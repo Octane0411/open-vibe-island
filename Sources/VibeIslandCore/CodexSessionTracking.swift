@@ -539,24 +539,15 @@ public enum CodexRolloutReducer {
                 break
             }
 
-            snapshot.initialUserPrompt = snapshot.initialUserPrompt ?? message
-            snapshot.lastUserPrompt = message
-            snapshot.currentTool = nil
-            snapshot.currentCommandPreview = nil
-            snapshot.phase = .running
-            snapshot.isCompleted = false
-            snapshot.summary = "Prompt: \(message)"
+            applyUserMessage(message, timestamp: timestamp, to: &snapshot)
+            return
         case "agent_message":
-            guard let message = payload["message"] as? String, !message.isEmpty else {
+            guard let message = clipped(payload["message"] as? String), !message.isEmpty else {
                 break
             }
 
-            snapshot.lastAssistantMessage = message
-            snapshot.currentTool = nil
-            snapshot.currentCommandPreview = nil
-            snapshot.summary = message
-            snapshot.phase = .running
-            snapshot.isCompleted = false
+            applyAssistantMessage(message, timestamp: timestamp, to: &snapshot)
+            return
         case "task_complete":
             snapshot.currentTool = nil
             snapshot.currentCommandPreview = nil
@@ -604,6 +595,31 @@ public enum CodexRolloutReducer {
         to snapshot: inout CodexRolloutSnapshot
     ) {
         let itemType = payload["type"] as? String
+        if itemType == "message" {
+            guard let role = payload["role"] as? String else {
+                return
+            }
+
+            switch role {
+            case "user":
+                guard let message = responseMessageText(from: payload, textType: "input_text", skipsInjectedBlocks: true) else {
+                    return
+                }
+
+                applyUserMessage(message, timestamp: timestamp, to: &snapshot)
+            case "assistant":
+                guard let message = responseMessageText(from: payload, textType: "output_text", skipsInjectedBlocks: false) else {
+                    return
+                }
+
+                applyAssistantMessage(message, timestamp: timestamp, to: &snapshot)
+            default:
+                return
+            }
+
+            return
+        }
+
         guard itemType == "function_call" || itemType == "custom_tool_call" else {
             return
         }
@@ -617,6 +633,41 @@ public enum CodexRolloutReducer {
         snapshot.phase = .running
         snapshot.isCompleted = false
         snapshot.summary = "Running \(displayName(for: toolName))."
+
+        if let timestamp {
+            snapshot.updatedAt = timestamp
+        }
+    }
+
+    private static func applyUserMessage(
+        _ message: String,
+        timestamp: Date?,
+        to snapshot: inout CodexRolloutSnapshot
+    ) {
+        snapshot.initialUserPrompt = snapshot.initialUserPrompt ?? message
+        snapshot.lastUserPrompt = message
+        snapshot.currentTool = nil
+        snapshot.currentCommandPreview = nil
+        snapshot.phase = .running
+        snapshot.isCompleted = false
+        snapshot.summary = "Prompt: \(message)"
+
+        if let timestamp {
+            snapshot.updatedAt = timestamp
+        }
+    }
+
+    private static func applyAssistantMessage(
+        _ message: String,
+        timestamp: Date?,
+        to snapshot: inout CodexRolloutSnapshot
+    ) {
+        snapshot.lastAssistantMessage = message
+        snapshot.currentTool = nil
+        snapshot.currentCommandPreview = nil
+        snapshot.summary = message
+        snapshot.phase = .running
+        snapshot.isCompleted = false
 
         if let timestamp {
             snapshot.updatedAt = timestamp
@@ -651,6 +702,48 @@ public enum CodexRolloutReducer {
         default:
             return nil
         }
+    }
+
+    private static func responseMessageText(
+        from payload: [String: Any],
+        textType: String,
+        skipsInjectedBlocks: Bool
+    ) -> String? {
+        guard let content = payload["content"] as? [[String: Any]] else {
+            return nil
+        }
+
+        let segments = content.compactMap { item -> String? in
+            guard item["type"] as? String == textType,
+                  let text = item["text"] as? String else {
+                return nil
+            }
+
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                return nil
+            }
+
+            if skipsInjectedBlocks, isInjectedPromptBlock(trimmed) {
+                return nil
+            }
+
+            return trimmed
+        }
+
+        guard !segments.isEmpty else {
+            return nil
+        }
+
+        return clipped(segments.joined(separator: " "))
+    }
+
+    private static func isInjectedPromptBlock(_ text: String) -> Bool {
+        text.hasPrefix("# AGENTS.md instructions for ")
+            || text.hasPrefix("<environment_context>")
+            || text.hasPrefix("<permissions instructions>")
+            || text.hasPrefix("<collaboration_mode>")
+            || text.hasPrefix("<skills_instructions>")
     }
 
     private static func clipped(_ value: String?, limit: Int = 110) -> String? {
@@ -698,16 +791,19 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
 
     private let pollInterval: TimeInterval
     private let initialReadLimit: UInt64
+    private let initialPromptBootstrapLimit: UInt64
     private let queue = DispatchQueue(label: "app.vibeisland.codex.rollout-watcher")
     private var timer: DispatchSourceTimer?
     private var observations: [String: Observation] = [:]
 
     public init(
         pollInterval: TimeInterval = 0.75,
-        initialReadLimit: UInt64 = 128 * 1_024
+        initialReadLimit: UInt64 = 128 * 1_024,
+        initialPromptBootstrapLimit: UInt64 = 128 * 1_024
     ) {
         self.pollInterval = pollInterval
         self.initialReadLimit = initialReadLimit
+        self.initialPromptBootstrapLimit = initialPromptBootstrapLimit
     }
 
     deinit {
@@ -866,13 +962,45 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
             return Observation(target: target)
         }
 
+        let bootstrapSnapshot = bootstrapPromptSnapshot(
+            fileHandle: fileHandle,
+            fileSize: fileSize
+        )
+
         return Observation(
             target: target,
             offset: fileSize - initialReadLimit,
             pendingBuffer: Data(),
-            snapshot: CodexRolloutSnapshot(),
+            snapshot: bootstrapSnapshot,
             shouldTrimLeadingPartialLine: true
         )
+    }
+
+    private func bootstrapPromptSnapshot(
+        fileHandle: FileHandle,
+        fileSize: UInt64
+    ) -> CodexRolloutSnapshot {
+        let readLimit = min(fileSize, initialPromptBootstrapLimit)
+        guard readLimit > 0 else {
+            return CodexRolloutSnapshot()
+        }
+
+        do {
+            try fileHandle.seek(toOffset: 0)
+            let data = try fileHandle.read(upToCount: Int(readLimit)) ?? Data()
+            guard !data.isEmpty else {
+                return CodexRolloutSnapshot()
+            }
+
+            var buffer = data
+            let headSnapshot = CodexRolloutReducer.snapshot(for: completeLines(from: &buffer))
+            return CodexRolloutSnapshot(
+                initialUserPrompt: headSnapshot.initialUserPrompt,
+                lastUserPrompt: headSnapshot.lastUserPrompt
+            )
+        } catch {
+            return CodexRolloutSnapshot()
+        }
     }
 
     private func trimLeadingPartialLine(from buffer: inout Data) {

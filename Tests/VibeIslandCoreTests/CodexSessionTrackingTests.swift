@@ -220,6 +220,63 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutReducerTracksMessageResponsePromptsWithoutInjectedBlocks() {
+        let snapshot = CodexRolloutReducer.snapshot(for: [
+            rolloutLine(
+                timestamp: "2026-04-02T14:37:27.780Z",
+                type: "response_item",
+                payload: [
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        [
+                            "type": "input_text",
+                            "text": "# AGENTS.md instructions for /tmp/repo\n\n<INSTRUCTIONS>\nRepository guide\n</INSTRUCTIONS>",
+                        ],
+                        [
+                            "type": "input_text",
+                            "text": "<environment_context>\n  <cwd>/tmp/repo</cwd>\n</environment_context>",
+                        ],
+                    ],
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T14:37:28.346Z",
+                type: "response_item",
+                payload: [
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        [
+                            "type": "input_text",
+                            "text": "读一下这篇论文 https://arxiv.org/html/2603.28052v1，然后对比一下 autoresearch 的实现。",
+                        ],
+                    ],
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T14:37:34.441Z",
+                type: "response_item",
+                payload: [
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [
+                        [
+                            "type": "output_text",
+                            "text": "我先读论文内容并在仓库里定位 autoresearch 相关实现，再把两边的机制做一版对照。",
+                        ],
+                    ],
+                ]
+            ),
+        ])
+
+        #expect(snapshot.initialUserPrompt == "读一下这篇论文 https://arxiv.org/html/2603.28052v1，然后对比一下 autoresearch 的实现。")
+        #expect(snapshot.lastUserPrompt == "读一下这篇论文 https://arxiv.org/html/2603.28052v1，然后对比一下 autoresearch 的实现。")
+        #expect(snapshot.lastAssistantMessage == "我先读论文内容并在仓库里定位 autoresearch 相关实现，再把两边的机制做一版对照。")
+        #expect(snapshot.summary == "我先读论文内容并在仓库里定位 autoresearch 相关实现，再把两边的机制做一版对照。")
+    }
+
+    @Test
     func codexRolloutWatcherTracksAppendedLines() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("vibe-island-rollout-\(UUID().uuidString)", isDirectory: true)
@@ -301,6 +358,111 @@ struct CodexSessionTrackingTests {
         #expect(events.contains(where: { $0.trackedMetadataUpdate?.codexMetadata.currentTool == "exec_command" }))
         #expect(events.contains(where: { $0.trackedMetadataUpdate?.codexMetadata.currentCommandPreview == "git status -sb" }))
         #expect(events.contains(where: { $0.trackedSessionCompletion?.summary == "Finished the rollout tracking slice." }))
+    }
+
+    @Test
+    func codexRolloutWatcherBootstrapsPromptMetadataFromHeadWhenTailMissesIt() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("vibe-island-rollout-head-bootstrap-\(UUID().uuidString)", isDirectory: true)
+        let rolloutURL = rootURL.appendingPathComponent("rollout.jsonl")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        let lines = [
+            rolloutLine(
+                timestamp: "2026-04-02T14:37:27.780Z",
+                type: "response_item",
+                payload: [
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        [
+                            "type": "input_text",
+                            "text": "# AGENTS.md instructions for /tmp/repo\n\n<INSTRUCTIONS>\nRepository guide\n</INSTRUCTIONS>",
+                        ],
+                        [
+                            "type": "input_text",
+                            "text": "<environment_context>\n  <cwd>/tmp/repo</cwd>\n</environment_context>",
+                        ],
+                    ],
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T14:37:28.346Z",
+                type: "response_item",
+                payload: [
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        [
+                            "type": "input_text",
+                            "text": "读一下这篇论文 https://arxiv.org/html/2603.28052v1，然后对比一下 autoresearch 的实现。",
+                        ],
+                    ],
+                ]
+            ),
+        ] + (0..<8).map { index in
+            rolloutLine(
+                timestamp: String(format: "2026-04-02T14:37:%02d.000Z", 29 + index),
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": "Filler analysis \(index): \(String(repeating: "segment-", count: 16))",
+                ]
+            )
+        } + [
+            rolloutLine(
+                timestamp: "2026-04-02T14:38:00.000Z",
+                type: "response_item",
+                payload: [
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [
+                        [
+                            "type": "output_text",
+                            "text": "我先读论文内容并在仓库里定位 autoresearch 相关实现，再把两边的机制做一版对照。",
+                        ],
+                    ],
+                ]
+            ),
+        ]
+
+        try lines.joined(separator: "\n").appending("\n").write(to: rolloutURL, atomically: true, encoding: .utf8)
+
+        let recorder = EventRecorder()
+        let watcher = CodexRolloutWatcher(
+            pollInterval: 0.05,
+            initialReadLimit: 512,
+            initialPromptBootstrapLimit: 4_096
+        )
+        watcher.eventHandler = { event in
+            Task {
+                await recorder.append(event)
+            }
+        }
+        watcher.sync(targets: [
+            CodexRolloutWatchTarget(
+                sessionID: "codex-session-head-bootstrap",
+                transcriptPath: rolloutURL.path
+            )
+        ])
+
+        try await Task.sleep(for: .milliseconds(200))
+        watcher.stop()
+
+        let events = await recorder.snapshot()
+        #expect(events.contains(where: {
+            $0.trackedMetadataUpdate?.codexMetadata.initialUserPrompt == "读一下这篇论文 https://arxiv.org/html/2603.28052v1，然后对比一下 autoresearch 的实现。"
+        }))
+        #expect(events.contains(where: {
+            $0.trackedMetadataUpdate?.codexMetadata.lastUserPrompt == "读一下这篇论文 https://arxiv.org/html/2603.28052v1，然后对比一下 autoresearch 的实现。"
+        }))
+        #expect(events.contains(where: {
+            $0.trackedActivityUpdate?.summary == "我先读论文内容并在仓库里定位 autoresearch 相关实现，再把两边的机制做一版对照。"
+        }))
     }
 
     @Test
