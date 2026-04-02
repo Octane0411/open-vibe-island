@@ -4,6 +4,11 @@ import SwiftUI
 
 @MainActor
 final class OverlayPanelController {
+    private static let windowHeight: CGFloat = 750
+    private static let openedContentWidthPadding: CGFloat = 24
+    private static let openedContentHeight: CGFloat = 420
+    private static let openedContentBottomPadding: CGFloat = 12
+
     private var panel: NotchPanel?
     private var eventMonitors = NotchEventMonitors()
     private var hoverTimer: DispatchWorkItem?
@@ -64,12 +69,11 @@ final class OverlayPanelController {
 
     private func makePanel(model: AppModel) -> NotchPanel {
         let screenFrame = resolveTargetScreen()?.frame ?? NSScreen.main?.frame ?? .zero
-        let windowHeight: CGFloat = 750
         let windowFrame = NSRect(
             x: screenFrame.origin.x,
-            y: screenFrame.maxY - windowHeight,
+            y: screenFrame.maxY - Self.windowHeight,
             width: screenFrame.width,
-            height: windowHeight
+            height: Self.windowHeight
         )
 
         let panel = NotchPanel(
@@ -108,12 +112,11 @@ final class OverlayPanelController {
             return nil
         }
 
-        let windowHeight: CGFloat = 750
         let windowFrame = NSRect(
             x: screen.frame.origin.x,
-            y: screen.frame.maxY - windowHeight,
+            y: screen.frame.maxY - Self.windowHeight,
             width: screen.frame.width,
-            height: windowHeight
+            height: Self.windowHeight
         )
         panel.setFrame(windowFrame, display: true)
         computeNotchRect(screen: screen)
@@ -238,15 +241,12 @@ final class OverlayPanelController {
             return isPointInNotchArea(screenPoint)
         }
 
-        let screen = resolveTargetScreen()
-        guard let screenFrame = screen?.frame else { return false }
+        guard let panel,
+              let localRect = contentRect(for: model, in: panel.contentView?.bounds ?? .zero) else {
+            return false
+        }
 
-        let panelWidth = openedPanelWidth(for: screen)
-        let panelHeight: CGFloat = 420
-        let panelX = screenFrame.midX - panelWidth / 2
-        let panelY = screenFrame.maxY - panelHeight
-
-        let expandedRect = NSRect(x: panelX, y: panelY, width: panelWidth, height: panelHeight)
+        let expandedRect = panel.convertToScreen(localRect)
         return expandedRect.contains(screenPoint)
     }
 
@@ -257,29 +257,26 @@ final class OverlayPanelController {
 
     func contentRect(for model: AppModel, in bounds: NSRect) -> NSRect? {
         guard let screen = resolveTargetScreen() else { return nil }
-        let screenFrame = screen.frame
-        let panelFrame = panel?.frame ?? .zero
 
         if model.notchStatus == .opened {
             let panelWidth = openedPanelWidth(for: screen)
-            let panelHeight: CGFloat = 420
-            let centerX = screenFrame.midX - panelFrame.origin.x
-            let topY = panelFrame.height - (screenFrame.maxY - panelFrame.origin.y)
+            let contentWidth = panelWidth + Self.openedContentWidthPadding
+            let contentHeight = Self.openedContentHeight + Self.openedContentBottomPadding
+            let centerX = bounds.midX
 
             return NSRect(
-                x: centerX - panelWidth / 2,
-                y: topY,
-                width: panelWidth,
-                height: panelHeight
+                x: centerX - contentWidth / 2,
+                y: bounds.maxY - contentHeight,
+                width: contentWidth,
+                height: contentHeight
             )
         } else {
             let notchSize = screen.notchSize
-            let centerX = screenFrame.midX - panelFrame.origin.x
-            let topY = panelFrame.height - (screenFrame.maxY - panelFrame.origin.y)
+            let centerX = bounds.midX
 
             return NSRect(
                 x: centerX - notchSize.width / 2,
-                y: topY,
+                y: bounds.maxY - notchSize.height,
                 width: notchSize.width,
                 height: notchSize.height
             )
@@ -330,20 +327,12 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
             return nil
         }
 
-        let screenPoint = convertToScreen(point)
-
-        if model.notchStatus == .opened {
-            if controller.isPointInExpandedArea(screenPoint) {
-                return super.hitTest(point)
-            }
+        guard let contentRect = controller.contentRect(for: model, in: bounds),
+              contentRect.contains(point) else {
             return nil
         }
 
-        if controller.isPointInNotchArea(screenPoint) {
-            return super.hitTest(point)
-        }
-
-        return nil
+        return super.hitTest(point) ?? self
     }
 
     private func convertToScreen(_ viewPoint: NSPoint) -> NSPoint {
@@ -430,4 +419,3 @@ extension NSScreen {
         return CGSize(width: notchWidth, height: notchHeight)
     }
 }
-
