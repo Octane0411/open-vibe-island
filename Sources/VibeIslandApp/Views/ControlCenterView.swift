@@ -47,26 +47,30 @@ struct ControlCenterView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Sessions")
                     .font(.headline)
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        ForEach(model.sessions) { session in
-                            Button {
-                                model.select(sessionID: session.id)
-                            } label: {
-                                SessionRowView(
-                                    session: session,
-                                    isSelected: session.id == model.focusedSession?.id
-                                )
-                            }
-                            .buttonStyle(.plain)
+                List {
+                    ForEach(model.sessions) { session in
+                        Button {
+                            model.select(sessionID: session.id)
+                        } label: {
+                            SessionRowView(
+                                session: session,
+                                isSelected: session.id == model.focusedSession?.id
+                            )
                         }
+                        .buttonStyle(.plain)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
                     }
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .background(Color.clear)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(maxWidth: 360, alignment: .topLeading)
+        .frame(maxWidth: 360, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var setupCard: some View {
