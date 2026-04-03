@@ -1096,7 +1096,7 @@ private struct IslandNotificationCard: View {
             .padding(.vertical, 12)
 
             Rectangle()
-                .fill(completionAccent.opacity(0.12))
+                .fill(.white.opacity(0.04))
                 .frame(height: 1)
 
             Text(session.codexMetadata?.lastAssistantMessage?.trimmedForNotificationCard ?? session.summary)
@@ -1108,11 +1108,11 @@ private struct IslandNotificationCard: View {
         }
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color(red: 0.04, green: 0.10, blue: 0.06))
+                .fill(Color.white.opacity(0.045))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(completionAccent.opacity(0.24))
+                .strokeBorder(.white.opacity(0.08))
         )
     }
 
