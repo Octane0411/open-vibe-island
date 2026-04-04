@@ -26,6 +26,7 @@ enum TrackedEventIngress {
 final class AppModel {
     private static let overlayDisplayPreferenceDefaultsKey = "overlay.display.preference"
     private static let soundMutedDefaultsKey = "overlay.sound.muted"
+    private static let controlCenterWindowTitle = "Open Island Debug"
     private static let syntheticClaudeSessionPrefix = "claude-process:"
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
     private static let notificationSurfaceAutoCollapseDelay: TimeInterval = 10
@@ -101,6 +102,9 @@ final class AppModel {
 
     @ObservationIgnored
     private let overlayPanelController = OverlayPanelController()
+
+    @ObservationIgnored
+    private var controlCenterWindowController: ControlCenterWindowController?
 
     @ObservationIgnored
     private let bridgeServer = DemoBridgeServer()
@@ -711,22 +715,22 @@ final class AppModel {
     }
 
     func showControlCenter() {
-        guard let window = NSApp.windows.first(where: { $0.title == "Open Island Debug" }) else {
+        if let window = controlCenterWindow {
+            window.orderFrontRegardless()
+            window.makeKey()
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
-        window.orderFrontRegardless()
-        window.makeKey()
-        NSApp.activate(ignoringOtherApps: true)
+        let controller = controlCenterWindowController ?? ControlCenterWindowController(model: self)
+        controlCenterWindowController = controller
+        controller.show()
     }
 
     func hideControlCenter() {
-        guard let window = NSApp.windows.first(where: { $0.title == "Open Island Debug" }) else {
-            return
+        if let window = controlCenterWindow {
+            window.orderOut(nil)
         }
-
-        window.orderOut(nil)
     }
 
     func toggleSoundMuted() {
@@ -2001,6 +2005,11 @@ final class AppModel {
         default:
             return nil
         }
+    }
+
+    private var controlCenterWindow: NSWindow? {
+        NSApp.windows.first(where: { $0.title == Self.controlCenterWindowTitle })
+            ?? controlCenterWindowController?.window
     }
 
     private func describe(_ event: AgentEvent) -> String {
