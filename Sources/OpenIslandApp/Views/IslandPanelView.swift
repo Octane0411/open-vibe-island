@@ -131,11 +131,11 @@ struct IslandPanelView: View {
                 headerRow
                     .frame(height: closedNotchHeight)
 
-                if isOpened {
-                    openedContent
-                        .frame(width: openedWidth - 24)
-                        .frame(maxHeight: currentHeight - closedNotchHeight - 12, alignment: .top)
-                }
+                openedContent
+                    .frame(width: openedWidth - 24)
+                    .frame(maxHeight: isOpened ? currentHeight - closedNotchHeight - 12 : 0, alignment: .top)
+                    .opacity(isOpened ? 1 : 0)
+                    .clipped()
             }
             .frame(width: currentWidth, height: currentHeight, alignment: .top)
             .padding(.horizontal, horizontalInset)
