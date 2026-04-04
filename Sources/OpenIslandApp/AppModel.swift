@@ -29,6 +29,7 @@ final class AppModel {
     private static let syntheticClaudeSessionPrefix = "claude-process:"
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
     private static let notificationSurfaceAutoCollapseDelay: TimeInterval = 10
+    private static let jumpOverlayDismissLeadTime: Duration = .milliseconds(140)
     static let hoverOpenDelay: TimeInterval = 0.7
     typealias ActiveProcessSnapshot = ActiveAgentProcessDiscovery.ProcessSnapshot
 
@@ -117,7 +118,7 @@ final class AppModel {
     private let claudeStatusLineInstallationManager = ClaudeStatusLineInstallationManager()
 
     @ObservationIgnored
-    private let terminalJumpService = TerminalJumpService()
+    private let terminalJumpAction: @Sendable (JumpTarget) throws -> String
 
     @ObservationIgnored
     private let codexSessionStore = CodexSessionStore()
@@ -164,7 +165,15 @@ final class AppModel {
     @ObservationIgnored
     private var codexUsageMonitorTask: Task<Void, Never>?
 
-    init() {
+    @ObservationIgnored
+    private var jumpTask: Task<Void, Never>?
+
+    init(
+        terminalJumpAction: @escaping @Sendable (JumpTarget) throws -> String = { target in
+            try TerminalJumpService().jump(to: target)
+        }
+    ) {
+        self.terminalJumpAction = terminalJumpAction
         overlayDisplaySelectionID = UserDefaults.standard.string(
             forKey: Self.overlayDisplayPreferenceDefaultsKey
         ) ?? OverlayDisplayOption.automaticID
@@ -802,32 +811,48 @@ final class AppModel {
     }
 
     func jumpToFocusedSession() {
-        guard let session = focusedSession, let jumpTarget = session.jumpTarget else {
-            lastActionMessage = "No jump target is available yet."
-            return
-        }
-
-        do {
-            dismissOverlayForJump()
-            let result = try terminalJumpService.jump(to: jumpTarget)
-            lastActionMessage = result
-        } catch {
-            lastActionMessage = "Jump failed: \(error.localizedDescription)"
-        }
+        jump(to: focusedSession?.jumpTarget)
     }
 
     func jumpToSession(_ session: AgentSession) {
-        guard let jumpTarget = session.jumpTarget else {
+        jump(to: session.jumpTarget)
+    }
+
+    private func jump(to jumpTarget: JumpTarget?) {
+        guard let jumpTarget else {
             lastActionMessage = "No jump target is available yet."
             return
         }
 
-        do {
-            dismissOverlayForJump()
-            let result = try terminalJumpService.jump(to: jumpTarget)
-            lastActionMessage = result
-        } catch {
-            lastActionMessage = "Jump failed: \(error.localizedDescription)"
+        let shouldDelayForDismissAnimation = isOverlayVisible
+        let jumpAction = terminalJumpAction
+
+        dismissOverlayForJump()
+        jumpTask?.cancel()
+        jumpTask = Task { [weak self] in
+            if shouldDelayForDismissAnimation {
+                try? await Task.sleep(for: Self.jumpOverlayDismissLeadTime)
+            }
+
+            do {
+                let result = try await Task.detached(priority: .userInitiated) {
+                    try jumpAction(jumpTarget)
+                }.value
+
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                self?.lastActionMessage = result
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                self?.lastActionMessage = "Jump failed: \(error.localizedDescription)"
+            }
         }
     }
 

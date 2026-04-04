@@ -562,6 +562,10 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
         false
     }
 
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
     required init(rootView: Content) {
         super.init(rootView: rootView)
         configureTransparency()

@@ -177,6 +177,46 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func jumpToSessionClosesOverlayBeforeTerminalJumpFinishes() async throws {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel { _ in
+            Thread.sleep(forTimeInterval: 0.25)
+            return "Focused the matching Ghostty terminal."
+        }
+        model.notchStatus = .opened
+        model.notchOpenReason = .click
+        model.islandSurface = .sessionList
+
+        let session = AgentSession(
+            id: "live-session",
+            title: "Codex · open-island",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Running",
+            updatedAt: now,
+            jumpTarget: JumpTarget(
+                terminalApp: "Ghostty",
+                workspaceName: "open-island",
+                paneTitle: "codex ~/p/open-island",
+                workingDirectory: "/tmp/open-island",
+                terminalSessionID: "ghostty-1"
+            )
+        )
+
+        model.jumpToSession(session)
+
+        #expect(model.notchStatus == .closed)
+        #expect(model.notchOpenReason == nil)
+        #expect(model.islandSurface == .sessionList)
+
+        try await Task.sleep(for: .milliseconds(450))
+
+        #expect(model.lastActionMessage == "Focused the matching Ghostty terminal.")
+    }
+
+    @Test
     func rolloutEventsDoNotPromoteRecoveredSessionsToAttachedDuringColdStart() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
