@@ -1732,10 +1732,18 @@ final class AppModel {
 
             while !Task.isCancelled {
                 let discovery = self.activeAgentProcessDiscovery
-                let snapshots = await Task.detached(priority: .utility) {
-                    discovery.discover()
+                let probe = self.terminalSessionAttachmentProbe
+                let (snapshots, ghosttyAvail, terminalAvail) = await Task.detached(priority: .utility) {
+                    let s = discovery.discover()
+                    let g = probe.ghosttySnapshotAvailability()
+                    let t = probe.terminalSnapshotAvailability()
+                    return (s, g, t)
                 }.value
-                self.reconcileSessionAttachments(activeProcesses: snapshots)
+                self.reconcileSessionAttachments(
+                    activeProcesses: snapshots,
+                    ghosttyAvailability: ghosttyAvail,
+                    terminalAvailability: terminalAvail
+                )
                 try? await Task.sleep(for: .seconds(3))
             }
         }
@@ -1775,7 +1783,11 @@ final class AppModel {
         }
     }
 
-    private func reconcileSessionAttachments(activeProcesses: [ActiveAgentProcessDiscovery.ProcessSnapshot]? = nil) {
+    private func reconcileSessionAttachments(
+        activeProcesses: [ActiveAgentProcessDiscovery.ProcessSnapshot]? = nil,
+        ghosttyAvailability: TerminalSessionAttachmentProbe.SnapshotAvailability<TerminalSessionAttachmentProbe.GhosttyTerminalSnapshot>? = nil,
+        terminalAvailability: TerminalSessionAttachmentProbe.SnapshotAvailability<TerminalSessionAttachmentProbe.TerminalTabSnapshot>? = nil
+    ) {
         let activeProcesses = activeProcesses ?? activeAgentProcessDiscovery.discover()
         let sanitizedSessions = sanitizeCrossToolGhosttyJumpTargets(in: state.sessions)
         let sanitizedSessionsChanged = sanitizedSessions != state.sessions
@@ -1800,11 +1812,22 @@ final class AppModel {
             return
         }
 
-        let resolutionReport = terminalSessionAttachmentProbe.sessionResolutionReport(
-            for: sessions,
-            activeProcesses: activeProcesses,
-            allowRecentAttachmentGrace: !isResolvingInitialLiveSessions
-        )
+        let resolutionReport: TerminalSessionAttachmentProbe.ResolutionReport
+        if let ghosttyAvailability, let terminalAvailability {
+            resolutionReport = terminalSessionAttachmentProbe.sessionResolutionReport(
+                for: sessions,
+                ghosttyAvailability: ghosttyAvailability,
+                terminalAvailability: terminalAvailability,
+                activeProcesses: activeProcesses,
+                allowRecentAttachmentGrace: !isResolvingInitialLiveSessions
+            )
+        } else {
+            resolutionReport = terminalSessionAttachmentProbe.sessionResolutionReport(
+                for: sessions,
+                activeProcesses: activeProcesses,
+                allowRecentAttachmentGrace: !isResolvingInitialLiveSessions
+            )
+        }
         let resolutions = resolutionReport.resolutions
         let attachmentUpdates = resolutions.mapValues { $0.attachmentState }
         let jumpTargetUpdates = resolutions.reduce(into: [String: JumpTarget]()) { partialResult, entry in

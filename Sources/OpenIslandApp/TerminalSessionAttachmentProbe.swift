@@ -15,18 +15,18 @@ struct TerminalSessionAttachmentProbe {
 
     typealias ActiveProcessSnapshot = ActiveAgentProcessDiscovery.ProcessSnapshot
 
-    struct GhosttyTerminalSnapshot {
+    struct GhosttyTerminalSnapshot: Sendable {
         var sessionID: String
         var workingDirectory: String
         var title: String
     }
 
-    struct TerminalTabSnapshot {
+    struct TerminalTabSnapshot: Sendable {
         var tty: String
         var customTitle: String
     }
 
-    enum SnapshotAvailability<Snapshot> {
+    enum SnapshotAvailability<Snapshot: Sendable>: Sendable {
         case unavailable(appIsRunning: Bool)
         case available([Snapshot], appIsRunning: Bool)
 
@@ -929,7 +929,7 @@ struct TerminalSessionAttachmentProbe {
             || session.currentToolName?.isEmpty == false
     }
 
-    private func ghosttySnapshotAvailability() -> SnapshotAvailability<GhosttyTerminalSnapshot> {
+    func ghosttySnapshotAvailability() -> SnapshotAvailability<GhosttyTerminalSnapshot> {
         let appIsRunning = isRunning(bundleIdentifier: "com.mitchellh.ghostty")
         guard appIsRunning else {
             return .available([], appIsRunning: false)
@@ -942,7 +942,7 @@ struct TerminalSessionAttachmentProbe {
         }
     }
 
-    private func terminalSnapshotAvailability() -> SnapshotAvailability<TerminalTabSnapshot> {
+    func terminalSnapshotAvailability() -> SnapshotAvailability<TerminalTabSnapshot> {
         let appIsRunning = isRunning(bundleIdentifier: "com.apple.Terminal")
         guard appIsRunning else {
             return .available([], appIsRunning: false)
