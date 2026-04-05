@@ -50,8 +50,8 @@
 
 ## 社区
 
-目前项目还在早期阶段，欢迎 issue 和 pull request。
-如果你想现在就开始做贡献，可以先加入微信群：
+目前项目还在早期阶段，在体验中可能会出现任何问题，加入微信群/discord以获得更快的反馈和更高的解决优先级
+同时欢迎任意 issue 和 pull request，我们也在寻找其他maintainer，open island只是个开始，欢迎加入微信群：
 
 <img src="docs/images/wechat-group.jpg" alt="Open Island 微信群二维码" width="360">
   

@@ -50,8 +50,8 @@ TBD
 
 ## Community
 
-The project is still at an early stage. Issues and pull requests are welcome.
-If you want to start contributing right away, you can join the WeChat group first:
+The project is still at an early stage — you may encounter issues along the way. Join the WeChat group or Discord for faster feedback and higher resolution priority.
+Issues and pull requests are always welcome. We are also looking for additional maintainers — Open Island is just the beginning. Come join us:
 
 <img src="docs/images/wechat-group.jpg" alt="Open Island WeChat group QR code" width="360">
 
