@@ -15,6 +15,7 @@ build_number="${OPEN_ISLAND_BUILD_NUMBER:-$(git -C "$repo_root" rev-list --count
 package_root="${OPEN_ISLAND_PACKAGE_ROOT:-$repo_root/output/package}"
 bundle_dir="${OPEN_ISLAND_BUNDLE_DIR:-$package_root/$app_name.app}"
 zip_path="${OPEN_ISLAND_ZIP_PATH:-$package_root/$app_name.zip}"
+dmg_path="${OPEN_ISLAND_DMG_PATH:-$package_root/$app_name.dmg}"
 signing_identity="${OPEN_ISLAND_SIGN_IDENTITY:-}"
 notary_profile="${OPEN_ISLAND_NOTARY_PROFILE:-}"
 
@@ -35,7 +36,7 @@ brand_icon="$repo_root/Assets/Brand/OpenIsland.icns"
 
 python3 "$brand_script"
 
-rm -rf "$bundle_dir" "$zip_path"
+rm -rf "$bundle_dir" "$zip_path" "$dmg_path"
 mkdir -p "$bundle_dir/Contents/MacOS" "$bundle_dir/Contents/Helpers" "$bundle_dir/Contents/Resources"
 
 cp "$app_binary" "$bundle_dir/Contents/MacOS/OpenIslandApp"
@@ -115,15 +116,35 @@ fi
 
 ditto -c -k --keepParent "$bundle_dir" "$zip_path"
 
+# --- DMG creation ---
+dmg_staging="$package_root/dmg-staging"
+rm -rf "$dmg_staging"
+mkdir -p "$dmg_staging"
+cp -R "$bundle_dir" "$dmg_staging/"
+ln -s /Applications "$dmg_staging/Applications"
+
+hdiutil create \
+    -volname "$app_name" \
+    -srcfolder "$dmg_staging" \
+    -ov \
+    -format UDZO \
+    "$dmg_path"
+
+rm -rf "$dmg_staging"
+
 if [[ -n "$signing_identity" && -n "$notary_profile" ]]; then
     xcrun notarytool submit "$zip_path" --keychain-profile "$notary_profile" --wait
     xcrun stapler staple -v "$bundle_dir"
     rm -f "$zip_path"
     ditto -c -k --keepParent "$bundle_dir" "$zip_path"
+
+    xcrun notarytool submit "$dmg_path" --keychain-profile "$notary_profile" --wait
+    xcrun stapler staple -v "$dmg_path"
 fi
 
 echo "Bundle: $bundle_dir"
 echo "Archive: $zip_path"
+echo "DMG: $dmg_path"
 if [[ -n "$signing_identity" ]]; then
     echo "Signed with identity: $signing_identity"
 else
