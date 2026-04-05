@@ -62,7 +62,7 @@ enum OverlayDisplayResolver {
     static func availableDisplayOptions() -> [OverlayDisplayOption] {
         let automatic = OverlayDisplayOption(
             id: OverlayDisplayOption.automaticID,
-            title: "Automatic",
+            title: "自动",
             subtitle: "Prefer the built-in notched display, otherwise use the current main display."
         )
 

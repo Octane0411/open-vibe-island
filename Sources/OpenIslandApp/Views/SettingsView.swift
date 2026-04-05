@@ -150,7 +150,6 @@ struct GeneralSettingsPane: View {
                     get: { model.overlayDisplaySelectionID },
                     set: { model.overlayDisplaySelectionID = $0 }
                 )) {
-                    Text("自动").tag(OverlayDisplayOption.automaticID)
                     ForEach(model.overlayDisplayOptions) { option in
                         Text(option.title).tag(option.id)
                     }
@@ -218,7 +217,6 @@ struct DisplaySettingsPane: View {
                     get: { model.overlayDisplaySelectionID },
                     set: { model.overlayDisplaySelectionID = $0 }
                 )) {
-                    Text("自动").tag(OverlayDisplayOption.automaticID)
                     ForEach(model.overlayDisplayOptions) { option in
                         Text(option.title).tag(option.id)
                     }
