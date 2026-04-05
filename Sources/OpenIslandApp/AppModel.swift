@@ -1782,7 +1782,7 @@ final class AppModel {
                     ghosttyAvailability: ghosttyAvail,
                     terminalAvailability: terminalAvail
                 )
-                try? await Task.sleep(for: .seconds(3))
+                try? await Task.sleep(for: .seconds(2))
             }
         }
     }
