@@ -411,6 +411,21 @@ struct IslandPanelView: View {
                             onJump: { model.jumpToSession(session) }
                         )
                     }
+
+                    if totalSessionCount > displayedSessions.count {
+                        Button {
+                            model.showsAllSessions.toggle()
+                        } label: {
+                            Text(model.showsAllSessions
+                                ? "收起列表"
+                                : "显示全部 \(totalSessionCount) 个会话")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.45))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
             .padding(.vertical, 2)
@@ -425,7 +440,11 @@ struct IslandPanelView: View {
     }
 
     private var displayedSessions: [AgentSession] {
-        model.islandListSessions
+        model.showsAllSessions ? model.allSessions : model.islandListSessions
+    }
+
+    private var totalSessionCount: Int {
+        model.allSessions.count
     }
 
     private func sessionListViewportSessions(at referenceDate: Date) -> [AgentSession] {

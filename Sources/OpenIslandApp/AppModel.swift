@@ -49,6 +49,7 @@ final class AppModel {
     var notchStatus: NotchStatus = .closed
     var notchOpenReason: NotchOpenReason?
     var islandSurface: IslandSurface = .sessionList()
+    var showsAllSessions: Bool = false
     var isOverlayVisible: Bool { notchStatus != .closed }
     let hooks = HookInstallationCoordinator()
     var isCodexSetupBusy: Bool { hooks.isCodexSetupBusy }
@@ -216,6 +217,10 @@ final class AppModel {
 
     var islandListSessions: [AgentSession] {
         surfacedSessions
+    }
+
+    var allSessions: [AgentSession] {
+        state.sessions
     }
 
     var recentSessionCount: Int {
