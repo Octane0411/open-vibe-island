@@ -139,7 +139,7 @@ struct TerminalSessionAttachmentProbe {
                 return true
             }
 
-            return terminalName != "ghostty" && terminalName != "terminal"
+            return terminalName != "ghostty" && terminalName != "terminal" && terminalName != "cmux"
         }
         let activeProcessesBySessionID = activeProcessesBySessionID(
             for: sessions,
@@ -227,8 +227,8 @@ struct TerminalSessionAttachmentProbe {
             }()
             let isRecentHookSession = !cwdContested
                 && session.origin == .live
-                && now.timeIntervalSince(session.updatedAt) < Self.staleGraceWindow
                 && session.phase != .completed
+                && now.timeIntervalSince(session.updatedAt) < Self.staleGraceWindow
             resolutions[session.id] = SessionResolution(
                 attachmentState: (isActiveProcess || isRecentHookSession)
                     ? .attached
