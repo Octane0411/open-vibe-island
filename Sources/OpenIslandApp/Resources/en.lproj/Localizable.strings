@@ -126,6 +126,16 @@
 "debug.sessionList" = "Session List";
 "debug.sessionListActionable" = "Session List (Actionable)";
 
+/* Setup Guide */
+"setup.title" = "Welcome to Open Island";
+"setup.subtitle" = "Open Island needs CLI hooks installed to monitor your AI coding agents.";
+"setup.hookReady" = "Installed and ready";
+"setup.hookMissing" = "Not installed";
+"setup.binaryMissing" = "Hook binary not found. Build the project first.";
+"setup.installAll" = "Install All";
+"setup.skip" = "Skip";
+"setup.done" = "Done";
+
 /* Window Titles */
 "window.settings" = "Open Island Settings";
 "window.debug" = "Open Island Debug";

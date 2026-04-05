@@ -126,6 +126,16 @@
 "debug.sessionList" = "会话列表";
 "debug.sessionListActionable" = "会话列表 (可操作)";
 
+/* Setup Guide */
+"setup.title" = "欢迎使用 Open Island";
+"setup.subtitle" = "Open Island 需要安装 CLI Hooks 来监控你的 AI 编程代理。";
+"setup.hookReady" = "已安装就绪";
+"setup.hookMissing" = "未安装";
+"setup.binaryMissing" = "未找到 Hook 二进制文件，请先构建项目。";
+"setup.installAll" = "全部安装";
+"setup.skip" = "跳过";
+"setup.done" = "完成";
+
 /* Window Titles */
 "window.settings" = "Open Island 设置";
 "window.debug" = "Open Island 调试";
