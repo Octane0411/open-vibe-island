@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and package
+        env:
+          OPEN_ISLAND_VERSION: ${{ steps.version.outputs.version }}
+          OPEN_ISLAND_BUILD_NUMBER: ${{ github.run_number }}
+        run: zsh scripts/package-app.sh
+
+      - name: Verify artifacts
+        run: |
+          test -f "output/package/Open Island.zip"
+          test -f "output/package/Open Island.dmg"
+          ls -lh output/package/
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Open Island $GITHUB_REF_NAME" \
+            --generate-notes \
+            --notes-start-tag "$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo '')" \
+            --draft \
+            "output/package/Open Island.dmg#Open Island.dmg (macOS, Apple Silicon)" \
+            "output/package/Open Island.zip#Open Island.zip (macOS, Apple Silicon)"
+
+      - name: Append install instructions to release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          existing="$(gh release view "$GITHUB_REF_NAME" --json body -q .body)"
+          gh release edit "$GITHUB_REF_NAME" --notes "$(cat <<EOF
+          ${existing}
+
+          ---
+
+          ## Installation
+
+          1. Download **Open Island.dmg**, open it, and drag **Open Island** to **Applications**.
+          2. First launch: right-click the app → **Open** (macOS Gatekeeper will warn about unsigned apps).
+             - Alternatively, run in Terminal: \`xattr -cr /Applications/Open\ Island.app\`
+          3. Requires **macOS 14+** and **Apple Silicon** (M1/M2/M3/M4).
+
+          > This is an unsigned early-access build. Code signing and notarization will be added once our Apple Developer account is approved.
+          EOF
+          )"
