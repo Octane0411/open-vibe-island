@@ -371,6 +371,33 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func rolloutPermissionRequestWithoutKnownSessionCreatesFallbackSession() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+
+        model.applyTrackedEvent(
+            .permissionRequested(
+                PermissionRequested(
+                    sessionID: "rollout-approval-session",
+                    request: PermissionRequest(
+                        title: "Approval required",
+                        summary: "Need your approval in Codex.",
+                        affectedPath: "git push origin feat/permission-consent-popup",
+                        primaryActionTitle: "Open Codex",
+                        secondaryActionTitle: "Later"
+                    ),
+                    timestamp: now.addingTimeInterval(1)
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .rollout
+        )
+
+        #expect(model.state.session(id: "rollout-approval-session")?.phase == .waitingForApproval)
+        #expect(model.state.session(id: "rollout-approval-session")?.attachmentState == .stale)
+    }
+
+    @Test
     func duplicatePermissionEventsOnlyAlertOnceForPendingSession() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
@@ -518,6 +545,51 @@ struct AppModelSessionListTests {
         #expect(model.notchStatus == .closed)
         #expect(model.notchOpenReason == nil)
         #expect(model.islandSurface == .sessionList())
+    }
+
+    @Test
+    func rolloutPermissionPresentsNotificationDuringColdStart() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        model.isResolvingInitialLiveSessions = true
+        model.notchStatus = .closed
+        model.notchOpenReason = nil
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "recovered-session",
+                    title: "Codex · open-island",
+                    tool: .codex,
+                    origin: .live,
+                    attachmentState: .stale,
+                    phase: .running,
+                    summary: "Recovered from cache",
+                    updatedAt: now
+                ),
+            ]
+        )
+
+        model.applyTrackedEvent(
+            .permissionRequested(
+                PermissionRequested(
+                    sessionID: "recovered-session",
+                    request: PermissionRequest(
+                        title: "Approval required",
+                        summary: "Need your approval in Codex.",
+                        affectedPath: "git push origin feat/permission-consent-popup",
+                        primaryActionTitle: "Open Codex",
+                        secondaryActionTitle: "Later"
+                    ),
+                    timestamp: now.addingTimeInterval(1)
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .rollout
+        )
+
+        #expect(model.notchStatus == .opened)
+        #expect(model.notchOpenReason == .notification)
+        #expect(model.islandSurface == .sessionList(actionableSessionID: "recovered-session"))
     }
 
     @Test

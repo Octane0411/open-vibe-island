@@ -772,8 +772,7 @@ final class AppModel {
         _ event: AgentEvent,
         ingress: TrackedEventIngress
     ) {
-        guard ingress == .bridge,
-              case let .permissionRequested(payload) = event,
+        guard case let .permissionRequested(payload) = event,
               state.session(id: payload.sessionID) == nil else {
             return
         }
@@ -802,12 +801,12 @@ final class AppModel {
             title: fallbackTitle,
             tool: inferredTool,
             origin: .live,
-            attachmentState: .attached,
+            attachmentState: ingress == .bridge ? .attached : .stale,
             phase: .running,
             summary: payload.request.summary,
             updatedAt: payload.timestamp
         )
-        fallbackSession.isProcessAlive = true
+        fallbackSession.isProcessAlive = ingress == .bridge
 
         state = SessionState(sessions: state.sessions + [fallbackSession])
     }
@@ -879,10 +878,19 @@ final class AppModel {
             lastActionMessage = describe(event)
         }
 
+        let shouldAllowRolloutNotificationDuringBootstrap: Bool = {
+            switch event {
+            case .permissionRequested, .questionAsked:
+                true
+            default:
+                false
+            }
+        }()
+
         if let surface = IslandSurface.notificationSurface(for: event),
            !wasAlreadyCompleted,
            surface.sessionID.flatMap({ state.session(id: $0) }) != nil,
-           (ingress == .bridge || !isResolvingInitialLiveSessions),
+           (ingress == .bridge || !isResolvingInitialLiveSessions || shouldAllowRolloutNotificationDuringBootstrap),
            notchStatus == .closed || notchOpenReason == .notification {
             presentNotificationSurface(surface)
         }
