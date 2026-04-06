@@ -190,6 +190,10 @@ struct GeneralSettingsPane: View {
                 Toggle(lang.t("settings.general.hideFullscreen"), isOn: .constant(false))
                 Toggle(lang.t("settings.general.autoHideNoSessions"), isOn: .constant(false))
                 Toggle(lang.t("settings.general.autoCollapse"), isOn: .constant(true))
+                Toggle("在 Dock 中显示图标", isOn: Binding(
+                    get: { model.showDockIcon },
+                    set: { model.showDockIcon = $0 }
+                ))
             }
 
         }

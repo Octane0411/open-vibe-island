@@ -13,7 +13,7 @@ final class OpenIslandAppDelegate: NSObject, NSApplicationDelegate {
             "Open Island should remain active while monitoring local agent sessions."
         )
         ProcessInfo.processInfo.disableSuddenTermination()
-        NSApp.setActivationPolicy(.regular)
+        NSApp.setActivationPolicy(model.showDockIcon ? .regular : .accessory)
         harnessRuntimeMonitor.recordMilestone("applicationDidFinishLaunching")
 
         DispatchQueue.main.async { [self] in

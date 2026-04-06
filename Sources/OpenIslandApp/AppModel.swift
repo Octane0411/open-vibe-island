@@ -8,6 +8,7 @@ import SwiftUI
 @Observable
 final class AppModel {
     private static let soundMutedDefaultsKey = "overlay.sound.muted"
+    private static let showDockIconDefaultsKey = "app.showDockIcon"
     private static let syntheticClaudeSessionPrefix = "claude-process:"
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
     private static let jumpOverlayDismissLeadTime: Duration = .milliseconds(20)
@@ -103,6 +104,13 @@ final class AppModel {
         get { overlay.overlayPlacementDiagnostics }
         set { overlay.overlayPlacementDiagnostics = newValue }
     }
+    var showDockIcon: Bool = false {
+        didSet {
+            guard showDockIcon != oldValue else { return }
+            UserDefaults.standard.set(showDockIcon, forKey: Self.showDockIconDefaultsKey)
+            NSApp.setActivationPolicy(showDockIcon ? .regular : .accessory)
+        }
+    }
     var isSoundMuted = false {
         didSet {
             guard isSoundMuted != oldValue else {
@@ -162,6 +170,7 @@ final class AppModel {
         self.terminalJumpAction = terminalJumpAction
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
+        showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
 
         overlay.appModel = self
         overlay.restoreDisplayPreference()
