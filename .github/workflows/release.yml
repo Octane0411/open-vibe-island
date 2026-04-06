@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build-and-release:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
         with:
@@ -20,8 +20,10 @@ jobs:
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Install create-dmg
-        run: brew install create-dmg
+      - name: Install dependencies
+        run: |
+          brew install create-dmg
+          pip3 install --break-system-packages Pillow
 
       - name: Build and package
         env:
@@ -34,6 +36,34 @@ jobs:
           test -f "output/package/Open Island.zip"
           test -f "output/package/Open Island.dmg"
           ls -lh output/package/
+
+      - name: Verify bundle structure
+        run: |
+          bundle="output/package/Open Island.app"
+          echo "--- Bundle contents ---"
+          find "$bundle" -maxdepth 3 -type f | sort
+
+          # Required files
+          for f in \
+            "Contents/MacOS/OpenIslandApp" \
+            "Contents/Helpers/OpenIslandHooks" \
+            "Contents/Helpers/OpenIslandSetup" \
+            "Contents/Resources/OpenIsland.icns" \
+            "OpenIsland_OpenIslandApp.bundle" \
+          ; do
+            if [[ ! -e "$bundle/$f" ]]; then
+              echo "::error::Missing required file: $f"
+              exit 1
+            fi
+          done
+
+          # Resource bundle must NOT be in Contents/MacOS/ (wrong path for Bundle.module)
+          if [[ -e "$bundle/Contents/MacOS/OpenIsland_OpenIslandApp.bundle" ]]; then
+            echo "::error::Resource bundle in Contents/MacOS/ — will crash on user machines"
+            exit 1
+          fi
+
+          echo "Bundle structure OK"
 
       - name: Create GitHub Release
         env:

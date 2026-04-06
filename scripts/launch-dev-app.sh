@@ -31,10 +31,12 @@ if [ "$skip_setup" = false ]; then
   "$setup_binary" install --hooks-binary "$hooks_binary"
 fi
 
-mkdir -p "$bundle_dir/Contents/MacOS" "$bundle_dir/Contents/Resources" "$bundle_dir/Contents/Frameworks"
+mkdir -p "$bundle_dir/Contents/MacOS" "$bundle_dir/Contents/Helpers" "$bundle_dir/Contents/Resources" "$bundle_dir/Contents/Frameworks"
 cp "$app_binary" "$bundle_binary"
+cp "$hooks_binary" "$bundle_dir/Contents/Helpers/OpenIslandHooks"
+cp "$setup_binary" "$bundle_dir/Contents/Helpers/OpenIslandSetup"
 cp "$brand_icon" "$bundle_dir/Contents/Resources/OpenIsland.icns"
-chmod +x "$bundle_binary"
+chmod +x "$bundle_binary" "$bundle_dir/Contents/Helpers/OpenIslandHooks" "$bundle_dir/Contents/Helpers/OpenIslandSetup"
 
 # Copy SPM resource bundle so Bundle.module can find localized strings.
 resource_bundle="$build_root/OpenIsland_OpenIslandApp.bundle"
@@ -73,13 +75,10 @@ cat > "$plist_path" <<EOF
     <string>0.1</string>
     <key>CFBundleVersion</key>
     <string>1</string>
-    <key>LSEnvironment</key>
-    <dict>
-        <key>OPEN_ISLAND_HOOKS_BINARY</key>
-        <string>$hooks_binary</string>
-    </dict>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Open Island needs automation access to focus Terminal and iTerm sessions for jump-back.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSPrincipalClass</key>

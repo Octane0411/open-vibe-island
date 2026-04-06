@@ -112,6 +112,33 @@ EOF
 
 plutil -lint "$bundle_dir/Contents/Info.plist" >/dev/null
 
+# --- Verify bundle structure matches what the app expects at runtime ---
+verify_errors=0
+for required in \
+    "Contents/MacOS/OpenIslandApp" \
+    "Contents/Helpers/OpenIslandHooks" \
+    "Contents/Helpers/OpenIslandSetup" \
+    "Contents/Resources/OpenIsland.icns" \
+    "OpenIsland_OpenIslandApp.bundle" \
+; do
+    if [[ ! -e "$bundle_dir/$required" ]]; then
+        echo "ERROR: missing required file: $required" >&2
+        verify_errors=$((verify_errors + 1))
+    fi
+done
+
+# Ensure resource bundle is NOT in the wrong location (SPM accessor doesn't search there).
+if [[ -e "$bundle_dir/Contents/MacOS/OpenIsland_OpenIslandApp.bundle" ]]; then
+    echo "ERROR: resource bundle in Contents/MacOS/ — must be in .app root for Bundle.module" >&2
+    verify_errors=$((verify_errors + 1))
+fi
+
+if [[ $verify_errors -gt 0 ]]; then
+    echo "Bundle verification failed with $verify_errors error(s)." >&2
+    exit 1
+fi
+echo "Bundle structure verified."
+
 if [[ -n "$signing_identity" ]]; then
     codesign \
         --force \

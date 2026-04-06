@@ -24,3 +24,39 @@ jobs:
 
       - name: Run CI checks
         run: zsh scripts/harness.sh ci
+
+  package-verify:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          brew install create-dmg
+          pip3 install --break-system-packages Pillow
+
+      - name: Build and package
+        run: zsh scripts/package-app.sh
+
+      - name: Verify bundle structure
+        run: |
+          bundle="output/package/Open Island.app"
+
+          for f in \
+            "Contents/MacOS/OpenIslandApp" \
+            "Contents/Helpers/OpenIslandHooks" \
+            "Contents/Helpers/OpenIslandSetup" \
+            "OpenIsland_OpenIslandApp.bundle" \
+          ; do
+            if [[ ! -e "$bundle/$f" ]]; then
+              echo "::error::Missing required file: $f"
+              exit 1
+            fi
+          done
+
+          if [[ -e "$bundle/Contents/MacOS/OpenIsland_OpenIslandApp.bundle" ]]; then
+            echo "::error::Resource bundle in wrong location (Contents/MacOS/)"
+            exit 1
+          fi
+
+          echo "Bundle structure OK"
