@@ -267,6 +267,79 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutReducerEmitsPermissionRequestForEscalatedToolCalls() {
+        let waitingLines = [
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:44.500Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": "Push this branch when ready.",
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "response_item",
+                payload: [
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "call_id": "call-push-approval",
+                    "arguments": #"{"cmd":"git push origin feat/permission-consent-popup","sandbox_permissions":"require_escalated","justification":"Do you want me to push this branch to origin?"}"#,
+                ]
+            ),
+        ]
+
+        let waitingSnapshot = CodexRolloutReducer.snapshot(for: waitingLines)
+        let waitingEvents = CodexRolloutReducer.events(
+            from: nil,
+            to: waitingSnapshot,
+            sessionID: "codex-session-approval",
+            transcriptPath: "/tmp/rollout.jsonl"
+        )
+
+        #expect(waitingSnapshot.phase == .waitingForApproval)
+        #expect(waitingSnapshot.currentCommandPreview == "git push origin feat/permission-consent-popup")
+        #expect(waitingEvents.contains(where: {
+            $0.trackedPermissionRequested?.request.title == "Codex host approval required"
+        }))
+        #expect(waitingEvents.contains(where: {
+            $0.trackedPermissionRequested?.request.summary == "Do you want me to push this branch to origin?"
+        }))
+        #expect(waitingEvents.contains(where: {
+            $0.trackedPermissionRequested?.request.affectedPath == "git push origin feat/permission-consent-popup"
+        }))
+        #expect(waitingEvents.contains(where: {
+            $0.trackedPermissionRequested?.request.approvalHandledByHost == true
+        }))
+
+        let resolvedSnapshot = CodexRolloutReducer.snapshot(
+            for: waitingLines + [
+                rolloutLine(
+                    timestamp: "2026-04-02T04:03:45.500Z",
+                    type: "response_item",
+                    payload: [
+                        "type": "function_call_output",
+                        "call_id": "call-push-approval",
+                        "output": "approval handled",
+                    ]
+                ),
+            ]
+        )
+        let resolvedEvents = CodexRolloutReducer.events(
+            from: waitingSnapshot,
+            to: resolvedSnapshot,
+            sessionID: "codex-session-approval",
+            transcriptPath: "/tmp/rollout.jsonl"
+        )
+
+        #expect(resolvedSnapshot.phase == .running)
+        #expect(resolvedSnapshot.pendingPermissionRequest == nil)
+        #expect(resolvedEvents.contains(where: {
+            $0.trackedActionableStateResolved?.summary == "Approval was handled in Codex."
+        }))
+    }
+
+    @Test
     func codexRolloutReducerPreservesInitialPromptAcrossLaterPrompts() {
         let snapshot = CodexRolloutReducer.snapshot(for: [
             rolloutLine(
@@ -787,6 +860,22 @@ private extension AgentEvent {
 
     var trackedMetadataUpdate: SessionMetadataUpdated? {
         if case let .sessionMetadataUpdated(payload) = self {
+            payload
+        } else {
+            nil
+        }
+    }
+
+    var trackedPermissionRequested: PermissionRequested? {
+        if case let .permissionRequested(payload) = self {
+            payload
+        } else {
+            nil
+        }
+    }
+
+    var trackedActionableStateResolved: ActionableStateResolved? {
+        if case let .actionableStateResolved(payload) = self {
             payload
         } else {
             nil

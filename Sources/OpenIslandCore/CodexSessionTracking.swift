@@ -402,6 +402,13 @@ public struct CodexRolloutWatchTarget: Equatable, Sendable {
     }
 }
 
+struct CodexRolloutPermissionRequest: Equatable, Sendable {
+    var callID: String?
+    var title: String
+    var summary: String
+    var affectedPath: String
+}
+
 public struct CodexRolloutSnapshot: Equatable, Sendable {
     public var summary: String?
     public var phase: SessionPhase
@@ -413,6 +420,7 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
     public var currentCommandPreview: String?
     public var isCompleted: Bool
     public var isInterrupted: Bool
+    var pendingPermissionRequest: CodexRolloutPermissionRequest?
 
     public init(
         summary: String? = nil,
@@ -436,6 +444,7 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
         self.currentCommandPreview = currentCommandPreview
         self.isCompleted = isCompleted
         self.isInterrupted = isInterrupted
+        pendingPermissionRequest = nil
     }
 
     public var metadata: CodexSessionMetadata {
@@ -517,7 +526,41 @@ public enum CodexRolloutReducer {
         let oldPhase = oldSnapshot?.phase
         let oldCompleted = oldSnapshot?.isCompleted ?? false
         let oldInterrupted = oldSnapshot?.isInterrupted ?? false
+        let oldPendingPermission = oldSnapshot?.pendingPermissionRequest
+        let newPendingPermission = newSnapshot.pendingPermissionRequest
         let newSummary = newSnapshot.summary ?? oldSummary ?? "Codex updated the current turn."
+
+        if oldPendingPermission != newPendingPermission {
+            if let pendingPermission = newPendingPermission {
+                events.append(
+                    .permissionRequested(
+                        PermissionRequested(
+                            sessionID: sessionID,
+                            request: PermissionRequest(
+                                title: pendingPermission.title,
+                                summary: pendingPermission.summary,
+                                affectedPath: pendingPermission.affectedPath,
+                                primaryActionTitle: "Open Codex",
+                                secondaryActionTitle: "Later",
+                                approvalHandledByHost: true,
+                                approvalHostName: "Codex"
+                            ),
+                            timestamp: timestamp
+                        )
+                    )
+                )
+            } else if oldPendingPermission != nil {
+                events.append(
+                    .actionableStateResolved(
+                        ActionableStateResolved(
+                            sessionID: sessionID,
+                            summary: "Approval was handled in Codex.",
+                            timestamp: timestamp
+                        )
+                    )
+                )
+            }
+        }
 
         if newSnapshot.isCompleted {
             if !oldCompleted || oldSummary != newSummary || oldInterrupted != newSnapshot.isInterrupted {
@@ -532,6 +575,8 @@ public enum CodexRolloutReducer {
                     )
                 )
             }
+        } else if newPendingPermission != nil {
+            // PermissionRequested already carries the actionable waiting state.
         } else if oldSummary != newSummary || oldPhase != newSnapshot.phase {
             events.append(
                 .activityUpdated(
@@ -555,6 +600,7 @@ public enum CodexRolloutReducer {
     ) {
         switch payload["type"] as? String {
         case "task_started":
+            snapshot.pendingPermissionRequest = nil
             snapshot.phase = .running
             snapshot.isCompleted = false
             snapshot.isInterrupted = false
@@ -576,6 +622,7 @@ public enum CodexRolloutReducer {
         case "task_complete":
             snapshot.currentTool = nil
             snapshot.currentCommandPreview = nil
+            snapshot.pendingPermissionRequest = nil
             snapshot.phase = .completed
             snapshot.isCompleted = true
             snapshot.isInterrupted = false
@@ -589,6 +636,7 @@ public enum CodexRolloutReducer {
         case "turn_aborted":
             snapshot.currentTool = nil
             snapshot.currentCommandPreview = nil
+            snapshot.pendingPermissionRequest = nil
             snapshot.phase = .completed
             snapshot.isCompleted = true
             snapshot.isInterrupted = true
@@ -596,6 +644,7 @@ public enum CodexRolloutReducer {
         case "exec_command_end":
             snapshot.currentTool = nil
             snapshot.currentCommandPreview = nil
+            snapshot.pendingPermissionRequest = nil
             if !snapshot.isCompleted {
                 snapshot.phase = .running
             }
@@ -603,6 +652,7 @@ public enum CodexRolloutReducer {
         case "patch_apply_end":
             snapshot.currentTool = nil
             snapshot.currentCommandPreview = nil
+            snapshot.pendingPermissionRequest = nil
             if !snapshot.isCompleted {
                 snapshot.phase = .running
             }
@@ -647,6 +697,24 @@ public enum CodexRolloutReducer {
             return
         }
 
+        if itemType == "function_call_output" || itemType == "custom_tool_call_output" {
+            if let pendingPermission = snapshot.pendingPermissionRequest {
+                let callID = payload["call_id"] as? String
+                if pendingPermission.callID == nil || callID == nil || pendingPermission.callID == callID {
+                    snapshot.pendingPermissionRequest = nil
+                    if !snapshot.isCompleted {
+                        snapshot.phase = .running
+                        snapshot.summary = "Approval was handled in Codex."
+                    }
+                }
+            }
+
+            if let timestamp {
+                snapshot.updatedAt = timestamp
+            }
+            return
+        }
+
         guard itemType == "function_call" || itemType == "custom_tool_call" else {
             return
         }
@@ -664,6 +732,22 @@ public enum CodexRolloutReducer {
             return
         }
 
+        if let pendingPermission = permissionRequest(for: toolName, payload: payload) {
+            snapshot.pendingPermissionRequest = pendingPermission
+            snapshot.currentTool = toolName
+            snapshot.currentCommandPreview = pendingPermission.affectedPath
+            snapshot.phase = .waitingForApproval
+            snapshot.isCompleted = false
+            snapshot.isInterrupted = false
+            snapshot.summary = pendingPermission.summary
+
+            if let timestamp {
+                snapshot.updatedAt = timestamp
+            }
+            return
+        }
+
+        snapshot.pendingPermissionRequest = nil
         snapshot.currentTool = toolName
         snapshot.currentCommandPreview = commandPreview(for: toolName, payload: payload)
         snapshot.phase = .running
@@ -685,6 +769,7 @@ public enum CodexRolloutReducer {
         snapshot.lastUserPrompt = message
         snapshot.currentTool = nil
         snapshot.currentCommandPreview = nil
+        snapshot.pendingPermissionRequest = nil
         snapshot.phase = .running
         snapshot.isCompleted = false
         snapshot.isInterrupted = false
@@ -710,6 +795,7 @@ public enum CodexRolloutReducer {
         if !snapshot.isCompleted {
             snapshot.currentTool = nil
             snapshot.currentCommandPreview = nil
+            snapshot.pendingPermissionRequest = nil
             snapshot.phase = .running
             snapshot.isInterrupted = false
         }
@@ -733,11 +819,7 @@ public enum CodexRolloutReducer {
     }
 
     private static func commandPreview(for toolName: String, payload: [String: Any]) -> String? {
-        guard let arguments = payload["arguments"] as? String,
-              let data = arguments.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
-        }
+        guard let object = commandArgumentsObject(from: payload) else { return nil }
 
         switch toolName {
         case "exec_command":
@@ -747,6 +829,35 @@ public enum CodexRolloutReducer {
         default:
             return nil
         }
+    }
+
+    private static func permissionRequest(for toolName: String, payload: [String: Any]) -> CodexRolloutPermissionRequest? {
+        guard let object = commandArgumentsObject(from: payload),
+              (object["sandbox_permissions"] as? String)?.lowercased() == "require_escalated" else {
+            return nil
+        }
+
+        let callID = (payload["call_id"] as? String) ?? (payload["id"] as? String)
+        let affectedPath = commandPreview(for: toolName, payload: payload) ?? displayName(for: toolName)
+        let summary = clipped(object["justification"] as? String, limit: 220)
+            ?? "Codex needs your approval before it can continue."
+
+        return CodexRolloutPermissionRequest(
+            callID: callID,
+            title: "Codex host approval required",
+            summary: summary,
+            affectedPath: affectedPath
+        )
+    }
+
+    private static func commandArgumentsObject(from payload: [String: Any]) -> [String: Any]? {
+        guard let arguments = payload["arguments"] as? String,
+              let data = arguments.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+
+        return object
     }
 
     private static func responseMessageText(

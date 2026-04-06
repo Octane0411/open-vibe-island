@@ -56,10 +56,15 @@ public final class CodexHookInstallationManager: @unchecked Sendable {
         let hooksData = try? Data(contentsOf: hooksURL)
         let manifest = try loadManifest(at: manifestURL)
         let managedCommand = manifest?.hookCommand ?? resolvedHooksBinaryURL.map { CodexHookInstaller.hookCommand(for: $0.path) }
-        let managedHooksPresent = ((try? CodexHookInstaller.uninstallHooksJSON(
+        let hasAnyManagedHooks = ((try? CodexHookInstaller.uninstallHooksJSON(
             existingData: hooksData,
             managedCommand: managedCommand
         ))?.changed) == true
+        let hasRequiredManagedHooks = (try? CodexHookInstaller.hasRequiredManagedHooks(
+            existingData: hooksData,
+            managedCommand: managedCommand
+        )) == true
+        let managedHooksPresent = hasAnyManagedHooks && hasRequiredManagedHooks
 
         return CodexHookInstallationStatus(
             codexDirectory: codexDirectory,

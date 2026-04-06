@@ -104,6 +104,8 @@ public struct PermissionRequest: Equatable, Identifiable, Codable, Sendable {
     public var affectedPath: String
     public var primaryActionTitle: String
     public var secondaryActionTitle: String
+    public var approvalHandledByHost: Bool?
+    public var approvalHostName: String?
     public var toolName: String?
     public var toolUseID: String?
     public var suggestedUpdates: [ClaudePermissionUpdate]
@@ -115,6 +117,8 @@ public struct PermissionRequest: Equatable, Identifiable, Codable, Sendable {
         affectedPath: String,
         primaryActionTitle: String = "Allow",
         secondaryActionTitle: String = "Deny",
+        approvalHandledByHost: Bool? = nil,
+        approvalHostName: String? = nil,
         toolName: String? = nil,
         toolUseID: String? = nil,
         suggestedUpdates: [ClaudePermissionUpdate] = []
@@ -125,6 +129,8 @@ public struct PermissionRequest: Equatable, Identifiable, Codable, Sendable {
         self.affectedPath = affectedPath
         self.primaryActionTitle = primaryActionTitle
         self.secondaryActionTitle = secondaryActionTitle
+        self.approvalHandledByHost = approvalHandledByHost
+        self.approvalHostName = approvalHostName
         self.toolName = toolName
         self.toolUseID = toolUseID
         self.suggestedUpdates = suggestedUpdates

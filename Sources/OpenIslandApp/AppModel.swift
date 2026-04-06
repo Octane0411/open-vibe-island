@@ -14,6 +14,17 @@ final class AppModel {
     private static let jumpOverlayDismissLeadTime: Duration = .milliseconds(20)
     static let hoverOpenDelay: TimeInterval = 0.35
 
+    enum PermissionRequestAlertAction {
+        case openInApp
+        case dismiss
+    }
+
+    enum HostManagedPermissionAction {
+        case accept
+        case acceptAndDontAsk
+        case reject
+    }
+
     struct AcceptanceStep: Identifiable {
         let id: String
         let title: String
@@ -154,6 +165,15 @@ final class AppModel {
     @ObservationIgnored
     private let terminalJumpAction: @Sendable (JumpTarget) throws -> String
 
+    @ObservationIgnored
+    private let terminalApprovalAction: @Sendable (JumpTarget, TerminalJumpService.HostApprovalResponse) throws -> String
+
+    @ObservationIgnored
+    var permissionRequestAlertPresenter: ((AgentSession) -> PermissionRequestAlertAction)?
+
+    @ObservationIgnored
+    private var alertedPermissionSessionIDs: Set<String> = []
+
 
     @ObservationIgnored
     var harnessRuntimeMonitor: HarnessRuntimeMonitor?
@@ -162,12 +182,19 @@ final class AppModel {
     @ObservationIgnored
     private var jumpTask: Task<Void, Never>?
 
+    @ObservationIgnored
+    private var approvalConfirmTask: Task<Void, Never>?
+
     init(
         terminalJumpAction: @escaping @Sendable (JumpTarget) throws -> String = { target in
             try TerminalJumpService().jump(to: target)
+        },
+        terminalApprovalAction: @escaping @Sendable (JumpTarget, TerminalJumpService.HostApprovalResponse) throws -> String = { target, response in
+            try TerminalJumpService().submitHostApproval(on: target, response: response)
         }
     ) {
         self.terminalJumpAction = terminalJumpAction
+        self.terminalApprovalAction = terminalApprovalAction
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
         showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
@@ -548,12 +575,7 @@ final class AppModel {
             return
         }
 
-        send(
-            .resolvePermission(sessionID: session.id, resolution: permissionResolution(for: approved)),
-            userMessage: approved
-                ? "Approving permission for \(session.title)."
-                : "Denying permission for \(session.title)."
-        )
+        approvePermission(for: session.id, approved: approved)
     }
 
     func answerFocusedQuestion(_ answer: String) {
@@ -623,6 +645,14 @@ final class AppModel {
             return
         }
 
+        if isHostManagedPermissionRequest(for: session) {
+            handleHostManagedPermissionAction(
+                for: sessionID,
+                action: approved ? .accept : .reject
+            )
+            return
+        }
+
         let resolution = permissionResolution(for: approved)
         dismissNotificationSurfaceIfPresent(for: sessionID)
         state.resolvePermission(sessionID: session.id, resolution: resolution)
@@ -639,6 +669,20 @@ final class AppModel {
 
     func approvePermission(for sessionID: String, mode: ClaudePermissionMode?) {
         guard let session = state.session(id: sessionID) else {
+            return
+        }
+
+        if isHostManagedPermissionRequest(for: session) {
+            let action: HostManagedPermissionAction
+            switch mode {
+            case .default:
+                action = .accept
+            case nil:
+                action = .reject
+            case .plan, .acceptEdits, .dontAsk, .bypassPermissions:
+                action = .acceptAndDontAsk
+            }
+            handleHostManagedPermissionAction(for: sessionID, action: action)
             return
         }
 
@@ -670,6 +714,91 @@ final class AppModel {
         )
     }
 
+    private func isHostManagedPermissionRequest(for session: AgentSession) -> Bool {
+        session.permissionRequest?.approvalHandledByHost == true
+    }
+
+    func handleHostManagedPermissionAction(for sessionID: String, action: HostManagedPermissionAction) {
+        guard let session = state.session(id: sessionID),
+              isHostManagedPermissionRequest(for: session) else {
+            return
+        }
+
+        let hostName = session.permissionRequest?.approvalHostName
+            ?? session.permissionRequest?.toolName
+            ?? session.tool.displayName
+
+        let openHostApprovalPrompt: (_ message: String, _ response: TerminalJumpService.HostApprovalResponse?) -> Void = { [weak self] message, response in
+            guard let self else { return }
+            self.dismissNotificationSurfaceIfPresent(for: session.id)
+            self.synchronizeSelection()
+            self.refreshOverlayPlacementIfVisible()
+            self.lastActionMessage = message
+
+            if let response, let jumpTarget = session.jumpTarget {
+                let submitAction = self.terminalApprovalAction
+                self.approvalConfirmTask?.cancel()
+                self.approvalConfirmTask = Task { [weak self] in
+                    do {
+                        let result = try await Task.detached(priority: .userInitiated) {
+                            try submitAction(jumpTarget, response)
+                        }.value
+
+                        guard !Task.isCancelled else {
+                            return
+                        }
+
+                        self?.lastActionMessage = result
+                    } catch is CancellationError {
+                        return
+                    } catch {
+                        guard !Task.isCancelled else {
+                            return
+                        }
+
+                        self?.lastActionMessage = "\(message) Auto-confirm failed: \(error.localizedDescription)"
+                    }
+                }
+            }
+        }
+
+        switch action {
+        case .accept:
+            send(
+                .resolvePermission(sessionID: session.id, resolution: .allowOnce()),
+                userMessage: "Approving permission for \(session.title)."
+            )
+            openHostApprovalPrompt("Open \(hostName) and accept this request in the native permission prompt.", .accept)
+        case .acceptAndDontAsk:
+            send(
+                .resolvePermission(
+                    sessionID: session.id,
+                    resolution: .allowOnce(
+                        updatedPermissions: [.setMode(destination: .session, mode: .dontAsk)]
+                    )
+                ),
+                userMessage: "Approving permission and requesting no further prompts for \(session.title)."
+            )
+            openHostApprovalPrompt("Open \(hostName) and accept this request in the native permission prompt.", .acceptAndDontAsk)
+        case .reject:
+            dismissNotificationSurfaceIfPresent(for: session.id)
+            state.resolvePermission(
+                sessionID: session.id,
+                resolution: .deny(message: "Permission denied in Open Island.", interrupt: false)
+            )
+            synchronizeSelection()
+            refreshOverlayPlacementIfVisible()
+            send(
+                .resolvePermission(
+                    sessionID: session.id,
+                    resolution: .deny(message: "Permission denied in Open Island.", interrupt: false)
+                ),
+                userMessage: "Denying permission for \(session.title)."
+            )
+            openHostApprovalPrompt("Rejected in Open Island.", .reject)
+        }
+    }
+
     func answerQuestion(for sessionID: String, answer: QuestionPromptResponse) {
         guard let session = state.session(id: sessionID) else {
             return
@@ -684,6 +813,48 @@ final class AppModel {
             .answerQuestion(sessionID: session.id, response: answer),
             userMessage: "Sending answer for \(session.title)."
         )
+    }
+
+    private func pruneAlertedPermissionSessionIDs() {
+        let pendingApprovalSessionIDs: Set<String> = Set(
+            state.sessions.compactMap { session in
+                guard session.phase == .waitingForApproval,
+                      session.permissionRequest != nil else {
+                    return nil
+                }
+
+                return session.id
+            }
+        )
+        alertedPermissionSessionIDs.formIntersection(pendingApprovalSessionIDs)
+    }
+
+    private func maybePresentPermissionRequestAlert(
+        for event: AgentEvent,
+        ingress: TrackedEventIngress
+    ) {
+        guard ingress == .bridge else {
+            return
+        }
+
+        guard case let .permissionRequested(payload) = event,
+              let session = state.session(id: payload.sessionID),
+              session.phase == .waitingForApproval,
+              session.permissionRequest != nil else {
+            return
+        }
+
+        guard alertedPermissionSessionIDs.insert(session.id).inserted else {
+            return
+        }
+
+        let action = permissionRequestAlertPresenter?(session) ?? presentPermissionRequestAlert(for: session)
+        switch action {
+        case .openInApp:
+            notchOpen(reason: .click, surface: .sessionList(actionableSessionID: session.id))
+        case .dismiss:
+            break
+        }
     }
 
 
@@ -724,6 +895,72 @@ final class AppModel {
         return .deny(message: "Permission denied in Open Island.", interrupt: false)
     }
 
+    private func ensureSessionExistsForPermissionRequestIfNeeded(
+        _ event: AgentEvent,
+        ingress: TrackedEventIngress
+    ) {
+        guard case let .permissionRequested(payload) = event,
+              state.session(id: payload.sessionID) == nil else {
+            return
+        }
+
+        let inferredTool: AgentTool
+        if payload.request.toolName != nil
+            || payload.request.primaryActionTitle.localizedCaseInsensitiveContains("once")
+            || !payload.request.suggestedUpdates.isEmpty {
+            inferredTool = .claudeCode
+        } else {
+            inferredTool = .codex
+        }
+
+        let fallbackTitle: String
+        switch inferredTool {
+        case .claudeCode:
+            fallbackTitle = "Claude · approval request"
+        case .codex:
+            fallbackTitle = "Codex · approval request"
+        case .geminiCLI:
+            fallbackTitle = "Agent · approval request"
+        }
+
+        var fallbackSession = AgentSession(
+            id: payload.sessionID,
+            title: fallbackTitle,
+            tool: inferredTool,
+            origin: .live,
+            attachmentState: ingress == .bridge ? .attached : .stale,
+            phase: .running,
+            summary: payload.request.summary,
+            updatedAt: payload.timestamp
+        )
+        fallbackSession.isProcessAlive = ingress == .bridge
+
+        state = SessionState(sessions: state.sessions + [fallbackSession])
+    }
+
+    private func presentPermissionRequestAlert(for session: AgentSession) -> PermissionRequestAlertAction {
+        NSApp.activate(ignoringOtherApps: true)
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Approval required"
+
+        var informativeLines: [String] = ["\(session.title) needs your approval to continue."]
+        if let summary = session.permissionRequest?.summary,
+           !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            informativeLines.append(summary)
+        }
+        if let affectedPath = session.permissionRequest?.affectedPath,
+           !affectedPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            informativeLines.append("Target: \(affectedPath)")
+        }
+        alert.informativeText = informativeLines.joined(separator: "\n")
+        alert.addButton(withTitle: "Review in Open Island")
+        alert.addButton(withTitle: "Later")
+
+        return alert.runModal() == .alertFirstButtonReturn ? .openInApp : .dismiss
+    }
+
     func applyTrackedEvent(
         _ event: AgentEvent,
         updateLastActionMessage: Bool = true,
@@ -749,7 +986,10 @@ final class AppModel {
             return
         }
 
+        ensureSessionExistsForPermissionRequestIfNeeded(event, ingress: ingress)
         state.apply(event)
+        pruneAlertedPermissionSessionIDs()
+        maybePresentPermissionRequestAlert(for: event, ingress: ingress)
         reconcileIslandSurfaceAfterStateChange()
         if ingress == .bridge {
             monitoring.markSessionAttached(for: event)
@@ -765,10 +1005,19 @@ final class AppModel {
             lastActionMessage = describe(event)
         }
 
+        let shouldAllowRolloutNotificationDuringBootstrap: Bool = {
+            switch event {
+            case .permissionRequested, .questionAsked:
+                true
+            default:
+                false
+            }
+        }()
+
         if let surface = IslandSurface.notificationSurface(for: event),
            !wasAlreadyCompleted,
            surface.sessionID.flatMap({ state.session(id: $0) }) != nil,
-           (ingress == .bridge || !isResolvingInitialLiveSessions),
+           (ingress == .bridge || !isResolvingInitialLiveSessions || shouldAllowRolloutNotificationDuringBootstrap),
            notchStatus == .closed || notchOpenReason == .notification {
             presentNotificationSurface(surface)
         }

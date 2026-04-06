@@ -60,11 +60,9 @@ public enum CodexHookInstaller {
     public static let legacyManagedStatusMessage = "Managed by Vibe Island"
     public static let managedTimeout = 45
 
-    // Keep the managed Codex install aligned with the original app's low-noise footprint.
-    // The bridge still understands richer hook events, but we do not install them by default
-    // because per-command Bash hooks produce a large amount of terminal log spam.
     private static let eventSpecs: [(name: String, matcher: String?)] = [
         ("SessionStart", "startup|resume"),
+        ("PreToolUse", nil),
         ("UserPromptSubmit", nil),
         ("Stop", nil),
     ]
@@ -136,6 +134,23 @@ public enum CodexHookInstaller {
         rootObject["hooks"] = hooksObject
         let data = try serialize(rootObject)
         return CodexHookFileMutation(contents: data, changed: mutated || data != existingData, hasRemainingHooks: true)
+    }
+
+    public static func hasRequiredManagedHooks(
+        existingData: Data?,
+        managedCommand: String?
+    ) throws -> Bool {
+        let rootObject = try loadRootObject(from: existingData)
+        let hooksObject = rootObject["hooks"] as? [String: Any] ?? [:]
+
+        for spec in eventSpecs {
+            let groups = hooksObject[spec.name] as? [Any] ?? []
+            if !containsManagedHook(in: groups, managedCommand: managedCommand) {
+                return false
+            }
+        }
+
+        return true
     }
 
     public static func enableCodexHooksFeature(in contents: String) -> CodexFeatureMutation {

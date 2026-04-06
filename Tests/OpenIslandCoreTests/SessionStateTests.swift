@@ -599,8 +599,13 @@ struct SessionStateTests {
         #expect(managedStopHook?["statusMessage"] == nil)
 
         let sessionStartGroups = hooks?["SessionStart"] as? [[String: Any]]
+        let preToolGroups = hooks?["PreToolUse"] as? [[String: Any]]
+        let preToolCommands = preToolGroups?
+            .compactMap { $0["hooks"] as? [[String: Any]] }
+            .flatMap { $0 }
+            .compactMap { $0["command"] as? String } ?? []
         #expect(sessionStartGroups?.contains(where: { $0["matcher"] as? String == "startup|resume" }) == true)
-        #expect(hooks?["PreToolUse"] == nil)
+        #expect(preToolCommands.contains("'/tmp/OpenIslandHooks'"))
         #expect(hooks?["PostToolUse"] == nil)
     }
 
@@ -666,12 +671,61 @@ struct SessionStateTests {
             .flatMap { $0 }
             .compactMap { $0["command"] as? String } ?? []
 
-        #expect(preToolCommands == ["/usr/bin/printf"])
+        #expect(preToolCommands.contains("/usr/bin/printf"))
+        #expect(preToolCommands.contains("'/tmp/new-release/OpenIslandHooks'"))
         #expect(hooks?["PostToolUse"] == nil)
         #expect(stopCommands.contains("/usr/bin/true"))
         #expect(stopCommands.contains("'/tmp/new-release/OpenIslandHooks'"))
         #expect(!stopCommands.contains("'/Users/test/.open-island/bin/open-island-bridge' --source codex"))
         #expect(!stopCommands.contains("'/tmp/old-debug/OpenIslandHooks'"))
+    }
+
+    @Test
+    func codexHookInstallerRequiredHooksCheckFailsWithoutPreToolUse() throws {
+        let missingPreToolUse = """
+        {
+          "hooks": {
+            "SessionStart": [
+              {
+                "matcher": "startup|resume",
+                "hooks": [
+                  {
+                    "type": "command",
+                    "command": "'/tmp/OpenIslandHooks'"
+                  }
+                ]
+              }
+            ],
+            "UserPromptSubmit": [
+              {
+                "hooks": [
+                  {
+                    "type": "command",
+                    "command": "'/tmp/OpenIslandHooks'"
+                  }
+                ]
+              }
+            ],
+            "Stop": [
+              {
+                "hooks": [
+                  {
+                    "type": "command",
+                    "command": "'/tmp/OpenIslandHooks'"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+        """.data(using: .utf8)
+
+        let hasRequiredHooks = try CodexHookInstaller.hasRequiredManagedHooks(
+            existingData: missingPreToolUse,
+            managedCommand: "'/tmp/OpenIslandHooks'"
+        )
+
+        #expect(!hasRequiredHooks)
     }
 
     @Test

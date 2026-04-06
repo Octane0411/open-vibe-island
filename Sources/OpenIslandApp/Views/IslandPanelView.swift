@@ -511,6 +511,7 @@ struct IslandPanelView: View {
                     isInteractive: model.notchStatus == .opened,
                     lang: model.lang,
                     onApprove: { model.approvePermission(for: session.id, mode: $0) },
+                    onHostManagedAction: { model.handleHostManagedPermissionAction(for: session.id, action: $0) },
                     onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
                     onJump: { model.jumpToSession(session) }
                 )
@@ -538,6 +539,7 @@ struct IslandPanelView: View {
                         isInteractive: model.notchStatus == .opened,
                         lang: model.lang,
                         onApprove: { model.approvePermission(for: session.id, mode: $0) },
+                        onHostManagedAction: { model.handleHostManagedPermissionAction(for: session.id, action: $0) },
                         onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
                         onJump: { model.jumpToSession(session) }
                     )
@@ -960,6 +962,7 @@ private struct IslandSessionRow: View {
     var isInteractive: Bool = true
     var lang: LanguageManager = .shared
     var onApprove: ((ClaudePermissionMode?) -> Void)?
+    var onHostManagedAction: ((AppModel.HostManagedPermissionAction) -> Void)?
     var onAnswer: ((QuestionPromptResponse) -> Void)?
     let onJump: () -> Void
 
@@ -1199,12 +1202,28 @@ private struct IslandSessionRow: View {
             )
 
             HStack(spacing: 8) {
-                Button(lang.t("approval.manual")) { onApprove?(.default) }
-                    .buttonStyle(IslandWideButtonStyle(kind: .secondary))
-                Button(lang.t("approval.autoAcceptEdits")) { onApprove?(.acceptEdits) }
-                    .buttonStyle(IslandWideButtonStyle(kind: .warning))
-                Button(lang.t("approval.autoBypassPermissions")) { onApprove?(.bypassPermissions) }
-                    .buttonStyle(IslandWideButtonStyle(kind: .danger))
+                if isHostManagedApprovalRequest {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 8) {
+                            Button("Accept") { onHostManagedAction?(.accept) }
+                                .buttonStyle(IslandWideButtonStyle(kind: .success))
+                            Button("Accept & Don't Ask") { onHostManagedAction?(.acceptAndDontAsk) }
+                                .buttonStyle(IslandWideButtonStyle(kind: .danger))
+                        }
+                        Button("Reject") { onHostManagedAction?(.reject) }
+                            .buttonStyle(IslandWideButtonStyle(kind: .warning))
+                        Text("\(hostApprovalName) handles this approval in its native prompt.")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.5))
+                    }
+                } else {
+                    Button(lang.t("approval.manual")) { onApprove?(.default) }
+                        .buttonStyle(IslandWideButtonStyle(kind: .secondary))
+                    Button(lang.t("approval.autoAcceptEdits")) { onApprove?(.acceptEdits) }
+                        .buttonStyle(IslandWideButtonStyle(kind: .warning))
+                    Button(lang.t("approval.autoBypassPermissions")) { onApprove?(.bypassPermissions) }
+                        .buttonStyle(IslandWideButtonStyle(kind: .danger))
+                }
             }
         }
     }
@@ -1296,16 +1315,15 @@ private struct IslandSessionRow: View {
         return session.permissionRequest?.summary.trimmedForNotificationCard ?? session.summary.trimmedForNotificationCard
     }
 
-    private var allowTitle: String {
-        let title = session.permissionRequest?.primaryActionTitle.trimmedForNotificationCard
-        if title == nil || title == "Allow" {
-            return "Allow Once"
-        }
-        return title ?? "Allow Once"
+    private var isHostManagedApprovalRequest: Bool {
+        session.permissionRequest?.approvalHandledByHost == true
     }
 
-    private var denyTitle: String {
-        session.permissionRequest?.secondaryActionTitle.trimmedForNotificationCard ?? "Deny"
+    private var hostApprovalName: String {
+        if let host = session.permissionRequest?.approvalHostName?.trimmedForNotificationCard, !host.isEmpty {
+            return host
+        }
+        return session.tool.displayName
     }
 
     private func subagentElapsed(since start: Date, at now: Date) -> String {
@@ -1594,6 +1612,7 @@ private struct IslandCompactButtonStyle: ButtonStyle {
 private struct IslandWideButtonStyle: ButtonStyle {
     enum Kind {
         case primary
+        case success
         case secondary
         case warning
         case danger
@@ -1612,7 +1631,7 @@ private struct IslandWideButtonStyle: ButtonStyle {
 
     private var foregroundColor: Color {
         switch kind {
-        case .primary, .warning, .danger:
+        case .primary, .success, .warning, .danger:
             return .white
         case .secondary:
             return .white.opacity(0.88)
@@ -1624,6 +1643,8 @@ private struct IslandWideButtonStyle: ButtonStyle {
         switch kind {
         case .primary:
             return Color(red: 0.26, green: 0.45, blue: 0.86).opacity(pressedFactor)
+        case .success:
+            return Color(red: 0.18, green: 0.72, blue: 0.36).opacity(pressedFactor)
         case .secondary:
             return Color.white.opacity(isPressed ? 0.12 : 0.16)
         case .warning:
