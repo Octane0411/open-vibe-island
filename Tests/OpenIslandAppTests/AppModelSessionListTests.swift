@@ -343,6 +343,34 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func bridgePermissionRequestWithoutKnownSessionStillPromptsAndCreatesSession() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        var promptedSessionIDs: [String] = []
+        model.permissionRequestAlertPresenter = { session in
+            promptedSessionIDs.append(session.id)
+            return .dismiss
+        }
+
+        model.applyTrackedEvent(
+            .permissionRequested(
+                PermissionRequested(
+                    sessionID: "late-approval-session",
+                    request: PermissionRequest(
+                        title: "Run command",
+                        summary: "Codex needs approval.",
+                        affectedPath: "git status -sb"
+                    ),
+                    timestamp: now.addingTimeInterval(1)
+                )
+            )
+        )
+
+        #expect(promptedSessionIDs == ["late-approval-session"])
+        #expect(model.state.session(id: "late-approval-session")?.phase == .waitingForApproval)
+    }
+
+    @Test
     func duplicatePermissionEventsOnlyAlertOnceForPendingSession() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()

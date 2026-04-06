@@ -768,6 +768,50 @@ final class AppModel {
         return .deny(message: "Permission denied in Open Island.", interrupt: false)
     }
 
+    private func ensureSessionExistsForPermissionRequestIfNeeded(
+        _ event: AgentEvent,
+        ingress: TrackedEventIngress
+    ) {
+        guard ingress == .bridge,
+              case let .permissionRequested(payload) = event,
+              state.session(id: payload.sessionID) == nil else {
+            return
+        }
+
+        let inferredTool: AgentTool
+        if payload.request.toolName != nil
+            || payload.request.primaryActionTitle.localizedCaseInsensitiveContains("once")
+            || !payload.request.suggestedUpdates.isEmpty {
+            inferredTool = .claudeCode
+        } else {
+            inferredTool = .codex
+        }
+
+        let fallbackTitle: String
+        switch inferredTool {
+        case .claudeCode:
+            fallbackTitle = "Claude · approval request"
+        case .codex:
+            fallbackTitle = "Codex · approval request"
+        case .geminiCLI:
+            fallbackTitle = "Agent · approval request"
+        }
+
+        var fallbackSession = AgentSession(
+            id: payload.sessionID,
+            title: fallbackTitle,
+            tool: inferredTool,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: payload.request.summary,
+            updatedAt: payload.timestamp
+        )
+        fallbackSession.isProcessAlive = true
+
+        state = SessionState(sessions: state.sessions + [fallbackSession])
+    }
+
     private func presentPermissionRequestAlert(for session: AgentSession) -> PermissionRequestAlertAction {
         NSApp.activate(ignoringOtherApps: true)
 
@@ -816,6 +860,7 @@ final class AppModel {
             return
         }
 
+        ensureSessionExistsForPermissionRequestIfNeeded(event, ingress: ingress)
         state.apply(event)
         pruneAlertedPermissionSessionIDs()
         maybePresentPermissionRequestAlert(for: event, ingress: ingress)
