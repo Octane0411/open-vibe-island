@@ -30,8 +30,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install create-dmg
-        run: brew install create-dmg
+      - name: Install dependencies
+        run: |
+          brew install create-dmg
+          pip3 install Pillow
 
       - name: Build and package
         run: zsh scripts/package-app.sh
