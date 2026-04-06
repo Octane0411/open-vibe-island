@@ -305,6 +305,155 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func bridgePermissionRequestsTriggerConsentAlert() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        var promptedSessionIDs: [String] = []
+        model.permissionRequestAlertPresenter = { session in
+            promptedSessionIDs.append(session.id)
+            return .dismiss
+        }
+
+        model.applyTrackedEvent(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: "approval-session",
+                    title: "Codex · open-island",
+                    tool: .codex,
+                    summary: "Running",
+                    timestamp: now
+                )
+            )
+        )
+        model.applyTrackedEvent(
+            .permissionRequested(
+                PermissionRequested(
+                    sessionID: "approval-session",
+                    request: PermissionRequest(
+                        title: "Run command",
+                        summary: "Codex needs approval.",
+                        affectedPath: "git status -sb"
+                    ),
+                    timestamp: now.addingTimeInterval(1)
+                )
+            )
+        )
+
+        #expect(promptedSessionIDs == ["approval-session"])
+    }
+
+    @Test
+    func duplicatePermissionEventsOnlyAlertOnceForPendingSession() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        var promptCount = 0
+        model.permissionRequestAlertPresenter = { _ in
+            promptCount += 1
+            return .dismiss
+        }
+
+        model.applyTrackedEvent(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: "approval-session",
+                    title: "Codex · open-island",
+                    tool: .codex,
+                    summary: "Running",
+                    timestamp: now
+                )
+            )
+        )
+        model.applyTrackedEvent(
+            .permissionRequested(
+                PermissionRequested(
+                    sessionID: "approval-session",
+                    request: PermissionRequest(
+                        title: "Run command",
+                        summary: "Codex needs approval.",
+                        affectedPath: "git status -sb"
+                    ),
+                    timestamp: now.addingTimeInterval(1)
+                )
+            )
+        )
+        model.applyTrackedEvent(
+            .permissionRequested(
+                PermissionRequested(
+                    sessionID: "approval-session",
+                    request: PermissionRequest(
+                        title: "Run command",
+                        summary: "Codex needs approval.",
+                        affectedPath: "git status -sb"
+                    ),
+                    timestamp: now.addingTimeInterval(2)
+                )
+            )
+        )
+
+        #expect(promptCount == 1)
+    }
+
+    @Test
+    func resolvedPermissionCanPromptAgainForSameSession() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        var promptCount = 0
+        model.permissionRequestAlertPresenter = { _ in
+            promptCount += 1
+            return .dismiss
+        }
+
+        model.applyTrackedEvent(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: "approval-session",
+                    title: "Codex · open-island",
+                    tool: .codex,
+                    summary: "Running",
+                    timestamp: now
+                )
+            )
+        )
+        model.applyTrackedEvent(
+            .permissionRequested(
+                PermissionRequested(
+                    sessionID: "approval-session",
+                    request: PermissionRequest(
+                        title: "Run command",
+                        summary: "Codex needs approval.",
+                        affectedPath: "git status -sb"
+                    ),
+                    timestamp: now.addingTimeInterval(1)
+                )
+            )
+        )
+        model.applyTrackedEvent(
+            .actionableStateResolved(
+                ActionableStateResolved(
+                    sessionID: "approval-session",
+                    summary: "Permission handled outside Open Island.",
+                    timestamp: now.addingTimeInterval(2)
+                )
+            )
+        )
+        model.applyTrackedEvent(
+            .permissionRequested(
+                PermissionRequested(
+                    sessionID: "approval-session",
+                    request: PermissionRequest(
+                        title: "Run another command",
+                        summary: "Codex needs approval again.",
+                        affectedPath: "npm test"
+                    ),
+                    timestamp: now.addingTimeInterval(3)
+                )
+            )
+        )
+
+        #expect(promptCount == 2)
+    }
+
+    @Test
     func rolloutCompletionDoesNotPresentNotificationDuringColdStart() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()

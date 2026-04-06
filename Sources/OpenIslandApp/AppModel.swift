@@ -13,6 +13,11 @@ final class AppModel {
     private static let jumpOverlayDismissLeadTime: Duration = .milliseconds(20)
     static let hoverOpenDelay: TimeInterval = 0.35
 
+    enum PermissionRequestAlertAction {
+        case openInApp
+        case dismiss
+    }
+
     struct AcceptanceStep: Identifiable {
         let id: String
         let title: String
@@ -145,6 +150,12 @@ final class AppModel {
 
     @ObservationIgnored
     private let terminalJumpAction: @Sendable (JumpTarget) throws -> String
+
+    @ObservationIgnored
+    var permissionRequestAlertPresenter: ((AgentSession) -> PermissionRequestAlertAction)?
+
+    @ObservationIgnored
+    private var alertedPermissionSessionIDs: Set<String> = []
 
 
     @ObservationIgnored
@@ -677,6 +688,48 @@ final class AppModel {
         )
     }
 
+    private func pruneAlertedPermissionSessionIDs() {
+        let pendingApprovalSessionIDs: Set<String> = Set(
+            state.sessions.compactMap { session in
+                guard session.phase == .waitingForApproval,
+                      session.permissionRequest != nil else {
+                    return nil
+                }
+
+                return session.id
+            }
+        )
+        alertedPermissionSessionIDs.formIntersection(pendingApprovalSessionIDs)
+    }
+
+    private func maybePresentPermissionRequestAlert(
+        for event: AgentEvent,
+        ingress: TrackedEventIngress
+    ) {
+        guard ingress == .bridge else {
+            return
+        }
+
+        guard case let .permissionRequested(payload) = event,
+              let session = state.session(id: payload.sessionID),
+              session.phase == .waitingForApproval,
+              session.permissionRequest != nil else {
+            return
+        }
+
+        guard alertedPermissionSessionIDs.insert(session.id).inserted else {
+            return
+        }
+
+        let action = permissionRequestAlertPresenter?(session) ?? presentPermissionRequestAlert(for: session)
+        switch action {
+        case .openInApp:
+            notchOpen(reason: .click, surface: .sessionList(actionableSessionID: session.id))
+        case .dismiss:
+            break
+        }
+    }
+
 
     private func send(_ command: BridgeCommand, userMessage: String) {
         lastActionMessage = userMessage
@@ -715,6 +768,29 @@ final class AppModel {
         return .deny(message: "Permission denied in Open Island.", interrupt: false)
     }
 
+    private func presentPermissionRequestAlert(for session: AgentSession) -> PermissionRequestAlertAction {
+        NSApp.activate(ignoringOtherApps: true)
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Approval required"
+
+        var informativeLines: [String] = ["\(session.title) needs your approval to continue."]
+        if let summary = session.permissionRequest?.summary,
+           !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            informativeLines.append(summary)
+        }
+        if let affectedPath = session.permissionRequest?.affectedPath,
+           !affectedPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            informativeLines.append("Target: \(affectedPath)")
+        }
+        alert.informativeText = informativeLines.joined(separator: "\n")
+        alert.addButton(withTitle: "Review in Open Island")
+        alert.addButton(withTitle: "Later")
+
+        return alert.runModal() == .alertFirstButtonReturn ? .openInApp : .dismiss
+    }
+
     func applyTrackedEvent(
         _ event: AgentEvent,
         updateLastActionMessage: Bool = true,
@@ -741,6 +817,8 @@ final class AppModel {
         }
 
         state.apply(event)
+        pruneAlertedPermissionSessionIDs()
+        maybePresentPermissionRequestAlert(for: event, ingress: ingress)
         reconcileIslandSurfaceAfterStateChange()
         if ingress == .bridge {
             monitoring.markSessionAttached(for: event)
