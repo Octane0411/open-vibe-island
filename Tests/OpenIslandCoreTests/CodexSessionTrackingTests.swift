@@ -300,13 +300,16 @@ struct CodexSessionTrackingTests {
         #expect(waitingSnapshot.phase == .waitingForApproval)
         #expect(waitingSnapshot.currentCommandPreview == "git push origin feat/permission-consent-popup")
         #expect(waitingEvents.contains(where: {
-            $0.trackedPermissionRequested?.request.title == "Approval required"
+            $0.trackedPermissionRequested?.request.title == "Codex host approval required"
         }))
         #expect(waitingEvents.contains(where: {
             $0.trackedPermissionRequested?.request.summary == "Do you want me to push this branch to origin?"
         }))
         #expect(waitingEvents.contains(where: {
             $0.trackedPermissionRequested?.request.affectedPath == "git push origin feat/permission-consent-popup"
+        }))
+        #expect(waitingEvents.contains(where: {
+            $0.trackedPermissionRequested?.request.approvalHandledByHost == true
         }))
 
         let resolvedSnapshot = CodexRolloutReducer.snapshot(

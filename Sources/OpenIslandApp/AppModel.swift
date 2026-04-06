@@ -550,12 +550,7 @@ final class AppModel {
             return
         }
 
-        send(
-            .resolvePermission(sessionID: session.id, resolution: permissionResolution(for: approved)),
-            userMessage: approved
-                ? "Approving permission for \(session.title)."
-                : "Denying permission for \(session.title)."
-        )
+        approvePermission(for: session.id, approved: approved)
     }
 
     func answerFocusedQuestion(_ answer: String) {
@@ -625,6 +620,11 @@ final class AppModel {
             return
         }
 
+        if isHostManagedPermissionRequest(for: session) {
+            handleHostManagedPermissionAction(for: session, mode: approved ? .default : nil)
+            return
+        }
+
         let resolution = permissionResolution(for: approved)
         dismissNotificationSurfaceIfPresent(for: sessionID)
         state.resolvePermission(sessionID: session.id, resolution: resolution)
@@ -641,6 +641,11 @@ final class AppModel {
 
     func approvePermission(for sessionID: String, mode: ClaudePermissionMode?) {
         guard let session = state.session(id: sessionID) else {
+            return
+        }
+
+        if isHostManagedPermissionRequest(for: session) {
+            handleHostManagedPermissionAction(for: session, mode: mode)
             return
         }
 
@@ -670,6 +675,34 @@ final class AppModel {
             .resolvePermission(sessionID: session.id, resolution: resolution),
             userMessage: message
         )
+    }
+
+    private func isHostManagedPermissionRequest(for session: AgentSession) -> Bool {
+        session.permissionRequest?.approvalHandledByHost == true
+    }
+
+    private func handleHostManagedPermissionAction(for session: AgentSession, mode: ClaudePermissionMode?) {
+        dismissNotificationSurfaceIfPresent(for: session.id)
+        synchronizeSelection()
+        refreshOverlayPlacementIfVisible()
+
+        let hostName = session.permissionRequest?.approvalHostName
+            ?? session.permissionRequest?.toolName
+            ?? session.tool.displayName
+
+        switch mode {
+        case .default:
+            if session.jumpTarget != nil {
+                jumpToSession(session)
+            } else {
+                notchOpen(reason: .click, surface: .sessionList(actionableSessionID: session.id))
+                lastActionMessage = "Open \(hostName) and approve this request in the native permission prompt."
+            }
+        case nil:
+            lastActionMessage = "Approval is still pending in \(hostName)."
+        case .acceptEdits, .plan, .dontAsk, .bypassPermissions:
+            lastActionMessage = "Auto-approval modes are unavailable for \(hostName) host permission prompts."
+        }
     }
 
     func answerQuestion(for sessionID: String, answer: QuestionPromptResponse) {

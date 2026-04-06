@@ -541,7 +541,9 @@ public enum CodexRolloutReducer {
                                 summary: pendingPermission.summary,
                                 affectedPath: pendingPermission.affectedPath,
                                 primaryActionTitle: "Open Codex",
-                                secondaryActionTitle: "Later"
+                                secondaryActionTitle: "Later",
+                                approvalHandledByHost: true,
+                                approvalHostName: "Codex"
                             ),
                             timestamp: timestamp
                         )
@@ -842,7 +844,7 @@ public enum CodexRolloutReducer {
 
         return CodexRolloutPermissionRequest(
             callID: callID,
-            title: "Approval required",
+            title: "Codex host approval required",
             summary: summary,
             affectedPath: affectedPath
         )

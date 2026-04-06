@@ -380,11 +380,13 @@ struct AppModelSessionListTests {
                 PermissionRequested(
                     sessionID: "rollout-approval-session",
                     request: PermissionRequest(
-                        title: "Approval required",
+                        title: "Codex host approval required",
                         summary: "Need your approval in Codex.",
                         affectedPath: "git push origin feat/permission-consent-popup",
                         primaryActionTitle: "Open Codex",
-                        secondaryActionTitle: "Later"
+                        secondaryActionTitle: "Later",
+                        approvalHandledByHost: true,
+                        approvalHostName: "Codex"
                     ),
                     timestamp: now.addingTimeInterval(1)
                 )
@@ -395,6 +397,44 @@ struct AppModelSessionListTests {
 
         #expect(model.state.session(id: "rollout-approval-session")?.phase == .waitingForApproval)
         #expect(model.state.session(id: "rollout-approval-session")?.attachmentState == .stale)
+    }
+
+    @Test
+    func codexHostEscalationModesDoNotResolvePermissionStateInApp() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "host-approval-session",
+                    title: "Codex · open-island",
+                    tool: .codex,
+                    origin: .live,
+                    attachmentState: .attached,
+                    phase: .waitingForApproval,
+                    summary: "Need host approval.",
+                    updatedAt: now,
+                    permissionRequest: PermissionRequest(
+                        title: "Codex host approval required",
+                        summary: "Need your approval in Codex.",
+                        affectedPath: "git push origin feat/permission-consent-popup",
+                        primaryActionTitle: "Open Codex",
+                        secondaryActionTitle: "Later",
+                        approvalHandledByHost: true,
+                        approvalHostName: "Codex"
+                    )
+                ),
+            ]
+        )
+
+        model.approvePermission(for: "host-approval-session", mode: .acceptEdits)
+        #expect(model.state.session(id: "host-approval-session")?.phase == .waitingForApproval)
+
+        model.approvePermission(for: "host-approval-session", mode: nil)
+        #expect(model.state.session(id: "host-approval-session")?.phase == .waitingForApproval)
+
+        model.approvePermission(for: "host-approval-session", mode: .default)
+        #expect(model.state.session(id: "host-approval-session")?.phase == .waitingForApproval)
     }
 
     @Test
@@ -574,11 +614,13 @@ struct AppModelSessionListTests {
                 PermissionRequested(
                     sessionID: "recovered-session",
                     request: PermissionRequest(
-                        title: "Approval required",
+                        title: "Codex host approval required",
                         summary: "Need your approval in Codex.",
                         affectedPath: "git push origin feat/permission-consent-popup",
                         primaryActionTitle: "Open Codex",
-                        secondaryActionTitle: "Later"
+                        secondaryActionTitle: "Later",
+                        approvalHandledByHost: true,
+                        approvalHostName: "Codex"
                     ),
                     timestamp: now.addingTimeInterval(1)
                 )

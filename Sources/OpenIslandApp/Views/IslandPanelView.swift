@@ -1199,12 +1199,19 @@ private struct IslandSessionRow: View {
             )
 
             HStack(spacing: 8) {
-                Button(lang.t("approval.manual")) { onApprove?(.default) }
-                    .buttonStyle(IslandWideButtonStyle(kind: .secondary))
-                Button(lang.t("approval.autoAcceptEdits")) { onApprove?(.acceptEdits) }
-                    .buttonStyle(IslandWideButtonStyle(kind: .warning))
-                Button(lang.t("approval.autoBypassPermissions")) { onApprove?(.bypassPermissions) }
-                    .buttonStyle(IslandWideButtonStyle(kind: .danger))
+                if isCodexHostEscalationRequest {
+                    Button(allowTitle) { onApprove?(.default) }
+                        .buttonStyle(IslandWideButtonStyle(kind: .warning))
+                    Button(denyTitle) { onApprove?(nil) }
+                        .buttonStyle(IslandWideButtonStyle(kind: .secondary))
+                } else {
+                    Button(lang.t("approval.manual")) { onApprove?(.default) }
+                        .buttonStyle(IslandWideButtonStyle(kind: .secondary))
+                    Button(lang.t("approval.autoAcceptEdits")) { onApprove?(.acceptEdits) }
+                        .buttonStyle(IslandWideButtonStyle(kind: .warning))
+                    Button(lang.t("approval.autoBypassPermissions")) { onApprove?(.bypassPermissions) }
+                        .buttonStyle(IslandWideButtonStyle(kind: .danger))
+                }
             }
         }
     }
@@ -1294,6 +1301,10 @@ private struct IslandSessionRow: View {
             return "$ \(preview)"
         }
         return session.permissionRequest?.summary.trimmedForNotificationCard ?? session.summary.trimmedForNotificationCard
+    }
+
+    private var isCodexHostEscalationRequest: Bool {
+        session.permissionRequest?.approvalHandledByHost == true
     }
 
     private var allowTitle: String {
