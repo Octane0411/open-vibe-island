@@ -300,8 +300,29 @@ final class OverlayUICoordinator {
             return
         }
 
-        NotificationSoundService.playNotification(isMuted: isSoundMuted)
+        // Skip sound when a notification is already showing for the same session
+        // (e.g. permission denied → sessionCompleted while the card is still open).
+        let shouldPlaySound = !(notchStatus == .opened
+            && notchOpenReason == .notification
+            && islandSurface.sessionID == surface.sessionID)
+
         notchOpen(reason: .notification, surface: surface)
+
+        // Defer sound to after the panel transition is confirmed. Playing it
+        // synchronously before `notchOpen` causes phantom sounds when a mouse
+        // click races with the async Phase 2 panel show — the click triggers
+        // `notchClose` (because the panel frame hasn't expanded yet), the
+        // generation guard cancels the open, and the user hears a sound with
+        // no visible notification. By gating on the same generation, the sound
+        // only plays when the panel actually appears.
+        if shouldPlaySound {
+            let capturedGeneration = overlayTransitionGeneration
+            DispatchQueue.main.async { [weak self] in
+                guard let self,
+                      self.overlayTransitionGeneration == capturedGeneration else { return }
+                NotificationSoundService.playNotification(isMuted: self.isSoundMuted)
+            }
+        }
     }
 
     func reconcileIslandSurfaceAfterStateChange() {
