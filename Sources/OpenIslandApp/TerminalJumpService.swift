@@ -8,6 +8,13 @@ struct TerminalJumpService {
         case acceptAndDontAsk
         case reject
 
+        var usesGhosttyEscAction: Bool {
+            if case .reject = self {
+                return true
+            }
+            return false
+        }
+
         var ghosttyKey: String {
             switch self {
             case .accept:
@@ -15,7 +22,7 @@ struct TerminalJumpService {
             case .acceptAndDontAsk:
                 return "p"
             case .reject:
-                return "escape"
+                return "esc"
             }
         }
 
@@ -26,7 +33,7 @@ struct TerminalJumpService {
             case .acceptAndDontAsk:
                 return "p"
             case .reject:
-                return nil
+                return "n"
             }
         }
 
@@ -203,6 +210,7 @@ struct TerminalJumpService {
         let workingDirectory = escapeAppleScript(target.workingDirectory)
         let paneTitle = escapeAppleScript(target.paneTitle)
         let decisionKey = response.ghosttyKey
+        let useEscAction = response.usesGhosttyEscAction
 
         let script = """
         tell application "Ghostty"
@@ -273,7 +281,19 @@ struct TerminalJumpService {
 
             if targetTerminal is missing value then return ""
 
-            send key "\(decisionKey)" to targetTerminal
+            if \(useEscAction ? "true" : "false") then
+                try
+                    perform action "esc" on targetTerminal
+                on error
+                    try
+                        send key "escape" to targetTerminal
+                    on error
+                        send key "n" to targetTerminal
+                    end try
+                end try
+            else
+                send key "\(decisionKey)" to targetTerminal
+            end if
             return "submitted"
         end tell
         return ""
