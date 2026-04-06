@@ -147,11 +147,16 @@ struct TerminalJumpService {
             repeat with aWindow in windows
                 repeat with aTab in tabs of aWindow
                     repeat with aSession in sessions of aTab
+                        set matched to false
                         if "\(escapeAppleScript(target.terminalSessionID))" is not "" and (id of aSession as text) is "\(escapeAppleScript(target.terminalSessionID))" then
-                            select aSession
-                            return "matched"
+                            set matched to true
                         end if
-                        if "\(escapeAppleScript(target.terminalTTY))" is not "" and (tty of aSession as text) is "\(escapeAppleScript(target.terminalTTY))" then
+                        if not matched and "\(escapeAppleScript(target.terminalTTY))" is not "" and (tty of aSession as text) is "\(escapeAppleScript(target.terminalTTY))" then
+                            set matched to true
+                        end if
+                        if matched then
+                            select aWindow
+                            tell aWindow to select aTab
                             select aSession
                             return "matched"
                         end if

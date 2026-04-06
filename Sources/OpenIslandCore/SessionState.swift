@@ -97,6 +97,7 @@ public struct SessionState: Equatable, Sendable {
                 }
             }
 
+            session.activityRequiresAttention = payload.requiresAttention
             session.updatedAt = payload.timestamp
             upsert(session)
 

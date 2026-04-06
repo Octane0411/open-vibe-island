@@ -268,6 +268,9 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     public var codexMetadata: CodexSessionMetadata?
     public var claudeMetadata: ClaudeSessionMetadata?
 
+    /// Whether the current activity requires user attention (e.g. Codex PreToolUse notification).
+    public var activityRequiresAttention: Bool = false
+
     /// Whether the agent process is currently alive according to process discovery.
     /// Populated in parallel with the existing attachment system during Phase 1.
     public var isProcessAlive: Bool = false

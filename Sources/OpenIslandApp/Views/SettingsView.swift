@@ -194,6 +194,10 @@ struct GeneralSettingsPane: View {
                     get: { model.showDockIcon },
                     set: { model.showDockIcon = $0 }
                 ))
+                Toggle(lang.t("settings.general.codexApprovalIntercept"), isOn: Binding(
+                    get: { model.codexApprovalIntercept },
+                    set: { model.codexApprovalIntercept = $0 }
+                ))
             }
 
         }

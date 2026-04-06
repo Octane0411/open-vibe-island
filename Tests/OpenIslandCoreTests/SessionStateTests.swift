@@ -422,7 +422,7 @@ struct SessionStateTests {
     }
 
     @Test
-    func codexPreToolUseWaitsForApprovalAndReturnsDenyDirective() async throws {
+    func codexPreToolUseNotifiesWithoutBlocking() async throws {
         let socketURL = BridgeSocketLocation.uniqueTestURL()
         let server = BridgeServer(socketURL: socketURL)
         try server.start()
@@ -446,64 +446,17 @@ struct SessionStateTests {
             toolInput: CodexHookToolInput(command: "rm -rf build")
         )
 
-        async let responseTask = sendOnGCDThread(.processCodexHook(payload), socketURL: socketURL)
+        let response = try await sendOnGCDThread(.processCodexHook(payload), socketURL: socketURL)
 
-        var iterator = stream.makeAsyncIterator()
-        let startedEvent = try await nextEvent(from: &iterator)
-        let permissionEvent = try await nextEvent(from: &iterator)
-
-        #expect(startedEvent.isSessionStarted)
-        #expect(permissionEvent.isPermissionRequested)
-
-        try await observer.send(.resolvePermission(sessionID: "codex-session-1", resolution: .deny()))
-
-        let response = try await responseTask
-        #expect(response == .codexHookDirective(.deny(reason: "Permission denied in Open Island.")))
-    }
-
-    @Test
-    func codexPreToolUseStillRequiresResolutionWhenHookArrivesInDontAskMode() async throws {
-        let socketURL = BridgeSocketLocation.uniqueTestURL()
-        let server = BridgeServer(socketURL: socketURL)
-        try server.start()
-        defer { server.stop() }
-
-        let observer = LocalBridgeClient(socketURL: socketURL)
-        let stream = try observer.connect()
-        defer { observer.disconnect() }
-        try await observer.send(.registerClient(role: .observer))
-
-        let payload = CodexHookPayload(
-            cwd: "/tmp/worktree",
-            hookEventName: .preToolUse,
-            model: "gpt-5-codex",
-            permissionMode: .dontAsk,
-            sessionID: "codex-session-no-ask",
-            terminalApp: "Ghostty",
-            terminalSessionID: "ghostty-session-1",
-            transcriptPath: nil,
-            turnID: "turn-1",
-            toolName: "Bash",
-            toolUseID: "tool-use-1",
-            toolInput: CodexHookToolInput(command: "ls")
-        )
-
-        async let responseTask = sendOnGCDThread(.processCodexHook(payload), socketURL: socketURL)
-
-        var iterator = stream.makeAsyncIterator()
-        let startedEvent = try await nextEvent(from: &iterator)
-        let permissionEvent = try await nextEvent(from: &iterator)
-
-        #expect(startedEvent.isSessionStarted)
-        #expect(permissionEvent.isPermissionRequested)
-
-        try await observer.send(.resolvePermission(sessionID: "codex-session-no-ask", resolution: .allowOnce()))
-
-        let activityEvent = try await nextEvent(from: &iterator)
-        let response = try await responseTask
-
-        #expect(activityEvent.activityUpdate?.summary == "Permission approved. Codex continued the command.")
+        // PreToolUse should return immediately without blocking for approval.
         #expect(response == .acknowledged)
+
+        var iterator = stream.makeAsyncIterator()
+        let startedEvent = try await nextEvent(from: &iterator)
+        let activityEvent = try await nextEvent(from: &iterator)
+
+        #expect(startedEvent.isSessionStarted)
+        #expect(activityEvent.activityUpdate?.summary == "Codex wants to run: rm -rf build")
     }
 
     @Test

@@ -95,7 +95,22 @@ cat > "$plist_path" <<EOF
 </plist>
 EOF
 
-# Re-sign the entire bundle so macOS accepts the embedded Sparkle.framework.
+# Dev builds on macOS 26+: the SPM resource bundle at the .app root
+# causes "unsealed contents" codesign failure. Move it into
+# Contents/Resources/ so signing succeeds. On the developer machine
+# Bundle.module falls back to the hardcoded .build/ path, so
+# localization still works. (Release builds use package-app.sh which
+# has its own resource bundle handling.)
+resource_bundle_name="OpenIsland_OpenIslandApp.bundle"
+root_bundle="$bundle_dir/$resource_bundle_name"
+resources_bundle="$bundle_dir/Contents/Resources/$resource_bundle_name"
+if [ -d "$root_bundle" ] && [ ! -L "$root_bundle" ]; then
+    rm -rf "$resources_bundle"
+    mv "$root_bundle" "$resources_bundle"
+fi
+# Remove stale symlinks from previous runs.
+[ -L "$root_bundle" ] && rm -f "$root_bundle"
+
 codesign --force --deep --sign - "$bundle_dir" 2>/dev/null || true
 
 pkill -f "$bundle_binary" >/dev/null 2>&1 || true

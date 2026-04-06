@@ -26,6 +26,12 @@ struct TerminalSessionAttachmentProbe {
         var customTitle: String
     }
 
+    struct ITermSessionSnapshot: Sendable {
+        var sessionID: String
+        var tty: String
+        var title: String
+    }
+
     enum SnapshotAvailability<Snapshot: Sendable>: Sendable {
         case unavailable(appIsRunning: Bool)
         case available([Snapshot], appIsRunning: Bool)
@@ -80,6 +86,7 @@ struct TerminalSessionAttachmentProbe {
             for: sessions,
             ghosttyAvailability: ghosttySnapshotAvailability(),
             terminalAvailability: terminalSnapshotAvailability(),
+            itermAvailability: itermSnapshotAvailability(),
             activeProcesses: activeProcesses,
             now: now
         ).resolutions.mapValues(\.attachmentState)
@@ -95,6 +102,7 @@ struct TerminalSessionAttachmentProbe {
             for: sessions,
             ghosttyAvailability: ghosttySnapshotAvailability(),
             terminalAvailability: terminalSnapshotAvailability(),
+            itermAvailability: itermSnapshotAvailability(),
             activeProcesses: activeProcesses,
             allowRecentAttachmentGrace: allowRecentAttachmentGrace,
             now: now
@@ -111,6 +119,7 @@ struct TerminalSessionAttachmentProbe {
             for: sessions,
             ghosttyAvailability: ghosttySnapshotAvailability(),
             terminalAvailability: terminalSnapshotAvailability(),
+            itermAvailability: itermSnapshotAvailability(),
             activeProcesses: activeProcesses,
             allowRecentAttachmentGrace: allowRecentAttachmentGrace,
             now: now
@@ -121,6 +130,7 @@ struct TerminalSessionAttachmentProbe {
         for sessions: [AgentSession],
         ghosttyAvailability: SnapshotAvailability<GhosttyTerminalSnapshot>,
         terminalAvailability: SnapshotAvailability<TerminalTabSnapshot>,
+        itermAvailability: SnapshotAvailability<ITermSessionSnapshot> = .available([], appIsRunning: false),
         activeProcesses: [ActiveProcessSnapshot] = [],
         allowRecentAttachmentGrace: Bool = true,
         now: Date = .now
@@ -128,18 +138,22 @@ struct TerminalSessionAttachmentProbe {
         guard !sessions.isEmpty else {
             return ResolutionReport(
                 resolutions: [:],
-                isAuthoritative: ghosttyAvailability.isAuthoritative && terminalAvailability.isAuthoritative
+                isAuthoritative: ghosttyAvailability.isAuthoritative
+                    && terminalAvailability.isAuthoritative
+                    && itermAvailability.isAuthoritative
             )
         }
 
         let ghosttySessions = sessions.filter { normalizedTerminalName(for: $0.jumpTarget?.terminalApp) == "ghostty" }
         let terminalSessions = sessions.filter { normalizedTerminalName(for: $0.jumpTarget?.terminalApp) == "terminal" }
+        let itermSessions = sessions.filter { normalizedTerminalName(for: $0.jumpTarget?.terminalApp) == "iterm" }
         let ambiguousSessions = sessions.filter { session in
             guard let terminalName = normalizedTerminalName(for: session.jumpTarget?.terminalApp) else {
                 return true
             }
 
             return terminalName != "ghostty" && terminalName != "terminal"
+                && terminalName != "iterm"
                 && terminalName != "kaku" && terminalName != "wezterm"
         }
         let activeProcessesBySessionID = activeProcessesBySessionID(
@@ -158,6 +172,10 @@ struct TerminalSessionAttachmentProbe {
             for: terminalSessions + ambiguousSessions,
             availability: terminalAvailability
         )
+        let attachedITermSessions = attachedITermSessions(
+            for: itermSessions + ambiguousSessions,
+            availability: itermAvailability
+        )
 
         var resolutions: [String: SessionResolution] = [:]
 
@@ -175,6 +193,23 @@ struct TerminalSessionAttachmentProbe {
                         now: now
                     ),
                     correctedJumpTarget: matchedSnapshot.flatMap { correctedGhosttyJumpTarget(for: session, snapshot: $0) }
+                )
+                continue
+            }
+
+            if itermSessions.contains(where: { $0.id == session.id })
+                || attachedITermSessions[session.id] != nil {
+                let matchedSnapshot = attachedITermSessions[session.id]
+                resolutions[session.id] = SessionResolution(
+                    attachmentState: resolveAttachmentState(
+                        for: session,
+                        isMatched: matchedSnapshot != nil,
+                        isActiveProcess: activeProcessesBySessionID[session.id] != nil,
+                        availability: itermAvailability,
+                        allowRecentAttachmentGrace: allowRecentAttachmentGrace,
+                        now: now
+                    ),
+                    correctedJumpTarget: matchedSnapshot.flatMap { correctedITermJumpTarget(for: session, snapshot: $0) }
                 )
                 continue
             }
@@ -250,7 +285,9 @@ struct TerminalSessionAttachmentProbe {
 
         return ResolutionReport(
             resolutions: resolutions,
-            isAuthoritative: ghosttyAvailability.isAuthoritative && terminalAvailability.isAuthoritative
+            isAuthoritative: ghosttyAvailability.isAuthoritative
+                && terminalAvailability.isAuthoritative
+                && itermAvailability.isAuthoritative
         )
     }
 
@@ -283,6 +320,7 @@ struct TerminalSessionAttachmentProbe {
         for sessions: [AgentSession],
         ghosttyAvailability: SnapshotAvailability<GhosttyTerminalSnapshot>,
         terminalAvailability: SnapshotAvailability<TerminalTabSnapshot>,
+        itermAvailability: SnapshotAvailability<ITermSessionSnapshot> = .available([], appIsRunning: false),
         activeProcesses: [ActiveProcessSnapshot] = [],
         allowRecentAttachmentGrace: Bool = true,
         now: Date = .now
@@ -291,6 +329,7 @@ struct TerminalSessionAttachmentProbe {
             for: sessions,
             ghosttyAvailability: ghosttyAvailability,
             terminalAvailability: terminalAvailability,
+            itermAvailability: itermAvailability,
             activeProcesses: activeProcesses,
             allowRecentAttachmentGrace: allowRecentAttachmentGrace,
             now: now
@@ -301,6 +340,7 @@ struct TerminalSessionAttachmentProbe {
         for sessions: [AgentSession],
         ghosttyAvailability: SnapshotAvailability<GhosttyTerminalSnapshot>,
         terminalAvailability: SnapshotAvailability<TerminalTabSnapshot>,
+        itermAvailability: SnapshotAvailability<ITermSessionSnapshot> = .available([], appIsRunning: false),
         activeProcesses: [ActiveProcessSnapshot] = [],
         allowRecentAttachmentGrace: Bool = true,
         now: Date = .now
@@ -309,6 +349,7 @@ struct TerminalSessionAttachmentProbe {
             for: sessions,
             ghosttyAvailability: ghosttyAvailability,
             terminalAvailability: terminalAvailability,
+            itermAvailability: itermAvailability,
             activeProcesses: activeProcesses,
             allowRecentAttachmentGrace: allowRecentAttachmentGrace,
             now: now
@@ -750,6 +791,83 @@ struct TerminalSessionAttachmentProbe {
         return changed ? jumpTarget : nil
     }
 
+    // MARK: - iTerm attachment
+
+    private func attachedITermSessions(
+        for sessions: [AgentSession],
+        availability: SnapshotAvailability<ITermSessionSnapshot>
+    ) -> [String: ITermSessionSnapshot] {
+        guard let snapshots = availability.snapshots else {
+            return [:]
+        }
+
+        return snapshots.reduce(into: [String: ITermSessionSnapshot]()) { partialResult, snapshot in
+            guard let session = preferredSession(
+                from: sessions.filter { itermSnapshot(snapshot, matches: $0) }
+            ) else {
+                return
+            }
+
+            partialResult[session.id] = snapshot
+        }
+    }
+
+    private func itermSnapshot(_ snapshot: ITermSessionSnapshot, matches session: AgentSession) -> Bool {
+        guard let jumpTarget = session.jumpTarget else {
+            return false
+        }
+
+        if let sessionID = nonEmptyValue(jumpTarget.terminalSessionID),
+           snapshot.sessionID == sessionID {
+            return true
+        }
+
+        if let tty = nonEmptyValue(jumpTarget.terminalTTY),
+           snapshot.tty == tty {
+            return true
+        }
+
+        guard let paneTitle = nonEmptyValue(jumpTarget.paneTitle) else {
+            return false
+        }
+
+        return snapshot.title.contains(paneTitle)
+    }
+
+    private func correctedITermJumpTarget(
+        for session: AgentSession,
+        snapshot: ITermSessionSnapshot
+    ) -> JumpTarget? {
+        guard var jumpTarget = session.jumpTarget else {
+            return nil
+        }
+
+        var changed = false
+
+        if normalizedTerminalName(for: jumpTarget.terminalApp) != "iterm" {
+            jumpTarget.terminalApp = "iTerm"
+            changed = true
+        }
+
+        if nonEmptyValue(jumpTarget.terminalSessionID) != snapshot.sessionID {
+            jumpTarget.terminalSessionID = snapshot.sessionID
+            changed = true
+        }
+
+        if nonEmptyValue(jumpTarget.terminalTTY) != snapshot.tty {
+            jumpTarget.terminalTTY = snapshot.tty
+            changed = true
+        }
+
+        if let title = nonEmptyValue(snapshot.title),
+           title != jumpTarget.paneTitle {
+            jumpTarget.paneTitle = title
+            changed = true
+        }
+
+        return changed ? jumpTarget : nil
+    }
+
     private func ghosttySnapshot(_ snapshot: GhosttyTerminalSnapshot, matches session: AgentSession) -> Bool {
         guard let jumpTarget = session.jumpTarget else {
             return false
@@ -1020,6 +1138,19 @@ struct TerminalSessionAttachmentProbe {
         }
     }
 
+    func itermSnapshotAvailability() -> SnapshotAvailability<ITermSessionSnapshot> {
+        let appIsRunning = isRunning(bundleIdentifier: "com.googlecode.iterm2")
+        guard appIsRunning else {
+            return .available([], appIsRunning: false)
+        }
+
+        do {
+            return .available(try itermSnapshots(), appIsRunning: true)
+        } catch {
+            return .unavailable(appIsRunning: true)
+        }
+    }
+
     private func nonEmptyValue(_ value: String?) -> String? {
         guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trimmed.isEmpty else {
@@ -1116,6 +1247,57 @@ struct TerminalSessionAttachmentProbe {
                 return TerminalTabSnapshot(
                     tty: values[0],
                     customTitle: values[1]
+                )
+            }
+    }
+
+    private func itermSnapshots() throws -> [ITermSessionSnapshot] {
+        let script = """
+        set fieldSeparator to ASCII character 31
+        set recordSeparator to ASCII character 30
+        tell application "iTerm"
+            if not (it is running) then return ""
+            set outputLines to {}
+            repeat with aWindow in windows
+                repeat with aTab in tabs of aWindow
+                    repeat with aSession in sessions of aTab
+                        set sessionID to ""
+                        set sessionTTY to ""
+                        set sessionTitle to ""
+                        try
+                            set sessionID to (id of aSession as text)
+                        end try
+                        try
+                            set sessionTTY to (tty of aSession as text)
+                        end try
+                        try
+                            set sessionTitle to (name of aSession as text)
+                        end try
+                        set end of outputLines to sessionID & fieldSeparator & sessionTTY & fieldSeparator & sessionTitle
+                    end repeat
+                end repeat
+            end repeat
+            set AppleScript's text item delimiters to recordSeparator
+            set joinedOutput to outputLines as string
+            set AppleScript's text item delimiters to ""
+            return joinedOutput
+        end tell
+        """
+
+        let output = try runAppleScript(script)
+        return output
+            .split(separator: Character(Self.recordSeparator), omittingEmptySubsequences: true)
+            .map(String.init)
+            .compactMap { line in
+                let values = line.components(separatedBy: Self.fieldSeparator)
+                guard values.count == 3 else {
+                    return nil
+                }
+
+                return ITermSessionSnapshot(
+                    sessionID: values[0],
+                    tty: values[1],
+                    title: values[2]
                 )
             }
     }

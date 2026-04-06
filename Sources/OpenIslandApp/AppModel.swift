@@ -9,6 +9,7 @@ import SwiftUI
 final class AppModel {
     private static let soundMutedDefaultsKey = "overlay.sound.muted"
     private static let showDockIconDefaultsKey = "app.showDockIcon"
+    private static let codexApprovalInterceptDefaultsKey = "codex.approval.intercept"
     private static let syntheticClaudeSessionPrefix = "claude-process:"
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
     private static let jumpOverlayDismissLeadTime: Duration = .milliseconds(20)
@@ -111,6 +112,12 @@ final class AppModel {
             NSApp.setActivationPolicy(showDockIcon ? .regular : .accessory)
         }
     }
+    var codexApprovalIntercept = false {
+        didSet {
+            guard codexApprovalIntercept != oldValue else { return }
+            UserDefaults.standard.set(codexApprovalIntercept, forKey: Self.codexApprovalInterceptDefaultsKey)
+        }
+    }
     var isSoundMuted = false {
         didSet {
             guard isSoundMuted != oldValue else {
@@ -171,6 +178,7 @@ final class AppModel {
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
         showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
+        codexApprovalIntercept = UserDefaults.standard.bool(forKey: Self.codexApprovalInterceptDefaultsKey)
 
         overlay.appModel = self
         overlay.restoreDisplayPreference()
@@ -185,6 +193,10 @@ final class AppModel {
         }
         overlay.ignoresPointerExitAccessor = { [weak self] in
             self?.ignoresPointerExitDuringHarness ?? false
+        }
+
+        bridgeServer.codexApprovalInterceptAccessor = {
+            UserDefaults.standard.bool(forKey: "codex.approval.intercept")
         }
 
         hooks.onStatusMessage = { [weak self] message in

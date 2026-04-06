@@ -224,7 +224,7 @@ extension AgentSession {
     }
 
     var spotlightActivityTone: SpotlightActivityTone {
-        if phase.requiresAttention {
+        if phase.requiresAttention || activityRequiresAttention {
             return .attention
         }
 

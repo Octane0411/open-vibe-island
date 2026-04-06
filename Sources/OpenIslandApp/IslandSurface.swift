@@ -17,11 +17,13 @@ enum IslandSurface: Equatable {
 
     func autoDismissesWhenPresentedAsNotification(session: AgentSession?) -> Bool {
         guard sessionID != nil else { return false }
-        return session?.phase == .completed
+        return session?.phase == .completed || session?.phase == .running
     }
 
     static func notificationSurface(for event: AgentEvent) -> IslandSurface? {
         switch event {
+        case let .activityUpdated(payload) where payload.showsNotification:
+            .sessionList(actionableSessionID: payload.sessionID)
         case let .permissionRequested(payload):
             .sessionList(actionableSessionID: payload.sessionID)
         case let .questionAsked(payload):
@@ -50,7 +52,7 @@ enum IslandSurface: Equatable {
         case .completed:
             return true
         case .running:
-            return false
+            return true
         }
     }
 }

@@ -43,6 +43,7 @@ public final class BridgeServer: @unchecked Sendable {
     private var pendingClaudeInteractions: [String: PendingClaudeInteraction] = [:]
     /// Caches Agent tool description from preToolUse for use by the next subagentStart.
     private var pendingAgentDescriptions: [String: String] = [:]
+    public var codexApprovalInterceptAccessor: @Sendable () -> Bool = { false }
     private var stateSnapshot = SessionState()
     /// Local working state: tracks sessions emitted by this server between
     /// snapshot pushes from AppModel. This is NOT a duplicate of AppModel's
@@ -398,25 +399,37 @@ public final class BridgeServer: @unchecked Sendable {
 
             let command = payload.commandPreview ?? "Bash command"
 
-            let approvalEvent = AgentEvent.permissionRequested(
-                PermissionRequested(
-                    sessionID: payload.sessionID,
-                    request: PermissionRequest(
-                        title: "Run Bash command",
-                        summary: "Codex wants to run a shell command.",
-                        affectedPath: payload.commandText ?? command,
-                        primaryActionTitle: "Allow",
-                        secondaryActionTitle: "Deny"
-                    ),
-                    timestamp: .now
+            if codexApprovalInterceptAccessor() {
+                let approvalEvent = AgentEvent.permissionRequested(
+                    PermissionRequested(
+                        sessionID: payload.sessionID,
+                        request: PermissionRequest(
+                            title: "Run Bash command",
+                            summary: "Codex wants to run a shell command.",
+                            affectedPath: payload.commandText ?? command,
+                            primaryActionTitle: "Allow",
+                            secondaryActionTitle: "Deny"
+                        ),
+                        timestamp: .now
+                    )
                 )
-            )
-
-            emit(approvalEvent)
-
-            pendingApprovals[payload.sessionID] = PendingApproval(
-                clientID: clientID
-            )
+                emit(approvalEvent)
+                pendingApprovals[payload.sessionID] = PendingApproval(clientID: clientID)
+            } else {
+                emit(
+                    .activityUpdated(
+                        SessionActivityUpdated(
+                            sessionID: payload.sessionID,
+                            summary: "Codex wants to run: \(command)",
+                            phase: .running,
+                            timestamp: .now,
+                            showsNotification: true,
+                            requiresAttention: true
+                        )
+                    )
+                )
+                send(.response(.acknowledged), to: clientID)
+            }
 
         case .postToolUse:
             ensureSessionExists(for: payload)
