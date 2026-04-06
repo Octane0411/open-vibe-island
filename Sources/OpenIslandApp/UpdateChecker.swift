@@ -4,10 +4,10 @@ import Foundation
 @MainActor
 @Observable
 final class UpdateChecker {
-    static let releasesURL = URL(string: "https://github.com/nicepkg/open-island/releases")!
+    static let releasesURL = URL(string: "https://github.com/Octane0411/open-vibe-island/releases")!
     private static let checkInterval: TimeInterval = 1 * 60 * 60 // 1 hour
 
-    private static let apiEndpoint = "https://api.github.com/repos/nicepkg/open-island/releases/latest"
+    private static let apiEndpoint = "https://api.github.com/repos/Octane0411/open-vibe-island/releases/latest"
 
     enum State: Equatable {
         case idle
