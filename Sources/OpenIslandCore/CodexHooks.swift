@@ -437,6 +437,7 @@ public extension CodexHookPayload {
     private func shouldUseFocusedTerminalLocator(for terminalApp: String) -> Bool {
         let lower = terminalApp.lowercased()
         return !lower.contains("ghostty") && lower != "cmux"
+            && lower != "kaku" && lower != "wezterm"
     }
 
     private func isGhosttyTerminalApp(_ terminalApp: String?) -> Bool {
@@ -480,6 +481,8 @@ public extension CodexHookPayload {
             return "Warp"
         case let value? where value.contains("wezterm"):
             return "WezTerm"
+        case .some("kaku"):
+            return "Kaku"
         default:
             return nil
         }
