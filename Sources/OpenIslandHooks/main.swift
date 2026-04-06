@@ -1,7 +1,6 @@
 import Foundation
 import OpenIslandCore
 
-@main
 struct OpenIslandHooksCLI {
     private static let interactiveClaudeHookTimeout: TimeInterval = 24 * 60 * 60
 
@@ -69,3 +68,5 @@ struct OpenIslandHooksCLI {
         return .codex
     }
 }
+
+OpenIslandHooksCLI.main()

@@ -1,7 +1,6 @@
 import Foundation
 import OpenIslandCore
 
-@main
 struct OpenIslandSetupCLI {
     static func main() {
         do {
@@ -193,6 +192,8 @@ private struct SetupCommand {
         }
     }
 }
+
+OpenIslandSetupCLI.main()
 
 private enum SetupError: Error, LocalizedError {
     case usage
