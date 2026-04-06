@@ -126,6 +126,27 @@
 "debug.sessionList" = "会话列表";
 "debug.sessionListActionable" = "会话列表 (可操作)";
 
+/* Setup Guide */
+"setup.title" = "欢迎使用 Open Island";
+"setup.subtitle" = "Open Island 需要完成以下配置才能监控你的 AI 编程代理。";
+"setup.section.binary" = "Hook 二进制文件";
+"setup.section.hooks" = "CLI Hooks";
+"setup.section.usage" = "用量监控";
+"setup.section.permissions" = "系统权限";
+"setup.binaryReady" = "已找到，就绪";
+"setup.binaryMissing" = "未找到 - 请先构建项目";
+"setup.hookReady" = "已安装就绪";
+"setup.hookMissing" = "未安装";
+"setup.usageBridge" = "Claude 用量桥接";
+"setup.usageBridgeReady" = "正在缓存 Claude Code 速率限制";
+"setup.usageBridgeDesc" = "在本地缓存 Claude Code 速率限制数据";
+"setup.optional" = "可选";
+"setup.permissionsTitle" = "自动化访问权限";
+"setup.permissionsDesc" = "首次使用「跳转回终端」功能时，macOS 会请求权限。请在系统设置 > 隐私与安全性 > 自动化中允许。";
+"setup.installAll" = "全部安装";
+"setup.skip" = "跳过";
+"setup.done" = "完成";
+
 /* Window Titles */
 "window.settings" = "Open Island 设置";
 "window.debug" = "Open Island 调试";

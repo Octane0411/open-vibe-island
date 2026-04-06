@@ -126,6 +126,27 @@
 "debug.sessionList" = "Session List";
 "debug.sessionListActionable" = "Session List (Actionable)";
 
+/* Setup Guide */
+"setup.title" = "Welcome to Open Island";
+"setup.subtitle" = "Open Island needs a few things set up to monitor your AI coding agents.";
+"setup.section.binary" = "Hook Binary";
+"setup.section.hooks" = "CLI Hooks";
+"setup.section.usage" = "Usage Monitoring";
+"setup.section.permissions" = "System Permissions";
+"setup.binaryReady" = "Found and ready";
+"setup.binaryMissing" = "Not found — build the project first";
+"setup.hookReady" = "Installed and ready";
+"setup.hookMissing" = "Not installed";
+"setup.usageBridge" = "Claude Usage Bridge";
+"setup.usageBridgeReady" = "Caching rate limits from Claude Code";
+"setup.usageBridgeDesc" = "Cache Claude Code rate limits locally";
+"setup.optional" = "optional";
+"setup.permissionsTitle" = "Automation Access";
+"setup.permissionsDesc" = "macOS will ask for permission when you first use \"Jump Back\" to focus a terminal window. Allow it in System Settings > Privacy & Security > Automation.";
+"setup.installAll" = "Install All";
+"setup.skip" = "Skip";
+"setup.done" = "Done";
+
 /* Window Titles */
 "window.settings" = "Open Island Settings";
 "window.debug" = "Open Island Debug";

@@ -117,6 +117,12 @@ struct OpenIslandApp: App {
             }
         }
 
+        Window("Setup Guide", id: "setup-guide") {
+            SetupGuideWindowContent(model: appDelegate.model)
+        }
+        .windowResizability(.contentSize)
+        .windowStyle(.hiddenTitleBar)
+
         #if DEBUG
         WindowGroup("Open Island Debug") {
             ControlCenterView(model: appDelegate.model)
@@ -145,6 +151,21 @@ private struct SettingsWindowContent: View {
             .onAppear {
                 model.openSettingsWindow = { [openWindow] in
                     openWindow(id: "settings")
+                }
+            }
+    }
+}
+
+/// Injects `openWindow` for the setup guide window.
+private struct SetupGuideWindowContent: View {
+    var model: AppModel
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        SetupGuideView(model: model)
+            .onAppear {
+                model.openSetupGuideWindow = { [openWindow] in
+                    openWindow(id: "setup-guide")
                 }
             }
     }

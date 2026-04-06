@@ -27,6 +27,16 @@ cp "$app_binary" "$bundle_binary"
 cp "$brand_icon" "$bundle_dir/Contents/Resources/OpenIsland.icns"
 chmod +x "$bundle_binary"
 
+# Copy SPM resource bundle so Bundle.module can find localized strings.
+# Bundle.module looks at Bundle.main.bundleURL (the .app root) first,
+# then falls back to a hardcoded .build/ path. Place the bundle in both
+# Contents/MacOS/ (where package-app.sh puts it) and the .app root to
+# ensure Bundle.main.bundleURL/OpenIsland_OpenIslandApp.bundle resolves.
+resource_bundle="$build_root/OpenIsland_OpenIslandApp.bundle"
+if [ -d "$resource_bundle" ]; then
+    cp -R "$resource_bundle" "$bundle_dir/"
+fi
+
 cat > "$plist_path" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

@@ -127,6 +127,17 @@ final class AppModel {
     @ObservationIgnored
     var openSettingsWindow: (() -> Void)?
 
+    @ObservationIgnored
+    var openSetupGuideWindow: (() -> Void)?
+
+    /// Whether the setup guide window is currently presented.
+    var isSetupGuidePresented = false
+
+    /// Tracks whether hooks status has been loaded after startup so the
+    /// guide can be shown once the status is known.
+    @ObservationIgnored
+    private var hasCheckedHooksOnStartup = false
+
     var ignoresPointerExitDuringHarness = false
     var disablesOverlayEventMonitoringDuringHarness = false
 
@@ -391,6 +402,16 @@ final class AppModel {
             hooks.startClaudeUsageMonitoringIfNeeded()
             hooks.refreshCodexUsageState()
             hooks.startCodexUsageMonitoringIfNeeded()
+
+            // After hook status is loaded, check whether the setup guide
+            // should be presented. The refresh calls above schedule async
+            // Tasks that will set codexHookStatus / claudeHookStatus, so
+            // we wait briefly for them to settle.
+            Task { @MainActor [weak self] in
+                // Yield twice to let the refresh Tasks enqueue their results.
+                try? await Task.sleep(for: .milliseconds(500))
+                self?.checkHooksAndShowSetupGuideIfNeeded()
+            }
         } else {
             isResolvingInitialLiveSessions = false
         }
@@ -525,6 +546,29 @@ final class AppModel {
         }
 
         window.orderOut(nil)
+    }
+
+    // MARK: - Setup Guide
+
+    func showSetupGuide() {
+        isSetupGuidePresented = true
+        openSetupGuideWindow?()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func dismissSetupGuide() {
+        isSetupGuidePresented = false
+    }
+
+    /// Called after hook status is first loaded. Shows the setup guide if
+    /// any hooks are missing. Only fires once per launch.
+    func checkHooksAndShowSetupGuideIfNeeded() {
+        guard !hasCheckedHooksOnStartup else { return }
+        hasCheckedHooksOnStartup = true
+
+        if !hooks.claudeHooksInstalled || !hooks.codexHooksInstalled {
+            showSetupGuide()
+        }
     }
 
     func toggleSoundMuted() {
