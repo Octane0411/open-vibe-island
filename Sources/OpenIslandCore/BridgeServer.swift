@@ -51,7 +51,7 @@ public final class BridgeServer: @unchecked Sendable {
     private var localState = SessionState()
 
     public init(
-        socketURL: URL = BridgeSocketLocation.currentURL()
+        socketURL: URL = BridgeSocketLocation.defaultURL
     ) {
         self.socketURL = socketURL
         queue.setSpecific(key: queueKey, value: ())
