@@ -18,6 +18,12 @@ final class AppModel {
         case dismiss
     }
 
+    enum HostManagedPermissionAction {
+        case accept
+        case acceptAndDontAsk
+        case reject
+    }
+
     struct AcceptanceStep: Identifiable {
         let id: String
         let title: String
@@ -152,6 +158,9 @@ final class AppModel {
     private let terminalJumpAction: @Sendable (JumpTarget) throws -> String
 
     @ObservationIgnored
+    private let terminalApprovalAction: @Sendable (JumpTarget, TerminalJumpService.HostApprovalResponse) throws -> String
+
+    @ObservationIgnored
     var permissionRequestAlertPresenter: ((AgentSession) -> PermissionRequestAlertAction)?
 
     @ObservationIgnored
@@ -165,12 +174,19 @@ final class AppModel {
     @ObservationIgnored
     private var jumpTask: Task<Void, Never>?
 
+    @ObservationIgnored
+    private var approvalConfirmTask: Task<Void, Never>?
+
     init(
         terminalJumpAction: @escaping @Sendable (JumpTarget) throws -> String = { target in
             try TerminalJumpService().jump(to: target)
+        },
+        terminalApprovalAction: @escaping @Sendable (JumpTarget, TerminalJumpService.HostApprovalResponse) throws -> String = { target, response in
+            try TerminalJumpService().submitHostApproval(on: target, response: response)
         }
     ) {
         self.terminalJumpAction = terminalJumpAction
+        self.terminalApprovalAction = terminalApprovalAction
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
 
@@ -621,7 +637,10 @@ final class AppModel {
         }
 
         if isHostManagedPermissionRequest(for: session) {
-            handleHostManagedPermissionAction(for: session, mode: approved ? .default : nil)
+            handleHostManagedPermissionAction(
+                for: sessionID,
+                action: approved ? .accept : .reject
+            )
             return
         }
 
@@ -645,7 +664,16 @@ final class AppModel {
         }
 
         if isHostManagedPermissionRequest(for: session) {
-            handleHostManagedPermissionAction(for: session, mode: mode)
+            let action: HostManagedPermissionAction
+            switch mode {
+            case .default:
+                action = .accept
+            case nil:
+                action = .reject
+            case .plan, .acceptEdits, .dontAsk, .bypassPermissions:
+                action = .acceptAndDontAsk
+            }
+            handleHostManagedPermissionAction(for: sessionID, action: action)
             return
         }
 
@@ -681,27 +709,84 @@ final class AppModel {
         session.permissionRequest?.approvalHandledByHost == true
     }
 
-    private func handleHostManagedPermissionAction(for session: AgentSession, mode: ClaudePermissionMode?) {
-        dismissNotificationSurfaceIfPresent(for: session.id)
-        synchronizeSelection()
-        refreshOverlayPlacementIfVisible()
+    func handleHostManagedPermissionAction(for sessionID: String, action: HostManagedPermissionAction) {
+        guard let session = state.session(id: sessionID),
+              isHostManagedPermissionRequest(for: session) else {
+            return
+        }
 
         let hostName = session.permissionRequest?.approvalHostName
             ?? session.permissionRequest?.toolName
             ?? session.tool.displayName
 
-        switch mode {
-        case .default:
-            if session.jumpTarget != nil {
-                jumpToSession(session)
-            } else {
-                notchOpen(reason: .click, surface: .sessionList(actionableSessionID: session.id))
-                lastActionMessage = "Open \(hostName) and approve this request in the native permission prompt."
+        let openHostApprovalPrompt: (_ message: String, _ response: TerminalJumpService.HostApprovalResponse?) -> Void = { [weak self] message, response in
+            guard let self else { return }
+            self.dismissNotificationSurfaceIfPresent(for: session.id)
+            self.synchronizeSelection()
+            self.refreshOverlayPlacementIfVisible()
+            self.lastActionMessage = message
+
+            if let response, let jumpTarget = session.jumpTarget {
+                let submitAction = self.terminalApprovalAction
+                self.approvalConfirmTask?.cancel()
+                self.approvalConfirmTask = Task { [weak self] in
+                    do {
+                        let result = try await Task.detached(priority: .userInitiated) {
+                            try submitAction(jumpTarget, response)
+                        }.value
+
+                        guard !Task.isCancelled else {
+                            return
+                        }
+
+                        self?.lastActionMessage = result
+                    } catch is CancellationError {
+                        return
+                    } catch {
+                        guard !Task.isCancelled else {
+                            return
+                        }
+
+                        self?.lastActionMessage = "\(message) Auto-confirm failed: \(error.localizedDescription)"
+                    }
+                }
             }
-        case nil:
-            lastActionMessage = "Approval is still pending in \(hostName)."
-        case .acceptEdits, .plan, .dontAsk, .bypassPermissions:
-            lastActionMessage = "Auto-approval modes are unavailable for \(hostName) host permission prompts."
+        }
+
+        switch action {
+        case .accept:
+            send(
+                .resolvePermission(sessionID: session.id, resolution: .allowOnce()),
+                userMessage: "Approving permission for \(session.title)."
+            )
+            openHostApprovalPrompt("Open \(hostName) and accept this request in the native permission prompt.", .accept)
+        case .acceptAndDontAsk:
+            send(
+                .resolvePermission(
+                    sessionID: session.id,
+                    resolution: .allowOnce(
+                        updatedPermissions: [.setMode(destination: .session, mode: .dontAsk)]
+                    )
+                ),
+                userMessage: "Approving permission and requesting no further prompts for \(session.title)."
+            )
+            openHostApprovalPrompt("Open \(hostName) and accept this request in the native permission prompt.", .acceptAndDontAsk)
+        case .reject:
+            dismissNotificationSurfaceIfPresent(for: session.id)
+            state.resolvePermission(
+                sessionID: session.id,
+                resolution: .deny(message: "Permission denied in Open Island.", interrupt: false)
+            )
+            synchronizeSelection()
+            refreshOverlayPlacementIfVisible()
+            send(
+                .resolvePermission(
+                    sessionID: session.id,
+                    resolution: .deny(message: "Permission denied in Open Island.", interrupt: false)
+                ),
+                userMessage: "Denying permission for \(session.title)."
+            )
+            openHostApprovalPrompt("Rejected in Open Island.", .reject)
         }
     }
 

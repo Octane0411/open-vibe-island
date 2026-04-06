@@ -3,6 +3,45 @@ import Foundation
 import OpenIslandCore
 
 struct TerminalJumpService {
+    enum HostApprovalResponse {
+        case accept
+        case acceptAndDontAsk
+        case reject
+
+        var ghosttyKey: String {
+            switch self {
+            case .accept:
+                return "a"
+            case .acceptAndDontAsk:
+                return "p"
+            case .reject:
+                return "escape"
+            }
+        }
+
+        var terminalInput: String? {
+            switch self {
+            case .accept:
+                return "a"
+            case .acceptAndDontAsk:
+                return "p"
+            case .reject:
+                return nil
+            }
+        }
+
+        var statusLabel: String {
+            switch self {
+            case .accept:
+                return "accepted"
+            case .acceptAndDontAsk:
+                return "accepted with don't-ask preference"
+            case .reject:
+                return "rejected"
+            }
+        }
+    }
+
     typealias ApplicationResolver = @Sendable (String) -> URL?
     typealias AppRunningChecker = @Sendable (String) -> Bool
     typealias OpenAction = @Sendable ([String]) throws -> Void
@@ -127,6 +166,183 @@ struct TerminalJumpService {
         }
 
         throw TerminalJumpError.unsupportedTerminal(target.terminalApp)
+    }
+
+    func submitHostApproval(on target: JumpTarget, response: HostApprovalResponse) throws -> String {
+        guard try sendHostApprovalWithoutActivation(to: target, response: response) else {
+            throw TerminalJumpError.appleScriptFailed("Unable to submit host approval input without changing focus.")
+        }
+        return "Submitted \(response.statusLabel) input in \(target.terminalApp)."
+    }
+
+    private func sendHostApprovalWithoutActivation(
+        to target: JumpTarget,
+        response: HostApprovalResponse
+    ) throws -> Bool {
+        guard let descriptor = resolveTerminalApp(preferredName: target.terminalApp) else {
+            return false
+        }
+
+        switch descriptor.bundleIdentifier {
+        case "com.mitchellh.ghostty":
+            return try sendHostApprovalToGhosttyTerminal(target, response: response)
+        case "com.apple.Terminal":
+            return try sendHostApprovalToTerminalTab(target, response: response)
+        case "com.googlecode.iterm2":
+            return try sendHostApprovalToITermSession(target, response: response)
+        default:
+            return false
+        }
+    }
+
+    private func sendHostApprovalToGhosttyTerminal(
+        _ target: JumpTarget,
+        response: HostApprovalResponse
+    ) throws -> Bool {
+        let terminalSessionID = escapeAppleScript(target.terminalSessionID)
+        let workingDirectory = escapeAppleScript(target.workingDirectory)
+        let paneTitle = escapeAppleScript(target.paneTitle)
+        let decisionKey = response.ghosttyKey
+
+        let script = """
+        tell application "Ghostty"
+            if not (it is running) then return ""
+
+            set targetTerminal to missing value
+
+            repeat with aWindow in windows
+                repeat with aTab in tabs of aWindow
+                    repeat with aTerminal in terminals of aTab
+                        if "\(terminalSessionID)" is not "" and (id of aTerminal as text) is "\(terminalSessionID)" then
+                            set targetTerminal to aTerminal
+                            exit repeat
+                        end if
+                    end repeat
+
+                    if targetTerminal is not missing value then
+                        exit repeat
+                    end if
+                end repeat
+
+                if targetTerminal is not missing value then
+                    exit repeat
+                end if
+            end repeat
+
+            if targetTerminal is missing value and "\(workingDirectory)" is not "" then
+                repeat with aWindow in windows
+                    repeat with aTab in tabs of aWindow
+                        repeat with aTerminal in terminals of aTab
+                            if (working directory of aTerminal as text) is "\(workingDirectory)" then
+                                set targetTerminal to aTerminal
+                                exit repeat
+                            end if
+                        end repeat
+
+                        if targetTerminal is not missing value then
+                            exit repeat
+                        end if
+                    end repeat
+
+                    if targetTerminal is not missing value then
+                        exit repeat
+                    end if
+                end repeat
+            end if
+
+            if targetTerminal is missing value and "\(paneTitle)" is not "" then
+                repeat with aWindow in windows
+                    repeat with aTab in tabs of aWindow
+                        repeat with aTerminal in terminals of aTab
+                            if (name of aTerminal as text) contains "\(paneTitle)" then
+                                set targetTerminal to aTerminal
+                                exit repeat
+                            end if
+                        end repeat
+
+                        if targetTerminal is not missing value then
+                            exit repeat
+                        end if
+                    end repeat
+
+                    if targetTerminal is not missing value then
+                        exit repeat
+                    end if
+                end repeat
+            end if
+
+            if targetTerminal is missing value then return ""
+
+            send key "\(decisionKey)" to targetTerminal
+            return "submitted"
+        end tell
+        return ""
+        """
+
+        return try runAppleScript(script) == "submitted"
+    }
+
+    private func sendHostApprovalToTerminalTab(
+        _ target: JumpTarget,
+        response: HostApprovalResponse
+    ) throws -> Bool {
+        guard let decisionToken = response.terminalInput else {
+            return false
+        }
+        let terminalTTY = escapeAppleScript(target.terminalTTY)
+        let paneTitle = escapeAppleScript(target.paneTitle)
+
+        let script = """
+        tell application "Terminal"
+            if not (it is running) then return ""
+            repeat with aWindow in windows
+                repeat with aTab in tabs of aWindow
+                    if "\(terminalTTY)" is not "" and (tty of aTab as text) is "\(terminalTTY)" then
+                        do script "\(decisionToken)" in aTab
+                        return "submitted"
+                    end if
+                    if "\(paneTitle)" is not "" and (custom title of aTab as text) contains "\(paneTitle)" then
+                        do script "\(decisionToken)" in aTab
+                        return "submitted"
+                    end if
+                end repeat
+            end repeat
+        end tell
+        return ""
+        """
+
+        return try runAppleScript(script) == "submitted"
+    }
+
+    private func sendHostApprovalToITermSession(
+        _ target: JumpTarget,
+        response: HostApprovalResponse
+    ) throws -> Bool {
+        guard let decisionToken = response.terminalInput else {
+            return false
+        }
+        let script = """
+        tell application "iTerm"
+            if not (it is running) then return ""
+            repeat with aWindow in windows
+                repeat with aTab in tabs of aWindow
+                    repeat with aSession in sessions of aTab
+                        if "\(escapeAppleScript(target.terminalSessionID))" is not "" and (id of aSession as text) is "\(escapeAppleScript(target.terminalSessionID))" then
+                            tell aSession to write text "\(decisionToken)"
+                            return "submitted"
+                        end if
+                        if "\(escapeAppleScript(target.terminalTTY))" is not "" and (tty of aSession as text) is "\(escapeAppleScript(target.terminalTTY))" then
+                            tell aSession to write text "\(decisionToken)"
+                            return "submitted"
+                        end if
+                    end repeat
+                end repeat
+            end repeat
+        end tell
+        return ""
+        """
+
+        return try runAppleScript(script) == "submitted"
     }
 
     private func jumpToITermSession(_ target: JumpTarget) throws -> Bool {

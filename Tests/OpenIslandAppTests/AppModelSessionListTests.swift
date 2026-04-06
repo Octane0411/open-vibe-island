@@ -400,41 +400,45 @@ struct AppModelSessionListTests {
     }
 
     @Test
-    func codexHostEscalationModesDoNotResolvePermissionStateInApp() {
+    func hostManagedApprovalActionsSupportAcceptAcceptDontAskAndReject() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
-        model.state = SessionState(
-            sessions: [
-                AgentSession(
-                    id: "host-approval-session",
-                    title: "Codex · open-island",
-                    tool: .codex,
-                    origin: .live,
-                    attachmentState: .attached,
-                    phase: .waitingForApproval,
-                    summary: "Need host approval.",
-                    updatedAt: now,
-                    permissionRequest: PermissionRequest(
-                        title: "Codex host approval required",
-                        summary: "Need your approval in Codex.",
-                        affectedPath: "git push origin feat/permission-consent-popup",
-                        primaryActionTitle: "Open Codex",
-                        secondaryActionTitle: "Later",
-                        approvalHandledByHost: true,
-                        approvalHostName: "Codex"
-                    )
-                ),
-            ]
-        )
+        let makeSession: () -> AgentSession = {
+            AgentSession(
+                id: "host-approval-session",
+                title: "Codex · open-island",
+                tool: .codex,
+                origin: .live,
+                attachmentState: .attached,
+                phase: .waitingForApproval,
+                summary: "Need host approval.",
+                updatedAt: now,
+                permissionRequest: PermissionRequest(
+                    title: "Codex host approval required",
+                    summary: "Need your approval in Codex.",
+                    affectedPath: "git push origin feat/permission-consent-popup",
+                    primaryActionTitle: "Open Codex",
+                    secondaryActionTitle: "Later",
+                    approvalHandledByHost: true,
+                    approvalHostName: "Codex"
+                )
+            )
+        }
 
-        model.approvePermission(for: "host-approval-session", mode: .acceptEdits)
+        model.state = SessionState(sessions: [makeSession()])
+        model.handleHostManagedPermissionAction(for: "host-approval-session", action: .accept)
         #expect(model.state.session(id: "host-approval-session")?.phase == .waitingForApproval)
+        #expect(model.lastActionMessage == "Open Codex and accept this request in the native permission prompt.")
 
-        model.approvePermission(for: "host-approval-session", mode: nil)
+        model.state = SessionState(sessions: [makeSession()])
+        model.handleHostManagedPermissionAction(for: "host-approval-session", action: .acceptAndDontAsk)
         #expect(model.state.session(id: "host-approval-session")?.phase == .waitingForApproval)
+        #expect(model.lastActionMessage == "Open Codex and accept this request in the native permission prompt.")
 
-        model.approvePermission(for: "host-approval-session", mode: .default)
-        #expect(model.state.session(id: "host-approval-session")?.phase == .waitingForApproval)
+        model.state = SessionState(sessions: [makeSession()])
+        model.handleHostManagedPermissionAction(for: "host-approval-session", action: .reject)
+        #expect(model.state.session(id: "host-approval-session")?.phase == .completed)
+        #expect(model.lastActionMessage == "Rejected in Open Island.")
     }
 
     @Test

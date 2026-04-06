@@ -303,6 +303,11 @@ public final class BridgeServer: @unchecked Sendable {
                 return
             }
 
+            guard pendingApprovals[sessionID] != nil else {
+                send(.response(.acknowledged), to: clientID)
+                return
+            }
+
             localState.resolvePermission(sessionID: sessionID, resolution: resolution)
             broadcast([.event(
                 resolution.isApproved
