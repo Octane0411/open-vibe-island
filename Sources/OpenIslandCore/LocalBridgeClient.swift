@@ -11,7 +11,7 @@ public final class LocalBridgeClient: @unchecked Sendable {
     private var continuation: AsyncThrowingStream<AgentEvent, Error>.Continuation?
     private var buffer = Data()
 
-    public init(socketURL: URL = BridgeSocketLocation.defaultURL) {
+    public init(socketURL: URL = BridgeSocketLocation.currentURL()) {
         self.socketURL = socketURL
     }
 

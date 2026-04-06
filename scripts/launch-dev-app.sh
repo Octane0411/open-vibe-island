@@ -54,6 +54,8 @@ cat > "$plist_path" <<EOF
     <dict>
         <key>OPEN_ISLAND_HOOKS_BINARY</key>
         <string>$hooks_binary</string>
+        <key>OPEN_ISLAND_SOCKET_PATH</key>
+        <string>/tmp/open-island-dev-$(id -u).sock</string>
     </dict>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
