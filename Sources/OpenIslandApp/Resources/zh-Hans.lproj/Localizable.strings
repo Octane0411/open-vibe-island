@@ -142,7 +142,7 @@
 "setup.usageBridgeDesc" = "在本地缓存 Claude Code 速率限制数据";
 "setup.optional" = "可选";
 "setup.permissionsTitle" = "自动化访问权限";
-"setup.permissionsDesc" = "首次使用"跳转回终端"功能时，macOS 会请求权限。请在系统设置 > 隐私与安全性 > 自动化中允许。";
+"setup.permissionsDesc" = "首次使用「跳转回终端」功能时，macOS 会请求权限。请在系统设置 > 隐私与安全性 > 自动化中允许。";
 "setup.installAll" = "全部安装";
 "setup.skip" = "跳过";
 "setup.done" = "完成";
