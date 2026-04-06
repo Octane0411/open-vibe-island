@@ -71,24 +71,15 @@ All release notes **must be bilingual** (English + Simplified Chinese). Use the 
 1. Download **Open Island.dmg**, open it, and drag **Open Island** to **Applications**.
    下载 **Open Island.dmg**，打开后将 **Open Island** 拖入 **Applications**。
 
-2. On first launch, macOS Gatekeeper will block the unsigned app. Follow these steps:
-   首次启动时，macOS Gatekeeper 会阻止未签名应用。请按以下步骤操作：
+2. Since this is an unsigned app, macOS will show **"Open Island is damaged"** when you try to open it. Run this command in Terminal to fix it:
+   由于应用未签名，macOS 会提示**「"Open Island"已损坏」**。请在终端中执行以下命令：
 
-   **Method 1 (Recommended) | 方法一（推荐）：**
-   - Double-click to open the app → a warning dialog appears → click **Done**.
-     双击打开应用 → 弹出安全提示 → 点击**完成**。
-   - Go to **System Settings → Privacy & Security**, scroll down to find the blocked app message, click **Open Anyway**.
-     前往**系统设置 → 隐私与安全性**，向下滚动找到被阻止的应用提示，点击**仍要打开**。
-   - A confirmation dialog appears → click **Open Anyway** again, then enter your password.
-     再次弹出确认对话框 → 点击**仍要打开**，然后输入密码。
-
-   **Method 2 (Terminal) | 方法二（终端）：**
    ```bash
    xattr -dr com.apple.quarantine "/Applications/Open Island.app"
    ```
 
 3. Requirements: **macOS 14+**, **Apple Silicon** (M1/M2/M3/M4/M5).
-   系统要求：**macOS 14+**，**Apple Silicon**（M1/M2/M3/M4）。
+   系统要求：**macOS 14+**，**Apple Silicon**（M1/M2/M3/M4/M5）。
 
 > ⚠️ **Note**: This is an unsigned early-access build. Code signing and notarization will be added once our Apple Developer account is approved.
 > **注意**：这是未签名的早期测试版。代码签名和 Apple 公证将在 Developer 账号审核通过后添加。

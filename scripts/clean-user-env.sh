@@ -14,22 +14,22 @@ red()    { printf '\033[31m%s\033[0m\n' "$1"; }
 green()  { printf '\033[32m%s\033[0m\n' "$1"; }
 yellow() { printf '\033[33m%s\033[0m\n' "$1"; }
 
-remove() {
+clean_path() {
     local path="$1"
     if [[ -e "$path" || -L "$path" ]]; then
         if $DRY_RUN; then
             yellow "[dry-run] would remove: $path"
         else
-            rm -rf "$path"
+            /bin/rm -rf "$path"
             green "removed: $path"
         fi
     fi
 }
 
-remove_glob() {
+clean_glob() {
     local pattern="$1"
     for f in $~pattern(N); do
-        remove "$f"
+        clean_path "$f"
     done
 }
 
@@ -78,9 +78,9 @@ if changed:
 " "$claude_settings" 2>/dev/null && green "cleaned hooks in $claude_settings" || true
     fi
 fi
-remove ~/.claude/open-island-claude-hooks-install.json
-remove ~/.claude/vibe-island-claude-hooks-install.json
-remove_glob ~/.claude/'settings.json.backup.*'
+clean_path ~/.claude/open-island-claude-hooks-install.json
+clean_path ~/.claude/vibe-island-claude-hooks-install.json
+clean_glob ~/.claude/'settings.json.backup.*'
 
 # Codex: remove Open Island entries from hooks.json
 codex_hooks=~/.codex/hooks.json
@@ -92,9 +92,11 @@ if [[ -f "$codex_hooks" ]]; then
 import json, sys, pathlib
 p = pathlib.Path(sys.argv[1])
 d = json.loads(p.read_text())
+# Codex hooks.json nests events under a 'hooks' key
+hooks = d.get('hooks', d)
 changed = False
-for event in list(d.keys()):
-    original = d[event]
+for event in list(hooks.keys()):
+    original = hooks[event]
     if not isinstance(original, list): continue
     filtered = [h for h in original
                 if not any('OpenIslandHooks' in c.get('command','')
@@ -102,44 +104,44 @@ for event in list(d.keys()):
     if len(filtered) != len(original):
         changed = True
         if filtered:
-            d[event] = filtered
+            hooks[event] = filtered
         else:
-            del d[event]
+            del hooks[event]
 if changed:
     p.write_text(json.dumps(d, indent=2, ensure_ascii=False) + '\n')
     print('stripped OpenIsland hooks from', sys.argv[1])
 " "$codex_hooks" 2>/dev/null && green "cleaned hooks in $codex_hooks" || true
     fi
 fi
-remove ~/.codex/open-island-codex-hooks-install.json
-remove_glob ~/.codex/'config.toml.backup.*'
-remove_glob ~/.codex/'hooks.json.backup.*'
+clean_path ~/.codex/open-island-codex-hooks-install.json
+clean_glob ~/.codex/'config.toml.backup.*'
+clean_glob ~/.codex/'hooks.json.backup.*'
 
 # --- Installed hooks binary ---
 echo "--- Hooks binary ---"
-remove ~/Library/Application\ Support/OpenIsland
-remove ~/Library/Application\ Support/VibeIsland
+clean_path ~/Library/Application\ Support/OpenIsland
+clean_path ~/Library/Application\ Support/VibeIsland
 
 # --- Status line scripts ---
 echo "--- Status line ---"
-remove ~/.open-island
-remove ~/.vibe-island
+clean_path ~/.open-island
+clean_path ~/.vibe-island
 
 # --- Session registry & app data ---
 echo "--- App data ---"
-remove ~/Library/Application\ Support/open-island
+clean_path ~/Library/Application\ Support/open-island
 
 # --- Temp / socket files ---
 echo "--- Temp files ---"
-remove "/tmp/open-island-${uid}.sock"
-remove /tmp/open-island-rl.json
-remove /tmp/vibe-island-rl.json
+clean_path "/tmp/open-island-${uid}.sock"
+clean_path /tmp/open-island-rl.json
+clean_path /tmp/vibe-island-rl.json
 
 # --- Installed app ---
 echo "--- App bundle ---"
-remove /Applications/Open\ Island.app
-remove ~/Applications/Open\ Island.app
-remove ~/Applications/Open\ Island\ Dev.app
+clean_path /Applications/Open\ Island.app
+clean_path ~/Applications/Open\ Island.app
+clean_path ~/Applications/Open\ Island\ Dev.app
 
 # --- UserDefaults ---
 echo "--- UserDefaults ---"
