@@ -719,6 +719,15 @@ final class AppModel {
         updateLastActionMessage: Bool = true,
         ingress: TrackedEventIngress = .bridge
     ) {
+        // Snapshot whether this session was already completed before applying
+        // the event. Used to suppress duplicate/stale completion notifications
+        // (e.g. rollout watcher re-discovering an old completion on startup,
+        // or producing a duplicate sessionCompleted that races with the bridge).
+        let wasAlreadyCompleted: Bool = {
+            guard case let .sessionCompleted(payload) = event else { return false }
+            return state.session(id: payload.sessionID)?.phase == .completed
+        }()
+
         state.apply(event)
         reconcileIslandSurfaceAfterStateChange()
         if ingress == .bridge {
@@ -736,6 +745,7 @@ final class AppModel {
         }
 
         if let surface = IslandSurface.notificationSurface(for: event),
+           !wasAlreadyCompleted,
            (ingress == .bridge || !isResolvingInitialLiveSessions),
            notchStatus == .closed || notchOpenReason == .notification {
             presentNotificationSurface(surface)
