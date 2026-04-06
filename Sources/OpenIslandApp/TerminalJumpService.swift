@@ -279,6 +279,12 @@ struct TerminalJumpService {
                 end repeat
             end if
 
+            if targetTerminal is missing value then
+                try
+                    set targetTerminal to focused terminal of selected tab of front window
+                end try
+            end if
+
             if targetTerminal is missing value then return ""
 
             if \(useEscAction ? "true" : "false") then
@@ -315,18 +321,31 @@ struct TerminalJumpService {
         let script = """
         tell application "Terminal"
             if not (it is running) then return ""
+            set targetTab to missing value
             repeat with aWindow in windows
                 repeat with aTab in tabs of aWindow
                     if "\(terminalTTY)" is not "" and (tty of aTab as text) is "\(terminalTTY)" then
-                        do script "\(decisionToken)" in aTab
-                        return "submitted"
+                        set targetTab to aTab
+                        exit repeat
                     end if
                     if "\(paneTitle)" is not "" and (custom title of aTab as text) contains "\(paneTitle)" then
-                        do script "\(decisionToken)" in aTab
-                        return "submitted"
+                        set targetTab to aTab
+                        exit repeat
                     end if
                 end repeat
+                if targetTab is not missing value then exit repeat
             end repeat
+
+            if targetTab is missing value then
+                try
+                    set targetTab to selected tab of front window
+                end try
+            end if
+
+            if targetTab is missing value then return ""
+
+            do script "\(decisionToken)" in targetTab
+            return "submitted"
         end tell
         return ""
         """
@@ -344,20 +363,34 @@ struct TerminalJumpService {
         let script = """
         tell application "iTerm"
             if not (it is running) then return ""
+            set targetSession to missing value
             repeat with aWindow in windows
                 repeat with aTab in tabs of aWindow
                     repeat with aSession in sessions of aTab
                         if "\(escapeAppleScript(target.terminalSessionID))" is not "" and (id of aSession as text) is "\(escapeAppleScript(target.terminalSessionID))" then
-                            tell aSession to write text "\(decisionToken)"
-                            return "submitted"
+                            set targetSession to aSession
+                            exit repeat
                         end if
                         if "\(escapeAppleScript(target.terminalTTY))" is not "" and (tty of aSession as text) is "\(escapeAppleScript(target.terminalTTY))" then
-                            tell aSession to write text "\(decisionToken)"
-                            return "submitted"
+                            set targetSession to aSession
+                            exit repeat
                         end if
                     end repeat
+                    if targetSession is not missing value then exit repeat
                 end repeat
+                if targetSession is not missing value then exit repeat
             end repeat
+
+            if targetSession is missing value then
+                try
+                    set targetSession to current session of current window
+                end try
+            end if
+
+            if targetSession is missing value then return ""
+
+            tell targetSession to write text "\(decisionToken)"
+            return "submitted"
         end tell
         return ""
         """
