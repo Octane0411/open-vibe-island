@@ -762,8 +762,11 @@ final class AppModel {
             }
         }
 
+        // Safe: this closure is only called from WatchHTTPEndpoint's serial queue,
+        // never from the main thread, so DispatchQueue.main.sync won't deadlock.
         watchRelay.endpoint.activeSessionCountProvider = { [weak self] in
-            DispatchQueue.main.sync { [weak self] in
+            dispatchPrecondition(condition: .notOnQueue(.main))
+            return DispatchQueue.main.sync { [weak self] in
                 self?.state.sessions.count ?? 0
             }
         }

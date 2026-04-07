@@ -305,7 +305,7 @@ public enum AgentEvent: Equatable, Codable, Sendable {
 }
 
 public extension AgentEvent {
-    func extractSessionID() -> String? {
+    func extractSessionID() -> String {
         switch self {
         case let .sessionStarted(p): p.sessionID
         case let .activityUpdated(p): p.sessionID
