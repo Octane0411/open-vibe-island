@@ -38,20 +38,6 @@ jobs:
       - name: Build and package
         run: zsh scripts/package-app.sh
 
-      - name: Verify bundle structure
-        run: |
-          bundle="output/package/Open Island.app"
-
-          for f in \
-            "Contents/MacOS/OpenIslandApp" \
-            "Contents/Helpers/OpenIslandHooks" \
-            "Contents/Helpers/OpenIslandSetup" \
-            "OpenIsland_OpenIslandApp.bundle" \
-          ; do
-            if [[ ! -e "$bundle/$f" ]]; then
-              echo "::error::Missing required file: $f"
-              exit 1
-            fi
-          done
-
-          echo "Bundle structure OK"
+      # Bundle structure is verified inside package-app.sh itself.
+      # No separate verify step needed — the script exits non-zero on
+      # missing files.
