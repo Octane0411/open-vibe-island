@@ -46,7 +46,7 @@ jobs:
             "Contents/MacOS/OpenIslandApp" \
             "Contents/Helpers/OpenIslandHooks" \
             "Contents/Helpers/OpenIslandSetup" \
-            "OpenIsland_OpenIslandApp.bundle" \
+            "Contents/Resources/OpenIsland_OpenIslandApp.bundle" \
           ; do
             if [[ ! -e "$bundle/$f" ]]; then
               echo "::error::Missing required file: $f"
