@@ -112,6 +112,7 @@ jobs:
           echo "Bundle structure OK"
 
       - name: Notarize (best-effort)
+        if: vars.SKIP_NOTARIZE != 'true'
         id: notarize
         continue-on-error: true
         env:
