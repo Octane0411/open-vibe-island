@@ -584,8 +584,8 @@ final class HookInstallationCoordinator {
     }
 
     private func loadBundledOpenCodePlugin() -> Data? {
-        // SPM resource bundles use Bundle.module
-        if let url = Bundle.module.url(forResource: "open-island-opencode", withExtension: "js") {
+        // Use appResources which searches both Contents/Resources/ and .app root
+        if let url = Bundle.appResources.url(forResource: "open-island-opencode", withExtension: "js") {
             return try? Data(contentsOf: url)
         }
 

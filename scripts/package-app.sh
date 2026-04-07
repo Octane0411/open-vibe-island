@@ -54,11 +54,12 @@ else
     echo "WARNING: Sparkle.framework not found at $sparkle_framework — run 'swift package resolve' first." >&2
 fi
 
-# Copy SPM resource bundle to .app root — SPM's generated Bundle.module accessor
-# searches Bundle.main.bundleURL (the .app root), NOT Contents/Resources/.
+# Copy SPM resource bundle into Contents/Resources/ so the .app root stays
+# clean for code signing (no unsealed contents). Our custom
+# resource_bundle_accessor.swift searches Bundle.main.resourceURL first.
 spm_resource_bundle="$build_bin_dir/OpenIsland_OpenIslandApp.bundle"
 if [[ -d "$spm_resource_bundle" ]]; then
-    cp -R "$spm_resource_bundle" "$bundle_dir/"
+    cp -R "$spm_resource_bundle" "$bundle_dir/Contents/Resources/"
 else
     echo "WARNING: SPM resource bundle not found at $spm_resource_bundle — app may crash on launch." >&2
 fi
@@ -121,7 +122,7 @@ for required in \
     "Contents/Helpers/OpenIslandHooks" \
     "Contents/Helpers/OpenIslandSetup" \
     "Contents/Resources/OpenIsland.icns" \
-    "OpenIsland_OpenIslandApp.bundle" \
+    "Contents/Resources/OpenIsland_OpenIslandApp.bundle" \
 ; do
     if [[ ! -e "$bundle_dir/$required" ]]; then
         echo "ERROR: missing required file: $required" >&2
@@ -166,12 +167,9 @@ fi
 
 sparkle_fw="$bundle_dir/Contents/Frameworks/Sparkle.framework"
 
-resource_bundle_root="$bundle_dir/OpenIsland_OpenIslandApp.bundle"
-
 if [[ -n "$signing_identity" ]]; then
-    # Sign all nested code objects inside-out before the main app bundle.
+    # Sign nested code objects inside-out: Sparkle internals → helpers → app.
 
-    # 1. Sparkle framework internals: XPC services → helpers → framework
     if [[ -d "$sparkle_fw" ]]; then
         for xpc in "$sparkle_fw"/Versions/B/XPCServices/*.xpc; do
             [[ -d "$xpc" ]] && codesign --force --options runtime --timestamp --sign "$signing_identity" "$xpc"
@@ -181,18 +179,11 @@ if [[ -n "$signing_identity" ]]; then
         codesign --force --options runtime --timestamp --sign "$signing_identity" "$sparkle_fw"
     fi
 
-    # 2. SPM resource bundle at .app root (must be signed so the root is sealed)
-    if [[ -d "$resource_bundle_root" ]]; then
-        codesign --force --sign "$signing_identity" --timestamp "$resource_bundle_root"
-    fi
-
-    # 3. Helper binaries
     codesign --force --options runtime --timestamp --sign "$signing_identity" \
         "$bundle_dir/Contents/Helpers/OpenIslandHooks"
     codesign --force --options runtime --timestamp --sign "$signing_identity" \
         "$bundle_dir/Contents/Helpers/OpenIslandSetup"
 
-    # 4. Main app bundle
     codesign \
         --force \
         --options runtime \
@@ -210,7 +201,6 @@ else
         done
         codesign --force --sign - "$sparkle_fw" 2>/dev/null || true
     fi
-    [[ -d "$resource_bundle_root" ]] && codesign --force --sign - "$resource_bundle_root" 2>/dev/null || true
     codesign --force --sign - "$bundle_dir/Contents/Helpers/OpenIslandHooks" 2>/dev/null || true
     codesign --force --sign - "$bundle_dir/Contents/Helpers/OpenIslandSetup" 2>/dev/null || true
     codesign --force --sign - "$bundle_dir" 2>/dev/null || true

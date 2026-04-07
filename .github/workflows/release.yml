@@ -105,7 +105,7 @@ jobs:
             "Contents/Helpers/OpenIslandHooks" \
             "Contents/Helpers/OpenIslandSetup" \
             "Contents/Resources/OpenIsland.icns" \
-            "OpenIsland_OpenIslandApp.bundle" \
+            "Contents/Resources/OpenIsland_OpenIslandApp.bundle" \
           ; do
             if [[ ! -e "$bundle/$f" ]]; then
               echo "::error::Missing required file: $f"
