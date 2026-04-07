@@ -65,14 +65,13 @@ jobs:
           # Clean up
           rm -f "$CERT_FILE"
 
-      - name: Build and package (signed + notarized)
+      - name: Build and package (signed)
         env:
           OPEN_ISLAND_APP_NAME: "Open Island"
           OPEN_ISLAND_BUNDLE_ID: "app.openisland.OpenIsland"
           OPEN_ISLAND_VERSION: ${{ steps.version.outputs.version }}
           OPEN_ISLAND_BUILD_NUMBER: ${{ github.run_number }}
           OPEN_ISLAND_SIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          OPEN_ISLAND_NOTARY_PROFILE: "open-island-notary"
         run: zsh scripts/package-app.sh
 
       - name: Verify artifacts
@@ -89,9 +88,6 @@ jobs:
           echo ""
           echo "--- Signature verification ---"
           codesign --verify --deep --strict --verbose=2 "$bundle"
-          echo ""
-          echo "--- Notarization staple check ---"
-          xcrun stapler validate "$bundle" || echo "::warning::Staple validation failed (may be expected for draft releases)"
 
       - name: Verify bundle structure
         run: |
@@ -115,6 +111,37 @@ jobs:
 
           echo "Bundle structure OK"
 
+      - name: Notarize (best-effort)
+        id: notarize
+        continue-on-error: true
+        env:
+          OPEN_ISLAND_APP_NAME: "Open Island"
+        run: |
+          bundle="output/package/$OPEN_ISLAND_APP_NAME.app"
+          zip_path="output/package/$OPEN_ISLAND_APP_NAME.zip"
+          dmg_path="output/package/$OPEN_ISLAND_APP_NAME.dmg"
+
+          echo "Submitting for notarization..."
+          xcrun notarytool submit "$zip_path" \
+            --keychain-profile "open-island-notary" \
+            --wait --timeout 10m || { echo "::warning::Notarization failed or timed out"; exit 1; }
+
+          echo "Stapling app bundle..."
+          xcrun stapler staple -v "$bundle"
+
+          # Re-create zip with stapled bundle
+          rm -f "$zip_path"
+          ditto -c -k --keepParent "$bundle" "$zip_path"
+
+          # Re-sign and notarize DMG
+          codesign --force --sign "${{ secrets.APPLE_SIGNING_IDENTITY }}" --timestamp "$dmg_path"
+          xcrun notarytool submit "$dmg_path" \
+            --keychain-profile "open-island-notary" \
+            --wait --timeout 10m || { echo "::warning::DMG notarization failed or timed out"; exit 1; }
+          xcrun stapler staple -v "$dmg_path"
+
+          echo "notarized=true" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -130,8 +157,14 @@ jobs:
       - name: Append install instructions to release notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NOTARIZED: ${{ steps.notarize.outputs.notarized }}
         run: |
           existing="$(gh release view "$GITHUB_REF_NAME" --json body -q .body)"
+          if [[ "$NOTARIZED" == "true" ]]; then
+            install_note="> This build is signed and notarized by Apple. It will launch without Gatekeeper warnings."
+          else
+            install_note="> This build is signed with a Developer ID certificate. On first launch, right-click → **Open** to bypass Gatekeeper."
+          fi
           gh release edit "$GITHUB_REF_NAME" --notes "$(cat <<EOF
           ${existing}
 
@@ -142,7 +175,7 @@ jobs:
           1. Download **Open Island.dmg**, open it, and drag **Open Island** to **Applications**.
           2. Requires **macOS 14+** and **Apple Silicon** (M1/M2/M3/M4).
 
-          > This build is signed and notarized by Apple. It will launch without Gatekeeper warnings.
+          ${install_note}
           EOF
           )"
 
