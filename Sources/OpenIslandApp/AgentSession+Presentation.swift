@@ -154,11 +154,11 @@ extension AgentSession {
             headline += " (\(branch))"
         }
 
-        guard let prompt = spotlightHeadlinePromptText else {
-            return headline
+        if let customTitle = claudeMetadata?.customTitle?.trimmedForSurface, !customTitle.isEmpty {
+            return "\(headline) - \(customTitle)"
         }
 
-        return "\(headline) · \(prompt)"
+        return headline
     }
 
     var spotlightHeadlinePromptText: String? {
@@ -258,7 +258,11 @@ extension AgentSession {
     }
 
     var spotlightAgeBadge: String {
-        let age = max(0, Int(Date.now.timeIntervalSince(islandActivityDate)))
+        spotlightAgeBadge(at: .now)
+    }
+
+    func spotlightAgeBadge(at referenceDate: Date) -> String {
+        let age = max(0, Int(referenceDate.timeIntervalSince(startedAt)))
 
         if age < 60 {
             return "<1m"

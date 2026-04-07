@@ -123,8 +123,8 @@ struct AgentSessionPresentationTests {
             )
         )
 
-        // Headline uses initial prompt (session topic), prompt line uses latest
-        #expect(session.spotlightHeadlineText == "worktree · Start by fixing the island hover behavior.")
+        // Headline shows workspace name; prompt line shows latest prompt
+        #expect(session.spotlightHeadlineText == "worktree")
         #expect(session.spotlightPromptLineText == "You: Now make the overlay height fit the content.")
     }
 
@@ -146,7 +146,7 @@ struct AgentSessionPresentationTests {
             )
         )
 
-        #expect(session.spotlightHeadlineText == "worktree · Start by fixing the island hover behavior.")
+        #expect(session.spotlightHeadlineText == "worktree")
         #expect(session.spotlightPromptLineText == "You: Now make the overlay height fit the content.")
     }
 
@@ -176,8 +176,75 @@ struct AgentSessionPresentationTests {
             )
         )
 
-        #expect(session.spotlightHeadlineText == "worktree · Commit the README change.")
+        #expect(session.spotlightHeadlineText == "worktree")
         #expect(session.spotlightPromptLineText == "You: Also confirm the worktree status.")
         #expect(session.notificationHeaderPromptLineText == nil)
+    }
+
+    @Test
+    func ageBadgeShowsSessionDurationNotTimeSinceLastEvent() {
+        let startTime = Date(timeIntervalSince1970: 10_000)
+        let now = startTime.addingTimeInterval(600) // 10 minutes later
+
+        // Session started 10 minutes ago but updatedAt is recent (simulating active events)
+        let session = AgentSession(
+            id: "session-1",
+            title: "Claude · project",
+            tool: .claudeCode,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Working",
+            startedAt: startTime,
+            updatedAt: now.addingTimeInterval(-2) // updated 2 seconds ago
+        )
+
+        // Badge should reflect duration from startedAt (10m), not updatedAt (<1m)
+        let badge = session.spotlightAgeBadge(at: now)
+        #expect(badge == "10m")
+    }
+
+    @Test
+    func completedSessionRemainsVisibleDuringGracePeriod() {
+        let now = Date(timeIntervalSince1970: 100_000)
+        let session = AgentSession(
+            id: "s1", title: "Test", tool: .claudeCode,
+            phase: .completed, summary: "Done",
+            updatedAt: now.addingTimeInterval(-300) // 5 minutes ago
+        )
+
+        #expect(session.isVisibleInIsland(at: now) == true)
+    }
+
+    @Test
+    func completedSessionBecomesInvisibleAfterGracePeriod() {
+        let now = Date(timeIntervalSince1970: 100_000)
+        let session = AgentSession(
+            id: "s1", title: "Test", tool: .claudeCode,
+            phase: .completed, summary: "Done",
+            updatedAt: now.addingTimeInterval(-1201) // 20+ minutes ago
+        )
+
+        #expect(session.isVisibleInIsland(at: now) == false)
+    }
+
+    @Test
+    func ageBadgeScalesAcrossTimeRanges() {
+        let startTime = Date(timeIntervalSince1970: 10_000)
+
+        func badge(afterSeconds seconds: TimeInterval) -> String {
+            let session = AgentSession(
+                id: "s", title: "t", tool: .claudeCode,
+                phase: .running, summary: "",
+                startedAt: startTime, updatedAt: startTime
+            )
+            return session.spotlightAgeBadge(at: startTime.addingTimeInterval(seconds))
+        }
+
+        #expect(badge(afterSeconds: 30) == "<1m")
+        #expect(badge(afterSeconds: 120) == "2m")
+        #expect(badge(afterSeconds: 3_600) == "1h")
+        #expect(badge(afterSeconds: 7_200) == "2h")
+        #expect(badge(afterSeconds: 86_400) == "1d")
     }
 }

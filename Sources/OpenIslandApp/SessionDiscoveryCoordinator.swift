@@ -102,21 +102,27 @@ final class SessionDiscoveryCoordinator {
 
         // Restore persisted Codex sessions.
         if !payload.codexRecords.isEmpty {
-            state = SessionState(sessions: payload.codexRecords.map(\.restorableSession))
+            var current = state
+            current.mergeSessions(payload.codexRecords.map(\.restorableSession))
+            state = current
             onStatusMessage?("Restored \(payload.codexRecords.count) recent Codex session(s) from local cache.")
         }
 
         // Restore persisted Claude sessions.
         if !payload.claudeRecords.isEmpty {
             let restoredSessions = payload.claudeRecords.map(\.restorableSession)
-            state = SessionState(sessions: mergeDiscoveredSessions(restoredSessions))
+            var current = state
+            current.mergeSessions(mergeDiscoveredSessions(restoredSessions))
+            state = current
             onStatusMessage?("Restored \(payload.claudeRecords.count) recent Claude session(s) from local registry.")
         }
 
         // Merge discovered Codex sessions.
         if !payload.discoveredCodexRecords.isEmpty {
             let mergedSessions = mergeDiscoveredSessions(payload.discoveredCodexRecords.map(\.session))
-            state = SessionState(sessions: mergedSessions)
+            var current = state
+            current.mergeSessions(mergedSessions)
+            state = current
             scheduleCodexSessionPersistence()
             onStatusMessage?("Discovered \(payload.discoveredCodexRecords.count) recent Codex session(s) from local rollouts.")
         }
@@ -124,7 +130,9 @@ final class SessionDiscoveryCoordinator {
         // Merge discovered Claude sessions.
         if !payload.discoveredClaudeSessions.isEmpty {
             let mergedSessions = mergeDiscoveredSessions(payload.discoveredClaudeSessions)
-            state = SessionState(sessions: mergedSessions)
+            var current = state
+            current.mergeSessions(mergedSessions)
+            state = current
             scheduleClaudeSessionPersistence()
             onStatusMessage?("Discovered \(payload.discoveredClaudeSessions.count) recent Claude session(s) from local transcripts.")
         }

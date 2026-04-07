@@ -11,6 +11,18 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
             .appendingPathComponent(".claude/projects", isDirectory: true)
     }
 
+    /// Derives the transcript path from sessionID and cwd.
+    /// Claude Code stores transcripts at ~/.claude/projects/{encoded-cwd}/{sessionID}.jsonl
+    public static func guessTranscriptPath(sessionID: String, cwd: String?) -> String? {
+        guard let cwd else { return nil }
+        let encoded = cwd.replacingOccurrences(of: "/", with: "-")
+        let path = defaultRootURL
+            .appendingPathComponent(encoded)
+            .appendingPathComponent("\(sessionID).jsonl")
+            .path
+        return FileManager.default.fileExists(atPath: path) ? path : nil
+    }
+
     private let rootURL: URL
     private let fileManager: FileManager
     private let maxAge: TimeInterval
@@ -73,11 +85,14 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
 
         var sessionID = fileURL.deletingPathExtension().lastPathComponent
         var cwd: String?
+        var startedAt: Date?
         var updatedAt = fallbackUpdatedAt
         var initialUserPrompt: String?
         var lastUserPrompt: String?
         var lastAssistantMessage: String?
         var model: String?
+        var customTitle: String?
+        var slug: String?
         var currentTool: String?
         var currentToolInputPreview: String?
         var pendingToolUses: [String: (name: String, preview: String?)] = [:]
@@ -92,18 +107,30 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
                 sessionID = value
             }
 
+            if let value = object["slug"] as? String, !value.isEmpty {
+                slug = value
+            }
+
             if let value = object["cwd"] as? String, !value.isEmpty {
                 cwd = value
             }
 
             if let timestampText = object["timestamp"] as? String,
                let timestamp = ISO8601DateFormatter().date(from: timestampText) {
+                if startedAt == nil {
+                    startedAt = timestamp
+                }
                 updatedAt = timestamp
             }
 
             let topLevelType = object["type"] as? String
             let message = object["message"] as? [String: Any]
             let role = message?["role"] as? String
+
+            if topLevelType == "custom-title",
+               let value = object["customTitle"] as? String, !value.isEmpty {
+                customTitle = value
+            }
 
             if role == "user" {
                 if let prompt = promptText(from: message?["content"]) {
@@ -164,7 +191,8 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
             lastAssistantMessage: lastAssistantMessage,
             currentTool: currentTool,
             currentToolInputPreview: currentToolInputPreview,
-            model: model
+            model: model,
+            customTitle: customTitle ?? slug
         )
         let summary = lastAssistantMessage
             ?? lastUserPrompt
@@ -178,6 +206,7 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
             attachmentState: .stale,
             phase: .completed,
             summary: summary,
+            startedAt: startedAt,
             updatedAt: updatedAt,
             jumpTarget: JumpTarget(
                 terminalApp: "Unknown",
@@ -187,6 +216,57 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
             ),
             claudeMetadata: metadata.isEmpty ? nil : metadata
         )
+    }
+
+    /// Reads a transcript to extract the session title (custom-title or slug).
+    /// Reads from the end of the file for efficiency since slug appears on most lines
+    /// and custom-title may appear late.
+    public static func sessionTitle(inTranscriptAt path: String) -> String? {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else { return nil }
+        guard let text = String(data: data, encoding: .utf8) else { return nil }
+
+        var customTitle: String?
+        var slug: String?
+
+        for line in text.split(separator: "\n") {
+            guard let lineData = line.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else {
+                continue
+            }
+
+            if object["type"] as? String == "custom-title",
+               let value = object["customTitle"] as? String, !value.isEmpty {
+                customTitle = value
+            }
+
+            if let value = object["slug"] as? String, !value.isEmpty {
+                slug = value
+            }
+        }
+
+        return customTitle ?? slug
+    }
+
+    /// Reads only the first few lines of a transcript to extract the earliest timestamp.
+    public static func firstTimestamp(inTranscriptAt path: String) -> Date? {
+        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { handle.closeFile() }
+
+        // Read just the first 4 KB — the first timestamp is in the first line.
+        let chunk = handle.readData(ofLength: 4096)
+        guard let text = String(data: chunk, encoding: .utf8) else { return nil }
+
+        let formatter = ISO8601DateFormatter()
+        for line in text.split(separator: "\n") {
+            guard let data = line.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let timestampText = object["timestamp"] as? String,
+                  let timestamp = formatter.date(from: timestampText) else {
+                continue
+            }
+            return timestamp
+        }
+        return nil
     }
 
     private func promptText(from content: Any?) -> String? {

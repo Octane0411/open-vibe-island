@@ -284,6 +284,10 @@ struct ActiveAgentProcessDiscovery {
             return "WezTerm"
         }
 
+        if lowered.contains("/warp.app/contents/macos/stable") || lowered.contains("/warp.app/contents/macos/warp") {
+            return "Warp"
+        }
+
         return nil
     }
 

@@ -35,6 +35,9 @@ final class ProcessMonitoringCoordinator {
     private let terminalJumpTargetResolver = TerminalJumpTargetResolver()
 
     @ObservationIgnored
+    private var syntheticStartedAtCache: [String: Date] = [:]
+
+    @ObservationIgnored
     private var sessionAttachmentMonitorTask: Task<Void, Never>?
 
     private var state: SessionState {
@@ -84,17 +87,25 @@ final class ProcessMonitoringCoordinator {
         let sanitizedSessions = sanitizeCrossToolGhosttyJumpTargets(in: state.sessions)
         let sanitizedSessionsChanged = sanitizedSessions != state.sessions
         if sanitizedSessionsChanged {
-            state = SessionState(sessions: sanitizedSessions)
+            var current = state
+            current.mergeSessions(sanitizedSessions)
+            state = current
         }
 
-        let mergedSessions = mergedWithSyntheticClaudeSessions(
+        let syntheticSessions = buildSyntheticClaudeSessions(
             existingSessions: state.sessions,
             activeProcesses: activeProcesses
         )
-        let syntheticSessionsChanged = mergedSessions != state.sessions
+        let syntheticSessionsChanged = !syntheticSessions.isEmpty
         if syntheticSessionsChanged {
-            state = SessionState(sessions: mergedSessions)
+            var current = state
+            current.mergeSessions(syntheticSessions)
+            state = current
         }
+
+        // Remove synthetic sessions whose process is no longer running.
+        let activeSyntheticIDs = Set(syntheticSessions.map(\.id))
+        pruneGoneSyntheticSessions(activeIDs: activeSyntheticIDs)
 
         adoptProcessTTYsForClaudeSessions(activeProcesses: activeProcesses)
 
@@ -282,31 +293,14 @@ final class ProcessMonitoringCoordinator {
 
     // MARK: - Synthetic Claude sessions
 
-    func mergedWithSyntheticClaudeSessions(
+    func buildSyntheticClaudeSessions(
         existingSessions: [AgentSession],
         activeProcesses: [ActiveProcessSnapshot],
         now: Date = .now
     ) -> [AgentSession] {
-        let baseSessions = existingSessions.filter { !isSyntheticClaudeSession($0) }
-        let syntheticSessions = syntheticClaudeSessions(
-            existingSessions: baseSessions,
-            activeProcesses: activeProcesses,
-            now: now
-        )
-
-        return baseSessions + syntheticSessions
-    }
-
-    private func syntheticClaudeSessions(
-        existingSessions: [AgentSession],
-        activeProcesses: [ActiveProcessSnapshot],
-        now: Date
-    ) -> [AgentSession] {
-        let activeClaudeProcesses = activeProcesses.filter { process in
-            process.tool == .claudeCode
-        }
-        let trackedClaudeSessions = existingSessions.filter { session in
-            session.tool == .claudeCode && !isSyntheticClaudeSession(session)
+        let activeClaudeProcesses = activeProcesses.filter { $0.tool == .claudeCode }
+        let trackedClaudeSessions = existingSessions.filter {
+            $0.tool == .claudeCode && !isSyntheticClaudeSession($0)
         }
 
         let representedProcessKeys = representedClaudeProcessKeys(
@@ -328,23 +322,44 @@ final class ProcessMonitoringCoordinator {
         let workspaceName = workingDirectory.map { WorkspaceNameResolver.workspaceName(for: $0) } ?? "Workspace"
         let terminalApp = supportedTerminalApp(for: process.terminalApp) ?? "Unknown"
         let identity = processIdentityKey(process)
+        let sessionID = "\(syntheticClaudeSessionPrefix)\(identity)"
+
+        let transcriptPath = process.transcriptPath
+            ?? Self.inferredTranscriptPath(sessionID: process.sessionID, workingDirectory: workingDirectory)
+
+        let startedAt: Date = syntheticStartedAtCache[sessionID] ?? {
+            let resolved = transcriptPath.flatMap {
+                ClaudeTranscriptDiscovery.firstTimestamp(inTranscriptAt: $0)
+            } ?? now
+            syntheticStartedAtCache[sessionID] = resolved
+            return resolved
+        }()
+
+        let customTitle = transcriptPath.flatMap {
+            ClaudeTranscriptDiscovery.sessionTitle(inTranscriptAt: $0)
+        }
+        let metadata: ClaudeSessionMetadata? = (transcriptPath != nil || customTitle != nil)
+            ? ClaudeSessionMetadata(transcriptPath: transcriptPath, customTitle: customTitle)
+            : nil
 
         var session = AgentSession(
-            id: "\(syntheticClaudeSessionPrefix)\(identity)",
+            id: sessionID,
             title: "Claude · \(workspaceName)",
             tool: .claudeCode,
             origin: .live,
             attachmentState: .attached,
             phase: .completed,
             summary: "Claude session detected from \(terminalApp).",
-            updatedAt: now,
+            startedAt: startedAt,
+            updatedAt: startedAt,
             jumpTarget: JumpTarget(
                 terminalApp: terminalApp,
                 workspaceName: workspaceName,
                 paneTitle: "Claude \(workspaceName)",
                 workingDirectory: workingDirectory,
                 terminalTTY: process.terminalTTY
-            )
+            ),
+            claudeMetadata: metadata
         )
         session.isProcessAlive = true
         return session
@@ -352,6 +367,35 @@ final class ProcessMonitoringCoordinator {
 
     func isSyntheticClaudeSession(_ session: AgentSession) -> Bool {
         session.tool == .claudeCode && session.id.hasPrefix(syntheticClaudeSessionPrefix)
+    }
+
+    /// Remove synthetic sessions whose process is no longer detected.
+    private func pruneGoneSyntheticSessions(activeIDs: Set<String>) {
+        let allSessions = state.sessions
+        let goneSynthetics = allSessions.filter {
+            isSyntheticClaudeSession($0) && !activeIDs.contains($0.id)
+        }
+
+        guard !goneSynthetics.isEmpty else { return }
+
+        for session in goneSynthetics {
+            syntheticStartedAtCache.removeValue(forKey: session.id)
+        }
+
+        let remaining = allSessions.filter { session in
+            !goneSynthetics.contains(where: { $0.id == session.id })
+        }
+        state = SessionState(sessions: remaining)
+    }
+
+    /// Derives the transcript path from session ID and working directory
+    /// since Claude Code doesn't keep the file open (lsof can't find it).
+    private static func inferredTranscriptPath(sessionID: String?, workingDirectory: String?) -> String? {
+        guard let sessionID, let cwd = workingDirectory else { return nil }
+        let encodedCWD = cwd.replacingOccurrences(of: "/", with: "-")
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let path = "\(home)/.claude/projects/\(encodedCWD)/\(sessionID).jsonl"
+        return FileManager.default.fileExists(atPath: path) ? path : nil
     }
 
     // MARK: - Process matching
@@ -454,6 +498,15 @@ final class ProcessMonitoringCoordinator {
                 workingDirectory: workingDirectory
             ).filter { session in
                 guard let sessionTTY = normalizedTTYForMatching(session.jumpTarget?.terminalTTY) else {
+                    // Session has no TTY.  Transcript-discovered sessions (terminal
+                    // "Unknown") should not match a process that DOES have a TTY —
+                    // they belong to a different (likely dead) process and matching
+                    // here would keep them alive incorrectly.  Sessions with a known
+                    // terminal app (e.g. hook-connected but missing TTY) are OK.
+                    if processTTY != nil,
+                       supportedTerminalApp(for: session.jumpTarget?.terminalApp) == nil {
+                        return false
+                    }
                     return true
                 }
                 return processTTY == nil || sessionTTY == processTTY
@@ -672,6 +725,8 @@ final class ProcessMonitoringCoordinator {
             return "Terminal"
         case "cmux":
             return "cmux"
+        case "warp":
+            return "Warp"
         default:
             return nil
         }

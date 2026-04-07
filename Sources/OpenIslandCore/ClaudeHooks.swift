@@ -188,6 +188,7 @@ public struct ClaudeSessionMetadata: Equatable, Codable, Sendable {
     public var agentID: String?
     public var agentType: String?
     public var worktreeBranch: String?
+    public var customTitle: String?
     public var activeSubagents: [ClaudeSubagentInfo]
     public var activeTasks: [ClaudeTaskInfo]
 
@@ -204,6 +205,7 @@ public struct ClaudeSessionMetadata: Equatable, Codable, Sendable {
         agentID: String? = nil,
         agentType: String? = nil,
         worktreeBranch: String? = nil,
+        customTitle: String? = nil,
         activeSubagents: [ClaudeSubagentInfo] = [],
         activeTasks: [ClaudeTaskInfo] = []
     ) {
@@ -219,6 +221,7 @@ public struct ClaudeSessionMetadata: Equatable, Codable, Sendable {
         self.agentID = agentID
         self.agentType = agentType
         self.worktreeBranch = worktreeBranch
+        self.customTitle = customTitle
         self.activeSubagents = activeSubagents
         self.activeTasks = activeTasks
     }
@@ -236,6 +239,7 @@ public struct ClaudeSessionMetadata: Equatable, Codable, Sendable {
             && agentID == nil
             && agentType == nil
             && worktreeBranch == nil
+            && customTitle == nil
             && activeSubagents.isEmpty
             && activeTasks.isEmpty
     }

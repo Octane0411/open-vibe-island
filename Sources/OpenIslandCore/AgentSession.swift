@@ -9,11 +9,11 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
     public var displayName: String {
         switch self {
         case .claudeCode:
-            "Claude Code"
+            "Claude"
         case .codex:
             "Codex"
         case .geminiCLI:
-            "Gemini CLI"
+            "Gemini"
         case .openCode:
             "OpenCode"
         }
@@ -266,6 +266,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     public var attachmentState: SessionAttachmentState
     public var phase: SessionPhase
     public var summary: String
+    public var startedAt: Date
     public var updatedAt: Date
     public var permissionRequest: PermissionRequest?
     public var questionPrompt: QuestionPrompt?
@@ -294,6 +295,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         attachmentState: SessionAttachmentState = .stale,
         phase: SessionPhase,
         summary: String,
+        startedAt: Date? = nil,
         updatedAt: Date,
         permissionRequest: PermissionRequest? = nil,
         questionPrompt: QuestionPrompt? = nil,
@@ -309,6 +311,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         self.attachmentState = attachmentState
         self.phase = phase
         self.summary = summary
+        self.startedAt = startedAt ?? updatedAt
         self.updatedAt = updatedAt
         self.permissionRequest = permissionRequest
         self.questionPrompt = questionPrompt
@@ -326,6 +329,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         case attachmentState
         case phase
         case summary
+        case startedAt
         case updatedAt
         case permissionRequest
         case questionPrompt
@@ -344,7 +348,9 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         attachmentState = try container.decodeIfPresent(SessionAttachmentState.self, forKey: .attachmentState) ?? .stale
         phase = try container.decode(SessionPhase.self, forKey: .phase)
         summary = try container.decode(String.self, forKey: .summary)
-        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        let decodedUpdatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        startedAt = try container.decodeIfPresent(Date.self, forKey: .startedAt) ?? decodedUpdatedAt
+        updatedAt = decodedUpdatedAt
         permissionRequest = try container.decodeIfPresent(PermissionRequest.self, forKey: .permissionRequest)
         questionPrompt = try container.decodeIfPresent(QuestionPrompt.self, forKey: .questionPrompt)
         jumpTarget = try container.decodeIfPresent(JumpTarget.self, forKey: .jumpTarget)
@@ -362,6 +368,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         try container.encode(attachmentState, forKey: .attachmentState)
         try container.encode(phase, forKey: .phase)
         try container.encode(summary, forKey: .summary)
+        try container.encode(startedAt, forKey: .startedAt)
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(permissionRequest, forKey: .permissionRequest)
         try container.encodeIfPresent(questionPrompt, forKey: .questionPrompt)
@@ -389,12 +396,22 @@ public extension AgentSession {
         attachmentState.isLive
     }
 
+    private static let visibilityGracePeriod: TimeInterval = 20 * 60
+
     /// New visibility rule based on process liveness (Phase 1: parallel, not yet driving UI).
     /// Will replace `isAttachedToTerminal` in Phase 3.
     var isVisibleInIsland: Bool {
+        isVisibleInIsland(at: .now)
+    }
+
+    func isVisibleInIsland(at referenceDate: Date) -> Bool {
         if isDemoSession { return true }
         if phase.requiresAttention { return true }
         if isProcessAlive { return true }
+        // Keep completed sessions visible for a grace period after last activity.
+        if phase == .completed {
+            return referenceDate.timeIntervalSince(updatedAt) < Self.visibilityGracePeriod
+        }
         return false
     }
 

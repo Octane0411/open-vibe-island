@@ -1345,6 +1345,10 @@ public final class BridgeServer: @unchecked Sendable {
             return
         }
 
+        let transcriptStart: Date? = payload.transcriptPath.flatMap {
+            ClaudeTranscriptDiscovery.firstTimestamp(inTranscriptAt: $0)
+        }
+
         emit(
             .sessionStarted(
                 SessionStarted(
@@ -1354,7 +1358,7 @@ public final class BridgeServer: @unchecked Sendable {
                     origin: .live,
                     initialPhase: .completed,
                     summary: payload.implicitStartSummary,
-                    timestamp: .now,
+                    timestamp: transcriptStart ?? .now,
                     jumpTarget: payload.defaultJumpTarget,
                     claudeMetadata: payload.defaultClaudeMetadata.isEmpty ? nil : payload.defaultClaudeMetadata,
                     isRemote: payload.remote == true
@@ -1400,11 +1404,25 @@ public final class BridgeServer: @unchecked Sendable {
             return
         }
 
-        let mergedMetadata = mergedClaudeMetadata(
+        var mergedMetadata = mergedClaudeMetadata(
             existing: existingSession.claudeMetadata,
             update: payload.defaultClaudeMetadata,
             hookEventName: payload.hookEventName
         )
+
+        // Read session title from transcript if not yet set
+        if mergedMetadata.customTitle == nil {
+            let transcriptPath = mergedMetadata.transcriptPath
+                ?? payload.transcriptPath
+                ?? ClaudeTranscriptDiscovery.guessTranscriptPath(
+                    sessionID: payload.sessionID,
+                    cwd: payload.cwd
+                )
+            if let transcriptPath {
+                mergedMetadata.customTitle = ClaudeTranscriptDiscovery.sessionTitle(inTranscriptAt: transcriptPath)
+            }
+        }
+
         guard !mergedMetadata.isEmpty else {
             return
         }
@@ -1490,6 +1508,7 @@ public final class BridgeServer: @unchecked Sendable {
             agentID: update.agentID ?? existing?.agentID,
             agentType: update.agentType ?? existing?.agentType,
             worktreeBranch: update.worktreeBranch ?? existing?.worktreeBranch,
+            customTitle: update.customTitle ?? existing?.customTitle,
             activeSubagents: existing?.activeSubagents ?? [],
             activeTasks: existing?.activeTasks ?? []
         )

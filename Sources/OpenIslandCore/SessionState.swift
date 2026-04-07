@@ -56,6 +56,7 @@ public struct SessionState: Equatable, Sendable {
     public mutating func apply(_ event: AgentEvent) {
         switch event {
         case let .sessionStarted(payload):
+            let existingStartedAt = sessionsByID[payload.sessionID]?.startedAt
             var session = AgentSession(
                 id: payload.sessionID,
                 title: payload.title,
@@ -64,6 +65,7 @@ public struct SessionState: Equatable, Sendable {
                 attachmentState: .attached,
                 phase: payload.initialPhase,
                 summary: payload.summary,
+                startedAt: existingStartedAt ?? payload.timestamp,
                 updatedAt: payload.timestamp,
                 jumpTarget: payload.jumpTarget,
                 codexMetadata: payload.codexMetadata?.isEmpty == true ? nil : payload.codexMetadata,
@@ -335,6 +337,14 @@ public struct SessionState: Equatable, Sendable {
             session.isVisibleInIsland
         }
         return sessionsByID.count != before
+    }
+
+    /// Upserts the given sessions by ID without removing any existing sessions.
+    /// If a session with the same ID already exists, it is replaced. New sessions are added.
+    public mutating func mergeSessions(_ sessions: [AgentSession]) {
+        for session in sessions {
+            sessionsByID[session.id] = session
+        }
     }
 
     private mutating func upsert(_ session: AgentSession) {

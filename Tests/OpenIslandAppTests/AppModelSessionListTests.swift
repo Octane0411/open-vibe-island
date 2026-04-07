@@ -476,11 +476,11 @@ struct AppModelSessionListTests {
     }
 
     @Test
-    func mergedWithSyntheticClaudeSessionsAddsGhosttyClaudeProcessWhenNoTrackedSessionExists() {
+    func buildSyntheticClaudeSessionsAddsGhosttyClaudeProcessWhenNoTrackedSessionExists() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
 
-        let merged = model.monitoring.mergedWithSyntheticClaudeSessions(
+        let synthetics = model.monitoring.buildSyntheticClaudeSessions(
             existingSessions: [],
             activeProcesses: [
                 .init(
@@ -494,11 +494,11 @@ struct AppModelSessionListTests {
             now: now
         )
 
-        #expect(merged.count == 1)
-        #expect(merged.first?.id.hasPrefix("claude-process:") == true)
-        #expect(merged.first?.attachmentState == .attached)
-        #expect(merged.first?.jumpTarget?.terminalApp == "Ghostty")
-        #expect(merged.first?.jumpTarget?.terminalTTY == "/dev/ttys002")
+        #expect(synthetics.count == 1)
+        #expect(synthetics.first?.id.hasPrefix("claude-process:") == true)
+        #expect(synthetics.first?.attachmentState == .attached)
+        #expect(synthetics.first?.jumpTarget?.terminalApp == "Ghostty")
+        #expect(synthetics.first?.jumpTarget?.terminalTTY == "/dev/ttys002")
     }
 
     @Test
@@ -530,7 +530,7 @@ struct AppModelSessionListTests {
     }
 
     @Test
-    func mergedWithSyntheticClaudeSessionsSkipsSyntheticWhenAttachedClaudeAlreadyRepresentsGroup() {
+    func buildSyntheticClaudeSessionsSkipsSyntheticWhenAttachedClaudeAlreadyRepresentsGroup() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
         let existing = AgentSession(
@@ -551,7 +551,7 @@ struct AppModelSessionListTests {
             )
         )
 
-        let merged = model.monitoring.mergedWithSyntheticClaudeSessions(
+        let synthetics = model.monitoring.buildSyntheticClaudeSessions(
             existingSessions: [existing],
             activeProcesses: [
                 .init(
@@ -565,11 +565,12 @@ struct AppModelSessionListTests {
             now: now
         )
 
-        #expect(merged.map(\.id) == [existing.id])
+        // Process is already represented by the existing session — no synthetics created.
+        #expect(synthetics.isEmpty)
     }
 
     @Test
-    func mergedWithSyntheticClaudeSessionsSkipsSyntheticWhenStaleClaudeSessionMatchesActiveProcess() {
+    func buildSyntheticClaudeSessionsSkipsSyntheticWhenStaleClaudeSessionMatchesActiveProcess() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
         let existing = AgentSession(
@@ -593,7 +594,7 @@ struct AppModelSessionListTests {
             )
         )
 
-        let merged = model.monitoring.mergedWithSyntheticClaudeSessions(
+        let synthetics = model.monitoring.buildSyntheticClaudeSessions(
             existingSessions: [existing],
             activeProcesses: [
                 .init(
@@ -607,7 +608,8 @@ struct AppModelSessionListTests {
             now: now
         )
 
-        #expect(merged.map(\.id) == [existing.id])
+        // Process is already matched by the stale session via session ID — no synthetics created.
+        #expect(synthetics.isEmpty)
     }
 
     @Test
@@ -658,37 +660,16 @@ struct AppModelSessionListTests {
             ),
         ]
 
-        let merged = model.monitoring.mergedWithSyntheticClaudeSessions(
+        let synthetics = model.monitoring.buildSyntheticClaudeSessions(
             existingSessions: recoveredSessions,
             activeProcesses: activeProcesses,
             now: now
         )
 
-        // With relaxed CWD matching, recovered session matches the process
-        // so no synthetic session is created.
-        #expect(merged.count == 2)
-        #expect(merged.allSatisfy { !$0.id.hasPrefix("claude-process:") })
-
-        let probe = TerminalSessionAttachmentProbe()
-        let resolutions = probe.sessionResolutions(
-            for: merged,
-            ghosttyAvailability: .unavailable(appIsRunning: true),
-            terminalAvailability: .available([] as [TerminalSessionAttachmentProbe.TerminalTabSnapshot], appIsRunning: false),
-            activeProcesses: activeProcesses,
-            now: now
-        )
-
-        model.state = SessionState(sessions: merged)
-        _ = model.state.reconcileAttachmentStates(resolutions.mapValues(\.attachmentState))
-        _ = model.state.reconcileJumpTargets(
-            resolutions.reduce(into: [String: JumpTarget]()) { partialResult, entry in
-                if let correctedJumpTarget = entry.value.correctedJumpTarget {
-                    partialResult[entry.key] = correctedJumpTarget
-                }
-            }
-        )
-
-        let claudeSessions = model.state.sessions.filter { $0.tool == .claudeCode }
-        #expect(claudeSessions.count == 2)
+        // Transcript-recovered sessions (terminal "Unknown", no TTY) should NOT
+        // match a live process by CWD alone — that keeps stale sessions alive.
+        // A synthetic session is created for the unmatched process instead.
+        #expect(synthetics.count == 1)
+        #expect(synthetics.first?.id.hasPrefix("claude-process:") == true)
     }
 }
