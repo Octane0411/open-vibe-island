@@ -176,6 +176,8 @@ if [[ -n "$signing_identity" ]]; then
         done
         [[ -f "$sparkle_fw/Versions/B/Autoupdate" ]] && \
             codesign --force --options runtime --timestamp --sign "$signing_identity" "$sparkle_fw/Versions/B/Autoupdate"
+        [[ -d "$sparkle_fw/Versions/B/Updater.app" ]] && \
+            codesign --force --options runtime --timestamp --sign "$signing_identity" "$sparkle_fw/Versions/B/Updater.app"
         codesign --force --options runtime --timestamp --sign "$signing_identity" "$sparkle_fw"
     fi
 
