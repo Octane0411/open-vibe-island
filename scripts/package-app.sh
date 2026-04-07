@@ -166,33 +166,33 @@ fi
 
 sparkle_fw="$bundle_dir/Contents/Frameworks/Sparkle.framework"
 
+resource_bundle_root="$bundle_dir/OpenIsland_OpenIslandApp.bundle"
+
 if [[ -n "$signing_identity" ]]; then
-    # Sign Sparkle internals inside-out: XPC services → helpers → framework → app.
-    # Each nested code object must be signed before its parent.
+    # Sign all nested code objects inside-out before the main app bundle.
+
+    # 1. Sparkle framework internals: XPC services → helpers → framework
     if [[ -d "$sparkle_fw" ]]; then
         for xpc in "$sparkle_fw"/Versions/B/XPCServices/*.xpc; do
             [[ -d "$xpc" ]] && codesign --force --options runtime --timestamp --sign "$signing_identity" "$xpc"
         done
-        # Autoupdate helper
         [[ -f "$sparkle_fw/Versions/B/Autoupdate" ]] && \
             codesign --force --options runtime --timestamp --sign "$signing_identity" "$sparkle_fw/Versions/B/Autoupdate"
         codesign --force --options runtime --timestamp --sign "$signing_identity" "$sparkle_fw"
     fi
 
-    codesign \
-        --force \
-        --options runtime \
-        --timestamp \
-        --sign "$signing_identity" \
-        "$bundle_dir/Contents/Helpers/OpenIslandHooks"
+    # 2. SPM resource bundle at .app root (must be signed so the root is sealed)
+    if [[ -d "$resource_bundle_root" ]]; then
+        codesign --force --sign "$signing_identity" --timestamp "$resource_bundle_root"
+    fi
 
-    codesign \
-        --force \
-        --options runtime \
-        --timestamp \
-        --sign "$signing_identity" \
+    # 3. Helper binaries
+    codesign --force --options runtime --timestamp --sign "$signing_identity" \
+        "$bundle_dir/Contents/Helpers/OpenIslandHooks"
+    codesign --force --options runtime --timestamp --sign "$signing_identity" \
         "$bundle_dir/Contents/Helpers/OpenIslandSetup"
 
+    # 4. Main app bundle
     codesign \
         --force \
         --options runtime \
@@ -210,6 +210,7 @@ else
         done
         codesign --force --sign - "$sparkle_fw" 2>/dev/null || true
     fi
+    [[ -d "$resource_bundle_root" ]] && codesign --force --sign - "$resource_bundle_root" 2>/dev/null || true
     codesign --force --sign - "$bundle_dir/Contents/Helpers/OpenIslandHooks" 2>/dev/null || true
     codesign --force --sign - "$bundle_dir/Contents/Helpers/OpenIslandSetup" 2>/dev/null || true
     codesign --force --sign - "$bundle_dir" 2>/dev/null || true
