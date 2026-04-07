@@ -164,7 +164,21 @@ else
     echo "WARNING: smoke test skipped — binary not found at $smoke_binary" >&2
 fi
 
+sparkle_fw="$bundle_dir/Contents/Frameworks/Sparkle.framework"
+
 if [[ -n "$signing_identity" ]]; then
+    # Sign Sparkle internals inside-out: XPC services → helpers → framework → app.
+    # Each nested code object must be signed before its parent.
+    if [[ -d "$sparkle_fw" ]]; then
+        for xpc in "$sparkle_fw"/Versions/B/XPCServices/*.xpc; do
+            [[ -d "$xpc" ]] && codesign --force --options runtime --timestamp --sign "$signing_identity" "$xpc"
+        done
+        # Autoupdate helper
+        [[ -f "$sparkle_fw/Versions/B/Autoupdate" ]] && \
+            codesign --force --options runtime --timestamp --sign "$signing_identity" "$sparkle_fw/Versions/B/Autoupdate"
+        codesign --force --options runtime --timestamp --sign "$signing_identity" "$sparkle_fw"
+    fi
+
     codesign \
         --force \
         --options runtime \
@@ -190,7 +204,12 @@ if [[ -n "$signing_identity" ]]; then
     codesign --verify --deep --strict --verbose=2 "$bundle_dir"
 else
     # Ad-hoc sign so macOS accepts the embedded Sparkle.framework.
-    codesign --force --sign - "$bundle_dir/Contents/Frameworks/Sparkle.framework" 2>/dev/null || true
+    if [[ -d "$sparkle_fw" ]]; then
+        for xpc in "$sparkle_fw"/Versions/B/XPCServices/*.xpc; do
+            [[ -d "$xpc" ]] && codesign --force --sign - "$xpc" 2>/dev/null || true
+        done
+        codesign --force --sign - "$sparkle_fw" 2>/dev/null || true
+    fi
     codesign --force --sign - "$bundle_dir/Contents/Helpers/OpenIslandHooks" 2>/dev/null || true
     codesign --force --sign - "$bundle_dir/Contents/Helpers/OpenIslandSetup" 2>/dev/null || true
     codesign --force --sign - "$bundle_dir" 2>/dev/null || true

@@ -25,10 +25,55 @@ jobs:
           brew install create-dmg
           pip3 install --break-system-packages Pillow
 
-      - name: Build and package
+      - name: Import signing certificate
         env:
+          CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          # Decode the p12 certificate from base64
+          CERT_FILE="$(mktemp).p12"
+          echo "$CERTIFICATE_P12" | base64 --decode > "$CERT_FILE"
+
+          # Create a temporary keychain
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Import the certificate
+          security import "$CERT_FILE" \
+            -P "$CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+
+          # Add the keychain to the search list
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+
+          # Store notarytool credentials in the keychain
+          xcrun notarytool store-credentials "open-island-notary" \
+            --apple-id "${{ secrets.APPLE_ID }}" \
+            --team-id "${{ secrets.APPLE_TEAM_ID }}" \
+            --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" \
+            --keychain "$KEYCHAIN_PATH"
+
+          # Clean up
+          rm -f "$CERT_FILE"
+
+      - name: Build and package (signed + notarized)
+        env:
+          OPEN_ISLAND_APP_NAME: "Open Island"
+          OPEN_ISLAND_BUNDLE_ID: "app.openisland.OpenIsland"
           OPEN_ISLAND_VERSION: ${{ steps.version.outputs.version }}
           OPEN_ISLAND_BUILD_NUMBER: ${{ github.run_number }}
+          OPEN_ISLAND_SIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          OPEN_ISLAND_NOTARY_PROFILE: "open-island-notary"
         run: zsh scripts/package-app.sh
 
       - name: Verify artifacts
@@ -36,6 +81,18 @@ jobs:
           test -f "output/package/Open Island.zip"
           test -f "output/package/Open Island.dmg"
           ls -lh output/package/
+
+      - name: Verify code signature
+        run: |
+          bundle="output/package/Open Island.app"
+          echo "--- Signature info ---"
+          codesign -dvv "$bundle"
+          echo ""
+          echo "--- Signature verification ---"
+          codesign --verify --deep --strict --verbose=2 "$bundle"
+          echo ""
+          echo "--- Notarization staple check ---"
+          xcrun stapler validate "$bundle" || echo "::warning::Staple validation failed (may be expected for draft releases)"
 
       - name: Verify bundle structure
         run: |
@@ -84,10 +141,14 @@ jobs:
           ## Installation
 
           1. Download **Open Island.dmg**, open it, and drag **Open Island** to **Applications**.
-          2. First launch: right-click the app → **Open** (macOS Gatekeeper will warn about unsigned apps).
-             - Alternatively, run in Terminal: \`xattr -cr /Applications/Open\ Island.app\`
-          3. Requires **macOS 14+** and **Apple Silicon** (M1/M2/M3/M4).
+          2. Requires **macOS 14+** and **Apple Silicon** (M1/M2/M3/M4).
 
-          > This is an unsigned early-access build. Code signing and notarization will be added once our Apple Developer account is approved.
+          > This build is signed and notarized by Apple. It will launch without Gatekeeper warnings.
           EOF
           )"
+
+      - name: Cleanup keychain
+        if: always()
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
