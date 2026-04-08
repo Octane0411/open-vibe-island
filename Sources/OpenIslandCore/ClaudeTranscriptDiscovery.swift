@@ -156,7 +156,10 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
             transcriptPath: fileURL.path,
             workingDirectory: cwd,
             startedAt: startedAt ?? fallbackUpdatedAt,
-            lastActivityAt: updatedAt,
+            // updatedAt = last JSON timestamp inside the JSONL (can lag behind actual writes).
+            // fallbackUpdatedAt = file system modification date (always current).
+            // Use whichever is more recent so sessions don't appear stale on startup.
+            lastActivityAt: max(updatedAt, fallbackUpdatedAt),
             customTitle: customTitle ?? slug,
             initialPrompt: initialUserPrompt,
             lastPrompt: lastUserPrompt,

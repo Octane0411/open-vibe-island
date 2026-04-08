@@ -112,6 +112,7 @@ struct IslandPanelView: View {
 
     @Namespace private var notchNamespace
     @State private var isHovering = false
+    @State private var showDebugIDs = false
 
     private var isOpened: Bool {
         model.notchStatus == .opened
@@ -380,6 +381,13 @@ struct IslandPanelView: View {
     private var openedHeaderButtons: some View {
         HStack(spacing: Self.headerControlSpacing) {
             headerIconButton(
+                systemName: showDebugIDs ? "ladybug.fill" : "ladybug",
+                tint: showDebugIDs ? .green.opacity(0.82) : .white.opacity(0.42)
+            ) {
+                showDebugIDs.toggle()
+            }
+
+            headerIconButton(
                 systemName: model.isSoundMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
                 tint: model.isSoundMuted ? .orange.opacity(0.92) : .white.opacity(0.62)
             ) {
@@ -509,6 +517,7 @@ struct IslandPanelView: View {
                     isActionable: true,
                     useDrawingGroup: model.notchStatus == .opened,
                     isInteractive: model.notchStatus == .opened,
+                    showDebugIDs: showDebugIDs,
                     lang: model.lang,
                     onApprove: { model.approvePermission(for: session.id, mode: $0) },
                     onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
@@ -536,6 +545,7 @@ struct IslandPanelView: View {
                         isActionable: session.id == actionableSessionID,
                         useDrawingGroup: model.notchStatus == .opened,
                         isInteractive: model.notchStatus == .opened,
+                        showDebugIDs: showDebugIDs,
                         lang: model.lang,
                         onApprove: { model.approvePermission(for: session.id, mode: $0) },
                         onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
@@ -958,6 +968,7 @@ private struct IslandSessionRow: View {
     var isActionable: Bool = false
     var useDrawingGroup: Bool = true
     var isInteractive: Bool = true
+    var showDebugIDs: Bool = false
     var lang: LanguageManager = .shared
     var onApprove: ((ClaudePermissionMode?) -> Void)?
     var onAnswer: ((QuestionPromptResponse) -> Void)?
@@ -995,7 +1006,8 @@ private struct IslandSessionRow: View {
                             if let terminalBadge = session.spotlightTerminalBadge {
                                 compactBadge(terminalBadge, presence: presence)
                             }
-                            rowActionButtons(presence: presence)
+                            compactBadge(session.spotlightAgeBadge, presence: presence)
+                            // rowActionButtons(presence: presence)
                         }
                     }
 
@@ -1013,6 +1025,11 @@ private struct IslandSessionRow: View {
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(activityColor(for: presence).opacity(0.94))
                             .lineLimit(1)
+                    }
+
+                    // Debug: session ID + terminal ID
+                    if showDebugIDs {
+                        debugIDLine
                     }
 
                     if showsExpandedContent,
@@ -1122,8 +1139,20 @@ private struct IslandSessionRow: View {
         .onChange(of: isInteractive) { _, interactive in
             if !interactive {
                 isManuallyExpanded = false
+                isHighlighted = false
             }
         }
+    }
+
+    private var debugIDLine: some View {
+        let sid = String(session.id.prefix(8))
+        let tid = String((session.terminal?.terminalSessionID ?? "none").prefix(8))
+        let label = "sid: " + sid + "  tid: " + tid
+        return Text(label)
+            .font(.system(size: 10, weight: .regular, design: .monospaced))
+            .foregroundStyle(.white.opacity(0.3))
+            .lineLimit(1)
+            .textSelection(.enabled)
     }
 
     private var actionableBorderColor: Color {
@@ -1370,11 +1399,13 @@ private struct IslandSessionRow: View {
 
     private func handlePrimaryTap() {
         let rawPresence = session.islandPresence(at: referenceDate)
+        print("[IslandSessionRow] tap — presence=\(rawPresence) expanded=\(isManuallyExpanded) session=\(session.id.prefix(8))")
         if rawPresence == .inactive && !isManuallyExpanded {
             withAnimation(.easeInOut(duration: 0.2)) {
                 isManuallyExpanded = true
             }
         } else {
+            print("[IslandSessionRow] calling onJump")
             onJump()
         }
     }

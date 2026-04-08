@@ -28,6 +28,7 @@ final class ProcessMonitoringCoordinator {
     @ObservationIgnored
     private let terminalJumpTargetResolver = TerminalJumpTargetResolver()
 
+
     @ObservationIgnored
     private var sessionAttachmentMonitorTask: Task<Void, Never>?
 
