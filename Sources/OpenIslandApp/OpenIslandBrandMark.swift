@@ -31,6 +31,8 @@ struct OpenIslandBrandMark: View {
     @State private var eyesVisible: Bool = true
     @State private var antennaOffset: CGFloat = 0
     @State private var legOffset: CGFloat = 0
+    @State private var alertShake: CGFloat = 0
+    @State private var hopOffset: CGFloat = 0
 
     private static let blinkTimer = Timer.publish(every: 5.0, on: .main, in: .common).autoconnect()
 
@@ -71,7 +73,7 @@ struct OpenIslandBrandMark: View {
             ZStack(alignment: .topLeading) {
                 ForEach(Array(Self.pixels.enumerated()), id: \.offset) { _, pixel in
                     Rectangle()
-                        .fill(fillColor(for: pixel.role))
+                        .fill(fillColor(for: pixel.role, part: pixel.part))
                         .opacity(pixel.part == .eye && !eyesVisible ? 0 : 1)
                         .frame(width: cell, height: cell)
                         .offset(
@@ -83,6 +85,7 @@ struct OpenIslandBrandMark: View {
         }
         .frame(width: size, height: size)
         .drawingGroup(opaque: false, colorMode: .extendedLinear)
+        .offset(y: hopOffset)
         .opacity(style == .duotone ? (breathePhase ? 1.0 : 0.78) : 1.0)
         .animation(
             style == .duotone
@@ -110,7 +113,36 @@ struct OpenIslandBrandMark: View {
 
     private func updatePartAnimations(_ anim: ScoutAnimation) {
         switch anim {
-        case .active, .permissionAlert, .taskComplete:
+        case .permissionAlert:
+            // Rapid antenna shake overrides normal wiggle
+            withAnimation(.easeInOut(duration: 0.1).repeatForever(autoreverses: true)) {
+                alertShake = 2.0
+            }
+            withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
+                legOffset = 1.5
+            }
+            antennaOffset = 0 // disable normal wiggle during alert
+        case .taskComplete:
+            // Hop animation
+            withAnimation(.easeInOut(duration: 0.75).repeatForever(autoreverses: true)) {
+                antennaOffset = 1.5
+            }
+            withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
+                legOffset = 1.5
+            }
+            withAnimation(.spring(response: 0.2, dampingFraction: 0.4)) {
+                hopOffset = -6
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                    hopOffset = 0
+                }
+            }
+        case .active:
+            withAnimation(.easeInOut(duration: 0.3)) {
+                alertShake = 0
+                hopOffset = 0
+            }
             withAnimation(.easeInOut(duration: 0.75).repeatForever(autoreverses: true)) {
                 antennaOffset = 1.5
             }
@@ -121,6 +153,8 @@ struct OpenIslandBrandMark: View {
             withAnimation(.easeInOut(duration: 0.3)) {
                 antennaOffset = 0
                 legOffset = 0
+                alertShake = 0
+                hopOffset = 0
             }
         }
     }
@@ -134,14 +168,18 @@ struct OpenIslandBrandMark: View {
 
     private func partOffsetX(_ part: PixelPart) -> CGFloat {
         switch part {
+        case .antenna where animation == .permissionAlert: return alertShake
         case .leg: return legOffset
         default: return 0
         }
     }
 
-    private func fillColor(for role: Character) -> Color {
+    private func fillColor(for role: Character, part: PixelPart) -> Color {
         switch style {
         case .duotone:
+            if part == .antenna && animation == .permissionAlert {
+                return Color(red: 0.98, green: 0.75, blue: 0.15) // amber/yellow
+            }
             switch role {
             case "B":
                 return tint.opacity(animation != .idle ? 1.0 : 0.86)
