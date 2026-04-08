@@ -20,6 +20,9 @@ struct OpenIslandMobileApp: App {
 
                     // Wire notification manager into connection manager
                     connectionManager.notificationManager = notificationManager
+
+                    // Activate WatchConnectivity session
+                    WatchConnectivityManager.shared.activate()
                 }
         }
     }

@@ -121,6 +121,19 @@ final class ConnectionManager: ObservableObject {
         // Observe notification action relay for resolution posting
         observeNotificationActions()
 
+        // Wire Watch resolution callback to post resolution back to Mac
+        WatchConnectivityManager.shared.onResolution = { [weak self] requestID, action in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    try await self.postResolution(requestID: requestID, action: action)
+                    self.markEventResolved(requestID: requestID, action: action)
+                } catch {
+                    Self.logger.error("Failed to post Watch resolution: \(error.localizedDescription)")
+                }
+            }
+        }
+
         // Monitor network changes for WiFi disconnect/reconnect
         startNetworkMonitor()
 
@@ -313,6 +326,10 @@ final class ConnectionManager: ObservableObject {
                 if notifyPermissions {
                     notificationManager?.sendPermissionNotification(e)
                 }
+                WatchConnectivityManager.shared.sendEvent(.permissionRequest(.init(
+                    requestID: e.requestID, sessionID: e.sessionID, agentTool: e.agentTool,
+                    title: e.title, summary: e.summary, workingDirectory: e.workingDirectory
+                )))
                 Self.logger.info("Permission requested: \(e.title)")
             } else {
                 event = nil
@@ -324,6 +341,10 @@ final class ConnectionManager: ObservableObject {
                 if notifyQuestions {
                     notificationManager?.sendQuestionNotification(e)
                 }
+                WatchConnectivityManager.shared.sendEvent(.question(.init(
+                    requestID: e.requestID, sessionID: e.sessionID, agentTool: e.agentTool,
+                    title: e.title, options: e.options
+                )))
                 Self.logger.info("Question asked: \(e.title)")
             } else {
                 event = nil
@@ -335,6 +356,9 @@ final class ConnectionManager: ObservableObject {
                 if notifyCompletions {
                     notificationManager?.sendCompletionNotification(e, silent: silentCompletions)
                 }
+                WatchConnectivityManager.shared.sendEvent(.sessionCompleted(.init(
+                    sessionID: e.sessionID, agentTool: e.agentTool, summary: e.summary
+                )))
                 Self.logger.info("Session completed: \(e.summary)")
             } else {
                 event = nil
@@ -343,6 +367,7 @@ final class ConnectionManager: ObservableObject {
         case "actionableStateResolved":
             if let e = try? decoder.decode(WatchResolvedEvent.self, from: data) {
                 handleRemoteResolution(e)
+                WatchConnectivityManager.shared.sendEvent(.resolved(requestID: e.requestID))
                 Self.logger.info("Remote resolution for request \(e.requestID)")
             }
             event = nil

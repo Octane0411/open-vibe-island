@@ -17,6 +17,8 @@
 		AA000008 /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000009 /* NotificationManager.swift */; };
 		AA000010 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000010 /* SettingsView.swift */; };
 		AA000011 /* EventDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000011 /* EventDetailView.swift */; };
+		AA000012 /* WatchMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000012 /* WatchMessage.swift */; };
+		AA000013 /* WatchConnectivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000013 /* WatchConnectivityManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -31,6 +33,8 @@
 		AB000009 /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
 		AB000010 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		AB000011 /* EventDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventDetailView.swift; sourceTree = "<group>"; };
+		AB000012 /* WatchMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchMessage.swift; sourceTree = "<group>"; };
+		AB000013 /* WatchConnectivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchConnectivityManager.swift; sourceTree = "<group>"; };
 		AC000001 /* OpenIslandMobile.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenIslandMobile.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -48,9 +52,18 @@
 		AE000001 = {
 			isa = PBXGroup;
 			children = (
+				AE000008 /* Shared */,
 				AE000002 /* OpenIslandMobile */,
 				AE000006 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		AE000008 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				AB000012 /* WatchMessage.swift */,
+			);
+			path = Shared;
 			sourceTree = "<group>";
 		};
 		AE000002 /* OpenIslandMobile */ = {
@@ -81,6 +94,7 @@
 				AB000004 /* BonjourDiscovery.swift */,
 				AB000005 /* SSEClient.swift */,
 				AB000006 /* ConnectionManager.swift */,
+			AB000013 /* WatchConnectivityManager.swift */,
 			);
 			path = Network;
 			sourceTree = "<group>";
@@ -189,6 +203,8 @@
 				AA000008 /* NotificationManager.swift in Sources */,
 				AA000010 /* SettingsView.swift in Sources */,
 				AA000011 /* EventDetailView.swift in Sources */,
+				AA000012 /* WatchMessage.swift in Sources */,
+				AA000013 /* WatchConnectivityManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
