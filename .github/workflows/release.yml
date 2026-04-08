@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   build-and-release:
@@ -72,6 +73,7 @@ jobs:
           OPEN_ISLAND_VERSION: ${{ steps.version.outputs.version }}
           OPEN_ISLAND_BUILD_NUMBER: ${{ github.run_number }}
           OPEN_ISLAND_SIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          OPEN_ISLAND_UNIVERSAL: "true"
         run: zsh scripts/package-app.sh
 
       - name: Verify artifacts
@@ -143,6 +145,60 @@ jobs:
 
           echo "notarized=true" >> "$GITHUB_OUTPUT"
 
+      - name: Sign update with EdDSA (Sparkle)
+        id: sparkle_sign
+        env:
+          SPARKLE_EDDSA_KEY: ${{ secrets.SPARKLE_EDDSA_KEY }}
+        run: |
+          sign_tool=".build/artifacts/sparkle/Sparkle/bin/sign_update"
+          zip_path="output/package/Open Island.zip"
+
+          if [[ -z "$SPARKLE_EDDSA_KEY" ]]; then
+            echo "::warning::SPARKLE_EDDSA_KEY not set — skipping appcast update"
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # sign_update reads the private EdDSA key from stdin via --ed-key-file -
+          sign_output="$(echo "$SPARKLE_EDDSA_KEY" | "$sign_tool" "$zip_path" --ed-key-file -)"
+          ed_signature="$(echo "$sign_output" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')"
+          length="$(echo "$sign_output" | sed -n 's/.*length="\([^"]*\)".*/\1/p')"
+
+          echo "ed_signature=$ed_signature" >> "$GITHUB_OUTPUT"
+          echo "length=$length" >> "$GITHUB_OUTPUT"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+          echo "EdDSA signature: $ed_signature (length: $length)"
+
+      - name: Update appcast.xml
+        if: steps.sparkle_sign.outputs.signed == 'true'
+        run: |
+          zsh scripts/update-appcast.sh \
+            "${{ steps.version.outputs.version }}" \
+            "${{ github.run_number }}" \
+            "${{ steps.sparkle_sign.outputs.ed_signature }}" \
+            "${{ steps.sparkle_sign.outputs.length }}"
+          cat appcast.xml
+
+      - name: Update appcast.xml via PR
+        if: steps.sparkle_sign.outputs.signed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          branch="chore/appcast-v${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -b "$branch" origin/main
+          git add appcast.xml
+          git commit -m "chore: update appcast.xml for v${{ steps.version.outputs.version }}"
+          git push --force origin "$branch"
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "chore: update appcast.xml for v${{ steps.version.outputs.version }}" \
+            --body "Automated appcast.xml update from release workflow."
+          gh pr merge "$branch" --merge --admin --delete-branch
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -152,8 +208,8 @@ jobs:
             --generate-notes \
             --notes-start-tag "$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo '')" \
             --draft \
-            "output/package/Open Island.dmg#Open Island.dmg (macOS, Apple Silicon)" \
-            "output/package/Open Island.zip#Open Island.zip (macOS, Apple Silicon)"
+            "output/package/Open Island.dmg#Open Island.dmg (macOS, Universal)" \
+            "output/package/Open Island.zip#Open Island.zip (macOS, Universal)"
 
       - name: Append install instructions to release notes
         env:
@@ -174,7 +230,7 @@ jobs:
           ## Installation
 
           1. Download **Open Island.dmg**, open it, and drag **Open Island** to **Applications**.
-          2. Requires **macOS 14+** and **Apple Silicon** (M1/M2/M3/M4).
+          2. Requires **macOS 14+** (Apple Silicon and Intel).
 
           ${install_note}
           EOF

@@ -25,11 +25,16 @@ entitlements_path="$repo_root/config/packaging/OpenIslandApp.entitlements"
 
 cd "$repo_root"
 
-swift build -c release --product OpenIslandApp
-swift build -c release --product OpenIslandHooks
-swift build -c release --product OpenIslandSetup
+arch_flags=()
+if [[ "${OPEN_ISLAND_UNIVERSAL:-false}" == "true" ]]; then
+    arch_flags=(--arch arm64 --arch x86_64)
+fi
 
-build_bin_dir="$(swift build -c release --show-bin-path)"
+swift build -c release "${arch_flags[@]}" --product OpenIslandApp
+swift build -c release "${arch_flags[@]}" --product OpenIslandHooks
+swift build -c release "${arch_flags[@]}" --product OpenIslandSetup
+
+build_bin_dir="$(swift build -c release "${arch_flags[@]}" --show-bin-path)"
 app_binary="$build_bin_dir/OpenIslandApp"
 hooks_binary="$build_bin_dir/OpenIslandHooks"
 setup_binary="$build_bin_dir/OpenIslandSetup"

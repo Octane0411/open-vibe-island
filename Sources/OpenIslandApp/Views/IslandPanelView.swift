@@ -117,6 +117,10 @@ struct IslandPanelView: View {
         model.notchStatus == .opened
     }
 
+    private var usesOpenedVisualState: Bool {
+        isOpened || model.isOverlayCloseTransitionPending
+    }
+
     private var isPopping: Bool {
         model.notchStatus == .popping
     }
@@ -153,7 +157,7 @@ struct IslandPanelView: View {
 
     private var countBadgeWidth: CGFloat {
         let digits = max(1, "\(model.liveSessionCount)".count)
-        return CGFloat(18 + max(0, digits - 1) * 7)
+        return CGFloat(26 + max(0, digits - 1) * 8)
     }
 
     private var expansionWidth: CGFloat {
@@ -209,27 +213,27 @@ struct IslandPanelView: View {
 
     @ViewBuilder
     private func notchContent(availableSize: CGSize) -> some View {
-        let panelShadowHorizontalInset = isOpened
+        let panelShadowHorizontalInset = usesOpenedVisualState
             ? IslandChromeMetrics.openedShadowHorizontalInset
             : IslandChromeMetrics.closedShadowHorizontalInset
-        let panelShadowBottomInset = isOpened
+        let panelShadowBottomInset = usesOpenedVisualState
             ? IslandChromeMetrics.openedShadowBottomInset
             : IslandChromeMetrics.closedShadowBottomInset
         let layoutWidth = max(0, availableSize.width - (panelShadowHorizontalInset * 2))
         let layoutHeight = max(0, availableSize.height - panelShadowBottomInset)
-        let outerHorizontalPadding: CGFloat = isOpened ? 28 : 0
-        let outerBottomPadding: CGFloat = isOpened ? 14 : 0
+        let outerHorizontalPadding: CGFloat = usesOpenedVisualState ? 28 : 0
+        let outerBottomPadding: CGFloat = usesOpenedVisualState ? 14 : 0
         let openedWidth = max(0, layoutWidth - outerHorizontalPadding)
         let closedWidth = layoutWidth
-        let currentWidth = isOpened ? openedWidth : closedWidth
-        let currentHeight = isOpened ? max(closedNotchHeight, layoutHeight - outerBottomPadding) : layoutHeight
-        let horizontalInset = isOpened ? 14.0 : 0.0
-        let bottomInset = isOpened ? 14.0 : 0.0
+        let currentWidth = usesOpenedVisualState ? openedWidth : closedWidth
+        let currentHeight = usesOpenedVisualState ? max(closedNotchHeight, layoutHeight - outerBottomPadding) : layoutHeight
+        let horizontalInset = usesOpenedVisualState ? 14.0 : 0.0
+        let bottomInset = usesOpenedVisualState ? 14.0 : 0.0
         let surfaceWidth = currentWidth + (horizontalInset * 2)
         let surfaceHeight = currentHeight + bottomInset
         let surfaceShape = NotchShape(
-            topCornerRadius: isOpened ? NotchShape.openedTopRadius : NotchShape.closedTopRadius,
-            bottomCornerRadius: isOpened ? NotchShape.openedBottomRadius : NotchShape.closedBottomRadius
+            topCornerRadius: usesOpenedVisualState ? NotchShape.openedTopRadius : NotchShape.closedTopRadius,
+            bottomCornerRadius: usesOpenedVisualState ? NotchShape.openedBottomRadius : NotchShape.closedBottomRadius
         )
 
         ZStack(alignment: .top) {
@@ -243,8 +247,8 @@ struct IslandPanelView: View {
 
                 openedContent
                     .frame(width: openedWidth - 24)
-                    .frame(maxHeight: isOpened ? currentHeight - closedNotchHeight - 12 : 0, alignment: .top)
-                    .opacity(isOpened ? 1 : 0)
+                    .frame(maxHeight: usesOpenedVisualState ? currentHeight - closedNotchHeight - 12 : 0, alignment: .top)
+                    .opacity(usesOpenedVisualState ? 1 : 0)
                     .clipped()
             }
             .frame(width: currentWidth, height: currentHeight, alignment: .top)
@@ -256,18 +260,18 @@ struct IslandPanelView: View {
                 Rectangle()
                     .fill(Color.black)
                     .frame(height: 1)
-                    .padding(.horizontal, isOpened ? NotchShape.openedTopRadius : NotchShape.closedTopRadius)
+                    .padding(.horizontal, usesOpenedVisualState ? NotchShape.openedTopRadius : NotchShape.closedTopRadius)
             }
             .overlay {
                 surfaceShape
-                    .stroke(Color.white.opacity(isOpened ? 0.07 : 0.04), lineWidth: 1)
+                    .stroke(Color.white.opacity(usesOpenedVisualState ? 0.07 : 0.04), lineWidth: 1)
             }
         }
         .frame(width: surfaceWidth, height: surfaceHeight, alignment: .top)
-        .scaleEffect(isOpened ? 1 : (isHovering ? IslandChromeMetrics.closedHoverScale : 1), anchor: .top)
+        .scaleEffect(usesOpenedVisualState ? 1 : (isHovering ? IslandChromeMetrics.closedHoverScale : 1), anchor: .top)
         .padding(.horizontal, panelShadowHorizontalInset)
         .padding(.bottom, panelShadowBottomInset)
-        .animation(isOpened ? openAnimation : closeAnimation, value: model.notchStatus)
+        .animation(usesOpenedVisualState ? openAnimation : closeAnimation, value: usesOpenedVisualState)
         .animation(isOpened ? nil : .smooth, value: closedPresenceAnimationKey)
         .animation(isOpened ? nil : popAnimation, value: isPopping)
         .contentShape(Rectangle())
@@ -297,7 +301,7 @@ struct IslandPanelView: View {
 
     @ViewBuilder
     private var headerRow: some View {
-        if isOpened {
+        if usesOpenedVisualState {
             openedHeaderContent
                 .frame(height: closedNotchHeight)
         } else {
@@ -487,13 +491,10 @@ struct IslandPanelView: View {
                         }
                     }
             } else {
-                // List mode: scrollable
-                ScrollView(.vertical) {
+                // List mode: auto-height (fits content, scrolls only when exceeding max)
+                AutoHeightScrollView(maxHeight: Self.maxSessionListHeight) {
                     sessionListContent(context: context)
                 }
-                .scrollIndicators(.automatic, axes: .vertical)
-                .scrollContentBackground(.hidden)
-                .frame(maxHeight: Self.maxSessionListHeight)
                 .padding(.vertical, 2)
             }
         }
@@ -510,7 +511,7 @@ struct IslandPanelView: View {
                     useDrawingGroup: model.notchStatus == .opened,
                     isInteractive: model.notchStatus == .opened,
                     lang: model.lang,
-                    onApprove: { model.approvePermission(for: session.id, mode: $0) },
+                    onApprove: { model.approvePermission(for: session.id, action: $0) },
                     onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
                     onJump: { model.jumpToSession(session) }
                 )
@@ -533,11 +534,11 @@ struct IslandPanelView: View {
                     IslandSessionRow(
                         session: session,
                         referenceDate: context.date,
-                        isActionable: session.id == actionableSessionID,
+                        isActionable: session.phase.requiresAttention || session.id == actionableSessionID,
                         useDrawingGroup: model.notchStatus == .opened,
                         isInteractive: model.notchStatus == .opened,
                         lang: model.lang,
-                        onApprove: { model.approvePermission(for: session.id, mode: $0) },
+                        onApprove: { model.approvePermission(for: session.id, action: $0) },
                         onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
                         onJump: { model.jumpToSession(session) }
                     )
@@ -959,7 +960,7 @@ private struct IslandSessionRow: View {
     var useDrawingGroup: Bool = true
     var isInteractive: Bool = true
     var lang: LanguageManager = .shared
-    var onApprove: ((ClaudePermissionMode?) -> Void)?
+    var onApprove: ((ApprovalAction) -> Void)?
     var onAnswer: ((QuestionPromptResponse) -> Void)?
     let onJump: () -> Void
 
@@ -1202,12 +1203,22 @@ private struct IslandSessionRow: View {
             )
 
             HStack(spacing: 8) {
-                Button(lang.t("approval.manual")) { onApprove?(.default) }
+                Button("No") { onApprove?(.deny) }
                     .buttonStyle(IslandWideButtonStyle(kind: .secondary))
-                Button(lang.t("approval.autoAcceptEdits")) { onApprove?(.acceptEdits) }
+                Button("Yes") { onApprove?(.allowOnce) }
                     .buttonStyle(IslandWideButtonStyle(kind: .warning))
-                Button(lang.t("approval.autoBypassPermissions")) { onApprove?(.bypassPermissions) }
+                if let toolName = session.permissionRequest?.toolName {
+                    Button("Always Allow (\(toolName))") {
+                        let rule = ClaudePermissionRuleValue(toolName: toolName)
+                        let update = ClaudePermissionUpdate.addRules(
+                            destination: .session,
+                            rules: [rule],
+                            behavior: .allow
+                        )
+                        onApprove?(.allowWithUpdates([update]))
+                    }
                     .buttonStyle(IslandWideButtonStyle(kind: .danger))
+                }
             }
         }
     }
@@ -1299,17 +1310,6 @@ private struct IslandSessionRow: View {
         return session.permissionRequest?.summary.trimmedForNotificationCard ?? session.summary.trimmedForNotificationCard
     }
 
-    private var allowTitle: String {
-        let title = session.permissionRequest?.primaryActionTitle.trimmedForNotificationCard
-        if title == nil || title == "Allow" {
-            return "Allow Once"
-        }
-        return title ?? "Allow Once"
-    }
-
-    private var denyTitle: String {
-        session.permissionRequest?.secondaryActionTitle.trimmedForNotificationCard ?? "Deny"
-    }
 
     private func subagentElapsed(since start: Date, at now: Date) -> String {
         let seconds = Int(now.timeIntervalSince(start))
@@ -1878,5 +1878,26 @@ extension MarkdownUI.Theme {
         .listItem { configuration in
             configuration.label
                 .markdownMargin(top: 2, bottom: 2)
+        }
+        .table { configuration in
+            configuration.label
+                .fixedSize(horizontal: false, vertical: true)
+                .markdownTableBorderStyle(.init(.allBorders, color: .white.opacity(0.15), strokeStyle: .init(lineWidth: 1)))
+                .markdownTableBackgroundStyle(
+                    .alternatingRows(Color.white.opacity(0.04), Color.white.opacity(0.08))
+                )
+                .markdownMargin(top: 4, bottom: 8)
+        }
+        .tableCell { configuration in
+            configuration.label
+                .markdownTextStyle {
+                    if configuration.row == 0 {
+                        FontWeight(.semibold)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.vertical, 6)
+                .padding(.horizontal, 12)
+                .relativeLineSpacing(.em(0.25))
         }
 }

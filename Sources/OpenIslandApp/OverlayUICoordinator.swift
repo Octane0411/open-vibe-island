@@ -57,6 +57,8 @@ final class OverlayUICoordinator {
     @ObservationIgnored
     private var autoCollapseSurfaceHasBeenEntered = false
 
+    private(set) var isCloseTransitionPending = false
+
     private var activeIslandCardSession: AgentSession? {
         activeIslandCardSessionAccessor?()
     }
@@ -129,8 +131,19 @@ final class OverlayUICoordinator {
         )
     }
 
-    /// Coordinates overlay transitions so SwiftUI re-renders complete before AppKit
-    /// animates the panel frame, preventing main-thread contention.
+    /// Duration (in seconds) to wait before shrinking the panel after a close
+    /// transition, matching the SwiftUI close animation.
+    private static let panelShrinkDelay: TimeInterval = 0.50
+
+    /// Coordinates overlay transitions.  The NSPanel frame is set instantly
+    /// (no NSAnimationContext) — all visual animation is driven by SwiftUI's
+    /// `.animation()` modifier on the content view.
+    ///
+    /// **Open**: expand the panel first so SwiftUI has full rendering space,
+    /// then set state to trigger the SwiftUI animation.
+    ///
+    /// **Close**: set state first so SwiftUI starts the close animation inside
+    /// the still-large panel, then shrink the panel after the animation ends.
     private func transitionOverlay(
         to status: NotchStatus,
         reason: NotchOpenReason?,
@@ -142,33 +155,48 @@ final class OverlayUICoordinator {
     ) {
         beforeTransition?()
 
-        // Phase 1: State mutation (drives SwiftUI re-render this frame).
-        islandSurface = surface
-        notchOpenReason = reason
-        notchStatus = status
-        overlayPanelController.setInteractive(interactive)
-        afterStateChange?()
-
-        // Phase 2: AppKit panel frame animation (deferred to next run-loop iteration).
         overlayTransitionGeneration &+= 1
         let capturedGeneration = overlayTransitionGeneration
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            switch status {
-            case .opened:
-                // Guard open transitions with generation to prevent stale opens.
-                guard self.overlayTransitionGeneration == capturedGeneration,
-                      let appModel else { return }
-                self.overlayPlacementDiagnostics = self.overlayPanelController.show(
+
+        switch status {
+        case .opened:
+            isCloseTransitionPending = false
+            // State change first so panelFrame() reads the correct notchStatus
+            // when computing the opened size.  SwiftUI coalesces renders within
+            // a single runloop pass, so the view won't draw until after the
+            // panel frame is also set below.
+            islandSurface = surface
+            notchOpenReason = reason
+            notchStatus = status
+            overlayPanelController.setInteractive(interactive)
+            if let appModel {
+                overlayPlacementDiagnostics = overlayPanelController.show(
                     model: appModel,
-                    preferredScreenID: self.preferredOverlayScreenID
+                    preferredScreenID: preferredOverlayScreenID
                 )
-            case .closed, .popping:
-                // Always execute close reposition — the panel must shrink back
-                // even if another transition was queued between Phase 1 and Phase 2.
-                self.refreshOverlayPlacement()
             }
+            afterStateChange?()
             onPlacementResolved?()
+
+        case .closed, .popping:
+            let wasOpened = notchStatus == .opened
+            isCloseTransitionPending = wasOpened
+            // State change FIRST so SwiftUI starts the close animation inside
+            // the still-large panel.  Shrink the panel after the animation.
+            islandSurface = surface
+            notchOpenReason = reason
+            notchStatus = status
+            overlayPanelController.setInteractive(interactive)
+            afterStateChange?()
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.panelShrinkDelay) { [weak self] in
+                guard let self else { return }
+                // Only shrink if no newer transition superseded this one.
+                guard self.overlayTransitionGeneration == capturedGeneration else { return }
+                self.isCloseTransitionPending = false
+                self.refreshOverlayPlacement()
+                onPlacementResolved?()
+            }
         }
     }
 
@@ -375,6 +403,7 @@ final class OverlayUICoordinator {
         notificationAutoCollapseTask?.cancel()
         notificationAutoCollapseTask = nil
         autoCollapseSurfaceHasBeenEntered = false
+        isCloseTransitionPending = false
 
         islandSurface = snapshot.islandSurface
         notchStatus = snapshot.notchStatus

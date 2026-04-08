@@ -31,15 +31,19 @@ public struct ClaudeHookInstallationStatus: Equatable, Sendable {
 public final class ClaudeHookInstallationManager: @unchecked Sendable {
     public let claudeDirectory: URL
     public let managedHooksBinaryURL: URL
+    /// The `--source` value passed to the hooks binary (e.g. "claude", "qoder", "factory", "codebuddy").
+    public let hookSource: String
     private let fileManager: FileManager
 
     public init(
         claudeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude", isDirectory: true),
         managedHooksBinaryURL: URL = ManagedHooksBinary.defaultURL(),
+        hookSource: String = "claude",
         fileManager: FileManager = .default
     ) {
         self.claudeDirectory = claudeDirectory
         self.managedHooksBinaryURL = managedHooksBinaryURL.standardizedFileURL
+        self.hookSource = hookSource
         self.fileManager = fileManager
     }
 
@@ -50,7 +54,7 @@ public final class ClaudeHookInstallationManager: @unchecked Sendable {
 
         let settingsData = try? Data(contentsOf: settingsURL)
         let manifest = try loadManifest(at: manifestURL)
-        let managedCommand = manifest?.hookCommand ?? resolvedHooksBinaryURL.map { ClaudeHookInstaller.hookCommand(for: $0.path) }
+        let managedCommand = manifest?.hookCommand ?? resolvedHooksBinaryURL.map { ClaudeHookInstaller.hookCommand(for: $0.path, source: hookSource) }
         let uninstallMutation = try ClaudeHookInstaller.uninstallSettingsJSON(
             existingData: settingsData,
             managedCommand: managedCommand
@@ -80,7 +84,7 @@ public final class ClaudeHookInstallationManager: @unchecked Sendable {
             to: managedHooksBinaryURL,
             fileManager: fileManager
         )
-        let command = ClaudeHookInstaller.hookCommand(for: installedHooksBinaryURL.path)
+        let command = ClaudeHookInstaller.hookCommand(for: installedHooksBinaryURL.path, source: hookSource)
         let mutation = try ClaudeHookInstaller.installSettingsJSON(
             existingData: existingSettings,
             hookCommand: command

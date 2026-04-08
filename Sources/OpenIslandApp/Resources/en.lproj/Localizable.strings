@@ -67,6 +67,12 @@
 "setup.permissionsTitle" = "Accessibility";
 "setup.permissionsDesc" = "Open Island may need Accessibility permission to detect terminal windows. Grant it in System Settings → Privacy & Security → Accessibility.";
 "setup.installAll" = "Install All";
+"setup.section.diagnostics" = "Hook Diagnostics";
+"setup.diagnostics.notRun" = "Health check not yet run.";
+"setup.diagnostics.runCheck" = "Run Check";
+"setup.diagnostics.recheck" = "Re-check";
+"setup.diagnostics.repair" = "Repair Hooks";
+"setup.diagnostics.allHealthy" = "All hooks are healthy.";
 
 /* Settings - Placeholder */
 "settings.shortcuts.comingSoon" = "Keyboard shortcuts coming soon.";
@@ -91,10 +97,6 @@
 "island.collapseList" = "Collapse list";
 "island.usageWaiting" = "Usage waiting";
 
-/* Island Panel - Approval */
-"approval.manual" = "Manual Approval";
-"approval.autoAcceptEdits" = "Auto-accept Edits";
-"approval.autoBypassPermissions" = "Auto-bypass Permissions";
 
 /* Island Panel - Subagents & Tasks */
 "subagents.title" = "Subagents (%lld)";

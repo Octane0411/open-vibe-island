@@ -6,16 +6,17 @@ This index is the repository map for humans and coding agents. Read these files 
 
 - [README.md](../README.md) for the public project summary and local quick start
 - [AGENTS.md](../AGENTS.md) for the repository workflow, commit policy, and worktree rules
-- [docs/product.md](./product.md) for the supported boundary and MVP scope
+- [docs/roadmap.md](./roadmap.md) for the project roadmap and contribution focus areas
+- [docs/roadmap.zh-CN.md](./roadmap.zh-CN.md) for the Chinese roadmap and contribution focus areas
+- [docs/product.md](./product.md) for the product scope, supported agents, and terminals
 - [docs/architecture.md](./architecture.md) for the runtime shape and transport boundaries
 - [docs/quality.md](./quality.md) for the current harness contract and verification expectations
 - [docs/worktree-workflow.md](./worktree-workflow.md) for the parallel worktree lifecycle
 - [docs/packaging.md](./packaging.md) for the current local app packaging, signing, and notarization path
 - [docs/releasing.md](./releasing.md) for the GitHub release workflow, bilingual notes template, and checklist
 
-## Testing
+## Hooks
 
-- [docs/manual-test-plan.md](./manual-test-plan.md) for the manual test checklist covering overlay, sessions, hooks, and jump targets
 - [docs/hooks.md](./hooks.md) for the supported hook events, payload fields, and directive response protocol
 
 ## Harness And Planning
@@ -26,7 +27,6 @@ This index is the repository map for humans and coding agents. Read these files 
 ## Runtime And Product Notes
 
 - [docs/notch-surface-model.md](./notch-surface-model.md) for the island surface routing model and debug harness intent
-- [docs/claude-code-runtime-plan.md](./claude-code-runtime-plan.md) for the planned Claude adapter runtime shape
 - [docs/app-ghostty-codex-chain.md](./app-ghostty-codex-chain.md) for terminal environment findings across the current supported chain
 
 ## Refactoring Plans
@@ -46,7 +46,3 @@ This index is the repository map for humans and coding agents. Read these files 
 - [docs/island-position-investigation.md](./island-position-investigation.md) for notch and external-display placement work
 - [docs/notchi-integration.md](./notchi-integration.md) for integration notes related to Notchi
 - [docs/installed-app-bundle-analysis.md](./installed-app-bundle-analysis.md) for installed-app bundle observations
-
-## Review Assets
-
-- `docs/review/` stores design studies, previews, and review artifacts that are useful as visual references but are not treated as the system-of-record docs.

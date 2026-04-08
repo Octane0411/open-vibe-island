@@ -11,6 +11,8 @@ final class OverlayPanelController {
     private static let preferredNotificationPanelWidth: CGFloat = 620
     private static let openedContentWidthPadding: CGFloat = 28
     private static let openedContentBottomPadding: CGFloat = 0
+    /// Must match `IslandPanelView.maxSessionListHeight` — the AutoHeightScrollView cap.
+    private static let maxSessionListHeight: CGFloat = 560
     private static let maxVisibleSessionRows: Int = 6
     private static let openedRowSpacing: CGFloat = 6
     // Content padding (8) + scroll padding (4) + view chrome: outerBottomPadding (14) + header-content gap (12)
@@ -148,22 +150,14 @@ final class OverlayPanelController {
         }
 
         let windowFrame = panelFrame(for: model, on: screen)
-        if animated {
-            let status = model?.notchStatus
-            NSAnimationContext.runAnimationGroup { context in
-                switch status {
-                case .opened:
-                    context.duration = 0.50
-                case .closed, .popping:
-                    context.duration = 0.42
-                case nil:
-                    context.duration = 0
-                }
-                context.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 1.0, 0.36, 1.0)
-                context.allowsImplicitAnimation = true
-                panel.animator().setFrame(windowFrame, display: true)
-            }
-        } else {
+
+        // Always set the panel frame instantly — no AppKit animation.
+        // All visual transitions (shape, size, opacity, corner radius) are
+        // driven by SwiftUI's .animation() modifier on the content view.
+        // Mixing NSAnimationContext with SwiftUI spring animations caused
+        // visible jank because the two systems have different timing curves,
+        // durations, and start times (AppKit was deferred by one runloop).
+        if panel.frame != windowFrame {
             panel.setFrame(windowFrame, display: true)
         }
         computeNotchRect(screen: screen)
@@ -403,18 +397,19 @@ final class OverlayPanelController {
     }
 
     private func panelShadowInsets(for model: AppModel?) -> (horizontal: CGFloat, bottom: CGFloat) {
-        switch model?.notchStatus {
-        case .opened, nil:
+        let usesOpenedInsets = model.map { $0.notchStatus == .opened || $0.isOverlayCloseTransitionPending } ?? true
+
+        if usesOpenedInsets {
             return (
                 horizontal: IslandChromeMetrics.openedShadowHorizontalInset,
                 bottom: IslandChromeMetrics.openedShadowBottomInset
             )
-        case .closed, .popping:
-            return (
-                horizontal: IslandChromeMetrics.closedShadowHorizontalInset,
-                bottom: IslandChromeMetrics.closedShadowBottomInset
-            )
         }
+
+        return (
+            horizontal: IslandChromeMetrics.closedShadowHorizontalInset,
+            bottom: IslandChromeMetrics.closedShadowBottomInset
+        )
     }
 
     private func closedPanelWidth(for model: AppModel, on screen: NSScreen) -> CGFloat {
@@ -431,7 +426,7 @@ final class OverlayPanelController {
 
         let sideWidth = max(0, notchHeight - 12) + 10
         let digits = max(1, "\(model.liveSessionCount)".count)
-        let countBadgeWidth = CGFloat(18 + max(0, digits - 1) * 7)
+        let countBadgeWidth = CGFloat(26 + max(0, digits - 1) * 8)
         let hasAttention = spotlightSession?.phase.requiresAttention == true
         let leftWidth = sideWidth + 8 + (hasAttention ? 18 : 0)
         let rightWidth = max(sideWidth, countBadgeWidth)
@@ -473,7 +468,10 @@ final class OverlayPanelController {
 
         let rowsHeight = rowHeights.reduce(CGFloat.zero, +)
         let spacingHeight = CGFloat(max(0, rowHeights.count - 1)) * Self.openedRowSpacing
-        return rowsHeight + spacingHeight + Self.openedContentVerticalInsets
+        let listHeight = rowsHeight + spacingHeight
+        // Cap to match AutoHeightScrollView's maxHeight in IslandPanelView.
+        let cappedListHeight = min(listHeight, Self.maxSessionListHeight)
+        return cappedListHeight + Self.openedContentVerticalInsets
     }
 
     /// Additional height for the actionable session's inline action area.
@@ -582,6 +580,7 @@ private final class NotchPanel: NSPanel {
 
 final class NotchHostingView<Content: View>: NSHostingView<Content> {
     weak var notchController: OverlayPanelController?
+    private var hasDisabledScrollers = false
 
     override var isOpaque: Bool {
         false
@@ -644,7 +643,11 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
         super.layout()
         // NSHostingView wraps content in an internal NSScrollView.
         // Disable its scrollers to prevent a thick system scrollbar.
-        disableInternalScrollers(in: self)
+        // Only traverse once — the internal hierarchy is stable after first layout.
+        if !hasDisabledScrollers {
+            hasDisabledScrollers = true
+            disableInternalScrollers(in: self)
+        }
     }
 
     private func disableInternalScrollers(in view: NSView) {
@@ -751,6 +754,26 @@ extension NSScreen {
     }
 
     var islandClosedHeight: CGFloat {
-        topStatusBarHeight
+        NSScreen.computeIslandClosedHeight(
+            safeAreaInsetsTop: safeAreaInsets.top,
+            topStatusBarHeight: topStatusBarHeight
+        )
+    }
+
+    /// Pure helper so the height selection logic can be unit-tested without real screen hardware.
+    ///
+    /// On notch screens, clamp to `min(safeAreaInsetsTop, topStatusBarHeight)`: the island
+    /// must not exceed the menu bar reserved area, and must not exceed the physical notch
+    /// height — e.g. MacBook Air M2 notch ≈ 34 pt while menu bar reserved ≈ 37 pt, so
+    /// the island should be 34 pt to sit flush with the notch bottom.
+    /// On non-notch screens (`safeAreaInsetsTop == 0`), use `topStatusBarHeight` directly.
+    static func computeIslandClosedHeight(
+        safeAreaInsetsTop: CGFloat,
+        topStatusBarHeight: CGFloat
+    ) -> CGFloat {
+        if safeAreaInsetsTop > 0 {
+            return min(safeAreaInsetsTop, topStatusBarHeight)
+        }
+        return topStatusBarHeight
     }
 }

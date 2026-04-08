@@ -2,6 +2,7 @@
 
 set -euo pipefail
 
+
 skip_setup=false
 for arg in "$@"; do
   case "$arg" in
@@ -10,10 +11,6 @@ for arg in "$@"; do
 done
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-build_root="$repo_root/.build/arm64-apple-macosx/debug"
-app_binary="$build_root/OpenIslandApp"
-hooks_binary="$build_root/OpenIslandHooks"
-setup_binary="$build_root/OpenIslandSetup"
 brand_script="$repo_root/scripts/generate_brand_icons.py"
 brand_icon="$repo_root/Assets/Brand/OpenIsland.icns"
 bundle_dir="$HOME/Applications/Open Island Dev.app"
@@ -26,16 +23,27 @@ swift build -c debug --product OpenIslandApp
 swift build -c debug --product OpenIslandHooks
 swift build -c debug --product OpenIslandSetup
 
+build_root="$(swift build -c debug --show-bin-path)"
+app_binary="$build_root/OpenIslandApp"
+hooks_binary="$build_root/OpenIslandHooks"
+setup_binary="$build_root/OpenIslandSetup"
+
 python3 "$brand_script"
 if [ "$skip_setup" = false ]; then
   "$setup_binary" install --hooks-binary "$hooks_binary"
 fi
 
 mkdir -p "$bundle_dir/Contents/MacOS" "$bundle_dir/Contents/Helpers" "$bundle_dir/Contents/Resources" "$bundle_dir/Contents/Frameworks"
-cp "$app_binary" "$bundle_binary"
-cp "$hooks_binary" "$bundle_dir/Contents/Helpers/OpenIslandHooks"
-cp "$setup_binary" "$bundle_dir/Contents/Helpers/OpenIslandSetup"
-cp "$brand_icon" "$bundle_dir/Contents/Resources/OpenIsland.icns"
+
+# Kill any running instance before copying so the binary isn't locked.
+osascript -e 'tell application "Open Island Dev" to quit' 2>/dev/null || true
+pkill -9 -f "Open Island Dev" 2>/dev/null || true
+sleep 2
+
+command cp "$app_binary" "$bundle_binary"
+command cp "$hooks_binary" "$bundle_dir/Contents/Helpers/OpenIslandHooks"
+command cp "$setup_binary" "$bundle_dir/Contents/Helpers/OpenIslandSetup"
+command cp "$brand_icon" "$bundle_dir/Contents/Resources/OpenIsland.icns"
 chmod +x "$bundle_binary" "$bundle_dir/Contents/Helpers/OpenIslandHooks" "$bundle_dir/Contents/Helpers/OpenIslandSetup"
 
 # Add rpath so the binary can find Sparkle.framework in Contents/Frameworks/.
@@ -46,14 +54,14 @@ install_name_tool -add_rpath @loader_path/../Frameworks "$bundle_binary" 2>/dev/
 resource_bundle="$build_root/OpenIsland_OpenIslandApp.bundle"
 if [ -d "$resource_bundle" ]; then
     rm -rf "$bundle_dir/OpenIsland_OpenIslandApp.bundle"
-    cp -R "$resource_bundle" "$bundle_dir/"
+    command cp -R "$resource_bundle" "$bundle_dir/"
 fi
 
 # Copy Sparkle.framework for auto-update support.
 sparkle_framework="$repo_root/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
 if [ -d "$sparkle_framework" ]; then
     rm -rf "$bundle_dir/Contents/Frameworks/Sparkle.framework"
-    cp -R "$sparkle_framework" "$bundle_dir/Contents/Frameworks/"
+    command cp -R "$sparkle_framework" "$bundle_dir/Contents/Frameworks/"
 fi
 
 cat > "$plist_path" <<EOF
@@ -113,5 +121,4 @@ fi
 
 codesign --force --deep --sign - "$bundle_dir" 2>/dev/null || true
 
-pkill -f "$bundle_binary" >/dev/null 2>&1 || true
 open -na "$bundle_dir"
