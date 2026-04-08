@@ -37,9 +37,13 @@ final class OverlayPanelController {
         panel?.isVisible == true
     }
 
-    /// Cancel hover so the panel doesn't reopen after the jump.
+    /// Drop key status so the target terminal gets keyboard focus.
     func dismissForJump() {
         cancelHoverOpen()
+        if let panel = panel as? NotchPanel {
+            panel.keyable = false
+            panel.resignKey()
+        }
     }
 
     nonisolated static func shouldActivatePanel(for reason: NotchOpenReason?) -> Bool {
@@ -182,6 +186,9 @@ final class OverlayPanelController {
     }
 
     private func presentPanel(_ panel: NSPanel, activates: Bool) {
+        if let notchPanel = panel as? NotchPanel {
+            notchPanel.keyable = true
+        }
         if activates {
             panel.makeKeyAndOrderFront(nil)
         } else {
@@ -600,7 +607,8 @@ final class OverlayPanelController {
 // MARK: - NotchPanel
 
 private final class NotchPanel: NSPanel {
-    override var canBecomeKey: Bool { true }
+    var keyable = true
+    override var canBecomeKey: Bool { keyable }
     override var canBecomeMain: Bool { false }
 }
 

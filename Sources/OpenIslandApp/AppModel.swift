@@ -747,7 +747,10 @@ final class AppModel {
               let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first else {
             return
         }
-        app.activate()
+        // Only activate if not already frontmost — re-activating can reset split focus.
+        if !app.isActive {
+            app.activate()
+        }
     }
 
     func approvePermission(for sessionID: String, approved: Bool) {
