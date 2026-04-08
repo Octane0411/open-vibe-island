@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 enum ScoutAnimation: Equatable {
     case idle
@@ -25,6 +26,11 @@ struct OpenIslandBrandMark: View {
     var tint: Color = .mint
     var animation: ScoutAnimation = .idle
     var style: Style = .duotone
+
+    @State private var breathePhase: Bool = false
+    @State private var eyesVisible: Bool = true
+
+    private static let blinkTimer = Timer.publish(every: 5.0, on: .main, in: .common).autoconnect()
 
     private static let scoutPattern = [
         "..B..B..",
@@ -64,6 +70,7 @@ struct OpenIslandBrandMark: View {
                 ForEach(Array(Self.pixels.enumerated()), id: \.offset) { _, pixel in
                     Rectangle()
                         .fill(fillColor(for: pixel.role))
+                        .opacity(pixel.part == .eye && !eyesVisible ? 0 : 1)
                         .frame(width: cell, height: cell)
                         .offset(
                             x: originX + CGFloat(pixel.x) * cell,
@@ -74,6 +81,25 @@ struct OpenIslandBrandMark: View {
         }
         .frame(width: size, height: size)
         .drawingGroup(opaque: false, colorMode: .extendedLinear)
+        .opacity(style == .duotone ? (breathePhase ? 1.0 : 0.78) : 1.0)
+        .animation(
+            style == .duotone
+                ? .easeInOut(duration: 1.5).repeatForever(autoreverses: true)
+                : nil,
+            value: breathePhase
+        )
+        .onAppear {
+            if style == .duotone {
+                breathePhase = true
+            }
+        }
+        .onReceive(Self.blinkTimer) { _ in
+            guard style == .duotone else { return }
+            eyesVisible = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                eyesVisible = true
+            }
+        }
     }
 
     private func fillColor(for role: Character) -> Color {
