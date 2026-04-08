@@ -41,12 +41,17 @@ public final class BridgeServer: @unchecked Sendable {
         let kind: Kind
     }
 
+    private struct Listener {
+        let fileDescriptor: Int32
+        let acceptSource: DispatchSourceRead
+        let socketURL: URL
+    }
+
     private let socketURL: URL
     private let queue = DispatchQueue(label: "app.openisland.bridge.server")
     private let queueKey = DispatchSpecificKey<Void>()
 
-    private var listeningFileDescriptor: Int32 = -1
-    private var acceptSource: DispatchSourceRead?
+    private var listeners: [Listener] = []
     private var clients: [UUID: ClientConnection] = [:]
     private var pendingApprovals: [String: PendingApproval] = [:]
     private var pendingClaudeToolContexts: [String: PendingClaudeToolContext] = [:]
@@ -75,66 +80,70 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     public func start() throws {
-        guard listeningFileDescriptor == -1 else {
+        guard listeners.isEmpty else {
             return
         }
 
-        let parentURL = socketURL.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: parentURL, withIntermediateDirectories: true)
-        try? FileManager.default.removeItem(at: socketURL)
+        // Primary socket in a stable, user-owned directory.
+        let primaryListener = try bindListener(at: socketURL)
+        listeners.append(primaryListener)
 
-        let listeningFileDescriptor = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard listeningFileDescriptor != -1 else {
+        // Also listen on the legacy /tmp path so that older hook binaries
+        // (from already-running Claude Code sessions) can still connect.
+        let legacyURL = BridgeSocketLocation.legacyURL
+        if legacyURL != socketURL {
+            if let legacyListener = try? bindListener(at: legacyURL) {
+                listeners.append(legacyListener)
+            }
+        }
+    }
+
+    private func bindListener(at url: URL) throws -> Listener {
+        let parentURL = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: parentURL, withIntermediateDirectories: true)
+        try? FileManager.default.removeItem(at: url)
+
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd != -1 else {
             throw BridgeTransportError.systemCallFailed("socket", errno)
         }
 
         do {
             var reuseAddress: Int32 = 1
             guard setsockopt(
-                listeningFileDescriptor,
-                SOL_SOCKET,
-                SO_REUSEADDR,
-                &reuseAddress,
-                socklen_t(MemoryLayout<Int32>.size)
+                fd, SOL_SOCKET, SO_REUSEADDR,
+                &reuseAddress, socklen_t(MemoryLayout<Int32>.size)
             ) != -1 else {
                 throw BridgeTransportError.systemCallFailed("setsockopt", errno)
             }
 
-            try withUnixSocketAddress(path: socketURL.path) { address, length in
-                guard bind(listeningFileDescriptor, address, length) != -1 else {
+            try withUnixSocketAddress(path: url.path) { address, length in
+                guard bind(fd, address, length) != -1 else {
                     throw BridgeTransportError.systemCallFailed("bind", errno)
                 }
             }
 
-            guard listen(listeningFileDescriptor, 16) != -1 else {
+            guard listen(fd, 16) != -1 else {
                 throw BridgeTransportError.systemCallFailed("listen", errno)
             }
 
-            try makeSocketNonBlocking(listeningFileDescriptor)
+            try makeSocketNonBlocking(fd)
         } catch {
-            close(listeningFileDescriptor)
-            try? FileManager.default.removeItem(at: socketURL)
+            close(fd)
+            try? FileManager.default.removeItem(at: url)
             throw error
         }
 
-        self.listeningFileDescriptor = listeningFileDescriptor
-
-        let acceptSource = DispatchSource.makeReadSource(fileDescriptor: listeningFileDescriptor, queue: queue)
-        acceptSource.setEventHandler { [weak self] in
-            self?.acceptPendingClients()
+        let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
+        source.setEventHandler { [weak self] in
+            self?.acceptPendingClients(on: fd)
         }
-        acceptSource.setCancelHandler { [weak self] in
-            guard let self else {
-                return
-            }
-
-            if self.listeningFileDescriptor != -1 {
-                close(self.listeningFileDescriptor)
-                self.listeningFileDescriptor = -1
-            }
+        source.setCancelHandler {
+            close(fd)
         }
-        self.acceptSource = acceptSource
-        acceptSource.resume()
+        source.resume()
+
+        return Listener(fileDescriptor: fd, acceptSource: source, socketURL: url)
     }
 
     public func stop() {
@@ -166,26 +175,18 @@ public final class BridgeServer: @unchecked Sendable {
         activeConnections.forEach { $0.readSource.cancel() }
         clients.removeAll()
 
-        acceptSource?.cancel()
-        acceptSource = nil
-
-        if listeningFileDescriptor != -1 {
-            close(listeningFileDescriptor)
-            listeningFileDescriptor = -1
+        for listener in listeners {
+            listener.acceptSource.cancel()
         }
+        listeners.removeAll()
 
-        // Do NOT delete the socket file here.  start() already cleans up
-        // stale sockets before binding.  Deleting in stop() causes a race
-        // when the old process is being terminated while a new process has
-        // already created its socket at the same path — the old process's
-        // deferred cleanup removes the new socket file, breaking the bridge.
+        // Do NOT delete socket files here.  start() / bindListener() already
+        // clean up stale sockets before binding.  Deleting in stop() causes
+        // a race when the old process is being terminated while a new process
+        // has already created its socket at the same path.
     }
 
-    private func acceptPendingClients() {
-        guard listeningFileDescriptor != -1 else {
-            return
-        }
-
+    private func acceptPendingClients(on listeningFileDescriptor: Int32) {
         while true {
             let clientFileDescriptor = accept(listeningFileDescriptor, nil, nil)
 

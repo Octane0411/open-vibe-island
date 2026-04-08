@@ -163,13 +163,16 @@ final class AppModel {
     private var bridgeTask: Task<Void, Never>?
 
     @ObservationIgnored
+    private var bridgeReconnectTask: Task<Void, Never>?
+
+    @ObservationIgnored
     private var hasStarted = false
 
     @ObservationIgnored
     private let bridgeServer = BridgeServer()
 
     @ObservationIgnored
-    private let bridgeClient = LocalBridgeClient()
+    private var bridgeClient = LocalBridgeClient()
 
     @ObservationIgnored
     private let terminalJumpAction: @Sendable (JumpTarget) throws -> String
@@ -446,47 +449,86 @@ final class AppModel {
 
         do {
             try bridgeServer.start()
-            let stream = try bridgeClient.connect()
-
-            Task { [weak self] in
-                guard let self else {
-                    return
-                }
-
-                do {
-                    try await self.bridgeClient.send(.registerClient(role: .observer))
-                    self.isBridgeReady = true
-                    self.lastActionMessage = "Bridge ready. Waiting for Claude and Codex hook events."
-                    self.harnessRuntimeMonitor?.recordMilestone("bridgeReady", message: self.lastActionMessage)
-                } catch {
-                    self.isBridgeReady = false
-                    self.lastActionMessage = "Failed to register bridge observer: \(error.localizedDescription)"
-                    self.harnessRuntimeMonitor?.recordMilestone(
-                        "bridgeRegistrationFailed",
-                        message: self.lastActionMessage
-                    )
-                }
-            }
-
-            bridgeTask = Task { [weak self] in
-                guard let self else {
-                    return
-                }
-
-                do {
-                    for try await event in stream {
-                        self.applyTrackedEvent(event)
-                    }
-                } catch {
-                    self.isBridgeReady = false
-                    self.lastActionMessage = "Bridge disconnected: \(error.localizedDescription)"
-                    self.harnessRuntimeMonitor?.recordMilestone("bridgeDisconnected", message: self.lastActionMessage)
-                }
-            }
+            connectBridgeObserver()
         } catch {
             isBridgeReady = false
             lastActionMessage = "Failed to start local bridge: \(error.localizedDescription)"
             harnessRuntimeMonitor?.recordMilestone("bridgeStartFailed", message: lastActionMessage)
+        }
+    }
+
+    // MARK: - Bridge observer connection
+
+    private static let bridgeReconnectDelay: Duration = .seconds(2)
+    private static let bridgeMaxReconnectDelay: Duration = .seconds(30)
+
+    private func connectBridgeObserver() {
+        bridgeTask?.cancel()
+        bridgeReconnectTask?.cancel()
+
+        // Create a fresh client for each connection attempt so we don't
+        // have to worry about stale file-descriptor state.
+        let client = LocalBridgeClient()
+        bridgeClient = client
+
+        let stream: AsyncThrowingStream<AgentEvent, Error>
+        do {
+            stream = try client.connect()
+        } catch {
+            isBridgeReady = false
+            lastActionMessage = "Failed to connect bridge observer: \(error.localizedDescription)"
+            scheduleBridgeReconnect()
+            return
+        }
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await client.send(.registerClient(role: .observer))
+                self.isBridgeReady = true
+                self.lastActionMessage = "Bridge ready. Waiting for Claude and Codex hook events."
+                self.harnessRuntimeMonitor?.recordMilestone("bridgeReady", message: self.lastActionMessage)
+            } catch {
+                self.isBridgeReady = false
+                self.lastActionMessage = "Failed to register bridge observer: \(error.localizedDescription)"
+                self.harnessRuntimeMonitor?.recordMilestone(
+                    "bridgeRegistrationFailed",
+                    message: self.lastActionMessage
+                )
+                self.scheduleBridgeReconnect()
+            }
+        }
+
+        bridgeTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                for try await event in stream {
+                    self.applyTrackedEvent(event)
+                }
+            } catch {}
+
+            // Stream ended (server closed our connection or transient error).
+            // Mark as disconnected and schedule reconnection.
+            guard !Task.isCancelled else { return }
+            self.isBridgeReady = false
+            self.lastActionMessage = "Bridge observer disconnected. Reconnecting…"
+            self.harnessRuntimeMonitor?.recordMilestone("bridgeDisconnected", message: self.lastActionMessage)
+            self.scheduleBridgeReconnect()
+        }
+    }
+
+    private func scheduleBridgeReconnect() {
+        bridgeReconnectTask?.cancel()
+        bridgeReconnectTask = Task { [weak self] in
+            var delay = Self.bridgeReconnectDelay
+            while !Task.isCancelled {
+                try? await Task.sleep(for: delay)
+                guard let self, !Task.isCancelled else { return }
+                self.connectBridgeObserver()
+                // If we're now connected, stop retrying.
+                if self.isBridgeReady { return }
+                delay = min(delay * 2, Self.bridgeMaxReconnectDelay)
+            }
         }
     }
 

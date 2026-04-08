@@ -11,7 +11,7 @@ function debugLog(msg) {
 
 const SOCKET_PATH =
   process.env.OPEN_ISLAND_SOCKET_PATH ||
-  `/tmp/open-island-${process.getuid()}.sock`;
+  `${process.env.HOME}/Library/Application Support/OpenIsland/bridge.sock`;
 
 function encodeEnvelope(command) {
   return JSON.stringify({ type: "command", command }) + "\n";
