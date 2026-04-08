@@ -29,6 +29,8 @@ struct OpenIslandBrandMark: View {
 
     @State private var breathePhase: Bool = false
     @State private var eyesVisible: Bool = true
+    @State private var antennaOffset: CGFloat = 0
+    @State private var legOffset: CGFloat = 0
 
     private static let blinkTimer = Timer.publish(every: 5.0, on: .main, in: .common).autoconnect()
 
@@ -73,8 +75,8 @@ struct OpenIslandBrandMark: View {
                         .opacity(pixel.part == .eye && !eyesVisible ? 0 : 1)
                         .frame(width: cell, height: cell)
                         .offset(
-                            x: originX + CGFloat(pixel.x) * cell,
-                            y: originY + CGFloat(pixel.y) * cell
+                            x: originX + CGFloat(pixel.x) * cell + partOffsetX(pixel.part),
+                            y: originY + CGFloat(pixel.y) * cell + partOffsetY(pixel.part)
                         )
                 }
             }
@@ -92,6 +94,10 @@ struct OpenIslandBrandMark: View {
             if style == .duotone {
                 breathePhase = true
             }
+            updatePartAnimations(animation)
+        }
+        .onChange(of: animation) { _, newAnimation in
+            updatePartAnimations(newAnimation)
         }
         .onReceive(Self.blinkTimer) { _ in
             guard style == .duotone else { return }
@@ -99,6 +105,37 @@ struct OpenIslandBrandMark: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                 eyesVisible = true
             }
+        }
+    }
+
+    private func updatePartAnimations(_ anim: ScoutAnimation) {
+        switch anim {
+        case .active, .permissionAlert, .taskComplete:
+            withAnimation(.easeInOut(duration: 0.75).repeatForever(autoreverses: true)) {
+                antennaOffset = 1.5
+            }
+            withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
+                legOffset = 1.5
+            }
+        case .idle:
+            withAnimation(.easeInOut(duration: 0.3)) {
+                antennaOffset = 0
+                legOffset = 0
+            }
+        }
+    }
+
+    private func partOffsetY(_ part: PixelPart) -> CGFloat {
+        switch part {
+        case .antenna: return -antennaOffset
+        default: return 0
+        }
+    }
+
+    private func partOffsetX(_ part: PixelPart) -> CGFloat {
+        switch part {
+        case .leg: return legOffset
+        default: return 0
         }
     }
 
