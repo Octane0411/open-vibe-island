@@ -140,14 +140,19 @@ public enum ClaudePermissionUpdate: Equatable, Codable, Sendable {
     /// Matches Claude Code's actual option text as closely as possible.
     public var displayLabel: String {
         switch self {
-        case let .addRules(_, rules, _):
-            let detail = rules.compactMap { rule -> String? in
-                if let content = rule.ruleContent, !content.isEmpty {
-                    return content
-                }
-                return rule.toolName
-            }.joined(separator: ", ")
-            return detail.isEmpty ? "Yes, and don't ask again" : "Yes, and don't ask again: \(detail)"
+        case let .addRules(destination, rules, _):
+            guard let rule = rules.first else { return "Yes, always allow" }
+            let action = Self.actionVerb(for: rule.toolName)
+            let path = Self.shortenedPath(rule.ruleContent)
+            let scope = Self.scopeLabel(for: destination)
+            if let path {
+                return scope.isEmpty
+                    ? "Yes, allow \(action) \(path)"
+                    : "Yes, allow \(action) \(path) \(scope)"
+            }
+            return scope.isEmpty
+                ? "Yes, always allow \(rule.toolName)"
+                : "Yes, always allow \(rule.toolName) \(scope)"
         case let .setMode(_, mode):
             switch mode {
             case .acceptEdits:
@@ -167,6 +172,35 @@ public enum ClaudePermissionUpdate: Equatable, Codable, Sendable {
             return "Add Directories"
         case .removeDirectories:
             return "Remove Directories"
+        }
+    }
+
+    private static func actionVerb(for toolName: String) -> String {
+        switch toolName {
+        case "Read": return "reading from"
+        case "Write", "Edit": return "writing to"
+        case "Bash": return "running"
+        case "Glob", "Grep": return "searching"
+        default: return toolName.lowercased()
+        }
+    }
+
+    private static func shortenedPath(_ ruleContent: String?) -> String? {
+        guard let content = ruleContent, !content.isEmpty else { return nil }
+        // Strip leading slashes and glob suffixes for cleaner display
+        var path = content
+        while path.hasPrefix("/") { path = String(path.dropFirst()) }
+        if path.hasSuffix("/**") { path = String(path.dropLast(3)) }
+        return path.isEmpty ? nil : path + "/"
+    }
+
+    private static func scopeLabel(for destination: ClaudePermissionUpdateDestination) -> String {
+        switch destination {
+        case .projectSettings: return "from this project"
+        case .userSettings: return "globally"
+        case .localSettings: return ""
+        case .session: return "for this session"
+        case .cliArg: return ""
         }
     }
 }

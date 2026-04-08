@@ -1203,16 +1203,17 @@ private struct IslandSessionRow: View {
                     .buttonStyle(IslandWideButtonStyle(kind: .secondary))
                 Button("Yes") { onApprove?(.allowOnce) }
                     .buttonStyle(IslandWideButtonStyle(kind: .warning))
-
-                let updates = session.permissionRequest?.suggestedUpdates ?? []
-                if updates.isEmpty {
-                    Button("Always Allow") { onApprove?(.allowWithUpdates([])) }
-                        .buttonStyle(IslandWideButtonStyle(kind: .danger))
-                } else {
-                    ForEach(Array(updates.enumerated()), id: \.offset) { _, update in
-                        Button(update.displayLabel) { onApprove?(.allowWithUpdates([update])) }
-                            .buttonStyle(IslandWideButtonStyle(kind: .danger))
+                if let toolName = session.permissionRequest?.toolName {
+                    Button("Always Allow (\(toolName))") {
+                        let rule = ClaudePermissionRuleValue(toolName: toolName)
+                        let update = ClaudePermissionUpdate.addRules(
+                            destination: .session,
+                            rules: [rule],
+                            behavior: .allow
+                        )
+                        onApprove?(.allowWithUpdates([update]))
                     }
+                    .buttonStyle(IslandWideButtonStyle(kind: .danger))
                 }
             }
         }

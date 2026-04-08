@@ -541,7 +541,6 @@ public final class BridgeServer: @unchecked Sendable {
             send(.response(.acknowledged), to: clientID)
 
         case .preToolUse:
-            clearStaleClaudeInteractionIfNeeded(for: payload.sessionID)
             ensureClaudeSessionExists(for: payload)
             synchronizeClaudeJumpTarget(for: payload)
             synchronizeClaudeMetadata(for: payload)
@@ -606,6 +605,8 @@ public final class BridgeServer: @unchecked Sendable {
                     kind: .question(payload, prompt)
                 )
             } else {
+                let suggestions = payload.permissionSuggestions ?? []
+
                 emit(
                     .permissionRequested(
                         PermissionRequested(
@@ -618,7 +619,7 @@ public final class BridgeServer: @unchecked Sendable {
                                 secondaryActionTitle: "Deny",
                                 toolName: payload.toolName,
                                 toolUseID: claudeToolUseID(for: payload),
-                                suggestedUpdates: payload.permissionSuggestions ?? []
+                                suggestedUpdates: suggestions
                             ),
                             timestamp: .now
                         )
@@ -715,7 +716,6 @@ public final class BridgeServer: @unchecked Sendable {
             send(.response(.acknowledged), to: clientID)
 
         case .notification:
-            clearStaleClaudeInteractionIfNeeded(for: payload.sessionID)
             ensureClaudeSessionExists(for: payload)
             synchronizeClaudeJumpTarget(for: payload)
             synchronizeClaudeMetadata(for: payload)
@@ -784,7 +784,6 @@ public final class BridgeServer: @unchecked Sendable {
             send(.response(.acknowledged), to: clientID)
 
         case .subagentStart:
-            clearStaleClaudeInteractionIfNeeded(for: payload.sessionID)
             ensureClaudeSessionExists(for: payload)
             synchronizeClaudeJumpTarget(for: payload)
             synchronizeClaudeMetadata(for: payload)
@@ -816,7 +815,6 @@ public final class BridgeServer: @unchecked Sendable {
             send(.response(.acknowledged), to: clientID)
 
         case .subagentStop:
-            clearStaleClaudeInteractionIfNeeded(for: payload.sessionID)
             ensureClaudeSessionExists(for: payload)
             synchronizeClaudeJumpTarget(for: payload)
             synchronizeClaudeMetadata(for: payload)
@@ -841,7 +839,6 @@ public final class BridgeServer: @unchecked Sendable {
             send(.response(.acknowledged), to: clientID)
 
         case .preCompact:
-            clearStaleClaudeInteractionIfNeeded(for: payload.sessionID)
             ensureClaudeSessionExists(for: payload)
             synchronizeClaudeJumpTarget(for: payload)
             synchronizeClaudeMetadata(for: payload)
