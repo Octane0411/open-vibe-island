@@ -141,6 +141,10 @@ public struct TrackedSession: Identifiable, Equatable, Sendable {
     /// Whether process discovery has ever confirmed this session's process.
     /// Only sessions confirmed by discovery can transition to `.gone` via discovery.
     public var processConfirmedByDiscovery: Bool
+    /// Number of consecutive discovery polls where this session's file was missing.
+    /// Hook-created sessions get a grace period (2 polls) before removal to avoid
+    /// a race where the hook fires before Claude Code writes the session file.
+    public var discoveryMissCount: Int
     public var customTitle: String?
     public var transcriptPath: String?
     public var metadata: SessionMetadata
@@ -160,6 +164,7 @@ public struct TrackedSession: Identifiable, Equatable, Sendable {
         questionPrompt: QuestionPrompt? = nil,
         processState: ProcessState = .unknown,
         processConfirmedByDiscovery: Bool = false,
+        discoveryMissCount: Int = 0,
         customTitle: String? = nil,
         transcriptPath: String? = nil,
         metadata: SessionMetadata = SessionMetadata(),
@@ -178,6 +183,7 @@ public struct TrackedSession: Identifiable, Equatable, Sendable {
         self.questionPrompt = questionPrompt
         self.processState = processState
         self.processConfirmedByDiscovery = processConfirmedByDiscovery
+        self.discoveryMissCount = discoveryMissCount
         self.customTitle = customTitle
         self.transcriptPath = transcriptPath
         self.metadata = metadata

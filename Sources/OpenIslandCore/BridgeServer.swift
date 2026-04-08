@@ -155,6 +155,17 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func stopLocked() {
+        // Unblock hook processes waiting for a permission response before
+        // tearing down connections. Without this, hooks hang until killed.
+        for (_, approval) in pendingApprovals {
+            send(.response(.codexHookDirective(.deny(reason: "Bridge shutting down."))), to: approval.clientID)
+        }
+        for (_, interaction) in pendingClaudeInteractions {
+            send(.response(.acknowledged), to: interaction.clientID)
+        }
+        for (_, interaction) in pendingOpenCodeInteractions {
+            send(.response(.acknowledged), to: interaction.clientID)
+        }
         pendingApprovals.removeAll()
         pendingClaudeInteractions.removeAll()
         pendingClaudeToolContexts.removeAll()
@@ -1262,6 +1273,9 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func clearStaleClaudeInteractionIfNeeded(for sessionID: String) {
+        // Prune cached Agent tool description if subagentStart never arrived.
+        pendingAgentDescriptions.removeValue(forKey: sessionID)
+
         guard pendingClaudeInteractions.removeValue(forKey: sessionID) != nil else {
             return
         }
@@ -1836,7 +1850,7 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func hasSession(id: String) -> Bool {
-        localState.session(id: id) != nil || localState.session(id: id) != nil
+        localState.session(id: id) != nil || stateSnapshot.session(id: id) != nil
     }
 
     private func send(_ envelope: BridgeEnvelope, to clientID: UUID) {
@@ -1874,6 +1888,15 @@ public final class BridgeServer: @unchecked Sendable {
 
         for sessionID in pendingSessionIDs {
             pendingApprovals.removeValue(forKey: sessionID)
+            emit(
+                .actionableStateResolved(
+                    ActionableStateResolved(
+                        sessionID: sessionID,
+                        summary: "Hook process disconnected.",
+                        timestamp: .now
+                    )
+                )
+            )
         }
 
         let pendingClaudeSessionIDs = pendingClaudeInteractions.compactMap { entry -> String? in

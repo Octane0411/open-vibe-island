@@ -170,10 +170,14 @@ final class SessionStore {
         case let .jumpTargetUpdated(payload):
             guard var s = sessions[payload.sessionID] else { return }
             let jt = payload.jumpTarget
+            // Keep the existing terminalSessionID if the update doesn't provide one.
+            // Ghostty's surface UUID is resolved once at session start and should
+            // not be wiped by later hooks that lack this info.
+            let existingSessionID = s.terminal?.terminalSessionID
             s.terminal = TerminalInfo(
                 app: jt.terminalApp,
                 tty: jt.terminalTTY,
-                terminalSessionID: jt.terminalSessionID
+                terminalSessionID: jt.terminalSessionID ?? existingSessionID
             )
             s.workingDirectory = jt.workingDirectory ?? s.workingDirectory
             s.lastActivityAt = payload.timestamp
@@ -181,6 +185,15 @@ final class SessionStore {
 
         case let .sessionMetadataUpdated(payload):
             guard var s = sessions[payload.sessionID] else { return }
+            let cm = payload.codexMetadata
+            s.metadata.initialPrompt = s.metadata.initialPrompt ?? cm.initialUserPrompt
+            s.metadata.lastPrompt = cm.lastUserPrompt ?? s.metadata.lastPrompt
+            s.metadata.lastAssistantMessage = cm.lastAssistantMessage ?? s.metadata.lastAssistantMessage
+            s.metadata.currentTool = cm.currentTool
+            s.metadata.currentToolInputPreview = cm.currentCommandPreview
+            if let path = cm.transcriptPath {
+                s.transcriptPath = path
+            }
             s.lastActivityAt = payload.timestamp
             sessions[payload.sessionID] = s
 
@@ -244,6 +257,33 @@ final class SessionStore {
                 metadata: meta
             )
             sessions[t.sessionID] = s
+        }
+    }
+
+    // MARK: Restore persisted terminal info
+
+    /// Apply persisted terminal info from disk. For sessions that have no
+    /// terminalSessionID (e.g. restored from transcripts or discovered by PID),
+    /// fill it in from the persisted file written by the hook binary.
+    func restorePersistedTerminalInfo() {
+        let entries = TerminalInfoStore.loadAll()
+        guard !entries.isEmpty else { return }
+
+        for (sessionID, entry) in entries {
+            guard var s = sessions[sessionID] else { continue }
+            // Don't overwrite if we already have a terminalSessionID.
+            guard s.terminal?.terminalSessionID == nil else { continue }
+
+            if s.terminal != nil {
+                s.terminal?.terminalSessionID = entry.terminalSessionID
+            } else {
+                s.terminal = TerminalInfo(
+                    app: entry.terminalApp,
+                    tty: entry.tty,
+                    terminalSessionID: entry.terminalSessionID
+                )
+            }
+            sessions[sessionID] = s
         }
     }
 
@@ -356,6 +396,12 @@ final class SessionStore {
                     existing.terminal = terminal
                     changed = true
                 }
+                // Keep lastActivityAt fresh from transcript mod time so sessions
+                // don't go grey while the agent is still actively running.
+                if lastActivityAt > existing.lastActivityAt {
+                    existing.lastActivityAt = lastActivityAt
+                    changed = true
+                }
                 if changed {
                     sessions[sessionID] = existing
                 }
@@ -380,13 +426,27 @@ final class SessionStore {
         // Remove Claude sessions not in session files — but keep sessions
         // that require attention (permission/question) to avoid dropping
         // actionable state before the user can respond.
-        for (id, session) in sessions {
-            if session.tool == .claudeCode
-                && !activeSessionIDs.contains(id)
-                && !session.phase.requiresAttention {
-                sessions.removeValue(forKey: id)
+        // Hook-created sessions get a grace period (2 consecutive misses)
+        // to avoid a race where the hook fires before Claude Code writes
+        // the session file to ~/.claude/sessions/.
+        for (id, var session) in sessions {
+            guard session.tool == .claudeCode else { continue }
+            if activeSessionIDs.contains(id) {
+                session.discoveryMissCount = 0
+                sessions[id] = session
+            } else if !session.phase.requiresAttention {
+                session.discoveryMissCount += 1
+                if session.discoveryMissCount >= 2 {
+                    sessions.removeValue(forKey: id)
+                } else {
+                    sessions[id] = session
+                }
             }
         }
+
+        // Apply persisted terminal info (surface UUIDs) saved by the hook binary.
+        // This restores jump-to-terminal capability after app restart.
+        restorePersistedTerminalInfo()
     }
 
     /// Resolve terminal app by walking the process parent chain.
