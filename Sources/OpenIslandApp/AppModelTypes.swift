@@ -13,7 +13,3 @@ enum NotchOpenReason: Equatable {
     case boot
 }
 
-enum TrackedEventIngress {
-    case bridge
-    case rollout
-}

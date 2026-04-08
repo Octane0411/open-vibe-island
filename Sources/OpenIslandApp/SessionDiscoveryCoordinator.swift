@@ -39,9 +39,6 @@ final class SessionDiscoveryCoordinator {
     private let claudeSessionRegistry = ClaudeSessionRegistry()
 
     @ObservationIgnored
-    let codexRolloutWatcher = CodexRolloutWatcher()
-
-    @ObservationIgnored
     private let codexRolloutDiscovery = CodexRolloutDiscovery()
 
     @ObservationIgnored
@@ -129,8 +126,6 @@ final class SessionDiscoveryCoordinator {
             onStatusMessage?("Discovered \(payload.discoveredClaudeSessions.count) recent Claude session(s) from local transcripts.")
         }
 
-        // Sync rollout tracking with current sessions.
-        refreshCodexRolloutTracking()
     }
 
     // MARK: - Merge & discovery
@@ -255,23 +250,6 @@ final class SessionDiscoveryCoordinator {
     }
 
     // MARK: - Rollout tracking
-
-    func refreshCodexRolloutTracking() {
-        let targets = state.sessions.compactMap { session -> CodexRolloutWatchTarget? in
-            guard session.tool == .codex,
-                  let transcriptPath = session.codexMetadata?.transcriptPath,
-                  !transcriptPath.isEmpty else {
-                return nil
-            }
-
-            return CodexRolloutWatchTarget(
-                sessionID: session.id,
-                transcriptPath: transcriptPath
-            )
-        }
-
-        codexRolloutWatcher.sync(targets: targets)
-    }
 
     // MARK: - Persistence scheduling
 

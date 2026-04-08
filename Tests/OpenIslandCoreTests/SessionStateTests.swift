@@ -600,8 +600,8 @@ struct SessionStateTests {
 
         let sessionStartGroups = hooks?["SessionStart"] as? [[String: Any]]
         #expect(sessionStartGroups?.contains(where: { $0["matcher"] as? String == "startup|resume" }) == true)
-        #expect(hooks?["PreToolUse"] == nil)
-        #expect(hooks?["PostToolUse"] == nil)
+        #expect(hooks?["PreToolUse"] != nil)
+        #expect(hooks?["PostToolUse"] != nil)
     }
 
     @Test
@@ -666,8 +666,9 @@ struct SessionStateTests {
             .flatMap { $0 }
             .compactMap { $0["command"] as? String } ?? []
 
-        #expect(preToolCommands == ["/usr/bin/printf"])
-        #expect(hooks?["PostToolUse"] == nil)
+        #expect(preToolCommands.contains("/usr/bin/printf"))
+        #expect(preToolCommands.contains("'/tmp/new-release/OpenIslandHooks'"))
+        #expect(hooks?["PostToolUse"] != nil)
         #expect(stopCommands.contains("/usr/bin/true"))
         #expect(stopCommands.contains("'/tmp/new-release/OpenIslandHooks'"))
         #expect(!stopCommands.contains("'/Users/test/.open-island/bin/open-island-bridge' --source codex"))

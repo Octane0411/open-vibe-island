@@ -219,16 +219,6 @@ final class AppModel {
             self?.refreshOverlayPlacementIfVisible()
         }
 
-        discovery.codexRolloutWatcher.eventHandler = { [weak self] event in
-            Task { @MainActor [weak self] in
-                self?.applyTrackedEvent(
-                    event,
-                    updateLastActionMessage: false,
-                    ingress: .rollout
-                )
-            }
-        }
-
         monitoring.syntheticClaudeSessionPrefix = Self.syntheticClaudeSessionPrefix
         monitoring.stateAccessor = { [weak self] in self?.state ?? SessionState() }
         monitoring.stateUpdater = { [weak self] in self?.state = $0 }
@@ -744,37 +734,13 @@ final class AppModel {
 
     func applyTrackedEvent(
         _ event: AgentEvent,
-        updateLastActionMessage: Bool = true,
-        ingress: TrackedEventIngress = .bridge
+        updateLastActionMessage: Bool = true
     ) {
-        // Snapshot whether this session was already completed before applying
-        // the event. Used to suppress duplicate/stale completion notifications
-        // (e.g. rollout watcher re-discovering an old completion on startup,
-        // or producing a duplicate sessionCompleted that races with the bridge).
-        let wasAlreadyCompleted: Bool = {
-            guard case let .sessionCompleted(payload) = event else { return false }
-            return state.session(id: payload.sessionID)?.phase == .completed
-        }()
-
-        // Guard: don't let rollout events downgrade a session from completed
-        // back to running. The bridge's sessionCompleted is authoritative; the
-        // rollout watcher may have read the JSONL before task_complete was
-        // flushed, producing a stale activityUpdated(phase: .running).
-        if ingress == .rollout,
-           case let .activityUpdated(payload) = event,
-           payload.phase == .running,
-           state.session(id: payload.sessionID)?.phase == .completed {
-            return
-        }
-
         state.apply(event)
         reconcileIslandSurfaceAfterStateChange()
-        if ingress == .bridge {
-            monitoring.markSessionAttached(for: event)
-            monitoring.markSessionProcessAlive(for: event)
-        }
+        monitoring.markSessionAttached(for: event)
+        monitoring.markSessionProcessAlive(for: event)
         synchronizeSelection()
-        discovery.refreshCodexRolloutTracking()
         refreshOverlayPlacementIfVisible()
         discovery.scheduleCodexSessionPersistence()
         discovery.scheduleClaudeSessionPersistence()
@@ -784,9 +750,7 @@ final class AppModel {
         }
 
         if let surface = IslandSurface.notificationSurface(for: event),
-           !wasAlreadyCompleted,
-           surface.sessionID.flatMap({ state.session(id: $0) }) != nil,
-           (ingress == .bridge || !isResolvingInitialLiveSessions),
+           !isResolvingInitialLiveSessions,
            notchStatus == .closed || notchOpenReason == .notification {
             presentNotificationSurface(surface)
         }
