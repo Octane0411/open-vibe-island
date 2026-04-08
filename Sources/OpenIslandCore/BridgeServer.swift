@@ -484,13 +484,27 @@ public final class BridgeServer: @unchecked Sendable {
         }
     }
 
+    /// Process a Claude Code hook payload received from the bridge.
+    ///
+    /// Claude Code fires hooks at each lifecycle point (SessionStart, PreToolUse, PermissionRequest,
+    /// Stop, etc.). This method translates each hook into an `AgentEvent` that flows to `SessionStore`.
+    ///
+    /// **Subagent filtering**: Hooks from subagent processes (agentID != nil) are mostly suppressed
+    /// to avoid creating duplicate sessions. Exceptions: SubagentStart/SubagentStop (lifecycle signals
+    /// for the parent session's metadata) and PermissionRequest (subagents need user approval too).
+    ///
+    /// **Metadata synchronization**: Every hook event carries the latest session metadata
+    /// (model, permissionMode, currentTool, etc.) which is synchronized via `synchronizeClaudeMetadata`.
     private func handleClaudeHook(_ payload: ClaudeHookPayload, from clientID: UUID) {
         // Subagent processes fire their own hooks with agentID set.
-        // The parent session already receives SubagentStart/SubagentStop events,
-        // so we suppress subagent hooks to avoid creating duplicate sessions.
+        // We suppress most subagent hooks to avoid creating duplicate sessions,
+        // but allow through:
+        //   - SubagentStart/SubagentStop: lifecycle signals for the parent session
+        //   - PermissionRequest: subagent permission prompts must reach the user
         if payload.agentID != nil,
            payload.hookEventName != .subagentStart,
-           payload.hookEventName != .subagentStop {
+           payload.hookEventName != .subagentStop,
+           payload.hookEventName != .permissionRequest {
             send(.response(.acknowledged), to: clientID)
             return
         }
@@ -766,7 +780,8 @@ public final class BridgeServer: @unchecked Sendable {
                         agentID: agentID,
                         agentType: payload.agentType,
                         taskDescription: desc,
-                        startedAt: .now
+                        startedAt: .now,
+                        transcriptPath: payload.agentTranscriptPath
                     ),
                     toSession: payload.sessionID
                 )

@@ -308,6 +308,33 @@ extension TrackedSession {
         terminal?.app
     }
 
+    /// Short model identifier for display (e.g. "claude-opus-4-5" → "opus-4-5").
+    /// Returns nil if no model is set.
+    var spotlightModelBadge: String? {
+        guard let model = metadata.model, !model.isEmpty else { return nil }
+        // Strip common "claude-" prefix for brevity.
+        if model.hasPrefix("claude-") {
+            return String(model.dropFirst("claude-".count))
+        }
+        return model
+    }
+
+    /// Warning badge when the session runs with elevated permissions.
+    /// Returns nil for normal/default permission modes.
+    var spotlightPermissionModeBadge: String? {
+        guard let mode = metadata.permissionMode else { return nil }
+        switch mode {
+        case .bypassPermissions, .dontAsk:
+            return "Auto-approve"
+        case .acceptEdits:
+            return "Accept edits"
+        case .plan:
+            return "Plan mode"
+        case .default:
+            return nil
+        }
+    }
+
     var spotlightTrackingLabel: String? {
         guard let path = transcriptPath?.trimmingCharacters(in: .whitespacesAndNewlines),
               !path.isEmpty else {

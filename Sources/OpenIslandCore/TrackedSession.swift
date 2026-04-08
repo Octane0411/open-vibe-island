@@ -24,6 +24,9 @@ public struct TerminalInfo: Equatable, Codable, Sendable {
     }
 }
 
+/// Metadata about an agent session that flows from hooks through to the UI layer.
+/// This is the shared representation — agent-specific metadata (e.g. `ClaudeSessionMetadata`)
+/// is converted into this type by `SessionStore.sessionMetadata(from:)`.
 public struct SessionMetadata: Equatable, Sendable {
     public var initialPrompt: String?
     public var lastPrompt: String?
@@ -32,6 +35,11 @@ public struct SessionMetadata: Equatable, Sendable {
     public var currentTool: String?
     public var currentToolInputPreview: String?
     public var worktreeBranch: String?
+    /// The active permission mode for the session (e.g. default, acceptEdits, bypassPermissions).
+    /// Useful for warning users when a session runs with elevated permissions.
+    public var permissionMode: ClaudePermissionMode?
+    /// How this session started — fresh startup, resumed, cleared context, or compacted.
+    public var startupSource: ClaudeSessionStartSource?
     public var activeSubagents: [ClaudeSubagentInfo]
     public var activeTasks: [ClaudeTaskInfo]
 
@@ -43,6 +51,8 @@ public struct SessionMetadata: Equatable, Sendable {
         currentTool: String? = nil,
         currentToolInputPreview: String? = nil,
         worktreeBranch: String? = nil,
+        permissionMode: ClaudePermissionMode? = nil,
+        startupSource: ClaudeSessionStartSource? = nil,
         activeSubagents: [ClaudeSubagentInfo] = [],
         activeTasks: [ClaudeTaskInfo] = []
     ) {
@@ -53,6 +63,8 @@ public struct SessionMetadata: Equatable, Sendable {
         self.currentTool = currentTool
         self.currentToolInputPreview = currentToolInputPreview
         self.worktreeBranch = worktreeBranch
+        self.permissionMode = permissionMode
+        self.startupSource = startupSource
         self.activeSubagents = activeSubagents
         self.activeTasks = activeTasks
     }
@@ -97,17 +109,34 @@ public struct DiscoveredTranscript: Equatable, Sendable {
 
 // MARK: - TrackedSession
 
+/// The primary session model used throughout the UI layer.
+///
+/// A TrackedSession represents one agent conversation (Claude Code, Codex, OpenCode).
+/// Sessions are created by two paths:
+///   1. **Hook events** — the authoritative path via `SessionStore.applyHookEvent(_:)`,
+///      triggered by live hook payloads arriving through the bridge.
+///   2. **Discovery** — `SessionStore.discoverClaudeSessions()` reads `~/.claude/sessions/*.json`
+///      and creates/updates sessions based on PID liveness. This is the source of truth for
+///      whether a Claude Code session is still alive.
+///
+/// Visibility is determined by `isVisible(at:)`: a session appears in the island if its
+/// process is alive, it requires user attention, or it's a demo session.
 public struct TrackedSession: Identifiable, Equatable, Sendable {
     public let id: String
     public var tool: AgentTool
+    /// Current lifecycle phase — drives UI treatment (badge color, action buttons).
     public var phase: SessionPhase
     public var summary: String
     public var startedAt: Date
+    /// Updated on every hook event and discovery poll. Used for age badges and sort order.
     public var lastActivityAt: Date
     public var terminal: TerminalInfo?
     public var workingDirectory: String?
+    /// Non-nil when the session is waiting for the user to approve a tool use.
     public var permissionRequest: PermissionRequest?
+    /// Non-nil when the session is waiting for the user to answer a question.
     public var questionPrompt: QuestionPrompt?
+    /// Liveness state. For Claude Code sessions, this is driven by `~/.claude/sessions/` PID checks.
     public var processState: ProcessState
     /// Whether process discovery has ever confirmed this session's process.
     /// Only sessions confirmed by discovery can transition to `.gone` via discovery.
@@ -180,7 +209,13 @@ public extension TrackedSession {
 
 public extension TrackedSession {
     /// Returns whether this session should be shown in the island at the given reference date.
-    /// Strictly synced with live Claude Code sessions — no grace period.
+    ///
+    /// Visibility rules (evaluated in order):
+    ///   1. Demo sessions are always visible (for testing/preview).
+    ///   2. Sessions needing user action (permission or question) stay visible regardless of process state.
+    ///   3. Sessions with a live process (confirmed by `~/.claude/sessions/` PID check) are visible.
+    ///   4. Everything else is hidden — no grace period. When the session file disappears
+    ///      or the PID dies, the session drops from the island immediately.
     func isVisible(at referenceDate: Date) -> Bool {
         if origin == .demo { return true }
         if phase.requiresAttention { return true }

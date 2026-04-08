@@ -143,19 +143,24 @@ public struct ClaudeSubagentInfo: Equatable, Codable, Sendable {
     public var summary: String?
     public var taskDescription: String?
     public var startedAt: Date?
+    /// Path to the subagent's own JSONL transcript, if available.
+    /// Enables jumping to the subagent's conversation context.
+    public var transcriptPath: String?
 
     public init(
         agentID: String,
         agentType: String? = nil,
         summary: String? = nil,
         taskDescription: String? = nil,
-        startedAt: Date? = nil
+        startedAt: Date? = nil,
+        transcriptPath: String? = nil
     ) {
         self.agentID = agentID
         self.agentType = agentType
         self.summary = summary
         self.taskDescription = taskDescription
         self.startedAt = startedAt
+        self.transcriptPath = transcriptPath
     }
 }
 

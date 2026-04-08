@@ -17,7 +17,19 @@ extension SessionPhase {
 
 // MARK: - SessionStore
 
-/// Single owner of all TrackedSession state for the app UI layer.
+/// Single owner of all `TrackedSession` state for the app UI layer.
+///
+/// Two data paths feed into the store:
+///   1. **Hook events** (`applyHookEvent`) — real-time updates from the bridge as Claude Code
+///      runs tools, asks questions, requests permission, etc. This is the authoritative path
+///      for session phase, summary, metadata, and actionable state.
+///   2. **Session file discovery** (`discoverClaudeSessions`) — periodic poll of
+///      `~/.claude/sessions/*.json` that creates sessions for newly-appeared files and
+///      removes sessions whose PID is no longer alive. This is the source of truth for
+///      process liveness and session existence.
+///
+/// The store also supports `reconcileProcesses` for non-Claude agents (Codex) that rely
+/// on process discovery via `ps`/`lsof` rather than session files.
 @MainActor @Observable
 final class SessionStore {
 
@@ -263,9 +275,19 @@ final class SessionStore {
 
     // MARK: Claude session file discovery (~/.claude/sessions/)
 
-    /// Discover active Claude Code sessions from ~/.claude/sessions/*.json.
-    /// Each file contains: pid, sessionId, cwd, startedAt, name.
-    /// PID is checked against `ps` to determine liveness.
+    /// Discover active Claude Code sessions from `~/.claude/sessions/*.json`.
+    ///
+    /// This is the **source of truth** for Claude Code session liveness. Each JSON file
+    /// contains `pid`, `sessionId`, `cwd`, `startedAt`, and `name`. The PID is checked
+    /// with `kill(pid, 0)` to determine liveness — if the process is gone, the session
+    /// is skipped.
+    ///
+    /// For sessions already known from hook events, this updates `processState` and
+    /// fills in terminal/title info. For unknown sessions (e.g. started before the app
+    /// launched), it creates new TrackedSessions.
+    ///
+    /// Sessions whose files disappear (or whose PID dies) are removed — unless they
+    /// have pending permission/question state that the user hasn't responded to yet.
     func discoverClaudeSessions() {
         let sessionsDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/sessions", isDirectory: true)
@@ -313,16 +335,30 @@ final class SessionStore {
             }()
 
             if var existing = sessions[sessionID] {
-                existing.processState = .alive
-                existing.processConfirmedByDiscovery = true
-                if let name, !name.isEmpty {
+                var changed = false
+                if existing.processState != .alive {
+                    existing.processState = .alive
+                    changed = true
+                }
+                if !existing.processConfirmedByDiscovery {
+                    existing.processConfirmedByDiscovery = true
+                    changed = true
+                }
+                if let name, !name.isEmpty, existing.customTitle != name {
                     existing.customTitle = name
+                    changed = true
                 }
-                existing.workingDirectory = existing.workingDirectory ?? cwd
-                if existing.terminal == nil {
+                if existing.workingDirectory == nil {
+                    existing.workingDirectory = cwd
+                    changed = true
+                }
+                if existing.terminal == nil, let terminal {
                     existing.terminal = terminal
+                    changed = true
                 }
-                sessions[sessionID] = existing
+                if changed {
+                    sessions[sessionID] = existing
+                }
             } else {
                 sessions[sessionID] = TrackedSession(
                     id: sessionID,
@@ -486,7 +522,9 @@ final class SessionStore {
         sessions[id] = s
     }
 
-    /// Convert `ClaudeSessionMetadata` → `SessionMetadata`.
+    /// Convert agent-specific `ClaudeSessionMetadata` into the shared `SessionMetadata`
+    /// used by the UI layer. Fields that only exist in the Claude model but are useful
+    /// for display (permissionMode, startupSource) are propagated here.
     private func sessionMetadata(from cm: ClaudeSessionMetadata?) -> SessionMetadata {
         guard let cm else { return SessionMetadata() }
         return SessionMetadata(
@@ -497,6 +535,8 @@ final class SessionStore {
             currentTool: cm.currentTool,
             currentToolInputPreview: cm.currentToolInputPreview,
             worktreeBranch: cm.worktreeBranch,
+            permissionMode: cm.permissionMode,
+            startupSource: cm.startupSource,
             activeSubagents: cm.activeSubagents,
             activeTasks: cm.activeTasks
         )
