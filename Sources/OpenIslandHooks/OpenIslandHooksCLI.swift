@@ -44,6 +44,7 @@ struct OpenIslandHooksCLI {
                     .withRuntimeContext(environment: ProcessInfo.processInfo.environment)
 
                 guard let response = try? client.send(.processCodexHook(payload)) else {
+                    logStderr("bridge unavailable for codex hook")
                     return
                 }
 
@@ -61,6 +62,7 @@ struct OpenIslandHooksCLI {
                     : 45
 
                 guard let response = try? client.send(.processClaudeHook(payload), timeout: timeout) else {
+                    logStderr("bridge unavailable for claude hook (\(payload.hookEventName.rawValue))")
                     return
                 }
 
@@ -70,7 +72,13 @@ struct OpenIslandHooksCLI {
             }
         } catch {
             // Hooks should fail open so the CLI continues working even if the bridge is unavailable.
+            logStderr("hook failed: \(error)")
         }
+    }
+
+    private static func logStderr(_ message: String) {
+        guard let data = "[OpenIslandHooks] \(message)\n".data(using: .utf8) else { return }
+        FileHandle.standardError.write(data)
     }
 
     private static func hookSource(arguments: [String]) -> HookSource {
