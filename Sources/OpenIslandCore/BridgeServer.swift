@@ -61,6 +61,9 @@ public final class BridgeServer: @unchecked Sendable {
     private var pendingAgentDescriptions: [String: String] = [:]
     /// Maps toolUseID → temporary task ID for TaskCreate, so postToolUse can update with real ID.
     private var pendingTaskCreations: [String: String] = [:]
+    /// Rules for automatic permission/question response, set by the app.
+    public var autoResponseRules: [AutoResponseRule] = []
+
     private var stateSnapshot = SessionState()
     /// Local working state: tracks sessions emitted by this server between
     /// snapshot pushes from AppModel. This is NOT a duplicate of AppModel's
@@ -591,6 +594,31 @@ public final class BridgeServer: @unchecked Sendable {
             synchronizeClaudeMetadata(for: payload)
 
             if let prompt = payload.questionPrompt {
+                // Auto-response check for questions
+                if let autoAction = AutoResponseMatcher.match(
+                    rules: autoResponseRules,
+                    toolName: payload.toolName,
+                    affectedPath: payload.permissionAffectedPath,
+                    agentTool: payload.resolvedAgentTool,
+                    title: prompt.title,
+                    isQuestion: true
+                ) {
+                    let resolution = autoActionToQuestionResolution(autoAction, prompt: prompt, payload: payload)
+                    let directive = buildAutoDirective(for: payload, resolution: resolution)
+                    send(.response(.claudeHookDirective(directive)), to: clientID)
+                    emit(
+                        .activityUpdated(
+                            SessionActivityUpdated(
+                                sessionID: payload.sessionID,
+                                summary: "Auto-responded to question: \(prompt.title)",
+                                phase: .running,
+                                timestamp: .now
+                            )
+                        )
+                    )
+                    return
+                }
+
                 emit(
                     .questionAsked(
                         QuestionAsked(
@@ -606,6 +634,31 @@ public final class BridgeServer: @unchecked Sendable {
                     kind: .question(payload, prompt)
                 )
             } else {
+                // Auto-response check for permissions
+                if let autoAction = AutoResponseMatcher.match(
+                    rules: autoResponseRules,
+                    toolName: payload.toolName,
+                    affectedPath: payload.permissionAffectedPath,
+                    agentTool: payload.resolvedAgentTool,
+                    title: payload.permissionRequestTitle,
+                    isQuestion: false
+                ) {
+                    let resolution = autoActionToPermissionResolution(autoAction)
+                    let directive = buildAutoDirective(for: payload, resolution: resolution)
+                    send(.response(.claudeHookDirective(directive)), to: clientID)
+                    emit(
+                        .activityUpdated(
+                            SessionActivityUpdated(
+                                sessionID: payload.sessionID,
+                                summary: "Auto-responded to permission: \(payload.toolName ?? "unknown")",
+                                phase: .running,
+                                timestamp: .now
+                            )
+                        )
+                    )
+                    return
+                }
+
                 emit(
                     .permissionRequested(
                         PermissionRequested(
@@ -2030,5 +2083,69 @@ public final class BridgeServer: @unchecked Sendable {
         }
 
         client.readSource.cancel()
+    }
+
+    // MARK: - Auto-Response Helpers
+
+    private func autoActionToPermissionResolution(_ action: RuleAction) -> PermissionResolution {
+        switch action {
+        case .allow:
+            return .allowOnce()
+        case .deny(let message):
+            return .deny(message: message ?? "Denied by auto-response rule.")
+        case .selectOption, .selectByKeyword:
+            return .allowOnce()
+        }
+    }
+
+    private func autoActionToQuestionResolution(
+        _ action: RuleAction,
+        prompt: QuestionPrompt,
+        payload: ClaudeHookPayload
+    ) -> PermissionResolution {
+        switch action {
+        case .allow:
+            return .allowOnce()
+        case .deny(let message):
+            return .deny(message: message ?? "Denied by auto-response rule.")
+        case .selectOption(let index):
+            let response = buildAutoQuestionResponse(prompt: prompt, optionIndex: index)
+            let mergedInput = mergedClaudeQuestionInput(
+                payload: payload,
+                prompt: prompt,
+                response: response
+            )
+            return .allowOnce(updatedInput: mergedInput)
+        case .selectByKeyword(let keyword):
+            let index = prompt.options.firstIndex(where: {
+                $0.lowercased().contains(keyword.lowercased())
+            }) ?? 0
+            let response = buildAutoQuestionResponse(prompt: prompt, optionIndex: index)
+            let mergedInput = mergedClaudeQuestionInput(
+                payload: payload,
+                prompt: prompt,
+                response: response
+            )
+            return .allowOnce(updatedInput: mergedInput)
+        }
+    }
+
+    private func buildAutoQuestionResponse(prompt: QuestionPrompt, optionIndex: Int) -> QuestionPromptResponse {
+        let safeIndex = min(optionIndex, max(prompt.options.count - 1, 0))
+        let answer = prompt.options.indices.contains(safeIndex) ? prompt.options[safeIndex] : ""
+        return QuestionPromptResponse(answer: answer)
+    }
+
+    private func buildAutoDirective(
+        for payload: ClaudeHookPayload,
+        resolution: PermissionResolution
+    ) -> ClaudeHookDirective {
+        switch resolution {
+        case let .allowOnce(updatedInput, updatedPermissions):
+            let finalInput = updatedInput ?? payload.toolInput
+            return .permissionRequest(.allow(updatedInput: finalInput, updatedPermissions: updatedPermissions))
+        case let .deny(message, interrupt):
+            return .permissionRequest(.deny(message: message ?? "Denied by auto-response rule.", interrupt: interrupt))
+        }
     }
 }
