@@ -61,6 +61,8 @@ public final class BridgeServer: @unchecked Sendable {
     /// overwritten whenever AppModel pushes a fresh snapshot.
     private var localState = SessionState()
 
+    // MARK: - Lifecycle
+
     public init(
         socketURL: URL = BridgeSocketLocation.defaultURL
     ) {
@@ -291,6 +293,8 @@ public final class BridgeServer: @unchecked Sendable {
         }
     }
 
+    // MARK: - Command dispatch
+
     private func handle(_ command: BridgeCommand, from clientID: UUID) {
         switch command {
         case let .registerClient(role):
@@ -393,6 +397,8 @@ public final class BridgeServer: @unchecked Sendable {
         }
     }
 
+    // MARK: - Codex hooks
+
     private func handleCodexHook(_ payload: CodexHookPayload, from clientID: UUID) {
         switch payload.hookEventName {
         case .sessionStart:
@@ -494,6 +500,8 @@ public final class BridgeServer: @unchecked Sendable {
             send(.response(.acknowledged), to: clientID)
         }
     }
+
+    // MARK: - Claude Code hooks
 
     /// Process a Claude Code hook payload received from the bridge.
     ///
@@ -873,6 +881,8 @@ public final class BridgeServer: @unchecked Sendable {
             send(.response(.acknowledged), to: clientID)
         }
     }
+
+    // MARK: - OpenCode hooks
 
     private func handleOpenCodeHook(_ payload: OpenCodeHookPayload, from clientID: UUID) {
         switch payload.hookEventName {
@@ -1790,6 +1800,8 @@ public final class BridgeServer: @unchecked Sendable {
             to: pendingInteraction.clientID
         )
     }
+
+    // MARK: - Shared helpers
 
     private func claudeToolUseID(for payload: ClaudeHookPayload) -> String? {
         payload.toolUseID ?? pendingClaudeToolContexts[payload.permissionCorrelationKey]?.toolUseID

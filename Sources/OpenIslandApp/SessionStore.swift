@@ -495,20 +495,7 @@ final class SessionStore {
     }
 
     private static func shellOutput(_ path: String, _ arguments: [String]) -> String? {
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: path)
-        process.arguments = arguments
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-            process.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            return String(data: data, encoding: .utf8)
-        } catch {
-            return nil
-        }
+        ShellProcess.output(executablePath: path, arguments: arguments)
     }
 
     /// Find transcript by globbing for the session UUID across all project directories.
