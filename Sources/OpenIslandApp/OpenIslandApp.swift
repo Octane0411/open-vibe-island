@@ -84,7 +84,9 @@ final class OpenIslandAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private static func hideAllAppWindows() {
-        for window in NSApp.windows where !window.className.contains("MenuBarExtra") {
+        for window in NSApp.windows {
+            let name = window.className
+            if name.contains("MenuBarExtra") || name.contains("NotchPanel") { continue }
             window.orderOut(nil)
         }
     }
@@ -100,29 +102,7 @@ struct OpenIslandApp: App {
     @NSApplicationDelegateAdaptor(OpenIslandAppDelegate.self)
     private var appDelegate
 
-    @Environment(\.openWindow) private var openWindow
-
     var body: some Scene {
-        Window("Open Island Settings", id: "settings") {
-            SettingsWindowContent(model: appDelegate.model)
-        }
-        .windowResizability(.contentSize)
-        .commands {
-            CommandGroup(replacing: .appSettings) {
-                Button("Settings…") {
-                    openWindow(id: "settings")
-                    appDelegate.model.showSettings()
-                }
-                .keyboardShortcut(",", modifiers: .command)
-            }
-        }
-
-        #if DEBUG
-        WindowGroup("Open Island Debug") {
-            ControlCenterView(model: appDelegate.model)
-        }
-        #endif
-
         MenuBarExtra {
             MenuBarContentView(model: appDelegate.model)
         } label: {
@@ -130,22 +110,13 @@ struct OpenIslandApp: App {
                 .accessibilityLabel("Open Island")
         }
         .menuBarExtraStyle(.window)
-    }
-}
-
-/// Injects the SwiftUI `openWindow` action into `AppModel` so that
-/// `model.showSettings()` can materialize the window even if it has
-/// never been shown before (SwiftUI `Window` scenes are lazy).
-private struct SettingsWindowContent: View {
-    var model: AppModel
-    @Environment(\.openWindow) private var openWindow
-
-    var body: some View {
-        SettingsView(model: model)
-            .onAppear {
-                model.openSettingsWindow = { [openWindow] in
-                    openWindow(id: "settings")
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") {
+                    appDelegate.model.showSettings()
                 }
+                .keyboardShortcut(",", modifiers: .command)
             }
+        }
     }
 }

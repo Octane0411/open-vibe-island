@@ -11,7 +11,9 @@ final class AppModel {
     private static let showDockIconDefaultsKey = "app.showDockIcon"
     private static let syntheticClaudeSessionPrefix = "claude-process:"
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
-    private static let jumpOverlayDismissLeadTime: Duration = .milliseconds(20)
+    // Wait for the overlay panel to fully dismiss before activating the terminal.
+    // Too short and the panel steals keyboard focus back from Ghostty/iTerm after jump.
+    private static let jumpOverlayDismissLeadTime: Duration = .milliseconds(80)
     static let hoverOpenDelay: TimeInterval = 0.35
 
     struct AcceptanceStep: Identifiable {
@@ -153,7 +155,11 @@ final class AppModel {
         set { overlay.overlayDisplaySelectionID = newValue }
     }
     @ObservationIgnored
-    var openSettingsWindow: (() -> Void)?
+    private var settingsWindow: NSWindow?
+    #if DEBUG
+    @ObservationIgnored
+    private var debugWindow: NSWindow?
+    #endif
 
     var ignoresPointerExitDuringHarness = false
     var disablesOverlayEventMonitoringDuringHarness = false
@@ -430,9 +436,6 @@ final class AppModel {
         }
         refreshOverlayDisplayConfiguration()
         ensureOverlayPanel()
-        if shouldPerformBootAnimation {
-            performBootAnimation()
-        }
 
         guard startBridge else {
             isBridgeReady = false
@@ -573,23 +576,59 @@ final class AppModel {
     }
 
     func showSettings() {
-        openSettingsWindow?()
-        if let window = NSApp.windows.first(where: { $0.title == "Open Island Settings" }) {
+        notchClose()
+
+        if let window = settingsWindow, window.isVisible {
             window.orderFrontRegardless()
             window.makeKey()
-        }
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
-    func showControlCenter() {
-        guard let window = NSApp.windows.first(where: { $0.title == "Open Island Debug" }) else {
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
+        let window = NSWindow(
+            contentRect: .zero,
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Open Island Settings"
+        window.isReleasedWhenClosed = false
+        let hostingController = NSHostingController(rootView: SettingsView(model: self))
+        window.contentViewController = hostingController
+        window.setContentSize(hostingController.view.fittingSize)
+        window.center()
         window.orderFrontRegardless()
         window.makeKey()
         NSApp.activate(ignoringOtherApps: true)
+        settingsWindow = window
+    }
+
+    func showControlCenter() {
+        #if DEBUG
+        if let window = debugWindow, window.isVisible {
+            window.orderFrontRegardless()
+            window.makeKey()
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let window = NSWindow(
+            contentRect: .zero,
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Open Island Debug"
+        window.isReleasedWhenClosed = false
+        let hostingController = NSHostingController(rootView: ControlCenterView(model: self))
+        window.contentViewController = hostingController
+        window.setContentSize(hostingController.view.fittingSize)
+        window.center()
+        window.orderFrontRegardless()
+        window.makeKey()
+        NSApp.activate(ignoringOtherApps: true)
+        debugWindow = window
+        #endif
     }
 
     func hideControlCenter() {
@@ -633,6 +672,12 @@ final class AppModel {
     }
 
     func jumpToSession(_ session: TrackedSession) {
+        print("[AppModel] jumpToSession called for \(session.id.prefix(8))")
+
+        // 1. Close the notch.
+        dismissOverlayForJump()
+
+        // 2. Jump to the terminal.
         guard let jumpTarget = session.jumpTarget,
               jumpTarget.terminalApp.lowercased() != "unknown" else {
             lastActionMessage = "Cannot jump: terminal app is unknown."
@@ -643,6 +688,7 @@ final class AppModel {
 
     private func jump(to jumpTarget: JumpTarget?) {
         guard let jumpTarget else {
+            print("[AppModel] jump — no jumpTarget")
             lastActionMessage = "No jump target is available yet."
             return
         }
@@ -650,6 +696,7 @@ final class AppModel {
         let shouldDelayForDismissAnimation = isOverlayVisible
         let jumpAction = terminalJumpAction
 
+        print("[AppModel] jump — app=\(jumpTarget.terminalApp) tid=\(jumpTarget.terminalSessionID ?? "nil") delay=\(shouldDelayForDismissAnimation)")
         dismissOverlayForJump()
         jumpTask?.cancel()
         jumpTask = Task { [weak self] in
@@ -658,6 +705,7 @@ final class AppModel {
             }
 
             do {
+                print("[AppModel] jump — executing AppleScript")
                 let result = try await Task.detached(priority: .userInitiated) {
                     try jumpAction(jumpTarget)
                 }.value
@@ -665,6 +713,10 @@ final class AppModel {
                 guard !Task.isCancelled else {
                     return
                 }
+
+                // Give the terminal app keyboard focus after the AppleScript completes.
+                // Our nonactivatingPanel stays key otherwise, stealing keyboard input.
+                self?.activateTerminalApp(jumpTarget.terminalApp)
 
                 self?.lastActionMessage = result
             } catch is CancellationError {
@@ -677,6 +729,25 @@ final class AppModel {
                 self?.lastActionMessage = "Jump failed: \(error.localizedDescription)"
             }
         }
+    }
+
+    private func activateTerminalApp(_ terminalApp: String) {
+        let name = terminalApp.lowercased()
+        let bundleIDs = [
+            "ghostty": "com.mitchellh.ghostty",
+            "iterm": "com.googlecode.iterm2",
+            "iterm2": "com.googlecode.iterm2",
+            "terminal": "com.apple.Terminal",
+            "warp": "dev.warp.Warp-Stable",
+            "wezterm": "com.github.wez.wezterm",
+            "kaku": "fun.tw93.kaku",
+            "cmux": "com.cmuxterm.app",
+        ]
+        guard let bundleID = bundleIDs[name],
+              let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first else {
+            return
+        }
+        app.activate()
     }
 
     func approvePermission(for sessionID: String, approved: Bool) {

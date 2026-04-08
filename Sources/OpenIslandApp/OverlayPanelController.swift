@@ -37,6 +37,11 @@ final class OverlayPanelController {
         panel?.isVisible == true
     }
 
+    /// Cancel hover so the panel doesn't reopen after the jump.
+    func dismissForJump() {
+        cancelHoverOpen()
+    }
+
     nonisolated static func shouldActivatePanel(for reason: NotchOpenReason?) -> Bool {
         reason == .click
     }
@@ -102,8 +107,10 @@ final class OverlayPanelController {
     // MARK: - Panel creation
 
     private func makePanel(model: AppModel) -> NotchPanel {
+        // Always create the panel at the closed/notch size so it doesn't flash
+        // a large frame on startup before snapping to the notch.
         let screen = resolveTargetScreen() ?? NSScreen.main
-        let windowFrame = screen.map { panelFrame(for: model, on: $0) } ?? .zero
+        let windowFrame = screen.map { closedPanelFrame(on: $0) } ?? .zero
 
         let panel = NotchPanel(
             contentRect: windowFrame,
@@ -179,6 +186,7 @@ final class OverlayPanelController {
             panel.makeKeyAndOrderFront(nil)
         } else {
             panel.orderFrontRegardless()
+            panel.makeKey()
         }
     }
 
@@ -259,12 +267,14 @@ final class OverlayPanelController {
         guard let model else { return }
 
         let inClosedSurfaceArea = isPointInClosedSurfaceArea(screenLocation)
+        let inExpandedArea = isPointInExpandedArea(screenLocation)
+        print("[PanelController] handleMouseDown — status=\(model.notchStatus) inClosed=\(inClosedSurfaceArea) inExpanded=\(inExpandedArea)")
 
         if model.notchStatus == .closed && inClosedSurfaceArea {
             cancelHoverOpen()
             model.notchOpen(reason: .click)
         } else if model.notchStatus == .opened {
-            if !isPointInExpandedArea(screenLocation) {
+            if !inExpandedArea {
                 model.notchClose()
                 repostMouseDown(at: screenLocation)
             }
@@ -362,6 +372,22 @@ final class OverlayPanelController {
         return Self.closedSurfaceRect(
             for: panel.frame,
             shadowInsets: panelShadowInsets(for: model)
+        )
+    }
+
+    /// Returns the panel frame at the closed/notch size — used for initial panel creation
+    /// so the window never flashes at a larger size before being positioned.
+    private func closedPanelFrame(on screen: NSScreen) -> NSRect {
+        let hInset = IslandChromeMetrics.closedShadowHorizontalInset
+        let bInset = IslandChromeMetrics.closedShadowBottomInset
+        let notchWidth = screen.notchSize.width
+        let width = notchWidth + (hInset * 2)
+        let height = screen.islandClosedHeight + bInset
+        return NSRect(
+            x: screen.frame.midX - width / 2,
+            y: screen.frame.maxY - height,
+            width: width,
+            height: height
         )
     }
 
@@ -592,6 +618,7 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
     }
 
     override func mouseDown(with event: NSEvent) {
+        print("[NotchHostingView] mouseDown at \(event.locationInWindow) ignoresMouseEvents=\(window?.ignoresMouseEvents ?? true)")
         // Ensure the panel is key before SwiftUI processes the click.
         // With nonactivatingPanel, hover-opened panels aren't key, so
         // SwiftUI Button may consume the first click for key acquisition
@@ -704,7 +731,7 @@ final class NotchEventMonitors {
 
         localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
             let location = NSEvent.mouseLocation
-            Task { @MainActor in mouseDownHandler(location) }
+            MainActor.assumeIsolated { mouseDownHandler(location) }
             return event
         }
     }
@@ -750,7 +777,13 @@ extension NSScreen {
         return 24
     }
 
+    /// Closed island height must not exceed the physical notch or the menu bar area.
+    /// On some notch Macs (e.g. MacBook Air M2) the menu bar reserved area (~37pt)
+    /// is taller than the notch (~34pt) — using `min` keeps the island flush.
     var islandClosedHeight: CGFloat {
-        topStatusBarHeight
+        if safeAreaInsets.top > 0 {
+            return min(safeAreaInsets.top, topStatusBarHeight)
+        }
+        return topStatusBarHeight
     }
 }
