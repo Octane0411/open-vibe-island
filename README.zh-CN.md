@@ -50,6 +50,14 @@
 - 如果你希望支持其他 terminal app 或 code agent，请先发 issue，我们会尽可能扩展。
 - 如果你有产品想法或功能需求，也请先发 issue；欢迎附 demo 发 PR。
 
+### 社区
+
+目前项目还在早期阶段，在体验中可能会出现任何问题，加入微信群/discord以获得更快的反馈和更高的解决优先级
+
+同时欢迎任意 issue 和 pull request，我们也在寻找其他maintainer，open island只是个开始，微信群：
+
+<img src="docs/images/wechat-group.jpg" alt="Open Island 微信群二维码" width="360">
+
 ### 注意事项
 
 本应用可能会为你的 Claude Code 或 Codex 安装 hooks，因此你可能会在这些会话中看到 hook 相关输出。
@@ -93,14 +101,6 @@
 | 通知音效 | 已支持 | 可配置系统音效、静音切换 |
 | 国际化 | 已支持 | English、简体中文 |
 | 自动更新 | 已支持 | 基于 Sparkle 的自动更新，支持 appcast |
-
-## 社区
-
-目前项目还在早期阶段，在体验中可能会出现任何问题，加入微信群/discord以获得更快的反馈和更高的解决优先级
-
-同时欢迎任意 issue 和 pull request，我们也在寻找其他maintainer，open island只是个开始，微信群：
-
-<img src="docs/images/wechat-group.jpg" alt="Open Island 微信群二维码" width="360">
 
 ### 通过 Code Agent 提交 Bug
 

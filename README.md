@@ -50,6 +50,13 @@ I do not want to run a closed-source paid app on my own computer just to monitor
 - If you want support for another terminal app or coding agent, open an issue first. We will expand where practical.
 - If you have a product idea or feature request, open an issue first. A follow-up PR with a demo is welcome.
 
+### Community
+
+The project is still at an early stage — you may encounter issues along the way. Join the WeChat group or Discord for faster feedback and higher resolution priority.
+Issues and pull requests are always welcome. We are also looking for additional maintainers — Open Island is just the beginning. Come join us:
+
+<img src="docs/images/wechat-group.jpg" alt="Open Island WeChat group QR code" width="360">
+
 ### Notes
 
 This app may install hooks for Claude Code or Codex, so you may see hook-related output inside those sessions. See [docs/hooks.md](docs/hooks.md) for the full list of supported hook events and the directive protocol.
@@ -94,13 +101,6 @@ This app may install hooks for Claude Code or Codex, so you may see hook-related
 | Process discovery | Supported | Match active agents via `ps`/`lsof` |
 | DMG packaging | Supported | Signing, notarization, GitHub Actions release workflow |
 | Auto-update | Supported | Sparkle-based automatic updates with appcast |
-
-## Community
-
-The project is still at an early stage — you may encounter issues along the way. Join the WeChat group or Discord for faster feedback and higher resolution priority.
-Issues and pull requests are always welcome. We are also looking for additional maintainers — Open Island is just the beginning. Come join us:
-
-<img src="docs/images/wechat-group.jpg" alt="Open Island WeChat group QR code" width="360">
 
 ### Report a Bug via Your Code Agent
 
