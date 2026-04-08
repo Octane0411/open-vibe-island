@@ -15,6 +15,12 @@ enum IslandSurface: Equatable {
         sessionID != nil
     }
 
+    func autoDismissesWhenPresentedAsNotification(session: TrackedSession?) -> Bool {
+        guard sessionID != nil else { return false }
+        return session?.phase == .completed
+    }
+
+    /// Legacy overload for callers still passing AgentSession.
     func autoDismissesWhenPresentedAsNotification(session: AgentSession?) -> Bool {
         guard sessionID != nil else { return false }
         return session?.phase == .completed
@@ -33,6 +39,28 @@ enum IslandSurface: Equatable {
         }
     }
 
+    func matchesCurrentState(of session: TrackedSession?) -> Bool {
+        guard sessionID != nil else {
+            return true
+        }
+
+        guard let session else {
+            return false
+        }
+
+        switch session.phase {
+        case .waitingForApproval:
+            return session.permissionRequest != nil
+        case .waitingForAnswer:
+            return session.questionPrompt != nil
+        case .completed:
+            return true
+        case .running:
+            return false
+        }
+    }
+
+    /// Legacy overload for callers still passing AgentSession.
     func matchesCurrentState(of session: AgentSession?) -> Bool {
         guard sessionID != nil else {
             return true

@@ -40,6 +40,131 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
         self.maxFiles = maxFiles
     }
 
+    public func discoverTranscripts(now: Date = .now) -> [DiscoveredTranscript] {
+        guard fileManager.fileExists(atPath: rootURL.path),
+              let enumerator = fileManager.enumerator(
+                at: rootURL,
+                includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+                options: [.skipsHiddenFiles]
+              ) else {
+            return []
+        }
+
+        let cutoff = now.addingTimeInterval(-maxAge)
+        var candidates: [Candidate] = []
+
+        for case let fileURL as URL in enumerator {
+            guard fileURL.pathExtension == "jsonl",
+                  !fileURL.path.contains("/subagents/") else {
+                continue
+            }
+
+            let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey])
+            guard values?.isRegularFile == true,
+                  let modifiedAt = values?.contentModificationDate,
+                  modifiedAt >= cutoff else {
+                continue
+            }
+
+            candidates.append(Candidate(fileURL: fileURL, modifiedAt: modifiedAt))
+        }
+
+        let sortedCandidates = candidates
+            .sorted { $0.modifiedAt > $1.modifiedAt }
+            .prefix(maxFiles)
+
+        return sortedCandidates.compactMap { candidate in
+            parseTranscript(at: candidate.fileURL, fallbackUpdatedAt: candidate.modifiedAt)
+        }
+    }
+
+    private func parseTranscript(at fileURL: URL, fallbackUpdatedAt: Date) -> DiscoveredTranscript? {
+        guard let contents = try? String(contentsOf: fileURL, encoding: .utf8) else {
+            return nil
+        }
+
+        var sessionID = fileURL.deletingPathExtension().lastPathComponent
+        var cwd: String?
+        var startedAt: Date?
+        var updatedAt = fallbackUpdatedAt
+        var initialUserPrompt: String?
+        var lastUserPrompt: String?
+        var lastAssistantMessage: String?
+        var model: String?
+        var customTitle: String?
+        var slug: String?
+
+        for line in contents.split(separator: "\n") {
+            guard let data = line.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                continue
+            }
+
+            if let value = object["sessionId"] as? String, !value.isEmpty {
+                sessionID = value
+            }
+
+            if let value = object["slug"] as? String, !value.isEmpty {
+                slug = value
+            }
+
+            if let value = object["cwd"] as? String, !value.isEmpty {
+                cwd = value
+            }
+
+            if let timestampText = object["timestamp"] as? String,
+               let timestamp = ISO8601DateFormatter().date(from: timestampText) {
+                if startedAt == nil {
+                    startedAt = timestamp
+                }
+                updatedAt = timestamp
+            }
+
+            let topLevelType = object["type"] as? String
+            let message = object["message"] as? [String: Any]
+            let role = message?["role"] as? String
+
+            if topLevelType == "custom-title",
+               let value = object["customTitle"] as? String, !value.isEmpty {
+                customTitle = value
+            }
+
+            if role == "user" {
+                if let prompt = promptText(from: message?["content"]) {
+                    if initialUserPrompt == nil {
+                        initialUserPrompt = prompt
+                    }
+                    lastUserPrompt = prompt
+                }
+            } else if role == "assistant" {
+                if let assistantText = assistantText(from: message?["content"]) {
+                    lastAssistantMessage = assistantText
+                }
+
+                if let value = message?["model"] as? String, !value.isEmpty {
+                    model = value
+                }
+            } else if topLevelType == "summary",
+                      let summary = object["summary"] as? String,
+                      !summary.isEmpty {
+                lastAssistantMessage = summary
+            }
+        }
+
+        return DiscoveredTranscript(
+            sessionID: sessionID,
+            transcriptPath: fileURL.path,
+            workingDirectory: cwd,
+            startedAt: startedAt ?? fallbackUpdatedAt,
+            lastActivityAt: updatedAt,
+            customTitle: customTitle ?? slug,
+            initialPrompt: initialUserPrompt,
+            lastPrompt: lastUserPrompt,
+            lastAssistantMessage: lastAssistantMessage,
+            model: model
+        )
+    }
+
     public func discoverRecentSessions(now: Date = .now) -> [AgentSession] {
         guard fileManager.fileExists(atPath: rootURL.path),
               let enumerator = fileManager.enumerator(

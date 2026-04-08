@@ -23,6 +23,8 @@ final class AppModel {
 
     let lang = LanguageManager.shared
 
+    let sessionStore = SessionStore()
+
     var state = SessionState() {
         didSet {
             _cachedSessionBuckets = nil
@@ -218,6 +220,7 @@ final class AppModel {
             self?.synchronizeSelection()
             self?.refreshOverlayPlacementIfVisible()
         }
+        discovery.sessionStore = sessionStore
 
         discovery.codexRolloutWatcher.eventHandler = { [weak self] event in
             Task { @MainActor [weak self] in
@@ -229,27 +232,24 @@ final class AppModel {
             }
         }
 
-        monitoring.syntheticClaudeSessionPrefix = Self.syntheticClaudeSessionPrefix
-        monitoring.stateAccessor = { [weak self] in self?.state ?? SessionState() }
-        monitoring.stateUpdater = { [weak self] in self?.state = $0 }
+        monitoring.sessionStore = sessionStore
         monitoring.onSessionsReconciled = { [weak self] in
             self?.synchronizeSelection()
             self?.refreshOverlayPlacementIfVisible()
         }
         monitoring.onPersistenceNeeded = { [weak self] in
             self?.discovery.scheduleCodexSessionPersistence()
-            self?.discovery.scheduleClaudeSessionPersistence()
         }
 
         refreshOverlayDisplayConfiguration()
     }
 
-    var sessions: [AgentSession] {
-        state.sessions
+    var sessions: [TrackedSession] {
+        sessionStore.visibleSessions
     }
 
-    var allSessions: [AgentSession] {
-        state.sessions
+    var allSessions: [TrackedSession] {
+        Array(sessionStore.sessions.values)
     }
 
     /// Measured by SwiftUI GeometryReader in notification mode. Used by panel controller for sizing.
@@ -261,15 +261,19 @@ final class AppModel {
         }
     }
 
-    var surfacedSessions: [AgentSession] {
-        sessionBuckets.primary
+    var surfacedSessions: [TrackedSession] {
+        sessionStore.visibleSessions
     }
 
-    var recentSessions: [AgentSession] {
-        sessionBuckets.overflow
+    var recentSessions: [TrackedSession] {
+        // Overflow sessions: all non-visible, non-subagent sessions
+        let visibleIDs = Set(sessionStore.visibleSessions.map(\.id))
+        return sessionStore.sessions.values
+            .filter { !visibleIDs.contains($0.id) && !$0.isSubagentSession }
+            .sorted { $0.lastActivityAt > $1.lastActivityAt }
     }
 
-    var islandListSessions: [AgentSession] {
+    var islandListSessions: [TrackedSession] {
         surfacedSessions
     }
 
@@ -292,19 +296,19 @@ final class AppModel {
     var shouldShowSessionBootstrapPlaceholder: Bool {
         isResolvingInitialLiveSessions
             && liveSessionCount == 0
-            && state.sessions.contains(where: \.isTrackedLiveSession)
+            && !sessionStore.sessions.isEmpty
     }
 
-    var focusedSession: AgentSession? {
-        state.session(id: selectedSessionID) ?? surfacedSessions.first ?? state.activeActionableSession ?? state.sessions.first
+    var focusedSession: TrackedSession? {
+        sessionStore.session(id: selectedSessionID) ?? surfacedSessions.first ?? sessionStore.actionableSession ?? sessions.first
     }
 
-    var activeIslandCardSession: AgentSession? {
+    var activeIslandCardSession: TrackedSession? {
         guard let sessionID = islandSurface.sessionID else {
             return nil
         }
 
-        return state.session(id: sessionID)
+        return sessionStore.session(id: sessionID)
     }
 
     var hasAnySession: Bool {
@@ -312,11 +316,11 @@ final class AppModel {
     }
 
     var hasCodexSession: Bool {
-        sessions.contains(where: { $0.tool == .codex })
+        sessions.contains { $0.tool == .codex }
     }
 
     var hasJumpableSession: Bool {
-        sessions.contains(where: { $0.jumpTarget != nil })
+        sessions.contains { $0.jumpTarget != nil }
     }
 
     var acceptanceSteps: [AcceptanceStep] {
@@ -522,6 +526,45 @@ final class AppModel {
         autoCollapseNotificationCards: Bool = false
     ) {
         state = SessionState(sessions: snapshot.sessions)
+
+        // Populate sessionStore from the debug snapshot's AgentSessions
+        for agentSession in snapshot.sessions {
+            let tracked = TrackedSession(
+                id: agentSession.id,
+                tool: agentSession.tool,
+                phase: agentSession.phase,
+                summary: agentSession.summary,
+                startedAt: agentSession.startedAt,
+                lastActivityAt: agentSession.updatedAt,
+                terminal: agentSession.jumpTarget.map { jt in
+                    TerminalInfo(
+                        app: jt.terminalApp,
+                        tty: jt.terminalTTY,
+                        terminalSessionID: jt.terminalSessionID
+                    )
+                },
+                workingDirectory: agentSession.jumpTarget?.workingDirectory,
+                permissionRequest: agentSession.permissionRequest,
+                questionPrompt: agentSession.questionPrompt,
+                processState: agentSession.isProcessAlive ? .alive : .unknown,
+                customTitle: agentSession.claudeMetadata?.customTitle,
+                transcriptPath: agentSession.claudeMetadata?.transcriptPath,
+                metadata: SessionMetadata(
+                    initialPrompt: agentSession.initialUserPromptText,
+                    lastPrompt: agentSession.latestUserPromptText,
+                    lastAssistantMessage: agentSession.lastAssistantMessageText,
+                    model: agentSession.claudeMetadata?.model,
+                    currentTool: agentSession.currentToolName,
+                    currentToolInputPreview: agentSession.currentCommandPreviewText,
+                    worktreeBranch: agentSession.claudeMetadata?.worktreeBranch,
+                    activeSubagents: agentSession.claudeMetadata?.activeSubagents ?? [],
+                    activeTasks: agentSession.claudeMetadata?.activeTasks ?? []
+                ),
+                origin: agentSession.origin
+            )
+            sessionStore.sessions[agentSession.id] = tracked
+        }
+
         selectedSessionID = snapshot.selectedSessionID ?? snapshot.sessions.first?.id
         lastActionMessage = "Loaded debug scenario: \(snapshot.title)."
         harnessRuntimeMonitor?.recordMilestone("scenarioLoaded", message: snapshot.title)
@@ -569,8 +612,8 @@ final class AppModel {
         send(
             .resolvePermission(sessionID: session.id, resolution: permissionResolution(for: approved)),
             userMessage: approved
-                ? "Approving permission for \(session.title)."
-                : "Denying permission for \(session.title)."
+                ? "Approving permission for \(session.displayName)."
+                : "Denying permission for \(session.displayName)."
         )
     }
 
@@ -581,7 +624,7 @@ final class AppModel {
 
         send(
             .answerQuestion(sessionID: session.id, response: QuestionPromptResponse(answer: answer)),
-            userMessage: "Sending answer \"\(answer)\" for \(session.title)."
+            userMessage: "Sending answer \"\(answer)\" for \(session.displayName)."
         )
     }
 
@@ -589,7 +632,7 @@ final class AppModel {
         jump(to: focusedSession?.jumpTarget)
     }
 
-    func jumpToSession(_ session: AgentSession) {
+    func jumpToSession(_ session: TrackedSession) {
         guard let jumpTarget = session.jumpTarget,
               jumpTarget.terminalApp.lowercased() != "unknown" else {
             lastActionMessage = "Cannot jump: terminal app is unknown."
@@ -637,12 +680,14 @@ final class AppModel {
     }
 
     func approvePermission(for sessionID: String, approved: Bool) {
-        guard let session = state.session(id: sessionID) else {
+        guard let session = sessionStore.session(id: sessionID) else {
             return
         }
 
         let resolution = permissionResolution(for: approved)
         dismissNotificationSurfaceIfPresent(for: sessionID)
+        sessionStore.resolvePermission(sessionID: session.id, resolution: resolution)
+        // Keep old state in sync for BridgeServer/monitoring
         state.resolvePermission(sessionID: session.id, resolution: resolution)
         synchronizeSelection()
         refreshOverlayPlacementIfVisible()
@@ -650,18 +695,20 @@ final class AppModel {
         send(
             .resolvePermission(sessionID: session.id, resolution: resolution),
             userMessage: approved
-                ? "Approving permission for \(session.title)."
-                : "Denying permission for \(session.title)."
+                ? "Approving permission for \(session.displayName)."
+                : "Denying permission for \(session.displayName)."
         )
     }
 
     func approvePermission(for sessionID: String, mode: ClaudePermissionMode?) {
-        guard let session = state.session(id: sessionID) else {
+        guard let session = sessionStore.session(id: sessionID) else {
             return
         }
 
         let resolution = permissionResolution(for: mode)
         dismissNotificationSurfaceIfPresent(for: sessionID)
+        sessionStore.resolvePermission(sessionID: session.id, resolution: resolution)
+        // Keep old state in sync for BridgeServer/monitoring
         state.resolvePermission(sessionID: session.id, resolution: resolution)
         synchronizeSelection()
         refreshOverlayPlacementIfVisible()
@@ -670,16 +717,16 @@ final class AppModel {
         if let mode {
             switch mode {
             case .default:
-                message = "Approving permission for \(session.title)."
+                message = "Approving permission for \(session.displayName)."
             case .acceptEdits:
-                message = "Auto-accepting edits for \(session.title)."
+                message = "Auto-accepting edits for \(session.displayName)."
             case .bypassPermissions, .dontAsk:
-                message = "Auto-approving all permissions for \(session.title)."
+                message = "Auto-approving all permissions for \(session.displayName)."
             case .plan:
-                message = "Switching to plan mode for \(session.title)."
+                message = "Switching to plan mode for \(session.displayName)."
             }
         } else {
-            message = "Denying permission for \(session.title)."
+            message = "Denying permission for \(session.displayName)."
         }
 
         send(
@@ -689,18 +736,20 @@ final class AppModel {
     }
 
     func answerQuestion(for sessionID: String, answer: QuestionPromptResponse) {
-        guard let session = state.session(id: sessionID) else {
+        guard let session = sessionStore.session(id: sessionID) else {
             return
         }
 
         dismissNotificationSurfaceIfPresent(for: sessionID)
+        sessionStore.answerQuestion(sessionID: session.id, answer: answer.displaySummary)
+        // Keep old state in sync for BridgeServer/monitoring
         state.answerQuestion(sessionID: session.id, response: answer)
         synchronizeSelection()
         refreshOverlayPlacementIfVisible()
 
         send(
             .answerQuestion(sessionID: session.id, response: answer),
-            userMessage: "Sending answer for \(session.title)."
+            userMessage: "Sending answer for \(session.displayName)."
         )
     }
 
@@ -753,7 +802,7 @@ final class AppModel {
         // or producing a duplicate sessionCompleted that races with the bridge).
         let wasAlreadyCompleted: Bool = {
             guard case let .sessionCompleted(payload) = event else { return false }
-            return state.session(id: payload.sessionID)?.phase == .completed
+            return sessionStore.session(id: payload.sessionID)?.phase == .completed
         }()
 
         // Guard: don't let rollout events downgrade a session from completed
@@ -763,11 +812,12 @@ final class AppModel {
         if ingress == .rollout,
            case let .activityUpdated(payload) = event,
            payload.phase == .running,
-           state.session(id: payload.sessionID)?.phase == .completed {
+           sessionStore.session(id: payload.sessionID)?.phase == .completed {
             return
         }
 
         state.apply(event)
+        sessionStore.applyHookEvent(event)
         reconcileIslandSurfaceAfterStateChange()
         if ingress == .bridge {
             monitoring.markSessionAttached(for: event)
@@ -777,7 +827,6 @@ final class AppModel {
         discovery.refreshCodexRolloutTracking()
         refreshOverlayPlacementIfVisible()
         discovery.scheduleCodexSessionPersistence()
-        discovery.scheduleClaudeSessionPersistence()
 
         if updateLastActionMessage {
             lastActionMessage = describe(event)
@@ -785,7 +834,7 @@ final class AppModel {
 
         if let surface = IslandSurface.notificationSurface(for: event),
            !wasAlreadyCompleted,
-           surface.sessionID.flatMap({ state.session(id: $0) }) != nil,
+           surface.sessionID.flatMap({ sessionStore.session(id: $0) }) != nil,
            (ingress == .bridge || !isResolvingInitialLiveSessions),
            notchStatus == .closed || notchOpenReason == .notification {
             presentNotificationSurface(surface)
@@ -795,15 +844,15 @@ final class AppModel {
     private func synchronizeSelection() {
         let surfacedIDs = Set(surfacedSessions.map(\.id))
 
-        if let activeAction = state.activeActionableSession {
+        if let activeAction = sessionStore.actionableSession {
             selectedSessionID = activeAction.id
             return
         }
 
         guard let selectedSessionID,
               surfacedIDs.contains(selectedSessionID),
-              state.session(id: selectedSessionID) != nil else {
-            self.selectedSessionID = surfacedSessions.first?.id ?? state.sessions.first?.id
+              sessionStore.session(id: selectedSessionID) != nil else {
+            self.selectedSessionID = surfacedSessions.first?.id ?? sessions.first?.id
             return
         }
     }

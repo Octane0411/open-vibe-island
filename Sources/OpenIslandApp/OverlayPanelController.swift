@@ -477,7 +477,7 @@ final class OverlayPanelController {
     }
 
     /// Additional height for the actionable session's inline action area.
-    private func actionableBodyHeight(for session: AgentSession, model: AppModel) -> CGFloat {
+    private func actionableBodyHeight(for session: TrackedSession, model: AppModel) -> CGFloat {
         switch session.phase {
         case .waitingForApproval:
             return Self.approvalCardHeight - 44
@@ -491,7 +491,7 @@ final class OverlayPanelController {
     }
 
     /// Height of the inline completion expansion area (not the old full-card height).
-    private func completionBodyHeight(for session: AgentSession) -> CGFloat {
+    private func completionBodyHeight(for session: TrackedSession) -> CGFloat {
         let headerHeight: CGFloat = 44
 
         let text = (session.lastAssistantMessageText ?? session.summary)
@@ -541,7 +541,7 @@ final class OverlayPanelController {
         return min(Self.completionCardMaxHeight, max(minHeight, estimatedHeight))
     }
 
-    private func openedVisibleSessions(sessions: [AgentSession]) -> [AgentSession] {
+    private func openedVisibleSessions(sessions: [TrackedSession]) -> [TrackedSession] {
         Array(sessions.prefix(Self.maxVisibleSessionRows))
     }
 

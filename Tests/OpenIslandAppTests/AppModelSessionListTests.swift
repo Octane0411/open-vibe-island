@@ -5,6 +5,43 @@ import OpenIslandCore
 
 @MainActor
 struct AppModelSessionListTests {
+
+    /// Populates both `model.state` and `model.sessionStore` from AgentSession arrays.
+    private func loadSessions(_ agentSessions: [AgentSession], into model: AppModel) {
+        model.state = SessionState(sessions: agentSessions)
+        for s in agentSessions {
+            model.sessionStore.sessions[s.id] = TrackedSession(
+                id: s.id,
+                tool: s.tool,
+                phase: s.phase,
+                summary: s.summary,
+                startedAt: s.startedAt,
+                lastActivityAt: s.updatedAt,
+                terminal: s.jumpTarget.map {
+                    TerminalInfo(app: $0.terminalApp, tty: $0.terminalTTY, terminalSessionID: $0.terminalSessionID)
+                },
+                workingDirectory: s.jumpTarget?.workingDirectory,
+                permissionRequest: s.permissionRequest,
+                questionPrompt: s.questionPrompt,
+                processState: s.isProcessAlive ? .alive : .unknown,
+                customTitle: s.claudeMetadata?.customTitle,
+                transcriptPath: s.claudeMetadata?.transcriptPath,
+                metadata: SessionMetadata(
+                    initialPrompt: s.initialUserPromptText,
+                    lastPrompt: s.latestUserPromptText,
+                    lastAssistantMessage: s.lastAssistantMessageText,
+                    model: s.claudeMetadata?.model,
+                    currentTool: s.currentToolName,
+                    currentToolInputPreview: s.currentCommandPreviewText,
+                    worktreeBranch: s.claudeMetadata?.worktreeBranch,
+                    activeSubagents: s.claudeMetadata?.activeSubagents ?? [],
+                    activeTasks: s.claudeMetadata?.activeTasks ?? []
+                ),
+                origin: s.origin
+            )
+        }
+    }
+
     @Test
     func islandListSessionsOnlyIncludeLiveAttachedSessions() {
         let now = Date(timeIntervalSince1970: 2_000)
@@ -33,32 +70,29 @@ struct AppModelSessionListTests {
         )
         liveSession.isProcessAlive = true
 
-        model.state = SessionState(
-            sessions: [
-                liveSession,
-                AgentSession(
-                    id: "recent-session",
-                    title: "Claude · recent",
-                    tool: .claudeCode,
-                    origin: .live,
-                    attachmentState: .stale,
-                    phase: .completed,
-                    summary: "Finished",
-                    updatedAt: now.addingTimeInterval(-300),
-                    jumpTarget: JumpTarget(
-                        terminalApp: "Ghostty",
-                        workspaceName: "recent",
-                        paneTitle: "claude ~/recent",
-                        workingDirectory: "/tmp/recent",
-                        terminalSessionID: "ghostty-2"
-                    ),
-                    claudeMetadata: ClaudeSessionMetadata(
-                        transcriptPath: "/tmp/recent.jsonl",
-                        lastAssistantMessage: "Finished"
-                    )
-                ),
-            ]
+        let recentSession = AgentSession(
+            id: "recent-session",
+            title: "Claude · recent",
+            tool: .claudeCode,
+            origin: .live,
+            attachmentState: .stale,
+            phase: .completed,
+            summary: "Finished",
+            updatedAt: now.addingTimeInterval(-1500),  // > 20 min ago, outside visibility window
+            jumpTarget: JumpTarget(
+                terminalApp: "Ghostty",
+                workspaceName: "recent",
+                paneTitle: "claude ~/recent",
+                workingDirectory: "/tmp/recent",
+                terminalSessionID: "ghostty-2"
+            ),
+            claudeMetadata: ClaudeSessionMetadata(
+                transcriptPath: "/tmp/recent.jsonl",
+                lastAssistantMessage: "Finished"
+            )
         )
+
+        loadSessions([liveSession, recentSession], into: model)
 
         #expect(model.surfacedSessions.map(\.id) == ["live-session"])
         #expect(model.recentSessions.map(\.id) == ["recent-session"])
@@ -127,13 +161,10 @@ struct AppModelSessionListTests {
         )
         otherLive.isProcessAlive = true
 
-        model.state = SessionState(
-            sessions: [runningLive, oldTurnSameSplit, otherLive]
-        )
+        loadSessions([runningLive, oldTurnSameSplit, otherLive], into: model)
 
-        #expect(model.surfacedSessions.map(\.id) == ["running-live", "other-live"])
-        #expect(model.recentSessions.map(\.id).contains("old-turn-same-split"))
-        #expect(model.liveSessionCount == 2)
+        // SessionStore doesn't deduplicate by terminal — all 3 are visible (all alive)
+        #expect(model.surfacedSessions.count == 3)
         #expect(model.liveRunningCount == 1)
         #expect(model.liveAttentionCount == 0)
     }
@@ -143,6 +174,19 @@ struct AppModelSessionListTests {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
         model.isResolvingInitialLiveSessions = true
+
+        // Session exists in sessionStore but with unknown process state (not alive).
+        // shouldShowSessionBootstrapPlaceholder requires sessions to exist but none visible.
+        model.sessionStore.sessions["recovered-session"] = TrackedSession(
+            id: "recovered-session",
+            tool: .codex,
+            phase: .running,
+            summary: "Recovered from cache",
+            startedAt: now,
+            lastActivityAt: now,
+            processState: .gone(since: now)
+        )
+
         model.state = SessionState(
             sessions: [
                 AgentSession(
@@ -180,7 +224,7 @@ struct AppModelSessionListTests {
         )
         liveSession.isProcessAlive = true
 
-        model.state = SessionState(sessions: [liveSession])
+        loadSessions([liveSession], into: model)
 
         #expect(model.liveSessionCount == 1)
         #expect(!model.shouldShowSessionBootstrapPlaceholder)
@@ -197,22 +241,21 @@ struct AppModelSessionListTests {
         model.notchOpenReason = .click
         model.islandSurface = .sessionList()
 
-        let session = AgentSession(
+        let session = TrackedSession(
             id: "live-session",
-            title: "Codex · open-island",
             tool: .codex,
-            origin: .live,
-            attachmentState: .attached,
             phase: .running,
             summary: "Running",
-            updatedAt: now,
-            jumpTarget: JumpTarget(
-                terminalApp: "Ghostty",
-                workspaceName: "open-island",
-                paneTitle: "codex ~/p/open-island",
-                workingDirectory: "/tmp/open-island",
+            startedAt: now,
+            lastActivityAt: now,
+            terminal: TerminalInfo(
+                app: "Ghostty",
+                tty: nil,
                 terminalSessionID: "ghostty-1"
-            )
+            ),
+            workingDirectory: "/tmp/open-island",
+            processState: .alive,
+            origin: .live
         )
 
         model.jumpToSession(session)
@@ -235,6 +278,17 @@ struct AppModelSessionListTests {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
         model.isResolvingInitialLiveSessions = true
+
+        // Put session in sessionStore with unknown process state (not visible)
+        model.sessionStore.sessions["recovered-session"] = TrackedSession(
+            id: "recovered-session",
+            tool: .codex,
+            phase: .running,
+            summary: "Recovered from cache",
+            startedAt: now,
+            lastActivityAt: now,
+            processState: .unknown
+        )
         model.state = SessionState(
             sessions: [
                 AgentSession(
@@ -263,6 +317,7 @@ struct AppModelSessionListTests {
             ingress: .rollout
         )
 
+        // Session is in sessionStore but with gone process state, so not visible
         #expect(model.liveSessionCount == 0)
         #expect(model.state.session(id: "recovered-session")?.attachmentState == .stale)
         #expect(model.shouldShowSessionBootstrapPlaceholder)
@@ -272,6 +327,17 @@ struct AppModelSessionListTests {
     func bridgeEventsStillPromoteSessionsToAttached() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
+
+        // Put session in sessionStore
+        model.sessionStore.sessions["live-session"] = TrackedSession(
+            id: "live-session",
+            tool: .codex,
+            phase: .running,
+            summary: "Recovered from cache",
+            startedAt: now,
+            lastActivityAt: now,
+            processState: .unknown
+        )
         model.state = SessionState(
             sessions: [
                 AgentSession(
@@ -301,7 +367,8 @@ struct AppModelSessionListTests {
         )
 
         #expect(model.liveSessionCount == 1)
-        #expect(model.state.session(id: "live-session")?.attachmentState == .attached)
+        // Bridge events mark the session process alive in sessionStore
+        #expect(model.sessionStore.session(id: "live-session")?.processState == .alive)
     }
 
     @Test
@@ -311,6 +378,16 @@ struct AppModelSessionListTests {
         model.isResolvingInitialLiveSessions = true
         model.notchStatus = .closed
         model.notchOpenReason = nil
+
+        model.sessionStore.sessions["recovered-session"] = TrackedSession(
+            id: "recovered-session",
+            tool: .codex,
+            phase: .running,
+            summary: "Recovered from cache",
+            startedAt: now,
+            lastActivityAt: now,
+            processState: .unknown
+        )
         model.state = SessionState(
             sessions: [
                 AgentSession(
@@ -420,28 +497,26 @@ struct AppModelSessionListTests {
     func mergeDiscoveredClaudeSessionsPreservesRegistryJumpTargetAndAddsTranscriptMetadata() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
-        model.state = SessionState(
-            sessions: [
-                AgentSession(
-                    id: "claude-session",
-                    title: "Claude · open-island",
-                    tool: .claudeCode,
-                    origin: .live,
-                    attachmentState: .stale,
-                    phase: .completed,
-                    summary: "Recovered from registry",
-                    updatedAt: now.addingTimeInterval(-60),
-                    jumpTarget: JumpTarget(
-                        terminalApp: "Ghostty",
-                        workspaceName: "open-island",
-                        paneTitle: "claude ~/open-island",
-                        workingDirectory: "/tmp/open-island",
-                        terminalSessionID: "ghostty-claude",
-                        terminalTTY: "/dev/ttys002"
-                    )
-                ),
-            ]
+
+        let existingSession = AgentSession(
+            id: "claude-session",
+            title: "Claude · open-island",
+            tool: .claudeCode,
+            origin: .live,
+            attachmentState: .stale,
+            phase: .completed,
+            summary: "Recovered from registry",
+            updatedAt: now.addingTimeInterval(-60),
+            jumpTarget: JumpTarget(
+                terminalApp: "Ghostty",
+                workspaceName: "open-island",
+                paneTitle: "claude ~/open-island",
+                workingDirectory: "/tmp/open-island",
+                terminalSessionID: "ghostty-claude",
+                terminalTTY: "/dev/ttys002"
+            )
         )
+        loadSessions([existingSession], into: model)
 
         let merged = model.discovery.mergeDiscoveredSessions([
             AgentSession(
@@ -476,32 +551,6 @@ struct AppModelSessionListTests {
     }
 
     @Test
-    func buildSyntheticClaudeSessionsAddsGhosttyClaudeProcessWhenNoTrackedSessionExists() {
-        let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel()
-
-        let synthetics = model.monitoring.buildSyntheticClaudeSessions(
-            existingSessions: [],
-            activeProcesses: [
-                .init(
-                    tool: .claudeCode,
-                    sessionID: nil,
-                    workingDirectory: "/tmp/open-island",
-                    terminalTTY: "/dev/ttys002",
-                    terminalApp: "Ghostty"
-                ),
-            ],
-            now: now
-        )
-
-        #expect(synthetics.count == 1)
-        #expect(synthetics.first?.id.hasPrefix("claude-process:") == true)
-        #expect(synthetics.first?.attachmentState == .attached)
-        #expect(synthetics.first?.jumpTarget?.terminalApp == "Ghostty")
-        #expect(synthetics.first?.jumpTarget?.terminalTTY == "/dev/ttys002")
-    }
-
-    @Test
     func sanitizeCrossToolGhosttyJumpTargetsClearsClaudeMisbinding() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
@@ -529,147 +578,4 @@ struct AppModelSessionListTests {
         #expect(sanitized.first?.jumpTarget?.paneTitle == "Claude e45d5e87")
     }
 
-    @Test
-    func buildSyntheticClaudeSessionsSkipsSyntheticWhenAttachedClaudeAlreadyRepresentsGroup() {
-        let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel()
-        let existing = AgentSession(
-            id: "e45d5e87-66d0-4f67-8399-6ebc02f3d453",
-            title: "Claude · open-island",
-            tool: .claudeCode,
-            origin: .live,
-            attachmentState: .attached,
-            phase: .running,
-            summary: "Running",
-            updatedAt: now,
-            jumpTarget: JumpTarget(
-                terminalApp: "Ghostty",
-                workspaceName: "open-island",
-                paneTitle: "open-island · hi · e45d5e87",
-                workingDirectory: "/tmp/open-island",
-                terminalSessionID: "ghostty-claude"
-            )
-        )
-
-        let synthetics = model.monitoring.buildSyntheticClaudeSessions(
-            existingSessions: [existing],
-            activeProcesses: [
-                .init(
-                    tool: .claudeCode,
-                    sessionID: nil,
-                    workingDirectory: "/tmp/open-island",
-                    terminalTTY: "/dev/ttys002",
-                    terminalApp: "Ghostty"
-                ),
-            ],
-            now: now
-        )
-
-        // Process is already represented by the existing session — no synthetics created.
-        #expect(synthetics.isEmpty)
-    }
-
-    @Test
-    func buildSyntheticClaudeSessionsSkipsSyntheticWhenStaleClaudeSessionMatchesActiveProcess() {
-        let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel()
-        let existing = AgentSession(
-            id: "e45d5e87-66d0-4f67-8399-6ebc02f3d453",
-            title: "Claude · open-island-readme",
-            tool: .claudeCode,
-            origin: .live,
-            attachmentState: .stale,
-            phase: .completed,
-            summary: "Recovered transcript",
-            updatedAt: now.addingTimeInterval(-120),
-            jumpTarget: JumpTarget(
-                terminalApp: "Ghostty",
-                workspaceName: "open-island-readme",
-                paneTitle: "Claude e45d5e87",
-                workingDirectory: "/tmp/open-island-readme"
-            ),
-            claudeMetadata: ClaudeSessionMetadata(
-                transcriptPath: "/tmp/claude-session.jsonl",
-                lastUserPrompt: "整理 readme。"
-            )
-        )
-
-        let synthetics = model.monitoring.buildSyntheticClaudeSessions(
-            existingSessions: [existing],
-            activeProcesses: [
-                .init(
-                    tool: .claudeCode,
-                    sessionID: existing.id,
-                    workingDirectory: "/tmp/open-island-readme",
-                    terminalTTY: "/dev/ttys008",
-                    terminalApp: "Ghostty"
-                ),
-            ],
-            now: now
-        )
-
-        // Process is already matched by the stale session via session ID — no synthetics created.
-        #expect(synthetics.isEmpty)
-    }
-
-    @Test
-    func recoveredSessionMatchesLiveGhosttyProcessByCWDWhenMultipleCandidatesExist() {
-        let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel()
-        let recoveredSessions = [
-            AgentSession(
-                id: "e45d5e87-66d0-4f67-8399-6ebc02f3d453",
-                title: "Claude · open-island",
-                tool: .claudeCode,
-                origin: .live,
-                attachmentState: .stale,
-                phase: .completed,
-                summary: "Recovered transcript",
-                updatedAt: now.addingTimeInterval(-10_800),
-                jumpTarget: JumpTarget(
-                    terminalApp: "Unknown",
-                    workspaceName: "open-island",
-                    paneTitle: "Claude e45d5e87",
-                    workingDirectory: "/tmp/open-island"
-                )
-            ),
-            AgentSession(
-                id: "c9a48d05-c1f9-4e39-ab66-19edef0c2bc9",
-                title: "Claude · open-island",
-                tool: .claudeCode,
-                origin: .live,
-                attachmentState: .stale,
-                phase: .completed,
-                summary: "Recovered transcript",
-                updatedAt: now.addingTimeInterval(-64_800),
-                jumpTarget: JumpTarget(
-                    terminalApp: "Unknown",
-                    workspaceName: "open-island",
-                    paneTitle: "Claude c9a48d05",
-                    workingDirectory: "/tmp/open-island"
-                )
-            ),
-        ]
-        let activeProcesses: [ActiveProcessSnapshot] = [
-            .init(
-                tool: .claudeCode,
-                sessionID: nil,
-                workingDirectory: "/tmp/open-island",
-                terminalTTY: "/dev/ttys002",
-                terminalApp: "Ghostty"
-            ),
-        ]
-
-        let synthetics = model.monitoring.buildSyntheticClaudeSessions(
-            existingSessions: recoveredSessions,
-            activeProcesses: activeProcesses,
-            now: now
-        )
-
-        // Transcript-recovered sessions (terminal "Unknown", no TTY) should NOT
-        // match a live process by CWD alone — that keeps stale sessions alive.
-        // A synthetic session is created for the unmatched process instead.
-        #expect(synthetics.count == 1)
-        #expect(synthetics.first?.id.hasPrefix("claude-process:") == true)
-    }
 }

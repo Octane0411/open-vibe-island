@@ -52,7 +52,7 @@ private struct AutoHeightScrollView<Content: View>: View {
 
 // MARK: - Row Height Estimation
 
-extension AgentSession {
+extension TrackedSession {
     /// Estimated row height matching `IslandSessionRow` layout for viewport sizing.
     func estimatedIslandRowHeight(at date: Date) -> CGFloat {
         let presence = islandPresence(at: date)
@@ -61,13 +61,13 @@ extension AgentSession {
         guard presence != .inactive else { return height }
         if spotlightPromptLineText != nil { height += 24 }   // spacing (8) + text (16)
         if spotlightActivityLineText != nil { height += 22 }  // spacing (8) + text (14)
-        if let subagents = claudeMetadata?.activeSubagents, !subagents.isEmpty {
+        if !metadata.activeSubagents.isEmpty {
             height += 22  // spacing (8) + header (14)
-            height += CGFloat(subagents.count) * 18  // each subagent row (spacing 4 + text 14)
+            height += CGFloat(metadata.activeSubagents.count) * 18  // each subagent row (spacing 4 + text 14)
         }
-        if let tasks = claudeMetadata?.activeTasks, !tasks.isEmpty {
+        if !metadata.activeTasks.isEmpty {
             height += 20  // spacing (8) + summary (12)
-            height += CGFloat(tasks.count) * 16  // each task row (spacing 3 + text 13)
+            height += CGFloat(metadata.activeTasks.count) * 16  // each task row (spacing 3 + text 13)
         }
         return height
     }
@@ -121,7 +121,7 @@ struct IslandPanelView: View {
         model.notchStatus == .popping
     }
 
-    private var closedSpotlightSession: AgentSession? {
+    private var closedSpotlightSession: TrackedSession? {
         model.surfacedSessions.first(where: { $0.phase.requiresAttention })
             ?? model.surfacedSessions.first(where: { $0.phase == .running })
             ?? model.surfacedSessions.first
@@ -953,7 +953,7 @@ private struct OpenedHeaderMetrics {
 // MARK: - Session row (opened state)
 
 private struct IslandSessionRow: View {
-    let session: AgentSession
+    let session: TrackedSession
     let referenceDate: Date
     var isActionable: Bool = false
     var useDrawingGroup: Bool = true
@@ -1016,18 +1016,17 @@ private struct IslandSessionRow: View {
                     }
 
                     if showsExpandedContent,
-                       let subagents = session.claudeMetadata?.activeSubagents,
-                       !subagents.isEmpty {
+                       !session.metadata.activeSubagents.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack(spacing: 5) {
                                 Image(systemName: "arrow.triangle.branch")
                                     .font(.system(size: 9, weight: .medium))
-                                Text(lang.t("subagents.title", subagents.count))
+                                Text(lang.t("subagents.title", session.metadata.activeSubagents.count))
                                     .font(.system(size: 10.5, weight: .medium))
                             }
                             .foregroundStyle(.cyan.opacity(0.8))
 
-                            ForEach(subagents, id: \.agentID) { sub in
+                            ForEach(session.metadata.activeSubagents, id: \.agentID) { sub in
                                 HStack(spacing: 6) {
                                     Circle()
                                         .fill(sub.summary != nil
@@ -1062,13 +1061,12 @@ private struct IslandSessionRow: View {
                     }
 
                     if showsExpandedContent,
-                       let tasks = session.claudeMetadata?.activeTasks,
-                       !tasks.isEmpty {
+                       !session.metadata.activeTasks.isEmpty {
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(taskSummary(tasks))
+                            Text(taskSummary(session.metadata.activeTasks))
                                 .font(.system(size: 10.5, weight: .medium))
                                 .foregroundStyle(.white.opacity(0.45))
-                            ForEach(tasks) { task in
+                            ForEach(session.metadata.activeTasks) { task in
                                 HStack(spacing: 5) {
                                     taskStatusIcon(task.status)
                                     Text(task.title)
@@ -1266,7 +1264,7 @@ private struct IslandSessionRow: View {
     // MARK: - Actionable helpers
 
     private var completionPromptLabel: String {
-        if let prompt = session.latestUserPromptText?.trimmedForNotificationCard, !prompt.isEmpty {
+        if let prompt = session.latestPromptText?.trimmedForNotificationCard, !prompt.isEmpty {
             return "You: \(prompt)"
         }
         return "You:"
@@ -1292,7 +1290,7 @@ private struct IslandSessionRow: View {
     }
 
     private var commandPreviewText: String {
-        let preview = session.currentCommandPreviewText?.trimmedForNotificationCard
+        let preview = session.metadata.currentToolInputPreview?.trimmedForNotificationCard
         if let preview, !preview.isEmpty {
             return "$ \(preview)"
         }
@@ -1778,7 +1776,7 @@ struct MenuBarContentView: View {
 
             if let session = model.focusedSession {
                 Divider()
-                Text(session.title)
+                Text(session.displayName)
                     .font(.subheadline.weight(.semibold))
                 Text(session.spotlightPrimaryText)
                     .font(.caption)

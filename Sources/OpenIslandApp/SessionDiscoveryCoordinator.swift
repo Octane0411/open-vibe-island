@@ -10,10 +10,8 @@ final class SessionDiscoveryCoordinator {
     struct StartupDiscoveryPayload: Sendable {
         var codexRecords: [CodexTrackedSessionRecord]
         var codexRecordsNeedPrune: Bool
-        var claudeRecords: [ClaudeTrackedSessionRecord]
-        var claudeRecordsNeedPrune: Bool
         var discoveredCodexRecords: [CodexTrackedSessionRecord]
-        var discoveredClaudeSessions: [AgentSession]
+        var discoveredClaudeTranscripts: [DiscoveredTranscript]
         var hooksBinaryURL: URL?
     }
 
@@ -33,10 +31,10 @@ final class SessionDiscoveryCoordinator {
     var onStateChanged: (() -> Void)?
 
     @ObservationIgnored
-    private let codexSessionStore = CodexSessionStore()
+    var sessionStore: SessionStore?
 
     @ObservationIgnored
-    private let claudeSessionRegistry = ClaudeSessionRegistry()
+    private let codexSessionStore = CodexSessionStore()
 
     @ObservationIgnored
     let codexRolloutWatcher = CodexRolloutWatcher()
@@ -49,9 +47,6 @@ final class SessionDiscoveryCoordinator {
 
     @ObservationIgnored
     private var codexSessionPersistenceTask: Task<Void, Never>?
-
-    @ObservationIgnored
-    private var claudeSessionPersistenceTask: Task<Void, Never>?
 
     private var state: SessionState {
         get { stateAccessor?() ?? SessionState() }
@@ -70,19 +65,14 @@ final class SessionDiscoveryCoordinator {
         let allCodex = (try? codexSessionStore.load()) ?? []
         let codexRecords = allCodex.filter { $0.updatedAt >= cutoff && $0.shouldRestoreToLiveState }
 
-        let allClaude = (try? claudeSessionRegistry.load()) ?? []
-        let claudeRecords = allClaude.filter { $0.updatedAt >= cutoff && $0.shouldRestoreToLiveState }
-
         let discoveredCodex = codexRolloutDiscovery.discoverRecentSessions()
-        let discoveredClaude = claudeTranscriptDiscovery.discoverRecentSessions()
+        let discoveredClaude = claudeTranscriptDiscovery.discoverTranscripts()
 
         return StartupDiscoveryPayload(
             codexRecords: codexRecords,
             codexRecordsNeedPrune: codexRecords != allCodex,
-            claudeRecords: claudeRecords,
-            claudeRecordsNeedPrune: claudeRecords != allClaude,
             discoveredCodexRecords: discoveredCodex,
-            discoveredClaudeSessions: discoveredClaude,
+            discoveredClaudeTranscripts: discoveredClaude,
             hooksBinaryURL: HooksBinaryLocator.locate(
                 executableDirectory: Bundle.main.executableURL?.deletingLastPathComponent()
             )
@@ -96,9 +86,6 @@ final class SessionDiscoveryCoordinator {
         if payload.codexRecordsNeedPrune {
             try? codexSessionStore.save(payload.codexRecords)
         }
-        if payload.claudeRecordsNeedPrune {
-            try? claudeSessionRegistry.save(payload.claudeRecords)
-        }
 
         // Restore persisted Codex sessions.
         if !payload.codexRecords.isEmpty {
@@ -106,15 +93,6 @@ final class SessionDiscoveryCoordinator {
             current.mergeSessions(payload.codexRecords.map(\.restorableSession))
             state = current
             onStatusMessage?("Restored \(payload.codexRecords.count) recent Codex session(s) from local cache.")
-        }
-
-        // Restore persisted Claude sessions.
-        if !payload.claudeRecords.isEmpty {
-            let restoredSessions = payload.claudeRecords.map(\.restorableSession)
-            var current = state
-            current.mergeSessions(mergeDiscoveredSessions(restoredSessions))
-            state = current
-            onStatusMessage?("Restored \(payload.claudeRecords.count) recent Claude session(s) from local registry.")
         }
 
         // Merge discovered Codex sessions.
@@ -127,14 +105,10 @@ final class SessionDiscoveryCoordinator {
             onStatusMessage?("Discovered \(payload.discoveredCodexRecords.count) recent Codex session(s) from local rollouts.")
         }
 
-        // Merge discovered Claude sessions.
-        if !payload.discoveredClaudeSessions.isEmpty {
-            let mergedSessions = mergeDiscoveredSessions(payload.discoveredClaudeSessions)
-            var current = state
-            current.mergeSessions(mergedSessions)
-            state = current
-            scheduleClaudeSessionPersistence()
-            onStatusMessage?("Discovered \(payload.discoveredClaudeSessions.count) recent Claude session(s) from local transcripts.")
+        // Restore discovered Claude sessions via SessionStore (transcript-based, no registry).
+        if !payload.discoveredClaudeTranscripts.isEmpty {
+            sessionStore?.restoreFromTranscripts(payload.discoveredClaudeTranscripts)
+            onStatusMessage?("Discovered \(payload.discoveredClaudeTranscripts.count) recent Claude session(s) from local transcripts.")
         }
 
         // Sync rollout tracking with current sessions.
@@ -297,24 +271,4 @@ final class SessionDiscoveryCoordinator {
         }
     }
 
-    func scheduleClaudeSessionPersistence() {
-        claudeSessionPersistenceTask?.cancel()
-
-        let prefix = syntheticClaudeSessionPrefix
-        let records = state.sessions
-            .filter {
-                $0.tool == .claudeCode
-                    && $0.isTrackedLiveSession
-                    && (prefix.isEmpty || !$0.id.hasPrefix(prefix))
-                    && $0.updatedAt >= Date.now.addingTimeInterval(-86_400)
-                    && ($0.jumpTarget != nil || $0.claudeMetadata?.transcriptPath != nil)
-            }
-            .map(ClaudeTrackedSessionRecord.init(session:))
-        let registry = claudeSessionRegistry
-
-        claudeSessionPersistenceTask = Task.detached(priority: .utility) {
-            try? await Task.sleep(for: .milliseconds(250))
-            try? registry.save(records)
-        }
-    }
 }

@@ -173,8 +173,8 @@ enum HarnessArtifactRecorder {
                     id: $0.id,
                     tool: $0.tool.rawValue,
                     phase: $0.phase.rawValue,
-                    attachmentState: $0.attachmentState.rawValue,
-                    title: $0.title,
+                    attachmentState: "tracked",
+                    title: $0.displayName,
                     summary: $0.summary
                 )
             }

@@ -34,7 +34,7 @@ final class OverlayUICoordinator {
     var onStatusMessage: ((String) -> Void)?
 
     @ObservationIgnored
-    var activeIslandCardSessionAccessor: (() -> AgentSession?)?
+    var activeIslandCardSessionAccessor: (() -> TrackedSession?)?
 
     @ObservationIgnored
     var isSoundMutedAccessor: (() -> Bool)?
@@ -57,7 +57,7 @@ final class OverlayUICoordinator {
     @ObservationIgnored
     private var autoCollapseSurfaceHasBeenEntered = false
 
-    private var activeIslandCardSession: AgentSession? {
+    private var activeIslandCardSession: TrackedSession? {
         activeIslandCardSessionAccessor?()
     }
 

@@ -333,7 +333,7 @@ struct ControlCenterView: View {
         }
     }
 
-    private var activePreviewSession: AgentSession? {
+    private var activePreviewSession: TrackedSession? {
         previewModel.activeIslandCardSession ?? previewModel.surfacedSessions.first
     }
 
