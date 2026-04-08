@@ -243,7 +243,7 @@ struct IslandPanelView: View {
 
                 openedContent
                     .frame(width: openedWidth - 24)
-                    .frame(maxHeight: isOpened ? currentHeight - closedNotchHeight - 12 : 0, alignment: .top)
+                    .frame(maxHeight: isOpened ? max(0, currentHeight - closedNotchHeight - 12) : 0, alignment: .top)
                     .opacity(isOpened ? 1 : 0)
                     .clipped()
             }
@@ -975,8 +975,8 @@ private struct IslandSessionRow: View {
         let presence = (rawPresence == .inactive && isManuallyExpanded) ? .active : rawPresence
         let showsExpandedContent = presence != .inactive
         return VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 14) {
-                statusDot(for: presence)
+            HStack(alignment: .top, spacing: 10) {
+                brandMark(for: presence)
 
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .top, spacing: 12) {
@@ -988,14 +988,14 @@ private struct IslandSessionRow: View {
                         Spacer(minLength: 8)
 
                         HStack(spacing: 6) {
-                            compactBadge(session.tool.displayName, presence: presence)
+                            compactBadge(session.tool.displayName, presence: presence, variant: .tool)
                             if session.isRemote {
                                 compactBadge("SSH", presence: presence, icon: "network")
                             }
                             if let terminalBadge = session.spotlightTerminalBadge {
                                 compactBadge(terminalBadge, presence: presence)
                             }
-                            compactBadge(session.spotlightAgeBadge, presence: presence)
+                            rowActionButtons(presence: presence)
                         }
                     }
 
@@ -1342,11 +1342,13 @@ private struct IslandSessionRow: View {
         }
     }
 
-    private func statusDot(for presence: IslandSessionPresence) -> some View {
-        Circle()
-            .fill(statusTint(for: presence))
-            .frame(width: 9, height: 9)
-            .padding(.top, 6)
+    private func brandMark(for presence: IslandSessionPresence) -> some View {
+        OpenIslandBrandMark(
+            size: 22,
+            tint: statusTint(for: presence),
+            isAnimating: presence == .running
+        )
+        .padding(.top, 2)
     }
 
     /// Prompt line for manually expanded inactive rows (bypasses time-based filter).
@@ -1377,10 +1379,16 @@ private struct IslandSessionRow: View {
         }
     }
 
+    private enum BadgeVariant {
+        case standard
+        case tool
+    }
+
     private func compactBadge(
         _ title: String,
         presence: IslandSessionPresence,
-        icon: String? = nil
+        icon: String? = nil,
+        variant: BadgeVariant = .standard
     ) -> some View {
         HStack(spacing: 3) {
             if let icon {
@@ -1390,10 +1398,56 @@ private struct IslandSessionRow: View {
             Text(title)
                 .font(.system(size: 9, weight: .semibold))
         }
-        .foregroundStyle(badgeTextColor(for: presence))
+        .foregroundStyle(variant == .tool ? toolBadgeColor(title) : badgeTextColor(for: presence))
         .padding(.horizontal, 7)
         .padding(.vertical, 3.5)
         .background(Color(red: 0.14, green: 0.14, blue: 0.15), in: Capsule())
+    }
+
+    private func toolBadgeColor(_ tool: String) -> Color {
+        switch tool.lowercased() {
+        case "claude":
+            return Color(red: 0.89, green: 0.55, blue: 0.42) // coral
+        case "codex":
+            return Color(red: 0.42, green: 0.78, blue: 0.55) // green
+        default:
+            return .white.opacity(0.56)
+        }
+    }
+
+    @ViewBuilder
+    private func rowActionButtons(presence: IslandSessionPresence) -> some View {
+        let tint = badgeTextColor(for: presence)
+
+        Button {
+            onJump()
+        } label: {
+            HStack(spacing: 2) {
+                if let shortcut = jumpShortcutLabel {
+                    Text(shortcut)
+                        .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                }
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 8, weight: .bold))
+            }
+            .foregroundStyle(tint)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3.5)
+            .background(Color(red: 0.14, green: 0.14, blue: 0.15), in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var jumpShortcutLabel: String? {
+        guard let terminal = session.spotlightTerminalBadge else { return nil }
+        switch terminal.lowercased() {
+        case "ghostty": return "^G"
+        case "iterm", "iterm2": return "^I"
+        case "terminal": return "^T"
+        case "warp": return "^W"
+        case "wezterm": return "^Z"
+        default: return nil
+        }
     }
 
     private func headlineColor(for presence: IslandSessionPresence) -> Color {

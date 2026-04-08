@@ -134,7 +134,7 @@ extension TrackedSession {
         }
 
         if let title = customTitle?.trimmedForSurface, !title.isEmpty {
-            return "\(headline) - \(title)"
+            return "\(headline) · \(title)"
         }
 
         return headline
