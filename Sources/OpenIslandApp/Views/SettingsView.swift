@@ -329,6 +329,9 @@ struct SetupSettingsPane: View {
     @State private var confirmingUninstallClaude = false
     @State private var confirmingUninstallCodex = false
     @State private var confirmingUninstallOpenCode = false
+    @State private var confirmingUninstallQoder = false
+    @State private var confirmingUninstallFactory = false
+    @State private var confirmingUninstallCodebuddy = false
 
     private var lang: LanguageManager { model.lang }
 
@@ -383,6 +386,54 @@ struct SetupSettingsPane: View {
                 } message: {
                     Text("This will remove the Open Island plugin from ~/.config/opencode/plugins/.")
                 }
+
+                hookRow(
+                    name: "Qoder",
+                    installed: model.qoderHooksInstalled,
+                    busy: model.isQoderHookSetupBusy,
+                    installAction: { model.installQoderHooks() },
+                    uninstallAction: { confirmingUninstallQoder = true }
+                )
+                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallQoder) {
+                    Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
+                        model.uninstallQoderHooks()
+                    }
+                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
+                } message: {
+                    Text("This will remove Open Island hooks from ~/.qoder/settings.json.")
+                }
+
+                hookRow(
+                    name: "Factory",
+                    installed: model.factoryHooksInstalled,
+                    busy: model.isFactoryHookSetupBusy,
+                    installAction: { model.installFactoryHooks() },
+                    uninstallAction: { confirmingUninstallFactory = true }
+                )
+                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallFactory) {
+                    Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
+                        model.uninstallFactoryHooks()
+                    }
+                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
+                } message: {
+                    Text("This will remove Open Island hooks from ~/.factory/settings.json.")
+                }
+
+                hookRow(
+                    name: "CodeBuddy",
+                    installed: model.codebuddyHooksInstalled,
+                    busy: model.isCodebuddyHookSetupBusy,
+                    installAction: { model.installCodebuddyHooks() },
+                    uninstallAction: { confirmingUninstallCodebuddy = true }
+                )
+                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallCodebuddy) {
+                    Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
+                        model.uninstallCodebuddyHooks()
+                    }
+                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
+                } message: {
+                    Text("This will remove Open Island hooks from ~/.codebuddy/settings.json.")
+                }
             }
 
             Section {
@@ -428,6 +479,8 @@ struct SetupSettingsPane: View {
                 }
             }
 
+            hookDiagnosticsSection
+
             RemoteConnectionSection(model: model)
 
             Section {
@@ -435,6 +488,9 @@ struct SetupSettingsPane: View {
                     if !model.claudeHooksInstalled { model.installClaudeHooks() }
                     if !model.codexHooksInstalled { model.installCodexHooks() }
                     if !model.openCodePluginInstalled { model.installOpenCodePlugin() }
+                    if !model.qoderHooksInstalled { model.installQoderHooks() }
+                    if !model.factoryHooksInstalled { model.installFactoryHooks() }
+                    if !model.codebuddyHooksInstalled { model.installCodebuddyHooks() }
                     if !model.claudeUsageInstalled { model.installClaudeUsageBridge() }
                 }
                 .disabled(model.hooksBinaryURL == nil || allReady)
@@ -446,7 +502,127 @@ struct SetupSettingsPane: View {
     }
 
     private var allReady: Bool {
-        model.claudeHooksInstalled && model.codexHooksInstalled && model.openCodePluginInstalled && model.claudeUsageInstalled
+        model.claudeHooksInstalled && model.codexHooksInstalled && model.openCodePluginInstalled
+            && model.qoderHooksInstalled && model.factoryHooksInstalled && model.codebuddyHooksInstalled
+            && model.claudeUsageInstalled
+    }
+
+    private var hasErrors: Bool {
+        let claudeErrors = model.claudeHealthReport?.errors.count ?? 0
+        let codexErrors = model.codexHealthReport?.errors.count ?? 0
+        return claudeErrors + codexErrors > 0
+    }
+
+    private var hasRepairableIssues: Bool {
+        let claude = model.claudeHealthReport?.repairableIssues.isEmpty == false
+        let codex = model.codexHealthReport?.repairableIssues.isEmpty == false
+        return claude || codex
+    }
+
+    private var hasNotices: Bool {
+        let claude = model.claudeHealthReport?.notices.isEmpty == false
+        let codex = model.codexHealthReport?.notices.isEmpty == false
+        return claude || codex
+    }
+
+    @ViewBuilder
+    private var hookDiagnosticsSection: some View {
+        Section {
+            if let claudeReport = model.claudeHealthReport, !claudeReport.issues.isEmpty {
+                issueList(report: claudeReport)
+            }
+            if let codexReport = model.codexHealthReport, !codexReport.issues.isEmpty {
+                issueList(report: codexReport)
+            }
+
+            if model.claudeHealthReport == nil && model.codexHealthReport == nil {
+                HStack {
+                    Text(lang.t("setup.diagnostics.notRun"))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button(lang.t("setup.diagnostics.runCheck")) {
+                        model.runHealthChecks()
+                    }
+                }
+            } else if !hasErrors {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text(lang.t("setup.diagnostics.allHealthy"))
+                    Spacer()
+                    Button(lang.t("setup.diagnostics.recheck")) {
+                        model.runHealthChecks()
+                    }
+                    .font(.caption)
+                }
+            } else {
+                HStack(spacing: 10) {
+                    Button(lang.t("setup.diagnostics.recheck")) {
+                        model.runHealthChecks()
+                    }
+
+                    if hasRepairableIssues {
+                        Button(lang.t("setup.diagnostics.repair")) {
+                            model.repairHooks()
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
+            }
+        } header: {
+            HStack(spacing: 4) {
+                Text(lang.t("setup.section.diagnostics"))
+                if hasErrors {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .font(.caption2)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func issueList(report: HookHealthReport) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(report.agent == "claude" ? "Claude Code" : "Codex")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+
+            ForEach(Array(report.issues.enumerated()), id: \.offset) { _, issue in
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: issueIcon(for: issue))
+                        .font(.caption2)
+                        .foregroundStyle(issueColor(for: issue))
+                        .frame(width: 14)
+
+                    Text(issue.description)
+                        .font(.caption)
+                        .foregroundStyle(issue.severity == .info ? .secondary : .primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            if let binaryPath = report.binaryPath {
+                Text("Binary: \(binaryPath)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private func issueIcon(for issue: HookHealthReport.Issue) -> String {
+        switch issue.severity {
+        case .info: "info.circle.fill"
+        case .error: issue.isAutoRepairable ? "wrench.fill" : "exclamationmark.triangle.fill"
+        }
+    }
+
+    private func issueColor(for issue: HookHealthReport.Issue) -> Color {
+        switch issue.severity {
+        case .info: .blue
+        case .error: issue.isAutoRepairable ? .orange : .red
+        }
     }
 
     @ViewBuilder

@@ -12,7 +12,7 @@ final class AppModel {
     private static let syntheticClaudeSessionPrefix = "claude-process:"
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
     private static let jumpOverlayDismissLeadTime: Duration = .milliseconds(20)
-    static let hoverOpenDelay: TimeInterval = 0.35
+    static let hoverOpenDelay: TimeInterval = 0.15
 
     struct AcceptanceStep: Identifiable {
         let id: String
@@ -50,6 +50,7 @@ final class AppModel {
         set { overlay.islandSurface = newValue }
     }
     var isOverlayVisible: Bool { overlay.isOverlayVisible }
+    var isOverlayCloseTransitionPending: Bool { overlay.isCloseTransitionPending }
     var isCodexSetupBusy: Bool { hooks.isCodexSetupBusy }
     var isClaudeHookSetupBusy: Bool { hooks.isClaudeHookSetupBusy }
     var isClaudeUsageSetupBusy: Bool { hooks.isClaudeUsageSetupBusy }
@@ -61,6 +62,15 @@ final class AppModel {
     var hooksBinaryURL: URL? { hooks.hooksBinaryURL }
     var codexHooksInstalled: Bool { hooks.codexHooksInstalled }
     var claudeHooksInstalled: Bool { hooks.claudeHooksInstalled }
+    var qoderHooksInstalled: Bool { hooks.qoderHooksInstalled }
+    var factoryHooksInstalled: Bool { hooks.factoryHooksInstalled }
+    var codebuddyHooksInstalled: Bool { hooks.codebuddyHooksInstalled }
+    var qoderHookStatus: ClaudeHookInstallationStatus? { hooks.qoderHookStatus }
+    var factoryHookStatus: ClaudeHookInstallationStatus? { hooks.factoryHookStatus }
+    var codebuddyHookStatus: ClaudeHookInstallationStatus? { hooks.codebuddyHookStatus }
+    var isQoderHookSetupBusy: Bool { hooks.isQoderHookSetupBusy }
+    var isFactoryHookSetupBusy: Bool { hooks.isFactoryHookSetupBusy }
+    var isCodebuddyHookSetupBusy: Bool { hooks.isCodebuddyHookSetupBusy }
     var openCodePluginInstalled: Bool { hooks.openCodePluginInstalled }
     var claudeUsageInstalled: Bool { hooks.claudeUsageInstalled }
     var claudeHookStatusTitle: String { hooks.claudeHookStatusTitle }
@@ -75,6 +85,8 @@ final class AppModel {
     var isOpenCodeSetupBusy: Bool { hooks.isOpenCodeSetupBusy }
     var openCodePluginStatusTitle: String { hooks.openCodePluginStatusTitle }
     var openCodePluginStatusSummary: String { hooks.openCodePluginStatusSummary }
+    var claudeHealthReport: HookHealthReport? { hooks.claudeHealthReport }
+    var codexHealthReport: HookHealthReport? { hooks.codexHealthReport }
     var codexHookStatusTitle: String { hooks.codexHookStatusTitle }
     var codexHookStatusSummary: String { hooks.codexHookStatusSummary }
     func refreshCodexHookStatus() { hooks.refreshCodexHookStatus() }
@@ -86,10 +98,23 @@ final class AppModel {
     func uninstallCodexHooks() { hooks.uninstallCodexHooks() }
     func installClaudeHooks() { hooks.installClaudeHooks() }
     func uninstallClaudeHooks() { hooks.uninstallClaudeHooks() }
+    func installQoderHooks() { hooks.installQoderHooks() }
+    func uninstallQoderHooks() { hooks.uninstallQoderHooks() }
+    func installFactoryHooks() { hooks.installFactoryHooks() }
+    func uninstallFactoryHooks() { hooks.uninstallFactoryHooks() }
+    func installCodebuddyHooks() { hooks.installCodebuddyHooks() }
+    func uninstallCodebuddyHooks() { hooks.uninstallCodebuddyHooks() }
+    func refreshCCForkHookStatuses() { hooks.refreshCCForkHookStatuses() }
     func installOpenCodePlugin() { hooks.installOpenCodePlugin() }
     func uninstallOpenCodePlugin() { hooks.uninstallOpenCodePlugin() }
     func installClaudeUsageBridge() { hooks.installClaudeUsageBridge() }
     func uninstallClaudeUsageBridge() { hooks.uninstallClaudeUsageBridge() }
+    func runHealthChecks() { hooks.runHealthChecks() }
+    func repairHooks() {
+        Task { @MainActor in
+            await hooks.repairHooksIfNeeded()
+        }
+    }
     var isBridgeReady = false
     var lastActionMessage = "Waiting for agent hook events..." {
         didSet {
@@ -114,7 +139,7 @@ final class AppModel {
     }
     var showDockIcon: Bool = false {
         didSet {
-            guard showDockIcon != oldValue else { return }
+            guard hasFinishedInit, showDockIcon != oldValue else { return }
             UserDefaults.standard.set(showDockIcon, forKey: Self.showDockIconDefaultsKey)
             NSApp.setActivationPolicy(showDockIcon ? .regular : .accessory)
             if !showDockIcon {
@@ -222,11 +247,17 @@ final class AppModel {
         watchRelay = nil
     }
 
+    @ObservationIgnored
+    private var hasFinishedInit = false
+
     var ignoresPointerExitDuringHarness = false
     var disablesOverlayEventMonitoringDuringHarness = false
 
     @ObservationIgnored
     private var bridgeTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var bridgeReconnectTask: Task<Void, Never>?
 
     @ObservationIgnored
     private var hasStarted = false
@@ -235,7 +266,7 @@ final class AppModel {
     private let bridgeServer = BridgeServer()
 
     @ObservationIgnored
-    private let bridgeClient = LocalBridgeClient()
+    private var bridgeClient = LocalBridgeClient()
 
     @ObservationIgnored
     private let terminalJumpAction: @Sendable (JumpTarget) throws -> String
@@ -254,6 +285,7 @@ final class AppModel {
         }
     ) {
         self.terminalJumpAction = terminalJumpAction
+        UserDefaults.standard.register(defaults: [Self.showDockIconDefaultsKey: true])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
         showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
@@ -315,6 +347,7 @@ final class AppModel {
         }
 
         refreshOverlayDisplayConfiguration()
+        hasFinishedInit = true
     }
 
     var sessions: [AgentSession] {
@@ -487,6 +520,7 @@ final class AppModel {
             // These are already async or lightweight — safe to start immediately.
             hooks.refreshCodexHookStatus()
             hooks.refreshClaudeHookStatus()
+            hooks.refreshCCForkHookStatuses()
             hooks.refreshOpenCodePluginStatus()
             hooks.refreshClaudeUsageState()
             hooks.startClaudeUsageMonitoringIfNeeded()
@@ -514,47 +548,92 @@ final class AppModel {
 
         do {
             try bridgeServer.start()
-            let stream = try bridgeClient.connect()
-
-            Task { [weak self] in
-                guard let self else {
-                    return
-                }
-
-                do {
-                    try await self.bridgeClient.send(.registerClient(role: .observer))
-                    self.isBridgeReady = true
-                    self.lastActionMessage = "Bridge ready. Waiting for Claude and Codex hook events."
-                    self.harnessRuntimeMonitor?.recordMilestone("bridgeReady", message: self.lastActionMessage)
-                } catch {
-                    self.isBridgeReady = false
-                    self.lastActionMessage = "Failed to register bridge observer: \(error.localizedDescription)"
-                    self.harnessRuntimeMonitor?.recordMilestone(
-                        "bridgeRegistrationFailed",
-                        message: self.lastActionMessage
-                    )
-                }
-            }
-
-            bridgeTask = Task { [weak self] in
-                guard let self else {
-                    return
-                }
-
-                do {
-                    for try await event in stream {
-                        self.applyTrackedEvent(event)
-                    }
-                } catch {
-                    self.isBridgeReady = false
-                    self.lastActionMessage = "Bridge disconnected: \(error.localizedDescription)"
-                    self.harnessRuntimeMonitor?.recordMilestone("bridgeDisconnected", message: self.lastActionMessage)
-                }
-            }
+            connectBridgeObserver()
         } catch {
             isBridgeReady = false
             lastActionMessage = "Failed to start local bridge: \(error.localizedDescription)"
             harnessRuntimeMonitor?.recordMilestone("bridgeStartFailed", message: lastActionMessage)
+        }
+    }
+
+    // MARK: - Bridge observer connection
+
+    private static let bridgeReconnectDelay: Duration = .seconds(2)
+    private static let bridgeMaxReconnectDelay: Duration = .seconds(30)
+
+    private func connectBridgeObserver() {
+        bridgeTask?.cancel()
+        bridgeReconnectTask?.cancel()
+
+        // Explicitly disconnect the old client so its DispatchSource is
+        // cancelled deterministically rather than relying on dealloc timing.
+        bridgeClient.disconnect()
+
+        // Create a fresh client for each connection attempt so we don't
+        // have to worry about stale file-descriptor state.
+        let client = LocalBridgeClient()
+        bridgeClient = client
+
+        let stream: AsyncThrowingStream<AgentEvent, Error>
+        do {
+            stream = try client.connect()
+        } catch {
+            isBridgeReady = false
+            lastActionMessage = "Failed to connect bridge observer: \(error.localizedDescription)"
+            scheduleBridgeReconnect()
+            return
+        }
+
+        // A single task handles both registration and event consumption so
+        // there is no untracked task that could race with a reconnect.
+        bridgeTask = Task { [weak self] in
+            guard let self else { return }
+
+            do {
+                try await client.send(.registerClient(role: .observer))
+                self.isBridgeReady = true
+                self.lastActionMessage = "Bridge ready. Waiting for Claude and Codex hook events."
+                self.harnessRuntimeMonitor?.recordMilestone("bridgeReady", message: self.lastActionMessage)
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.isBridgeReady = false
+                self.lastActionMessage = "Failed to register bridge observer: \(error.localizedDescription)"
+                self.harnessRuntimeMonitor?.recordMilestone(
+                    "bridgeRegistrationFailed",
+                    message: self.lastActionMessage
+                )
+                self.scheduleBridgeReconnect()
+                return
+            }
+
+            do {
+                for try await event in stream {
+                    self.applyTrackedEvent(event)
+                }
+            } catch {}
+
+            // Stream ended (server closed our connection or transient error).
+            // Mark as disconnected and schedule reconnection.
+            guard !Task.isCancelled else { return }
+            self.isBridgeReady = false
+            self.lastActionMessage = "Bridge observer disconnected. Reconnecting…"
+            self.harnessRuntimeMonitor?.recordMilestone("bridgeDisconnected", message: self.lastActionMessage)
+            self.scheduleBridgeReconnect()
+        }
+    }
+
+    private func scheduleBridgeReconnect() {
+        bridgeReconnectTask?.cancel()
+        bridgeReconnectTask = Task { [weak self] in
+            var delay = Self.bridgeReconnectDelay
+            while !Task.isCancelled {
+                try? await Task.sleep(for: delay)
+                guard let self, !Task.isCancelled else { return }
+                self.connectBridgeObserver()
+                // If we're now connected, stop retrying.
+                if self.isBridgeReady { return }
+                delay = min(delay * 2, Self.bridgeMaxReconnectDelay)
+            }
         }
     }
 
@@ -728,32 +807,30 @@ final class AppModel {
         )
     }
 
-    func approvePermission(for sessionID: String, mode: ClaudePermissionMode?) {
+    func approvePermission(for sessionID: String, action: ApprovalAction) {
         guard let session = state.session(id: sessionID) else {
             return
         }
 
-        let resolution = permissionResolution(for: mode)
+        let resolution: PermissionResolution
+        let message: String
+
+        switch action {
+        case .deny:
+            resolution = .deny(message: "Permission denied in Open Island.", interrupt: false)
+            message = "Denying permission for \(session.title)."
+        case .allowOnce:
+            resolution = .allowOnce()
+            message = "Approving permission for \(session.title)."
+        case let .allowWithUpdates(updates):
+            resolution = .allowOnce(updatedPermissions: updates)
+            message = "Always allowing for \(session.title)."
+        }
+
         dismissNotificationSurfaceIfPresent(for: sessionID)
         state.resolvePermission(sessionID: session.id, resolution: resolution)
         synchronizeSelection()
         refreshOverlayPlacementIfVisible()
-
-        let message: String
-        if let mode {
-            switch mode {
-            case .default:
-                message = "Approving permission for \(session.title)."
-            case .acceptEdits:
-                message = "Auto-accepting edits for \(session.title)."
-            case .bypassPermissions, .dontAsk:
-                message = "Auto-approving all permissions for \(session.title)."
-            case .plan:
-                message = "Switching to plan mode for \(session.title)."
-            }
-        } else {
-            message = "Denying permission for \(session.title)."
-        }
 
         send(
             .resolvePermission(sessionID: session.id, resolution: resolution),
@@ -791,19 +868,6 @@ final class AppModel {
             } catch {
                 self.lastActionMessage = "Failed to send bridge command: \(error.localizedDescription)"
             }
-        }
-    }
-
-    private func permissionResolution(for mode: ClaudePermissionMode?) -> PermissionResolution {
-        guard let mode else {
-            return .deny(message: "Permission denied in Open Island.", interrupt: false)
-        }
-
-        switch mode {
-        case .default:
-            return .allowOnce()
-        case .acceptEdits, .plan, .dontAsk, .bypassPermissions:
-            return .allowOnce(updatedPermissions: [.setMode(destination: .session, mode: mode)])
         }
     }
 
@@ -909,15 +973,25 @@ final class AppModel {
         hooks.hooksBinaryURL = payload.hooksBinaryURL
         hooks.updateHooksBinaryIfNeeded()
 
-        // Auto-install missing hooks and usage bridge on first launch.
+        // Auto-install missing hooks and usage bridge, then run health checks.
         if payload.hooksBinaryURL != nil {
             Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .milliseconds(800))
                 guard let self else { return }
+
+                // Wait for all status reads to complete before checking install state.
+                await self.hooks.refreshAllHookStatusAndWait()
+
                 if !self.claudeHooksInstalled { self.installClaudeHooks() }
                 if !self.codexHooksInstalled { self.installCodexHooks() }
+                if !self.qoderHooksInstalled { self.installQoderHooks() }
+                if !self.factoryHooksInstalled { self.installFactoryHooks() }
+                if !self.codebuddyHooksInstalled { self.installCodebuddyHooks() }
                 if !self.openCodePluginInstalled { self.installOpenCodePlugin() }
                 if !self.claudeUsageInstalled { self.installClaudeUsageBridge() }
+
+                // Run health checks after install to detect stale paths, conflicts, etc.
+                try? await Task.sleep(for: .milliseconds(500))
+                await self.hooks.repairHooksIfNeeded()
             }
         }
 

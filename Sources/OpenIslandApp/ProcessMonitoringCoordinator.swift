@@ -81,25 +81,35 @@ final class ProcessMonitoringCoordinator {
         terminalAvailability: TerminalSessionAttachmentProbe.SnapshotAvailability<TerminalSessionAttachmentProbe.TerminalTabSnapshot>? = nil
     ) {
         let activeProcesses = activeProcesses ?? activeAgentProcessDiscovery.discover()
-        let sanitizedSessions = sanitizeCrossToolGhosttyJumpTargets(in: state.sessions)
-        let sanitizedSessionsChanged = sanitizedSessions != state.sessions
+
+        // Work on a local copy to avoid triggering didSet (and its queue.sync +
+        // view invalidation) on every intermediate mutation.
+        var local = state
+
+        let sanitizedSessions = sanitizeCrossToolGhosttyJumpTargets(in: local.sessions)
+        let sanitizedSessionsChanged = sanitizedSessions != local.sessions
         if sanitizedSessionsChanged {
-            state = SessionState(sessions: sanitizedSessions)
+            local = SessionState(sessions: sanitizedSessions)
         }
 
         let mergedSessions = mergedWithSyntheticClaudeSessions(
-            existingSessions: state.sessions,
+            existingSessions: local.sessions,
             activeProcesses: activeProcesses
         )
-        let syntheticSessionsChanged = mergedSessions != state.sessions
+        let syntheticSessionsChanged = mergedSessions != local.sessions
         if syntheticSessionsChanged {
-            state = SessionState(sessions: mergedSessions)
+            local = SessionState(sessions: mergedSessions)
         }
 
-        adoptProcessTTYsForClaudeSessions(activeProcesses: activeProcesses)
+        // Adopt process TTYs inline on local copy.
+        let ttyAdopted = adoptProcessTTYsForClaudeSessions(activeProcesses: activeProcesses, sessions: &local)
 
-        let sessions = state.sessions.filter(\.isTrackedLiveSession)
+        let sessions = local.sessions.filter(\.isTrackedLiveSession)
         guard !sessions.isEmpty else {
+            // Flush local changes if any early mutations happened.
+            if sanitizedSessionsChanged || syntheticSessionsChanged || ttyAdopted {
+                state = local
+            }
             isResolvingInitialLiveSessions = false
             return
         }
@@ -128,26 +138,33 @@ final class ProcessMonitoringCoordinator {
             }
         }
 
-        let attachmentsChanged = state.reconcileAttachmentStates(attachmentUpdates)
-        let jumpTargetsChanged = state.reconcileJumpTargets(jumpTargetUpdates)
+        let attachmentsChanged = local.reconcileAttachmentStates(attachmentUpdates)
+        let jumpTargetsChanged = local.reconcileJumpTargets(jumpTargetUpdates)
 
         // Phase 1: populate isProcessAlive in parallel with existing system.
         let aliveIDs = sessionIDsWithAliveProcesses(activeProcesses: activeProcesses)
-        let livenessChanges = state.markProcessLiveness(aliveSessionIDs: aliveIDs)
+        _ = local.markProcessLiveness(aliveSessionIDs: aliveIDs)
 
         // Resolve jump targets via the new focused resolver.
         let resolverJumpTargets = terminalJumpTargetResolver.resolveJumpTargets(
-            for: state.sessions.filter(\.isTrackedLiveSession),
+            for: local.sessions.filter(\.isTrackedLiveSession),
             activeProcesses: activeProcesses
         )
         if !resolverJumpTargets.isEmpty {
-            _ = state.reconcileJumpTargets(resolverJumpTargets)
+            _ = local.reconcileJumpTargets(resolverJumpTargets)
         }
 
         // Phase 4: remove sessions that are no longer visible.
-        let removedInvisible = state.removeInvisibleSessions()
+        let removedInvisible = local.removeInvisibleSessions()
 
-        guard sanitizedSessionsChanged || syntheticSessionsChanged || attachmentsChanged || jumpTargetsChanged || removedInvisible else {
+        // Single state assignment — triggers didSet exactly once.
+        let anyChange = sanitizedSessionsChanged || syntheticSessionsChanged || ttyAdopted
+            || attachmentsChanged || jumpTargetsChanged || removedInvisible
+        if anyChange {
+            state = local
+        }
+
+        guard anyChange else {
             if resolutionReport.isAuthoritative {
                 isResolvingInitialLiveSessions = false
             }
@@ -499,11 +516,15 @@ final class ProcessMonitoringCoordinator {
     /// When a Claude session was matched to a process by cwd but has a nil or
     /// mismatched TTY, adopt the process's TTY so that the subsequent terminal
     /// attachment resolution can find and promote the session.
-    private func adoptProcessTTYsForClaudeSessions(activeProcesses: [ActiveProcessSnapshot]) {
+    @discardableResult
+    private func adoptProcessTTYsForClaudeSessions(
+        activeProcesses: [ActiveProcessSnapshot],
+        sessions localState: inout SessionState
+    ) -> Bool {
         let claudeProcesses = activeProcesses.filter { $0.tool == .claudeCode }
-        guard !claudeProcesses.isEmpty else { return }
+        guard !claudeProcesses.isEmpty else { return false }
 
-        var sessions = state.sessions
+        var sessions = localState.sessions
         var changed = false
 
         for process in claudeProcesses {
@@ -545,8 +566,9 @@ final class ProcessMonitoringCoordinator {
         }
 
         if changed {
-            state = SessionState(sessions: sessions)
+            localState = SessionState(sessions: sessions)
         }
+        return changed
     }
 
     // MARK: - Cross-tool sanitization
@@ -700,6 +722,12 @@ final class ProcessMonitoringCoordinator {
             return "Gemini \(session.id.prefix(8))"
         case .openCode:
             return "OpenCode \(session.id.prefix(8))"
+        case .qoder:
+            return "Qoder \(session.id.prefix(8))"
+        case .factory:
+            return "Factory \(session.id.prefix(8))"
+        case .codebuddy:
+            return "CodeBuddy \(session.id.prefix(8))"
         }
     }
 }

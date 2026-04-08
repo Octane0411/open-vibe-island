@@ -1,5 +1,6 @@
 import Foundation
 import WatchConnectivity
+import UserNotifications
 import os
 
 struct PendingWatchEvent: Identifiable {
@@ -46,18 +47,17 @@ final class WatchSessionManager: NSObject, ObservableObject {
             replyHandler(payload)
             logger.info("Resolved \(requestID) via replyHandler")
             lastError = nil
-        } else if WCSession.default.isReachable {
-            WCSession.default.sendMessage(payload, replyHandler: nil) { [weak self] error in
-                self?.logger.error("Failed to send resolution for \(requestID): \(error.localizedDescription)")
-                DispatchQueue.main.async {
-                    self?.lastError = "发送失败: \(error.localizedDescription)"
-                }
-            }
-            logger.info("Resolved \(requestID) via sendMessage fallback")
-            lastError = nil
         } else {
-            logger.warning("Cannot resolve \(requestID): phone not reachable and no replyHandler")
-            lastError = "iPhone 不可达，请检查连接"
+            // Always try sendMessage first, fallback to transferUserInfo
+            WCSession.default.sendMessage(payload, replyHandler: { [weak self] _ in
+                self?.logger.info("Resolution for \(requestID) acknowledged by iPhone")
+                DispatchQueue.main.async { self?.lastError = nil }
+            }) { [weak self] error in
+                self?.logger.info("sendMessage failed for \(requestID), queuing via transferUserInfo")
+                WCSession.default.transferUserInfo(payload)
+                DispatchQueue.main.async { self?.lastError = nil }
+            }
+            logger.info("Resolving \(requestID) via sendMessage + transferUserInfo fallback")
         }
 
         pendingEvents.removeAll { $0.id == requestID }
@@ -106,6 +106,75 @@ final class WatchSessionManager: NSObject, ObservableObject {
         }
 
         HapticManager.play(for: message)
+        scheduleLocalNotification(for: message, requestID: requestID)
+    }
+
+    private func scheduleLocalNotification(for message: WatchMessage, requestID: String) {
+        let content = UNMutableNotificationContent()
+        content.sound = .default
+
+        switch message {
+        case .permissionRequest(let p):
+            content.title = p.agentTool
+            content.subtitle = p.title
+            content.body = p.summary
+            content.categoryIdentifier = "PERMISSION_REQUEST"
+            content.userInfo = ["requestID": requestID]
+
+        case .question(let q):
+            content.title = q.agentTool
+            content.subtitle = q.title
+            content.body = q.options.joined(separator: " / ")
+            content.categoryIdentifier = "QUESTION"
+            content.userInfo = ["requestID": requestID]
+
+        case .sessionCompleted(let c):
+            content.title = "✅ \(c.agentTool)"
+            content.body = c.summary
+            content.categoryIdentifier = "SESSION_COMPLETED"
+
+        case .resolved:
+            return
+        }
+
+        let request = UNNotificationRequest(
+            identifier: "watch-\(requestID)",
+            content: content,
+            trigger: nil  // 立即触发
+        )
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error {
+                self.logger.error("Failed to schedule Watch notification: \(error.localizedDescription)")
+            }
+        }
+    }
+}
+
+// MARK: - UNUserNotificationCenterDelegate
+
+extension WatchSessionManager: UNUserNotificationCenterDelegate {
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        // 即使 app 在前台也显示通知（确保震动）
+        [.sound, .banner]
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse) async {
+        let userInfo = response.notification.request.content.userInfo
+        guard let requestID = userInfo["requestID"] as? String else { return }
+
+        switch response.actionIdentifier {
+        case "ALLOW":
+            resolve(requestID: requestID, action: "allow")
+        case "DENY":
+            resolve(requestID: requestID, action: "deny")
+        case UNNotificationDefaultActionIdentifier:
+            // 用户点击了通知本体，打开 app 显示详情
+            break
+        default:
+            break
+        }
     }
 }
 

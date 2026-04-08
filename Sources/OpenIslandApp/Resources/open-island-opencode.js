@@ -3,6 +3,7 @@
 // Install: copy to ~/.config/opencode/plugins/open-island.js
 import { connect } from "net";
 import { appendFileSync } from "fs";
+import { homedir } from "os";
 
 const DEBUG_LOG = "/tmp/open-island-opencode-debug.log";
 function debugLog(msg) {
@@ -11,7 +12,7 @@ function debugLog(msg) {
 
 const SOCKET_PATH =
   process.env.OPEN_ISLAND_SOCKET_PATH ||
-  `/tmp/open-island-${process.getuid()}.sock`;
+  `${process.env.HOME || homedir()}/Library/Application Support/OpenIsland/bridge.sock`;
 
 function encodeEnvelope(command) {
   return JSON.stringify({ type: "command", command }) + "\n";

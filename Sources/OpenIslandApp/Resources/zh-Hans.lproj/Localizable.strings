@@ -67,6 +67,12 @@
 "setup.permissionsTitle" = "辅助功能";
 "setup.permissionsDesc" = "Open Island 可能需要辅助功能权限来检测终端窗口。请在「系统设置 → 隐私与安全性 → 辅助功能」中授权。";
 "setup.installAll" = "全部安装";
+"setup.section.diagnostics" = "Hooks 诊断";
+"setup.diagnostics.notRun" = "尚未运行健康检查。";
+"setup.diagnostics.runCheck" = "运行检查";
+"setup.diagnostics.recheck" = "重新检查";
+"setup.diagnostics.repair" = "修复 Hooks";
+"setup.diagnostics.allHealthy" = "所有 Hooks 运行正常。";
 
 /* Settings - Placeholder */
 "settings.shortcuts.comingSoon" = "快捷键设置即将推出。";
@@ -91,10 +97,6 @@
 "island.collapseList" = "收起列表";
 "island.usageWaiting" = "等待用量数据";
 
-/* Island Panel - Approval */
-"approval.manual" = "手动审批";
-"approval.autoAcceptEdits" = "自动接受编辑";
-"approval.autoBypassPermissions" = "自动批准权限";
 
 /* Island Panel - Subagents & Tasks */
 "subagents.title" = "子代理 (%lld)";

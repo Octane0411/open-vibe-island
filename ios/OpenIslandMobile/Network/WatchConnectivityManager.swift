@@ -47,18 +47,14 @@ final class WatchConnectivityManager: NSObject, @unchecked Sendable {
             return
         }
 
-        if session.isReachable {
-            session.sendMessage(payload, replyHandler: { [weak self] reply in
-                Self.logger.debug("Watch replied to message")
-                self?.handleIncomingMessage(reply)
-            }, errorHandler: { error in
-                Self.logger.warning("sendMessage failed, falling back to transferUserInfo: \(error.localizedDescription)")
-                self.session.transferUserInfo(payload)
-            })
-        } else {
-            session.transferUserInfo(payload)
-            Self.logger.debug("Watch not reachable, queued via transferUserInfo")
-        }
+        // Always try sendMessage first (isReachable can be stale), fallback to transferUserInfo
+        session.sendMessage(payload, replyHandler: { [weak self] reply in
+            Self.logger.debug("Watch replied to message")
+            self?.handleIncomingMessage(reply)
+        }, errorHandler: { error in
+            Self.logger.info("sendMessage failed, queuing via transferUserInfo: \(error.localizedDescription)")
+            self.session.transferUserInfo(payload)
+        })
     }
 }
 

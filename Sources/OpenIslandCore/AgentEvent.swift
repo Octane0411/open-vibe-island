@@ -99,17 +99,24 @@ public struct SessionCompleted: Equatable, Codable, Sendable {
     public var summary: String
     public var timestamp: Date
     public var isInterrupt: Bool?
+    /// When `true`, the agent session itself has ended (e.g. Claude Code's
+    /// `SessionEnd` hook). Distinguishes a full session teardown from a
+    /// turn-level completion (`Stop`/`StopFailure`) where the CLI is still
+    /// running and waiting for the next user prompt.
+    public var isSessionEnd: Bool?
 
     public init(
         sessionID: String,
         summary: String,
         timestamp: Date,
-        isInterrupt: Bool? = nil
+        isInterrupt: Bool? = nil,
+        isSessionEnd: Bool? = nil
     ) {
         self.sessionID = sessionID
         self.summary = summary
         self.timestamp = timestamp
         self.isInterrupt = isInterrupt
+        self.isSessionEnd = isSessionEnd
     }
 }
 

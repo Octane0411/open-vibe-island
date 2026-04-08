@@ -2,7 +2,20 @@ import Darwin
 import Foundation
 
 public enum BridgeSocketLocation {
+    /// Stable per-user socket directory under ~/Library/Application Support.
+    /// Unlike /tmp, this directory is not subject to periodic system cleanup.
+    private static var stableDirectoryURL: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
+        return appSupport.appendingPathComponent("OpenIsland")
+    }
+
     public static var defaultURL: URL {
+        stableDirectoryURL.appendingPathComponent("bridge.sock")
+    }
+
+    /// Legacy path for backward compatibility with older hook binaries.
+    public static var legacyURL: URL {
         URL(fileURLWithPath: "/tmp/open-island-\(getuid()).sock")
     }
 

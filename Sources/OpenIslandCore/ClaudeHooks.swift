@@ -135,6 +135,74 @@ public enum ClaudePermissionUpdate: Equatable, Codable, Sendable {
             try container.encode(directories, forKey: .directories)
         }
     }
+
+    /// Human-readable label for rendering as a button in the approval card.
+    /// Matches Claude Code's actual option text as closely as possible.
+    public var displayLabel: String {
+        switch self {
+        case let .addRules(destination, rules, _):
+            guard let rule = rules.first else { return "Yes, always allow" }
+            let action = Self.actionVerb(for: rule.toolName)
+            let path = Self.shortenedPath(rule.ruleContent)
+            let scope = Self.scopeLabel(for: destination)
+            if let path {
+                return scope.isEmpty
+                    ? "Yes, allow \(action) \(path)"
+                    : "Yes, allow \(action) \(path) \(scope)"
+            }
+            return scope.isEmpty
+                ? "Yes, always allow \(rule.toolName)"
+                : "Yes, always allow \(rule.toolName) \(scope)"
+        case let .setMode(_, mode):
+            switch mode {
+            case .acceptEdits:
+                return "Yes, manually approve edits"
+            case .bypassPermissions, .dontAsk:
+                return "Yes, and bypass permissions"
+            case .plan:
+                return "Plan Mode"
+            case .default:
+                return "Manual Mode"
+            }
+        case .replaceRules:
+            return "Update Rules"
+        case .removeRules:
+            return "Remove Rules"
+        case .addDirectories:
+            return "Add Directories"
+        case .removeDirectories:
+            return "Remove Directories"
+        }
+    }
+
+    private static func actionVerb(for toolName: String) -> String {
+        switch toolName {
+        case "Read": return "reading from"
+        case "Write", "Edit": return "writing to"
+        case "Bash": return "running"
+        case "Glob", "Grep": return "searching"
+        default: return toolName.lowercased()
+        }
+    }
+
+    private static func shortenedPath(_ ruleContent: String?) -> String? {
+        guard let content = ruleContent, !content.isEmpty else { return nil }
+        // Strip leading slashes and glob suffixes for cleaner display
+        var path = content
+        while path.hasPrefix("/") { path = String(path.dropFirst()) }
+        if path.hasSuffix("/**") { path = String(path.dropLast(3)) }
+        return path.isEmpty ? nil : path + "/"
+    }
+
+    private static func scopeLabel(for destination: ClaudePermissionUpdateDestination) -> String {
+        switch destination {
+        case .projectSettings: return "from this project"
+        case .userSettings: return "globally"
+        case .localSettings: return ""
+        case .session: return "for this session"
+        case .cliArg: return ""
+        }
+    }
 }
 
 public struct ClaudeSubagentInfo: Equatable, Codable, Sendable {
@@ -296,6 +364,10 @@ public struct ClaudeHookPayload: Equatable, Codable, Sendable {
     public var terminalTitle: String?
     /// Set to `true` by the Python hook client to indicate a remote (SSH) session.
     public var remote: Bool?
+
+    /// The agent tool that produced this hook payload (e.g. "claude", "qoder", "factory", "codebuddy").
+    /// Set by the hooks CLI from the `--source` argument; not part of the JSON wire format.
+    public var hookSource: String?
 
     private enum CodingKeys: String, CodingKey {
         case cwd
@@ -771,6 +843,21 @@ public extension ClaudeHookPayload {
         }
 
         return QuestionPrompt(title: title, questions: questions)
+    }
+
+    /// Resolves the `AgentTool` for this payload based on `hookSource`.
+    /// Defaults to `.claudeCode` for unknown or nil sources.
+    var resolvedAgentTool: AgentTool {
+        switch hookSource {
+        case "qoder":
+            return .qoder
+        case "factory", "droid":
+            return .factory
+        case "codebuddy":
+            return .codebuddy
+        default:
+            return .claudeCode
+        }
     }
 
     var permissionRequestTitle: String {

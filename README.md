@@ -13,6 +13,7 @@
 <p align="center">
   <a href="https://github.com/Octane0411/open-vibe-island/releases">Releases</a> ·
   <a href="#quick-start">Quick Start</a> ·
+  <a href="docs/roadmap.md">Roadmap</a> ·
   <a href="#contributing">Contributing</a>
 </p>
 
@@ -30,7 +31,9 @@ This section is written for humans.
 
 ### What This Is
 
-An open-source [Vibe Island](https://vibeisland.app/) alternative for heavy code-agent users on macOS. Currently supports **Claude Code**, **Codex**, and **OpenCode**, with terminal integration for **Terminal.app**, **Ghostty**, **cmux**, **Kaku**, **WezTerm**, and **iTerm2**, plus fallback detection for Warp.
+An open-source [Vibe Island](https://vibeisland.app/) alternative for heavy code-agent users on macOS. Currently supports **Claude Code**, **Codex**, **OpenCode**, **Qoder**, **Factory**, and **CodeBuddy**, with terminal integration for **Terminal.app**, **Ghostty**, **cmux**, **Kaku**, **WezTerm**, and **iTerm2**, plus fallback detection for Warp.
+
+This is a community project. We provide the basics: code agent communication, a mac island app shell, and some fundamental features. We welcome anyone to build on top of this and turn ideas into real features for everyone. Read the [Roadmap](docs/roadmap.md) and [Contributing](CONTRIBUTING.md) docs for more info.
 
 <p align="center">
   <img src="docs/images/screenshot-overview.png" alt="Open Island screenshot" width="720">
@@ -46,9 +49,15 @@ I do not want to run a closed-source paid app on my own computer just to monitor
 
 - Download an early build from [GitHub Releases](https://github.com/Octane0411/open-vibe-island/releases), or build from source.
 - Fork this repository and vibe your own version.
-- If you hit a bug or a usage problem, open an issue. Those get the highest priority.
-- If you want support for another terminal app or coding agent, open an issue first. We will expand where practical.
-- If you have a product idea or feature request, open an issue first. A follow-up PR with a demo is welcome.
+- If you hit a bug or a usage problem, open an issue or report it in the WeChat group — we'll do our best to address it.
+- If you have a good idea, open an issue or discuss it in the WeChat group, or directly submit a PR with a demo and feature description — we welcome any product suggestions and ideas.
+
+### Community
+
+The project is still at an early stage — you may encounter issues along the way. Join the WeChat group or Discord for faster feedback and higher resolution priority.
+We welcome any issues and pull requests. We are also looking for others to join as maintainers. WeChat group:
+
+<img src="docs/images/wechat-group.jpg" alt="Open Island WeChat group QR code" width="360">
 
 ### Notes
 
@@ -63,6 +72,9 @@ This app may install hooks for Claude Code or Codex, so you may see hook-related
 | **Claude Code** | Supported | Hook integration, JSONL session discovery, status line bridge, usage tracking |
 | **Codex** | Supported | Full hook integration (SessionStart, UserPromptSubmit, Stop), usage tracking |
 | **OpenCode** | Supported | JS plugin integration, permission/question flows, process detection |
+| **Qoder** | Supported | Claude Code fork — same hook format, config at `~/.qoder/settings.json` |
+| **Factory** | Supported | Claude Code fork — same hook format, config at `~/.factory/settings.json` |
+| **CodeBuddy** | Supported | Claude Code fork — same hook format, config at `~/.codebuddy/settings.json` |
 | **Gemini CLI** | Planned | — |
 
 #### Supported Terminals
@@ -91,13 +103,6 @@ This app may install hooks for Claude Code or Codex, so you may see hook-related
 | Process discovery | Supported | Match active agents via `ps`/`lsof` |
 | DMG packaging | Supported | Signing, notarization, GitHub Actions release workflow |
 | Auto-update | Supported | Sparkle-based automatic updates with appcast |
-
-## Community
-
-The project is still at an early stage — you may encounter issues along the way. Join the WeChat group or Discord for faster feedback and higher resolution priority.
-Issues and pull requests are always welcome. We are also looking for additional maintainers — Open Island is just the beginning. Come join us:
-
-<img src="docs/images/wechat-group.jpg" alt="Open Island WeChat group QR code" width="360">
 
 ### Report a Bug via Your Code Agent
 
@@ -181,6 +186,9 @@ Developers who already live in the terminal and want a better way to work with c
 - **Codex** — Full hook-based integration. Receives `SessionStart`, `UserPromptSubmit`, and `Stop` events by default. Reads 5-hour and 7-day account usage windows from local rollout files. Install/uninstall managed hooks from the control center or CLI.
 - **Claude Code** — Hook-based integration via `~/.claude/settings.json`. Discovers sessions from `~/.claude/projects/` JSONL transcripts. Persists and restores sessions across app launches. Managed status line bridge with opt-in installation. Reads cached 5-hour and 7-day usage windows.
 - **OpenCode** — JS plugin integration via `~/.config/opencode/plugins/`. Plugin auto-installed on first launch. Receives session lifecycle, tool use, permission, and question events. Permission approval and question answering flows supported. Process detection via `ps`.
+- **Qoder** — Claude Code fork. Same hook format and events via `~/.qoder/settings.json`. Use `--source qoder` with the hooks binary.
+- **Factory** — Claude Code fork. Same hook format and events via `~/.factory/settings.json`. Use `--source factory` with the hooks binary.
+- **CodeBuddy** — Claude Code fork. Same hook format and events via `~/.codebuddy/settings.json`. Use `--source codebuddy` with the hooks binary.
 
 ### Terminal Support
 

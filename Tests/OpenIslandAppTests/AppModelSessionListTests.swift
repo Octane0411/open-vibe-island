@@ -360,6 +360,45 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func closeTransitionKeepsOpenedVisualStateUntilPanelShrinkFinishes() async throws {
+        let model = AppModel()
+        model.notchStatus = .opened
+        model.notchOpenReason = .hover
+        model.islandSurface = .sessionList()
+
+        model.notchClose()
+
+        #expect(model.notchStatus == .closed)
+        #expect(model.notchOpenReason == nil)
+        #expect(model.isOverlayCloseTransitionPending)
+
+        try await Task.sleep(for: .milliseconds(150))
+
+        #expect(model.isOverlayCloseTransitionPending)
+
+        try await Task.sleep(for: .milliseconds(450))
+
+        #expect(!model.isOverlayCloseTransitionPending)
+    }
+
+    @Test
+    func reopeningOverlayClearsPendingCloseTransitionImmediately() {
+        let model = AppModel()
+        model.notchStatus = .opened
+        model.notchOpenReason = .hover
+        model.islandSurface = .sessionList()
+
+        model.notchClose()
+        #expect(model.isOverlayCloseTransitionPending)
+
+        model.notchOpen(reason: .click)
+
+        #expect(model.notchStatus == .opened)
+        #expect(model.notchOpenReason == .click)
+        #expect(!model.isOverlayCloseTransitionPending)
+    }
+
+    @Test
     func clickedSessionListDoesNotAutoCollapseOnPointerExit() {
         let model = AppModel()
         model.notchStatus = .opened

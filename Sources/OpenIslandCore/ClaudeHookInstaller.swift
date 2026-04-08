@@ -63,8 +63,8 @@ public enum ClaudeHookInstaller {
         ("PreCompact", nil, nil),
     ]
 
-    public static func hookCommand(for binaryPath: String) -> String {
-        "\(shellQuote(binaryPath)) --source claude"
+    public static func hookCommand(for binaryPath: String, source: String = "claude") -> String {
+        "\(shellQuote(binaryPath)) --source \(source)"
     }
 
     public static func installSettingsJSON(

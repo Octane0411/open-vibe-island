@@ -2,56 +2,68 @@
 
 ## Problem
 
-CLI coding agents are powerful, but they pull attention away from the editor and terminal. Developers need a lightweight control surface to monitor work, approve actions, answer questions, and return to the right session quickly.
+CLI coding agents are powerful, but they pull attention away from the editor and terminal. Developers need a lightweight control surface to monitor work, approve actions, answer questions, and return to the right session quickly — without handing their machine over to a closed-source paid app.
 
 ## Target User
 
 - macOS developers using terminal-based coding agents daily
 - Users running more than one agent or more than one terminal session
-- Users who care about low latency and native behavior
+- Users who care about low latency, native behavior, and open-source transparency
 
-## MVP Goal
+## Product Principles
 
-Deliver a native macOS companion that proves the end-to-end loop:
+- **Open source** — all code is public, all contributions are AI-produced
+- **Local first** — no server dependency, no accounts, no analytics
+- **Native macOS** — SwiftUI + AppKit, not a web wrapper
+- **Terminal-native** — built to support the terminal workflow, not replace it
+- **Fail open** — if the app or bridge is unavailable, agents keep running unchanged
 
-1. Receive local agent events
-2. Render live session state in a notch or floating top bar
-3. Handle permission approval and question answering
-4. Bring the user back to the correct terminal session
+## Supported Code Agents
 
-## Supported Boundary
+| Agent | Status | Notes |
+|---|---|---|
+| **Claude Code** | Supported | Hook integration, JSONL session discovery, status line bridge, usage tracking |
+| **Codex** | Supported | Full hook integration (SessionStart, UserPromptSubmit, Stop), usage tracking |
+| **OpenCode** | Supported | JS plugin integration, permission/question flows, process detection |
+| **Qoder** | Supported | Claude Code fork — same hook format, config at `~/.qoder/settings.json` |
+| **Factory** | Supported | Claude Code fork — same hook format, config at `~/.factory/settings.json` |
+| **CodeBuddy** | Supported | Claude Code fork — same hook format, config at `~/.codebuddy/settings.json` |
+| **Gemini CLI** | Planned | — |
 
-For now, the product boundary is fixed to these four surfaces only:
+## Supported Terminals
 
-- `Codex`
-- `Claude Code`
-- `Terminal.app`
-- `Ghostty`
+| Terminal | Status | Notes |
+|---|---|---|
+| **Terminal.app** | Full Support | Jump-back with TTY targeting |
+| **Ghostty** | Full Support | Jump-back with ID matching |
+| **cmux** | Full Support | Jump-back via Unix socket API |
+| **Kaku** | Full Support | Jump-back via CLI pane targeting |
+| **WezTerm** | Full Support | Jump-back via CLI pane targeting |
+| **iTerm2** | Full Support | Jump-back with session ID / TTY matching |
+| **Warp** | Planned | Fallback detection only |
 
-Anything else is explicitly out of scope until the user chooses to expand the boundary.
+## Features
 
-## v0.1 Scope
-
-- One real agent integration only: `Codex`
-- One real terminal verification target pair: `Terminal.app` and `Ghostty`
-- `Claude Code` remains in product scope, but not in implementation scope yet
-- Mock event source first, then replace with real hooks
-- One active permission request at a time
-- Basic session list and detail panel
-- External-display fallback bar for machines without a notch
-
-## Deferred
-
-- Multi-agent support from day one
-- Expanding support to more terminal apps
-- Expanding support to more code agents
-- Pixel-perfect terminal split targeting across many terminal apps
-- Sound packs, themes, and onboarding polish
-- Analytics, accounts, sync, or cloud features
+- **Notch overlay** — sits in the notch area on notch Macs, falls back to a compact top-center bar on external displays or non-notch Macs
+- **Control center** — hook status, usage dashboard, hook install/uninstall
+- **Settings** — General, Display, Sound, Shortcuts, Lab, About
+- **Notification mode** — auto-height panel for permission requests and session events
+- **Notification sounds** — configurable system sounds with mute toggle
+- **i18n** — English and Simplified Chinese
+- **Session discovery** — auto-discover from local transcripts, persist across launches
+- **Process discovery** — match active agents via `ps`/`lsof`
+- **DMG packaging** — signing, notarization, GitHub Actions release workflow
+- **Auto-update** — Sparkle-based automatic updates with appcast
 
 ## Success Criteria
 
-- A local mock event can appear in the overlay within one second
+- Agent events appear in the overlay with low latency
 - Approval and answer actions round-trip back to the source process
 - The app can restore focus to the owning terminal window reliably
 - Idle resource usage remains low enough for all-day background use
+
+## Future Directions
+
+- Gemini CLI and Warp support
+- Sound packs, themes, and onboarding polish
+- Deeper terminal split targeting
