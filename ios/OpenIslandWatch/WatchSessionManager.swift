@@ -47,18 +47,17 @@ final class WatchSessionManager: NSObject, ObservableObject {
             replyHandler(payload)
             logger.info("Resolved \(requestID) via replyHandler")
             lastError = nil
-        } else if WCSession.default.isReachable {
-            WCSession.default.sendMessage(payload, replyHandler: nil) { [weak self] error in
-                self?.logger.error("Failed to send resolution for \(requestID): \(error.localizedDescription)")
-                DispatchQueue.main.async {
-                    self?.lastError = "发送失败: \(error.localizedDescription)"
-                }
-            }
-            logger.info("Resolved \(requestID) via sendMessage fallback")
-            lastError = nil
         } else {
-            logger.warning("Cannot resolve \(requestID): phone not reachable and no replyHandler")
-            lastError = "iPhone 不可达，请检查连接"
+            // Always try sendMessage first, fallback to transferUserInfo
+            WCSession.default.sendMessage(payload, replyHandler: { [weak self] _ in
+                self?.logger.info("Resolution for \(requestID) acknowledged by iPhone")
+                DispatchQueue.main.async { self?.lastError = nil }
+            }) { [weak self] error in
+                self?.logger.info("sendMessage failed for \(requestID), queuing via transferUserInfo")
+                WCSession.default.transferUserInfo(payload)
+                DispatchQueue.main.async { self?.lastError = nil }
+            }
+            logger.info("Resolving \(requestID) via sendMessage + transferUserInfo fallback")
         }
 
         pendingEvents.removeAll { $0.id == requestID }
