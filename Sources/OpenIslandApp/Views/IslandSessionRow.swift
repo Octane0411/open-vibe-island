@@ -416,9 +416,19 @@ struct IslandSessionRow: View {
         OpenIslandBrandMark(
             size: 22,
             tint: statusTint(for: presence),
-            isAnimating: presence == .running
+            animation: rowAnimation(for: presence)
         )
         .padding(.top, 2)
+    }
+
+    private func rowAnimation(for presence: IslandSessionPresence) -> ScoutAnimation {
+        if session.phase.requiresAttention {
+            return .permissionAlert
+        }
+        if presence == .running {
+            return .active
+        }
+        return .idle
     }
 
     /// Prompt line for manually expanded inactive rows (bypasses time-based filter).

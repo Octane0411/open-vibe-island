@@ -4,14 +4,14 @@ import SwiftUI
 
 struct OpenIslandIcon: View {
     let size: CGFloat
-    var isAnimating: Bool = false
+    var animation: ScoutAnimation = .idle
     var tint: Color = .mint
 
     var body: some View {
         OpenIslandBrandMark(
             size: size,
             tint: tint,
-            isAnimating: isAnimating,
+            animation: animation,
             style: .duotone
         )
     }

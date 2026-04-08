@@ -140,6 +140,17 @@ struct IslandPanelView: View {
         return session.phase == .running || session.phase.requiresAttention
     }
 
+    private var closedScoutAnimation: ScoutAnimation {
+        let sessions = model.surfacedSessions
+        if sessions.contains(where: { $0.phase.requiresAttention }) {
+            return .permissionAlert
+        }
+        if sessions.contains(where: { $0.phase == .running }) {
+            return .active
+        }
+        return .idle
+    }
+
     /// Scout icon tint: blue if any running, green if any live, else gray.
     private var scoutTint: Color {
         let sessions = model.surfacedSessions
@@ -305,7 +316,7 @@ struct IslandPanelView: View {
             HStack(spacing: 0) {
                 if hasClosedPresence {
                     HStack(spacing: 4) {
-                        OpenIslandIcon(size: 14, isAnimating: hasClosedActivity, tint: scoutTint)
+                        OpenIslandIcon(size: 14, animation: closedScoutAnimation, tint: scoutTint)
                             .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
 
                         if closedSpotlightSession?.phase.requiresAttention == true {
