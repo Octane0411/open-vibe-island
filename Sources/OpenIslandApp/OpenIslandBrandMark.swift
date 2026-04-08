@@ -1,14 +1,29 @@
 import SwiftUI
 
+enum ScoutAnimation: Equatable {
+    case idle
+    case active
+    case permissionAlert
+    case taskComplete
+}
+
 struct OpenIslandBrandMark: View {
     enum Style {
         case duotone
         case template
     }
 
+    enum PixelPart {
+        case antenna
+        case head
+        case eye
+        case body
+        case leg
+    }
+
     let size: CGFloat
     var tint: Color = .mint
-    var isAnimating: Bool = false
+    var animation: ScoutAnimation = .idle
     var style: Style = .duotone
 
     private static let scoutPattern = [
@@ -22,9 +37,18 @@ struct OpenIslandBrandMark: View {
         "........",
     ]
 
-    private static let pixels: [(x: Int, y: Int, role: Character)] = scoutPattern.enumerated().flatMap { rowIndex, row in
+    private static let pixels: [(x: Int, y: Int, role: Character, part: PixelPart)] = scoutPattern.enumerated().flatMap { rowIndex, row in
         row.enumerated().compactMap { columnIndex, character in
-            character == "." ? nil : (columnIndex, rowIndex, character)
+            guard character != "." else { return nil }
+            let part: PixelPart = switch rowIndex {
+            case 0: .antenna
+            case 1, 2: .head
+            case 3: character == "E" ? .eye : .body
+            case 4, 5: .body
+            case 6: .leg
+            default: .body
+            }
+            return (columnIndex, rowIndex, character, part)
         }
     }
 
@@ -57,9 +81,9 @@ struct OpenIslandBrandMark: View {
         case .duotone:
             switch role {
             case "B":
-                return tint.opacity(isAnimating ? 1.0 : 0.86)
+                return tint.opacity(animation != .idle ? 1.0 : 0.86)
             case "H":
-                return tint.opacity(isAnimating ? 0.84 : 0.64)
+                return tint.opacity(animation != .idle ? 0.84 : 0.64)
             case "E":
                 return Color.black.opacity(0.72)
             default:
