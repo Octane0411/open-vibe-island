@@ -1,5 +1,6 @@
 import Foundation
 import WatchConnectivity
+import UserNotifications
 import os
 
 struct PendingWatchEvent: Identifiable {
@@ -106,6 +107,75 @@ final class WatchSessionManager: NSObject, ObservableObject {
         }
 
         HapticManager.play(for: message)
+        scheduleLocalNotification(for: message, requestID: requestID)
+    }
+
+    private func scheduleLocalNotification(for message: WatchMessage, requestID: String) {
+        let content = UNMutableNotificationContent()
+        content.sound = .default
+
+        switch message {
+        case .permissionRequest(let p):
+            content.title = p.agentTool
+            content.subtitle = p.title
+            content.body = p.summary
+            content.categoryIdentifier = "PERMISSION_REQUEST"
+            content.userInfo = ["requestID": requestID]
+
+        case .question(let q):
+            content.title = q.agentTool
+            content.subtitle = q.title
+            content.body = q.options.joined(separator: " / ")
+            content.categoryIdentifier = "QUESTION"
+            content.userInfo = ["requestID": requestID]
+
+        case .sessionCompleted(let c):
+            content.title = "✅ \(c.agentTool)"
+            content.body = c.summary
+            content.categoryIdentifier = "SESSION_COMPLETED"
+
+        case .resolved:
+            return
+        }
+
+        let request = UNNotificationRequest(
+            identifier: "watch-\(requestID)",
+            content: content,
+            trigger: nil  // 立即触发
+        )
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error {
+                self.logger.error("Failed to schedule Watch notification: \(error.localizedDescription)")
+            }
+        }
+    }
+}
+
+// MARK: - UNUserNotificationCenterDelegate
+
+extension WatchSessionManager: UNUserNotificationCenterDelegate {
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        // 即使 app 在前台也显示通知（确保震动）
+        [.sound, .banner]
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse) async {
+        let userInfo = response.notification.request.content.userInfo
+        guard let requestID = userInfo["requestID"] as? String else { return }
+
+        switch response.actionIdentifier {
+        case "ALLOW":
+            resolve(requestID: requestID, action: "allow")
+        case "DENY":
+            resolve(requestID: requestID, action: "deny")
+        case UNNotificationDefaultActionIdentifier:
+            // 用户点击了通知本体，打开 app 显示详情
+            break
+        default:
+            break
+        }
     }
 }
 
