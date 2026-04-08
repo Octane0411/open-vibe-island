@@ -282,8 +282,8 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     public var isProcessAlive: Bool = false
 
     /// Number of consecutive reconciliation polls where the process was not found.
-    /// Reset to 0 when the process is found. When >= 2 (~6 seconds), the session
-    /// is considered gone. This prevents flicker from momentary `ps` gaps.
+    /// Reset to 0 when the process is found. When >= 3 (~9 seconds), the session
+    /// is considered gone. This prevents flicker from momentary `lsof`/`ps` gaps.
     public var processNotSeenCount: Int = 0
 
     public init(

@@ -3,7 +3,7 @@ import OpenIslandCore
 
 struct ActiveAgentProcessDiscovery {
     private static let processCommandTimeout: TimeInterval = 0.5
-    private static let lsofCommandTimeout: TimeInterval = 0.2
+    private static let lsofCommandTimeout: TimeInterval = 0.5
 
     private final class OutputBox: @unchecked Sendable {
         var data = Data()
