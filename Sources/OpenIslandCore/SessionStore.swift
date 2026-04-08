@@ -1,5 +1,4 @@
 import Foundation
-import OpenIslandCore
 
 // MARK: - SessionPhase sort priority
 
@@ -31,27 +30,29 @@ extension SessionPhase {
 /// The store also supports `reconcileProcesses` for non-Claude agents (Codex) that rely
 /// on process discovery via `ps`/`lsof` rather than session files.
 @MainActor @Observable
-final class SessionStore {
+public final class SessionStore {
+
+    public init() {}
 
     // MARK: State
 
     /// Direct access to the sessions dictionary. Use `applyHookEvent` for authoritative updates.
-    var sessions: [String: TrackedSession] = [:]
+    public var sessions: [String: TrackedSession] = [:]
 
     // MARK: Queries
 
-    func session(id: String?) -> TrackedSession? {
+    public func session(id: String?) -> TrackedSession? {
         guard let id else { return nil }
         return sessions[id]
     }
 
     /// All sessions that are visible right now, sorted by phase priority then activity then name.
-    var visibleSessions: [TrackedSession] {
+    public var visibleSessions: [TrackedSession] {
         visibleSessions(at: .now)
     }
 
     /// All sessions visible at the given reference date, sorted consistently.
-    func visibleSessions(at referenceDate: Date) -> [TrackedSession] {
+    public func visibleSessions(at referenceDate: Date) -> [TrackedSession] {
         sessions.values
             .filter { !$0.isSubagentSession && $0.isVisible(at: referenceDate) }
             .sorted { lhs, rhs in
@@ -66,7 +67,7 @@ final class SessionStore {
     }
 
     /// The first session requiring user attention (permission or question), if any.
-    var actionableSession: TrackedSession? {
+    public var actionableSession: TrackedSession? {
         visibleSessions.first { $0.phase.requiresAttention }
     }
 
@@ -74,7 +75,7 @@ final class SessionStore {
 
     /// Apply an AgentEvent from the bridge hook. This is the authoritative path;
     /// it creates sessions if necessary (except for sessionCompleted).
-    func applyHookEvent(_ event: AgentEvent) {
+    public func applyHookEvent(_ event: AgentEvent) {
         switch event {
 
         case let .sessionStarted(payload):
@@ -229,7 +230,7 @@ final class SessionStore {
 
     // MARK: Transcript restore (startup only — never overwrites existing)
 
-    func restoreFromTranscripts(_ transcripts: [DiscoveredTranscript]) {
+    public func restoreFromTranscripts(_ transcripts: [DiscoveredTranscript]) {
         for t in transcripts {
             // Skip if hook has already established a session for this ID.
             guard sessions[t.sessionID] == nil else { continue }
@@ -265,7 +266,7 @@ final class SessionStore {
     /// Apply persisted terminal info from disk. For sessions that have no
     /// terminalSessionID (e.g. restored from transcripts or discovered by PID),
     /// fill it in from the persisted file written by the hook binary.
-    func restorePersistedTerminalInfo() {
+    public func restorePersistedTerminalInfo() {
         let entries = TerminalInfoStore.loadAll()
         guard !entries.isEmpty else { return }
 
@@ -289,7 +290,7 @@ final class SessionStore {
 
     // MARK: User actions
 
-    func resolvePermission(sessionID: String, resolution: PermissionResolution) {
+    public func resolvePermission(sessionID: String, resolution: PermissionResolution) {
         guard var s = sessions[sessionID] else { return }
         s.permissionRequest = nil
         let now = Date.now
@@ -304,7 +305,7 @@ final class SessionStore {
         sessions[sessionID] = s
     }
 
-    func answerQuestion(sessionID: String, answer: String) {
+    public func answerQuestion(sessionID: String, answer: String) {
         guard var s = sessions[sessionID] else { return }
         s.questionPrompt = nil
         s.phase = .running
@@ -328,7 +329,7 @@ final class SessionStore {
     ///
     /// Sessions whose files disappear (or whose PID dies) are removed — unless they
     /// have pending permission/question state that the user hasn't responded to yet.
-    func discoverClaudeSessions() {
+    public func discoverClaudeSessions() {
         let sessionsDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/sessions", isDirectory: true)
 
@@ -521,7 +522,7 @@ final class SessionStore {
 
     /// Update process liveness and terminal info from process discovery.
     /// Never creates sessions — only updates existing ones.
-    func reconcileProcesses(
+    public func reconcileProcesses(
         aliveSessionIDs: Set<String>,
         terminalUpdates: [String: TerminalInfo]
     ) {
@@ -547,7 +548,7 @@ final class SessionStore {
 
     // MARK: Pruning
 
-    func pruneInvisibleSessions(at referenceDate: Date = .now) {
+    public func pruneInvisibleSessions(at referenceDate: Date = .now) {
         sessions = sessions.filter { _, s in s.isVisible(at: referenceDate) }
     }
 
