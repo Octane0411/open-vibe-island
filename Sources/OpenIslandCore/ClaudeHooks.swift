@@ -868,12 +868,10 @@ public extension ClaudeHookPayload {
             // SessionStart and UserPromptSubmit are safe because the user's
             // terminal is guaranteed to be focused at those moments.  Later
             // hooks (tool use, etc.) may fire after the user switched tabs,
-            // so clear stale values and skip the locator.
+            // so skip the locator — but keep any previously resolved session ID.
             if payload.hookEventName == .sessionStart || payload.hookEventName == .userPromptSubmit {
                 useLocator = true
             } else {
-                payload.terminalSessionID = nil
-                payload.terminalTitle = nil
                 useLocator = false
             }
         } else {

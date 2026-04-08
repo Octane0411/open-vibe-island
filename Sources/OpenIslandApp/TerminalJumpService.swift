@@ -52,9 +52,10 @@ struct TerminalJumpService {
         ),
     ]
 
-    private static let ghosttyFocusSettleDelay = 0.08
-    private static let ghosttyWindowActivationDelay = 0.04
-    private static let ghosttyFocusAttempts = 3
+    // Ghostty's `focus` command is async — the split doesn't visually update until
+    // the next event-loop tick. 150ms is enough for a single settle without retries.
+    private static let ghosttyFocusSettleDelay = 0.15
+    private static let ghosttyWindowActivationDelay = 0.05
 
     private let applicationResolver: ApplicationResolver
     private let appRunningChecker: AppRunningChecker
@@ -242,130 +243,105 @@ struct TerminalJumpService {
         return nil
     }
 
-    private func jumpToGhosttyTerminal(_ target: JumpTarget) throws -> Bool {
-        try runAppleScript(ghosttyJumpScript(for: target)) == "matched"
-    }
+    // MARK: - Ghostty jump
 
-    func ghosttyJumpScript(for target: JumpTarget) -> String {
+    /// Jump to a Ghostty split pane. The surface UUID should already be resolved
+    /// by GhosttyTTYResolver during background reconciliation. Falls back to
+    /// working directory match if UUID isn't available yet.
+    private func jumpToGhosttyTerminal(_ target: JumpTarget) throws -> Bool {
         let terminalSessionID = escapeAppleScript(target.terminalSessionID)
         let workingDirectory = escapeAppleScript(target.workingDirectory)
-        let paneTitle = escapeAppleScript(target.paneTitle)
 
-        return """
+        let script = """
         tell application "Ghostty"
             if not (it is running) then return ""
-            activate
-
-            set targetWindow to missing value
-            set targetTab to missing value
-            set targetTerminal to missing value
 
             repeat with aWindow in windows
                 repeat with aTab in tabs of aWindow
                     repeat with aTerminal in terminals of aTab
                         if "\(terminalSessionID)" is not "" and (id of aTerminal as text) is "\(terminalSessionID)" then
-                            set targetWindow to aWindow
-                            set targetTab to aTab
-                            set targetTerminal to aTerminal
-                            exit repeat
+                            activate
+                            activate window aWindow
+                            delay \(Self.ghosttyWindowActivationDelay)
+                            select tab aTab
+                            delay \(Self.ghosttyWindowActivationDelay)
+                            focus aTerminal
+                            delay \(Self.ghosttyFocusSettleDelay)
+                            activate
+                            return "matched"
                         end if
                     end repeat
-
-                    if targetTerminal is not missing value then
-                        exit repeat
-                    end if
                 end repeat
-
-                if targetTerminal is not missing value then
-                    exit repeat
-                end if
             end repeat
 
-            if targetTerminal is missing value and "\(workingDirectory)" is not "" then
+            -- Fallback: working directory match (ambiguous when splits share cwd).
+            if "\(workingDirectory)" is not "" then
                 repeat with aWindow in windows
                     repeat with aTab in tabs of aWindow
                         repeat with aTerminal in terminals of aTab
                             if (working directory of aTerminal as text) is "\(workingDirectory)" then
-                                set targetWindow to aWindow
-                                set targetTab to aTab
-                                set targetTerminal to aTerminal
-                                exit repeat
+                                activate
+                                activate window aWindow
+                                delay \(Self.ghosttyWindowActivationDelay)
+                                select tab aTab
+                                delay \(Self.ghosttyWindowActivationDelay)
+                                focus aTerminal
+                                delay \(Self.ghosttyFocusSettleDelay)
+                                activate
+                                return "matched"
                             end if
                         end repeat
-
-                        if targetTerminal is not missing value then
-                            exit repeat
-                        end if
                     end repeat
-
-                    if targetTerminal is not missing value then
-                        exit repeat
-                    end if
                 end repeat
             end if
+        end tell
+        return ""
+        """
+        return try runAppleScript(script) == "matched"
+    }
 
-            if targetTerminal is missing value and "\(paneTitle)" is not "" then
+    // Keep for tests.
+    func ghosttyJumpScript(for target: JumpTarget) -> String {
+        let terminalSessionID = escapeAppleScript(target.terminalSessionID)
+        let workingDirectory = escapeAppleScript(target.workingDirectory)
+        return """
+        tell application "Ghostty"
+            if not (it is running) then return ""
+            activate
+            repeat with aWindow in windows
+                repeat with aTab in tabs of aWindow
+                    repeat with aTerminal in terminals of aTab
+                        if "\(terminalSessionID)" is not "" and (id of aTerminal as text) is "\(terminalSessionID)" then
+                            activate window aWindow
+                            delay \(Self.ghosttyWindowActivationDelay)
+                            select tab aTab
+                            delay \(Self.ghosttyWindowActivationDelay)
+                            focus aTerminal
+                            delay \(Self.ghosttyFocusSettleDelay)
+                            activate
+                            return "matched"
+                        end if
+                    end repeat
+                end repeat
+            end repeat
+            if "\(workingDirectory)" is not "" then
                 repeat with aWindow in windows
                     repeat with aTab in tabs of aWindow
                         repeat with aTerminal in terminals of aTab
-                            if (name of aTerminal as text) contains "\(paneTitle)" then
-                                set targetWindow to aWindow
-                                set targetTab to aTab
-                                set targetTerminal to aTerminal
-                                exit repeat
+                            if (working directory of aTerminal as text) is "\(workingDirectory)" then
+                                activate window aWindow
+                                delay \(Self.ghosttyWindowActivationDelay)
+                                select tab aTab
+                                delay \(Self.ghosttyWindowActivationDelay)
+                                focus aTerminal
+                                delay \(Self.ghosttyFocusSettleDelay)
+                                activate
+                                return "matched"
                             end if
                         end repeat
-
-                        if targetTerminal is not missing value then
-                            exit repeat
-                        end if
                     end repeat
-
-                    if targetTerminal is not missing value then
-                        exit repeat
-                    end if
                 end repeat
             end if
-
-            if targetTerminal is missing value then return ""
-
-            if "\(terminalSessionID)" is "" then
-                if targetWindow is not missing value then
-                    activate window targetWindow
-                    delay \(Self.ghosttyWindowActivationDelay)
-                end if
-
-                if targetTab is not missing value then
-                    select tab targetTab
-                    delay \(Self.ghosttyWindowActivationDelay)
-                end if
-
-                focus targetTerminal
-                delay \(Self.ghosttyFocusSettleDelay)
-                return "matched"
-            end if
-
-            repeat \(Self.ghosttyFocusAttempts) times
-                if targetWindow is not missing value then
-                    activate window targetWindow
-                    delay \(Self.ghosttyWindowActivationDelay)
-                end if
-
-                if targetTab is not missing value then
-                    select tab targetTab
-                    delay \(Self.ghosttyWindowActivationDelay)
-                end if
-
-                focus targetTerminal
-                -- Ghostty updates the focused split asynchronously after focus returns.
-                delay \(Self.ghosttyFocusSettleDelay)
-
-                try
-                    if (id of focused terminal of selected tab of front window as text) is "\(terminalSessionID)" then
-                        return "matched"
-                    end if
-                end try
-            end repeat
         end tell
         return ""
         """

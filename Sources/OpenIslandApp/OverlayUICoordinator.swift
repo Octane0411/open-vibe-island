@@ -176,6 +176,7 @@ final class OverlayUICoordinator {
         guard notchStatus == .closed else { return }
         islandSurface = .sessionList()
         notchStatus = .popping
+        NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             guard self?.notchStatus == .popping else { return }
             self?.notchStatus = .closed
@@ -332,11 +333,15 @@ final class OverlayUICoordinator {
     }
 
     func dismissOverlayForJump() {
+        print("[Overlay] dismissOverlayForJump — visible=\(isOverlayVisible) status=\(notchStatus)")
         guard isOverlayVisible else {
+            print("[Overlay] dismissOverlayForJump — skipped, not visible")
             return
         }
 
         notchClose()
+        overlayPanelController.dismissForJump()
+        print("[Overlay] dismissOverlayForJump — done, status now=\(notchStatus)")
     }
 
     private func updateNotificationAutoCollapse() {

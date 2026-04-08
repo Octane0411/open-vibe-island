@@ -39,6 +39,10 @@ struct OpenIslandHooksCLI {
                     .decode(ClaudeHookPayload.self, from: input)
                     .withRuntimeContext(environment: ProcessInfo.processInfo.environment)
 
+                // Persist terminal info on session start so the app can restore
+                // terminal mappings after restart. Delete on session end.
+                persistTerminalInfo(for: payload)
+
                 let timeout = payload.hookEventName == .permissionRequest
                     ? interactiveClaudeHookTimeout
                     : 45
@@ -53,6 +57,29 @@ struct OpenIslandHooksCLI {
             }
         } catch {
             // Hooks should fail open so the CLI continues working even if the bridge is unavailable.
+        }
+    }
+
+    private static func persistTerminalInfo(for payload: ClaudeHookPayload) {
+        let sessionID = payload.sessionID
+        guard !sessionID.isEmpty else { return }
+
+        switch payload.hookEventName {
+        case .sessionStart, .userPromptSubmit:
+            // Save terminal info — the enriched payload has the terminal ID
+            // resolved from the focused terminal at this moment.
+            if let app = payload.terminalApp, !app.isEmpty {
+                let entry = TerminalInfoStore.Entry(
+                    terminalApp: app,
+                    terminalSessionID: payload.terminalSessionID,
+                    tty: payload.terminalTTY
+                )
+                TerminalInfoStore.save(entry, sessionID: sessionID)
+            }
+        case .sessionEnd:
+            TerminalInfoStore.remove(sessionID: sessionID)
+        default:
+            break
         }
     }
 
