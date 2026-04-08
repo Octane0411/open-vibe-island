@@ -14,7 +14,7 @@ Open Island is a native macOS companion app for AI coding agents. It sits in the
 Four targets in one Swift package (`OpenIsland`):
 
 1. **OpenIslandApp** — SwiftUI + AppKit shell. Menu bar extra, overlay panel (notch/top-bar), and control center window. Entry point: `OpenIslandApp.swift` with `AppModel` as the central `@Observable` state owner.
-2. **OpenIslandCore** — Shared library. Models (`AgentSession`, `AgentEvent`, `SessionState`), bridge transport (Unix socket IPC with JSON line protocol), hook models/installers for both Codex and Claude Code, transcript discovery, session persistence/registry.
+2. **OpenIslandCore** — Shared library. Models (`TrackedSession`, `AgentSession`, `AgentEvent`), bridge transport (Unix socket IPC with JSON line protocol), hook models/installers for both Codex and Claude Code, transcript discovery.
 3. **OpenIslandHooks** — Lightweight CLI executable invoked by agent hooks. Reads hook payload from stdin, forwards to app bridge via Unix socket, writes blocking JSON to stdout only when island denies a `PreToolUse`.
 4. **OpenIslandSetup** — Installer CLI for managing `~/.codex/config.toml` and `hooks.json`.
 
@@ -26,13 +26,13 @@ Codex → hooks.json → OpenIslandHooks (stdin/stdout) → Unix socket → Brid
 ### Claude Code path
 Claude Code → settings.json hooks → OpenIslandHooks (stdin/stdout) → Unix socket → BridgeServer.handleClaudeHook → AppModel → UI
 
-### Session discovery (on launch)
-Restore cached sessions from registry → discover recent JSONL transcripts (`~/.claude/projects/`) → reconcile with active terminal processes → start live bridge.
+### Session discovery
+`~/.claude/sessions/*.json` is the source of truth for active Claude sessions. Each file contains `pid`, `sessionId`, `cwd`, `startedAt`, `name`. PID liveness checked with `kill(pid, 0)`. Terminal detected by walking PID parent process chain. Transcript JSONL files at `~/.claude/projects/*/‌<sessionId>.jsonl` provide last activity time and metadata. No registry — session files + transcripts are the only data sources.
 
 ## Supported scope (narrow by design)
 
 - **Agents**: Codex (fully wired), Claude Code (hook-based integration)
-- **Terminals**: Terminal.app, Ghostty
+- **Terminals**: Terminal.app, Ghostty, Warp, iTerm, WezTerm, Kaku
 - Do NOT expand scope unless explicitly asked
 
 ## Build & test
@@ -103,7 +103,8 @@ Open `Package.swift` in Xcode for the app target. Requires macOS 14+, Swift 6.2.
 - Prefer small end-to-end slices over speculative scaffolding
 - Native macOS APIs over cross-platform abstractions
 - Hooks fail open — if app/bridge unavailable, agents keep running unchanged
-- The `SessionState.apply(_:)` reducer is the single source of truth for session mutations
+- `SessionStore` is the single owner of all `TrackedSession` state — all mutations go through it
+- `~/.claude/sessions/*.json` is the source of truth for active Claude sessions (no registry)
 - Bridge protocol uses newline-delimited JSON envelopes (`BridgeCodec`)
 - All models are `Sendable` and `Codable`
 
@@ -117,14 +118,15 @@ Open `Package.swift` in Xcode for the app target. Requires macOS 14+, Swift 6.2.
 - `Sources/OpenIslandApp/AppModel.swift` — Central app state, session management, bridge lifecycle
 - `Sources/OpenIslandApp/TerminalSessionAttachmentProbe.swift` — Ghostty/Terminal attachment matching
 - `Sources/OpenIslandApp/ActiveAgentProcessDiscovery.swift` — Process discovery via ps/lsof
-- `Sources/OpenIslandCore/SessionState.swift` — Pure state reducer for agent sessions
-- `Sources/OpenIslandCore/AgentSession.swift` — Core session model and related types
-- `Sources/OpenIslandCore/AgentEvent.swift` — Event enum driving all state transitions
+- `Sources/OpenIslandApp/SessionStore.swift` — Single owner of all TrackedSession state (discovery, hooks, process reconciliation)
+- `Sources/OpenIslandCore/TrackedSession.swift` — Session model with ProcessState, TerminalInfo, SessionMetadata, visibility, display name
+- `Sources/OpenIslandApp/TrackedSession+Presentation.swift` — UI computed properties for TrackedSession
+- `Sources/OpenIslandCore/AgentSession.swift` — Legacy session model (used internally by BridgeServer)
+- `Sources/OpenIslandCore/AgentEvent.swift` — Event enum driving hook event processing
 - `Sources/OpenIslandCore/BridgeTransport.swift` — Unix socket protocol, codec, envelope types
 - `Sources/OpenIslandCore/BridgeServer.swift` — Bridge server handling hook payloads
-- `Sources/OpenIslandCore/ClaudeHooks.swift` — Claude Code hook payload model and terminal detection
+- `Sources/OpenIslandCore/ClaudeHooks.swift` — Claude Code hook payload model
 - `Sources/OpenIslandCore/ClaudeTranscriptDiscovery.swift` — Discovers sessions from `~/.claude/projects/` JSONL files
-- `Sources/OpenIslandCore/ClaudeSessionRegistry.swift` — Persists/restores Claude sessions across app launches
 - `Sources/OpenIslandCore/CodexHooks.swift` — Codex hook payload model
 - `Sources/OpenIslandHooks/main.swift` — Hook CLI entry point
 - `Sources/OpenIslandApp/OverlayPanelController.swift` — Notch/top-bar overlay window
