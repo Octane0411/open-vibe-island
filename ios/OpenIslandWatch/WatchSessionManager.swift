@@ -34,17 +34,17 @@ final class WatchSessionManager: NSObject, ObservableObject {
 
     func resolve(requestID: String, action: String) {
         let response = WatchResponse.resolution(requestID: requestID, action: action)
-        guard let data = try? JSONEncoder().encode(response),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        guard let data = try? JSONEncoder().encode(response) else {
             logger.error("Failed to encode WatchResponse for \(requestID)")
             return
         }
+        let payload: [String: Any] = ["payload": data]
 
         if let replyHandler = replyHandlers.removeValue(forKey: requestID) {
-            replyHandler(dict)
+            replyHandler(payload)
             logger.info("Resolved \(requestID) via replyHandler")
         } else if WCSession.default.isReachable {
-            WCSession.default.sendMessage(dict, replyHandler: nil) { [weak self] error in
+            WCSession.default.sendMessage(payload, replyHandler: nil) { [weak self] error in
                 self?.logger.error("Failed to send resolution for \(requestID): \(error.localizedDescription)")
             }
             logger.info("Resolved \(requestID) via sendMessage fallback")
@@ -59,7 +59,7 @@ final class WatchSessionManager: NSObject, ObservableObject {
     // MARK: - Private
 
     private func handleIncoming(_ payload: [String: Any], replyHandler: (([String: Any]) -> Void)? = nil) {
-        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+        guard let data = payload["payload"] as? Data,
               let message = try? JSONDecoder().decode(WatchMessage.self, from: data) else {
             logger.error("Failed to decode WatchMessage from payload")
             return

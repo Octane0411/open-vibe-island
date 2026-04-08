@@ -48,8 +48,9 @@ final class WatchConnectivityManager: NSObject, @unchecked Sendable {
         }
 
         if session.isReachable {
-            session.sendMessage(payload, replyHandler: { _ in
-                Self.logger.debug("Watch acknowledged message")
+            session.sendMessage(payload, replyHandler: { [weak self] reply in
+                Self.logger.debug("Watch replied to message")
+                self?.handleIncomingMessage(reply)
             }, errorHandler: { error in
                 Self.logger.warning("sendMessage failed, falling back to transferUserInfo: \(error.localizedDescription)")
                 self.session.transferUserInfo(payload)
