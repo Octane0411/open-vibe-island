@@ -1,16 +1,5 @@
 import SwiftUI
 
-extension OverlayClosedShellMetrics {
-    enum LayoutFamily: Equatable {
-        case notch
-        case floatingPill
-    }
-
-    var layoutFamily: LayoutFamily {
-        isFloatingPill ? .floatingPill : .notch
-    }
-}
-
 struct TopBarClosedShell<IconView: View, AttentionView: View, BadgeView: View>: View {
     let hasClosedPresence: Bool
     let hasAttention: Bool
@@ -39,14 +28,34 @@ struct TopBarClosedShell<IconView: View, AttentionView: View, BadgeView: View>: 
 struct NotchClosedShell<IconView: View, AttentionView: View, BadgeView: View>: View {
     let hasClosedPresence: Bool
     let hasAttention: Bool
-    let sideWidth: CGFloat
+    let liveCount: Int
     let closedNotchWidth: CGFloat
     let closedHeight: CGFloat
-    let countBadgeWidth: CGFloat
     let isPopping: Bool
     @ViewBuilder let icon: () -> IconView
     @ViewBuilder let attention: () -> AttentionView
     @ViewBuilder let badge: () -> BadgeView
+
+    private var sideWidth: CGFloat {
+        max(0, closedHeight - 12) + 10
+    }
+
+    private var countBadgeWidth: CGFloat {
+        let digits = max(1, "\(liveCount)".count)
+        return CGFloat(26 + max(0, digits - 1) * 8)
+    }
+
+    private var leftLaneWidth: CGFloat {
+        sideWidth + 8 + (hasAttention ? 18 : 0)
+    }
+
+    private var centerLaneWidth: CGFloat {
+        closedNotchWidth - NotchShape.closedTopRadius + (isPopping ? 18 : 0)
+    }
+
+    private var rightLaneWidth: CGFloat {
+        max(sideWidth, countBadgeWidth)
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -57,7 +66,7 @@ struct NotchClosedShell<IconView: View, AttentionView: View, BadgeView: View>: V
                         attention()
                     }
                 }
-                .frame(width: sideWidth + 8 + (hasAttention ? 18 : 0))
+                .frame(width: leftLaneWidth)
             }
 
             if !hasClosedPresence {
@@ -67,12 +76,12 @@ struct NotchClosedShell<IconView: View, AttentionView: View, BadgeView: View>: V
             } else {
                 Rectangle()
                     .fill(Color.black)
-                    .frame(width: closedNotchWidth - NotchShape.closedTopRadius + (isPopping ? 18 : 0))
+                    .frame(width: centerLaneWidth)
             }
 
             if hasClosedPresence {
                 badge()
-                    .frame(width: max(sideWidth, countBadgeWidth))
+                    .frame(width: rightLaneWidth)
             }
         }
         .frame(height: closedHeight)

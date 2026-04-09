@@ -1,6 +1,11 @@
 import CoreGraphics
 
 struct OverlayClosedShellMetrics: Equatable {
+    enum LayoutFamily: Equatable {
+        case notch
+        case floatingPill
+    }
+
     let mode: OverlayPlacementMode
     let closedHeight: CGFloat
     let openedHeaderHeight: CGFloat
@@ -11,6 +16,10 @@ struct OverlayClosedShellMetrics: Equatable {
 
     var isFloatingPill: Bool {
         mode == .topBar
+    }
+
+    var layoutFamily: LayoutFamily {
+        isFloatingPill ? .floatingPill : .notch
     }
 
     static func forMode(

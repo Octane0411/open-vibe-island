@@ -438,10 +438,9 @@ struct IslandPanelView: View {
                 NotchClosedShell(
                     hasClosedPresence: hasClosedPresence,
                     hasAttention: hasAttention,
-                    sideWidth: sideWidth,
+                    liveCount: model.liveSessionCount,
                     closedNotchWidth: closedNotchWidth,
                     closedHeight: closedNotchHeight,
-                    countBadgeWidth: countBadgeWidth,
                     isPopping: isPopping
                 ) {
                     if model.isCustomAppearance {
