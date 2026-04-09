@@ -128,10 +128,6 @@ enum OverlayDisplayResolver {
             return (screens[0], "manual missing, first-display fallback")
         }
 
-        if let notchScreen = screens.first(where: isNotched) {
-            return (notchScreen, "automatic")
-        }
-
         if let mainScreen = NSScreen.main {
             return (mainScreen, "automatic")
         }

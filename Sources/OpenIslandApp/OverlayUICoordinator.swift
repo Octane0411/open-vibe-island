@@ -82,6 +82,9 @@ final class OverlayUICoordinator {
     @ObservationIgnored
     private var screenObserver: Any?
 
+    @ObservationIgnored
+    private var activeAppObserver: Any?
+
     // MARK: - Initialization
 
     func restoreDisplayPreference() {
@@ -100,6 +103,17 @@ final class OverlayUICoordinator {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.refreshOverlayDisplayConfiguration()
+            }
+        }
+
+        activeAppObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.preferredOverlayScreenID == nil else { return }
+                self.refreshOverlayPlacement()
             }
         }
     }
