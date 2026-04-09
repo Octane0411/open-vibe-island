@@ -36,13 +36,14 @@ struct OpenIslandBrandMark: View {
         } else {
             spriteBody(pattern: Self.scoutPattern)
                 .frame(width: size, height: size)
+                .drawingGroup(opaque: false, colorMode: .extendedLinear)
         }
     }
 
     private func spriteBody(pattern: [String]) -> some View {
         GeometryReader { proxy in
             let gridSize = CGFloat(pattern.count)
-            let cell = floor(min(proxy.size.width / gridSize, proxy.size.height / gridSize))
+            let cell = min(proxy.size.width / gridSize, proxy.size.height / gridSize)
             let markWidth = cell * gridSize
             let markHeight = cell * gridSize
             let originX = (proxy.size.width - markWidth) / 2

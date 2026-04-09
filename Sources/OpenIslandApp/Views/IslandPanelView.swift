@@ -304,7 +304,7 @@ struct IslandPanelView: View {
                 if hasClosedPresence {
                     HStack(spacing: 4) {
                         OpenIslandIcon(
-                            size: 18,
+                            size: model.customAvatarImage != nil ? 18 : 14,
                             isAnimating: hasClosedActivity,
                             tint: scoutTint,
                             customAvatarImage: model.customAvatarImage
