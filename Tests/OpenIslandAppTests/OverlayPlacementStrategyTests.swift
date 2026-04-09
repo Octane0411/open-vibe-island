@@ -46,7 +46,6 @@ struct OverlayPlacementStrategyTests {
         let frame = OverlayPlacementStrategy.topBar.frame(
             anchor: NSPoint(x: 1900, y: 1060),
             size: NSSize(width: 740, height: 520),
-            screenFrame: NSRect(x: 0, y: 0, width: 1728, height: 1117),
             screenVisibleFrame: NSRect(x: 0, y: 0, width: 1728, height: 1117)
         )
 

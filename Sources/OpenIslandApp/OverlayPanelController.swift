@@ -472,10 +472,11 @@ final class OverlayPanelController {
         notchRect: NSRect,
         closedWidth: CGFloat
     ) -> NSRect {
-        OverlayPlacementStrategy.topBar.closedHitRect(
-            anchor: NSPoint(x: notchRect.midX, y: notchRect.maxY),
-            closedWidth: closedWidth,
-            closedHeight: notchRect.height
+        NSRect(
+            x: notchRect.midX - closedWidth / 2,
+            y: notchRect.minY,
+            width: closedWidth,
+            height: notchRect.height
         )
     }
 
@@ -543,7 +544,6 @@ final class OverlayPanelController {
         return strategy.frame(
             anchor: pillAnchor(on: screen),
             size: size,
-            screenFrame: screen.frame,
             screenVisibleFrame: screen.visibleFrame
         )
     }

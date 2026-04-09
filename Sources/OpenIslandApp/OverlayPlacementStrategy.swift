@@ -32,7 +32,6 @@ enum OverlayPlacementStrategy: Equatable {
     func frame(
         anchor: NSPoint,
         size: NSSize,
-        screenFrame: NSRect,
         screenVisibleFrame: NSRect
     ) -> NSRect {
         switch self {
