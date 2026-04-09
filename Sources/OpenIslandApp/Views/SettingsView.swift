@@ -223,6 +223,13 @@ struct DisplaySettingsPane: View {
                 }
             }
 
+            if let diag = model.overlayPlacementDiagnostics {
+                Section(lang.t("settings.display.diagnostics")) {
+                    LabeledContent(lang.t("settings.display.currentScreen"), value: diag.targetScreenName)
+                    LabeledContent(lang.t("settings.display.layoutMode"), value: diag.modeDescription)
+                }
+            }
+
             Section(lang.t("settings.display.avatar")) {
                 HStack(spacing: 16) {
                     OpenIslandBrandMark(
@@ -248,13 +255,6 @@ struct DisplaySettingsPane: View {
                         model.removeCustomAvatar()
                     }
                     .disabled(model.customAvatarImage == nil)
-                }
-            }
-
-            if let diag = model.overlayPlacementDiagnostics {
-                Section(lang.t("settings.display.diagnostics")) {
-                    LabeledContent(lang.t("settings.display.currentScreen"), value: diag.targetScreenName)
-                    LabeledContent(lang.t("settings.display.layoutMode"), value: diag.modeDescription)
                 }
             }
         }
