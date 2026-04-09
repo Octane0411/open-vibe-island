@@ -185,17 +185,36 @@ final class OverlayPanelController {
         }
 
         let notchSize = screen.notchSize
-        let notchX = screen.frame.midX - notchSize.width / 2
-
-        let notchY: CGFloat
-        switch OverlayDisplayResolver.placementMode(for: screen) {
-        case .notch:
-            notchY = screen.frame.maxY - notchSize.height
-        case .topBar:
-            notchY = screen.visibleFrame.maxY - notchSize.height - 18
-        }
+        let anchor = pillAnchor(on: screen)
+        let notchX = anchor.x - notchSize.width / 2
+        let notchY = anchor.y - notchSize.height
 
         notchRect = NSRect(x: notchX, y: notchY, width: notchSize.width, height: notchSize.height)
+    }
+
+    /// Returns the closed-pill anchor `(centerX, topY)` in Cocoa screen
+    /// coordinates for the given screen.
+    ///
+    /// - On `.notch` screens: always horizontally centered at the top of the
+    ///   physical display (current behavior, ignores any saved position).
+    /// - On `.topBar` screens: uses the user-dragged position from
+    ///   `OverlayPillPositionStore` if present, otherwise falls back to
+    ///   horizontally centered with an 18pt gap below the menu bar.
+    private func pillAnchor(on screen: NSScreen) -> NSPoint {
+        switch OverlayDisplayResolver.placementMode(for: screen) {
+        case .notch:
+            return NSPoint(x: screen.frame.midX, y: screen.frame.maxY)
+        case .topBar:
+            let screenID = screenID(for: screen)
+            if let stored = OverlayPillPositionStore.load(for: screenID, on: screen) {
+                return stored
+            }
+            // Panel top sits 18pt below the menu bar (matches legacy default).
+            return NSPoint(
+                x: screen.frame.midX,
+                y: screen.visibleFrame.maxY - 18
+            )
+        }
     }
 
     private func resolveTargetScreen(preferredScreenID: String? = nil) -> NSScreen? {
@@ -207,10 +226,6 @@ final class OverlayPanelController {
             return screen
         }
 
-        if let notchScreen = screens.first(where: { $0.safeAreaInsets.top > 0 }) {
-            return notchScreen
-        }
-
         return NSScreen.main ?? screens[0]
     }
 
@@ -220,6 +235,59 @@ final class OverlayPanelController {
             return "display-\(number.uint32Value)"
         }
         return screen.localizedName
+    }
+
+    // MARK: - Drag-to-reposition pill (external displays only)
+
+    /// Whether the pill is currently eligible for drag-to-move. Only true when
+    /// the panel is closed AND the current target screen is in topBar mode
+    /// (i.e. not the built-in notch screen). Notch screens never allow drag.
+    func canDragPillNow() -> Bool {
+        guard model?.notchStatus == .closed else { return false }
+        guard let screen = resolveTargetScreen() else { return false }
+        return OverlayDisplayResolver.placementMode(for: screen) == .topBar
+    }
+
+    /// Called by the hosting view while the user drags the pill. Moves the
+    /// panel without triggering our own `positionPanel` path (which would
+    /// reset the frame back to the stored anchor).
+    func moveDraggedPanel(to origin: NSPoint) {
+        panel?.setFrameOrigin(origin)
+    }
+
+    /// Called by the hosting view after a drag finishes. Persists the new
+    /// pill anchor for whichever screen the panel now lives on, and refreshes
+    /// the hover hit-test rect.
+    func persistDraggedPillPosition() {
+        guard let panel else { return }
+        let frame = panel.frame
+        let center = NSPoint(x: frame.midX, y: frame.maxY)
+
+        // Find the screen that currently contains the panel's center. Fall
+        // back to the previously resolved target screen if the panel ended up
+        // between screens.
+        let hostScreen = NSScreen.screens.first {
+            $0.frame.contains(NSPoint(x: frame.midX, y: (frame.minY + frame.maxY) / 2))
+        } ?? resolveTargetScreen()
+
+        guard let screen = hostScreen,
+              OverlayDisplayResolver.placementMode(for: screen) == .topBar else {
+            // Dragged onto a notch screen — ignore; notch screens always
+            // center on the physical notch.
+            computeNotchRect(screen: resolveTargetScreen())
+            return
+        }
+
+        OverlayPillPositionStore.save(center, for: screenID(for: screen), on: screen)
+        computeNotchRect(screen: screen)
+    }
+
+    /// Called by the hosting view when the user taps the pill without
+    /// dragging. Mirrors the SwiftUI `onTapGesture` behavior that normally
+    /// fires in closed state.
+    func handlePillClickFromDragLayer() {
+        guard let model, model.notchStatus == .closed else { return }
+        model.notchOpen(reason: .click)
     }
 
     // MARK: - Mouse event monitoring
@@ -478,19 +546,35 @@ final class OverlayPanelController {
 
     private func panelFrame(for model: AppModel?, on screen: NSScreen) -> NSRect {
         let size = panelSize(for: model, on: screen)
-        let y: CGFloat
         switch OverlayDisplayResolver.placementMode(for: screen) {
         case .notch:
-            y = screen.frame.maxY - size.height
+            return NSRect(
+                x: screen.frame.midX - size.width / 2,
+                y: screen.frame.maxY - size.height,
+                width: size.width,
+                height: size.height
+            )
         case .topBar:
-            y = screen.visibleFrame.maxY - size.height - 18
+            let anchor = pillAnchor(on: screen)
+            var minX = anchor.x - size.width / 2
+            var minY = anchor.y - size.height
+
+            // Clamp to visibleFrame so opened panel (especially its wider/taller
+            // size) never extends past screen edges. Closed pill is small enough
+            // that the anchor clamp alone already keeps it on-screen.
+            let visible = screen.visibleFrame
+            if minX + size.width > visible.maxX {
+                minX = visible.maxX - size.width
+            }
+            if minX < visible.minX {
+                minX = visible.minX
+            }
+            if minY < visible.minY {
+                minY = visible.minY
+            }
+
+            return NSRect(x: minX, y: minY, width: size.width, height: size.height)
         }
-        return NSRect(
-            x: screen.frame.midX - size.width / 2,
-            y: y,
-            width: size.width,
-            height: size.height
-        )
     }
 
     /// Always returns the maximum (opened) panel size so the window never
@@ -694,8 +778,16 @@ private final class NotchPanel: NSPanel {
 
 // MARK: - NotchHostingView
 
+private let pillDragThreshold: CGFloat = 4
+
 final class NotchHostingView<Content: View>: NSHostingView<Content> {
     weak var notchController: OverlayPanelController?
+
+    // Drag tracking state for topBar-mode pill repositioning.
+    private var dragStartMouse: NSPoint?
+    private var dragStartPanelOrigin: NSPoint?
+    private var isTrackingPillDrag = false
+    private var didMovePillWhileTracking = false
 
     override var isOpaque: Bool {
         false
@@ -706,12 +798,65 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
     }
 
     override func mouseDown(with event: NSEvent) {
+        // On external displays (topBar mode) with a closed pill, take over
+        // mouse handling so we can implement drag-to-reposition + click-to-open.
+        // On the built-in notch screen, or when opened, fall through to the
+        // legacy SwiftUI-driven behavior.
+        if notchController?.canDragPillNow() == true, let window {
+            dragStartMouse = NSEvent.mouseLocation
+            dragStartPanelOrigin = window.frame.origin
+            isTrackingPillDrag = true
+            didMovePillWhileTracking = false
+            return
+        }
+
         // Ensure the panel is key before SwiftUI processes the click.
         // With nonactivatingPanel, hover-opened panels aren't key, so
         // SwiftUI Button may consume the first click for key acquisition
         // instead of firing its action.
         window?.makeKey()
         super.mouseDown(with: event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard isTrackingPillDrag,
+              let start = dragStartMouse,
+              let originAtStart = dragStartPanelOrigin else {
+            super.mouseDragged(with: event)
+            return
+        }
+
+        let current = NSEvent.mouseLocation
+        let dx = current.x - start.x
+        let dy = current.y - start.y
+
+        if !didMovePillWhileTracking && hypot(dx, dy) < pillDragThreshold {
+            return
+        }
+
+        didMovePillWhileTracking = true
+        notchController?.moveDraggedPanel(
+            to: NSPoint(x: originAtStart.x + dx, y: originAtStart.y + dy)
+        )
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard isTrackingPillDrag else {
+            super.mouseUp(with: event)
+            return
+        }
+
+        let didMove = didMovePillWhileTracking
+        isTrackingPillDrag = false
+        dragStartMouse = nil
+        dragStartPanelOrigin = nil
+        didMovePillWhileTracking = false
+
+        if didMove {
+            notchController?.persistDraggedPillPosition()
+        } else {
+            notchController?.handlePillClickFromDragLayer()
+        }
     }
 
     required init(rootView: Content) {
