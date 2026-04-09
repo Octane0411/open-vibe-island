@@ -185,9 +185,16 @@ final class OverlayPanelController {
         }
 
         let notchSize = screen.notchSize
-        let screenFrame = screen.frame
-        let notchX = screenFrame.midX - notchSize.width / 2
-        let notchY = screenFrame.maxY - notchSize.height
+        let notchX = screen.frame.midX - notchSize.width / 2
+
+        let notchY: CGFloat
+        switch OverlayDisplayResolver.placementMode(for: screen) {
+        case .notch:
+            notchY = screen.frame.maxY - notchSize.height
+        case .topBar:
+            notchY = screen.visibleFrame.maxY - notchSize.height - 18
+        }
+
         notchRect = NSRect(x: notchX, y: notchY, width: notchSize.width, height: notchSize.height)
     }
 
@@ -471,9 +478,16 @@ final class OverlayPanelController {
 
     private func panelFrame(for model: AppModel?, on screen: NSScreen) -> NSRect {
         let size = panelSize(for: model, on: screen)
+        let y: CGFloat
+        switch OverlayDisplayResolver.placementMode(for: screen) {
+        case .notch:
+            y = screen.frame.maxY - size.height
+        case .topBar:
+            y = screen.visibleFrame.maxY - size.height - 18
+        }
         return NSRect(
             x: screen.frame.midX - size.width / 2,
-            y: screen.frame.maxY - size.height,
+            y: y,
             width: size.width,
             height: size.height
         )
@@ -830,7 +844,7 @@ final class NotchEventMonitors {
 extension NSScreen {
     var notchSize: CGSize {
         guard safeAreaInsets.top > 0 else {
-            return CGSize(width: 224, height: 38)
+            return CGSize(width: 180, height: topStatusBarHeight)
         }
 
         let notchHeight = safeAreaInsets.top

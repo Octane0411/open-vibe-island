@@ -79,12 +79,29 @@ final class OverlayUICoordinator {
             : overlayDisplaySelectionID
     }
 
+    @ObservationIgnored
+    private var screenObserver: Any?
+
     // MARK: - Initialization
 
     func restoreDisplayPreference() {
         overlayDisplaySelectionID = UserDefaults.standard.string(
             forKey: "overlay.display.preference"
         ) ?? OverlayDisplayOption.automaticID
+        startScreenMonitoring()
+    }
+
+    private func startScreenMonitoring() {
+        guard screenObserver == nil else { return }
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.refreshOverlayDisplayConfiguration()
+            }
+        }
     }
 
     // MARK: - Overlay transitions

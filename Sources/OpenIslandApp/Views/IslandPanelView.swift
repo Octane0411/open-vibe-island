@@ -212,6 +212,11 @@ struct IslandPanelView: View {
             || targetOverlayScreen?.safeAreaInsets.top ?? 0 > 0
     }
 
+    private var isNotchMode: Bool {
+        model.overlayPlacementDiagnostics?.mode == .notch
+            || targetOverlayScreen?.safeAreaInsets.top ?? 0 > 0
+    }
+
     private var openedHeaderButtonsWidth: CGFloat {
         (Self.headerControlButtonSize * 2) + Self.headerControlSpacing
     }
@@ -254,8 +259,9 @@ struct IslandPanelView: View {
         let bottomInset = usesOpenedVisualState ? 14.0 : 0.0
         let surfaceWidth = currentWidth + (horizontalInset * 2)
         let surfaceHeight = currentHeight + bottomInset
+        let closedTopR: CGFloat = isNotchMode ? NotchShape.closedTopRadius : 12
         let surfaceShape = NotchShape(
-            topCornerRadius: usesOpenedVisualState ? NotchShape.openedTopRadius : NotchShape.closedTopRadius,
+            topCornerRadius: usesOpenedVisualState ? NotchShape.openedTopRadius : closedTopR,
             bottomCornerRadius: usesOpenedVisualState ? NotchShape.openedBottomRadius : NotchShape.closedBottomRadius
         )
         let hidesClosedSurfaceChrome = showsIdleEdgeWhenCollapsed && !usesOpenedVisualState
@@ -283,12 +289,14 @@ struct IslandPanelView: View {
                 .padding(.bottom, bottomInset)
                 .clipShape(surfaceShape)
                 .overlay(alignment: .top) {
-                    // Black strip to blend with physical notch at the very top
-                    Rectangle()
-                        .fill(Color.black)
-                        .frame(height: 1)
-                        .padding(.horizontal, usesOpenedVisualState ? NotchShape.openedTopRadius : NotchShape.closedTopRadius)
-                        .opacity(hidesClosedSurfaceChrome ? 0 : 1)
+                    if isNotchMode {
+                        // Black strip to blend with physical notch at the very top.
+                        Rectangle()
+                            .fill(Color.black)
+                            .frame(height: 1)
+                            .padding(.horizontal, usesOpenedVisualState ? NotchShape.openedTopRadius : closedTopR)
+                            .opacity(hidesClosedSurfaceChrome ? 0 : 1)
+                    }
                 }
                 .overlay {
                     surfaceShape
@@ -328,7 +336,7 @@ struct IslandPanelView: View {
     // MARK: - Closed state
 
     private var closedNotchWidth: CGFloat {
-        (targetOverlayScreen ?? NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }))?.notchSize.width ?? 224
+        (targetOverlayScreen ?? NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }))?.notchSize.width ?? 180
     }
 
     private var closedNotchHeight: CGFloat {

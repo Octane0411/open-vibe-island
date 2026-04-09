@@ -139,7 +139,7 @@ enum OverlayDisplayResolver {
         return (screens[0], "automatic")
     }
 
-    private static func placementMode(for screen: NSScreen) -> OverlayPlacementMode {
+    static func placementMode(for screen: NSScreen) -> OverlayPlacementMode {
         isNotched(screen) ? .notch : .topBar
     }
 
