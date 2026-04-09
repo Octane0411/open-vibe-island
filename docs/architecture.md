@@ -16,6 +16,7 @@ The project is a single Swift package with four targets:
 - Closed-state shell is split by placement mode (`notch` vs `topBar`) to keep mode-specific geometry and chrome isolated.
 - Opened-state content remains a single shared rendering path across both modes. Session list, actionable cards, and opened header actions are not duplicated.
 - Mode-specific differences in opened state should be limited to small layout tokens (for example header allowance / spacing), not separate content trees.
+- Opened header allowance is computed from a single metrics helper (`OverlayClosedShellMetrics.openedHeaderAllowance`) and reused by both modes.
 
 ## Data Flow
 

@@ -22,6 +22,10 @@ struct OverlayClosedShellMetrics: Equatable {
         isFloatingPill ? .floatingPill : .notch
     }
 
+    static func openedHeaderAllowance(forClosedHeight closedHeight: CGFloat) -> CGFloat {
+        max(closedHeight, 30)
+    }
+
     static func forMode(
         _ mode: OverlayPlacementMode,
         closedHeight: CGFloat
@@ -31,7 +35,7 @@ struct OverlayClosedShellMetrics: Equatable {
             return OverlayClosedShellMetrics(
                 mode: .notch,
                 closedHeight: closedHeight,
-                openedHeaderHeight: max(closedHeight, 30),
+                openedHeaderHeight: openedHeaderAllowance(forClosedHeight: closedHeight),
                 iconSize: 14,
                 horizontalPadding: 0,
                 badgeSpacing: 4,
@@ -41,7 +45,7 @@ struct OverlayClosedShellMetrics: Equatable {
             return OverlayClosedShellMetrics(
                 mode: .topBar,
                 closedHeight: closedHeight,
-                openedHeaderHeight: max(closedHeight, 30),
+                openedHeaderHeight: openedHeaderAllowance(forClosedHeight: closedHeight),
                 iconSize: 12,
                 horizontalPadding: 8,
                 badgeSpacing: 4,

@@ -109,10 +109,6 @@ struct IslandPanelView: View {
     private static let notchLaneSafetyInset: CGFloat = 12
     private static let closedIdleEdgeHeight: CGFloat = 4
 
-    nonisolated static func openedHeaderAllowance(forClosedHeight closedHeight: CGFloat) -> CGFloat {
-        max(closedHeight, 30)
-    }
-
     var model: AppModel
 
     @Namespace private var notchNamespace
@@ -380,7 +376,7 @@ struct IslandPanelView: View {
     /// notch MacBooks (where `closedNotchHeight` ≈ 34pt) keep their existing
     /// header sizing.
     private var openedHeaderHeight: CGFloat {
-        Self.openedHeaderAllowance(forClosedHeight: closedShellMetrics.closedHeight)
+        closedShellMetrics.openedHeaderHeight
     }
 
     @ViewBuilder

@@ -8,6 +8,13 @@ struct OverlayClosedShellMetricsTests {
         let notchClosedHeight: CGFloat = 34
         let topBarClosedHeight: CGFloat = 22
 
+        let notchAllowance = OverlayClosedShellMetrics.openedHeaderAllowance(
+            forClosedHeight: notchClosedHeight
+        )
+        let topBarAllowance = OverlayClosedShellMetrics.openedHeaderAllowance(
+            forClosedHeight: topBarClosedHeight
+        )
+
         let notchMetrics = OverlayClosedShellMetrics.forMode(
             .notch,
             closedHeight: notchClosedHeight
@@ -18,15 +25,13 @@ struct OverlayClosedShellMetricsTests {
         )
 
         #expect(
-            notchMetrics.openedHeaderHeight
-                == IslandPanelView.openedHeaderAllowance(forClosedHeight: notchClosedHeight)
+            notchMetrics.openedHeaderHeight == notchAllowance
         )
         #expect(
-            topBarMetrics.openedHeaderHeight
-                == IslandPanelView.openedHeaderAllowance(forClosedHeight: topBarClosedHeight)
+            topBarMetrics.openedHeaderHeight == topBarAllowance
         )
-        #expect(topBarMetrics.openedHeaderHeight >= 30)
-        #expect(notchMetrics.openedHeaderHeight == notchClosedHeight)
+        #expect(topBarAllowance >= 30)
+        #expect(notchAllowance == notchClosedHeight)
     }
 
     @Test
