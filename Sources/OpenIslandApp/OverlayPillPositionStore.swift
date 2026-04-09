@@ -15,29 +15,41 @@ import Foundation
 enum OverlayPillPositionStore {
     private static let keyPrefix = "overlay.pill.position."
 
-    static func load(for screenID: String, on screen: NSScreen) -> NSPoint? {
+    static func load(for screenID: String, on screen: NSScreen, closedWidth: CGFloat) -> NSPoint? {
         let key = keyPrefix + screenID
         guard let array = UserDefaults.standard.array(forKey: key) as? [Double],
               array.count == 2 else {
             return nil
         }
-        return clamp(NSPoint(x: array[0], y: array[1]), on: screen)
+        return clamp(NSPoint(x: array[0], y: array[1]), on: screen, closedWidth: closedWidth)
     }
 
-    static func save(_ anchor: NSPoint, for screenID: String, on screen: NSScreen) {
-        let clamped = clamp(anchor, on: screen)
+    static func save(_ anchor: NSPoint, for screenID: String, on screen: NSScreen, closedWidth: CGFloat) {
+        let clamped = clamp(anchor, on: screen, closedWidth: closedWidth)
         let key = keyPrefix + screenID
         UserDefaults.standard.set([Double(clamped.x), Double(clamped.y)], forKey: key)
     }
 
     /// Clamps a `(centerX, topY)` anchor so the closed pill stays fully within
     /// the screen's visible frame (menu-bar excluded).
-    static func clamp(_ anchor: NSPoint, on screen: NSScreen) -> NSPoint {
-        let visible = screen.visibleFrame
-        let horizontalMargin: CGFloat = 24
-        let minCenterX = visible.minX + horizontalMargin
-        let maxCenterX = visible.maxX - horizontalMargin
-        let clampedX = min(max(anchor.x, minCenterX), maxCenterX)
+    static func clamp(_ anchor: NSPoint, on screen: NSScreen, closedWidth: CGFloat) -> NSPoint {
+        clamp(anchor, within: screen.visibleFrame, closedWidth: closedWidth)
+    }
+
+    static func clamp(
+        _ anchor: NSPoint,
+        within visible: NSRect,
+        closedWidth: CGFloat
+    ) -> NSPoint {
+        let halfWidth = max(0, closedWidth / 2)
+        let clampedX: CGFloat
+        if visible.width <= closedWidth {
+            clampedX = visible.midX
+        } else {
+            let minCenterX = visible.minX + halfWidth
+            let maxCenterX = visible.maxX - halfWidth
+            clampedX = min(max(anchor.x, minCenterX), maxCenterX)
+        }
 
         // `topY` = top edge of panel in Cocoa coordinates. Must sit just under
         // the menu bar (`visible.maxY`) and above the bottom of the screen.

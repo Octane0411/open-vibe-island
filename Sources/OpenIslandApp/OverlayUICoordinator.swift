@@ -7,6 +7,11 @@ import OpenIslandCore
 @Observable
 final class OverlayUICoordinator {
 
+    enum InteractionUpdatePlan: Equatable {
+        case setInteractive(Bool)
+        case repositionThenSetInteractive(Bool)
+    }
+
     private static let notificationSurfaceAutoCollapseDelay: TimeInterval = 10
 
     var notchStatus: NotchStatus = .closed
@@ -84,6 +89,21 @@ final class OverlayUICoordinator {
 
     @ObservationIgnored
     private var activeAppObserver: Any?
+
+    nonisolated static func interactionUpdatePlan(
+        requestedInteractive: Bool,
+        status: NotchStatus,
+        mode: OverlayPlacementMode
+    ) -> InteractionUpdatePlan {
+        let effectiveInteractive = requestedInteractive || OverlayPanelController.acceptsDirectMouseInteraction(
+            status: status,
+            mode: mode
+        )
+        if effectiveInteractive && status == .closed && mode == .topBar {
+            return .repositionThenSetInteractive(true)
+        }
+        return .setInteractive(effectiveInteractive)
+    }
 
     // MARK: - Initialization
 
@@ -197,11 +217,11 @@ final class OverlayUICoordinator {
                 preferredScreenID: preferredOverlayScreenID
             )?.mode
             ?? .notch
-        let effectiveInteractive = interactive || OverlayPanelController.acceptsDirectMouseInteraction(
+        applyInteractionUpdatePlan(
+            requestedInteractive: interactive,
             status: status,
             mode: placementMode
         )
-        overlayPanelController.setInteractive(effectiveInteractive)
 
         if status == .opened, let appModel {
             overlayPlacementDiagnostics = overlayPanelController.show(
@@ -440,7 +460,11 @@ final class OverlayUICoordinator {
             status: snapshot.notchStatus,
             mode: placementMode
         )
-        overlayPanelController.setInteractive(interactive)
+        applyInteractionUpdatePlan(
+            requestedInteractive: interactive,
+            status: snapshot.notchStatus,
+            mode: placementMode
+        )
 
         // Defer AppKit panel animation to the next run-loop iteration.
         overlayTransitionGeneration &+= 1
@@ -468,6 +492,26 @@ final class OverlayUICoordinator {
             defaults.removeObject(forKey: "overlay.display.preference")
         } else {
             defaults.set(overlayDisplaySelectionID, forKey: "overlay.display.preference")
+        }
+    }
+
+    private func applyInteractionUpdatePlan(
+        requestedInteractive: Bool,
+        status: NotchStatus,
+        mode: OverlayPlacementMode
+    ) {
+        switch Self.interactionUpdatePlan(
+            requestedInteractive: requestedInteractive,
+            status: status,
+            mode: mode
+        ) {
+        case .setInteractive(let interactive):
+            overlayPanelController.setInteractive(interactive)
+        case .repositionThenSetInteractive(let interactive):
+            overlayPlacementDiagnostics = overlayPanelController.reposition(
+                preferredScreenID: preferredOverlayScreenID
+            )
+            overlayPanelController.setInteractive(interactive)
         }
     }
 }

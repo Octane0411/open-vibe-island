@@ -46,11 +46,13 @@ final class OverlayPanelController {
         reason == .click
     }
 
-    nonisolated static func effectiveTargetScreenID(
-        preferredScreenID: String?,
-        diagnosticsScreenID: String?
+    nonisolated static func normalizedPreferredScreenID(
+        _ selectionID: String?
     ) -> String? {
-        preferredScreenID ?? diagnosticsScreenID
+        guard let selectionID, selectionID != OverlayDisplayOption.automaticID else {
+            return nil
+        }
+        return selectionID
     }
 
     nonisolated static func acceptsDirectMouseInteraction(
@@ -248,7 +250,11 @@ final class OverlayPanelController {
         let strategy = placementStrategy(for: screen)
         let storedTopBarAnchor: NSPoint?
         if strategy == .topBar {
-            storedTopBarAnchor = OverlayPillPositionStore.load(for: screenID(for: screen), on: screen)
+            storedTopBarAnchor = OverlayPillPositionStore.load(
+                for: screenID(for: screen),
+                on: screen,
+                closedWidth: currentClosedWidth(on: screen)
+            )
         } else {
             storedTopBarAnchor = nil
         }
@@ -264,17 +270,24 @@ final class OverlayPanelController {
         let screens = NSScreen.screens
         guard !screens.isEmpty else { return nil }
 
-        let effectiveScreenID = Self.effectiveTargetScreenID(
-            preferredScreenID: preferredScreenID,
-            diagnosticsScreenID: model?.overlayPlacementDiagnostics?.targetScreenID
+        let preferredSelectionID = Self.normalizedPreferredScreenID(
+            preferredScreenID ?? model?.overlayDisplaySelectionID
         )
 
-        if let effectiveScreenID,
-           let screen = screens.first(where: { screenID(for: $0) == effectiveScreenID }) {
-            return screen
+        guard let selection = OverlayScreenSelectionResolver.resolve(
+            preferredScreenID: preferredSelectionID,
+            screens: screens.map { screen in
+                OverlayScreenSelectionCandidate(
+                    id: screenID(for: screen),
+                    isNotched: OverlayDisplayResolver.placementMode(for: screen) == .notch,
+                    isMain: screen == NSScreen.main
+                )
+            }
+        ) else {
+            return nil
         }
 
-        return NSScreen.main ?? screens[0]
+        return screens.first(where: { screenID(for: $0) == selection.screenID })
     }
 
     private func screenID(for screen: NSScreen) -> String {
@@ -335,7 +348,12 @@ final class OverlayPanelController {
             return
         }
 
-        OverlayPillPositionStore.save(center, for: screenID(for: screen), on: screen)
+        OverlayPillPositionStore.save(
+            center,
+            for: screenID(for: screen),
+            on: screen,
+            closedWidth: currentClosedWidth(on: screen)
+        )
         computeNotchRect(screen: screen)
     }
 
@@ -696,6 +714,13 @@ final class OverlayPanelController {
             hasAttention: spotlightSession?.phase.requiresAttention == true,
             isPopping: model.notchStatus == .popping
         )
+    }
+
+    private func currentClosedWidth(on screen: NSScreen) -> CGFloat {
+        guard let model else {
+            return screen.notchSize.width
+        }
+        return closedPanelWidth(for: model, on: screen)
     }
 
     private func openedContentHeight(for model: AppModel) -> CGFloat {

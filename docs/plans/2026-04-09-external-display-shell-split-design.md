@@ -18,7 +18,10 @@
 
 - 展开态内容必须保持一致。
 - 外接显示器和内置刘海屏允许使用不同的闭合态视觉。
+- `automatic` 选屏在存在内置刘海屏时，仍必须优先贴到刘海屏，不能因为外接屏恰好是 `NSScreen.main` 而漂移到 top bar。
 - 外接显示器的拖拽、命中区和 top-bar 定位行为必须保留。
+- topBar 闭合态在恢复直接命中前，必须先把 `NSPanel` frame 缩回闭合尺寸，不能继续保留上一次展开态的大窗口命中区。
+- topBar 锚点持久化必须按实时闭合宽度做边界夹取，不能写死一个固定半宽。
 - 外接显示器闭合态保留 hover 自动展开，但鼠标按下后必须优先进入按住/拖动链路，不能再被 hover 展开抢占。
 - 不做“双套完整 UI”，避免把 session list、notification card、header actions 维护两份。
 
@@ -166,6 +169,9 @@
 - `closedSurfaceRect`
 - 非刘海屏高度规则
 - click / hover 相关行为不回归
+- automatic 选屏对内置刘海屏的优先级不回归
+- closed topBar 命中恢复前的 frame 同步不回归
+- topBar 锚点保存/恢复的边缘 clamp 不回归
 
 ### 手工验证
 

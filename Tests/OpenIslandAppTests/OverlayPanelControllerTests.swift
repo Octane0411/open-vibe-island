@@ -124,11 +124,15 @@ struct OverlayPanelControllerTests {
     }
 
     @Test
-    func effectiveTargetScreenIDFallsBackToDiagnostics() {
+    func automaticSelectionDoesNotBecomeManualTarget() {
         #expect(
-            OverlayPanelController.effectiveTargetScreenID(
-                preferredScreenID: nil,
-                diagnosticsScreenID: "display-external"
+            OverlayPanelController.normalizedPreferredScreenID(
+                OverlayDisplayOption.automaticID
+            ) == nil
+        )
+        #expect(
+            OverlayPanelController.normalizedPreferredScreenID(
+                "display-external"
             ) == "display-external"
         )
     }

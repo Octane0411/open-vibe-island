@@ -111,28 +111,15 @@ enum OverlayDisplayResolver {
             return nil
         }
 
-        if let preferredScreenID,
-           let explicitScreen = screens.first(where: { screenID(for: $0) == preferredScreenID }) {
-            return (explicitScreen, "manual")
+        guard let selection = OverlayScreenSelectionResolver.resolve(
+            preferredScreenID: preferredScreenID,
+            screens: selectionCandidates(from: screens)
+        ),
+        let screen = screens.first(where: { screenID(for: $0) == selection.screenID }) else {
+            return nil
         }
 
-        if preferredScreenID != nil {
-            if let notchScreen = screens.first(where: isNotched) {
-                return (notchScreen, "manual missing, auto fallback")
-            }
-
-            if let mainScreen = NSScreen.main {
-                return (mainScreen, "manual missing, main fallback")
-            }
-
-            return (screens[0], "manual missing, first-display fallback")
-        }
-
-        if let mainScreen = NSScreen.main {
-            return (mainScreen, "automatic")
-        }
-
-        return (screens[0], "automatic")
+        return (screen, selection.selectionSummary)
     }
 
     static func placementMode(for screen: NSScreen) -> OverlayPlacementMode {
@@ -147,6 +134,16 @@ enum OverlayDisplayResolver {
 
     private static func screenKindDescription(for screen: NSScreen) -> String {
         placementMode(for: screen) == .notch ? "Built-in notch" : "Top-bar fallback"
+    }
+
+    private static func selectionCandidates(from screens: [NSScreen]) -> [OverlayScreenSelectionCandidate] {
+        screens.map { screen in
+            OverlayScreenSelectionCandidate(
+                id: screenID(for: screen),
+                isNotched: isNotched(screen),
+                isMain: screen == NSScreen.main
+            )
+        }
     }
 
     private static func screenID(for screen: NSScreen) -> String {
