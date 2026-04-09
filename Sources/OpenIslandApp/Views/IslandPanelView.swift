@@ -965,15 +965,13 @@ private struct IslandSessionRow: View {
     let onJump: () -> Void
 
     @State private var isHighlighted = false
-    @State private var isManuallyExpanded = false
 
     var body: some View {
         rowBody(referenceDate: referenceDate)
     }
 
     private func rowBody(referenceDate: Date) -> some View {
-        let rawPresence = session.islandPresence(at: referenceDate)
-        let presence = (rawPresence == .inactive && isManuallyExpanded) ? .active : rawPresence
+        let presence = session.islandPresence(at: referenceDate)
         let showsExpandedContent = presence != .inactive
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 14) {
@@ -1001,7 +999,7 @@ private struct IslandSessionRow: View {
                     }
 
                     if showsExpandedContent || isActionable,
-                       let promptLine = session.spotlightPromptLineText ?? expandedPromptLineText {
+                       let promptLine = session.spotlightPromptLineText {
                         Text(promptLine)
                             .font(.system(size: 11.5, weight: .medium))
                             .foregroundStyle(.white.opacity(0.62))
@@ -1009,7 +1007,7 @@ private struct IslandSessionRow: View {
                     }
 
                     if showsExpandedContent || isActionable,
-                       let activityLine = session.spotlightActivityLineText ?? expandedActivityLineText {
+                       let activityLine = session.spotlightActivityLineText {
                         Text(activityLine)
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(activityColor(for: presence).opacity(0.94))
@@ -1124,7 +1122,7 @@ private struct IslandSessionRow: View {
         }
         .onChange(of: isInteractive) { _, interactive in
             if !interactive {
-                isManuallyExpanded = false
+                isHighlighted = false
             }
         }
     }
@@ -1351,32 +1349,8 @@ private struct IslandSessionRow: View {
             .padding(.top, 6)
     }
 
-    /// Prompt line for manually expanded inactive rows (bypasses time-based filter).
-    private var expandedPromptLineText: String? {
-        guard isManuallyExpanded, let prompt = session.spotlightPromptText else { return nil }
-        return "You: \(prompt)"
-    }
-
-    /// Activity line for manually expanded inactive rows (bypasses time-based filter).
-    private var expandedActivityLineText: String? {
-        guard isManuallyExpanded else { return nil }
-        let trimmed = session.lastAssistantMessageText?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if let assistantMessage = trimmed, !assistantMessage.isEmpty {
-            return assistantMessage
-        }
-        return session.jumpTarget != nil ? "Ready" : "Completed"
-    }
-
     private func handlePrimaryTap() {
-        let rawPresence = session.islandPresence(at: referenceDate)
-        if rawPresence == .inactive && !isManuallyExpanded {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                isManuallyExpanded = true
-            }
-        } else {
-            onJump()
-        }
+        onJump()
     }
 
     private func compactBadge(
