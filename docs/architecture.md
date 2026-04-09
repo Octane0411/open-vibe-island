@@ -11,6 +11,12 @@ The project is a single Swift package with four targets:
 | **OpenIslandHooks** | Lightweight CLI executable invoked by agent hooks. Reads hook payload from stdin, forwards to app bridge via Unix socket, writes blocking JSON to stdout only when island denies a `PreToolUse`. |
 | **OpenIslandSetup** | Installer CLI for managing `~/.codex/config.toml` and `hooks.json`. |
 
+### Overlay Composition
+
+- Closed-state shell is split by placement mode (`notch` vs `topBar`) to keep mode-specific geometry and chrome isolated.
+- Opened-state content remains a single shared rendering path across both modes. Session list, actionable cards, and opened header actions are not duplicated.
+- Mode-specific differences in opened state should be limited to small layout tokens (for example header allowance / spacing), not separate content trees.
+
 ## Data Flow
 
 ### Hook-based agents (Codex, Claude Code, and forks)

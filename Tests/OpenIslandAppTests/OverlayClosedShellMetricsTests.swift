@@ -4,6 +4,32 @@ import Testing
 
 struct OverlayClosedShellMetricsTests {
     @Test
+    func openedHeaderAllowanceUsesSharedEntryForNotchAndTopBar() {
+        let notchClosedHeight: CGFloat = 34
+        let topBarClosedHeight: CGFloat = 22
+
+        let notchMetrics = OverlayClosedShellMetrics.forMode(
+            .notch,
+            closedHeight: notchClosedHeight
+        )
+        let topBarMetrics = OverlayClosedShellMetrics.forMode(
+            .topBar,
+            closedHeight: topBarClosedHeight
+        )
+
+        #expect(
+            notchMetrics.openedHeaderHeight
+                == IslandPanelView.openedHeaderAllowance(forClosedHeight: notchClosedHeight)
+        )
+        #expect(
+            topBarMetrics.openedHeaderHeight
+                == IslandPanelView.openedHeaderAllowance(forClosedHeight: topBarClosedHeight)
+        )
+        #expect(topBarMetrics.openedHeaderHeight >= 30)
+        #expect(notchMetrics.openedHeaderHeight == notchClosedHeight)
+    }
+
+    @Test
     func notchAndTopBarClosedShellsUseDifferentLayoutFamilies() {
         let notch = OverlayClosedShellMetrics.forMode(
             .notch,

@@ -109,6 +109,10 @@ struct IslandPanelView: View {
     private static let notchLaneSafetyInset: CGFloat = 12
     private static let closedIdleEdgeHeight: CGFloat = 4
 
+    nonisolated static func openedHeaderAllowance(forClosedHeight closedHeight: CGFloat) -> CGFloat {
+        max(closedHeight, 30)
+    }
+
     var model: AppModel
 
     @Namespace private var notchNamespace
@@ -309,45 +313,36 @@ struct IslandPanelView: View {
                     .fill(Color.black.opacity(hidesClosedSurfaceChrome ? 0 : 1))
                     .frame(width: surfaceWidth, height: surfaceHeight)
 
-                VStack(spacing: 0) {
-                    headerRow
-                        .frame(height: usesOpenedVisualState ? openedHeaderHeight : closedNotchHeight)
-                        .opacity(hidesClosedSurfaceChrome ? 0 : 1)
-
-                    openedContent
-                        .frame(width: openedWidth - 24)
-                        .frame(maxHeight: usesOpenedVisualState ? currentHeight - openedHeaderHeight - 12 : 0, alignment: .top)
-                        .opacity(usesOpenedVisualState ? 1 : 0)
-                        .clipped()
-                }
-                .frame(width: currentWidth, height: currentHeight, alignment: .top)
-                .padding(.horizontal, horizontalInset)
-                .padding(.bottom, bottomInset)
-                .clipShape(surfaceShape)
-                .overlay(alignment: .top) {
-                    if isNotchMode {
-                        // Black strip to blend with physical notch at the very top.
-                        Rectangle()
-                            .fill(Color.black)
-                            .frame(height: 1)
-                            .padding(.horizontal, usesOpenedVisualState ? NotchShape.openedTopRadius : closedTopR)
-                            .opacity(hidesClosedSurfaceChrome ? 0 : 1)
-                    }
-                }
-                .overlay {
-                    surfaceShape
-                        .stroke(Color.white.opacity(hidesClosedSurfaceChrome ? 0 : (usesOpenedVisualState ? 0.07 : 0.04)), lineWidth: 1)
-                }
-                .overlay(alignment: .top) {
-                    Capsule()
-                        .fill(Color.black)
-                        .frame(width: idleEdgeWidth, height: Self.closedIdleEdgeHeight)
-                        .overlay {
-                            Capsule()
-                                .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                openedSurfaceContent(openedWidth: openedWidth, currentHeight: currentHeight)
+                    .opacity(hidesClosedSurfaceChrome ? 0 : 1)
+                    .frame(width: currentWidth, height: currentHeight, alignment: .top)
+                    .padding(.horizontal, horizontalInset)
+                    .padding(.bottom, bottomInset)
+                    .clipShape(surfaceShape)
+                    .overlay(alignment: .top) {
+                        if isNotchMode {
+                            // Black strip to blend with physical notch at the very top.
+                            Rectangle()
+                                .fill(Color.black)
+                                .frame(height: 1)
+                                .padding(.horizontal, usesOpenedVisualState ? NotchShape.openedTopRadius : closedTopR)
+                                .opacity(hidesClosedSurfaceChrome ? 0 : 1)
                         }
-                        .opacity(showsIdleEdgeWhenCollapsed ? 1 : 0)
-                }
+                    }
+                    .overlay {
+                        surfaceShape
+                            .stroke(Color.white.opacity(hidesClosedSurfaceChrome ? 0 : (usesOpenedVisualState ? 0.07 : 0.04)), lineWidth: 1)
+                    }
+                    .overlay(alignment: .top) {
+                        Capsule()
+                            .fill(Color.black)
+                            .frame(width: idleEdgeWidth, height: Self.closedIdleEdgeHeight)
+                            .overlay {
+                                Capsule()
+                                    .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                            }
+                            .opacity(showsIdleEdgeWhenCollapsed ? 1 : 0)
+                    }
             }
             .frame(width: surfaceWidth, height: surfaceHeight, alignment: .top)
         }
@@ -385,7 +380,21 @@ struct IslandPanelView: View {
     /// notch MacBooks (where `closedNotchHeight` ≈ 34pt) keep their existing
     /// header sizing.
     private var openedHeaderHeight: CGFloat {
-        closedShellMetrics.openedHeaderHeight
+        Self.openedHeaderAllowance(forClosedHeight: closedShellMetrics.closedHeight)
+    }
+
+    @ViewBuilder
+    private func openedSurfaceContent(openedWidth: CGFloat, currentHeight: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            headerRow
+                .frame(height: usesOpenedVisualState ? openedHeaderHeight : closedNotchHeight)
+
+            openedContent
+                .frame(width: openedWidth - 24)
+                .frame(maxHeight: usesOpenedVisualState ? currentHeight - openedHeaderHeight - 12 : 0, alignment: .top)
+                .opacity(usesOpenedVisualState ? 1 : 0)
+                .clipped()
+        }
     }
 
     // MARK: - Header row (shared between closed and opened)
