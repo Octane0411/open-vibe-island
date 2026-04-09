@@ -192,7 +192,16 @@ final class OverlayUICoordinator {
         islandSurface = surface
         notchOpenReason = reason
         notchStatus = status
-        overlayPanelController.setInteractive(interactive)
+        let placementMode = overlayPlacementDiagnostics?.mode
+            ?? overlayPanelController.placementDiagnostics(
+                preferredScreenID: preferredOverlayScreenID
+            )?.mode
+            ?? .notch
+        let effectiveInteractive = interactive || OverlayPanelController.acceptsDirectMouseInteraction(
+            status: status,
+            mode: placementMode
+        )
+        overlayPanelController.setInteractive(effectiveInteractive)
 
         if status == .opened, let appModel {
             overlayPlacementDiagnostics = overlayPanelController.show(
@@ -422,7 +431,15 @@ final class OverlayUICoordinator {
         }
 
         // Immediate interactivity update.
-        let interactive = snapshot.notchStatus == .opened
+        let placementMode = overlayPlacementDiagnostics?.mode
+            ?? overlayPanelController.placementDiagnostics(
+                preferredScreenID: preferredOverlayScreenID
+            )?.mode
+            ?? .notch
+        let interactive = OverlayPanelController.acceptsDirectMouseInteraction(
+            status: snapshot.notchStatus,
+            mode: placementMode
+        )
         overlayPanelController.setInteractive(interactive)
 
         // Defer AppKit panel animation to the next run-loop iteration.

@@ -92,6 +92,47 @@ struct OverlayPanelControllerTests {
         #expect(!OverlayPanelController.shouldActivatePanel(for: nil))
     }
 
+    @Test
+    func closedTopBarAllowsDirectMouseInteraction() {
+        #expect(
+            OverlayPanelController.acceptsDirectMouseInteraction(
+                status: .closed,
+                mode: .topBar
+            )
+        )
+    }
+
+    @Test
+    func closedNotchKeepsPassiveMouseInteraction() {
+        #expect(
+            !OverlayPanelController.acceptsDirectMouseInteraction(
+                status: .closed,
+                mode: .notch
+            )
+        )
+    }
+
+    @Test
+    func eventMonitorDefersClosedTopBarClicksWhenPanelIsInteractive() {
+        #expect(
+            !OverlayPanelController.shouldEventMonitorHandleClosedSurfaceClick(
+                status: .closed,
+                mode: .topBar,
+                panelIgnoresMouseEvents: false
+            )
+        )
+    }
+
+    @Test
+    func effectiveTargetScreenIDFallsBackToDiagnostics() {
+        #expect(
+            OverlayPanelController.effectiveTargetScreenID(
+                preferredScreenID: nil,
+                diagnosticsScreenID: "display-external"
+            ) == "display-external"
+        )
+    }
+
     // MARK: - islandClosedHeight
 
     @Test

@@ -45,6 +45,32 @@ final class OverlayPanelController {
         reason == .click
     }
 
+    nonisolated static func effectiveTargetScreenID(
+        preferredScreenID: String?,
+        diagnosticsScreenID: String?
+    ) -> String? {
+        preferredScreenID ?? diagnosticsScreenID
+    }
+
+    nonisolated static func acceptsDirectMouseInteraction(
+        status: NotchStatus,
+        mode: OverlayPlacementMode
+    ) -> Bool {
+        status == .opened || (status == .closed && mode == .topBar)
+    }
+
+    nonisolated static func shouldEventMonitorHandleClosedSurfaceClick(
+        status: NotchStatus,
+        mode: OverlayPlacementMode,
+        panelIgnoresMouseEvents: Bool
+    ) -> Bool {
+        guard status == .closed else { return false }
+        if mode != .topBar {
+            return true
+        }
+        return panelIgnoresMouseEvents
+    }
+
     func availableDisplayOptions() -> [OverlayDisplayOption] {
         OverlayDisplayResolver.availableDisplayOptions()
     }
@@ -55,8 +81,13 @@ final class OverlayPanelController {
         self.panel = panel
         positionPanel(panel, preferredScreenID: preferredScreenID, animated: false)
         panel.orderFrontRegardless()
-        panel.ignoresMouseEvents = true
-        panel.acceptsMouseMovedEvents = false
+        let mode = placementDiagnostics(preferredScreenID: preferredScreenID)?.mode ?? .notch
+        let interactive = Self.acceptsDirectMouseInteraction(
+            status: model.notchStatus,
+            mode: mode
+        )
+        panel.ignoresMouseEvents = !interactive
+        panel.acceptsMouseMovedEvents = interactive
         startEventMonitoring()
     }
 
@@ -220,8 +251,13 @@ final class OverlayPanelController {
         let screens = NSScreen.screens
         guard !screens.isEmpty else { return nil }
 
-        if let preferredScreenID,
-           let screen = screens.first(where: { screenID(for: $0) == preferredScreenID }) {
+        let effectiveScreenID = Self.effectiveTargetScreenID(
+            preferredScreenID: preferredScreenID,
+            diagnosticsScreenID: model?.overlayPlacementDiagnostics?.targetScreenID
+        )
+
+        if let effectiveScreenID,
+           let screen = screens.first(where: { screenID(for: $0) == effectiveScreenID }) {
             return screen
         }
 
@@ -329,8 +365,19 @@ final class OverlayPanelController {
         guard let model else { return }
 
         let inClosedSurfaceArea = isPointInClosedSurfaceArea(screenLocation)
+        let mode = model.overlayPlacementDiagnostics?.mode
+            ?? placementDiagnostics(preferredScreenID: nil)?.mode
+            ?? .notch
 
         if model.notchStatus == .closed && inClosedSurfaceArea {
+            let panelIgnoresMouseEvents = panel?.ignoresMouseEvents ?? true
+            guard Self.shouldEventMonitorHandleClosedSurfaceClick(
+                status: model.notchStatus,
+                mode: mode,
+                panelIgnoresMouseEvents: panelIgnoresMouseEvents
+            ) else {
+                return
+            }
             cancelHoverOpenImmediately()
             model.notchOpen(reason: .click)
         } else if model.notchStatus == .opened {

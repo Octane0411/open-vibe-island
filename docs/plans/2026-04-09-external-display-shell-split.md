@@ -169,6 +169,7 @@ git commit -m "refactor: split closed overlay shells by placement mode"
 - 已保存 anchor 会被优先使用
 - closed rect 会围绕 anchor / closed width 计算
 - opened panel 会被 clamp 在 `visibleFrame` 内
+- topBar 闭合态的点击/拖拽命中必须跟随当前 overlay 实际所在屏，不能默认退回主屏
 
 示例：
 
@@ -198,6 +199,11 @@ Expected: 因 helper 未实现而失败。
 - notch / topBar anchor 规则
 - topBar frame clamp
 - closed hit rect 计算
+
+并保持以下交互约束：
+
+- `topBar` 闭合态保留直接鼠标交互，支持点击与拖拽
+- `notch` 闭合态继续走被动命中，不引入可拖拽行为
 
 然后把 `OverlayPanelController` 中对应逻辑改为调用 helper，而不是继续内联。
 
