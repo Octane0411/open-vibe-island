@@ -118,4 +118,34 @@ struct OverlayPanelControllerTests {
         let height = NSScreen.computeIslandClosedHeight(safeAreaInsetsTop: 0, topStatusBarHeight: 24)
         #expect(height == 22)
     }
+
+    @Test
+    func topBarOpenedHeaderAllowanceUsesMinimumThirtyPoints() {
+        let closedHeight = NSScreen.computeIslandClosedHeight(
+            safeAreaInsetsTop: 0,
+            topStatusBarHeight: 24
+        )
+        let metrics = OverlayClosedShellMetrics.forMode(
+            .topBar,
+            closedHeight: closedHeight,
+            liveCountDigits: 1,
+            showsAttention: false
+        )
+
+        #expect(metrics.openedHeaderHeight == 30)
+    }
+
+    @Test
+    func closedSurfaceRectPreservesCompactTopBarPillHeight() {
+        let notchRect = NSRect(x: 600, y: 980, width: 120, height: 22)
+        let closedWidth: CGFloat = 64
+
+        let rect = OverlayPanelController.closedSurfaceRect(
+            notchRect: notchRect,
+            closedWidth: closedWidth
+        )
+
+        #expect(rect.height == 22)
+        #expect(rect.midX == notchRect.midX)
+    }
 }
