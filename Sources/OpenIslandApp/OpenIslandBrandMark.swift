@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct OpenIslandBrandMark: View {
     enum Style {
@@ -10,6 +11,7 @@ struct OpenIslandBrandMark: View {
     var tint: Color = .mint
     var isAnimating: Bool = false
     var style: Style = .duotone
+    var customAvatarImage: NSImage? = nil
 
     private static let scoutPattern = [
         "..B..B..",
@@ -22,22 +24,33 @@ struct OpenIslandBrandMark: View {
         "........",
     ]
 
-    private static let pixels: [(x: Int, y: Int, role: Character)] = scoutPattern.enumerated().flatMap { rowIndex, row in
-        row.enumerated().compactMap { columnIndex, character in
-            character == "." ? nil : (columnIndex, rowIndex, character)
+    var body: some View {
+        if style == .duotone, let customAvatarImage {
+            Image(nsImage: customAvatarImage)
+                .resizable()
+                .interpolation(.high)
+                .antialiased(true)
+                .scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(Circle())
+        } else {
+            spriteBody(pattern: Self.scoutPattern)
+                .frame(width: size, height: size)
         }
     }
 
-    var body: some View {
+    private func spriteBody(pattern: [String]) -> some View {
         GeometryReader { proxy in
-            let cell = min(proxy.size.width / 8, proxy.size.height / 8)
-            let markWidth = cell * 8
-            let markHeight = cell * 8
+            let gridSize = CGFloat(pattern.count)
+            let cell = floor(min(proxy.size.width / gridSize, proxy.size.height / gridSize))
+            let markWidth = cell * gridSize
+            let markHeight = cell * gridSize
             let originX = (proxy.size.width - markWidth) / 2
             let originY = (proxy.size.height - markHeight) / 2
+            let pixels = Self.pixels(for: pattern)
 
             ZStack(alignment: .topLeading) {
-                ForEach(Array(Self.pixels.enumerated()), id: \.offset) { _, pixel in
+                ForEach(Array(pixels.enumerated()), id: \.offset) { _, pixel in
                     Rectangle()
                         .fill(fillColor(for: pixel.role))
                         .frame(width: cell, height: cell)
@@ -48,8 +61,14 @@ struct OpenIslandBrandMark: View {
                 }
             }
         }
-        .frame(width: size, height: size)
-        .drawingGroup(opaque: false, colorMode: .extendedLinear)
+    }
+
+    private static func pixels(for pattern: [String]) -> [(x: Int, y: Int, role: Character)] {
+        pattern.enumerated().flatMap { rowIndex, row in
+            row.enumerated().compactMap { columnIndex, character in
+                character == "." ? nil : (columnIndex, rowIndex, character)
+            }
+        }
     }
 
     private func fillColor(for role: Character) -> Color {

@@ -41,6 +41,10 @@
 /* Settings - Display */
 "settings.display.monitor" = "Monitor";
 "settings.display.position" = "Display Position";
+"settings.display.avatar" = "Avatar";
+"settings.display.uploadAvatar" = "Upload Avatar";
+"settings.display.removeAvatar" = "Remove Avatar";
+"settings.display.avatarHelp" = "Currently only static images are supported.";
 "settings.display.diagnostics" = "Diagnostics";
 "settings.display.currentScreen" = "Current Screen";
 "settings.display.layoutMode" = "Layout Mode";

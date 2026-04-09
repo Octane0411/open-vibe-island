@@ -133,10 +133,9 @@ struct IslandPanelView: View {
 
     /// Whether any session has activity worth showing in the closed notch
     private var hasClosedActivity: Bool {
-        guard let session = closedSpotlightSession else {
-            return false
+        model.surfacedSessions.contains { session in
+            session.phase == .running || session.phase.requiresAttention
         }
-        return session.phase == .running || session.phase.requiresAttention
     }
 
     /// Scout icon tint: blue if any running, green if any live, else gray.
@@ -304,7 +303,12 @@ struct IslandPanelView: View {
             HStack(spacing: 0) {
                 if hasClosedPresence {
                     HStack(spacing: 4) {
-                        OpenIslandIcon(size: 14, isAnimating: hasClosedActivity, tint: scoutTint)
+                        OpenIslandIcon(
+                            size: 18,
+                            isAnimating: hasClosedActivity,
+                            tint: scoutTint,
+                            customAvatarImage: model.customAvatarImage
+                        )
                             .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
 
                         if closedSpotlightSession?.phase.requiresAttention == true {
@@ -1646,13 +1650,15 @@ private struct OpenIslandIcon: View {
     let size: CGFloat
     var isAnimating: Bool = false
     var tint: Color = .mint
+    var customAvatarImage: NSImage? = nil
 
     var body: some View {
         OpenIslandBrandMark(
             size: size,
             tint: tint,
             isAnimating: isAnimating,
-            style: .duotone
+            style: .duotone,
+            customAvatarImage: customAvatarImage
         )
     }
 }

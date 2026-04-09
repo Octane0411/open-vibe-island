@@ -223,6 +223,34 @@ struct DisplaySettingsPane: View {
                 }
             }
 
+            Section(lang.t("settings.display.avatar")) {
+                HStack(spacing: 16) {
+                    OpenIslandBrandMark(
+                        size: 56,
+                        style: .duotone,
+                        customAvatarImage: model.customAvatarImage
+                    )
+                    .frame(width: 56, height: 56)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(lang.t("settings.display.avatarHelp"))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
+
+                HStack {
+                    Button(lang.t("settings.display.uploadAvatar")) {
+                        model.importCustomAvatar()
+                    }
+
+                    Button(lang.t("settings.display.removeAvatar")) {
+                        model.removeCustomAvatar()
+                    }
+                    .disabled(model.customAvatarImage == nil)
+                }
+            }
+
             if let diag = model.overlayPlacementDiagnostics {
                 Section(lang.t("settings.display.diagnostics")) {
                     LabeledContent(lang.t("settings.display.currentScreen"), value: diag.targetScreenName)

@@ -170,6 +170,7 @@ final class AppModel {
             NotificationSoundService.selectedSoundName = selectedSoundName
         }
     }
+    var customAvatarImage: NSImage? = nil
     var overlayDisplaySelectionID: String {
         get { overlay.overlayDisplaySelectionID }
         set { overlay.overlayDisplaySelectionID = newValue }
@@ -219,6 +220,7 @@ final class AppModel {
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
         showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
+        customAvatarImage = AvatarImageStore.currentImage()
 
         overlay.appModel = self
         overlay.restoreDisplayPreference()
@@ -711,6 +713,36 @@ final class AppModel {
 
                 self?.lastActionMessage = "Jump failed: \(error.localizedDescription)"
             }
+        }
+    }
+
+    func importCustomAvatar() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.png, .jpeg, .heic, .tiff]
+        panel.message = "Choose a static image for the island avatar."
+
+        guard panel.runModal() == .OK, let url = panel.url else {
+            return
+        }
+
+        do {
+            customAvatarImage = try AvatarImageStore.importImage(from: url)
+            lastActionMessage = "Custom avatar updated."
+        } catch {
+            lastActionMessage = error.localizedDescription
+        }
+    }
+
+    func removeCustomAvatar() {
+        do {
+            try AvatarImageStore.removeCurrentImage()
+            customAvatarImage = nil
+            lastActionMessage = "Custom avatar removed."
+        } catch {
+            lastActionMessage = error.localizedDescription
         }
     }
 

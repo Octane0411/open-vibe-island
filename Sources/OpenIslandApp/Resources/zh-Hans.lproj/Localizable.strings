@@ -41,6 +41,10 @@
 /* Settings - Display */
 "settings.display.monitor" = "显示器";
 "settings.display.position" = "显示位置";
+"settings.display.avatar" = "头像";
+"settings.display.uploadAvatar" = "上传头像";
+"settings.display.removeAvatar" = "移除头像";
+"settings.display.avatarHelp" = "目前只支持静态图片展示";
 "settings.display.diagnostics" = "诊断";
 "settings.display.currentScreen" = "当前屏幕";
 "settings.display.layoutMode" = "布局模式";
