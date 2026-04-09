@@ -204,17 +204,26 @@ struct IslandPanelView: View {
             return screen
         }
 
-        return NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main
+        // No diagnostics yet — prefer the screen the app is currently on.
+        // Do NOT fall back to scanning for any notched screen in the system,
+        // or topBar-mode external displays will incorrectly inherit notch
+        // behavior whenever a notched MacBook is also connected.
+        return NSScreen.main ?? NSScreen.screens.first
     }
 
     private var usesNotchAwareOpenedHeader: Bool {
-        model.overlayPlacementDiagnostics?.mode == .notch
-            || targetOverlayScreen?.safeAreaInsets.top ?? 0 > 0
+        isNotchMode
     }
 
     private var isNotchMode: Bool {
-        model.overlayPlacementDiagnostics?.mode == .notch
-            || targetOverlayScreen?.safeAreaInsets.top ?? 0 > 0
+        // Diagnostics (set by OverlayPanelController when presenting) is the
+        // authoritative source of truth for placement mode.  Only fall back
+        // to inspecting the current screen when diagnostics is unavailable
+        // (e.g. very early in launch, before the first `show()`).
+        if let mode = model.overlayPlacementDiagnostics?.mode {
+            return mode == .notch
+        }
+        return targetOverlayScreen?.safeAreaInsets.top ?? 0 > 0
     }
 
     private var openedHeaderButtonsWidth: CGFloat {
@@ -260,10 +269,21 @@ struct IslandPanelView: View {
         let surfaceWidth = currentWidth + (horizontalInset * 2)
         let surfaceHeight = currentHeight + bottomInset
         let closedTopR: CGFloat = isNotchMode ? NotchShape.closedTopRadius : 12
-        let surfaceShape = NotchShape(
-            topCornerRadius: usesOpenedVisualState ? NotchShape.openedTopRadius : closedTopR,
-            bottomCornerRadius: usesOpenedVisualState ? NotchShape.openedBottomRadius : NotchShape.closedBottomRadius
-        )
+        let surfaceShape: AnyShape = {
+            if isNotchMode {
+                return AnyShape(NotchShape(
+                    topCornerRadius: usesOpenedVisualState ? NotchShape.openedTopRadius : closedTopR,
+                    bottomCornerRadius: usesOpenedVisualState ? NotchShape.openedBottomRadius : NotchShape.closedBottomRadius
+                ))
+            }
+            // Non-notch screens: render as a smooth rounded capsule/rectangle
+            // so the pill reads as a free-floating island, not something
+            // that's notched into the top edge of the display.
+            if usesOpenedVisualState {
+                return AnyShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            }
+            return AnyShape(Capsule(style: .continuous))
+        }()
         let hidesClosedSurfaceChrome = showsIdleEdgeWhenCollapsed && !usesOpenedVisualState
         let idleEdgeWidth = closedNotchWidth + (isPopping ? 18 : 0)
 
