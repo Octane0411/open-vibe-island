@@ -581,32 +581,50 @@ final class OverlayPanelController {
     /// needs to resize.  All visual transitions are driven purely by SwiftUI
     /// inside this fixed-size window.
     private func panelSize(for model: AppModel?, on screen: NSScreen) -> CGSize {
-        let insets = panelShadowInsets
+        let insets = panelShadowInsets(for: model)
+        // The opened state header needs more vertical room than the compact
+        // 22pt closed pill on non-notch screens — keep the SwiftUI-side
+        // `openedHeaderHeight` (max(closedNotchHeight, 30)) in sync here so
+        // the AppKit panel rect matches.
+        let openedHeaderAllowance: CGFloat = max(screen.notchSize.height, 30)
 
         guard let model else {
             return CGSize(
                 width: openedPanelWidth(for: screen) + Self.openedContentWidthPadding + (insets.horizontal * 2),
-                height: screen.notchSize.height + Self.openedEmptyStateHeight + Self.openedContentBottomPadding + insets.bottom
+                height: openedHeaderAllowance + Self.openedEmptyStateHeight + Self.openedContentBottomPadding + insets.bottom
             )
         }
 
-        let panelWidth = openedPanelWidth(for: screen)
-        let contentHeight = openedContentHeight(for: model)
-        // Use at least the empty-state height so the window doesn't shrink
-        // when sessions come and go while opened.
-        let height = screen.notchSize.height + max(contentHeight, Self.openedEmptyStateHeight) + Self.openedContentBottomPadding + insets.bottom
-
-        return CGSize(
-            width: panelWidth + Self.openedContentWidthPadding + (insets.horizontal * 2),
-            height: height
-        )
+        switch model.notchStatus {
+        case .opened:
+            let panelWidth = model.showsNotificationCard
+                ? notificationPanelWidth(for: screen)
+                : openedPanelWidth(for: screen)
+            return CGSize(
+                width: panelWidth + Self.openedContentWidthPadding + (insets.horizontal * 2),
+                height: openedHeaderAllowance + openedContentHeight(for: model) + Self.openedContentBottomPadding + insets.bottom
+            )
+        case .closed, .popping:
+            return CGSize(
+                width: closedPanelWidth(for: model, on: screen) + (insets.horizontal * 2),
+                height: screen.islandClosedHeight + insets.bottom
+            )
+        }
     }
 
-    /// Constant insets — always opened size since the window never shrinks.
-    private var panelShadowInsets: (horizontal: CGFloat, bottom: CGFloat) {
-        (
-            horizontal: IslandChromeMetrics.openedShadowHorizontalInset,
-            bottom: IslandChromeMetrics.openedShadowBottomInset
+    private func panelShadowInsets(for model: AppModel?) -> (horizontal: CGFloat, bottom: CGFloat) {
+        let usesOpenedInsets = model.map { $0.notchStatus == .opened || $0.isOverlayCloseTransitionPending } ?? true
+
+        if usesOpenedInsets {
+            return (
+                horizontal: IslandChromeMetrics.openedShadowHorizontalInset,
+                bottom: IslandChromeMetrics.openedShadowBottomInset
+            )
+        }
+
+        return (
+            horizontal: IslandChromeMetrics.closedShadowHorizontalInset,
+            bottom: IslandChromeMetrics.closedShadowBottomInset
         )
     }
 
@@ -998,11 +1016,11 @@ final class NotchEventMonitors {
 extension NSScreen {
     var notchSize: CGSize {
         guard safeAreaInsets.top > 0 else {
-            // Non-notch screen: render a compact pill rather than mimicking
-            // a physical notch. The closed pill only shows an icon + a small
-            // session-count badge, so 84x22 is plenty of room while keeping
-            // the pill unobtrusive on external displays.
-            return CGSize(width: 84, height: 22)
+            // Non-notch screen: compact floating pill for external displays.
+            // The closed pill only shows an icon + a small count badge, so
+            // 64x22 keeps it small and balanced (ratio ~2.9:1) without the
+            // awkwardly elongated look of wider pills.
+            return CGSize(width: 64, height: 22)
         }
 
         let notchHeight = safeAreaInsets.top

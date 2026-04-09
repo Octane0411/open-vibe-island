@@ -276,13 +276,12 @@ struct IslandPanelView: View {
                     bottomCornerRadius: usesOpenedVisualState ? NotchShape.openedBottomRadius : NotchShape.closedBottomRadius
                 ))
             }
-            // Non-notch screens: render as a smooth rounded capsule/rectangle
-            // so the pill reads as a free-floating island, not something
-            // that's notched into the top edge of the display.
-            if usesOpenedVisualState {
-                return AnyShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-            }
-            return AnyShape(Capsule(style: .continuous))
+            // Non-notch screens: use a single RoundedRectangle for both states
+            // so SwiftUI can smoothly interpolate the corner radius during the
+            // open/close animation. Closed cornerRadius == half of pill height
+            // gives a perfect capsule end; opened uses a softer 26pt radius.
+            let radius: CGFloat = usesOpenedVisualState ? 26 : (surfaceHeight / 2)
+            return AnyShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         }()
         let hidesClosedSurfaceChrome = showsIdleEdgeWhenCollapsed && !usesOpenedVisualState
         let idleEdgeWidth = closedNotchWidth + (isPopping ? 18 : 0)
@@ -295,12 +294,12 @@ struct IslandPanelView: View {
 
                 VStack(spacing: 0) {
                     headerRow
-                        .frame(height: closedNotchHeight)
+                        .frame(height: usesOpenedVisualState ? openedHeaderHeight : closedNotchHeight)
                         .opacity(hidesClosedSurfaceChrome ? 0 : 1)
 
                     openedContent
                         .frame(width: openedWidth - 24)
-                        .frame(maxHeight: usesOpenedVisualState ? currentHeight - closedNotchHeight - 12 : 0, alignment: .top)
+                        .frame(maxHeight: usesOpenedVisualState ? currentHeight - openedHeaderHeight - 12 : 0, alignment: .top)
                         .opacity(usesOpenedVisualState ? 1 : 0)
                         .clipped()
                 }
@@ -356,11 +355,20 @@ struct IslandPanelView: View {
     // MARK: - Closed state
 
     private var closedNotchWidth: CGFloat {
-        (targetOverlayScreen ?? NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }))?.notchSize.width ?? 84
+        (targetOverlayScreen ?? NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }))?.notchSize.width ?? 64
     }
 
     private var closedNotchHeight: CGFloat {
         (targetOverlayScreen ?? NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }))?.islandClosedHeight ?? 22
+    }
+
+    /// Header row height used in the **opened** state.  Decoupled from
+    /// `closedNotchHeight` so the compact 22pt non-notch pill doesn't squash
+    /// the 22pt header buttons against the edges when expanded.  Built-in
+    /// notch MacBooks (where `closedNotchHeight` ≈ 34pt) keep their existing
+    /// header sizing.
+    private var openedHeaderHeight: CGFloat {
+        max(closedNotchHeight, 30)
     }
 
     // MARK: - Header row (shared between closed and opened)
@@ -369,7 +377,7 @@ struct IslandPanelView: View {
     private var headerRow: some View {
         if usesOpenedVisualState {
             openedHeaderContent
-                .frame(height: closedNotchHeight)
+                .frame(height: openedHeaderHeight)
         } else {
             HStack(spacing: 0) {
                 if hasClosedPresence {
