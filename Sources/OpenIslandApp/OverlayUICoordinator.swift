@@ -131,15 +131,15 @@ final class OverlayUICoordinator {
         )
     }
 
-    /// Duration of the panel fade-out on close.
-    private static let closeFadeDuration: TimeInterval = 0.18
-
-    /// Coordinates overlay transitions.
+    /// Coordinates overlay transitions. Open expands the panel immediately so
+    /// SwiftUI has rendering space. Close starts the SwiftUI state change and
+    /// then asks AppKit to animate the panel frame closed right away.
     ///
     /// **Open**: expand the panel frame instantly, then set state so SwiftUI
     /// animates content from closed → opened inside the already-large panel.
     ///
-    /// **Close**: fade panel out, then snap state and window frame to closed.
+    /// **Close**: switch state immediately, then animate the NSPanel frame to
+    /// the closed geometry without holding the window open first.
     private func transitionOverlay(
         to status: NotchStatus,
         reason: NotchOpenReason?,
@@ -152,7 +152,6 @@ final class OverlayUICoordinator {
         beforeTransition?()
 
         overlayTransitionGeneration &+= 1
-        let capturedGeneration = overlayTransitionGeneration
 
         switch status {
         case .opened:
@@ -175,32 +174,14 @@ final class OverlayUICoordinator {
             onPlacementResolved?()
 
         case .closed, .popping:
-            let wasOpened = notchStatus == .opened
-            // Set state immediately — usesOpenedVisualState keeps the view
-            // looking opened while isCloseTransitionPending is true.
-            isCloseTransitionPending = wasOpened
+            isCloseTransitionPending = false
             islandSurface = surface
             notchOpenReason = reason
             notchStatus = status
             overlayPanelController.setInteractive(interactive)
             afterStateChange?()
-
-            if wasOpened {
-                // Fade the panel out, then snap window frame to closed size.
-                overlayPanelController.fadeOutAndClose(
-                    duration: Self.closeFadeDuration
-                ) { [weak self] in
-                    guard let self else { return }
-                    guard self.overlayTransitionGeneration == capturedGeneration else { return }
-                    self.isCloseTransitionPending = false
-                    self.refreshOverlayPlacement()
-                    self.overlayPanelController.restoreAlpha()
-                    onPlacementResolved?()
-                }
-            } else {
-                refreshOverlayPlacement()
-                onPlacementResolved?()
-            }
+            refreshOverlayPlacement()
+            onPlacementResolved?()
         }
     }
 

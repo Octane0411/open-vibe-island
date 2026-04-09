@@ -360,7 +360,7 @@ struct AppModelSessionListTests {
     }
 
     @Test
-    func closeTransitionSetsStateImmediatelyAndClearsPending() {
+    func closeTransitionDoesNotKeepPanelShrinkPending() async throws {
         let model = AppModel()
         model.notchStatus = .opened
         model.notchOpenReason = .hover
@@ -368,10 +368,27 @@ struct AppModelSessionListTests {
 
         model.notchClose()
 
-        // State changes immediately; pending clears synchronously in tests
-        // (no panel → fadeOutAndClose calls completion inline).
+        // State changes immediately; close should not leave any pending
+        // window-shrink state behind.
         #expect(model.notchStatus == .closed)
         #expect(model.notchOpenReason == nil)
+        #expect(!model.isOverlayCloseTransitionPending)
+    }
+
+    @Test
+    func reopeningOverlayKeepsCloseTransitionNotPending() {
+        let model = AppModel()
+        model.notchStatus = .opened
+        model.notchOpenReason = .hover
+        model.islandSurface = .sessionList()
+
+        model.notchClose()
+        #expect(!model.isOverlayCloseTransitionPending)
+
+        model.notchOpen(reason: .click)
+
+        #expect(model.notchStatus == .opened)
+        #expect(model.notchOpenReason == .click)
         #expect(!model.isOverlayCloseTransitionPending)
     }
 

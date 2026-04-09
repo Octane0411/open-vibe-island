@@ -5,6 +5,7 @@ import OpenIslandCore
 
 @MainActor
 final class OverlayPanelController {
+    private static let closePanelAnimationDuration: TimeInterval = 0.18
     private static let minimumOpenedPanelWidth: CGFloat = 680
     private static let maximumOpenedPanelWidth: CGFloat = 740
     private static let openedPanelWidthFactor: CGFloat = 0.46
@@ -175,14 +176,16 @@ final class OverlayPanelController {
 
         let windowFrame = panelFrame(for: model, on: screen)
 
-        // Always set the panel frame instantly — no AppKit animation.
-        // All visual transitions (shape, size, opacity, corner radius) are
-        // driven by SwiftUI's .animation() modifier on the content view.
-        // Mixing NSAnimationContext with SwiftUI spring animations caused
-        // visible jank because the two systems have different timing curves,
-        // durations, and start times (AppKit was deferred by one runloop).
         if panel.frame != windowFrame {
-            panel.setFrame(windowFrame, display: true)
+            if animated, shouldAnimatePanelClose(from: panel.frame, to: windowFrame) {
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = Self.closePanelAnimationDuration
+                    context.allowsImplicitAnimation = true
+                    panel.animator().setFrame(windowFrame, display: true)
+                }
+            } else {
+                panel.setFrame(windowFrame, display: true)
+            }
         }
         computeNotchRect(screen: screen)
 
@@ -211,6 +214,10 @@ final class OverlayPanelController {
         let notchX = screenFrame.midX - notchSize.width / 2
         let notchY = screenFrame.maxY - notchSize.height
         notchRect = NSRect(x: notchX, y: notchY, width: notchSize.width, height: notchSize.height)
+    }
+
+    private func shouldAnimatePanelClose(from currentFrame: NSRect, to targetFrame: NSRect) -> Bool {
+        targetFrame.width < currentFrame.width || targetFrame.height < currentFrame.height
     }
 
     private func resolveTargetScreen(preferredScreenID: String? = nil) -> NSScreen? {
@@ -421,7 +428,7 @@ final class OverlayPanelController {
     }
 
     private func panelShadowInsets(for model: AppModel?) -> (horizontal: CGFloat, bottom: CGFloat) {
-        let usesOpenedInsets = model.map { $0.notchStatus == .opened || $0.isOverlayCloseTransitionPending } ?? true
+        let usesOpenedInsets = model.map { $0.notchStatus == .opened } ?? true
 
         if usesOpenedInsets {
             return (
