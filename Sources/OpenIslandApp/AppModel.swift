@@ -209,9 +209,8 @@ final class AppModel {
         }
 
         relay.endpoint.activeSessionCountProvider = { [weak self] in
-            // Safe to call from any queue — reads a snapshot count.
             guard let self else { return 0 }
-            return MainActor.assumeIsolated {
+            return DispatchQueue.main.sync {
                 self.state.sessions.count
             }
         }
