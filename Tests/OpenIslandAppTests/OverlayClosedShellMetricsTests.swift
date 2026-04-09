@@ -83,6 +83,57 @@ struct OverlayClosedShellMetricsTests {
     }
 
     @Test
+    func topBarClosedSurfaceWidthFitsSingleSessionContent() {
+        let metrics = OverlayClosedShellMetrics.forMode(
+            .topBar,
+            closedHeight: 22
+        )
+
+        let width = metrics.closedSurfaceWidth(
+            baseClosedWidth: 56,
+            liveCount: 1,
+            hasAttention: false,
+            isPopping: false
+        )
+
+        #expect(width == 58)
+    }
+
+    @Test
+    func topBarClosedSurfaceWidthAddsOnlyNeededAttentionSpace() {
+        let metrics = OverlayClosedShellMetrics.forMode(
+            .topBar,
+            closedHeight: 22
+        )
+
+        let width = metrics.closedSurfaceWidth(
+            baseClosedWidth: 56,
+            liveCount: 1,
+            hasAttention: true,
+            isPopping: false
+        )
+
+        #expect(width == 72)
+    }
+
+    @Test
+    func notchClosedSurfaceWidthKeepsLaneExpansionModel() {
+        let metrics = OverlayClosedShellMetrics.forMode(
+            .notch,
+            closedHeight: 34
+        )
+
+        let width = metrics.closedSurfaceWidth(
+            baseClosedWidth: 200,
+            liveCount: 1,
+            hasAttention: false,
+            isPopping: false
+        )
+
+        #expect(width == 288)
+    }
+
+    @Test
     func openedHeaderAllowanceIsAtLeastThirtyOnTopBar() {
         let metrics = OverlayClosedShellMetrics.forMode(
             .topBar,

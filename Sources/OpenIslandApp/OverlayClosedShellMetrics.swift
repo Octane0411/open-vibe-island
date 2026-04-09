@@ -22,8 +22,45 @@ struct OverlayClosedShellMetrics: Equatable {
         isFloatingPill ? .floatingPill : .notch
     }
 
+    func closedSurfaceWidth(
+        baseClosedWidth: CGFloat,
+        liveCount: Int,
+        hasAttention: Bool,
+        isPopping: Bool
+    ) -> CGFloat {
+        let popWidth: CGFloat = isPopping ? 18 : 0
+
+        guard liveCount > 0 else {
+            return baseClosedWidth + popWidth
+        }
+
+        let badgeWidth = Self.closedBadgeWidth(forLiveCount: liveCount)
+
+        switch layoutFamily {
+        case .floatingPill:
+            let attentionWidth = hasAttention ? badgeSpacing + attentionIndicatorSize : 0
+            let contentWidth = (horizontalPadding * 2)
+                + iconSize
+                + badgeSpacing
+                + badgeWidth
+                + attentionWidth
+            return max(baseClosedWidth, contentWidth) + popWidth
+        case .notch:
+            let sideWidth = max(0, closedHeight - 12) + 10
+            let leftWidth = sideWidth + 8 + (hasAttention ? 18 : 0)
+            let rightWidth = max(sideWidth, badgeWidth)
+            let expansionWidth = leftWidth + rightWidth + 16 + (hasAttention ? 6 : 0)
+            return baseClosedWidth + expansionWidth + popWidth
+        }
+    }
+
     static func openedHeaderAllowance(forClosedHeight closedHeight: CGFloat) -> CGFloat {
         max(closedHeight, 30)
+    }
+
+    private static func closedBadgeWidth(forLiveCount liveCount: Int) -> CGFloat {
+        let digits = max(1, "\(liveCount)".count)
+        return CGFloat(26 + max(0, digits - 1) * 8)
     }
 
     static func forMode(

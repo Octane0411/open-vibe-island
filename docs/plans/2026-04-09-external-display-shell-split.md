@@ -288,7 +288,7 @@ git add Sources/OpenIslandApp/Views/IslandPanelView.swift \
 git commit -m "refactor: share opened overlay content across display modes"
 ```
 
-### Task 5: 外接屏视觉细调单独跟进
+### Task 5: 外接屏视觉细调与闭合宽度收敛
 
 **Files:**
 - Modify: `Sources/OpenIslandApp/OverlayClosedShellMetrics.swift`
@@ -314,7 +314,13 @@ Expected: 新 token 断言失败。
 
 **Step 3: 写最小实现**
 
-仅调整 topBar 壳层的视觉 tokens，不改 notch 壳层。
+仅调整 topBar 壳层相关的视觉参数与闭合宽度来源，不改 notch 壳层。
+
+要求：
+
+- topBar 闭合宽度按内容紧凑计算，不能继续复用 notch 的 lane expansion 公式
+- `IslandPanelView` 与 `OverlayPanelController` 走同一个 mode-aware helper
+- notch 模式继续保留原有 lane-based 宽度模型
 
 **Step 4: 运行测试并确认通过**
 

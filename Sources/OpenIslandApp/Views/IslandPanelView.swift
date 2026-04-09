@@ -79,7 +79,7 @@ private let openAnimation = Animation.spring(response: 0.42, dampingFraction: 0.
 private let closeAnimation = Animation.smooth(duration: 0.3)
 private let popAnimation = Animation.spring(response: 0.3, dampingFraction: 0.5)
 
-/// Composite equatable key so `hasClosedPresence` and `expansionWidth` share
+/// Composite equatable key so `hasClosedPresence` and `closedSurfaceWidth` share
 /// a single `.animation(.smooth, value:)` modifier instead of two separate
 /// ones that can conflict when both change simultaneously.
 private struct ClosedPresenceKey: Equatable {
@@ -172,30 +172,21 @@ struct IslandPanelView: View {
         return Color.white.opacity(0.4) // gray
     }
 
-    private var countBadgeWidth: CGFloat {
-        let digits = max(1, "\(model.liveSessionCount)".count)
-        return CGFloat(26 + max(0, digits - 1) * 8)
+    private var closedSurfaceWidth: CGFloat {
+        closedShellMetrics.closedSurfaceWidth(
+            baseClosedWidth: closedNotchWidth,
+            liveCount: model.liveSessionCount,
+            hasAttention: closedSpotlightSession?.phase.requiresAttention == true,
+            isPopping: isPopping
+        )
     }
 
-    private var expansionWidth: CGFloat {
-        guard !showsIdleEdgeWhenCollapsed else { return 0 }
-        guard hasClosedPresence else { return 0 }
-        let leftWidth = sideWidth + 8 + (closedSpotlightSession?.phase.requiresAttention == true ? 18 : 0)
-        let rightWidth = max(sideWidth, countBadgeWidth)
-        let hasPending = closedSpotlightSession?.phase.requiresAttention == true
-        return leftWidth + rightWidth + 16 + (hasPending ? 6 : 0)
-    }
-
-    /// Composite key combining `hasClosedPresence` and `expansionWidth` so a
+    /// Composite key combining `hasClosedPresence` and `closedSurfaceWidth` so a
     /// single `.animation(.smooth)` modifier drives both values.  Previously
     /// they had two separate `.animation(.smooth, value:)` modifiers that
     /// could conflict when they changed in the same runloop pass.
     private var closedPresenceAnimationKey: ClosedPresenceKey {
-        ClosedPresenceKey(present: hasClosedPresence, width: expansionWidth)
-    }
-
-    private var sideWidth: CGFloat {
-        max(0, closedNotchHeight - 12) + 10
+        ClosedPresenceKey(present: hasClosedPresence, width: closedSurfaceWidth)
     }
 
     private var targetOverlayScreen: NSScreen? {
@@ -270,7 +261,7 @@ struct IslandPanelView: View {
         let openedHeight = max(closedNotchHeight, layoutHeight - outerBottomPadding)
 
         // Closed dimensions: sized to the actual notch + session indicators.
-        let closedTotalWidth = closedNotchWidth + expansionWidth + (isPopping ? 18 : 0)
+        let closedTotalWidth = closedSurfaceWidth
         let closedTotalHeight = closedNotchHeight
 
         let currentWidth = usesOpenedVisualState ? openedWidth : closedTotalWidth

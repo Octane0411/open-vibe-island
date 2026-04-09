@@ -557,11 +557,9 @@ final class OverlayPanelController {
     /// inside this fixed-size window.
     private func panelSize(for model: AppModel?, on screen: NSScreen) -> CGSize {
         let insets = panelShadowInsets(for: model)
-        // The opened state header needs more vertical room than the compact
-        // 22pt closed pill on non-notch screens — keep the SwiftUI-side
-        // `openedHeaderHeight` (max(closedNotchHeight, 30)) in sync here so
-        // the AppKit panel rect matches.
-        let openedHeaderAllowance: CGFloat = max(screen.notchSize.height, 30)
+        let openedHeaderAllowance = OverlayClosedShellMetrics.openedHeaderAllowance(
+            forClosedHeight: screen.islandClosedHeight
+        )
 
         guard let model else {
             return CGSize(
@@ -604,19 +602,21 @@ final class OverlayPanelController {
     }
 
     private func closedPanelWidth(for model: AppModel, on screen: NSScreen) -> CGFloat {
-        let notchWidth = screen.notchSize.width
-        let notchHeight = screen.islandClosedHeight
+        let baseClosedWidth = screen.notchSize.width
+        let closedHeight = screen.islandClosedHeight
+        let mode = OverlayDisplayResolver.placementMode(for: screen)
+        let metrics = OverlayClosedShellMetrics.forMode(
+            mode,
+            closedHeight: closedHeight
+        )
         let spotlightSession = model.surfacedSessions.first(where: { $0.phase.requiresAttention })
             ?? model.surfacedSessions.first(where: { $0.phase == .running })
             ?? model.surfacedSessions.first
-
-        return Self.closedPanelWidth(
-            notchWidth: notchWidth,
-            notchHeight: notchHeight,
-            liveSessionCount: model.liveSessionCount,
+        return metrics.closedSurfaceWidth(
+            baseClosedWidth: baseClosedWidth,
+            liveCount: model.liveSessionCount,
             hasAttention: spotlightSession?.phase.requiresAttention == true,
-            notchStatus: model.notchStatus,
-            showsIdleEdgeWhenCollapsed: model.showsIdleEdgeWhenCollapsed
+            isPopping: model.notchStatus == .popping
         )
     }
 
