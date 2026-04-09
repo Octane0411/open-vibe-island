@@ -460,7 +460,7 @@ final class OverlayPanelController {
     }
 
     func contentRect(for model: AppModel, in bounds: NSRect) -> NSRect? {
-        let insets = panelShadowInsets
+        let insets = panelShadowInsets(for: model)
         return NSRect(
             x: bounds.minX + insets.horizontal,
             y: bounds.minY + insets.bottom,
