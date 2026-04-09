@@ -4,6 +4,21 @@ import Testing
 
 struct OverlayClosedShellMetricsTests {
     @Test
+    func notchAndTopBarClosedShellsUseDifferentLayoutFamilies() {
+        let notch = OverlayClosedShellMetrics.forMode(
+            .notch,
+            closedHeight: 34
+        )
+        let topBar = OverlayClosedShellMetrics.forMode(
+            .topBar,
+            closedHeight: 22
+        )
+
+        #expect(notch.layoutFamily == .notch)
+        #expect(topBar.layoutFamily == .floatingPill)
+    }
+
+    @Test
     func notchModeReturnsNotchMetrics() {
         let metrics = OverlayClosedShellMetrics.forMode(
             .notch,

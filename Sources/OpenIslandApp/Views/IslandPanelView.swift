@@ -215,6 +215,17 @@ struct IslandPanelView: View {
         isNotchMode
     }
 
+    private var currentPlacementMode: OverlayPlacementMode {
+        isNotchMode ? .notch : .topBar
+    }
+
+    private var closedShellMetrics: OverlayClosedShellMetrics {
+        OverlayClosedShellMetrics.forMode(
+            currentPlacementMode,
+            closedHeight: closedNotchHeight
+        )
+    }
+
     private var isNotchMode: Bool {
         // Diagnostics (set by OverlayPanelController when presenting) is the
         // authoritative source of truth for placement mode.  Only fall back
@@ -374,7 +385,7 @@ struct IslandPanelView: View {
     /// notch MacBooks (where `closedNotchHeight` ≈ 34pt) keep their existing
     /// header sizing.
     private var openedHeaderHeight: CGFloat {
-        max(closedNotchHeight, 30)
+        closedShellMetrics.openedHeaderHeight
     }
 
     // MARK: - Header row (shared between closed and opened)
@@ -384,79 +395,84 @@ struct IslandPanelView: View {
         if usesOpenedVisualState {
             openedHeaderContent
                 .frame(height: openedHeaderHeight)
-        } else if !isNotchMode {
-            // Compact layout for non-notch (external display) pills: the pill
-            // is only 56pt wide, so there's no room for the notch-style
-            // "icon | middle filler | badge" structure. Pack icon and badge
-            // together with tight spacing so they read as a single chip.
-            HStack(spacing: 4) {
-                OpenIslandIcon(size: 12, isAnimating: hasClosedActivity, tint: scoutTint)
-                    .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
-
-                if hasClosedPresence {
-                    if closedSpotlightSession?.phase.requiresAttention == true {
-                        AttentionIndicator(
-                            size: 10,
-                            color: phaseColor(closedSpotlightSession?.phase ?? .running)
-                        )
-                    }
-
-                    ClosedCountBadge(
-                        liveCount: model.liveSessionCount,
-                        tint: closedSpotlightSession?.phase.requiresAttention == true ? .orange : scoutTint
-                    )
-                    .matchedGeometryEffect(id: "right-indicator", in: notchNamespace, isSource: true)
-                }
-            }
-            .padding(.horizontal, 8)
-            .frame(height: closedNotchHeight)
         } else {
-            HStack(spacing: 0) {
-                if hasClosedPresence {
-                    HStack(spacing: 4) {
-                        if model.isCustomAppearance {
-                            IslandPixelGlyph(
-                                tint: scoutTint,
-                                style: model.islandPixelShapeStyle,
-                                isAnimating: hasClosedActivity,
-                                customAvatarImage: model.customAvatarImage
-                            )
-                            .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
-                        } else {
-                            OpenIslandIcon(size: 14, isAnimating: hasClosedActivity, tint: scoutTint)
-                                .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
-                        }
-
-                        if closedSpotlightSession?.phase.requiresAttention == true {
-                            AttentionIndicator(
-                                size: 14,
-                                color: phaseColor(closedSpotlightSession?.phase ?? .running)
-                            )
-                        }
+            let hasAttention = closedSpotlightSession?.phase.requiresAttention == true
+            switch closedShellMetrics.layoutFamily {
+            case .floatingPill:
+                TopBarClosedShell(
+                    hasClosedPresence: hasClosedPresence,
+                    hasAttention: hasAttention,
+                    closedHeight: closedNotchHeight,
+                    horizontalPadding: closedShellMetrics.horizontalPadding,
+                    spacing: closedShellMetrics.badgeSpacing
+                ) {
+                    if model.isCustomAppearance {
+                        IslandPixelGlyph(
+                            tint: scoutTint,
+                            style: model.islandPixelShapeStyle,
+                            isAnimating: hasClosedActivity,
+                            customAvatarImage: model.customAvatarImage
+                        )
+                        .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
+                    } else {
+                        OpenIslandIcon(
+                            size: closedShellMetrics.iconSize,
+                            isAnimating: hasClosedActivity,
+                            tint: scoutTint
+                        )
+                        .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
                     }
-                    .frame(width: sideWidth + 8 + (closedSpotlightSession?.phase.requiresAttention == true ? 18 : 0))
-                }
-
-                if !hasClosedPresence {
-                    Rectangle()
-                        .fill(Color.clear)
-                        .frame(width: closedNotchWidth - 20)
-                } else {
-                    Rectangle()
-                        .fill(Color.black)
-                        .frame(width: closedNotchWidth - NotchShape.closedTopRadius + (isPopping ? 18 : 0))
-                }
-
-                if hasClosedPresence {
+                } attention: {
+                    AttentionIndicator(
+                        size: closedShellMetrics.attentionIndicatorSize,
+                        color: phaseColor(closedSpotlightSession?.phase ?? .running)
+                    )
+                } badge: {
                     ClosedCountBadge(
                         liveCount: model.liveSessionCount,
-                        tint: closedSpotlightSession?.phase.requiresAttention == true ? .orange : scoutTint
+                        tint: hasAttention ? .orange : scoutTint
                     )
                     .matchedGeometryEffect(id: "right-indicator", in: notchNamespace, isSource: true)
-                    .frame(width: max(sideWidth, countBadgeWidth))
+                }
+            case .notch:
+                NotchClosedShell(
+                    hasClosedPresence: hasClosedPresence,
+                    hasAttention: hasAttention,
+                    sideWidth: sideWidth,
+                    closedNotchWidth: closedNotchWidth,
+                    closedHeight: closedNotchHeight,
+                    countBadgeWidth: countBadgeWidth,
+                    isPopping: isPopping
+                ) {
+                    if model.isCustomAppearance {
+                        IslandPixelGlyph(
+                            tint: scoutTint,
+                            style: model.islandPixelShapeStyle,
+                            isAnimating: hasClosedActivity,
+                            customAvatarImage: model.customAvatarImage
+                        )
+                        .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
+                    } else {
+                        OpenIslandIcon(
+                            size: closedShellMetrics.iconSize,
+                            isAnimating: hasClosedActivity,
+                            tint: scoutTint
+                        )
+                        .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
+                    }
+                } attention: {
+                    AttentionIndicator(
+                        size: closedShellMetrics.attentionIndicatorSize,
+                        color: phaseColor(closedSpotlightSession?.phase ?? .running)
+                    )
+                } badge: {
+                    ClosedCountBadge(
+                        liveCount: model.liveSessionCount,
+                        tint: hasAttention ? .orange : scoutTint
+                    )
+                    .matchedGeometryEffect(id: "right-indicator", in: notchNamespace, isSource: true)
                 }
             }
-            .frame(height: closedNotchHeight)
         }
     }
 
