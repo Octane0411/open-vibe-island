@@ -201,20 +201,19 @@ final class OverlayPanelController {
     ///   `OverlayPillPositionStore` if present, otherwise falls back to
     ///   horizontally centered with an 18pt gap below the menu bar.
     private func pillAnchor(on screen: NSScreen) -> NSPoint {
-        switch OverlayDisplayResolver.placementMode(for: screen) {
-        case .notch:
-            return NSPoint(x: screen.frame.midX, y: screen.frame.maxY)
-        case .topBar:
-            let screenID = screenID(for: screen)
-            if let stored = OverlayPillPositionStore.load(for: screenID, on: screen) {
-                return stored
-            }
-            // Panel top sits 18pt below the menu bar (matches legacy default).
-            return NSPoint(
-                x: screen.frame.midX,
-                y: screen.visibleFrame.maxY - 18
-            )
+        let strategy = placementStrategy(for: screen)
+        let storedTopBarAnchor: NSPoint?
+        if strategy == .topBar {
+            storedTopBarAnchor = OverlayPillPositionStore.load(for: screenID(for: screen), on: screen)
+        } else {
+            storedTopBarAnchor = nil
         }
+
+        return strategy.resolvedAnchor(
+            screenFrame: screen.frame,
+            screenVisibleFrame: screen.visibleFrame,
+            storedTopBarAnchor: storedTopBarAnchor
+        )
     }
 
     private func resolveTargetScreen(preferredScreenID: String? = nil) -> NSScreen? {
@@ -245,7 +244,7 @@ final class OverlayPanelController {
     func canDragPillNow() -> Bool {
         guard model?.notchStatus == .closed else { return false }
         guard let screen = resolveTargetScreen() else { return false }
-        return OverlayDisplayResolver.placementMode(for: screen) == .topBar
+        return placementStrategy(for: screen) == .topBar
     }
 
     /// Called by the hosting view while the user drags the pill. Moves the
@@ -271,7 +270,7 @@ final class OverlayPanelController {
         } ?? resolveTargetScreen()
 
         guard let screen = hostScreen,
-              OverlayDisplayResolver.placementMode(for: screen) == .topBar else {
+              placementStrategy(for: screen) == .topBar else {
             // Dragged onto a notch screen — ignore; notch screens always
             // center on the physical notch.
             computeNotchRect(screen: resolveTargetScreen())
@@ -473,12 +472,10 @@ final class OverlayPanelController {
         notchRect: NSRect,
         closedWidth: CGFloat
     ) -> NSRect {
-        let cx = notchRect.midX
-        return NSRect(
-            x: cx - closedWidth / 2,
-            y: notchRect.minY,
-            width: closedWidth,
-            height: notchRect.height
+        OverlayPlacementStrategy.topBar.closedHitRect(
+            anchor: NSPoint(x: notchRect.midX, y: notchRect.maxY),
+            closedWidth: closedWidth,
+            closedHeight: notchRect.height
         )
     }
 
@@ -529,52 +526,30 @@ final class OverlayPanelController {
             return nil
         }
 
+        let strategy = placementStrategy(for: screen)
+        let anchor = pillAnchor(on: screen)
         let closedWidth = closedPanelWidth(for: model, on: screen)
-        if model.showsIdleEdgeWhenCollapsed {
-            return Self.hiddenIdleEdgeHoverRect(
-                notchRect: notchRect,
-                closedWidth: closedWidth,
-                hoverHitHeight: Self.hiddenIdleEdgeHoverHitHeight
-            )
-        }
-
-        return Self.closedSurfaceRect(
-            notchRect: notchRect,
-            closedWidth: closedWidth
+        let closedHeight = screen.islandClosedHeight
+        return strategy.closedHitRect(
+            anchor: anchor,
+            closedWidth: closedWidth,
+            closedHeight: closedHeight
         )
     }
 
     private func panelFrame(for model: AppModel?, on screen: NSScreen) -> NSRect {
         let size = panelSize(for: model, on: screen)
-        switch OverlayDisplayResolver.placementMode(for: screen) {
-        case .notch:
-            return NSRect(
-                x: screen.frame.midX - size.width / 2,
-                y: screen.frame.maxY - size.height,
-                width: size.width,
-                height: size.height
-            )
-        case .topBar:
-            let anchor = pillAnchor(on: screen)
-            var minX = anchor.x - size.width / 2
-            var minY = anchor.y - size.height
+        let strategy = placementStrategy(for: screen)
+        return strategy.frame(
+            anchor: pillAnchor(on: screen),
+            size: size,
+            screenFrame: screen.frame,
+            screenVisibleFrame: screen.visibleFrame
+        )
+    }
 
-            // Clamp to visibleFrame so opened panel (especially its wider/taller
-            // size) never extends past screen edges. Closed pill is small enough
-            // that the anchor clamp alone already keeps it on-screen.
-            let visible = screen.visibleFrame
-            if minX + size.width > visible.maxX {
-                minX = visible.maxX - size.width
-            }
-            if minX < visible.minX {
-                minX = visible.minX
-            }
-            if minY < visible.minY {
-                minY = visible.minY
-            }
-
-            return NSRect(x: minX, y: minY, width: size.width, height: size.height)
-        }
+    private func placementStrategy(for screen: NSScreen) -> OverlayPlacementStrategy {
+        OverlayPlacementStrategy(mode: OverlayDisplayResolver.placementMode(for: screen))
     }
 
     /// Always returns the maximum (opened) panel size so the window never
