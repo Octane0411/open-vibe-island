@@ -34,6 +34,7 @@ final class OverlayPanelController {
     private var eventMonitors = NotchEventMonitors()
     private var hoverTimer: DispatchWorkItem?
     private var hoverCancelGrace: DispatchWorkItem?
+    private var isPressingClosedTopBarPill = false
     weak var model: AppModel?
     private(set) var notchRect: NSRect = .zero
 
@@ -69,6 +70,18 @@ final class OverlayPanelController {
             return true
         }
         return panelIgnoresMouseEvents
+    }
+
+    nonisolated static func shouldArmClosedSurfaceHoverOpen(
+        status: NotchStatus,
+        mode: OverlayPlacementMode,
+        isPressingClosedTopBarPill: Bool
+    ) -> Bool {
+        guard status == .closed else { return false }
+        if mode != .topBar {
+            return true
+        }
+        return !isPressingClosedTopBarPill
     }
 
     func availableDisplayOptions() -> [OverlayDisplayOption] {
@@ -290,6 +303,15 @@ final class OverlayPanelController {
         panel?.setFrameOrigin(origin)
     }
 
+    func beginClosedTopBarPress() {
+        isPressingClosedTopBarPill = true
+        cancelHoverOpenImmediately()
+    }
+
+    func endClosedTopBarPress() {
+        isPressingClosedTopBarPill = false
+    }
+
     /// Called by the hosting view after a drag finishes. Persists the new
     /// pill anchor for whichever screen the panel now lives on, and refreshes
     /// the hover hit-test rect.
@@ -345,11 +367,20 @@ final class OverlayPanelController {
         guard let model else { return }
 
         let inClosedSurfaceArea = isPointInClosedSurfaceArea(screenLocation)
+        let mode = model.overlayPlacementDiagnostics?.mode
+            ?? placementDiagnostics(preferredScreenID: nil)?.mode
+            ?? .notch
 
-        if model.notchStatus == .closed && inClosedSurfaceArea {
-            scheduleHoverOpen()
-        } else if model.notchStatus == .closed && !inClosedSurfaceArea {
-            cancelHoverOpen()
+        if Self.shouldArmClosedSurfaceHoverOpen(
+            status: model.notchStatus,
+            mode: mode,
+            isPressingClosedTopBarPill: isPressingClosedTopBarPill
+        ) {
+            if inClosedSurfaceArea {
+                scheduleHoverOpen()
+            } else {
+                cancelHoverOpen()
+            }
         }
 
         if model.shouldAutoCollapseOnMouseLeave {
@@ -843,6 +874,7 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
         // On the built-in notch screen, or when opened, fall through to the
         // legacy SwiftUI-driven behavior.
         if notchController?.canDragPillNow() == true, let window {
+            notchController?.beginClosedTopBarPress()
             dragStartMouse = NSEvent.mouseLocation
             dragStartPanelOrigin = window.frame.origin
             isTrackingPillDrag = true
@@ -891,6 +923,7 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
         dragStartMouse = nil
         dragStartPanelOrigin = nil
         didMovePillWhileTracking = false
+        notchController?.endClosedTopBarPress()
 
         if didMove {
             notchController?.persistDraggedPillPosition()

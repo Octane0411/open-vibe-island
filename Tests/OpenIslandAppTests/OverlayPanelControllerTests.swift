@@ -133,6 +133,39 @@ struct OverlayPanelControllerTests {
         )
     }
 
+    @Test
+    func closedTopBarPressSuppressesHoverOpen() {
+        #expect(
+            !OverlayPanelController.shouldArmClosedSurfaceHoverOpen(
+                status: .closed,
+                mode: .topBar,
+                isPressingClosedTopBarPill: true
+            )
+        )
+    }
+
+    @Test
+    func closedTopBarWithoutPressStillAllowsHoverOpen() {
+        #expect(
+            OverlayPanelController.shouldArmClosedSurfaceHoverOpen(
+                status: .closed,
+                mode: .topBar,
+                isPressingClosedTopBarPill: false
+            )
+        )
+    }
+
+    @Test
+    func closedNotchPressDoesNotSuppressHoverOpen() {
+        #expect(
+            OverlayPanelController.shouldArmClosedSurfaceHoverOpen(
+                status: .closed,
+                mode: .notch,
+                isPressingClosedTopBarPill: true
+            )
+        )
+    }
+
     // MARK: - islandClosedHeight
 
     @Test
