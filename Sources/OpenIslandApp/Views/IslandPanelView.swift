@@ -276,12 +276,18 @@ struct IslandPanelView: View {
                     bottomCornerRadius: usesOpenedVisualState ? NotchShape.openedBottomRadius : NotchShape.closedBottomRadius
                 ))
             }
-            // Non-notch screens: use a single RoundedRectangle for both states
-            // so SwiftUI can smoothly interpolate the corner radius during the
-            // open/close animation. Closed cornerRadius == half of pill height
-            // gives a perfect capsule end; opened uses a softer 26pt radius.
-            let radius: CGFloat = usesOpenedVisualState ? 26 : (surfaceHeight / 2)
-            return AnyShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            // Non-notch screens:
+            // - Closed state uses Capsule, whose path computes its corner
+            //   radius from the actual drawn rect at paint time. That means
+            //   while SwiftUI interpolates the frame from opened (700×514)
+            //   to closed (56×22), the shape always renders as a stadium —
+            //   no intermediate "rectangle with small corners" frame.
+            // - Opened state uses RoundedRectangle(26) so the session list
+            //   sits inside a normal panel, not a giant oval.
+            if usesOpenedVisualState {
+                return AnyShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            }
+            return AnyShape(Capsule(style: .continuous))
         }()
         let hidesClosedSurfaceChrome = showsIdleEdgeWhenCollapsed && !usesOpenedVisualState
         let idleEdgeWidth = closedNotchWidth + (isPopping ? 18 : 0)
@@ -355,7 +361,7 @@ struct IslandPanelView: View {
     // MARK: - Closed state
 
     private var closedNotchWidth: CGFloat {
-        (targetOverlayScreen ?? NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }))?.notchSize.width ?? 64
+        (targetOverlayScreen ?? NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }))?.notchSize.width ?? 56
     }
 
     private var closedNotchHeight: CGFloat {
@@ -378,6 +384,32 @@ struct IslandPanelView: View {
         if usesOpenedVisualState {
             openedHeaderContent
                 .frame(height: openedHeaderHeight)
+        } else if !isNotchMode {
+            // Compact layout for non-notch (external display) pills: the pill
+            // is only 56pt wide, so there's no room for the notch-style
+            // "icon | middle filler | badge" structure. Pack icon and badge
+            // together with tight spacing so they read as a single chip.
+            HStack(spacing: 4) {
+                OpenIslandIcon(size: 12, isAnimating: hasClosedActivity, tint: scoutTint)
+                    .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
+
+                if hasClosedPresence {
+                    if closedSpotlightSession?.phase.requiresAttention == true {
+                        AttentionIndicator(
+                            size: 10,
+                            color: phaseColor(closedSpotlightSession?.phase ?? .running)
+                        )
+                    }
+
+                    ClosedCountBadge(
+                        liveCount: model.liveSessionCount,
+                        tint: closedSpotlightSession?.phase.requiresAttention == true ? .orange : scoutTint
+                    )
+                    .matchedGeometryEffect(id: "right-indicator", in: notchNamespace, isSource: true)
+                }
+            }
+            .padding(.horizontal, 8)
+            .frame(height: closedNotchHeight)
         } else {
             HStack(spacing: 0) {
                 if hasClosedPresence {

@@ -1016,11 +1016,10 @@ final class NotchEventMonitors {
 extension NSScreen {
     var notchSize: CGSize {
         guard safeAreaInsets.top > 0 else {
-            // Non-notch screen: compact floating pill for external displays.
-            // The closed pill only shows an icon + a small count badge, so
-            // 64x22 keeps it small and balanced (ratio ~2.9:1) without the
-            // awkwardly elongated look of wider pills.
-            return CGSize(width: 64, height: 22)
+            // Non-notch screen: tight floating pill that fits exactly
+            // icon (12pt) + gap (6) + count badge (~26) + horizontal
+            // padding (~12) ≈ 56pt wide.
+            return CGSize(width: 56, height: 22)
         }
 
         let notchHeight = safeAreaInsets.top
