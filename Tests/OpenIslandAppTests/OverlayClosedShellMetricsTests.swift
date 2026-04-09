@@ -7,9 +7,7 @@ struct OverlayClosedShellMetricsTests {
     func notchModeReturnsNotchMetrics() {
         let metrics = OverlayClosedShellMetrics.forMode(
             .notch,
-            closedHeight: 34,
-            liveCountDigits: 2,
-            showsAttention: true
+            closedHeight: 34
         )
 
         #expect(metrics.mode == .notch)
@@ -26,9 +24,7 @@ struct OverlayClosedShellMetricsTests {
     func topBarModeReturnsCompactPillMetrics() {
         let metrics = OverlayClosedShellMetrics.forMode(
             .topBar,
-            closedHeight: 22,
-            liveCountDigits: 1,
-            showsAttention: false
+            closedHeight: 22
         )
 
         #expect(metrics.mode == .topBar)
@@ -44,9 +40,7 @@ struct OverlayClosedShellMetricsTests {
     func openedHeaderAllowanceIsAtLeastThirtyOnTopBar() {
         let metrics = OverlayClosedShellMetrics.forMode(
             .topBar,
-            closedHeight: 22,
-            liveCountDigits: 3,
-            showsAttention: true
+            closedHeight: 22
         )
 
         #expect(metrics.openedHeaderHeight == 30)

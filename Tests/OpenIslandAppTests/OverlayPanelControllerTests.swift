@@ -127,9 +127,7 @@ struct OverlayPanelControllerTests {
         )
         let metrics = OverlayClosedShellMetrics.forMode(
             .topBar,
-            closedHeight: closedHeight,
-            liveCountDigits: 1,
-            showsAttention: false
+            closedHeight: closedHeight
         )
 
         #expect(metrics.openedHeaderHeight == 30)

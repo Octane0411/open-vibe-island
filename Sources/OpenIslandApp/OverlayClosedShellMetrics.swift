@@ -15,9 +15,7 @@ struct OverlayClosedShellMetrics: Equatable {
 
     static func forMode(
         _ mode: OverlayPlacementMode,
-        closedHeight: CGFloat,
-        liveCountDigits _: Int,
-        showsAttention _: Bool
+        closedHeight: CGFloat
     ) -> OverlayClosedShellMetrics {
         switch mode {
         case .notch:
