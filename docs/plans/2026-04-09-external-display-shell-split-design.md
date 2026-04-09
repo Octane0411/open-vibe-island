@@ -19,6 +19,7 @@
 - 展开态内容必须保持一致。
 - 外接显示器和内置刘海屏允许使用不同的闭合态视觉。
 - 外接显示器的拖拽、命中区和 top-bar 定位行为必须保留。
+- 外接显示器闭合态保留 hover 自动展开，但鼠标按下后必须优先进入按住/拖动链路，不能再被 hover 展开抢占。
 - 不做“双套完整 UI”，避免把 session list、notification card、header actions 维护两份。
 
 ## 目标
@@ -129,7 +130,7 @@
 `OverlayPanelController` 继续是 overlay 生命周期入口，但模式差异逻辑应收敛到独立 helper：
 
 - notch：居中贴刘海、固定命中模型
-- topBar：锚点、拖拽、clamp、closed hit rect、可持久化位置
+- topBar：锚点、拖拽、clamp、closed hit rect、可持久化位置、按住时的 hover 抑制
 
 不一定要第一步就上 protocol；可以先抽成 mode-aware helper / strategy type，确保职责边界清楚，再视复杂度决定是否继续抽象。
 
@@ -142,6 +143,10 @@
 4. 展开态时：
    - 始终进入共享 opened content
    - 仅通过 mode-aware token 处理少量顶部几何差异
+5. 外接显示器闭合态按下时：
+   - 立即取消当前 hover timer
+   - 进入 press/drag 优先状态
+   - `mouseUp` 再按“点击打开 / 拖动持久化”分流
 
 ## 测试策略
 
@@ -152,6 +157,7 @@
 - notch / topBar 模式下的 closed shell metrics
 - opened header allowance 规则
 - topBar closed hit rect / anchor clamp / dragging 保存逻辑
+- topBar 闭合态按下时不会再触发 hover 自动展开
 
 ### 回归测试
 
@@ -167,6 +173,7 @@
 
 - 内置刘海屏闭合态视觉与打开行为不回归
 - 外接显示器闭合态仍可拖拽、点击打开、hover 打开
+- 外接显示器闭合态在按下后不会边展开边拖动
 - 两种模式展开后内容一致
 - 外接显示器展开后不会裁切 header 或内容区
 

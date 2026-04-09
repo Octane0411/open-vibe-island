@@ -348,3 +348,69 @@ git add Sources/OpenIslandApp/OverlayClosedShellMetrics.swift \
   Tests/OpenIslandAppTests/OverlayClosedShellMetricsTests.swift
 git commit -m "fix: refine top-bar closed shell tokens"
 ```
+
+### Task 6: topBar 按下优先拖动并抑制 hover 展开
+
+**Files:**
+- Modify: `Sources/OpenIslandApp/OverlayPanelController.swift`
+- Modify: `Sources/OpenIslandApp/OverlayUICoordinator.swift`
+- Modify: `Tests/OpenIslandAppTests/OverlayPanelControllerTests.swift`
+- Modify: `docs/plans/2026-04-09-external-display-shell-split-design.md`
+
+**Step 1: 写失败测试，锁定按住优先交互**
+
+在 `Tests/OpenIslandAppTests/OverlayPanelControllerTests.swift` 中新增纯 helper 测试，覆盖：
+
+- `topBar` 闭合态按下时不再允许 hover 定时展开
+- `notch` 闭合态不受这条规则影响
+- 释放按住状态后，`topBar` 的 hover 展开资格恢复
+
+**Step 2: 运行测试并确认失败**
+
+Run: `swift test --filter OverlayPanelControllerTests`
+
+Expected: 因 hover 抑制 helper 尚不存在而失败。
+
+**Step 3: 写最小实现**
+
+在 `OverlayPanelController` 中：
+
+- 为 topBar 闭合态引入按住/拖动中的 hover 抑制状态
+- `mouseDown` 一进入 topBar 闭合态 press candidate 就立即取消 hover timer
+- `handleMouseMoved` / `scheduleHoverOpen` 在 press state 下禁止触发 hover 展开
+- `mouseUp` 后恢复 hover 资格，并保持现有“点击打开 / 拖动保存”分流
+
+在 `OverlayUICoordinator` 中只保留必要的交互状态对接，不改展开态内容与 notch 行为。
+
+**Step 4: 运行测试并确认通过**
+
+Run: `swift test --filter OverlayPanelControllerTests`
+
+Expected: 新增交互测试通过。
+
+**Step 5: 运行完整测试**
+
+Run: `swift test`
+
+Expected: 全量测试通过；如有跳过测试，记录原因。
+
+**Step 6: 手工验证**
+
+Run: `zsh scripts/launch-dev-app.sh`
+
+验证：
+
+- hover 到外接屏小胶囊时仍会自动展开
+- 但在 hover 延迟内按下并拖动时，不会再触发展开动画
+- 按住不动并松手时仍按点击打开处理
+
+**Step 7: 提交**
+
+```bash
+git add Sources/OpenIslandApp/OverlayPanelController.swift \
+  Sources/OpenIslandApp/OverlayUICoordinator.swift \
+  Tests/OpenIslandAppTests/OverlayPanelControllerTests.swift \
+  docs/plans/2026-04-09-external-display-shell-split-design.md \
+  docs/plans/2026-04-09-external-display-shell-split.md
+git commit -m "fix: suppress hover open during top-bar drag press"
+```
