@@ -111,9 +111,11 @@ struct OverlayPanelControllerTests {
     }
 
     @Test
-    func islandClosedHeightFallsBackToMenuBarHeightOnNonNotchScreen() {
-        // Non-notch screen: safeAreaInsets.top == 0, fall back to topStatusBarHeight.
+    func islandClosedHeightFallsBackToCompactPillOnNonNotchScreen() {
+        // Non-notch screen: safeAreaInsets.top == 0, use a compact 22pt pill height.
+        // The closed pill only shows an icon + count badge so it doesn't need the
+        // full menu-bar strip height.
         let height = NSScreen.computeIslandClosedHeight(safeAreaInsetsTop: 0, topStatusBarHeight: 24)
-        #expect(height == 24)
+        #expect(height == 22)
     }
 }
