@@ -880,6 +880,15 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
             return nil
         }
 
+        // On external displays in closed state, take over hit testing so our
+        // mouseDown override (drag vs click) runs instead of SwiftUI's inner
+        // NSHostingView subtree swallowing the event. Without this, tapping
+        // the pill lands on a SwiftUI-managed subview and mouseDown never
+        // bubbles up to NotchHostingView.
+        if controller.canDragPillNow() {
+            return self
+        }
+
         return super.hitTest(point) ?? self
     }
 
@@ -989,7 +998,12 @@ final class NotchEventMonitors {
 extension NSScreen {
     var notchSize: CGSize {
         guard safeAreaInsets.top > 0 else {
-            return CGSize(width: 180, height: topStatusBarHeight)
+            // Non-notch screen: render a compact pill rather than mimicking
+            // a physical notch. 120pt wide is small enough to stay out of
+            // the way on external displays while still being a comfortable
+            // hover/click target. Height tracks the system menu-bar so the
+            // hit-test rect aligns with the visible pill.
+            return CGSize(width: 120, height: topStatusBarHeight)
         }
 
         let notchHeight = safeAreaInsets.top
