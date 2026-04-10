@@ -243,13 +243,20 @@ final class ProcessMonitoringCoordinator {
         let sessions = state.sessions
 
         // Codex and Qwen sessions: match by session ID directly.
-        let directMatchProcessIDs = Set(
+        let codexProcessIDs = Set(
             activeProcesses
-                .filter { $0.tool == .codex || $0.tool == .qwenCode }
+                .filter { $0.tool == .codex }
                 .compactMap(\.sessionID)
         )
-        for session in sessions where (session.tool == .codex || session.tool == .qwenCode) && !session.isDemoSession {
-            if directMatchProcessIDs.contains(session.id) {
+        let qwenProcessIDs = Set(
+            activeProcesses
+                .filter { $0.tool == .qwenCode }
+                .compactMap(\.sessionID)
+        )
+        for session in sessions where !session.isDemoSession {
+            if session.tool == .codex, codexProcessIDs.contains(session.id) {
+                aliveIDs.insert(session.id)
+            } else if session.tool == .qwenCode, qwenProcessIDs.contains(where: { session.id.hasSuffix($0) }) {
                 aliveIDs.insert(session.id)
             }
         }
