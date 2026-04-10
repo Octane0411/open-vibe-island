@@ -37,70 +37,25 @@ ssh "$REMOTE" "chmod +x ~/$REMOTE_BIN_DIR/open-island-hooks.py"
 
 echo ""
 echo "==> Configuring Claude Code hooks on $REMOTE ..."
-# Build the hooks JSON fragment
-HOOKS_JSON=$(cat <<'ENDJSON'
+# Build the hooks JSON fragment.
+# Use the *local* UID in the socket path so the remote hook connects to the
+# forwarded socket created by the local Open Island app.  The heredoc is
+# unquoted so that $SOCKET_NAME is expanded.
+HOOK_CMD="OPEN_ISLAND_SOCKET_PATH=/tmp/$SOCKET_NAME python3 ~/.local/bin/open-island-hooks.py --source claude"
+HOOK_ENTRY="{\"matcher\": \"\", \"hooks\": [{\"type\": \"command\", \"command\": \"$HOOK_CMD\"}]}"
+HOOKS_JSON=$(cat <<ENDJSON
 {
   "hooks": {
-    "PreToolUse": [
-      {
-        "type": "command",
-        "command": "python3 ~/.local/bin/open-island-hooks.py --source claude"
-      }
-    ],
-    "PostToolUse": [
-      {
-        "type": "command",
-        "command": "python3 ~/.local/bin/open-island-hooks.py --source claude"
-      }
-    ],
-    "Notification": [
-      {
-        "type": "command",
-        "command": "python3 ~/.local/bin/open-island-hooks.py --source claude"
-      }
-    ],
-    "SessionStart": [
-      {
-        "type": "command",
-        "command": "python3 ~/.local/bin/open-island-hooks.py --source claude"
-      }
-    ],
-    "SessionEnd": [
-      {
-        "type": "command",
-        "command": "python3 ~/.local/bin/open-island-hooks.py --source claude"
-      }
-    ],
-    "Stop": [
-      {
-        "type": "command",
-        "command": "python3 ~/.local/bin/open-island-hooks.py --source claude"
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "type": "command",
-        "command": "python3 ~/.local/bin/open-island-hooks.py --source claude"
-      }
-    ],
-    "PermissionRequest": [
-      {
-        "type": "command",
-        "command": "python3 ~/.local/bin/open-island-hooks.py --source claude"
-      }
-    ],
-    "SubagentStart": [
-      {
-        "type": "command",
-        "command": "python3 ~/.local/bin/open-island-hooks.py --source claude"
-      }
-    ],
-    "SubagentStop": [
-      {
-        "type": "command",
-        "command": "python3 ~/.local/bin/open-island-hooks.py --source claude"
-      }
-    ]
+    "PreToolUse": [$HOOK_ENTRY],
+    "PostToolUse": [$HOOK_ENTRY],
+    "Notification": [$HOOK_ENTRY],
+    "SessionStart": [$HOOK_ENTRY],
+    "SessionEnd": [$HOOK_ENTRY],
+    "Stop": [$HOOK_ENTRY],
+    "UserPromptSubmit": [$HOOK_ENTRY],
+    "PermissionRequest": [$HOOK_ENTRY],
+    "SubagentStart": [$HOOK_ENTRY],
+    "SubagentStop": [$HOOK_ENTRY]
   }
 }
 ENDJSON

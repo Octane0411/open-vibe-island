@@ -676,7 +676,7 @@ public extension ClaudeHookPayload {
 
     var defaultJumpTarget: JumpTarget {
         JumpTarget(
-            terminalApp: terminalApp ?? "Terminal",
+            terminalApp: terminalApp ?? "Unknown",
             workspaceName: workspaceName,
             paneTitle: terminalTitle ?? "Claude \(sessionID.prefix(8))",
             workingDirectory: cwd,
@@ -1111,6 +1111,10 @@ public extension ClaudeHookPayload {
             return "Ghostty"
         }
 
+        if environment["WARP_IS_LOCAL_SHELL_SESSION"] != nil {
+            return "Warp"
+        }
+
         let termProgram = environment["TERM_PROGRAM"]?.lowercased()
         switch termProgram {
         case .some("apple_terminal"):
@@ -1122,6 +1126,8 @@ public extension ClaudeHookPayload {
             // CMUX_WORKSPACE_ID / CMUX_SOCKET_PATH, so reaching here means
             // genuine Ghostty.
             return "Ghostty"
+        case let value? where value.contains("warp"):
+            return "Warp"
         case .some("kaku"):
             return "Kaku"
         case .some("wezterm"):

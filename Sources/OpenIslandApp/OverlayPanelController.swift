@@ -280,6 +280,12 @@ final class OverlayPanelController {
         let item = DispatchWorkItem { [weak self] in
             guard let self, let model = self.model else { return }
             if model.notchStatus == .closed {
+                if model.hapticFeedbackEnabled {
+                    NSHapticFeedbackManager.defaultPerformer.perform(
+                        NSHapticFeedbackManager.FeedbackPattern.alignment,
+                        performanceTime: .now
+                    )
+                }
                 model.notchOpen(reason: .hover)
             }
             self.hoverTimer = nil

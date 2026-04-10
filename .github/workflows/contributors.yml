@@ -1,0 +1,39 @@
+name: Update contributors image
+
+on:
+  schedule:
+    - cron: '0 0 * * 1'  # every Monday
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  update-contributors:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update contrib.rocks cache-bust timestamp
+        run: |
+          TIMESTAMP=$(date +%s)
+          for file in README.md README.zh-CN.md; do
+            sed -i "s|contrib.rocks/image?repo=Octane0411/open-vibe-island&t=[0-9]*|contrib.rocks/image?repo=Octane0411/open-vibe-island\&t=${TIMESTAMP}|g" "$file"
+          done
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md README.zh-CN.md
+          git commit -m "chore: refresh contributors image cache"
+          git push

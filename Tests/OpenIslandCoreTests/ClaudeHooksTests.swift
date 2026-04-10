@@ -155,6 +155,46 @@ struct ClaudeHooksTests {
     }
 
     @Test
+    func claudeInferTerminalAppRecognizesWarpViaEnvVar() {
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: ["WARP_IS_LOCAL_SHELL_SESSION": "1"],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+        )
+
+        #expect(payload.terminalApp == "Warp")
+    }
+
+    @Test
+    func claudeInferTerminalAppRecognizesWarpViaTermProgram() {
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: ["TERM_PROGRAM": "WarpTerminal"],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+        )
+
+        #expect(payload.terminalApp == "Warp")
+    }
+
+    @Test
+    func claudeDefaultJumpTargetUsesUnknownSentinelForUnrecognizedTerminal() {
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: ["TERM_PROGRAM": "rio"],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+        )
+
+        #expect(payload.terminalApp == nil)
+        #expect(payload.defaultJumpTarget.terminalApp == "Unknown")
+    }
+
+    @Test
     func claudePermissionRequestReturnsAllowDirectiveAfterApproval() async throws {
         let socketURL = BridgeSocketLocation.uniqueTestURL()
         let server = BridgeServer(socketURL: socketURL)

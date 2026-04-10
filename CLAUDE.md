@@ -31,8 +31,9 @@ Restore cached sessions from registry → discover recent JSONL transcripts (`~/
 
 ## Supported scope (narrow by design)
 
-- **Agents**: Codex (fully wired), Claude Code (hook-based integration)
-- **Terminals**: Terminal.app, Ghostty
+- **Agents**: Claude Code, Codex, OpenCode, Cursor, Qoder, Qwen Code, Factory, CodeBuddy
+- **Terminals**: Terminal.app, Ghostty, iTerm2, WezTerm, cmux, Kaku, Zellij; tmux (multiplexer)
+- **IDE workspace jump**: VS Code, Cursor, Windsurf, Trae, JetBrains IDEs
 - Do NOT expand scope unless explicitly asked
 
 ## Build & test
@@ -105,7 +106,7 @@ Open `Package.swift` in Xcode for the app target. Requires macOS 14+, Swift 6.2.
 - Official product reference: `https://vibeisland.app/`
 - On Macs with a built-in notch, the island sits in the notch area; on external displays or non-notch Macs, it falls back to a compact top-center bar.
 - Community reference: `https://github.com/farouqaldori/claude-island` — useful for design patterns, not a product spec.
-- Do NOT import from `claude-island` unless explicitly asked: analytics (Mixpanel etc.), window-manager scope (`tmux`, `yabai`), Claude-only assumptions that weaken the shared agent model.
+- Do NOT import from `claude-island` unless explicitly asked: analytics (Mixpanel etc.), window-manager scope (`yabai`), Claude-only assumptions that weaken the shared agent model, raising the support boundary beyond the surfaces already listed.
 
 ## Conventions
 

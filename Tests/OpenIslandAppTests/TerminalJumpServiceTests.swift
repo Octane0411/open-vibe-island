@@ -173,6 +173,39 @@ final class TerminalJumpServiceTests: XCTestCase {
         XCTAssertEqual(result, "Focused the matching Cursor workspace.")
         XCTAssertTrue(openedArguments.values.isEmpty)
     }
+
+    func testUnknownTerminalAppFallsBackToFinderInsteadOfFirstInstalledTerminal() throws {
+        let openedArguments = OpenedArgumentsBox()
+        // Pretend iTerm is installed. Without the "unknown" guard in
+        // resolveTerminalApp, the silent "first installed known app" fallback
+        // would return iTerm's descriptor and the cwd would end up being opened
+        // via `open -b com.googlecode.iterm2 /path` (wrong terminal).
+        let service = TerminalJumpService(
+            applicationResolver: { bundleIdentifier in
+                bundleIdentifier == "com.googlecode.iterm2" ? URL(fileURLWithPath: "/Applications/iTerm.app") : nil
+            },
+            appRunningChecker: { _ in false },
+            openAction: { arguments in
+                openedArguments.values.append(arguments)
+            },
+            appleScriptRunner: { _ in "" }
+        )
+
+        let result = try service.jump(
+            to: JumpTarget(
+                terminalApp: "Unknown",
+                workspaceName: "my-project",
+                paneTitle: "",
+                workingDirectory: "/tmp"
+            )
+        )
+
+        XCTAssertEqual(openedArguments.values, [["/tmp"]])
+        XCTAssertTrue(
+            result.contains("Finder"),
+            "Expected Finder fallback, got: \(result)"
+        )
+    }
 }
 
 private struct LiveGhosttyTerminal: Equatable {

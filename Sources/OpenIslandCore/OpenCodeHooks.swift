@@ -187,7 +187,7 @@ public extension OpenCodeHookPayload {
 
     var defaultJumpTarget: JumpTarget {
         JumpTarget(
-            terminalApp: terminalApp ?? "Terminal",
+            terminalApp: terminalApp ?? "Unknown",
             workspaceName: workspaceName,
             paneTitle: terminalTitle ?? "OpenCode \(sessionID.prefix(8))",
             workingDirectory: cwd,

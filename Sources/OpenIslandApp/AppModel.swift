@@ -15,6 +15,7 @@ final class AppModel {
     private static let islandApprovalColorDefaultsKey = "display.island.approvalColor"
     private static let islandAnswerColorDefaultsKey = "display.island.answerColor"
     private static let islandCompletedColorDefaultsKey = "display.island.completedColor"
+    private static let hapticFeedbackEnabledDefaultsKey = "app.hapticFeedbackEnabled"
     private static let syntheticClaudeSessionPrefix = "claude-process:"
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
     private static let jumpOverlayDismissLeadTime: Duration = .milliseconds(20)
@@ -179,6 +180,12 @@ final class AppModel {
             }
         }
     }
+    var hapticFeedbackEnabled: Bool = false {
+        didSet {
+            guard hasFinishedInit, hapticFeedbackEnabled != oldValue else { return }
+            UserDefaults.standard.set(hapticFeedbackEnabled, forKey: Self.hapticFeedbackEnabledDefaultsKey)
+        }
+    }
     var isSoundMuted = false {
         didSet {
             guard isSoundMuted != oldValue else {
@@ -284,7 +291,10 @@ final class AppModel {
         }
     ) {
         self.terminalJumpAction = terminalJumpAction
-        UserDefaults.standard.register(defaults: [Self.showDockIconDefaultsKey: true])
+        UserDefaults.standard.register(defaults: [
+            Self.showDockIconDefaultsKey: true,
+            Self.hapticFeedbackEnabledDefaultsKey: false,
+        ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
         showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
@@ -302,6 +312,7 @@ final class AppModel {
             .normalizedHexColorString ?? Self.defaultIslandStatusColorHex[.waitingForAnswer] ?? "#FFD95A"
         completedStatusColorHex = UserDefaults.standard.string(forKey: Self.islandCompletedColorDefaultsKey)?
             .normalizedHexColorString ?? Self.defaultIslandStatusColorHex[.completed] ?? "#42E86B"
+        hapticFeedbackEnabled = UserDefaults.standard.bool(forKey: Self.hapticFeedbackEnabledDefaultsKey)
 
         overlay.appModel = self
         overlay.restoreDisplayPreference()
@@ -938,6 +949,12 @@ final class AppModel {
             .resolvePermission(sessionID: session.id, resolution: resolution),
             userMessage: message
         )
+    }
+
+    func dismissSession(_ sessionID: String) {
+        state.dismissSession(id: sessionID)
+        dismissNotificationSurfaceIfPresent(for: sessionID)
+        synchronizeSelection()
     }
 
     func answerQuestion(for sessionID: String, answer: QuestionPromptResponse) {

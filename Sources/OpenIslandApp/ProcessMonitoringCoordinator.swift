@@ -385,7 +385,9 @@ final class ProcessMonitoringCoordinator {
                 workspaceName: workspaceName,
                 paneTitle: "Claude \(workspaceName)",
                 workingDirectory: workingDirectory,
-                terminalTTY: process.terminalTTY
+                terminalTTY: process.terminalTTY,
+                tmuxTarget: process.tmuxTarget,
+                tmuxSocketPath: process.tmuxSocketPath
             )
         )
         session.isProcessAlive = true

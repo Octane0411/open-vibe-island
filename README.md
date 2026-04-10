@@ -52,7 +52,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 
 **8 agents**: Claude Code, Codex, Cursor, OpenCode, Qoder, Qwen Code, Factory, CodeBuddy
 
-**14+ terminals & IDEs**: Terminal.app, Ghostty, iTerm2, WezTerm, Zellij, cmux, Kaku, VS Code, Cursor, Windsurf, Trae, JetBrains IDEs (IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover)
+**15+ terminals & IDEs**: Terminal.app, Ghostty, iTerm2, WezTerm, Zellij, tmux, cmux, Kaku, VS Code, Cursor, Windsurf, Trae, JetBrains IDEs (IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover)
 
 <details>
 <summary>Full compatibility table</summary>
@@ -81,6 +81,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 | **Kaku** | Full | Jump-back via CLI pane targeting |
 | **WezTerm** | Full | Jump-back via CLI pane targeting |
 | **iTerm2** | Full | Jump-back with session ID / TTY matching |
+| **tmux** (multiplexer) | Full | Jump-back with session/window/pane targeting |
 | **Zellij** | Full | Jump-back via CLI pane/tab targeting |
 | **VS Code** | Workspace | Activate workspace via `code` CLI |
 | **Cursor** | Workspace | Activate workspace via `cursor` CLI |
@@ -216,7 +217,9 @@ Repository: Octane0411/open-vibe-island
 ## Contributors
 
 <a href="https://github.com/Octane0411/open-vibe-island/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=Octane0411/open-vibe-island" />
+  <!-- CONTRIBUTORS-IMG:START -->
+  <img src="https://contrib.rocks/image?repo=Octane0411/open-vibe-island&t=1744300800" />
+  <!-- CONTRIBUTORS-IMG:END -->
 </a>
 
 ---

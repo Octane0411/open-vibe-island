@@ -83,6 +83,7 @@ Terminal focus restoration is implemented per-terminal:
 | Kaku | CLI pane targeting |
 | WezTerm | CLI pane targeting |
 | iTerm2 | AppleScript session/TTY probe |
+| tmux (multiplexer) | switch-client → select-window → select-pane |
 
 The hook helper enriches payloads with terminal-local hints (terminal app, TTY, session ID, window title) from environment inspection at hook invocation time.
 

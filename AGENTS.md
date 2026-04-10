@@ -56,10 +56,11 @@ See [docs/worktree-workflow.md](/Users/wangruobing/Personal/open-island/docs/wor
 
 ## Reproduction Scope
 
-- Reproduction work is currently limited to these four surfaces only: `Claude Code`, `Codex`, `Terminal.app`, and `Ghostty`.
-- Treat those four surfaces as the only supported product boundary for now.
-- Do not count partial or experimental code paths for other terminals or agents as supported scope.
-- Do not broaden the reproduction scope to other tools, runtimes, platforms, or environments unless the user explicitly asks to expand it.
+- Supported agents: `Claude Code`, `Codex`, `OpenCode`, `Cursor`, `Qoder`, `Qwen Code`, `Factory`, `CodeBuddy`.
+- Supported terminals: `Terminal.app`, `Ghostty`, `iTerm2`, `WezTerm`, `cmux`, `Kaku`, `Zellij`; `tmux` (multiplexer).
+- IDE workspace jump: `VS Code`, `Cursor`, `Windsurf`, `Trae`, `JetBrains IDEs`.
+- Treat these surfaces as the supported product boundary. See `docs/product.md` for the canonical list.
+- Do not broaden the scope to other tools, runtimes, platforms, or environments unless the user explicitly asks to expand it.
 
 ## App Targets And Naming
 
@@ -88,7 +89,7 @@ See [docs/worktree-workflow.md](/Users/wangruobing/Personal/open-island/docs/wor
 - Do not treat `claude-island` as a product spec. It is a reference implementation, not the source of truth for Open Island.
 - Unless the user explicitly asks, do not import or prioritize these `claude-island` choices into this repository:
   - Mixpanel or other analytics
-  - `tmux`, `yabai`, or window-manager-specific scope expansion
+  - `yabai` or window-manager-specific scope expansion
   - Claude-only assumptions that weaken the shared agent model
   - raising the repository support boundary beyond the surfaces already listed above
 

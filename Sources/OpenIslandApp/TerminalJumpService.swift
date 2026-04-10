@@ -172,6 +172,45 @@ struct TerminalJumpService {
     }
 
     func jump(to target: JumpTarget) throws -> String {
+        // tmux sessions: switch pane first, then use the terminal-specific
+        // jump to focus the correct window/tab (not just activate the app).
+        if let tmuxTarget = target.tmuxTarget, !tmuxTarget.isEmpty {
+            let paneSelected = jumpToTmuxPane(target)
+
+            let descriptor = resolveTerminalApp(preferredName: target.terminalApp)
+
+            // Use the full terminal-specific jump (AppleScript for Ghostty/iTerm,
+            // CLI for WezTerm, etc.) to focus the correct window/tab.
+            if let descriptor {
+                switch descriptor.bundleIdentifier {
+                case "com.mitchellh.ghostty":
+                    if try jumpToGhosttyTerminal(target) {
+                        return "Focused the matching tmux pane in Ghostty."
+                    }
+                case "com.googlecode.iterm2":
+                    if try jumpToITermSession(target) {
+                        return "Focused the matching tmux pane in iTerm."
+                    }
+                case "com.apple.Terminal":
+                    if try jumpToTerminalTab(target) {
+                        return "Focused the matching tmux pane in Terminal."
+                    }
+                default:
+                    break
+                }
+
+                // Fallback: at least activate the app
+                try openAction(["-b", descriptor.bundleIdentifier])
+                return paneSelected
+                    ? "Focused the matching tmux pane and activated \(descriptor.displayName)."
+                    : "Activated \(descriptor.displayName). tmux pane targeting failed."
+            }
+
+            if paneSelected {
+                return "Focused the matching tmux pane."
+            }
+        }
+
         let descriptor = resolveTerminalApp(preferredName: target.terminalApp)
         let hasWorkingDirectory = target.workingDirectory.map { FileManager.default.fileExists(atPath: $0) } ?? false
         let hasPreciseLocator = [target.terminalSessionID, target.terminalTTY].contains {
@@ -411,6 +450,116 @@ struct TerminalJumpService {
         }
 
         return nil
+    }
+
+    // MARK: - Tmux CLI-based jump
+
+    private func jumpToTmuxPane(_ target: JumpTarget) -> Bool {
+        guard let tmuxTarget = target.tmuxTarget, !tmuxTarget.isEmpty else {
+            return false
+        }
+
+        guard let tmuxPath = resolveTmuxPath() else {
+            return false
+        }
+
+        // tmuxTarget is "session:window.pane" (e.g. "oss-contributions:3.0")
+        // When running from a macOS GUI app (outside tmux), there is no
+        // "current client" — $TMUX is not set. We must explicitly find the
+        // client TTY and pass it via -c to switch-client.
+
+        func socketArgs() -> [String] {
+            if let socketPath = target.tmuxSocketPath, !socketPath.isEmpty {
+                return ["-S", socketPath]
+            }
+            return []
+        }
+
+        // Extract "session:window" and "session" from "session:window.pane"
+        let sessionWindow: String
+        if let dotIndex = tmuxTarget.lastIndex(of: ".") {
+            sessionWindow = String(tmuxTarget[tmuxTarget.startIndex..<dotIndex])
+        } else {
+            sessionWindow = tmuxTarget
+        }
+
+        let sessionName: String
+        if let colonIndex = tmuxTarget.firstIndex(of: ":") {
+            sessionName = String(tmuxTarget[tmuxTarget.startIndex..<colonIndex])
+        } else {
+            sessionName = tmuxTarget
+        }
+
+        // Find the client TTY so we can explicitly target it with switch-client.
+        let clientTTY = runTmuxCommand(tmuxPath: tmuxPath, socketArgs: socketArgs(),
+                                       args: ["list-clients", "-F", "#{client_tty}"])?
+            .components(separatedBy: "\n").first { !$0.isEmpty }
+
+        // Step 1: switch-client — point the client at the target session.
+        if let clientTTY = clientTTY {
+            _ = runTmuxCommand(tmuxPath: tmuxPath, socketArgs: socketArgs(),
+                               args: ["switch-client", "-c", clientTTY, "-t", sessionName])
+        }
+
+        // Step 2: select-window — switch to the correct window.
+        _ = runTmuxCommand(tmuxPath: tmuxPath, socketArgs: socketArgs(),
+                           args: ["select-window", "-t", sessionWindow])
+
+        // Step 3: select-pane — focus the exact pane.
+        let spResult = runTmuxCommand(tmuxPath: tmuxPath, socketArgs: socketArgs(),
+                                      args: ["select-pane", "-t", tmuxTarget])
+
+        return spResult != nil
+    }
+
+    /// Run a tmux command and return its stdout (nil on failure).
+    /// Uses the same direct-exec pattern as ActiveAgentProcessDiscovery.commandOutput.
+    private func runTmuxCommand(tmuxPath: String, socketArgs: [String], args: [String]) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: tmuxPath)
+        process.arguments = socketArgs + args
+
+        let outPipe = Pipe()
+        process.standardOutput = outPipe
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            guard process.terminationStatus == 0 else { return nil }
+
+            return String(data: outPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        } catch {
+            return nil
+        }
+    }
+
+    private func resolveTmuxPath() -> String? {
+        let candidates = [
+            "/opt/homebrew/bin/tmux",
+            "/usr/local/bin/tmux",
+            "/usr/bin/tmux",
+        ]
+
+        if let found = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
+            return found
+        }
+
+        // Fallback to 'which'
+        let whichTask = Process()
+        whichTask.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+        whichTask.arguments = ["tmux"]
+        let pipe = Pipe()
+        whichTask.standardOutput = pipe
+        whichTask.standardError = FileHandle.nullDevice
+        guard (try? whichTask.run()) != nil else { return nil }
+        whichTask.waitUntilExit()
+        guard whichTask.terminationStatus == 0 else { return nil }
+        let path = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return path.isEmpty ? nil : path
     }
 
     // MARK: - Zellij CLI-based jump
@@ -853,6 +1002,15 @@ struct TerminalJumpService {
         let normalized = preferredName
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
+
+        // "Unknown" is the hook-side sentinel meaning "we could not classify this
+        // terminal". Returning nil here lets jump() fall through to the Finder
+        // cwd fallback instead of silently activating the first installed
+        // known terminal — the historical behavior that caused Warp sessions to
+        // open Terminal.app (or worse, iTerm) windows.
+        if normalized == "unknown" {
+            return nil
+        }
 
         if let exact = Self.knownApps.first(where: { descriptor in
             descriptor.displayName.lowercased() == normalized || descriptor.aliases.contains(normalized)

@@ -24,6 +24,7 @@
 "settings.general.autoHideNoSessions" = "Auto-hide without active sessions";
 "settings.general.autoCollapse" = "Auto-collapse on mouse exit";
 "settings.general.showDockIcon" = "Show icon in Dock";
+"settings.general.hapticFeedback" = "Haptic feedback on hover";
 "settings.general.cliHooks" = "CLI Hooks";
 "settings.general.activated" = "Activated";
 "settings.general.install" = "Install";

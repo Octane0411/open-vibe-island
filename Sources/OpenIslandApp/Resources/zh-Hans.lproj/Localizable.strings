@@ -24,6 +24,7 @@
 "settings.general.autoHideNoSessions" = "无活跃会话时自动隐藏";
 "settings.general.autoCollapse" = "鼠标离开时自动收起";
 "settings.general.showDockIcon" = "在 Dock 中显示图标";
+"settings.general.hapticFeedback" = "悬停时震动反馈";
 "settings.general.cliHooks" = "CLI Hooks";
 "settings.general.activated" = "已激活";
 "settings.general.install" = "安装";
