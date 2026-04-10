@@ -172,6 +172,12 @@ struct TerminalJumpService {
     }
 
     func jump(to target: JumpTarget) throws -> String {
+        // Native app mode: activate the app directly via bundle ID.
+        // This is simpler and more reliable than terminal-specific tab matching.
+        if let bundleID = target.appBundleID {
+            return try jumpToNativeApp(bundleID: bundleID, displayName: target.terminalApp)
+        }
+
         let descriptor = resolveTerminalApp(preferredName: target.terminalApp)
         let hasWorkingDirectory = target.workingDirectory.map { FileManager.default.fileExists(atPath: $0) } ?? false
         let hasPreciseLocator = [target.terminalSessionID, target.terminalTTY].contains {
@@ -847,6 +853,17 @@ struct TerminalJumpService {
         } catch {
             return false
         }
+    }
+
+    private func jumpToNativeApp(bundleID: String, displayName: String) throws -> String {
+        guard appRunningChecker(bundleID) else {
+            // App is not running — try launching it.
+            try openAction(["-b", bundleID])
+            return "Launched \(displayName)."
+        }
+
+        try openAction(["-b", bundleID])
+        return "Activated \(displayName)."
     }
 
     private func resolveTerminalApp(preferredName: String) -> TerminalAppDescriptor? {

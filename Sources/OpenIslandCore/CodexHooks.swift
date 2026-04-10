@@ -263,8 +263,28 @@ public extension CodexHookPayload {
         "Codex · \(workspaceName)"
     }
 
+    /// The Codex native app bundle identifier.
+    static let codexAppBundleID = "com.openai.codex"
+
+    /// Whether this payload originates from the Codex native app rather than
+    /// the CLI running inside a terminal. When all terminal context fields are
+    /// nil, we assume the hook was invoked by the standalone app.
+    var isNativeAppMode: Bool {
+        terminalApp == nil && terminalTTY == nil && terminalSessionID == nil
+    }
+
     var defaultJumpTarget: JumpTarget {
-        JumpTarget(
+        if isNativeAppMode {
+            return JumpTarget(
+                terminalApp: "Codex",
+                workspaceName: workspaceName,
+                paneTitle: "Codex \(sessionID.prefix(8))",
+                workingDirectory: cwd,
+                appBundleID: Self.codexAppBundleID
+            )
+        }
+
+        return JumpTarget(
             terminalApp: terminalApp ?? "Terminal",
             workspaceName: workspaceName,
             paneTitle: terminalTitle ?? "Codex \(sessionID.prefix(8))",

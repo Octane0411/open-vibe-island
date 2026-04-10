@@ -61,11 +61,9 @@ struct ActiveAgentProcessDiscovery {
         var claimedKeys: Set<String> = []
 
         for process in processes {
-            guard process.terminalTTY != nil else {
-                continue
-            }
-
-            if isCodexProcess(command: process.command) {
+            // Codex can run as a native app (no TTY), so check it before the
+            // TTY filter. CLI-based agents still require a terminal.
+            if isCodexProcess(command: process.command) || isCodexNativeAppProcess(command: process.command) {
                 guard let snapshot = codexSnapshot(for: process, processesByPID: processesByPID) else {
                     continue
                 }
@@ -76,6 +74,10 @@ struct ActiveAgentProcessDiscovery {
                 }
 
                 snapshots.append(snapshot)
+                continue
+            }
+
+            guard process.terminalTTY != nil else {
                 continue
             }
 
@@ -456,6 +458,12 @@ struct ActiveAgentProcessDiscovery {
         return firstToken == "codex"
             || firstToken.hasSuffix("/codex")
             || lowered.contains("/codex/codex")
+    }
+
+    /// Detect Codex running as a native macOS app bundle.
+    private func isCodexNativeAppProcess(command: String) -> Bool {
+        let lowered = command.lowercased()
+        return lowered.contains("/codex.app/contents/")
     }
 
     private func isOpenCodeProcess(command: String) -> Bool {

@@ -148,6 +148,12 @@ struct TerminalSessionAttachmentProbe {
         let terminalSessions = sessions.filter { normalizedTerminalName(for: $0.jumpTarget?.terminalApp) == "terminal" }
         let itermSessions = sessions.filter { normalizedTerminalName(for: $0.jumpTarget?.terminalApp) == "iterm" }
         let ambiguousSessions = sessions.filter { session in
+            // Native app sessions (e.g. Codex desktop app) are not backed by a
+            // terminal — they should never participate in terminal snapshot matching.
+            if session.jumpTarget?.isNativeApp == true {
+                return false
+            }
+
             guard let terminalName = normalizedTerminalName(for: session.jumpTarget?.terminalApp) else {
                 return true
             }

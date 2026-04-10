@@ -118,6 +118,9 @@ public struct JumpTarget: Equatable, Codable, Sendable {
     public var workingDirectory: String?
     public var terminalSessionID: String?
     public var terminalTTY: String?
+    /// Bundle identifier of a native app to activate instead of a terminal.
+    /// When set, jump-back activates this app directly via NSWorkspace.
+    public var appBundleID: String?
 
     public init(
         terminalApp: String,
@@ -125,7 +128,8 @@ public struct JumpTarget: Equatable, Codable, Sendable {
         paneTitle: String,
         workingDirectory: String? = nil,
         terminalSessionID: String? = nil,
-        terminalTTY: String? = nil
+        terminalTTY: String? = nil,
+        appBundleID: String? = nil
     ) {
         self.terminalApp = terminalApp
         self.workspaceName = workspaceName
@@ -133,6 +137,12 @@ public struct JumpTarget: Equatable, Codable, Sendable {
         self.workingDirectory = workingDirectory
         self.terminalSessionID = terminalSessionID
         self.terminalTTY = terminalTTY
+        self.appBundleID = appBundleID
+    }
+
+    /// Whether this jump target points to a native macOS app rather than a terminal.
+    public var isNativeApp: Bool {
+        appBundleID != nil
     }
 }
 
