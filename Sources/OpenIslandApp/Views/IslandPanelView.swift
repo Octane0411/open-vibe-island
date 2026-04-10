@@ -248,9 +248,11 @@ struct IslandPanelView: View {
 
     @ViewBuilder
     private func notchContent(availableSize: CGSize) -> some View {
-        // Window is always at opened size — use opened insets unconditionally.
-        let panelShadowHorizontalInset = IslandChromeMetrics.openedShadowHorizontalInset
-        let panelShadowBottomInset = IslandChromeMetrics.openedShadowBottomInset
+        let panelShadowInsets = IslandChromeMetrics.panelShadowInsets(
+            usesOpenedVisualState: usesOpenedVisualState
+        )
+        let panelShadowHorizontalInset = panelShadowInsets.horizontal
+        let panelShadowBottomInset = panelShadowInsets.bottom
         let layoutWidth = max(0, availableSize.width - (panelShadowHorizontalInset * 2))
         let layoutHeight = max(0, availableSize.height - panelShadowBottomInset)
 
