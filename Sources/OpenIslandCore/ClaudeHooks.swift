@@ -484,8 +484,8 @@ public struct ClaudePreToolUseDirective: Equatable, Codable, Sendable {
 }
 
 public enum ClaudePermissionRequestDecision: Equatable, Codable, Sendable {
-    case allow(updatedInput: ClaudeHookJSONValue? = nil, updatedPermissions: [ClaudePermissionUpdate] = [])
-    case deny(message: String? = nil, interrupt: Bool = false)
+    case allow(updatedInput: ClaudeHookJSONValue? = nil, updatedPermissions: [ClaudePermissionUpdate] = [], additionalContext: String? = nil)
+    case deny(message: String? = nil, interrupt: Bool = false, additionalContext: String? = nil)
 
     private enum CodingKeys: String, CodingKey {
         case behavior
@@ -493,6 +493,7 @@ public enum ClaudePermissionRequestDecision: Equatable, Codable, Sendable {
         case updatedPermissions
         case message
         case interrupt
+        case additionalContext
     }
 
     private enum Behavior: String, Codable {
@@ -503,17 +504,20 @@ public enum ClaudePermissionRequestDecision: Equatable, Codable, Sendable {
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let behavior = try container.decode(Behavior.self, forKey: .behavior)
+        let additionalContext = try container.decodeIfPresent(String.self, forKey: .additionalContext)
 
         switch behavior {
         case .allow:
             self = .allow(
                 updatedInput: try container.decodeIfPresent(ClaudeHookJSONValue.self, forKey: .updatedInput),
-                updatedPermissions: try container.decodeIfPresent([ClaudePermissionUpdate].self, forKey: .updatedPermissions) ?? []
+                updatedPermissions: try container.decodeIfPresent([ClaudePermissionUpdate].self, forKey: .updatedPermissions) ?? [],
+                additionalContext: additionalContext
             )
         case .deny:
             self = .deny(
                 message: try container.decodeIfPresent(String.self, forKey: .message),
-                interrupt: try container.decodeIfPresent(Bool.self, forKey: .interrupt) ?? false
+                interrupt: try container.decodeIfPresent(Bool.self, forKey: .interrupt) ?? false,
+                additionalContext: additionalContext
             )
         }
     }
@@ -522,18 +526,20 @@ public enum ClaudePermissionRequestDecision: Equatable, Codable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
 
         switch self {
-        case let .allow(updatedInput, updatedPermissions):
+        case let .allow(updatedInput, updatedPermissions, additionalContext):
             try container.encode(Behavior.allow, forKey: .behavior)
             try container.encodeIfPresent(updatedInput, forKey: .updatedInput)
             if !updatedPermissions.isEmpty {
                 try container.encode(updatedPermissions, forKey: .updatedPermissions)
             }
-        case let .deny(message, interrupt):
+            try container.encodeIfPresent(additionalContext, forKey: .additionalContext)
+        case let .deny(message, interrupt, additionalContext):
             try container.encode(Behavior.deny, forKey: .behavior)
             try container.encodeIfPresent(message, forKey: .message)
             if interrupt {
                 try container.encode(true, forKey: .interrupt)
             }
+            try container.encodeIfPresent(additionalContext, forKey: .additionalContext)
         }
     }
 }

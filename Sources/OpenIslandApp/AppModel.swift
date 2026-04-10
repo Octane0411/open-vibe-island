@@ -744,12 +744,12 @@ final class AppModel {
         }
     }
 
-    func approvePermission(for sessionID: String, approved: Bool) {
+    func approvePermission(for sessionID: String, approved: Bool, additionalContext: String? = nil) {
         guard let session = state.session(id: sessionID) else {
             return
         }
 
-        let resolution = permissionResolution(for: approved)
+        let resolution = permissionResolution(for: approved, additionalContext: additionalContext)
         dismissNotificationSurfaceIfPresent(for: sessionID)
         state.resolvePermission(sessionID: session.id, resolution: resolution)
         synchronizeSelection()
@@ -763,7 +763,7 @@ final class AppModel {
         )
     }
 
-    func approvePermission(for sessionID: String, action: ApprovalAction) {
+    func approvePermission(for sessionID: String, action: ApprovalAction, additionalContext: String? = nil) {
         guard let session = state.session(id: sessionID) else {
             return
         }
@@ -773,13 +773,13 @@ final class AppModel {
 
         switch action {
         case .deny:
-            resolution = .deny(message: "Permission denied in Open Island.", interrupt: false)
+            resolution = .deny(message: "Permission denied in Open Island.", interrupt: false, additionalContext: additionalContext)
             message = "Denying permission for \(session.title)."
         case .allowOnce:
-            resolution = .allowOnce()
+            resolution = .allowOnce(additionalContext: additionalContext)
             message = "Approving permission for \(session.title)."
         case let .allowWithUpdates(updates):
-            resolution = .allowOnce(updatedPermissions: updates)
+            resolution = .allowOnce(updatedPermissions: updates, additionalContext: additionalContext)
             message = "Always allowing for \(session.title)."
         }
 
@@ -833,12 +833,26 @@ final class AppModel {
         }
     }
 
-    private func permissionResolution(for approved: Bool) -> PermissionResolution {
+    private func permissionResolution(for approved: Bool, additionalContext: String? = nil) -> PermissionResolution {
         if approved {
-            return .allowOnce()
+            return .allowOnce(additionalContext: additionalContext)
         }
 
-        return .deny(message: "Permission denied in Open Island.", interrupt: false)
+        return .deny(message: "Permission denied in Open Island.", interrupt: false, additionalContext: additionalContext)
+    }
+
+    // MARK: - Approval Rules
+
+    var approvalRules: [ApprovalRule] {
+        ApprovalRuleEngine.shared.getRules()
+    }
+
+    func addApprovalRule(pattern: String, action: ApprovalRule.RuleAction, label: String? = nil) {
+        ApprovalRuleEngine.shared.addRule(pattern: pattern, action: action, label: label)
+    }
+
+    func removeApprovalRule(id: UUID) {
+        ApprovalRuleEngine.shared.removeRule(id: id)
     }
 
     func applyTrackedEvent(

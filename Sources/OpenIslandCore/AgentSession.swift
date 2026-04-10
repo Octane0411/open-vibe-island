@@ -292,8 +292,8 @@ public enum ApprovalAction: Sendable {
 }
 
 public enum PermissionResolution: Equatable, Codable, Sendable {
-    case allowOnce(updatedInput: ClaudeHookJSONValue? = nil, updatedPermissions: [ClaudePermissionUpdate] = [])
-    case deny(message: String? = nil, interrupt: Bool = false)
+    case allowOnce(updatedInput: ClaudeHookJSONValue? = nil, updatedPermissions: [ClaudePermissionUpdate] = [], additionalContext: String? = nil)
+    case deny(message: String? = nil, interrupt: Bool = false, additionalContext: String? = nil)
 
     public var isApproved: Bool {
         switch self {
@@ -301,6 +301,13 @@ public enum PermissionResolution: Equatable, Codable, Sendable {
             true
         case .deny:
             false
+        }
+    }
+
+    public var additionalContext: String? {
+        switch self {
+        case let .allowOnce(_, _, ctx): ctx
+        case let .deny(_, _, ctx): ctx
         }
     }
 }

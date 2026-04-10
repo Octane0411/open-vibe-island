@@ -524,7 +524,8 @@ struct IslandPanelView: View {
                     useDrawingGroup: model.notchStatus == .opened,
                     isInteractive: model.notchStatus == .opened,
                     lang: model.lang,
-                    onApprove: { model.approvePermission(for: session.id, action: $0) },
+                    onApprove: { action, context in model.approvePermission(for: session.id, action: action, additionalContext: context) },
+                    onCreateRule: { pattern, action in model.addApprovalRule(pattern: pattern, action: action) },
                     onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
                     onJump: { model.jumpToSession(session) }
                 )
@@ -551,7 +552,8 @@ struct IslandPanelView: View {
                         useDrawingGroup: model.notchStatus == .opened,
                         isInteractive: model.notchStatus == .opened,
                         lang: model.lang,
-                        onApprove: { model.approvePermission(for: session.id, action: $0) },
+                        onApprove: { action, context in model.approvePermission(for: session.id, action: action, additionalContext: context) },
+                        onCreateRule: { pattern, action in model.addApprovalRule(pattern: pattern, action: action) },
                         onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
                         onJump: { model.jumpToSession(session) },
                         onDismiss: session.isRemote ? { model.dismissSession(session.id) } : nil
@@ -974,13 +976,17 @@ private struct IslandSessionRow: View {
     var useDrawingGroup: Bool = true
     var isInteractive: Bool = true
     var lang: LanguageManager = .shared
-    var onApprove: ((ApprovalAction) -> Void)?
+    var onApprove: ((ApprovalAction, String?) -> Void)?
+    var onCreateRule: ((String, ApprovalRule.RuleAction) -> Void)?
     var onAnswer: ((QuestionPromptResponse) -> Void)?
     let onJump: () -> Void
     var onDismiss: (() -> Void)?
 
     @State private var isHighlighted = false
     @State private var isManuallyExpanded = false
+    @State private var approvalNote = ""
+    @State private var isNoteExpanded = false
+    @FocusState private var isNoteFocused: Bool
 
     var body: some View {
         rowBody(referenceDate: referenceDate)
@@ -1220,11 +1226,69 @@ private struct IslandSessionRow: View {
                     .strokeBorder(.orange.opacity(0.18))
             )
 
+            // Permission suggestion buttons from Claude
+            if let suggestions = session.permissionRequest?.suggestedUpdates, !suggestions.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(suggestions.enumerated()), id: \.offset) { _, update in
+                        Button(update.displayLabel) {
+                            onApprove?(.allowWithUpdates([update]), nil)
+                        }
+                        .buttonStyle(IslandWideButtonStyle(kind: .primary))
+                    }
+                }
+            }
+
+            // Note input
+            if isNoteExpanded {
+                TextField("Instructions for Claude...", text: $approvalNote, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12, design: .default))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(minHeight: 36)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(.white.opacity(0.06))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(.white.opacity(0.12))
+                    )
+                    .focused($isNoteFocused)
+                    .lineLimit(1 ... 4)
+                    .onSubmit {
+                        isNoteFocused = false
+                    }
+            } else {
+                Button {
+                    isNoteExpanded = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        isNoteFocused = true
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus.circle")
+                            .font(.system(size: 11))
+                        Text("add note")
+                            .font(.system(size: 11))
+                    }
+                    .foregroundStyle(.white.opacity(0.4))
+                }
+                .buttonStyle(.plain)
+            }
+
             HStack(spacing: 8) {
-                Button("No") { onApprove?(.deny) }
-                    .buttonStyle(IslandWideButtonStyle(kind: .secondary))
-                Button("Yes") { onApprove?(.allowOnce) }
-                    .buttonStyle(IslandWideButtonStyle(kind: .warning))
+                Button("No") {
+                    onApprove?(.deny, approvalNote.isEmpty ? nil : "[Boss says] \(approvalNote)")
+                }
+                .buttonStyle(IslandWideButtonStyle(kind: .secondary))
+                .keyboardShortcut("n", modifiers: .command)
+                Button("Yes") {
+                    onApprove?(.allowOnce, approvalNote.isEmpty ? nil : "[Boss says] \(approvalNote)")
+                }
+                .buttonStyle(IslandWideButtonStyle(kind: .warning))
+                .keyboardShortcut("y", modifiers: .command)
                 if let toolName = session.permissionRequest?.toolName {
                     Button("Always Allow (\(toolName))") {
                         let rule = ClaudePermissionRuleValue(toolName: toolName)
@@ -1233,9 +1297,22 @@ private struct IslandSessionRow: View {
                             rules: [rule],
                             behavior: .allow
                         )
-                        onApprove?(.allowWithUpdates([update]))
+                        onApprove?(.allowWithUpdates([update]), approvalNote.isEmpty ? nil : "[Boss says] \(approvalNote)")
                     }
                     .buttonStyle(IslandWideButtonStyle(kind: .danger))
+
+                    Button("Save Rule") {
+                        let pattern: String
+                        if toolName == "Bash", let summary = session.permissionRequest?.summary {
+                            // Extract base command from summary (e.g. "rm -rf /tmp/foo" -> "rm")
+                            let base = summary.split(separator: " ").first.map(String.init) ?? summary
+                            pattern = base
+                        } else {
+                            pattern = toolName
+                        }
+                        onCreateRule?(pattern, .allow)
+                    }
+                    .buttonStyle(IslandWideButtonStyle(kind: .primary))
                 }
             }
         }

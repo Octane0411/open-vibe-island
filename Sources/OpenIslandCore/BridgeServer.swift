@@ -29,6 +29,13 @@ public final class BridgeServer: @unchecked Sendable {
 
         let clientID: UUID
         let kind: Kind
+        let createdAt: ContinuousClock.Instant
+
+        init(clientID: UUID, kind: Kind) {
+            self.clientID = clientID
+            self.kind = kind
+            self.createdAt = ContinuousClock.now
+        }
     }
 
     private struct PendingOpenCodeInteraction {
@@ -68,6 +75,9 @@ public final class BridgeServer: @unchecked Sendable {
     /// Maps toolUseID → temporary task ID for TaskCreate, so postToolUse can update with real ID.
     private var pendingTaskCreations: [String: String] = [:]
     private var stateSnapshot = SessionState()
+    /// Timer that auto-denies stale pending interactions after 10 minutes.
+    private var pendingInteractionTimer: DispatchSourceTimer?
+    private static let pendingInteractionTimeout: Duration = .seconds(600) // 10 minutes
     /// Local working state: tracks sessions emitted by this server between
     /// snapshot pushes from AppModel. This is NOT a duplicate of AppModel's
     /// state — it only contains sessions created via bridge hooks and is
@@ -101,6 +111,37 @@ public final class BridgeServer: @unchecked Sendable {
             if let legacyListener = try? bindListener(at: legacyURL) {
                 listeners.append(legacyListener)
             }
+        }
+
+        startPendingInteractionTimer()
+    }
+
+    private func startPendingInteractionTimer() {
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 60, repeating: .seconds(60))
+        timer.setEventHandler { [weak self] in
+            self?.expireStalePendingInteractions()
+        }
+        timer.resume()
+        pendingInteractionTimer = timer
+    }
+
+    private func expireStalePendingInteractions() {
+        let now = ContinuousClock.now
+        let threshold = now - Self.pendingInteractionTimeout
+
+        let staleSessions = pendingClaudeInteractions.filter { $0.value.createdAt < threshold }
+        for (sessionID, _) in staleSessions {
+            pendingClaudeInteractions.removeValue(forKey: sessionID)
+            emit(
+                .actionableStateResolved(
+                    ActionableStateResolved(
+                        sessionID: sessionID,
+                        summary: "Approval timed out after 10 minutes.",
+                        timestamp: .now
+                    )
+                )
+            )
         }
     }
 
@@ -172,6 +213,9 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func stopLocked() {
+        pendingInteractionTimer?.cancel()
+        pendingInteractionTimer = nil
+
         pendingApprovals.removeAll()
         pendingClaudeInteractions.removeAll()
         pendingClaudeToolContexts.removeAll()
@@ -340,7 +384,7 @@ public final class BridgeServer: @unchecked Sendable {
                     directive = CursorHookDirective(continue: true, permission: .allow)
                     summary = "Permission approved."
                     phase = .running
-                case let .deny(message, _):
+                case let .deny(message, _, _):
                     directive = CursorHookDirective(continue: true, permission: .deny, agentMessage: message)
                     summary = message ?? "Permission denied in Open Island."
                     phase = .completed
@@ -654,31 +698,54 @@ public final class BridgeServer: @unchecked Sendable {
                     kind: .question(payload, prompt)
                 )
             } else {
-                let suggestions = payload.permissionSuggestions ?? []
+                // Auto-approve safe tools via classifier
+                let risk = ToolRiskClassifier.classify(
+                    toolName: payload.toolName ?? "",
+                    toolInput: payload.toolInput
+                )
 
-                emit(
-                    .permissionRequested(
-                        PermissionRequested(
-                            sessionID: payload.sessionID,
-                            request: PermissionRequest(
-                                title: payload.permissionRequestTitle,
-                                summary: payload.permissionRequestSummary,
-                                affectedPath: payload.permissionAffectedPath,
-                                primaryActionTitle: "Allow Once",
-                                secondaryActionTitle: "Deny",
-                                toolName: payload.toolName,
-                                toolUseID: claudeToolUseID(for: payload),
-                                suggestedUpdates: suggestions
-                            ),
-                            timestamp: .now
+                if risk == .safe {
+                    let directive: ClaudeHookDirective = .permissionRequest(
+                        .allow(updatedInput: payload.toolInput)
+                    )
+                    send(.response(.claudeHookDirective(directive)), to: clientID)
+                    emit(
+                        .activityUpdated(
+                            SessionActivityUpdated(
+                                sessionID: payload.sessionID,
+                                summary: "Auto-approved \(payload.toolName ?? "tool").",
+                                phase: .running,
+                                timestamp: .now
+                            )
                         )
                     )
-                )
+                } else {
+                    let suggestions = payload.permissionSuggestions ?? []
 
-                pendingClaudeInteractions[payload.sessionID] = PendingClaudeInteraction(
-                    clientID: clientID,
-                    kind: .permission(payload)
-                )
+                    emit(
+                        .permissionRequested(
+                            PermissionRequested(
+                                sessionID: payload.sessionID,
+                                request: PermissionRequest(
+                                    title: payload.permissionRequestTitle,
+                                    summary: payload.permissionRequestSummary,
+                                    affectedPath: payload.permissionAffectedPath,
+                                    primaryActionTitle: "Allow Once",
+                                    secondaryActionTitle: "Deny",
+                                    toolName: payload.toolName,
+                                    toolUseID: claudeToolUseID(for: payload),
+                                    suggestedUpdates: suggestions
+                                ),
+                                timestamp: .now
+                            )
+                        )
+                    )
+
+                    pendingClaudeInteractions[payload.sessionID] = PendingClaudeInteraction(
+                        clientID: clientID,
+                        kind: .permission(payload)
+                    )
+                }
             }
 
         case .postToolUse:
@@ -1474,7 +1541,7 @@ public final class BridgeServer: @unchecked Sendable {
             summary = payload.toolName.map { "Permission approved for \($0)." } ?? "Permission approved."
             phase = .running
 
-        case let (.permission(_), .deny(message, _)):
+        case let (.permission(_), .deny(message, _, _)):
             directive = .deny(reason: message ?? "Permission denied in Open Island.")
             summary = message ?? "Permission denied in Open Island."
             phase = .completed
@@ -1484,7 +1551,7 @@ public final class BridgeServer: @unchecked Sendable {
             summary = "OpenCode's question was answered."
             phase = .running
 
-        case let (.question(_), .deny(message, _)):
+        case let (.question(_), .deny(message, _, _)):
             directive = .deny(reason: message ?? "Declined to answer.")
             summary = message ?? "Declined to answer."
             phase = .completed
@@ -2060,32 +2127,32 @@ public final class BridgeServer: @unchecked Sendable {
         let phase: SessionPhase
 
         switch (pendingInteraction.kind, resolution) {
-        case let (.permission(payload), .allowOnce(updatedInput, updatedPermissions)):
+        case let (.permission(payload), .allowOnce(updatedInput, updatedPermissions, additionalContext)):
             let finalInput = updatedInput ?? payload.toolInput
             directive = .permissionRequest(
-                .allow(updatedInput: finalInput, updatedPermissions: updatedPermissions)
+                .allow(updatedInput: finalInput, updatedPermissions: updatedPermissions, additionalContext: additionalContext)
             )
             summary = payload.toolName.map { "Permission approved for \($0)." } ?? "Permission approved."
             phase = .running
 
-        case let (.permission(_), .deny(message, interrupt)):
+        case let (.permission(_), .deny(message, interrupt, additionalContext)):
             directive = .permissionRequest(
-                .deny(message: message ?? "Permission denied in Open Island.", interrupt: interrupt)
+                .deny(message: message ?? "Permission denied in Open Island.", interrupt: interrupt, additionalContext: additionalContext)
             )
             summary = message ?? "Permission denied in Open Island."
             phase = .completed
 
-        case let (.question(payload, _), .allowOnce(updatedInput, updatedPermissions)):
+        case let (.question(payload, _), .allowOnce(updatedInput, updatedPermissions, additionalContext)):
             let finalInput = updatedInput ?? payload.toolInput
             directive = .permissionRequest(
-                .allow(updatedInput: finalInput, updatedPermissions: updatedPermissions)
+                .allow(updatedInput: finalInput, updatedPermissions: updatedPermissions, additionalContext: additionalContext)
             )
             summary = "Claude's questions were answered."
             phase = .running
 
-        case let (.question(_, _), .deny(message, interrupt)):
+        case let (.question(_, _), .deny(message, interrupt, additionalContext)):
             directive = .permissionRequest(
-                .deny(message: message ?? "Declined to answer Claude's questions.", interrupt: interrupt)
+                .deny(message: message ?? "Declined to answer Claude's questions.", interrupt: interrupt, additionalContext: additionalContext)
             )
             summary = message ?? "Declined to answer Claude's questions."
             phase = .completed
