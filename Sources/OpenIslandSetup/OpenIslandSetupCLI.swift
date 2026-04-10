@@ -42,7 +42,7 @@ private struct SetupCommand {
 
         var hooksBinary: URL?
         var codexDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex", isDirectory: true)
-        var claudeDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude", isDirectory: true)
+        var claudeDirectory = ClaudeConfigDirectory.resolved()
 
         var index = 1
         while index < arguments.count {

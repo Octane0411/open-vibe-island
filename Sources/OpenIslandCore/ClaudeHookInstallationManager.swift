@@ -36,7 +36,7 @@ public final class ClaudeHookInstallationManager: @unchecked Sendable {
     private let fileManager: FileManager
 
     public init(
-        claudeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude", isDirectory: true),
+        claudeDirectory: URL = ClaudeConfigDirectory.resolved(),
         managedHooksBinaryURL: URL = ManagedHooksBinary.defaultURL(),
         hookSource: String = "claude",
         fileManager: FileManager = .default

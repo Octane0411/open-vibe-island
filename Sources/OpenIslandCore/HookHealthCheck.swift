@@ -94,7 +94,7 @@ public struct HookHealthReport: Equatable, Sendable {
 public enum HookHealthCheck {
     /// Check Claude Code hook health.
     public static func checkClaude(
-        claudeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude", isDirectory: true),
+        claudeDirectory: URL = ClaudeConfigDirectory.resolved(),
         hooksBinaryURL: URL? = nil,
         managedHooksBinaryURL: URL = ManagedHooksBinary.defaultURL(),
         fileManager: FileManager = .default

@@ -68,7 +68,7 @@ public final class ClaudeStatusLineInstallationManager: @unchecked Sendable {
     private let fileManager: FileManager
 
     public init(
-        claudeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude", isDirectory: true),
+        claudeDirectory: URL = ClaudeConfigDirectory.resolved(),
         scriptDirectoryURL: URL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".open-island", isDirectory: true)
             .appendingPathComponent("bin", isDirectory: true),
