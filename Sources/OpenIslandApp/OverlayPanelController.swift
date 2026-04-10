@@ -5,6 +5,10 @@ import OpenIslandCore
 
 @MainActor
 final class OverlayPanelController {
+    struct CloseTransitionContext {
+        let surfaceOffset: CGSize
+    }
+
     private static let minimumOpenedPanelWidth: CGFloat = 680
     private static let maximumOpenedPanelWidth: CGFloat = 740
     private static let openedPanelWidthFactor: CGFloat = 0.46
@@ -41,6 +45,10 @@ final class OverlayPanelController {
 
     var isVisible: Bool {
         panel?.isVisible == true
+    }
+
+    var hasAttachedPanel: Bool {
+        panel != nil
     }
 
     nonisolated static func shouldActivatePanel(for reason: NotchOpenReason?) -> Bool {
@@ -148,6 +156,42 @@ final class OverlayPanelController {
     func placementDiagnostics(preferredScreenID: String?) -> OverlayPlacementDiagnostics? {
         let panelSize = panel?.frame.size ?? OverlayDisplayResolver.defaultPanelSize
         return OverlayDisplayResolver.diagnostics(preferredScreenID: preferredScreenID, panelSize: panelSize)
+    }
+
+    func topBarCloseTransitionContext(preferredScreenID: String?) -> CloseTransitionContext? {
+        guard let model,
+              let panel,
+              let screen = resolveTargetScreen(preferredScreenID: preferredScreenID) else {
+            return nil
+        }
+
+        let strategy = placementStrategy(for: screen)
+        guard strategy == .topBar else {
+            return nil
+        }
+
+        let closedWidth = closedPanelWidth(for: model, on: screen)
+        let closedHeight = screen.islandClosedHeight
+        let targetClosedShadowInsets = IslandChromeMetrics.panelShadowInsets(
+            usesOpenedVisualState: false
+        )
+        let targetClosedPanelFrame = strategy.frame(
+            anchor: pillAnchor(on: screen),
+            size: NSSize(
+                width: closedWidth + (targetClosedShadowInsets.horizontal * 2),
+                height: closedHeight + targetClosedShadowInsets.bottom
+            ),
+            screenVisibleFrame: screen.visibleFrame
+        )
+
+        return CloseTransitionContext(
+            surfaceOffset: strategy.closeTransitionSurfaceOffset(
+                currentPanelFrame: panel.frame,
+                targetClosedPanelFrame: targetClosedPanelFrame,
+                closedSurfaceSize: NSSize(width: closedWidth, height: closedHeight),
+                targetClosedShadowInsets: targetClosedShadowInsets
+            )
+        )
     }
 
     // MARK: - Panel creation

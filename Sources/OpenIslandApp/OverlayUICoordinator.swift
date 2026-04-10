@@ -17,6 +17,11 @@ final class OverlayUICoordinator {
         case deferred
     }
 
+    enum CloseTransitionPlan: Equatable {
+        case immediate
+        case deferTopBarFrameSync
+    }
+
     private static let notificationSurfaceAutoCollapseDelay: TimeInterval = 10
 
     var notchStatus: NotchStatus = .closed
@@ -67,9 +72,8 @@ final class OverlayUICoordinator {
     @ObservationIgnored
     private var autoCollapseSurfaceHasBeenEntered = false
 
-    /// Kept for API compatibility; always false now that the window never
-    /// resizes and close transitions are pure SwiftUI.
-    var isCloseTransitionPending: Bool { false }
+    var isCloseTransitionPending = false
+    var closeTransitionSurfaceOffset: CGSize = .zero
 
     private var activeIslandCardSession: AgentSession? {
         activeIslandCardSessionAccessor?()
@@ -119,6 +123,22 @@ final class OverlayUICoordinator {
         }
 
         return .refresh
+    }
+
+    nonisolated static func closeTransitionPlan(
+        previousStatus: NotchStatus,
+        targetStatus: NotchStatus,
+        mode: OverlayPlacementMode,
+        hasPanel: Bool
+    ) -> CloseTransitionPlan {
+        guard previousStatus == .opened,
+              targetStatus == .closed,
+              mode == .topBar,
+              hasPanel else {
+            return .immediate
+        }
+
+        return .deferTopBarFrameSync
     }
 
     // MARK: - Initialization
@@ -218,34 +238,83 @@ final class OverlayUICoordinator {
         beforeTransition?()
 
         overlayTransitionGeneration &+= 1
+        let capturedGeneration = overlayTransitionGeneration
+
+        let previousStatus = notchStatus
 
         // Reset measured notification height when the surface changes so stale
         // measurements from a previous notification don't mis-size the new one.
         if surface != islandSurface {
             appModel?.measuredNotificationContentHeight = 0
         }
-
-        islandSurface = surface
-        notchOpenReason = reason
-        notchStatus = status
         let placementMode = overlayPlacementDiagnostics?.mode
             ?? overlayPanelController.placementDiagnostics(
                 preferredScreenID: preferredOverlayScreenID
             )?.mode
             ?? .notch
+        let closeTransitionPlan = Self.closeTransitionPlan(
+            previousStatus: previousStatus,
+            targetStatus: status,
+            mode: placementMode,
+            hasPanel: overlayPanelController.hasAttachedPanel
+        )
+        let deferredTopBarCloseContext = closeTransitionPlan == .deferTopBarFrameSync
+            ? overlayPanelController.topBarCloseTransitionContext(
+                preferredScreenID: preferredOverlayScreenID
+            )
+            : nil
+
+        if status == .opened {
+            clearCloseTransitionState()
+        } else if let deferredTopBarCloseContext {
+            isCloseTransitionPending = true
+            closeTransitionSurfaceOffset = deferredTopBarCloseContext.surfaceOffset
+        } else {
+            clearCloseTransitionState()
+        }
+
+        islandSurface = surface
+        notchOpenReason = reason
+        notchStatus = status
+
+        if status == .opened, let appModel {
+            applyInteractionUpdatePlan(
+                requestedInteractive: interactive,
+                status: status,
+                mode: placementMode
+            )
+            overlayPlacementDiagnostics = overlayPanelController.show(
+                model: appModel,
+                preferredScreenID: preferredOverlayScreenID
+            )
+            afterStateChange?()
+            onPlacementResolved?()
+            return
+        }
+
+        if deferredTopBarCloseContext != nil {
+            overlayPanelController.setInteractive(false)
+            afterStateChange?()
+
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + IslandChromeMetrics.closeTransitionDuration
+            ) { [weak self] in
+                guard let self, self.overlayTransitionGeneration == capturedGeneration else { return }
+                self.overlayPlacementDiagnostics = self.overlayPanelController.reposition(
+                    preferredScreenID: self.preferredOverlayScreenID
+                )
+                self.clearCloseTransitionState()
+                self.overlayPanelController.setInteractive(true)
+                onPlacementResolved?()
+            }
+            return
+        }
+
         applyInteractionUpdatePlan(
             requestedInteractive: interactive,
             status: status,
             mode: placementMode
         )
-
-        if status == .opened, let appModel {
-            overlayPlacementDiagnostics = overlayPanelController.show(
-                model: appModel,
-                preferredScreenID: preferredOverlayScreenID
-            )
-        }
-
         afterStateChange?()
         onPlacementResolved?()
     }
@@ -309,6 +378,9 @@ final class OverlayUICoordinator {
     }
 
     func refreshOverlayPlacement() {
+        guard !isCloseTransitionPending else {
+            return
+        }
         overlayPlacementDiagnostics = overlayPanelController.reposition(
             preferredScreenID: preferredOverlayScreenID
         )
@@ -461,6 +533,7 @@ final class OverlayUICoordinator {
         notificationAutoCollapseTask?.cancel()
         notificationAutoCollapseTask = nil
         autoCollapseSurfaceHasBeenEntered = false
+        clearCloseTransitionState()
 
         islandSurface = snapshot.islandSurface
         notchStatus = snapshot.notchStatus
@@ -537,5 +610,10 @@ final class OverlayUICoordinator {
             )
             overlayPanelController.setInteractive(interactive)
         }
+    }
+
+    private func clearCloseTransitionState() {
+        isCloseTransitionPending = false
+        closeTransitionSurfaceOffset = .zero
     }
 }

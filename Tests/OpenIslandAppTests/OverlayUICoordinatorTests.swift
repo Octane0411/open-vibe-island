@@ -3,6 +3,30 @@ import Testing
 
 struct OverlayUICoordinatorTests {
     @Test
+    func openedTopBarCloseDefersFrameSyncWhenPanelExists() {
+        let plan = OverlayUICoordinator.closeTransitionPlan(
+            previousStatus: .opened,
+            targetStatus: .closed,
+            mode: .topBar,
+            hasPanel: true
+        )
+
+        #expect(plan == .deferTopBarFrameSync)
+    }
+
+    @Test
+    func closedTopBarWithoutPanelDoesNotDeferFrameSync() {
+        let plan = OverlayUICoordinator.closeTransitionPlan(
+            previousStatus: .opened,
+            targetStatus: .closed,
+            mode: .topBar,
+            hasPanel: false
+        )
+
+        #expect(plan == .immediate)
+    }
+
+    @Test
     func closedTopBarPointerInteractionDefersPlacementRefresh() {
         let plan = OverlayUICoordinator.placementRefreshPlan(
             status: .closed,

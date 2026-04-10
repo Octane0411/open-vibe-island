@@ -64,6 +64,7 @@ final class AppModel {
     }
     var isOverlayVisible: Bool { overlay.isOverlayVisible }
     var isOverlayCloseTransitionPending: Bool { overlay.isCloseTransitionPending }
+    var overlayCloseTransitionSurfaceOffset: CGSize { overlay.closeTransitionSurfaceOffset }
     var isCodexSetupBusy: Bool { hooks.isCodexSetupBusy }
     var isClaudeHookSetupBusy: Bool { hooks.isClaudeHookSetupBusy }
     var isClaudeUsageSetupBusy: Bool { hooks.isClaudeUsageSetupBusy }

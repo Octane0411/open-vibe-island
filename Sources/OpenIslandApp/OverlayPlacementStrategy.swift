@@ -72,4 +72,26 @@ enum OverlayPlacementStrategy: Equatable {
             height: closedHeight
         )
     }
+
+    func closeTransitionSurfaceOffset(
+        currentPanelFrame: NSRect,
+        targetClosedPanelFrame: NSRect,
+        closedSurfaceSize: NSSize,
+        targetClosedShadowInsets: (horizontal: CGFloat, bottom: CGFloat)
+    ) -> CGSize {
+        switch self {
+        case .notch:
+            return .zero
+        case .topBar:
+            let defaultX = (currentPanelFrame.width - closedSurfaceSize.width) / 2
+            let defaultY = currentPanelFrame.height - closedSurfaceSize.height
+            let targetX = (targetClosedPanelFrame.minX + targetClosedShadowInsets.horizontal) - currentPanelFrame.minX
+            let targetY = (targetClosedPanelFrame.minY + targetClosedShadowInsets.bottom) - currentPanelFrame.minY
+
+            return CGSize(
+                width: targetX - defaultX,
+                height: targetY - defaultY
+            )
+        }
+    }
 }

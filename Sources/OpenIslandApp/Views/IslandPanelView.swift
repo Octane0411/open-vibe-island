@@ -76,7 +76,7 @@ extension AgentSession {
 // MARK: - Animations
 
 private let openAnimation = Animation.spring(response: 0.42, dampingFraction: 0.8, blendDuration: 0)
-private let closeAnimation = Animation.smooth(duration: 0.3)
+private let closeAnimation = Animation.smooth(duration: IslandChromeMetrics.closeTransitionDuration)
 private let popAnimation = Animation.spring(response: 0.3, dampingFraction: 0.5)
 
 /// Composite equatable key so `hasClosedPresence` and `closedSurfaceWidth` share
@@ -187,6 +187,18 @@ struct IslandPanelView: View {
     /// could conflict when they changed in the same runloop pass.
     private var closedPresenceAnimationKey: ClosedPresenceKey {
         ClosedPresenceKey(present: hasClosedPresence, width: closedSurfaceWidth)
+    }
+
+    private var closeTransitionSurfaceOffset: CGSize {
+        guard model.isOverlayCloseTransitionPending,
+              currentPlacementMode == .topBar else {
+            return .zero
+        }
+
+        // Placement math is expressed in Cocoa screen coordinates where
+        // positive Y moves upward; SwiftUI view offsets use downward Y.
+        let cocoaOffset = model.overlayCloseTransitionSurfaceOffset
+        return CGSize(width: cocoaOffset.width, height: -cocoaOffset.height)
     }
 
     private var targetOverlayScreen: NSScreen? {
@@ -335,6 +347,11 @@ struct IslandPanelView: View {
             }
             .frame(width: surfaceWidth, height: surfaceHeight, alignment: .top)
         }
+        .frame(width: surfaceWidth, height: surfaceHeight, alignment: .top)
+        .offset(
+            x: closeTransitionSurfaceOffset.width,
+            y: closeTransitionSurfaceOffset.height
+        )
         .scaleEffect(usesOpenedVisualState ? 1 : (isHovering ? IslandChromeMetrics.closedHoverScale : 1), anchor: .top)
         .padding(.horizontal, panelShadowHorizontalInset)
         .padding(.bottom, panelShadowBottomInset)

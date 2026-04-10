@@ -25,6 +25,7 @@
 - topBar 闭合态按住/拖拽期间，后台 session 刷新不能立刻触发 panel reposition，必须延后到指针释放后再补做。
 - 控制器用于定位的 shadow inset 与 SwiftUI 视图用于绘制的 shadow inset 必须共享同一套 opened/closed 规则，否则边界附近会出现开合后 pill 无法回到原锚点的问题。
 - 外接显示器闭合态保留 hover 自动展开，但鼠标按下后必须优先进入按住/拖动链路，不能再被 hover 展开抢占。
+- topBar 在边界附近从 opened 收回 closed 时，收缩动画必须直接朝最终 pill 锚点收回；窗口 frame 的闭合同步只能在收缩动画结束后发生，不能先朝 opened 窗口中心收缩再跳回原位。
 - 不做“双套完整 UI”，避免把 session list、notification card、header actions 维护两份。
 
 ## 目标
@@ -174,6 +175,7 @@
 - automatic 选屏对内置刘海屏的优先级不回归
 - closed topBar 命中恢复前的 frame 同步不回归
 - topBar 锚点保存/恢复的边缘 clamp 不回归
+- topBar 边界收缩动画不会先缩到错误位置再跳回原锚点
 
 ### 手工验证
 

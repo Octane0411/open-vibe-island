@@ -53,4 +53,43 @@ struct OverlayPlacementStrategyTests {
         #expect(frame.minX >= 0)
         #expect(frame.minY >= 0)
     }
+
+    @Test
+    func topBarCloseTransitionOffsetIsZeroWhenClosedPillAlreadyLinesUp() {
+        let offset = OverlayPlacementStrategy.topBar.closeTransitionSurfaceOffset(
+            currentPanelFrame: NSRect(x: 100, y: 100, width: 400, height: 200),
+            targetClosedPanelFrame: NSRect(x: 248, y: 264, width: 104, height: 36),
+            closedSurfaceSize: NSSize(width: 80, height: 22),
+            targetClosedShadowInsets: (horizontal: 12, bottom: 14)
+        )
+
+        #expect(offset.width == 0)
+        #expect(offset.height == 0)
+    }
+
+    @Test
+    func topBarCloseTransitionOffsetPullsSurfaceTowardLeftEdgeTarget() {
+        let offset = OverlayPlacementStrategy.topBar.closeTransitionSurfaceOffset(
+            currentPanelFrame: NSRect(x: 0, y: 100, width: 400, height: 200),
+            targetClosedPanelFrame: NSRect(x: 0, y: 264, width: 104, height: 36),
+            closedSurfaceSize: NSSize(width: 80, height: 22),
+            targetClosedShadowInsets: (horizontal: 12, bottom: 14)
+        )
+
+        #expect(offset.width == -148)
+        #expect(offset.height == 0)
+    }
+
+    @Test
+    func topBarCloseTransitionOffsetPullsSurfaceTowardBottomEdgeTarget() {
+        let offset = OverlayPlacementStrategy.topBar.closeTransitionSurfaceOffset(
+            currentPanelFrame: NSRect(x: 100, y: 0, width: 400, height: 200),
+            targetClosedPanelFrame: NSRect(x: 248, y: 0, width: 104, height: 36),
+            closedSurfaceSize: NSSize(width: 80, height: 22),
+            targetClosedShadowInsets: (horizontal: 12, bottom: 14)
+        )
+
+        #expect(offset.width == 0)
+        #expect(offset.height == -164)
+    }
 }
