@@ -79,10 +79,9 @@ struct OpenIslandHooksCLI {
                     return
                 }
                 
-                // Just send an empty JSON object back or whatever is expected to not block
-                let output = try JSONEncoder().encode(BridgeResponse.acknowledged)
-                FileHandle.standardOutput.write(output)
-                FileHandle.standardOutput.write(Data("\n".utf8))
+                // Return a JSON that tells the Qwen (Claude fork) CLI to continue normally.
+                let outputText = "{\"continue\":true,\"suppressOutput\":true}\n"
+                FileHandle.standardOutput.write(Data(outputText.utf8))
             case .cursor:
                 let payload = try decoder.decode(CursorHookPayload.self, from: input)
 

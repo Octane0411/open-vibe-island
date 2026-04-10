@@ -25,6 +25,24 @@ public struct QwenHookPayload: Equatable, Codable, Sendable {
     public var terminalSessionID: String?
     public var terminalTTY: String?
 
+    private enum CodingKeys: String, CodingKey {
+        case cwd
+        case hookEventName = "hook_event_name"
+        case sessionID = "session_id"
+        case transcriptPath = "transcript_path"
+        case agentID = "agent_id"
+        case agentType = "agent_type"
+        case model
+        case toolName = "tool_name"
+        case prompt
+        case message
+        case title
+        case lastAssistantMessage = "last_assistant_message"
+        case error
+        case isInterrupt = "is_interrupt"
+        case remote
+    }
+
     public init(
         cwd: String,
         hookEventName: String,
