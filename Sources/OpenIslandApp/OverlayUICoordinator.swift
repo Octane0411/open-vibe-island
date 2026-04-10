@@ -12,6 +12,11 @@ final class OverlayUICoordinator {
         case repositionThenSetInteractive(Bool)
     }
 
+    enum PlacementRefreshPlan: Equatable {
+        case refresh
+        case deferred
+    }
+
     private static let notificationSurfaceAutoCollapseDelay: TimeInterval = 10
 
     var notchStatus: NotchStatus = .closed
@@ -103,6 +108,17 @@ final class OverlayUICoordinator {
             return .repositionThenSetInteractive(true)
         }
         return .setInteractive(effectiveInteractive)
+    }
+
+    nonisolated static func placementRefreshPlan(
+        status: NotchStatus,
+        defersForClosedTopBarPointerInteraction: Bool
+    ) -> PlacementRefreshPlan {
+        if status == .closed && defersForClosedTopBarPointerInteraction {
+            return .deferred
+        }
+
+        return .refresh
     }
 
     // MARK: - Initialization
@@ -299,7 +315,15 @@ final class OverlayUICoordinator {
     }
 
     func refreshOverlayPlacementIfVisible() {
-        refreshOverlayPlacement()
+        switch Self.placementRefreshPlan(
+            status: notchStatus,
+            defersForClosedTopBarPointerInteraction: overlayPanelController.isClosedTopBarPointerInteractionActive()
+        ) {
+        case .refresh:
+            refreshOverlayPlacement()
+        case .deferred:
+            overlayPanelController.deferPlacementRefreshUntilClosedTopBarPointerRelease()
+        }
     }
 
     // MARK: - Pointer tracking

@@ -22,6 +22,7 @@
 - 外接显示器的拖拽、命中区和 top-bar 定位行为必须保留。
 - topBar 闭合态在恢复直接命中前，必须先把 `NSPanel` frame 缩回闭合尺寸，不能继续保留上一次展开态的大窗口命中区。
 - topBar 锚点持久化必须按实时闭合宽度做边界夹取，不能写死一个固定半宽。
+- topBar 闭合态按住/拖拽期间，后台 session 刷新不能立刻触发 panel reposition，必须延后到指针释放后再补做。
 - 外接显示器闭合态保留 hover 自动展开，但鼠标按下后必须优先进入按住/拖动链路，不能再被 hover 展开抢占。
 - 不做“双套完整 UI”，避免把 session list、notification card、header actions 维护两份。
 

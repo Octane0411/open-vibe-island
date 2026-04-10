@@ -35,6 +35,7 @@ final class OverlayPanelController {
     private var hoverTimer: DispatchWorkItem?
     private var hoverCancelGrace: DispatchWorkItem?
     private var isPressingClosedTopBarPill = false
+    private var hasDeferredPlacementRefreshDuringClosedTopBarPress = false
     weak var model: AppModel?
     private(set) var notchRect: NSRect = .zero
 
@@ -318,11 +319,30 @@ final class OverlayPanelController {
 
     func beginClosedTopBarPress() {
         isPressingClosedTopBarPill = true
+        hasDeferredPlacementRefreshDuringClosedTopBarPress = false
         cancelHoverOpenImmediately()
     }
 
     func endClosedTopBarPress() {
         isPressingClosedTopBarPill = false
+        let shouldRefreshPlacement = hasDeferredPlacementRefreshDuringClosedTopBarPress
+        hasDeferredPlacementRefreshDuringClosedTopBarPress = false
+
+        if shouldRefreshPlacement {
+            model?.refreshOverlayPlacement()
+        }
+    }
+
+    func isClosedTopBarPointerInteractionActive() -> Bool {
+        isPressingClosedTopBarPill
+    }
+
+    func deferPlacementRefreshUntilClosedTopBarPointerRelease() {
+        guard isPressingClosedTopBarPill else {
+            return
+        }
+
+        hasDeferredPlacementRefreshDuringClosedTopBarPress = true
     }
 
     /// Called by the hosting view after a drag finishes. Persists the new
