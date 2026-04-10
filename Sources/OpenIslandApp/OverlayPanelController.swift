@@ -455,17 +455,41 @@ final class OverlayPanelController {
             return notchWidth
         }
 
-        let sideWidth = max(0, notchHeight - 12) + 10
-        let digits = max(1, "\(model.liveSessionCount)".count)
-        let countBadgeWidth = CGFloat(26 + max(0, digits - 1) * 8)
+        let indicatorCount = max(model.liveExecutingTaskCount, model.liveSessionCount)
         let hasAttention = spotlightSession?.phase.requiresAttention == true
-        let leftWidth = sideWidth + 8 + (hasAttention ? 18 : 0)
-        let rightWidth = max(sideWidth, countBadgeWidth)
-        let expansionWidth = leftWidth + rightWidth + 16 + (hasAttention ? 6 : 0)
+        let expansionWidth = Self.closedPanelExpansionWidth(
+            notchHeight: notchHeight,
+            indicatorCount: indicatorCount,
+            hasAttention: hasAttention,
+            displayStyle: model.islandClosedDisplayStyle,
+            detailText: model.islandClosedDisplayStyle == .detailed
+                ? model.closedNotchDetailText
+                : nil,
+            countLabel: model.islandClosedDisplayStyle == .detailed
+                ? model.lang.t("settings.display.preview.sessions")
+                : nil
+        )
         let popWidth = model.notchStatus == .popping ? 18 : 0
         return notchWidth + expansionWidth + CGFloat(popWidth)
     }
 
+    static func closedPanelExpansionWidth(
+        notchHeight: CGFloat,
+        indicatorCount: Int,
+        hasAttention: Bool,
+        displayStyle: IslandClosedDisplayStyle,
+        detailText: String?,
+        countLabel: String?
+    ) -> CGFloat {
+        IslandClosedHeaderLayout.expansionWidth(
+            notchHeight: notchHeight,
+            indicatorCount: indicatorCount,
+            hasAttention: hasAttention,
+            displayStyle: displayStyle,
+            detailText: detailText,
+            countLabel: countLabel
+        )
+    }
     private func openedContentHeight(for model: AppModel) -> CGFloat {
         let now = Date.now
         let visibleSessions = openedVisibleSessions(
@@ -484,17 +508,9 @@ final class OverlayPanelController {
             if model.measuredNotificationContentHeight > 0 {
                 return model.measuredNotificationContentHeight + 28
             }
-            // First render: estimate from the actionable session's content so the
-            // initial window is close to the final size. This avoids a large blank
-            // panel flash (the previous 500pt fallback) and reduces the chance of
-            // a measurement→reposition cycle.
-            if let actionableID,
-               let session = model.state.session(id: actionableID) {
-                let rowHeight = session.estimatedIslandRowHeight(at: now)
-                let bodyHeight = actionableBodyHeight(for: session, model: model)
-                return rowHeight + bodyHeight + Self.openedContentVerticalInsets
-            }
-            return 300
+            // First render: use generous height so content isn't clipped.
+            // SwiftUI will measure actual height and trigger a resize.
+            return 500
         }
 
         let rowHeights = visibleSessions.map { session -> CGFloat in

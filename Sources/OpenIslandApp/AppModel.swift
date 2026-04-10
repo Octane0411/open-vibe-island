@@ -9,10 +9,23 @@ import SwiftUI
 final class AppModel {
     private static let soundMutedDefaultsKey = "overlay.sound.muted"
     private static let showDockIconDefaultsKey = "app.showDockIcon"
+    private static let islandClosedDisplayStyleDefaultsKey = "display.island.closedDisplayStyle"
+    private static let islandPixelShapeStyleDefaultsKey = "display.island.pixelShapeStyle"
+    private static let islandRunningColorDefaultsKey = "display.island.runningColor"
+    private static let islandApprovalColorDefaultsKey = "display.island.approvalColor"
+    private static let islandAnswerColorDefaultsKey = "display.island.answerColor"
+    private static let islandCompletedColorDefaultsKey = "display.island.completedColor"
     private static let syntheticClaudeSessionPrefix = "claude-process:"
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
     private static let jumpOverlayDismissLeadTime: Duration = .milliseconds(20)
     static let hoverOpenDelay: TimeInterval = 0.15
+
+    private static let defaultIslandStatusColorHex: [SessionPhase: String] = [
+        .running: "#6E9FFF",
+        .waitingForApproval: "#FFB547",
+        .waitingForAnswer: "#FFD95A",
+        .completed: "#42E86B",
+    ]
 
     struct AcceptanceStep: Identifiable {
         let id: String
@@ -188,6 +201,48 @@ final class AppModel {
         get { overlay.overlayDisplaySelectionID }
         set { overlay.overlayDisplaySelectionID = newValue }
     }
+    var islandClosedDisplayStyle: IslandClosedDisplayStyle = .detailed {
+        didSet {
+            guard islandClosedDisplayStyle != oldValue else { return }
+            UserDefaults.standard.set(islandClosedDisplayStyle.rawValue, forKey: Self.islandClosedDisplayStyleDefaultsKey)
+            refreshOverlayPlacementIfVisible()
+        }
+    }
+    var islandPixelShapeStyle: IslandPixelShapeStyle = .bars {
+        didSet {
+            guard islandPixelShapeStyle != oldValue else { return }
+            UserDefaults.standard.set(islandPixelShapeStyle.rawValue, forKey: Self.islandPixelShapeStyleDefaultsKey)
+        }
+    }
+    var runningStatusColorHex: String = "#6E9FFF" {
+        didSet {
+            guard runningStatusColorHex != oldValue else { return }
+            UserDefaults.standard.set(runningStatusColorHex, forKey: Self.islandRunningColorDefaultsKey)
+            _cachedStatusColors.removeValue(forKey: .running)
+        }
+    }
+    var approvalStatusColorHex: String = "#FFB547" {
+        didSet {
+            guard approvalStatusColorHex != oldValue else { return }
+            UserDefaults.standard.set(approvalStatusColorHex, forKey: Self.islandApprovalColorDefaultsKey)
+            _cachedStatusColors.removeValue(forKey: .waitingForApproval)
+        }
+    }
+    var answerStatusColorHex: String = "#FFD95A" {
+        didSet {
+            guard answerStatusColorHex != oldValue else { return }
+            UserDefaults.standard.set(answerStatusColorHex, forKey: Self.islandAnswerColorDefaultsKey)
+            _cachedStatusColors.removeValue(forKey: .waitingForAnswer)
+        }
+    }
+    var completedStatusColorHex: String = "#42E86B" {
+        didSet {
+            guard completedStatusColorHex != oldValue else { return }
+            UserDefaults.standard.set(completedStatusColorHex, forKey: Self.islandCompletedColorDefaultsKey)
+            _cachedStatusColors.removeValue(forKey: .completed)
+        }
+    }
+    private var _cachedStatusColors: [SessionPhase: Color] = [:]
     @ObservationIgnored
     var openSettingsWindow: (() -> Void)?
 
@@ -233,6 +288,20 @@ final class AppModel {
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
         showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
+        islandClosedDisplayStyle = IslandClosedDisplayStyle(
+            rawValue: UserDefaults.standard.string(forKey: Self.islandClosedDisplayStyleDefaultsKey) ?? ""
+        ) ?? .detailed
+        islandPixelShapeStyle = IslandPixelShapeStyle(
+            rawValue: UserDefaults.standard.string(forKey: Self.islandPixelShapeStyleDefaultsKey) ?? ""
+        ) ?? .bars
+        runningStatusColorHex = UserDefaults.standard.string(forKey: Self.islandRunningColorDefaultsKey)?
+            .normalizedHexColorString ?? Self.defaultIslandStatusColorHex[.running] ?? "#6E9FFF"
+        approvalStatusColorHex = UserDefaults.standard.string(forKey: Self.islandApprovalColorDefaultsKey)?
+            .normalizedHexColorString ?? Self.defaultIslandStatusColorHex[.waitingForApproval] ?? "#FFB547"
+        answerStatusColorHex = UserDefaults.standard.string(forKey: Self.islandAnswerColorDefaultsKey)?
+            .normalizedHexColorString ?? Self.defaultIslandStatusColorHex[.waitingForAnswer] ?? "#FFD95A"
+        completedStatusColorHex = UserDefaults.standard.string(forKey: Self.islandCompletedColorDefaultsKey)?
+            .normalizedHexColorString ?? Self.defaultIslandStatusColorHex[.completed] ?? "#42E86B"
 
         overlay.appModel = self
         overlay.restoreDisplayPreference()
@@ -339,6 +408,30 @@ final class AppModel {
         surfacedSessions.filter { $0.phase == .running }.count
     }
 
+    var liveExecutingTaskCount: Int {
+        let explicitTaskCount = surfacedSessions.reduce(0) { count, session in
+            count + (session.claudeMetadata?.activeTasks.reduce(0) { $1.status == .inProgress ? $0 + 1 : $0 } ?? 0)
+        }
+
+        if explicitTaskCount > 0 {
+            return explicitTaskCount
+        }
+
+        return liveRunningCount
+    }
+
+    var closedNotchSummaryPhase: SessionPhase? {
+        for session in surfacedSessions {
+            switch session.phase {
+            case .waitingForApproval: return .waitingForApproval
+            case .waitingForAnswer:   return .waitingForAnswer
+            case .running:            return .running
+            case .completed:          continue
+            }
+        }
+        return surfacedSessions.first?.phase
+    }
+
     var shouldShowSessionBootstrapPlaceholder: Bool {
         isResolvingInitialLiveSessions
             && liveSessionCount == 0
@@ -438,6 +531,70 @@ final class AppModel {
         }
 
         return "Finish the setup steps in the left column, then start Codex from Terminal."
+    }
+
+    var closedNotchDetailText: String {
+        guard let phase = closedNotchSummaryPhase else {
+            return "Open Island"
+        }
+
+        switch phase {
+        case .running:
+            return lang.t("settings.display.status.running")
+        case .waitingForApproval:
+            return lang.t("settings.display.status.approval")
+        case .waitingForAnswer:
+            return lang.t("settings.display.status.answer")
+        case .completed:
+            return lang.t("settings.display.status.completed")
+        }
+    }
+
+    func islandStatusColorHex(for phase: SessionPhase) -> String {
+        switch phase {
+        case .running:
+            return runningStatusColorHex
+        case .waitingForApproval:
+            return approvalStatusColorHex
+        case .waitingForAnswer:
+            return answerStatusColorHex
+        case .completed:
+            return completedStatusColorHex
+        }
+    }
+
+    func islandStatusColor(for phase: SessionPhase) -> Color {
+        if let cached = _cachedStatusColors[phase] {
+            return cached
+        }
+        let color = Color(hex: islandStatusColorHex(for: phase))
+            ?? Color(hex: Self.defaultIslandStatusColorHex[phase] ?? "#6E9FFF")
+            ?? .white
+        _cachedStatusColors[phase] = color
+        return color
+    }
+
+    func setIslandStatusColor(_ color: Color, for phase: SessionPhase) {
+        guard let hex = color.opaqueHexString else {
+            return
+        }
+
+        setIslandStatusColorHex(hex, for: phase)
+    }
+
+    func setIslandStatusColorHex(_ hex: String, for phase: SessionPhase) {
+        let normalized = hex.normalizedHexColorString
+
+        switch phase {
+        case .running:
+            runningStatusColorHex = normalized
+        case .waitingForApproval:
+            approvalStatusColorHex = normalized
+        case .waitingForAnswer:
+            answerStatusColorHex = normalized
+        case .completed:
+            completedStatusColorHex = normalized
+        }
     }
 
     func startIfNeeded(
@@ -1073,4 +1230,42 @@ final class AppModel {
         NSApplication.shared.terminate(nil)
     }
 
+}
+
+private extension String {
+    var normalizedHexColorString: String {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        let raw = trimmed.hasPrefix("#") ? String(trimmed.dropFirst()) : trimmed
+        guard raw.count == 6, raw.allSatisfy(\.isHexDigit) else {
+            return "#6E9FFF"
+        }
+
+        return "#\(raw.uppercased())"
+    }
+}
+
+private extension Color {
+    init?(hex: String) {
+        let raw = String(hex.normalizedHexColorString.dropFirst())
+        guard let value = Int(raw, radix: 16) else {
+            return nil
+        }
+
+        let red = Double((value >> 16) & 0xFF) / 255
+        let green = Double((value >> 8) & 0xFF) / 255
+        let blue = Double(value & 0xFF) / 255
+        self = Color(red: red, green: green, blue: blue)
+    }
+
+    var opaqueHexString: String? {
+        let nsColor = NSColor(self).usingColorSpace(.deviceRGB)
+        guard let nsColor else {
+            return nil
+        }
+
+        let red = Int(round(nsColor.redComponent * 255))
+        let green = Int(round(nsColor.greenComponent * 255))
+        let blue = Int(round(nsColor.blueComponent * 255))
+        return String(format: "#%02X%02X%02X", red, green, blue)
+    }
 }

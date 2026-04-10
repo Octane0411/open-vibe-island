@@ -152,29 +152,86 @@ struct IslandPanelView: View {
         return session.phase == .running || session.phase.requiresAttention
     }
 
-    /// Scout icon tint: blue if any running, green if any live, else gray.
-    private var scoutTint: Color {
-        let sessions = model.surfacedSessions
-        if sessions.contains(where: { $0.phase == .running }) {
-            return Color(red: 0.43, green: 0.62, blue: 1.0) // #6E9FFF working blue
+    private var closedStatusPhase: SessionPhase? {
+        closedSpotlightSession?.phase
+    }
+
+    private var closedStatusTint: Color {
+        guard let phase = closedStatusPhase else {
+            return Color.white.opacity(0.4)
         }
-        if !sessions.isEmpty {
-            return Color(red: 0.26, green: 0.91, blue: 0.42) // #42E86B idle green
-        }
-        return Color.white.opacity(0.4) // gray
+
+        return model.islandStatusColor(for: phase)
+    }
+
+    private var closedIndicatorCount: Int {
+        let executingTaskCount = model.liveExecutingTaskCount
+        return executingTaskCount > 0 ? executingTaskCount : model.liveSessionCount
+    }
+
+    private var showsDetailedClosedHeader: Bool {
+        model.islandClosedDisplayStyle == .detailed
+    }
+
+    private var closedHeaderTitle: String {
+        closedSpotlightSession?.spotlightWorkspaceName ?? "Open Island"
+    }
+
+    private var closedHeaderDetailText: String {
+        model.closedNotchDetailText
+    }
+
+    private var detailedCountLabel: String? {
+        showsDetailedClosedHeader ? model.lang.t("settings.display.preview.sessions") : nil
     }
 
     private var countBadgeWidth: CGFloat {
-        let digits = max(1, "\(model.liveSessionCount)".count)
-        return CGFloat(26 + max(0, digits - 1) * 8)
+        IslandClosedHeaderLayout.badgeWidth(
+            indicatorCount: closedIndicatorCount,
+            displayStyle: model.islandClosedDisplayStyle,
+            countLabel: detailedCountLabel
+        )
+    }
+
+    private var closedEdgeLaneWidth: CGFloat {
+        IslandClosedHeaderLayout.edgeLaneWidth(
+            notchHeight: closedNotchHeight,
+            indicatorCount: closedIndicatorCount,
+            hasAttention: closedSpotlightSession?.phase.requiresAttention == true,
+            displayStyle: model.islandClosedDisplayStyle,
+            countLabel: detailedCountLabel
+        )
+    }
+
+    private var closedLeadingContentWidth: CGFloat {
+        IslandClosedHeaderLayout.leadingContentWidth(
+            notchHeight: closedNotchHeight,
+            hasAttention: closedSpotlightSession?.phase.requiresAttention == true,
+            displayStyle: model.islandClosedDisplayStyle,
+            detailText: showsDetailedClosedHeader ? closedHeaderDetailText : nil
+        )
+    }
+
+    private var closedTrailingBadgeWidth: CGFloat {
+        IslandClosedHeaderLayout.trailingBadgeWidth(
+            notchHeight: closedNotchHeight,
+            indicatorCount: closedIndicatorCount,
+            displayStyle: model.islandClosedDisplayStyle,
+            countLabel: detailedCountLabel
+        )
     }
 
     private var expansionWidth: CGFloat {
         guard hasClosedPresence else { return 0 }
-        let leftWidth = sideWidth + 8 + (closedSpotlightSession?.phase.requiresAttention == true ? 18 : 0)
-        let rightWidth = max(sideWidth, countBadgeWidth)
         let hasPending = closedSpotlightSession?.phase.requiresAttention == true
-        return leftWidth + rightWidth + 16 + (hasPending ? 6 : 0)
+        return IslandClosedHeaderLayout.expansionWidth(
+            notchHeight: closedNotchHeight,
+            indicatorCount: closedIndicatorCount,
+            hasAttention: hasPending,
+            displayStyle: model.islandClosedDisplayStyle,
+            detailText: showsDetailedClosedHeader ? closedHeaderDetailText : nil,
+            countLabel: detailedCountLabel
+        )
     }
 
     /// Composite key combining `hasClosedPresence` and `expansionWidth` so a
@@ -186,7 +243,7 @@ struct IslandPanelView: View {
     }
 
     private var sideWidth: CGFloat {
-        max(0, closedNotchHeight - 12) + 10
+        IslandClosedHeaderLayout.sideWidth(notchHeight: closedNotchHeight)
     }
 
     private var targetOverlayScreen: NSScreen? {
@@ -320,39 +377,59 @@ struct IslandPanelView: View {
         } else {
             HStack(spacing: 0) {
                 if hasClosedPresence {
-                    HStack(spacing: 4) {
-                        OpenIslandIcon(size: 14, isAnimating: hasClosedActivity, tint: scoutTint)
+                    HStack(spacing: 5) {
+                        HStack(spacing: 4) {
+                            IslandPixelGlyph(
+                                tint: closedStatusTint,
+                                style: model.islandPixelShapeStyle,
+                                isAnimating: hasClosedActivity
+                            )
                             .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
 
-                        if closedSpotlightSession?.phase.requiresAttention == true {
-                            AttentionIndicator(
-                                size: 14,
-                                color: phaseColor(closedSpotlightSession?.phase ?? .running)
-                            )
+                            if closedSpotlightSession?.phase.requiresAttention == true {
+                                AttentionIndicator(
+                                    size: 14,
+                                    color: closedStatusTint
+                                )
+                            }
+                        }
+
+                        if showsDetailedClosedHeader {
+                            Text(closedHeaderDetailText)
+                                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.white.opacity(0.92))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .minimumScaleFactor(0.7)
+                                .allowsTightening(true)
+                                .offset(y: 2)
+                                .frame(
+                                    width: IslandClosedHeaderLayout.detailTextWidth(
+                                        closedHeaderDetailText,
+                                        displayStyle: model.islandClosedDisplayStyle
+                                    ),
+                                    alignment: .leading
+                                )
                         }
                     }
-                    .frame(width: sideWidth + 8 + (closedSpotlightSession?.phase.requiresAttention == true ? 18 : 0))
-                }
+                    .frame(width: closedLeadingContentWidth, alignment: .leading)
 
-                if !hasClosedPresence {
+                    Spacer(minLength: IslandClosedHeaderLayout.centerSpacing(displayStyle: model.islandClosedDisplayStyle))
+
+                    ClosedCountBadge(
+                        liveCount: closedIndicatorCount,
+                        tint: closedStatusTint,
+                        label: detailedCountLabel
+                    )
+                    .matchedGeometryEffect(id: "right-indicator", in: notchNamespace, isSource: true)
+                    .frame(width: closedTrailingBadgeWidth, alignment: .trailing)
+                } else {
                     Rectangle()
                         .fill(Color.clear)
                         .frame(width: closedNotchWidth - 20)
-                } else {
-                    Rectangle()
-                        .fill(Color.black)
-                        .frame(width: closedNotchWidth - NotchShape.closedTopRadius + (isPopping ? 18 : 0))
-                }
-
-                if hasClosedPresence {
-                    ClosedCountBadge(
-                        liveCount: model.liveSessionCount,
-                        tint: closedSpotlightSession?.phase.requiresAttention == true ? .orange : scoutTint
-                    )
-                    .matchedGeometryEffect(id: "right-indicator", in: notchNamespace, isSource: true)
-                    .frame(width: max(sideWidth, countBadgeWidth))
                 }
             }
+            .padding(.horizontal, IslandClosedHeaderLayout.horizontalPadding(displayStyle: model.islandClosedDisplayStyle))
             .frame(height: closedNotchHeight)
         }
     }
@@ -567,12 +644,7 @@ struct IslandPanelView: View {
     }
 
     private func phaseColor(_ phase: SessionPhase) -> Color {
-        switch phase {
-        case .running: .mint
-        case .waitingForApproval: .orange
-        case .waitingForAnswer: .yellow
-        case .completed: .blue
-        }
+        model.islandStatusColor(for: phase)
     }
 
     @ViewBuilder
@@ -1689,17 +1761,26 @@ private struct AttentionIndicator: View {
 
 // MARK: - Closed count badge (right side of closed notch)
 
-private struct ClosedCountBadge: View {
+struct ClosedCountBadge: View {
     let liveCount: Int
     let tint: Color
+    var label: String? = nil
 
     var body: some View {
-        Text("\(liveCount)")
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(tint)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 2)
-            .background(Color(red: 0.14, green: 0.14, blue: 0.15), in: Capsule())
+        HStack(spacing: 2) {
+            Text("\(liveCount)")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(tint)
+            if let label, !label.isEmpty {
+                Text(label)
+                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.72))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+        }
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 

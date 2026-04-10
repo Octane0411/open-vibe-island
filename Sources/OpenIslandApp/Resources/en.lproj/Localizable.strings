@@ -44,6 +44,22 @@
 "settings.display.diagnostics" = "Diagnostics";
 "settings.display.currentScreen" = "Current Screen";
 "settings.display.layoutMode" = "Layout Mode";
+"settings.display.notchTitle" = "Notch";
+"settings.display.style" = "Style";
+"settings.display.style.minimal" = "Minimal";
+"settings.display.style.minimalSubtitle" = "Show only the status dot and count in the menu-bar lane.";
+"settings.display.style.detailed" = "Detailed";
+"settings.display.style.detailedSubtitle" = "Expose the workspace title and status summary in one glance.";
+"settings.display.preview.sessions" = "sessions";
+"settings.display.pixelShape" = "Pixel Glyph";
+"settings.display.pixelShape.bars" = "Cat";
+"settings.display.pixelShape.steps" = "Steps";
+"settings.display.pixelShape.blocks" = "Blocks";
+"settings.display.statusColors" = "Status Colors";
+"settings.display.status.running" = "Running";
+"settings.display.status.approval" = "Approval";
+"settings.display.status.answer" = "Answer";
+"settings.display.status.completed" = "Completed";
 
 /* Settings - Sound */
 "settings.sound.notifications" = "Notification Sounds";

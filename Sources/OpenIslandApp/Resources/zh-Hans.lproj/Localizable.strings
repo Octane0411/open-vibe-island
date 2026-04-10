@@ -44,6 +44,22 @@
 "settings.display.diagnostics" = "诊断";
 "settings.display.currentScreen" = "当前屏幕";
 "settings.display.layoutMode" = "布局模式";
+"settings.display.notchTitle" = "刘海";
+"settings.display.style" = "样式";
+"settings.display.style.minimal" = "简洁";
+"settings.display.style.minimalSubtitle" = "给菜单栏留出更多空间，只展示状态点和数量。";
+"settings.display.style.detailed" = "详细";
+"settings.display.style.detailedSubtitle" = "把工作区标题和当前状态一起展示得更清楚。";
+"settings.display.preview.sessions" = "个会话";
+"settings.display.pixelShape" = "像素图形";
+"settings.display.pixelShape.bars" = "猫咪";
+"settings.display.pixelShape.steps" = "阶梯";
+"settings.display.pixelShape.blocks" = "方块";
+"settings.display.statusColors" = "状态颜色";
+"settings.display.status.running" = "运行中";
+"settings.display.status.approval" = "等待审批";
+"settings.display.status.answer" = "等待回答";
+"settings.display.status.completed" = "已完成";
 
 /* Settings - Sound */
 "settings.sound.notifications" = "通知音效";

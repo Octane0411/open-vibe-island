@@ -207,32 +207,466 @@ struct GeneralSettingsPane: View {
 
 struct DisplaySettingsPane: View {
     var model: AppModel
+    @State private var previewPhase: SessionPhase = .running
 
     private var lang: LanguageManager { model.lang }
+    private let pageBackground = Color(red: 0.16, green: 0.17, blue: 0.18)
+    private let cardBackground = Color.white.opacity(0.04)
+    private let cardBorder = Color.white.opacity(0.06)
+    private let secondaryText = Color.white.opacity(0.48)
 
     var body: some View {
         Form {
-            Section(lang.t("settings.display.monitor")) {
-                Picker(lang.t("settings.display.position"), selection: Binding(
-                    get: { model.overlayDisplaySelectionID },
-                    set: { model.overlayDisplaySelectionID = $0 }
-                )) {
-                    Text(lang.t("settings.general.automatic")).tag(OverlayDisplayOption.automaticID)
-                    ForEach(model.overlayDisplayOptions) { option in
-                        Text(option.title).tag(option.id)
+            Section(lang.t("settings.display.notchTitle")) {
+                VStack(alignment: .leading, spacing: 16) {
+                    notchPreviewCard
+
+                    settingsField(title: lang.t("settings.display.style")) {
+                        HStack(alignment: .top, spacing: 14) {
+                            styleOptionCard(
+                                style: .minimal,
+                                title: lang.t("settings.display.style.minimal"),
+                                subtitle: lang.t("settings.display.style.minimalSubtitle")
+                            )
+
+                            styleOptionCard(
+                                style: .detailed,
+                                title: lang.t("settings.display.style.detailed"),
+                                subtitle: lang.t("settings.display.style.detailedSubtitle")
+                            )
+                        }
                     }
+
+                    settingsField(title: lang.t("settings.display.pixelShape")) {
+                        LazyVGrid(
+                            columns: Array(repeating: GridItem(.flexible(), spacing: 14, alignment: .top), count: 3),
+                            spacing: 14
+                        ) {
+                            ForEach(IslandPixelShapeStyle.allCases) { style in
+                                pixelShapeCard(style)
+                            }
+                        }
+                    }
+
+                    settingsField(title: lang.t("settings.display.statusColors")) {
+                        VStack(alignment: .leading, spacing: 14) {
+                            HStack(spacing: 10) {
+                                ForEach(statusPhases, id: \.self) { phase in
+                                    previewPhaseButton(phase)
+                                }
+                            }
+
+                            VStack(spacing: 12) {
+                                ForEach(statusPhases, id: \.self) { phase in
+                                    statusColorRow(phase)
+                                }
+                            }
+                        }
+                    }
+
                 }
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                .listRowBackground(Color.clear)
             }
 
-            if let diag = model.overlayPlacementDiagnostics {
-                Section(lang.t("settings.display.diagnostics")) {
-                    LabeledContent(lang.t("settings.display.currentScreen"), value: diag.targetScreenName)
-                    LabeledContent(lang.t("settings.display.layoutMode"), value: diag.modeDescription)
+            Section(lang.t("settings.display.monitor")) {
+                VStack(alignment: .leading, spacing: 16) {
+                    settingsInlineField(title: lang.t("settings.display.position")) {
+                        Picker(
+                            lang.t("settings.display.position"),
+                            selection: Binding(
+                                get: { model.overlayDisplaySelectionID },
+                                set: { model.overlayDisplaySelectionID = $0 }
+                            )
+                        ) {
+                            Text(lang.t("settings.general.automatic")).tag(OverlayDisplayOption.automaticID)
+                            ForEach(model.overlayDisplayOptions) { option in
+                                Text(option.title).tag(option.id)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(maxWidth: 220, alignment: .trailing)
+                    }
+
+                    if let diag = model.overlayPlacementDiagnostics {
+                        VStack(spacing: 12) {
+                            diagnosticsRow(
+                                title: lang.t("settings.display.currentScreen"),
+                                value: diag.targetScreenName
+                            )
+                            diagnosticsRow(
+                                title: lang.t("settings.display.layoutMode"),
+                                value: diag.modeDescription
+                            )
+                        }
+                    }
                 }
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                .listRowBackground(Color.clear)
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(pageBackground)
         .navigationTitle(lang.t("settings.tab.display"))
+    }
+
+    private func settingsCard<Content: View>(
+        description: String? = nil,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            if let description {
+                Text(description)
+                    .font(.system(size: 13))
+                    .foregroundStyle(secondaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .minimumScaleFactor(0.82)
+                    .allowsTightening(true)
+            }
+
+            content()
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .fill(cardBackground)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .stroke(cardBorder, lineWidth: 1)
+        )
+    }
+
+    private func settingsField<Content: View>(
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.78))
+
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func settingsInlineField<Content: View>(
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        HStack(alignment: .center, spacing: 16) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.74))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .minimumScaleFactor(0.88)
+                .allowsTightening(true)
+
+            Spacer(minLength: 12)
+
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var notchPreviewCard: some View {
+        let previewCount = 2
+        let previewLabel = model.islandClosedDisplayStyle == .detailed
+            ? lang.t("settings.display.preview.sessions")
+            : nil
+        let previewStatusText = model.islandClosedDisplayStyle == .detailed
+            ? statusTitle(previewPhase)
+            : nil
+        let previewLeadingWidth = IslandClosedHeaderLayout.leadingContentWidth(
+            notchHeight: 24,
+            hasAttention: previewPhase.requiresAttention,
+            displayStyle: model.islandClosedDisplayStyle,
+            detailText: previewStatusText
+        )
+        let previewTrailingWidth = IslandClosedHeaderLayout.trailingBadgeWidth(
+            notchHeight: 24,
+            indicatorCount: previewCount,
+            displayStyle: model.islandClosedDisplayStyle,
+            countLabel: previewLabel
+        )
+        let previewBarWidth = 224 + IslandClosedHeaderLayout.expansionWidth(
+            notchHeight: 24,
+            indicatorCount: previewCount,
+            hasAttention: previewPhase.requiresAttention,
+            displayStyle: model.islandClosedDisplayStyle,
+            detailText: previewStatusText,
+            countLabel: previewLabel
+        )
+
+        return ZStack {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.21, green: 0.11, blue: 0.39),
+                            Color(red: 0.16, green: 0.28, blue: 0.62),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+
+            HStack(spacing: 0) {
+                HStack(spacing: 5) {
+                    HStack(spacing: 4) {
+                        IslandPixelGlyph(
+                            tint: model.islandStatusColor(for: previewPhase),
+                            style: model.islandPixelShapeStyle,
+                            isAnimating: previewPhase != .completed
+                        )
+
+                        if previewPhase.requiresAttention {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 10.5, weight: .bold))
+                                .foregroundStyle(model.islandStatusColor(for: previewPhase))
+                        }
+                    }
+
+                    if model.islandClosedDisplayStyle == .detailed {
+                        Text(statusTitle(previewPhase))
+                            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.92))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .minimumScaleFactor(0.7)
+                            .allowsTightening(true)
+                            .frame(
+                                width: IslandClosedHeaderLayout.detailTextWidth(
+                                    statusTitle(previewPhase),
+                                    displayStyle: model.islandClosedDisplayStyle
+                                ),
+                                alignment: .leading
+                            )
+                    }
+                }
+                .frame(width: previewLeadingWidth, alignment: .leading)
+
+                Spacer(minLength: IslandClosedHeaderLayout.centerSpacing(displayStyle: model.islandClosedDisplayStyle))
+
+                ClosedCountBadge(
+                    liveCount: previewCount,
+                    tint: model.islandStatusColor(for: previewPhase),
+                    label: previewLabel
+                )
+                .frame(width: previewTrailingWidth, alignment: Alignment.trailing)
+            }
+            .padding(14)
+            .padding(.horizontal, IslandClosedHeaderLayout.horizontalPadding(displayStyle: model.islandClosedDisplayStyle))
+            .frame(width: previewBarWidth, height: 62, alignment: .leading)
+            .background(Color.black, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .padding(.top, 22)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 128)
+    }
+
+    private func styleOptionCard(
+        style: IslandClosedDisplayStyle,
+        title: String,
+        subtitle: String
+    ) -> some View {
+        return Button {
+            model.islandClosedDisplayStyle = style
+        } label: {
+            VStack(spacing: 6) {
+                Text(title)
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .minimumScaleFactor(0.85)
+                    .allowsTightening(true)
+                    .frame(height: 24, alignment: .center)
+
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.42))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .minimumScaleFactor(0.8)
+                    .allowsTightening(true)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(.vertical, 22)
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(Color.white.opacity(style == model.islandClosedDisplayStyle ? 0.06 : 0.02))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(
+                        style == model.islandClosedDisplayStyle ? Color.blue.opacity(0.9) : Color.white.opacity(0.08),
+                        lineWidth: style == model.islandClosedDisplayStyle ? 2 : 1
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func diagnosticsRow(title: String, value: String) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.white.opacity(0.5))
+            Spacer()
+            Text(value)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.88))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .minimumScaleFactor(0.84)
+                .allowsTightening(true)
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var statusPhases: [SessionPhase] {
+        [.running, .waitingForApproval, .waitingForAnswer, .completed]
+    }
+
+    private func pixelShapeCard(_ style: IslandPixelShapeStyle) -> some View {
+        Button {
+            model.islandPixelShapeStyle = style
+        } label: {
+            VStack(spacing: 10) {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.white.opacity(0.05))
+                    .frame(height: 62)
+                    .overlay {
+                        IslandPixelGlyph(
+                            tint: model.islandStatusColor(for: previewPhase),
+                            style: style,
+                            isAnimating: previewPhase != .completed,
+                            width: 30,
+                            height: 18
+                        )
+                    }
+
+                Text(pixelShapeTitle(style))
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.84))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .minimumScaleFactor(0.85)
+                    .allowsTightening(true)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.white.opacity(style == model.islandPixelShapeStyle ? 0.06 : 0.02))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(
+                        style == model.islandPixelShapeStyle ? Color.blue.opacity(0.9) : Color.white.opacity(0.08),
+                        lineWidth: style == model.islandPixelShapeStyle ? 2 : 1
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func previewPhaseButton(_ phase: SessionPhase) -> some View {
+        Button {
+            previewPhase = phase
+        } label: {
+            Text(statusTitle(phase))
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(previewPhase == phase ? .white : .white.opacity(0.64))
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+                .allowsTightening(true)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(previewPhase == phase ? model.islandStatusColor(for: phase).opacity(0.3) : Color.white.opacity(0.06))
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(previewPhase == phase ? model.islandStatusColor(for: phase).opacity(0.9) : Color.white.opacity(0.08), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func statusColorRow(_ phase: SessionPhase) -> some View {
+        HStack(spacing: 14) {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(model.islandStatusColor(for: phase))
+                    .frame(width: 12, height: 12)
+                Text(statusTitle(phase))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.82))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .minimumScaleFactor(0.84)
+                    .allowsTightening(true)
+            }
+            .frame(width: 120, alignment: .leading)
+
+            ColorPicker(
+                "",
+                selection: Binding(
+                    get: { model.islandStatusColor(for: phase) },
+                    set: { model.setIslandStatusColor($0, for: phase) }
+                ),
+                supportsOpacity: false
+            )
+            .labelsHidden()
+
+            Text(model.islandStatusColorHex(for: phase))
+                .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.5))
+
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white.opacity(0.03))
+        )
+    }
+
+    private func pixelShapeTitle(_ style: IslandPixelShapeStyle) -> String {
+        switch style {
+        case .bars:
+            return lang.t("settings.display.pixelShape.bars")
+        case .steps:
+            return lang.t("settings.display.pixelShape.steps")
+        case .blocks:
+            return lang.t("settings.display.pixelShape.blocks")
+        }
+    }
+
+    private func statusTitle(_ phase: SessionPhase) -> String {
+        switch phase {
+        case .running:
+            return lang.t("settings.display.status.running")
+        case .waitingForApproval:
+            return lang.t("settings.display.status.approval")
+        case .waitingForAnswer:
+            return lang.t("settings.display.status.answer")
+        case .completed:
+            return lang.t("settings.display.status.completed")
+        }
     }
 }
 
