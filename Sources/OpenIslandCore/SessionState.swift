@@ -109,6 +109,9 @@ public struct SessionState: Equatable, Sendable {
                 }
             }
 
+            // A session receiving hook activity is definitively hook-managed.
+            // This upgrades discovered sessions to hook-managed so they collapse promptly when done.
+            session.isHookManaged = true
             session.updatedAt = payload.timestamp
             upsert(session)
 
