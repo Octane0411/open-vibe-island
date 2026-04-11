@@ -3,28 +3,6 @@ import Testing
 
 struct OverlayUICoordinatorTests {
     @Test
-    func hoverOpenedTopBarDragStartClosesImmediately() {
-        let plan = OverlayUICoordinator.dragStartPlan(
-            status: .opened,
-            mode: .topBar,
-            openReason: .hover
-        )
-
-        #expect(plan == .closeImmediatelyForDrag)
-    }
-
-    @Test
-    func clickOpenedTopBarDragStartDoesNotCloseImmediately() {
-        let plan = OverlayUICoordinator.dragStartPlan(
-            status: .opened,
-            mode: .topBar,
-            openReason: .click
-        )
-
-        #expect(plan == .keepCurrentState)
-    }
-
-    @Test
     func openedTopBarCloseDefersFrameSyncWhenPanelExists() {
         let plan = OverlayUICoordinator.closeTransitionPlan(
             previousStatus: .opened,

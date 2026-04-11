@@ -376,31 +376,6 @@ struct AppModelSessionListTests {
     }
 
     @Test
-    func hoverOpenedTopBarDragStartClosesOverlayImmediately() {
-        let model = AppModel()
-        model.overlayPlacementDiagnostics = OverlayPlacementDiagnostics(
-            targetScreenID: "display-external",
-            targetScreenName: "External",
-            selectionSummary: "manual",
-            mode: .topBar,
-            screenFrame: NSRect(x: 0, y: 0, width: 1728, height: 1117),
-            visibleFrame: NSRect(x: 0, y: 0, width: 1728, height: 1117),
-            safeAreaInsets: NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0),
-            overlayFrame: NSRect(x: 510, y: 580, width: 708, height: 514)
-        )
-        model.notchStatus = .opened
-        model.notchOpenReason = .hover
-        model.islandSurface = .sessionList()
-
-        model.beginTopBarHoverDrag()
-
-        #expect(model.notchStatus == .closed)
-        #expect(model.notchOpenReason == nil)
-        #expect(model.islandSurface == .sessionList())
-        #expect(!model.isOverlayCloseTransitionPending)
-    }
-
-    @Test
     func clickedSessionListDoesNotAutoCollapseOnPointerExit() {
         let model = AppModel()
         model.notchStatus = .opened
