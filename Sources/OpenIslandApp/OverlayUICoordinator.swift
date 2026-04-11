@@ -22,6 +22,11 @@ final class OverlayUICoordinator {
         case deferTopBarFrameSync
     }
 
+    enum DragStartPlan: Equatable {
+        case keepCurrentState
+        case closeImmediatelyForDrag
+    }
+
     private static let notificationSurfaceAutoCollapseDelay: TimeInterval = 10
 
     var notchStatus: NotchStatus = .closed
@@ -141,6 +146,18 @@ final class OverlayUICoordinator {
         return .deferTopBarFrameSync
     }
 
+    nonisolated static func dragStartPlan(
+        status: NotchStatus,
+        mode: OverlayPlacementMode,
+        openReason: NotchOpenReason?
+    ) -> DragStartPlan {
+        if status == .opened && mode == .topBar && openReason == .hover {
+            return .closeImmediatelyForDrag
+        }
+
+        return .keepCurrentState
+    }
+
     // MARK: - Initialization
 
     func restoreDisplayPreference() {
@@ -217,6 +234,39 @@ final class OverlayUICoordinator {
                 self?.autoCollapseSurfaceHasBeenEntered = false
                 self?.appModel?.measuredNotificationContentHeight = 0
             }
+        )
+    }
+
+    func beginTopBarHoverDrag() {
+        let placementMode = overlayPlacementDiagnostics?.mode
+            ?? overlayPanelController.placementDiagnostics(
+                preferredScreenID: preferredOverlayScreenID
+            )?.mode
+            ?? .notch
+
+        guard Self.dragStartPlan(
+            status: notchStatus,
+            mode: placementMode,
+            openReason: notchOpenReason
+        ) == .closeImmediatelyForDrag else {
+            return
+        }
+
+        notificationAutoCollapseTask?.cancel()
+        notificationAutoCollapseTask = nil
+        autoCollapseSurfaceHasBeenEntered = false
+        appModel?.measuredNotificationContentHeight = 0
+        overlayTransitionGeneration &+= 1
+        clearCloseTransitionState()
+
+        islandSurface = .sessionList()
+        notchOpenReason = nil
+        notchStatus = .closed
+
+        applyInteractionUpdatePlan(
+            requestedInteractive: false,
+            status: .closed,
+            mode: placementMode
         )
     }
 

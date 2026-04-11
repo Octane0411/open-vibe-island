@@ -804,6 +804,7 @@ final class AppModel {
     func toggleOverlay() { overlay.toggleOverlay() }
     func notchOpen(reason: NotchOpenReason, surface: IslandSurface = .sessionList()) { overlay.notchOpen(reason: reason, surface: surface) }
     func notchClose() { overlay.notchClose() }
+    func beginTopBarHoverDrag() { overlay.beginTopBarHoverDrag() }
     func notchPop() { overlay.notchPop() }
     func performBootAnimation() { overlay.performBootAnimation() }
     func ensureOverlayPanel() { overlay.ensureOverlayPanel() }

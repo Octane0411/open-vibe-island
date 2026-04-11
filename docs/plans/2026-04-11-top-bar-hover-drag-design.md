@@ -203,3 +203,8 @@
 - 后续继续沿用现有 closed pill 拖动与持久化链路
 
 这样既满足新的交互目标，也能把副作用限制在 top-bar hover 路径内。
+
+## 实现备注
+
+- 实际实现时，Task 3 到 Task 5 共享同一条 AppKit 拖动态机：header 热区接管、越阈值后同步切回 closed、随后复用 closed pill 拖动与持久化。
+- 这三步不能再人为拆成互不相干的链路，否则会重新引入 shared-state 回归。

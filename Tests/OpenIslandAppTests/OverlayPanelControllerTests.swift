@@ -239,6 +239,110 @@ struct OverlayPanelControllerTests {
     }
 
     @Test
+    func topBarDragLayerDoesNotCaptureOpenedBlankAreaFallback() {
+        #expect(
+            !OverlayPanelController.shouldCaptureTopBarDragLayerHit(
+                capturesClosedTopBarPill: false,
+                capturesOpenedHeaderDrag: false
+            )
+        )
+    }
+
+    @Test
+    func topBarDragLayerCapturesClosedPillOrOpenedHeaderHotZone() {
+        #expect(
+            OverlayPanelController.shouldCaptureTopBarDragLayerHit(
+                capturesClosedTopBarPill: true,
+                capturesOpenedHeaderDrag: false
+            )
+        )
+        #expect(
+            OverlayPanelController.shouldCaptureTopBarDragLayerHit(
+                capturesClosedTopBarPill: false,
+                capturesOpenedHeaderDrag: true
+            )
+        )
+    }
+
+    @Test
+    func openedHeaderDragCrossingThresholdStartsClosedPillDrag() {
+        let plan = OverlayPanelController.openedTopBarHeaderDragPlan(
+            startedFromOpenedTopBarHeader: true,
+            didTransitionToClosedPill: false,
+            dragDistance: 6,
+            threshold: 4
+        )
+
+        #expect(plan == .startClosedPillDrag)
+    }
+
+    @Test
+    func openedHeaderDragBelowThresholdKeepsWaiting() {
+        let plan = OverlayPanelController.openedTopBarHeaderDragPlan(
+            startedFromOpenedTopBarHeader: true,
+            didTransitionToClosedPill: false,
+            dragDistance: 3,
+            threshold: 4
+        )
+
+        #expect(plan == .waitForThreshold)
+    }
+
+    @Test
+    func openedHeaderDragAfterCollapseContinuesClosedPillDrag() {
+        let plan = OverlayPanelController.openedTopBarHeaderDragPlan(
+            startedFromOpenedTopBarHeader: true,
+            didTransitionToClosedPill: true,
+            dragDistance: 2,
+            threshold: 4
+        )
+
+        #expect(plan == .continueClosedPillDrag)
+    }
+
+    @Test
+    func closedPillDragPlanKeepsUsingClosedPillPath() {
+        let plan = OverlayPanelController.openedTopBarHeaderDragPlan(
+            startedFromOpenedTopBarHeader: false,
+            didTransitionToClosedPill: false,
+            dragDistance: 1,
+            threshold: 4
+        )
+
+        #expect(plan == .continueClosedPillDrag)
+    }
+
+    @Test
+    func openedHeaderDragEndsClosedTopBarPressAfterCollapse() {
+        #expect(
+            OverlayPanelController.shouldEndClosedTopBarPressAfterDrag(
+                startedFromOpenedTopBarHeader: true,
+                didTransitionToClosedPill: true
+            )
+        )
+    }
+
+    @Test
+    func openedHeaderWithoutCollapseDoesNotEndClosedTopBarPress() {
+        #expect(
+            !OverlayPanelController.shouldEndClosedTopBarPressAfterDrag(
+                startedFromOpenedTopBarHeader: true,
+                didTransitionToClosedPill: false
+            )
+        )
+    }
+
+    @Test
+    func closedPillDragStillEndsClosedTopBarPress() {
+        #expect(
+            OverlayPanelController.shouldEndClosedTopBarPressAfterDrag(
+                startedFromOpenedTopBarHeader: false,
+                didTransitionToClosedPill: false
+            )
+        )
+    }
+
+    @Test
     func eventMonitorDefersClosedTopBarClicksWhenPanelIsInteractive() {
         #expect(
             !OverlayPanelController.shouldEventMonitorHandleClosedSurfaceClick(
