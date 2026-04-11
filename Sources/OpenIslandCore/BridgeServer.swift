@@ -1166,11 +1166,13 @@ public final class BridgeServer: @unchecked Sendable {
 
         synchronizeQwenMetadata(for: payload)
 
-        switch payload.hookEventName {
-        case "SessionStart":
+        let lowercasedEvent = payload.hookEventName.lowercased()
+
+        switch lowercasedEvent {
+        case "sessionstart", "session_start":
             // Already handled above
             break
-        case "UserPromptSubmit":
+        case "userpromptsubmit", "user_prompt_submit":
             emit(
                 .activityUpdated(
                     SessionActivityUpdated(
@@ -1181,7 +1183,7 @@ public final class BridgeServer: @unchecked Sendable {
                     )
                 )
             )
-        case "PreToolUse":
+        case "pretooluse", "pre_tool_use":
             let summary = payload.toolName.map { "Running \($0)" } ?? "Running Qwen tool"
             emit(
                 .activityUpdated(
@@ -1193,7 +1195,7 @@ public final class BridgeServer: @unchecked Sendable {
                     )
                 )
             )
-        case "PostToolUse":
+        case "posttooluse", "post_tool_use":
             let summary = payload.toolName.map { "\($0) finished." } ?? "Qwen tool finished."
             emit(
                 .activityUpdated(
@@ -1205,7 +1207,7 @@ public final class BridgeServer: @unchecked Sendable {
                     )
                 )
             )
-        case "Stop":
+        case "stop":
             emit(
                 .sessionCompleted(
                     SessionCompleted(
@@ -1216,7 +1218,7 @@ public final class BridgeServer: @unchecked Sendable {
                     )
                 )
             )
-        case "StopFailure":
+        case "stopfailure", "stop_failure":
             emit(
                 .sessionCompleted(
                     SessionCompleted(
@@ -1227,7 +1229,7 @@ public final class BridgeServer: @unchecked Sendable {
                     )
                 )
             )
-        case "SessionEnd":
+        case "sessionend", "session_end":
             emit(
                 .sessionCompleted(
                     SessionCompleted(
@@ -1922,10 +1924,11 @@ public final class BridgeServer: @unchecked Sendable {
             mergedMetadata.agentID = agentID
         }
 
-        switch payload.hookEventName {
-        case "PreToolUse":
+        let lowercasedEvent = payload.hookEventName.lowercased()
+        switch lowercasedEvent {
+        case "pretooluse", "pre_tool_use":
             mergedMetadata.currentTool = payload.toolName
-        case "PostToolUse", "Stop", "StopFailure", "SessionEnd":
+        case "posttooluse", "post_tool_use", "stop", "stopfailure", "stop_failure", "sessionend", "session_end":
             mergedMetadata.currentTool = nil
         default:
             break
