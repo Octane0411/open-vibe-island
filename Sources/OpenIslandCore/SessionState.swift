@@ -350,10 +350,12 @@ public struct SessionState: Equatable, Sendable {
                     if session.processNotSeenCount >= 2 {
                         session.isProcessAlive = false
                         
-                        // Only mark as zombie completed if it hasn't seen any hook events for 60 seconds
-                        if Date.now.timeIntervalSince(session.updatedAt) > 60.0 {
+                        // Process is confirmed dead for multiple polls. 
+                        // Mark it as ended so it can gracefully animate out via the UI's 5s completion window.
+                        if !session.isSessionEnded {
                             session.isSessionEnded = true
                             session.phase = .completed
+                            session.updatedAt = .now // Reset updatedAt to trigger the 5s completion animation
                             changed.insert(id)
                         }
                     }

@@ -464,14 +464,6 @@ public extension AgentSession {
                 return Date.now.timeIntervalSince(updatedAt) <= 6.0
             }
             
-            // Hook-managed sessions are primarily controlled by the bridge.
-            // We give them a large 60-second grace period to ignore flaky process 
-            // polling dropouts. If the process is dead AND no hook events arrived 
-            // for 60 seconds, we treat it as a zombie and cull it.
-            if !isProcessAlive && Date.now.timeIntervalSince(updatedAt) > 60.0 {
-                return false
-            }
-            
             return true
         }
         if isProcessAlive { return true }
