@@ -50,6 +50,7 @@ final class AppModel {
     let monitoring = ProcessMonitoringCoordinator()
     let updateChecker = UpdateChecker()
     let nowPlayingObserver = NowPlayingObserver()
+    let artworkCache = ArtworkCache()
 
     var notchStatus: NotchStatus {
         get { overlay.notchStatus }
