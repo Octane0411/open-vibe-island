@@ -505,19 +505,27 @@ struct ActiveAgentProcessDiscovery {
 
     private func isClaudeProcess(command: String) -> Bool {
         let lowered = command.lowercased()
-        if lowered.contains("/.local/bin/claude") {
-            return true
-        }
         
-        if lowered.contains("/.local/bin/qwen") {
+        if lowered.contains("/bin/claude") || lowered.contains("/bin/qwen") || lowered.contains("/.local/bin/claude") || lowered.contains("/.local/bin/qwen") {
             return true
         }
 
-        guard let firstToken = lowered.split(separator: " ").first else {
+        let tokens = lowered.split(separator: " ").map(String.init)
+        guard let firstToken = tokens.first else {
             return false
         }
 
-        return firstToken == "claude" || firstToken == "qwen"
+        if firstToken == "claude" || firstToken == "qwen" {
+            return true
+        }
+
+        if firstToken == "node" || firstToken.hasSuffix("/node") {
+            if lowered.contains("claude") || lowered.contains("qwen") {
+                return true
+            }
+        }
+
+        return false
     }
 
     private static func commandOutput(executablePath: String, arguments: [String]) -> String? {
