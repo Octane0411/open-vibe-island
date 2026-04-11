@@ -108,6 +108,8 @@ struct IslandPanelView: View {
     private static let headerTopPadding: CGFloat = 2
     private static let notchLaneSafetyInset: CGFloat = 12
     private static let closedIdleEdgeHeight: CGFloat = 4
+    nonisolated static let topBarOpenedHeaderHorizontalPadding: CGFloat = 18
+    nonisolated static let topBarOpenedHeaderTrailingControlWidth: CGFloat = 52
 
     var model: AppModel
 

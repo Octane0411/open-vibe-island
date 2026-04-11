@@ -103,6 +103,34 @@ final class OverlayPanelController {
         status == .opened && mode == .topBar && openReason == .hover
     }
 
+    nonisolated static func openedTopBarHeaderDragRect(
+        contentRect: NSRect,
+        headerHeight: CGFloat,
+        trailingControlWidth: CGFloat,
+        horizontalPadding: CGFloat
+    ) -> NSRect {
+        let clampedHeaderHeight = max(0, min(headerHeight, contentRect.height))
+        let headerRect = NSRect(
+            x: contentRect.minX,
+            y: contentRect.maxY - clampedHeaderHeight,
+            width: contentRect.width,
+            height: clampedHeaderHeight
+        )
+
+        let safeHorizontalPadding = max(0, horizontalPadding)
+        let safeTrailingControlWidth = max(0, trailingControlWidth)
+        let dragMinX = headerRect.minX + safeHorizontalPadding
+        let dragMaxX = headerRect.maxX - safeHorizontalPadding - safeTrailingControlWidth
+        let dragWidth = max(0, dragMaxX - dragMinX)
+
+        return NSRect(
+            x: dragMinX,
+            y: headerRect.minY,
+            width: dragWidth,
+            height: headerRect.height
+        )
+    }
+
     func availableDisplayOptions() -> [OverlayDisplayOption] {
         OverlayDisplayResolver.availableDisplayOptions()
     }

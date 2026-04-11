@@ -146,6 +146,45 @@ struct OverlayPanelControllerTests {
     }
 
     @Test
+    func openedTopBarHeaderLeftAreaCanStartDrag() {
+        let contentRect = NSRect(x: 18, y: 14, width: 700, height: 500)
+        let dragRect = OverlayPanelController.openedTopBarHeaderDragRect(
+            contentRect: contentRect,
+            headerHeight: 30,
+            trailingControlWidth: IslandPanelView.topBarOpenedHeaderTrailingControlWidth,
+            horizontalPadding: IslandPanelView.topBarOpenedHeaderHorizontalPadding
+        )
+
+        #expect(dragRect.contains(NSPoint(x: 56, y: 498)))
+    }
+
+    @Test
+    func openedTopBarHeaderControlButtonsAreaCannotStartDrag() {
+        let contentRect = NSRect(x: 18, y: 14, width: 700, height: 500)
+        let dragRect = OverlayPanelController.openedTopBarHeaderDragRect(
+            contentRect: contentRect,
+            headerHeight: 30,
+            trailingControlWidth: IslandPanelView.topBarOpenedHeaderTrailingControlWidth,
+            horizontalPadding: IslandPanelView.topBarOpenedHeaderHorizontalPadding
+        )
+
+        #expect(!dragRect.contains(NSPoint(x: 686, y: 498)))
+    }
+
+    @Test
+    func openedTopBarHeaderBelowAreaCannotStartDrag() {
+        let contentRect = NSRect(x: 18, y: 14, width: 700, height: 500)
+        let dragRect = OverlayPanelController.openedTopBarHeaderDragRect(
+            contentRect: contentRect,
+            headerHeight: 30,
+            trailingControlWidth: IslandPanelView.topBarOpenedHeaderTrailingControlWidth,
+            horizontalPadding: IslandPanelView.topBarOpenedHeaderHorizontalPadding
+        )
+
+        #expect(!dragRect.contains(NSPoint(x: 56, y: 476)))
+    }
+
+    @Test
     func eventMonitorDefersClosedTopBarClicksWhenPanelIsInteractive() {
         #expect(
             !OverlayPanelController.shouldEventMonitorHandleClosedSurfaceClick(
