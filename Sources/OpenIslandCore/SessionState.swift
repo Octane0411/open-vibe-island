@@ -343,13 +343,19 @@ public struct SessionState: Equatable, Sendable {
                 }
 
                 if aliveSessionIDs.contains(id) {
+                    session.isProcessAlive = true
                     session.processNotSeenCount = 0
                 } else {
                     session.processNotSeenCount += 1
                     if session.processNotSeenCount >= 2 {
-                        session.isSessionEnded = true
-                        session.phase = .completed
-                        changed.insert(id)
+                        session.isProcessAlive = false
+                        
+                        // Only mark as zombie completed if it hasn't seen any hook events for 60 seconds
+                        if Date.now.timeIntervalSince(session.updatedAt) > 60.0 {
+                            session.isSessionEnded = true
+                            session.phase = .completed
+                            changed.insert(id)
+                        }
                     }
                 }
 
