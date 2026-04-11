@@ -113,6 +113,39 @@ struct OverlayPanelControllerTests {
     }
 
     @Test
+    func hoverOpenedTopBarAllowsHeaderDrag() {
+        #expect(
+            OverlayPanelController.canDragOpenedTopBarHeader(
+                status: .opened,
+                mode: .topBar,
+                openReason: .hover
+            )
+        )
+    }
+
+    @Test
+    func clickOpenedTopBarDoesNotAllowHeaderDrag() {
+        #expect(
+            !OverlayPanelController.canDragOpenedTopBarHeader(
+                status: .opened,
+                mode: .topBar,
+                openReason: .click
+            )
+        )
+    }
+
+    @Test
+    func hoverOpenedNotchDoesNotAllowHeaderDrag() {
+        #expect(
+            !OverlayPanelController.canDragOpenedTopBarHeader(
+                status: .opened,
+                mode: .notch,
+                openReason: .hover
+            )
+        )
+    }
+
+    @Test
     func eventMonitorDefersClosedTopBarClicksWhenPanelIsInteractive() {
         #expect(
             !OverlayPanelController.shouldEventMonitorHandleClosedSurfaceClick(

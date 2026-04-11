@@ -95,6 +95,14 @@ final class OverlayPanelController {
         return !isPressingClosedTopBarPill
     }
 
+    nonisolated static func canDragOpenedTopBarHeader(
+        status: NotchStatus,
+        mode: OverlayPlacementMode,
+        openReason: NotchOpenReason?
+    ) -> Bool {
+        status == .opened && mode == .topBar && openReason == .hover
+    }
+
     func availableDisplayOptions() -> [OverlayDisplayOption] {
         OverlayDisplayResolver.availableDisplayOptions()
     }
