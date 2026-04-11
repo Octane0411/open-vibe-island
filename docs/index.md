@@ -34,6 +34,8 @@ This index is the repository map for humans and coding agents. Read these files 
 - [docs/session-state-refactor.md](./session-state-refactor.md) for the session state management refactoring plan (process discovery as source of truth)
 - [docs/plans/2026-04-09-external-display-shell-split-design.md](./plans/2026-04-09-external-display-shell-split-design.md) for the external-display closed-shell design constraints
 - [docs/plans/2026-04-09-external-display-shell-split.md](./plans/2026-04-09-external-display-shell-split.md) for the external-display closed-shell implementation steps
+- [docs/plans/2026-04-11-top-bar-hover-drag-design.md](./plans/2026-04-11-top-bar-hover-drag-design.md) for the top-bar hover-expand drag interaction design
+- [docs/plans/2026-04-11-top-bar-hover-drag.md](./plans/2026-04-11-top-bar-hover-drag.md) for the top-bar hover-expand drag implementation plan
 
 ## Watch / iOS
 
