@@ -457,7 +457,12 @@ public extension AgentSession {
     var isVisibleInIsland: Bool {
         if isDemoSession { return true }
         if phase.requiresAttention { return true }
-        if isHookManaged { return !isSessionEnded && isProcessAlive }
+        if isHookManaged {
+            if phase == .completed {
+                return true // the 5-second limit is enforced by islandPresence
+            }
+            return !isSessionEnded && isProcessAlive
+        }
         if isProcessAlive { return true }
         return false
     }
