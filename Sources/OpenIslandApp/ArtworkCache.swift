@@ -60,9 +60,14 @@ final class ArtworkCache {
     // MARK: Private
 
     private func loadImage(url: URL) async -> NSImage? {
-        await Task.detached(priority: .utility) {
-            guard let data = try? Data(contentsOf: url) else { return nil }
-            return NSImage(data: data)
-        }.value
+        if url.isFileURL {
+            return await Task.detached(priority: .utility) {
+                guard let data = try? Data(contentsOf: url) else { return nil }
+                return NSImage(data: data)
+            }.value
+        }
+        // Remote URL: use URLSession for proper async, timeout, and cancellation support
+        guard let (data, _) = try? await URLSession.shared.data(from: url) else { return nil }
+        return NSImage(data: data)
     }
 }

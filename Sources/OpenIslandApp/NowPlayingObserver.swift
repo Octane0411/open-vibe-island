@@ -107,13 +107,19 @@ final class NowPlayingObserver {
     }
 
     private func writeMusicArtwork() -> URL? {
+        // Write to a UUID-named temp file first, then atomically move to final path
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        let baseDir = caches ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        let tmpPath = baseDir.appendingPathComponent("open-island-artwork-\(UUID().uuidString)").path
+        let finalURL = URL(fileURLWithPath: Self.musicArtworkPath)
+
         let script = """
         tell application "Music"
             if not (it is running) then return ""
             if player state is stopped then return ""
             try
                 set artData to raw data of artwork 1 of current track
-                set tmpPath to "\(Self.musicArtworkPath)"
+                set tmpPath to "\(tmpPath)"
                 set fileRef to open for access POSIX file tmpPath with write permission
                 set eof of fileRef to 0
                 write artData to fileRef
@@ -124,8 +130,17 @@ final class NowPlayingObserver {
             end try
         end tell
         """
-        guard let path = runOsascript(script), !path.isEmpty else { return nil }
-        return URL(fileURLWithPath: path)
+        guard let writtenPath = runOsascript(script), !writtenPath.isEmpty else { return nil }
+        let writtenURL = URL(fileURLWithPath: writtenPath)
+        // Atomically move temp file to the stable final path
+        do {
+            _ = try FileManager.default.replaceItemAt(finalURL, withItemAt: writtenURL)
+        } catch {
+            // replaceItemAt failed — try a plain move as fallback
+            try? FileManager.default.removeItem(at: finalURL)
+            try? FileManager.default.moveItem(at: writtenURL, to: finalURL)
+        }
+        return finalURL
     }
 
     private func parseSpotifyScript(_ script: String) -> NowPlayingState? {
