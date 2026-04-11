@@ -403,7 +403,7 @@ public struct SessionState: Equatable, Sendable {
     public mutating func removeInvisibleSessions() -> Bool {
         let before = sessionsByID.count
         sessionsByID = sessionsByID.filter { _, session in
-            session.isVisibleInIsland
+            session.isVisibleInIsland || session.isProcessAlive
         }
         return sessionsByID.count != before
     }
