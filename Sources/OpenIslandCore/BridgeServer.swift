@@ -1164,6 +1164,8 @@ public final class BridgeServer: @unchecked Sendable {
             )
         }
 
+        synchronizeQwenMetadata(for: payload)
+
         switch payload.hookEventName {
         case "SessionStart":
             // Already handled above
@@ -1858,6 +1860,71 @@ public final class BridgeServer: @unchecked Sendable {
         )
         guard !mergedMetadata.isEmpty else {
             return
+        }
+
+        guard existingSession.claudeMetadata != mergedMetadata else {
+            return
+        }
+
+        emit(
+            .claudeSessionMetadataUpdated(
+                ClaudeSessionMetadataUpdated(
+                    sessionID: payload.sessionID,
+                    claudeMetadata: mergedMetadata,
+                    timestamp: .now
+                )
+            )
+        )
+    }
+
+    private func synchronizeQwenMetadata(for payload: QwenHookPayload) {
+        guard let existingSession = localState.session(id: payload.sessionID) else {
+            return
+        }
+
+        var mergedMetadata = existingSession.claudeMetadata ?? ClaudeSessionMetadata(
+            transcriptPath: payload.transcriptPath,
+            initialUserPrompt: payload.prompt,
+            lastUserPrompt: payload.prompt,
+            lastAssistantMessage: payload.lastAssistantMessage,
+            currentTool: payload.toolName,
+            currentToolInputPreview: nil,
+            model: payload.model,
+            startupSource: nil,
+            permissionMode: nil,
+            agentID: payload.agentID,
+            agentType: payload.agentType,
+            worktreeBranch: nil,
+            activeSubagents: [],
+            activeTasks: []
+        )
+
+        if let prompt = payload.prompt {
+            if mergedMetadata.initialUserPrompt == nil {
+                mergedMetadata.initialUserPrompt = prompt
+            }
+            mergedMetadata.lastUserPrompt = prompt
+        }
+        
+        if let msg = payload.lastAssistantMessage {
+            mergedMetadata.lastAssistantMessage = msg
+        }
+        
+        if let path = payload.transcriptPath {
+            mergedMetadata.transcriptPath = path
+        }
+        
+        if let agentID = payload.agentID {
+            mergedMetadata.agentID = agentID
+        }
+
+        switch payload.hookEventName {
+        case "PreToolUse":
+            mergedMetadata.currentTool = payload.toolName
+        case "PostToolUse", "Stop", "StopFailure", "SessionEnd":
+            mergedMetadata.currentTool = nil
+        default:
+            break
         }
 
         guard existingSession.claudeMetadata != mergedMetadata else {
