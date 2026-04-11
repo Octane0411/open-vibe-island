@@ -8,6 +8,9 @@ final class NowPlayingObserver {
     private(set) var state: NowPlayingState = .none
     private var timer: Timer?
     private let pollInterval: TimeInterval
+    private var lastMusicTrackKey: String = ""
+
+    private static let musicArtworkPath = "/tmp/open-island-artwork"
 
     init(pollInterval: TimeInterval = 1.0) {
         self.pollInterval = pollInterval
@@ -40,14 +43,17 @@ final class NowPlayingObserver {
         tell application "Spotify"
             if not (it is running) then return ""
             set sep to ASCII character 31
-            if player state is playing then
-                return "playing" & sep & (name of current track) & sep & (artist of current track) & sep & (album of current track)
-            else
-                return "paused" & sep & (name of current track) & sep & (artist of current track) & sep & (album of current track)
-            end if
+            set isPlaying to player state is playing
+            set status to "paused"
+            if isPlaying then set status to "playing"
+            set artURL to ""
+            try
+                set artURL to artwork url of current track
+            end try
+            return status & sep & (name of current track) & sep & (artist of current track) & sep & (album of current track) & sep & artURL
         end tell
         """
-        return parseMediaScript(script)
+        return parseSpotifyScript(script)
     }
 
     private func pollMusic() -> NowPlayingState? {
@@ -55,25 +61,74 @@ final class NowPlayingObserver {
         tell application "Music"
             if not (it is running) then return ""
             set sep to ASCII character 31
-            if player state is playing then
-                return "playing" & sep & (name of current track) & sep & (artist of current track) & sep & (album of current track)
-            else
-                return "paused" & sep & (name of current track) & sep & (artist of current track) & sep & (album of current track)
-            end if
+            if player state is stopped then return ""
+            set status to "paused"
+            if player state is playing then set status to "playing"
+            return status & sep & (name of current track) & sep & (artist of current track) & sep & (album of current track)
         end tell
         """
-        return parseMediaScript(script)
-    }
-
-    private func parseMediaScript(_ script: String) -> NowPlayingState? {
         guard let raw = runOsascript(script), !raw.isEmpty else { return nil }
         let sep = String(UnicodeScalar(31)!)
         let parts = raw.components(separatedBy: sep)
         guard parts.count >= 4 else { return nil }
+
+        let title = parts[1].nilIfEmpty
+        let artist = parts[2].nilIfEmpty
+        let album = parts[3].nilIfEmpty
+        let trackKey = "\(title ?? "")-\(artist ?? "")"
+
+        // Only write artwork to disk when the track changes.
+        var artworkURL: URL? = nil
+        if trackKey != lastMusicTrackKey {
+            lastMusicTrackKey = trackKey
+            artworkURL = writeMusicArtwork()
+        } else if FileManager.default.fileExists(atPath: Self.musicArtworkPath) {
+            artworkURL = URL(fileURLWithPath: Self.musicArtworkPath)
+        }
+
+        return NowPlayingState(
+            title: title,
+            artist: artist,
+            album: album,
+            artworkURL: artworkURL,
+            artworkData: nil,
+            isPlaying: parts[0] == "playing"
+        )
+    }
+
+    private func writeMusicArtwork() -> URL? {
+        let script = """
+        tell application "Music"
+            if not (it is running) then return ""
+            if player state is stopped then return ""
+            try
+                set artData to raw data of artwork 1 of current track
+                set tmpPath to "\(Self.musicArtworkPath)"
+                set fileRef to open for access POSIX file tmpPath with write permission
+                set eof of fileRef to 0
+                write artData to fileRef
+                close access fileRef
+                return tmpPath
+            on error
+                return ""
+            end try
+        end tell
+        """
+        guard let path = runOsascript(script), !path.isEmpty else { return nil }
+        return URL(fileURLWithPath: path)
+    }
+
+    private func parseSpotifyScript(_ script: String) -> NowPlayingState? {
+        guard let raw = runOsascript(script), !raw.isEmpty else { return nil }
+        let sep = String(UnicodeScalar(31)!)
+        let parts = raw.components(separatedBy: sep)
+        guard parts.count >= 4 else { return nil }
+        let artworkURL = parts.count >= 5 ? URL(string: parts[4].trimmingCharacters(in: .whitespaces)) : nil
         return NowPlayingState(
             title: parts[1].nilIfEmpty,
             artist: parts[2].nilIfEmpty,
             album: parts[3].nilIfEmpty,
+            artworkURL: artworkURL,
             artworkData: nil,
             isPlaying: parts[0] == "playing"
         )
