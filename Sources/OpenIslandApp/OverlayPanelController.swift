@@ -206,6 +206,20 @@ final class OverlayPanelController {
         capturesClosedTopBarPill || capturesOpenedHeaderDrag
     }
 
+    nonisolated static func normalizeEventPointForOverlayGeometry(
+        _ point: NSPoint,
+        viewHeight: CGFloat
+    ) -> NSPoint {
+        guard viewHeight > 0 else {
+            return point
+        }
+
+        return NSPoint(
+            x: point.x,
+            y: max(0, min(viewHeight, viewHeight - point.y))
+        )
+    }
+
     nonisolated static func openedTopBarHeaderDragPlan(
         startedFromOpenedTopBarHeader: Bool,
         didTransitionToClosedPill: Bool,
@@ -1170,7 +1184,11 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
     }
 
     override func mouseDown(with event: NSEvent) {
-        let downPointInView = convert(event.locationInWindow, from: nil)
+        let rawDownPointInView = convert(event.locationInWindow, from: nil)
+        let downPointInView = OverlayPanelController.normalizeEventPointForOverlayGeometry(
+            rawDownPointInView,
+            viewHeight: bounds.height
+        )
         let canDragClosedPill = notchController?.canDragPillNow() == true
         let canDragOpenedHeader = notchController?.shouldCaptureOpenedTopBarHeaderDrag(
             at: downPointInView,
@@ -1179,7 +1197,7 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
         let notchStatusDescription = notchController?.model.map { String(describing: $0.notchStatus) } ?? "nil"
         let openReasonDescription = notchController?.model.map { String(describing: $0.notchOpenReason) } ?? "nil"
         overlayDragLog(
-            "mouseDown entry point=\(overlayDragPointDescription(downPointInView)) canDragClosedPill=\(canDragClosedPill) canDragOpenedHeader=\(canDragOpenedHeader) status=\(notchStatusDescription) reason=\(openReasonDescription)"
+            "mouseDown entry rawPoint=\(overlayDragPointDescription(rawDownPointInView)) normalizedPoint=\(overlayDragPointDescription(downPointInView)) canDragClosedPill=\(canDragClosedPill) canDragOpenedHeader=\(canDragOpenedHeader) status=\(notchStatusDescription) reason=\(openReasonDescription)"
         )
 
         // On external displays (topBar mode) with a closed pill, take over

@@ -203,6 +203,29 @@ struct OverlayPanelControllerTests {
     }
 
     @Test
+    func flippedMouseDownPointNormalizesIntoOpenedHeaderDragRect() {
+        let normalizedPoint = OverlayPanelController.normalizeEventPointForOverlayGeometry(
+            NSPoint(x: 56, y: 16),
+            viewHeight: 514
+        )
+        let contentRect = NSRect(x: 18, y: 14, width: 700, height: 500)
+
+        let shouldCapture = OverlayPanelController.shouldCaptureOpenedTopBarHeaderDrag(
+            status: .opened,
+            mode: .topBar,
+            openReason: .hover,
+            point: normalizedPoint,
+            contentRect: contentRect,
+            headerHeight: 30,
+            trailingControlWidth: IslandPanelView.topBarOpenedHeaderTrailingControlWidth,
+            horizontalPadding: IslandPanelView.topBarOpenedHeaderHorizontalPadding
+        )
+
+        #expect(normalizedPoint == NSPoint(x: 56, y: 498))
+        #expect(shouldCapture)
+    }
+
+    @Test
     func hoverOpenedTopBarControlButtonsHitIsNotCapturedByDragLayer() {
         let contentRect = NSRect(x: 18, y: 14, width: 700, height: 500)
 
