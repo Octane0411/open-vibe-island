@@ -9,6 +9,12 @@ final class OverlayPanelController {
         let surfaceOffset: CGSize
     }
 
+    struct OpenedTopBarHeaderDragTransition: Equatable {
+        let immediatePanelOrigin: NSPoint
+        let continuedDragStartMouse: NSPoint
+        let continuedDragStartPanelOrigin: NSPoint
+    }
+
     enum OpenedTopBarHeaderDragPlan: Equatable {
         case waitForThreshold
         case startClosedPillDrag
@@ -192,6 +198,24 @@ final class OverlayPanelController {
         }
 
         return .waitForThreshold
+    }
+
+    nonisolated static func openedTopBarHeaderDragTransition(
+        originalDragStartMouse: NSPoint,
+        currentMouse: NSPoint,
+        collapsedPillOrigin: NSPoint
+    ) -> OpenedTopBarHeaderDragTransition {
+        let dx = currentMouse.x - originalDragStartMouse.x
+        let dy = currentMouse.y - originalDragStartMouse.y
+
+        return OpenedTopBarHeaderDragTransition(
+            immediatePanelOrigin: NSPoint(
+                x: collapsedPillOrigin.x + dx,
+                y: collapsedPillOrigin.y + dy
+            ),
+            continuedDragStartMouse: originalDragStartMouse,
+            continuedDragStartPanelOrigin: collapsedPillOrigin
+        )
     }
 
     nonisolated static func shouldEndClosedTopBarPressAfterDrag(
@@ -1105,6 +1129,7 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
         // On the built-in notch screen, or when opened, fall through to the
         // legacy SwiftUI-driven behavior.
         if notchController?.canDragPillNow() == true, let window {
+            window.makeKey()
             notchController?.beginClosedTopBarPress()
             dragStartMouse = NSEvent.mouseLocation
             dragStartPanelOrigin = window.frame.origin
@@ -1120,6 +1145,7 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
             at: downPointInView,
             in: bounds
         ) == true, let window {
+            window.makeKey()
             dragStartMouse = NSEvent.mouseLocation
             dragStartPanelOrigin = window.frame.origin
             isTrackingPillDrag = true
@@ -1162,7 +1188,14 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
             notchController?.beginOpenedTopBarHeaderDrag()
             dragStartMouse = current
             if let window {
-                dragStartPanelOrigin = window.frame.origin
+                let transition = OverlayPanelController.openedTopBarHeaderDragTransition(
+                    originalDragStartMouse: start,
+                    currentMouse: current,
+                    collapsedPillOrigin: window.frame.origin
+                )
+                dragStartMouse = transition.continuedDragStartMouse
+                dragStartPanelOrigin = transition.continuedDragStartPanelOrigin
+                notchController?.moveDraggedPanel(to: transition.immediatePanelOrigin)
             }
             didMovePillWhileTracking = true
             didTransitionOpenedHeaderDragToClosedPill = true

@@ -301,6 +301,19 @@ struct OverlayPanelControllerTests {
     }
 
     @Test
+    func openedHeaderDragTransitionPreservesAccumulatedDeltaWhenCollapsing() {
+        let transition = OverlayPanelController.openedTopBarHeaderDragTransition(
+            originalDragStartMouse: NSPoint(x: 100, y: 200),
+            currentMouse: NSPoint(x: 112, y: 209),
+            collapsedPillOrigin: NSPoint(x: 400, y: 500)
+        )
+
+        #expect(transition.immediatePanelOrigin == NSPoint(x: 412, y: 509))
+        #expect(transition.continuedDragStartMouse == NSPoint(x: 100, y: 200))
+        #expect(transition.continuedDragStartPanelOrigin == NSPoint(x: 400, y: 500))
+    }
+
+    @Test
     func closedPillDragPlanKeepsUsingClosedPillPath() {
         let plan = OverlayPanelController.openedTopBarHeaderDragPlan(
             startedFromOpenedTopBarHeader: false,
