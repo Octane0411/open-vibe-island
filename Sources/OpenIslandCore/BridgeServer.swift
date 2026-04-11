@@ -1882,7 +1882,7 @@ public final class BridgeServer: @unchecked Sendable {
             return
         }
 
-        let rawPrompt = payload.prompt ?? payload.message
+        let rawPrompt = payload.prompt ?? payload.message ?? payload.title
         let validPrompt = rawPrompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? rawPrompt : nil
         let validMsg = payload.lastAssistantMessage?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? payload.lastAssistantMessage : nil
 
