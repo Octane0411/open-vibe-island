@@ -1,7 +1,34 @@
 import AppKit
 import Combine
+import OSLog
 import SwiftUI
 import OpenIslandCore
+
+private let overlayDragLogger = Logger(
+    subsystem: "app.openisland.dev",
+    category: "OverlayDrag"
+)
+private let overlayDragDebugKey = "overlay.debug.drag"
+
+private func overlayDragLoggingEnabled() -> Bool {
+    UserDefaults.standard.bool(forKey: overlayDragDebugKey)
+}
+
+private func overlayDragLog(_ message: String) {
+    guard overlayDragLoggingEnabled() else {
+        return
+    }
+
+    overlayDragLogger.notice("\(message, privacy: .public)")
+}
+
+private func overlayDragPointDescription(_ point: NSPoint) -> String {
+    "(\(Int(point.x.rounded())), \(Int(point.y.rounded())))"
+}
+
+private func overlayDragRectDescription(_ rect: NSRect) -> String {
+    NSStringFromRect(rect)
+}
 
 @MainActor
 final class OverlayPanelController {
@@ -498,7 +525,13 @@ final class OverlayPanelController {
             ?? placementDiagnostics(preferredScreenID: nil)?.mode
             ?? .notch
 
-        return Self.shouldCaptureOpenedTopBarHeaderDrag(
+        let dragRect = Self.openedTopBarHeaderDragRect(
+            contentRect: contentRect,
+            headerHeight: Self.topBarOpenedHeaderDragHeight,
+            trailingControlWidth: IslandPanelView.topBarOpenedHeaderTrailingControlWidth,
+            horizontalPadding: IslandPanelView.topBarOpenedHeaderHorizontalPadding
+        )
+        let captures = Self.shouldCaptureOpenedTopBarHeaderDrag(
             status: model.notchStatus,
             mode: mode,
             openReason: model.notchOpenReason,
@@ -508,6 +541,10 @@ final class OverlayPanelController {
             trailingControlWidth: IslandPanelView.topBarOpenedHeaderTrailingControlWidth,
             horizontalPadding: IslandPanelView.topBarOpenedHeaderHorizontalPadding
         )
+        overlayDragLog(
+            "openedHeaderCapture=\(captures) status=\(String(describing: model.notchStatus)) reason=\(String(describing: model.notchOpenReason)) mode=\(mode.rawValue) point=\(overlayDragPointDescription(pointInView)) contentRect=\(overlayDragRectDescription(contentRect)) dragRect=\(overlayDragRectDescription(dragRect))"
+        )
+        return captures
     }
 
     func shouldCaptureTopBarDragLayerHit(at pointInView: NSPoint, in bounds: NSRect) -> Bool {
@@ -524,6 +561,7 @@ final class OverlayPanelController {
     /// panel without triggering our own `positionPanel` path (which would
     /// reset the frame back to the stored anchor).
     func moveDraggedPanel(to origin: NSPoint) {
+        overlayDragLog("moveDraggedPanel origin=\(overlayDragPointDescription(origin))")
         panel?.setFrameOrigin(origin)
     }
 
@@ -538,8 +576,16 @@ final class OverlayPanelController {
             return
         }
 
+        let beforePanelFrame = panel.map { overlayDragRectDescription($0.frame) } ?? "nil"
+        overlayDragLog(
+            "beginOpenedTopBarHeaderDrag before status=\(String(describing: model.notchStatus)) reason=\(String(describing: model.notchOpenReason)) panelFrame=\(beforePanelFrame)"
+        )
         model.beginTopBarHoverDrag()
         beginClosedTopBarPress()
+        let afterPanelFrame = panel.map { overlayDragRectDescription($0.frame) } ?? "nil"
+        overlayDragLog(
+            "beginOpenedTopBarHeaderDrag after status=\(String(describing: model.notchStatus)) reason=\(String(describing: model.notchOpenReason)) panelFrame=\(afterPanelFrame)"
+        )
     }
 
     func endClosedTopBarPress() {
@@ -1137,6 +1183,9 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
             didMovePillWhileTracking = false
             dragStartedFromOpenedTopBarHeader = false
             didTransitionOpenedHeaderDragToClosedPill = false
+            overlayDragLog(
+                "mouseDown closedPill startMouse=\(overlayDragPointDescription(dragStartMouse ?? .zero)) panelOrigin=\(overlayDragPointDescription(dragStartPanelOrigin ?? .zero))"
+            )
             return
         }
 
@@ -1152,6 +1201,9 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
             didMovePillWhileTracking = false
             dragStartedFromOpenedTopBarHeader = true
             didTransitionOpenedHeaderDragToClosedPill = false
+            overlayDragLog(
+                "mouseDown openedHeader point=\(overlayDragPointDescription(downPointInView)) startMouse=\(overlayDragPointDescription(dragStartMouse ?? .zero)) panelOrigin=\(overlayDragPointDescription(dragStartPanelOrigin ?? .zero)) frame=\(overlayDragRectDescription(window.frame))"
+            )
             return
         }
 
@@ -1176,12 +1228,18 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
         let dy = current.y - start.y
         let dragDistance = hypot(dx, dy)
 
-        switch OverlayPanelController.openedTopBarHeaderDragPlan(
+        let plan = OverlayPanelController.openedTopBarHeaderDragPlan(
             startedFromOpenedTopBarHeader: dragStartedFromOpenedTopBarHeader,
             didTransitionToClosedPill: didTransitionOpenedHeaderDragToClosedPill,
             dragDistance: dragDistance,
             threshold: pillDragThreshold
-        ) {
+        )
+        let formattedDragDistance = String(format: "%.2f", dragDistance)
+        overlayDragLog(
+            "mouseDragged plan=\(String(describing: plan)) startMouse=\(overlayDragPointDescription(start)) currentMouse=\(overlayDragPointDescription(current)) panelOrigin=\(overlayDragPointDescription(originAtStart)) distance=\(formattedDragDistance) transitioned=\(didTransitionOpenedHeaderDragToClosedPill)"
+        )
+
+        switch plan {
         case .waitForThreshold:
             return
         case .startClosedPillDrag:
@@ -1196,6 +1254,9 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
                 dragStartMouse = transition.continuedDragStartMouse
                 dragStartPanelOrigin = transition.continuedDragStartPanelOrigin
                 notchController?.moveDraggedPanel(to: transition.immediatePanelOrigin)
+                overlayDragLog(
+                    "mouseDragged transitionedToClosedPill immediateOrigin=\(overlayDragPointDescription(transition.immediatePanelOrigin)) continuedStartMouse=\(overlayDragPointDescription(transition.continuedDragStartMouse)) continuedPanelOrigin=\(overlayDragPointDescription(transition.continuedDragStartPanelOrigin)) windowFrame=\(overlayDragRectDescription(window.frame))"
+                )
             }
             didMovePillWhileTracking = true
             didTransitionOpenedHeaderDragToClosedPill = true
@@ -1229,6 +1290,10 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
         didMovePillWhileTracking = false
         dragStartedFromOpenedTopBarHeader = false
         didTransitionOpenedHeaderDragToClosedPill = false
+
+        overlayDragLog(
+            "mouseUp didMove=\(didMove) startedFromOpenedHeader=\(startedFromOpenedHeader) transitionedToClosedPill=\(didTransitionToClosedPill)"
+        )
 
         if OverlayPanelController.shouldEndClosedTopBarPressAfterDrag(
             startedFromOpenedTopBarHeader: startedFromOpenedHeader,
@@ -1274,6 +1339,7 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
             at: point,
             in: bounds
         ) {
+            overlayDragLog("hitTest captured point=\(overlayDragPointDescription(point))")
             return self
         }
 
