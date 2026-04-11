@@ -242,35 +242,28 @@ final class ProcessMonitoringCoordinator {
         var aliveIDs: Set<String> = []
         let sessions = state.sessions
 
-        // Codex and Qwen sessions: match by session ID directly.
+        // Codex sessions: match by session ID directly.
         let codexProcessIDs = Set(
             activeProcesses
                 .filter { $0.tool == .codex }
                 .compactMap(\.sessionID)
         )
-        let qwenProcessIDs = Set(
-            activeProcesses
-                .filter { $0.tool == .qwenCode }
-                .compactMap(\.sessionID)
-        )
-        for session in sessions where !session.isDemoSession {
-            if session.tool == .codex, codexProcessIDs.contains(session.id) {
-                aliveIDs.insert(session.id)
-            } else if session.tool == .qwenCode, qwenProcessIDs.contains(where: { session.id.hasSuffix($0) }) {
+        for session in sessions where session.tool == .codex && !session.isDemoSession {
+            if codexProcessIDs.contains(session.id) {
                 aliveIDs.insert(session.id)
             }
         }
 
         // Claude sessions: reuse the multi-pass matching from representedClaudeProcessKeys.
-        let claudeProcesses = activeProcesses.filter { $0.tool == .claudeCode }
-        let trackedClaudeSessions = sessions.filter { $0.tool == .claudeCode && !isSyntheticClaudeSession($0) }
+        let claudeProcesses = activeProcesses.filter { $0.tool == .claudeCode || $0.tool == .qwenCode }
+        let trackedClaudeSessions = sessions.filter { ($0.tool == .claudeCode || $0.tool == .qwenCode) && !isSyntheticClaudeSession($0) }
         var claimedSessionIDs: Set<String> = []
 
         // Pass 1: exact session ID match.
         for process in claudeProcesses {
             guard let processSessionID = process.sessionID,
                   let matched = trackedClaudeSessions.first(where: {
-                      !claimedSessionIDs.contains($0.id) && $0.id == processSessionID
+                      !claimedSessionIDs.contains($0.id) && ($0.id == processSessionID || $0.id.hasSuffix(processSessionID))
                   }) else { continue }
             aliveIDs.insert(matched.id)
             claimedSessionIDs.insert(matched.id)
@@ -281,7 +274,7 @@ final class ProcessMonitoringCoordinator {
             guard let transcriptPath = process.transcriptPath,
                   let matched = trackedClaudeSessions.first(where: {
                       !claimedSessionIDs.contains($0.id)
-                          && $0.claudeMetadata?.transcriptPath == transcriptPath
+                          && ($0.claudeMetadata?.transcriptPath == transcriptPath || $0.trackingTranscriptPath == transcriptPath)
                   }) else { continue }
             aliveIDs.insert(matched.id)
             claimedSessionIDs.insert(matched.id)
@@ -352,10 +345,10 @@ final class ProcessMonitoringCoordinator {
         now: Date
     ) -> [AgentSession] {
         let activeClaudeProcesses = activeProcesses.filter { process in
-            process.tool == .claudeCode
+            process.tool == .claudeCode || process.tool == .qwenCode
         }
         let trackedClaudeSessions = existingSessions.filter { session in
-            session.tool == .claudeCode && !isSyntheticClaudeSession(session)
+            (session.tool == .claudeCode || session.tool == .qwenCode) && !isSyntheticClaudeSession(session)
         }
 
         let representedProcessKeys = representedClaudeProcessKeys(
@@ -380,17 +373,17 @@ final class ProcessMonitoringCoordinator {
 
         var session = AgentSession(
             id: "\(syntheticClaudeSessionPrefix)\(identity)",
-            title: "Claude · \(workspaceName)",
-            tool: .claudeCode,
+            title: "\(process.tool == .qwenCode ? "Qwen Code" : "Claude") · \(workspaceName)",
+            tool: process.tool,
             origin: .live,
             attachmentState: .attached,
             phase: .completed,
-            summary: "Claude session detected from \(terminalApp).",
+            summary: "\(process.tool == .qwenCode ? "Qwen Code" : "Claude") session detected from \(terminalApp).",
             updatedAt: now,
             jumpTarget: JumpTarget(
                 terminalApp: terminalApp,
                 workspaceName: workspaceName,
-                paneTitle: "Claude \(workspaceName)",
+                paneTitle: "\(process.tool == .qwenCode ? "Qwen" : "Claude") \(workspaceName)",
                 workingDirectory: workingDirectory,
                 terminalTTY: process.terminalTTY,
                 tmuxTarget: process.tmuxTarget,
@@ -412,7 +405,7 @@ final class ProcessMonitoringCoordinator {
         activeProcesses: [ActiveProcessSnapshot]
     ) -> Set<String> {
         let trackedClaudeSessions = sessions.filter { session in
-            session.tool == .claudeCode && !isSyntheticClaudeSession(session)
+            (session.tool == .claudeCode || session.tool == .qwenCode) && !isSyntheticClaudeSession(session)
         }
 
         var representedProcessKeys: Set<String> = []
@@ -421,7 +414,7 @@ final class ProcessMonitoringCoordinator {
         for process in activeProcesses {
             guard let processSessionID = process.sessionID,
                   let matchedSession = trackedClaudeSessions.first(where: {
-                      !claimedSessionIDs.contains($0.id) && $0.id == processSessionID
+                      !claimedSessionIDs.contains($0.id) && ($0.id == processSessionID || $0.id.hasSuffix(processSessionID))
                   }) else {
                 continue
             }
@@ -436,7 +429,7 @@ final class ProcessMonitoringCoordinator {
                   let transcriptPath = process.transcriptPath,
                   let matchedSession = trackedClaudeSessions.first(where: {
                       !claimedSessionIDs.contains($0.id)
-                          && $0.claudeMetadata?.transcriptPath == transcriptPath
+                          && ($0.claudeMetadata?.transcriptPath == transcriptPath || $0.trackingTranscriptPath == transcriptPath)
                   }) else {
                 continue
             }
@@ -528,7 +521,7 @@ final class ProcessMonitoringCoordinator {
         workingDirectory: String?
     ) -> [AgentSession] {
         sessions.filter { session in
-            guard session.tool == .claudeCode,
+            guard (session.tool == .claudeCode || session.tool == .qwenCode),
                   !claimedSessionIDs.contains(session.id) else {
                 return false
             }
@@ -555,7 +548,7 @@ final class ProcessMonitoringCoordinator {
         activeProcesses: [ActiveProcessSnapshot],
         sessions localState: inout SessionState
     ) -> Bool {
-        let claudeProcesses = activeProcesses.filter { $0.tool == .claudeCode }
+        let claudeProcesses = activeProcesses.filter { $0.tool == .claudeCode || $0.tool == .qwenCode }
         guard !claudeProcesses.isEmpty else { return false }
 
         var sessions = localState.sessions
