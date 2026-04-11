@@ -339,16 +339,21 @@ final class AppModel {
         recentSessions.count
     }
 
+    var activeIslandSessions: [AgentSession] {
+        let now = Date.now
+        return surfacedSessions.filter { $0.islandPresence(at: now) != .inactive }
+    }
+
     var liveSessionCount: Int {
-        surfacedSessions.count
+        activeIslandSessions.count
     }
 
     var liveAttentionCount: Int {
-        surfacedSessions.filter { $0.phase.requiresAttention }.count
+        activeIslandSessions.filter { $0.phase.requiresAttention }.count
     }
 
     var liveRunningCount: Int {
-        surfacedSessions.filter { $0.phase == .running }.count
+        activeIslandSessions.filter { $0.phase == .running }.count
     }
 
     var shouldShowSessionBootstrapPlaceholder: Bool {
@@ -977,7 +982,7 @@ final class AppModel {
         var claimedLiveAttachmentKeys: Set<String> = []
         var minRefreshDelay: TimeInterval?
 
-        for session in rankedSessions where session.isVisibleInIsland && session.islandPresence(at: now) != .inactive {
+        for session in rankedSessions where session.isVisibleInIsland {
             guard !session.isSubagentSession else { continue }
 
             if let liveAttachmentKey = monitoring.liveAttachmentKey(for: session) {

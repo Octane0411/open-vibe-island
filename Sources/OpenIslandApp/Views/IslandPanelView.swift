@@ -135,9 +135,9 @@ struct IslandPanelView: View {
     }
 
     private var closedSpotlightSession: AgentSession? {
-        model.surfacedSessions.first(where: { $0.phase.requiresAttention })
-            ?? model.surfacedSessions.first(where: { $0.phase == .running })
-            ?? model.surfacedSessions.first
+        model.activeIslandSessions.first(where: { $0.phase.requiresAttention })
+            ?? model.activeIslandSessions.first(where: { $0.phase == .running })
+            ?? model.activeIslandSessions.first
     }
 
     private var hasClosedPresence: Bool {
@@ -154,7 +154,7 @@ struct IslandPanelView: View {
 
     /// Scout icon tint: blue if any running, green if any live, else gray.
     private var scoutTint: Color {
-        let sessions = model.surfacedSessions
+        let sessions = model.activeIslandSessions
         if sessions.contains(where: { $0.phase == .running }) {
             return Color(red: 0.43, green: 0.62, blue: 1.0) // #6E9FFF working blue
         }

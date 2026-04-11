@@ -71,6 +71,13 @@ public struct SessionState: Equatable, Sendable {
                 openCodeMetadata: payload.openCodeMetadata?.isEmpty == true ? nil : payload.openCodeMetadata,
                 cursorMetadata: payload.cursorMetadata?.isEmpty == true ? nil : payload.cursorMetadata
             )
+            if let existing = sessionsByID[payload.sessionID] {
+                // Do not downgrade a correctly discovered Qwen session back to Claude Code
+                // if the hook payload lacks a specific Qwen source identifier.
+                if existing.tool == .qwenCode && payload.tool == .claudeCode {
+                    session.tool = .qwenCode
+                }
+            }
             session.isRemote = payload.isRemote
             session.isHookManaged = payload.origin == .live
             session.isSessionEnded = false

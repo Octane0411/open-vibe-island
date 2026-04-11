@@ -452,9 +452,9 @@ final class OverlayPanelController {
     private func closedPanelWidth(for model: AppModel, on screen: NSScreen) -> CGFloat {
         let notchWidth = screen.notchSize.width
         let notchHeight = screen.islandClosedHeight
-        let spotlightSession = model.surfacedSessions.first(where: { $0.phase.requiresAttention })
-            ?? model.surfacedSessions.first(where: { $0.phase == .running })
-            ?? model.surfacedSessions.first
+        let spotlightSession = model.activeIslandSessions.first(where: { $0.phase.requiresAttention })
+            ?? model.activeIslandSessions.first(where: { $0.phase == .running })
+            ?? model.activeIslandSessions.first
         let hasClosedPresence = model.liveSessionCount > 0
 
         guard hasClosedPresence else {
