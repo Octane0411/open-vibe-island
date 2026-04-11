@@ -288,6 +288,66 @@ struct ClaudeUsageTests {
             }
         }
     }
+
+    @Test
+    func claudeStatusLineInstallationManagerWrapsExistingCommandOnReplace() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-claude-wrap-\(UUID().uuidString)", isDirectory: true)
+        let claudeDirectory = rootURL.appendingPathComponent(".claude", isDirectory: true)
+        let scriptDirectory = rootURL
+            .appendingPathComponent(".open-island", isDirectory: true)
+            .appendingPathComponent("bin", isDirectory: true)
+        let manager = ClaudeStatusLineInstallationManager(
+            claudeDirectory: claudeDirectory,
+            scriptDirectoryURL: scriptDirectory
+        )
+        let settingsURL = claudeDirectory.appendingPathComponent("settings.json")
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        try FileManager.default.createDirectory(at: claudeDirectory, withIntermediateDirectories: true)
+        let originalCommand = "node ~/.claude/plugins/claude-hud/dist/index.js"
+        let settingsData = try JSONSerialization.data(
+            withJSONObject: [
+                "theme": "dark",
+                "statusLine": [
+                    "type": "command",
+                    "command": originalCommand,
+                ],
+            ],
+            options: [.prettyPrinted, .sortedKeys]
+        )
+        try settingsData.write(to: settingsURL, options: .atomic)
+
+        // Install with replacingExisting — should wrap the original command.
+        let installed = try manager.install(replacingExisting: true)
+        #expect(installed.managedStatusLineInstalled)
+
+        // Verify the generated script contains the wrapped command marker.
+        let scriptContents = try String(contentsOf: installed.scriptURL, encoding: .utf8)
+        #expect(scriptContents.contains(ClaudeStatusLineInstallationManager.wrappedCommandMarker + originalCommand))
+        // The script should pipe to the original command instead of using jq default output.
+        #expect(scriptContents.contains("echo \"$input\" | \(originalCommand)"))
+        #expect(!scriptContents.contains("jq -r"))
+
+        // Re-install (repair) should preserve the wrapped command.
+        let reinstalled = try manager.install()
+        let reinstalledScript = try String(contentsOf: reinstalled.scriptURL, encoding: .utf8)
+        #expect(reinstalledScript.contains(ClaudeStatusLineInstallationManager.wrappedCommandMarker + originalCommand))
+
+        // Uninstall should restore the original command in settings.json.
+        let uninstalled = try manager.uninstall()
+        #expect(!uninstalled.managedStatusLineInstalled)
+        #expect(!uninstalled.managedStatusLineConfigured)
+
+        let restoredData = try Data(contentsOf: settingsURL)
+        let restoredSettings = try jsonObject(from: restoredData)
+        let restoredStatusLine = restoredSettings["statusLine"] as? [String: Any]
+        #expect(restoredStatusLine?["command"] as? String == originalCommand)
+        #expect(restoredSettings["theme"] as? String == "dark")
+    }
 }
 
 private func jsonObject(from data: Data) throws -> [String: Any] {

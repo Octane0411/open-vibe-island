@@ -556,11 +556,20 @@ struct SetupSettingsPane: View {
                         }
                     } else if model.isClaudeUsageSetupBusy {
                         ProgressView().controlSize(.small)
+                    } else if model.hasConflictingClaudeStatusLine {
+                        Button(lang.t("settings.general.install")) {
+                            model.replaceClaudeUsageBridge()
+                        }
                     } else {
                         Button(lang.t("settings.general.install")) {
                             model.installClaudeUsageBridge()
                         }
                     }
+                }
+                if model.hasConflictingClaudeStatusLine {
+                    Text(lang.t("setup.usageBridgeConflictCompat"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             } header: {
                 HStack(spacing: 4) {

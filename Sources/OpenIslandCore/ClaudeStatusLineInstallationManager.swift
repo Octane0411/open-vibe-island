@@ -115,13 +115,18 @@ public final class ClaudeStatusLineInstallationManager: @unchecked Sendable {
     }
 
     @discardableResult
-    public func install() throws -> ClaudeStatusLineInstallationStatus {
+    public func install(replacingExisting: Bool = false) throws -> ClaudeStatusLineInstallationStatus {
         let currentStatus = try status()
-        if currentStatus.hasConflictingStatusLine {
+        if currentStatus.hasConflictingStatusLine && !replacingExisting {
             throw ClaudeStatusLineInstallationError.existingStatusLineConflict(
                 command: currentStatus.statusLineCommand
             )
         }
+
+        // When replacing an existing status line, wrap it so both work together.
+        let wrappedCommand: String? = (replacingExisting && currentStatus.hasConflictingStatusLine)
+            ? currentStatus.statusLineCommand
+            : existingWrappedCommand()
 
         try fileManager.createDirectory(at: claudeDirectory, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: scriptDirectoryURL, withIntermediateDirectories: true)
@@ -137,7 +142,7 @@ public final class ClaudeStatusLineInstallationManager: @unchecked Sendable {
             try backupFile(at: settingsURL)
         }
 
-        let scriptContents = Self.managedScript(cacheURL: currentStatus.cacheURL)
+        let scriptContents = Self.managedScript(cacheURL: currentStatus.cacheURL, wrappedCommand: wrappedCommand)
         try settingsData.write(to: settingsURL, options: .atomic)
         try scriptContents.write(to: scriptURL, atomically: true, encoding: .utf8)
         try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
@@ -155,9 +160,19 @@ public final class ClaudeStatusLineInstallationManager: @unchecked Sendable {
         let settingsURL = currentStatus.settingsURL
         let scriptURL = currentStatus.scriptURL
 
+        // If we wrapped another command, restore it instead of removing statusLine entirely.
+        let wrapped = existingWrappedCommand()
+
         if currentStatus.managedStatusLineConfigured {
             var settings = try loadSettings(at: settingsURL)
-            settings.removeValue(forKey: "statusLine")
+            if let wrapped, !wrapped.isEmpty {
+                settings["statusLine"] = [
+                    "type": "command",
+                    "command": wrapped,
+                ] as [String: Any]
+            } else {
+                settings.removeValue(forKey: "statusLine")
+            }
             if fileManager.fileExists(atPath: settingsURL.path) {
                 try backupFile(at: settingsURL)
             }
@@ -216,9 +231,35 @@ public final class ClaudeStatusLineInstallationManager: @unchecked Sendable {
         try fileManager.copyItem(at: url, to: backupURL)
     }
 
-    public static func managedScript(cacheURL: URL = managedCacheURL) -> String {
-        #"""
+    /// Marker comment embedded in the generated script to record the original command.
+    static let wrappedCommandMarker = "# OPEN_ISLAND_WRAPPED_CMD="
+
+    /// Read the wrapped (original) command from the currently installed managed script, if any.
+    private func existingWrappedCommand() -> String? {
+        let scriptURL = scriptDirectoryURL.appendingPathComponent(Self.managedScriptName)
+        guard let contents = try? String(contentsOf: scriptURL, encoding: .utf8) else { return nil }
+        for line in contents.components(separatedBy: "\n") {
+            if line.hasPrefix(Self.wrappedCommandMarker) {
+                let value = String(line.dropFirst(Self.wrappedCommandMarker.count))
+                return value.isEmpty ? nil : value
+            }
+        }
+        return nil
+    }
+
+    public static func managedScript(cacheURL: URL = managedCacheURL, wrappedCommand: String? = nil) -> String {
+        let markerLine = "\(wrappedCommandMarker)\(wrappedCommand ?? "")"
+        let outputSection: String
+        if let wrappedCommand, !wrappedCommand.isEmpty {
+            // Forward stdin to the original status line command (e.g. claude-hud).
+            outputSection = #"echo "$input" | \#(wrappedCommand)"#
+        } else {
+            // Default: simple one-line status output.
+            outputSection = #"echo "$input" | jq -r '"[\(.model.display_name // "Claude")] \(.context_window.used_percentage // 0)% context"' 2>/dev/null"#
+        }
+        return """
         #!/bin/bash
+        \(markerLine)
         # Claude Code StatusLine Script
         # Auto-configured by Open Island
         # FOR AI ASSISTANTS EDITING THIS FILE:
@@ -231,8 +272,8 @@ public final class ClaudeStatusLineInstallationManager: @unchecked Sendable {
         # Notch panel. Removing it will degrade the usage display.
         input=$(cat)
         _rl=$(echo "$input" | jq -c '.rate_limits // empty' 2>/dev/null)
-        [ -n "$_rl" ] && printf '%s\n' "$_rl" > "\#(cacheURL.path)"
-        echo "$input" | jq -r '"[\(.model.display_name // "Claude")] \(.context_window.used_percentage // 0)% context"' 2>/dev/null
-        """#
+        [ -n "$_rl" ] && printf '%s\\n' "$_rl" > "\(cacheURL.path)"
+        \(outputSection)
+        """
     }
 }

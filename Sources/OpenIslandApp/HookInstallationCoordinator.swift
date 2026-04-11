@@ -124,6 +124,15 @@ final class HookInstallationCoordinator {
         claudeStatusLineStatus?.managedStatusLineInstalled == true
     }
 
+    var hasConflictingClaudeStatusLine: Bool {
+        claudeStatusLineStatus?.hasConflictingStatusLine == true
+    }
+
+    var conflictingClaudeStatusLineCommand: String? {
+        guard hasConflictingClaudeStatusLine else { return nil }
+        return claudeStatusLineStatus?.statusLineCommand
+    }
+
     var claudeHookStatusTitle: String {
         if claudeHooksInstalled {
             return "Claude hooks installed"
@@ -823,6 +832,12 @@ final class HookInstallationCoordinator {
     func installClaudeUsageBridge() {
         updateClaudeUsageBridge(userMessage: "Installing Claude usage bridge.") { manager in
             try manager.install()
+        }
+    }
+
+    func replaceClaudeUsageBridge() {
+        updateClaudeUsageBridge(userMessage: "Replacing existing status line with Claude usage bridge.") { manager in
+            try manager.install(replacingExisting: true)
         }
     }
 

@@ -98,6 +98,7 @@
 "setup.usageBridge" = "Claude 用量桥接";
 "setup.usageBridgeReady" = "已安装";
 "setup.usageBridgeDesc" = "在本地追踪 Claude API 用量";
+"setup.usageBridgeConflictCompat" = "检测到已有状态行，安装后两者将同时工作。";
 "setup.optional" = "可选";
 "setup.permissionsTitle" = "辅助功能";
 "setup.permissionsDesc" = "Open Island 可能需要辅助功能权限来检测终端窗口。请在「系统设置 → 隐私与安全性 → 辅助功能」中授权。";

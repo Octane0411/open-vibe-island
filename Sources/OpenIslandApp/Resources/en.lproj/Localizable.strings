@@ -98,6 +98,7 @@
 "setup.usageBridge" = "Claude Usage Bridge";
 "setup.usageBridgeReady" = "Installed";
 "setup.usageBridgeDesc" = "Tracks Claude API usage locally";
+"setup.usageBridgeConflictCompat" = "Another status line detected. Installing will wrap it so both work together.";
 "setup.optional" = "Optional";
 "setup.permissionsTitle" = "Accessibility";
 "setup.permissionsDesc" = "Open Island may need Accessibility permission to detect terminal windows. Grant it in System Settings → Privacy & Security → Accessibility.";

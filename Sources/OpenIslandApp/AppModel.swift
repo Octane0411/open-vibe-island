@@ -89,6 +89,8 @@ final class AppModel {
     var isCodebuddyHookSetupBusy: Bool { hooks.isCodebuddyHookSetupBusy }
     var openCodePluginInstalled: Bool { hooks.openCodePluginInstalled }
     var claudeUsageInstalled: Bool { hooks.claudeUsageInstalled }
+    var hasConflictingClaudeStatusLine: Bool { hooks.hasConflictingClaudeStatusLine }
+    var conflictingClaudeStatusLineCommand: String? { hooks.conflictingClaudeStatusLineCommand }
     var claudeHookStatusTitle: String { hooks.claudeHookStatusTitle }
     var claudeHookStatusSummary: String { hooks.claudeHookStatusSummary }
     var claudeUsageStatusTitle: String { hooks.claudeUsageStatusTitle }
@@ -133,6 +135,7 @@ final class AppModel {
     func installCursorHooks() { hooks.installCursorHooks() }
     func uninstallCursorHooks() { hooks.uninstallCursorHooks() }
     func installClaudeUsageBridge() { hooks.installClaudeUsageBridge() }
+    func replaceClaudeUsageBridge() { hooks.replaceClaudeUsageBridge() }
     func uninstallClaudeUsageBridge() { hooks.uninstallClaudeUsageBridge() }
     func updateClaudeConfigDirectory(to newDirectory: URL?) { hooks.updateClaudeConfigDirectory(to: newDirectory) }
     func runHealthChecks() { hooks.runHealthChecks() }
