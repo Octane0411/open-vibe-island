@@ -9,6 +9,14 @@ final class OverlayPanelController {
         let surfaceOffset: CGSize
     }
 
+    enum OpenedTopBarHeaderDragPlan: Equatable {
+        case waitForThreshold
+        case startClosedPillDrag
+        case continueClosedPillDrag
+    }
+
+    private static let topBarOpenedHeaderDragHeight: CGFloat = 30
+
     private static let minimumOpenedPanelWidth: CGFloat = 680
     private static let maximumOpenedPanelWidth: CGFloat = 740
     private static let openedPanelWidthFactor: CGFloat = 0.46
@@ -95,6 +103,42 @@ final class OverlayPanelController {
         return !isPressingClosedTopBarPill
     }
 
+    nonisolated static func canDragOpenedTopBarHeader(
+        status: NotchStatus,
+        mode: OverlayPlacementMode,
+        openReason: NotchOpenReason?
+    ) -> Bool {
+        status == .opened && mode == .topBar && openReason == .hover
+    }
+
+    nonisolated static func openedTopBarHeaderDragRect(
+        contentRect: NSRect,
+        headerHeight: CGFloat,
+        trailingControlWidth: CGFloat,
+        horizontalPadding: CGFloat
+    ) -> NSRect {
+        let clampedHeaderHeight = max(0, min(headerHeight, contentRect.height))
+        let headerRect = NSRect(
+            x: contentRect.minX,
+            y: contentRect.maxY - clampedHeaderHeight,
+            width: contentRect.width,
+            height: clampedHeaderHeight
+        )
+
+        let safeHorizontalPadding = max(0, horizontalPadding)
+        let safeTrailingControlWidth = max(0, trailingControlWidth)
+        let dragMinX = headerRect.minX + safeHorizontalPadding
+        let dragMaxX = headerRect.maxX - safeHorizontalPadding - safeTrailingControlWidth
+        let dragWidth = max(0, dragMaxX - dragMinX)
+
+        return NSRect(
+            x: dragMinX,
+            y: headerRect.minY,
+            width: dragWidth,
+            height: headerRect.height
+        )
+    }
+
     nonisolated static func shouldCaptureOpenedTopBarHeaderDrag(
         status: NotchStatus,
         mode: OverlayPlacementMode,
@@ -105,32 +149,56 @@ final class OverlayPanelController {
         trailingControlWidth: CGFloat,
         horizontalPadding: CGFloat
     ) -> Bool {
-        let _ = status
-        let _ = mode
-        let _ = openReason
-        let _ = point
-        let _ = contentRect
-        let _ = headerHeight
-        let _ = trailingControlWidth
-        let _ = horizontalPadding
-        return false
+        guard canDragOpenedTopBarHeader(
+            status: status,
+            mode: mode,
+            openReason: openReason
+        ) else {
+            return false
+        }
+
+        let dragRect = openedTopBarHeaderDragRect(
+            contentRect: contentRect,
+            headerHeight: headerHeight,
+            trailingControlWidth: trailingControlWidth,
+            horizontalPadding: horizontalPadding
+        )
+        return dragRect.contains(point)
     }
 
     nonisolated static func shouldCaptureTopBarDragLayerHit(
         capturesClosedTopBarPill: Bool,
         capturesOpenedHeaderDrag: Bool
     ) -> Bool {
-        let _ = capturesOpenedHeaderDrag
-        return capturesClosedTopBarPill
+        capturesClosedTopBarPill || capturesOpenedHeaderDrag
+    }
+
+    nonisolated static func openedTopBarHeaderDragPlan(
+        startedFromOpenedTopBarHeader: Bool,
+        didTransitionToClosedPill: Bool,
+        dragDistance: CGFloat,
+        threshold: CGFloat
+    ) -> OpenedTopBarHeaderDragPlan {
+        guard startedFromOpenedTopBarHeader else {
+            return .continueClosedPillDrag
+        }
+
+        if didTransitionToClosedPill {
+            return .continueClosedPillDrag
+        }
+
+        if dragDistance >= threshold {
+            return .startClosedPillDrag
+        }
+
+        return .waitForThreshold
     }
 
     nonisolated static func shouldEndClosedTopBarPressAfterDrag(
         startedFromOpenedTopBarHeader: Bool,
         didTransitionToClosedPill: Bool
     ) -> Bool {
-        let _ = startedFromOpenedTopBarHeader
-        let _ = didTransitionToClosedPill
-        return true
+        !startedFromOpenedTopBarHeader || didTransitionToClosedPill
     }
 
     func availableDisplayOptions() -> [OverlayDisplayOption] {
@@ -392,12 +460,39 @@ final class OverlayPanelController {
         return placementStrategy(for: screen) == .topBar
     }
 
+    func shouldCaptureOpenedTopBarHeaderDrag(at pointInView: NSPoint, in bounds: NSRect) -> Bool {
+        guard let model else {
+            return false
+        }
+
+        guard let contentRect = contentRect(for: model, in: bounds),
+              contentRect.contains(pointInView) else {
+            return false
+        }
+
+        let mode = model.overlayPlacementDiagnostics?.mode
+            ?? placementDiagnostics(preferredScreenID: nil)?.mode
+            ?? .notch
+
+        return Self.shouldCaptureOpenedTopBarHeaderDrag(
+            status: model.notchStatus,
+            mode: mode,
+            openReason: model.notchOpenReason,
+            point: pointInView,
+            contentRect: contentRect,
+            headerHeight: Self.topBarOpenedHeaderDragHeight,
+            trailingControlWidth: IslandPanelView.topBarOpenedHeaderTrailingControlWidth,
+            horizontalPadding: IslandPanelView.topBarOpenedHeaderHorizontalPadding
+        )
+    }
+
     func shouldCaptureTopBarDragLayerHit(at pointInView: NSPoint, in bounds: NSRect) -> Bool {
-        let _ = pointInView
-        let _ = bounds
-        return Self.shouldCaptureTopBarDragLayerHit(
+        Self.shouldCaptureTopBarDragLayerHit(
             capturesClosedTopBarPill: canDragPillNow(),
-            capturesOpenedHeaderDrag: false
+            capturesOpenedHeaderDrag: shouldCaptureOpenedTopBarHeaderDrag(
+                at: pointInView,
+                in: bounds
+            )
         )
     }
 
@@ -412,6 +507,15 @@ final class OverlayPanelController {
         isPressingClosedTopBarPill = true
         hasDeferredPlacementRefreshDuringClosedTopBarPress = false
         cancelHoverOpenImmediately()
+    }
+
+    func beginOpenedTopBarHeaderDrag() {
+        guard let model else {
+            return
+        }
+
+        model.beginTopBarHoverDrag()
+        beginClosedTopBarPress()
     }
 
     func endClosedTopBarPress() {
@@ -984,6 +1088,8 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
     private var dragStartPanelOrigin: NSPoint?
     private var isTrackingPillDrag = false
     private var didMovePillWhileTracking = false
+    private var dragStartedFromOpenedTopBarHeader = false
+    private var didTransitionOpenedHeaderDragToClosedPill = false
 
     override var isOpaque: Bool {
         false
@@ -1004,6 +1110,22 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
             dragStartPanelOrigin = window.frame.origin
             isTrackingPillDrag = true
             didMovePillWhileTracking = false
+            dragStartedFromOpenedTopBarHeader = false
+            didTransitionOpenedHeaderDragToClosedPill = false
+            return
+        }
+
+        let downPointInView = convert(event.locationInWindow, from: nil)
+        if notchController?.shouldCaptureOpenedTopBarHeaderDrag(
+            at: downPointInView,
+            in: bounds
+        ) == true, let window {
+            dragStartMouse = NSEvent.mouseLocation
+            dragStartPanelOrigin = window.frame.origin
+            isTrackingPillDrag = true
+            didMovePillWhileTracking = false
+            dragStartedFromOpenedTopBarHeader = true
+            didTransitionOpenedHeaderDragToClosedPill = false
             return
         }
 
@@ -1028,6 +1150,27 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
         let dy = current.y - start.y
         let dragDistance = hypot(dx, dy)
 
+        switch OverlayPanelController.openedTopBarHeaderDragPlan(
+            startedFromOpenedTopBarHeader: dragStartedFromOpenedTopBarHeader,
+            didTransitionToClosedPill: didTransitionOpenedHeaderDragToClosedPill,
+            dragDistance: dragDistance,
+            threshold: pillDragThreshold
+        ) {
+        case .waitForThreshold:
+            return
+        case .startClosedPillDrag:
+            notchController?.beginOpenedTopBarHeaderDrag()
+            dragStartMouse = current
+            if let window {
+                dragStartPanelOrigin = window.frame.origin
+            }
+            didMovePillWhileTracking = true
+            didTransitionOpenedHeaderDragToClosedPill = true
+            return
+        case .continueClosedPillDrag:
+            break
+        }
+
         if !didMovePillWhileTracking && dragDistance < pillDragThreshold {
             return
         }
@@ -1045,15 +1188,25 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
         }
 
         let didMove = didMovePillWhileTracking
+        let startedFromOpenedHeader = dragStartedFromOpenedTopBarHeader
+        let didTransitionToClosedPill = didTransitionOpenedHeaderDragToClosedPill
         isTrackingPillDrag = false
         dragStartMouse = nil
         dragStartPanelOrigin = nil
         didMovePillWhileTracking = false
-        notchController?.endClosedTopBarPress()
+        dragStartedFromOpenedTopBarHeader = false
+        didTransitionOpenedHeaderDragToClosedPill = false
+
+        if OverlayPanelController.shouldEndClosedTopBarPressAfterDrag(
+            startedFromOpenedTopBarHeader: startedFromOpenedHeader,
+            didTransitionToClosedPill: didTransitionToClosedPill
+        ) {
+            notchController?.endClosedTopBarPress()
+        }
 
         if didMove {
             notchController?.persistDraggedPillPosition()
-        } else {
+        } else if !startedFromOpenedHeader {
             notchController?.handlePillClickFromDragLayer()
         }
     }

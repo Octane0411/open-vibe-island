@@ -208,8 +208,3 @@
 
 - 实际实现时，Task 3 到 Task 5 共享同一条 AppKit 拖动态机：header 热区接管、越阈值后同步切回 closed、随后复用 closed pill 拖动与持久化。
 - 这三步不能再人为拆成互不相干的链路，否则会重新引入 shared-state 回归。
-
-## 后续调整
-
-- 2026-04-11 手动验证后放弃了 “hover 展开后从 header 直接拖动” 方案。
-- 当前保留的交互是更早一版、也更稳定的方案：只有 closed top-bar pill 可拖动，opened 状态继续交给原有点击与 hover 交互处理。
