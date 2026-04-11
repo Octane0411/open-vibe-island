@@ -347,7 +347,7 @@ final class SessionDiscoveryCoordinator {
         let prefix = syntheticClaudeSessionPrefix
         let records = state.sessions
             .filter {
-                $0.tool == .claudeCode
+                ($0.tool == .claudeCode || $0.tool == .qwenCode)
                     && $0.isTrackedLiveSession
                     && (prefix.isEmpty || !$0.id.hasPrefix(prefix))
                     && $0.updatedAt >= Date.now.addingTimeInterval(-86_400)
