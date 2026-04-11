@@ -4,6 +4,7 @@ public struct NowPlayingState: Equatable, Codable, Sendable {
     public var title: String?
     public var artist: String?
     public var album: String?
+    public var artworkURL: URL?
     public var artworkData: Data?
     public var isPlaying: Bool
 
@@ -11,18 +12,21 @@ public struct NowPlayingState: Equatable, Codable, Sendable {
         title: String?,
         artist: String?,
         album: String?,
-        artworkData: Data?,
+        artworkURL: URL? = nil,
+        artworkData: Data? = nil,
         isPlaying: Bool
     ) {
         self.title = title
         self.artist = artist
         self.album = album
+        self.artworkURL = artworkURL
         self.artworkData = artworkData
         self.isPlaying = isPlaying
     }
 
     public static let none = NowPlayingState(
-        title: nil, artist: nil, album: nil, artworkData: nil, isPlaying: false
+        title: nil, artist: nil, album: nil,
+        artworkURL: nil, artworkData: nil, isPlaying: false
     )
 
     public var hasContent: Bool {

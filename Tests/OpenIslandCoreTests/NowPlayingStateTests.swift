@@ -43,4 +43,23 @@ struct NowPlayingStateTests {
 
         #expect(NowPlayingState.none.displayLine == "Unknown")
     }
+
+    @Test func artworkURLRoundTripsCodable() throws {
+        let url = URL(string: "https://i.scdn.co/image/abc123")!
+        let state = NowPlayingState(
+            title: "Song",
+            artist: "Artist",
+            album: "Album",
+            artworkURL: url,
+            artworkData: nil,
+            isPlaying: true
+        )
+        let data = try JSONEncoder().encode(state)
+        let decoded = try JSONDecoder().decode(NowPlayingState.self, from: data)
+        #expect(decoded.artworkURL == url)
+    }
+
+    @Test func artworkURLNilByDefault() {
+        #expect(NowPlayingState.none.artworkURL == nil)
+    }
 }
