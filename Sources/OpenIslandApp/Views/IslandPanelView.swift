@@ -274,14 +274,13 @@ struct IslandPanelView: View {
 
                     openedContent
                         .frame(width: openedWidth - 24)
-                        .frame(maxHeight: usesOpenedVisualState ? currentHeight - closedNotchHeight - 12 : 0, alignment: .top)
+                        .frame(maxHeight: usesOpenedVisualState ? .infinity : 0, alignment: .top)
                         .opacity(usesOpenedVisualState ? 1 : 0)
-                        .clipped()
                 }
                 .frame(width: currentWidth, height: currentHeight, alignment: .top)
+                .clipped()
                 .padding(.horizontal, horizontalInset)
                 .padding(.bottom, bottomInset)
-                .clipShape(surfaceShape)
                 .overlay(alignment: .top) {
                     // Black strip to blend with physical notch at the very top
                     Rectangle()
@@ -512,9 +511,12 @@ struct IslandPanelView: View {
         model.islandSurface.sessionID
     }
 
-    /// Whether the panel was opened by a notification (show only actionable session + footer).
+    /// Whether to render in single-card mode: show only the actionable session (no full list).
+    /// This is true whenever the surface carries an actionableSessionID, regardless of the
+    /// open reason — a user can click to re-open an approval card that was previously shown
+    /// as a notification, and should still see the full card with action buttons.
     private var isNotificationMode: Bool {
-        model.notchOpenReason == .notification && actionableSessionID != nil
+        actionableSessionID != nil
     }
 
     private static let maxSessionListHeight: CGFloat = 560

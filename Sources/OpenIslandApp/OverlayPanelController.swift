@@ -15,10 +15,15 @@ final class OverlayPanelController {
     private static let maxSessionListHeight: CGFloat = 560
     private static let maxVisibleSessionRows: Int = 6
     private static let openedRowSpacing: CGFloat = 6
-    // Content padding (8) + scroll padding (4) + view chrome: outerBottomPadding (14) + header-content gap (12)
-    private static let openedContentVerticalInsets: CGFloat = 38
+    // Content padding top (8) + scroll padding (4) + outerBottomPadding (14) + header-content gap (12)
+    // + bottomInset (14, the VStack .padding(.bottom, bottomInset) that subtracts from usable height)
+    // = 52.  The extra 14 pt avoids the card bottom being clipped by the .clipped() modifier when
+    // the measured height is not yet available (first notification render).
+    private static let openedContentVerticalInsets: CGFloat = 52
     private static let openedEmptyStateHeight: CGFloat = 108
-    private static let approvalCardHeight: CGFloat = 288
+    // Approval card: header row (~72) + actionableBody padding (16*2 + 14 bottom) + body content (~186)
+    // Bumped to 310 to ensure the estimated panel height is never smaller than the actual rendered card.
+    private static let approvalCardHeight: CGFloat = 310
     private static let questionCardHeight: CGFloat = 110
     // Completion card chrome breakdown (everything except the scrollable text):
     // openedContent vertical padding: 24, card container padding: 28,
@@ -471,12 +476,14 @@ final class OverlayPanelController {
 
     private func panelFrame(for model: AppModel?, on screen: NSScreen) -> NSRect {
         let size = panelSize(for: model, on: screen)
-        return NSRect(
-            x: screen.frame.midX - size.width / 2,
-            y: screen.frame.maxY - size.height,
-            width: size.width,
-            height: size.height
-        )
+        let isTopBar = !OverlayDisplayResolver.isNotchedScreen(screen)
+
+        let x = screen.frame.midX - size.width / 2
+        let y: CGFloat = isTopBar
+            ? screen.visibleFrame.maxY - size.height - 18  // below menu bar, above Dock
+            : screen.frame.maxY - size.height              // flush with physical notch
+
+        return NSRect(x: x, y: y, width: size.width, height: size.height)
     }
 
     /// Always returns the maximum (opened) panel size so the window never
@@ -484,11 +491,17 @@ final class OverlayPanelController {
     /// inside this fixed-size window.
     private func panelSize(for model: AppModel?, on screen: NSScreen) -> CGSize {
         let insets = panelShadowInsets
+        let isTopBar = !OverlayDisplayResolver.isNotchedScreen(screen)
+
+        let maxAvailableHeight: CGFloat = isTopBar
+            ? max(0, screen.visibleFrame.height - 18 - 8)  // 18pt gap + 8pt Dock margin
+            : screen.frame.height
 
         guard let model else {
+            let rawHeight = screen.notchSize.height + Self.openedEmptyStateHeight + Self.openedContentBottomPadding + insets.bottom
             return CGSize(
                 width: openedPanelWidth(for: screen) + Self.openedContentWidthPadding + (insets.horizontal * 2),
-                height: screen.notchSize.height + Self.openedEmptyStateHeight + Self.openedContentBottomPadding + insets.bottom
+                height: min(rawHeight, maxAvailableHeight)
             )
         }
 
@@ -496,7 +509,8 @@ final class OverlayPanelController {
         let contentHeight = openedContentHeight(for: model)
         // Use at least the empty-state height so the window doesn't shrink
         // when sessions come and go while opened.
-        let height = screen.notchSize.height + max(contentHeight, Self.openedEmptyStateHeight) + Self.openedContentBottomPadding + insets.bottom
+        let rawHeight = screen.notchSize.height + max(contentHeight, Self.openedEmptyStateHeight) + Self.openedContentBottomPadding + insets.bottom
+        let height = min(rawHeight, maxAvailableHeight)
 
         return CGSize(
             width: panelWidth + Self.openedContentWidthPadding + (insets.horizontal * 2),
@@ -540,7 +554,7 @@ final class OverlayPanelController {
         }
 
         let actionableID = model.islandSurface.sessionID
-        let isNotificationMode = model.notchOpenReason == .notification && actionableID != nil
+        let isNotificationMode = actionableID != nil
 
         if isNotificationMode {
             // Use SwiftUI-measured height when available (accurate after first render).

@@ -516,6 +516,9 @@ final class AppModel {
     /// in GeometryReader measurements across consecutive layout passes.
     var measuredNotificationContentHeight: CGFloat = 0 {
         didSet {
+            if measuredNotificationContentHeight > 0 {
+                overlay.noteNotificationHeightMeasured(for: islandSurface.sessionID)
+            }
             let delta = abs(measuredNotificationContentHeight - oldValue)
             if delta >= 2, measuredNotificationContentHeight > 0 {
                 overlay.refreshOverlayPlacementIfVisible()

@@ -57,9 +57,16 @@ final class OverlayUICoordinator {
     @ObservationIgnored
     private var autoCollapseSurfaceHasBeenEntered = false
 
+    @ObservationIgnored
+    private var lastMeasuredNotificationSessionID: String?
+
     /// Kept for API compatibility; always false now that the window never
     /// resizes and close transitions are pure SwiftUI.
     var isCloseTransitionPending: Bool { false }
+
+    func noteNotificationHeightMeasured(for sessionID: String?) {
+        lastMeasuredNotificationSessionID = sessionID
+    }
 
     private var activeIslandCardSession: AgentSession? {
         activeIslandCardSessionAccessor?()
@@ -98,10 +105,18 @@ final class OverlayUICoordinator {
     }
 
     func notchOpen(reason: NotchOpenReason, surface: IslandSurface = .sessionList()) {
+        let resolvedSurface: IslandSurface
+        if surface.sessionID == nil,
+           let attentionSession = appModel?.surfacedSessions.first(where: { $0.phase.requiresAttention }) {
+            resolvedSurface = .sessionList(actionableSessionID: attentionSession.id)
+        } else {
+            resolvedSurface = surface
+        }
+
         transitionOverlay(
             to: .opened,
             reason: reason,
-            surface: surface,
+            surface: resolvedSurface,
             interactive: true,
             beforeTransition: nil,
             afterStateChange: { [weak self] in
@@ -128,7 +143,8 @@ final class OverlayUICoordinator {
             },
             afterStateChange: { [weak self] in
                 self?.autoCollapseSurfaceHasBeenEntered = false
-                self?.appModel?.measuredNotificationContentHeight = 0
+                // Preserve measuredNotificationContentHeight; cleared in transitionOverlay
+                // only when a different session's card opens.
             }
         )
     }
@@ -152,10 +168,12 @@ final class OverlayUICoordinator {
 
         overlayTransitionGeneration &+= 1
 
-        // Reset measured notification height when the surface changes so stale
-        // measurements from a previous notification don't mis-size the new one.
-        if surface != islandSurface {
-            appModel?.measuredNotificationContentHeight = 0
+        // Clear stale height only when a genuinely different session's card opens.
+        if let newSessionID = surface.sessionID {
+            if newSessionID != lastMeasuredNotificationSessionID {
+                appModel?.measuredNotificationContentHeight = 0
+            }
+            lastMeasuredNotificationSessionID = newSessionID
         }
 
         islandSurface = surface
@@ -168,6 +186,18 @@ final class OverlayUICoordinator {
                 model: appModel,
                 preferredScreenID: preferredOverlayScreenID
             )
+
+            // Deferred reposition: give SwiftUI one runloop pass to report the
+            // measured height before correcting the panel size.
+            let capturedGeneration = overlayTransitionGeneration
+            DispatchQueue.main.async { [weak self] in
+                guard let self,
+                      self.overlayTransitionGeneration == capturedGeneration,
+                      self.notchStatus == .opened else { return }
+                self.overlayPlacementDiagnostics = self.overlayPanelController.reposition(
+                    preferredScreenID: self.preferredOverlayScreenID
+                )
+            }
         }
 
         afterStateChange?()

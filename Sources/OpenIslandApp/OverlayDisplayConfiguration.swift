@@ -117,7 +117,7 @@ enum OverlayDisplayResolver {
         }
 
         if preferredScreenID != nil {
-            if let notchScreen = screens.first(where: isNotched) {
+            if let notchScreen = screens.first(where: isNotchedScreen) {
                 return (notchScreen, "manual missing, auto fallback")
             }
 
@@ -128,7 +128,7 @@ enum OverlayDisplayResolver {
             return (screens[0], "manual missing, first-display fallback")
         }
 
-        if let notchScreen = screens.first(where: isNotched) {
+        if let notchScreen = screens.first(where: isNotchedScreen) {
             return (notchScreen, "automatic")
         }
 
@@ -140,10 +140,10 @@ enum OverlayDisplayResolver {
     }
 
     private static func placementMode(for screen: NSScreen) -> OverlayPlacementMode {
-        isNotched(screen) ? .notch : .topBar
+        isNotchedScreen(screen) ? .notch : .topBar
     }
 
-    private static func isNotched(_ screen: NSScreen) -> Bool {
+    static func isNotchedScreen(_ screen: NSScreen) -> Bool {
         screen.safeAreaInsets.top > 0
             || screen.auxiliaryTopLeftArea?.isEmpty == false
             || screen.auxiliaryTopRightArea?.isEmpty == false
