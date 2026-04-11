@@ -284,6 +284,10 @@ extension AgentSession {
             return .active
         }
 
+        if isHookManaged, phase == .completed {
+            return .inactive
+        }
+
         if referenceDate.timeIntervalSince(islandActivityDate) <= Self.islandActivityThreshold {
             return .active
         }
