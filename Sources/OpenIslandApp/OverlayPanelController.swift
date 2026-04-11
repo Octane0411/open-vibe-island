@@ -42,6 +42,12 @@ final class OverlayPanelController {
         let continuedDragStartPanelOrigin: NSPoint
     }
 
+    enum TopBarDragReleaseAction: Equatable {
+        case persistDraggedPosition
+        case endClosedTopBarPress
+        case handlePillClick
+    }
+
     enum OpenedTopBarHeaderDragPlan: Equatable {
         case waitForThreshold
         case startClosedPillDrag
@@ -264,6 +270,29 @@ final class OverlayPanelController {
         didTransitionToClosedPill: Bool
     ) -> Bool {
         !startedFromOpenedTopBarHeader || didTransitionToClosedPill
+    }
+
+    nonisolated static func topBarDragReleaseActions(
+        didMove: Bool,
+        startedFromOpenedTopBarHeader: Bool,
+        didTransitionToClosedPill: Bool
+    ) -> [TopBarDragReleaseAction] {
+        var actions: [TopBarDragReleaseAction] = []
+
+        if didMove {
+            actions.append(.persistDraggedPosition)
+        } else if !startedFromOpenedTopBarHeader {
+            actions.append(.handlePillClick)
+        }
+
+        if shouldEndClosedTopBarPressAfterDrag(
+            startedFromOpenedTopBarHeader: startedFromOpenedTopBarHeader,
+            didTransitionToClosedPill: didTransitionToClosedPill
+        ) {
+            actions.append(.endClosedTopBarPress)
+        }
+
+        return actions
     }
 
     func availableDisplayOptions() -> [OverlayDisplayOption] {
@@ -1328,17 +1357,19 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
             "mouseUp didMove=\(didMove) startedFromOpenedHeader=\(startedFromOpenedHeader) transitionedToClosedPill=\(didTransitionToClosedPill)"
         )
 
-        if OverlayPanelController.shouldEndClosedTopBarPressAfterDrag(
+        for action in OverlayPanelController.topBarDragReleaseActions(
+            didMove: didMove,
             startedFromOpenedTopBarHeader: startedFromOpenedHeader,
             didTransitionToClosedPill: didTransitionToClosedPill
         ) {
-            notchController?.endClosedTopBarPress()
-        }
-
-        if didMove {
-            notchController?.persistDraggedPillPosition()
-        } else if !startedFromOpenedHeader {
-            notchController?.handlePillClickFromDragLayer()
+            switch action {
+            case .persistDraggedPosition:
+                notchController?.persistDraggedPillPosition()
+            case .endClosedTopBarPress:
+                notchController?.endClosedTopBarPress()
+            case .handlePillClick:
+                notchController?.handlePillClickFromDragLayer()
+            }
         }
     }
 

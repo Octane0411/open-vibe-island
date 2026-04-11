@@ -379,6 +379,17 @@ struct OverlayPanelControllerTests {
     }
 
     @Test
+    func movedTopBarDragPersistsPositionBeforeEndingPress() {
+        let actions = OverlayPanelController.topBarDragReleaseActions(
+            didMove: true,
+            startedFromOpenedTopBarHeader: true,
+            didTransitionToClosedPill: true
+        )
+
+        #expect(actions == [.persistDraggedPosition, .endClosedTopBarPress])
+    }
+
+    @Test
     func eventMonitorDefersClosedTopBarClicksWhenPanelIsInteractive() {
         #expect(
             !OverlayPanelController.shouldEventMonitorHandleClosedSurfaceClick(
