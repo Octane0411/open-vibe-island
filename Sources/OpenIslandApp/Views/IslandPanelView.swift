@@ -446,6 +446,12 @@ struct IslandPanelView: View {
             } else {
                 sessionList
             }
+            if model.showMediaStrip && model.nowPlayingObserver.state.hasContent {
+                Divider().opacity(0.3)
+                MediaStripView(state: model.nowPlayingObserver.state)
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 6)
+            }
         }
         .padding(.horizontal, 18)
         .padding(.top, 8)
