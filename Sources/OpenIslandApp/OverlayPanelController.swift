@@ -9,6 +9,8 @@ final class OverlayPanelController {
         let surfaceOffset: CGSize
     }
 
+    private static let topBarOpenedHeaderDragHeight: CGFloat = 30
+
     private static let minimumOpenedPanelWidth: CGFloat = 680
     private static let maximumOpenedPanelWidth: CGFloat = 740
     private static let openedPanelWidthFactor: CGFloat = 0.46
@@ -129,6 +131,33 @@ final class OverlayPanelController {
             width: dragWidth,
             height: headerRect.height
         )
+    }
+
+    nonisolated static func shouldCaptureOpenedTopBarHeaderDrag(
+        status: NotchStatus,
+        mode: OverlayPlacementMode,
+        openReason: NotchOpenReason?,
+        point: NSPoint,
+        contentRect: NSRect,
+        headerHeight: CGFloat,
+        trailingControlWidth: CGFloat,
+        horizontalPadding: CGFloat
+    ) -> Bool {
+        guard canDragOpenedTopBarHeader(
+            status: status,
+            mode: mode,
+            openReason: openReason
+        ) else {
+            return false
+        }
+
+        let dragRect = openedTopBarHeaderDragRect(
+            contentRect: contentRect,
+            headerHeight: headerHeight,
+            trailingControlWidth: trailingControlWidth,
+            horizontalPadding: horizontalPadding
+        )
+        return dragRect.contains(point)
     }
 
     func availableDisplayOptions() -> [OverlayDisplayOption] {
@@ -388,6 +417,32 @@ final class OverlayPanelController {
         guard model?.notchStatus == .closed else { return false }
         guard let screen = resolveTargetScreen() else { return false }
         return placementStrategy(for: screen) == .topBar
+    }
+
+    func shouldCaptureOpenedTopBarHeaderDrag(at pointInView: NSPoint, in bounds: NSRect) -> Bool {
+        guard let model else {
+            return false
+        }
+
+        guard let contentRect = contentRect(for: model, in: bounds),
+              contentRect.contains(pointInView) else {
+            return false
+        }
+
+        let mode = model.overlayPlacementDiagnostics?.mode
+            ?? placementDiagnostics(preferredScreenID: nil)?.mode
+            ?? .notch
+
+        return Self.shouldCaptureOpenedTopBarHeaderDrag(
+            status: model.notchStatus,
+            mode: mode,
+            openReason: model.notchOpenReason,
+            point: pointInView,
+            contentRect: contentRect,
+            headerHeight: Self.topBarOpenedHeaderDragHeight,
+            trailingControlWidth: IslandPanelView.topBarOpenedHeaderTrailingControlWidth,
+            horizontalPadding: IslandPanelView.topBarOpenedHeaderHorizontalPadding
+        )
     }
 
     /// Called by the hosting view while the user drags the pill. Moves the
@@ -973,6 +1028,7 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
     private var dragStartPanelOrigin: NSPoint?
     private var isTrackingPillDrag = false
     private var didMovePillWhileTracking = false
+    private var dragStartedFromOpenedTopBarHeader = false
 
     override var isOpaque: Bool {
         false
@@ -993,6 +1049,20 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
             dragStartPanelOrigin = window.frame.origin
             isTrackingPillDrag = true
             didMovePillWhileTracking = false
+            dragStartedFromOpenedTopBarHeader = false
+            return
+        }
+
+        let downPointInView = convert(event.locationInWindow, from: nil)
+        if notchController?.shouldCaptureOpenedTopBarHeaderDrag(
+            at: downPointInView,
+            in: bounds
+        ) == true, let window {
+            dragStartMouse = NSEvent.mouseLocation
+            dragStartPanelOrigin = window.frame.origin
+            isTrackingPillDrag = true
+            didMovePillWhileTracking = false
+            dragStartedFromOpenedTopBarHeader = true
             return
         }
 
@@ -1033,15 +1103,20 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
         }
 
         let didMove = didMovePillWhileTracking
+        let startedFromOpenedHeader = dragStartedFromOpenedTopBarHeader
         isTrackingPillDrag = false
         dragStartMouse = nil
         dragStartPanelOrigin = nil
         didMovePillWhileTracking = false
-        notchController?.endClosedTopBarPress()
+        dragStartedFromOpenedTopBarHeader = false
+
+        if !startedFromOpenedHeader {
+            notchController?.endClosedTopBarPress()
+        }
 
         if didMove {
             notchController?.persistDraggedPillPosition()
-        } else {
+        } else if !startedFromOpenedHeader {
             notchController?.handlePillClickFromDragLayer()
         }
     }
@@ -1073,6 +1148,13 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
         // the pill lands on a SwiftUI-managed subview and mouseDown never
         // bubbles up to NotchHostingView.
         if controller.canDragPillNow() {
+            return self
+        }
+
+        if controller.shouldCaptureOpenedTopBarHeaderDrag(
+            at: point,
+            in: bounds
+        ) {
             return self
         }
 

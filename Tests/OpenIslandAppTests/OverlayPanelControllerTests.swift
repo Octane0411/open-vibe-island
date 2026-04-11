@@ -185,6 +185,60 @@ struct OverlayPanelControllerTests {
     }
 
     @Test
+    func hoverOpenedTopBarHeaderHitIsCapturedByDragLayer() {
+        let contentRect = NSRect(x: 18, y: 14, width: 700, height: 500)
+
+        let shouldCapture = OverlayPanelController.shouldCaptureOpenedTopBarHeaderDrag(
+            status: .opened,
+            mode: .topBar,
+            openReason: .hover,
+            point: NSPoint(x: 56, y: 498),
+            contentRect: contentRect,
+            headerHeight: 30,
+            trailingControlWidth: IslandPanelView.topBarOpenedHeaderTrailingControlWidth,
+            horizontalPadding: IslandPanelView.topBarOpenedHeaderHorizontalPadding
+        )
+
+        #expect(shouldCapture)
+    }
+
+    @Test
+    func hoverOpenedTopBarControlButtonsHitIsNotCapturedByDragLayer() {
+        let contentRect = NSRect(x: 18, y: 14, width: 700, height: 500)
+
+        let shouldCapture = OverlayPanelController.shouldCaptureOpenedTopBarHeaderDrag(
+            status: .opened,
+            mode: .topBar,
+            openReason: .hover,
+            point: NSPoint(x: 686, y: 498),
+            contentRect: contentRect,
+            headerHeight: 30,
+            trailingControlWidth: IslandPanelView.topBarOpenedHeaderTrailingControlWidth,
+            horizontalPadding: IslandPanelView.topBarOpenedHeaderHorizontalPadding
+        )
+
+        #expect(!shouldCapture)
+    }
+
+    @Test
+    func clickOpenedTopBarHeaderHitIsNotCapturedByDragLayer() {
+        let contentRect = NSRect(x: 18, y: 14, width: 700, height: 500)
+
+        let shouldCapture = OverlayPanelController.shouldCaptureOpenedTopBarHeaderDrag(
+            status: .opened,
+            mode: .topBar,
+            openReason: .click,
+            point: NSPoint(x: 56, y: 498),
+            contentRect: contentRect,
+            headerHeight: 30,
+            trailingControlWidth: IslandPanelView.topBarOpenedHeaderTrailingControlWidth,
+            horizontalPadding: IslandPanelView.topBarOpenedHeaderHorizontalPadding
+        )
+
+        #expect(!shouldCapture)
+    }
+
+    @Test
     func eventMonitorDefersClosedTopBarClicksWhenPanelIsInteractive() {
         #expect(
             !OverlayPanelController.shouldEventMonitorHandleClosedSurfaceClick(
