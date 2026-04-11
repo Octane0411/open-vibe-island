@@ -1,0 +1,19 @@
+--- Sources/OpenIslandCore/BridgeServer.swift
++++ Sources/OpenIslandCore/BridgeServer.swift
+@@ -1182,6 +1182,15 @@
+                         timestamp: .now
+                     )
+                 )
+             )
++        case "notification":
++            emit(
++                .activityUpdated(
++                    SessionActivityUpdated(
++                        sessionID: payload.sessionID,
++                        summary: payload.promptPreview ?? payload.implicitStartSummary,
++                        phase: .completed,
++                        timestamp: .now
++                    )
++                )
++            )
+         case "pretooluse", "pre_tool_use":

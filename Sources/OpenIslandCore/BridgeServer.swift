@@ -1940,7 +1940,7 @@ public final class BridgeServer: @unchecked Sendable {
 
         let lowercasedEvent = payload.hookEventName.lowercased()
         
-        if lowercasedEvent == "user_prompt_submit" || lowercasedEvent == "userpromptsubmit" {
+        if lowercasedEvent == "user_prompt_submit" || lowercasedEvent == "userpromptsubmit" || lowercasedEvent == "sessionstart" || lowercasedEvent == "session_start" {
             if let prompt = validPrompt {
                 if mergedMetadata.initialUserPrompt == nil {
                     mergedMetadata.initialUserPrompt = prompt
