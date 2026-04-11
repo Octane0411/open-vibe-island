@@ -10,7 +10,12 @@ final class NowPlayingObserver {
     private let pollInterval: TimeInterval
     private var lastMusicTrackKey: String = ""
 
-    private static let musicArtworkPath = "/tmp/open-island-artwork"
+    private static let musicArtworkPath: String = {
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        return (caches ?? URL(fileURLWithPath: NSTemporaryDirectory()))
+            .appendingPathComponent("open-island-artwork")
+            .path
+    }()
 
     init(pollInterval: TimeInterval = 1.0) {
         self.pollInterval = pollInterval
@@ -81,7 +86,12 @@ final class NowPlayingObserver {
         var artworkURL: URL? = nil
         if trackKey != lastMusicTrackKey {
             lastMusicTrackKey = trackKey
-            artworkURL = writeMusicArtwork()
+            if let url = writeMusicArtwork() {
+                artworkURL = url
+            } else {
+                // Write failed — remove stale file so we don't serve previous track's art
+                try? FileManager.default.removeItem(atPath: Self.musicArtworkPath)
+            }
         } else if FileManager.default.fileExists(atPath: Self.musicArtworkPath) {
             artworkURL = URL(fileURLWithPath: Self.musicArtworkPath)
         }
