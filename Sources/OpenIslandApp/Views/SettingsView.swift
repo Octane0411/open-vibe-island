@@ -240,6 +240,26 @@ struct DisplaySettingsPane: View {
                 }
             }
 
+            Section("Position") {
+                let edge = model.dockEdge
+                let edgeLabel = switch edge {
+                case .top: "Top (Notch)"
+                case .left: "Left Sidebar"
+                case .right: "Right Sidebar"
+                }
+                LabeledContent("Docked", value: edgeLabel)
+
+                Text("Drag the panel to a screen edge to snap: top → notch, left/right → vertical sidebar")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+
+                if edge != .top || model.overlay.overlayPanelController.useCustomPosition {
+                    Button("Reset to Notch") {
+                        model.overlay.overlayPanelController.resetToNotch()
+                    }
+                }
+            }
+
             if let diag = model.overlayPlacementDiagnostics {
                 Section(lang.t("settings.display.diagnostics")) {
                     LabeledContent(lang.t("settings.display.currentScreen"), value: diag.targetScreenName)

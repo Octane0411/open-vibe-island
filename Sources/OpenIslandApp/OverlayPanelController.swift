@@ -30,12 +30,103 @@ final class OverlayPanelController {
     private static let completionCardMaxHeight: CGFloat = 400
     private static let hiddenIdleEdgeHoverHitHeight: CGFloat = 8
 
+    private static let customPositionXKey = "islandCustomPositionX"
+    private static let customPositionYKey = "islandCustomPositionY"
+    private static let useCustomPositionKey = "islandUseCustomPosition"
+
     private var panel: NotchPanel?
     private var eventMonitors = NotchEventMonitors()
     private var hoverTimer: DispatchWorkItem?
     private var hoverCancelGrace: DispatchWorkItem?
     weak var model: AppModel?
     private(set) var notchRect: NSRect = .zero
+
+    /// Whether the user has dragged the panel to a custom position.
+    var useCustomPosition: Bool {
+        get { UserDefaults.standard.bool(forKey: Self.useCustomPositionKey) }
+        set { UserDefaults.standard.set(newValue, forKey: Self.useCustomPositionKey) }
+    }
+
+    /// The user's custom panel origin, persisted across launches.
+    var customPosition: NSPoint? {
+        get {
+            guard useCustomPosition else { return nil }
+            let x = UserDefaults.standard.double(forKey: Self.customPositionXKey)
+            let y = UserDefaults.standard.double(forKey: Self.customPositionYKey)
+            return NSPoint(x: x, y: y)
+        }
+        set {
+            if let p = newValue {
+                UserDefaults.standard.set(p.x, forKey: Self.customPositionXKey)
+                UserDefaults.standard.set(p.y, forKey: Self.customPositionYKey)
+                useCustomPosition = true
+            } else {
+                useCustomPosition = false
+            }
+        }
+    }
+
+    /// Distance from screen edge to trigger snap (in points).
+    private static let edgeSnapThreshold: CGFloat = 80
+    /// Width of the vertical sidebar when docked to left/right edge.
+    private static let verticalPanelWidth: CGFloat = 320
+    /// Key for persisting dock edge.
+    private static let dockEdgeKey = "islandDockEdge"
+
+    var dockEdge: IslandDockEdge {
+        get {
+            let raw = UserDefaults.standard.string(forKey: Self.dockEdgeKey) ?? "top"
+            return IslandDockEdge(rawValue: raw) ?? .top
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: Self.dockEdgeKey)
+            model?.dockEdge = newValue
+        }
+    }
+
+    /// Reset the panel back to the notch position.
+    func resetToNotch() {
+        customPosition = nil
+        dockEdge = .top
+        guard let panel, let screen = resolveTargetScreen() else { return }
+        let frame = panelFrame(for: model, on: screen)
+        panel.setFrame(frame, display: true)
+        computeNotchRect(screen: screen)
+    }
+
+    /// Called when the user finishes dragging the panel. Detects edge proximity and snaps.
+    func panelDidMove() {
+        guard let panel, let screen = resolveTargetScreen() else { return }
+        let panelFrame = panel.frame
+        let screenFrame = screen.frame
+
+        let distToLeft = panelFrame.minX - screenFrame.minX
+        let distToRight = screenFrame.maxX - panelFrame.maxX
+        let distToTop = screenFrame.maxY - panelFrame.maxY
+
+        let newEdge: IslandDockEdge
+        if distToTop < Self.edgeSnapThreshold && distToTop <= distToLeft && distToTop <= distToRight {
+            newEdge = .top
+        } else if distToLeft < Self.edgeSnapThreshold && distToLeft <= distToRight {
+            newEdge = .left
+        } else if distToRight < Self.edgeSnapThreshold {
+            newEdge = .right
+        } else {
+            // Not near any edge — keep as free-floating at current position.
+            customPosition = panel.frame.origin
+            return
+        }
+
+        dockEdge = newEdge
+        // Snap to edge — compute the snapped frame and apply.
+        if newEdge == .top {
+            customPosition = nil
+        } else {
+            customPosition = nil  // Edge-docked positions are computed, not stored.
+        }
+        let snappedFrame = self.panelFrame(for: model, on: screen)
+        panel.setFrame(snappedFrame, display: true, animate: true)
+    }
 
     var isVisible: Bool {
         panel?.isVisible == true
@@ -51,12 +142,21 @@ final class OverlayPanelController {
 
     func ensurePanel(model: AppModel, preferredScreenID: String?) {
         self.model = model
+        // Sync persisted dock edge to model.
+        model.dockEdge = dockEdge
         let panel = self.panel ?? makePanel(model: model)
         self.panel = panel
         positionPanel(panel, preferredScreenID: preferredScreenID, animated: false)
         panel.orderFrontRegardless()
-        panel.ignoresMouseEvents = true
-        panel.acceptsMouseMovedEvents = false
+        if dockEdge.isVertical {
+            // Side-docked: always interactive, always visible as opened.
+            panel.ignoresMouseEvents = false
+            panel.acceptsMouseMovedEvents = true
+            model.notchOpen(reason: .click)
+        } else {
+            panel.ignoresMouseEvents = true
+            panel.acceptsMouseMovedEvents = false
+        }
         startEventMonitoring()
     }
 
@@ -73,6 +173,8 @@ final class OverlayPanelController {
     }
 
     func hide() {
+        // Sidebar mode: never hide — panel stays visible and interactive.
+        if dockEdge.isVertical { return }
         panel?.ignoresMouseEvents = true
         panel?.acceptsMouseMovedEvents = false
     }
@@ -123,7 +225,7 @@ final class OverlayPanelController {
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = false
-        panel.isMovable = false
+        panel.isMovable = true
         panel.hidesOnDeactivate = false
         panel.acceptsMouseMovedEvents = false
         panel.collectionBehavior = [.fullScreenAuxiliary, .stationary, .canJoinAllSpaces, .ignoresCycle]
@@ -131,9 +233,20 @@ final class OverlayPanelController {
         panel.titlebarAppearsTransparent = true
         panel.ignoresMouseEvents = true
 
+        panel.overlayController = self
+
         let hostingView = NotchHostingView(rootView: IslandPanelView(model: model))
         hostingView.notchController = self
         panel.contentView = hostingView
+
+        // Listen for drag-end from SwiftUI DragGripButton.
+        NotificationCenter.default.addObserver(
+            forName: .islandPanelDragEnded,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.panelDidMove() }
+        }
 
         computeNotchRect(screen: resolveTargetScreen())
         return panel
@@ -151,7 +264,14 @@ final class OverlayPanelController {
             return nil
         }
 
-        let windowFrame = panelFrame(for: model, on: screen)
+        let windowFrame: NSRect
+        if let custom = customPosition, !dockEdge.isVertical {
+            // Preserve user-dragged origin, only update size (free-floating mode).
+            let size = panelSize(for: model, on: screen)
+            windowFrame = NSRect(origin: custom, size: size)
+        } else {
+            windowFrame = panelFrame(for: model, on: screen)
+        }
 
         // Always set the panel frame instantly — no AppKit animation.
         // All visual transitions (shape, size, opacity, corner radius) are
@@ -234,6 +354,9 @@ final class OverlayPanelController {
     private func handleMouseMoved(_ screenLocation: NSPoint) {
         guard let model else { return }
 
+        // Sidebar mode: always stay opened, no hover open/close logic.
+        if dockEdge.isVertical { return }
+
         let inClosedSurfaceArea = isPointInClosedSurfaceArea(screenLocation)
 
         if model.notchStatus == .closed && inClosedSurfaceArea {
@@ -253,6 +376,9 @@ final class OverlayPanelController {
 
     private func handleMouseDown(_ screenLocation: NSPoint) {
         guard let model else { return }
+
+        // Sidebar mode: never close on outside click. Panel stays open.
+        if dockEdge.isVertical { return }
 
         let inClosedSurfaceArea = isPointInClosedSurfaceArea(screenLocation)
 
@@ -342,6 +468,12 @@ final class OverlayPanelController {
     func isPointInClosedSurfaceArea(_ screenPoint: NSPoint) -> Bool {
         guard let model else { return false }
 
+        // When using a custom position, use the panel frame directly for hit testing.
+        if useCustomPosition, let panel {
+            let expandedFrame = panel.frame.insetBy(dx: -20, dy: -10)
+            return expandedFrame.contains(screenPoint)
+        }
+
         if let closedSurfaceRect = closedSurfaceRect(for: model) {
             return closedSurfaceRect.contains(screenPoint)
         }
@@ -385,6 +517,10 @@ final class OverlayPanelController {
     }
 
     func contentRect(for model: AppModel, in bounds: NSRect) -> NSRect? {
+        // Sidebar mode: the entire panel is content, no shadow insets.
+        if dockEdge.isVertical {
+            return bounds
+        }
         let insets = panelShadowInsets
         return NSRect(
             x: bounds.minX + insets.horizontal,
@@ -471,18 +607,46 @@ final class OverlayPanelController {
 
     private func panelFrame(for model: AppModel?, on screen: NSScreen) -> NSRect {
         let size = panelSize(for: model, on: screen)
-        return NSRect(
-            x: screen.frame.midX - size.width / 2,
-            y: screen.frame.maxY - size.height,
-            width: size.width,
-            height: size.height
-        )
+        if let custom = customPosition {
+            return NSRect(origin: custom, size: size)
+        }
+
+        let edge = dockEdge
+        switch edge {
+        case .top:
+            return NSRect(
+                x: screen.frame.midX - size.width / 2,
+                y: screen.frame.maxY - size.height,
+                width: size.width,
+                height: size.height
+            )
+        case .left:
+            return NSRect(
+                x: screen.frame.minX,
+                y: screen.frame.midY - size.height / 2,
+                width: size.width,
+                height: size.height
+            )
+        case .right:
+            return NSRect(
+                x: screen.frame.maxX - size.width,
+                y: screen.frame.midY - size.height / 2,
+                width: size.width,
+                height: size.height
+            )
+        }
     }
 
     /// Always returns the maximum (opened) panel size so the window never
     /// needs to resize.  All visual transitions are driven purely by SwiftUI
     /// inside this fixed-size window.
     private func panelSize(for model: AppModel?, on screen: NSScreen) -> CGSize {
+        // Vertical sidebar mode for left/right docking.
+        if dockEdge.isVertical {
+            let height = min(screen.visibleFrame.height * 0.85, 800)
+            return CGSize(width: Self.verticalPanelWidth, height: height)
+        }
+
         let insets = panelShadowInsets
 
         guard let model else {
@@ -674,6 +838,8 @@ final class OverlayPanelController {
 // MARK: - NotchPanel
 
 private final class NotchPanel: NSPanel {
+    weak var overlayController: OverlayPanelController?
+
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }

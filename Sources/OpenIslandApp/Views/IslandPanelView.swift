@@ -1,6 +1,45 @@
 import SwiftUI
+import AppKit
 @preconcurrency import MarkdownUI
 import OpenIslandCore
+
+// MARK: - Window drag handle (pure SwiftUI gesture)
+
+/// Notification posted when the user finishes dragging the panel.
+extension Notification.Name {
+    static let islandPanelDragEnded = Notification.Name("islandPanelDragEnded")
+}
+
+/// A drag grip that moves the window via SwiftUI DragGesture.
+private struct DragGripButton: View {
+    @State private var dragStartOrigin: CGPoint? = nil
+
+    var body: some View {
+        Image(systemName: "line.3.horizontal")
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(.white.opacity(0.35))
+            .frame(width: 28, height: 22)
+            .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 5))
+            .help("Drag to reposition")
+            .gesture(
+                DragGesture(coordinateSpace: .global)
+                    .onChanged { value in
+                        guard let window = NSApp.windows.first(where: { $0.title == "" && $0.level == .statusBar && $0.isVisible }) else { return }
+                        if dragStartOrigin == nil {
+                            dragStartOrigin = CGPoint(x: window.frame.origin.x, y: window.frame.origin.y)
+                        }
+                        guard let start = dragStartOrigin else { return }
+                        let newX = start.x + value.translation.width
+                        let newY = start.y - value.translation.height
+                        window.setFrameOrigin(NSPoint(x: newX, y: newY))
+                    }
+                    .onEnded { _ in
+                        dragStartOrigin = nil
+                        NotificationCenter.default.post(name: .islandPanelDragEnded, object: nil)
+                    }
+            )
+    }
+}
 
 private struct NotificationContentHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
@@ -218,16 +257,28 @@ struct IslandPanelView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            ZStack(alignment: .top) {
-                Color.clear
+            if model.dockEdge.isVertical {
+                sidebarContent(availableSize: geometry.size)
+            } else {
+                ZStack(alignment: .top) {
+                    Color.clear
 
-                notchContent(availableSize: geometry.size)
-                    .frame(maxWidth: .infinity, alignment: .top)
+                    notchContent(availableSize: geometry.size)
+                        .frame(maxWidth: .infinity, alignment: .top)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
+    }
+
+    // MARK: - Sidebar (vertical) layout for left/right docking
+
+    @ViewBuilder
+    private func sidebarContent(availableSize: CGSize) -> some View {
+        IslandSidebarView(model: model)
+            .frame(width: availableSize.width, height: availableSize.height)
     }
 
     @ViewBuilder
@@ -431,6 +482,8 @@ struct IslandPanelView: View {
 
     private var openedHeaderButtons: some View {
         HStack(spacing: Self.headerControlSpacing) {
+            DragGripButton()
+
             headerIconButton(
                 systemName: model.isSoundMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
                 tint: model.isSoundMuted ? .orange.opacity(0.92) : .white.opacity(0.62)
@@ -1970,5 +2023,156 @@ private struct DismissButton: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+    }
+}
+
+// MARK: - Sidebar view (vertical, for left/right edge docking)
+
+private struct IslandSidebarView: View {
+    var model: AppModel
+
+    private var scoutTint: Color {
+        let sessions = model.surfacedSessions
+        if sessions.contains(where: { $0.phase == .running }) {
+            return Color(red: 0.43, green: 0.62, blue: 1.0)
+        }
+        if !sessions.isEmpty {
+            return Color(red: 0.26, green: 0.91, blue: 0.42)
+        }
+        return Color.white.opacity(0.4)
+    }
+
+    var body: some View {
+        let isLeft = model.dockEdge == .left
+        let cr: CGFloat = 14
+
+        VStack(spacing: 0) {
+            sidebarHeader
+            sidebarDivider
+            sidebarSessionList
+        }
+        .background(sidebarBackground(isLeft: isLeft, cornerRadius: cr))
+        .shadow(color: .black.opacity(0.4), radius: 20, x: isLeft ? 4 : -4, y: 0)
+    }
+
+    private var sidebarHeader: some View {
+        HStack(spacing: 8) {
+            sidebarIcon
+            Text("Open Island")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.85))
+            Spacer()
+            sidebarHeaderButtons
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    @ViewBuilder
+    private var sidebarIcon: some View {
+        if model.isCustomAppearance {
+            IslandPixelGlyph(
+                tint: scoutTint,
+                style: model.islandPixelShapeStyle,
+                isAnimating: model.surfacedSessions.contains(where: { $0.phase == .running }),
+                customAvatarImage: model.customAvatarImage
+            )
+        } else {
+            OpenIslandIcon(
+                size: 14,
+                isAnimating: model.surfacedSessions.contains(where: { $0.phase == .running }),
+                tint: scoutTint
+            )
+        }
+    }
+
+    private var sidebarHeaderButtons: some View {
+        HStack(spacing: 8) {
+            DragGripButton()
+
+            headerButton(systemName: model.isSoundMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
+                         tint: model.isSoundMuted ? .orange.opacity(0.92) : .white.opacity(0.62)) {
+                model.toggleSoundMuted()
+            }
+            headerButton(systemName: "gearshape.fill", tint: .white.opacity(0.62)) {
+                model.showSettings()
+            }
+        }
+    }
+
+    private func headerButton(systemName: String, tint: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 22, height: 22)
+                .background(.white.opacity(0.08), in: Circle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var sidebarDivider: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.08))
+            .frame(height: 0.5)
+    }
+
+    private var sidebarSessionList: some View {
+        ScrollView(.vertical) {
+            if model.islandListSessions.isEmpty {
+                sidebarEmptyState
+            } else {
+                let now = Date.now
+                LazyVStack(spacing: 6) {
+                    ForEach(model.islandListSessions, id: \.id) { session in
+                        IslandSessionRow(
+                            session: session,
+                            referenceDate: now,
+                            isActionable: session.phase.requiresAttention || session.id == model.islandSurface.sessionID,
+                            useDrawingGroup: true,
+                            isInteractive: true,
+                            lang: model.lang,
+                            onApprove: { model.approvePermission(for: session.id, action: $0) },
+                            onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
+                            onJump: { model.jumpToSession(session) },
+                            onDismiss: session.isRemote ? { model.dismissSession(session.id) } : nil
+                        )
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+            }
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    private var sidebarEmptyState: some View {
+        VStack(spacing: 8) {
+            Spacer(minLength: 40)
+            Text(model.lang.t("island.noSessions"))
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.white.opacity(0.4))
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func sidebarBackground(isLeft: Bool, cornerRadius cr: CGFloat) -> some View {
+        UnevenRoundedRectangle(
+            topLeadingRadius: isLeft ? 0 : cr,
+            bottomLeadingRadius: isLeft ? 0 : cr,
+            bottomTrailingRadius: isLeft ? cr : 0,
+            topTrailingRadius: isLeft ? cr : 0
+        )
+        .fill(Color.black.opacity(0.92))
+        .overlay(
+            UnevenRoundedRectangle(
+                topLeadingRadius: isLeft ? 0 : cr,
+                bottomLeadingRadius: isLeft ? 0 : cr,
+                bottomTrailingRadius: isLeft ? cr : 0,
+                topTrailingRadius: isLeft ? cr : 0
+            )
+            .stroke(Color.white.opacity(0.07), lineWidth: 1)
+        )
     }
 }

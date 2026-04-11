@@ -234,6 +234,8 @@ final class AppModel {
             refreshOverlayPlacementIfVisible()
         }
     }
+    /// Which edge the island panel is docked to. Driven by OverlayPanelController on drag.
+    var dockEdge: IslandDockEdge = .top
     var islandPixelShapeStyle: IslandPixelShapeStyle = .bars {
         didSet {
             guard islandPixelShapeStyle != oldValue else { return }

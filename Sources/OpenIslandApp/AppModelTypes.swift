@@ -44,3 +44,14 @@ enum IslandPixelShapeStyle: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 }
+
+/// Which screen edge the island panel is docked to.
+enum IslandDockEdge: String, CaseIterable, Identifiable {
+    case top
+    case left
+    case right
+
+    var id: String { rawValue }
+
+    var isVertical: Bool { self == .left || self == .right }
+}

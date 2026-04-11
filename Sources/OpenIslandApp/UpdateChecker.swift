@@ -34,6 +34,10 @@ final class UpdateChecker: NSObject {
     /// Start Sparkle's automatic update checking schedule.
     /// Call once after app launch.
     func startIfNeeded() {
+        // Disabled for dev builds — Sparkle signature mismatch causes errors.
+        print("[UpdateChecker] Skipping Sparkle updater for dev build.")
+        return
+
         let updater = updaterController.updater
         updater.automaticallyChecksForUpdates = true
         updater.updateCheckInterval = 60 * 60 // 1 hour
