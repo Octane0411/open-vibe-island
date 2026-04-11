@@ -65,6 +65,21 @@ struct OverlayPanelControllerTests {
     }
 
     @Test
+    func hiddenIdleEdgeHoverRectAnchorsToTopOfClosedArea() {
+        let notchRect = NSRect(x: 400, y: 1_000, width: 224, height: 38)
+
+        let rect = OverlayPanelController.hiddenIdleEdgeHoverRect(
+            notchRect: notchRect,
+            closedWidth: 224,
+            hoverHitHeight: 8
+        )
+
+        #expect(rect.minX == 400)
+        #expect(rect.maxY == notchRect.maxY)
+        #expect(rect.height == 8)
+    }
+
+    @Test
     func clickOpensActivateThePanel() {
         #expect(OverlayPanelController.shouldActivatePanel(for: .click))
     }

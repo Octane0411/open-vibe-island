@@ -28,6 +28,7 @@ final class OverlayPanelController {
     private static let completionCardChromeHeight: CGFloat = 187
     private static let completionCardMinHeight: CGFloat = 210
     private static let completionCardMaxHeight: CGFloat = 400
+    private static let hiddenIdleEdgeHoverHitHeight: CGFloat = 8
 
     private var panel: NotchPanel?
     private var eventMonitors = NotchEventMonitors()
@@ -276,24 +277,35 @@ final class OverlayPanelController {
         hoverCancelGrace = nil
 
         guard let model else { return }
+
+        if model.showsIdleEdgeWhenCollapsed {
+            performHoverOpen(model)
+            return
+        }
+
         guard hoverTimer == nil else { return }
 
         let item = DispatchWorkItem { [weak self] in
             guard let self, let model = self.model else { return }
-            if model.notchStatus == .closed {
-                if model.hapticFeedbackEnabled {
-                    NSHapticFeedbackManager.defaultPerformer.perform(
-                        NSHapticFeedbackManager.FeedbackPattern.alignment,
-                        performanceTime: .now
-                    )
-                }
-                model.notchOpen(reason: .hover)
-            }
+            self.performHoverOpen(model)
             self.hoverTimer = nil
         }
 
         hoverTimer = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + model.currentHoverOpenDelay, execute: item)
+        DispatchQueue.main.asyncAfter(deadline: .now() + AppModel.hoverOpenDelay, execute: item)
+    }
+
+    private func performHoverOpen(_ model: AppModel) {
+        guard model.notchStatus == .closed else { return }
+
+        if model.hapticFeedbackEnabled {
+            NSHapticFeedbackManager.defaultPerformer.perform(
+                NSHapticFeedbackManager.FeedbackPattern.alignment,
+                performanceTime: .now
+            )
+        }
+
+        model.notchOpen(reason: .hover)
     }
 
     private func cancelHoverOpen() {
@@ -395,6 +407,21 @@ final class OverlayPanelController {
         )
     }
 
+    nonisolated static func hiddenIdleEdgeHoverRect(
+        notchRect: NSRect,
+        closedWidth: CGFloat,
+        hoverHitHeight: CGFloat
+    ) -> NSRect {
+        let cx = notchRect.midX
+        let effectiveHeight = min(notchRect.height, max(1, hoverHitHeight))
+        return NSRect(
+            x: cx - closedWidth / 2,
+            y: notchRect.maxY - effectiveHeight,
+            width: closedWidth,
+            height: effectiveHeight
+        )
+    }
+
     nonisolated static func closedPanelWidth(
         notchWidth: CGFloat,
         notchHeight: CGFloat,
@@ -428,6 +455,14 @@ final class OverlayPanelController {
         }
 
         let closedWidth = closedPanelWidth(for: model, on: screen)
+        if model.showsIdleEdgeWhenCollapsed {
+            return Self.hiddenIdleEdgeHoverRect(
+                notchRect: notchRect,
+                closedWidth: closedWidth,
+                hoverHitHeight: Self.hiddenIdleEdgeHoverHitHeight
+            )
+        }
+
         return Self.closedSurfaceRect(
             notchRect: notchRect,
             closedWidth: closedWidth

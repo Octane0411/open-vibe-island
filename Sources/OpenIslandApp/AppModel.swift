@@ -26,7 +26,6 @@ final class AppModel {
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
     private static let jumpOverlayDismissLeadTime: Duration = .milliseconds(20)
     static let hoverOpenDelay: TimeInterval = 0.15
-    static let hiddenIdleEdgeHoverOpenDelay: TimeInterval = 0.09
 
     struct AcceptanceStep: Identifiable {
         let id: String
@@ -267,10 +266,6 @@ final class AppModel {
 
     var showsIdleEdgeWhenCollapsed: Bool {
         hideIdleIslandToEdge && notchStatus == .closed
-    }
-
-    var currentHoverOpenDelay: TimeInterval {
-        showsIdleEdgeWhenCollapsed ? Self.hiddenIdleEdgeHoverOpenDelay : Self.hoverOpenDelay
     }
 
     func importCustomAvatar() {

@@ -407,22 +407,6 @@ struct AppModelSessionListTests {
     }
 
     @Test
-    func hiddenIdleEdgeUsesFasterHoverOpenDelay() {
-        let model = AppModel()
-        let originalSetting = model.hideIdleIslandToEdge
-        defer { model.hideIdleIslandToEdge = originalSetting }
-
-        model.notchStatus = .closed
-        #expect(model.currentHoverOpenDelay == AppModel.hoverOpenDelay)
-
-        model.hideIdleIslandToEdge = true
-        #expect(model.currentHoverOpenDelay == AppModel.hiddenIdleEdgeHoverOpenDelay)
-
-        model.notchStatus = .opened
-        #expect(model.currentHoverOpenDelay == AppModel.hoverOpenDelay)
-    }
-
-    @Test
     func completionNotificationRequiresSurfaceEntryBeforePointerExitCollapse() {
         let model = AppModel()
         // Add a completed session so autoDismissesWhenPresentedAsNotification can check phase
