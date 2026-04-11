@@ -1170,11 +1170,23 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
     }
 
     override func mouseDown(with event: NSEvent) {
+        let downPointInView = convert(event.locationInWindow, from: nil)
+        let canDragClosedPill = notchController?.canDragPillNow() == true
+        let canDragOpenedHeader = notchController?.shouldCaptureOpenedTopBarHeaderDrag(
+            at: downPointInView,
+            in: bounds
+        ) == true
+        let notchStatusDescription = notchController?.model.map { String(describing: $0.notchStatus) } ?? "nil"
+        let openReasonDescription = notchController?.model.map { String(describing: $0.notchOpenReason) } ?? "nil"
+        overlayDragLog(
+            "mouseDown entry point=\(overlayDragPointDescription(downPointInView)) canDragClosedPill=\(canDragClosedPill) canDragOpenedHeader=\(canDragOpenedHeader) status=\(notchStatusDescription) reason=\(openReasonDescription)"
+        )
+
         // On external displays (topBar mode) with a closed pill, take over
         // mouse handling so we can implement drag-to-reposition + click-to-open.
         // On the built-in notch screen, or when opened, fall through to the
         // legacy SwiftUI-driven behavior.
-        if notchController?.canDragPillNow() == true, let window {
+        if canDragClosedPill, let window {
             window.makeKey()
             notchController?.beginClosedTopBarPress()
             dragStartMouse = NSEvent.mouseLocation
@@ -1189,11 +1201,7 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
             return
         }
 
-        let downPointInView = convert(event.locationInWindow, from: nil)
-        if notchController?.shouldCaptureOpenedTopBarHeaderDrag(
-            at: downPointInView,
-            in: bounds
-        ) == true, let window {
+        if canDragOpenedHeader, let window {
             window.makeKey()
             dragStartMouse = NSEvent.mouseLocation
             dragStartPanelOrigin = window.frame.origin
@@ -1211,6 +1219,7 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
         // With nonactivatingPanel, hover-opened panels aren't key, so
         // SwiftUI Button may consume the first click for key acquisition
         // instead of firing its action.
+        overlayDragLog("mouseDown fallbackToSwiftUI point=\(overlayDragPointDescription(downPointInView))")
         window?.makeKey()
         super.mouseDown(with: event)
     }
@@ -1219,6 +1228,9 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
         guard isTrackingPillDrag,
               let start = dragStartMouse,
               let originAtStart = dragStartPanelOrigin else {
+            overlayDragLog(
+                "mouseDragged ignoredWithoutTracking point=\(overlayDragPointDescription(convert(event.locationInWindow, from: nil)))"
+            )
             super.mouseDragged(with: event)
             return
         }
@@ -1277,6 +1289,9 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
 
     override func mouseUp(with event: NSEvent) {
         guard isTrackingPillDrag else {
+            overlayDragLog(
+                "mouseUp ignoredWithoutTracking point=\(overlayDragPointDescription(convert(event.locationInWindow, from: nil)))"
+            )
             super.mouseUp(with: event)
             return
         }
