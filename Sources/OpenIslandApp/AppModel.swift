@@ -10,6 +10,7 @@ final class AppModel {
     private static let soundMutedDefaultsKey = "overlay.sound.muted"
     private static let showDockIconDefaultsKey = "app.showDockIcon"
     private static let hapticFeedbackEnabledDefaultsKey = "app.hapticFeedbackEnabled"
+    private static let preferredColorSchemeDefaultsKey = "app.preferredColorScheme"
     private static let islandAppearanceModeDefaultsKey = "appearance.island.mode"
     private static let islandClosedDisplayStyleDefaultsKey = "appearance.island.closedDisplayStyle"
     private static let islandHideIdleToEdgeDefaultsKey = "appearance.island.hideIdleToEdge"
@@ -242,6 +243,29 @@ final class AppModel {
 
     // MARK: - Appearance
 
+    enum AppColorScheme: String, CaseIterable, Codable, Identifiable {
+        case system
+        case light
+        case dark
+
+        var id: String { rawValue }
+
+        var swiftUIScheme: SwiftUI.ColorScheme? {
+            switch self {
+            case .system: nil
+            case .light: .light
+            case .dark: .dark
+            }
+        }
+    }
+
+    var preferredColorScheme: AppColorScheme = .system {
+        didSet {
+            guard preferredColorScheme != oldValue else { return }
+            UserDefaults.standard.set(preferredColorScheme.rawValue, forKey: Self.preferredColorSchemeDefaultsKey)
+        }
+    }
+
     var islandAppearanceMode: IslandAppearanceMode = .default {
         didSet {
             guard islandAppearanceMode != oldValue else { return }
@@ -454,6 +478,9 @@ final class AppModel {
             )
         }
         completionReplyEnabled = UserDefaults.standard.bool(forKey: Self.completionReplyEnabledDefaultsKey)
+        preferredColorScheme = AppColorScheme(
+            rawValue: UserDefaults.standard.string(forKey: Self.preferredColorSchemeDefaultsKey) ?? ""
+        ) ?? .system
         islandAppearanceMode = IslandAppearanceMode(
             rawValue: UserDefaults.standard.string(forKey: Self.islandAppearanceModeDefaultsKey) ?? ""
         ) ?? .default

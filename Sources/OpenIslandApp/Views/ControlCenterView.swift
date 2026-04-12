@@ -18,7 +18,7 @@ struct ControlCenterView: View {
         .padding(28)
         .frame(width: 1280, height: 820)
         .background(debugBackground)
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(model.preferredColorScheme.swiftUIScheme)
         .onAppear {
             refreshPreview(for: selectedScenario)
         }

@@ -45,6 +45,10 @@
 
 /* Settings - Appearance */
 "settings.tab.appearance" = "个性化";
+"settings.appearance.colorScheme" = "外观主题";
+"settings.appearance.colorScheme.system" = "跟随系统";
+"settings.appearance.colorScheme.light" = "浅色";
+"settings.appearance.colorScheme.dark" = "深色";
 "settings.appearance.mode" = "模式";
 "settings.appearance.mode.default" = "默认";
 "settings.appearance.mode.custom" = "自定义";

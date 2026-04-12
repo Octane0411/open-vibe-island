@@ -45,6 +45,10 @@
 
 /* Settings - Appearance */
 "settings.tab.appearance" = "Appearance";
+"settings.appearance.colorScheme" = "Theme";
+"settings.appearance.colorScheme.system" = "Follow System";
+"settings.appearance.colorScheme.light" = "Light";
+"settings.appearance.colorScheme.dark" = "Dark";
 "settings.appearance.mode" = "Mode";
 "settings.appearance.mode.default" = "Default";
 "settings.appearance.mode.custom" = "Custom";
