@@ -1197,6 +1197,9 @@ public extension ClaudeHookPayload {
         if environment["WARP_IS_LOCAL_SHELL_SESSION"] != nil {
             return "Warp"
         }
+        if environment.keys.contains(where: { $0.hasPrefix("VSCODE_") }) {
+            return "VS Code"
+        }
         if environment["GHOSTTY_RESOURCES_DIR"] != nil {
             return "Ghostty"
         }

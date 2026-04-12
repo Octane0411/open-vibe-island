@@ -168,6 +168,19 @@ struct ClaudeHooksTests {
     }
 
     @Test
+    func claudeInferTerminalAppRecognizesVSCodeViaEnvironmentFallback() {
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: ["VSCODE_GIT_ASKPASS_NODE": "/Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper"],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+        )
+
+        #expect(payload.terminalApp == "VS Code")
+    }
+
+    @Test
     func claudeInferTerminalAppRecognizesWarpViaTermProgram() {
         let payload = ClaudeHookPayload(
             cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"

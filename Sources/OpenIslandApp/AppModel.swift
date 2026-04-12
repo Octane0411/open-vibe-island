@@ -532,7 +532,7 @@ final class AppModel {
     }
 
     var islandListSessions: [AgentSession] {
-        surfacedSessions
+        surfacedSessions + recentSessions
     }
 
     var recentSessionCount: Int {

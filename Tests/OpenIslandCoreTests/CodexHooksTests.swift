@@ -66,4 +66,23 @@ struct CodexHooksTests {
         #expect(resolverCalls == 0)
     }
 
+    @Test
+    func codexInferTerminalAppRecognizesVSCodeViaEnvironmentFallback() {
+        let payload = CodexHookPayload(
+            cwd: "/tmp/demo",
+            hookEventName: .sessionStart,
+            model: "gpt-4o",
+            permissionMode: .default,
+            sessionID: "s1",
+            transcriptPath: nil
+        ).withRuntimeContext(
+            environment: ["VSCODE_GIT_ASKPASS_NODE": "/Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper"],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) },
+            warpPaneResolver: { _ in nil }
+        )
+
+        #expect(payload.terminalApp == "VS Code")
+    }
+
 }

@@ -1064,8 +1064,10 @@ private struct IslandSessionRow: View {
                             .lineLimit(1)
                     }
 
-                    if showsExpandedContent || isActionable,
-                       let activityLine = session.spotlightActivityLineText ?? expandedActivityLineText {
+                    if showsExpandedContent || isActionable || session.phase == .completed,
+                       let activityLine = session.spotlightActivityLineText
+                       ?? expandedActivityLineText
+                       ?? collapsedCompletedActivityLineText {
                         Text(activityLine)
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(activityColor(for: presence).opacity(0.94))
@@ -1422,6 +1424,14 @@ private struct IslandSessionRow: View {
             return assistantMessage
         }
         return session.jumpTarget != nil ? "Ready" : "Completed"
+    }
+
+    private var collapsedCompletedActivityLineText: String? {
+        guard !isManuallyExpanded else {
+            return nil
+        }
+
+        return session.collapsedCompletedActivityText
     }
 
     private func handlePrimaryTap() {

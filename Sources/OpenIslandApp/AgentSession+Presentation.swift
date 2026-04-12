@@ -223,6 +223,24 @@ extension AgentSession {
         }
     }
 
+    var collapsedCompletedActivityText: String? {
+        guard phase == .completed else {
+            return nil
+        }
+
+        if let assistantMessage = lastAssistantMessageText?.trimmedForSurface,
+           !assistantMessage.isEmpty {
+            return assistantMessage
+        }
+
+        let normalizedSummary = summary.trimmedForSurface
+        guard !normalizedSummary.isEmpty else {
+            return nil
+        }
+
+        return normalizedSummary
+    }
+
     var spotlightActivityTone: SpotlightActivityTone {
         if phase.requiresAttention {
             return .attention

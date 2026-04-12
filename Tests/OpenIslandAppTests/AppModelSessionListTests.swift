@@ -6,7 +6,7 @@ import OpenIslandCore
 @MainActor
 struct AppModelSessionListTests {
     @Test
-    func islandListSessionsOnlyIncludeLiveAttachedSessions() {
+    func islandListSessionsIncludeRecentCompletedHistory() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
 
@@ -62,7 +62,7 @@ struct AppModelSessionListTests {
 
         #expect(model.surfacedSessions.map(\.id) == ["live-session"])
         #expect(model.recentSessions.map(\.id) == ["recent-session"])
-        #expect(model.islandListSessions.map(\.id) == ["live-session"])
+        #expect(model.islandListSessions.map(\.id) == ["live-session", "recent-session"])
     }
 
     @Test

@@ -99,6 +99,27 @@ struct AgentSessionPresentationTests {
     }
 
     @Test
+    func inactiveCompletedSessionRetainsCollapsedHistoryMessage() {
+        let referenceDate = Date(timeIntervalSince1970: 10_000)
+        let session = AgentSession(
+            id: "session-1",
+            title: "Codex · worktree",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .detached,
+            phase: .completed,
+            summary: "Done",
+            updatedAt: referenceDate.addingTimeInterval(-1_801),
+            codexMetadata: CodexSessionMetadata(
+                lastAssistantMessage: "Committed and verified."
+            )
+        )
+
+        #expect(session.islandPresence(at: referenceDate) == .inactive)
+        #expect(session.collapsedCompletedActivityText == "Committed and verified.")
+    }
+
+    @Test
     func liveHeadlineUsesLatestPromptForAttachedSession() {
         let session = AgentSession(
             id: "session-1",
