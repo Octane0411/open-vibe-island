@@ -45,6 +45,10 @@ public struct QwenHookPayload: Equatable, Codable, Sendable {
         case remote
         case toolInputPreview = "tool_input_preview"
         case toolInput = "tool_input"
+        case terminalApp = "terminal_app"
+        case terminalTitle = "terminal_title"
+        case terminalSessionID = "terminal_session_id"
+        case terminalTTY = "terminal_tty"
     }
 
     public init(

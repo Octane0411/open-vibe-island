@@ -7,7 +7,7 @@ import OpenIslandCore
 struct AppModelSessionListTests {
     @Test
     func islandListSessionsOnlyIncludeLiveAttachedSessions() {
-        let now = Date.now
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
         let model = AppModel()
 
         var liveSession = AgentSession(
@@ -67,7 +67,7 @@ struct AppModelSessionListTests {
 
     @Test
     func islandListDeduplicatesSessionsSharingTheSameLiveGhosttyTerminal() {
-        let now = Date.now
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
         let model = AppModel()
 
         var runningLive = AgentSession(
@@ -140,7 +140,7 @@ struct AppModelSessionListTests {
 
     @Test
     func sessionBootstrapPlaceholderAppearsWhileStartupResolutionIsPending() {
-        let now = Date.now
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
         let model = AppModel()
         model.isResolvingInitialLiveSessions = true
         model.state = SessionState(
@@ -164,7 +164,7 @@ struct AppModelSessionListTests {
 
     @Test
     func sessionBootstrapPlaceholderClearsOnceALiveSessionIsConfirmed() {
-        let now = Date.now
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
         let model = AppModel()
         model.isResolvingInitialLiveSessions = true
 
@@ -188,7 +188,7 @@ struct AppModelSessionListTests {
 
     @Test
     func jumpToSessionClosesOverlayBeforeTerminalJumpFinishes() async throws {
-        let now = Date.now
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
         let model = AppModel { _ in
             Thread.sleep(forTimeInterval: 0.25)
             return "Focused the matching Ghostty terminal."
@@ -232,7 +232,7 @@ struct AppModelSessionListTests {
 
     @Test
     func rolloutEventsDoNotPromoteRecoveredSessionsToAttachedDuringColdStart() {
-        let now = Date.now
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
         let model = AppModel()
         model.isResolvingInitialLiveSessions = true
         model.state = SessionState(
@@ -270,7 +270,7 @@ struct AppModelSessionListTests {
 
     @Test
     func bridgeEventsStillPromoteSessionsToAttached() {
-        let now = Date.now
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
         let model = AppModel()
         model.state = SessionState(
             sessions: [
@@ -306,7 +306,7 @@ struct AppModelSessionListTests {
 
     @Test
     func rolloutCompletionDoesNotPresentNotificationDuringColdStart() {
-        let now = Date.now
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
         let model = AppModel()
         model.isResolvingInitialLiveSessions = true
         model.notchStatus = .closed
@@ -448,7 +448,7 @@ struct AppModelSessionListTests {
 
     @Test
     func mergeDiscoveredClaudeSessionsPreservesRegistryJumpTargetAndAddsTranscriptMetadata() {
-        let now = Date.now
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
         let model = AppModel()
         model.state = SessionState(
             sessions: [
@@ -507,7 +507,7 @@ struct AppModelSessionListTests {
 
     @Test
     func mergedWithSyntheticClaudeSessionsAddsGhosttyClaudeProcessWhenNoTrackedSessionExists() {
-        let now = Date.now
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
         let model = AppModel()
 
         let merged = model.monitoring.mergedWithSyntheticClaudeSessions(
@@ -533,7 +533,7 @@ struct AppModelSessionListTests {
 
     @Test
     func sanitizeCrossToolGhosttyJumpTargetsClearsClaudeMisbinding() {
-        let now = Date.now
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
         let model = AppModel()
         let misboundClaudeSession = AgentSession(
             id: "e45d5e87-66d0-4f67-8399-6ebc02f3d453",
@@ -561,7 +561,7 @@ struct AppModelSessionListTests {
 
     @Test
     func mergedWithSyntheticClaudeSessionsSkipsSyntheticWhenAttachedClaudeAlreadyRepresentsGroup() {
-        let now = Date.now
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
         let model = AppModel()
         let existing = AgentSession(
             id: "e45d5e87-66d0-4f67-8399-6ebc02f3d453",
@@ -600,7 +600,7 @@ struct AppModelSessionListTests {
 
     @Test
     func mergedWithSyntheticClaudeSessionsSkipsSyntheticWhenStaleClaudeSessionMatchesActiveProcess() {
-        let now = Date.now
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
         let model = AppModel()
         let existing = AgentSession(
             id: "e45d5e87-66d0-4f67-8399-6ebc02f3d453",
@@ -642,7 +642,7 @@ struct AppModelSessionListTests {
 
     @Test
     func recoveredSessionMatchesLiveGhosttyProcessByCWDWhenMultipleCandidatesExist() {
-        let now = Date.now
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
         let model = AppModel()
         let recoveredSessions = [
             AgentSession(

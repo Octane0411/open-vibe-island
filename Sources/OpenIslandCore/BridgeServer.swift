@@ -1197,7 +1197,7 @@ public final class BridgeServer: @unchecked Sendable {
                 .activityUpdated(
                     SessionActivityUpdated(
                         sessionID: payload.sessionID,
-                        summary: payload.promptPreview ?? payload.implicitStartSummary,
+                        summary: payload.assistantMessagePreview ?? payload.promptPreview ?? payload.implicitStartSummary,
                         phase: notificationPhase,
                         timestamp: .now
                     )

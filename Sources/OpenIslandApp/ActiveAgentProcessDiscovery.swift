@@ -85,7 +85,7 @@ struct ActiveAgentProcessDiscovery {
                 continue
             }
 
-            if isClaudeProcess(command: process.command) {
+            if isAgentProcess(command: process.command) {
                 guard let snapshot = claudeSnapshot(for: process, processesByPID: processesByPID) else {
                     continue
                 }
@@ -236,9 +236,13 @@ struct ActiveAgentProcessDiscovery {
     }
 
     private func bestClaudeTranscriptPath(in lsofOutput: String, workingDirectory: String?, isQwen: Bool = false) -> String? {
-        let qwenPaths = allMatchingPaths(in: lsofOutput, containing: "/.qwen/projects/", suffix: ".jsonl")
-        let claudePaths = allMatchingPaths(in: lsofOutput, containing: "/.claude/projects/", suffix: ".jsonl")
-        let paths = qwenPaths + claudePaths
+        let paths: [String]
+        if isQwen {
+            paths = allMatchingPaths(in: lsofOutput, containing: "/.qwen/projects/", suffix: ".jsonl")
+        } else {
+            paths = allMatchingPaths(in: lsofOutput, containing: "/.claude/projects/", suffix: ".jsonl")
+        }
+        
         guard !paths.isEmpty else {
             return nil
         }
@@ -548,7 +552,7 @@ struct ActiveAgentProcessDiscovery {
             || lowered.contains("/.opencode")
     }
 
-    private func isClaudeProcess(command: String) -> Bool {
+    private func isAgentProcess(command: String) -> Bool {
         let lowered = command.lowercased()
         
         if lowered.contains("/bin/claude") || lowered.contains("/bin/qwen") || lowered.contains("/.local/bin/claude") || lowered.contains("/.local/bin/qwen") {

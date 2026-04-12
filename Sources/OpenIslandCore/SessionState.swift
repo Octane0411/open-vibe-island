@@ -151,6 +151,7 @@ public struct SessionState: Equatable, Sendable {
             session.updatedAt = payload.timestamp
             if payload.isSessionEnd == true {
                 session.isSessionEnded = true
+                session.isProcessAlive = false
             }
             upsert(session)
 
@@ -352,7 +353,7 @@ public struct SessionState: Equatable, Sendable {
                         
                         // Process is confirmed dead for multiple polls. 
                         // Mark it as ended so it can gracefully animate out via the UI's 5s completion window.
-                        if !session.isSessionEnded {
+                        if !session.isHookManaged && !session.isSessionEnded {
                             session.isSessionEnded = true
                             session.phase = .completed
                             session.updatedAt = .now // Reset updatedAt to trigger the 5s completion animation

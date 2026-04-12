@@ -15,16 +15,7 @@ struct OpenIslandHooksCLI {
         case codebuddy
         case cursor
 
-        var isClaudeFormat: Bool {
-            switch self {
-            case .claude, .qoder, .factory, .droid, .codebuddy:
-                return true
-            case .qwen:
-                return false // Or true if you want to consider it claude format
-            case .codex, .cursor:
-                return false
-            }
-        }
+
     }
 
     static func main() {
