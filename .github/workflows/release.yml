@@ -26,7 +26,20 @@ jobs:
           brew install create-dmg
           pip3 install --break-system-packages Pillow
 
+      - name: Check signing availability
+        id: signing
+        env:
+          CERT_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+        run: |
+          if [[ -n "$CERT_P12" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No APPLE_CERTIFICATE_P12 secret set — building unsigned"
+          fi
+
       - name: Import signing certificate
+        if: steps.signing.outputs.available == 'true'
         env:
           CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
           CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -66,7 +79,7 @@ jobs:
           # Clean up
           rm -f "$CERT_FILE"
 
-      - name: Build and package (signed)
+      - name: Build and package
         env:
           OPEN_ISLAND_APP_NAME: "Open Island"
           OPEN_ISLAND_BUNDLE_ID: "app.openisland.OpenIsland"
@@ -83,6 +96,7 @@ jobs:
           ls -lh output/package/
 
       - name: Verify code signature
+        if: steps.signing.outputs.available == 'true'
         run: |
           bundle="output/package/Open Island.app"
           echo "--- Signature info ---"
@@ -114,7 +128,7 @@ jobs:
           echo "Bundle structure OK"
 
       - name: Notarize (best-effort)
-        if: vars.SKIP_NOTARIZE != 'true'
+        if: steps.signing.outputs.available == 'true' && vars.SKIP_NOTARIZE != 'true'
         id: notarize
         continue-on-error: true
         env:
@@ -218,12 +232,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NOTARIZED: ${{ steps.notarize.outputs.notarized }}
+          SIGNED: ${{ steps.signing.outputs.available }}
         run: |
           existing="$(gh release view "$GITHUB_REF_NAME" --json body -q .body)"
           if [[ "$NOTARIZED" == "true" ]]; then
             install_note="> This build is signed and notarized by Apple. It will launch without Gatekeeper warnings."
-          else
+          elif [[ "$SIGNED" == "true" ]]; then
             install_note="> This build is signed with a Developer ID certificate. On first launch, right-click → **Open** to bypass Gatekeeper."
+          else
+            install_note="> This is an unsigned build. On first launch, right-click → **Open** to bypass Gatekeeper, or run \`xattr -cr /Applications/Open\\ Island.app\` from Terminal."
           fi
           gh release edit "$GITHUB_REF_NAME" --notes "$(cat <<EOF
           ${existing}
