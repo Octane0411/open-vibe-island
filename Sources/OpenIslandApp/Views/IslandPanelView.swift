@@ -1049,6 +1049,9 @@ private struct IslandSessionRow: View {
                             if let terminalBadge = session.spotlightTerminalBadge {
                                 compactBadge(terminalBadge, presence: presence)
                             }
+                            if let paneBadge = session.spotlightPaneBadge {
+                                compactBadge(paneBadge, presence: presence)
+                            }
                             compactBadge(session.spotlightAgeBadge, presence: presence)
                             if let onDismiss {
                                 DismissButton(action: onDismiss)

@@ -119,6 +119,19 @@ extension AgentSession {
         jumpTarget?.terminalApp
     }
 
+    /// For Zellij sessions, returns "Pane N" extracted from `terminalSessionID`
+    /// (format: "paneID:sessionName"). Returns nil for non-Zellij sessions.
+    var spotlightPaneBadge: String? {
+        guard let jumpTarget,
+              jumpTarget.terminalApp.lowercased() == "zellij",
+              let sessionID = jumpTarget.terminalSessionID else {
+            return nil
+        }
+        let paneID = sessionID.split(separator: ":").first.map(String.init) ?? sessionID
+        guard !paneID.isEmpty else { return nil }
+        return "Pane \(paneID)"
+    }
+
     var spotlightWorkspaceName: String {
         if let workspaceName = jumpTarget?.workspaceName.trimmedForSurface,
            !workspaceName.isEmpty {
