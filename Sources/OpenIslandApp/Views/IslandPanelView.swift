@@ -107,7 +107,6 @@ struct IslandPanelView: View {
     private static let headerHorizontalPadding: CGFloat = 18
     private static let headerTopPadding: CGFloat = 2
     private static let notchLaneSafetyInset: CGFloat = 12
-    private static let closedIdleEdgeHeight: CGFloat = 4
 
     var model: AppModel
 
@@ -145,10 +144,6 @@ struct IslandPanelView: View {
         model.liveSessionCount > 0
     }
 
-    private var showsIdleEdgeWhenCollapsed: Bool {
-        model.showsIdleEdgeWhenCollapsed
-    }
-
     /// Whether any session has activity worth showing in the closed notch
     private var hasClosedActivity: Bool {
         guard let session = closedSpotlightSession else {
@@ -159,9 +154,6 @@ struct IslandPanelView: View {
 
     /// Scout icon tint: blue if any running, green if any live, else gray.
     private var scoutTint: Color {
-        if model.isCustomAppearance, let phase = closedSpotlightSession?.phase {
-            return model.statusColor(for: phase)
-        }
         let sessions = model.surfacedSessions
         if sessions.contains(where: { $0.phase == .running }) {
             return Color(red: 0.43, green: 0.62, blue: 1.0) // #6E9FFF working blue
@@ -178,7 +170,6 @@ struct IslandPanelView: View {
     }
 
     private var expansionWidth: CGFloat {
-        guard !showsIdleEdgeWhenCollapsed else { return 0 }
         guard hasClosedPresence else { return 0 }
         let leftWidth = sideWidth + 8 + (closedSpotlightSession?.phase.requiresAttention == true ? 18 : 0)
         let rightWidth = max(sideWidth, countBadgeWidth)
@@ -258,55 +249,39 @@ struct IslandPanelView: View {
             topCornerRadius: usesOpenedVisualState ? NotchShape.openedTopRadius : NotchShape.closedTopRadius,
             bottomCornerRadius: usesOpenedVisualState ? NotchShape.openedBottomRadius : NotchShape.closedBottomRadius
         )
-        let hidesClosedSurfaceChrome = showsIdleEdgeWhenCollapsed && !usesOpenedVisualState
-        let idleEdgeWidth = closedNotchWidth + (isPopping ? 18 : 0)
 
-        VStack(spacing: 0) {
-            ZStack(alignment: .top) {
-                surfaceShape
-                    .fill(Color.black.opacity(hidesClosedSurfaceChrome ? 0 : 1))
-                    .frame(width: surfaceWidth, height: surfaceHeight)
+        ZStack(alignment: .top) {
+            surfaceShape
+                .fill(Color.black)
+                .frame(width: surfaceWidth, height: surfaceHeight)
 
-                VStack(spacing: 0) {
-                    headerRow
-                        .frame(height: closedNotchHeight)
-                        .opacity(hidesClosedSurfaceChrome ? 0 : 1)
+            VStack(spacing: 0) {
+                headerRow
+                    .frame(height: closedNotchHeight)
 
-                    openedContent
-                        .frame(width: openedWidth - 24)
-                        .frame(maxHeight: usesOpenedVisualState ? currentHeight - closedNotchHeight - 12 : 0, alignment: .top)
-                        .opacity(usesOpenedVisualState ? 1 : 0)
-                        .clipped()
-                }
-                .frame(width: currentWidth, height: currentHeight, alignment: .top)
-                .padding(.horizontal, horizontalInset)
-                .padding(.bottom, bottomInset)
-                .clipShape(surfaceShape)
-                .overlay(alignment: .top) {
-                    // Black strip to blend with physical notch at the very top
-                    Rectangle()
-                        .fill(Color.black)
-                        .frame(height: 1)
-                        .padding(.horizontal, usesOpenedVisualState ? NotchShape.openedTopRadius : NotchShape.closedTopRadius)
-                        .opacity(hidesClosedSurfaceChrome ? 0 : 1)
-                }
-                .overlay {
-                    surfaceShape
-                        .stroke(Color.white.opacity(hidesClosedSurfaceChrome ? 0 : (usesOpenedVisualState ? 0.07 : 0.04)), lineWidth: 1)
-                }
-                .overlay(alignment: .top) {
-                    Capsule()
-                        .fill(Color.black)
-                        .frame(width: idleEdgeWidth, height: Self.closedIdleEdgeHeight)
-                        .overlay {
-                            Capsule()
-                                .stroke(Color.white.opacity(0.05), lineWidth: 1)
-                        }
-                        .opacity(showsIdleEdgeWhenCollapsed ? 1 : 0)
-                }
+                openedContent
+                    .frame(width: openedWidth - 24)
+                    .frame(maxHeight: usesOpenedVisualState ? currentHeight - closedNotchHeight - 12 : 0, alignment: .top)
+                    .opacity(usesOpenedVisualState ? 1 : 0)
+                    .clipped()
             }
-            .frame(width: surfaceWidth, height: surfaceHeight, alignment: .top)
+            .frame(width: currentWidth, height: currentHeight, alignment: .top)
+            .padding(.horizontal, horizontalInset)
+            .padding(.bottom, bottomInset)
+            .clipShape(surfaceShape)
+            .overlay(alignment: .top) {
+                // Black strip to blend with physical notch at the very top
+                Rectangle()
+                    .fill(Color.black)
+                    .frame(height: 1)
+                    .padding(.horizontal, usesOpenedVisualState ? NotchShape.openedTopRadius : NotchShape.closedTopRadius)
+            }
+            .overlay {
+                surfaceShape
+                    .stroke(Color.white.opacity(usesOpenedVisualState ? 0.07 : 0.04), lineWidth: 1)
+            }
         }
+        .frame(width: surfaceWidth, height: surfaceHeight, alignment: .top)
         .scaleEffect(usesOpenedVisualState ? 1 : (isHovering ? IslandChromeMetrics.closedHoverScale : 1), anchor: .top)
         .padding(.horizontal, panelShadowHorizontalInset)
         .padding(.bottom, panelShadowBottomInset)
@@ -346,18 +321,8 @@ struct IslandPanelView: View {
             HStack(spacing: 0) {
                 if hasClosedPresence {
                     HStack(spacing: 4) {
-                        if model.isCustomAppearance {
-                            IslandPixelGlyph(
-                                tint: scoutTint,
-                                style: model.islandPixelShapeStyle,
-                                isAnimating: hasClosedActivity,
-                                customAvatarImage: model.customAvatarImage
-                            )
+                        OpenIslandIcon(size: 14, isAnimating: hasClosedActivity, tint: scoutTint)
                             .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
-                        } else {
-                            OpenIslandIcon(size: 14, isAnimating: hasClosedActivity, tint: scoutTint)
-                                .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
-                        }
 
                         if closedSpotlightSession?.phase.requiresAttention == true {
                             AttentionIndicator(
@@ -524,6 +489,7 @@ struct IslandPanelView: View {
             if isNotificationMode {
                 // Notification mode: NO ScrollView — content sizes naturally
                 sessionListContent(context: context)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.vertical, 2)
                     .background(
                         GeometryReader { geo in
@@ -603,10 +569,7 @@ struct IslandPanelView: View {
     }
 
     private func phaseColor(_ phase: SessionPhase) -> Color {
-        if model.isCustomAppearance {
-            return model.statusColor(for: phase)
-        }
-        return switch phase {
+        switch phase {
         case .running: .mint
         case .waitingForApproval: .orange
         case .waitingForAnswer: .yellow
@@ -1501,6 +1464,7 @@ private struct StructuredQuestionPromptView: View {
     let onAnswer: (QuestionPromptResponse) -> Void
 
     @State private var selections: [String: Set<String>] = [:]
+    @State private var freeformAnswer: String = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1512,12 +1476,38 @@ private struct StructuredQuestionPromptView: View {
             }
 
             if structuredQuestions.isEmpty {
-                HStack(spacing: 10) {
-                    ForEach(prompt?.options.prefix(3) ?? [], id: \.self) { option in
-                        Button(option) {
-                            onAnswer(QuestionPromptResponse(answer: option))
+                if promptOptions.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        TextField(lang.t("question.placeholder"), text: $freeformAnswer)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.92))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color.white.opacity(0.08))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .strokeBorder(.white.opacity(0.08))
+                            )
+                            .onSubmit { submitFreeformAnswer() }
+
+                        Button(lang.t("question.submit")) {
+                            submitFreeformAnswer()
                         }
-                        .buttonStyle(IslandWideButtonStyle(kind: .secondary))
+                        .buttonStyle(IslandWideButtonStyle(kind: .primary))
+                        .disabled(freeformAnswer.trimmedForNotificationCard.isEmpty)
+                    }
+                } else {
+                    HStack(spacing: 10) {
+                        ForEach(promptOptions.prefix(3), id: \.self) { option in
+                            Button(option) {
+                                onAnswer(QuestionPromptResponse(answer: option))
+                            }
+                            .buttonStyle(IslandWideButtonStyle(kind: .secondary))
+                        }
                     }
                 }
             } else {
@@ -1575,6 +1565,10 @@ private struct StructuredQuestionPromptView: View {
         prompt?.questions ?? []
     }
 
+    private var promptOptions: [String] {
+        prompt?.options ?? []
+    }
+
     private var promptTitle: String {
         prompt?.title.trimmedForNotificationCard ?? lang.t("question.answerNeeded")
     }
@@ -1605,6 +1599,15 @@ private struct StructuredQuestionPromptView: View {
 
     private var hasCompleteSelection: Bool {
         structuredQuestions.allSatisfy { !selectedLabels(for: $0).isEmpty }
+    }
+
+    private func submitFreeformAnswer() {
+        let answer = freeformAnswer.trimmedForNotificationCard
+        guard !answer.isEmpty else {
+            return
+        }
+
+        onAnswer(QuestionPromptResponse(answer: answer))
     }
 
     private func selectedLabels(for question: QuestionPromptItem) -> Set<String> {
