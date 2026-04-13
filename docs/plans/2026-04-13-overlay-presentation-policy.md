@@ -2,6 +2,14 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
+## 实施状态（2026-04-13）
+
+- Task 1 已落地：`b52329f feat: add overlay presentation policy model`
+- Task 2 已落地：`52302ae feat: add overlay presentation policy setting`
+- Task 3 已落地：`3b067a7 fix: preserve manual display selection during fallback`
+- Task 4-6 已合并落地：`431d044 feat: drive overlay layout by resolved presentation mode`
+- Task 7 当前用于最终验证与文档收口
+
 **Goal:** 引入与显示器选择正交的三档形态策略，让 overlay 可以在任意目标屏幕上按“全使用岛 / 有刘海才用岛 / 全胶囊”工作，并修复手工显示器选择会被错误清空的问题。
 
 **Architecture:** 保留现有 `overlayDisplaySelectionID` 作为“目标显示器”配置，新增 `overlayPresentationPolicy` 作为“形态策略”配置，再根据目标屏幕能力推导运行时最终形态。拖动、位置持久化、壳层几何和诊断展示统一改为基于最终形态驱动，而不是继续把“外接屏 fallback”与“胶囊形态”耦合在一起。同时修复显示器暂时缺失时只做临时 fallback、但不丢失手工选择的持久化值。

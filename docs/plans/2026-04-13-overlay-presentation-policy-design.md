@@ -1,5 +1,14 @@
 # 覆盖层形态策略与显示器选择解耦设计
 
+## 实施状态（2026-04-13）
+
+- 已完成形态策略模型：`b52329f feat: add overlay presentation policy model`
+- 已完成形态策略设置项与持久化：`52302ae feat: add overlay presentation policy setting`
+- 已完成手工显示器选择缺失时的 fallback 保留：`3b067a7 fix: preserve manual display selection during fallback`
+- 已完成最终展示形态对 diagnostics、布局、壳层与交互路径的真实驱动：`431d044 feat: drive overlay layout by resolved presentation mode`
+
+当前分支上的“全使用岛 / 有刘海才用岛 / 全胶囊”配置、显示器选择保留策略，以及按最终形态驱动的 overlay 行为已经落地。该设计文档后续主要保留为决策背景与约束说明。
+
 ## 背景
 
 当前覆盖层的显示逻辑把两件不同的事情混在了一起：
