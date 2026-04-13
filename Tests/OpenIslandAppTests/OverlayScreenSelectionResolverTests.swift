@@ -3,6 +3,38 @@ import Testing
 
 struct OverlayScreenSelectionResolverTests {
     @Test
+    func automaticPolicyUsesIslandOnNotchedScreen() {
+        let mode = OverlayPresentationPolicy.automaticIslandWhenNotched
+            .resolvePresentationMode(screenCapability: .notched)
+
+        #expect(mode == .island)
+    }
+
+    @Test
+    func automaticPolicyUsesPillOnPlainScreen() {
+        let mode = OverlayPresentationPolicy.automaticIslandWhenNotched
+            .resolvePresentationMode(screenCapability: .plain)
+
+        #expect(mode == .pill)
+    }
+
+    @Test
+    func alwaysIslandForcesIslandOnPlainScreen() {
+        let mode = OverlayPresentationPolicy.alwaysIsland
+            .resolvePresentationMode(screenCapability: .plain)
+
+        #expect(mode == .island)
+    }
+
+    @Test
+    func alwaysPillForcesPillOnNotchedScreen() {
+        let mode = OverlayPresentationPolicy.alwaysPill
+            .resolvePresentationMode(screenCapability: .notched)
+
+        #expect(mode == .pill)
+    }
+
+    @Test
     func automaticPrefersNotchedScreenOverMainDisplay() {
         let resolved = OverlayScreenSelectionResolver.resolve(
             preferredScreenID: nil,

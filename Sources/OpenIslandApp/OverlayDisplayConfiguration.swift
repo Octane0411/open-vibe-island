@@ -8,6 +8,37 @@ struct OverlayDisplayOption: Identifiable, Equatable {
     let subtitle: String
 }
 
+enum OverlayScreenCapability: Equatable {
+    case notched
+    case plain
+}
+
+enum OverlayPresentationPolicy: String, Equatable, CaseIterable {
+    case alwaysIsland
+    case automaticIslandWhenNotched
+    case alwaysPill
+}
+
+enum OverlayPresentationMode: Equatable {
+    case island
+    case pill
+}
+
+extension OverlayPresentationPolicy {
+    func resolvePresentationMode(
+        screenCapability: OverlayScreenCapability
+    ) -> OverlayPresentationMode {
+        switch self {
+        case .alwaysIsland:
+            return .island
+        case .automaticIslandWhenNotched:
+            return screenCapability == .notched ? .island : .pill
+        case .alwaysPill:
+            return .pill
+        }
+    }
+}
+
 enum OverlayPlacementMode: String, Equatable {
     case notch = "Notch area"
     case topBar = "Top bar fallback"
@@ -123,7 +154,11 @@ enum OverlayDisplayResolver {
     }
 
     static func placementMode(for screen: NSScreen) -> OverlayPlacementMode {
-        isNotched(screen) ? .notch : .topBar
+        screenCapability(for: screen) == .notched ? .notch : .topBar
+    }
+
+    static func screenCapability(for screen: NSScreen) -> OverlayScreenCapability {
+        isNotched(screen) ? .notched : .plain
     }
 
     private static func isNotched(_ screen: NSScreen) -> Bool {
