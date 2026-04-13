@@ -113,6 +113,7 @@ struct IslandPanelView: View {
 
     @Namespace private var notchNamespace
     @State private var isHovering = false
+    @State private var selectedUsageProviderID: String?
 
     private var isOpened: Bool {
         model.notchStatus == .opened
@@ -228,6 +229,9 @@ struct IslandPanelView: View {
         }
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
+        .onChange(of: model.focusedSession?.tool) {
+            selectedUsageProviderID = nil
+        }
     }
 
     @ViewBuilder
@@ -639,7 +643,7 @@ struct IslandPanelView: View {
         }
     }
 
-    private var openedUsageProviders: [UsageProviderPresentation] {
+    private var allUsageProviders: [UsageProviderPresentation] {
         var providers: [UsageProviderPresentation] = []
 
         if let snapshot = model.claudeUsageSnapshot,
@@ -704,6 +708,41 @@ struct IslandPanelView: View {
         return providers
     }
 
+    private var defaultUsageProviderID: String? {
+        switch model.focusedSession?.tool {
+        case .claudeCode, .qoder, .qwenCode, .factory, .codebuddy:
+            return "claude"
+        case .codex:
+            return "codex"
+        default:
+            return nil
+        }
+    }
+
+    private var openedUsageProviders: [UsageProviderPresentation] {
+        let all = allUsageProviders
+        guard all.count > 1 else { return all }
+
+        let targetID = selectedUsageProviderID ?? defaultUsageProviderID
+        if let targetID, let match = all.first(where: { $0.id == targetID }) {
+            return [match]
+        }
+        return all
+    }
+
+    private func cycleUsageProvider() {
+        let all = allUsageProviders
+        guard all.count > 1 else { return }
+
+        let currentID = selectedUsageProviderID ?? defaultUsageProviderID ?? all[0].id
+        if let currentIndex = all.firstIndex(where: { $0.id == currentID }) {
+            let nextIndex = (currentIndex + 1) % all.count
+            selectedUsageProviderID = all[nextIndex].id
+        } else {
+            selectedUsageProviderID = all[0].id
+        }
+    }
+
     private func splitUsageProviders(
         _ providers: [UsageProviderPresentation]
     ) -> (left: [UsageProviderPresentation], right: [UsageProviderPresentation]) {
@@ -739,6 +778,11 @@ struct IslandPanelView: View {
                 usageSummaryView(providers, layout: .minimal)
             }
             .frame(maxWidth: .infinity, alignment: alignment)
+            .onTapGesture {
+                if allUsageProviders.count > 1 {
+                    cycleUsageProvider()
+                }
+            }
         }
     }
 
