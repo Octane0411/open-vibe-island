@@ -449,7 +449,7 @@ final class OverlayPanelController {
         let digits = max(1, "\(liveSessionCount)".count)
         let countBadgeWidth = CGFloat(26 + max(0, digits - 1) * 8)
         let leftWidth = sideWidth + 8 + (hasAttention ? 18 : 0)
-        let rightWidth = max(sideWidth, countBadgeWidth)
+        let rightWidth = max(sideWidth, countBadgeWidth) + (hasAttention ? 18 : 0)
         let expansionWidth = leftWidth + rightWidth + 16 + (hasAttention ? 6 : 0)
         return notchWidth + expansionWidth + CGFloat(popWidth)
     }
