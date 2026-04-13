@@ -345,6 +345,13 @@ struct IslandPanelView: View {
             HStack(spacing: 0) {
                 if hasClosedPresence {
                     HStack(spacing: 4) {
+                        if closedSpotlightSession?.phase.requiresAttention == true {
+                            AttentionIndicator(
+                                size: 14,
+                                color: phaseColor(closedSpotlightSession?.phase ?? .running)
+                            )
+                        }
+
                         if model.isCustomAppearance {
                             IslandPixelGlyph(
                                 tint: scoutTint,
@@ -356,13 +363,6 @@ struct IslandPanelView: View {
                         } else {
                             OpenIslandIcon(size: 14, isAnimating: hasClosedActivity, tint: scoutTint)
                                 .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
-                        }
-
-                        if closedSpotlightSession?.phase.requiresAttention == true {
-                            AttentionIndicator(
-                                size: 14,
-                                color: phaseColor(closedSpotlightSession?.phase ?? .running)
-                            )
                         }
                     }
                     .frame(width: sideWidth + 8 + (closedSpotlightSession?.phase.requiresAttention == true ? 18 : 0))

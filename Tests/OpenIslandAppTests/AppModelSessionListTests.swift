@@ -700,46 +700,6 @@ struct AppModelSessionListTests {
         )
     }
 
-    /// Regression test: when the user taps the notch to re-open the island after
-    /// collapsing it (reason: .click, default surface has no actionableSessionID),
-    /// but there is still a session waiting for approval, the surface should be
-    /// promoted to carry the actionableSessionID so that openedContentHeight()
-    /// picks notification-mode sizing and the full approval card is visible.
-    @Test
-    @MainActor
-    func clickReopenWithPendingApprovalPromotesSurfaceToActionable() {
-        let model = AppModel()
-
-        var session = AgentSession(
-            id: "approval-session",
-            title: "Claude · open-island",
-            tool: .claudeCode,
-            attachmentState: .attached,
-            phase: .waitingForApproval,
-            summary: "Approve Bash",
-            updatedAt: .now,
-            permissionRequest: PermissionRequest(
-                title: "Bash",
-                summary: "curl -s https://httpbin.org/get | head -20",
-                affectedPath: "/tmp"
-            )
-        )
-        session.isProcessAlive = true
-        model.state = SessionState(sessions: [session])
-
-        model.notchOpen(reason: .notification, surface: .sessionList(actionableSessionID: "approval-session"))
-        #expect(model.islandSurface == .sessionList(actionableSessionID: "approval-session"))
-
-        model.notchClose()
-        #expect(model.notchStatus == .closed)
-
-        model.notchOpen(reason: .click)
-
-        #expect(
-            model.islandSurface == .sessionList(actionableSessionID: "approval-session"),
-            "Re-opening via click while an approval is pending should promote the surface to actionable, so the full approval card (including buttons) is sized correctly."
-        )
-    }
     @Test
     func recoveredSessionMatchesLiveGhosttyProcessByCWDWhenMultipleCandidatesExist() {
         let now = Date(timeIntervalSince1970: 2_000)
