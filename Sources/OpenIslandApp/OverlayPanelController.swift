@@ -476,14 +476,12 @@ final class OverlayPanelController {
 
     private func panelFrame(for model: AppModel?, on screen: NSScreen) -> NSRect {
         let size = panelSize(for: model, on: screen)
-        let isTopBar = !OverlayDisplayResolver.isNotchedScreen(screen)
-
-        let x = screen.frame.midX - size.width / 2
-        let y: CGFloat = isTopBar
-            ? screen.visibleFrame.maxY - size.height - 18  // below menu bar, above Dock
-            : screen.frame.maxY - size.height              // flush with physical notch
-
-        return NSRect(x: x, y: y, width: size.width, height: size.height)
+        return NSRect(
+            x: screen.frame.midX - size.width / 2,
+            y: screen.frame.maxY - size.height,
+            width: size.width,
+            height: size.height
+        )
     }
 
     /// Always returns the maximum (opened) panel size so the window never
@@ -491,17 +489,11 @@ final class OverlayPanelController {
     /// inside this fixed-size window.
     private func panelSize(for model: AppModel?, on screen: NSScreen) -> CGSize {
         let insets = panelShadowInsets
-        let isTopBar = !OverlayDisplayResolver.isNotchedScreen(screen)
-
-        let maxAvailableHeight: CGFloat = isTopBar
-            ? max(0, screen.visibleFrame.height - 18 - 8)  // 18pt gap + 8pt Dock margin
-            : screen.frame.height
 
         guard let model else {
-            let rawHeight = screen.notchSize.height + Self.openedEmptyStateHeight + Self.openedContentBottomPadding + insets.bottom
             return CGSize(
                 width: openedPanelWidth(for: screen) + Self.openedContentWidthPadding + (insets.horizontal * 2),
-                height: min(rawHeight, maxAvailableHeight)
+                height: screen.notchSize.height + Self.openedEmptyStateHeight + Self.openedContentBottomPadding + insets.bottom
             )
         }
 
@@ -509,8 +501,7 @@ final class OverlayPanelController {
         let contentHeight = openedContentHeight(for: model)
         // Use at least the empty-state height so the window doesn't shrink
         // when sessions come and go while opened.
-        let rawHeight = screen.notchSize.height + max(contentHeight, Self.openedEmptyStateHeight) + Self.openedContentBottomPadding + insets.bottom
-        let height = min(rawHeight, maxAvailableHeight)
+        let height = screen.notchSize.height + max(contentHeight, Self.openedEmptyStateHeight) + Self.openedContentBottomPadding + insets.bottom
 
         return CGSize(
             width: panelWidth + Self.openedContentWidthPadding + (insets.horizontal * 2),

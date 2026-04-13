@@ -281,6 +281,7 @@ struct IslandPanelView: View {
                 .frame(width: currentWidth, height: currentHeight, alignment: .top)
                 .padding(.horizontal, horizontalInset)
                 .padding(.bottom, bottomInset)
+                .clipShape(surfaceShape)
                 .overlay(alignment: .top) {
                     // Black strip to blend with physical notch at the very top
                     Rectangle()
