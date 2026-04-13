@@ -61,7 +61,8 @@ struct OverlayPanelControllerTests {
             showsIdleEdgeWhenCollapsed: false
         )
 
-        #expect(width == 344)
+        // 344 + 18 (attention balance on right side keeps center rect aligned with physical notch)
+        #expect(width == 362)
     }
 
     @Test
