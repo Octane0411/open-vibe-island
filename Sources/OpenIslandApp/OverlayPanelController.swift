@@ -1626,10 +1626,9 @@ extension NSScreen {
 
     /// Pure helper so the height selection logic can be unit-tested without real screen hardware.
     ///
-    /// On notch screens, clamp to `min(safeAreaInsetsTop, topStatusBarHeight)`: the island
-    /// must not exceed the menu bar reserved area, and must not exceed the physical notch
-    /// height — e.g. MacBook Air M2 notch ≈ 34 pt while menu bar reserved ≈ 37 pt, so
-    /// the island should be 34 pt to sit flush with the notch bottom.
+    /// On notch screens, use `safeAreaInsetsTop` directly so the island matches the
+    /// physical notch height exactly and sits flush with the notch bottom edge, even
+    /// when the menu bar reserved area is shorter.
     /// On non-notch screens (`safeAreaInsetsTop == 0`), use a compact 22pt pill height
     /// that matches `notchSize.height` — the closed pill only shows an icon + count badge
     /// so it doesn't need to fill the full menu-bar strip.
@@ -1638,7 +1637,7 @@ extension NSScreen {
         topStatusBarHeight: CGFloat
     ) -> CGFloat {
         if safeAreaInsetsTop > 0 {
-            return min(safeAreaInsetsTop, topStatusBarHeight)
+            return safeAreaInsetsTop
         }
         return 22
     }
