@@ -28,6 +28,10 @@ final class OverlayPanelController {
     private static let completionCardChromeHeight: CGFloat = 187
     private static let completionCardMinHeight: CGFloat = 210
     private static let completionCardMaxHeight: CGFloat = 400
+    private static let firstPassNotificationSafetyPadding: CGFloat = 64
+    private static let firstPassApprovalBodyMinHeight: CGFloat = 210
+    private static let firstPassQuestionBodyMinHeight: CGFloat = 150
+    private static let firstPassCompletionBodyMinHeight: CGFloat = 230
     private static let hiddenIdleEdgeHoverHitHeight: CGFloat = 8
 
     private var panel: NotchPanel?
@@ -518,6 +522,11 @@ final class OverlayPanelController {
         let spotlightSession = model.surfacedSessions.first(where: { $0.phase.requiresAttention })
             ?? model.surfacedSessions.first(where: { $0.phase == .running })
             ?? model.surfacedSessions.first
+        let hasClosedPresence = model.liveSessionCount > 0
+
+        guard hasClosedPresence else {
+            return notchWidth
+        }
 
         return Self.closedPanelWidth(
             notchWidth: notchWidth,
@@ -547,17 +556,19 @@ final class OverlayPanelController {
             if model.measuredNotificationContentHeight > 0 {
                 return model.measuredNotificationContentHeight + 28
             }
-            // First render: estimate from the actionable session's content so the
-            // initial window is close to the final size. This avoids a large blank
-            // panel flash (the previous 500pt fallback) and reduces the chance of
-            // a measurement→reposition cycle.
+            // First render: bias the estimate a little high so notification cards
+            // show completely on frame one, then let SwiftUI measurement pull the
+            // panel back down on the next layout pass.
             if let actionableID,
                let session = model.state.session(id: actionableID) {
                 let rowHeight = session.estimatedIslandRowHeight(at: now)
-                let bodyHeight = actionableBodyHeight(for: session, model: model)
+                let bodyHeight = max(
+                    actionableBodyHeight(for: session, model: model) + Self.firstPassNotificationSafetyPadding,
+                    minimumFirstPassNotificationBodyHeight(for: session)
+                )
                 return rowHeight + bodyHeight + Self.openedContentVerticalInsets
             }
-            return 300
+            return 360
         }
 
         let rowHeights = visibleSessions.map { session -> CGFloat in
@@ -580,11 +591,62 @@ final class OverlayPanelController {
     private func actionableBodyHeight(for session: AgentSession, model: AppModel) -> CGFloat {
         switch session.phase {
         case .waitingForApproval:
-            return Self.approvalCardHeight - 44
+            return approvalBodyHeight(for: session)
         case .waitingForAnswer:
-            return questionCardHeight(for: session.questionPrompt) - 44
+            return questionBodyHeight(for: session.questionPrompt)
         case .completed:
             return completionBodyHeight(for: session)
+        case .running:
+            return 0
+        }
+    }
+
+    private func approvalBodyHeight(for session: AgentSession) -> CGFloat {
+        let preview = session.currentCommandPreviewText?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = preview?.isEmpty == false ? "$ \(preview!)" : (session.permissionRequest?.summary ?? session.summary)
+        
+        let availableWidth = Self.preferredNotificationPanelWidth - 96
+        let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .semibold)
+        let textSize = (text as NSString).boundingRect(
+            with: NSSize(width: availableWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font]
+        )
+        
+        let baseHeight: CGFloat = 126 // 16(label) + 14(path) + 24(padding) + 36(buttons) + 36(spacing)
+        return baseHeight + ceil(textSize.height)
+    }
+
+    private func questionBodyHeight(for prompt: QuestionPrompt?) -> CGFloat {
+        guard let prompt else { return Self.questionCardHeight - 44 }
+        
+        let titleText = prompt.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let availableWidth = Self.preferredNotificationPanelWidth - 64
+        let font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        let titleSize = (titleText as NSString).boundingRect(
+            with: NSSize(width: availableWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font]
+        )
+        let titleHeight = ceil(titleSize.height) + 12
+        
+        if !prompt.questions.isEmpty {
+            return min(320, titleHeight + CGFloat(prompt.questions.count * 60) + 40)
+        } else if prompt.options.isEmpty {
+            return titleHeight + 88 // TextField + Button
+        } else {
+            return titleHeight + 36 // Buttons
+        }
+    }
+
+    private func minimumFirstPassNotificationBodyHeight(for session: AgentSession) -> CGFloat {
+        switch session.phase {
+        case .waitingForApproval:
+            return Self.firstPassApprovalBodyMinHeight
+        case .waitingForAnswer:
+            return Self.firstPassQuestionBodyMinHeight
+        case .completed:
+            return Self.firstPassCompletionBodyMinHeight
         case .running:
             return 0
         }
