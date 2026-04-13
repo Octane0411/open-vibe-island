@@ -277,6 +277,11 @@ struct DisplaySettingsPane: View {
                         Text(title(for: policy)).tag(policy)
                     }
                 }
+                .help(lang.t("settings.display.presentationPolicy.help"))
+
+                Text(lang.t("settings.display.presentationPolicy.footer"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             if let diag = model.overlayPlacementDiagnostics {

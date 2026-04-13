@@ -94,7 +94,9 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 
 | Feature | Description |
 |---|---|
-| Notch / top-bar overlay | Notch area on notch Macs, top-center bar on others |
+| Notch / top-bar overlay | Dynamic-Island shape on notched Macs, draggable floating pill on external and non-notch displays |
+| Presentation policy | Settings → Display → Presentation: *Automatic* (island on notch, pill elsewhere), *Always Island*, *Always Pill* |
+| Multi-display support | Pick which screen hosts the overlay; per-display drag position is remembered |
 | Control center | Hook status, usage dashboard |
 | Notification mode | Auto-height panel for permission requests and session events |
 | Notification sounds | Configurable system sounds, mute toggle |
