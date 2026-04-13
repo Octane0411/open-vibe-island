@@ -1,6 +1,26 @@
 import CoreGraphics
 
+/// Pure-value description of the closed pill/island shell at a given
+/// placement mode.
+///
+/// Two concrete layout families are modeled:
+///
+/// - `.notch`: the traditional Dynamic-Island-style shell that expands
+///   horizontally around the physical notch with left/right "lanes" for
+///   the icon and live-session count badge.
+/// - `.floatingPill`: a compact capsule used on external and non-notch
+///   displays. Content is laid out in a single padded `HStack` with a
+///   smaller icon and indicator footprint.
+///
+/// Metrics are derived from the closed height so that the same struct can
+/// drive both AppKit panel sizing (`OverlayPanelController`) and SwiftUI
+/// closed-shell views (`Views/OverlayClosedShells.swift`) without the two
+/// sides drifting. All methods are pure and deterministic for unit
+/// testing.
 struct OverlayClosedShellMetrics: Equatable {
+    /// Which visual family the closed shell belongs to. Callers branch on
+    /// this rather than `mode` directly when they only care about
+    /// notch-style lane layout vs. floating pill layout.
     enum LayoutFamily: Equatable {
         case notch
         case floatingPill
@@ -22,6 +42,11 @@ struct OverlayClosedShellMetrics: Equatable {
         isFloatingPill ? .floatingPill : .notch
     }
 
+    /// Width of the closed shell's visible surface for the given live-session
+    /// state. The returned value includes any popping animation growth and,
+    /// for the notch family, the left/right lane expansion around the
+    /// physical notch. `liveCount == 0` collapses to `baseClosedWidth`
+    /// (plus popping width) because no badge needs to be rendered.
     func closedSurfaceWidth(
         baseClosedWidth: CGFloat,
         liveCount: Int,
@@ -54,6 +79,10 @@ struct OverlayClosedShellMetrics: Equatable {
         }
     }
 
+    /// Minimum vertical allowance for the opened-state header. Notch-style
+    /// shells pass their physical closed height through, while pill-style
+    /// shells need a 30pt floor so the header hit-area stays tappable even
+    /// when the closed pill is shorter than 30pt.
     static func openedHeaderAllowance(forClosedHeight closedHeight: CGFloat) -> CGFloat {
         max(closedHeight, 30)
     }
@@ -63,6 +92,10 @@ struct OverlayClosedShellMetrics: Equatable {
         return CGFloat(26 + max(0, digits - 1) * 8)
     }
 
+    /// Builds the concrete metrics for the given placement mode. Height is
+    /// the only runtime input — everything else (icon size, padding,
+    /// indicator size) is fixed per family to keep closed-shell layout
+    /// deterministic and visually consistent.
     static func forMode(
         _ mode: OverlayPlacementMode,
         closedHeight: CGFloat
