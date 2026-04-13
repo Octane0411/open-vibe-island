@@ -3,6 +3,7 @@ import Combine
 import OSLog
 import SwiftUI
 import OpenIslandCore
+import os.lock
 
 private let overlayDragLogger = Logger(
     subsystem: "app.openisland.dev",
@@ -10,16 +11,31 @@ private let overlayDragLogger = Logger(
 )
 private let overlayDragDebugKey = "overlay.debug.drag"
 
-private func overlayDragLoggingEnabled() -> Bool {
+/// Cached one-shot read of the `overlay.debug.drag` UserDefaults flag.
+///
+/// The previous implementation called `UserDefaults.standard.bool(forKey:)`
+/// on every `overlayDragLog` invocation, which meant the hot mouse-move
+/// code path acquired the shared UserDefaults lock ~hundreds of times per
+/// second in release builds where the flag is almost always `false`.
+/// Reading once at first access keeps the flag effectively free to check.
+/// Developers flip the flag with `defaults write app.openisland.OpenIsland
+/// overlay.debug.drag -bool YES` and relaunch.
+private let overlayDragLoggingEnabled: Bool = {
     UserDefaults.standard.bool(forKey: overlayDragDebugKey)
-}
+}()
 
-private func overlayDragLog(_ message: String) {
-    guard overlayDragLoggingEnabled() else {
-        return
-    }
-
-    overlayDragLogger.notice("\(message, privacy: .public)")
+/// Logs a drag-diagnostic message when `overlay.debug.drag` is enabled.
+///
+/// The `message` parameter is `@autoclosure` so string interpolation is
+/// deferred until after the enabled check — in release builds the caller's
+/// format arguments are never evaluated and zero allocations happen on the
+/// hit-test hot path. See `overlayDragLoggingEnabled` above for the
+/// one-shot flag read.
+@inline(__always)
+private func overlayDragLog(_ message: @autoclosure () -> String) {
+    guard overlayDragLoggingEnabled else { return }
+    let rendered = message()
+    overlayDragLogger.notice("\(rendered, privacy: .public)")
 }
 
 private func overlayDragPointDescription(_ point: NSPoint) -> String {
@@ -28,6 +44,49 @@ private func overlayDragPointDescription(_ point: NSPoint) -> String {
 
 private func overlayDragRectDescription(_ rect: NSRect) -> String {
     NSStringFromRect(rect)
+}
+
+@MainActor
+protocol OverlayEventMonitoring: AnyObject {
+    var isActive: Bool { get }
+
+    func start(
+        mouseMoveHandler: @MainActor @escaping @Sendable (NSPoint) -> Void,
+        mouseDownHandler: @MainActor @escaping @Sendable (NSPoint) -> Void
+    )
+
+    func stop()
+}
+
+final class LockedMoveThrottleState: @unchecked Sendable {
+    private var unfairLock = os_unfair_lock_s()
+    private var lastMoveTime: TimeInterval = 0
+
+    func reset() {
+        os_unfair_lock_lock(&unfairLock)
+        lastMoveTime = 0
+        os_unfair_lock_unlock(&unfairLock)
+    }
+
+    func shouldDispatchMove(
+        now: TimeInterval,
+        throttleInterval: TimeInterval
+    ) -> Bool {
+        os_unfair_lock_lock(&unfairLock)
+        defer { os_unfair_lock_unlock(&unfairLock) }
+
+        switch NotchEventMonitors.moveDispatchDecision(
+            now: now,
+            lastMoveTime: lastMoveTime,
+            throttleInterval: throttleInterval
+        ) {
+        case .drop:
+            return false
+        case .dispatch(let updatedLastMoveTime):
+            lastMoveTime = updatedLastMoveTime
+            return true
+        }
+    }
 }
 
 @MainActor
@@ -82,7 +141,7 @@ final class OverlayPanelController {
     private static let hiddenIdleEdgeHoverHitHeight: CGFloat = 8
 
     private var panel: NotchPanel?
-    private var eventMonitors = NotchEventMonitors()
+    private let eventMonitors: any OverlayEventMonitoring
     private var hoverTimer: DispatchWorkItem?
     private var hoverCancelGrace: DispatchWorkItem?
     private var isPressingClosedTopBarPill = false
@@ -97,6 +156,10 @@ final class OverlayPanelController {
 
     var hasAttachedPanel: Bool {
         panel != nil
+    }
+
+    init(eventMonitors: any OverlayEventMonitoring = NotchEventMonitors()) {
+        self.eventMonitors = eventMonitors
     }
 
     nonisolated static func shouldActivatePanel(for reason: NotchOpenReason?) -> Bool {
@@ -354,6 +417,7 @@ final class OverlayPanelController {
     func hide() {
         panel?.ignoresMouseEvents = true
         panel?.acceptsMouseMovedEvents = false
+        eventMonitors.stop()
     }
 
     func setInteractive(_ interactive: Bool) {
@@ -635,13 +699,29 @@ final class OverlayPanelController {
     }
 
     func shouldCaptureTopBarDragLayerHit(at pointInView: NSPoint, in bounds: NSRect) -> Bool {
-        Self.shouldCaptureTopBarDragLayerHit(
-            capturesClosedTopBarPill: canDragPillNow(),
-            capturesOpenedHeaderDrag: shouldCaptureOpenedTopBarHeaderDrag(
-                at: pointInView,
-                in: bounds
+        // Fast path: branch on status *before* running either of the two
+        // expensive sub-checks. `canDragPillNow()` resolves the target
+        // screen (UserDefaults + NSScreen.screens) and
+        // `shouldCaptureOpenedTopBarHeaderDrag` computes placement
+        // diagnostics — calling both on every hitTest wastes cycles when
+        // only one can possibly return true in a given panel state.
+        switch model?.notchStatus {
+        case .closed:
+            return Self.shouldCaptureTopBarDragLayerHit(
+                capturesClosedTopBarPill: canDragPillNow(),
+                capturesOpenedHeaderDrag: false
             )
-        )
+        case .opened:
+            return Self.shouldCaptureTopBarDragLayerHit(
+                capturesClosedTopBarPill: false,
+                capturesOpenedHeaderDrag: shouldCaptureOpenedTopBarHeaderDrag(
+                    at: pointInView,
+                    in: bounds
+                )
+            )
+        default:
+            return false
+        }
     }
 
     /// Called by the hosting view while the user drags the pill. Moves the
@@ -1519,35 +1599,59 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
 // MARK: - NotchEventMonitors
 
 @MainActor
-final class NotchEventMonitors {
+final class NotchEventMonitors: OverlayEventMonitoring {
+    enum MoveDispatchDecision: Equatable {
+        case drop
+        case dispatch(updatedLastMoveTime: TimeInterval)
+    }
+
     private var globalMoveMonitor: Any?
     private var localMoveMonitor: Any?
     private var globalClickMonitor: Any?
     private var localClickMonitor: Any?
-    private var lastMoveTime: TimeInterval = 0
+    private let moveThrottleState = LockedMoveThrottleState()
 
     var isActive: Bool { globalMoveMonitor != nil }
+
+    nonisolated static func moveDispatchDecision(
+        now: TimeInterval,
+        lastMoveTime: TimeInterval,
+        throttleInterval: TimeInterval
+    ) -> MoveDispatchDecision {
+        guard now - lastMoveTime >= throttleInterval else {
+            return .drop
+        }
+        return .dispatch(updatedLastMoveTime: now)
+    }
 
     func start(
         mouseMoveHandler: @MainActor @escaping @Sendable (NSPoint) -> Void,
         mouseDownHandler: @MainActor @escaping @Sendable (NSPoint) -> Void
     ) {
         let throttleInterval: TimeInterval = 0.05
-
-        nonisolated(unsafe) var sharedLastMove: TimeInterval = 0
+        let moveThrottleState = self.moveThrottleState
+        moveThrottleState.reset()
 
         globalMoveMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { event in
             let now = ProcessInfo.processInfo.systemUptime
-            guard now - sharedLastMove >= throttleInterval else { return }
-            sharedLastMove = now
+            guard moveThrottleState.shouldDispatchMove(
+                now: now,
+                throttleInterval: throttleInterval
+            ) else {
+                return
+            }
             let location = NSEvent.mouseLocation
             Task { @MainActor in mouseMoveHandler(location) }
         }
 
         localMoveMonitor = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { event in
             let now = ProcessInfo.processInfo.systemUptime
-            guard now - sharedLastMove >= throttleInterval else { return event }
-            sharedLastMove = now
+            guard moveThrottleState.shouldDispatchMove(
+                now: now,
+                throttleInterval: throttleInterval
+            ) else {
+                return event
+            }
             let location = NSEvent.mouseLocation
             Task { @MainActor in mouseMoveHandler(location) }
             return event
@@ -1574,6 +1678,7 @@ final class NotchEventMonitors {
         localMoveMonitor = nil
         globalClickMonitor = nil
         localClickMonitor = nil
+        moveThrottleState.reset()
     }
 }
 

@@ -3,6 +3,28 @@ import Testing
 @testable import OpenIslandApp
 
 struct OverlayPanelControllerTests {
+    @MainActor
+    private final class TestEventMonitors: OverlayEventMonitoring {
+        private(set) var isActive = false
+        private(set) var startCallCount = 0
+        private(set) var stopCallCount = 0
+
+        func start(
+            mouseMoveHandler: @MainActor @escaping @Sendable (NSPoint) -> Void,
+            mouseDownHandler: @MainActor @escaping @Sendable (NSPoint) -> Void
+        ) {
+            _ = mouseMoveHandler
+            _ = mouseDownHandler
+            isActive = true
+            startCallCount += 1
+        }
+
+        func stop() {
+            isActive = false
+            stopCallCount += 1
+        }
+    }
+
     @Test
     func closedSurfaceRectCentersOnNotch() {
         let notchRect = NSRect(x: 200, y: 900, width: 200, height: 38)
@@ -500,5 +522,38 @@ struct OverlayPanelControllerTests {
 
         #expect(rect.height == 22)
         #expect(rect.midX == notchRect.midX)
+    }
+
+    @Test
+    @MainActor
+    func hideStopsEventMonitoring() {
+        let eventMonitors = TestEventMonitors()
+        let controller = OverlayPanelController(eventMonitors: eventMonitors)
+
+        controller.hide()
+
+        #expect(eventMonitors.stopCallCount == 1)
+    }
+
+    @Test
+    func moveDispatchDecisionDropsEventsInsideThrottleWindow() {
+        let decision = NotchEventMonitors.moveDispatchDecision(
+            now: 10.03,
+            lastMoveTime: 10.0,
+            throttleInterval: 0.05
+        )
+
+        #expect(decision == .drop)
+    }
+
+    @Test
+    func moveDispatchDecisionAcceptsEventsAtThrottleBoundary() {
+        let decision = NotchEventMonitors.moveDispatchDecision(
+            now: 10.05,
+            lastMoveTime: 10.0,
+            throttleInterval: 0.05
+        )
+
+        #expect(decision == .dispatch(updatedLastMoveTime: 10.05))
     }
 }
