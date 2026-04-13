@@ -125,10 +125,15 @@ final class OverlayPanelController {
     private static let maxSessionListHeight: CGFloat = 560
     private static let maxVisibleSessionRows: Int = 6
     private static let openedRowSpacing: CGFloat = 6
-    // Content padding (8) + scroll padding (4) + view chrome: outerBottomPadding (14) + header-content gap (12)
-    private static let openedContentVerticalInsets: CGFloat = 38
+    // Content padding top (8) + scroll padding (4) + outerBottomPadding (14) + header-content gap (12)
+    // + bottomInset (14, the VStack .padding(.bottom, bottomInset) that subtracts from usable height)
+    // = 52.  The extra 14 pt avoids the card bottom being clipped by the .clipped() modifier when
+    // the measured height is not yet available (first notification render).
+    private static let openedContentVerticalInsets: CGFloat = 52
     private static let openedEmptyStateHeight: CGFloat = 108
-    private static let approvalCardHeight: CGFloat = 288
+    // Approval card: header row (~72) + actionableBody padding (16*2 + 14 bottom) + body content (~186)
+    // Bumped to 310 to ensure the estimated panel height is never smaller than the actual rendered card.
+    private static let approvalCardHeight: CGFloat = 310
     private static let questionCardHeight: CGFloat = 110
     // Completion card chrome breakdown (everything except the scrollable text):
     // openedContent vertical padding: 24, card container padding: 28,
@@ -1071,7 +1076,7 @@ final class OverlayPanelController {
         let digits = max(1, "\(liveSessionCount)".count)
         let countBadgeWidth = CGFloat(26 + max(0, digits - 1) * 8)
         let leftWidth = sideWidth + 8 + (hasAttention ? 18 : 0)
-        let rightWidth = max(sideWidth, countBadgeWidth)
+        let rightWidth = max(sideWidth, countBadgeWidth) + (hasAttention ? 18 : 0)
         let expansionWidth = leftWidth + rightWidth + 16 + (hasAttention ? 6 : 0)
         return notchWidth + expansionWidth + CGFloat(popWidth)
     }

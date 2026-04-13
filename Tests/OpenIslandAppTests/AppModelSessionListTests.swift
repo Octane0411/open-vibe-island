@@ -668,6 +668,66 @@ struct AppModelSessionListTests {
         #expect(merged.map(\.id) == [existing.id])
     }
 
+
+    /// Regression test: `measuredNotificationContentHeight` MUST be cleared when the
+    /// surface changes to a different session, to avoid sizing the new card with stale
+    /// measurements from the previous one.
+    @Test
+    @MainActor
+    func approvalCardMeasuredHeightClearedWhenSurfaceSessionChanges() {
+        let model = AppModel()
+
+        var sessionA = AgentSession(
+            id: "approval-session-A",
+            title: "Claude · proj-A",
+            tool: .claudeCode,
+            attachmentState: .attached,
+            phase: .waitingForApproval,
+            summary: "Approve edit A",
+            updatedAt: .now,
+            permissionRequest: PermissionRequest(
+                title: "Edit",
+                summary: "file_a.swift",
+                affectedPath: "/tmp/file_a.swift"
+            )
+        )
+        sessionA.isProcessAlive = true
+
+        var sessionB = AgentSession(
+            id: "approval-session-B",
+            title: "Claude · proj-B",
+            tool: .claudeCode,
+            attachmentState: .attached,
+            phase: .waitingForApproval,
+            summary: "Approve edit B",
+            updatedAt: .now,
+            permissionRequest: PermissionRequest(
+                title: "Edit",
+                summary: "file_b.swift",
+                affectedPath: "/tmp/file_b.swift"
+            )
+        )
+        sessionB.isProcessAlive = true
+
+        model.state = SessionState(sessions: [sessionA, sessionB])
+
+        let surfaceA = IslandSurface.sessionList(actionableSessionID: "approval-session-A")
+        model.notchStatus = .opened
+        model.notchOpenReason = .notification
+        model.islandSurface = surfaceA
+        model.measuredNotificationContentHeight = 320
+
+        model.notchClose()
+
+        let surfaceB = IslandSurface.sessionList(actionableSessionID: "approval-session-B")
+        model.notchOpen(reason: .notification, surface: surfaceB)
+
+        #expect(
+            model.measuredNotificationContentHeight == 0,
+            "Switching to a different session's card must clear the stale measurement from the previous session to prevent wrong initial panel sizing."
+        )
+    }
+
     @Test
     func recoveredSessionMatchesLiveGhosttyProcessByCWDWhenMultipleCandidatesExist() {
         let now = Date(timeIntervalSince1970: 2_000)

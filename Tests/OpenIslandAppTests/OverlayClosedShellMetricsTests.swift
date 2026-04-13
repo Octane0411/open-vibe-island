@@ -236,8 +236,9 @@ struct OverlayClosedShellMetricsTests {
             isPopping: false
         )
 
-        // Attention adds 18 to leftWidth and 6 to expansionWidth.
-        #expect(widthAttention == widthNoAttention + 24)
+        // Attention adds 18 to leftWidth, 18 to rightWidth (notch-centering
+        // balance restored from main #300), and 6 to expansionWidth.
+        #expect(widthAttention == widthNoAttention + 42)
     }
 
     @Test

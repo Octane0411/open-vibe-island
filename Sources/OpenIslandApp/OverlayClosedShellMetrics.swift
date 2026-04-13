@@ -72,8 +72,11 @@ struct OverlayClosedShellMetrics: Equatable {
             return max(baseClosedWidth, contentWidth) + popWidth
         case .notch:
             let sideWidth = max(0, closedHeight - 12) + 10
+            // Attention indicator widens the LEFT lane by 18; the RIGHT lane
+            // mirrors that growth so the visible shell stays centered on the
+            // physical notch. (Originally fixed in main as PR #300.)
             let leftWidth = sideWidth + 8 + (hasAttention ? 18 : 0)
-            let rightWidth = max(sideWidth, badgeWidth)
+            let rightWidth = max(sideWidth, badgeWidth) + (hasAttention ? 18 : 0)
             let expansionWidth = leftWidth + rightWidth + 16 + (hasAttention ? 6 : 0)
             return baseClosedWidth + expansionWidth + popWidth
         }

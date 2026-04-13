@@ -38,6 +38,7 @@
 "settings.general.languageSystem" = "跟随系统";
 "settings.general.languageEnglish" = "English";
 "settings.general.languageChinese" = "简体中文";
+"settings.general.languageTraditionalChinese" = "繁體中文";
 
 /* Settings - Appearance */
 "settings.tab.appearance" = "个性化";

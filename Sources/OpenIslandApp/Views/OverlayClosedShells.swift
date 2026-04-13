@@ -73,8 +73,14 @@ struct NotchClosedShell<IconView: View, AttentionView: View, BadgeView: View>: V
         closedNotchWidth - NotchShape.closedTopRadius + (isPopping ? 18 : 0)
     }
 
+    /// Right lane mirrors the left lane's attention-indicator width so the
+    /// composite shell stays visually centered on the physical notch when an
+    /// attention indicator is showing on the left side. Without this balance
+    /// the icon+attention pair pushes everything right, leaving the right
+    /// edge clipping into the notch on certain MacBook models. (Restores the
+    /// fix originally landed in main as PR #300.)
     private var rightLaneWidth: CGFloat {
-        max(sideWidth, countBadgeWidth)
+        max(sideWidth, countBadgeWidth) + (hasAttention ? 18 : 0)
     }
 
     var body: some View {

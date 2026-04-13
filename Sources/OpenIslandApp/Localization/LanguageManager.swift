@@ -14,6 +14,7 @@ final class LanguageManager: @unchecked Sendable {
         case system
         case en
         case zhHans = "zh-Hans"
+        case zhHant = "zh-Hant"
 
         var id: String { rawValue }
 
@@ -22,12 +23,17 @@ final class LanguageManager: @unchecked Sendable {
             switch self {
             case .system:
                 let preferred = Locale.preferredLanguages.first ?? "en"
+                if preferred.hasPrefix("zh-Hant") || preferred.hasPrefix("zh-TW") || preferred.hasPrefix("zh-HK") || preferred.hasPrefix("zh-MO") {
+                    return "zh-Hant"
+                }
                 if preferred.hasPrefix("zh") { return "zh-Hans" }
                 return "en"
             case .en:
                 return "en"
             case .zhHans:
                 return "zh-Hans"
+            case .zhHant:
+                return "zh-Hant"
             }
         }
     }
