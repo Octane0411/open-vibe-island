@@ -3,6 +3,23 @@ import Testing
 
 struct OverlayUICoordinatorTests {
     @Test
+    @MainActor
+    func presentationPolicyDefaultsToAutomaticIslandWhenNotched() {
+        let coordinator = OverlayUICoordinator()
+
+        #expect(OverlayPresentationPolicy.defaultValue == .automaticIslandWhenNotched)
+        #expect(coordinator.overlayPresentationPolicy == .automaticIslandWhenNotched)
+    }
+
+    @Test
+    func persistedPresentationPolicyRoundTripsRawValue() {
+        let raw = OverlayPresentationPolicy.alwaysPill.rawValue
+        let restored = OverlayPresentationPolicy(rawValue: raw)
+
+        #expect(restored == .alwaysPill)
+    }
+
+    @Test
     func hoverOpenedTopBarDragStartClosesImmediately() {
         let plan = OverlayUICoordinator.dragStartPlan(
             status: .opened,

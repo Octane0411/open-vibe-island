@@ -6,6 +6,8 @@ import OpenIslandCore
 @MainActor
 @Observable
 final class OverlayUICoordinator {
+    private static let overlayDisplayPreferenceDefaultsKey = "overlay.display.preference"
+    private static let overlayPresentationPolicyDefaultsKey = "overlay.presentation.policy"
 
     enum InteractionUpdatePlan: Equatable {
         case setInteractive(Bool)
@@ -36,6 +38,15 @@ final class OverlayUICoordinator {
 
     var overlayDisplayOptions: [OverlayDisplayOption] = []
     var overlayPlacementDiagnostics: OverlayPlacementDiagnostics?
+    var overlayPresentationPolicy = OverlayPresentationPolicy.defaultValue {
+        didSet {
+            guard overlayPresentationPolicy != oldValue else {
+                return
+            }
+            persistOverlayPresentationPolicy()
+            refreshOverlayPlacement()
+        }
+    }
 
     var overlayDisplaySelectionID = OverlayDisplayOption.automaticID {
         didSet {
@@ -161,9 +172,15 @@ final class OverlayUICoordinator {
     // MARK: - Initialization
 
     func restoreDisplayPreference() {
-        overlayDisplaySelectionID = UserDefaults.standard.string(
-            forKey: "overlay.display.preference"
+        let defaults = UserDefaults.standard
+        overlayDisplaySelectionID = defaults.string(
+            forKey: Self.overlayDisplayPreferenceDefaultsKey
         ) ?? OverlayDisplayOption.automaticID
+        overlayPresentationPolicy = defaults.string(
+            forKey: Self.overlayPresentationPolicyDefaultsKey
+        )
+        .flatMap(OverlayPresentationPolicy.init(rawValue:))
+        ?? .defaultValue
         startScreenMonitoring()
     }
 
@@ -636,9 +653,24 @@ final class OverlayUICoordinator {
     private func persistOverlayDisplayPreference() {
         let defaults = UserDefaults.standard
         if overlayDisplaySelectionID == OverlayDisplayOption.automaticID {
-            defaults.removeObject(forKey: "overlay.display.preference")
+            defaults.removeObject(forKey: Self.overlayDisplayPreferenceDefaultsKey)
         } else {
-            defaults.set(overlayDisplaySelectionID, forKey: "overlay.display.preference")
+            defaults.set(
+                overlayDisplaySelectionID,
+                forKey: Self.overlayDisplayPreferenceDefaultsKey
+            )
+        }
+    }
+
+    private func persistOverlayPresentationPolicy() {
+        let defaults = UserDefaults.standard
+        if overlayPresentationPolicy == .defaultValue {
+            defaults.removeObject(forKey: Self.overlayPresentationPolicyDefaultsKey)
+        } else {
+            defaults.set(
+                overlayPresentationPolicy.rawValue,
+                forKey: Self.overlayPresentationPolicyDefaultsKey
+            )
         }
     }
 

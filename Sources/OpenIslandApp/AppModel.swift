@@ -216,6 +216,10 @@ final class AppModel {
         get { overlay.overlayDisplaySelectionID }
         set { overlay.overlayDisplaySelectionID = newValue }
     }
+    var overlayPresentationPolicy: OverlayPresentationPolicy {
+        get { overlay.overlayPresentationPolicy }
+        set { overlay.overlayPresentationPolicy = newValue }
+    }
 
     // MARK: - Appearance
 
@@ -303,7 +307,6 @@ final class AppModel {
             lastActionMessage = error.localizedDescription
         }
     }
-
     @ObservationIgnored
     var openSettingsWindow: (() -> Void)?
 

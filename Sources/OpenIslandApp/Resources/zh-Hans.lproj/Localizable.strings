@@ -71,6 +71,11 @@
 /* Settings - Display */
 "settings.display.monitor" = "显示器";
 "settings.display.position" = "显示位置";
+"settings.display.presentation" = "显示形态";
+"settings.display.presentationPolicy" = "形态策略";
+"settings.display.presentation.alwaysIsland" = "全使用岛";
+"settings.display.presentation.automaticIslandWhenNotched" = "有刘海才用岛";
+"settings.display.presentation.alwaysPill" = "全胶囊";
 "settings.display.diagnostics" = "诊断";
 "settings.display.currentScreen" = "当前屏幕";
 "settings.display.layoutMode" = "布局模式";

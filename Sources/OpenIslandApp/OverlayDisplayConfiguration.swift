@@ -17,6 +17,8 @@ enum OverlayPresentationPolicy: String, Equatable, CaseIterable {
     case alwaysIsland
     case automaticIslandWhenNotched
     case alwaysPill
+
+    static let defaultValue = OverlayPresentationPolicy.automaticIslandWhenNotched
 }
 
 enum OverlayPresentationMode: Equatable {

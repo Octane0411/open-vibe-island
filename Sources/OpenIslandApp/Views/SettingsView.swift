@@ -225,6 +225,17 @@ struct DisplaySettingsPane: View {
 
     private var lang: LanguageManager { model.lang }
 
+    private func title(for policy: OverlayPresentationPolicy) -> String {
+        switch policy {
+        case .alwaysIsland:
+            return lang.t("settings.display.presentation.alwaysIsland")
+        case .automaticIslandWhenNotched:
+            return lang.t("settings.display.presentation.automaticIslandWhenNotched")
+        case .alwaysPill:
+            return lang.t("settings.display.presentation.alwaysPill")
+        }
+    }
+
     var body: some View {
         Form {
             Section(lang.t("settings.display.monitor")) {
@@ -235,6 +246,17 @@ struct DisplaySettingsPane: View {
                     Text(lang.t("settings.general.automatic")).tag(OverlayDisplayOption.automaticID)
                     ForEach(model.overlayDisplayOptions) { option in
                         Text(option.title).tag(option.id)
+                    }
+                }
+            }
+
+            Section(lang.t("settings.display.presentation")) {
+                Picker(lang.t("settings.display.presentationPolicy"), selection: Binding(
+                    get: { model.overlayPresentationPolicy },
+                    set: { model.overlayPresentationPolicy = $0 }
+                )) {
+                    ForEach(OverlayPresentationPolicy.allCases, id: \.self) { policy in
+                        Text(title(for: policy)).tag(policy)
                     }
                 }
             }

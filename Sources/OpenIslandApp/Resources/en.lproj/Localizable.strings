@@ -71,6 +71,11 @@
 /* Settings - Display */
 "settings.display.monitor" = "Monitor";
 "settings.display.position" = "Display Position";
+"settings.display.presentation" = "Presentation";
+"settings.display.presentationPolicy" = "Presentation Policy";
+"settings.display.presentation.alwaysIsland" = "Always Island";
+"settings.display.presentation.automaticIslandWhenNotched" = "Island on Notched Displays";
+"settings.display.presentation.alwaysPill" = "Always Pill";
 "settings.display.diagnostics" = "Diagnostics";
 "settings.display.currentScreen" = "Current Screen";
 "settings.display.layoutMode" = "Layout Mode";
