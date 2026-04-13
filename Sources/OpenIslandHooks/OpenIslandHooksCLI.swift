@@ -18,9 +18,9 @@ struct OpenIslandHooksCLI {
 
         var isClaudeFormat: Bool {
             switch self {
-            case .claude, .qoder, .qwen, .factory, .droid, .codebuddy:
+            case .claude, .qoder, .factory, .droid, .codebuddy:
                 return true
-            case .codex, .cursor, .gemini:
+            case .codex, .cursor, .gemini, .qwen:
                 return false
             }
         }
@@ -53,7 +53,7 @@ struct OpenIslandHooksCLI {
                 if let output = try CodexHookOutputEncoder.standardOutput(for: response) {
                     FileHandle.standardOutput.write(output)
                 }
-            case .claude, .qoder, .qwen, .factory, .droid, .codebuddy:
+            case .claude, .qoder, .factory, .droid, .codebuddy:
                 var payload = try decoder
                     .decode(ClaudeHookPayload.self, from: input)
                     .withRuntimeContext(environment: ProcessInfo.processInfo.environment)
@@ -71,6 +71,17 @@ struct OpenIslandHooksCLI {
                 if let output = try ClaudeHookOutputEncoder.standardOutput(for: response) {
                     FileHandle.standardOutput.write(output)
                 }
+            case .qwen:
+                let payload = try decoder.decode(QwenHookPayload.self, from: input)
+                    .withRuntimeContext(environment: ProcessInfo.processInfo.environment)
+                guard (try? client.send(.processQwenHook(payload), timeout: 45)) != nil else {
+                    logStderr("bridge unavailable for qwen hook")
+                    return
+                }
+                
+                // Return a JSON that tells the Qwen (Claude fork) CLI to continue normally.
+                let outputText = "{\"continue\":true,\"suppressOutput\":true}\n"
+                FileHandle.standardOutput.write(Data(outputText.utf8))
             case .cursor:
                 let payload = try decoder.decode(CursorHookPayload.self, from: input)
 
