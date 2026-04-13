@@ -545,7 +545,7 @@ final class OverlayPanelController {
         let storedTopBarAnchor: NSPoint?
         if strategy == .topBar {
             storedTopBarAnchor = OverlayPillPositionStore.load(
-                for: screenID(for: screen),
+                for: OverlayScreenIdentity.id(for: screen),
                 on: screen,
                 closedWidth: currentClosedWidth(on: screen)
             )
@@ -572,7 +572,7 @@ final class OverlayPanelController {
             preferredScreenID: preferredSelectionID,
             screens: screens.map { screen in
                 OverlayScreenSelectionCandidate(
-                    id: screenID(for: screen),
+                    id: OverlayScreenIdentity.id(for: screen),
                     isNotched: OverlayDisplayResolver.placementMode(for: screen) == .notch,
                     isMain: screen == NSScreen.main
                 )
@@ -581,15 +581,7 @@ final class OverlayPanelController {
             return nil
         }
 
-        return screens.first(where: { screenID(for: $0) == selection.screenID })
-    }
-
-    private func screenID(for screen: NSScreen) -> String {
-        let key = NSDeviceDescriptionKey("NSScreenNumber")
-        if let number = screen.deviceDescription[key] as? NSNumber {
-            return "display-\(number.uint32Value)"
-        }
-        return screen.localizedName
+        return screens.first(where: { OverlayScreenIdentity.id(for: $0) == selection.screenID })
     }
 
     // MARK: - Drag-to-reposition pill (external displays only)
@@ -730,7 +722,7 @@ final class OverlayPanelController {
 
         OverlayPillPositionStore.save(
             center,
-            for: screenID(for: screen),
+            for: OverlayScreenIdentity.id(for: screen),
             on: screen,
             closedWidth: currentClosedWidth(on: screen)
         )

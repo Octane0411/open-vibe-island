@@ -205,7 +205,7 @@ struct IslandPanelView: View {
 
     private var targetOverlayScreen: NSScreen? {
         if let targetScreenID = model.overlayPlacementDiagnostics?.targetScreenID,
-           let screen = NSScreen.screens.first(where: { screenID(for: $0) == targetScreenID }) {
+           let screen = NSScreen.screens.first(where: { OverlayScreenIdentity.id(for: $0) == targetScreenID }) {
             return screen
         }
 
@@ -935,15 +935,6 @@ struct IslandPanelView: View {
                 usageWindowView(window: window, layout: layout)
             }
         }
-    }
-
-    private func screenID(for screen: NSScreen) -> String {
-        let key = NSDeviceDescriptionKey("NSScreenNumber")
-        if let number = screen.deviceDescription[key] as? NSNumber {
-            return "display-\(number.uint32Value)"
-        }
-
-        return screen.localizedName
     }
 
     private func usageWindowView(

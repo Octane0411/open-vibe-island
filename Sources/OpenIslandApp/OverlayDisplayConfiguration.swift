@@ -155,7 +155,7 @@ enum OverlayDisplayResolver {
     static func availableDisplayOptions() -> [OverlayDisplayOption] {
         NSScreen.screens.map { screen in
             OverlayDisplayOption(
-                id: screenID(for: screen),
+                id: OverlayScreenIdentity.id(for: screen),
                 title: screen.localizedName,
                 subtitle: "\(screenKindDescription(for: screen)) · \(Int(screen.frame.width))×\(Int(screen.frame.height))"
             )
@@ -183,7 +183,7 @@ enum OverlayDisplayResolver {
         )
 
         return OverlayPlacementDiagnostics(
-            targetScreenID: screenID(for: screen),
+            targetScreenID: OverlayScreenIdentity.id(for: screen),
             targetScreenName: screen.localizedName,
             selectionSummary: resolvedScreen.selectionSummary,
             mode: placementMode,
@@ -229,7 +229,7 @@ enum OverlayDisplayResolver {
             preferredScreenID: preferredScreenID,
             screens: selectionCandidates(from: screens)
         ),
-        let screen = screens.first(where: { screenID(for: $0) == selection.screenID }) else {
+        let screen = screens.first(where: { OverlayScreenIdentity.id(for: $0) == selection.screenID }) else {
             return nil
         }
 
@@ -257,19 +257,10 @@ enum OverlayDisplayResolver {
     private static func selectionCandidates(from screens: [NSScreen]) -> [OverlayScreenSelectionCandidate] {
         screens.map { screen in
             OverlayScreenSelectionCandidate(
-                id: screenID(for: screen),
+                id: OverlayScreenIdentity.id(for: screen),
                 isNotched: isNotched(screen),
                 isMain: screen == NSScreen.main
             )
         }
-    }
-
-    private static func screenID(for screen: NSScreen) -> String {
-        let key = NSDeviceDescriptionKey("NSScreenNumber")
-        if let number = screen.deviceDescription[key] as? NSNumber {
-            return "display-\(number.uint32Value)"
-        }
-
-        return screen.localizedName
     }
 }
