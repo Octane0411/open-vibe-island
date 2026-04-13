@@ -14,7 +14,10 @@ struct OverlayUICoordinatorTests {
     @Test
     @MainActor
     func presentationPolicyDefaultsToAutomaticIslandWhenNotched() {
-        let coordinator = OverlayUICoordinator()
+        let (defaults, suiteName) = makeDefaultsSuite()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let coordinator = OverlayUICoordinator(defaults: defaults)
 
         #expect(OverlayPresentationPolicy.defaultValue == .automaticIslandWhenNotched)
         #expect(coordinator.overlayPresentationPolicy == .automaticIslandWhenNotched)
@@ -103,7 +106,10 @@ struct OverlayUICoordinatorTests {
     @Test
     @MainActor
     func applyingDisplayOptionsPreservesMissingManualSelection() {
-        let coordinator = OverlayUICoordinator()
+        let (defaults, suiteName) = makeDefaultsSuite()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let coordinator = OverlayUICoordinator(defaults: defaults)
 
         coordinator.overlayDisplaySelectionID = "display-external"
         coordinator.applyOverlayDisplayOptions([
@@ -225,5 +231,48 @@ struct OverlayUICoordinatorTests {
         )
 
         #expect(plan == .setInteractive(false))
+    }
+
+    // MARK: - Observer lifecycle
+
+    @Test
+    @MainActor
+    func stopScreenMonitoringIsIdempotentBeforeAndAfterStart() {
+        let (defaults, suiteName) = makeDefaultsSuite()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let coordinator = OverlayUICoordinator(defaults: defaults)
+
+        // Safe before any monitoring has started.
+        coordinator.stopScreenMonitoring()
+
+        coordinator.restoreDisplayPreference(startMonitoring: true)
+
+        // Safe to call once and then again.
+        coordinator.stopScreenMonitoring()
+        coordinator.stopScreenMonitoring()
+
+        // Safe to restart after stop.
+        coordinator.restoreDisplayPreference(startMonitoring: true)
+        coordinator.stopScreenMonitoring()
+    }
+
+    @Test
+    @MainActor
+    func coordinatorDeinitsEvenWhileScreenMonitoringIsActive() {
+        let (defaults, suiteName) = makeDefaultsSuite()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        weak var weakCoordinator: OverlayUICoordinator?
+        do {
+            let coordinator = OverlayUICoordinator(defaults: defaults)
+            coordinator.restoreDisplayPreference(startMonitoring: true)
+            weakCoordinator = coordinator
+            // Do NOT call stopScreenMonitoring() — the observer box's own
+            // deinit must clean up the NotificationCenter tokens so the
+            // coordinator can be fully released without leaking.
+        }
+
+        #expect(weakCoordinator == nil)
     }
 }

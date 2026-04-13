@@ -113,14 +113,17 @@ final class OverlayUICoordinator {
     }
 
     @ObservationIgnored
-    private var screenObserver: Any?
-
-    @ObservationIgnored
-    private var activeAppObserver: Any?
+    private let observerBox = ScreenObserverBox()
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
     }
+
+    // Observer cleanup is handled by `observerBox`'s own `deinit`, which
+    // runs on whichever thread releases the coordinator and calls the
+    // thread-safe `NotificationCenter.removeObserver(_:)` directly. This
+    // avoids needing an unsafe `MainActor.assumeIsolated` hop from this
+    // `@MainActor` class's own deinit.
 
     nonisolated static func interactionUpdatePlan(
         requestedInteractive: Bool,
@@ -193,8 +196,8 @@ final class OverlayUICoordinator {
     }
 
     private func startScreenMonitoring() {
-        guard screenObserver == nil else { return }
-        screenObserver = NotificationCenter.default.addObserver(
+        guard observerBox.screenObserver == nil else { return }
+        observerBox.screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil,
             queue: .main
@@ -204,7 +207,7 @@ final class OverlayUICoordinator {
             }
         }
 
-        activeAppObserver = NSWorkspace.shared.notificationCenter.addObserver(
+        observerBox.activeAppObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil,
             queue: .main
@@ -214,6 +217,15 @@ final class OverlayUICoordinator {
                 self.refreshOverlayPlacement()
             }
         }
+    }
+
+    /// Stops both NotificationCenter observers registered by
+    /// `startScreenMonitoring()`. Safe to call multiple times; the helper
+    /// is idempotent. Tests that create multiple coordinators per suite
+    /// MUST call this in tearDown (or let the coordinator go out of scope)
+    /// to avoid polluting other tests' notification streams.
+    func stopScreenMonitoring() {
+        observerBox.clear()
     }
 
     // MARK: - Overlay transitions
@@ -715,5 +727,38 @@ final class OverlayUICoordinator {
     private func clearCloseTransitionState() {
         isCloseTransitionPending = false
         closeTransitionSurfaceOffset = .zero
+    }
+}
+
+/// Thread-safe holder for NotificationCenter observer tokens registered by
+/// `OverlayUICoordinator.startScreenMonitoring()`.
+///
+/// Lives as a standalone `final class` so its `deinit` runs on whichever
+/// thread releases the coordinator — `NotificationCenter.removeObserver(_:)`
+/// and `NSWorkspace.notificationCenter.removeObserver(_:)` are both thread
+/// safe, so no MainActor hop is needed.
+///
+/// Marked `@unchecked Sendable` because the outer `OverlayUICoordinator`
+/// only mutates the box from its `@MainActor` context; in practice the
+/// tokens are only read/written on the main thread during
+/// `start/stopScreenMonitoring`, and only read once more during `deinit`
+/// after the final reference is dropped.
+private final class ScreenObserverBox: @unchecked Sendable {
+    var screenObserver: Any?
+    var activeAppObserver: Any?
+
+    func clear() {
+        if let screenObserver {
+            NotificationCenter.default.removeObserver(screenObserver)
+            self.screenObserver = nil
+        }
+        if let activeAppObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(activeAppObserver)
+            self.activeAppObserver = nil
+        }
+    }
+
+    deinit {
+        clear()
     }
 }
