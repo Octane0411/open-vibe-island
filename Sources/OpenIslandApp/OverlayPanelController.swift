@@ -554,7 +554,7 @@ final class OverlayPanelController {
         }
 
         let actionableID = model.islandSurface.sessionID
-        let isNotificationMode = actionableID != nil
+        let isNotificationMode = model.notchOpenReason == .notification && actionableID != nil
 
         if isNotificationMode {
             // Use SwiftUI-measured height when available (accurate after first render).

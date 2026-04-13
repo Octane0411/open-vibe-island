@@ -105,18 +105,10 @@ final class OverlayUICoordinator {
     }
 
     func notchOpen(reason: NotchOpenReason, surface: IslandSurface = .sessionList()) {
-        let resolvedSurface: IslandSurface
-        if surface.sessionID == nil,
-           let attentionSession = appModel?.surfacedSessions.first(where: { $0.phase.requiresAttention }) {
-            resolvedSurface = .sessionList(actionableSessionID: attentionSession.id)
-        } else {
-            resolvedSurface = surface
-        }
-
         transitionOverlay(
             to: .opened,
             reason: reason,
-            surface: resolvedSurface,
+            surface: surface,
             interactive: true,
             beforeTransition: nil,
             afterStateChange: { [weak self] in

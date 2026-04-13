@@ -511,12 +511,9 @@ struct IslandPanelView: View {
         model.islandSurface.sessionID
     }
 
-    /// Whether to render in single-card mode: show only the actionable session (no full list).
-    /// This is true whenever the surface carries an actionableSessionID, regardless of the
-    /// open reason — a user can click to re-open an approval card that was previously shown
-    /// as a notification, and should still see the full card with action buttons.
+    /// Whether the panel was opened by a notification (show only actionable session + footer).
     private var isNotificationMode: Bool {
-        actionableSessionID != nil
+        model.notchOpenReason == .notification && actionableSessionID != nil
     }
 
     private static let maxSessionListHeight: CGFloat = 560
