@@ -152,4 +152,116 @@ struct OverlayClosedShellMetricsTests {
 
         #expect(size == NSSize(width: 56, height: 22))
     }
+
+    @Test
+    func closedSurfaceWidthWithZeroLiveCountReturnsBaseWidth() {
+        // Covers the `liveCount > 0` guard — with no live sessions there is
+        // no badge to render, so the surface width must equal the base pill
+        // width. This branch is otherwise exercised only at runtime when the
+        // last session ends.
+        let metrics = OverlayClosedShellMetrics.forMode(
+            .topBar,
+            closedHeight: 22
+        )
+
+        let width = metrics.closedSurfaceWidth(
+            baseClosedWidth: 56,
+            liveCount: 0,
+            hasAttention: false,
+            isPopping: false
+        )
+
+        #expect(width == 56)
+    }
+
+    @Test
+    func closedSurfaceWidthWithZeroLiveCountStillAddsPoppingWidth() {
+        // The `isPopping` contribution must still be applied when there are
+        // no live sessions — otherwise the pop animation clips.
+        let metrics = OverlayClosedShellMetrics.forMode(
+            .topBar,
+            closedHeight: 22
+        )
+
+        let width = metrics.closedSurfaceWidth(
+            baseClosedWidth: 56,
+            liveCount: 0,
+            hasAttention: false,
+            isPopping: true
+        )
+
+        #expect(width == 74) // 56 + 18 pop width
+    }
+
+    @Test
+    func notchClosedSurfaceWidthAddsPoppingWidth() {
+        let metrics = OverlayClosedShellMetrics.forMode(
+            .notch,
+            closedHeight: 34
+        )
+
+        let widthStatic = metrics.closedSurfaceWidth(
+            baseClosedWidth: 200,
+            liveCount: 1,
+            hasAttention: false,
+            isPopping: false
+        )
+        let widthPopping = metrics.closedSurfaceWidth(
+            baseClosedWidth: 200,
+            liveCount: 1,
+            hasAttention: false,
+            isPopping: true
+        )
+
+        #expect(widthPopping == widthStatic + 18)
+    }
+
+    @Test
+    func notchClosedSurfaceWidthIncludesAttentionIndicatorWidth() {
+        let metrics = OverlayClosedShellMetrics.forMode(
+            .notch,
+            closedHeight: 34
+        )
+
+        let widthNoAttention = metrics.closedSurfaceWidth(
+            baseClosedWidth: 200,
+            liveCount: 1,
+            hasAttention: false,
+            isPopping: false
+        )
+        let widthAttention = metrics.closedSurfaceWidth(
+            baseClosedWidth: 200,
+            liveCount: 1,
+            hasAttention: true,
+            isPopping: false
+        )
+
+        // Attention adds 18 to leftWidth and 6 to expansionWidth.
+        #expect(widthAttention == widthNoAttention + 24)
+    }
+
+    @Test
+    func topBarClosedSurfaceWidthGrowsForMultiDigitLiveCount() {
+        // The badge widens by 8 per extra digit — guards against the
+        // `digits - 1` arithmetic regressing for two-digit counts.
+        let metrics = OverlayClosedShellMetrics.forMode(
+            .topBar,
+            closedHeight: 22
+        )
+
+        let singleDigit = metrics.closedSurfaceWidth(
+            baseClosedWidth: 56,
+            liveCount: 9,
+            hasAttention: false,
+            isPopping: false
+        )
+        let twoDigits = metrics.closedSurfaceWidth(
+            baseClosedWidth: 56,
+            liveCount: 10,
+            hasAttention: false,
+            isPopping: false
+        )
+
+        #expect(twoDigits == singleDigit + 8)
+    }
 }
