@@ -24,3 +24,14 @@ output/
 *.log
 *.tmp
 .worktrees/
+
+# Xcode / SwiftPM
+.swiftpm/
+
+# Profiling data
+*.profraw
+
+# Agent configs / Patches
+.qwen/
+*.patch
+test_*.swift

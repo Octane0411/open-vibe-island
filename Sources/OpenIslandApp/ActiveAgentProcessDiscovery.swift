@@ -85,12 +85,13 @@ struct ActiveAgentProcessDiscovery {
                 continue
             }
 
-            if isClaudeProcess(command: process.command) {
+            if isAgentProcess(command: process.command) {
                 guard let snapshot = claudeSnapshot(for: process, processesByPID: processesByPID) else {
                     continue
                 }
 
-                let claimKey = "claude:\(snapshot.sessionID ?? snapshot.terminalTTY ?? snapshot.workingDirectory ?? process.pid)"
+                let toolPrefix = snapshot.tool == .qwenCode ? "qwen" : "claude"
+                let claimKey = "\(toolPrefix):\(snapshot.sessionID ?? snapshot.terminalTTY ?? snapshot.workingDirectory ?? process.pid)"
                 guard claimedKeys.insert(claimKey).inserted else {
                     continue
                 }
@@ -182,7 +183,7 @@ struct ActiveAgentProcessDiscovery {
     }
 
     private func isClaudeSubagentWorktree(_ path: String) -> Bool {
-        path.contains("/.claude/worktrees/agent-")
+        path.contains("/.claude/worktrees/agent-") || path.contains("/.qwen/worktrees/agent-")
     }
 
     private func claudeSnapshot(
@@ -190,6 +191,7 @@ struct ActiveAgentProcessDiscovery {
         processesByPID: [String: RunningProcess]
     ) -> ProcessSnapshot? {
         let lsofOutput = lsofOutput(pid: process.pid)
+        let isQwen = process.command.lowercased().contains("qwen") || (lsofOutput?.contains("/.qwen/") == true)
         let workingDirectory = lsofOutput.flatMap(workingDirectory(from:))
 
         // Subagent processes run in .claude/worktrees/agent-*/ directories.
@@ -199,7 +201,7 @@ struct ActiveAgentProcessDiscovery {
         }
 
         let transcriptPath = lsofOutput.flatMap {
-            bestClaudeTranscriptPath(in: $0, workingDirectory: workingDirectory)
+            bestClaudeTranscriptPath(in: $0, workingDirectory: workingDirectory, isQwen: isQwen)
         }
         let sessionID = transcriptPath.flatMap(firstUUID(in:))
             ?? claudeSessionID(from: process.command)
@@ -209,7 +211,7 @@ struct ActiveAgentProcessDiscovery {
         }
 
         var snapshot = ProcessSnapshot(
-            tool: .claudeCode,
+            tool: isQwen ? .qwenCode : .claudeCode,
             sessionID: sessionID,
             workingDirectory: workingDirectory,
             terminalTTY: process.terminalTTY,
@@ -233,8 +235,14 @@ struct ActiveAgentProcessDiscovery {
         return snapshot
     }
 
-    private func bestClaudeTranscriptPath(in lsofOutput: String, workingDirectory: String?) -> String? {
-        let paths = allMatchingPaths(in: lsofOutput, containing: "/.claude/projects/", suffix: ".jsonl")
+    private func bestClaudeTranscriptPath(in lsofOutput: String, workingDirectory: String?, isQwen: Bool = false) -> String? {
+        let paths: [String]
+        if isQwen {
+            paths = allMatchingPaths(in: lsofOutput, containing: "/.qwen/projects/", suffix: ".jsonl")
+        } else {
+            paths = allMatchingPaths(in: lsofOutput, containing: "/.claude/projects/", suffix: ".jsonl")
+        }
+        
         guard !paths.isEmpty else {
             return nil
         }
@@ -261,11 +269,12 @@ struct ActiveAgentProcessDiscovery {
             }
 
             let value = String(line.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard value.contains(fragment), value.hasSuffix(suffix) else {
+            let unescaped = unescapeLSOF(value)
+            guard unescaped.contains(fragment), unescaped.hasSuffix(suffix) else {
                 continue
             }
 
-            results.append(value)
+            results.append(unescaped)
         }
 
         return results
@@ -395,12 +404,54 @@ struct ActiveAgentProcessDiscovery {
             }
 
             let value = String(nextLine.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines)
-            if value.hasPrefix("/") {
-                return value
+            let unescaped = unescapeLSOF(value)
+            if unescaped.hasPrefix("/") {
+                return unescaped
             }
         }
 
         return nil
+    }
+
+    private func unescapeLSOF(_ string: String) -> String {
+        var result = ""
+        var i = string.startIndex
+        var bytes: [UInt8] = []
+
+        func flushBytes() {
+            if !bytes.isEmpty {
+                if let s = String(bytes: bytes, encoding: .utf8) {
+                    result += s
+                } else {
+                    for b in bytes {
+                        result += String(format: "\\x%02x", b)
+                    }
+                }
+                bytes.removeAll()
+            }
+        }
+
+        while i < string.endIndex {
+            if string[i] == "\\" {
+                let nextI = string.index(after: i)
+                if nextI < string.endIndex, string[nextI] == "x" {
+                    let hexStart = string.index(after: nextI)
+                    if let hexEnd = string.index(hexStart, offsetBy: 2, limitedBy: string.endIndex) {
+                        let hexStr = string[hexStart..<hexEnd]
+                        if let byte = UInt8(hexStr, radix: 16) {
+                            bytes.append(byte)
+                            i = hexEnd
+                            continue
+                        }
+                    }
+                }
+            }
+            flushBytes()
+            result.append(string[i])
+            i = string.index(after: i)
+        }
+        flushBytes()
+        return result
     }
 
     private func matchingPath(in lsofOutput: String, containing fragment: String, suffix: String) -> String? {
@@ -410,11 +461,12 @@ struct ActiveAgentProcessDiscovery {
             }
 
             let value = String(line.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard value.contains(fragment), value.hasSuffix(suffix) else {
+            let unescaped = unescapeLSOF(value)
+            guard unescaped.contains(fragment), unescaped.hasSuffix(suffix) else {
                 continue
             }
 
-            return value
+            return unescaped
         }
 
         return nil
@@ -500,17 +552,29 @@ struct ActiveAgentProcessDiscovery {
             || lowered.contains("/.opencode")
     }
 
-    private func isClaudeProcess(command: String) -> Bool {
+    private func isAgentProcess(command: String) -> Bool {
         let lowered = command.lowercased()
-        if lowered.contains("/.local/bin/claude") {
+        
+        if lowered.contains("/bin/claude") || lowered.contains("/bin/qwen") || lowered.contains("/.local/bin/claude") || lowered.contains("/.local/bin/qwen") {
             return true
         }
 
-        guard let firstToken = lowered.split(separator: " ").first else {
+        let tokens = lowered.split(separator: " ").map(String.init)
+        guard let firstToken = tokens.first else {
             return false
         }
 
-        return firstToken == "claude"
+        if firstToken == "claude" || firstToken == "qwen" || firstToken == "qwen-cli" {
+            return true
+        }
+
+        if firstToken == "node" || firstToken.hasSuffix("/node") || firstToken == "npx" || firstToken == "bun" || firstToken == "npm" || firstToken == "pnpm" || firstToken == "yarn" {
+            if lowered.contains("claude") || lowered.contains("qwen") {
+                return true
+            }
+        }
+
+        return false
     }
 
     private static func commandOutput(executablePath: String, arguments: [String]) -> String? {
