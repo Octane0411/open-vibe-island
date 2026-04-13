@@ -10,6 +10,7 @@ final class AppModel {
     private static let soundMutedDefaultsKey = "overlay.sound.muted"
     private static let showDockIconDefaultsKey = "app.showDockIcon"
     private static let hapticFeedbackEnabledDefaultsKey = "app.hapticFeedbackEnabled"
+    private static let showMediaStripDefaultsKey = "display.showMediaStrip"
     private static let islandAppearanceModeDefaultsKey = "appearance.island.mode"
     private static let islandClosedDisplayStyleDefaultsKey = "appearance.island.closedDisplayStyle"
     private static let islandHideIdleToEdgeDefaultsKey = "appearance.island.hideIdleToEdge"
@@ -49,6 +50,8 @@ final class AppModel {
     let discovery = SessionDiscoveryCoordinator()
     let monitoring = ProcessMonitoringCoordinator()
     let updateChecker = UpdateChecker()
+    let nowPlayingObserver = NowPlayingObserver()
+    let artworkCache = ArtworkCache()
 
     var notchStatus: NotchStatus {
         get { overlay.notchStatus }
@@ -191,6 +194,12 @@ final class AppModel {
         didSet {
             guard hasFinishedInit, hapticFeedbackEnabled != oldValue else { return }
             UserDefaults.standard.set(hapticFeedbackEnabled, forKey: Self.hapticFeedbackEnabledDefaultsKey)
+        }
+    }
+    var showMediaStrip: Bool = true {
+        didSet {
+            guard hasFinishedInit, showMediaStrip != oldValue else { return }
+            UserDefaults.standard.set(showMediaStrip, forKey: Self.showMediaStripDefaultsKey)
         }
     }
     var isSoundMuted = false {
@@ -416,11 +425,13 @@ final class AppModel {
         UserDefaults.standard.register(defaults: [
             Self.showDockIconDefaultsKey: true,
             Self.hapticFeedbackEnabledDefaultsKey: false,
+            Self.showMediaStripDefaultsKey: true,
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
         showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
         hapticFeedbackEnabled = UserDefaults.standard.bool(forKey: Self.hapticFeedbackEnabledDefaultsKey)
+        showMediaStrip = UserDefaults.standard.bool(forKey: Self.showMediaStripDefaultsKey)
         islandAppearanceMode = IslandAppearanceMode(
             rawValue: UserDefaults.standard.string(forKey: Self.islandAppearanceModeDefaultsKey) ?? ""
         ) ?? .default
@@ -684,6 +695,7 @@ final class AppModel {
             hooks.refreshCodexUsageState()
             hooks.startCodexUsageMonitoringIfNeeded()
             updateChecker.startIfNeeded()
+            nowPlayingObserver.start()
 
         } else {
             isResolvingInitialLiveSessions = false
@@ -1309,6 +1321,7 @@ final class AppModel {
     }
 
     func quitApplication() {
+        nowPlayingObserver.stop()
         NSApplication.shared.terminate(nil)
     }
 

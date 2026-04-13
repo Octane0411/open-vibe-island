@@ -468,6 +468,15 @@ struct IslandPanelView: View {
             } else {
                 sessionList
             }
+            if model.showMediaStrip && model.nowPlayingObserver.state.hasContent {
+                Divider().opacity(0.3)
+                MediaStripView(
+                    state: model.nowPlayingObserver.state,
+                    artworkCache: model.artworkCache
+                )
+                .padding(.horizontal, 8)
+                .padding(.bottom, 6)
+            }
         }
         .padding(.horizontal, 18)
         .padding(.top, 8)
@@ -518,6 +527,7 @@ struct IslandPanelView: View {
     }
 
     private static let maxSessionListHeight: CGFloat = 560
+    private static let mediaStripReservedHeight: CGFloat = 64
 
     private var sessionList: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in

@@ -245,6 +245,13 @@ struct DisplaySettingsPane: View {
                     LabeledContent(lang.t("settings.display.layoutMode"), value: diag.modeDescription)
                 }
             }
+
+            Section("Media") {
+                Toggle("Show media strip", isOn: Binding(
+                    get: { model.showMediaStrip },
+                    set: { model.showMediaStrip = $0 }
+                ))
+            }
         }
         .formStyle(.grouped)
         .navigationTitle(lang.t("settings.tab.display"))
