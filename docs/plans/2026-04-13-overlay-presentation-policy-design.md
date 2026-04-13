@@ -335,3 +335,9 @@
 - 同时修复手工显示器选择会被错误清空的问题
 
 这样可以把当前“胶囊 = 外接屏 fallback”这层历史耦合拆掉，为后续形态控制、显示器切换与交互稳定性建立更清晰的边界。
+
+## 回滚策略
+
+- **设计级回滚**：若策略维度被放弃，删除 `OverlayPresentationPolicy` / `OverlayPresentationMode` 两个类型，让 `resolvePlacementMode` 退回“有刘海 ⇒ 岛、其它 ⇒ 胶囊”的直推规则，`OverlayUICoordinator` 去掉 policy 字段与 UserDefaults 读写。
+- **向后兼容**：持久化键 `overlay.presentation.policy` 在设计下是 rawValue；若回滚移除枚举则需在启动时直接忽略该键，保留其余显示器相关键（`overlay.display.selection`、`overlay.pill.position.*`）不动。
+- **关联 PR**：参考落地计划文档顶部的“实施状态”提交列表来确定回滚的粒度。

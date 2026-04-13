@@ -312,3 +312,9 @@ git add docs/plans/2026-04-11-top-bar-hover-drag-design.md \
   docs/plans/2026-04-09-external-display-shell-split-design.md
 git commit -m "docs: record top-bar hover drag plan"
 ```
+
+## 回滚策略
+
+- **回滚范围**：本计划的代码改动集中在 `OverlayPanelController`（hover-opened drag 捕获 + dragStartPlan 分支）与 `OverlayUICoordinator`（`dragStartPlan` 决策）。通过 `git revert` 对应提交即可恢复“展开态不可拖拽”的旧行为。
+- **无持久化风险**：没有引入新的 UserDefaults 键或设置项；现有 `overlay.pill.position.*` 存储在拖拽结束时写入，回滚后读写路径仍向后兼容。
+- **回滚判定**：若用户反馈 hover-opened 拖动与点击打开发生语义冲突，可先只回滚 `dragStartPlan` 分支而保留闭合药丸拖拽能力；相应单元测试 (`hoverOpenedTopBarDragStartClosesImmediately` / `clickOpenedTopBarDragStartDoesNotCloseImmediately`) 可作为回滚是否彻底的校验锚点。

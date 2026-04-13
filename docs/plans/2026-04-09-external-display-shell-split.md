@@ -414,3 +414,10 @@ git add Sources/OpenIslandApp/OverlayPanelController.swift \
   docs/plans/2026-04-09-external-display-shell-split.md
 git commit -m "fix: suppress hover open during top-bar drag press"
 ```
+
+## 回滚策略
+
+- **壳层拆分部分**：`NotchClosedShell` / `TopBarClosedShell` 以及 `OverlayClosedShellMetrics.forMode` 是纯加法；若需要回滚，可以让 `IslandPanelView` 的 closed 分支重新走合并后的老路径，再删除这两个视图文件。
+- **hover+drag 部分**：对应的 `OverlayPanelController` / `OverlayUICoordinator` 改动与 `2026-04-11-top-bar-hover-drag` 计划共享回滚面，参见那份计划的“回滚策略”。
+- **持久化**：本计划未新增 UserDefaults 键，也未变动 `overlay.pill.position.*` 的 schema，回滚无数据迁移负担。
+- **测试锚点**：`OverlayClosedShellMetricsTests` 的 notch/topBar 分家用例是结构回归的最小校验集，可作为回滚彻底性的快速 smoke。

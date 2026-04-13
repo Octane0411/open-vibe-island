@@ -219,3 +219,9 @@
 - 拆分模式相关的定位与命中策略
 
 这样既能保持产品语义一致，也能让外接显示器真正作为独立表现面来演进。
+
+## 回滚策略
+
+- **结构回滚**：重新把 `NotchClosedShell` / `TopBarClosedShell` 内联回 `IslandPanelView` 的 closed 分支，并让 `OverlayPlacementStrategy` 退化到单一 case。由于 opened-state 内容始终只有一份，回滚不会触及共享内容的渲染路径。
+- **视觉回归**：若回滚是因为胶囊的紧凑度或刘海的几何被意外变更，可以只还原 `OverlayClosedShellMetrics.forMode(...)` 的具体常量，而保留壳层拆分带来的结构收益。
+- **兼容性**：本设计未引入新的数据契约与持久化键，仅重排渲染拓扑，因此回滚仅为代码层面的改动，不牵涉磁盘状态。

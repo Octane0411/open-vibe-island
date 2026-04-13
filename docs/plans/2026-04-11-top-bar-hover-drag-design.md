@@ -211,3 +211,9 @@
 - 越过拖动阈值的同一帧必须把从初始按下点累计出来的位移立即应用到 collapsed pill；如果只是先切回 `closed`、下一帧再继续拖，用户体感会像“面板根本拖不动”。
 - 运行时排查这条链路时，可打开 `defaults write app.openisland.dev overlay.debug.drag -bool YES`；日志会写入 `OSLog` 的 `OverlayDrag` category，覆盖 `hitTest -> mouseDown -> mouseDragged -> collapse -> moveDraggedPanel -> mouseUp`。
 - 这条链路在 `NSHostingView.mouseDown` 中读取到的是 flipped 事件坐标；如果直接拿它去复用 opened-header 热区判断，会与 `hitTest` 使用的 overlay 几何坐标不一致，表现为“命中 header，但按下后不会进入拖动”。实现上必须先把事件点归一化回 overlay 几何坐标。
+
+## 回滚策略
+
+- **设计级回滚**：若 hover-open + drag 的交互带来回归，最稳妥的退路是重新让展开态 header 不响应 `mouseDown`，拖动入口仅保留在闭合药丸上。
+- **关联文件**：`OverlayPanelController` 的 header 命中区分支、`OverlayUICoordinator.dragStartPlan`、以及 `shouldCaptureOpenedTopBarHeaderDrag` 测试桩可作为回滚定位点。
+- **兼容性**：本设计没有引入新的持久化状态，因此回滚不需要数据迁移；拖拽位置仍由 `OverlayPillPositionStore` 独立持久化，互不影响。

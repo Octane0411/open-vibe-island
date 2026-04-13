@@ -572,3 +572,10 @@ Expected: 无空白错误；仅保留本轮预期改动。
 git add docs/index.md docs/plans/2026-04-13-overlay-presentation-policy-design.md docs/plans/2026-04-13-overlay-presentation-policy.md
 git commit -m "docs: finalize overlay presentation policy plan"
 ```
+
+## 回滚策略
+
+- **回滚范围**：本计划引入的四个落地提交——`b52329f`（model）、`52302ae`（settings）、`3b067a7`（preserve manual fallback）、`431d044`（drive layout by mode）——可通过 `git revert` 按倒序单独撤销。
+- **持久化清理**：用户已配置的 `overlay.presentation.policy` UserDefaults 键在回滚后会被忽略（模型不再存在即视为默认 `automaticIslandWhenNotched`），无需主动清理；不会影响拖拽锚点（`overlay.pill.position.<screenID>`）等独立持久化状态。
+- **数据兼容**：`overlayDisplaySelectionID` 的手工选择语义在整个 PR 中未改变，只在 fallback 分支上加了保留逻辑，回滚后退化为旧的 auto-fallback 行为，不会丢失用户的持久化选择。
+- **验证**：`swift test` 全量通过 + 手工切换 `Always Island / Always Pill / Automatic` 观察外接屏形态随之变化。
