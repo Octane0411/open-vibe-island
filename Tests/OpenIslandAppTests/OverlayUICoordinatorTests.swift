@@ -20,6 +20,24 @@ struct OverlayUICoordinatorTests {
     }
 
     @Test
+    @MainActor
+    func applyingDisplayOptionsPreservesMissingManualSelection() {
+        let coordinator = OverlayUICoordinator()
+
+        coordinator.overlayDisplaySelectionID = "display-external"
+        coordinator.applyOverlayDisplayOptions([
+            OverlayDisplayOption(
+                id: "display-built-in",
+                title: "Built-in Retina Display",
+                subtitle: "Built-in notch · 3024×1964"
+            )
+        ])
+
+        #expect(coordinator.overlayDisplaySelectionID == "display-external")
+        #expect(coordinator.overlayDisplayOptions.map(\.id) == ["display-built-in"])
+    }
+
+    @Test
     func hoverOpenedTopBarDragStartClosesImmediately() {
         let plan = OverlayUICoordinator.dragStartPlan(
             status: .opened,

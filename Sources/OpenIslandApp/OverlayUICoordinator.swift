@@ -432,16 +432,13 @@ final class OverlayUICoordinator {
 
     // MARK: - Display configuration
 
-    func refreshOverlayDisplayConfiguration() {
-        overlayDisplayOptions = overlayPanelController.availableDisplayOptions()
-
-        let validSelectionIDs = Set(overlayDisplayOptions.map(\.id))
-        if !validSelectionIDs.contains(overlayDisplaySelectionID) {
-            overlayDisplaySelectionID = OverlayDisplayOption.automaticID
-            return
-        }
-
+    func applyOverlayDisplayOptions(_ options: [OverlayDisplayOption]) {
+        overlayDisplayOptions = options
         refreshOverlayPlacement()
+    }
+
+    func refreshOverlayDisplayConfiguration() {
+        applyOverlayDisplayOptions(overlayPanelController.availableDisplayOptions())
     }
 
     func refreshOverlayPlacement() {

@@ -77,4 +77,26 @@ struct OverlayScreenSelectionResolverTests {
         #expect(resolved?.screenID == "display-built-in")
         #expect(resolved?.selectionSummary == "manual missing, auto fallback")
     }
+
+    @Test
+    func missingManualSelectionFallsBackToMainDisplayWhenNoNotchedScreen() {
+        let resolved = OverlayScreenSelectionResolver.resolve(
+            preferredScreenID: "display-missing",
+            screens: [
+                OverlayScreenSelectionCandidate(
+                    id: "display-external",
+                    isNotched: false,
+                    isMain: true
+                ),
+                OverlayScreenSelectionCandidate(
+                    id: "display-sidecar",
+                    isNotched: false,
+                    isMain: false
+                )
+            ]
+        )
+
+        #expect(resolved?.screenID == "display-external")
+        #expect(resolved?.selectionSummary == "manual missing, main fallback")
+    }
 }
