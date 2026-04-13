@@ -35,6 +35,22 @@ struct OverlayScreenSelectionResolverTests {
     }
 
     @Test
+    func alwaysPillUsesTopBarPlacementModeOnNotchedScreen() {
+        let mode = OverlayPresentationPolicy.alwaysPill
+            .resolvePlacementMode(screenCapability: .notched)
+
+        #expect(mode == .topBar)
+    }
+
+    @Test
+    func alwaysIslandUsesNotchPlacementModeOnPlainScreen() {
+        let mode = OverlayPresentationPolicy.alwaysIsland
+            .resolvePlacementMode(screenCapability: .plain)
+
+        #expect(mode == .notch)
+    }
+
+    @Test
     func automaticPrefersNotchedScreenOverMainDisplay() {
         let resolved = OverlayScreenSelectionResolver.resolve(
             preferredScreenID: nil,

@@ -1,4 +1,5 @@
 import CoreGraphics
+import AppKit
 import Testing
 @testable import OpenIslandApp
 
@@ -141,5 +142,14 @@ struct OverlayClosedShellMetricsTests {
         )
 
         #expect(metrics.openedHeaderHeight == 30)
+    }
+
+    @Test
+    func pillPresentationUsesCompactBaseSizeEvenOnNotchedScreen() {
+        let size = OverlayPresentationMode.pill.closedBaseSize(
+            physicalIslandBaseSize: NSSize(width: 210, height: 34)
+        )
+
+        #expect(size == NSSize(width: 56, height: 22))
     }
 }

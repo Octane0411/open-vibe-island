@@ -79,6 +79,13 @@
 "settings.display.diagnostics" = "Diagnostics";
 "settings.display.currentScreen" = "Current Screen";
 "settings.display.layoutMode" = "Layout Mode";
+"settings.display.screenCapability" = "Screen Capability";
+"settings.display.capability.notched" = "Notched";
+"settings.display.capability.plain" = "Plain";
+"settings.display.currentPresentationPolicy" = "Presentation Policy";
+"settings.display.currentPresentationMode" = "Actual Presentation";
+"settings.display.presentationMode.island" = "Island";
+"settings.display.presentationMode.pill" = "Pill";
 
 /* Settings - Sound */
 "settings.sound.notifications" = "Notification Sounds";

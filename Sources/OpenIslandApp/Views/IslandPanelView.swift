@@ -216,12 +216,28 @@ struct IslandPanelView: View {
         return NSScreen.main ?? NSScreen.screens.first
     }
 
+    private var currentPresentationMode: OverlayPresentationMode {
+        if let presentationMode = model.overlayPlacementDiagnostics?.presentationMode {
+            return presentationMode
+        }
+
+        guard let screen = targetOverlayScreen else {
+            return OverlayPresentationPolicy.defaultValue.resolvePresentationMode(
+                screenCapability: .plain
+            )
+        }
+
+        return model.overlayPresentationPolicy.resolvePresentationMode(
+            screenCapability: OverlayDisplayResolver.screenCapability(for: screen)
+        )
+    }
+
     private var usesNotchAwareOpenedHeader: Bool {
-        isNotchMode
+        currentPresentationMode == .island
     }
 
     private var currentPlacementMode: OverlayPlacementMode {
-        isNotchMode ? .notch : .topBar
+        currentPresentationMode.placementMode
     }
 
     private var closedShellMetrics: OverlayClosedShellMetrics {
@@ -232,14 +248,7 @@ struct IslandPanelView: View {
     }
 
     private var isNotchMode: Bool {
-        // Diagnostics (set by OverlayPanelController when presenting) is the
-        // authoritative source of truth for placement mode.  Only fall back
-        // to inspecting the current screen when diagnostics is unavailable
-        // (e.g. very early in launch, before the first `show()`).
-        if let mode = model.overlayPlacementDiagnostics?.mode {
-            return mode == .notch
-        }
-        return targetOverlayScreen?.safeAreaInsets.top ?? 0 > 0
+        currentPresentationMode == .island
     }
 
     private var openedHeaderButtonsWidth: CGFloat {
@@ -375,11 +384,23 @@ struct IslandPanelView: View {
     // MARK: - Closed state
 
     private var closedNotchWidth: CGFloat {
-        (targetOverlayScreen ?? NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }))?.notchSize.width ?? 56
+        guard let screen = targetOverlayScreen ?? NSScreen.screens.first else {
+            return 56
+        }
+
+        return currentPresentationMode.closedBaseSize(
+            physicalIslandBaseSize: screen.notchSize
+        ).width
     }
 
     private var closedNotchHeight: CGFloat {
-        (targetOverlayScreen ?? NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }))?.islandClosedHeight ?? 22
+        guard let screen = targetOverlayScreen ?? NSScreen.screens.first else {
+            return 22
+        }
+
+        return currentPresentationMode.closedBaseSize(
+            physicalIslandBaseSize: screen.notchSize
+        ).height
     }
 
     /// Header row height used in the **opened** state.  Decoupled from

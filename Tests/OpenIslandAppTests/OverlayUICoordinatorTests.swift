@@ -1,7 +1,16 @@
+import AppKit
 import Testing
 @testable import OpenIslandApp
 
 struct OverlayUICoordinatorTests {
+    @MainActor
+    private func makeDefaultsSuite() -> (defaults: UserDefaults, suiteName: String) {
+        let suiteName = "OpenIslandAppTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        return (defaults, suiteName)
+    }
+
     @Test
     @MainActor
     func presentationPolicyDefaultsToAutomaticIslandWhenNotched() {
@@ -21,6 +30,78 @@ struct OverlayUICoordinatorTests {
 
     @Test
     @MainActor
+    func restoreDisplayPreferenceReadsPersistedPresentationPolicy() {
+        let (defaults, suiteName) = makeDefaultsSuite()
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        defaults.set(
+            OverlayPresentationPolicy.alwaysPill.rawValue,
+            forKey: OverlayUICoordinator.overlayPresentationPolicyDefaultsKey
+        )
+
+        let coordinator = OverlayUICoordinator(defaults: defaults)
+        coordinator.restoreDisplayPreference(startMonitoring: false)
+
+        #expect(coordinator.overlayPresentationPolicy == .alwaysPill)
+    }
+
+    @Test
+    @MainActor
+    func restoreDisplayPreferenceFallsBackToDefaultForInvalidPersistedPolicy() {
+        let (defaults, suiteName) = makeDefaultsSuite()
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        defaults.set(
+            "invalid-policy",
+            forKey: OverlayUICoordinator.overlayPresentationPolicyDefaultsKey
+        )
+
+        let coordinator = OverlayUICoordinator(defaults: defaults)
+        coordinator.restoreDisplayPreference(startMonitoring: false)
+
+        #expect(coordinator.overlayPresentationPolicy == .automaticIslandWhenNotched)
+    }
+
+    @Test
+    @MainActor
+    func settingNonDefaultPresentationPolicyPersistsRawValue() {
+        let (defaults, suiteName) = makeDefaultsSuite()
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        let coordinator = OverlayUICoordinator(defaults: defaults)
+        coordinator.overlayPresentationPolicy = .alwaysIsland
+
+        #expect(
+            defaults.string(forKey: OverlayUICoordinator.overlayPresentationPolicyDefaultsKey)
+            == OverlayPresentationPolicy.alwaysIsland.rawValue
+        )
+    }
+
+    @Test
+    @MainActor
+    func settingDefaultPresentationPolicyClearsPersistedValue() {
+        let (defaults, suiteName) = makeDefaultsSuite()
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        let coordinator = OverlayUICoordinator(defaults: defaults)
+        coordinator.overlayPresentationPolicy = .alwaysIsland
+        coordinator.overlayPresentationPolicy = .defaultValue
+
+        #expect(
+            defaults.object(forKey: OverlayUICoordinator.overlayPresentationPolicyDefaultsKey) == nil
+        )
+    }
+
+    @Test
+    @MainActor
     func applyingDisplayOptionsPreservesMissingManualSelection() {
         let coordinator = OverlayUICoordinator()
 
@@ -35,6 +116,27 @@ struct OverlayUICoordinatorTests {
 
         #expect(coordinator.overlayDisplaySelectionID == "display-external")
         #expect(coordinator.overlayDisplayOptions.map(\.id) == ["display-built-in"])
+    }
+
+    @Test
+    func diagnosticsCarryResolvedPresentationMode() {
+        let diagnostics = OverlayPlacementDiagnostics(
+            targetScreenID: "display-1",
+            targetScreenName: "Built-in Retina Display",
+            selectionSummary: "automatic",
+            mode: .notch,
+            screenCapability: .notched,
+            presentationPolicy: .alwaysPill,
+            presentationMode: .pill,
+            screenFrame: .zero,
+            visibleFrame: .zero,
+            safeAreaInsets: NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0),
+            overlayFrame: .zero
+        )
+
+        #expect(diagnostics.screenCapability == .notched)
+        #expect(diagnostics.presentationPolicy == .alwaysPill)
+        #expect(diagnostics.presentationMode == .pill)
     }
 
     @Test

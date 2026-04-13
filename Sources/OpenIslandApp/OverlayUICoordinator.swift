@@ -6,8 +6,8 @@ import OpenIslandCore
 @MainActor
 @Observable
 final class OverlayUICoordinator {
-    private static let overlayDisplayPreferenceDefaultsKey = "overlay.display.preference"
-    private static let overlayPresentationPolicyDefaultsKey = "overlay.presentation.policy"
+    static let overlayDisplayPreferenceDefaultsKey = "overlay.display.preference"
+    static let overlayPresentationPolicyDefaultsKey = "overlay.presentation.policy"
 
     enum InteractionUpdatePlan: Equatable {
         case setInteractive(Bool)
@@ -80,6 +80,9 @@ final class OverlayUICoordinator {
     let overlayPanelController = OverlayPanelController()
 
     @ObservationIgnored
+    private let defaults: UserDefaults
+
+    @ObservationIgnored
     private var overlayTransitionGeneration: UInt64 = 0
 
     @ObservationIgnored
@@ -114,6 +117,10 @@ final class OverlayUICoordinator {
 
     @ObservationIgnored
     private var activeAppObserver: Any?
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
 
     nonisolated static func interactionUpdatePlan(
         requestedInteractive: Bool,
@@ -171,8 +178,7 @@ final class OverlayUICoordinator {
 
     // MARK: - Initialization
 
-    func restoreDisplayPreference() {
-        let defaults = UserDefaults.standard
+    func restoreDisplayPreference(startMonitoring: Bool = true) {
         overlayDisplaySelectionID = defaults.string(
             forKey: Self.overlayDisplayPreferenceDefaultsKey
         ) ?? OverlayDisplayOption.automaticID
@@ -181,7 +187,9 @@ final class OverlayUICoordinator {
         )
         .flatMap(OverlayPresentationPolicy.init(rawValue:))
         ?? .defaultValue
-        startScreenMonitoring()
+        if startMonitoring {
+            startScreenMonitoring()
+        }
     }
 
     private func startScreenMonitoring() {
@@ -232,7 +240,9 @@ final class OverlayUICoordinator {
             },
             onPlacementResolved: { [weak self] in
                 guard let self, let overlayPlacementDiagnostics else { return }
-                self.onStatusMessage?("Overlay showing on \(overlayPlacementDiagnostics.targetScreenName) as \(overlayPlacementDiagnostics.modeDescription.lowercased()).")
+                self.onStatusMessage?(
+                    "Overlay targeting \(overlayPlacementDiagnostics.targetScreenName) with resolved \(overlayPlacementDiagnostics.presentationModeDescription.lowercased()) presentation."
+                )
             }
         )
     }
@@ -257,7 +267,8 @@ final class OverlayUICoordinator {
     func beginTopBarHoverDrag() {
         let placementMode = overlayPlacementDiagnostics?.mode
             ?? overlayPanelController.placementDiagnostics(
-                preferredScreenID: preferredOverlayScreenID
+                preferredScreenID: preferredOverlayScreenID,
+                presentationPolicy: overlayPresentationPolicy
             )?.mode
             ?? .notch
 
@@ -316,7 +327,8 @@ final class OverlayUICoordinator {
         }
         let placementMode = overlayPlacementDiagnostics?.mode
             ?? overlayPanelController.placementDiagnostics(
-                preferredScreenID: preferredOverlayScreenID
+                preferredScreenID: preferredOverlayScreenID,
+                presentationPolicy: overlayPresentationPolicy
             )?.mode
             ?? .notch
         let closeTransitionPlan = Self.closeTransitionPlan(
@@ -327,7 +339,8 @@ final class OverlayUICoordinator {
         )
         let deferredTopBarCloseContext = closeTransitionPlan == .deferTopBarFrameSync
             ? overlayPanelController.topBarCloseTransitionContext(
-                preferredScreenID: preferredOverlayScreenID
+                preferredScreenID: preferredOverlayScreenID,
+                presentationPolicy: overlayPresentationPolicy
             )
             : nil
 
@@ -352,7 +365,8 @@ final class OverlayUICoordinator {
             )
             overlayPlacementDiagnostics = overlayPanelController.show(
                 model: appModel,
-                preferredScreenID: preferredOverlayScreenID
+                preferredScreenID: preferredOverlayScreenID,
+                presentationPolicy: overlayPresentationPolicy
             )
             afterStateChange?()
             onPlacementResolved?()
@@ -368,7 +382,8 @@ final class OverlayUICoordinator {
             ) { [weak self] in
                 guard let self, self.overlayTransitionGeneration == capturedGeneration else { return }
                 self.overlayPlacementDiagnostics = self.overlayPanelController.reposition(
-                    preferredScreenID: self.preferredOverlayScreenID
+                    preferredScreenID: self.preferredOverlayScreenID,
+                    presentationPolicy: self.overlayPresentationPolicy
                 )
                 self.clearCloseTransitionState()
                 self.overlayPanelController.setInteractive(true)
@@ -409,7 +424,11 @@ final class OverlayUICoordinator {
 
     func ensureOverlayPanel() {
         guard let appModel else { return }
-        overlayPanelController.ensurePanel(model: appModel, preferredScreenID: preferredOverlayScreenID)
+        overlayPanelController.ensurePanel(
+            model: appModel,
+            preferredScreenID: preferredOverlayScreenID,
+            presentationPolicy: overlayPresentationPolicy
+        )
     }
 
     // Legacy compatibility
@@ -446,7 +465,8 @@ final class OverlayUICoordinator {
             return
         }
         overlayPlacementDiagnostics = overlayPanelController.reposition(
-            preferredScreenID: preferredOverlayScreenID
+            preferredScreenID: preferredOverlayScreenID,
+            presentationPolicy: overlayPresentationPolicy
         )
     }
 
@@ -614,7 +634,8 @@ final class OverlayUICoordinator {
         // Immediate interactivity update.
         let placementMode = overlayPlacementDiagnostics?.mode
             ?? overlayPanelController.placementDiagnostics(
-                preferredScreenID: preferredOverlayScreenID
+                preferredScreenID: preferredOverlayScreenID,
+                presentationPolicy: overlayPresentationPolicy
             )?.mode
             ?? .notch
         let interactive = OverlayPanelController.acceptsDirectMouseInteraction(
@@ -636,7 +657,8 @@ final class OverlayUICoordinator {
             case .opened:
                 self.overlayPlacementDiagnostics = self.overlayPanelController.show(
                     model: appModel,
-                    preferredScreenID: self.preferredOverlayScreenID
+                    preferredScreenID: self.preferredOverlayScreenID,
+                    presentationPolicy: self.overlayPresentationPolicy
                 )
             case .closed, .popping:
                 self.refreshOverlayPlacement()
@@ -648,7 +670,6 @@ final class OverlayUICoordinator {
     // MARK: - Persistence
 
     private func persistOverlayDisplayPreference() {
-        let defaults = UserDefaults.standard
         if overlayDisplaySelectionID == OverlayDisplayOption.automaticID {
             defaults.removeObject(forKey: Self.overlayDisplayPreferenceDefaultsKey)
         } else {
@@ -660,7 +681,6 @@ final class OverlayUICoordinator {
     }
 
     private func persistOverlayPresentationPolicy() {
-        let defaults = UserDefaults.standard
         if overlayPresentationPolicy == .defaultValue {
             defaults.removeObject(forKey: Self.overlayPresentationPolicyDefaultsKey)
         } else {
@@ -685,7 +705,8 @@ final class OverlayUICoordinator {
             overlayPanelController.setInteractive(interactive)
         case .repositionThenSetInteractive(let interactive):
             overlayPlacementDiagnostics = overlayPanelController.reposition(
-                preferredScreenID: preferredOverlayScreenID
+                preferredScreenID: preferredOverlayScreenID,
+                presentationPolicy: overlayPresentationPolicy
             )
             overlayPanelController.setInteractive(interactive)
         }

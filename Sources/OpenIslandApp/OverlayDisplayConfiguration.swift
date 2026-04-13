@@ -24,6 +24,26 @@ enum OverlayPresentationPolicy: String, Equatable, CaseIterable {
 enum OverlayPresentationMode: Equatable {
     case island
     case pill
+
+    private static let compactPillBaseSize = NSSize(width: 56, height: 22)
+
+    var placementMode: OverlayPlacementMode {
+        switch self {
+        case .island:
+            return .notch
+        case .pill:
+            return .topBar
+        }
+    }
+
+    func closedBaseSize(physicalIslandBaseSize: NSSize) -> NSSize {
+        switch self {
+        case .island:
+            return physicalIslandBaseSize
+        case .pill:
+            return Self.compactPillBaseSize
+        }
+    }
 }
 
 extension OverlayPresentationPolicy {
@@ -39,6 +59,14 @@ extension OverlayPresentationPolicy {
             return .pill
         }
     }
+
+    func resolvePlacementMode(
+        screenCapability: OverlayScreenCapability
+    ) -> OverlayPlacementMode {
+        resolvePresentationMode(
+            screenCapability: screenCapability
+        ).placementMode
+    }
 }
 
 enum OverlayPlacementMode: String, Equatable {
@@ -51,6 +79,9 @@ struct OverlayPlacementDiagnostics {
     let targetScreenName: String
     let selectionSummary: String
     let mode: OverlayPlacementMode
+    let screenCapability: OverlayScreenCapability
+    let presentationPolicy: OverlayPresentationPolicy
+    let presentationMode: OverlayPresentationMode
     let screenFrame: NSRect
     let visibleFrame: NSRect
     let safeAreaInsets: NSEdgeInsets
@@ -62,6 +93,35 @@ struct OverlayPlacementDiagnostics {
 
     var modeDescription: String {
         mode.rawValue
+    }
+
+    var screenCapabilityDescription: String {
+        switch screenCapability {
+        case .notched:
+            return "Notched"
+        case .plain:
+            return "Plain"
+        }
+    }
+
+    var presentationPolicyDescription: String {
+        switch presentationPolicy {
+        case .alwaysIsland:
+            return "Always island"
+        case .automaticIslandWhenNotched:
+            return "Island when notched"
+        case .alwaysPill:
+            return "Always pill"
+        }
+    }
+
+    var presentationModeDescription: String {
+        switch presentationMode {
+        case .island:
+            return "Island"
+        case .pill:
+            return "Pill"
+        }
     }
 
     var screenFrameDescription: String {
@@ -102,19 +162,36 @@ enum OverlayDisplayResolver {
         }
     }
 
-    static func diagnostics(preferredScreenID: String?, panelSize: NSSize) -> OverlayPlacementDiagnostics? {
+    static func diagnostics(
+        preferredScreenID: String?,
+        panelSize: NSSize,
+        presentationPolicy: OverlayPresentationPolicy
+    ) -> OverlayPlacementDiagnostics? {
         guard let resolvedScreen = resolveScreen(preferredScreenID: preferredScreenID) else {
             return nil
         }
 
         let screen = resolvedScreen.screen
-        let overlayFrame = frame(for: screen, panelSize: panelSize)
+        let screenCapability = screenCapability(for: screen)
+        let placementMode = presentationPolicy.resolvePlacementMode(
+            screenCapability: screenCapability
+        )
+        let overlayFrame = frame(
+            for: screen,
+            panelSize: panelSize,
+            placementMode: placementMode
+        )
 
         return OverlayPlacementDiagnostics(
             targetScreenID: screenID(for: screen),
             targetScreenName: screen.localizedName,
             selectionSummary: resolvedScreen.selectionSummary,
-            mode: placementMode(for: screen),
+            mode: placementMode,
+            screenCapability: screenCapability,
+            presentationPolicy: presentationPolicy,
+            presentationMode: presentationPolicy.resolvePresentationMode(
+                screenCapability: screenCapability
+            ),
             screenFrame: screen.frame,
             visibleFrame: screen.visibleFrame,
             safeAreaInsets: screen.safeAreaInsets,
@@ -122,13 +199,17 @@ enum OverlayDisplayResolver {
         )
     }
 
-    private static func frame(for screen: NSScreen, panelSize: NSSize) -> NSRect {
+    private static func frame(
+        for screen: NSScreen,
+        panelSize: NSSize,
+        placementMode: OverlayPlacementMode
+    ) -> NSRect {
         let width = min(panelSize.width, screen.visibleFrame.width - 64)
         let height = panelSize.height
         let x = screen.frame.midX - (width / 2)
 
         let y: CGFloat
-        switch placementMode(for: screen) {
+        switch placementMode {
         case .notch:
             y = screen.frame.maxY - height
         case .topBar:

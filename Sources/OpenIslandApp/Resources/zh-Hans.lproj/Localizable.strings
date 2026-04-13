@@ -79,6 +79,13 @@
 "settings.display.diagnostics" = "诊断";
 "settings.display.currentScreen" = "当前屏幕";
 "settings.display.layoutMode" = "布局模式";
+"settings.display.screenCapability" = "屏幕能力";
+"settings.display.capability.notched" = "有刘海";
+"settings.display.capability.plain" = "普通屏幕";
+"settings.display.currentPresentationPolicy" = "当前形态策略";
+"settings.display.currentPresentationMode" = "当前实际形态";
+"settings.display.presentationMode.island" = "岛";
+"settings.display.presentationMode.pill" = "胶囊";
 
 /* Settings - Sound */
 "settings.sound.notifications" = "通知音效";

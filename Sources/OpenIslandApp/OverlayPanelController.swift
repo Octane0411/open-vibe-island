@@ -87,6 +87,7 @@ final class OverlayPanelController {
     private var hoverCancelGrace: DispatchWorkItem?
     private var isPressingClosedTopBarPill = false
     private var hasDeferredPlacementRefreshDuringClosedTopBarPress = false
+    private var presentationPolicy = OverlayPresentationPolicy.defaultValue
     weak var model: AppModel?
     private(set) var notchRect: NSRect = .zero
 
@@ -299,13 +300,26 @@ final class OverlayPanelController {
         OverlayDisplayResolver.availableDisplayOptions()
     }
 
-    func ensurePanel(model: AppModel, preferredScreenID: String?) {
+    func ensurePanel(
+        model: AppModel,
+        preferredScreenID: String?,
+        presentationPolicy: OverlayPresentationPolicy
+    ) {
         self.model = model
+        self.presentationPolicy = presentationPolicy
         let panel = self.panel ?? makePanel(model: model)
         self.panel = panel
-        positionPanel(panel, preferredScreenID: preferredScreenID, animated: false)
+        positionPanel(
+            panel,
+            preferredScreenID: preferredScreenID,
+            presentationPolicy: presentationPolicy,
+            animated: false
+        )
         panel.orderFrontRegardless()
-        let mode = placementDiagnostics(preferredScreenID: preferredScreenID)?.mode ?? .notch
+        let mode = placementDiagnostics(
+            preferredScreenID: preferredScreenID,
+            presentationPolicy: presentationPolicy
+        )?.mode ?? .notch
         let interactive = Self.acceptsDirectMouseInteraction(
             status: model.notchStatus,
             mode: mode
@@ -315,11 +329,21 @@ final class OverlayPanelController {
         startEventMonitoring()
     }
 
-    func show(model: AppModel, preferredScreenID: String?) -> OverlayPlacementDiagnostics? {
+    func show(
+        model: AppModel,
+        preferredScreenID: String?,
+        presentationPolicy: OverlayPresentationPolicy
+    ) -> OverlayPlacementDiagnostics? {
         self.model = model
+        self.presentationPolicy = presentationPolicy
         let panel = self.panel ?? makePanel(model: model)
         self.panel = panel
-        let diagnostics = positionPanel(panel, preferredScreenID: preferredScreenID, animated: true)
+        let diagnostics = positionPanel(
+            panel,
+            preferredScreenID: preferredScreenID,
+            presentationPolicy: presentationPolicy,
+            animated: true
+        )
         presentPanel(panel, activates: Self.shouldActivatePanel(for: model.notchOpenReason))
         panel.ignoresMouseEvents = false
         panel.acceptsMouseMovedEvents = true
@@ -345,20 +369,43 @@ final class OverlayPanelController {
         }
     }
 
-    func reposition(preferredScreenID: String?) -> OverlayPlacementDiagnostics? {
+    func reposition(
+        preferredScreenID: String?,
+        presentationPolicy: OverlayPresentationPolicy
+    ) -> OverlayPlacementDiagnostics? {
+        self.presentationPolicy = presentationPolicy
         guard let panel else {
-            return placementDiagnostics(preferredScreenID: preferredScreenID)
+            return placementDiagnostics(
+                preferredScreenID: preferredScreenID,
+                presentationPolicy: presentationPolicy
+            )
         }
 
-        return positionPanel(panel, preferredScreenID: preferredScreenID, animated: true)
+        return positionPanel(
+            panel,
+            preferredScreenID: preferredScreenID,
+            presentationPolicy: presentationPolicy,
+            animated: true
+        )
     }
 
-    func placementDiagnostics(preferredScreenID: String?) -> OverlayPlacementDiagnostics? {
+    func placementDiagnostics(
+        preferredScreenID: String?,
+        presentationPolicy: OverlayPresentationPolicy
+    ) -> OverlayPlacementDiagnostics? {
+        self.presentationPolicy = presentationPolicy
         let panelSize = panel?.frame.size ?? OverlayDisplayResolver.defaultPanelSize
-        return OverlayDisplayResolver.diagnostics(preferredScreenID: preferredScreenID, panelSize: panelSize)
+        return OverlayDisplayResolver.diagnostics(
+            preferredScreenID: preferredScreenID,
+            panelSize: panelSize,
+            presentationPolicy: presentationPolicy
+        )
     }
 
-    func topBarCloseTransitionContext(preferredScreenID: String?) -> CloseTransitionContext? {
+    func topBarCloseTransitionContext(
+        preferredScreenID: String?,
+        presentationPolicy: OverlayPresentationPolicy
+    ) -> CloseTransitionContext? {
         guard let model,
               let panel,
               let screen = resolveTargetScreen(preferredScreenID: preferredScreenID) else {
@@ -371,7 +418,7 @@ final class OverlayPanelController {
         }
 
         let closedWidth = closedPanelWidth(for: model, on: screen)
-        let closedHeight = screen.islandClosedHeight
+        let closedHeight = currentClosedHeight(on: screen)
         let targetClosedShadowInsets = IslandChromeMetrics.panelShadowInsets(
             usesOpenedVisualState: false
         )
@@ -436,6 +483,7 @@ final class OverlayPanelController {
     private func positionPanel(
         _ panel: NSPanel,
         preferredScreenID: String?,
+        presentationPolicy: OverlayPresentationPolicy,
         animated: Bool
     ) -> OverlayPlacementDiagnostics? {
         guard let screen = resolveTargetScreen(preferredScreenID: preferredScreenID) else {
@@ -457,7 +505,8 @@ final class OverlayPanelController {
 
         return OverlayDisplayResolver.diagnostics(
             preferredScreenID: preferredScreenID,
-            panelSize: panel.frame.size
+            panelSize: panel.frame.size,
+            presentationPolicy: presentationPolicy
         )
     }
 
@@ -565,7 +614,10 @@ final class OverlayPanelController {
         }
 
         let mode = model.overlayPlacementDiagnostics?.mode
-            ?? placementDiagnostics(preferredScreenID: nil)?.mode
+            ?? placementDiagnostics(
+                preferredScreenID: nil,
+                presentationPolicy: presentationPolicy
+            )?.mode
             ?? .notch
 
         let dragRect = Self.openedTopBarHeaderDragRect(
@@ -714,7 +766,10 @@ final class OverlayPanelController {
 
         let inClosedSurfaceArea = isPointInClosedSurfaceArea(screenLocation)
         let mode = model.overlayPlacementDiagnostics?.mode
-            ?? placementDiagnostics(preferredScreenID: nil)?.mode
+            ?? placementDiagnostics(
+                preferredScreenID: nil,
+                presentationPolicy: presentationPolicy
+            )?.mode
             ?? .notch
 
         if Self.shouldArmClosedSurfaceHoverOpen(
@@ -743,7 +798,10 @@ final class OverlayPanelController {
 
         let inClosedSurfaceArea = isPointInClosedSurfaceArea(screenLocation)
         let mode = model.overlayPlacementDiagnostics?.mode
-            ?? placementDiagnostics(preferredScreenID: nil)?.mode
+            ?? placementDiagnostics(
+                preferredScreenID: nil,
+                presentationPolicy: presentationPolicy
+            )?.mode
             ?? .notch
 
         if model.notchStatus == .closed && inClosedSurfaceArea {
@@ -954,7 +1012,7 @@ final class OverlayPanelController {
         let strategy = placementStrategy(for: screen)
         let anchor = pillAnchor(on: screen)
         let closedWidth = closedPanelWidth(for: model, on: screen)
-        let closedHeight = screen.islandClosedHeight
+        let closedHeight = currentClosedHeight(on: screen)
         return strategy.closedHitRect(
             anchor: anchor,
             closedWidth: closedWidth,
@@ -973,7 +1031,23 @@ final class OverlayPanelController {
     }
 
     private func placementStrategy(for screen: NSScreen) -> OverlayPlacementStrategy {
-        OverlayPlacementStrategy(mode: OverlayDisplayResolver.placementMode(for: screen))
+        OverlayPlacementStrategy(mode: currentPresentationMode(on: screen).placementMode)
+    }
+
+    private func currentPresentationMode(on screen: NSScreen) -> OverlayPresentationMode {
+        presentationPolicy.resolvePresentationMode(
+            screenCapability: OverlayDisplayResolver.screenCapability(for: screen)
+        )
+    }
+
+    private func currentClosedBaseSize(on screen: NSScreen) -> CGSize {
+        currentPresentationMode(on: screen).closedBaseSize(
+            physicalIslandBaseSize: screen.notchSize
+        )
+    }
+
+    private func currentClosedHeight(on screen: NSScreen) -> CGFloat {
+        currentClosedBaseSize(on: screen).height
     }
 
     /// Always returns the maximum (opened) panel size so the window never
@@ -982,7 +1056,7 @@ final class OverlayPanelController {
     private func panelSize(for model: AppModel?, on screen: NSScreen) -> CGSize {
         let insets = panelShadowInsets(for: model)
         let openedHeaderAllowance = OverlayClosedShellMetrics.openedHeaderAllowance(
-            forClosedHeight: screen.islandClosedHeight
+            forClosedHeight: currentClosedHeight(on: screen)
         )
 
         guard let model else {
@@ -1004,7 +1078,7 @@ final class OverlayPanelController {
         case .closed, .popping:
             return CGSize(
                 width: closedPanelWidth(for: model, on: screen) + (insets.horizontal * 2),
-                height: screen.islandClosedHeight + insets.bottom
+                height: currentClosedHeight(on: screen) + insets.bottom
             )
         }
     }
@@ -1015,9 +1089,9 @@ final class OverlayPanelController {
     }
 
     private func closedPanelWidth(for model: AppModel, on screen: NSScreen) -> CGFloat {
-        let baseClosedWidth = screen.notchSize.width
-        let closedHeight = screen.islandClosedHeight
-        let mode = OverlayDisplayResolver.placementMode(for: screen)
+        let baseClosedWidth = currentClosedBaseSize(on: screen).width
+        let closedHeight = currentClosedHeight(on: screen)
+        let mode = currentPresentationMode(on: screen).placementMode
         let metrics = OverlayClosedShellMetrics.forMode(
             mode,
             closedHeight: closedHeight
@@ -1035,7 +1109,7 @@ final class OverlayPanelController {
 
     private func currentClosedWidth(on screen: NSScreen) -> CGFloat {
         guard let model else {
-            return screen.notchSize.width
+            return currentClosedBaseSize(on: screen).width
         }
         return closedPanelWidth(for: model, on: screen)
     }
