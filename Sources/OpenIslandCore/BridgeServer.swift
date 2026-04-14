@@ -63,6 +63,7 @@ public final class BridgeServer: @unchecked Sendable {
     private var pendingClaudeInteractions: [String: PendingClaudeInteraction] = [:]
     private var pendingOpenCodeInteractions: [String: PendingOpenCodeInteraction] = [:]
     private var pendingCursorInteractions: [String: PendingCursorInteraction] = [:]
+    private var cursorTranscriptWatchers: [String: CursorTranscriptWatcher] = [:]
     /// Caches Agent tool description from preToolUse for use by the next subagentStart.
     private var pendingAgentDescriptions: [String: String] = [:]
     /// Maps toolUseID → temporary task ID for TaskCreate, so postToolUse can update with real ID.
@@ -177,6 +178,11 @@ public final class BridgeServer: @unchecked Sendable {
         pendingClaudeToolContexts.removeAll()
         pendingOpenCodeInteractions.removeAll()
         pendingCursorInteractions.removeAll()
+
+        for (_, watcher) in cursorTranscriptWatchers {
+            watcher.stop()
+        }
+        cursorTranscriptWatchers.removeAll()
 
         let activeConnections = Array(clients.values)
         activeConnections.forEach { $0.readSource.cancel() }
@@ -1190,6 +1196,7 @@ public final class BridgeServer: @unchecked Sendable {
             ensureCursorSessionExists(for: payload)
             synchronizeCursorJumpTarget(for: payload)
             synchronizeCursorMetadata(for: payload)
+            stopCursorTranscriptWatcher(for: payload.sessionID)
             let stopSummary: String
             switch payload.status {
             case "error":
@@ -1469,6 +1476,44 @@ public final class BridgeServer: @unchecked Sendable {
                 CursorSessionMetadataUpdated(
                     sessionID: payload.sessionID,
                     cursorMetadata: merged,
+                    timestamp: .now
+                )
+            )
+        )
+
+        startCursorTranscriptWatcherIfNeeded(sessionID: payload.sessionID, transcriptPath: resolvedTranscriptPath)
+    }
+
+    private func startCursorTranscriptWatcherIfNeeded(sessionID: String, transcriptPath: String?) {
+        guard let path = transcriptPath,
+              cursorTranscriptWatchers[sessionID] == nil else {
+            return
+        }
+
+        let watcher = CursorTranscriptWatcher(
+            sessionID: sessionID,
+            transcriptPath: path
+        ) { [weak self] sessionID, prompt in
+            self?.handleCursorQuestionDetected(sessionID: sessionID, prompt: prompt)
+        }
+
+        cursorTranscriptWatchers[sessionID] = watcher
+        watcher.start()
+    }
+
+    private func stopCursorTranscriptWatcher(for sessionID: String) {
+        guard let watcher = cursorTranscriptWatchers.removeValue(forKey: sessionID) else {
+            return
+        }
+        watcher.stop()
+    }
+
+    private func handleCursorQuestionDetected(sessionID: String, prompt: QuestionPrompt) {
+        emit(
+            .questionAsked(
+                QuestionAsked(
+                    sessionID: sessionID,
+                    prompt: prompt,
                     timestamp: .now
                 )
             )
