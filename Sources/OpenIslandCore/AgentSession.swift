@@ -460,7 +460,15 @@ public extension AgentSession {
     var isVisibleInIsland: Bool {
         if isDemoSession { return true }
         if phase.requiresAttention { return true }
-        if isHookManaged { return !isSessionEnded }
+        if isHookManaged {
+            if phase == .completed {
+                // Keep it in state for 6 seconds (slightly longer than the 5s UI presence limit)
+                // so that it can be cleanly animated out before being purged from memory.
+                return Date.now.timeIntervalSince(updatedAt) <= 6.0
+            }
+            
+            return attachmentState.isLive
+        }
         if isProcessAlive { return true }
         return false
     }

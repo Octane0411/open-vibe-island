@@ -252,7 +252,7 @@ struct TerminalSessionAttachmentProbe {
                 }
                 if peerOwnsProcess { return true }
                 let unassignedProcessSharesCWD = activeProcesses.contains { process in
-                    process.tool == .claudeCode
+                    (process.tool == .claudeCode || process.tool == .qwenCode)
                         && !activeSessionIDs.contains(where: {
                             activeProcessesBySessionID[$0]?.terminalTTY == process.terminalTTY
                                 && activeProcessesBySessionID[$0]?.workingDirectory == process.workingDirectory
@@ -543,7 +543,7 @@ struct TerminalSessionAttachmentProbe {
         // prompt like "~/project"), do not match it to agent sessions.  This
         // prevents Claude/Codex sessions from binding to an unrelated terminal
         // that just happens to share the same working directory.
-        if snapshotHint == nil && (session.tool == .claudeCode || session.tool == .codex) {
+        if snapshotHint == nil && (session.tool == .claudeCode || session.tool == .qwenCode || session.tool == .codex) {
             return false
         }
 
@@ -673,6 +673,10 @@ struct TerminalSessionAttachmentProbe {
 
         if normalizedTitle.contains("claude") {
             return .claudeCode
+        }
+
+        if normalizedTitle.contains("qwen") {
+            return .qwenCode
         }
 
         return nil
@@ -921,7 +925,7 @@ struct TerminalSessionAttachmentProbe {
                 .filter { $0.tool == .codex }
                 .compactMap(\.sessionID)
         )
-        let activeClaudeProcesses = activeProcesses.filter { $0.tool == .claudeCode }
+        let activeClaudeProcesses = activeProcesses.filter { $0.tool == .claudeCode || $0.tool == .qwenCode }
 
         for session in sessions {
             if session.tool == .codex,
@@ -1018,7 +1022,7 @@ struct TerminalSessionAttachmentProbe {
         workingDirectory: String?
     ) -> [AgentSession] {
         sessions.filter { session in
-            guard session.tool == .claudeCode,
+            guard session.tool == .claudeCode || session.tool == .qwenCode,
                   !claimedSessionIDs.contains(session.id) else {
                 return false
             }
@@ -1079,7 +1083,7 @@ struct TerminalSessionAttachmentProbe {
     /// from staying attached just because the terminal tab is still open.
     /// Non-Claude sessions (Codex) are always eligible.
     private func isRecentEnoughForInactiveMatch(_ session: AgentSession, now: Date) -> Bool {
-        guard session.tool == .claudeCode else { return true }
+        guard session.tool == .claudeCode || session.tool == .qwenCode else { return true }
         return now.timeIntervalSince(session.updatedAt) <= Self.inactiveClaudeMatchWindow
     }
 

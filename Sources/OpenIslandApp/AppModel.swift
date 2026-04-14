@@ -43,6 +43,7 @@ final class AppModel {
         }
     }
     @ObservationIgnored private var _cachedSessionBuckets: (primary: [AgentSession], overflow: [AgentSession])?
+    @ObservationIgnored private var sessionBucketRefreshTask: Task<Void, Never>?
     var selectedSessionID: String?
     let hooks = HookInstallationCoordinator()
     let overlay = OverlayUICoordinator()
@@ -539,16 +540,21 @@ final class AppModel {
         recentSessions.count
     }
 
+    var activeIslandSessions: [AgentSession] {
+        let now = Date.now
+        return surfacedSessions.filter { $0.islandPresence(at: now) != .inactive }
+    }
+
     var liveSessionCount: Int {
-        surfacedSessions.count
+        activeIslandSessions.count
     }
 
     var liveAttentionCount: Int {
-        surfacedSessions.filter { $0.phase.requiresAttention }.count
+        activeIslandSessions.filter { $0.phase.requiresAttention }.count
     }
 
     var liveRunningCount: Int {
-        surfacedSessions.filter { $0.phase == .running }.count
+        activeIslandSessions.filter { $0.phase == .running }.count
     }
 
     var shouldShowSessionBootstrapPlaceholder: Bool {
@@ -1196,8 +1202,9 @@ final class AppModel {
 
         var primary: [AgentSession] = []
         var claimedLiveAttachmentKeys: Set<String> = []
+        var minRefreshDelay: TimeInterval?
 
-        for session in rankedSessions where session.isVisibleInIsland {
+        for session in rankedSessions where session.isVisibleInIsland && session.islandPresence(at: now) != .inactive {
             guard !session.isSubagentSession else { continue }
 
             if let liveAttachmentKey = monitoring.liveAttachmentKey(for: session) {
@@ -1206,7 +1213,26 @@ final class AppModel {
                 }
             }
 
+            if session.isHookManaged, session.phase == .completed {
+                let remaining = 5.0 - now.timeIntervalSince(session.islandActivityDate)
+                if remaining > 0 {
+                    let delay = minRefreshDelay.map { min($0, remaining) } ?? remaining
+                    minRefreshDelay = delay
+                }
+            }
+
             primary.append(session)
+        }
+
+        if let delay = minRefreshDelay {
+            sessionBucketRefreshTask?.cancel()
+            sessionBucketRefreshTask = Task { @MainActor [weak self] in
+                guard let self else { return }
+                try? await Task.sleep(for: .seconds(delay + 0.1))
+                guard !Task.isCancelled else { return }
+                // Trigger a re-evaluation of UI buckets by setting state (since _cachedSessionBuckets clears on didSet)
+                self.state = self.state
+            }
         }
 
         let primaryIDs = Set(primary.map(\.id))

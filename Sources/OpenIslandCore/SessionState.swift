@@ -71,6 +71,13 @@ public struct SessionState: Equatable, Sendable {
                 openCodeMetadata: payload.openCodeMetadata?.isEmpty == true ? nil : payload.openCodeMetadata,
                 cursorMetadata: payload.cursorMetadata?.isEmpty == true ? nil : payload.cursorMetadata
             )
+            if let existing = sessionsByID[payload.sessionID] {
+                // Do not downgrade a correctly discovered Qwen session back to Claude Code
+                // if the hook payload lacks a specific Qwen source identifier.
+                if existing.tool == .qwenCode && payload.tool == .claudeCode {
+                    session.tool = .qwenCode
+                }
+            }
             session.isRemote = payload.isRemote
             session.isHookManaged = payload.origin == .live
             session.isSessionEnded = false
@@ -102,6 +109,9 @@ public struct SessionState: Equatable, Sendable {
                 }
             }
 
+            // A session receiving hook activity is definitively hook-managed.
+            // This upgrades discovered sessions to hook-managed so they collapse promptly when done.
+            session.isHookManaged = true
             session.updatedAt = payload.timestamp
             upsert(session)
 
@@ -141,6 +151,7 @@ public struct SessionState: Equatable, Sendable {
             session.updatedAt = payload.timestamp
             if payload.isSessionEnd == true {
                 session.isSessionEnded = true
+                session.isProcessAlive = false
             }
             upsert(session)
 
@@ -333,13 +344,21 @@ public struct SessionState: Equatable, Sendable {
                 }
 
                 if aliveSessionIDs.contains(id) {
+                    session.isProcessAlive = true
                     session.processNotSeenCount = 0
                 } else {
                     session.processNotSeenCount += 1
                     if session.processNotSeenCount >= 2 {
-                        session.isSessionEnded = true
-                        session.phase = .completed
-                        changed.insert(id)
+                        session.isProcessAlive = false
+                        
+                        // Process is confirmed dead for multiple polls. 
+                        // Mark it as ended so it can gracefully animate out via the UI's 5s completion window.
+                        if !session.isSessionEnded {
+                            session.isSessionEnded = true
+                            session.phase = .completed
+                            session.updatedAt = .now // Reset updatedAt to trigger the 5s completion animation
+                            changed.insert(id)
+                        }
                     }
                 }
 
@@ -371,6 +390,14 @@ public struct SessionState: Equatable, Sendable {
     /// Remove sessions that are no longer visible in the island.
     /// Returns `true` if any sessions were removed.
     @discardableResult
+    public mutating func removeInvisibleSessions() -> Bool {
+        let before = sessionsByID.count
+        sessionsByID = sessionsByID.filter { _, session in
+            session.isVisibleInIsland || session.isProcessAlive
+        }
+        return sessionsByID.count != before
+    }
+
     /// Manually mark a session as completed and ended.
     /// Intended for remote sessions whose SSH tunnel dropped without a
     /// SessionEnd hook.
@@ -380,14 +407,6 @@ public struct SessionState: Equatable, Sendable {
         session.phase = .completed
         session.updatedAt = .now
         upsert(session)
-    }
-
-    public mutating func removeInvisibleSessions() -> Bool {
-        let before = sessionsByID.count
-        sessionsByID = sessionsByID.filter { _, session in
-            session.isVisibleInIsland
-        }
-        return sessionsByID.count != before
     }
 
     private mutating func upsert(_ session: AgentSession) {

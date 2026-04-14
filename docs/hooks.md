@@ -198,6 +198,69 @@ Setting `interrupt: true` terminates the current agent turn immediately.
 
 ---
 
+## Qwen Code Hooks (`--source qwen`)
+
+**Payload type**: `QwenHookPayload`  
+**Source**: [`Sources/OpenIslandCore/QwenHooks.swift`](../Sources/OpenIslandCore/QwenHooks.swift)
+
+Qwen's hook payload is lighter-weight than Claude's, but OpenIsland now treats `tool_input` as arbitrary JSON so object-shaped inputs like `{"command":"..."}` can be previewed correctly in the island.
+
+### Events
+
+| `hook_event_name` | When it fires | Directive response |
+|---|---|---|
+| `session_start` / `SessionStart` | Session starts | None |
+| `user_prompt_submit` | User submits a prompt | None |
+| `pre_tool_use` | Before a tool call | None |
+| `post_tool_use` | After a tool call | None |
+| `permission_request` | Qwen requests approval | **Yes** — allow or deny |
+| `question_asked` | Qwen asks for user input | **Yes** — answer text |
+| `notification` | Informational update | None |
+| `stop` / `stop_failure` | Turn ends | None |
+| `session_end` | Session ends | None |
+
+### Common payload fields
+
+| JSON key | Swift property | Description |
+|---|---|---|
+| `cwd` | `cwd` | Working directory |
+| `hook_event_name` | `hookEventName` | Event type |
+| `session_id` | `sessionID` | Session identifier |
+| `tool_name` | `toolName` | Tool name |
+| `tool_input` | `toolInput` | Tool input as arbitrary JSON |
+| `tool_input_preview` | `toolInputPreview` | Optional hook-provided preview |
+| `permission_title` | `permissionTitle` | Permission card title |
+| `permission_description` | `permissionDescription` | Permission card summary |
+| `question_text` | `questionText` | Prompt shown in the island question UI |
+| `prompt` | `prompt` | User prompt text |
+| `last_assistant_message` | `lastAssistantMessage` | Last assistant message |
+| `terminal_app` | `terminalApp` | Terminal name |
+| `terminal_session_id` | `terminalSessionID` | Terminal session identifier |
+| `terminal_tty` | `terminalTTY` | TTY device path |
+| `terminal_title` | `terminalTitle` | Tab / window title |
+
+### Directive response
+
+Allow:
+
+```json
+{"type":"allow"}
+```
+
+Deny:
+
+```json
+{"type":"deny","reason":"Permission denied in Open Island."}
+```
+
+Answer:
+
+```json
+{"type":"answer","text":"Production"}
+```
+
+---
+
 ## Timeout Policy
 
 | Source | Event | Timeout |
@@ -205,6 +268,8 @@ Setting `interrupt: true` terminates the current agent turn immediately.
 | Codex | All events | Bridge default |
 | Claude Code | `PermissionRequest` | **24 hours** (awaits human approval) |
 | Claude Code | All other events | **45 seconds** |
+| Qwen Code | `permission_request`, `question_asked` | **24 hours** (awaits human input) |
+| Qwen Code | All other events | **45 seconds** |
 
 ---
 
