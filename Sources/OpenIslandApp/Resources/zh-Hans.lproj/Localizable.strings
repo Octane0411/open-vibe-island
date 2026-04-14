@@ -34,6 +34,7 @@
 "settings.general.uninstallConfirmAction" = "卸载";
 "settings.general.uninstallConfirmMessage.claude" = "这将从 Claude Code 中移除 Open Island 的 hooks。你可以随时重新安装。";
 "settings.general.uninstallConfirmMessage.codex" = "这将从 Codex 中移除 Open Island 的 hooks。你可以随时重新安装。";
+"settings.general.uninstallConfirmMessage.claudeUsage" = "这将移除 Claude 用量桥接。你可以随时重新安装。";
 "settings.general.cancel" = "取消";
 "settings.general.language" = "语言";
 "settings.general.languageSystem" = "跟随系统";

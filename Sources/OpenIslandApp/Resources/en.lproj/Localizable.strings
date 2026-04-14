@@ -34,6 +34,7 @@
 "settings.general.uninstallConfirmAction" = "Uninstall";
 "settings.general.uninstallConfirmMessage.claude" = "This will remove Open Island hooks from Claude Code. You can reinstall them at any time.";
 "settings.general.uninstallConfirmMessage.codex" = "This will remove Open Island hooks from Codex. You can reinstall them at any time.";
+"settings.general.uninstallConfirmMessage.claudeUsage" = "This will remove the Claude usage bridge. You can reinstall it at any time.";
 "settings.general.cancel" = "Cancel";
 "settings.general.language" = "Language";
 "settings.general.languageSystem" = "System";

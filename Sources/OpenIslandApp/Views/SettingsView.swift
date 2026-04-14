@@ -211,10 +211,6 @@ struct GeneralSettingsPane: View {
                     get: { model.hapticFeedbackEnabled },
                     set: { model.hapticFeedbackEnabled = $0 }
                 ))
-                Toggle(lang.t("settings.general.showCodexUsage"), isOn: Binding(
-                    get: { model.showCodexUsage },
-                    set: { model.showCodexUsage = $0 }
-                ))
             }
 
         }
@@ -409,6 +405,7 @@ struct SetupSettingsPane: View {
     @State private var confirmingUninstallCodebuddy = false
     @State private var confirmingUninstallCursor = false
     @State private var confirmingUninstallGemini = false
+    @State private var confirmingUninstallClaudeUsage = false
 
     private var lang: LanguageManager { model.lang }
 
@@ -584,6 +581,9 @@ struct SetupSettingsPane: View {
                             Text(lang.t("setup.usageBridgeReady"))
                                 .foregroundStyle(.secondary)
                         }
+                        Button(lang.t("settings.general.uninstall")) {
+                            confirmingUninstallClaudeUsage = true
+                        }
                     } else if model.isClaudeUsageSetupBusy {
                         ProgressView().controlSize(.small)
                     } else {
@@ -592,6 +592,19 @@ struct SetupSettingsPane: View {
                         }
                     }
                 }
+                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallClaudeUsage) {
+                    Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
+                        model.uninstallClaudeUsageBridge()
+                    }
+                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
+                } message: {
+                    Text(lang.t("settings.general.uninstallConfirmMessage.claudeUsage"))
+                }
+
+                Toggle(lang.t("settings.general.showCodexUsage"), isOn: Binding(
+                    get: { model.showCodexUsage },
+                    set: { model.showCodexUsage = $0 }
+                ))
             } header: {
                 HStack(spacing: 4) {
                     Text(lang.t("setup.section.usage"))
