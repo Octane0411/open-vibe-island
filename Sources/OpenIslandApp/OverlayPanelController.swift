@@ -348,11 +348,11 @@ final class OverlayPanelController {
         guard let model else { return false }
 
         if let closedSurfaceRect = closedSurfaceRect(for: model) {
-            return closedSurfaceRect.contains(screenPoint)
+            return Self.rectContainsIncludingEdges(closedSurfaceRect, point: screenPoint)
         }
 
         let expandedNotch = notchRect.insetBy(dx: -20, dy: -10)
-        return expandedNotch.contains(screenPoint)
+        return Self.rectContainsIncludingEdges(expandedNotch, point: screenPoint)
     }
 
     func isPointInExpandedArea(_ screenPoint: NSPoint) -> Bool {
@@ -370,7 +370,7 @@ final class OverlayPanelController {
             return false
         }
 
-        return contentRect.contains(screenPoint)
+        return Self.rectContainsIncludingEdges(contentRect, point: screenPoint)
     }
 
     func openedPanelWidth(for screen: NSScreen?) -> CGFloat {
@@ -425,6 +425,13 @@ final class OverlayPanelController {
             width: closedWidth,
             height: effectiveHeight
         )
+    }
+
+    nonisolated static func rectContainsIncludingEdges(_ rect: NSRect, point: NSPoint) -> Bool {
+        point.x >= rect.minX
+            && point.x <= rect.maxX
+            && point.y >= rect.minY
+            && point.y <= rect.maxY
     }
 
     nonisolated static func closedPanelWidth(

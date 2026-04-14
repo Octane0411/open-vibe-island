@@ -37,6 +37,15 @@ struct OverlayPanelControllerTests {
     }
 
     @Test
+    func edgeInclusiveHitTestingTreatsMaxBoundaryAsInside() {
+        let rect = NSRect(x: 100, y: 200, width: 224, height: 8)
+        #expect(OverlayPanelController.rectContainsIncludingEdges(rect, point: NSPoint(x: 150, y: 208)))
+        #expect(OverlayPanelController.rectContainsIncludingEdges(rect, point: NSPoint(x: 324, y: 205)))
+        #expect(!OverlayPanelController.rectContainsIncludingEdges(rect, point: NSPoint(x: 325, y: 205)))
+        #expect(!OverlayPanelController.rectContainsIncludingEdges(rect, point: NSPoint(x: 150, y: 209)))
+    }
+
+    @Test
     func hiddenIdleEdgeClosedWidthStaysAtNotchWidth() {
         let width = OverlayPanelController.closedPanelWidth(
             notchWidth: 224,
