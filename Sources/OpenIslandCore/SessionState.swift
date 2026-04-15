@@ -103,6 +103,10 @@ public struct SessionState: Equatable, Sendable {
                 }
             }
 
+            // Any activity hook proves the agent is alive. Revive the session
+            // even if a prior process-liveness sweep had marked it ended.
+            session.isSessionEnded = false
+            session.processNotSeenCount = 0
             session.updatedAt = payload.timestamp
             upsert(session)
 
@@ -115,6 +119,8 @@ public struct SessionState: Equatable, Sendable {
             session.summary = payload.request.summary
             session.permissionRequest = payload.request
             session.questionPrompt = nil
+            session.isSessionEnded = false
+            session.processNotSeenCount = 0
             session.updatedAt = payload.timestamp
             upsert(session)
 
@@ -127,6 +133,8 @@ public struct SessionState: Equatable, Sendable {
             session.summary = payload.prompt.title
             session.questionPrompt = payload.prompt
             session.permissionRequest = nil
+            session.isSessionEnded = false
+            session.processNotSeenCount = 0
             session.updatedAt = payload.timestamp
             upsert(session)
 
@@ -346,7 +354,11 @@ public struct SessionState: Equatable, Sendable {
                     session.processNotSeenCount = 0
                 } else {
                     session.processNotSeenCount += 1
-                    if session.processNotSeenCount >= 2 {
+                    // Never mark a session ended while it's actively waiting on the
+                    // user — a stale process-discovery miss must not nuke a visible
+                    // permission/question prompt the user still needs to answer.
+                    let blocksOnUser = session.phase.requiresAttention
+                    if session.processNotSeenCount >= 2, !blocksOnUser {
                         session.isSessionEnded = true
                         session.phase = .completed
                         changed.insert(id)
