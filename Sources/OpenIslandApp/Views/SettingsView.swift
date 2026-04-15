@@ -690,6 +690,7 @@ struct SetupSettingsPane: View {
                     panel.canChooseDirectories = true
                     panel.canChooseFiles = false
                     panel.canCreateDirectories = true
+                    panel.showsHiddenFiles = true
                     panel.prompt = lang.t("setup.claudeConfigDir.choose")
                     if panel.runModal() == .OK, let url = panel.url {
                         model.updateClaudeConfigDirectory(to: url)

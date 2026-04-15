@@ -304,6 +304,7 @@ final class AppModel {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
+        panel.showsHiddenFiles = true
         panel.allowedContentTypes = [.png, .jpeg, .heic, .tiff]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
