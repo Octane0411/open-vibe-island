@@ -130,7 +130,7 @@
 "island.checkingTerminals" = "正在检查打开的终端会话";
 "island.terminalOwnership" = "Open Island 将在确认终端归属后显示实时代理";
 "island.noTerminals" = "没有打开的终端会话";
-"island.startAgent" = "在终端中启动 Codex";
+"island.startAgent" = "在终端中启动编码 Agent";
 "island.recentSessions" = "最近的会话将保留在控制中心，直到终端重新打开";
 
 /* Island Panel - Session List */
