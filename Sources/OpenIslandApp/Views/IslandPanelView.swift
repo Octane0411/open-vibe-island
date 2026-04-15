@@ -436,6 +436,10 @@ struct IslandPanelView: View {
                 model.toggleSoundMuted()
             }
 
+            headerIconButton(systemName: "arrow.clockwise", tint: .white.opacity(0.62)) {
+                model.refreshSessions()
+            }
+
             headerIconButton(systemName: "gearshape.fill", tint: .white.opacity(0.62)) {
                 model.showSettings()
             }
