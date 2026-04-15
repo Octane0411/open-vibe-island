@@ -17,6 +17,7 @@ final class AppModel {
     private static let islandStatusColorsDefaultsKey = "appearance.island.statusColors"
     private static let showCodexUsageDefaultsKey = "app.showCodexUsage"
     private static let completionReplyEnabledDefaultsKey = "feature.completionReply.enabled"
+    private static let suppressFrontmostNotificationsDefaultsKey = "app.suppressFrontmostNotifications"
 
     static let defaultStatusColors: [SessionPhase: String] = [
         .running: "#6E9FFF",
@@ -207,6 +208,12 @@ final class AppModel {
             guard hasFinishedInit, completionReplyEnabled != oldValue else { return }
             UserDefaults.standard.set(completionReplyEnabled, forKey: Self.completionReplyEnabledDefaultsKey)
             refreshOverlayPlacementIfVisible()
+        }
+    }
+    var suppressFrontmostNotifications: Bool = true {
+        didSet {
+            guard hasFinishedInit, suppressFrontmostNotifications != oldValue else { return }
+            UserDefaults.standard.set(suppressFrontmostNotifications, forKey: Self.suppressFrontmostNotificationsDefaultsKey)
         }
     }
     var isSoundMuted = false {
@@ -443,11 +450,13 @@ final class AppModel {
             Self.showDockIconDefaultsKey: true,
             Self.hapticFeedbackEnabledDefaultsKey: false,
             Self.completionReplyEnabledDefaultsKey: false,
+            Self.suppressFrontmostNotificationsDefaultsKey: true,
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
         showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
         hapticFeedbackEnabled = UserDefaults.standard.bool(forKey: Self.hapticFeedbackEnabledDefaultsKey)
+        suppressFrontmostNotifications = UserDefaults.standard.bool(forKey: Self.suppressFrontmostNotificationsDefaultsKey)
         if UserDefaults.standard.object(forKey: Self.showCodexUsageDefaultsKey) != nil {
             showCodexUsage = UserDefaults.standard.bool(forKey: Self.showCodexUsageDefaultsKey)
         } else {
@@ -1179,6 +1188,11 @@ final class AppModel {
               notificationSurfaceIsEligibleForPresentation(surface, ingress: ingress),
               let sessionID = surface.sessionID,
               let session = state.session(id: sessionID) else {
+            return
+        }
+
+        guard suppressFrontmostNotifications else {
+            presentNotificationSurface(surface)
             return
         }
 
