@@ -34,6 +34,14 @@ final class UpdateChecker: NSObject {
     /// Start Sparkle's automatic update checking schedule.
     /// Call once after app launch.
     func startIfNeeded() {
+        #if DEBUG
+        // Dev builds run from a local branch that often carries fixes not yet in
+        // the upstream appcast. Letting Sparkle prompt the user to "update" to
+        // 1.0.21 would overwrite the bundle and silently discard those fixes.
+        // Skip the auto-check entirely in debug — release bundles still update.
+        print("[UpdateChecker] skipped in DEBUG build")
+        return
+        #else
         let updater = updaterController.updater
         updater.automaticallyChecksForUpdates = true
         updater.updateCheckInterval = 60 * 60 // 1 hour
@@ -50,6 +58,7 @@ final class UpdateChecker: NSObject {
             .sink { [weak self] value in
                 self?.canCheckForUpdates = value
             }
+        #endif
     }
 
     /// Manually trigger an update check (from Settings UI).
