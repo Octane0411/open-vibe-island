@@ -536,11 +536,12 @@ struct ActiveAgentProcessDiscovery {
             return true
         }
 
-        guard let firstToken = lowered.split(separator: " ").first else {
+        guard let firstToken = lowered.split(separator: " ").first.map(String.init) else {
             return false
         }
 
         return firstToken == "claude"
+            || firstToken.hasSuffix("/claude")
     }
 
     private static func commandOutput(executablePath: String, arguments: [String]) -> String? {
