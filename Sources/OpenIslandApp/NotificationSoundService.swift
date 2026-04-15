@@ -1,20 +1,19 @@
 import AppKit
-import AudioToolbox
 
 /// Manages notification sound playback using macOS system sounds.
 ///
-/// Uses AudioToolbox's `AudioServicesPlaySystemSound` instead of `NSSound`
-/// because the latter relies on bundle context and silently fails when the
-/// app is launched via `swift run` or any other non-bundled path.
+/// Shells out to `/usr/bin/afplay` to play the sound. Both `NSSound` and
+/// `AudioServicesPlaySystemSound` silently fail when the app is launched
+/// outside of a signed `.app` bundle (e.g. `swift run` for local dev, or
+/// any dev-signed bundle whose cdhash has drifted). `afplay` is a tiny
+/// command-line tool shipped with macOS that has no such constraint and
+/// reliably plays .aiff/.wav/.mp3 at the current system volume.
 @MainActor
 struct NotificationSoundService {
     private static let soundsDirectory = "/System/Library/Sounds"
     private static let defaultsKey = "notification.sound.name"
+    private static let afplayPath = "/usr/bin/afplay"
     static let defaultSoundName = "Bottle"
-
-    /// Cache of registered system sound IDs so we don't re-register the same
-    /// file on every notification. Keyed by sound name (e.g. "Bottle").
-    private static var soundIDCache: [String: SystemSoundID] = [:]
 
     /// Returns the list of available system sound names (without file extension).
     static func availableSounds() -> [String] {
@@ -40,24 +39,22 @@ struct NotificationSoundService {
 
     /// Plays a system sound by name.
     static func play(_ name: String) {
-        let soundID: SystemSoundID
-        if let cached = soundIDCache[name] {
-            soundID = cached
-        } else {
-            let url = URL(fileURLWithPath: soundsDirectory)
-                .appendingPathComponent("\(name).aiff")
-            guard FileManager.default.fileExists(atPath: url.path) else {
-                return
-            }
-            var id: SystemSoundID = 0
-            let status = AudioServicesCreateSystemSoundID(url as CFURL, &id)
-            guard status == kAudioServicesNoError else {
-                return
-            }
-            soundIDCache[name] = id
-            soundID = id
+        let url = URL(fileURLWithPath: soundsDirectory)
+            .appendingPathComponent("\(name).aiff")
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return
         }
-        AudioServicesPlaySystemSound(soundID)
+
+        // Detach on a background queue so the Process.run + short-lived
+        // afplay child doesn't block the main actor. Fire-and-forget.
+        DispatchQueue.global(qos: .userInitiated).async {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: afplayPath)
+            process.arguments = [url.path]
+            process.standardOutput = nil
+            process.standardError = nil
+            try? process.run()
+        }
     }
 
     /// Plays the user-selected notification sound, respecting the mute setting.
