@@ -131,7 +131,7 @@
 "island.checkingTerminals" = "正在檢查已開啟的終端機工作階段";
 "island.terminalOwnership" = "Open Island 將在確認終端機歸屬後顯示即時代理";
 "island.noTerminals" = "沒有已開啟的終端機工作階段";
-"island.startAgent" = "在終端機中啟動 Codex";
+"island.startAgent" = "在終端機中啟動編碼代理";
 "island.recentSessions" = "最近的工作階段將保留在控制中心，直到終端機重新開啟";
 
 /* Island Panel - Session List */
