@@ -415,6 +415,9 @@ final class AppModel {
     @ObservationIgnored
     private let terminalJumpAction: @Sendable (JumpTarget) throws -> String
 
+    @ObservationIgnored
+    private let isNotificationSessionAlreadyFrontmost: @Sendable (AgentSession) -> Bool
+
 
     @ObservationIgnored
     var harnessRuntimeMonitor: HarnessRuntimeMonitor?
@@ -426,9 +429,13 @@ final class AppModel {
     init(
         terminalJumpAction: @escaping @Sendable (JumpTarget) throws -> String = { target in
             try TerminalJumpService().jump(to: target)
+        },
+        isNotificationSessionAlreadyFrontmost: @escaping @Sendable (AgentSession) -> Bool = { session in
+            ForegroundTerminalSessionProbe().matches(session: session)
         }
     ) {
         self.terminalJumpAction = terminalJumpAction
+        self.isNotificationSessionAlreadyFrontmost = isNotificationSessionAlreadyFrontmost
         UserDefaults.standard.register(defaults: [
             Self.showDockIconDefaultsKey: true,
             Self.hapticFeedbackEnabledDefaultsKey: false,
@@ -1155,9 +1162,19 @@ final class AppModel {
            !wasAlreadyCompleted,
            surface.sessionID.flatMap({ state.session(id: $0) }) != nil,
            (ingress == .bridge || !isResolvingInitialLiveSessions),
-           notchStatus == .closed || notchOpenReason == .notification {
+           notchStatus == .closed || notchOpenReason == .notification,
+           !shouldSuppressNotificationSurface(surface) {
             presentNotificationSurface(surface)
         }
+    }
+
+    private func shouldSuppressNotificationSurface(_ surface: IslandSurface) -> Bool {
+        guard let sessionID = surface.sessionID,
+              let session = state.session(id: sessionID) else {
+            return false
+        }
+
+        return isNotificationSessionAlreadyFrontmost(session)
     }
 
     private func synchronizeSelection() {
