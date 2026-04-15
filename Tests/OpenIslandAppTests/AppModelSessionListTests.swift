@@ -344,7 +344,7 @@ struct AppModelSessionListTests {
     }
 
     @Test
-    func bridgeNotificationIsSuppressedWhenSessionIsAlreadyFrontmost() {
+    func bridgeNotificationIsSuppressedWhenSessionIsAlreadyFrontmost() async throws {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel(
             isNotificationSessionAlreadyFrontmost: { session in
@@ -382,13 +382,18 @@ struct AppModelSessionListTests {
             ingress: .bridge
         )
 
+        for _ in 0..<20 {
+            await Task.yield()
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
         #expect(model.notchStatus == .closed)
         #expect(model.notchOpenReason == nil)
         #expect(model.islandSurface == .sessionList())
     }
 
     @Test
-    func bridgeNotificationStillPresentsWhenSessionIsNotFrontmost() {
+    func bridgeNotificationStillPresentsWhenSessionIsNotFrontmost() async throws {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel(
             isNotificationSessionAlreadyFrontmost: { _ in false }
@@ -423,6 +428,14 @@ struct AppModelSessionListTests {
             updateLastActionMessage: false,
             ingress: .bridge
         )
+
+        for _ in 0..<20 {
+            if model.notchStatus == .opened {
+                break
+            }
+            await Task.yield()
+            try await Task.sleep(for: .milliseconds(10))
+        }
 
         #expect(model.notchStatus == .opened)
         #expect(model.notchOpenReason == .notification)
