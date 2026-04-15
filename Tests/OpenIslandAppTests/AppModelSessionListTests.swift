@@ -372,9 +372,11 @@ struct AppModelSessionListTests {
             .permissionRequested(
                 PermissionRequested(
                     sessionID: "frontmost-session",
-                    title: "Edit",
-                    summary: "main.swift",
-                    affectedPath: "/tmp/main.swift",
+                    request: PermissionRequest(
+                        title: "Edit",
+                        summary: "main.swift",
+                        affectedPath: "/tmp/main.swift"
+                    ),
                     timestamp: now.addingTimeInterval(1)
                 )
             ),
@@ -419,9 +421,11 @@ struct AppModelSessionListTests {
             .permissionRequested(
                 PermissionRequested(
                     sessionID: "background-session",
-                    title: "Edit",
-                    summary: "main.swift",
-                    affectedPath: "/tmp/main.swift",
+                    request: PermissionRequest(
+                        title: "Edit",
+                        summary: "main.swift",
+                        affectedPath: "/tmp/main.swift"
+                    ),
                     timestamp: now.addingTimeInterval(1)
                 )
             ),
