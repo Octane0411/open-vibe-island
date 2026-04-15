@@ -1738,6 +1738,9 @@ private struct ReplyTextField: NSViewRepresentable {
 
         func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                // Let AppKit handle Enter during IME composition (e.g. confirming
+                // a Chinese/Japanese candidate). Only submit when no marked text.
+                guard !textView.hasMarkedText() else { return false }
                 onSubmit()
                 return true
             }
