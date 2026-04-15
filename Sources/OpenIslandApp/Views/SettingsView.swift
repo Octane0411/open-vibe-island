@@ -568,6 +568,7 @@ struct SetupSettingsPane: View {
                 hookRow(
                     name: "Gemini CLI",
                     installed: model.geminiHooksInstalled,
+                    detected: model.isGeminiDetected,
                     busy: model.isGeminiHookSetupBusy,
                     configLocationURL: geminiHookConfigURL,
                     installAction: { model.installGeminiHooks() },

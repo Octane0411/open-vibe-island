@@ -100,6 +100,7 @@ final class AppModel {
     var isQwenCodeDetected: Bool { hooks.isQwenCodeDetected }
     var isFactoryDetected: Bool { hooks.isFactoryDetected }
     var isCodebuddyDetected: Bool { hooks.isCodebuddyDetected }
+    var isGeminiDetected: Bool { hooks.isGeminiDetected }
     var claudeHookStatusTitle: String { hooks.claudeHookStatusTitle }
     var claudeHookStatusSummary: String { hooks.claudeHookStatusSummary }
     var claudeUsageStatusTitle: String { hooks.claudeUsageStatusTitle }
@@ -243,6 +244,8 @@ final class AppModel {
 
     // MARK: - Appearance
 
+    /// User-selectable color scheme for the app's UI.
+    /// Persisted to UserDefaults and applied to all views.
     enum AppColorScheme: String, CaseIterable, Codable, Identifiable {
         case system
         case light
@@ -250,6 +253,7 @@ final class AppModel {
 
         var id: String { rawValue }
 
+        /// Converts this color scheme to a SwiftUI ColorScheme for use with .preferredColorScheme().
         var swiftUIScheme: SwiftUI.ColorScheme? {
             switch self {
             case .system: nil
@@ -259,6 +263,8 @@ final class AppModel {
         }
     }
 
+    /// The user's preferred color scheme. Defaults to `.system` (follows macOS appearance).
+    /// Changes are persisted to UserDefaults and applied immediately to all views.
     var preferredColorScheme: AppColorScheme = .system {
         didSet {
             guard preferredColorScheme != oldValue else { return }
