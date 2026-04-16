@@ -1529,8 +1529,8 @@ public final class BridgeServer: @unchecked Sendable {
             initialUserPrompt: existing?.initialUserPrompt ?? update.initialUserPrompt,
             lastUserPrompt: update.lastUserPrompt ?? existing?.lastUserPrompt,
             lastAssistantMessage: update.lastAssistantMessage ?? existing?.lastAssistantMessage,
-            currentTool: update.currentTool ?? existing?.currentTool,
-            currentToolInputPreview: update.currentToolInputPreview ?? existing?.currentToolInputPreview
+            currentTool: update.currentTool,
+            currentToolInputPreview: update.currentToolInputPreview
         )
         guard !merged.isEmpty, existing != merged else { return }
 

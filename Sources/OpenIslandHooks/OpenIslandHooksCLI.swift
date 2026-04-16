@@ -144,18 +144,23 @@ struct OpenIslandHooksCLI {
     }
 
     /// Get the TTY of the current process via ps (works even when stdin is a pipe).
+    /// Falls back to the parent process TTY if the current process has none.
     private static func currentTTY() -> String? {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/bin/ps")
-        proc.arguments = ["-o", "tty=", "-p", "\(getpid())"]
-        let pipe = Pipe()
-        proc.standardOutput = pipe
-        proc.standardError = FileHandle.nullDevice
-        try? proc.run()
-        proc.waitUntilExit()
-        let raw = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !raw.isEmpty, raw != "??" else { return nil }
-        return raw.hasPrefix("/dev/") ? raw : "/dev/\(raw)"
+        for pid in [getpid(), getppid()] {
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/bin/ps")
+            proc.arguments = ["-o", "tty=", "-p", "\(pid)"]
+            let pipe = Pipe()
+            proc.standardOutput = pipe
+            proc.standardError = FileHandle.nullDevice
+            try? proc.run()
+            proc.waitUntilExit()
+            let raw = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !raw.isEmpty, raw != "??" {
+                return raw.hasPrefix("/dev/") ? raw : "/dev/\(raw)"
+            }
+        }
+        return nil
     }
 }
