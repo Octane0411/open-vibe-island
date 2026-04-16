@@ -411,6 +411,7 @@ struct SetupSettingsPane: View {
     @State private var confirmingUninstallQwenCode = false
     @State private var confirmingUninstallFactory = false
     @State private var confirmingUninstallCodebuddy = false
+    @State private var confirmingUninstallKiro = false
     @State private var confirmingUninstallCursor = false
     @State private var confirmingUninstallGemini = false
     @State private var confirmingUninstallClaudeUsage = false
@@ -543,6 +544,23 @@ struct SetupSettingsPane: View {
                 }
 
                 hookRow(
+                    name: "Kiro CLI",
+                    installed: model.kiroHooksInstalled,
+                    busy: model.isKiroHookSetupBusy,
+                    configLocationURL: model.kiroHookStatus?.settingsURL,
+                    installAction: { model.installKiroHooks() },
+                    uninstallAction: { confirmingUninstallKiro = true }
+                )
+                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallKiro) {
+                    Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
+                        model.uninstallKiroHooks()
+                    }
+                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
+                } message: {
+                    Text("This will remove Open Island hooks from ~/.kiro/settings.json.")
+                }
+
+                hookRow(
                     name: "Cursor",
                     installed: model.cursorHooksInstalled,
                     busy: model.isCursorHookSetupBusy,
@@ -650,6 +668,7 @@ struct SetupSettingsPane: View {
                     if !model.qwenCodeHooksInstalled { model.installQwenCodeHooks() }
                     if !model.factoryHooksInstalled { model.installFactoryHooks() }
                     if !model.codebuddyHooksInstalled { model.installCodebuddyHooks() }
+                    if !model.kiroHooksInstalled { model.installKiroHooks() }
                     if !model.cursorHooksInstalled { model.installCursorHooks() }
                     if !model.geminiHooksInstalled { model.installGeminiHooks() }
                     if !model.claudeUsageInstalled { model.installClaudeUsageBridge() }
@@ -712,7 +731,7 @@ struct SetupSettingsPane: View {
     private var allReady: Bool {
         model.claudeHooksInstalled && model.codexHooksInstalled && model.openCodePluginInstalled
             && model.qoderHooksInstalled && model.qwenCodeHooksInstalled && model.factoryHooksInstalled && model.codebuddyHooksInstalled
-            && model.cursorHooksInstalled && model.geminiHooksInstalled && model.claudeUsageInstalled
+            && model.kiroHooksInstalled && model.cursorHooksInstalled && model.geminiHooksInstalled && model.claudeUsageInstalled
     }
 
     private var codexHookConfigURL: URL? {

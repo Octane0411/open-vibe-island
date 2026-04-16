@@ -404,6 +404,7 @@ public struct ClaudeHookPayload: Equatable, Codable, Sendable {
         case terminalTitle = "terminal_title"
         case warpPaneUUID = "warp_pane_uuid"
         case remote
+        case hookSource = "hook_source"
     }
 
     public init(
@@ -867,6 +868,8 @@ public extension ClaudeHookPayload {
             return .factory
         case "codebuddy":
             return .codebuddy
+        case "kiro":
+            return .kiro
         default:
             return .claudeCode
         }

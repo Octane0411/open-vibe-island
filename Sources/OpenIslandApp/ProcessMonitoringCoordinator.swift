@@ -334,6 +334,16 @@ final class ProcessMonitoringCoordinator {
             }
         }
 
+        // Kiro sessions: kiro-cli spawns a new shell for each hook call,
+        // so we cannot match by session ID. Keep all Kiro sessions alive
+        // as long as any kiro-cli process exists.
+        let hasKiroProcess = activeProcesses.contains { $0.tool == .kiro }
+        if hasKiroProcess {
+            for session in sessions where session.tool == .kiro && !session.isDemoSession {
+                aliveIDs.insert(session.id)
+            }
+        }
+
         // Synthetic sessions: always alive if the process exists.
         let syntheticSessions = sessions.filter { isSyntheticClaudeSession($0) }
         for session in syntheticSessions {
@@ -869,6 +879,8 @@ final class ProcessMonitoringCoordinator {
             return "CodeBuddy \(session.id.prefix(8))"
         case .cursor:
             return "Cursor \(session.id.prefix(8))"
+        case .kiro:
+            return "Kiro \(session.id.prefix(8))"
         }
     }
 }

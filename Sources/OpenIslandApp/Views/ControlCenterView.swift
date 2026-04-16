@@ -115,6 +115,8 @@ struct ControlCenterView: View {
 
                 ccForkHookCard(title: "CodeBuddy Hooks", installed: model.codebuddyHooksInstalled, status: model.codebuddyHookStatus, isBusy: model.isCodebuddyHookSetupBusy, install: model.installCodebuddyHooks, uninstall: model.uninstallCodebuddyHooks)
 
+                ccForkHookCard(title: "Kiro Hooks", installed: model.kiroHooksInstalled, status: model.kiroHookStatus, isBusy: model.isKiroHookSetupBusy, install: model.installKiroHooks, uninstall: model.uninstallKiroHooks)
+
                 geminiHookCard
 
                 usageDebugCard(

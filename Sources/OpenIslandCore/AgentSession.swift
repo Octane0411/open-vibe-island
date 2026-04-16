@@ -10,6 +10,7 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
     case factory
     case codebuddy
     case cursor
+    case kiro
 
     public var displayName: String {
         switch self {
@@ -31,6 +32,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "CodeBuddy"
         case .cursor:
             "Cursor"
+        case .kiro:
+            "Kiro CLI"
         }
     }
 
@@ -54,12 +57,14 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "CODEBUDDY"
         case .cursor:
             "CURSOR"
+        case .kiro:
+            "KIRO"
         }
     }
 
     public var isClaudeCodeFork: Bool {
         switch self {
-        case .claudeCode, .qoder, .qwenCode, .factory, .codebuddy:
+        case .claudeCode, .qoder, .qwenCode, .factory, .codebuddy, .kiro:
             true
         default:
             false
