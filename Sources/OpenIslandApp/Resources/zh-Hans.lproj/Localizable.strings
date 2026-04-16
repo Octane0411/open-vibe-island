@@ -25,6 +25,7 @@
 "settings.general.autoCollapse" = "鼠标离开时自动收起";
 "settings.general.showDockIcon" = "在 Dock 中显示图标";
 "settings.general.hapticFeedback" = "悬停时震动反馈";
+"settings.general.suppressFrontmostNotifications" = "前台会话不弹出通知";
 "settings.general.showCodexUsage" = "显示 Codex 用量";
 "settings.general.completionReply" = "在完成卡片中回复";
 "settings.general.cliHooks" = "CLI Hooks";
@@ -134,7 +135,7 @@
 "island.checkingTerminals" = "正在检查打开的终端会话";
 "island.terminalOwnership" = "Open Island 将在确认终端归属后显示实时代理";
 "island.noTerminals" = "没有打开的终端会话";
-"island.startAgent" = "在终端中启动 Codex";
+"island.startAgent" = "在终端中启动编码代理";
 "island.recentSessions" = "最近的会话将保留在控制中心，直到终端重新打开";
 
 /* Island Panel - Session List */

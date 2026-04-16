@@ -288,6 +288,112 @@ struct ClaudeUsageTests {
             }
         }
     }
+
+    @Test
+    func claudeStatusLineInstallationManagerWrapsExistingCustomStatusLine() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-claude-wrap-\(UUID().uuidString)", isDirectory: true)
+        let claudeDirectory = rootURL.appendingPathComponent(".claude", isDirectory: true)
+        let scriptDirectory = rootURL
+            .appendingPathComponent(".open-island", isDirectory: true)
+            .appendingPathComponent("bin", isDirectory: true)
+        let manager = ClaudeStatusLineInstallationManager(
+            claudeDirectory: claudeDirectory,
+            scriptDirectoryURL: scriptDirectory
+        )
+        let settingsURL = claudeDirectory.appendingPathComponent("settings.json")
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        let originalCommand = "/usr/local/bin/custom-status --flag"
+        let originalStatusLine: [String: Any] = [
+            "type": "command",
+            "command": originalCommand,
+            "padding": 0,
+        ]
+
+        try FileManager.default.createDirectory(at: claudeDirectory, withIntermediateDirectories: true)
+        try JSONSerialization.data(
+            withJSONObject: [
+                "theme": "dark",
+                "statusLine": originalStatusLine,
+            ],
+            options: [.prettyPrinted, .sortedKeys]
+        ).write(to: settingsURL, options: .atomic)
+
+        let wrapped = try manager.installAsWrapper()
+
+        #expect(wrapped.managedStatusLineInstalled)
+        #expect(wrapped.managedStatusLineIsWrapper)
+        #expect(wrapped.statusLineCommand == wrapped.scriptURL.path)
+
+        let delegateURL = scriptDirectory
+            .appendingPathComponent(ClaudeStatusLineInstallationManager.wrappedDelegateScriptName)
+        #expect(FileManager.default.fileExists(atPath: wrapped.scriptURL.path))
+        #expect(FileManager.default.fileExists(atPath: delegateURL.path))
+
+        let wrapperContents = try String(contentsOf: wrapped.scriptURL, encoding: .utf8)
+        #expect(wrapperContents.contains(wrapped.cacheURL.path))
+        #expect(wrapperContents.contains(delegateURL.path))
+
+        let delegateContents = try String(contentsOf: delegateURL, encoding: .utf8)
+        #expect(delegateContents.contains(originalCommand))
+
+        let settingsAfterInstall = try jsonObject(from: Data(contentsOf: settingsURL))
+        let savedOriginal = settingsAfterInstall[openIslandOriginalStatusLineKey] as? [String: Any]
+        #expect(savedOriginal?["command"] as? String == originalCommand)
+        #expect((settingsAfterInstall["statusLine"] as? [String: Any])?["command"] as? String == wrapped.scriptURL.path)
+
+        let uninstalled = try manager.uninstall()
+        #expect(!uninstalled.managedStatusLineInstalled)
+        #expect(!uninstalled.managedStatusLineIsWrapper)
+        #expect(!FileManager.default.fileExists(atPath: wrapped.scriptURL.path))
+        #expect(!FileManager.default.fileExists(atPath: delegateURL.path))
+
+        let settingsAfterUninstall = try jsonObject(from: Data(contentsOf: settingsURL))
+        #expect(settingsAfterUninstall[openIslandOriginalStatusLineKey] == nil)
+        let restored = settingsAfterUninstall["statusLine"] as? [String: Any]
+        #expect(restored?["command"] as? String == originalCommand)
+        #expect(restored?["padding"] as? Int == 0)
+    }
+
+    @Test
+    func claudeStatusLineInstallAutoFallsBackToWrapperViaHandler() throws {
+        // Simulates HookInstallationCoordinator's catch-and-fall-back behavior.
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-claude-fallback-\(UUID().uuidString)", isDirectory: true)
+        let claudeDirectory = rootURL.appendingPathComponent(".claude", isDirectory: true)
+        let scriptDirectory = rootURL
+            .appendingPathComponent(".open-island", isDirectory: true)
+            .appendingPathComponent("bin", isDirectory: true)
+        let manager = ClaudeStatusLineInstallationManager(
+            claudeDirectory: claudeDirectory,
+            scriptDirectoryURL: scriptDirectory
+        )
+        let settingsURL = claudeDirectory.appendingPathComponent("settings.json")
+
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        try FileManager.default.createDirectory(at: claudeDirectory, withIntermediateDirectories: true)
+        try JSONSerialization.data(
+            withJSONObject: [
+                "statusLine": ["type": "command", "command": "/usr/local/bin/custom-status"],
+            ],
+            options: [.prettyPrinted, .sortedKeys]
+        ).write(to: settingsURL, options: .atomic)
+
+        let finalStatus: ClaudeStatusLineInstallationStatus
+        do {
+            finalStatus = try manager.install()
+        } catch ClaudeStatusLineInstallationError.existingStatusLineConflict {
+            finalStatus = try manager.installAsWrapper()
+        }
+
+        #expect(finalStatus.managedStatusLineIsWrapper)
+        #expect(finalStatus.managedStatusLineInstalled)
+    }
 }
 
 private func jsonObject(from data: Data) throws -> [String: Any] {

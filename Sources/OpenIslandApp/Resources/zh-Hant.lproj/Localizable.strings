@@ -25,6 +25,7 @@
 "settings.general.autoCollapse" = "滑鼠離開時自動收起";
 "settings.general.showDockIcon" = "在 Dock 中顯示圖示";
 "settings.general.hapticFeedback" = "懸停時震動回饋";
+"settings.general.suppressFrontmostNotifications" = "前台工作階段不彈出通知";
 "settings.general.showCodexUsage" = "顯示 Codex 用量";
 "settings.general.completionReply" = "在完成卡片中回覆";
 "settings.general.cliHooks" = "CLI Hooks";
@@ -130,7 +131,7 @@
 "island.checkingTerminals" = "正在檢查已開啟的終端機工作階段";
 "island.terminalOwnership" = "Open Island 將在確認終端機歸屬後顯示即時代理";
 "island.noTerminals" = "沒有已開啟的終端機工作階段";
-"island.startAgent" = "在終端機中啟動 Codex";
+"island.startAgent" = "在終端機中啟動編碼代理";
 "island.recentSessions" = "最近的工作階段將保留在控制中心，直到終端機重新開啟";
 
 /* Island Panel - Session List */

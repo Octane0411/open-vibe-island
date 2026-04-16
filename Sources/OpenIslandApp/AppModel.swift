@@ -18,6 +18,7 @@ final class AppModel {
     private static let islandStatusColorsDefaultsKey = "appearance.island.statusColors"
     private static let showCodexUsageDefaultsKey = "app.showCodexUsage"
     private static let completionReplyEnabledDefaultsKey = "feature.completionReply.enabled"
+    private static let suppressFrontmostNotificationsDefaultsKey = "app.suppressFrontmostNotifications"
 
     static let defaultStatusColors: [SessionPhase: String] = [
         .running: "#6E9FFF",
@@ -217,6 +218,12 @@ final class AppModel {
             guard hasFinishedInit, completionReplyEnabled != oldValue else { return }
             UserDefaults.standard.set(completionReplyEnabled, forKey: Self.completionReplyEnabledDefaultsKey)
             refreshOverlayPlacementIfVisible()
+        }
+    }
+    var suppressFrontmostNotifications: Bool = true {
+        didSet {
+            guard hasFinishedInit, suppressFrontmostNotifications != oldValue else { return }
+            UserDefaults.standard.set(suppressFrontmostNotifications, forKey: Self.suppressFrontmostNotificationsDefaultsKey)
         }
     }
     var isSoundMuted = false {
@@ -453,6 +460,9 @@ final class AppModel {
     @ObservationIgnored
     private let terminalJumpAction: @Sendable (JumpTarget) throws -> String
 
+    @ObservationIgnored
+    private let isNotificationSessionAlreadyFrontmost: @Sendable (AgentSession) async -> Bool
+
 
     @ObservationIgnored
     var harnessRuntimeMonitor: HarnessRuntimeMonitor?
@@ -461,21 +471,30 @@ final class AppModel {
     @ObservationIgnored
     private var jumpTask: Task<Void, Never>?
 
+    @ObservationIgnored
+    private var notificationPresentationTask: Task<Void, Never>?
+
     init(
         terminalJumpAction: @escaping @Sendable (JumpTarget) throws -> String = { target in
             try TerminalJumpService().jump(to: target)
+        },
+        isNotificationSessionAlreadyFrontmost: @escaping @Sendable (AgentSession) async -> Bool = { session in
+            await ForegroundTerminalSessionProbe().matches(session: session)
         }
     ) {
         self.terminalJumpAction = terminalJumpAction
+        self.isNotificationSessionAlreadyFrontmost = isNotificationSessionAlreadyFrontmost
         UserDefaults.standard.register(defaults: [
             Self.showDockIconDefaultsKey: true,
             Self.hapticFeedbackEnabledDefaultsKey: false,
             Self.completionReplyEnabledDefaultsKey: false,
+            Self.suppressFrontmostNotificationsDefaultsKey: true,
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
         showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
         hapticFeedbackEnabled = UserDefaults.standard.bool(forKey: Self.hapticFeedbackEnabledDefaultsKey)
+        suppressFrontmostNotifications = UserDefaults.standard.bool(forKey: Self.suppressFrontmostNotificationsDefaultsKey)
         if UserDefaults.standard.object(forKey: Self.showCodexUsageDefaultsKey) != nil {
             showCodexUsage = UserDefaults.standard.bool(forKey: Self.showCodexUsageDefaultsKey)
         } else {
@@ -1192,13 +1211,61 @@ final class AppModel {
             lastActionMessage = describe(event)
         }
 
-        if let surface = IslandSurface.notificationSurface(for: event),
-           !wasAlreadyCompleted,
-           surface.sessionID.flatMap({ state.session(id: $0) }) != nil,
-           (ingress == .bridge || !isResolvingInitialLiveSessions),
-           notchStatus == .closed || notchOpenReason == .notification {
-            presentNotificationSurface(surface)
+        if let surface = IslandSurface.notificationSurface(for: event) {
+            scheduleNotificationSurfacePresentationIfNeeded(
+                surface,
+                wasAlreadyCompleted: wasAlreadyCompleted,
+                ingress: ingress
+            )
         }
+    }
+
+    private func scheduleNotificationSurfacePresentationIfNeeded(
+        _ surface: IslandSurface,
+        wasAlreadyCompleted: Bool,
+        ingress: TrackedEventIngress
+    ) {
+        guard !wasAlreadyCompleted,
+              notificationSurfaceIsEligibleForPresentation(surface, ingress: ingress),
+              let sessionID = surface.sessionID,
+              let session = state.session(id: sessionID) else {
+            return
+        }
+
+        guard suppressFrontmostNotifications else {
+            presentNotificationSurface(surface)
+            return
+        }
+
+        notificationPresentationTask?.cancel()
+        notificationPresentationTask = Task { @MainActor [weak self] in
+            guard let self else {
+                return
+            }
+
+            let shouldSuppress = await self.isNotificationSessionAlreadyFrontmost(session)
+            guard !Task.isCancelled,
+                  !shouldSuppress,
+                  self.notificationSurfaceIsEligibleForPresentation(surface, ingress: ingress) else {
+                return
+            }
+
+            self.presentNotificationSurface(surface)
+        }
+    }
+
+    private func notificationSurfaceIsEligibleForPresentation(
+        _ surface: IslandSurface,
+        ingress: TrackedEventIngress
+    ) -> Bool {
+        guard let sessionID = surface.sessionID,
+              let session = state.session(id: sessionID) else {
+            return false
+        }
+
+        return (ingress == .bridge || !isResolvingInitialLiveSessions)
+            && (notchStatus == .closed || notchOpenReason == .notification)
+            && surface.matchesCurrentState(of: session)
     }
 
     private func synchronizeSelection() {

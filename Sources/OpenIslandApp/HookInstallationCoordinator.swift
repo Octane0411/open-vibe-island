@@ -952,7 +952,13 @@ final class HookInstallationCoordinator {
     /// Installs the Claude usage bridge (managed Claude status line) to cache rate limits locally.
     func installClaudeUsageBridge() {
         updateClaudeUsageBridge(userMessage: "Installing Claude usage bridge.") { manager in
-            try manager.install()
+            do {
+                return try manager.install()
+            } catch ClaudeStatusLineInstallationError.existingStatusLineConflict {
+                // User already has a custom statusLine (e.g. claude-hud). Install as a
+                // wrapper so their script keeps running and we still get rate_limits.
+                return try manager.installAsWrapper()
+            }
         }
     }
 
@@ -1138,7 +1144,11 @@ final class HookInstallationCoordinator {
                 self.claudeStatusLineStatus = status
                 self.claudeUsageSnapshot = try ClaudeUsageLoader.load()
                 if status.managedStatusLineInstalled {
-                    self.onStatusMessage?("Claude usage bridge is installed. Start a Claude Code turn to refresh cached rate limits.")
+                    if status.managedStatusLineIsWrapper {
+                        self.onStatusMessage?("Claude usage bridge installed in wrapper mode — your existing statusLine is preserved. Start a Claude Code turn to refresh cached rate limits.")
+                    } else {
+                        self.onStatusMessage?("Claude usage bridge is installed. Start a Claude Code turn to refresh cached rate limits.")
+                    }
                 } else {
                     self.onStatusMessage?("Claude usage bridge is not installed.")
                 }

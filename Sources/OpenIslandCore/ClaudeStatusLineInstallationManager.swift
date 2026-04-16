@@ -12,6 +12,9 @@ public struct ClaudeStatusLineInstallationStatus: Equatable, Sendable {
     public var managedStatusLineInstalled: Bool
     public var managedStatusLineNeedsRepair: Bool
     public var hasConflictingStatusLine: Bool
+    /// `true` when the managed script is installed in wrapper mode, preserving
+    /// the user's existing `statusLine.command` under `_openIslandOriginalStatusLine`.
+    public var managedStatusLineIsWrapper: Bool
 
     public init(
         claudeDirectory: URL,
@@ -24,7 +27,8 @@ public struct ClaudeStatusLineInstallationStatus: Equatable, Sendable {
         managedStatusLineConfigured: Bool,
         managedStatusLineInstalled: Bool,
         managedStatusLineNeedsRepair: Bool,
-        hasConflictingStatusLine: Bool
+        hasConflictingStatusLine: Bool,
+        managedStatusLineIsWrapper: Bool = false
     ) {
         self.claudeDirectory = claudeDirectory
         self.settingsURL = settingsURL
@@ -37,12 +41,14 @@ public struct ClaudeStatusLineInstallationStatus: Equatable, Sendable {
         self.managedStatusLineInstalled = managedStatusLineInstalled
         self.managedStatusLineNeedsRepair = managedStatusLineNeedsRepair
         self.hasConflictingStatusLine = hasConflictingStatusLine
+        self.managedStatusLineIsWrapper = managedStatusLineIsWrapper
     }
 }
 
 public enum ClaudeStatusLineInstallationError: LocalizedError, Sendable {
     case existingStatusLineConflict(command: String?)
     case invalidSettingsRoot
+    case wrappableCommandMissing
 
     public var errorDescription: String? {
         switch self {
@@ -53,12 +59,17 @@ public enum ClaudeStatusLineInstallationError: LocalizedError, Sendable {
             return "Claude Code already has a custom status line."
         case .invalidSettingsRoot:
             return "Claude Code settings.json must contain a top-level object."
+        case .wrappableCommandMissing:
+            return "No existing statusLine command was found to wrap."
         }
     }
 }
 
+public let openIslandOriginalStatusLineKey = "_openIslandOriginalStatusLine"
+
 public final class ClaudeStatusLineInstallationManager: @unchecked Sendable {
     public static let managedScriptName = "open-island-statusline"
+    public static let wrappedDelegateScriptName = "open-island-statusline-delegate"
     public static let legacyManagedScriptName = "vibe-island-statusline"
     public static let managedCacheURL = ClaudeUsageLoader.defaultCacheURL
 
@@ -98,6 +109,8 @@ public final class ClaudeStatusLineInstallationManager: @unchecked Sendable {
         let managedStatusLineNeedsRepair = managedStatusLineConfigured && !managedStatusLineInstalled
         let hasStatusLine = statusLine != nil
         let hasConflictingStatusLine = hasStatusLine && !managedStatusLineConfigured
+        let managedStatusLineIsWrapper = managedStatusLineConfigured
+            && settings[openIslandOriginalStatusLineKey] != nil
 
         return ClaudeStatusLineInstallationStatus(
             claudeDirectory: claudeDirectory,
@@ -110,7 +123,8 @@ public final class ClaudeStatusLineInstallationManager: @unchecked Sendable {
             managedStatusLineConfigured: managedStatusLineConfigured,
             managedStatusLineInstalled: managedStatusLineInstalled,
             managedStatusLineNeedsRepair: managedStatusLineNeedsRepair,
-            hasConflictingStatusLine: hasConflictingStatusLine
+            hasConflictingStatusLine: hasConflictingStatusLine,
+            managedStatusLineIsWrapper: managedStatusLineIsWrapper
         )
     }
 
@@ -149,15 +163,69 @@ public final class ClaudeStatusLineInstallationManager: @unchecked Sendable {
         return try status()
     }
 
+    /// Install in "wrap mode": keep the user's existing statusLine command working,
+    /// but prepend our cache-writing shim. The original command is saved under
+    /// `_openIslandOriginalStatusLine` so `uninstall()` can restore it verbatim.
+    @discardableResult
+    public func installAsWrapper() throws -> ClaudeStatusLineInstallationStatus {
+        let currentStatus = try status()
+        guard currentStatus.hasConflictingStatusLine,
+              let originalCommand = currentStatus.statusLineCommand,
+              !originalCommand.isEmpty
+        else {
+            throw ClaudeStatusLineInstallationError.wrappableCommandMissing
+        }
+
+        try fileManager.createDirectory(at: claudeDirectory, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: scriptDirectoryURL, withIntermediateDirectories: true)
+
+        let settingsURL = currentStatus.settingsURL
+        let scriptURL = currentStatus.scriptURL
+        let delegateScriptURL = scriptDirectoryURL.appendingPathComponent(Self.wrappedDelegateScriptName)
+        var mutatedSettings = try loadSettings(at: settingsURL)
+
+        // Preserve the user's original statusLine dict so uninstall can restore it verbatim.
+        if let originalStatusLine = mutatedSettings["statusLine"] {
+            mutatedSettings[openIslandOriginalStatusLineKey] = originalStatusLine
+        }
+        mutatedSettings["statusLine"] = managedStatusLine(for: scriptURL)
+
+        let settingsData = try serializeSettings(mutatedSettings)
+        if fileManager.fileExists(atPath: settingsURL.path) {
+            try backupFile(at: settingsURL)
+        }
+
+        let wrapperContents = Self.wrappedScript(
+            cacheURL: currentStatus.cacheURL,
+            delegateScriptURL: delegateScriptURL
+        )
+        let delegateContents = Self.wrappedDelegateScript(originalCommand: originalCommand)
+
+        try settingsData.write(to: settingsURL, options: .atomic)
+        try wrapperContents.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+        try delegateContents.write(to: delegateScriptURL, atomically: true, encoding: .utf8)
+        try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: delegateScriptURL.path)
+
+        return try status()
+    }
+
     @discardableResult
     public func uninstall() throws -> ClaudeStatusLineInstallationStatus {
         let currentStatus = try status()
         let settingsURL = currentStatus.settingsURL
         let scriptURL = currentStatus.scriptURL
+        let delegateScriptURL = scriptDirectoryURL.appendingPathComponent(Self.wrappedDelegateScriptName)
 
         if currentStatus.managedStatusLineConfigured {
             var settings = try loadSettings(at: settingsURL)
-            settings.removeValue(forKey: "statusLine")
+            // Restore the user's original statusLine when we were running in wrapper mode.
+            if let savedOriginal = settings[openIslandOriginalStatusLineKey] {
+                settings["statusLine"] = savedOriginal
+                settings.removeValue(forKey: openIslandOriginalStatusLineKey)
+            } else {
+                settings.removeValue(forKey: "statusLine")
+            }
             if fileManager.fileExists(atPath: settingsURL.path) {
                 try backupFile(at: settingsURL)
             }
@@ -167,6 +235,9 @@ public final class ClaudeStatusLineInstallationManager: @unchecked Sendable {
 
         if fileManager.fileExists(atPath: scriptURL.path) {
             try fileManager.removeItem(at: scriptURL)
+        }
+        if fileManager.fileExists(atPath: delegateScriptURL.path) {
+            try fileManager.removeItem(at: delegateScriptURL)
         }
         let legacyScriptURL = legacyScriptDirectoryURL.appendingPathComponent(Self.legacyManagedScriptName)
         if fileManager.fileExists(atPath: legacyScriptURL.path) {
@@ -214,6 +285,32 @@ public final class ClaudeStatusLineInstallationManager: @unchecked Sendable {
             try fileManager.removeItem(at: backupURL)
         }
         try fileManager.copyItem(at: url, to: backupURL)
+    }
+
+    /// The wrapper script executed as Claude Code's `statusLine.command` in wrap mode.
+    /// It reads stdin once, writes `.rate_limits` to the cache (best-effort), then forwards
+    /// the same stdin to the delegate script which runs the user's original command.
+    /// The delegate's stdout is what Claude Code displays, so the user's custom statusLine
+    /// is unchanged visually — we're just teeing the payload to the cache file.
+    public static func wrappedScript(cacheURL: URL, delegateScriptURL: URL) -> String {
+        #"""
+        #!/bin/bash
+        # Claude Code StatusLine Script (wrapper mode)
+        # Auto-configured by Open Island.
+        # The delegate script holds the user's original statusLine.command.
+        # Keep the rate_limits cache line intact — it feeds the notch usage panel.
+        input=$(cat)
+        _rl=$(printf '%s' "$input" | jq -c '.rate_limits // empty' 2>/dev/null)
+        [ -n "$_rl" ] && printf '%s\n' "$_rl" > "\#(cacheURL.path)"
+        printf '%s' "$input" | "\#(delegateScriptURL.path)"
+        """#
+    }
+
+    /// The delegate script. Written verbatim — `originalCommand` is a shell command string
+    /// from `settings.json`, so embedding it as a script body runs with identical semantics
+    /// without the escaping problems of `bash -c "$ORIG"`.
+    public static func wrappedDelegateScript(originalCommand: String) -> String {
+        "#!/bin/bash\n# Original Claude Code statusLine.command preserved by Open Island.\n\(originalCommand)\n"
     }
 
     public static func managedScript(cacheURL: URL = managedCacheURL) -> String {

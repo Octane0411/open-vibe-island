@@ -25,6 +25,7 @@
 "settings.general.autoCollapse" = "Auto-collapse on mouse exit";
 "settings.general.showDockIcon" = "Show icon in Dock";
 "settings.general.hapticFeedback" = "Haptic feedback on hover";
+"settings.general.suppressFrontmostNotifications" = "Suppress notifications for focused sessions";
 "settings.general.showCodexUsage" = "Show Codex usage";
 "settings.general.completionReply" = "Reply from completion card";
 "settings.general.cliHooks" = "CLI Hooks";
@@ -134,7 +135,7 @@
 "island.checkingTerminals" = "Checking open terminal sessions";
 "island.terminalOwnership" = "Open Island will show live agents after terminal ownership is confirmed";
 "island.noTerminals" = "No open terminal sessions";
-"island.startAgent" = "Start Codex in your terminal";
+"island.startAgent" = "Start a coding agent in your terminal";
 "island.recentSessions" = "Recent sessions remain in Control Center until the terminal is open again";
 
 /* Island Panel - Session List */
