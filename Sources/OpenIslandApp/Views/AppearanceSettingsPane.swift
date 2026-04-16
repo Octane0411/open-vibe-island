@@ -47,6 +47,15 @@ struct AppearanceSettingsPane: View {
                 Text(lang.t("settings.appearance.hideIdleToEdge.help"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                Toggle(lang.t("settings.appearance.disablePixelAnimation"), isOn: Binding(
+                    get: { model.disablePixelAnimation },
+                    set: { model.disablePixelAnimation = $0 }
+                ))
+
+                Text(lang.t("settings.appearance.disablePixelAnimation.help"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             if isCustom {

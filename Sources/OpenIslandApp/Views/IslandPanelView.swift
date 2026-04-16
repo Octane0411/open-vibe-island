@@ -342,17 +342,18 @@ struct IslandPanelView: View {
         } else {
             HStack(spacing: 0) {
                 if hasClosedPresence {
+                    let glyphIsAnimating = hasClosedActivity && !model.disablePixelAnimation
                     HStack(spacing: 4) {
                         if model.isCustomAppearance {
                             IslandPixelGlyph(
                                 tint: scoutTint,
                                 style: model.islandPixelShapeStyle,
-                                isAnimating: hasClosedActivity,
+                                isAnimating: glyphIsAnimating,
                                 customAvatarImage: model.customAvatarImage
                             )
                             .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
                         } else {
-                            OpenIslandIcon(size: 14, isAnimating: hasClosedActivity, tint: scoutTint)
+                            OpenIslandIcon(size: 14, isAnimating: glyphIsAnimating, tint: scoutTint)
                                 .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
                         }
 

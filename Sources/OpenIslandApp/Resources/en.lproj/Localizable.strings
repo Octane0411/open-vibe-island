@@ -58,6 +58,8 @@
 "settings.appearance.style.detailed" = "Detailed";
 "settings.appearance.hideIdleToEdge" = "Hide To Edge When Idle";
 "settings.appearance.hideIdleToEdge.help" = "When the island is collapsed without an active notification card, keep only a thin black edge visible. Hovering or clicking still opens it.";
+"settings.appearance.disablePixelAnimation" = "Disable Pixel Animation";
+"settings.appearance.disablePixelAnimation.help" = "Stops the continuous animation of the pixel glyph in the closed island. Reduces CPU and battery usage, especially while a session is active.";
 "settings.appearance.pixelShape" = "Pixel Glyph";
 "settings.appearance.pixelShape.bars" = "Cat";
 "settings.appearance.pixelShape.steps" = "Steps";
