@@ -492,6 +492,7 @@ final class AppModel {
 
         overlay.appModel = self
         overlay.restoreDisplayPreference()
+        overlay.startWorkspaceMonitoring()
         overlay.onStatusMessage = { [weak self] message in
             self?.lastActionMessage = message
         }

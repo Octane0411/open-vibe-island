@@ -57,6 +57,9 @@ final class OverlayUICoordinator {
     @ObservationIgnored
     private var autoCollapseSurfaceHasBeenEntered = false
 
+    @ObservationIgnored
+    private var workspaceObservers: [NSObjectProtocol] = []
+
     /// Kept for API compatibility; always false now that the window never
     /// resizes and close transitions are pure SwiftUI.
     var isCloseTransitionPending: Bool { false }
@@ -85,6 +88,66 @@ final class OverlayUICoordinator {
         overlayDisplaySelectionID = UserDefaults.standard.string(
             forKey: "overlay.display.preference"
         ) ?? OverlayDisplayOption.automaticID
+    }
+
+    /// Start monitoring workspace events (Mission Control, space switches) to
+    /// auto-close the overlay when the user leaves the current desktop context.
+    func startWorkspaceMonitoring() {
+        guard workspaceObservers.isEmpty else { return }
+
+        let wsCenter = NSWorkspace.shared.notificationCenter
+
+        // Close overlay when the active Space changes (space switch, leaving
+        // Mission Control to a different space, full-screen app transitions).
+        let spaceObserver = wsCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.handleActiveSpaceDidChange()
+            }
+        }
+        workspaceObservers.append(spaceObserver)
+
+        // When the Dock activates it usually means Mission Control, Launchpad,
+        // or another system overlay is taking over the screen.  Close the island
+        // so it doesn't float unresponsive above the system UI.
+        let appObserver = wsCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            // Extract the bundle identifier on the current (main) queue before
+            // entering the MainActor-isolated closure to avoid sending
+            // `notification` across isolation boundaries.
+            let bundleID = (notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier
+            MainActor.assumeIsolated {
+                self?.handleDockActivationIfNeeded(bundleID: bundleID)
+            }
+        }
+        workspaceObservers.append(appObserver)
+    }
+
+    func stopWorkspaceMonitoring() {
+        let wsCenter = NSWorkspace.shared.notificationCenter
+        for observer in workspaceObservers {
+            wsCenter.removeObserver(observer)
+        }
+        workspaceObservers.removeAll()
+    }
+
+    private func handleActiveSpaceDidChange() {
+        guard notchStatus == .opened else { return }
+        notchClose()
+    }
+
+    private func handleDockActivationIfNeeded(bundleID: String?) {
+        guard notchStatus == .opened,
+              bundleID == "com.apple.dock" else {
+            return
+        }
+        notchClose()
     }
 
     // MARK: - Overlay transitions
