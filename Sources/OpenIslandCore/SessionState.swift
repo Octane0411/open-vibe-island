@@ -199,6 +199,15 @@ public struct SessionState: Equatable, Sendable {
             session.updatedAt = payload.timestamp
             upsert(session)
 
+        case let .kiroSessionMetadataUpdated(payload):
+            guard var session = sessionsByID[payload.sessionID] else {
+                return
+            }
+
+            session.kiroMetadata = payload.kiroMetadata.isEmpty ? nil : payload.kiroMetadata
+            session.updatedAt = payload.timestamp
+            upsert(session)
+
         case let .actionableStateResolved(payload):
             guard var session = sessionsByID[payload.sessionID] else {
                 return

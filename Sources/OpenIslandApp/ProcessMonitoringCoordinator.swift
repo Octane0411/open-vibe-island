@@ -230,6 +230,8 @@ final class ProcessMonitoringCoordinator {
             payload.sessionID
         case let .cursorSessionMetadataUpdated(payload):
             payload.sessionID
+        case let .kiroSessionMetadataUpdated(payload):
+            payload.sessionID
         case let .actionableStateResolved(payload):
             payload.sessionID
         }
@@ -334,12 +336,11 @@ final class ProcessMonitoringCoordinator {
             }
         }
 
-        // Kiro sessions: kiro-cli spawns a new shell for each hook call,
-        // so we cannot match by session ID. Keep all Kiro sessions alive
-        // as long as any kiro-cli process exists.
-        let hasKiroProcess = activeProcesses.contains { $0.tool == .kiro }
-        if hasKiroProcess {
-            for session in sessions where session.tool == .kiro && !session.isDemoSession {
+        // Kiro sessions: session ID is TTY-based ("kiro-tty-{hash}").
+        // Match by checking if any kiro-cli-chat process shares the same TTY.
+        let kiroProcessTTYs = Set(activeProcesses.filter { $0.tool == .kiro }.compactMap(\.terminalTTY))
+        for session in sessions where session.tool == .kiro && !session.isDemoSession {
+            if let tty = session.jumpTarget?.terminalTTY, kiroProcessTTYs.contains(tty) {
                 aliveIDs.insert(session.id)
             }
         }

@@ -222,6 +222,22 @@ public struct CursorSessionMetadataUpdated: Equatable, Codable, Sendable {
     }
 }
 
+public struct KiroSessionMetadataUpdated: Equatable, Codable, Sendable {
+    public var sessionID: String
+    public var kiroMetadata: KiroSessionMetadata
+    public var timestamp: Date
+
+    public init(
+        sessionID: String,
+        kiroMetadata: KiroSessionMetadata,
+        timestamp: Date
+    ) {
+        self.sessionID = sessionID
+        self.kiroMetadata = kiroMetadata
+        self.timestamp = timestamp
+    }
+}
+
 public struct ActionableStateResolved: Equatable, Codable, Sendable {
     public var sessionID: String
     public var summary: String
@@ -250,6 +266,7 @@ public enum AgentEvent: Equatable, Codable, Sendable {
     case geminiSessionMetadataUpdated(GeminiSessionMetadataUpdated)
     case openCodeSessionMetadataUpdated(OpenCodeSessionMetadataUpdated)
     case cursorSessionMetadataUpdated(CursorSessionMetadataUpdated)
+    case kiroSessionMetadataUpdated(KiroSessionMetadataUpdated)
     case actionableStateResolved(ActionableStateResolved)
 
     private enum CodingKeys: String, CodingKey {
@@ -265,6 +282,7 @@ public enum AgentEvent: Equatable, Codable, Sendable {
         case geminiSessionMetadataUpdated
         case openCodeSessionMetadataUpdated
         case cursorSessionMetadataUpdated
+        case kiroSessionMetadataUpdated
         case actionableStateResolved
     }
 
@@ -280,6 +298,7 @@ public enum AgentEvent: Equatable, Codable, Sendable {
         case geminiSessionMetadataUpdated
         case openCodeSessionMetadataUpdated
         case cursorSessionMetadataUpdated
+        case kiroSessionMetadataUpdated
         case actionableStateResolved
     }
 
@@ -317,6 +336,10 @@ public enum AgentEvent: Equatable, Codable, Sendable {
         case .cursorSessionMetadataUpdated:
             self = .cursorSessionMetadataUpdated(
                 try container.decode(CursorSessionMetadataUpdated.self, forKey: .cursorSessionMetadataUpdated)
+            )
+        case .kiroSessionMetadataUpdated:
+            self = .kiroSessionMetadataUpdated(
+                try container.decode(KiroSessionMetadataUpdated.self, forKey: .kiroSessionMetadataUpdated)
             )
         case .actionableStateResolved:
             self = .actionableStateResolved(
@@ -362,6 +385,9 @@ public enum AgentEvent: Equatable, Codable, Sendable {
         case let .cursorSessionMetadataUpdated(payload):
             try container.encode(EventType.cursorSessionMetadataUpdated, forKey: .type)
             try container.encode(payload, forKey: .cursorSessionMetadataUpdated)
+        case let .kiroSessionMetadataUpdated(payload):
+            try container.encode(EventType.kiroSessionMetadataUpdated, forKey: .type)
+            try container.encode(payload, forKey: .kiroSessionMetadataUpdated)
         case let .actionableStateResolved(payload):
             try container.encode(EventType.actionableStateResolved, forKey: .type)
             try container.encode(payload, forKey: .actionableStateResolved)

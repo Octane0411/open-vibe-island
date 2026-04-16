@@ -1408,6 +1408,7 @@ public final class BridgeServer: @unchecked Sendable {
 
         case .userPromptSubmit:
             ensureKiroSessionExists(for: payload, sessionID: sessionID)
+            synchronizeKiroMetadata(for: payload, sessionID: sessionID)
             emit(
                 .activityUpdated(
                     SessionActivityUpdated(
@@ -1422,6 +1423,7 @@ public final class BridgeServer: @unchecked Sendable {
 
         case .preToolUse:
             ensureKiroSessionExists(for: payload, sessionID: sessionID)
+            synchronizeKiroMetadata(for: payload, sessionID: sessionID)
             let tool = payload.toolName ?? "a tool"
             emit(
                 .activityUpdated(
@@ -1437,6 +1439,7 @@ public final class BridgeServer: @unchecked Sendable {
 
         case .postToolUse, .postToolUseFailure:
             ensureKiroSessionExists(for: payload, sessionID: sessionID)
+            synchronizeKiroMetadata(for: payload, sessionID: sessionID)
             let tool = payload.toolName ?? "a tool"
             emit(
                 .activityUpdated(
@@ -1452,6 +1455,7 @@ public final class BridgeServer: @unchecked Sendable {
 
         case .stop:
             ensureKiroSessionExists(for: payload, sessionID: sessionID)
+            synchronizeKiroMetadata(for: payload, sessionID: sessionID)
             emit(
                 .sessionCompleted(
                     SessionCompleted(
@@ -1464,17 +1468,32 @@ public final class BridgeServer: @unchecked Sendable {
             send(.response(.acknowledged), to: clientID)
 
         case .agentStop:
-            // agentStop is redundant with stop — suppress it.
+            ensureKiroSessionExists(for: payload, sessionID: sessionID)
+            emit(
+                .sessionCompleted(
+                    SessionCompleted(
+                        sessionID: sessionID,
+                        summary: "Kiro CLI session ended.",
+                        timestamp: .now,
+                        isSessionEnd: true
+                    )
+                )
+            )
             send(.response(.acknowledged), to: clientID)
         }
     }
 
-    /// Generates a stable session ID for Kiro CLI based on the cwd.
-    /// The actual kiro-cli PID is resolved by the hook CLI process.
+    /// Generates a stable session ID for Kiro CLI using the terminal TTY.
+    /// Same TTY = same kiro-cli session (matching Vibe Island behavior).
     private func kiroSessionID(for payload: KiroHookPayload) -> String {
-        let cwd = payload.cwd ?? ""
-        let hash = String(abs(cwd.hashValue) % 0xFFFF_FFFF, radix: 16)
-        return "kiro-\(hash)"
+        if let tty = payload.terminalTTY, !tty.isEmpty {
+            var hash: UInt32 = 5381
+            for byte in tty.utf8 { hash = hash &* 33 &+ UInt32(byte) }
+            return "kiro-tty-\(String(hash, radix: 16))"
+        }
+        var hash: UInt32 = 5381
+        for byte in (payload.cwd ?? "").utf8 { hash = hash &* 33 &+ UInt32(byte) }
+        return "kiro-cwd-\(String(hash, radix: 16))"
     }
 
     private func ensureKiroSessionExists(for payload: KiroHookPayload, sessionID: String) {
@@ -1491,6 +1510,29 @@ public final class BridgeServer: @unchecked Sendable {
                     summary: payload.implicitStartSummary,
                     timestamp: .now,
                     jumpTarget: payload.defaultJumpTarget
+                )
+            )
+        )
+    }
+
+    private func synchronizeKiroMetadata(for payload: KiroHookPayload, sessionID: String) {
+        let existing = localState.session(id: sessionID)?.kiroMetadata
+        let update = payload.defaultKiroMetadata
+        let merged = KiroSessionMetadata(
+            initialUserPrompt: existing?.initialUserPrompt ?? update.initialUserPrompt,
+            lastUserPrompt: update.lastUserPrompt ?? existing?.lastUserPrompt,
+            lastAssistantMessage: update.lastAssistantMessage ?? existing?.lastAssistantMessage,
+            currentTool: update.currentTool ?? existing?.currentTool,
+            currentToolInputPreview: update.currentToolInputPreview ?? existing?.currentToolInputPreview
+        )
+        guard !merged.isEmpty, existing != merged else { return }
+
+        emit(
+            .kiroSessionMetadataUpdated(
+                KiroSessionMetadataUpdated(
+                    sessionID: sessionID,
+                    kiroMetadata: merged,
+                    timestamp: .now
                 )
             )
         )

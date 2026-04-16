@@ -333,6 +333,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     public var geminiMetadata: GeminiSessionMetadata?
     public var openCodeMetadata: OpenCodeSessionMetadata?
     public var cursorMetadata: CursorSessionMetadata?
+    public var kiroMetadata: KiroSessionMetadata?
 
     /// Whether this session originates from a remote (SSH) connection.
     public var isRemote: Bool = false
@@ -457,7 +458,7 @@ public extension AgentSession {
     }
 
     var isTrackedLiveSession: Bool {
-        !isDemoSession && (tool == .codex || tool == .claudeCode || tool == .geminiCLI || tool == .openCode || tool == .qoder || tool == .qwenCode || tool == .factory || tool == .codebuddy || tool == .cursor)
+        !isDemoSession && (tool == .codex || tool == .claudeCode || tool == .geminiCLI || tool == .openCode || tool == .qoder || tool == .qwenCode || tool == .factory || tool == .codebuddy || tool == .cursor || tool == .kiro)
     }
 
     var isTrackedLiveCodexSession: Bool {
@@ -480,11 +481,17 @@ public extension AgentSession {
     }
 
     var currentToolName: String? {
-        codexMetadata?.currentTool ?? claudeMetadata?.currentTool ?? openCodeMetadata?.currentTool ?? cursorMetadata?.currentTool
+        codexMetadata?.currentTool ?? claudeMetadata?.currentTool ?? openCodeMetadata?.currentTool ?? cursorMetadata?.currentTool ?? kiroMetadata?.currentTool
     }
 
     var lastAssistantMessageText: String? {
-        codexMetadata?.lastAssistantMessage ?? claudeMetadata?.lastAssistantMessage ?? geminiMetadata?.lastAssistantMessage ?? openCodeMetadata?.lastAssistantMessage ?? cursorMetadata?.lastAssistantMessage
+        if let v = codexMetadata?.lastAssistantMessage { return v }
+        if let v = claudeMetadata?.lastAssistantMessage { return v }
+        if let v = geminiMetadata?.lastAssistantMessage { return v }
+        if let v = openCodeMetadata?.lastAssistantMessage { return v }
+        if let v = cursorMetadata?.lastAssistantMessage { return v }
+        if let v = kiroMetadata?.lastAssistantMessage { return v }
+        return nil
     }
 
     var completionAssistantMessageText: String? {
@@ -506,11 +513,23 @@ public extension AgentSession {
     }
 
     var latestUserPromptText: String? {
-        codexMetadata?.lastUserPrompt ?? claudeMetadata?.lastUserPrompt ?? geminiMetadata?.lastUserPrompt ?? openCodeMetadata?.lastUserPrompt ?? cursorMetadata?.lastUserPrompt
+        if let v = codexMetadata?.lastUserPrompt { return v }
+        if let v = claudeMetadata?.lastUserPrompt { return v }
+        if let v = geminiMetadata?.lastUserPrompt { return v }
+        if let v = openCodeMetadata?.lastUserPrompt { return v }
+        if let v = cursorMetadata?.lastUserPrompt { return v }
+        if let v = kiroMetadata?.lastUserPrompt { return v }
+        return nil
     }
 
     var initialUserPromptText: String? {
-        codexMetadata?.initialUserPrompt ?? claudeMetadata?.initialUserPrompt ?? geminiMetadata?.initialUserPrompt ?? openCodeMetadata?.initialUserPrompt ?? cursorMetadata?.initialUserPrompt
+        if let v = codexMetadata?.initialUserPrompt { return v }
+        if let v = claudeMetadata?.initialUserPrompt { return v }
+        if let v = geminiMetadata?.initialUserPrompt { return v }
+        if let v = openCodeMetadata?.initialUserPrompt { return v }
+        if let v = cursorMetadata?.initialUserPrompt { return v }
+        if let v = kiroMetadata?.initialUserPrompt { return v }
+        return nil
     }
 
     var currentCommandPreviewText: String? {

@@ -17,6 +17,8 @@ public struct KiroHookPayload: Equatable, Codable, Sendable {
     public var assistantResponse: String?
     public var toolName: String?
     public var toolInput: KiroHookJSONValue?
+    /// Terminal TTY path, set by the hook CLI for session grouping.
+    public var terminalTTY: String?
 
     private enum CodingKeys: String, CodingKey {
         case hookEventName = "hook_event_name"
@@ -25,6 +27,7 @@ public struct KiroHookPayload: Equatable, Codable, Sendable {
         case assistantResponse = "assistant_response"
         case toolName = "tool_name"
         case toolInput = "tool_input"
+        case terminalTTY = "terminal_tty"
     }
 
     public init(
@@ -33,7 +36,8 @@ public struct KiroHookPayload: Equatable, Codable, Sendable {
         prompt: String? = nil,
         assistantResponse: String? = nil,
         toolName: String? = nil,
-        toolInput: KiroHookJSONValue? = nil
+        toolInput: KiroHookJSONValue? = nil,
+        terminalTTY: String? = nil
     ) {
         self.hookEventName = hookEventName
         self.cwd = cwd
@@ -41,6 +45,7 @@ public struct KiroHookPayload: Equatable, Codable, Sendable {
         self.assistantResponse = assistantResponse
         self.toolName = toolName
         self.toolInput = toolInput
+        self.terminalTTY = terminalTTY
     }
 }
 
@@ -117,7 +122,8 @@ public extension KiroHookPayload {
             terminalApp: "Unknown",
             workspaceName: workspaceName,
             paneTitle: "Kiro CLI",
-            workingDirectory: cwd ?? ""
+            workingDirectory: cwd ?? "",
+            terminalTTY: terminalTTY
         )
     }
 

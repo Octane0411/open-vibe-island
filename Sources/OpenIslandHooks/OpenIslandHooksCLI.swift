@@ -73,7 +73,10 @@ struct OpenIslandHooksCLI {
                     FileHandle.standardOutput.write(output)
                 }
             case .kiro:
-                let payload = try decoder.decode(KiroHookPayload.self, from: input)
+                var payload = try decoder.decode(KiroHookPayload.self, from: input)
+                if payload.terminalTTY == nil {
+                    payload.terminalTTY = Self.currentTTY()
+                }
 
                 guard (try? client.send(.processKiroHook(payload), timeout: 45)) != nil else {
                     logStderr("bridge unavailable for kiro hook (\(payload.hookEventName.rawValue))")
@@ -138,5 +141,21 @@ struct OpenIslandHooksCLI {
         }
 
         return nil
+    }
+
+    /// Get the TTY of the current process via ps (works even when stdin is a pipe).
+    private static func currentTTY() -> String? {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/bin/ps")
+        proc.arguments = ["-o", "tty=", "-p", "\(getpid())"]
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = FileHandle.nullDevice
+        try? proc.run()
+        proc.waitUntilExit()
+        let raw = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !raw.isEmpty, raw != "??" else { return nil }
+        return raw.hasPrefix("/dev/") ? raw : "/dev/\(raw)"
     }
 }
