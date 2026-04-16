@@ -392,6 +392,12 @@ struct IslandPanelView: View {
                                 isVisible: isExternalDisplayPlacement && hasClosedPresence
                             )
                         )
+                        .overlay {
+                            ClaudeUsageBadge(
+                                fiveHourPercent: model.claudeUsageSnapshot?.fiveHour?.roundedUsedPercentage,
+                                sevenDayPercent: model.claudeUsageSnapshot?.sevenDay?.roundedUsedPercentage
+                            )
+                        }
                 }
 
                 if hasClosedPresence {
@@ -2056,6 +2062,50 @@ private struct CentralActivityLabel: View {
             return "sparkles"
         }
         return "wrench.and.screwdriver"
+    }
+}
+
+// MARK: - Claude usage badge (5h / 7d percentages in the closed pill)
+
+private struct ClaudeUsageBadge: View {
+    let fiveHourPercent: Int?
+    let sevenDayPercent: Int?
+
+    var body: some View {
+        if fiveHourPercent == nil && sevenDayPercent == nil {
+            EmptyView()
+        } else {
+            HStack(spacing: 6) {
+                segment(label: "5h", percent: fiveHourPercent)
+                segment(label: "7d", percent: sevenDayPercent)
+            }
+            .font(.system(size: 10, weight: .semibold))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
+            .background(Color(red: 0.14, green: 0.14, blue: 0.15), in: Capsule())
+        }
+    }
+
+    private func segment(label: String, percent: Int?) -> some View {
+        HStack(spacing: 2) {
+            Text(label).foregroundStyle(.secondary)
+            Text("\u{2022}").foregroundStyle(.secondary)
+            Text(format(percent)).foregroundStyle(color(for: percent))
+        }
+    }
+
+    private func format(_ p: Int?) -> String {
+        guard let p else { return "--" }
+        return "\(p)"
+    }
+
+    private func color(for p: Int?) -> Color {
+        guard let p else { return .secondary }
+        switch p {
+        case ..<50: return .green
+        case ..<80: return .orange
+        default: return .red
+        }
     }
 }
 
