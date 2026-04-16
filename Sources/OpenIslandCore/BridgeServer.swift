@@ -1516,6 +1516,13 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func synchronizeKiroMetadata(for payload: KiroHookPayload, sessionID: String) {
+        // Reconcile jump target in case TTY was unavailable at session creation.
+        let jumpTarget = payload.defaultJumpTarget
+        if let existing = localState.session(id: sessionID)?.jumpTarget,
+           existing != jumpTarget {
+            emit(.jumpTargetUpdated(JumpTargetUpdated(sessionID: sessionID, jumpTarget: jumpTarget, timestamp: .now)))
+        }
+
         let existing = localState.session(id: sessionID)?.kiroMetadata
         let update = payload.defaultKiroMetadata
         let merged = KiroSessionMetadata(
