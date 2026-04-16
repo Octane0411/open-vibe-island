@@ -37,6 +37,8 @@ final class ProcessMonitoringCoordinator {
     @ObservationIgnored
     private var sessionAttachmentMonitorTask: Task<Void, Never>?
 
+    private static let cursorStalenessTimeout: TimeInterval = 600  // 10 minutes
+
     private var state: SessionState {
         get { stateAccessor?() ?? SessionState() }
         set { stateUpdater?(newValue) }
@@ -237,6 +239,10 @@ final class ProcessMonitoringCoordinator {
 
     // MARK: - Process liveness
 
+    /// Returns the set of session IDs whose backing agent process is still
+    /// alive, based on ``ActiveProcessSnapshot`` matching and per-tool
+    /// heuristics (e.g. bundle-ID liveness for Cursor, PID matching for
+    /// Codex/Claude/Gemini).
     func sessionIDsWithAliveProcesses(
         activeProcesses: [ActiveProcessSnapshot]
     ) -> Set<String> {
@@ -323,14 +329,21 @@ final class ProcessMonitoringCoordinator {
         }
 
         // Cursor sessions: Cursor is an Electron IDE — we cannot match
-        // individual session IDs from ps/lsof.  Keep all Cursor sessions
-        // alive as long as Cursor.app is running.
+        // individual session IDs from ps/lsof.  Keep Cursor sessions alive
+        // while Cursor.app is running, but let completed sessions expire
+        // after a staleness window so the notch clears when the user is
+        // no longer interacting with the conversation.  Cursor has no
+        // "tab closed" hook, so this timeout is the best available proxy.
         let isCursorRunning = !NSRunningApplication.runningApplications(
             withBundleIdentifier: "com.todesktop.230313mzl4w4u92"
         ).isEmpty
         if isCursorRunning {
             for session in sessions where session.tool == .cursor && !session.isDemoSession {
-                aliveIDs.insert(session.id)
+                let isStale = session.phase == .completed
+                    && session.updatedAt.addingTimeInterval(Self.cursorStalenessTimeout) < Date.now
+                if !isStale {
+                    aliveIDs.insert(session.id)
+                }
             }
         }
 
