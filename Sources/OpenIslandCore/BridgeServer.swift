@@ -434,6 +434,9 @@ public final class BridgeServer: @unchecked Sendable {
 
         case let .processGeminiHook(payload):
             handleGeminiHook(payload, from: clientID)
+
+        case let .processKiroHook(payload):
+            handleKiroHook(payload, from: clientID)
         }
     }
 
@@ -1375,6 +1378,119 @@ public final class BridgeServer: @unchecked Sendable {
                     sessionID: payload.sessionID,
                     geminiMetadata: merged,
                     timestamp: .now
+                )
+            )
+        )
+    }
+
+    // MARK: - Kiro CLI hooks
+
+    private func handleKiroHook(_ payload: KiroHookPayload, from clientID: UUID) {
+        let sessionID = kiroSessionID(for: payload)
+
+        switch payload.hookEventName {
+        case .agentSpawn:
+            emit(
+                .sessionStarted(
+                    SessionStarted(
+                        sessionID: sessionID,
+                        title: payload.sessionTitle,
+                        tool: .kiro,
+                        origin: .live,
+                        initialPhase: .running,
+                        summary: payload.implicitStartSummary,
+                        timestamp: .now,
+                        jumpTarget: payload.defaultJumpTarget
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .userPromptSubmit:
+            ensureKiroSessionExists(for: payload, sessionID: sessionID)
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: sessionID,
+                        summary: payload.promptPreview.map { "Prompt: \($0)" } ?? payload.implicitStartSummary,
+                        phase: .running,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .preToolUse:
+            ensureKiroSessionExists(for: payload, sessionID: sessionID)
+            let tool = payload.toolName ?? "a tool"
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: sessionID,
+                        summary: payload.toolInputPreview.map { "Running \(tool): \($0)" } ?? "Running \(tool)",
+                        phase: .running,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .postToolUse, .postToolUseFailure:
+            ensureKiroSessionExists(for: payload, sessionID: sessionID)
+            let tool = payload.toolName ?? "a tool"
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: sessionID,
+                        summary: "\(tool) finished.",
+                        phase: .running,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .stop:
+            ensureKiroSessionExists(for: payload, sessionID: sessionID)
+            emit(
+                .sessionCompleted(
+                    SessionCompleted(
+                        sessionID: sessionID,
+                        summary: payload.assistantResponse ?? payload.assistantResponsePreview ?? "Kiro CLI completed the turn.",
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .agentStop:
+            // agentStop is redundant with stop — suppress it.
+            send(.response(.acknowledged), to: clientID)
+        }
+    }
+
+    /// Generates a stable session ID for Kiro CLI based on the cwd.
+    /// The actual kiro-cli PID is resolved by the hook CLI process.
+    private func kiroSessionID(for payload: KiroHookPayload) -> String {
+        let cwd = payload.cwd ?? ""
+        let hash = String(abs(cwd.hashValue) % 0xFFFF_FFFF, radix: 16)
+        return "kiro-\(hash)"
+    }
+
+    private func ensureKiroSessionExists(for payload: KiroHookPayload, sessionID: String) {
+        guard !hasSession(id: sessionID) else { return }
+
+        emit(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: sessionID,
+                    title: payload.sessionTitle,
+                    tool: .kiro,
+                    origin: .live,
+                    initialPhase: .running,
+                    summary: payload.implicitStartSummary,
+                    timestamp: .now,
+                    jumpTarget: payload.defaultJumpTarget
                 )
             )
         )

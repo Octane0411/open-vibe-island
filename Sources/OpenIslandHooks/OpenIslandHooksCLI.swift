@@ -73,27 +73,11 @@ struct OpenIslandHooksCLI {
                     FileHandle.standardOutput.write(output)
                 }
             case .kiro:
-                // kiro-cli sends camelCase events; agentStop is suppressed (redundant with stop)
-                if let raw = try? JSONSerialization.jsonObject(with: input) as? [String: Any],
-                   let event = raw["hook_event_name"] as? String,
-                   event == "agentStop" {
-                    return
-                }
+                let payload = try decoder.decode(KiroHookPayload.self, from: input)
 
-                var payload = try Self.kiroToClaudePayload(from: input, environment: ProcessInfo.processInfo.environment)
-                payload.hookSource = "kiro"
-
-                let timeout: TimeInterval = payload.hookEventName == .permissionRequest
-                    ? interactiveClaudeHookTimeout
-                    : 45
-
-                guard let response = try? client.send(.processClaudeHook(payload), timeout: timeout) else {
+                guard (try? client.send(.processKiroHook(payload), timeout: 45)) != nil else {
                     logStderr("bridge unavailable for kiro hook (\(payload.hookEventName.rawValue))")
                     return
-                }
-
-                if let output = try ClaudeHookOutputEncoder.standardOutput(for: response) {
-                    FileHandle.standardOutput.write(output)
                 }
             case .cursor:
                 let payload = try decoder.decode(CursorHookPayload.self, from: input)
@@ -153,86 +137,6 @@ struct OpenIslandHooksCLI {
             index += 1
         }
 
-        return nil
-    }
-
-    // MARK: - Kiro CLI payload translation
-
-    /// Kiro CLI sends camelCase event names and a minimal payload.
-    /// This translates it into a ClaudeHookPayload the bridge understands.
-    private static let kiroEventMap: [String: String] = [
-        "agentSpawn": "SessionStart",
-        "agentStop": "SessionEnd",
-        "userPromptSubmit": "UserPromptSubmit",
-        "preToolUse": "PreToolUse",
-        "postToolUse": "PostToolUse",
-        "postToolUseFailure": "PostToolUseFailure",
-        "stop": "Stop",
-        "notification": "Notification",
-        "permissionRequest": "PermissionRequest",
-        "sessionStart": "SessionStart",
-        "sessionEnd": "SessionEnd",
-    ]
-
-    private static func kiroToClaudePayload(
-        from input: Data,
-        environment: [String: String]
-    ) throws -> ClaudeHookPayload {
-        guard var raw = try JSONSerialization.jsonObject(with: input) as? [String: Any] else {
-            throw ClaudeHookInstallerError.invalidSettingsJSON
-        }
-
-        // Map camelCase event name → PascalCase (matching vibe-island-bridge behavior)
-        if let eventName = raw["hook_event_name"] as? String,
-           let mapped = kiroEventMap[eventName] {
-            raw["hook_event_name"] = mapped
-        }
-
-        // Generate stable session_id by walking up the process tree to find the
-        // kiro-cli process (matching vibe-island-bridge behavior).
-        if raw["session_id"] == nil {
-            let kiroPID = findAncestorPID(named: "kiro-cli") ?? getppid()
-            let cwd = raw["cwd"] as? String ?? ""
-            let hash = String(abs(cwd.hashValue) % 0xFFFFFFFF, radix: 16)
-            raw["session_id"] = "kiro-\(kiroPID)-\(hash)"
-        }
-
-        // Map assistant_response → last_assistant_message
-        if let resp = raw["assistant_response"] as? String, raw["last_assistant_message"] == nil {
-            raw["last_assistant_message"] = resp
-        }
-
-        // Map tool_name "shell" → "Bash" to match vibe-island-bridge
-        if let toolName = raw["tool_name"] as? String, toolName == "shell" {
-            raw["tool_name"] = "Bash"
-        }
-
-        let patched = try JSONSerialization.data(withJSONObject: raw)
-        return try JSONDecoder().decode(ClaudeHookPayload.self, from: patched)
-            .withRuntimeContext(environment: environment)
-    }
-
-    /// Walk up the process tree to find an ancestor whose name contains the given string.
-    private static func findAncestorPID(named target: String) -> pid_t? {
-        var pid = getppid()
-        for _ in 0..<20 {
-            guard pid > 1 else { return nil }
-            let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: "/bin/ps")
-            proc.arguments = ["-p", "\(pid)", "-o", "ppid=,comm="]
-            let pipe = Pipe()
-            proc.standardOutput = pipe
-            proc.standardError = FileHandle.nullDevice
-            try? proc.run()
-            proc.waitUntilExit()
-            let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let parts = output.split(separator: " ", maxSplits: 1)
-            let comm = parts.count > 1 ? String(parts[1]) : ""
-            if comm.contains(target) { return pid }
-            guard let parentPID = parts.first.flatMap({ pid_t($0) }), parentPID > 0 else { return nil }
-            pid = parentPID
-        }
         return nil
     }
 }
