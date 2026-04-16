@@ -64,7 +64,7 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
 
     public var isClaudeCodeFork: Bool {
         switch self {
-        case .claudeCode, .qoder, .qwenCode, .factory, .codebuddy, .kiro:
+        case .claudeCode, .qoder, .qwenCode, .factory, .codebuddy:
             true
         default:
             false
