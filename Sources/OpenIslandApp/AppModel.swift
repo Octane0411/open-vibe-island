@@ -1279,6 +1279,13 @@ final class AppModel {
                 // Wait for all status reads to complete before checking install state.
                 await self.hooks.refreshAllHookStatusAndWait()
 
+                // Reconcile persisted intent with what is actually on disk. For
+                // legacy users this records existing hooks as `.installed` and
+                // marks first-launch as complete so onboarding does not appear
+                // on upgrade. Must run after status reads and before any
+                // install decision.
+                self.hooks.migrateIntentStoreIfNeeded()
+
                 if !self.claudeHooksInstalled { self.installClaudeHooks() }
                 if !self.codexHooksInstalled { self.installCodexHooks() }
                 if !self.qoderHooksInstalled { self.installQoderHooks() }
