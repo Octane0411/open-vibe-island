@@ -107,6 +107,9 @@
 "setup.permissionsTitle" = "Accessibility";
 "setup.permissionsDesc" = "Open Island may need Accessibility permission to detect terminal windows. Grant it in System Settings → Privacy & Security → Accessibility.";
 "setup.installAll" = "Install All";
+"setup.banner.noHooks.title" = "Get started with Open Island";
+"setup.banner.noHooks.message" = "Enable agent hooks so Open Island can monitor your AI coding sessions.";
+"setup.banner.noHooks.action" = "Set up";
 "setup.revealConfigLocation" = "Reveal config in Finder";
 "setup.section.diagnostics" = "Hook Diagnostics";
 "setup.diagnostics.notRun" = "Health check not yet run.";
@@ -133,6 +136,8 @@
 "island.noTerminals" = "No open terminal sessions";
 "island.startAgent" = "Start a coding agent in your terminal";
 "island.recentSessions" = "Recent sessions remain in Control Center until the terminal is open again";
+"island.empty.noAgents.title" = "No agent hooks installed yet";
+"island.empty.noAgents.cta" = "Set up agents";
 
 /* Island Panel - Session List */
 "island.showAll" = "Show all %lld sessions";
@@ -197,3 +202,55 @@
 /* Window Titles */
 "window.settings" = "Open Island Settings";
 "window.debug" = "Open Island Debug";
+
+/* Onboarding - Common */
+"onboarding.back" = "Back";
+"onboarding.continue" = "Continue";
+
+/* Onboarding - Welcome */
+"onboarding.welcome.title" = "Welcome to Open Island";
+"onboarding.welcome.subtitle" = "A native macOS companion that surfaces your AI coding agents right in the menu bar.";
+"onboarding.welcome.bullet.agents" = "Monitors Claude Code, Codex, Cursor, and other coding agents.";
+"onboarding.welcome.bullet.permissions" = "Shows permission requests and questions without breaking your flow.";
+"onboarding.welcome.bullet.jump" = "Jumps back to the terminal and pane where the session lives.";
+"onboarding.welcome.skip" = "Skip for now";
+"onboarding.welcome.continue" = "Get started";
+
+/* Onboarding - Agents */
+"onboarding.agents.title" = "Which AI coding agents do you use?";
+"onboarding.agents.subtitle" = "Open Island will monitor these agents. Anything you skip can be enabled later from settings.";
+"onboarding.agents.more" = "More agents";
+"onboarding.agents.footnote" = "Leaving unused agents enabled is harmless — hooks only run when the matching agent starts.";
+"onboarding.agents.desc.claudeCode" = "Anthropic's official Claude Code CLI";
+"onboarding.agents.desc.codex" = "OpenAI's official Codex CLI";
+"onboarding.agents.desc.cursor" = "Cursor Agent (CLI mode)";
+"onboarding.agents.desc.openCode" = "opencode.ai";
+"onboarding.agents.desc.qoder" = "Qoder coding agent";
+"onboarding.agents.desc.qwenCode" = "Alibaba Qwen Code CLI";
+"onboarding.agents.desc.factory" = "Factory AI coding agent";
+"onboarding.agents.desc.codebuddy" = "Tencent CodeBuddy";
+"onboarding.agents.desc.gemini" = "Google Gemini CLI";
+
+/* Onboarding - Permissions */
+"onboarding.permissions.title" = "Grant the permissions Open Island needs";
+"onboarding.permissions.subtitle" = "All of these can be granted later from System Settings — nothing here blocks setup.";
+"onboarding.permissions.required" = "Required";
+"onboarding.permissions.recommended" = "Recommended";
+"onboarding.permissions.optional" = "Optional";
+"onboarding.permissions.granted" = "Granted";
+"onboarding.permissions.grant" = "Grant";
+"onboarding.permissions.openSettings" = "Open Settings";
+"onboarding.permissions.skip" = "Skip";
+"onboarding.permissions.notifications.title" = "Notifications";
+"onboarding.permissions.notifications.desc" = "Surface permission requests and completion events even when Open Island is not focused.";
+"onboarding.permissions.accessibility.title" = "Accessibility";
+"onboarding.permissions.accessibility.desc" = "Lets Open Island jump precisely to the terminal pane hosting each session.";
+"onboarding.permissions.automation.title" = "Automation";
+"onboarding.permissions.automation.desc" = "Enables tab-aware jumps for iTerm, Terminal, and other supported terminals.";
+
+/* Onboarding - Completion */
+"onboarding.completion.title" = "You're all set";
+"onboarding.completion.subtitle" = "Start any coding agent in your terminal — Open Island will appear at the top of your screen.";
+"onboarding.completion.hint" = "Look up here";
+"onboarding.completion.revisit" = "You can change these choices any time from Open Island → Settings → Setup.";
+"onboarding.completion.start" = "Start using";

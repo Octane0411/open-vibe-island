@@ -493,14 +493,34 @@ struct IslandPanelView: View {
     private var emptyState: some View {
         VStack(spacing: 12) {
             Spacer()
-            Text(model.lang.t("island.noTerminals"))
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.white.opacity(0.4))
-            Text(model.recentSessions.isEmpty
-                ? model.lang.t("island.startAgent")
-                : model.lang.t("island.recentSessions"))
-                .font(.system(size: 12))
-                .foregroundStyle(.white.opacity(0.25))
+            if !model.hasAnyInstalledAgent {
+                Text(model.lang.t("island.empty.noAgents.title"))
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.6))
+                Button {
+                    model.showOnboarding()
+                } label: {
+                    Text(model.lang.t("island.empty.noAgents.cta"))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.accentColor.opacity(0.85))
+                        )
+                }
+                .buttonStyle(.plain)
+            } else {
+                Text(model.lang.t("island.noTerminals"))
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.4))
+                Text(model.recentSessions.isEmpty
+                    ? model.lang.t("island.startAgent")
+                    : model.lang.t("island.recentSessions"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.25))
+            }
             Spacer()
         }
         .frame(maxWidth: .infinity)

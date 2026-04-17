@@ -119,6 +119,30 @@ final class AppModel {
     var geminiHookStatusSummary: String { hooks.geminiHookStatusSummary }
     var codexHookStatusTitle: String { hooks.codexHookStatusTitle }
     var codexHookStatusSummary: String { hooks.codexHookStatusSummary }
+
+    /// Mirrors `AgentIntentStore.firstLaunchCompleted`. Onboarding sets this
+    /// to true after the user completes (or explicitly skips) the flow;
+    /// legacy migration also flips it for users upgrading with existing
+    /// hooks.
+    var firstLaunchCompleted: Bool {
+        get { hooks.intentStore.firstLaunchCompleted }
+        set { hooks.intentStore.firstLaunchCompleted = newValue }
+    }
+
+    /// True if at least one managed hook is currently present on disk.
+    /// Drives the "configure agents" empty-state prompts in the island and
+    /// the settings window.
+    var hasAnyInstalledAgent: Bool {
+        hooks.claudeHooksInstalled
+            || hooks.codexHooksInstalled
+            || hooks.cursorHooksInstalled
+            || hooks.qoderHooksInstalled
+            || hooks.qwenCodeHooksInstalled
+            || hooks.factoryHooksInstalled
+            || hooks.codebuddyHooksInstalled
+            || hooks.openCodePluginInstalled
+            || hooks.geminiHooksInstalled
+    }
     func refreshCodexHookStatus() { hooks.refreshCodexHookStatus() }
     func refreshClaudeHookStatus() { hooks.refreshClaudeHookStatus() }
     func refreshOpenCodePluginStatus() { hooks.refreshOpenCodePluginStatus() }
@@ -330,6 +354,14 @@ final class AppModel {
 
     @ObservationIgnored
     var openSettingsWindow: (() -> Void)?
+
+    /// Whether the first-run onboarding window is on screen. Set when the
+    /// startup flow presents it or when the user taps an empty-state CTA.
+    /// Cleared by the window controller's `windowWillClose` delegate.
+    var isOnboardingPresented: Bool = false
+
+    @ObservationIgnored
+    private var onboardingWindowController: OnboardingWindowController?
 
     @ObservationIgnored
     private var hasFinishedInit = false
@@ -913,6 +945,25 @@ final class AppModel {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// Opens the first-run onboarding window. Invoked on first launch (via
+    /// the startup discovery payload) and from the empty-state prompts in
+    /// the island and settings panels. Lazily creates the controller so
+    /// the window resources cost nothing until first use.
+    func showOnboarding() {
+        isOnboardingPresented = true
+        if onboardingWindowController == nil {
+            onboardingWindowController = OnboardingWindowController(model: self)
+        }
+        onboardingWindowController?.show()
+    }
+
+    /// Closes the onboarding window. Called by the coordinator when the
+    /// user completes the flow or explicitly skips it.
+    func dismissOnboarding() {
+        onboardingWindowController?.close()
+        isOnboardingPresented = false
+    }
+
     func showControlCenter() {
         guard let window = NSApp.windows.first(where: { $0.title == "Open Island Debug" }) else {
             NSApp.activate(ignoringOtherApps: true)
@@ -1279,16 +1330,36 @@ final class AppModel {
                 // Wait for all status reads to complete before checking install state.
                 await self.hooks.refreshAllHookStatusAndWait()
 
-                if !self.claudeHooksInstalled { self.installClaudeHooks() }
-                if !self.codexHooksInstalled { self.installCodexHooks() }
-                if !self.qoderHooksInstalled { self.installQoderHooks() }
-                if !self.qwenCodeHooksInstalled { self.installQwenCodeHooks() }
-                if !self.factoryHooksInstalled { self.installFactoryHooks() }
-                if !self.codebuddyHooksInstalled { self.installCodebuddyHooks() }
-                if !self.openCodePluginInstalled { self.installOpenCodePlugin() }
-                if !self.cursorHooksInstalled { self.installCursorHooks() }
-                if !self.geminiHooksInstalled { self.installGeminiHooks() }
-                if !self.claudeUsageInstalled { self.installClaudeUsageBridge() }
+                // Reconcile persisted intent with what is actually on disk. For
+                // legacy users this records existing hooks as `.installed` and
+                // marks first-launch as complete so onboarding does not appear
+                // on upgrade. Must run after status reads and before any
+                // install decision.
+                self.hooks.migrateIntentStoreIfNeeded()
+
+                // True new users (no hooks, no prior onboarding) get the
+                // first-run window instead of the blind auto-install loop
+                // below. Harness scenarios skip session discovery entirely
+                // so this branch is naturally excluded there.
+                if !self.firstLaunchCompleted {
+                    self.showOnboarding()
+                    return
+                }
+
+                // Install only hooks the user has not explicitly opted out of.
+                // `shouldAutoInstall` skips `.uninstalled` agents and agents
+                // whose hooks are already present — it is the single checkpoint
+                // that fixes #324.
+                if self.hooks.shouldAutoInstall(.claudeCode) { self.installClaudeHooks() }
+                if self.hooks.shouldAutoInstall(.codex) { self.installCodexHooks() }
+                if self.hooks.shouldAutoInstall(.qoder) { self.installQoderHooks() }
+                if self.hooks.shouldAutoInstall(.qwenCode) { self.installQwenCodeHooks() }
+                if self.hooks.shouldAutoInstall(.factory) { self.installFactoryHooks() }
+                if self.hooks.shouldAutoInstall(.codebuddy) { self.installCodebuddyHooks() }
+                if self.hooks.shouldAutoInstall(.openCode) { self.installOpenCodePlugin() }
+                if self.hooks.shouldAutoInstall(.cursor) { self.installCursorHooks() }
+                if self.hooks.shouldAutoInstall(.gemini) { self.installGeminiHooks() }
+                if self.hooks.shouldAutoInstall(.claudeUsageBridge) { self.installClaudeUsageBridge() }
 
                 // Run health checks after install to detect stale paths, conflicts, etc.
                 try? await Task.sleep(for: .milliseconds(500))

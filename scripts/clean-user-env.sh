@@ -47,13 +47,17 @@ echo "==> Cleaning Open Island artifacts"
 # --- Hook configurations ---
 echo "--- Hook configs ---"
 
-# Claude: remove Open Island hook entries from settings.json
-claude_settings=~/.claude/settings.json
-if [[ -f "$claude_settings" ]]; then
-    if $DRY_RUN; then
-        yellow "[dry-run] would strip OpenIsland hooks from: $claude_settings"
-    else
-        python3 -c "
+# Claude-style forks (.claude / .qoder / .qwen / .factory / .codebuddy / .gemini):
+# each has a settings.json that may contain Open Island hook entries, plus
+# sidecar manifests and backups.
+strip_claude_style() {
+    local dir="$1"
+    local settings="$dir/settings.json"
+    if [[ -f "$settings" ]]; then
+        if $DRY_RUN; then
+            yellow "[dry-run] would strip OpenIsland hooks from: $settings"
+        else
+            python3 -c "
 import json, sys, pathlib
 p = pathlib.Path(sys.argv[1])
 d = json.loads(p.read_text())
@@ -61,6 +65,7 @@ hooks = d.get('hooks', {})
 changed = False
 for event in list(hooks.keys()):
     original = hooks[event]
+    if not isinstance(original, list): continue
     filtered = [h for h in original
                 if not any('OpenIslandHooks' in (c.get('command',''))
                            for c in h.get('hooks',[]))]
@@ -79,12 +84,17 @@ if changed:
         del d['hooks']
     p.write_text(json.dumps(d, indent=2, ensure_ascii=False) + '\n')
     print('stripped OpenIsland hooks/statusLine from', sys.argv[1])
-" "$claude_settings" 2>/dev/null && green "cleaned hooks in $claude_settings" || true
+" "$settings" 2>/dev/null && green "cleaned hooks in $settings" || true
+        fi
     fi
-fi
-clean_path ~/.claude/open-island-claude-hooks-install.json
-clean_path ~/.claude/vibe-island-claude-hooks-install.json
-clean_glob ~/.claude/'settings.json.backup.*'
+    clean_path "$dir/open-island-claude-hooks-install.json"
+    clean_path "$dir/vibe-island-claude-hooks-install.json"
+    clean_glob "$dir/settings.json.backup.*"
+}
+
+for d in ~/.claude ~/.qoder ~/.qwen ~/.factory ~/.codebuddy ~/.gemini; do
+    strip_claude_style "$d"
+done
 
 # Codex: remove Open Island entries from hooks.json
 codex_hooks=~/.codex/hooks.json
@@ -120,6 +130,43 @@ fi
 clean_path ~/.codex/open-island-codex-hooks-install.json
 clean_glob ~/.codex/'config.toml.backup.*'
 clean_glob ~/.codex/'hooks.json.backup.*'
+
+# Cursor: remove Open Island hook entries from ~/.cursor/hooks.json
+cursor_hooks=~/.cursor/hooks.json
+if [[ -f "$cursor_hooks" ]]; then
+    if $DRY_RUN; then
+        yellow "[dry-run] would strip OpenIsland hooks from: $cursor_hooks"
+    else
+        python3 -c "
+import json, sys, pathlib
+p = pathlib.Path(sys.argv[1])
+d = json.loads(p.read_text())
+hooks = d.get('hooks', d)
+changed = False
+for event in list(hooks.keys()):
+    original = hooks[event]
+    if not isinstance(original, list): continue
+    filtered = [h for h in original
+                if not any('OpenIslandHooks' in c.get('command','')
+                           for c in h.get('hooks',[]))]
+    if len(filtered) != len(original):
+        changed = True
+        if filtered:
+            hooks[event] = filtered
+        else:
+            del hooks[event]
+if changed:
+    p.write_text(json.dumps(d, indent=2, ensure_ascii=False) + '\n')
+    print('stripped OpenIsland hooks from', sys.argv[1])
+" "$cursor_hooks" 2>/dev/null && green "cleaned hooks in $cursor_hooks" || true
+    fi
+fi
+clean_path ~/.cursor/open-island-cursor-hooks-install.json
+clean_glob ~/.cursor/'hooks.json.backup.*'
+
+# OpenCode: remove the bundled plugin + install manifest
+clean_path ~/.config/opencode/plugins/open-island-opencode.js
+clean_path ~/.config/opencode/open-island-opencode-plugin-install.json
 
 # --- Installed hooks binary ---
 echo "--- Hooks binary ---"

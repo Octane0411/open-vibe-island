@@ -107,6 +107,9 @@
 "setup.permissionsTitle" = "輔助使用";
 "setup.permissionsDesc" = "Open Island 可能需要輔助使用權限來偵測終端機視窗。請在「系統設定 → 隱私權與安全性 → 輔助使用」中授權。";
 "setup.installAll" = "全部安裝";
+"setup.banner.noHooks.title" = "開始使用 Open Island";
+"setup.banner.noHooks.message" = "啟用 Agent hooks，讓 Open Island 監聽你的 AI 編碼工作階段。";
+"setup.banner.noHooks.action" = "開始設定";
 "setup.revealConfigLocation" = "在 Finder 中顯示設定";
 "setup.section.diagnostics" = "Hooks 診斷";
 "setup.diagnostics.notRun" = "尚未執行健康檢查。";
@@ -133,6 +136,8 @@
 "island.noTerminals" = "沒有已開啟的終端機工作階段";
 "island.startAgent" = "在終端機中啟動編碼代理";
 "island.recentSessions" = "最近的工作階段將保留在控制中心，直到終端機重新開啟";
+"island.empty.noAgents.title" = "尚未啟用任何 Agent 監聽";
+"island.empty.noAgents.cta" = "開始設定";
 
 /* Island Panel - Session List */
 "island.showAll" = "顯示全部 %lld 個工作階段";
@@ -196,3 +201,55 @@
 /* Window Titles */
 "window.settings" = "Open Island 設定";
 "window.debug" = "Open Island 除錯";
+
+/* Onboarding - Common */
+"onboarding.back" = "返回";
+"onboarding.continue" = "繼續";
+
+/* Onboarding - Welcome */
+"onboarding.welcome.title" = "歡迎使用 Open Island";
+"onboarding.welcome.subtitle" = "原生 macOS 伴侶應用，讓你的 AI 編碼代理一目了然地出現在選單列。";
+"onboarding.welcome.bullet.agents" = "監聽 Claude Code、Codex、Cursor 等多種編碼代理";
+"onboarding.welcome.bullet.permissions" = "權限請求和待回答問題，即時提醒不打斷你";
+"onboarding.welcome.bullet.jump" = "一鍵跳回對應的終端機視窗和面板";
+"onboarding.welcome.skip" = "稍後再說";
+"onboarding.welcome.continue" = "開始設定";
+
+/* Onboarding - Agents */
+"onboarding.agents.title" = "你使用哪些 AI 編碼代理？";
+"onboarding.agents.subtitle" = "Open Island 會監聽這些代理。未選中的可以隨時在設定中啟用。";
+"onboarding.agents.more" = "更多代理";
+"onboarding.agents.footnote" = "未使用的代理保持勾選不會有任何影響——hooks 只會在對應代理啟動時才被呼叫。";
+"onboarding.agents.desc.claudeCode" = "Anthropic 官方 Claude Code CLI";
+"onboarding.agents.desc.codex" = "OpenAI 官方 Codex CLI";
+"onboarding.agents.desc.cursor" = "Cursor Agent（CLI 模式）";
+"onboarding.agents.desc.openCode" = "opencode.ai";
+"onboarding.agents.desc.qoder" = "Qoder 編碼代理";
+"onboarding.agents.desc.qwenCode" = "阿里通義 Qwen Code CLI";
+"onboarding.agents.desc.factory" = "Factory AI 編碼代理";
+"onboarding.agents.desc.codebuddy" = "騰訊 CodeBuddy";
+"onboarding.agents.desc.gemini" = "Google Gemini CLI";
+
+/* Onboarding - Permissions */
+"onboarding.permissions.title" = "授予 Open Island 所需權限";
+"onboarding.permissions.subtitle" = "所有權限都可以之後在系統設定中授予——這裡不會阻擋你的設定。";
+"onboarding.permissions.required" = "必需";
+"onboarding.permissions.recommended" = "推薦";
+"onboarding.permissions.optional" = "可選";
+"onboarding.permissions.granted" = "已授予";
+"onboarding.permissions.grant" = "授予";
+"onboarding.permissions.openSettings" = "開啟設定";
+"onboarding.permissions.skip" = "略過";
+"onboarding.permissions.notifications.title" = "通知";
+"onboarding.permissions.notifications.desc" = "即使 Open Island 不在前景，也能即時收到權限請求和工作階段完成提醒。";
+"onboarding.permissions.accessibility.title" = "輔助使用";
+"onboarding.permissions.accessibility.desc" = "讓 Open Island 精準跳轉到承載每個工作階段的終端機面板。";
+"onboarding.permissions.automation.title" = "自動化";
+"onboarding.permissions.automation.desc" = "讓 iTerm、Terminal 等終端機支援 tab 層級的跳轉。";
+
+/* Onboarding - Completion */
+"onboarding.completion.title" = "準備就緒";
+"onboarding.completion.subtitle" = "在終端機中啟動任何編碼代理，Open Island 就會出現在螢幕頂端。";
+"onboarding.completion.hint" = "就在上方";
+"onboarding.completion.revisit" = "你可以隨時在 Open Island → 設定 → Setup 中修改這些選項。";
+"onboarding.completion.start" = "開始使用";
