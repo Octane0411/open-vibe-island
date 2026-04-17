@@ -82,14 +82,17 @@ final class AppModel {
     var qwenCodeHooksInstalled: Bool { hooks.qwenCodeHooksInstalled }
     var factoryHooksInstalled: Bool { hooks.factoryHooksInstalled }
     var codebuddyHooksInstalled: Bool { hooks.codebuddyHooksInstalled }
+    var kiroHooksInstalled: Bool { hooks.kiroHooksInstalled }
     var qoderHookStatus: ClaudeHookInstallationStatus? { hooks.qoderHookStatus }
     var qwenCodeHookStatus: ClaudeHookInstallationStatus? { hooks.qwenCodeHookStatus }
     var factoryHookStatus: ClaudeHookInstallationStatus? { hooks.factoryHookStatus }
     var codebuddyHookStatus: ClaudeHookInstallationStatus? { hooks.codebuddyHookStatus }
+    var kiroHookStatus: ClaudeHookInstallationStatus? { hooks.kiroHookStatus }
     var isQoderHookSetupBusy: Bool { hooks.isQoderHookSetupBusy }
     var isQwenCodeHookSetupBusy: Bool { hooks.isQwenCodeHookSetupBusy }
     var isFactoryHookSetupBusy: Bool { hooks.isFactoryHookSetupBusy }
     var isCodebuddyHookSetupBusy: Bool { hooks.isCodebuddyHookSetupBusy }
+    var isKiroHookSetupBusy: Bool { hooks.isKiroHookSetupBusy }
     var openCodePluginInstalled: Bool { hooks.openCodePluginInstalled }
     var claudeUsageInstalled: Bool { hooks.claudeUsageInstalled }
     var claudeHookStatusTitle: String { hooks.claudeHookStatusTitle }
@@ -136,6 +139,8 @@ final class AppModel {
     func uninstallFactoryHooks() { hooks.uninstallFactoryHooks() }
     func installCodebuddyHooks() { hooks.installCodebuddyHooks() }
     func uninstallCodebuddyHooks() { hooks.uninstallCodebuddyHooks() }
+    func installKiroHooks() { hooks.installKiroHooks() }
+    func uninstallKiroHooks() { hooks.uninstallKiroHooks() }
     func refreshCCForkHookStatuses() { hooks.refreshCCForkHookStatuses() }
     func installOpenCodePlugin() { hooks.installOpenCodePlugin() }
     func uninstallOpenCodePlugin() { hooks.uninstallOpenCodePlugin() }
@@ -1159,6 +1164,7 @@ final class AppModel {
                 case let .geminiSessionMetadataUpdated(p): return p.sessionID
                 case let .openCodeSessionMetadataUpdated(p): return p.sessionID
                 case let .cursorSessionMetadataUpdated(p): return p.sessionID
+                case let .kiroSessionMetadataUpdated(p): return p.sessionID
                 case let .actionableStateResolved(p): return p.sessionID
                 }
             }()
@@ -1265,6 +1271,7 @@ final class AppModel {
                 if !self.qwenCodeHooksInstalled { self.installQwenCodeHooks() }
                 if !self.factoryHooksInstalled { self.installFactoryHooks() }
                 if !self.codebuddyHooksInstalled { self.installCodebuddyHooks() }
+                if !self.kiroHooksInstalled { self.installKiroHooks() }
                 if !self.openCodePluginInstalled { self.installOpenCodePlugin() }
                 if !self.cursorHooksInstalled { self.installCursorHooks() }
                 if !self.geminiHooksInstalled { self.installGeminiHooks() }
@@ -1419,6 +1426,8 @@ final class AppModel {
             }
 
             return payload.cursorMetadata.lastAssistantMessage ?? "Cursor session metadata updated."
+        case let .kiroSessionMetadataUpdated(payload):
+            return payload.kiroMetadata.lastAssistantMessage ?? "Kiro session metadata updated."
         case let .actionableStateResolved(payload):
             return "Actionable state resolved for session \(payload.sessionID)."
         }

@@ -10,6 +10,7 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
     case factory
     case codebuddy
     case cursor
+    case kiro
 
     public var displayName: String {
         switch self {
@@ -31,6 +32,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "CodeBuddy"
         case .cursor:
             "Cursor"
+        case .kiro:
+            "Kiro CLI"
         }
     }
 
@@ -54,6 +57,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "CODEBUDDY"
         case .cursor:
             "CURSOR"
+        case .kiro:
+            "KIRO"
         }
     }
 
@@ -328,6 +333,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     public var geminiMetadata: GeminiSessionMetadata?
     public var openCodeMetadata: OpenCodeSessionMetadata?
     public var cursorMetadata: CursorSessionMetadata?
+    public var kiroMetadata: KiroSessionMetadata?
 
     /// Whether this session originates from a remote (SSH) connection.
     public var isRemote: Bool = false
@@ -403,6 +409,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         case geminiMetadata
         case openCodeMetadata
         case cursorMetadata
+        case kiroMetadata
     }
 
     public init(from decoder: any Decoder) throws {
@@ -423,6 +430,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         geminiMetadata = try container.decodeIfPresent(GeminiSessionMetadata.self, forKey: .geminiMetadata)
         openCodeMetadata = try container.decodeIfPresent(OpenCodeSessionMetadata.self, forKey: .openCodeMetadata)
         cursorMetadata = try container.decodeIfPresent(CursorSessionMetadata.self, forKey: .cursorMetadata)
+        kiroMetadata = try container.decodeIfPresent(KiroSessionMetadata.self, forKey: .kiroMetadata)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -443,6 +451,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         try container.encodeIfPresent(geminiMetadata, forKey: .geminiMetadata)
         try container.encodeIfPresent(openCodeMetadata, forKey: .openCodeMetadata)
         try container.encodeIfPresent(cursorMetadata, forKey: .cursorMetadata)
+        try container.encodeIfPresent(kiroMetadata, forKey: .kiroMetadata)
     }
 }
 
@@ -452,7 +461,7 @@ public extension AgentSession {
     }
 
     var isTrackedLiveSession: Bool {
-        !isDemoSession && (tool == .codex || tool == .claudeCode || tool == .geminiCLI || tool == .openCode || tool == .qoder || tool == .qwenCode || tool == .factory || tool == .codebuddy || tool == .cursor)
+        !isDemoSession && (tool == .codex || tool == .claudeCode || tool == .geminiCLI || tool == .openCode || tool == .qoder || tool == .qwenCode || tool == .factory || tool == .codebuddy || tool == .cursor || tool == .kiro)
     }
 
     var isTrackedLiveCodexSession: Bool {
@@ -475,11 +484,17 @@ public extension AgentSession {
     }
 
     var currentToolName: String? {
-        codexMetadata?.currentTool ?? claudeMetadata?.currentTool ?? openCodeMetadata?.currentTool ?? cursorMetadata?.currentTool
+        codexMetadata?.currentTool ?? claudeMetadata?.currentTool ?? openCodeMetadata?.currentTool ?? cursorMetadata?.currentTool ?? kiroMetadata?.currentTool
     }
 
     var lastAssistantMessageText: String? {
-        codexMetadata?.lastAssistantMessage ?? claudeMetadata?.lastAssistantMessage ?? geminiMetadata?.lastAssistantMessage ?? openCodeMetadata?.lastAssistantMessage ?? cursorMetadata?.lastAssistantMessage
+        if let v = codexMetadata?.lastAssistantMessage { return v }
+        if let v = claudeMetadata?.lastAssistantMessage { return v }
+        if let v = geminiMetadata?.lastAssistantMessage { return v }
+        if let v = openCodeMetadata?.lastAssistantMessage { return v }
+        if let v = cursorMetadata?.lastAssistantMessage { return v }
+        if let v = kiroMetadata?.lastAssistantMessage { return v }
+        return nil
     }
 
     var completionAssistantMessageText: String? {
@@ -501,15 +516,27 @@ public extension AgentSession {
     }
 
     var latestUserPromptText: String? {
-        codexMetadata?.lastUserPrompt ?? claudeMetadata?.lastUserPrompt ?? geminiMetadata?.lastUserPrompt ?? openCodeMetadata?.lastUserPrompt ?? cursorMetadata?.lastUserPrompt
+        if let v = codexMetadata?.lastUserPrompt { return v }
+        if let v = claudeMetadata?.lastUserPrompt { return v }
+        if let v = geminiMetadata?.lastUserPrompt { return v }
+        if let v = openCodeMetadata?.lastUserPrompt { return v }
+        if let v = cursorMetadata?.lastUserPrompt { return v }
+        if let v = kiroMetadata?.lastUserPrompt { return v }
+        return nil
     }
 
     var initialUserPromptText: String? {
-        codexMetadata?.initialUserPrompt ?? claudeMetadata?.initialUserPrompt ?? geminiMetadata?.initialUserPrompt ?? openCodeMetadata?.initialUserPrompt ?? cursorMetadata?.initialUserPrompt
+        if let v = codexMetadata?.initialUserPrompt { return v }
+        if let v = claudeMetadata?.initialUserPrompt { return v }
+        if let v = geminiMetadata?.initialUserPrompt { return v }
+        if let v = openCodeMetadata?.initialUserPrompt { return v }
+        if let v = cursorMetadata?.initialUserPrompt { return v }
+        if let v = kiroMetadata?.initialUserPrompt { return v }
+        return nil
     }
 
     var currentCommandPreviewText: String? {
-        codexMetadata?.currentCommandPreview ?? claudeMetadata?.currentToolInputPreview ?? openCodeMetadata?.currentToolInputPreview ?? cursorMetadata?.currentToolInputPreview
+        codexMetadata?.currentCommandPreview ?? claudeMetadata?.currentToolInputPreview ?? openCodeMetadata?.currentToolInputPreview ?? cursorMetadata?.currentToolInputPreview ?? kiroMetadata?.currentToolInputPreview
     }
 }
 

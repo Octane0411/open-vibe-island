@@ -129,6 +129,20 @@ struct ActiveAgentProcessDiscovery {
                     terminalApp: terminalApp(for: process, processesByPID: processesByPID)
                 ))
             }
+
+            if isKiroProcess(command: process.command) {
+                let claimKey = "kiro:\(process.pid)"
+                guard claimedKeys.insert(claimKey).inserted else {
+                    continue
+                }
+
+                snapshots.append(ProcessSnapshot(
+                    tool: .kiro,
+                    sessionID: nil,
+                    workingDirectory: nil,
+                    terminalTTY: process.terminalTTY
+                ))
+            }
         }
 
         return snapshots
@@ -541,6 +555,11 @@ struct ActiveAgentProcessDiscovery {
         }
 
         return firstToken == "claude"
+    }
+
+    private func isKiroProcess(command: String) -> Bool {
+        let lowered = command.lowercased()
+        return lowered.contains("kiro-cli-chat") || lowered.contains("kiro-cli chat")
     }
 
     private static func commandOutput(executablePath: String, arguments: [String]) -> String? {

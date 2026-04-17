@@ -11,6 +11,7 @@ final class HookInstallationCoordinator {
     var qwenCodeHookStatus: ClaudeHookInstallationStatus?
     var factoryHookStatus: ClaudeHookInstallationStatus?
     var codebuddyHookStatus: ClaudeHookInstallationStatus?
+    var kiroHookStatus: ClaudeHookInstallationStatus?
     var openCodePluginStatus: OpenCodePluginInstallationStatus?
     var cursorHookStatus: CursorHookInstallationStatus?
     var geminiHookStatus: GeminiHookInstallationStatus?
@@ -24,6 +25,7 @@ final class HookInstallationCoordinator {
     var isQwenCodeHookSetupBusy = false
     var isFactoryHookSetupBusy = false
     var isCodebuddyHookSetupBusy = false
+    var isKiroHookSetupBusy = false
     var isOpenCodeSetupBusy = false
     var isCursorHookSetupBusy = false
     var isGeminiHookSetupBusy = false
@@ -62,6 +64,12 @@ final class HookInstallationCoordinator {
     private let codebuddyHookInstallationManager = ClaudeHookInstallationManager(
         claudeDirectory: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codebuddy", isDirectory: true),
         hookSource: "codebuddy"
+    )
+
+    @ObservationIgnored
+    private let kiroHookInstallationManager = ClaudeHookInstallationManager(
+        claudeDirectory: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".kiro", isDirectory: true),
+        hookSource: "kiro"
     )
 
     @ObservationIgnored
@@ -115,6 +123,10 @@ final class HookInstallationCoordinator {
 
     var codebuddyHooksInstalled: Bool {
         codebuddyHookStatus?.managedHooksPresent == true
+    }
+
+    var kiroHooksInstalled: Bool {
+        kiroHookStatus?.managedHooksPresent == true
     }
 
     var openCodePluginInstalled: Bool {
@@ -527,6 +539,7 @@ final class HookInstallationCoordinator {
         refreshCCForkHookStatus(manager: qwenCodeHookInstallationManager, name: "Qwen Code") { [weak self] in self?.qwenCodeHookStatus = $0 }
         refreshCCForkHookStatus(manager: factoryHookInstallationManager, name: "Factory") { [weak self] in self?.factoryHookStatus = $0 }
         refreshCCForkHookStatus(manager: codebuddyHookInstallationManager, name: "CodeBuddy") { [weak self] in self?.codebuddyHookStatus = $0 }
+        refreshCCForkHookStatus(manager: kiroHookInstallationManager, name: "Kiro") { [weak self] in self?.kiroHookStatus = $0 }
     }
 
     private func refreshCCForkHookStatus(
@@ -598,6 +611,7 @@ final class HookInstallationCoordinator {
                     (self.qwenCodeHookInstallationManager, "Qwen Code", { [weak self] (s: ClaudeHookInstallationStatus) in self?.qwenCodeHookStatus = s }),
                     (self.factoryHookInstallationManager, "Factory", { [weak self] (s: ClaudeHookInstallationStatus) in self?.factoryHookStatus = s }),
                     (self.codebuddyHookInstallationManager, "CodeBuddy", { [weak self] (s: ClaudeHookInstallationStatus) in self?.codebuddyHookStatus = s }),
+                    (self.kiroHookInstallationManager, "Kiro", { [weak self] (s: ClaudeHookInstallationStatus) in self?.kiroHookStatus = s }),
                 ] {
                     do {
                         let status = try manager.status(hooksBinaryURL: self.hooksBinaryURL)
@@ -767,6 +781,14 @@ final class HookInstallationCoordinator {
 
     func uninstallCodebuddyHooks() {
         updateCCForkHooks(manager: codebuddyHookInstallationManager, name: "CodeBuddy", isBusySetter: { [weak self] in self?.isCodebuddyHookSetupBusy = $0 }, statusSetter: { [weak self] in self?.codebuddyHookStatus = $0 }, install: false)
+    }
+
+    func installKiroHooks() {
+        updateCCForkHooks(manager: kiroHookInstallationManager, name: "Kiro", isBusySetter: { [weak self] in self?.isKiroHookSetupBusy = $0 }, statusSetter: { [weak self] in self?.kiroHookStatus = $0 }, install: true)
+    }
+
+    func uninstallKiroHooks() {
+        updateCCForkHooks(manager: kiroHookInstallationManager, name: "Kiro", isBusySetter: { [weak self] in self?.isKiroHookSetupBusy = $0 }, statusSetter: { [weak self] in self?.kiroHookStatus = $0 }, install: false)
     }
 
     private func updateCCForkHooks(

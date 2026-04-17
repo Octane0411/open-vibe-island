@@ -15,12 +15,13 @@ struct OpenIslandHooksCLI {
         case codebuddy
         case cursor
         case gemini
+        case kiro
 
         var isClaudeFormat: Bool {
             switch self {
             case .claude, .qoder, .qwen, .factory, .droid, .codebuddy:
                 return true
-            case .codex, .cursor, .gemini:
+            case .codex, .cursor, .gemini, .kiro:
                 return false
             }
         }
@@ -70,6 +71,16 @@ struct OpenIslandHooksCLI {
 
                 if let output = try ClaudeHookOutputEncoder.standardOutput(for: response) {
                     FileHandle.standardOutput.write(output)
+                }
+            case .kiro:
+                var payload = try decoder.decode(KiroHookPayload.self, from: input)
+                if payload.terminalTTY == nil {
+                    payload.terminalTTY = Self.currentTTY()
+                }
+
+                guard (try? client.send(.processKiroHook(payload), timeout: 45)) != nil else {
+                    logStderr("bridge unavailable for kiro hook (\(payload.hookEventName.rawValue))")
+                    return
                 }
             case .cursor:
                 let payload = try decoder.decode(CursorHookPayload.self, from: input)
@@ -129,6 +140,27 @@ struct OpenIslandHooksCLI {
             index += 1
         }
 
+        return nil
+    }
+
+    /// Get the TTY of the current process via ps (works even when stdin is a pipe).
+    /// Falls back to the parent process TTY if the current process has none.
+    private static func currentTTY() -> String? {
+        for pid in [getpid(), getppid()] {
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/bin/ps")
+            proc.arguments = ["-o", "tty=", "-p", "\(pid)"]
+            let pipe = Pipe()
+            proc.standardOutput = pipe
+            proc.standardError = FileHandle.nullDevice
+            try? proc.run()
+            proc.waitUntilExit()
+            let raw = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !raw.isEmpty, raw != "??" {
+                return raw.hasPrefix("/dev/") ? raw : "/dev/\(raw)"
+            }
+        }
         return nil
     }
 }

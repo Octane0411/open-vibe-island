@@ -230,6 +230,8 @@ final class ProcessMonitoringCoordinator {
             payload.sessionID
         case let .cursorSessionMetadataUpdated(payload):
             payload.sessionID
+        case let .kiroSessionMetadataUpdated(payload):
+            payload.sessionID
         case let .actionableStateResolved(payload):
             payload.sessionID
         }
@@ -330,6 +332,15 @@ final class ProcessMonitoringCoordinator {
         ).isEmpty
         if isCursorRunning {
             for session in sessions where session.tool == .cursor && !session.isDemoSession {
+                aliveIDs.insert(session.id)
+            }
+        }
+
+        // Kiro sessions: session ID is TTY-based ("kiro-tty-{hash}").
+        // Match by checking if any kiro-cli-chat process shares the same TTY.
+        let kiroProcessTTYs = Set(activeProcesses.filter { $0.tool == .kiro }.compactMap(\.terminalTTY))
+        for session in sessions where session.tool == .kiro && !session.isDemoSession {
+            if let tty = session.jumpTarget?.terminalTTY, kiroProcessTTYs.contains(tty) {
                 aliveIDs.insert(session.id)
             }
         }
@@ -869,6 +880,8 @@ final class ProcessMonitoringCoordinator {
             return "CodeBuddy \(session.id.prefix(8))"
         case .cursor:
             return "Cursor \(session.id.prefix(8))"
+        case .kiro:
+            return "Kiro \(session.id.prefix(8))"
         }
     }
 }
