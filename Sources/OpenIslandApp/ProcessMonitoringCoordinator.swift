@@ -14,6 +14,9 @@ final class ProcessMonitoringCoordinator {
     var syntheticClaudeSessionPrefix = ""
 
     @ObservationIgnored
+    var syntheticAgentSessionPrefix = ""
+
+    @ObservationIgnored
     var stateAccessor: (() -> SessionState)?
 
     @ObservationIgnored
@@ -42,7 +45,40 @@ final class ProcessMonitoringCoordinator {
         set { stateUpdater?(newValue) }
     }
 
+    @ObservationIgnored
+    private var immediateReconciliationTask: Task<Void, Never>?
+
     // MARK: - Monitoring lifecycle
+
+    /// Trigger an immediate process discovery + reconciliation cycle off the
+    /// normal 2-second polling schedule.  Safe to call repeatedly — concurrent
+    /// requests are coalesced (the second call is a no-op while a scan is
+    /// already in-flight).
+    func triggerImmediateReconciliation() {
+        guard immediateReconciliationTask == nil else { return }
+
+        immediateReconciliationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let discovery = self.activeAgentProcessDiscovery
+            let probe = self.terminalSessionAttachmentProbe
+            let resolver = self.terminalJumpTargetResolver
+            let liveSessions = self.state.sessions.filter(\.isTrackedLiveSession)
+            let (snapshots, ghosttyAvail, terminalAvail, jumpTargets) = await Task.detached(priority: .userInitiated) {
+                let s = discovery.discover()
+                let g = probe.ghosttySnapshotAvailability()
+                let t = probe.terminalSnapshotAvailability()
+                let j = resolver.resolveJumpTargets(for: liveSessions, activeProcesses: s)
+                return (s, g, t, j)
+            }.value
+            self.reconcileSessionAttachments(
+                activeProcesses: snapshots,
+                ghosttyAvailability: ghosttyAvail,
+                terminalAvailability: terminalAvail,
+                preResolvedJumpTargets: jumpTargets
+            )
+            self.immediateReconciliationTask = nil
+        }
+    }
 
     func startMonitoringIfNeeded() {
         guard sessionAttachmentMonitorTask == nil else {
@@ -103,6 +139,14 @@ final class ProcessMonitoringCoordinator {
         )
         if mergedSessions != local.sessions {
             local = SessionState(sessions: mergedSessions)
+        }
+
+        let mergedNonClaude = mergedWithSyntheticNonClaudeSessions(
+            existingSessions: local.sessions,
+            activeProcesses: activeProcesses
+        )
+        if mergedNonClaude != local.sessions {
+            local = SessionState(sessions: mergedNonClaude)
         }
 
         // Adopt process TTYs inline on local copy.
@@ -335,7 +379,11 @@ final class ProcessMonitoringCoordinator {
         }
 
         // Synthetic sessions: always alive if the process exists.
-        let syntheticSessions = sessions.filter { isSyntheticClaudeSession($0) }
+        // They are rebuilt from scratch on every reconcile, so their
+        // presence in `sessions` implies a backing process was found.
+        let syntheticSessions = sessions.filter {
+            isSyntheticClaudeSession($0) || isSyntheticNonClaudeSession($0)
+        }
         for session in syntheticSessions {
             aliveIDs.insert(session.id)
         }
@@ -465,6 +513,141 @@ final class ProcessMonitoringCoordinator {
 
     func isSyntheticClaudeSession(_ session: AgentSession) -> Bool {
         session.tool == .claudeCode && session.id.hasPrefix(syntheticClaudeSessionPrefix)
+    }
+
+    // MARK: - Synthetic non-Claude agent sessions
+
+    /// Tools that are detectable via `ps` and therefore eligible for synthetic
+    /// session creation when no hook-managed session yet represents the
+    /// running process.
+    private static let syntheticAgentTools: [AgentTool] = [.codex, .openCode, .geminiCLI]
+
+    func mergedWithSyntheticNonClaudeSessions(
+        existingSessions: [AgentSession],
+        activeProcesses: [ActiveProcessSnapshot],
+        now: Date = .now
+    ) -> [AgentSession] {
+        let baseSessions = existingSessions.filter { !isSyntheticNonClaudeSession($0) }
+        let syntheticProcesses = activeProcesses.filter { process in
+            Self.syntheticAgentTools.contains(process.tool)
+        }
+        guard !syntheticProcesses.isEmpty else {
+            return baseSessions
+        }
+
+        let unrepresentedProcesses = syntheticProcesses.filter { process in
+            !processIsRepresentedByNonClaudeSession(process: process, sessions: baseSessions)
+        }
+        let syntheticSessions = unrepresentedProcesses
+            .sorted { processIdentityKey($0) < processIdentityKey($1) }
+            .map { syntheticNonClaudeSession(for: $0, now: now) }
+
+        return baseSessions + syntheticSessions
+    }
+
+    func isSyntheticNonClaudeSession(_ session: AgentSession) -> Bool {
+        guard !syntheticAgentSessionPrefix.isEmpty else { return false }
+        return session.id.hasPrefix(syntheticAgentSessionPrefix)
+    }
+
+    private func processIsRepresentedByNonClaudeSession(
+        process: ActiveProcessSnapshot,
+        sessions: [AgentSession]
+    ) -> Bool {
+        let sameToolSessions = sessions.filter { session in
+            session.tool == process.tool && !session.isDemoSession
+        }
+        guard !sameToolSessions.isEmpty else { return false }
+
+        if let processSessionID = process.sessionID,
+           sameToolSessions.contains(where: { $0.id == processSessionID }) {
+            return true
+        }
+
+        if let transcriptPath = process.transcriptPath,
+           sameToolSessions.contains(where: { sessionTranscriptPath($0) == transcriptPath }) {
+            return true
+        }
+
+        let processTTY = normalizedTTYForMatching(process.terminalTTY)
+        let processCWD = normalizedPathForMatching(process.workingDirectory)
+
+        if let processTTY, let processCWD,
+           sameToolSessions.contains(where: { session in
+               normalizedTTYForMatching(session.jumpTarget?.terminalTTY) == processTTY
+                   && normalizedPathForMatching(session.jumpTarget?.workingDirectory) == processCWD
+           }) {
+            return true
+        }
+
+        if let processTTY,
+           sameToolSessions.contains(where: { session in
+               normalizedTTYForMatching(session.jumpTarget?.terminalTTY) == processTTY
+           }) {
+            return true
+        }
+
+        if let processCWD,
+           sameToolSessions.contains(where: { session in
+               normalizedPathForMatching(session.jumpTarget?.workingDirectory) == processCWD
+           }) {
+            return true
+        }
+
+        return false
+    }
+
+    private func syntheticNonClaudeSession(
+        for process: ActiveProcessSnapshot,
+        now: Date
+    ) -> AgentSession {
+        let workingDirectory = process.workingDirectory
+        let workspaceName = workingDirectory.map { WorkspaceNameResolver.workspaceName(for: $0) } ?? "Workspace"
+        let terminalApp = supportedTerminalApp(for: process.terminalApp) ?? "Unknown"
+        let identity = processIdentityKey(process)
+        let titlePrefix = syntheticTitlePrefix(for: process.tool)
+
+        var session = AgentSession(
+            id: "\(syntheticAgentSessionPrefix)\(process.tool.rawValue):\(identity)",
+            title: "\(titlePrefix) · \(workspaceName)",
+            tool: process.tool,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .completed,
+            summary: "\(titlePrefix) session detected from \(terminalApp).",
+            updatedAt: now,
+            jumpTarget: JumpTarget(
+                terminalApp: terminalApp,
+                workspaceName: workspaceName,
+                paneTitle: "\(titlePrefix) \(workspaceName)",
+                workingDirectory: workingDirectory,
+                terminalTTY: process.terminalTTY,
+                tmuxTarget: process.tmuxTarget,
+                tmuxSocketPath: process.tmuxSocketPath
+            )
+        )
+        session.isProcessAlive = true
+        return session
+    }
+
+    private func sessionTranscriptPath(_ session: AgentSession) -> String? {
+        switch session.tool {
+        case .claudeCode:
+            return session.claudeMetadata?.transcriptPath
+        case .geminiCLI:
+            return session.geminiMetadata?.transcriptPath
+        default:
+            return nil
+        }
+    }
+
+    private func syntheticTitlePrefix(for tool: AgentTool) -> String {
+        switch tool {
+        case .codex: "Codex"
+        case .openCode: "OpenCode"
+        case .geminiCLI: "Gemini"
+        default: tool.displayName
+        }
     }
 
     // MARK: - Process matching

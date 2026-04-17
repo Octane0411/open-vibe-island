@@ -2,28 +2,23 @@
   <img src="Assets/Brand/app-icon-cat.png" alt="Open Island" width="128" height="128">
 </p>
 
-<h1 align="center">Open Island</h1>
+<h1 align="center">Open Island (Enhanced)</h1>
 
 <p align="center">
-  <strong>Why pay for a closed-source app just to monitor your coding agents?</strong>
+  <strong>基于 <a href="https://github.com/Octane0411/open-vibe-island">open-vibe-island</a> 的增强版，新增即时终端识别和手动刷新机制</strong>
   <br>
-  Open-source, local-first, native macOS companion for AI coding agents.
+  开源、本地优先、原生 macOS AI 编程助手伴侣应用
   <br><br>
-  <a href="README.zh-CN.md">中文</a> | <strong>English</strong>
+  <a href="#安装">安装</a> ·
+  <a href="#新增功能">新增功能</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#english">English</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Octane0411/open-vibe-island/releases/latest"><img src="https://img.shields.io/github/v/release/Octane0411/open-vibe-island?style=flat-square&label=release&color=blue" alt="Latest Release"></a>
-  <a href="https://github.com/Octane0411/open-vibe-island/stargazers"><img src="https://img.shields.io/github/stars/Octane0411/open-vibe-island?style=flat-square&color=yellow" alt="Stars"></a>
-  <a href="https://discord.gg/bPF2HpbCFb"><img src="https://img.shields.io/badge/discord-join-5865F2?style=flat-square&logo=discord" alt="Discord"></a>
+  <a href="https://github.com/8676311081/open-island/releases/latest"><img src="https://img.shields.io/github/v/release/8676311081/open-island?style=flat-square&label=release&color=blue" alt="Latest Release"></a>
+  <a href="https://github.com/8676311081/open-island/stargazers"><img src="https://img.shields.io/github/stars/8676311081/open-island?style=flat-square&color=yellow" alt="Stars"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL%20v3-green?style=flat-square" alt="License: GPL v3"></a>
-</p>
-
-<p align="center">
-  <a href="https://github.com/Octane0411/open-vibe-island/releases">Download</a> ·
-  <a href="#quick-start">Quick Start</a> ·
-  <a href="docs/roadmap.md">Roadmap</a> ·
-  <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
 <p align="center">
@@ -32,315 +27,109 @@
 
 ---
 
-## What is Open Island?
+## 这是什么？
 
-Open Island sits in your Mac's **notch** (or top bar) and gives you a real-time control surface for your AI coding agents — session status, permission approvals, and instant jump-back to the right terminal. All without leaving your flow.
+这是 [Open Island (open-vibe-island)](https://github.com/Octane0411/open-vibe-island) 的增强版本。原版是一个优秀的开源 macOS AI 编程助手伴侣应用，常驻 Mac 的 notch/顶栏区域，实时监控 AI 编程 agent 会话。
 
-Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free, local-first, and you own every bit of it**.
+本仓库在原版基础上增加了**即时终端识别**和**手动刷新**机制，解决了新开终端无法被及时识别的问题。
 
-> *You don't need to pay for a product you can vibe, since you are a vibe coder.*
+## 新增功能
 
-## Why Open Island?
+### 即时终端识别
+原版依赖 2 秒一次的轮询来发现新终端。增强版在收到 Hook 事件时**立即触发**进程扫描和终端匹配，新开的终端运行 AI agent 后**瞬间**出现在面板中。
 
-- **Open source** — GPL v3, fork it, mod it, ship your own version
-- **Local-first** — No server, no telemetry, no account. Everything runs on your Mac
-- **Native macOS** — SwiftUI + AppKit, not an Electron wrapper
-- **Multi-agent** — One surface for Claude Code, Codex, Cursor, Gemini CLI, OpenCode, and more
-- **Multi-terminal** — Jump back to the exact terminal/IDE session in one click
+```
+之前：新终端 → Hook 事件 → 等待 2 秒轮询 → 识别
+现在：新终端 → Hook 事件 → 立即扫描 → 识别
+```
 
-## Supported Agents & Terminals
+### 手动刷新按钮
+面板头部新增 ↻ 刷新按钮，一键触发会话重新扫描。不再需要等待自动轮询。
 
-**9 agents**: Claude Code, Codex, Cursor, Gemini CLI, OpenCode, Qoder, Qwen Code, Factory, CodeBuddy
+### 改动文件（仅 3 个）
 
-**15+ terminals & IDEs**: Terminal.app, Ghostty, iTerm2, WezTerm, Zellij, tmux, cmux, Kaku, VS Code, Cursor, Windsurf, Trae, JetBrains IDEs (IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover)
-
-<details>
-<summary>Full compatibility table</summary>
-
-### Code Agents
-
-| Agent | Status | Description |
-|---|---|---|
-| **Claude Code** | Supported | Hook integration, JSONL session discovery, status line bridge, usage tracking |
-| **Codex** | Supported | Full hook integration (SessionStart, UserPromptSubmit, Stop), usage tracking |
-| **OpenCode** | Supported | JS plugin integration, permission/question flows, process detection |
-| **Qoder** | Supported | Claude Code fork — same hook format, config at `~/.qoder/settings.json` |
-| **Qwen Code** | Supported | Claude Code fork — same hook format, config at `~/.qwen/settings.json` |
-| **Factory** | Supported | Claude Code fork — same hook format, config at `~/.factory/settings.json` |
-| **CodeBuddy** | Supported | Claude Code fork — same hook format, config at `~/.codebuddy/settings.json` |
-| **Cursor** | Supported | Hook integration via `~/.cursor/hooks.json`, session tracking, workspace jump-back |
-| **Gemini CLI** | Supported | Hook integration via `~/.gemini/settings.json`, session tracking, fire-and-forget events |
-
-### Terminals & IDEs
-
-| Terminal / IDE | Support Level | Description |
-|---|---|---|
-| **Terminal.app** | Full | Jump-back with TTY targeting |
-| **Ghostty** | Full | Jump-back with ID matching |
-| **cmux** | Full | Jump-back via Unix socket API |
-| **Kaku** | Full | Jump-back via CLI pane targeting |
-| **WezTerm** | Full | Jump-back via CLI pane targeting |
-| **iTerm2** | Full | Jump-back with session ID / TTY matching |
-| **tmux** (multiplexer) | Full | Jump-back with session/window/pane targeting |
-| **Zellij** | Full | Jump-back via CLI pane/tab targeting |
-| **VS Code** | Workspace | Activate workspace via `code` CLI |
-| **Cursor** | Workspace | Activate workspace via `cursor` CLI |
-| **Windsurf** | Workspace | Activate workspace via `windsurf` CLI |
-| **Trae** | Workspace | Activate workspace via `trae` CLI |
-| **JetBrains IDEs** | Workspace | IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover |
-| **Warp** | Full | Precision tab jump via SQLite pane lookup + AX menu click |
-
-### Other Features
-
-| Feature | Description |
+| 文件 | 改动 |
 |---|---|
-| Notch / top-bar overlay | Notch area on notch Macs, top-center bar on others |
-| Control center | Hook status, usage dashboard |
-| Notification mode | Auto-height panel for permission requests and session events |
-| Notification sounds | Configurable system sounds, mute toggle |
-| i18n | English, Simplified Chinese |
-| Session discovery | Auto-discover from local transcripts, persist across launches |
-| Auto-update | Sparkle-based automatic updates |
-| Signed & notarized | DMG packaging with Apple notarization |
+| `ProcessMonitoringCoordinator.swift` | 新增 `triggerImmediateReconciliation()` |
+| `AppModel.swift` | Hook sessionStarted 时立即 reconcile；暴露 `refreshSessions()` |
+| `IslandPanelView.swift` | header 添加刷新按钮 |
 
-</details>
+## 安装
 
-## Quick Start
+### 方式一：下载 DMG
 
-### Option 1: Download
+从 [Releases](https://github.com/8676311081/open-island/releases/latest) 下载最新的 **Open Island.dmg**，打开后拖入 Applications。
 
-Grab the latest DMG from [GitHub Releases](https://github.com/Octane0411/open-vibe-island/releases) — signed and notarized, ready to run.
+> 需要 **macOS 14+**，支持 Apple Silicon 和 Intel Mac。
+>
+> 首次启动：右键 → 打开，或在系统设置 → 隐私与安全中允许运行。
 
-### Option 2: Build from source
+### 方式二：从源码构建
 
 ```bash
-git clone https://github.com/Octane0411/open-vibe-island.git
-cd open-vibe-island
-open Package.swift   # Opens in Xcode — hit Run
+git clone https://github.com/8676311081/open-island.git
+cd open-island
+swift build
+swift run OpenIslandApp
 ```
 
-On first launch, Open Island auto-discovers your active agent sessions and starts the live bridge. Hook installation is managed from the **Control Center** inside the app.
+## 快速开始
 
-> **Requirements**: macOS 14+, Swift 6.2, Xcode
+1. 启动 Open Island，它会出现在你的 notch/顶栏区域
+2. 打开终端，运行 `claude`、`codex` 等 AI agent
+3. 面板会立即显示新会话 — 点击可跳转到对应终端
+4. 如果需要手动刷新，点击面板头部的 ↻ 按钮
 
-## How It Works
+## 支持的 Agent 和终端
+
+**9 种 Agent**：Claude Code, Codex, Cursor, Gemini CLI, OpenCode, Qoder, Qwen Code, Factory, CodeBuddy
+
+**15+ 种终端/IDE**：Terminal.app, Ghostty, iTerm2, WezTerm, Zellij, tmux, cmux, Kaku, VS Code, Cursor, Windsurf, Trae, JetBrains 全家桶
+
+## 工作原理
 
 ```
-Agent (Claude Code / Codex / Cursor / ...)
-  ↓ hook event
+Agent (Claude Code / Codex / ...)
+  ↓ hook 事件
 OpenIslandHooks CLI (stdin → Unix socket)
-  ↓ JSON envelope
-BridgeServer (in-app)
-  ↓ state update
-Notch overlay UI ← you see it here
-  ↓ click
-Jump back → correct terminal / IDE
+  ↓ JSON 数据包
+BridgeServer (应用内)
+  ↓ 状态更新 + 立即 reconciliation（增强版新增）
+Notch 悬浮面板 ← 你在这里看到
+  ↓ 点击
+跳转到 → 对应的终端 / IDE
 ```
-
-Hooks **fail open** — if Open Island isn't running, your agents continue unaffected.
-
-<details>
-<summary>Architecture details</summary>
-
-Four targets in one Swift package:
-
-| Target | Role |
-|---|---|
-| **OpenIslandApp** | SwiftUI + AppKit shell — menu bar, overlay panel, control center, settings |
-| **OpenIslandCore** | Shared library — models, bridge transport (Unix socket IPC), hooks, session persistence |
-| **OpenIslandHooks** | Lightweight CLI invoked by agent hooks, forwards payloads via Unix socket |
-| **OpenIslandSetup** | Installer CLI for managing `~/.codex/config.toml` and hook entries |
-
-See [docs/architecture.md](docs/architecture.md) for the full system design.
-
-</details>
-
-## Community
-
-Join us on **Discord** for discussion, feedback, and faster issue resolution:
-
-[![Discord](https://img.shields.io/discord/1490752192368476253?style=for-the-badge&logo=discord&label=Join%20Discord&color=5865F2)](https://discord.gg/bPF2HpbCFb)
-
-We welcome issues, pull requests, and new maintainers. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
-
-<details>
-<summary>WeChat group (for Chinese-speaking users)</summary>
-
-<img src="docs/images/wechat-group.jpg" alt="WeChat group QR code" width="240">
-
-</details>
-
-## Report a Bug via Your Code Agent
-
-Copy this prompt into your agent (Claude Code, Codex, etc.) to auto-generate a well-structured issue:
-
-<details>
-<summary>Click to expand</summary>
-
-```
-I'm having an issue with Open Island (https://github.com/Octane0411/open-vibe-island).
-
-Please help me file a GitHub issue. Do the following:
-
-1. Collect my environment info:
-   - Run `sw_vers` to get macOS version
-   - Run `swift --version` to get Swift version
-   - Check if Open Island is running: `ps aux | grep -i "open.island\|OpenIslandApp" | grep -v grep`
-   - Get the app version: `defaults read ~/Applications/Open\ Island\ Dev.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null || echo "unknown"`
-   - Check which terminal I'm using
-
-2. Ask me to describe:
-   - What I expected to happen
-   - What actually happened
-   - Steps to reproduce
-
-3. Create the issue on GitHub using `gh issue create` with this format:
-   - Title: concise summary
-   - Body with sections: **Environment**, **Description**, **Steps to Reproduce**, **Expected vs Actual Behavior**
-   - Add label "bug" if applicable
-
-Repository: Octane0411/open-vibe-island
-```
-
-</details>
-
-## Star History
-
-<a href="https://star-history.com/#Octane0411/open-vibe-island&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Octane0411/open-vibe-island&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Octane0411/open-vibe-island&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Octane0411/open-vibe-island&type=Date" />
- </picture>
-</a>
-
-## Contributors
-
-<a href="https://github.com/Octane0411/open-vibe-island/graphs/contributors">
-  <!-- CONTRIBUTORS-IMG:START -->
-  <img src="https://contrib.rocks/image?repo=Octane0411/open-vibe-island&t=1775913499" />
-  <!-- CONTRIBUTORS-IMG:END -->
-</a>
 
 ---
 
-## Agent Parts
+<a name="english"></a>
 
-This section is written for agents.
+## English
 
-The open-source macOS companion for terminal-native AI coding.
+This is an enhanced version of [Open Island (open-vibe-island)](https://github.com/Octane0411/open-vibe-island), adding **instant terminal detection** and a **manual refresh** mechanism.
 
-`Open Island` puts a lightweight control surface in your notch or top bar so you can keep an eye on live coding agents, follow session progress, and jump back to the right terminal without breaking flow.
+### What's New
 
-### Why This Product Exists
+- **Instant terminal detection** — When a new agent session hook event arrives, triggers immediate process scan + terminal reconciliation instead of waiting for the 2-second polling cycle
+- **Manual refresh button (↻)** — One-click session rescan in the island panel header
+- **`refreshSessions()` API** — Programmatic session refresh for UI-driven rescans
 
-AI coding is becoming part of the daily development loop, but the surrounding control layer still too often means handing your machine over to a closed-source paid app.
+### Installation
 
-`Open Island` takes the opposite approach:
-
-- Open source
-- Local first, no server dependency
-- Native macOS (SwiftUI + AppKit)
-- Built to support the terminal workflow, not replace it
-
-### Who It Is For
-
-Developers who already live in the terminal and want a better way to work with coding agents on macOS without losing context.
-
-### Agent Integrations
-
-- **Codex** — Full hook-based integration. Receives `SessionStart`, `UserPromptSubmit`, and `Stop` events by default. Reads 5-hour and 7-day account usage windows from local rollout files. Install/uninstall managed hooks from the control center or CLI.
-- **Claude Code** — Hook-based integration via `~/.claude/settings.json`. Discovers sessions from `~/.claude/projects/` JSONL transcripts. Persists and restores sessions across app launches. Managed status line bridge with opt-in installation. Reads cached 5-hour and 7-day usage windows.
-- **OpenCode** — JS plugin integration via `~/.config/opencode/plugins/`. Plugin auto-installed on first launch. Receives session lifecycle, tool use, permission, and question events. Permission approval and question answering flows supported. Process detection via `ps`.
-- **Qoder** — Claude Code fork. Same hook format and events via `~/.qoder/settings.json`. Use `--source qoder` with the hooks binary.
-- **Qwen Code** — Claude Code fork. Same hook format and events via `~/.qwen/settings.json`. Use `--source qwen` with the hooks binary.
-- **Factory** — Claude Code fork. Same hook format and events via `~/.factory/settings.json`. Use `--source factory` with the hooks binary.
-- **CodeBuddy** — Claude Code fork. Same hook format and events via `~/.codebuddy/settings.json`. Use `--source codebuddy` with the hooks binary.
-- **Cursor** — Hook-based integration via `~/.cursor/hooks.json`. Receives `beforeSubmitPrompt`, `beforeShellExecution`, `beforeMCPExecution`, `beforeReadFile`, `afterFileEdit`, and `stop` events. Session persistence across app launches. Workspace jump-back via `cursor -r`. Use `--source cursor` with the hooks binary.
-- **Gemini CLI** — Hook-based integration via `~/.gemini/settings.json`. Receives `SessionStart`, `PreToolUse`, `PostToolUse`, `Stop`, and `UserPromptSubmit` events. Fire-and-forget (no block/deny). Use `--source gemini` with the hooks binary.
-
-### Terminal Support
-
-- **Terminal.app**, **Ghostty**, **cmux**, **Kaku**, **WezTerm**, **iTerm2**, and **Zellij** — Full jump-back support with session attachment matching (cmux via Unix socket API, Kaku/WezTerm/Zellij via CLI pane targeting, iTerm2 via AppleScript session/TTY probe)
-- **VS Code**, **VS Code Insiders**, **Cursor**, **Windsurf**, **Trae** — Workspace-level jump via respective CLI (`code -r`, `cursor -r`, etc.)
-- **JetBrains IDEs** (IntelliJ IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover) — Workspace-level jump via IDE CLI launcher
-- **Warp** — Precision tab jump via SQLite pane lookup, pid-based sibling-tab disambiguation, and AX menu click
-
-### UI & Display
-
-- **Notch overlay** — On Macs with a built-in notch, the island sits in the notch area; on external displays or non-notch Macs, it falls back to a compact top-center bar
-- **Control center** — Codex/Claude hook status, usage dashboard, debug scenarios
-- **Settings** — General, Display, Sound, Shortcuts, Lab (advanced), About
-- **Notification mode** — Auto-height notification panel for permission requests and session events
-- **Notification sounds** — Configurable system sounds (default: Bottle) with mute toggle
-- **i18n** — English and Simplified Chinese
-
-### Session Management
-
-- Live session visibility with expandable detail rows
-- Session state reducer (`SessionState.apply`) as single source of truth
-- Automatic session discovery from local transcript files and cache
-- Process discovery via `ps`/`lsof` for active agent matching
-
-### Architecture
-
-Four targets in one Swift package:
-
-| Target | Role |
-|---|---|
-| **OpenIslandApp** | SwiftUI + AppKit shell — menu bar, overlay panel, control center, settings |
-| **OpenIslandCore** | Shared library — models, bridge transport (Unix socket IPC), hooks, session persistence |
-| **OpenIslandHooks** | Lightweight CLI invoked by agent hooks, forwards payloads via Unix socket |
-| **OpenIslandSetup** | Installer CLI for managing `~/.codex/config.toml` and hook entries |
-
-### Quick Start (Agent)
-
-Build and run locally:
+Download the latest DMG from [Releases](https://github.com/8676311081/open-island/releases/latest), or build from source:
 
 ```bash
-open Package.swift
+git clone https://github.com/8676311081/open-island.git
+cd open-island
+swift build && swift run OpenIslandApp
 ```
 
-Build a local `.app` bundle:
-
-```bash
-zsh scripts/package-app.sh
-```
-
-That script creates `output/package/Open Island.app` and `output/package/Open Island.zip`. Pass `OPEN_ISLAND_SIGN_IDENTITY` to sign the bundle. See [docs/packaging.md](docs/packaging.md) for the full path, including notarization.
-
-#### Connect Codex
-
-Open the package in Xcode to run the macOS app target. On launch, the app restores its local cache, scans recent `~/.codex/sessions/**/rollout-*.jsonl` files for existing Codex sessions, and starts the live bridge for new hook events.
-
-The control center shows live Codex hook install status from `~/.codex`, and can install or uninstall managed hook entries directly. Installs copy the helper into `~/Library/Application Support/OpenIsland/bin/OpenIslandHooks` so repo renames do not break existing hooks.
-
-```bash
-swift build -c release --product OpenIslandHooks
-swift run OpenIslandSetup install
-swift run OpenIslandSetup status
-swift run OpenIslandSetup uninstall
-```
-
-#### Connect Claude Code
-
-Claude usage setup is available from the app's control center and remains opt-in. The bridge writes a managed `statusLine.command` to `~/.open-island/bin/open-island-statusline`, caches `rate_limits` into `/tmp/open-island-rl.json`, and refuses to overwrite an existing custom status line automatically.
-
-### Repository Map
-
-- Start with [docs/index.md](docs/index.md) for the current doc map.
-- Read [docs/quality.md](docs/quality.md) for the quality baseline and verification approach.
-- Read [docs/hooks.md](docs/hooks.md) for all supported hook events, payload fields, and directive response formats.
-- Run `scripts/harness.sh` for automated checks (docs validation, tests, build).
-
-### Requirements
-
-- macOS 14+
-- Swift 6.2
-- Xcode (for the app target)
+Requires macOS 14+. Supports Apple Silicon and Intel.
 
 ---
 
-## License
+## 致谢
 
-[GPL v3](LICENSE)
+- 原版项目：[Octane0411/open-vibe-island](https://github.com/Octane0411/open-vibe-island)
+- 灵感来源：[Vibe Island](https://vibeisland.app/)
+- 许可证：GPL v3

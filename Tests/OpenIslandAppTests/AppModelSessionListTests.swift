@@ -884,4 +884,160 @@ struct AppModelSessionListTests {
         let claudeSessions = model.state.sessions.filter { $0.tool == .claudeCode }
         #expect(claudeSessions.count == 2)
     }
+
+    @Test
+    func mergedWithSyntheticNonClaudeSessionsCreatesCodexSessionWhenNoneTracked() throws {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+
+        let merged = model.monitoring.mergedWithSyntheticNonClaudeSessions(
+            existingSessions: [],
+            activeProcesses: [
+                .init(
+                    tool: .codex,
+                    sessionID: "codex-uuid-1",
+                    workingDirectory: "/tmp/open-island",
+                    terminalTTY: "/dev/ttys002",
+                    terminalApp: "Terminal"
+                ),
+            ],
+            now: now
+        )
+
+        #expect(merged.count == 1)
+        let synthetic = try #require(merged.first)
+        #expect(synthetic.tool == .codex)
+        #expect(synthetic.id.hasPrefix("agent-process:codex:"))
+        #expect(synthetic.title == "Codex · open-island")
+        #expect(synthetic.isProcessAlive)
+        #expect(synthetic.attachmentState == .attached)
+        #expect(synthetic.jumpTarget?.terminalTTY == "/dev/ttys002")
+        #expect(synthetic.jumpTarget?.terminalApp == "Terminal")
+    }
+
+    @Test
+    func mergedWithSyntheticNonClaudeSessionsSkipsWhenCodexSessionIDAlreadyTracked() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        let existing = AgentSession(
+            id: "codex-uuid-1",
+            title: "Codex · tracked",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Running",
+            updatedAt: now,
+            jumpTarget: JumpTarget(
+                terminalApp: "Ghostty",
+                workspaceName: "open-island",
+                paneTitle: "codex",
+                workingDirectory: "/tmp/open-island",
+                terminalSessionID: "ghostty-codex"
+            )
+        )
+
+        let merged = model.monitoring.mergedWithSyntheticNonClaudeSessions(
+            existingSessions: [existing],
+            activeProcesses: [
+                .init(
+                    tool: .codex,
+                    sessionID: "codex-uuid-1",
+                    workingDirectory: "/tmp/open-island",
+                    terminalTTY: "/dev/ttys002",
+                    terminalApp: "Terminal"
+                ),
+            ],
+            now: now
+        )
+
+        #expect(merged.map(\.id) == [existing.id])
+    }
+
+    @Test
+    func mergedWithSyntheticNonClaudeSessionsSkipsWhenOpenCodeSessionMatchesByCwd() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        let existing = AgentSession(
+            id: "opencode-existing",
+            title: "OpenCode · ws",
+            tool: .openCode,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Running",
+            updatedAt: now,
+            jumpTarget: JumpTarget(
+                terminalApp: "Ghostty",
+                workspaceName: "ws",
+                paneTitle: "opencode",
+                workingDirectory: "/tmp/ws"
+            )
+        )
+
+        let merged = model.monitoring.mergedWithSyntheticNonClaudeSessions(
+            existingSessions: [existing],
+            activeProcesses: [
+                .init(
+                    tool: .openCode,
+                    sessionID: nil,
+                    workingDirectory: "/tmp/ws",
+                    terminalTTY: "/dev/ttys003",
+                    terminalApp: "Ghostty"
+                ),
+            ],
+            now: now
+        )
+
+        #expect(merged.map(\.id) == [existing.id])
+    }
+
+    @Test
+    func mergedWithSyntheticNonClaudeSessionsCreatesGeminiSessionWhenProcessUnrepresented() throws {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+
+        let merged = model.monitoring.mergedWithSyntheticNonClaudeSessions(
+            existingSessions: [],
+            activeProcesses: [
+                .init(
+                    tool: .geminiCLI,
+                    sessionID: nil,
+                    workingDirectory: "/tmp/ws",
+                    terminalTTY: "/dev/ttys004",
+                    terminalApp: "Ghostty",
+                    transcriptPath: "/tmp/gemini-log.jsonl"
+                ),
+            ],
+            now: now
+        )
+
+        #expect(merged.count == 1)
+        let synthetic = try #require(merged.first)
+        #expect(synthetic.tool == .geminiCLI)
+        #expect(synthetic.id.hasPrefix("agent-process:geminiCLI:"))
+        #expect(synthetic.title == "Gemini · ws")
+    }
+
+    @Test
+    func mergedWithSyntheticNonClaudeSessionsIgnoresClaudeProcesses() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+
+        let merged = model.monitoring.mergedWithSyntheticNonClaudeSessions(
+            existingSessions: [],
+            activeProcesses: [
+                .init(
+                    tool: .claudeCode,
+                    sessionID: nil,
+                    workingDirectory: "/tmp/ws",
+                    terminalTTY: "/dev/ttys005",
+                    terminalApp: "Terminal"
+                ),
+            ],
+            now: now
+        )
+
+        #expect(merged.isEmpty)
+    }
 }
