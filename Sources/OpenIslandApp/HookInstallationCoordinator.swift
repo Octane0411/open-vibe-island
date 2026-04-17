@@ -18,6 +18,30 @@ final class HookInstallationCoordinator {
     var claudeUsageSnapshot: ClaudeUsageSnapshot?
     var codexUsageSnapshot: CodexUsageSnapshot?
     var hooksBinaryURL: URL?
+
+    // MARK: - Tool detection (set once at init, never changes during session)
+
+    /// Whether Claude Code is installed on this machine (detected by the presence of its config directory).
+    var isClaudeCodeDetected: Bool = false
+    /// Whether Codex is installed on this machine.
+    var isCodexDetected: Bool = false
+    /// Whether Cursor is installed on this machine.
+    var isCursorDetected: Bool = false
+    /// Whether OpenCode is installed on this machine.
+    var isOpenCodeDetected: Bool = false
+    /// Whether Qoder is installed on this machine.
+    var isQoderDetected: Bool = false
+    /// Whether Qwen Code is installed on this machine.
+    var isQwenCodeDetected: Bool = false
+    /// Whether Factory is installed on this machine.
+    var isFactoryDetected: Bool = false
+    /// Whether CodeBuddy is installed on this machine.
+    var isCodebuddyDetected: Bool = false
+    //// Whether Gemini CLI is installed on this machine.
+    var isGeminiDetected: Bool = false
+
+    @ObservationIgnored
+    private let fileManager = FileManager.default
     var isCodexSetupBusy = false
     var isClaudeHookSetupBusy = false
     var isQoderHookSetupBusy = false
@@ -89,6 +113,32 @@ final class HookInstallationCoordinator {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
         return formatter
+    }
+
+    // MARK: - Tool detection
+
+    /// Detects which agent tools are present on this machine and sets the isXxxDetected properties.
+    /// Safe to call multiple times; subsequent calls overwrite with current state.
+    func detectInstalledTools() {
+        let home = fileManager.homeDirectoryForCurrentUser
+
+        isClaudeCodeDetected = fileManager.fileExists(atPath: ClaudeConfigDirectory.resolved().path)
+
+        isCodexDetected = fileManager.fileExists(atPath: home.appendingPathComponent(".codex", isDirectory: true).path)
+
+        isCursorDetected = fileManager.fileExists(atPath: home.appendingPathComponent(".cursor", isDirectory: true).path)
+
+        isOpenCodeDetected = fileManager.fileExists(atPath: home.appendingPathComponent(".config/opencode", isDirectory: true).path)
+
+        isQoderDetected = fileManager.fileExists(atPath: home.appendingPathComponent(".qoder", isDirectory: true).path)
+
+        isQwenCodeDetected = fileManager.fileExists(atPath: home.appendingPathComponent(".qwen", isDirectory: true).path)
+
+        isFactoryDetected = fileManager.fileExists(atPath: home.appendingPathComponent(".factory", isDirectory: true).path)
+
+        isCodebuddyDetected = fileManager.fileExists(atPath: home.appendingPathComponent(".codebuddy", isDirectory: true).path)
+
+        isGeminiDetected = fileManager.fileExists(atPath: home.appendingPathComponent(".gemini", isDirectory: true).path)
     }
 
     // MARK: - Computed display properties
@@ -496,6 +546,7 @@ final class HookInstallationCoordinator {
 
     // MARK: - Refresh
 
+    /// Refreshes the Codex hook installation status.
     func refreshCodexHookStatus() {
         Task { [weak self] in
             guard let self else { return }
@@ -509,6 +560,7 @@ final class HookInstallationCoordinator {
         }
     }
 
+    /// Refreshes the Claude hook installation status.
     func refreshClaudeHookStatus() {
         Task { [weak self] in
             guard let self else { return }
@@ -522,6 +574,7 @@ final class HookInstallationCoordinator {
         }
     }
 
+    /// Refreshes hook installation status for all Claude Code fork agents (Qoder, Qwen Code, Factory, CodeBuddy).
     func refreshCCForkHookStatuses() {
         refreshCCForkHookStatus(manager: qoderHookInstallationManager, name: "Qoder") { [weak self] in self?.qoderHookStatus = $0 }
         refreshCCForkHookStatus(manager: qwenCodeHookInstallationManager, name: "Qwen Code") { [weak self] in self?.qwenCodeHookStatus = $0 }
@@ -620,6 +673,7 @@ final class HookInstallationCoordinator {
         }
     }
 
+    /// Refreshes the OpenCode plugin installation status.
     func refreshOpenCodePluginStatus() {
         Task { [weak self] in
             guard let self else { return }
@@ -633,6 +687,7 @@ final class HookInstallationCoordinator {
         }
     }
 
+    /// Refreshes the Cursor hook installation status.
     func refreshCursorHookStatus() {
         Task { [weak self] in
             guard let self else { return }
@@ -646,6 +701,7 @@ final class HookInstallationCoordinator {
         }
     }
 
+    /// Refreshes the Gemini CLI hook installation status.
     func refreshGeminiHookStatus() {
         Task { [weak self] in
             guard let self else { return }
@@ -659,6 +715,8 @@ final class HookInstallationCoordinator {
         }
     }
 
+    /// Refreshes the Claude usage bridge status and snapshot.
+    /// Automatically repairs the bridge if it needs restoration.
     func refreshClaudeUsageState() {
         let manager = claudeStatusLineInstallationManager
         Task { [weak self] in
@@ -686,6 +744,7 @@ final class HookInstallationCoordinator {
         }
     }
 
+    /// Refreshes the Codex usage snapshot from local rollout JSONL files.
     func refreshCodexUsageState() {
         Task { [weak self] in
             guard let self else { return }
@@ -805,6 +864,7 @@ final class HookInstallationCoordinator {
         }
     }
 
+    /// Installs the OpenCode plugin into the user's OpenCode configuration.
     func installOpenCodePlugin() {
         guard let pluginData = loadBundledOpenCodePlugin() else {
             onStatusMessage?("Could not find the bundled OpenCode plugin resource.")
@@ -833,6 +893,7 @@ final class HookInstallationCoordinator {
         }
     }
 
+    /// Removes the OpenCode plugin from the user's OpenCode configuration.
     func uninstallOpenCodePlugin() {
         isOpenCodeSetupBusy = true
         onStatusMessage?("Removing OpenCode plugin.")
@@ -869,6 +930,7 @@ final class HookInstallationCoordinator {
         }
     }
 
+    /// Installs the Gemini CLI hooks into ~/.gemini/settings.json.
     func installGeminiHooks() {
         guard let hooksBinaryURL else {
             onStatusMessage?("Could not find a local OpenIslandHooks binary. Build the package first.")
@@ -880,12 +942,14 @@ final class HookInstallationCoordinator {
         }
     }
 
+    /// Removes the Gemini CLI hooks from ~/.gemini/settings.json.
     func uninstallGeminiHooks() {
         updateGeminiHooks(userMessage: "Removing Gemini hooks.") { manager in
             try manager.uninstall()
         }
     }
 
+    /// Installs the Claude usage bridge (managed Claude status line) to cache rate limits locally.
     func installClaudeUsageBridge() {
         updateClaudeUsageBridge(userMessage: "Installing Claude usage bridge.") { manager in
             do {
@@ -898,6 +962,7 @@ final class HookInstallationCoordinator {
         }
     }
 
+    /// Removes the Claude usage bridge (managed Claude status line).
     func uninstallClaudeUsageBridge() {
         updateClaudeUsageBridge(userMessage: "Removing Claude usage bridge.") { manager in
             try manager.uninstall()

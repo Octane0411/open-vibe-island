@@ -101,8 +101,9 @@ struct SettingsView: View {
         } detail: {
             detailView
         }
-        .frame(minWidth: 680, idealWidth: 780, minHeight: 480, idealHeight: 560)
-        .preferredColorScheme(.dark)
+        .frame(minWidth: 680, minHeight: 480)
+        .frame(width: 780, height: 560)
+        .preferredColorScheme(model.preferredColorScheme.swiftUIScheme)
     }
 
     // MARK: Sidebar
@@ -425,6 +426,7 @@ struct SetupSettingsPane: View {
                 hookRow(
                     name: "Claude Code",
                     installed: model.claudeHooksInstalled,
+                    detected: model.isClaudeCodeDetected,
                     busy: model.isClaudeHookSetupBusy,
                     configLocationURL: model.claudeHookStatus?.settingsURL,
                     installAction: { model.installClaudeHooks() },
@@ -442,6 +444,7 @@ struct SetupSettingsPane: View {
                 hookRow(
                     name: "Codex",
                     installed: model.codexHooksInstalled,
+                    detected: model.isCodexDetected,
                     busy: model.isCodexSetupBusy,
                     configLocationURL: codexHookConfigURL,
                     installAction: { model.installCodexHooks() },
@@ -459,6 +462,7 @@ struct SetupSettingsPane: View {
                 hookRow(
                     name: "OpenCode",
                     installed: model.openCodePluginInstalled,
+                    detected: model.isOpenCodeDetected,
                     busy: model.isOpenCodeSetupBusy,
                     requiresBinary: false,
                     configLocationURL: model.openCodePluginStatus?.configURL,
@@ -477,6 +481,7 @@ struct SetupSettingsPane: View {
                 hookRow(
                     name: "Qoder",
                     installed: model.qoderHooksInstalled,
+                    detected: model.isQoderDetected,
                     busy: model.isQoderHookSetupBusy,
                     configLocationURL: model.qoderHookStatus?.settingsURL,
                     installAction: { model.installQoderHooks() },
@@ -494,6 +499,7 @@ struct SetupSettingsPane: View {
                 hookRow(
                     name: "Qwen Code",
                     installed: model.qwenCodeHooksInstalled,
+                    detected: model.isQwenCodeDetected,
                     busy: model.isQwenCodeHookSetupBusy,
                     configLocationURL: model.qwenCodeHookStatus?.settingsURL,
                     installAction: { model.installQwenCodeHooks() },
@@ -511,6 +517,7 @@ struct SetupSettingsPane: View {
                 hookRow(
                     name: "Factory",
                     installed: model.factoryHooksInstalled,
+                    detected: model.isFactoryDetected,
                     busy: model.isFactoryHookSetupBusy,
                     configLocationURL: model.factoryHookStatus?.settingsURL,
                     installAction: { model.installFactoryHooks() },
@@ -528,6 +535,7 @@ struct SetupSettingsPane: View {
                 hookRow(
                     name: "CodeBuddy",
                     installed: model.codebuddyHooksInstalled,
+                    detected: model.isCodebuddyDetected,
                     busy: model.isCodebuddyHookSetupBusy,
                     configLocationURL: model.codebuddyHookStatus?.settingsURL,
                     installAction: { model.installCodebuddyHooks() },
@@ -545,6 +553,7 @@ struct SetupSettingsPane: View {
                 hookRow(
                     name: "Cursor",
                     installed: model.cursorHooksInstalled,
+                    detected: model.isCursorDetected,
                     busy: model.isCursorHookSetupBusy,
                     requiresBinary: true,
                     configLocationURL: model.cursorHookStatus?.hooksURL,
@@ -563,6 +572,7 @@ struct SetupSettingsPane: View {
                 hookRow(
                     name: "Gemini CLI",
                     installed: model.geminiHooksInstalled,
+                    detected: model.isGeminiDetected,
                     busy: model.isGeminiHookSetupBusy,
                     configLocationURL: geminiHookConfigURL,
                     installAction: { model.installGeminiHooks() },
@@ -643,16 +653,15 @@ struct SetupSettingsPane: View {
 
             Section {
                 Button(lang.t("setup.installAll")) {
-                    if !model.claudeHooksInstalled { model.installClaudeHooks() }
-                    if !model.codexHooksInstalled { model.installCodexHooks() }
-                    if !model.openCodePluginInstalled { model.installOpenCodePlugin() }
-                    if !model.qoderHooksInstalled { model.installQoderHooks() }
-                    if !model.qwenCodeHooksInstalled { model.installQwenCodeHooks() }
-                    if !model.factoryHooksInstalled { model.installFactoryHooks() }
-                    if !model.codebuddyHooksInstalled { model.installCodebuddyHooks() }
-                    if !model.cursorHooksInstalled { model.installCursorHooks() }
-                    if !model.geminiHooksInstalled { model.installGeminiHooks() }
-                    if !model.claudeUsageInstalled { model.installClaudeUsageBridge() }
+                    if !model.claudeHooksInstalled && model.isClaudeCodeDetected { model.installClaudeHooks() }
+                    if !model.codexHooksInstalled && model.isCodexDetected { model.installCodexHooks() }
+                    if !model.openCodePluginInstalled && model.isOpenCodeDetected { model.installOpenCodePlugin() }
+                    if !model.qoderHooksInstalled && model.isQoderDetected { model.installQoderHooks() }
+                    if !model.qwenCodeHooksInstalled && model.isQwenCodeDetected { model.installQwenCodeHooks() }
+                    if !model.factoryHooksInstalled && model.isFactoryDetected { model.installFactoryHooks() }
+                    if !model.codebuddyHooksInstalled && model.isCodebuddyDetected { model.installCodebuddyHooks() }
+                    if !model.cursorHooksInstalled && model.isCursorDetected { model.installCursorHooks() }
+                    if !model.claudeUsageInstalled && model.isClaudeCodeDetected { model.installClaudeUsageBridge() }
                 }
                 .disabled(model.hooksBinaryURL == nil || allReady)
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -711,9 +720,16 @@ struct SetupSettingsPane: View {
     }
 
     private var allReady: Bool {
-        model.claudeHooksInstalled && model.codexHooksInstalled && model.openCodePluginInstalled
-            && model.qoderHooksInstalled && model.qwenCodeHooksInstalled && model.factoryHooksInstalled && model.codebuddyHooksInstalled
-            && model.cursorHooksInstalled && model.geminiHooksInstalled && model.claudeUsageInstalled
+        // All tools that are detected have their hooks installed.
+        (!model.isClaudeCodeDetected || model.claudeHooksInstalled)
+            && (!model.isCodexDetected || model.codexHooksInstalled)
+            && (!model.isOpenCodeDetected || model.openCodePluginInstalled)
+            && (!model.isQoderDetected || model.qoderHooksInstalled)
+            && (!model.isQwenCodeDetected || model.qwenCodeHooksInstalled)
+            && (!model.isFactoryDetected || model.factoryHooksInstalled)
+            && (!model.isCodebuddyDetected || model.codebuddyHooksInstalled)
+            && (!model.isCursorDetected || model.cursorHooksInstalled)
+            && (!model.isClaudeCodeDetected || model.claudeUsageInstalled)
     }
 
     private var codexHookConfigURL: URL? {
@@ -850,6 +866,7 @@ struct SetupSettingsPane: View {
     private func hookRow(
         name: String,
         installed: Bool,
+        detected: Bool,
         busy: Bool,
         requiresBinary: Bool = true,
         configLocationURL: URL? = nil,
@@ -885,6 +902,10 @@ struct SetupSettingsPane: View {
                 }
             } else if busy {
                 ProgressView().controlSize(.small)
+            } else if !detected {
+                Text("Not detected")
+                    .foregroundStyle(.tertiary)
+                    .font(.caption)
             } else {
                 Button(lang.t("settings.general.install")) {
                     installAction()

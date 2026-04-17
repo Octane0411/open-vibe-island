@@ -10,6 +10,7 @@ final class AppModel {
     private static let soundMutedDefaultsKey = "overlay.sound.muted"
     private static let showDockIconDefaultsKey = "app.showDockIcon"
     private static let hapticFeedbackEnabledDefaultsKey = "app.hapticFeedbackEnabled"
+    private static let preferredColorSchemeDefaultsKey = "app.preferredColorScheme"
     private static let islandAppearanceModeDefaultsKey = "appearance.island.mode"
     private static let islandClosedDisplayStyleDefaultsKey = "appearance.island.closedDisplayStyle"
     private static let islandHideIdleToEdgeDefaultsKey = "appearance.island.hideIdleToEdge"
@@ -93,6 +94,15 @@ final class AppModel {
     var isCodebuddyHookSetupBusy: Bool { hooks.isCodebuddyHookSetupBusy }
     var openCodePluginInstalled: Bool { hooks.openCodePluginInstalled }
     var claudeUsageInstalled: Bool { hooks.claudeUsageInstalled }
+    var isClaudeCodeDetected: Bool { hooks.isClaudeCodeDetected }
+    var isCodexDetected: Bool { hooks.isCodexDetected }
+    var isCursorDetected: Bool { hooks.isCursorDetected }
+    var isOpenCodeDetected: Bool { hooks.isOpenCodeDetected }
+    var isQoderDetected: Bool { hooks.isQoderDetected }
+    var isQwenCodeDetected: Bool { hooks.isQwenCodeDetected }
+    var isFactoryDetected: Bool { hooks.isFactoryDetected }
+    var isCodebuddyDetected: Bool { hooks.isCodebuddyDetected }
+    var isGeminiDetected: Bool { hooks.isGeminiDetected }
     var claudeHookStatusTitle: String { hooks.claudeHookStatusTitle }
     var claudeHookStatusSummary: String { hooks.claudeHookStatusSummary }
     var claudeUsageStatusTitle: String { hooks.claudeUsageStatusTitle }
@@ -241,6 +251,34 @@ final class AppModel {
     }
 
     // MARK: - Appearance
+
+    /// User-selectable color scheme for the app's UI.
+    /// Persisted to UserDefaults and applied to all views.
+    enum AppColorScheme: String, CaseIterable, Codable, Identifiable {
+        case system
+        case light
+        case dark
+
+        var id: String { rawValue }
+
+        /// Converts this color scheme to a SwiftUI ColorScheme for use with .preferredColorScheme().
+        var swiftUIScheme: SwiftUI.ColorScheme? {
+            switch self {
+            case .system: nil
+            case .light: .light
+            case .dark: .dark
+            }
+        }
+    }
+
+    /// The user's preferred color scheme. Defaults to `.system` (follows macOS appearance).
+    /// Changes are persisted to UserDefaults and applied immediately to all views.
+    var preferredColorScheme: AppColorScheme = .system {
+        didSet {
+            guard preferredColorScheme != oldValue else { return }
+            UserDefaults.standard.set(preferredColorScheme.rawValue, forKey: Self.preferredColorSchemeDefaultsKey)
+        }
+    }
 
     var islandAppearanceMode: IslandAppearanceMode = .default {
         didSet {
@@ -467,6 +505,9 @@ final class AppModel {
             )
         }
         completionReplyEnabled = UserDefaults.standard.bool(forKey: Self.completionReplyEnabledDefaultsKey)
+        preferredColorScheme = AppColorScheme(
+            rawValue: UserDefaults.standard.string(forKey: Self.preferredColorSchemeDefaultsKey) ?? ""
+        ) ?? .system
         islandAppearanceMode = IslandAppearanceMode(
             rawValue: UserDefaults.standard.string(forKey: Self.islandAppearanceModeDefaultsKey) ?? ""
         ) ?? .default
@@ -1271,6 +1312,9 @@ final class AppModel {
         hooks.hooksBinaryURL = payload.hooksBinaryURL
         hooks.updateHooksBinaryIfNeeded()
 
+        // Detect which agent tools are present before attempting any installs.
+        self.hooks.detectInstalledTools()
+
         // Auto-install missing hooks and usage bridge, then run health checks.
         if payload.hooksBinaryURL != nil {
             Task { @MainActor [weak self] in
@@ -1279,16 +1323,16 @@ final class AppModel {
                 // Wait for all status reads to complete before checking install state.
                 await self.hooks.refreshAllHookStatusAndWait()
 
-                if !self.claudeHooksInstalled { self.installClaudeHooks() }
-                if !self.codexHooksInstalled { self.installCodexHooks() }
-                if !self.qoderHooksInstalled { self.installQoderHooks() }
-                if !self.qwenCodeHooksInstalled { self.installQwenCodeHooks() }
-                if !self.factoryHooksInstalled { self.installFactoryHooks() }
-                if !self.codebuddyHooksInstalled { self.installCodebuddyHooks() }
-                if !self.openCodePluginInstalled { self.installOpenCodePlugin() }
-                if !self.cursorHooksInstalled { self.installCursorHooks() }
+                if !self.claudeHooksInstalled && self.isClaudeCodeDetected { self.installClaudeHooks() }
+                if !self.codexHooksInstalled && self.isCodexDetected { self.installCodexHooks() }
+                if !self.qoderHooksInstalled && self.isQoderDetected { self.installQoderHooks() }
+                if !self.qwenCodeHooksInstalled && self.isQwenCodeDetected { self.installQwenCodeHooks() }
+                if !self.factoryHooksInstalled && self.isFactoryDetected { self.installFactoryHooks() }
+                if !self.codebuddyHooksInstalled && self.isCodebuddyDetected { self.installCodebuddyHooks() }
+                if !self.openCodePluginInstalled && self.isOpenCodeDetected { self.installOpenCodePlugin() }
+                if !self.cursorHooksInstalled && self.isCursorDetected { self.installCursorHooks() }
                 if !self.geminiHooksInstalled { self.installGeminiHooks() }
-                if !self.claudeUsageInstalled { self.installClaudeUsageBridge() }
+                if !self.claudeUsageInstalled && self.isClaudeCodeDetected { self.installClaudeUsageBridge() }
 
                 // Run health checks after install to detect stale paths, conflicts, etc.
                 try? await Task.sleep(for: .milliseconds(500))

@@ -224,7 +224,7 @@ struct IslandPanelView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .ignoresSafeArea()
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(model.preferredColorScheme.swiftUIScheme)
     }
 
     @ViewBuilder

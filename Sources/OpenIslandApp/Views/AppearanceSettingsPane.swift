@@ -10,6 +10,18 @@ struct AppearanceSettingsPane: View {
 
     var body: some View {
         Form {
+            Section(lang.t("settings.appearance.colorScheme")) {
+                Picker(lang.t("settings.appearance.colorScheme"), selection: Binding(
+                    get: { model.preferredColorScheme },
+                    set: { model.preferredColorScheme = $0 }
+                )) {
+                    Text(lang.t("settings.appearance.colorScheme.system")).tag(AppModel.AppColorScheme.system)
+                    Text(lang.t("settings.appearance.colorScheme.light")).tag(AppModel.AppColorScheme.light)
+                    Text(lang.t("settings.appearance.colorScheme.dark")).tag(AppModel.AppColorScheme.dark)
+                }
+                .pickerStyle(.segmented)
+            }
+
             Section(lang.t("settings.appearance.mode")) {
                 Picker(lang.t("settings.appearance.mode"), selection: Binding(
                     get: { model.islandAppearanceMode },
