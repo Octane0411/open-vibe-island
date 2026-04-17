@@ -119,6 +119,15 @@ final class AppModel {
     var geminiHookStatusSummary: String { hooks.geminiHookStatusSummary }
     var codexHookStatusTitle: String { hooks.codexHookStatusTitle }
     var codexHookStatusSummary: String { hooks.codexHookStatusSummary }
+
+    /// Mirrors `AgentIntentStore.firstLaunchCompleted`. Onboarding sets this
+    /// to true after the user completes (or explicitly skips) the flow;
+    /// legacy migration also flips it for users upgrading with existing
+    /// hooks.
+    var firstLaunchCompleted: Bool {
+        get { hooks.intentStore.firstLaunchCompleted }
+        set { hooks.intentStore.firstLaunchCompleted = newValue }
+    }
     func refreshCodexHookStatus() { hooks.refreshCodexHookStatus() }
     func refreshClaudeHookStatus() { hooks.refreshClaudeHookStatus() }
     func refreshOpenCodePluginStatus() { hooks.refreshOpenCodePluginStatus() }
@@ -1286,16 +1295,20 @@ final class AppModel {
                 // install decision.
                 self.hooks.migrateIntentStoreIfNeeded()
 
-                if !self.claudeHooksInstalled { self.installClaudeHooks() }
-                if !self.codexHooksInstalled { self.installCodexHooks() }
-                if !self.qoderHooksInstalled { self.installQoderHooks() }
-                if !self.qwenCodeHooksInstalled { self.installQwenCodeHooks() }
-                if !self.factoryHooksInstalled { self.installFactoryHooks() }
-                if !self.codebuddyHooksInstalled { self.installCodebuddyHooks() }
-                if !self.openCodePluginInstalled { self.installOpenCodePlugin() }
-                if !self.cursorHooksInstalled { self.installCursorHooks() }
-                if !self.geminiHooksInstalled { self.installGeminiHooks() }
-                if !self.claudeUsageInstalled { self.installClaudeUsageBridge() }
+                // Install only hooks the user has not explicitly opted out of.
+                // `shouldAutoInstall` skips `.uninstalled` agents and agents
+                // whose hooks are already present — it is the single checkpoint
+                // that fixes #324.
+                if self.hooks.shouldAutoInstall(.claudeCode) { self.installClaudeHooks() }
+                if self.hooks.shouldAutoInstall(.codex) { self.installCodexHooks() }
+                if self.hooks.shouldAutoInstall(.qoder) { self.installQoderHooks() }
+                if self.hooks.shouldAutoInstall(.qwenCode) { self.installQwenCodeHooks() }
+                if self.hooks.shouldAutoInstall(.factory) { self.installFactoryHooks() }
+                if self.hooks.shouldAutoInstall(.codebuddy) { self.installCodebuddyHooks() }
+                if self.hooks.shouldAutoInstall(.openCode) { self.installOpenCodePlugin() }
+                if self.hooks.shouldAutoInstall(.cursor) { self.installCursorHooks() }
+                if self.hooks.shouldAutoInstall(.gemini) { self.installGeminiHooks() }
+                if self.hooks.shouldAutoInstall(.claudeUsageBridge) { self.installClaudeUsageBridge() }
 
                 // Run health checks after install to detect stale paths, conflicts, etc.
                 try? await Task.sleep(for: .milliseconds(500))

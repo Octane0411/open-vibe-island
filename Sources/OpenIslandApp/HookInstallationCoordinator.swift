@@ -708,6 +708,33 @@ final class HookInstallationCoordinator {
         }
     }
 
+    // MARK: - Intent-aware helpers
+
+    /// Reports whether the startup flow should auto-install hooks for the
+    /// given agent. Returns `false` when the user has explicitly opted out
+    /// (`.uninstalled`) or when the hook is already present on disk.
+    /// Untouched and previously-installed-but-missing agents both return
+    /// `true`, preserving legacy auto-install for never-seen users until
+    /// onboarding ships (see C6).
+    func shouldAutoInstall(_ agent: AgentIdentifier) -> Bool {
+        guard intentStore.intent(for: agent) != .uninstalled else {
+            return false
+        }
+
+        switch agent {
+        case .claudeCode: return !claudeHooksInstalled
+        case .codex: return !codexHooksInstalled
+        case .cursor: return !cursorHooksInstalled
+        case .qoder: return !qoderHooksInstalled
+        case .qwenCode: return !qwenCodeHooksInstalled
+        case .factory: return !factoryHooksInstalled
+        case .codebuddy: return !codebuddyHooksInstalled
+        case .openCode: return !openCodePluginInstalled
+        case .gemini: return !geminiHooksInstalled
+        case .claudeUsageBridge: return !claudeUsageInstalled
+        }
+    }
+
     // MARK: - Intent store migration
 
     /// Reconciles the persisted intent store with the hook status currently
