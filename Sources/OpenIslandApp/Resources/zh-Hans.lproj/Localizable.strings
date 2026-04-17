@@ -28,6 +28,10 @@
 "settings.general.suppressFrontmostNotifications" = "前台会话不弹出通知";
 "settings.general.showCodexUsage" = "显示 Codex 用量";
 "settings.general.completionReply" = "在完成卡片中回复";
+"settings.general.chatEntryMode" = "会话点击行为";
+"settings.general.clickToChat" = "打开聊天面板";
+"settings.general.clickToJump" = "跳转到终端";
+"settings.general.chatShowTimestamps" = "在聊天中显示时间戳";
 "settings.general.cliHooks" = "CLI Hooks";
 "settings.general.activated" = "已激活";
 "settings.general.install" = "安装";
@@ -152,6 +156,7 @@
 /* Island Panel - Completion */
 "completion.done" = "完成";
 "completion.replyPlaceholder" = "回复 Claude…";
+"chat.unsupported" = "此终端不支持聊天。请使用跳转至终端。";
 
 /* Menu Bar */
 "menu.status" = "%lld 活跃 · %lld 待处理";

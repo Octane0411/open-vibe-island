@@ -3,21 +3,34 @@ import OpenIslandCore
 
 enum IslandSurface: Equatable {
     case sessionList(actionableSessionID: String? = nil)
+    case chat(sessionID: String)
 
     var sessionID: String? {
         switch self {
         case let .sessionList(actionableSessionID):
             actionableSessionID
+        case let .chat(sessionID):
+            sessionID
         }
     }
 
     var isNotificationCard: Bool {
-        sessionID != nil
+        switch self {
+        case .sessionList:
+            return sessionID != nil
+        case .chat:
+            return false
+        }
     }
 
     func autoDismissesWhenPresentedAsNotification(session: AgentSession?) -> Bool {
-        guard sessionID != nil else { return false }
-        return session?.phase == .completed
+        switch self {
+        case .sessionList:
+            guard sessionID != nil else { return false }
+            return session?.phase == .completed
+        case .chat:
+            return false
+        }
     }
 
     static func notificationSurface(for event: AgentEvent) -> IslandSurface? {
@@ -34,23 +47,28 @@ enum IslandSurface: Equatable {
     }
 
     func matchesCurrentState(of session: AgentSession?) -> Bool {
-        guard sessionID != nil else {
-            return true
-        }
+        switch self {
+        case .sessionList:
+            guard sessionID != nil else {
+                return true
+            }
 
-        guard let session else {
-            return false
-        }
+            guard let session else {
+                return false
+            }
 
-        switch session.phase {
-        case .waitingForApproval:
-            return session.permissionRequest != nil
-        case .waitingForAnswer:
-            return session.questionPrompt != nil
-        case .completed:
+            switch session.phase {
+            case .waitingForApproval:
+                return session.permissionRequest != nil
+            case .waitingForAnswer:
+                return session.questionPrompt != nil
+            case .completed:
+                return true
+            case .running:
+                return false
+            }
+        case .chat:
             return true
-        case .running:
-            return false
         }
     }
 }

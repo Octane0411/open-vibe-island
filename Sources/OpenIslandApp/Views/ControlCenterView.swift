@@ -427,6 +427,8 @@ struct ControlCenterView: View {
             lang.t("debug.sessionList")
         case .sessionList(actionableSessionID: .some):
             lang.t("debug.sessionListActionable")
+        case .chat:
+            lang.t("debug.chat")
         }
     }
 

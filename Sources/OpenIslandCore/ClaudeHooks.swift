@@ -548,15 +548,19 @@ public enum ClaudePermissionRequestDecision: Equatable, Codable, Sendable {
 public enum ClaudeHookDirective: Equatable, Codable, Sendable {
     case preToolUse(ClaudePreToolUseDirective)
     case permissionRequest(ClaudePermissionRequestDecision)
+    case submitPrompt(sessionID: String, prompt: String)
 
     private enum CodingKeys: String, CodingKey {
         case type
         case directive
+        case sessionID
+        case prompt
     }
 
     private enum DirectiveType: String, Codable {
         case preToolUse
         case permissionRequest
+        case submitPrompt
     }
 
     public init(from decoder: any Decoder) throws {
@@ -568,6 +572,11 @@ public enum ClaudeHookDirective: Equatable, Codable, Sendable {
             self = .preToolUse(try container.decode(ClaudePreToolUseDirective.self, forKey: .directive))
         case .permissionRequest:
             self = .permissionRequest(try container.decode(ClaudePermissionRequestDecision.self, forKey: .directive))
+        case .submitPrompt:
+            self = .submitPrompt(
+                sessionID: try container.decode(String.self, forKey: .sessionID),
+                prompt: try container.decode(String.self, forKey: .prompt)
+            )
         }
     }
 
@@ -581,6 +590,10 @@ public enum ClaudeHookDirective: Equatable, Codable, Sendable {
         case let .permissionRequest(directive):
             try container.encode(DirectiveType.permissionRequest, forKey: .type)
             try container.encode(directive, forKey: .directive)
+        case let .submitPrompt(sessionID, prompt):
+            try container.encode(DirectiveType.submitPrompt, forKey: .type)
+            try container.encode(sessionID, forKey: .sessionID)
+            try container.encode(prompt, forKey: .prompt)
         }
     }
 }
@@ -613,6 +626,24 @@ public enum ClaudeHookOutputEncoder {
         }
 
         var continue_: Bool = true
+        var suppressOutput: Bool = true
+        var hookSpecificOutput: HookSpecificOutput
+
+        private enum CodingKeys: String, CodingKey {
+            case continue_ = "continue"
+            case suppressOutput
+            case hookSpecificOutput
+        }
+    }
+
+    private struct SubmitPromptOutput: Encodable {
+        struct HookSpecificOutput: Encodable {
+            var hookEventName = "SubmitPrompt"
+            var sessionID: String
+            var prompt: String
+        }
+
+        var continue_: Bool = false
         var suppressOutput: Bool = true
         var hookSpecificOutput: HookSpecificOutput
 
@@ -656,7 +687,18 @@ public enum ClaudeHookOutputEncoder {
                         hookSpecificOutput: PermissionRequestOutput.HookSpecificOutput(decision: decision)
                     )
                 )
+            case let .submitPrompt(sessionID, prompt):
+                data = try encoder.encode(
+                    SubmitPromptOutput(
+                        hookSpecificOutput: SubmitPromptOutput.HookSpecificOutput(
+                            sessionID: sessionID,
+                            prompt: prompt
+                        )
+                    )
+                )
             }
+        case .submitPromptResult:
+            data = nil
         }
 
         guard var line = data else {

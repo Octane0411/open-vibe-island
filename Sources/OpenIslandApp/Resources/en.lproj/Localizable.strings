@@ -28,6 +28,10 @@
 "settings.general.suppressFrontmostNotifications" = "Suppress notifications for focused sessions";
 "settings.general.showCodexUsage" = "Show Codex usage";
 "settings.general.completionReply" = "Reply from completion card";
+"settings.general.chatEntryMode" = "Session click behavior";
+"settings.general.clickToChat" = "Open chat panel";
+"settings.general.clickToJump" = "Jump to terminal";
+"settings.general.chatShowTimestamps" = "Show timestamps in chat";
 "settings.general.cliHooks" = "CLI Hooks";
 "settings.general.activated" = "Activated";
 "settings.general.install" = "Install";
@@ -152,6 +156,7 @@
 /* Island Panel - Completion */
 "completion.done" = "Done";
 "completion.replyPlaceholder" = "Reply to Claude…";
+"chat.unsupported" = "Chat not supported for this terminal. Use Jump to terminal instead.";
 
 /* Menu Bar */
 "menu.status" = "%lld live · %lld attention";

@@ -89,6 +89,7 @@ public enum BridgeCommand: Equatable, Codable, Sendable {
     case processOpenCodeHook(OpenCodeHookPayload)
     case processCursorHook(CursorHookPayload)
     case processGeminiHook(GeminiHookPayload)
+    case submitPrompt(sessionID: String, prompt: String)
 
     private enum CodingKeys: String, CodingKey {
         case type
@@ -102,6 +103,7 @@ public enum BridgeCommand: Equatable, Codable, Sendable {
         case openCodeHook
         case cursorHook
         case geminiHook
+        case submitPrompt
     }
 
     private enum CommandType: String, Codable {
@@ -114,6 +116,7 @@ public enum BridgeCommand: Equatable, Codable, Sendable {
         case processOpenCodeHook
         case processCursorHook
         case processGeminiHook
+        case submitPrompt
     }
 
     public init(from decoder: any Decoder) throws {
@@ -148,6 +151,11 @@ public enum BridgeCommand: Equatable, Codable, Sendable {
             self = .processCursorHook(try container.decode(CursorHookPayload.self, forKey: .cursorHook))
         case .processGeminiHook:
             self = .processGeminiHook(try container.decode(GeminiHookPayload.self, forKey: .geminiHook))
+        case .submitPrompt:
+            self = .submitPrompt(
+                sessionID: try container.decode(String.self, forKey: .sessionID),
+                prompt: try container.decode(String.self, forKey: .prompt)
+            )
         }
     }
 
@@ -185,6 +193,10 @@ public enum BridgeCommand: Equatable, Codable, Sendable {
         case let .processGeminiHook(payload):
             try container.encode(CommandType.processGeminiHook, forKey: .type)
             try container.encode(payload, forKey: .geminiHook)
+        case let .submitPrompt(sessionID, prompt):
+            try container.encode(CommandType.submitPrompt, forKey: .type)
+            try container.encode(sessionID, forKey: .sessionID)
+            try container.encode(prompt, forKey: .prompt)
         }
     }
 }
@@ -195,10 +207,14 @@ public enum BridgeResponse: Equatable, Codable, Sendable {
     case claudeHookDirective(ClaudeHookDirective)
     case openCodeHookDirective(OpenCodeHookDirective)
     case cursorHookDirective(CursorHookDirective)
+    case submitPromptResult(sessionID: String, success: Bool, error: String?)
 
     private enum CodingKeys: String, CodingKey {
         case type
         case directive
+        case sessionID
+        case success
+        case error
     }
 
     private enum ResponseType: String, Codable {
@@ -207,6 +223,7 @@ public enum BridgeResponse: Equatable, Codable, Sendable {
         case claudeHookDirective
         case openCodeHookDirective
         case cursorHookDirective
+        case submitPromptResult
     }
 
     public init(from decoder: any Decoder) throws {
@@ -224,6 +241,12 @@ public enum BridgeResponse: Equatable, Codable, Sendable {
             self = .openCodeHookDirective(try container.decode(OpenCodeHookDirective.self, forKey: .directive))
         case .cursorHookDirective:
             self = .cursorHookDirective(try container.decode(CursorHookDirective.self, forKey: .directive))
+        case .submitPromptResult:
+            self = .submitPromptResult(
+                sessionID: try container.decode(String.self, forKey: .sessionID),
+                success: try container.decode(Bool.self, forKey: .success),
+                error: try container.decodeIfPresent(String.self, forKey: .error)
+            )
         }
     }
 
@@ -245,6 +268,11 @@ public enum BridgeResponse: Equatable, Codable, Sendable {
         case let .cursorHookDirective(directive):
             try container.encode(ResponseType.cursorHookDirective, forKey: .type)
             try container.encode(directive, forKey: .directive)
+        case let .submitPromptResult(sessionID, success, error):
+            try container.encode(ResponseType.submitPromptResult, forKey: .type)
+            try container.encode(sessionID, forKey: .sessionID)
+            try container.encode(success, forKey: .success)
+            try container.encodeIfPresent(error, forKey: .error)
         }
     }
 }

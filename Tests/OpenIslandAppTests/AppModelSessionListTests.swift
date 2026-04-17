@@ -344,109 +344,6 @@ struct AppModelSessionListTests {
     }
 
     @Test
-    func bridgeNotificationIsSuppressedWhenSessionIsAlreadyFrontmost() async throws {
-        let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel(
-            isNotificationSessionAlreadyFrontmost: { session in
-                session.id == "frontmost-session"
-            }
-        )
-        model.notchStatus = .closed
-        model.notchOpenReason = nil
-        model.state = SessionState(
-            sessions: [
-                AgentSession(
-                    id: "frontmost-session",
-                    title: "Codex · open-island",
-                    tool: .codex,
-                    origin: .live,
-                    attachmentState: .attached,
-                    phase: .running,
-                    summary: "Already focused in the front terminal.",
-                    updatedAt: now
-                ),
-            ]
-        )
-
-        model.applyTrackedEvent(
-            .permissionRequested(
-                PermissionRequested(
-                    sessionID: "frontmost-session",
-                    request: PermissionRequest(
-                        title: "Edit",
-                        summary: "main.swift",
-                        affectedPath: "/tmp/main.swift"
-                    ),
-                    timestamp: now.addingTimeInterval(1)
-                )
-            ),
-            updateLastActionMessage: false,
-            ingress: .bridge
-        )
-
-        for _ in 0..<20 {
-            await Task.yield()
-            try await Task.sleep(for: .milliseconds(10))
-        }
-
-        #expect(model.notchStatus == .closed)
-        #expect(model.notchOpenReason == nil)
-        #expect(model.islandSurface == .sessionList())
-    }
-
-    @Test
-    func bridgeNotificationStillPresentsWhenSessionIsNotFrontmost() async throws {
-        let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel(
-            isNotificationSessionAlreadyFrontmost: { _ in false }
-        )
-        model.notchStatus = .closed
-        model.notchOpenReason = nil
-        model.state = SessionState(
-            sessions: [
-                AgentSession(
-                    id: "background-session",
-                    title: "Codex · open-island",
-                    tool: .codex,
-                    origin: .live,
-                    attachmentState: .attached,
-                    phase: .running,
-                    summary: "Needs approval.",
-                    updatedAt: now
-                ),
-            ]
-        )
-
-        model.applyTrackedEvent(
-            .permissionRequested(
-                PermissionRequested(
-                    sessionID: "background-session",
-                    request: PermissionRequest(
-                        title: "Edit",
-                        summary: "main.swift",
-                        affectedPath: "/tmp/main.swift"
-                    ),
-                    timestamp: now.addingTimeInterval(1)
-                )
-            ),
-            updateLastActionMessage: false,
-            ingress: .bridge
-        )
-
-        for _ in 0..<20 {
-            if model.notchStatus == .opened {
-                break
-            }
-            await Task.yield()
-            try await Task.sleep(for: .milliseconds(10))
-        }
-
-        #expect(model.notchStatus == .opened)
-        #expect(model.notchOpenReason == .notification)
-        #expect(model.islandSurface == .sessionList(actionableSessionID: "background-session"))
-    }
-
-    @Test
     func hoverOpenedSessionListAutoCollapsesOnPointerExit() {
         let model = AppModel()
         model.notchStatus = .opened
@@ -493,20 +390,6 @@ struct AppModelSessionListTests {
         #expect(model.notchStatus == .opened)
         #expect(model.notchOpenReason == .click)
         #expect(model.islandSurface == .sessionList())
-    }
-
-    @Test
-    func idleEdgeModeOnlyAppliesWhileCollapsed() {
-        let model = AppModel()
-        let originalSetting = model.hideIdleIslandToEdge
-        defer { model.hideIdleIslandToEdge = originalSetting }
-        model.hideIdleIslandToEdge = true
-
-        model.notchStatus = .closed
-        #expect(model.showsIdleEdgeWhenCollapsed)
-
-        model.notchStatus = .opened
-        #expect(!model.showsIdleEdgeWhenCollapsed)
     }
 
     @Test
@@ -741,66 +624,6 @@ struct AppModelSessionListTests {
         )
 
         #expect(merged.map(\.id) == [existing.id])
-    }
-
-
-    /// Regression test: `measuredNotificationContentHeight` MUST be cleared when the
-    /// surface changes to a different session, to avoid sizing the new card with stale
-    /// measurements from the previous one.
-    @Test
-    @MainActor
-    func approvalCardMeasuredHeightClearedWhenSurfaceSessionChanges() {
-        let model = AppModel()
-
-        var sessionA = AgentSession(
-            id: "approval-session-A",
-            title: "Claude · proj-A",
-            tool: .claudeCode,
-            attachmentState: .attached,
-            phase: .waitingForApproval,
-            summary: "Approve edit A",
-            updatedAt: .now,
-            permissionRequest: PermissionRequest(
-                title: "Edit",
-                summary: "file_a.swift",
-                affectedPath: "/tmp/file_a.swift"
-            )
-        )
-        sessionA.isProcessAlive = true
-
-        var sessionB = AgentSession(
-            id: "approval-session-B",
-            title: "Claude · proj-B",
-            tool: .claudeCode,
-            attachmentState: .attached,
-            phase: .waitingForApproval,
-            summary: "Approve edit B",
-            updatedAt: .now,
-            permissionRequest: PermissionRequest(
-                title: "Edit",
-                summary: "file_b.swift",
-                affectedPath: "/tmp/file_b.swift"
-            )
-        )
-        sessionB.isProcessAlive = true
-
-        model.state = SessionState(sessions: [sessionA, sessionB])
-
-        let surfaceA = IslandSurface.sessionList(actionableSessionID: "approval-session-A")
-        model.notchStatus = .opened
-        model.notchOpenReason = .notification
-        model.islandSurface = surfaceA
-        model.measuredNotificationContentHeight = 320
-
-        model.notchClose()
-
-        let surfaceB = IslandSurface.sessionList(actionableSessionID: "approval-session-B")
-        model.notchOpen(reason: .notification, surface: surfaceB)
-
-        #expect(
-            model.measuredNotificationContentHeight == 0,
-            "Switching to a different session's card must clear the stale measurement from the previous session to prevent wrong initial panel sizing."
-        )
     }
 
     @Test

@@ -15,15 +15,10 @@ final class OverlayPanelController {
     private static let maxSessionListHeight: CGFloat = 560
     private static let maxVisibleSessionRows: Int = 6
     private static let openedRowSpacing: CGFloat = 6
-    // Content padding top (8) + scroll padding (4) + outerBottomPadding (14) + header-content gap (12)
-    // + bottomInset (14, the VStack .padding(.bottom, bottomInset) that subtracts from usable height)
-    // = 52.  The extra 14 pt avoids the card bottom being clipped by the .clipped() modifier when
-    // the measured height is not yet available (first notification render).
-    private static let openedContentVerticalInsets: CGFloat = 52
+    // Content padding (8) + scroll padding (4) + view chrome: outerBottomPadding (14) + header-content gap (12)
+    private static let openedContentVerticalInsets: CGFloat = 38
     private static let openedEmptyStateHeight: CGFloat = 108
-    // Approval card: header row (~72) + actionableBody padding (16*2 + 14 bottom) + body content (~186)
-    // Bumped to 310 to ensure the estimated panel height is never smaller than the actual rendered card.
-    private static let approvalCardHeight: CGFloat = 310
+    private static let approvalCardHeight: CGFloat = 288
     private static let questionCardHeight: CGFloat = 110
     // Completion card chrome breakdown (everything except the scrollable text):
     // openedContent vertical padding: 24, card container padding: 28,
@@ -33,12 +28,10 @@ final class OverlayPanelController {
     private static let completionCardChromeHeight: CGFloat = 187
     private static let completionCardMinHeight: CGFloat = 210
     private static let completionCardMaxHeight: CGFloat = 400
-    private static let hiddenIdleEdgeHoverHitHeight: CGFloat = 8
 
     private var panel: NotchPanel?
     private var eventMonitors = NotchEventMonitors()
     private var hoverTimer: DispatchWorkItem?
-    private var hoverCancelGrace: DispatchWorkItem?
     weak var model: AppModel?
     private(set) var notchRect: NSRect = .zero
 
@@ -95,6 +88,30 @@ final class OverlayPanelController {
         }
     }
 
+    /// Fade the panel out, then call completion so the caller can snap state.
+    func fadeOutAndClose(
+        duration: TimeInterval,
+        completion: @escaping @MainActor () -> Void
+    ) {
+        guard let panel else {
+            completion()
+            return
+        }
+
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = duration
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            panel.animator().alphaValue = 0
+        }, completionHandler: {
+            Task { @MainActor in completion() }
+        })
+    }
+
+    /// Restore panel alpha after a fade-out close.
+    func restoreAlpha() {
+        panel?.alphaValue = 1
+    }
+
     func reposition(preferredScreenID: String?) -> OverlayPlacementDiagnostics? {
         guard let panel else {
             return placementDiagnostics(preferredScreenID: preferredScreenID)
@@ -131,7 +148,7 @@ final class OverlayPanelController {
         panel.isMovable = false
         panel.hidesOnDeactivate = false
         panel.acceptsMouseMovedEvents = false
-        panel.collectionBehavior = [.fullScreenAuxiliary, .canJoinAllSpaces, .ignoresCycle]
+        panel.collectionBehavior = [.fullScreenAuxiliary, .stationary, .canJoinAllSpaces, .ignoresCycle]
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.ignoresMouseEvents = true
@@ -262,7 +279,7 @@ final class OverlayPanelController {
         let inClosedSurfaceArea = isPointInClosedSurfaceArea(screenLocation)
 
         if model.notchStatus == .closed && inClosedSurfaceArea {
-            cancelHoverOpenImmediately()
+            cancelHoverOpen()
             model.notchOpen(reason: .click)
         } else if model.notchStatus == .opened {
             if !isPointInExpandedArea(screenLocation) {
@@ -272,27 +289,14 @@ final class OverlayPanelController {
         }
     }
 
-    /// Grace period before a hover-open timer is cancelled.  Prevents
-    /// mouse jitter at the notch edge from resetting the delay.
-    private static let hoverCancelGracePeriod: TimeInterval = 0.1
-
     private func scheduleHoverOpen() {
-        // Mouse re-entered during grace period — just revoke the cancel.
-        hoverCancelGrace?.cancel()
-        hoverCancelGrace = nil
-
-        guard let model else { return }
-
-        if model.showsIdleEdgeWhenCollapsed {
-            performHoverOpen(model)
-            return
-        }
-
         guard hoverTimer == nil else { return }
 
         let item = DispatchWorkItem { [weak self] in
             guard let self, let model = self.model else { return }
-            self.performHoverOpen(model)
+            if model.notchStatus == .closed {
+                model.notchOpen(reason: .hover)
+            }
             self.hoverTimer = nil
         }
 
@@ -300,44 +304,7 @@ final class OverlayPanelController {
         DispatchQueue.main.asyncAfter(deadline: .now() + AppModel.hoverOpenDelay, execute: item)
     }
 
-    private func performHoverOpen(_ model: AppModel) {
-        guard model.notchStatus == .closed else { return }
-
-        if model.hapticFeedbackEnabled {
-            NSHapticFeedbackManager.defaultPerformer.perform(
-                NSHapticFeedbackManager.FeedbackPattern.alignment,
-                performanceTime: .now
-            )
-        }
-
-        model.notchOpen(reason: .hover)
-    }
-
     private func cancelHoverOpen() {
-        guard hoverTimer != nil else { return }
-
-        // Don't cancel immediately — allow a short grace period so that
-        // mouse jitter at the notch edge doesn't restart the timer.
-        guard hoverCancelGrace == nil else { return }
-
-        let grace = DispatchWorkItem { [weak self] in
-            self?.hoverTimer?.cancel()
-            self?.hoverTimer = nil
-            self?.hoverCancelGrace = nil
-        }
-
-        hoverCancelGrace = grace
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + Self.hoverCancelGracePeriod,
-            execute: grace
-        )
-    }
-
-    /// Cancel without grace period — used for click-to-open where the
-    /// hover timer must not fire after the click already opened the panel.
-    private func cancelHoverOpenImmediately() {
-        hoverCancelGrace?.cancel()
-        hoverCancelGrace = nil
         hoverTimer?.cancel()
         hoverTimer = nil
     }
@@ -348,11 +315,11 @@ final class OverlayPanelController {
         guard let model else { return false }
 
         if let closedSurfaceRect = closedSurfaceRect(for: model) {
-            return Self.rectContainsIncludingEdges(closedSurfaceRect, point: screenPoint)
+            return closedSurfaceRect.contains(screenPoint)
         }
 
         let expandedNotch = notchRect.insetBy(dx: -20, dy: -10)
-        return Self.rectContainsIncludingEdges(expandedNotch, point: screenPoint)
+        return expandedNotch.contains(screenPoint)
     }
 
     func isPointInExpandedArea(_ screenPoint: NSPoint) -> Bool {
@@ -364,13 +331,7 @@ final class OverlayPanelController {
             return false
         }
 
-        // The window is always at opened size, but the visible content area
-        // is the inner content rect (excluding shadow insets).
-        guard let contentRect = contentRect(for: model, in: panel.frame) else {
-            return false
-        }
-
-        return Self.rectContainsIncludingEdges(contentRect, point: screenPoint)
+        return panel.frame.contains(screenPoint)
     }
 
     func openedPanelWidth(for screen: NSScreen?) -> CGFloat {
@@ -390,7 +351,7 @@ final class OverlayPanelController {
     }
 
     func contentRect(for model: AppModel, in bounds: NSRect) -> NSRect? {
-        let insets = panelShadowInsets
+        let insets = panelShadowInsets(for: model)
         return NSRect(
             x: bounds.minX + insets.horizontal,
             y: bounds.minY + insets.bottom,
@@ -400,84 +361,25 @@ final class OverlayPanelController {
     }
 
     nonisolated static func closedSurfaceRect(
-        notchRect: NSRect,
-        closedWidth: CGFloat
+        for panelFrame: NSRect,
+        shadowInsets: (horizontal: CGFloat, bottom: CGFloat)
     ) -> NSRect {
-        let cx = notchRect.midX
-        return NSRect(
-            x: cx - closedWidth / 2,
-            y: notchRect.minY,
-            width: closedWidth,
-            height: notchRect.height
+        NSRect(
+            x: panelFrame.minX + shadowInsets.horizontal,
+            y: panelFrame.minY + shadowInsets.bottom,
+            width: max(0, panelFrame.width - (shadowInsets.horizontal * 2)),
+            height: max(0, panelFrame.height - shadowInsets.bottom)
         )
-    }
-
-    nonisolated static func hiddenIdleEdgeHoverRect(
-        notchRect: NSRect,
-        closedWidth: CGFloat,
-        hoverHitHeight: CGFloat
-    ) -> NSRect {
-        let cx = notchRect.midX
-        let effectiveHeight = min(notchRect.height, max(1, hoverHitHeight))
-        return NSRect(
-            x: cx - closedWidth / 2,
-            y: notchRect.maxY - effectiveHeight,
-            width: closedWidth,
-            height: effectiveHeight
-        )
-    }
-
-    nonisolated static func rectContainsIncludingEdges(_ rect: NSRect, point: NSPoint) -> Bool {
-        point.x >= rect.minX
-            && point.x <= rect.maxX
-            && point.y >= rect.minY
-            && point.y <= rect.maxY
-    }
-
-    nonisolated static func closedPanelWidth(
-        notchWidth: CGFloat,
-        notchHeight: CGFloat,
-        liveSessionCount: Int,
-        hasAttention: Bool,
-        notchStatus: NotchStatus,
-        showsIdleEdgeWhenCollapsed: Bool
-    ) -> CGFloat {
-        let popWidth = notchStatus == .popping ? 18 : 0
-
-        guard !showsIdleEdgeWhenCollapsed else {
-            return notchWidth + CGFloat(popWidth)
-        }
-
-        guard liveSessionCount > 0 else {
-            return notchWidth
-        }
-
-        let sideWidth = max(0, notchHeight - 12) + 10
-        let digits = max(1, "\(liveSessionCount)".count)
-        let countBadgeWidth = CGFloat(26 + max(0, digits - 1) * 8)
-        let leftWidth = sideWidth + 8 + (hasAttention ? 18 : 0)
-        let rightWidth = max(sideWidth, countBadgeWidth) + (hasAttention ? 18 : 0)
-        let expansionWidth = leftWidth + rightWidth + 16 + (hasAttention ? 6 : 0)
-        return notchWidth + expansionWidth + CGFloat(popWidth)
     }
 
     private func closedSurfaceRect(for model: AppModel) -> NSRect? {
-        guard let screen = resolveTargetScreen() else {
+        guard let panel else {
             return nil
         }
 
-        let closedWidth = closedPanelWidth(for: model, on: screen)
-        if model.showsIdleEdgeWhenCollapsed {
-            return Self.hiddenIdleEdgeHoverRect(
-                notchRect: notchRect,
-                closedWidth: closedWidth,
-                hoverHitHeight: Self.hiddenIdleEdgeHoverHitHeight
-            )
-        }
-
         return Self.closedSurfaceRect(
-            notchRect: notchRect,
-            closedWidth: closedWidth
+            for: panel.frame,
+            shadowInsets: panelShadowInsets(for: model)
         )
     }
 
@@ -491,11 +393,8 @@ final class OverlayPanelController {
         )
     }
 
-    /// Always returns the maximum (opened) panel size so the window never
-    /// needs to resize.  All visual transitions are driven purely by SwiftUI
-    /// inside this fixed-size window.
     private func panelSize(for model: AppModel?, on screen: NSScreen) -> CGSize {
-        let insets = panelShadowInsets
+        let insets = panelShadowInsets(for: model)
 
         guard let model else {
             return CGSize(
@@ -504,23 +403,36 @@ final class OverlayPanelController {
             )
         }
 
-        let panelWidth = openedPanelWidth(for: screen)
-        let contentHeight = openedContentHeight(for: model)
-        // Use at least the empty-state height so the window doesn't shrink
-        // when sessions come and go while opened.
-        let height = screen.notchSize.height + max(contentHeight, Self.openedEmptyStateHeight) + Self.openedContentBottomPadding + insets.bottom
-
-        return CGSize(
-            width: panelWidth + Self.openedContentWidthPadding + (insets.horizontal * 2),
-            height: height
-        )
+        switch model.notchStatus {
+        case .opened:
+            let panelWidth = model.showsNotificationCard
+                ? notificationPanelWidth(for: screen)
+                : openedPanelWidth(for: screen)
+            return CGSize(
+                width: panelWidth + Self.openedContentWidthPadding + (insets.horizontal * 2),
+                height: screen.notchSize.height + openedContentHeight(for: model) + Self.openedContentBottomPadding + insets.bottom
+            )
+        case .closed, .popping:
+            return CGSize(
+                width: closedPanelWidth(for: model, on: screen) + (insets.horizontal * 2),
+                height: screen.islandClosedHeight + insets.bottom
+            )
+        }
     }
 
-    /// Constant insets — always opened size since the window never shrinks.
-    private var panelShadowInsets: (horizontal: CGFloat, bottom: CGFloat) {
-        (
-            horizontal: IslandChromeMetrics.openedShadowHorizontalInset,
-            bottom: IslandChromeMetrics.openedShadowBottomInset
+    private func panelShadowInsets(for model: AppModel?) -> (horizontal: CGFloat, bottom: CGFloat) {
+        let usesOpenedInsets = model.map { $0.notchStatus == .opened || $0.isOverlayCloseTransitionPending } ?? true
+
+        if usesOpenedInsets {
+            return (
+                horizontal: IslandChromeMetrics.openedShadowHorizontalInset,
+                bottom: IslandChromeMetrics.openedShadowBottomInset
+            )
+        }
+
+        return (
+            horizontal: IslandChromeMetrics.closedShadowHorizontalInset,
+            bottom: IslandChromeMetrics.closedShadowBottomInset
         )
     }
 
@@ -530,15 +442,21 @@ final class OverlayPanelController {
         let spotlightSession = model.surfacedSessions.first(where: { $0.phase.requiresAttention })
             ?? model.surfacedSessions.first(where: { $0.phase == .running })
             ?? model.surfacedSessions.first
+        let hasClosedPresence = model.liveSessionCount > 0
 
-        return Self.closedPanelWidth(
-            notchWidth: notchWidth,
-            notchHeight: notchHeight,
-            liveSessionCount: model.liveSessionCount,
-            hasAttention: spotlightSession?.phase.requiresAttention == true,
-            notchStatus: model.notchStatus,
-            showsIdleEdgeWhenCollapsed: model.showsIdleEdgeWhenCollapsed
-        )
+        guard hasClosedPresence else {
+            return notchWidth
+        }
+
+        let sideWidth = max(0, notchHeight - 12) + 10
+        let digits = max(1, "\(model.liveSessionCount)".count)
+        let countBadgeWidth = CGFloat(26 + max(0, digits - 1) * 8)
+        let hasAttention = spotlightSession?.phase.requiresAttention == true
+        let leftWidth = sideWidth + 8 + (hasAttention ? 18 : 0)
+        let rightWidth = max(sideWidth, countBadgeWidth)
+        let expansionWidth = leftWidth + rightWidth + 16 + (hasAttention ? 6 : 0)
+        let popWidth = model.notchStatus == .popping ? 18 : 0
+        return notchWidth + expansionWidth + CGFloat(popWidth)
     }
 
     private func openedContentHeight(for model: AppModel) -> CGFloat {
@@ -559,17 +477,9 @@ final class OverlayPanelController {
             if model.measuredNotificationContentHeight > 0 {
                 return model.measuredNotificationContentHeight + 28
             }
-            // First render: estimate from the actionable session's content so the
-            // initial window is close to the final size. This avoids a large blank
-            // panel flash (the previous 500pt fallback) and reduces the chance of
-            // a measurement→reposition cycle.
-            if let actionableID,
-               let session = model.state.session(id: actionableID) {
-                let rowHeight = session.estimatedIslandRowHeight(at: now)
-                let bodyHeight = actionableBodyHeight(for: session, model: model)
-                return rowHeight + bodyHeight + Self.openedContentVerticalInsets
-            }
-            return 300
+            // First render: use generous height so content isn't clipped.
+            // SwiftUI will measure actual height and trigger a resize.
+            return 500
         }
 
         let rowHeights = visibleSessions.map { session -> CGFloat in
@@ -606,7 +516,7 @@ final class OverlayPanelController {
     private func completionBodyHeight(for session: AgentSession, model: AppModel) -> CGFloat {
         let headerHeight: CGFloat = 44
 
-        let text = (session.completionAssistantMessageText ?? session.summary)
+        let text = (session.lastAssistantMessageText ?? session.summary)
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !text.isEmpty else {
@@ -635,7 +545,7 @@ final class OverlayPanelController {
             return Self.completionCardMinHeight
         }
 
-        let text = (session.completionAssistantMessageText ?? session.summary)
+        let text = (session.lastAssistantMessageText ?? session.summary)
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         // Estimate text height using NSString measurement with the actual font.
@@ -760,16 +670,14 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
         // SwiftUI may recreate them when the view tree changes (e.g.
         // AutoHeightScrollView toggling between scroll/non-scroll mode),
         // so we must re-disable on every layout pass.
-        // Guard: only modify properties when they differ to avoid
-        // triggering additional layout passes that could loop.
         disableInternalScrollers(in: self)
     }
 
     private func disableInternalScrollers(in view: NSView) {
         if let scrollView = view as? NSScrollView {
-            if scrollView.hasVerticalScroller { scrollView.hasVerticalScroller = false }
-            if scrollView.hasHorizontalScroller { scrollView.hasHorizontalScroller = false }
-            if scrollView.scrollerStyle != .overlay { scrollView.scrollerStyle = .overlay }
+            scrollView.hasVerticalScroller = false
+            scrollView.hasHorizontalScroller = false
+            scrollView.scrollerStyle = .overlay
             return
         }
         for child in view.subviews {
@@ -877,19 +785,17 @@ extension NSScreen {
 
     /// Pure helper so the height selection logic can be unit-tested without real screen hardware.
     ///
-    /// On notch screens, use `safeAreaInsetsTop` directly — the island must match the
-    /// physical notch height exactly so it sits flush with the notch bottom edge.
-    /// Previously this used `min(safeAreaInsetsTop, topStatusBarHeight)`, but when the
-    /// menu bar reserved area is smaller than the notch (e.g. auto-hide menu bar, or
-    /// certain display configurations), the island ended up shorter than the physical
-    /// notch, leaving a visible gap.
+    /// On notch screens, clamp to `min(safeAreaInsetsTop, topStatusBarHeight)`: the island
+    /// must not exceed the menu bar reserved area, and must not exceed the physical notch
+    /// height — e.g. MacBook Air M2 notch ≈ 34 pt while menu bar reserved ≈ 37 pt, so
+    /// the island should be 34 pt to sit flush with the notch bottom.
     /// On non-notch screens (`safeAreaInsetsTop == 0`), use `topStatusBarHeight` directly.
     static func computeIslandClosedHeight(
         safeAreaInsetsTop: CGFloat,
         topStatusBarHeight: CGFloat
     ) -> CGFloat {
         if safeAreaInsetsTop > 0 {
-            return safeAreaInsetsTop
+            return min(safeAreaInsetsTop, topStatusBarHeight)
         }
         return topStatusBarHeight
     }

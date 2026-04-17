@@ -28,6 +28,10 @@
 "settings.general.suppressFrontmostNotifications" = "前台工作階段不彈出通知";
 "settings.general.showCodexUsage" = "顯示 Codex 用量";
 "settings.general.completionReply" = "在完成卡片中回覆";
+"settings.general.chatEntryMode" = "工作階段點擊行為";
+"settings.general.clickToChat" = "開啟聊天面板";
+"settings.general.clickToJump" = "跳轉到終端";
+"settings.general.chatShowTimestamps" = "在聊天中顯示時間戳";
 "settings.general.cliHooks" = "CLI Hooks";
 "settings.general.activated" = "已啟用";
 "settings.general.install" = "安裝";
@@ -151,6 +155,7 @@
 /* Island Panel - Completion */
 "completion.done" = "完成";
 "completion.replyPlaceholder" = "回覆 Claude…";
+"chat.unsupported" = "此終端不支援聊天。請使用跳轉至終端。";
 
 /* Menu Bar */
 "menu.status" = "%lld 活躍 · %lld 待處理";

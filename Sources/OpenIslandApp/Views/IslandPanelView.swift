@@ -23,27 +23,30 @@ private struct AutoHeightScrollView<Content: View>: View {
     @ViewBuilder let content: () -> Content
     @State private var contentHeight: CGFloat = 0
 
-    private var isScrollable: Bool { contentHeight > maxHeight }
-
     var body: some View {
-        // Always use ScrollView so the content gets unconstrained vertical
-        // space for measurement.  Without this, a tight parent window can
-        // cap the GeometryReader measurement, making long content appear
-        // truncated instead of scrollable.
-        ScrollView(.vertical) {
-            content()
-                .background(
-                    GeometryReader { geo in
-                        Color.clear.preference(key: ContentHeightKey.self, value: geo.size.height)
-                    }
-                )
-                .onPreferenceChange(ContentHeightKey.self) { height in
-                    if height > 0 { contentHeight = height }
-                }
+        if contentHeight > maxHeight {
+            // Exceeds max → fixed height, scrollable
+            ScrollView(.vertical) {
+                measuredContent
+            }
+            .scrollIndicators(.hidden)
+            .frame(height: maxHeight)
+        } else {
+            // Fits within max → direct render, auto-height
+            measuredContent
         }
-        .scrollBounceBehavior(.basedOnSize)
-        .scrollIndicators(isScrollable ? .automatic : .hidden)
-        .frame(height: contentHeight > 0 ? min(contentHeight, maxHeight) : nil)
+    }
+
+    private var measuredContent: some View {
+        content()
+            .background(
+                GeometryReader { geo in
+                    Color.clear.preference(key: ContentHeightKey.self, value: geo.size.height)
+                }
+            )
+            .onPreferenceChange(ContentHeightKey.self) { height in
+                if height > 0 { contentHeight = height }
+            }
     }
 }
 
@@ -73,7 +76,7 @@ extension AgentSession {
 // MARK: - Animations
 
 private let openAnimation = Animation.spring(response: 0.42, dampingFraction: 0.8, blendDuration: 0)
-private let closeAnimation = Animation.smooth(duration: 0.3)
+private let closeAnimation = Animation.spring(response: 0.45, dampingFraction: 1.0, blendDuration: 0)
 private let popAnimation = Animation.spring(response: 0.3, dampingFraction: 0.5)
 
 /// Composite equatable key so `hasClosedPresence` and `expansionWidth` share
@@ -104,7 +107,6 @@ struct IslandPanelView: View {
     private static let headerHorizontalPadding: CGFloat = 18
     private static let headerTopPadding: CGFloat = 2
     private static let notchLaneSafetyInset: CGFloat = 12
-    private static let closedIdleEdgeHeight: CGFloat = 4
 
     var model: AppModel
 
@@ -116,20 +118,11 @@ struct IslandPanelView: View {
     }
 
     private var usesOpenedVisualState: Bool {
-        isOpened
+        isOpened || model.isOverlayCloseTransitionPending
     }
 
     private var isPopping: Bool {
         model.notchStatus == .popping
-    }
-
-    /// Single animation selection based on the current notch status.
-    private var notchTransitionAnimation: Animation {
-        switch model.notchStatus {
-        case .opened:  return openAnimation
-        case .closed:  return closeAnimation
-        case .popping: return popAnimation
-        }
     }
 
     private var closedSpotlightSession: AgentSession? {
@@ -142,10 +135,6 @@ struct IslandPanelView: View {
         model.liveSessionCount > 0
     }
 
-    private var showsIdleEdgeWhenCollapsed: Bool {
-        model.showsIdleEdgeWhenCollapsed
-    }
-
     /// Whether any session has activity worth showing in the closed notch
     private var hasClosedActivity: Bool {
         guard let session = closedSpotlightSession else {
@@ -156,9 +145,6 @@ struct IslandPanelView: View {
 
     /// Scout icon tint: blue if any running, green if any live, else gray.
     private var scoutTint: Color {
-        if model.isCustomAppearance, let phase = closedSpotlightSession?.phase {
-            return model.statusColor(for: phase)
-        }
         let sessions = model.surfacedSessions
         if sessions.contains(where: { $0.phase == .running }) {
             return Color(red: 0.43, green: 0.62, blue: 1.0) // #6E9FFF working blue
@@ -175,11 +161,10 @@ struct IslandPanelView: View {
     }
 
     private var expansionWidth: CGFloat {
-        guard !showsIdleEdgeWhenCollapsed else { return 0 }
         guard hasClosedPresence else { return 0 }
+        let leftWidth = sideWidth + 8 + (closedSpotlightSession?.phase.requiresAttention == true ? 18 : 0)
+        let rightWidth = max(sideWidth, countBadgeWidth)
         let hasPending = closedSpotlightSession?.phase.requiresAttention == true
-        let leftWidth = sideWidth + 8 + (hasPending ? 18 : 0)
-        let rightWidth = max(sideWidth, countBadgeWidth) + (hasPending ? 18 : 0)
         return leftWidth + rightWidth + 16 + (hasPending ? 6 : 0)
     }
 
@@ -223,30 +208,25 @@ struct IslandPanelView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .ignoresSafeArea()
         .preferredColorScheme(.dark)
     }
 
     @ViewBuilder
     private func notchContent(availableSize: CGSize) -> some View {
-        // Window is always at opened size — use opened insets unconditionally.
-        let panelShadowHorizontalInset = IslandChromeMetrics.openedShadowHorizontalInset
-        let panelShadowBottomInset = IslandChromeMetrics.openedShadowBottomInset
+        let panelShadowHorizontalInset = usesOpenedVisualState
+            ? IslandChromeMetrics.openedShadowHorizontalInset
+            : IslandChromeMetrics.closedShadowHorizontalInset
+        let panelShadowBottomInset = usesOpenedVisualState
+            ? IslandChromeMetrics.openedShadowBottomInset
+            : IslandChromeMetrics.closedShadowBottomInset
         let layoutWidth = max(0, availableSize.width - (panelShadowHorizontalInset * 2))
         let layoutHeight = max(0, availableSize.height - panelShadowBottomInset)
-
-        // Opened dimensions: fill the layout area with outer padding.
-        let outerHorizontalPadding: CGFloat = 28
-        let outerBottomPadding: CGFloat = 14
+        let outerHorizontalPadding: CGFloat = usesOpenedVisualState ? 28 : 0
+        let outerBottomPadding: CGFloat = usesOpenedVisualState ? 14 : 0
         let openedWidth = max(0, layoutWidth - outerHorizontalPadding)
-        let openedHeight = max(closedNotchHeight, layoutHeight - outerBottomPadding)
-
-        // Closed dimensions: sized to the actual notch + session indicators.
-        let closedTotalWidth = closedNotchWidth + expansionWidth + (isPopping ? 18 : 0)
-        let closedTotalHeight = closedNotchHeight
-
-        let currentWidth = usesOpenedVisualState ? openedWidth : closedTotalWidth
-        let currentHeight = usesOpenedVisualState ? openedHeight : closedTotalHeight
+        let closedWidth = layoutWidth
+        let currentWidth = usesOpenedVisualState ? openedWidth : closedWidth
+        let currentHeight = usesOpenedVisualState ? max(closedNotchHeight, layoutHeight - outerBottomPadding) : layoutHeight
         let horizontalInset = usesOpenedVisualState ? 14.0 : 0.0
         let bottomInset = usesOpenedVisualState ? 14.0 : 0.0
         let surfaceWidth = currentWidth + (horizontalInset * 2)
@@ -255,60 +235,45 @@ struct IslandPanelView: View {
             topCornerRadius: usesOpenedVisualState ? NotchShape.openedTopRadius : NotchShape.closedTopRadius,
             bottomCornerRadius: usesOpenedVisualState ? NotchShape.openedBottomRadius : NotchShape.closedBottomRadius
         )
-        let hidesClosedSurfaceChrome = showsIdleEdgeWhenCollapsed && !usesOpenedVisualState
-        let idleEdgeWidth = closedNotchWidth + (isPopping ? 18 : 0)
 
-        VStack(spacing: 0) {
-            ZStack(alignment: .top) {
-                surfaceShape
-                    .fill(Color.black.opacity(hidesClosedSurfaceChrome ? 0 : 1))
-                    .frame(width: surfaceWidth, height: surfaceHeight)
+        ZStack(alignment: .top) {
+            surfaceShape
+                .fill(Color.black)
+                .frame(width: surfaceWidth, height: surfaceHeight)
 
-                VStack(spacing: 0) {
-                    headerRow
-                        .frame(height: closedNotchHeight)
-                        .opacity(hidesClosedSurfaceChrome ? 0 : 1)
+            VStack(spacing: 0) {
+                headerRow
+                    .frame(height: closedNotchHeight)
 
-                    openedContent
-                        .frame(width: openedWidth - 24)
-                        .frame(maxHeight: usesOpenedVisualState ? currentHeight - closedNotchHeight - 12 : 0, alignment: .top)
-                        .opacity(usesOpenedVisualState ? 1 : 0)
-                        .clipped()
-                }
-                .frame(width: currentWidth, height: currentHeight, alignment: .top)
-                .padding(.horizontal, horizontalInset)
-                .padding(.bottom, bottomInset)
-                .clipShape(surfaceShape)
-                .overlay(alignment: .top) {
-                    // Black strip to blend with physical notch at the very top
-                    Rectangle()
-                        .fill(Color.black)
-                        .frame(height: 1)
-                        .padding(.horizontal, usesOpenedVisualState ? NotchShape.openedTopRadius : NotchShape.closedTopRadius)
-                        .opacity(hidesClosedSurfaceChrome ? 0 : 1)
-                }
-                .overlay {
-                    surfaceShape
-                        .stroke(Color.white.opacity(hidesClosedSurfaceChrome ? 0 : (usesOpenedVisualState ? 0.07 : 0.04)), lineWidth: 1)
-                }
-                .overlay(alignment: .top) {
-                    Capsule()
-                        .fill(Color.black)
-                        .frame(width: idleEdgeWidth, height: Self.closedIdleEdgeHeight)
-                        .overlay {
-                            Capsule()
-                                .stroke(Color.white.opacity(0.05), lineWidth: 1)
-                        }
-                        .opacity(showsIdleEdgeWhenCollapsed ? 1 : 0)
-                }
+                openedContent
+                    .frame(width: openedWidth - 24)
+                    .frame(maxHeight: usesOpenedVisualState ? currentHeight - closedNotchHeight - 12 : 0, alignment: .top)
+                    .opacity(usesOpenedVisualState ? 1 : 0)
+                    .clipped()
             }
-            .frame(width: surfaceWidth, height: surfaceHeight, alignment: .top)
+            .frame(width: currentWidth, height: currentHeight, alignment: .top)
+            .padding(.horizontal, horizontalInset)
+            .padding(.bottom, bottomInset)
+            .clipShape(surfaceShape)
+            .overlay(alignment: .top) {
+                // Black strip to blend with physical notch at the very top
+                Rectangle()
+                    .fill(Color.black)
+                    .frame(height: 1)
+                    .padding(.horizontal, usesOpenedVisualState ? NotchShape.openedTopRadius : NotchShape.closedTopRadius)
+            }
+            .overlay {
+                surfaceShape
+                    .stroke(Color.white.opacity(usesOpenedVisualState ? 0.07 : 0.04), lineWidth: 1)
+            }
         }
+        .frame(width: surfaceWidth, height: surfaceHeight, alignment: .top)
         .scaleEffect(usesOpenedVisualState ? 1 : (isHovering ? IslandChromeMetrics.closedHoverScale : 1), anchor: .top)
         .padding(.horizontal, panelShadowHorizontalInset)
         .padding(.bottom, panelShadowBottomInset)
-        .animation(notchTransitionAnimation, value: model.notchStatus)
-        .animation(.smooth, value: closedPresenceAnimationKey)
+        .animation(isOpened ? openAnimation : nil, value: model.notchStatus)
+        .animation(isOpened ? nil : .smooth, value: closedPresenceAnimationKey)
+        .animation(isOpened ? nil : popAnimation, value: isPopping)
         .contentShape(Rectangle())
         .onHover { hovering in
             withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {
@@ -343,18 +308,8 @@ struct IslandPanelView: View {
             HStack(spacing: 0) {
                 if hasClosedPresence {
                     HStack(spacing: 4) {
-                        if model.isCustomAppearance {
-                            IslandPixelGlyph(
-                                tint: scoutTint,
-                                style: model.islandPixelShapeStyle,
-                                isAnimating: hasClosedActivity,
-                                customAvatarImage: model.customAvatarImage
-                            )
+                        OpenIslandIcon(size: 14, isAnimating: hasClosedActivity, tint: scoutTint)
                             .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
-                        } else {
-                            OpenIslandIcon(size: 14, isAnimating: hasClosedActivity, tint: scoutTint)
-                                .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
-                        }
 
                         if closedSpotlightSession?.phase.requiresAttention == true {
                             AttentionIndicator(
@@ -377,13 +332,12 @@ struct IslandPanelView: View {
                 }
 
                 if hasClosedPresence {
-                    let attentionBalanceWidth: CGFloat = closedSpotlightSession?.phase.requiresAttention == true ? 18 : 0
                     ClosedCountBadge(
                         liveCount: model.liveSessionCount,
                         tint: closedSpotlightSession?.phase.requiresAttention == true ? .orange : scoutTint
                     )
                     .matchedGeometryEffect(id: "right-indicator", in: notchNamespace, isSource: true)
-                    .frame(width: max(sideWidth, countBadgeWidth) + attentionBalanceWidth)
+                    .frame(width: max(sideWidth, countBadgeWidth))
                 }
             }
             .frame(height: closedNotchHeight)
@@ -459,7 +413,10 @@ struct IslandPanelView: View {
 
     private var openedContent: some View {
         VStack(spacing: 0) {
-            if model.shouldShowSessionBootstrapPlaceholder {
+            if case let .chat(sessionID) = model.islandSurface,
+               let session = model.state.session(id: sessionID) {
+                chatPanel(for: session)
+            } else if model.shouldShowSessionBootstrapPlaceholder {
                 sessionBootstrapPlaceholder
             } else if model.islandListSessions.isEmpty {
                 emptyState
@@ -470,6 +427,277 @@ struct IslandPanelView: View {
         .padding(.horizontal, 18)
         .padding(.top, 8)
         .padding(.bottom, 0)
+    }
+
+    // MARK: - Chat panel
+
+    private func chatPanel(for session: AgentSession) -> some View {
+        VStack(spacing: 0) {
+            // Header with back button
+            HStack {
+                Button {
+                    model.notchOpen(reason: .click, surface: .sessionList())
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+                .buttonStyle(.plain)
+
+                Text(session.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .lineLimit(1)
+
+                Spacer()
+            }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 8)
+
+            Rectangle()
+                .fill(.white.opacity(0.06))
+                .frame(height: 1)
+
+            // Message history (inverted scroll - newest at bottom)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        // Anchor at bottom (first due to flip)
+                        Color.clear
+                            .frame(height: 1)
+                            .id("bottom")
+
+                        ForEach(chatMessages(for: session).reversed()) { message in
+                            ChatMessageRow(message: message, showTimestamp: model.chatShowTimestamps)
+                                .id(message.id)
+                                .scaleEffect(x: 1, y: -1) // Flip each row back
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                }
+                .scaleEffect(x: 1, y: -1) // Invert scroll view
+                .onAppear {
+                    proxy.scrollTo("bottom", anchor: .bottom)
+                }
+            }
+
+            // Input field or unsupported message
+            if TerminalTextSender.canChat(to: session) {
+                ChatInputField(
+                    text: Binding(
+                        get: { chatInputText },
+                        set: { chatInputText = $0 }
+                    ),
+                    onSubmit: { submitChat(for: session) }
+                )
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+            } else {
+                Text(model.lang.t("chat.unsupported"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.4))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+            }
+        }
+    }
+
+    @State private var chatInputText: String = ""
+
+    private func chatMessages(for session: AgentSession) -> [ChatMessageItem] {
+        loadTranscriptMessages(for: session)
+    }
+
+    private func loadTranscriptMessages(for session: AgentSession) -> [ChatMessageItem] {
+        guard let transcriptPath = session.trackingTranscriptPath else {
+            return latestOnlyMessages(for: session)
+        }
+
+        let fileURL = URL(fileURLWithPath: transcriptPath)
+        guard let contents = try? String(contentsOf: fileURL, encoding: .utf8) else {
+            return latestOnlyMessages(for: session)
+        }
+
+        var messages: [ChatMessageItem] = []
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        for line in contents.split(separator: "\n") {
+            guard let data = line.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let message = object["message"] as? [String: Any],
+                  let role = message["role"] as? String else {
+                continue
+            }
+
+            let isFromUser = role == "user"
+            guard let content = message["content"] else { continue }
+
+            let text: String?
+            if let contentArray = content as? [[String: Any]] {
+                text = contentArray.compactMap { item -> String? in
+                    if let textBlock = item["text"] as? String {
+                        return textBlock
+                    }
+                    return nil
+                }.joined(separator: "\n")
+            } else if let contentText = content as? String {
+                text = contentText
+            } else {
+                text = nil
+            }
+
+            guard let messageText = text, !messageText.isEmpty else { continue }
+
+            let timestamp: Date
+            if let timestampText = object["timestamp"] as? String {
+                timestamp = dateFormatter.date(from: timestampText) ?? session.updatedAt
+            } else {
+                timestamp = session.updatedAt
+            }
+
+            messages.append(ChatMessageItem(
+                id: UUID(),
+                text: messageText,
+                isFromUser: isFromUser,
+                timestamp: timestamp
+            ))
+        }
+
+        if messages.isEmpty {
+            return latestOnlyMessages(for: session)
+        }
+
+        return messages
+    }
+
+    private func latestOnlyMessages(for session: AgentSession) -> [ChatMessageItem] {
+        var messages: [ChatMessageItem] = []
+        if let prompt = session.latestUserPromptText, !prompt.isEmpty {
+            messages.append(ChatMessageItem(id: UUID(), text: prompt, isFromUser: true, timestamp: session.updatedAt.addingTimeInterval(-1)))
+        }
+        if let response = session.lastAssistantMessageText, !response.isEmpty {
+            messages.append(ChatMessageItem(id: UUID(), text: response, isFromUser: false, timestamp: session.updatedAt))
+        }
+        return messages
+    }
+
+    private func submitChat(for session: AgentSession) {
+        let text = chatInputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        chatInputText = ""
+        model.chatSubmitPrompt(session, text: text)
+    }
+
+    private struct ChatMessageItem: Equatable, Identifiable {
+        let id: UUID
+        let text: String
+        let isFromUser: Bool
+        let timestamp: Date
+    }
+
+    private struct ChatMessageRow: View {
+        let message: ChatMessageItem
+        let showTimestamp: Bool
+
+        private static let timestampFormatter: DateFormatter = {
+            let f = DateFormatter()
+            f.timeStyle = .short
+            return f
+        }()
+
+        private var timestampText: String {
+            Self.timestampFormatter.string(from: message.timestamp)
+        }
+
+        var body: some View {
+            if message.isFromUser {
+                userMessageView
+            } else {
+                assistantMessageView
+            }
+        }
+
+        private var userMessageView: some View {
+            HStack {
+                Spacer(minLength: 60)
+                VStack(alignment: .trailing, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(message.text)
+                            .font(.system(size: 13))
+                            .foregroundStyle(.white)
+                            .textSelection(.enabled)
+                        if showTimestamp {
+                            Text(timestampText)
+                                .font(.system(size: 9))
+                                .foregroundStyle(.white.opacity(0.4))
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18)
+                            .fill(Color.white.opacity(0.15))
+                    )
+                }
+            }
+        }
+
+        private var assistantMessageView: some View {
+            HStack(alignment: .top, spacing: 6) {
+                Circle()
+                    .fill(Color.white.opacity(0.6))
+                    .frame(width: 6, height: 6)
+                    .padding(.top, 5)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        MarkdownUI.Markdown(message.text)
+                            .markdownTheme(.completionCard)
+                            .textSelection(.enabled)
+                        if showTimestamp {
+                            Text(timestampText)
+                                .font(.system(size: 9))
+                                .foregroundStyle(.white.opacity(0.4))
+                        }
+                    }
+                }
+                Spacer(minLength: 60)
+            }
+        }
+    }
+
+    private struct ChatInputField: View {
+        @Binding var text: String
+        var onSubmit: () -> Void
+
+        var body: some View {
+            HStack(spacing: 8) {
+                TextField("Message Claude…", text: $text, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .lineLimit(1...4)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.white.opacity(0.08))
+                    )
+                    .onSubmit(onSubmit)
+
+                Button(action: onSubmit) {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 24))
+                        .foregroundStyle(text.trimmingCharacters(in: .whitespaces).isEmpty
+                            ? .white.opacity(0.2)
+                            : .white.opacity(0.9))
+                }
+                .buttonStyle(.plain)
+                .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
     }
 
     private var sessionBootstrapPlaceholder: some View {
@@ -537,14 +765,10 @@ struct IslandPanelView: View {
                         }
                     }
             } else {
-                // List mode: scroll when content exceeds the panel's available space.
-                // The parent frame constraint (currentHeight - closedNotchHeight - 12)
-                // determines the viewport; ScrollView handles overflow naturally.
-                ScrollView(.vertical) {
+                // List mode: auto-height (fits content, scrolls only when exceeding max)
+                AutoHeightScrollView(maxHeight: Self.maxSessionListHeight) {
                     sessionListContent(context: context)
                 }
-                .scrollIndicators(.hidden)
-                .scrollBounceBehavior(.basedOnSize)
                 .padding(.vertical, 2)
             }
         }
@@ -565,7 +789,13 @@ struct IslandPanelView: View {
                     onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
                     onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                         ? { model.replyToSession(session, text: $0) } : nil,
-                    onJump: { model.jumpToSession(session) }
+                    onJump: {
+                        if model.chatEntryMode == .clickToChat {
+                            model.notchOpen(reason: .click, surface: .chat(sessionID: session.id))
+                        } else {
+                            model.jumpToSession(session)
+                        }
+                    }
                 )
 
                 if model.allSessions.count > 1 {
@@ -592,10 +822,16 @@ struct IslandPanelView: View {
                         lang: model.lang,
                         onApprove: { model.approvePermission(for: session.id, action: $0) },
                         onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
+                        onDismiss: session.isRemote ? { model.dismissSession(session.id) } : nil,
                         onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                             ? { model.replyToSession(session, text: $0) } : nil,
-                        onJump: { model.jumpToSession(session) },
-                        onDismiss: session.isRemote ? { model.dismissSession(session.id) } : nil
+                        onJump: {
+                            if model.chatEntryMode == .clickToChat {
+                                model.notchOpen(reason: .click, surface: .chat(sessionID: session.id))
+                            } else {
+                                model.jumpToSession(session)
+                            }
+                        }
                     )
                 }
             }
@@ -609,10 +845,7 @@ struct IslandPanelView: View {
     }
 
     private func phaseColor(_ phase: SessionPhase) -> Color {
-        if model.isCustomAppearance {
-            return model.statusColor(for: phase)
-        }
-        return switch phase {
+        switch phase {
         case .running: .mint
         case .waitingForApproval: .orange
         case .waitingForAnswer: .yellow
@@ -685,8 +918,7 @@ struct IslandPanelView: View {
             }
         }
 
-        if model.showCodexUsage,
-           let snapshot = model.codexUsageSnapshot,
+        if let snapshot = model.codexUsageSnapshot,
            snapshot.isEmpty == false {
             let windows = snapshot.windows.map { window in
                 UsageWindowPresentation(
@@ -1021,9 +1253,9 @@ private struct IslandSessionRow: View {
     var lang: LanguageManager = .shared
     var onApprove: ((ApprovalAction) -> Void)?
     var onAnswer: ((QuestionPromptResponse) -> Void)?
+    var onDismiss: (() -> Void)?
     var onReply: ((String) -> Void)?
     let onJump: () -> Void
-    var onDismiss: (() -> Void)?
 
     @State private var isHighlighted = false
     @State private var isManuallyExpanded = false
@@ -1059,9 +1291,6 @@ private struct IslandSessionRow: View {
                                 compactBadge(terminalBadge, presence: presence)
                             }
                             compactBadge(session.spotlightAgeBadge, presence: presence)
-                            if let onDismiss {
-                                DismissButton(action: onDismiss)
-                            }
                         }
                     }
 
@@ -1167,8 +1396,7 @@ private struct IslandSessionRow: View {
             RoundedRectangle(cornerRadius: isActionable ? 24 : 22, style: .continuous)
                 .strokeBorder(actionableBorderColor)
         )
-        .compositingGroup()
-        .shadow(color: .black.opacity(0.24), radius: isHighlighted ? 8 : 0, y: isHighlighted ? 6 : 0)
+        .shadow(color: isHighlighted ? .black.opacity(0.24) : .clear, radius: 8, y: 6)
         .overlay(
             Group {
                 if !isActionable {
@@ -1181,11 +1409,12 @@ private struct IslandSessionRow: View {
         )
         .modifier(ConditionalDrawingGroup(enabled: useDrawingGroup && !isActionable))
         .contentShape(RoundedRectangle(cornerRadius: isActionable ? 24 : 22, style: .continuous))
-        .animation(.easeInOut(duration: 0.15), value: isHighlighted)
         .onTapGesture(perform: handlePrimaryTap)
         .onHover { hovering in
             guard isInteractive else { return }
-            isHighlighted = hovering
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isHighlighted = hovering
+            }
         }
         .onChange(of: isInteractive) { _, interactive in
             if !interactive {
@@ -1389,7 +1618,7 @@ private struct IslandSessionRow: View {
     }
 
     private var completionMessageText: String {
-        if let text = session.completionAssistantMessageText?.trimmedForNotificationCard, !text.isEmpty {
+        if let text = session.lastAssistantMessageText?.trimmedForNotificationCard, !text.isEmpty {
             return text
         }
         return session.summary
@@ -2073,19 +2302,4 @@ extension MarkdownUI.Theme {
                 .padding(.horizontal, 12)
                 .relativeLineSpacing(.em(0.25))
         }
-}
-
-private struct DismissButton: View {
-    let action: () -> Void
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "xmark.circle.fill")
-                .font(.system(size: 12))
-                .foregroundStyle(.white.opacity(isHovered ? 0.8 : 0.4))
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
-    }
 }

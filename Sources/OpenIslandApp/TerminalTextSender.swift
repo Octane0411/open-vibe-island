@@ -15,7 +15,6 @@ struct TerminalTextSender {
 
     static func canReply(to session: AgentSession, enabled: Bool) -> Bool {
         guard enabled else { return false }
-        guard session.phase == .completed else { return false }
         guard let target = session.jumpTarget else { return false }
 
         // tmux sessions: any terminal can receive send-keys.
@@ -28,26 +27,112 @@ struct TerminalTextSender {
         return false
     }
 
+    /// Whether chat messages can be sent to this session's terminal.
+    /// Same as canReply but without the feature flag requirement.
+    /// Also checks if tmux is available even without jumpTarget.
+    static func canChat(to session: AgentSession) -> Bool {
+        // If we have a jumpTarget with tmux or Ghostty, we can chat
+        if let target = session.jumpTarget {
+            if target.tmuxTarget != nil { return true }
+            if target.terminalApp.lowercased() == "ghostty" { return true }
+        }
+
+        // Fallback: check if tmux is available (for sessions without jumpTarget)
+        if resolveTmuxPath() != nil { return true }
+
+        return false
+    }
+
     // MARK: - Send
 
     /// Send `text` followed by Enter to the terminal that owns `session`.
     /// Returns `true` on success.
     @discardableResult
     static func send(_ text: String, to session: AgentSession) -> Bool {
-        guard let target = session.jumpTarget else { return false }
+        // Try jumpTarget first
+        if let target = session.jumpTarget {
+            // Prefer tmux when available — it targets a specific pane without
+            // needing to activate/focus the terminal window.
+            if let tmuxTarget = target.tmuxTarget {
+                return sendViaTmux(text, tmuxTarget: tmuxTarget, socketPath: target.tmuxSocketPath)
+            }
 
-        // Prefer tmux when available — it targets a specific pane without
-        // needing to activate/focus the terminal window.
-        if let tmuxTarget = target.tmuxTarget {
-            return sendViaTmux(text, tmuxTarget: tmuxTarget, socketPath: target.tmuxSocketPath)
+            let app = target.terminalApp.lowercased()
+            if app == "ghostty" {
+                return sendViaGhostty(text, target: target)
+            }
         }
 
-        let app = target.terminalApp.lowercased()
-        if app == "ghostty" {
-            return sendViaGhostty(text, target: target)
+        // Fallback: try to find tmux target via working directory
+        if let tmuxPath = resolveTmuxPath(),
+           let cwd = workingDirectory(for: session) {
+            if let tmuxTarget = findTmuxTarget(tmuxPath: tmuxPath, workingDirectory: cwd) {
+                return sendViaTmux(text, tmuxTarget: tmuxTarget, socketPath: nil)
+            }
         }
 
         return false
+    }
+
+    /// Derives the working directory from the session's transcript path.
+    private static func workingDirectory(for session: AgentSession) -> String? {
+        guard let transcriptPath = session.trackingTranscriptPath else { return nil }
+        // Path format: ~/.claude/projects/<workspace>/<session_id>.jsonl
+        let path = transcriptPath
+            .replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "")
+        let components = path.components(separatedBy: "/").filter { !$0.isEmpty }
+        // Find "projects" and take the next component as workspace
+        if let projectsIndex = components.firstIndex(of: "projects"),
+           projectsIndex + 1 < components.count {
+            let workspace = components[projectsIndex + 1]
+            return FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("projects")
+                .appendingPathComponent(workspace)
+                .path
+        }
+        return nil
+    }
+
+    /// Finds a tmux target pane matching the given working directory.
+    private static func findTmuxTarget(tmuxPath: String, workingDirectory: String) -> String? {
+        let result = runProcessWithOutput(tmuxPath, arguments: [
+            "list-panes", "-a", "-F",
+            "#{session_name}:#{window_index}.#{pane_index} #{pane_current_path}"
+        ])
+
+        guard result.exitCode == 0 else { return nil }
+
+        let lines = result.output.components(separatedBy: "\n")
+        for line in lines {
+            let parts = line.trimmingCharacters(in: .whitespaces)
+                .components(separatedBy: " ")
+            guard parts.count >= 2 else { continue }
+            let target = parts[0]
+            let panePath = parts[1...].joined(separator: " ")
+
+            if panePath == workingDirectory {
+                return target
+            }
+        }
+        return nil
+    }
+
+    private static func runProcessWithOutput(_ path: String, arguments: [String]) -> (exitCode: Int32, output: String) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: path)
+        process.arguments = arguments
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8) ?? ""
+            return (process.terminationStatus, output)
+        } catch {
+            return (-1, "")
+        }
     }
 
     // MARK: - tmux

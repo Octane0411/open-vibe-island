@@ -57,9 +57,7 @@ final class OverlayUICoordinator {
     @ObservationIgnored
     private var autoCollapseSurfaceHasBeenEntered = false
 
-    /// Kept for API compatibility; always false now that the window never
-    /// resizes and close transitions are pure SwiftUI.
-    var isCloseTransitionPending: Bool { false }
+    private(set) var isCloseTransitionPending = false
 
     private var activeIslandCardSession: AgentSession? {
         activeIslandCardSessionAccessor?()
@@ -133,12 +131,15 @@ final class OverlayUICoordinator {
         )
     }
 
+    /// Duration of the panel fade-out on close.
+    private static let closeFadeDuration: TimeInterval = 0.18
+
     /// Coordinates overlay transitions.
     ///
-    /// The window stays at a fixed (opened) size at all times.  All visual
-    /// transitions — shape morphing, content fade, corner radius — are
-    /// driven purely by SwiftUI `.animation()` modifiers reacting to
-    /// `notchStatus` changes.  No AppKit animation, no window resize.
+    /// **Open**: expand the panel frame instantly, then set state so SwiftUI
+    /// animates content from closed → opened inside the already-large panel.
+    ///
+    /// **Close**: fade panel out, then snap state and window frame to closed.
     private func transitionOverlay(
         to status: NotchStatus,
         reason: NotchOpenReason?,
@@ -151,27 +152,56 @@ final class OverlayUICoordinator {
         beforeTransition?()
 
         overlayTransitionGeneration &+= 1
+        let capturedGeneration = overlayTransitionGeneration
 
-        // Reset measured notification height when the surface changes so stale
-        // measurements from a previous notification don't mis-size the new one.
-        if surface != islandSurface {
-            appModel?.measuredNotificationContentHeight = 0
+        switch status {
+        case .opened:
+            isCloseTransitionPending = false
+            // State change first so panelFrame() reads the correct notchStatus
+            // when computing the opened size.  SwiftUI coalesces renders within
+            // a single runloop pass, so the view won't draw until after the
+            // panel frame is also set below.
+            islandSurface = surface
+            notchOpenReason = reason
+            notchStatus = status
+            overlayPanelController.setInteractive(interactive)
+            if let appModel {
+                overlayPlacementDiagnostics = overlayPanelController.show(
+                    model: appModel,
+                    preferredScreenID: preferredOverlayScreenID
+                )
+            }
+            afterStateChange?()
+            onPlacementResolved?()
+
+        case .closed, .popping:
+            let wasOpened = notchStatus == .opened
+            // Set state immediately — usesOpenedVisualState keeps the view
+            // looking opened while isCloseTransitionPending is true.
+            isCloseTransitionPending = wasOpened
+            islandSurface = surface
+            notchOpenReason = reason
+            notchStatus = status
+            overlayPanelController.setInteractive(interactive)
+            afterStateChange?()
+
+            if wasOpened {
+                // Fade the panel out, then snap window frame to closed size.
+                overlayPanelController.fadeOutAndClose(
+                    duration: Self.closeFadeDuration
+                ) { [weak self] in
+                    guard let self else { return }
+                    guard self.overlayTransitionGeneration == capturedGeneration else { return }
+                    self.isCloseTransitionPending = false
+                    self.refreshOverlayPlacement()
+                    self.overlayPanelController.restoreAlpha()
+                    onPlacementResolved?()
+                }
+            } else {
+                refreshOverlayPlacement()
+                onPlacementResolved?()
+            }
         }
-
-        islandSurface = surface
-        notchOpenReason = reason
-        notchStatus = status
-        overlayPanelController.setInteractive(interactive)
-
-        if status == .opened, let appModel {
-            overlayPlacementDiagnostics = overlayPanelController.show(
-                model: appModel,
-                preferredScreenID: preferredOverlayScreenID
-            )
-        }
-
-        afterStateChange?()
-        onPlacementResolved?()
     }
 
     func notchPop() {
@@ -377,6 +407,7 @@ final class OverlayUICoordinator {
         notificationAutoCollapseTask?.cancel()
         notificationAutoCollapseTask = nil
         autoCollapseSurfaceHasBeenEntered = false
+        isCloseTransitionPending = false
 
         islandSurface = snapshot.islandSurface
         notchStatus = snapshot.notchStatus

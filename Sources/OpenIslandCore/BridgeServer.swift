@@ -67,6 +67,8 @@ public final class BridgeServer: @unchecked Sendable {
     private var pendingAgentDescriptions: [String: String] = [:]
     /// Maps toolUseID → temporary task ID for TaskCreate, so postToolUse can update with real ID.
     private var pendingTaskCreations: [String: String] = [:]
+    /// Maps sessionID → hook client UUID, populated when hook events are received.
+    private var sessionToHookClient: [String: UUID] = [:]
     private var stateSnapshot = SessionState()
     /// Local working state: tracks sessions emitted by this server between
     /// snapshot pushes from AppModel. This is NOT a duplicate of AppModel's
@@ -434,7 +436,40 @@ public final class BridgeServer: @unchecked Sendable {
 
         case let .processGeminiHook(payload):
             handleGeminiHook(payload, from: clientID)
+
+        case let .submitPrompt(sessionID, prompt):
+            handleSubmitPrompt(sessionID: sessionID, prompt: prompt, from: clientID)
         }
+    }
+
+    private func handleSubmitPrompt(sessionID: String, prompt: String, from clientID: UUID) {
+        // Find the hook client associated with this session
+        guard let hookClientID = hookClientID(for: sessionID) else {
+            send(.response(.submitPromptResult(sessionID: sessionID, success: false, error: "Session not found or agent not connected")), to: clientID)
+            return
+        }
+
+        // Forward the submitPrompt directive to the agent via the hook connection
+        let directive = ClaudeHookDirective.submitPrompt(sessionID: sessionID, prompt: prompt)
+        send(.response(.claudeHookDirective(directive)), to: hookClientID)
+
+        // Emit a local event to show the user message was sent
+        emit(
+            .activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: sessionID,
+                    summary: "You: \(prompt.prefix(100))",
+                    phase: .running,
+                    timestamp: .now
+                )
+            )
+        )
+
+        send(.response(.submitPromptResult(sessionID: sessionID, success: true, error: nil)), to: clientID)
+    }
+
+    private func hookClientID(for sessionID: String) -> UUID? {
+        sessionToHookClient[sessionID]
     }
 
     private func handleCodexHook(_ payload: CodexHookPayload, from clientID: UUID) {
@@ -557,6 +592,8 @@ public final class BridgeServer: @unchecked Sendable {
         switch payload.hookEventName {
         case .sessionStart:
             clearStaleClaudeInteractionIfNeeded(for: payload.sessionID)
+            // Track that this hook client owns this session
+            sessionToHookClient[payload.sessionID] = clientID
             emit(
                 .sessionStarted(
                     SessionStarted(
@@ -577,6 +614,8 @@ public final class BridgeServer: @unchecked Sendable {
 
         case .userPromptSubmit:
             clearStaleClaudeInteractionIfNeeded(for: payload.sessionID)
+            // Track that this hook client owns this session
+            sessionToHookClient[payload.sessionID] = clientID
             ensureClaudeSessionExists(for: payload)
             synchronizeClaudeJumpTarget(for: payload)
             synchronizeClaudeMetadata(for: payload)

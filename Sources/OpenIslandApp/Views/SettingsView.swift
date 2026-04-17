@@ -215,6 +215,17 @@ struct GeneralSettingsPane: View {
                     get: { model.completionReplyEnabled },
                     set: { model.completionReplyEnabled = $0 }
                 ))
+                Picker(lang.t("settings.general.chatEntryMode"), selection: Binding(
+                    get: { model.chatEntryMode },
+                    set: { model.chatEntryMode = $0 }
+                )) {
+                    Text(lang.t("settings.general.clickToChat")).tag(AppModel.ChatEntryMode.clickToChat)
+                    Text(lang.t("settings.general.clickToJump")).tag(AppModel.ChatEntryMode.clickToJump)
+                }
+                Toggle(lang.t("settings.general.chatShowTimestamps"), isOn: Binding(
+                    get: { model.chatShowTimestamps },
+                    set: { model.chatShowTimestamps = $0 }
+                ))
                 Toggle(lang.t("settings.general.suppressFrontmostNotifications"), isOn: Binding(
                     get: { model.suppressFrontmostNotifications },
                     set: { model.suppressFrontmostNotifications = $0 }

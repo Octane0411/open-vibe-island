@@ -285,6 +285,8 @@ enum HarnessArtifactRecorder {
             "sessionList"
         case let .sessionList(actionableSessionID: sessionID?):
             "sessionList:actionable(\(sessionID))"
+        case let .chat(sessionID):
+            "chat(\(sessionID))"
         }
     }
 

@@ -18,6 +18,14 @@ final class AppModel {
     private static let showCodexUsageDefaultsKey = "app.showCodexUsage"
     private static let completionReplyEnabledDefaultsKey = "feature.completionReply.enabled"
     private static let suppressFrontmostNotificationsDefaultsKey = "app.suppressFrontmostNotifications"
+    private static let chatEntryModeDefaultsKey = "feature.chatEntryMode"
+    private static let chatShowTimestampsDefaultsKey = "feature.chatShowTimestamps"
+
+    enum ChatEntryMode: String, CaseIterable, Identifiable {
+        case clickToChat
+        case clickToJump
+        var id: String { rawValue }
+    }
 
     static let defaultStatusColors: [SessionPhase: String] = [
         .running: "#6E9FFF",
@@ -210,10 +218,22 @@ final class AppModel {
             refreshOverlayPlacementIfVisible()
         }
     }
-    var suppressFrontmostNotifications: Bool = true {
+var suppressFrontmostNotifications: Bool = true {
         didSet {
             guard hasFinishedInit, suppressFrontmostNotifications != oldValue else { return }
             UserDefaults.standard.set(suppressFrontmostNotifications, forKey: Self.suppressFrontmostNotificationsDefaultsKey)
+        }
+    }
+    var chatEntryMode: ChatEntryMode = .clickToJump {
+        didSet {
+            guard hasFinishedInit, chatEntryMode != oldValue else { return }
+            UserDefaults.standard.set(chatEntryMode.rawValue, forKey: Self.chatEntryModeDefaultsKey)
+        }
+    }
+    var chatShowTimestamps: Bool = false {
+        didSet {
+            guard hasFinishedInit, chatShowTimestamps != oldValue else { return }
+            UserDefaults.standard.set(chatShowTimestamps, forKey: Self.chatShowTimestampsDefaultsKey)
         }
     }
     var isSoundMuted = false {
@@ -451,6 +471,8 @@ final class AppModel {
             Self.hapticFeedbackEnabledDefaultsKey: false,
             Self.completionReplyEnabledDefaultsKey: false,
             Self.suppressFrontmostNotificationsDefaultsKey: true,
+            Self.chatEntryModeDefaultsKey: ChatEntryMode.clickToJump.rawValue,
+            Self.chatShowTimestampsDefaultsKey: false,
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
@@ -465,6 +487,10 @@ final class AppModel {
             )
         }
         completionReplyEnabled = UserDefaults.standard.bool(forKey: Self.completionReplyEnabledDefaultsKey)
+        chatEntryMode = ChatEntryMode(
+            rawValue: UserDefaults.standard.string(forKey: Self.chatEntryModeDefaultsKey) ?? ""
+        ) ?? .clickToJump
+        chatShowTimestamps = UserDefaults.standard.bool(forKey: Self.chatShowTimestampsDefaultsKey)
         islandAppearanceMode = IslandAppearanceMode(
             rawValue: UserDefaults.standard.string(forKey: Self.islandAppearanceModeDefaultsKey) ?? ""
         ) ?? .default
@@ -1078,6 +1104,24 @@ final class AppModel {
             self?.lastActionMessage = success
                 ? "Sent reply to \(session.title)."
                 : "Failed to send reply to \(session.title)."
+        }
+    }
+
+    func chatSubmitPrompt(_ session: AgentSession, text: String) {
+        dismissNotificationSurfaceIfPresent(for: session.id)
+        synchronizeSelection()
+        refreshOverlayPlacementIfVisible()
+
+        lastActionMessage = "Sending message to \(session.title)…"
+
+        Task { [weak self] in
+            let success = await Task.detached(priority: .userInitiated) {
+                TerminalTextSender.send(text, to: session)
+            }.value
+
+            self?.lastActionMessage = success
+                ? "Message sent to \(session.title)."
+                : "Failed to send message to \(session.title)."
         }
     }
 
