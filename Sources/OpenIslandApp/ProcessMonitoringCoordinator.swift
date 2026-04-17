@@ -339,6 +339,7 @@ final class ProcessMonitoringCoordinator {
         ).isEmpty
         if isCursorRunning {
             for session in sessions where session.tool == .cursor && !session.isDemoSession {
+                if session.isSessionEnded { continue }
                 let isStale = session.phase == .completed
                     && session.updatedAt.addingTimeInterval(Self.cursorStalenessTimeout) < Date.now
                 if !isStale {
