@@ -135,8 +135,7 @@
 "island.noTerminals" = "沒有已開啟的終端機工作階段";
 "island.startAgent" = "在終端機中啟動編碼代理";
 "island.recentSessions" = "最近的工作階段將保留在控制中心，直到終端機重新開啟";
-"island.empty.noAgents.title" = "尚未啟用任何 Agent 監聽";
-"island.empty.noAgents.cta" = "開始設定";
+"island.hint.installHooks" = "尚未安裝任何 Agent hook，工作階段不會觸發事件 · 點擊設定";
 
 /* Island Panel - Session List */
 "island.showAll" = "顯示全部 %lld 個工作階段";

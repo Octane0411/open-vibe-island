@@ -135,8 +135,7 @@
 "island.noTerminals" = "没有打开的终端会话";
 "island.startAgent" = "在终端中启动编码代理";
 "island.recentSessions" = "最近的会话将保留在控制中心，直到终端重新打开";
-"island.empty.noAgents.title" = "尚未启用任何 Agent 监听";
-"island.empty.noAgents.cta" = "开始配置";
+"island.hint.installHooks" = "尚未安装任何 Agent hook，session 不会触发事件 · 点击配置";
 
 /* Island Panel - Session List */
 "island.showAll" = "显示全部 %lld 个会话";
