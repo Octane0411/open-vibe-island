@@ -439,6 +439,10 @@ struct IslandPanelView: View {
             headerIconButton(systemName: "gearshape.fill", tint: .white.opacity(0.62)) {
                 model.showSettings()
             }
+
+            headerIconButton(systemName: "power", tint: .white.opacity(0.62)) {
+                model.quitApplication()
+            }
         }
     }
 
