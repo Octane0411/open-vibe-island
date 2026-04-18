@@ -2251,9 +2251,14 @@ public final class BridgeServer: @unchecked Sendable {
             return
         }
 
+        // Only Codex's PreToolUse path uses `pendingApprovals`; returning a
+        // codex directive is safe here. Allow is explicit (instead of
+        // `.acknowledged` → empty stdout → Codex default-continue) so the
+        // hook command emits the PreToolUse permission envelope and stays
+        // unambiguous against future Codex schema changes.
         let response: BridgeResponse
         if approved {
-            response = .acknowledged
+            response = .codexHookDirective(.allow)
         } else {
             response = .codexHookDirective(.deny(reason: "Permission denied in Open Island."))
         }
