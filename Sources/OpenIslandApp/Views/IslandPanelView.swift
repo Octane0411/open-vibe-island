@@ -563,6 +563,7 @@ struct IslandPanelView: View {
             if isNotificationMode {
                 // Notification mode: NO ScrollView — content sizes naturally
                 sessionListContent(context: context)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.vertical, 2)
                     .background(
                         GeometryReader { geo in
@@ -1591,6 +1592,7 @@ private struct StructuredQuestionPromptView: View {
     let onAnswer: (QuestionPromptResponse) -> Void
 
     @State private var selections: [String: Set<String>] = [:]
+    @State private var freeformAnswer: String = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1602,12 +1604,38 @@ private struct StructuredQuestionPromptView: View {
             }
 
             if structuredQuestions.isEmpty {
-                HStack(spacing: 10) {
-                    ForEach(prompt?.options.prefix(3) ?? [], id: \.self) { option in
-                        Button(option) {
-                            onAnswer(QuestionPromptResponse(answer: option))
+                if promptOptions.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        TextField(lang.t("question.placeholder"), text: $freeformAnswer)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.92))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color.white.opacity(0.08))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .strokeBorder(.white.opacity(0.08))
+                            )
+                            .onSubmit { submitFreeformAnswer() }
+
+                        Button(lang.t("question.submit")) {
+                            submitFreeformAnswer()
                         }
-                        .buttonStyle(IslandWideButtonStyle(kind: .secondary))
+                        .buttonStyle(IslandWideButtonStyle(kind: .primary))
+                        .disabled(freeformAnswer.trimmedForNotificationCard.isEmpty)
+                    }
+                } else {
+                    HStack(spacing: 10) {
+                        ForEach(promptOptions.prefix(3), id: \.self) { option in
+                            Button(option) {
+                                onAnswer(QuestionPromptResponse(answer: option))
+                            }
+                            .buttonStyle(IslandWideButtonStyle(kind: .secondary))
+                        }
                     }
                 }
             } else {
@@ -1665,6 +1693,10 @@ private struct StructuredQuestionPromptView: View {
         prompt?.questions ?? []
     }
 
+    private var promptOptions: [String] {
+        prompt?.options ?? []
+    }
+
     private var promptTitle: String {
         prompt?.title.trimmedForNotificationCard ?? lang.t("question.answerNeeded")
     }
@@ -1695,6 +1727,15 @@ private struct StructuredQuestionPromptView: View {
 
     private var hasCompleteSelection: Bool {
         structuredQuestions.allSatisfy { !selectedLabels(for: $0).isEmpty }
+    }
+
+    private func submitFreeformAnswer() {
+        let answer = freeformAnswer.trimmedForNotificationCard
+        guard !answer.isEmpty else {
+            return
+        }
+
+        onAnswer(QuestionPromptResponse(answer: answer))
     }
 
     private func selectedLabels(for question: QuestionPromptItem) -> Set<String> {
