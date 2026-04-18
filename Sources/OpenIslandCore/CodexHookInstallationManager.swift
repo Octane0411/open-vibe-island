@@ -74,7 +74,10 @@ public final class CodexHookInstallationManager: @unchecked Sendable {
     }
 
     @discardableResult
-    public func install(hooksBinaryURL: URL) throws -> CodexHookInstallationStatus {
+    public func install(
+        hooksBinaryURL: URL,
+        mode: CodexHookInstallMode = .default
+    ) throws -> CodexHookInstallationStatus {
         try fileManager.createDirectory(at: codexDirectory, withIntermediateDirectories: true)
 
         let configURL = codexDirectory.appendingPathComponent("config.toml")
@@ -92,7 +95,11 @@ public final class CodexHookInstallationManager: @unchecked Sendable {
 
         let command = CodexHookInstaller.hookCommand(for: installedHooksBinaryURL.path)
         let featureMutation = CodexHookInstaller.enableCodexHooksFeature(in: existingConfig)
-        let hooksMutation = try CodexHookInstaller.installHooksJSON(existingData: existingHooks, hookCommand: command)
+        let hooksMutation = try CodexHookInstaller.installHooksJSON(
+            existingData: existingHooks,
+            hookCommand: command,
+            mode: mode
+        )
 
         if featureMutation.changed, fileManager.fileExists(atPath: configURL.path) {
             try backupFile(at: configURL)
@@ -108,7 +115,8 @@ public final class CodexHookInstallationManager: @unchecked Sendable {
 
         let manifest = CodexHookInstallerManifest(
             hookCommand: command,
-            enabledCodexHooksFeature: featureMutation.featureEnabledByInstaller
+            enabledCodexHooksFeature: featureMutation.featureEnabledByInstaller,
+            installMode: mode
         )
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601

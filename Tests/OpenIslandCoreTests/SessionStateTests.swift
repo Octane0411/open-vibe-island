@@ -503,7 +503,11 @@ struct SessionStateTests {
         let response = try await responseTask
 
         #expect(activityEvent.activityUpdate?.summary == "Permission approved. Codex continued the command.")
-        #expect(response == .acknowledged)
+        // Approved PreToolUse now returns an explicit allow directive so
+        // the hook writes a well-formed `{"continue":true,"hookSpecificOutput":
+        // {"permissionDecision":"allow"}}` envelope to Codex, instead of
+        // relying on Codex's default-continue behavior for empty stdout.
+        #expect(response == .codexHookDirective(.allow))
     }
 
     @Test

@@ -7,15 +7,25 @@ public struct CodexHookInstallerManifest: Equatable, Codable, Sendable {
     public var hookCommand: String
     public var enabledCodexHooksFeature: Bool
     public var installedAt: Date
+    /// Optional so manifests written before full-control mode existed still
+    /// decode. `effectiveInstallMode` normalizes a missing value to
+    /// `.notifyOnly`, which matches the pre-upgrade footprint.
+    public var installMode: CodexHookInstallMode?
+
+    public var effectiveInstallMode: CodexHookInstallMode {
+        installMode ?? .default
+    }
 
     public init(
         hookCommand: String,
         enabledCodexHooksFeature: Bool,
-        installedAt: Date = .now
+        installedAt: Date = .now,
+        installMode: CodexHookInstallMode? = nil
     ) {
         self.hookCommand = hookCommand
         self.enabledCodexHooksFeature = enabledCodexHooksFeature
         self.installedAt = installedAt
+        self.installMode = installMode
     }
 }
 
@@ -59,15 +69,49 @@ public enum CodexHookInstaller {
     public static let managedStatusMessage = "Managed by Open Island"
     public static let legacyManagedStatusMessage = "Managed by Vibe Island"
     public static let managedTimeout = 45
+    /// PreToolUse waits on the user for an approval decision. Codex kills the
+    /// hook at this timeout; 1 hour effectively means "wait until the user
+    /// answers" without making the process eternally unkillable if the app
+    /// crashes mid-approval.
+    public static let managedPreToolUseTimeout = 3600
 
-    // Keep the managed Codex install aligned with the original app's low-noise footprint.
-    // The bridge still understands richer hook events, but we do not install them by default
-    // because per-command Bash hooks produce a large amount of terminal log spam.
-    private static let eventSpecs: [(name: String, matcher: String?)] = [
-        ("SessionStart", "startup|resume"),
-        ("UserPromptSubmit", nil),
-        ("Stop", nil),
+    /// Union of every event name this installer may register, across all
+    /// `CodexHookInstallMode` variants. Used during uninstall and mode
+    /// switches so entries written under a previous mode are always cleaned
+    /// up, even if the current mode would not register that event itself.
+    public static let allManagedEventNames: [String] = [
+        "SessionStart",
+        "UserPromptSubmit",
+        "Stop",
+        "PreToolUse",
+        "PostToolUse",
     ]
+
+    public struct EventSpec: Equatable, Sendable {
+        public let name: String
+        public let matcher: String?
+        public let timeout: Int
+    }
+
+    // The bridge dispatches on `hook_event_name` from stdin, so every event
+    // uses the same hook command — mode only decides which events we tell
+    // Codex to fire.
+    public static func eventSpecs(for mode: CodexHookInstallMode) -> [EventSpec] {
+        var specs: [EventSpec] = [
+            EventSpec(name: "SessionStart", matcher: "startup|resume", timeout: managedTimeout),
+            EventSpec(name: "UserPromptSubmit", matcher: nil, timeout: managedTimeout),
+            EventSpec(name: "Stop", matcher: nil, timeout: managedTimeout),
+        ]
+
+        if mode == .fullControl {
+            // PreToolUse blocks Codex on the user's approval decision, so it
+            // needs a long timeout. PostToolUse is fire-and-forget.
+            specs.append(EventSpec(name: "PreToolUse", matcher: nil, timeout: managedPreToolUseTimeout))
+            specs.append(EventSpec(name: "PostToolUse", matcher: nil, timeout: managedTimeout))
+        }
+
+        return specs
+    }
 
     public static func hookCommand(for binaryPath: String) -> String {
         shellQuote(binaryPath)
@@ -75,7 +119,8 @@ public enum CodexHookInstaller {
 
     public static func installHooksJSON(
         existingData: Data?,
-        hookCommand: String
+        hookCommand: String,
+        mode: CodexHookInstallMode = .default
     ) throws -> CodexHookFileMutation {
         var rootObject = try loadRootObject(from: existingData)
         let existingHooksObject = rootObject["hooks"] as? [String: Any] ?? [:]
@@ -90,10 +135,10 @@ public enum CodexHookInstaller {
             }
         }
 
-        for spec in eventSpecs {
+        for spec in eventSpecs(for: mode) {
             let existingGroups = hooksObject[spec.name] as? [Any] ?? []
             let cleanedGroups = sanitizeForInstall(groups: existingGroups, replacingCommand: hookCommand)
-            hooksObject[spec.name] = cleanedGroups + [managedGroup(matcher: spec.matcher, hookCommand: hookCommand)]
+            hooksObject[spec.name] = cleanedGroups + [managedGroup(matcher: spec.matcher, hookCommand: hookCommand, timeout: spec.timeout)]
         }
 
         rootObject["hooks"] = hooksObject
@@ -114,8 +159,12 @@ public enum CodexHookInstaller {
         var hooksObject = rootObject["hooks"] as? [String: Any] ?? [:]
         var mutated = false
 
-        for spec in eventSpecs {
-            let existingGroups = hooksObject[spec.name] as? [Any] ?? []
+        // Walk the superset of event names we might have written under any
+        // mode, so switching fullControl → notifyOnly or full uninstall
+        // always drops PreToolUse/PostToolUse entries even if the current
+        // mode wouldn't list them.
+        for eventName in allManagedEventNames {
+            let existingGroups = hooksObject[eventName] as? [Any] ?? []
             let cleanedGroups = sanitize(groups: existingGroups, managedCommand: managedCommand)
 
             if cleanedGroups.count != existingGroups.count || containsManagedHook(in: existingGroups, managedCommand: managedCommand) {
@@ -123,9 +172,9 @@ public enum CodexHookInstaller {
             }
 
             if cleanedGroups.isEmpty {
-                hooksObject.removeValue(forKey: spec.name)
+                hooksObject.removeValue(forKey: eventName)
             } else {
-                hooksObject[spec.name] = cleanedGroups
+                hooksObject[eventName] = cleanedGroups
             }
         }
 
@@ -292,12 +341,12 @@ public enum CodexHookInstaller {
         }
     }
 
-    private static func managedGroup(matcher: String?, hookCommand: String) -> [String: Any] {
+    private static func managedGroup(matcher: String?, hookCommand: String, timeout: Int = managedTimeout) -> [String: Any] {
         var group: [String: Any] = [
             "hooks": [[
                 "type": "command",
                 "command": hookCommand,
-                "timeout": managedTimeout,
+                "timeout": timeout,
             ]]
         ]
 

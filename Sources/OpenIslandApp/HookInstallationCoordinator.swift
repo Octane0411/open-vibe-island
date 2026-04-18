@@ -703,14 +703,14 @@ final class HookInstallationCoordinator {
 
     // MARK: - Install / uninstall
 
-    func installCodexHooks() {
+    func installCodexHooks(mode: CodexHookInstallMode = .default) {
         guard let hooksBinaryURL else {
             onStatusMessage?("Could not find a local OpenIslandHooks binary. Build the package first.")
             return
         }
 
         updateCodexHooks(userMessage: "Installing Codex hooks.") { manager in
-            try manager.install(hooksBinaryURL: hooksBinaryURL)
+            try manager.install(hooksBinaryURL: hooksBinaryURL, mode: mode)
         }
     }
 
@@ -718,6 +718,14 @@ final class HookInstallationCoordinator {
         updateCodexHooks(userMessage: "Removing Codex hooks.") { manager in
             try manager.uninstall()
         }
+    }
+
+    /// Re-installs Codex hooks with the given mode when they're already
+    /// installed. No-op otherwise — the user will pick the mode the next
+    /// time they hit the Install button.
+    func reapplyCodexHookMode(_ mode: CodexHookInstallMode) {
+        guard codexHookStatus?.managedHooksPresent == true else { return }
+        installCodexHooks(mode: mode)
     }
 
     func installClaudeHooks() {

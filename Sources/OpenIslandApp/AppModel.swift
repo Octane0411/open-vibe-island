@@ -16,6 +16,7 @@ final class AppModel {
     private static let islandPixelShapeStyleDefaultsKey = "appearance.island.pixelShapeStyle"
     private static let islandStatusColorsDefaultsKey = "appearance.island.statusColors"
     private static let showCodexUsageDefaultsKey = "app.showCodexUsage"
+    private static let codexHookInstallModeDefaultsKey = "app.codexHookInstallMode"
     private static let completionReplyEnabledDefaultsKey = "feature.completionReply.enabled"
     private static let suppressFrontmostNotificationsDefaultsKey = "app.suppressFrontmostNotifications"
 
@@ -125,7 +126,7 @@ final class AppModel {
     func refreshCursorHookStatus() { hooks.refreshCursorHookStatus() }
     func refreshClaudeUsageState() { hooks.refreshClaudeUsageState() }
     func refreshCodexUsageState() { hooks.refreshCodexUsageState() }
-    func installCodexHooks() { hooks.installCodexHooks() }
+    func installCodexHooks() { hooks.installCodexHooks(mode: codexHookInstallMode) }
     func uninstallCodexHooks() { hooks.uninstallCodexHooks() }
     func installClaudeHooks() { hooks.installClaudeHooks() }
     func uninstallClaudeHooks() { hooks.uninstallClaudeHooks() }
@@ -202,6 +203,18 @@ final class AppModel {
         didSet {
             guard hasFinishedInit, showCodexUsage != oldValue else { return }
             UserDefaults.standard.set(showCodexUsage, forKey: Self.showCodexUsageDefaultsKey)
+        }
+    }
+    /// User-chosen integration footprint for Codex CLI. Defaults to
+    /// `.notifyOnly` — the historical quiet surface — so upgrading users
+    /// don't see a flood of per-command prompts. Writes flow through
+    /// `HookInstallationCoordinator.reapplyCodexHookMode` so the hooks.json
+    /// reflects the new mode immediately without waiting for a reinstall.
+    var codexHookInstallMode: CodexHookInstallMode = .default {
+        didSet {
+            guard hasFinishedInit, codexHookInstallMode != oldValue else { return }
+            UserDefaults.standard.set(codexHookInstallMode.rawValue, forKey: Self.codexHookInstallModeDefaultsKey)
+            hooks.reapplyCodexHookMode(codexHookInstallMode)
         }
     }
     var completionReplyEnabled: Bool = false {
@@ -465,6 +478,15 @@ final class AppModel {
             showCodexUsage = FileManager.default.fileExists(
                 atPath: CodexRolloutDiscovery.defaultRootURL.path
             )
+        }
+        // Preference order: persisted UserDefaults > manifest-recorded mode
+        // (covers pre-preference upgrades where the user re-installed under
+        // full-control externally) > default.
+        if let raw = UserDefaults.standard.string(forKey: Self.codexHookInstallModeDefaultsKey),
+           let mode = CodexHookInstallMode(rawValue: raw) {
+            codexHookInstallMode = mode
+        } else {
+            codexHookInstallMode = .default
         }
         completionReplyEnabled = UserDefaults.standard.bool(forKey: Self.completionReplyEnabledDefaultsKey)
         islandAppearanceMode = IslandAppearanceMode(

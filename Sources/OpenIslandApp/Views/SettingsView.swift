@@ -456,6 +456,8 @@ struct SetupSettingsPane: View {
                     Text(lang.t("settings.general.uninstallConfirmMessage.codex"))
                 }
 
+                codexHookModeRow
+
                 hookRow(
                     name: "OpenCode",
                     installed: model.openCodePluginInstalled,
@@ -721,6 +723,40 @@ struct SetupSettingsPane: View {
             return hooksURL
         }
         return model.codexHookStatus?.configURL ?? model.codexHookStatus?.hooksURL
+    }
+
+    @ViewBuilder
+    private var codexHookModeRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Picker(
+                lang.t("settings.codex.hookMode.title"),
+                selection: Binding(
+                    get: { model.codexHookInstallMode },
+                    set: { model.codexHookInstallMode = $0 }
+                )
+            ) {
+                Text(lang.t("settings.codex.hookMode.notifyOnly"))
+                    .tag(CodexHookInstallMode.notifyOnly)
+                Text(lang.t("settings.codex.hookMode.fullControl"))
+                    .tag(CodexHookInstallMode.fullControl)
+            }
+            .pickerStyle(.segmented)
+
+            Text(codexHookModeDescription)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.leading, 24)
+    }
+
+    private var codexHookModeDescription: String {
+        switch model.codexHookInstallMode {
+        case .notifyOnly:
+            return lang.t("settings.codex.hookMode.notifyOnly.description")
+        case .fullControl:
+            return lang.t("settings.codex.hookMode.fullControl.description")
+        }
     }
 
     private var geminiHookConfigURL: URL {
