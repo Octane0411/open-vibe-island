@@ -4,6 +4,11 @@ import OpenIslandCore
 @main
 struct OpenIslandHooksCLI {
     private static let interactiveClaudeHookTimeout: TimeInterval = 24 * 60 * 60
+    /// Must match the Codex hooks.json `timeout` we write for PreToolUse in
+    /// full-control mode. Keeping the client-side socket timeout a touch
+    /// below Codex's own kill threshold so a slow network read surfaces as a
+    /// clean fail-open instead of a sigkill mid-write.
+    private static let interactiveCodexHookTimeout: TimeInterval = 3500
 
     private enum HookSource: String {
         case codex
@@ -45,8 +50,14 @@ struct OpenIslandHooksCLI {
                     .decode(CodexHookPayload.self, from: input)
                     .withRuntimeContext(environment: ProcessInfo.processInfo.environment)
 
-                guard let response = try? client.send(.processCodexHook(payload)) else {
-                    logStderr("bridge unavailable for codex hook")
+                // PreToolUse blocks Codex on the user's approval decision;
+                // every other Codex event is a quick activity/status ping.
+                let timeout: TimeInterval = payload.hookEventName == .preToolUse
+                    ? Self.interactiveCodexHookTimeout
+                    : 45
+
+                guard let response = try? client.send(.processCodexHook(payload), timeout: timeout) else {
+                    logStderr("bridge unavailable for codex hook (\(payload.hookEventName.rawValue))")
                     return
                 }
 
