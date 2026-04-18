@@ -632,7 +632,7 @@ public final class BridgeServer: @unchecked Sendable {
                 }
             }
 
-            let summary = payload.toolName.map { "Running \($0)" } ?? "Running Claude tool"
+            let summary = payload.toolName.map { "Running \($0)" } ?? "Running \(payload.resolvedAgentTool.displayName) tool"
             emit(
                 .activityUpdated(
                     SessionActivityUpdated(
@@ -751,7 +751,7 @@ public final class BridgeServer: @unchecked Sendable {
                 .activityUpdated(
                     SessionActivityUpdated(
                         sessionID: payload.sessionID,
-                        summary: payload.error ?? "Claude tool failed.",
+                        summary: payload.error ?? "\(payload.resolvedAgentTool.displayName) tool failed.",
                         phase: payload.isInterrupt == true ? .completed : .running,
                         timestamp: .now
                     )
@@ -815,7 +815,7 @@ public final class BridgeServer: @unchecked Sendable {
                 .sessionCompleted(
                     SessionCompleted(
                         sessionID: payload.sessionID,
-                        summary: payload.lastAssistantMessage ?? payload.assistantMessagePreview ?? "Claude completed the turn.",
+                        summary: payload.lastAssistantMessage ?? payload.assistantMessagePreview ?? "\(payload.resolvedAgentTool.displayName) completed the turn.",
                         timestamp: .now,
                         isInterrupt: payload.isInterrupt
                     )
@@ -836,7 +836,7 @@ public final class BridgeServer: @unchecked Sendable {
                 .sessionCompleted(
                     SessionCompleted(
                         sessionID: payload.sessionID,
-                        summary: payload.error ?? payload.lastAssistantMessage ?? payload.assistantMessagePreview ?? "Claude failed to finish the turn.",
+                        summary: payload.error ?? payload.lastAssistantMessage ?? payload.assistantMessagePreview ?? "\(payload.resolvedAgentTool.displayName) failed to finish the turn.",
                         timestamp: .now,
                         isInterrupt: payload.isInterrupt
                     )
@@ -908,7 +908,7 @@ public final class BridgeServer: @unchecked Sendable {
                 .activityUpdated(
                     SessionActivityUpdated(
                         sessionID: payload.sessionID,
-                        summary: "Claude is compacting the conversation.",
+                        summary: "\(payload.resolvedAgentTool.displayName) is compacting the conversation.",
                         phase: .running,
                         timestamp: .now
                     )

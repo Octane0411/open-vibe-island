@@ -714,44 +714,45 @@ public extension ClaudeHookPayload {
     }
 
     var implicitStartSummary: String {
+        let agent = resolvedAgentTool.displayName
         switch hookEventName {
         case .sessionStart:
             switch source {
             case .resume:
-                return "Resumed Claude session in \(workspaceName)."
+                return "Resumed \(agent) session in \(workspaceName)."
             case .clear:
-                return "Cleared Claude context in \(workspaceName)."
+                return "Cleared \(agent) context in \(workspaceName)."
             case .compact:
-                return "Compacted Claude context in \(workspaceName)."
+                return "Compacted \(agent) context in \(workspaceName)."
             case .startup, .none:
-                return "Started Claude session in \(workspaceName)."
+                return "Started \(agent) session in \(workspaceName)."
             }
         case .userPromptSubmit:
-            return "Claude received a new prompt in \(workspaceName)."
+            return "\(agent) received a new prompt in \(workspaceName)."
         case .preToolUse:
-            return "Claude is preparing \(toolName ?? "a tool") in \(workspaceName)."
+            return "\(agent) is preparing \(toolName ?? "a tool") in \(workspaceName)."
         case .postToolUse:
-            return "Claude finished \(toolName ?? "a tool") in \(workspaceName)."
+            return "\(agent) finished \(toolName ?? "a tool") in \(workspaceName)."
         case .postToolUseFailure:
-            return "Claude hit a tool error in \(workspaceName)."
+            return "\(agent) hit a tool error in \(workspaceName)."
         case .permissionRequest:
-            return "Claude needs approval in \(workspaceName)."
+            return "\(agent) needs approval in \(workspaceName)."
         case .permissionDenied:
-            return "Claude permission was denied in \(workspaceName)."
+            return "\(agent) permission was denied in \(workspaceName)."
         case .notification:
-            return "Claude sent a notification in \(workspaceName)."
+            return "\(agent) sent a notification in \(workspaceName)."
         case .stop:
-            return "Claude completed a turn in \(workspaceName)."
+            return "\(agent) completed a turn in \(workspaceName)."
         case .stopFailure:
-            return "Claude failed to finish a turn in \(workspaceName)."
+            return "\(agent) failed to finish a turn in \(workspaceName)."
         case .subagentStart:
-            return "Claude started a subagent in \(workspaceName)."
+            return "\(agent) started a subagent in \(workspaceName)."
         case .subagentStop:
-            return "Claude finished a subagent in \(workspaceName)."
+            return "\(agent) finished a subagent in \(workspaceName)."
         case .preCompact:
-            return "Claude is compacting the conversation in \(workspaceName)."
+            return "\(agent) is compacting the conversation in \(workspaceName)."
         case .sessionEnd:
-            return "Claude session ended in \(workspaceName)."
+            return "\(agent) session ended in \(workspaceName)."
         }
     }
 
@@ -903,11 +904,13 @@ public extension ClaudeHookPayload {
             return notificationPreview
         }
 
+        let agent = resolvedAgentTool.displayName
+
         if let toolName {
-            return "Claude wants to run \(toolName)."
+            return "\(agent) wants to run \(toolName)."
         }
 
-        return "Claude needs permission to continue."
+        return "\(agent) needs permission to continue."
     }
 
     var permissionAffectedPath: String {
