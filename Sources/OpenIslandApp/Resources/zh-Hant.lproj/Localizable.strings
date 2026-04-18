@@ -123,6 +123,9 @@
 "settings.about.version" = "版本 %@";
 "settings.about.checkForUpdates" = "檢查更新…";
 "settings.about.quitApp" = "結束 Open Island";
+"island.quit.confirmTitle" = "結束 Open Island？";
+"island.quit.confirmAction" = "結束";
+"island.quit.confirmMessage" = "確定要結束嗎？";
 
 /* Settings - Update */
 "settings.update.available" = "v%@ 可更新 — 點擊更新";

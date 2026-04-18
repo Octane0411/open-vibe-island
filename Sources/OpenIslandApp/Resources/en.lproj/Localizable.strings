@@ -123,6 +123,9 @@
 "settings.about.version" = "Version %@";
 "settings.about.checkForUpdates" = "Check for Updates…";
 "settings.about.quitApp" = "Quit Open Island";
+"island.quit.confirmTitle" = "Quit Open Island?";
+"island.quit.confirmAction" = "Quit";
+"island.quit.confirmMessage" = "Are you sure you want to quit?";
 
 /* Settings - Update */
 "settings.update.available" = "v%@ Available — Update";
