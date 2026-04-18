@@ -73,10 +73,10 @@ extension AgentSession {
 // MARK: - Animations
 
 private let openAnimation = Animation.spring(response: 0.42, dampingFraction: 0.8, blendDuration: 0)
-private let closeAnimation = Animation.smooth(duration: 0.3)
+private let closeAnimation = Animation.smooth(duration: IslandChromeMetrics.closeTransitionDuration)
 private let popAnimation = Animation.spring(response: 0.3, dampingFraction: 0.5)
 
-/// Composite equatable key so `hasClosedPresence` and `expansionWidth` share
+/// Composite equatable key so `hasClosedPresence` and `closedSurfaceWidth` share
 /// a single `.animation(.smooth, value:)` modifier instead of two separate
 /// ones that can conflict when both change simultaneously.
 private struct ClosedPresenceKey: Equatable {
@@ -105,6 +105,8 @@ struct IslandPanelView: View {
     private static let headerTopPadding: CGFloat = 2
     private static let notchLaneSafetyInset: CGFloat = 12
     private static let closedIdleEdgeHeight: CGFloat = 4
+    nonisolated static let topBarOpenedHeaderHorizontalPadding: CGFloat = 18
+    nonisolated static let topBarOpenedHeaderTrailingControlWidth: CGFloat = 52
 
     var model: AppModel
 
@@ -169,44 +171,81 @@ struct IslandPanelView: View {
         return Color.white.opacity(0.4) // gray
     }
 
-    private var countBadgeWidth: CGFloat {
-        let digits = max(1, "\(model.liveSessionCount)".count)
-        return CGFloat(26 + max(0, digits - 1) * 8)
+    private var closedSurfaceWidth: CGFloat {
+        closedShellMetrics.closedSurfaceWidth(
+            baseClosedWidth: closedNotchWidth,
+            liveCount: model.liveSessionCount,
+            hasAttention: closedSpotlightSession?.phase.requiresAttention == true,
+            isPopping: isPopping
+        )
     }
 
-    private var expansionWidth: CGFloat {
-        guard !showsIdleEdgeWhenCollapsed else { return 0 }
-        guard hasClosedPresence else { return 0 }
-        let hasPending = closedSpotlightSession?.phase.requiresAttention == true
-        let leftWidth = sideWidth + 8 + (hasPending ? 18 : 0)
-        let rightWidth = max(sideWidth, countBadgeWidth) + (hasPending ? 18 : 0)
-        return leftWidth + rightWidth + 16 + (hasPending ? 6 : 0)
-    }
-
-    /// Composite key combining `hasClosedPresence` and `expansionWidth` so a
+    /// Composite key combining `hasClosedPresence` and `closedSurfaceWidth` so a
     /// single `.animation(.smooth)` modifier drives both values.  Previously
     /// they had two separate `.animation(.smooth, value:)` modifiers that
     /// could conflict when they changed in the same runloop pass.
     private var closedPresenceAnimationKey: ClosedPresenceKey {
-        ClosedPresenceKey(present: hasClosedPresence, width: expansionWidth)
+        ClosedPresenceKey(present: hasClosedPresence, width: closedSurfaceWidth)
     }
 
-    private var sideWidth: CGFloat {
-        max(0, closedNotchHeight - 12) + 10
+    private var closeTransitionSurfaceOffset: CGSize {
+        guard model.isOverlayCloseTransitionPending,
+              currentPlacementMode == .topBar else {
+            return .zero
+        }
+
+        // Placement math is expressed in Cocoa screen coordinates where
+        // positive Y moves upward; SwiftUI view offsets use downward Y.
+        let cocoaOffset = model.overlayCloseTransitionSurfaceOffset
+        return CGSize(width: cocoaOffset.width, height: -cocoaOffset.height)
     }
 
     private var targetOverlayScreen: NSScreen? {
         if let targetScreenID = model.overlayPlacementDiagnostics?.targetScreenID,
-           let screen = NSScreen.screens.first(where: { screenID(for: $0) == targetScreenID }) {
+           let screen = NSScreen.screens.first(where: { OverlayScreenIdentity.id(for: $0) == targetScreenID }) {
             return screen
         }
 
-        return NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main
+        // No diagnostics yet — prefer the screen the app is currently on.
+        // Do NOT fall back to scanning for any notched screen in the system,
+        // or topBar-mode external displays will incorrectly inherit notch
+        // behavior whenever a notched MacBook is also connected.
+        return NSScreen.main ?? NSScreen.screens.first
+    }
+
+    private var currentPresentationMode: OverlayPresentationMode {
+        if let presentationMode = model.overlayPlacementDiagnostics?.presentationMode {
+            return presentationMode
+        }
+
+        guard let screen = targetOverlayScreen else {
+            return OverlayPresentationPolicy.defaultValue.resolvePresentationMode(
+                screenCapability: .plain
+            )
+        }
+
+        return model.overlayPresentationPolicy.resolvePresentationMode(
+            screenCapability: OverlayDisplayResolver.screenCapability(for: screen)
+        )
     }
 
     private var usesNotchAwareOpenedHeader: Bool {
-        model.overlayPlacementDiagnostics?.mode == .notch
-            || targetOverlayScreen?.safeAreaInsets.top ?? 0 > 0
+        currentPresentationMode == .island
+    }
+
+    private var currentPlacementMode: OverlayPlacementMode {
+        currentPresentationMode.placementMode
+    }
+
+    private var closedShellMetrics: OverlayClosedShellMetrics {
+        OverlayClosedShellMetrics.forMode(
+            currentPlacementMode,
+            closedHeight: closedNotchHeight
+        )
+    }
+
+    private var isNotchMode: Bool {
+        currentPresentationMode == .island
     }
 
     private var openedHeaderButtonsWidth: CGFloat {
@@ -229,9 +268,11 @@ struct IslandPanelView: View {
 
     @ViewBuilder
     private func notchContent(availableSize: CGSize) -> some View {
-        // Window is always at opened size — use opened insets unconditionally.
-        let panelShadowHorizontalInset = IslandChromeMetrics.openedShadowHorizontalInset
-        let panelShadowBottomInset = IslandChromeMetrics.openedShadowBottomInset
+        let panelShadowInsets = IslandChromeMetrics.panelShadowInsets(
+            usesOpenedVisualState: usesOpenedVisualState
+        )
+        let panelShadowHorizontalInset = panelShadowInsets.horizontal
+        let panelShadowBottomInset = panelShadowInsets.bottom
         let layoutWidth = max(0, availableSize.width - (panelShadowHorizontalInset * 2))
         let layoutHeight = max(0, availableSize.height - panelShadowBottomInset)
 
@@ -242,7 +283,7 @@ struct IslandPanelView: View {
         let openedHeight = max(closedNotchHeight, layoutHeight - outerBottomPadding)
 
         // Closed dimensions: sized to the actual notch + session indicators.
-        let closedTotalWidth = closedNotchWidth + expansionWidth + (isPopping ? 18 : 0)
+        let closedTotalWidth = closedSurfaceWidth
         let closedTotalHeight = closedNotchHeight
 
         let currentWidth = usesOpenedVisualState ? openedWidth : closedTotalWidth
@@ -251,10 +292,27 @@ struct IslandPanelView: View {
         let bottomInset = usesOpenedVisualState ? 14.0 : 0.0
         let surfaceWidth = currentWidth + (horizontalInset * 2)
         let surfaceHeight = currentHeight + bottomInset
-        let surfaceShape = NotchShape(
-            topCornerRadius: usesOpenedVisualState ? NotchShape.openedTopRadius : NotchShape.closedTopRadius,
-            bottomCornerRadius: usesOpenedVisualState ? NotchShape.openedBottomRadius : NotchShape.closedBottomRadius
-        )
+        let closedTopR: CGFloat = isNotchMode ? NotchShape.closedTopRadius : 12
+        let surfaceShape: AnyShape = {
+            if isNotchMode {
+                return AnyShape(NotchShape(
+                    topCornerRadius: usesOpenedVisualState ? NotchShape.openedTopRadius : closedTopR,
+                    bottomCornerRadius: usesOpenedVisualState ? NotchShape.openedBottomRadius : NotchShape.closedBottomRadius
+                ))
+            }
+            // Non-notch screens:
+            // - Closed state uses Capsule, whose path computes its corner
+            //   radius from the actual drawn rect at paint time. That means
+            //   while SwiftUI interpolates the frame from opened (700×514)
+            //   to closed (56×22), the shape always renders as a stadium —
+            //   no intermediate "rectangle with small corners" frame.
+            // - Opened state uses RoundedRectangle(26) so the session list
+            //   sits inside a normal panel, not a giant oval.
+            if usesOpenedVisualState {
+                return AnyShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            }
+            return AnyShape(Capsule(style: .continuous))
+        }()
         let hidesClosedSurfaceChrome = showsIdleEdgeWhenCollapsed && !usesOpenedVisualState
         let idleEdgeWidth = closedNotchWidth + (isPopping ? 18 : 0)
 
@@ -264,46 +322,44 @@ struct IslandPanelView: View {
                     .fill(Color.black.opacity(hidesClosedSurfaceChrome ? 0 : 1))
                     .frame(width: surfaceWidth, height: surfaceHeight)
 
-                VStack(spacing: 0) {
-                    headerRow
-                        .frame(height: closedNotchHeight)
-                        .opacity(hidesClosedSurfaceChrome ? 0 : 1)
-
-                    openedContent
-                        .frame(width: openedWidth - 24)
-                        .frame(maxHeight: usesOpenedVisualState ? currentHeight - closedNotchHeight - 12 : 0, alignment: .top)
-                        .opacity(usesOpenedVisualState ? 1 : 0)
-                        .clipped()
-                }
-                .frame(width: currentWidth, height: currentHeight, alignment: .top)
-                .padding(.horizontal, horizontalInset)
-                .padding(.bottom, bottomInset)
-                .clipShape(surfaceShape)
-                .overlay(alignment: .top) {
-                    // Black strip to blend with physical notch at the very top
-                    Rectangle()
-                        .fill(Color.black)
-                        .frame(height: 1)
-                        .padding(.horizontal, usesOpenedVisualState ? NotchShape.openedTopRadius : NotchShape.closedTopRadius)
-                        .opacity(hidesClosedSurfaceChrome ? 0 : 1)
-                }
-                .overlay {
-                    surfaceShape
-                        .stroke(Color.white.opacity(hidesClosedSurfaceChrome ? 0 : (usesOpenedVisualState ? 0.07 : 0.04)), lineWidth: 1)
-                }
-                .overlay(alignment: .top) {
-                    Capsule()
-                        .fill(Color.black)
-                        .frame(width: idleEdgeWidth, height: Self.closedIdleEdgeHeight)
-                        .overlay {
-                            Capsule()
-                                .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                openedSurfaceContent(openedWidth: openedWidth, currentHeight: currentHeight)
+                    .opacity(hidesClosedSurfaceChrome ? 0 : 1)
+                    .frame(width: currentWidth, height: currentHeight, alignment: .top)
+                    .padding(.horizontal, horizontalInset)
+                    .padding(.bottom, bottomInset)
+                    .clipShape(surfaceShape)
+                    .overlay(alignment: .top) {
+                        if isNotchMode {
+                            // Black strip to blend with physical notch at the very top.
+                            Rectangle()
+                                .fill(Color.black)
+                                .frame(height: 1)
+                                .padding(.horizontal, usesOpenedVisualState ? NotchShape.openedTopRadius : closedTopR)
+                                .opacity(hidesClosedSurfaceChrome ? 0 : 1)
                         }
-                        .opacity(showsIdleEdgeWhenCollapsed ? 1 : 0)
-                }
+                    }
+                    .overlay {
+                        surfaceShape
+                            .stroke(Color.white.opacity(hidesClosedSurfaceChrome ? 0 : (usesOpenedVisualState ? 0.07 : 0.04)), lineWidth: 1)
+                    }
+                    .overlay(alignment: .top) {
+                        Capsule()
+                            .fill(Color.black)
+                            .frame(width: idleEdgeWidth, height: Self.closedIdleEdgeHeight)
+                            .overlay {
+                                Capsule()
+                                    .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                            }
+                            .opacity(showsIdleEdgeWhenCollapsed ? 1 : 0)
+                    }
             }
             .frame(width: surfaceWidth, height: surfaceHeight, alignment: .top)
         }
+        .frame(width: surfaceWidth, height: surfaceHeight, alignment: .top)
+        .offset(
+            x: closeTransitionSurfaceOffset.width,
+            y: closeTransitionSurfaceOffset.height
+        )
         .scaleEffect(usesOpenedVisualState ? 1 : (isHovering ? IslandChromeMetrics.closedHoverScale : 1), anchor: .top)
         .padding(.horizontal, panelShadowHorizontalInset)
         .padding(.bottom, panelShadowBottomInset)
@@ -325,11 +381,46 @@ struct IslandPanelView: View {
     // MARK: - Closed state
 
     private var closedNotchWidth: CGFloat {
-        (targetOverlayScreen ?? NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }))?.notchSize.width ?? 224
+        guard let screen = targetOverlayScreen ?? NSScreen.screens.first else {
+            return 56
+        }
+
+        return currentPresentationMode.closedBaseSize(
+            physicalIslandBaseSize: screen.notchSize
+        ).width
     }
 
     private var closedNotchHeight: CGFloat {
-        (targetOverlayScreen ?? NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }))?.islandClosedHeight ?? 24
+        guard let screen = targetOverlayScreen ?? NSScreen.screens.first else {
+            return 22
+        }
+
+        return currentPresentationMode.closedBaseSize(
+            physicalIslandBaseSize: screen.notchSize
+        ).height
+    }
+
+    /// Header row height used in the **opened** state.  Decoupled from
+    /// `closedNotchHeight` so the compact 22pt non-notch pill doesn't squash
+    /// the 22pt header buttons against the edges when expanded.  Built-in
+    /// notch MacBooks (where `closedNotchHeight` ≈ 34pt) keep their existing
+    /// header sizing.
+    private var openedHeaderHeight: CGFloat {
+        closedShellMetrics.openedHeaderHeight
+    }
+
+    @ViewBuilder
+    private func openedSurfaceContent(openedWidth: CGFloat, currentHeight: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            headerRow
+                .frame(height: usesOpenedVisualState ? openedHeaderHeight : closedNotchHeight)
+
+            openedContent
+                .frame(width: openedWidth - 24)
+                .frame(maxHeight: usesOpenedVisualState ? currentHeight - openedHeaderHeight - 12 : 0, alignment: .top)
+                .opacity(usesOpenedVisualState ? 1 : 0)
+                .clipped()
+        }
     }
 
     // MARK: - Header row (shared between closed and opened)
@@ -338,55 +429,84 @@ struct IslandPanelView: View {
     private var headerRow: some View {
         if usesOpenedVisualState {
             openedHeaderContent
-                .frame(height: closedNotchHeight)
+                .frame(height: openedHeaderHeight)
         } else {
-            HStack(spacing: 0) {
-                if hasClosedPresence {
-                    HStack(spacing: 4) {
-                        if model.isCustomAppearance {
-                            IslandPixelGlyph(
-                                tint: scoutTint,
-                                style: model.islandPixelShapeStyle,
-                                isAnimating: hasClosedActivity,
-                                customAvatarImage: model.customAvatarImage
-                            )
-                            .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
-                        } else {
-                            OpenIslandIcon(size: 14, isAnimating: hasClosedActivity, tint: scoutTint)
-                                .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
-                        }
-
-                        if closedSpotlightSession?.phase.requiresAttention == true {
-                            AttentionIndicator(
-                                size: 14,
-                                color: phaseColor(closedSpotlightSession?.phase ?? .running)
-                            )
-                        }
+            let hasAttention = closedSpotlightSession?.phase.requiresAttention == true
+            switch closedShellMetrics.layoutFamily {
+            case .floatingPill:
+                TopBarClosedShell(
+                    hasClosedPresence: hasClosedPresence,
+                    hasAttention: hasAttention,
+                    closedHeight: closedNotchHeight,
+                    horizontalPadding: closedShellMetrics.horizontalPadding,
+                    spacing: closedShellMetrics.badgeSpacing
+                ) {
+                    if model.isCustomAppearance {
+                        IslandPixelGlyph(
+                            tint: scoutTint,
+                            style: model.islandPixelShapeStyle,
+                            isAnimating: hasClosedActivity,
+                            customAvatarImage: model.customAvatarImage
+                        )
+                        .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
+                    } else {
+                        OpenIslandIcon(
+                            size: closedShellMetrics.iconSize,
+                            isAnimating: hasClosedActivity,
+                            tint: scoutTint
+                        )
+                        .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
                     }
-                    .frame(width: sideWidth + 8 + (closedSpotlightSession?.phase.requiresAttention == true ? 18 : 0))
-                }
-
-                if !hasClosedPresence {
-                    Rectangle()
-                        .fill(Color.clear)
-                        .frame(width: closedNotchWidth - 20)
-                } else {
-                    Rectangle()
-                        .fill(Color.black)
-                        .frame(width: closedNotchWidth - NotchShape.closedTopRadius + (isPopping ? 18 : 0))
-                }
-
-                if hasClosedPresence {
-                    let attentionBalanceWidth: CGFloat = closedSpotlightSession?.phase.requiresAttention == true ? 18 : 0
+                } attention: {
+                    AttentionIndicator(
+                        size: closedShellMetrics.attentionIndicatorSize,
+                        color: phaseColor(closedSpotlightSession?.phase ?? .running)
+                    )
+                } badge: {
                     ClosedCountBadge(
                         liveCount: model.liveSessionCount,
-                        tint: closedSpotlightSession?.phase.requiresAttention == true ? .orange : scoutTint
+                        tint: hasAttention ? .orange : scoutTint
                     )
                     .matchedGeometryEffect(id: "right-indicator", in: notchNamespace, isSource: true)
-                    .frame(width: max(sideWidth, countBadgeWidth) + attentionBalanceWidth)
+                }
+            case .notch:
+                NotchClosedShell(
+                    hasClosedPresence: hasClosedPresence,
+                    hasAttention: hasAttention,
+                    liveCount: model.liveSessionCount,
+                    closedNotchWidth: closedNotchWidth,
+                    closedHeight: closedNotchHeight,
+                    isPopping: isPopping
+                ) {
+                    if model.isCustomAppearance {
+                        IslandPixelGlyph(
+                            tint: scoutTint,
+                            style: model.islandPixelShapeStyle,
+                            isAnimating: hasClosedActivity,
+                            customAvatarImage: model.customAvatarImage
+                        )
+                        .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
+                    } else {
+                        OpenIslandIcon(
+                            size: closedShellMetrics.iconSize,
+                            isAnimating: hasClosedActivity,
+                            tint: scoutTint
+                        )
+                        .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
+                    }
+                } attention: {
+                    AttentionIndicator(
+                        size: closedShellMetrics.attentionIndicatorSize,
+                        color: phaseColor(closedSpotlightSession?.phase ?? .running)
+                    )
+                } badge: {
+                    ClosedCountBadge(
+                        liveCount: model.liveSessionCount,
+                        tint: hasAttention ? .orange : scoutTint
+                    )
+                    .matchedGeometryEffect(id: "right-indicator", in: notchNamespace, isSource: true)
                 }
             }
-            .frame(height: closedNotchHeight)
         }
     }
 
@@ -862,15 +982,6 @@ struct IslandPanelView: View {
                 usageWindowView(window: window, layout: layout)
             }
         }
-    }
-
-    private func screenID(for screen: NSScreen) -> String {
-        let key = NSDeviceDescriptionKey("NSScreenNumber")
-        if let number = screen.deviceDescription[key] as? NSNumber {
-            return "display-\(number.uint32Value)"
-        }
-
-        return screen.localizedName
     }
 
     private func usageWindowView(

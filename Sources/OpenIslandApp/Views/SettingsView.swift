@@ -237,6 +237,35 @@ struct DisplaySettingsPane: View {
 
     private var lang: LanguageManager { model.lang }
 
+    private func title(for policy: OverlayPresentationPolicy) -> String {
+        switch policy {
+        case .alwaysIsland:
+            return lang.t("settings.display.presentation.alwaysIsland")
+        case .automaticIslandWhenNotched:
+            return lang.t("settings.display.presentation.automaticIslandWhenNotched")
+        case .alwaysPill:
+            return lang.t("settings.display.presentation.alwaysPill")
+        }
+    }
+
+    private func title(for capability: OverlayScreenCapability) -> String {
+        switch capability {
+        case .notched:
+            return lang.t("settings.display.capability.notched")
+        case .plain:
+            return lang.t("settings.display.capability.plain")
+        }
+    }
+
+    private func title(for mode: OverlayPresentationMode) -> String {
+        switch mode {
+        case .island:
+            return lang.t("settings.display.presentationMode.island")
+        case .pill:
+            return lang.t("settings.display.presentationMode.pill")
+        }
+    }
+
     var body: some View {
         Form {
             Section(lang.t("settings.display.monitor")) {
@@ -251,10 +280,38 @@ struct DisplaySettingsPane: View {
                 }
             }
 
+            Section(lang.t("settings.display.presentation")) {
+                Picker(lang.t("settings.display.presentationPolicy"), selection: Binding(
+                    get: { model.overlayPresentationPolicy },
+                    set: { model.overlayPresentationPolicy = $0 }
+                )) {
+                    ForEach(OverlayPresentationPolicy.allCases, id: \.self) { policy in
+                        Text(title(for: policy)).tag(policy)
+                    }
+                }
+                .help(lang.t("settings.display.presentationPolicy.help"))
+
+                Text(lang.t("settings.display.presentationPolicy.footer"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             if let diag = model.overlayPlacementDiagnostics {
                 Section(lang.t("settings.display.diagnostics")) {
                     LabeledContent(lang.t("settings.display.currentScreen"), value: diag.targetScreenName)
                     LabeledContent(lang.t("settings.display.layoutMode"), value: diag.modeDescription)
+                    LabeledContent(
+                        lang.t("settings.display.screenCapability"),
+                        value: title(for: diag.screenCapability)
+                    )
+                    LabeledContent(
+                        lang.t("settings.display.currentPresentationPolicy"),
+                        value: title(for: diag.presentationPolicy)
+                    )
+                    LabeledContent(
+                        lang.t("settings.display.currentPresentationMode"),
+                        value: title(for: diag.presentationMode)
+                    )
                 }
             }
         }

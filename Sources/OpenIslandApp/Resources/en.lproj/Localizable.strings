@@ -76,9 +76,23 @@
 /* Settings - Display */
 "settings.display.monitor" = "Monitor";
 "settings.display.position" = "Display Position";
+"settings.display.presentation" = "Presentation";
+"settings.display.presentationPolicy" = "Presentation Policy";
+"settings.display.presentationPolicy.help" = "Choose whether the overlay renders as a Dynamic-Island-style shape or a floating pill. Affects the current and future displays.";
+"settings.display.presentationPolicy.footer" = "Automatic uses the Island shape only on Macs with a physical notch, and the floating pill on every other display. Always Island / Always Pill override the automatic choice on every screen.";
+"settings.display.presentation.alwaysIsland" = "Always Island";
+"settings.display.presentation.automaticIslandWhenNotched" = "Island on Notched Displays";
+"settings.display.presentation.alwaysPill" = "Always Pill";
 "settings.display.diagnostics" = "Diagnostics";
 "settings.display.currentScreen" = "Current Screen";
 "settings.display.layoutMode" = "Layout Mode";
+"settings.display.screenCapability" = "Screen Capability";
+"settings.display.capability.notched" = "Notched";
+"settings.display.capability.plain" = "Plain";
+"settings.display.currentPresentationPolicy" = "Presentation Policy";
+"settings.display.currentPresentationMode" = "Actual Presentation";
+"settings.display.presentationMode.island" = "Island";
+"settings.display.presentationMode.pill" = "Pill";
 
 /* Settings - Sound */
 "settings.sound.notifications" = "Notification Sounds";

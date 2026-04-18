@@ -76,6 +76,7 @@ final class AppModel {
     }
     var isOverlayVisible: Bool { overlay.isOverlayVisible }
     var isOverlayCloseTransitionPending: Bool { overlay.isCloseTransitionPending }
+    var overlayCloseTransitionSurfaceOffset: CGSize { overlay.closeTransitionSurfaceOffset }
     var isCodexSetupBusy: Bool { hooks.isCodexSetupBusy }
     var isClaudeHookSetupBusy: Bool { hooks.isClaudeHookSetupBusy }
     var isClaudeUsageSetupBusy: Bool { hooks.isClaudeUsageSetupBusy }
@@ -280,6 +281,10 @@ final class AppModel {
         get { overlay.overlayDisplaySelectionID }
         set { overlay.overlayDisplaySelectionID = newValue }
     }
+    var overlayPresentationPolicy: OverlayPresentationPolicy {
+        get { overlay.overlayPresentationPolicy }
+        set { overlay.overlayPresentationPolicy = newValue }
+    }
 
     // MARK: - Appearance
 
@@ -368,7 +373,6 @@ final class AppModel {
             lastActionMessage = error.localizedDescription
         }
     }
-
     @ObservationIgnored
     var openSettingsWindow: (() -> Void)?
 
@@ -910,6 +914,7 @@ final class AppModel {
     func toggleOverlay() { overlay.toggleOverlay() }
     func notchOpen(reason: NotchOpenReason, surface: IslandSurface = .sessionList()) { overlay.notchOpen(reason: reason, surface: surface) }
     func notchClose() { overlay.notchClose() }
+    func beginTopBarHoverDrag() { overlay.beginTopBarHoverDrag() }
     func notchPop() { overlay.notchPop() }
     func performBootAnimation() { overlay.performBootAnimation() }
     func ensureOverlayPanel() { overlay.ensureOverlayPanel() }

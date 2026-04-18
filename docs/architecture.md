@@ -11,6 +11,26 @@ The project is a single Swift package with four targets:
 | **OpenIslandHooks** | Lightweight CLI executable invoked by agent hooks. Reads hook payload from stdin, forwards to app bridge via Unix socket, writes blocking JSON to stdout only when island denies a `PreToolUse`. |
 | **OpenIslandSetup** | Installer CLI for managing `~/.codex/config.toml` and `hooks.json`. |
 
+### Overlay Composition
+
+- Closed-state shell is split by placement mode (`notch` vs `topBar`) to keep mode-specific geometry and chrome isolated.
+- Opened-state content remains a single shared rendering path across both modes. Session list, actionable cards, and opened header actions are not duplicated.
+- Mode-specific differences in opened state should be limited to small layout tokens (for example header allowance / spacing), not separate content trees.
+- Opened header allowance is computed from a single metrics helper (`OverlayClosedShellMetrics.openedHeaderAllowance`) and reused by both modes.
+
+### Presentation Policy
+
+The overlay shape (Dynamic-Island vs. floating pill) is decided by a two-layer model so user preference, physical display capability, and placement geometry each stay in their own pure helper:
+
+| Type | Role |
+|---|---|
+| `OverlayScreenCapability` | Describes what the screen can host — `.notched` or `.plain`. Derived from `NSScreen.safeAreaInsets`. |
+| `OverlayPresentationPolicy` | User-facing setting: `.automaticIslandWhenNotched` (default), `.alwaysIsland`, `.alwaysPill`. Persisted under `overlay.presentation.policy`. |
+| `OverlayPresentationMode` | Resolved result: `.island` or `.pill`. Computed from policy + capability by `policy.resolvePresentationMode(screenCapability:)`. |
+| `OverlayPlacementMode` | Geometry family: `.notch` or `.topBar`. Computed from policy + capability by `policy.resolvePlacementMode(screenCapability:)`, and drives which closed shell and `OverlayPlacementStrategy` case renders. |
+
+`OverlayScreenSelectionResolver` picks *which* attached display to use from a preferred-screen ID plus the current `NSScreen` list. The resolver is pure and produces a tagged `selectionSummary` (`manual`, `manual missing, auto fallback`, `manual missing, main fallback`, `manual missing, first-display fallback`, `automatic`) used in logs and placement diagnostics so drops can be attributed. Per-display drag anchors for the top-bar pill are persisted by `OverlayPillPositionStore` using `OverlayScreenIdentity` as the key.
+
 ## Data Flow
 
 ### Hook-based agents (Codex, Claude Code, and forks)

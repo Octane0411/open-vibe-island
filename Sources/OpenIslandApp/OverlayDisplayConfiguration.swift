@@ -8,6 +8,67 @@ struct OverlayDisplayOption: Identifiable, Equatable {
     let subtitle: String
 }
 
+enum OverlayScreenCapability: Equatable {
+    case notched
+    case plain
+}
+
+enum OverlayPresentationPolicy: String, Equatable, CaseIterable {
+    case alwaysIsland
+    case automaticIslandWhenNotched
+    case alwaysPill
+
+    static let defaultValue = OverlayPresentationPolicy.automaticIslandWhenNotched
+}
+
+enum OverlayPresentationMode: Equatable {
+    case island
+    case pill
+
+    private static let compactPillBaseSize = NSSize(width: 56, height: 22)
+
+    var placementMode: OverlayPlacementMode {
+        switch self {
+        case .island:
+            return .notch
+        case .pill:
+            return .topBar
+        }
+    }
+
+    func closedBaseSize(physicalIslandBaseSize: NSSize) -> NSSize {
+        switch self {
+        case .island:
+            return physicalIslandBaseSize
+        case .pill:
+            return Self.compactPillBaseSize
+        }
+    }
+}
+
+extension OverlayPresentationPolicy {
+    func resolvePresentationMode(
+        screenCapability: OverlayScreenCapability
+    ) -> OverlayPresentationMode {
+        switch self {
+        case .alwaysIsland:
+            return .island
+        case .automaticIslandWhenNotched:
+            return screenCapability == .notched ? .island : .pill
+        case .alwaysPill:
+            return .pill
+        }
+    }
+
+    func resolvePlacementMode(
+        screenCapability: OverlayScreenCapability
+    ) -> OverlayPlacementMode {
+        resolvePresentationMode(
+            screenCapability: screenCapability
+        ).placementMode
+    }
+}
+
 enum OverlayPlacementMode: String, Equatable {
     case notch = "Notch area"
     case topBar = "Top bar fallback"
@@ -18,6 +79,9 @@ struct OverlayPlacementDiagnostics {
     let targetScreenName: String
     let selectionSummary: String
     let mode: OverlayPlacementMode
+    let screenCapability: OverlayScreenCapability
+    let presentationPolicy: OverlayPresentationPolicy
+    let presentationMode: OverlayPresentationMode
     let screenFrame: NSRect
     let visibleFrame: NSRect
     let safeAreaInsets: NSEdgeInsets
@@ -29,6 +93,35 @@ struct OverlayPlacementDiagnostics {
 
     var modeDescription: String {
         mode.rawValue
+    }
+
+    var screenCapabilityDescription: String {
+        switch screenCapability {
+        case .notched:
+            return "Notched"
+        case .plain:
+            return "Plain"
+        }
+    }
+
+    var presentationPolicyDescription: String {
+        switch presentationPolicy {
+        case .alwaysIsland:
+            return "Always island"
+        case .automaticIslandWhenNotched:
+            return "Island when notched"
+        case .alwaysPill:
+            return "Always pill"
+        }
+    }
+
+    var presentationModeDescription: String {
+        switch presentationMode {
+        case .island:
+            return "Island"
+        case .pill:
+            return "Pill"
+        }
     }
 
     var screenFrameDescription: String {
@@ -62,26 +155,43 @@ enum OverlayDisplayResolver {
     static func availableDisplayOptions() -> [OverlayDisplayOption] {
         NSScreen.screens.map { screen in
             OverlayDisplayOption(
-                id: screenID(for: screen),
+                id: OverlayScreenIdentity.id(for: screen),
                 title: screen.localizedName,
                 subtitle: "\(screenKindDescription(for: screen)) · \(Int(screen.frame.width))×\(Int(screen.frame.height))"
             )
         }
     }
 
-    static func diagnostics(preferredScreenID: String?, panelSize: NSSize) -> OverlayPlacementDiagnostics? {
+    static func diagnostics(
+        preferredScreenID: String?,
+        panelSize: NSSize,
+        presentationPolicy: OverlayPresentationPolicy
+    ) -> OverlayPlacementDiagnostics? {
         guard let resolvedScreen = resolveScreen(preferredScreenID: preferredScreenID) else {
             return nil
         }
 
         let screen = resolvedScreen.screen
-        let overlayFrame = frame(for: screen, panelSize: panelSize)
+        let screenCapability = screenCapability(for: screen)
+        let placementMode = presentationPolicy.resolvePlacementMode(
+            screenCapability: screenCapability
+        )
+        let overlayFrame = frame(
+            for: screen,
+            panelSize: panelSize,
+            placementMode: placementMode
+        )
 
         return OverlayPlacementDiagnostics(
-            targetScreenID: screenID(for: screen),
+            targetScreenID: OverlayScreenIdentity.id(for: screen),
             targetScreenName: screen.localizedName,
             selectionSummary: resolvedScreen.selectionSummary,
-            mode: placementMode(for: screen),
+            mode: placementMode,
+            screenCapability: screenCapability,
+            presentationPolicy: presentationPolicy,
+            presentationMode: presentationPolicy.resolvePresentationMode(
+                screenCapability: screenCapability
+            ),
             screenFrame: screen.frame,
             visibleFrame: screen.visibleFrame,
             safeAreaInsets: screen.safeAreaInsets,
@@ -89,13 +199,17 @@ enum OverlayDisplayResolver {
         )
     }
 
-    private static func frame(for screen: NSScreen, panelSize: NSSize) -> NSRect {
+    private static func frame(
+        for screen: NSScreen,
+        panelSize: NSSize,
+        placementMode: OverlayPlacementMode
+    ) -> NSRect {
         let width = min(panelSize.width, screen.visibleFrame.width - 64)
         let height = panelSize.height
         let x = screen.frame.midX - (width / 2)
 
         let y: CGFloat
-        switch placementMode(for: screen) {
+        switch placementMode {
         case .notch:
             y = screen.frame.maxY - height
         case .topBar:
@@ -111,36 +225,23 @@ enum OverlayDisplayResolver {
             return nil
         }
 
-        if let preferredScreenID,
-           let explicitScreen = screens.first(where: { screenID(for: $0) == preferredScreenID }) {
-            return (explicitScreen, "manual")
+        guard let selection = OverlayScreenSelectionResolver.resolve(
+            preferredScreenID: preferredScreenID,
+            screens: selectionCandidates(from: screens)
+        ),
+        let screen = screens.first(where: { OverlayScreenIdentity.id(for: $0) == selection.screenID }) else {
+            return nil
         }
 
-        if preferredScreenID != nil {
-            if let notchScreen = screens.first(where: isNotched) {
-                return (notchScreen, "manual missing, auto fallback")
-            }
-
-            if let mainScreen = NSScreen.main {
-                return (mainScreen, "manual missing, main fallback")
-            }
-
-            return (screens[0], "manual missing, first-display fallback")
-        }
-
-        if let notchScreen = screens.first(where: isNotched) {
-            return (notchScreen, "automatic")
-        }
-
-        if let mainScreen = NSScreen.main {
-            return (mainScreen, "automatic")
-        }
-
-        return (screens[0], "automatic")
+        return (screen, selection.selectionSummary)
     }
 
-    private static func placementMode(for screen: NSScreen) -> OverlayPlacementMode {
-        isNotched(screen) ? .notch : .topBar
+    static func placementMode(for screen: NSScreen) -> OverlayPlacementMode {
+        screenCapability(for: screen) == .notched ? .notch : .topBar
+    }
+
+    static func screenCapability(for screen: NSScreen) -> OverlayScreenCapability {
+        isNotched(screen) ? .notched : .plain
     }
 
     private static func isNotched(_ screen: NSScreen) -> Bool {
@@ -153,12 +254,13 @@ enum OverlayDisplayResolver {
         placementMode(for: screen) == .notch ? "Built-in notch" : "Top-bar fallback"
     }
 
-    private static func screenID(for screen: NSScreen) -> String {
-        let key = NSDeviceDescriptionKey("NSScreenNumber")
-        if let number = screen.deviceDescription[key] as? NSNumber {
-            return "display-\(number.uint32Value)"
+    private static func selectionCandidates(from screens: [NSScreen]) -> [OverlayScreenSelectionCandidate] {
+        screens.map { screen in
+            OverlayScreenSelectionCandidate(
+                id: OverlayScreenIdentity.id(for: screen),
+                isNotched: isNotched(screen),
+                isMain: screen == NSScreen.main
+            )
         }
-
-        return screen.localizedName
     }
 }

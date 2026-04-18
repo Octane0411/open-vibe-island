@@ -3,6 +3,28 @@ import Testing
 @testable import OpenIslandApp
 
 struct OverlayPanelControllerTests {
+    @MainActor
+    private final class TestEventMonitors: OverlayEventMonitoring {
+        private(set) var isActive = false
+        private(set) var startCallCount = 0
+        private(set) var stopCallCount = 0
+
+        func start(
+            mouseMoveHandler: @MainActor @escaping @Sendable (NSPoint) -> Void,
+            mouseDownHandler: @MainActor @escaping @Sendable (NSPoint) -> Void
+        ) {
+            _ = mouseMoveHandler
+            _ = mouseDownHandler
+            isActive = true
+            startCallCount += 1
+        }
+
+        func stop() {
+            isActive = false
+            stopCallCount += 1
+        }
+    }
+
     @Test
     func closedSurfaceRectCentersOnNotch() {
         let notchRect = NSRect(x: 200, y: 900, width: 200, height: 38)
@@ -102,6 +124,361 @@ struct OverlayPanelControllerTests {
         #expect(!OverlayPanelController.shouldActivatePanel(for: nil))
     }
 
+    @Test
+    func closedTopBarAllowsDirectMouseInteraction() {
+        #expect(
+            OverlayPanelController.acceptsDirectMouseInteraction(
+                status: .closed,
+                mode: .topBar
+            )
+        )
+    }
+
+    @Test
+    func closedNotchKeepsPassiveMouseInteraction() {
+        #expect(
+            !OverlayPanelController.acceptsDirectMouseInteraction(
+                status: .closed,
+                mode: .notch
+            )
+        )
+    }
+
+    @Test
+    func hoverOpenedTopBarAllowsHeaderDrag() {
+        #expect(
+            OverlayPanelController.canDragOpenedTopBarHeader(
+                status: .opened,
+                mode: .topBar,
+                openReason: .hover
+            )
+        )
+    }
+
+    @Test
+    func clickOpenedTopBarDoesNotAllowHeaderDrag() {
+        #expect(
+            !OverlayPanelController.canDragOpenedTopBarHeader(
+                status: .opened,
+                mode: .topBar,
+                openReason: .click
+            )
+        )
+    }
+
+    @Test
+    func hoverOpenedNotchDoesNotAllowHeaderDrag() {
+        #expect(
+            !OverlayPanelController.canDragOpenedTopBarHeader(
+                status: .opened,
+                mode: .notch,
+                openReason: .hover
+            )
+        )
+    }
+
+    @Test
+    func openedTopBarHeaderLeftAreaCanStartDrag() {
+        let contentRect = NSRect(x: 18, y: 14, width: 700, height: 500)
+        let dragRect = OverlayPanelController.openedTopBarHeaderDragRect(
+            contentRect: contentRect,
+            headerHeight: 30,
+            trailingControlWidth: IslandPanelView.topBarOpenedHeaderTrailingControlWidth,
+            horizontalPadding: IslandPanelView.topBarOpenedHeaderHorizontalPadding
+        )
+
+        #expect(dragRect.contains(NSPoint(x: 56, y: 498)))
+    }
+
+    @Test
+    func openedTopBarHeaderControlButtonsAreaCannotStartDrag() {
+        let contentRect = NSRect(x: 18, y: 14, width: 700, height: 500)
+        let dragRect = OverlayPanelController.openedTopBarHeaderDragRect(
+            contentRect: contentRect,
+            headerHeight: 30,
+            trailingControlWidth: IslandPanelView.topBarOpenedHeaderTrailingControlWidth,
+            horizontalPadding: IslandPanelView.topBarOpenedHeaderHorizontalPadding
+        )
+
+        #expect(!dragRect.contains(NSPoint(x: 686, y: 498)))
+    }
+
+    @Test
+    func openedTopBarHeaderBelowAreaCannotStartDrag() {
+        let contentRect = NSRect(x: 18, y: 14, width: 700, height: 500)
+        let dragRect = OverlayPanelController.openedTopBarHeaderDragRect(
+            contentRect: contentRect,
+            headerHeight: 30,
+            trailingControlWidth: IslandPanelView.topBarOpenedHeaderTrailingControlWidth,
+            horizontalPadding: IslandPanelView.topBarOpenedHeaderHorizontalPadding
+        )
+
+        #expect(!dragRect.contains(NSPoint(x: 56, y: 476)))
+    }
+
+    @Test
+    func hoverOpenedTopBarHeaderHitIsCapturedByDragLayer() {
+        let contentRect = NSRect(x: 18, y: 14, width: 700, height: 500)
+
+        let shouldCapture = OverlayPanelController.shouldCaptureOpenedTopBarHeaderDrag(
+            status: .opened,
+            mode: .topBar,
+            openReason: .hover,
+            point: NSPoint(x: 56, y: 498),
+            contentRect: contentRect,
+            headerHeight: 30,
+            trailingControlWidth: IslandPanelView.topBarOpenedHeaderTrailingControlWidth,
+            horizontalPadding: IslandPanelView.topBarOpenedHeaderHorizontalPadding
+        )
+
+        #expect(shouldCapture)
+    }
+
+    @Test
+    func flippedMouseDownPointNormalizesIntoOpenedHeaderDragRect() {
+        let normalizedPoint = OverlayPanelController.normalizeEventPointForOverlayGeometry(
+            NSPoint(x: 56, y: 16),
+            viewHeight: 514
+        )
+        let contentRect = NSRect(x: 18, y: 14, width: 700, height: 500)
+
+        let shouldCapture = OverlayPanelController.shouldCaptureOpenedTopBarHeaderDrag(
+            status: .opened,
+            mode: .topBar,
+            openReason: .hover,
+            point: normalizedPoint,
+            contentRect: contentRect,
+            headerHeight: 30,
+            trailingControlWidth: IslandPanelView.topBarOpenedHeaderTrailingControlWidth,
+            horizontalPadding: IslandPanelView.topBarOpenedHeaderHorizontalPadding
+        )
+
+        #expect(normalizedPoint == NSPoint(x: 56, y: 498))
+        #expect(shouldCapture)
+    }
+
+    @Test
+    func hoverOpenedTopBarControlButtonsHitIsNotCapturedByDragLayer() {
+        let contentRect = NSRect(x: 18, y: 14, width: 700, height: 500)
+
+        let shouldCapture = OverlayPanelController.shouldCaptureOpenedTopBarHeaderDrag(
+            status: .opened,
+            mode: .topBar,
+            openReason: .hover,
+            point: NSPoint(x: 686, y: 498),
+            contentRect: contentRect,
+            headerHeight: 30,
+            trailingControlWidth: IslandPanelView.topBarOpenedHeaderTrailingControlWidth,
+            horizontalPadding: IslandPanelView.topBarOpenedHeaderHorizontalPadding
+        )
+
+        #expect(!shouldCapture)
+    }
+
+    @Test
+    func clickOpenedTopBarHeaderHitIsNotCapturedByDragLayer() {
+        let contentRect = NSRect(x: 18, y: 14, width: 700, height: 500)
+
+        let shouldCapture = OverlayPanelController.shouldCaptureOpenedTopBarHeaderDrag(
+            status: .opened,
+            mode: .topBar,
+            openReason: .click,
+            point: NSPoint(x: 56, y: 498),
+            contentRect: contentRect,
+            headerHeight: 30,
+            trailingControlWidth: IslandPanelView.topBarOpenedHeaderTrailingControlWidth,
+            horizontalPadding: IslandPanelView.topBarOpenedHeaderHorizontalPadding
+        )
+
+        #expect(!shouldCapture)
+    }
+
+    @Test
+    func topBarDragLayerDoesNotCaptureOpenedBlankAreaFallback() {
+        #expect(
+            !OverlayPanelController.shouldCaptureTopBarDragLayerHit(
+                capturesClosedTopBarPill: false,
+                capturesOpenedHeaderDrag: false
+            )
+        )
+    }
+
+    @Test
+    func topBarDragLayerCapturesClosedPillOrOpenedHeaderHotZone() {
+        #expect(
+            OverlayPanelController.shouldCaptureTopBarDragLayerHit(
+                capturesClosedTopBarPill: true,
+                capturesOpenedHeaderDrag: false
+            )
+        )
+        #expect(
+            OverlayPanelController.shouldCaptureTopBarDragLayerHit(
+                capturesClosedTopBarPill: false,
+                capturesOpenedHeaderDrag: true
+            )
+        )
+    }
+
+    @Test
+    func openedHeaderDragCrossingThresholdStartsClosedPillDrag() {
+        let plan = OverlayPanelController.openedTopBarHeaderDragPlan(
+            startedFromOpenedTopBarHeader: true,
+            didTransitionToClosedPill: false,
+            dragDistance: 6,
+            threshold: 4
+        )
+
+        #expect(plan == .startClosedPillDrag)
+    }
+
+    @Test
+    func openedHeaderDragBelowThresholdKeepsWaiting() {
+        let plan = OverlayPanelController.openedTopBarHeaderDragPlan(
+            startedFromOpenedTopBarHeader: true,
+            didTransitionToClosedPill: false,
+            dragDistance: 3,
+            threshold: 4
+        )
+
+        #expect(plan == .waitForThreshold)
+    }
+
+    @Test
+    func openedHeaderDragAfterCollapseContinuesClosedPillDrag() {
+        let plan = OverlayPanelController.openedTopBarHeaderDragPlan(
+            startedFromOpenedTopBarHeader: true,
+            didTransitionToClosedPill: true,
+            dragDistance: 2,
+            threshold: 4
+        )
+
+        #expect(plan == .continueClosedPillDrag)
+    }
+
+    @Test
+    func openedHeaderDragTransitionPreservesAccumulatedDeltaWhenCollapsing() {
+        let transition = OverlayPanelController.openedTopBarHeaderDragTransition(
+            originalDragStartMouse: NSPoint(x: 100, y: 200),
+            currentMouse: NSPoint(x: 112, y: 209),
+            collapsedPillOrigin: NSPoint(x: 400, y: 500)
+        )
+
+        #expect(transition.immediatePanelOrigin == NSPoint(x: 412, y: 509))
+        #expect(transition.continuedDragStartMouse == NSPoint(x: 100, y: 200))
+        #expect(transition.continuedDragStartPanelOrigin == NSPoint(x: 400, y: 500))
+    }
+
+    @Test
+    func closedPillDragPlanKeepsUsingClosedPillPath() {
+        let plan = OverlayPanelController.openedTopBarHeaderDragPlan(
+            startedFromOpenedTopBarHeader: false,
+            didTransitionToClosedPill: false,
+            dragDistance: 1,
+            threshold: 4
+        )
+
+        #expect(plan == .continueClosedPillDrag)
+    }
+
+    @Test
+    func openedHeaderDragEndsClosedTopBarPressAfterCollapse() {
+        #expect(
+            OverlayPanelController.shouldEndClosedTopBarPressAfterDrag(
+                startedFromOpenedTopBarHeader: true,
+                didTransitionToClosedPill: true
+            )
+        )
+    }
+
+    @Test
+    func openedHeaderWithoutCollapseDoesNotEndClosedTopBarPress() {
+        #expect(
+            !OverlayPanelController.shouldEndClosedTopBarPressAfterDrag(
+                startedFromOpenedTopBarHeader: true,
+                didTransitionToClosedPill: false
+            )
+        )
+    }
+
+    @Test
+    func closedPillDragStillEndsClosedTopBarPress() {
+        #expect(
+            OverlayPanelController.shouldEndClosedTopBarPressAfterDrag(
+                startedFromOpenedTopBarHeader: false,
+                didTransitionToClosedPill: false
+            )
+        )
+    }
+
+    @Test
+    func movedTopBarDragPersistsPositionBeforeEndingPress() {
+        let actions = OverlayPanelController.topBarDragReleaseActions(
+            didMove: true,
+            startedFromOpenedTopBarHeader: true,
+            didTransitionToClosedPill: true
+        )
+
+        #expect(actions == [.persistDraggedPosition, .endClosedTopBarPress])
+    }
+
+    @Test
+    func eventMonitorDefersClosedTopBarClicksWhenPanelIsInteractive() {
+        #expect(
+            !OverlayPanelController.shouldEventMonitorHandleClosedSurfaceClick(
+                status: .closed,
+                mode: .topBar,
+                panelIgnoresMouseEvents: false
+            )
+        )
+    }
+
+    @Test
+    func automaticSelectionDoesNotBecomeManualTarget() {
+        #expect(
+            OverlayPanelController.normalizedPreferredScreenID(
+                OverlayDisplayOption.automaticID
+            ) == nil
+        )
+        #expect(
+            OverlayPanelController.normalizedPreferredScreenID(
+                "display-external"
+            ) == "display-external"
+        )
+    }
+
+    @Test
+    func closedTopBarPressSuppressesHoverOpen() {
+        #expect(
+            !OverlayPanelController.shouldArmClosedSurfaceHoverOpen(
+                status: .closed,
+                mode: .topBar,
+                isPressingClosedTopBarPill: true
+            )
+        )
+    }
+
+    @Test
+    func closedTopBarWithoutPressStillAllowsHoverOpen() {
+        #expect(
+            OverlayPanelController.shouldArmClosedSurfaceHoverOpen(
+                status: .closed,
+                mode: .topBar,
+                isPressingClosedTopBarPill: false
+            )
+        )
+    }
+
+    @Test
+    func closedNotchPressDoesNotSuppressHoverOpen() {
+        #expect(
+            OverlayPanelController.shouldArmClosedSurfaceHoverOpen(
+                status: .closed,
+                mode: .notch,
+                isPressingClosedTopBarPill: true
+            )
+        )
+    }
+
     // MARK: - islandClosedHeight
 
     @Test
@@ -121,9 +498,72 @@ struct OverlayPanelControllerTests {
     }
 
     @Test
-    func islandClosedHeightFallsBackToMenuBarHeightOnNonNotchScreen() {
-        // Non-notch screen: safeAreaInsets.top == 0, fall back to topStatusBarHeight.
+    func islandClosedHeightFallsBackToCompactPillOnNonNotchScreen() {
+        // Non-notch screen: safeAreaInsets.top == 0, use a compact 22pt pill height.
+        // The closed pill only shows an icon + count badge so it doesn't need the
+        // full menu-bar strip height.
         let height = NSScreen.computeIslandClosedHeight(safeAreaInsetsTop: 0, topStatusBarHeight: 24)
-        #expect(height == 24)
+        #expect(height == 22)
+    }
+
+    @Test
+    func topBarOpenedHeaderAllowanceUsesMinimumThirtyPoints() {
+        let closedHeight = NSScreen.computeIslandClosedHeight(
+            safeAreaInsetsTop: 0,
+            topStatusBarHeight: 24
+        )
+        let metrics = OverlayClosedShellMetrics.forMode(
+            .topBar,
+            closedHeight: closedHeight
+        )
+
+        #expect(metrics.openedHeaderHeight == 30)
+    }
+
+    @Test
+    func closedSurfaceRectPreservesCompactTopBarPillHeight() {
+        let notchRect = NSRect(x: 600, y: 980, width: 120, height: 22)
+        let closedWidth: CGFloat = 64
+
+        let rect = OverlayPanelController.closedSurfaceRect(
+            notchRect: notchRect,
+            closedWidth: closedWidth
+        )
+
+        #expect(rect.height == 22)
+        #expect(rect.midX == notchRect.midX)
+    }
+
+    @Test
+    @MainActor
+    func hideStopsEventMonitoring() {
+        let eventMonitors = TestEventMonitors()
+        let controller = OverlayPanelController(eventMonitors: eventMonitors)
+
+        controller.hide()
+
+        #expect(eventMonitors.stopCallCount == 1)
+    }
+
+    @Test
+    func moveDispatchDecisionDropsEventsInsideThrottleWindow() {
+        let decision = NotchEventMonitors.moveDispatchDecision(
+            now: 10.03,
+            lastMoveTime: 10.0,
+            throttleInterval: 0.05
+        )
+
+        #expect(decision == .drop)
+    }
+
+    @Test
+    func moveDispatchDecisionAcceptsEventsAtThrottleBoundary() {
+        let decision = NotchEventMonitors.moveDispatchDecision(
+            now: 10.05,
+            lastMoveTime: 10.0,
+            throttleInterval: 0.05
+        )
+
+        #expect(decision == .dispatch(updatedLastMoveTime: 10.05))
     }
 }

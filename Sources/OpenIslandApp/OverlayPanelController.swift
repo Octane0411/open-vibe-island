@@ -1,10 +1,120 @@
 import AppKit
 import Combine
+import OSLog
 import SwiftUI
 import OpenIslandCore
+import os.lock
+
+private let overlayDragLogger = Logger(
+    subsystem: "app.openisland.dev",
+    category: "OverlayDrag"
+)
+private let overlayDragDebugKey = "overlay.debug.drag"
+
+/// Cached one-shot read of the `overlay.debug.drag` UserDefaults flag.
+///
+/// The previous implementation called `UserDefaults.standard.bool(forKey:)`
+/// on every `overlayDragLog` invocation, which meant the hot mouse-move
+/// code path acquired the shared UserDefaults lock ~hundreds of times per
+/// second in release builds where the flag is almost always `false`.
+/// Reading once at first access keeps the flag effectively free to check.
+/// Developers flip the flag with `defaults write app.openisland.OpenIsland
+/// overlay.debug.drag -bool YES` and relaunch.
+private let overlayDragLoggingEnabled: Bool = {
+    UserDefaults.standard.bool(forKey: overlayDragDebugKey)
+}()
+
+/// Logs a drag-diagnostic message when `overlay.debug.drag` is enabled.
+///
+/// The `message` parameter is `@autoclosure` so string interpolation is
+/// deferred until after the enabled check — in release builds the caller's
+/// format arguments are never evaluated and zero allocations happen on the
+/// hit-test hot path. See `overlayDragLoggingEnabled` above for the
+/// one-shot flag read.
+@inline(__always)
+private func overlayDragLog(_ message: @autoclosure () -> String) {
+    guard overlayDragLoggingEnabled else { return }
+    let rendered = message()
+    overlayDragLogger.notice("\(rendered, privacy: .public)")
+}
+
+private func overlayDragPointDescription(_ point: NSPoint) -> String {
+    "(\(Int(point.x.rounded())), \(Int(point.y.rounded())))"
+}
+
+private func overlayDragRectDescription(_ rect: NSRect) -> String {
+    NSStringFromRect(rect)
+}
+
+@MainActor
+protocol OverlayEventMonitoring: AnyObject {
+    var isActive: Bool { get }
+
+    func start(
+        mouseMoveHandler: @MainActor @escaping @Sendable (NSPoint) -> Void,
+        mouseDownHandler: @MainActor @escaping @Sendable (NSPoint) -> Void
+    )
+
+    func stop()
+}
+
+final class LockedMoveThrottleState: @unchecked Sendable {
+    private var unfairLock = os_unfair_lock_s()
+    private var lastMoveTime: TimeInterval = 0
+
+    func reset() {
+        os_unfair_lock_lock(&unfairLock)
+        lastMoveTime = 0
+        os_unfair_lock_unlock(&unfairLock)
+    }
+
+    func shouldDispatchMove(
+        now: TimeInterval,
+        throttleInterval: TimeInterval
+    ) -> Bool {
+        os_unfair_lock_lock(&unfairLock)
+        defer { os_unfair_lock_unlock(&unfairLock) }
+
+        switch NotchEventMonitors.moveDispatchDecision(
+            now: now,
+            lastMoveTime: lastMoveTime,
+            throttleInterval: throttleInterval
+        ) {
+        case .drop:
+            return false
+        case .dispatch(let updatedLastMoveTime):
+            lastMoveTime = updatedLastMoveTime
+            return true
+        }
+    }
+}
 
 @MainActor
 final class OverlayPanelController {
+    struct CloseTransitionContext {
+        let surfaceOffset: CGSize
+    }
+
+    struct OpenedTopBarHeaderDragTransition: Equatable {
+        let immediatePanelOrigin: NSPoint
+        let continuedDragStartMouse: NSPoint
+        let continuedDragStartPanelOrigin: NSPoint
+    }
+
+    enum TopBarDragReleaseAction: Equatable {
+        case persistDraggedPosition
+        case endClosedTopBarPress
+        case handlePillClick
+    }
+
+    enum OpenedTopBarHeaderDragPlan: Equatable {
+        case waitForThreshold
+        case startClosedPillDrag
+        case continueClosedPillDrag
+    }
+
+    private static let topBarOpenedHeaderDragHeight: CGFloat = 30
+
     private static let minimumOpenedPanelWidth: CGFloat = 680
     private static let maximumOpenedPanelWidth: CGFloat = 740
     private static let openedPanelWidthFactor: CGFloat = 0.46
@@ -36,9 +146,12 @@ final class OverlayPanelController {
     private static let hiddenIdleEdgeHoverHitHeight: CGFloat = 8
 
     private var panel: NotchPanel?
-    private var eventMonitors = NotchEventMonitors()
+    private let eventMonitors: any OverlayEventMonitoring
     private var hoverTimer: DispatchWorkItem?
     private var hoverCancelGrace: DispatchWorkItem?
+    private var isPressingClosedTopBarPill = false
+    private var hasDeferredPlacementRefreshDuringClosedTopBarPress = false
+    private var presentationPolicy = OverlayPresentationPolicy.defaultValue
     weak var model: AppModel?
     private(set) var notchRect: NSRect = .zero
 
@@ -46,30 +159,259 @@ final class OverlayPanelController {
         panel?.isVisible == true
     }
 
+    var hasAttachedPanel: Bool {
+        panel != nil
+    }
+
+    init(eventMonitors: any OverlayEventMonitoring = NotchEventMonitors()) {
+        self.eventMonitors = eventMonitors
+    }
+
     nonisolated static func shouldActivatePanel(for reason: NotchOpenReason?) -> Bool {
         reason == .click
+    }
+
+    nonisolated static func normalizedPreferredScreenID(
+        _ selectionID: String?
+    ) -> String? {
+        guard let selectionID, selectionID != OverlayDisplayOption.automaticID else {
+            return nil
+        }
+        return selectionID
+    }
+
+    nonisolated static func acceptsDirectMouseInteraction(
+        status: NotchStatus,
+        mode: OverlayPlacementMode
+    ) -> Bool {
+        status == .opened || (status == .closed && mode == .topBar)
+    }
+
+    nonisolated static func shouldEventMonitorHandleClosedSurfaceClick(
+        status: NotchStatus,
+        mode: OverlayPlacementMode,
+        panelIgnoresMouseEvents: Bool
+    ) -> Bool {
+        guard status == .closed else { return false }
+        if mode != .topBar {
+            return true
+        }
+        return panelIgnoresMouseEvents
+    }
+
+    nonisolated static func shouldArmClosedSurfaceHoverOpen(
+        status: NotchStatus,
+        mode: OverlayPlacementMode,
+        isPressingClosedTopBarPill: Bool
+    ) -> Bool {
+        guard status == .closed else { return false }
+        if mode != .topBar {
+            return true
+        }
+        return !isPressingClosedTopBarPill
+    }
+
+    nonisolated static func canDragOpenedTopBarHeader(
+        status: NotchStatus,
+        mode: OverlayPlacementMode,
+        openReason: NotchOpenReason?
+    ) -> Bool {
+        status == .opened && mode == .topBar && openReason == .hover
+    }
+
+    nonisolated static func openedTopBarHeaderDragRect(
+        contentRect: NSRect,
+        headerHeight: CGFloat,
+        trailingControlWidth: CGFloat,
+        horizontalPadding: CGFloat
+    ) -> NSRect {
+        let clampedHeaderHeight = max(0, min(headerHeight, contentRect.height))
+        let headerRect = NSRect(
+            x: contentRect.minX,
+            y: contentRect.maxY - clampedHeaderHeight,
+            width: contentRect.width,
+            height: clampedHeaderHeight
+        )
+
+        let safeHorizontalPadding = max(0, horizontalPadding)
+        let safeTrailingControlWidth = max(0, trailingControlWidth)
+        let dragMinX = headerRect.minX + safeHorizontalPadding
+        let dragMaxX = headerRect.maxX - safeHorizontalPadding - safeTrailingControlWidth
+        let dragWidth = max(0, dragMaxX - dragMinX)
+
+        return NSRect(
+            x: dragMinX,
+            y: headerRect.minY,
+            width: dragWidth,
+            height: headerRect.height
+        )
+    }
+
+    nonisolated static func shouldCaptureOpenedTopBarHeaderDrag(
+        status: NotchStatus,
+        mode: OverlayPlacementMode,
+        openReason: NotchOpenReason?,
+        point: NSPoint,
+        contentRect: NSRect,
+        headerHeight: CGFloat,
+        trailingControlWidth: CGFloat,
+        horizontalPadding: CGFloat
+    ) -> Bool {
+        guard canDragOpenedTopBarHeader(
+            status: status,
+            mode: mode,
+            openReason: openReason
+        ) else {
+            return false
+        }
+
+        let dragRect = openedTopBarHeaderDragRect(
+            contentRect: contentRect,
+            headerHeight: headerHeight,
+            trailingControlWidth: trailingControlWidth,
+            horizontalPadding: horizontalPadding
+        )
+        return dragRect.contains(point)
+    }
+
+    nonisolated static func shouldCaptureTopBarDragLayerHit(
+        capturesClosedTopBarPill: Bool,
+        capturesOpenedHeaderDrag: Bool
+    ) -> Bool {
+        capturesClosedTopBarPill || capturesOpenedHeaderDrag
+    }
+
+    nonisolated static func normalizeEventPointForOverlayGeometry(
+        _ point: NSPoint,
+        viewHeight: CGFloat
+    ) -> NSPoint {
+        guard viewHeight > 0 else {
+            return point
+        }
+
+        return NSPoint(
+            x: point.x,
+            y: max(0, min(viewHeight, viewHeight - point.y))
+        )
+    }
+
+    nonisolated static func openedTopBarHeaderDragPlan(
+        startedFromOpenedTopBarHeader: Bool,
+        didTransitionToClosedPill: Bool,
+        dragDistance: CGFloat,
+        threshold: CGFloat
+    ) -> OpenedTopBarHeaderDragPlan {
+        guard startedFromOpenedTopBarHeader else {
+            return .continueClosedPillDrag
+        }
+
+        if didTransitionToClosedPill {
+            return .continueClosedPillDrag
+        }
+
+        if dragDistance >= threshold {
+            return .startClosedPillDrag
+        }
+
+        return .waitForThreshold
+    }
+
+    nonisolated static func openedTopBarHeaderDragTransition(
+        originalDragStartMouse: NSPoint,
+        currentMouse: NSPoint,
+        collapsedPillOrigin: NSPoint
+    ) -> OpenedTopBarHeaderDragTransition {
+        let dx = currentMouse.x - originalDragStartMouse.x
+        let dy = currentMouse.y - originalDragStartMouse.y
+
+        return OpenedTopBarHeaderDragTransition(
+            immediatePanelOrigin: NSPoint(
+                x: collapsedPillOrigin.x + dx,
+                y: collapsedPillOrigin.y + dy
+            ),
+            continuedDragStartMouse: originalDragStartMouse,
+            continuedDragStartPanelOrigin: collapsedPillOrigin
+        )
+    }
+
+    nonisolated static func shouldEndClosedTopBarPressAfterDrag(
+        startedFromOpenedTopBarHeader: Bool,
+        didTransitionToClosedPill: Bool
+    ) -> Bool {
+        !startedFromOpenedTopBarHeader || didTransitionToClosedPill
+    }
+
+    nonisolated static func topBarDragReleaseActions(
+        didMove: Bool,
+        startedFromOpenedTopBarHeader: Bool,
+        didTransitionToClosedPill: Bool
+    ) -> [TopBarDragReleaseAction] {
+        var actions: [TopBarDragReleaseAction] = []
+
+        if didMove {
+            actions.append(.persistDraggedPosition)
+        } else if !startedFromOpenedTopBarHeader {
+            actions.append(.handlePillClick)
+        }
+
+        if shouldEndClosedTopBarPressAfterDrag(
+            startedFromOpenedTopBarHeader: startedFromOpenedTopBarHeader,
+            didTransitionToClosedPill: didTransitionToClosedPill
+        ) {
+            actions.append(.endClosedTopBarPress)
+        }
+
+        return actions
     }
 
     func availableDisplayOptions() -> [OverlayDisplayOption] {
         OverlayDisplayResolver.availableDisplayOptions()
     }
 
-    func ensurePanel(model: AppModel, preferredScreenID: String?) {
+    func ensurePanel(
+        model: AppModel,
+        preferredScreenID: String?,
+        presentationPolicy: OverlayPresentationPolicy
+    ) {
         self.model = model
+        self.presentationPolicy = presentationPolicy
         let panel = self.panel ?? makePanel(model: model)
         self.panel = panel
-        positionPanel(panel, preferredScreenID: preferredScreenID, animated: false)
+        positionPanel(
+            panel,
+            preferredScreenID: preferredScreenID,
+            presentationPolicy: presentationPolicy,
+            animated: false
+        )
         panel.orderFrontRegardless()
-        panel.ignoresMouseEvents = true
-        panel.acceptsMouseMovedEvents = false
+        let mode = placementDiagnostics(
+            preferredScreenID: preferredScreenID,
+            presentationPolicy: presentationPolicy
+        )?.mode ?? .notch
+        let interactive = Self.acceptsDirectMouseInteraction(
+            status: model.notchStatus,
+            mode: mode
+        )
+        panel.ignoresMouseEvents = !interactive
+        panel.acceptsMouseMovedEvents = interactive
         startEventMonitoring()
     }
 
-    func show(model: AppModel, preferredScreenID: String?) -> OverlayPlacementDiagnostics? {
+    func show(
+        model: AppModel,
+        preferredScreenID: String?,
+        presentationPolicy: OverlayPresentationPolicy
+    ) -> OverlayPlacementDiagnostics? {
         self.model = model
+        self.presentationPolicy = presentationPolicy
         let panel = self.panel ?? makePanel(model: model)
         self.panel = panel
-        let diagnostics = positionPanel(panel, preferredScreenID: preferredScreenID, animated: true)
+        let diagnostics = positionPanel(
+            panel,
+            preferredScreenID: preferredScreenID,
+            presentationPolicy: presentationPolicy,
+            animated: true
+        )
         presentPanel(panel, activates: Self.shouldActivatePanel(for: model.notchOpenReason))
         panel.ignoresMouseEvents = false
         panel.acceptsMouseMovedEvents = true
@@ -80,6 +422,7 @@ final class OverlayPanelController {
     func hide() {
         panel?.ignoresMouseEvents = true
         panel?.acceptsMouseMovedEvents = false
+        eventMonitors.stop()
     }
 
     func setInteractive(_ interactive: Bool) {
@@ -95,17 +438,76 @@ final class OverlayPanelController {
         }
     }
 
-    func reposition(preferredScreenID: String?) -> OverlayPlacementDiagnostics? {
+    func reposition(
+        preferredScreenID: String?,
+        presentationPolicy: OverlayPresentationPolicy
+    ) -> OverlayPlacementDiagnostics? {
+        self.presentationPolicy = presentationPolicy
         guard let panel else {
-            return placementDiagnostics(preferredScreenID: preferredScreenID)
+            return placementDiagnostics(
+                preferredScreenID: preferredScreenID,
+                presentationPolicy: presentationPolicy
+            )
         }
 
-        return positionPanel(panel, preferredScreenID: preferredScreenID, animated: true)
+        return positionPanel(
+            panel,
+            preferredScreenID: preferredScreenID,
+            presentationPolicy: presentationPolicy,
+            animated: true
+        )
     }
 
-    func placementDiagnostics(preferredScreenID: String?) -> OverlayPlacementDiagnostics? {
+    func placementDiagnostics(
+        preferredScreenID: String?,
+        presentationPolicy: OverlayPresentationPolicy
+    ) -> OverlayPlacementDiagnostics? {
+        self.presentationPolicy = presentationPolicy
         let panelSize = panel?.frame.size ?? OverlayDisplayResolver.defaultPanelSize
-        return OverlayDisplayResolver.diagnostics(preferredScreenID: preferredScreenID, panelSize: panelSize)
+        return OverlayDisplayResolver.diagnostics(
+            preferredScreenID: preferredScreenID,
+            panelSize: panelSize,
+            presentationPolicy: presentationPolicy
+        )
+    }
+
+    func topBarCloseTransitionContext(
+        preferredScreenID: String?,
+        presentationPolicy: OverlayPresentationPolicy
+    ) -> CloseTransitionContext? {
+        guard let model,
+              let panel,
+              let screen = resolveTargetScreen(preferredScreenID: preferredScreenID) else {
+            return nil
+        }
+
+        let strategy = placementStrategy(for: screen)
+        guard strategy == .topBar else {
+            return nil
+        }
+
+        let closedWidth = closedPanelWidth(for: model, on: screen)
+        let closedHeight = currentClosedHeight(on: screen)
+        let targetClosedShadowInsets = IslandChromeMetrics.panelShadowInsets(
+            usesOpenedVisualState: false
+        )
+        let targetClosedPanelFrame = strategy.frame(
+            anchor: pillAnchor(on: screen),
+            size: NSSize(
+                width: closedWidth + (targetClosedShadowInsets.horizontal * 2),
+                height: closedHeight + targetClosedShadowInsets.bottom
+            ),
+            screenVisibleFrame: screen.visibleFrame
+        )
+
+        return CloseTransitionContext(
+            surfaceOffset: strategy.closeTransitionSurfaceOffset(
+                currentPanelFrame: panel.frame,
+                targetClosedPanelFrame: targetClosedPanelFrame,
+                closedSurfaceSize: NSSize(width: closedWidth, height: closedHeight),
+                targetClosedShadowInsets: targetClosedShadowInsets
+            )
+        )
     }
 
     // MARK: - Panel creation
@@ -150,6 +552,7 @@ final class OverlayPanelController {
     private func positionPanel(
         _ panel: NSPanel,
         preferredScreenID: String?,
+        presentationPolicy: OverlayPresentationPolicy,
         animated: Bool
     ) -> OverlayPlacementDiagnostics? {
         guard let screen = resolveTargetScreen(preferredScreenID: preferredScreenID) else {
@@ -171,7 +574,8 @@ final class OverlayPanelController {
 
         return OverlayDisplayResolver.diagnostics(
             preferredScreenID: preferredScreenID,
-            panelSize: panel.frame.size
+            panelSize: panel.frame.size,
+            presentationPolicy: presentationPolicy
         )
     }
 
@@ -190,34 +594,232 @@ final class OverlayPanelController {
         }
 
         let notchSize = screen.notchSize
-        let screenFrame = screen.frame
-        let notchX = screenFrame.midX - notchSize.width / 2
-        let notchY = screenFrame.maxY - notchSize.height
+        let anchor = pillAnchor(on: screen)
+        let notchX = anchor.x - notchSize.width / 2
+        let notchY = anchor.y - notchSize.height
+
         notchRect = NSRect(x: notchX, y: notchY, width: notchSize.width, height: notchSize.height)
+    }
+
+    /// Returns the closed-pill anchor `(centerX, topY)` in Cocoa screen
+    /// coordinates for the given screen.
+    ///
+    /// - On `.notch` screens: always horizontally centered at the top of the
+    ///   physical display (current behavior, ignores any saved position).
+    /// - On `.topBar` screens: uses the user-dragged position from
+    ///   `OverlayPillPositionStore` if present, otherwise falls back to
+    ///   horizontally centered with an 18pt gap below the menu bar.
+    private func pillAnchor(on screen: NSScreen) -> NSPoint {
+        let strategy = placementStrategy(for: screen)
+        let storedTopBarAnchor: NSPoint?
+        if strategy == .topBar {
+            storedTopBarAnchor = OverlayPillPositionStore.load(
+                for: OverlayScreenIdentity.id(for: screen),
+                on: screen,
+                closedWidth: currentClosedWidth(on: screen)
+            )
+        } else {
+            storedTopBarAnchor = nil
+        }
+
+        return strategy.resolvedAnchor(
+            screenFrame: screen.frame,
+            screenVisibleFrame: screen.visibleFrame,
+            storedTopBarAnchor: storedTopBarAnchor
+        )
     }
 
     private func resolveTargetScreen(preferredScreenID: String? = nil) -> NSScreen? {
         let screens = NSScreen.screens
         guard !screens.isEmpty else { return nil }
 
-        if let preferredScreenID,
-           let screen = screens.first(where: { screenID(for: $0) == preferredScreenID }) {
-            return screen
+        let preferredSelectionID = Self.normalizedPreferredScreenID(
+            preferredScreenID ?? model?.overlayDisplaySelectionID
+        )
+
+        guard let selection = OverlayScreenSelectionResolver.resolve(
+            preferredScreenID: preferredSelectionID,
+            screens: screens.map { screen in
+                OverlayScreenSelectionCandidate(
+                    id: OverlayScreenIdentity.id(for: screen),
+                    isNotched: OverlayDisplayResolver.placementMode(for: screen) == .notch,
+                    isMain: screen == NSScreen.main
+                )
+            }
+        ) else {
+            return nil
         }
 
-        if let notchScreen = screens.first(where: { $0.safeAreaInsets.top > 0 }) {
-            return notchScreen
-        }
-
-        return NSScreen.main ?? screens[0]
+        return screens.first(where: { OverlayScreenIdentity.id(for: $0) == selection.screenID })
     }
 
-    private func screenID(for screen: NSScreen) -> String {
-        let key = NSDeviceDescriptionKey("NSScreenNumber")
-        if let number = screen.deviceDescription[key] as? NSNumber {
-            return "display-\(number.uint32Value)"
+    // MARK: - Drag-to-reposition pill (external displays only)
+
+    /// Whether the pill is currently eligible for drag-to-move. Only true when
+    /// the panel is closed AND the current target screen is in topBar mode
+    /// (i.e. not the built-in notch screen). Notch screens never allow drag.
+    func canDragPillNow() -> Bool {
+        guard model?.notchStatus == .closed else { return false }
+        guard let screen = resolveTargetScreen() else { return false }
+        return placementStrategy(for: screen) == .topBar
+    }
+
+    func shouldCaptureOpenedTopBarHeaderDrag(at pointInView: NSPoint, in bounds: NSRect) -> Bool {
+        guard let model else {
+            return false
         }
-        return screen.localizedName
+
+        guard let contentRect = contentRect(for: model, in: bounds),
+              contentRect.contains(pointInView) else {
+            return false
+        }
+
+        let mode = model.overlayPlacementDiagnostics?.mode
+            ?? placementDiagnostics(
+                preferredScreenID: nil,
+                presentationPolicy: presentationPolicy
+            )?.mode
+            ?? .notch
+
+        let dragRect = Self.openedTopBarHeaderDragRect(
+            contentRect: contentRect,
+            headerHeight: Self.topBarOpenedHeaderDragHeight,
+            trailingControlWidth: IslandPanelView.topBarOpenedHeaderTrailingControlWidth,
+            horizontalPadding: IslandPanelView.topBarOpenedHeaderHorizontalPadding
+        )
+        let captures = Self.shouldCaptureOpenedTopBarHeaderDrag(
+            status: model.notchStatus,
+            mode: mode,
+            openReason: model.notchOpenReason,
+            point: pointInView,
+            contentRect: contentRect,
+            headerHeight: Self.topBarOpenedHeaderDragHeight,
+            trailingControlWidth: IslandPanelView.topBarOpenedHeaderTrailingControlWidth,
+            horizontalPadding: IslandPanelView.topBarOpenedHeaderHorizontalPadding
+        )
+        overlayDragLog(
+            "openedHeaderCapture=\(captures) status=\(String(describing: model.notchStatus)) reason=\(String(describing: model.notchOpenReason)) mode=\(mode.rawValue) point=\(overlayDragPointDescription(pointInView)) contentRect=\(overlayDragRectDescription(contentRect)) dragRect=\(overlayDragRectDescription(dragRect))"
+        )
+        return captures
+    }
+
+    func shouldCaptureTopBarDragLayerHit(at pointInView: NSPoint, in bounds: NSRect) -> Bool {
+        // Fast path: branch on status *before* running either of the two
+        // expensive sub-checks. `canDragPillNow()` resolves the target
+        // screen (UserDefaults + NSScreen.screens) and
+        // `shouldCaptureOpenedTopBarHeaderDrag` computes placement
+        // diagnostics — calling both on every hitTest wastes cycles when
+        // only one can possibly return true in a given panel state.
+        switch model?.notchStatus {
+        case .closed:
+            return Self.shouldCaptureTopBarDragLayerHit(
+                capturesClosedTopBarPill: canDragPillNow(),
+                capturesOpenedHeaderDrag: false
+            )
+        case .opened:
+            return Self.shouldCaptureTopBarDragLayerHit(
+                capturesClosedTopBarPill: false,
+                capturesOpenedHeaderDrag: shouldCaptureOpenedTopBarHeaderDrag(
+                    at: pointInView,
+                    in: bounds
+                )
+            )
+        default:
+            return false
+        }
+    }
+
+    /// Called by the hosting view while the user drags the pill. Moves the
+    /// panel without triggering our own `positionPanel` path (which would
+    /// reset the frame back to the stored anchor).
+    func moveDraggedPanel(to origin: NSPoint) {
+        overlayDragLog("moveDraggedPanel origin=\(overlayDragPointDescription(origin))")
+        panel?.setFrameOrigin(origin)
+    }
+
+    func beginClosedTopBarPress() {
+        isPressingClosedTopBarPill = true
+        hasDeferredPlacementRefreshDuringClosedTopBarPress = false
+        cancelHoverOpenImmediately()
+    }
+
+    func beginOpenedTopBarHeaderDrag() {
+        guard let model else {
+            return
+        }
+
+        let beforePanelFrame = panel.map { overlayDragRectDescription($0.frame) } ?? "nil"
+        overlayDragLog(
+            "beginOpenedTopBarHeaderDrag before status=\(String(describing: model.notchStatus)) reason=\(String(describing: model.notchOpenReason)) panelFrame=\(beforePanelFrame)"
+        )
+        model.beginTopBarHoverDrag()
+        beginClosedTopBarPress()
+        let afterPanelFrame = panel.map { overlayDragRectDescription($0.frame) } ?? "nil"
+        overlayDragLog(
+            "beginOpenedTopBarHeaderDrag after status=\(String(describing: model.notchStatus)) reason=\(String(describing: model.notchOpenReason)) panelFrame=\(afterPanelFrame)"
+        )
+    }
+
+    func endClosedTopBarPress() {
+        isPressingClosedTopBarPill = false
+        let shouldRefreshPlacement = hasDeferredPlacementRefreshDuringClosedTopBarPress
+        hasDeferredPlacementRefreshDuringClosedTopBarPress = false
+
+        if shouldRefreshPlacement {
+            model?.refreshOverlayPlacement()
+        }
+    }
+
+    func isClosedTopBarPointerInteractionActive() -> Bool {
+        isPressingClosedTopBarPill
+    }
+
+    func deferPlacementRefreshUntilClosedTopBarPointerRelease() {
+        guard isPressingClosedTopBarPill else {
+            return
+        }
+
+        hasDeferredPlacementRefreshDuringClosedTopBarPress = true
+    }
+
+    /// Called by the hosting view after a drag finishes. Persists the new
+    /// pill anchor for whichever screen the panel now lives on, and refreshes
+    /// the hover hit-test rect.
+    func persistDraggedPillPosition() {
+        guard let panel else { return }
+        let frame = panel.frame
+        let center = NSPoint(x: frame.midX, y: frame.maxY)
+
+        // Find the screen that currently contains the panel's center. Fall
+        // back to the previously resolved target screen if the panel ended up
+        // between screens.
+        let hostScreen = NSScreen.screens.first {
+            $0.frame.contains(NSPoint(x: frame.midX, y: (frame.minY + frame.maxY) / 2))
+        } ?? resolveTargetScreen()
+
+        guard let screen = hostScreen,
+              placementStrategy(for: screen) == .topBar else {
+            // Dragged onto a notch screen — ignore; notch screens always
+            // center on the physical notch.
+            computeNotchRect(screen: resolveTargetScreen())
+            return
+        }
+
+        OverlayPillPositionStore.save(
+            center,
+            for: OverlayScreenIdentity.id(for: screen),
+            on: screen,
+            closedWidth: currentClosedWidth(on: screen)
+        )
+        computeNotchRect(screen: screen)
+    }
+
+    /// Called by the hosting view when the user taps the pill without
+    /// dragging. Mirrors the SwiftUI `onTapGesture` behavior that normally
+    /// fires in closed state.
+    func handlePillClickFromDragLayer() {
+        guard let model, model.notchStatus == .closed else { return }
+        model.notchOpen(reason: .click)
     }
 
     // MARK: - Mouse event monitoring
@@ -240,11 +842,23 @@ final class OverlayPanelController {
         guard let model else { return }
 
         let inClosedSurfaceArea = isPointInClosedSurfaceArea(screenLocation)
+        let mode = model.overlayPlacementDiagnostics?.mode
+            ?? placementDiagnostics(
+                preferredScreenID: nil,
+                presentationPolicy: presentationPolicy
+            )?.mode
+            ?? .notch
 
-        if model.notchStatus == .closed && inClosedSurfaceArea {
-            scheduleHoverOpen()
-        } else if model.notchStatus == .closed && !inClosedSurfaceArea {
-            cancelHoverOpen()
+        if Self.shouldArmClosedSurfaceHoverOpen(
+            status: model.notchStatus,
+            mode: mode,
+            isPressingClosedTopBarPill: isPressingClosedTopBarPill
+        ) {
+            if inClosedSurfaceArea {
+                scheduleHoverOpen()
+            } else {
+                cancelHoverOpen()
+            }
         }
 
         if model.shouldAutoCollapseOnMouseLeave {
@@ -260,8 +874,22 @@ final class OverlayPanelController {
         guard let model else { return }
 
         let inClosedSurfaceArea = isPointInClosedSurfaceArea(screenLocation)
+        let mode = model.overlayPlacementDiagnostics?.mode
+            ?? placementDiagnostics(
+                preferredScreenID: nil,
+                presentationPolicy: presentationPolicy
+            )?.mode
+            ?? .notch
 
         if model.notchStatus == .closed && inClosedSurfaceArea {
+            let panelIgnoresMouseEvents = panel?.ignoresMouseEvents ?? true
+            guard Self.shouldEventMonitorHandleClosedSurfaceClick(
+                status: model.notchStatus,
+                mode: mode,
+                panelIgnoresMouseEvents: panelIgnoresMouseEvents
+            ) else {
+                return
+            }
             cancelHoverOpenImmediately()
             model.notchOpen(reason: .click)
         } else if model.notchStatus == .opened {
@@ -390,7 +1018,7 @@ final class OverlayPanelController {
     }
 
     func contentRect(for model: AppModel, in bounds: NSRect) -> NSRect? {
-        let insets = panelShadowInsets
+        let insets = panelShadowInsets(for: model)
         return NSRect(
             x: bounds.minX + insets.horizontal,
             y: bounds.minY + insets.bottom,
@@ -403,9 +1031,8 @@ final class OverlayPanelController {
         notchRect: NSRect,
         closedWidth: CGFloat
     ) -> NSRect {
-        let cx = notchRect.midX
-        return NSRect(
-            x: cx - closedWidth / 2,
+        NSRect(
+            x: notchRect.midX - closedWidth / 2,
             y: notchRect.minY,
             width: closedWidth,
             height: notchRect.height
@@ -466,79 +1093,109 @@ final class OverlayPanelController {
             return nil
         }
 
+        let strategy = placementStrategy(for: screen)
+        let anchor = pillAnchor(on: screen)
         let closedWidth = closedPanelWidth(for: model, on: screen)
-        if model.showsIdleEdgeWhenCollapsed {
-            return Self.hiddenIdleEdgeHoverRect(
-                notchRect: notchRect,
-                closedWidth: closedWidth,
-                hoverHitHeight: Self.hiddenIdleEdgeHoverHitHeight
-            )
-        }
-
-        return Self.closedSurfaceRect(
-            notchRect: notchRect,
-            closedWidth: closedWidth
+        let closedHeight = currentClosedHeight(on: screen)
+        return strategy.closedHitRect(
+            anchor: anchor,
+            closedWidth: closedWidth,
+            closedHeight: closedHeight
         )
     }
 
     private func panelFrame(for model: AppModel?, on screen: NSScreen) -> NSRect {
         let size = panelSize(for: model, on: screen)
-        return NSRect(
-            x: screen.frame.midX - size.width / 2,
-            y: screen.frame.maxY - size.height,
-            width: size.width,
-            height: size.height
+        let strategy = placementStrategy(for: screen)
+        return strategy.frame(
+            anchor: pillAnchor(on: screen),
+            size: size,
+            screenVisibleFrame: screen.visibleFrame
         )
+    }
+
+    private func placementStrategy(for screen: NSScreen) -> OverlayPlacementStrategy {
+        OverlayPlacementStrategy(mode: currentPresentationMode(on: screen).placementMode)
+    }
+
+    private func currentPresentationMode(on screen: NSScreen) -> OverlayPresentationMode {
+        presentationPolicy.resolvePresentationMode(
+            screenCapability: OverlayDisplayResolver.screenCapability(for: screen)
+        )
+    }
+
+    private func currentClosedBaseSize(on screen: NSScreen) -> CGSize {
+        currentPresentationMode(on: screen).closedBaseSize(
+            physicalIslandBaseSize: screen.notchSize
+        )
+    }
+
+    private func currentClosedHeight(on screen: NSScreen) -> CGFloat {
+        currentClosedBaseSize(on: screen).height
     }
 
     /// Always returns the maximum (opened) panel size so the window never
     /// needs to resize.  All visual transitions are driven purely by SwiftUI
     /// inside this fixed-size window.
     private func panelSize(for model: AppModel?, on screen: NSScreen) -> CGSize {
-        let insets = panelShadowInsets
+        let insets = panelShadowInsets(for: model)
+        let openedHeaderAllowance = OverlayClosedShellMetrics.openedHeaderAllowance(
+            forClosedHeight: currentClosedHeight(on: screen)
+        )
 
         guard let model else {
             return CGSize(
                 width: openedPanelWidth(for: screen) + Self.openedContentWidthPadding + (insets.horizontal * 2),
-                height: screen.notchSize.height + Self.openedEmptyStateHeight + Self.openedContentBottomPadding + insets.bottom
+                height: openedHeaderAllowance + Self.openedEmptyStateHeight + Self.openedContentBottomPadding + insets.bottom
             )
         }
 
-        let panelWidth = openedPanelWidth(for: screen)
-        let contentHeight = openedContentHeight(for: model)
-        // Use at least the empty-state height so the window doesn't shrink
-        // when sessions come and go while opened.
-        let height = screen.notchSize.height + max(contentHeight, Self.openedEmptyStateHeight) + Self.openedContentBottomPadding + insets.bottom
-
-        return CGSize(
-            width: panelWidth + Self.openedContentWidthPadding + (insets.horizontal * 2),
-            height: height
-        )
+        switch model.notchStatus {
+        case .opened:
+            let panelWidth = model.showsNotificationCard
+                ? notificationPanelWidth(for: screen)
+                : openedPanelWidth(for: screen)
+            return CGSize(
+                width: panelWidth + Self.openedContentWidthPadding + (insets.horizontal * 2),
+                height: openedHeaderAllowance + openedContentHeight(for: model) + Self.openedContentBottomPadding + insets.bottom
+            )
+        case .closed, .popping:
+            return CGSize(
+                width: closedPanelWidth(for: model, on: screen) + (insets.horizontal * 2),
+                height: currentClosedHeight(on: screen) + insets.bottom
+            )
+        }
     }
 
-    /// Constant insets — always opened size since the window never shrinks.
-    private var panelShadowInsets: (horizontal: CGFloat, bottom: CGFloat) {
-        (
-            horizontal: IslandChromeMetrics.openedShadowHorizontalInset,
-            bottom: IslandChromeMetrics.openedShadowBottomInset
-        )
+    private func panelShadowInsets(for model: AppModel?) -> (horizontal: CGFloat, bottom: CGFloat) {
+        let usesOpenedInsets = model.map { $0.notchStatus == .opened || $0.isOverlayCloseTransitionPending } ?? true
+        return IslandChromeMetrics.panelShadowInsets(usesOpenedVisualState: usesOpenedInsets)
     }
 
     private func closedPanelWidth(for model: AppModel, on screen: NSScreen) -> CGFloat {
-        let notchWidth = screen.notchSize.width
-        let notchHeight = screen.islandClosedHeight
+        let baseClosedWidth = currentClosedBaseSize(on: screen).width
+        let closedHeight = currentClosedHeight(on: screen)
+        let mode = currentPresentationMode(on: screen).placementMode
+        let metrics = OverlayClosedShellMetrics.forMode(
+            mode,
+            closedHeight: closedHeight
+        )
         let spotlightSession = model.surfacedSessions.first(where: { $0.phase.requiresAttention })
             ?? model.surfacedSessions.first(where: { $0.phase == .running })
             ?? model.surfacedSessions.first
-
-        return Self.closedPanelWidth(
-            notchWidth: notchWidth,
-            notchHeight: notchHeight,
-            liveSessionCount: model.liveSessionCount,
+        return metrics.closedSurfaceWidth(
+            baseClosedWidth: baseClosedWidth,
+            liveCount: model.liveSessionCount,
             hasAttention: spotlightSession?.phase.requiresAttention == true,
-            notchStatus: model.notchStatus,
-            showsIdleEdgeWhenCollapsed: model.showsIdleEdgeWhenCollapsed
+            isPopping: model.notchStatus == .popping
         )
+    }
+
+    private func currentClosedWidth(on screen: NSScreen) -> CGFloat {
+        guard let model else {
+            return currentClosedBaseSize(on: screen).width
+        }
+        return closedPanelWidth(for: model, on: screen)
     }
 
     private func openedContentHeight(for model: AppModel) -> CGFloat {
@@ -694,8 +1351,18 @@ private final class NotchPanel: NSPanel {
 
 // MARK: - NotchHostingView
 
+private let pillDragThreshold: CGFloat = 4
+
 final class NotchHostingView<Content: View>: NSHostingView<Content> {
     weak var notchController: OverlayPanelController?
+
+    // Drag tracking state for topBar-mode pill repositioning.
+    private var dragStartMouse: NSPoint?
+    private var dragStartPanelOrigin: NSPoint?
+    private var isTrackingPillDrag = false
+    private var didMovePillWhileTracking = false
+    private var dragStartedFromOpenedTopBarHeader = false
+    private var didTransitionOpenedHeaderDragToClosedPill = false
 
     override var isOpaque: Bool {
         false
@@ -706,12 +1373,164 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
     }
 
     override func mouseDown(with event: NSEvent) {
+        let rawDownPointInView = convert(event.locationInWindow, from: nil)
+        let downPointInView = OverlayPanelController.normalizeEventPointForOverlayGeometry(
+            rawDownPointInView,
+            viewHeight: bounds.height
+        )
+        let canDragClosedPill = notchController?.canDragPillNow() == true
+        let canDragOpenedHeader = notchController?.shouldCaptureOpenedTopBarHeaderDrag(
+            at: downPointInView,
+            in: bounds
+        ) == true
+        let notchStatusDescription = notchController?.model.map { String(describing: $0.notchStatus) } ?? "nil"
+        let openReasonDescription = notchController?.model.map { String(describing: $0.notchOpenReason) } ?? "nil"
+        overlayDragLog(
+            "mouseDown entry rawPoint=\(overlayDragPointDescription(rawDownPointInView)) normalizedPoint=\(overlayDragPointDescription(downPointInView)) canDragClosedPill=\(canDragClosedPill) canDragOpenedHeader=\(canDragOpenedHeader) status=\(notchStatusDescription) reason=\(openReasonDescription)"
+        )
+
+        // On external displays (topBar mode) with a closed pill, take over
+        // mouse handling so we can implement drag-to-reposition + click-to-open.
+        // On the built-in notch screen, or when opened, fall through to the
+        // legacy SwiftUI-driven behavior.
+        if canDragClosedPill, let window {
+            window.makeKey()
+            notchController?.beginClosedTopBarPress()
+            dragStartMouse = NSEvent.mouseLocation
+            dragStartPanelOrigin = window.frame.origin
+            isTrackingPillDrag = true
+            didMovePillWhileTracking = false
+            dragStartedFromOpenedTopBarHeader = false
+            didTransitionOpenedHeaderDragToClosedPill = false
+            overlayDragLog(
+                "mouseDown closedPill startMouse=\(overlayDragPointDescription(dragStartMouse ?? .zero)) panelOrigin=\(overlayDragPointDescription(dragStartPanelOrigin ?? .zero))"
+            )
+            return
+        }
+
+        if canDragOpenedHeader, let window {
+            window.makeKey()
+            dragStartMouse = NSEvent.mouseLocation
+            dragStartPanelOrigin = window.frame.origin
+            isTrackingPillDrag = true
+            didMovePillWhileTracking = false
+            dragStartedFromOpenedTopBarHeader = true
+            didTransitionOpenedHeaderDragToClosedPill = false
+            overlayDragLog(
+                "mouseDown openedHeader point=\(overlayDragPointDescription(downPointInView)) startMouse=\(overlayDragPointDescription(dragStartMouse ?? .zero)) panelOrigin=\(overlayDragPointDescription(dragStartPanelOrigin ?? .zero)) frame=\(overlayDragRectDescription(window.frame))"
+            )
+            return
+        }
+
         // Ensure the panel is key before SwiftUI processes the click.
         // With nonactivatingPanel, hover-opened panels aren't key, so
         // SwiftUI Button may consume the first click for key acquisition
         // instead of firing its action.
+        overlayDragLog("mouseDown fallbackToSwiftUI point=\(overlayDragPointDescription(downPointInView))")
         window?.makeKey()
         super.mouseDown(with: event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard isTrackingPillDrag,
+              let start = dragStartMouse,
+              let originAtStart = dragStartPanelOrigin else {
+            overlayDragLog(
+                "mouseDragged ignoredWithoutTracking point=\(overlayDragPointDescription(convert(event.locationInWindow, from: nil)))"
+            )
+            super.mouseDragged(with: event)
+            return
+        }
+
+        let current = NSEvent.mouseLocation
+        let dx = current.x - start.x
+        let dy = current.y - start.y
+        let dragDistance = hypot(dx, dy)
+
+        let plan = OverlayPanelController.openedTopBarHeaderDragPlan(
+            startedFromOpenedTopBarHeader: dragStartedFromOpenedTopBarHeader,
+            didTransitionToClosedPill: didTransitionOpenedHeaderDragToClosedPill,
+            dragDistance: dragDistance,
+            threshold: pillDragThreshold
+        )
+        let formattedDragDistance = String(format: "%.2f", dragDistance)
+        overlayDragLog(
+            "mouseDragged plan=\(String(describing: plan)) startMouse=\(overlayDragPointDescription(start)) currentMouse=\(overlayDragPointDescription(current)) panelOrigin=\(overlayDragPointDescription(originAtStart)) distance=\(formattedDragDistance) transitioned=\(didTransitionOpenedHeaderDragToClosedPill)"
+        )
+
+        switch plan {
+        case .waitForThreshold:
+            return
+        case .startClosedPillDrag:
+            notchController?.beginOpenedTopBarHeaderDrag()
+            dragStartMouse = current
+            if let window {
+                let transition = OverlayPanelController.openedTopBarHeaderDragTransition(
+                    originalDragStartMouse: start,
+                    currentMouse: current,
+                    collapsedPillOrigin: window.frame.origin
+                )
+                dragStartMouse = transition.continuedDragStartMouse
+                dragStartPanelOrigin = transition.continuedDragStartPanelOrigin
+                notchController?.moveDraggedPanel(to: transition.immediatePanelOrigin)
+                overlayDragLog(
+                    "mouseDragged transitionedToClosedPill immediateOrigin=\(overlayDragPointDescription(transition.immediatePanelOrigin)) continuedStartMouse=\(overlayDragPointDescription(transition.continuedDragStartMouse)) continuedPanelOrigin=\(overlayDragPointDescription(transition.continuedDragStartPanelOrigin)) windowFrame=\(overlayDragRectDescription(window.frame))"
+                )
+            }
+            didMovePillWhileTracking = true
+            didTransitionOpenedHeaderDragToClosedPill = true
+            return
+        case .continueClosedPillDrag:
+            break
+        }
+
+        if !didMovePillWhileTracking && dragDistance < pillDragThreshold {
+            return
+        }
+
+        didMovePillWhileTracking = true
+        notchController?.moveDraggedPanel(
+            to: NSPoint(x: originAtStart.x + dx, y: originAtStart.y + dy)
+        )
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard isTrackingPillDrag else {
+            overlayDragLog(
+                "mouseUp ignoredWithoutTracking point=\(overlayDragPointDescription(convert(event.locationInWindow, from: nil)))"
+            )
+            super.mouseUp(with: event)
+            return
+        }
+
+        let didMove = didMovePillWhileTracking
+        let startedFromOpenedHeader = dragStartedFromOpenedTopBarHeader
+        let didTransitionToClosedPill = didTransitionOpenedHeaderDragToClosedPill
+        isTrackingPillDrag = false
+        dragStartMouse = nil
+        dragStartPanelOrigin = nil
+        didMovePillWhileTracking = false
+        dragStartedFromOpenedTopBarHeader = false
+        didTransitionOpenedHeaderDragToClosedPill = false
+
+        overlayDragLog(
+            "mouseUp didMove=\(didMove) startedFromOpenedHeader=\(startedFromOpenedHeader) transitionedToClosedPill=\(didTransitionToClosedPill)"
+        )
+
+        for action in OverlayPanelController.topBarDragReleaseActions(
+            didMove: didMove,
+            startedFromOpenedTopBarHeader: startedFromOpenedHeader,
+            didTransitionToClosedPill: didTransitionToClosedPill
+        ) {
+            switch action {
+            case .persistDraggedPosition:
+                notchController?.persistDraggedPillPosition()
+            case .endClosedTopBarPress:
+                notchController?.endClosedTopBarPress()
+            case .handlePillClick:
+                notchController?.handlePillClickFromDragLayer()
+            }
+        }
     }
 
     required init(rootView: Content) {
@@ -735,7 +1554,20 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
             return nil
         }
 
-        return super.hitTest(point) ?? self
+        // On external displays in closed state, take over hit testing so our
+        // mouseDown override (drag vs click) runs instead of SwiftUI's inner
+        // NSHostingView subtree swallowing the event. Without this, tapping
+        // the pill lands on a SwiftUI-managed subview and mouseDown never
+        // bubbles up to NotchHostingView.
+        if controller.shouldCaptureTopBarDragLayerHit(
+            at: point,
+            in: bounds
+        ) {
+            overlayDragLog("hitTest captured point=\(overlayDragPointDescription(point))")
+            return self
+        }
+
+        return super.hitTest(point)
     }
 
     private func convertToScreen(_ viewPoint: NSPoint) -> NSPoint {
@@ -781,35 +1613,59 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
 // MARK: - NotchEventMonitors
 
 @MainActor
-final class NotchEventMonitors {
+final class NotchEventMonitors: OverlayEventMonitoring {
+    enum MoveDispatchDecision: Equatable {
+        case drop
+        case dispatch(updatedLastMoveTime: TimeInterval)
+    }
+
     private var globalMoveMonitor: Any?
     private var localMoveMonitor: Any?
     private var globalClickMonitor: Any?
     private var localClickMonitor: Any?
-    private var lastMoveTime: TimeInterval = 0
+    private let moveThrottleState = LockedMoveThrottleState()
 
     var isActive: Bool { globalMoveMonitor != nil }
+
+    nonisolated static func moveDispatchDecision(
+        now: TimeInterval,
+        lastMoveTime: TimeInterval,
+        throttleInterval: TimeInterval
+    ) -> MoveDispatchDecision {
+        guard now - lastMoveTime >= throttleInterval else {
+            return .drop
+        }
+        return .dispatch(updatedLastMoveTime: now)
+    }
 
     func start(
         mouseMoveHandler: @MainActor @escaping @Sendable (NSPoint) -> Void,
         mouseDownHandler: @MainActor @escaping @Sendable (NSPoint) -> Void
     ) {
         let throttleInterval: TimeInterval = 0.05
-
-        nonisolated(unsafe) var sharedLastMove: TimeInterval = 0
+        let moveThrottleState = self.moveThrottleState
+        moveThrottleState.reset()
 
         globalMoveMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { event in
             let now = ProcessInfo.processInfo.systemUptime
-            guard now - sharedLastMove >= throttleInterval else { return }
-            sharedLastMove = now
+            guard moveThrottleState.shouldDispatchMove(
+                now: now,
+                throttleInterval: throttleInterval
+            ) else {
+                return
+            }
             let location = NSEvent.mouseLocation
             Task { @MainActor in mouseMoveHandler(location) }
         }
 
         localMoveMonitor = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { event in
             let now = ProcessInfo.processInfo.systemUptime
-            guard now - sharedLastMove >= throttleInterval else { return event }
-            sharedLastMove = now
+            guard moveThrottleState.shouldDispatchMove(
+                now: now,
+                throttleInterval: throttleInterval
+            ) else {
+                return event
+            }
             let location = NSEvent.mouseLocation
             Task { @MainActor in mouseMoveHandler(location) }
             return event
@@ -836,6 +1692,7 @@ final class NotchEventMonitors {
         localMoveMonitor = nil
         globalClickMonitor = nil
         localClickMonitor = nil
+        moveThrottleState.reset()
     }
 }
 
@@ -844,7 +1701,10 @@ final class NotchEventMonitors {
 extension NSScreen {
     var notchSize: CGSize {
         guard safeAreaInsets.top > 0 else {
-            return CGSize(width: 224, height: 38)
+            // Non-notch screen: tight floating pill that fits exactly
+            // icon (12pt) + gap (6) + count badge (~26) + horizontal
+            // padding (~12) ≈ 56pt wide.
+            return CGSize(width: 56, height: 22)
         }
 
         let notchHeight = safeAreaInsets.top
@@ -877,13 +1737,12 @@ extension NSScreen {
 
     /// Pure helper so the height selection logic can be unit-tested without real screen hardware.
     ///
-    /// On notch screens, use `safeAreaInsetsTop` directly — the island must match the
-    /// physical notch height exactly so it sits flush with the notch bottom edge.
-    /// Previously this used `min(safeAreaInsetsTop, topStatusBarHeight)`, but when the
-    /// menu bar reserved area is smaller than the notch (e.g. auto-hide menu bar, or
-    /// certain display configurations), the island ended up shorter than the physical
-    /// notch, leaving a visible gap.
-    /// On non-notch screens (`safeAreaInsetsTop == 0`), use `topStatusBarHeight` directly.
+    /// On notch screens, use `safeAreaInsetsTop` directly so the island matches the
+    /// physical notch height exactly and sits flush with the notch bottom edge, even
+    /// when the menu bar reserved area is shorter.
+    /// On non-notch screens (`safeAreaInsetsTop == 0`), use a compact 22pt pill height
+    /// that matches `notchSize.height` — the closed pill only shows an icon + count badge
+    /// so it doesn't need to fill the full menu-bar strip.
     static func computeIslandClosedHeight(
         safeAreaInsetsTop: CGFloat,
         topStatusBarHeight: CGFloat
@@ -891,6 +1750,6 @@ extension NSScreen {
         if safeAreaInsetsTop > 0 {
             return safeAreaInsetsTop
         }
-        return topStatusBarHeight
+        return 22
     }
 }

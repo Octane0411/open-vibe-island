@@ -6,6 +6,28 @@ import OpenIslandCore
 @MainActor
 @Observable
 final class OverlayUICoordinator {
+    static let overlayDisplayPreferenceDefaultsKey = "overlay.display.preference"
+    static let overlayPresentationPolicyDefaultsKey = "overlay.presentation.policy"
+
+    enum InteractionUpdatePlan: Equatable {
+        case setInteractive(Bool)
+        case repositionThenSetInteractive(Bool)
+    }
+
+    enum PlacementRefreshPlan: Equatable {
+        case refresh
+        case deferred
+    }
+
+    enum CloseTransitionPlan: Equatable {
+        case immediate
+        case deferTopBarFrameSync
+    }
+
+    enum DragStartPlan: Equatable {
+        case keepCurrentState
+        case closeImmediatelyForDrag
+    }
 
     private static let notificationSurfaceAutoCollapseDelay: TimeInterval = 10
 
@@ -16,6 +38,15 @@ final class OverlayUICoordinator {
 
     var overlayDisplayOptions: [OverlayDisplayOption] = []
     var overlayPlacementDiagnostics: OverlayPlacementDiagnostics?
+    var overlayPresentationPolicy = OverlayPresentationPolicy.defaultValue {
+        didSet {
+            guard overlayPresentationPolicy != oldValue else {
+                return
+            }
+            persistOverlayPresentationPolicy()
+            refreshOverlayPlacement()
+        }
+    }
 
     var overlayDisplaySelectionID = OverlayDisplayOption.automaticID {
         didSet {
@@ -49,6 +80,9 @@ final class OverlayUICoordinator {
     let overlayPanelController = OverlayPanelController()
 
     @ObservationIgnored
+    private let defaults: UserDefaults
+
+    @ObservationIgnored
     private var overlayTransitionGeneration: UInt64 = 0
 
     @ObservationIgnored
@@ -57,9 +91,8 @@ final class OverlayUICoordinator {
     @ObservationIgnored
     private var autoCollapseSurfaceHasBeenEntered = false
 
-    /// Kept for API compatibility; always false now that the window never
-    /// resizes and close transitions are pure SwiftUI.
-    var isCloseTransitionPending: Bool { false }
+    var isCloseTransitionPending = false
+    var closeTransitionSurfaceOffset: CGSize = .zero
 
     private var activeIslandCardSession: AgentSession? {
         activeIslandCardSessionAccessor?()
@@ -79,12 +112,120 @@ final class OverlayUICoordinator {
             : overlayDisplaySelectionID
     }
 
+    @ObservationIgnored
+    private let observerBox = ScreenObserverBox()
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    // Observer cleanup is handled by `observerBox`'s own `deinit`, which
+    // runs on whichever thread releases the coordinator and calls the
+    // thread-safe `NotificationCenter.removeObserver(_:)` directly. This
+    // avoids needing an unsafe `MainActor.assumeIsolated` hop from this
+    // `@MainActor` class's own deinit.
+
+    nonisolated static func interactionUpdatePlan(
+        requestedInteractive: Bool,
+        status: NotchStatus,
+        mode: OverlayPlacementMode
+    ) -> InteractionUpdatePlan {
+        let effectiveInteractive = requestedInteractive || OverlayPanelController.acceptsDirectMouseInteraction(
+            status: status,
+            mode: mode
+        )
+        if effectiveInteractive && status == .closed && mode == .topBar {
+            return .repositionThenSetInteractive(true)
+        }
+        return .setInteractive(effectiveInteractive)
+    }
+
+    nonisolated static func placementRefreshPlan(
+        status: NotchStatus,
+        defersForClosedTopBarPointerInteraction: Bool
+    ) -> PlacementRefreshPlan {
+        if status == .closed && defersForClosedTopBarPointerInteraction {
+            return .deferred
+        }
+
+        return .refresh
+    }
+
+    nonisolated static func closeTransitionPlan(
+        previousStatus: NotchStatus,
+        targetStatus: NotchStatus,
+        mode: OverlayPlacementMode,
+        hasPanel: Bool
+    ) -> CloseTransitionPlan {
+        guard previousStatus == .opened,
+              targetStatus == .closed,
+              mode == .topBar,
+              hasPanel else {
+            return .immediate
+        }
+
+        return .deferTopBarFrameSync
+    }
+
+    nonisolated static func dragStartPlan(
+        status: NotchStatus,
+        mode: OverlayPlacementMode,
+        openReason: NotchOpenReason?
+    ) -> DragStartPlan {
+        if status == .opened && mode == .topBar && openReason == .hover {
+            return .closeImmediatelyForDrag
+        }
+
+        return .keepCurrentState
+    }
+
     // MARK: - Initialization
 
-    func restoreDisplayPreference() {
-        overlayDisplaySelectionID = UserDefaults.standard.string(
-            forKey: "overlay.display.preference"
+    func restoreDisplayPreference(startMonitoring: Bool = true) {
+        overlayDisplaySelectionID = defaults.string(
+            forKey: Self.overlayDisplayPreferenceDefaultsKey
         ) ?? OverlayDisplayOption.automaticID
+        overlayPresentationPolicy = defaults.string(
+            forKey: Self.overlayPresentationPolicyDefaultsKey
+        )
+        .flatMap(OverlayPresentationPolicy.init(rawValue:))
+        ?? .defaultValue
+        if startMonitoring {
+            startScreenMonitoring()
+        }
+    }
+
+    private func startScreenMonitoring() {
+        guard observerBox.screenObserver == nil else { return }
+        observerBox.screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.refreshOverlayDisplayConfiguration()
+            }
+        }
+
+        observerBox.activeAppObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.preferredOverlayScreenID == nil else { return }
+                self.refreshOverlayPlacement()
+            }
+        }
+    }
+
+    /// Stops both NotificationCenter observers registered by
+    /// `startScreenMonitoring()`. Safe to call multiple times; the helper
+    /// is idempotent. Tests that create multiple coordinators per suite
+    /// MUST call this in tearDown (or let the coordinator go out of scope)
+    /// to avoid polluting other tests' notification streams.
+    func stopScreenMonitoring() {
+        observerBox.clear()
     }
 
     // MARK: - Overlay transitions
@@ -111,7 +252,9 @@ final class OverlayUICoordinator {
             },
             onPlacementResolved: { [weak self] in
                 guard let self, let overlayPlacementDiagnostics else { return }
-                self.onStatusMessage?("Overlay showing on \(overlayPlacementDiagnostics.targetScreenName) as \(overlayPlacementDiagnostics.modeDescription.lowercased()).")
+                self.onStatusMessage?(
+                    "Overlay targeting \(overlayPlacementDiagnostics.targetScreenName) with resolved \(overlayPlacementDiagnostics.presentationModeDescription.lowercased()) presentation."
+                )
             }
         )
     }
@@ -133,6 +276,40 @@ final class OverlayUICoordinator {
         )
     }
 
+    func beginTopBarHoverDrag() {
+        let placementMode = overlayPlacementDiagnostics?.mode
+            ?? overlayPanelController.placementDiagnostics(
+                preferredScreenID: preferredOverlayScreenID,
+                presentationPolicy: overlayPresentationPolicy
+            )?.mode
+            ?? .notch
+
+        guard Self.dragStartPlan(
+            status: notchStatus,
+            mode: placementMode,
+            openReason: notchOpenReason
+        ) == .closeImmediatelyForDrag else {
+            return
+        }
+
+        notificationAutoCollapseTask?.cancel()
+        notificationAutoCollapseTask = nil
+        autoCollapseSurfaceHasBeenEntered = false
+        appModel?.measuredNotificationContentHeight = 0
+        overlayTransitionGeneration &+= 1
+        clearCloseTransitionState()
+
+        islandSurface = .sessionList()
+        notchOpenReason = nil
+        notchStatus = .closed
+
+        applyInteractionUpdatePlan(
+            requestedInteractive: false,
+            status: .closed,
+            mode: placementMode
+        )
+    }
+
     /// Coordinates overlay transitions.
     ///
     /// The window stays at a fixed (opened) size at all times.  All visual
@@ -151,25 +328,87 @@ final class OverlayUICoordinator {
         beforeTransition?()
 
         overlayTransitionGeneration &+= 1
+        let capturedGeneration = overlayTransitionGeneration
+
+        let previousStatus = notchStatus
 
         // Reset measured notification height when the surface changes so stale
         // measurements from a previous notification don't mis-size the new one.
         if surface != islandSurface {
             appModel?.measuredNotificationContentHeight = 0
         }
+        let placementMode = overlayPlacementDiagnostics?.mode
+            ?? overlayPanelController.placementDiagnostics(
+                preferredScreenID: preferredOverlayScreenID,
+                presentationPolicy: overlayPresentationPolicy
+            )?.mode
+            ?? .notch
+        let closeTransitionPlan = Self.closeTransitionPlan(
+            previousStatus: previousStatus,
+            targetStatus: status,
+            mode: placementMode,
+            hasPanel: overlayPanelController.hasAttachedPanel
+        )
+        let deferredTopBarCloseContext = closeTransitionPlan == .deferTopBarFrameSync
+            ? overlayPanelController.topBarCloseTransitionContext(
+                preferredScreenID: preferredOverlayScreenID,
+                presentationPolicy: overlayPresentationPolicy
+            )
+            : nil
+
+        if status == .opened {
+            clearCloseTransitionState()
+        } else if let deferredTopBarCloseContext {
+            isCloseTransitionPending = true
+            closeTransitionSurfaceOffset = deferredTopBarCloseContext.surfaceOffset
+        } else {
+            clearCloseTransitionState()
+        }
 
         islandSurface = surface
         notchOpenReason = reason
         notchStatus = status
-        overlayPanelController.setInteractive(interactive)
 
         if status == .opened, let appModel {
+            applyInteractionUpdatePlan(
+                requestedInteractive: interactive,
+                status: status,
+                mode: placementMode
+            )
             overlayPlacementDiagnostics = overlayPanelController.show(
                 model: appModel,
-                preferredScreenID: preferredOverlayScreenID
+                preferredScreenID: preferredOverlayScreenID,
+                presentationPolicy: overlayPresentationPolicy
             )
+            afterStateChange?()
+            onPlacementResolved?()
+            return
         }
 
+        if deferredTopBarCloseContext != nil {
+            overlayPanelController.setInteractive(false)
+            afterStateChange?()
+
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + IslandChromeMetrics.closeTransitionDuration
+            ) { [weak self] in
+                guard let self, self.overlayTransitionGeneration == capturedGeneration else { return }
+                self.overlayPlacementDiagnostics = self.overlayPanelController.reposition(
+                    preferredScreenID: self.preferredOverlayScreenID,
+                    presentationPolicy: self.overlayPresentationPolicy
+                )
+                self.clearCloseTransitionState()
+                self.overlayPanelController.setInteractive(true)
+                onPlacementResolved?()
+            }
+            return
+        }
+
+        applyInteractionUpdatePlan(
+            requestedInteractive: interactive,
+            status: status,
+            mode: placementMode
+        )
         afterStateChange?()
         onPlacementResolved?()
     }
@@ -197,7 +436,11 @@ final class OverlayUICoordinator {
 
     func ensureOverlayPanel() {
         guard let appModel else { return }
-        overlayPanelController.ensurePanel(model: appModel, preferredScreenID: preferredOverlayScreenID)
+        overlayPanelController.ensurePanel(
+            model: appModel,
+            preferredScreenID: preferredOverlayScreenID,
+            presentationPolicy: overlayPresentationPolicy
+        )
     }
 
     // Legacy compatibility
@@ -220,26 +463,35 @@ final class OverlayUICoordinator {
 
     // MARK: - Display configuration
 
-    func refreshOverlayDisplayConfiguration() {
-        overlayDisplayOptions = overlayPanelController.availableDisplayOptions()
-
-        let validSelectionIDs = Set(overlayDisplayOptions.map(\.id))
-        if !validSelectionIDs.contains(overlayDisplaySelectionID) {
-            overlayDisplaySelectionID = OverlayDisplayOption.automaticID
-            return
-        }
-
+    func applyOverlayDisplayOptions(_ options: [OverlayDisplayOption]) {
+        overlayDisplayOptions = options
         refreshOverlayPlacement()
     }
 
+    func refreshOverlayDisplayConfiguration() {
+        applyOverlayDisplayOptions(overlayPanelController.availableDisplayOptions())
+    }
+
     func refreshOverlayPlacement() {
+        guard !isCloseTransitionPending else {
+            return
+        }
         overlayPlacementDiagnostics = overlayPanelController.reposition(
-            preferredScreenID: preferredOverlayScreenID
+            preferredScreenID: preferredOverlayScreenID,
+            presentationPolicy: overlayPresentationPolicy
         )
     }
 
     func refreshOverlayPlacementIfVisible() {
-        refreshOverlayPlacement()
+        switch Self.placementRefreshPlan(
+            status: notchStatus,
+            defersForClosedTopBarPointerInteraction: overlayPanelController.isClosedTopBarPointerInteractionActive()
+        ) {
+        case .refresh:
+            refreshOverlayPlacement()
+        case .deferred:
+            overlayPanelController.deferPlacementRefreshUntilClosedTopBarPointerRelease()
+        }
     }
 
     // MARK: - Pointer tracking
@@ -377,6 +629,7 @@ final class OverlayUICoordinator {
         notificationAutoCollapseTask?.cancel()
         notificationAutoCollapseTask = nil
         autoCollapseSurfaceHasBeenEntered = false
+        clearCloseTransitionState()
 
         islandSurface = snapshot.islandSurface
         notchStatus = snapshot.notchStatus
@@ -391,8 +644,21 @@ final class OverlayUICoordinator {
         }
 
         // Immediate interactivity update.
-        let interactive = snapshot.notchStatus == .opened
-        overlayPanelController.setInteractive(interactive)
+        let placementMode = overlayPlacementDiagnostics?.mode
+            ?? overlayPanelController.placementDiagnostics(
+                preferredScreenID: preferredOverlayScreenID,
+                presentationPolicy: overlayPresentationPolicy
+            )?.mode
+            ?? .notch
+        let interactive = OverlayPanelController.acceptsDirectMouseInteraction(
+            status: snapshot.notchStatus,
+            mode: placementMode
+        )
+        applyInteractionUpdatePlan(
+            requestedInteractive: interactive,
+            status: snapshot.notchStatus,
+            mode: placementMode
+        )
 
         // Defer AppKit panel animation to the next run-loop iteration.
         overlayTransitionGeneration &+= 1
@@ -403,7 +669,8 @@ final class OverlayUICoordinator {
             case .opened:
                 self.overlayPlacementDiagnostics = self.overlayPanelController.show(
                     model: appModel,
-                    preferredScreenID: self.preferredOverlayScreenID
+                    preferredScreenID: self.preferredOverlayScreenID,
+                    presentationPolicy: self.overlayPresentationPolicy
                 )
             case .closed, .popping:
                 self.refreshOverlayPlacement()
@@ -415,11 +682,83 @@ final class OverlayUICoordinator {
     // MARK: - Persistence
 
     private func persistOverlayDisplayPreference() {
-        let defaults = UserDefaults.standard
         if overlayDisplaySelectionID == OverlayDisplayOption.automaticID {
-            defaults.removeObject(forKey: "overlay.display.preference")
+            defaults.removeObject(forKey: Self.overlayDisplayPreferenceDefaultsKey)
         } else {
-            defaults.set(overlayDisplaySelectionID, forKey: "overlay.display.preference")
+            defaults.set(
+                overlayDisplaySelectionID,
+                forKey: Self.overlayDisplayPreferenceDefaultsKey
+            )
         }
+    }
+
+    private func persistOverlayPresentationPolicy() {
+        if overlayPresentationPolicy == .defaultValue {
+            defaults.removeObject(forKey: Self.overlayPresentationPolicyDefaultsKey)
+        } else {
+            defaults.set(
+                overlayPresentationPolicy.rawValue,
+                forKey: Self.overlayPresentationPolicyDefaultsKey
+            )
+        }
+    }
+
+    private func applyInteractionUpdatePlan(
+        requestedInteractive: Bool,
+        status: NotchStatus,
+        mode: OverlayPlacementMode
+    ) {
+        switch Self.interactionUpdatePlan(
+            requestedInteractive: requestedInteractive,
+            status: status,
+            mode: mode
+        ) {
+        case .setInteractive(let interactive):
+            overlayPanelController.setInteractive(interactive)
+        case .repositionThenSetInteractive(let interactive):
+            overlayPlacementDiagnostics = overlayPanelController.reposition(
+                preferredScreenID: preferredOverlayScreenID,
+                presentationPolicy: overlayPresentationPolicy
+            )
+            overlayPanelController.setInteractive(interactive)
+        }
+    }
+
+    private func clearCloseTransitionState() {
+        isCloseTransitionPending = false
+        closeTransitionSurfaceOffset = .zero
+    }
+}
+
+/// Thread-safe holder for NotificationCenter observer tokens registered by
+/// `OverlayUICoordinator.startScreenMonitoring()`.
+///
+/// Lives as a standalone `final class` so its `deinit` runs on whichever
+/// thread releases the coordinator — `NotificationCenter.removeObserver(_:)`
+/// and `NSWorkspace.notificationCenter.removeObserver(_:)` are both thread
+/// safe, so no MainActor hop is needed.
+///
+/// Marked `@unchecked Sendable` because the outer `OverlayUICoordinator`
+/// only mutates the box from its `@MainActor` context; in practice the
+/// tokens are only read/written on the main thread during
+/// `start/stopScreenMonitoring`, and only read once more during `deinit`
+/// after the final reference is dropped.
+private final class ScreenObserverBox: @unchecked Sendable {
+    var screenObserver: Any?
+    var activeAppObserver: Any?
+
+    func clear() {
+        if let screenObserver {
+            NotificationCenter.default.removeObserver(screenObserver)
+            self.screenObserver = nil
+        }
+        if let activeAppObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(activeAppObserver)
+            self.activeAppObserver = nil
+        }
+    }
+
+    deinit {
+        clear()
     }
 }
