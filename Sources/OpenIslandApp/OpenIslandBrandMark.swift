@@ -30,9 +30,15 @@ struct OpenIslandBrandMark: View {
 
     var body: some View {
         if isAnimating {
-            TimelineView(.animation(minimumInterval: 0.05)) { context in
+            TimelineView(.animation(minimumInterval: 0.033)) { context in
                 markContent(brightness: pulseBrightness(at: context.date))
                     .scaleEffect(pulseScale(at: context.date))
+                    .shadow(
+                        color: tint.opacity(glowOpacity(at: context.date)),
+                        radius: pulseGlowRadius(at: context.date),
+                        x: 0,
+                        y: 0
+                    )
             }
         } else {
             markContent(brightness: 1.0)
@@ -63,16 +69,30 @@ struct OpenIslandBrandMark: View {
         .drawingGroup(opaque: false, colorMode: .extendedLinear)
     }
 
-    private func pulseBrightness(at date: Date) -> Double {
+    /// Pulse cycle: 1.5 seconds. Wave goes 0→1→0→-1→0.
+    private func pulsePhase(at date: Date) -> Double {
         let t = date.timeIntervalSinceReferenceDate
-        let wave = sin(t * Double.pi)
-        return 1.0 + (wave + 1) / 2 * 0.3
+        return sin(t * Double.pi * 4 / 3)
+    }
+
+    private func pulseBrightness(at date: Date) -> Double {
+        let wave = pulsePhase(at: date)
+        return 0.45 + (wave + 1) / 2 * 0.75
     }
 
     private func pulseScale(at date: Date) -> CGFloat {
-        let t = date.timeIntervalSinceReferenceDate
-        let wave = sin(t * Double.pi)
-        return CGFloat(0.94 + (wave + 1) / 2 * 0.06)
+        let wave = pulsePhase(at: date)
+        return CGFloat(0.82 + (wave + 1) / 2 * 0.18)
+    }
+
+    private func glowOpacity(at date: Date) -> Double {
+        let wave = pulsePhase(at: date)
+        return (wave + 1) / 2 * 0.55
+    }
+
+    private func pulseGlowRadius(at date: Date) -> CGFloat {
+        let wave = pulsePhase(at: date)
+        return CGFloat(2 + (wave + 1) / 2 * 5)
     }
 
     private func fillColor(for role: Character, brightness: Double) -> Color {
