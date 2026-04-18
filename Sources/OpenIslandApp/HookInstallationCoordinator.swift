@@ -16,6 +16,7 @@ final class HookInstallationCoordinator {
     var geminiHookStatus: GeminiHookInstallationStatus?
     var claudeStatusLineStatus: ClaudeStatusLineInstallationStatus?
     var claudeUsageSnapshot: ClaudeUsageSnapshot?
+    var anthropicOAuthUsageSnapshot: AnthropicOAuthUsageSnapshot?
     var codexUsageSnapshot: CodexUsageSnapshot?
     var hooksBinaryURL: URL?
     var isCodexSetupBusy = false
@@ -83,6 +84,9 @@ final class HookInstallationCoordinator {
 
     @ObservationIgnored
     private var codexUsageMonitorTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var anthropicOAuthUsageMonitorTask: Task<Void, Never>?
 
     @ObservationIgnored
     private var relativeTimestampFormatter: RelativeDateTimeFormatter {
@@ -262,6 +266,46 @@ final class HookInstallationCoordinator {
             components.append("updated \(relativeTimestampFormatter.localizedString(for: capturedAt, relativeTo: .now))")
         }
 
+        return components.isEmpty ? nil : components.joined(separator: " · ")
+    }
+
+    // MARK: - Anthropic OAuth Usage
+
+    var anthropicOAuthUsageStatusTitle: String {
+        if anthropicOAuthUsageSnapshot?.isEmpty == false {
+            return "Anthropic usage detected"
+        }
+        return "Waiting for Anthropic usage"
+    }
+
+    var anthropicOAuthUsageStatusSummary: String {
+        if let summary = anthropicOAuthUsageSummaryText {
+            return "Reading Claude subscription usage from Anthropic API · \(summary)"
+        }
+        return "Resolving local OAuth token and fetching usage from api.anthropic.com/api/oauth/usage."
+    }
+
+    var anthropicOAuthUsageSummaryText: String? {
+        guard let snapshot = anthropicOAuthUsageSnapshot else {
+            return nil
+        }
+
+        var components: [String] = []
+        if let fiveHour = snapshot.fiveHour {
+            components.append("5h \(fiveHour.roundedUsedPercentage)%")
+        }
+        if let sevenDay = snapshot.sevenDay {
+            components.append("7d \(sevenDay.roundedUsedPercentage)%")
+        }
+        if let remaining = snapshot.remaining {
+            components.append("remaining \(remaining)")
+        }
+        if let monthlyLimit = snapshot.monthlyLimit {
+            components.append("limit \(monthlyLimit)")
+        }
+        if let fetchedAt = snapshot.fetchedAt {
+            components.append("updated \(relativeTimestampFormatter.localizedString(for: fetchedAt, relativeTo: .now))")
+        }
         return components.isEmpty ? nil : components.joined(separator: " · ")
     }
 
@@ -929,6 +973,30 @@ final class HookInstallationCoordinator {
                 self.refreshCodexUsageState()
                 try? await Task.sleep(for: .seconds(120))
             }
+        }
+    }
+
+    func startAnthropicOAuthUsageMonitoringIfNeeded() {
+        guard anthropicOAuthUsageMonitorTask == nil else { return }
+
+        anthropicOAuthUsageMonitorTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            while !Task.isCancelled {
+                self.refreshAnthropicOAuthUsageState()
+                try? await Task.sleep(for: .seconds(300))
+            }
+        }
+    }
+
+    func refreshAnthropicOAuthUsageState() {
+        Task { [weak self] in
+            guard let self else { return }
+
+            let snapshot = await Task.detached(priority: .utility) {
+                await AnthropicOAuthUsageLoader.loadWithFallback()
+            }.value
+            self.anthropicOAuthUsageSnapshot = snapshot
         }
     }
 

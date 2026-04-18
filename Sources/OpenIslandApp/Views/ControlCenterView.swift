@@ -188,6 +188,40 @@ struct ControlCenterView: View {
                     }
                 }
 
+                usageDebugCard(
+                    title: "Anthropic OAuth Usage",
+                    statusTitle: model.anthropicOAuthUsageStatusTitle,
+                    statusSummary: model.anthropicOAuthUsageStatusSummary,
+                    isActive: model.anthropicOAuthUsageSnapshot?.isEmpty == false,
+                    accentColor: model.anthropicOAuthUsageSnapshot?.isEmpty == false ? .mint : .purple
+                ) {
+                    if let summary = model.anthropicOAuthUsageSummaryText {
+                        metadataRow(title: "usage", value: summary)
+                    }
+
+                    if let snapshot = model.anthropicOAuthUsageSnapshot {
+                        if let remaining = snapshot.remaining {
+                            metadataRow(title: "remaining", value: "\(remaining)")
+                        }
+                        if let monthlyLimit = snapshot.monthlyLimit {
+                            metadataRow(title: "monthly limit", value: "\(monthlyLimit)")
+                        }
+                        if let fetchedAt = snapshot.fetchedAt {
+                            metadataRow(
+                                title: "fetched",
+                                value: fetchedAt.formatted(date: .abbreviated, time: .standard)
+                            )
+                        }
+                    }
+                } actions: {
+                    HStack(spacing: 10) {
+                        Button(lang.t("debug.refresh")) {
+                            model.refreshAnthropicOAuthUsageState()
+                        }
+                        .buttonStyle(DebugActionButtonStyle(kind: .secondary))
+                    }
+                }
+
                 actionCard
                 transcriptCard
                 liveOverlayCard

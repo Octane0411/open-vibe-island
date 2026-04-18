@@ -613,6 +613,25 @@ struct SetupSettingsPane: View {
                     get: { model.showCodexUsage },
                     set: { model.showCodexUsage = $0 }
                 ))
+
+                HStack {
+                    Label("Anthropic OAuth Usage", systemImage: "creditcard")
+                    Spacer()
+                    if let snapshot = model.anthropicOAuthUsageSnapshot, !snapshot.isEmpty {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                            Text("Active")
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Text("Auto-detect")
+                            .foregroundStyle(.secondary)
+                    }
+                    Button("Refresh") {
+                        model.refreshAnthropicOAuthUsageState()
+                    }
+                }
             } header: {
                 HStack(spacing: 4) {
                     Text(lang.t("setup.section.usage"))

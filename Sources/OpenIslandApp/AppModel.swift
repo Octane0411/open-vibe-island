@@ -101,6 +101,10 @@ final class AppModel {
     var codexUsageStatusTitle: String { hooks.codexUsageStatusTitle }
     var codexUsageStatusSummary: String { hooks.codexUsageStatusSummary }
     var codexUsageSummaryText: String? { hooks.codexUsageSummaryText }
+    var anthropicOAuthUsageSnapshot: AnthropicOAuthUsageSnapshot? { hooks.anthropicOAuthUsageSnapshot }
+    var anthropicOAuthUsageStatusTitle: String { hooks.anthropicOAuthUsageStatusTitle }
+    var anthropicOAuthUsageStatusSummary: String { hooks.anthropicOAuthUsageStatusSummary }
+    var anthropicOAuthUsageSummaryText: String? { hooks.anthropicOAuthUsageSummaryText }
     var openCodePluginStatus: OpenCodePluginInstallationStatus? { hooks.openCodePluginStatus }
     var isOpenCodeSetupBusy: Bool { hooks.isOpenCodeSetupBusy }
     var openCodePluginStatusTitle: String { hooks.openCodePluginStatusTitle }
@@ -125,6 +129,7 @@ final class AppModel {
     func refreshCursorHookStatus() { hooks.refreshCursorHookStatus() }
     func refreshClaudeUsageState() { hooks.refreshClaudeUsageState() }
     func refreshCodexUsageState() { hooks.refreshCodexUsageState() }
+    func refreshAnthropicOAuthUsageState() { hooks.refreshAnthropicOAuthUsageState() }
     func installCodexHooks() { hooks.installCodexHooks() }
     func uninstallCodexHooks() { hooks.uninstallCodexHooks() }
     func installClaudeHooks() { hooks.installClaudeHooks() }
@@ -749,6 +754,8 @@ final class AppModel {
                 hooks.refreshCodexUsageState()
                 hooks.startCodexUsageMonitoringIfNeeded()
             }
+            hooks.refreshAnthropicOAuthUsageState()
+            hooks.startAnthropicOAuthUsageMonitoringIfNeeded()
             updateChecker.startIfNeeded()
 
         } else {

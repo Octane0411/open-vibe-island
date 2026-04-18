@@ -708,6 +708,43 @@ struct IslandPanelView: View {
             }
         }
 
+        if let snapshot = model.anthropicOAuthUsageSnapshot,
+           snapshot.isEmpty == false {
+            var windows: [UsageWindowPresentation] = []
+
+            if let fiveHour = snapshot.fiveHour {
+                windows.append(
+                    UsageWindowPresentation(
+                        id: "anth-oauth-5h",
+                        label: "5h",
+                        usedPercentage: fiveHour.usedPercentage,
+                        resetsAt: fiveHour.resetsAt
+                    )
+                )
+            }
+
+            if let sevenDay = snapshot.sevenDay {
+                windows.append(
+                    UsageWindowPresentation(
+                        id: "anth-oauth-7d",
+                        label: "7d",
+                        usedPercentage: sevenDay.usedPercentage,
+                        resetsAt: sevenDay.resetsAt
+                    )
+                )
+            }
+
+            if windows.isEmpty == false {
+                providers.append(
+                    UsageProviderPresentation(
+                        id: "anthropic-oauth",
+                        title: "Anthropic",
+                        windows: windows
+                    )
+                )
+            }
+        }
+
         return providers
     }
 
@@ -918,6 +955,8 @@ private struct UsageProviderPresentation: Identifiable {
             "Cl"
         case "codex":
             "Cx"
+        case "anthropic-oauth":
+            "An"
         default:
             String(title.prefix(2))
         }
