@@ -1,6 +1,6 @@
 import Foundation
 
-public struct KimiHookInstallationStatus: Equatable, Sendable {
+public struct KimiHookInstallationStatus: Equatable, Sendable, Codable {
     public var kimiDirectory: URL
     public var configURL: URL
     public var manifestURL: URL

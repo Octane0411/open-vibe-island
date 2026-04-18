@@ -50,7 +50,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 
 ## Supported Agents & Terminals
 
-**9 agents**: Claude Code, Codex, Cursor, Gemini CLI, OpenCode, Qoder, Qwen Code, Factory, CodeBuddy
+**10 agents**: Claude Code, Codex, Cursor, Gemini CLI, Kimi CLI, OpenCode, Qoder, Qwen Code, Factory, CodeBuddy
 
 **15+ terminals & IDEs**: Terminal.app, Ghostty, iTerm2, WezTerm, Zellij, tmux, cmux, Kaku, VS Code, Cursor, Windsurf, Trae, JetBrains IDEs (IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover)
 

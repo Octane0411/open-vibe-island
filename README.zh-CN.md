@@ -50,7 +50,7 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 
 ## 支持的 Agents 和终端
 
-**9 个 Agents**：Claude Code、Codex、Cursor、Gemini CLI、OpenCode、Qoder、Qwen Code、Factory、CodeBuddy
+**10 个 Agents**：Claude Code、Codex、Cursor、Gemini CLI、Kimi CLI、OpenCode、Qoder、Qwen Code、Factory、CodeBuddy
 
 **15+ 终端和 IDE**：Terminal.app、Ghostty、iTerm2、WezTerm、Zellij、tmux、cmux、Kaku、VS Code、Cursor、Windsurf、Trae、JetBrains 全家桶（IDEA、WebStorm、PyCharm、GoLand、CLion、RubyMine、PhpStorm、Rider、RustRover）
 

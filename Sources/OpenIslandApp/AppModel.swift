@@ -1348,6 +1348,7 @@ final class AppModel {
                 if self.hooks.shouldAutoInstall(.openCode) { self.installOpenCodePlugin() }
                 if self.hooks.shouldAutoInstall(.cursor) { self.installCursorHooks() }
                 if self.hooks.shouldAutoInstall(.gemini) { self.installGeminiHooks() }
+                if self.hooks.shouldAutoInstall(.kimi) { self.installKimiHooks() }
                 if self.hooks.shouldAutoInstall(.claudeUsageBridge) { self.installClaudeUsageBridge() }
 
                 // Run health checks after install to detect stale paths, conflicts, etc.

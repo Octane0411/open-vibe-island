@@ -795,6 +795,7 @@ final class HookInstallationCoordinator {
         case .codebuddy: return !codebuddyHooksInstalled
         case .openCode: return !openCodePluginInstalled
         case .gemini: return !geminiHooksInstalled
+        case .kimi: return !kimiHooksInstalled
         case .claudeUsageBridge: return !claudeUsageInstalled
         }
     }
@@ -818,6 +819,7 @@ final class HookInstallationCoordinator {
             case .codebuddy: return codebuddyHooksInstalled
             case .openCode: return openCodePluginInstalled
             case .gemini: return geminiHooksInstalled
+            case .kimi: return kimiHooksInstalled
             case .claudeUsageBridge: return claudeUsageInstalled
             }
         }
@@ -1018,13 +1020,13 @@ final class HookInstallationCoordinator {
             return
         }
 
-        updateKimiHooks(userMessage: "Installing Kimi hooks.") { manager in
+        updateKimiHooks(userMessage: "Installing Kimi hooks.", intent: .installed) { manager in
             try manager.install(hooksBinaryURL: hooksBinaryURL)
         }
     }
 
     func uninstallKimiHooks() {
-        updateKimiHooks(userMessage: "Removing Kimi hooks.") { manager in
+        updateKimiHooks(userMessage: "Removing Kimi hooks.", intent: .uninstalled) { manager in
             try manager.uninstall()
         }
     }
@@ -1215,6 +1217,7 @@ final class HookInstallationCoordinator {
 
     private func updateKimiHooks(
         userMessage: String,
+        intent: AgentHookIntent,
         operation: @escaping (KimiHookInstallationManager) throws -> KimiHookInstallationStatus
     ) {
         isKimiHookSetupBusy = true
@@ -1228,6 +1231,7 @@ final class HookInstallationCoordinator {
             do {
                 let status = try operation(self.kimiHookInstallationManager)
                 self.kimiHookStatus = status
+                self.intentStore.setIntent(intent, for: .kimi)
                 if status.managedHooksPresent {
                     self.onStatusMessage?("Kimi hooks are installed and ready.")
                 } else {

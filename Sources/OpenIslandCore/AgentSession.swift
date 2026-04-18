@@ -64,7 +64,7 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
 
     public var isClaudeCodeFork: Bool {
         switch self {
-        case .claudeCode, .qoder, .qwenCode, .factory, .codebuddy:
+        case .claudeCode, .qoder, .qwenCode, .factory, .codebuddy, .kimiCLI:
             true
         default:
             false
@@ -469,7 +469,7 @@ public extension AgentSession {
     }
 
     var isTrackedLiveSession: Bool {
-        !isDemoSession && (tool == .codex || tool == .claudeCode || tool == .geminiCLI || tool == .openCode || tool == .qoder || tool == .qwenCode || tool == .factory || tool == .codebuddy || tool == .cursor)
+        !isDemoSession && (tool == .codex || tool == .claudeCode || tool == .geminiCLI || tool == .openCode || tool == .qoder || tool == .qwenCode || tool == .factory || tool == .codebuddy || tool == .cursor || tool == .kimiCLI)
     }
 
     var isTrackedLiveCodexSession: Bool {

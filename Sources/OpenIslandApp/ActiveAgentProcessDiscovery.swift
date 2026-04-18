@@ -145,6 +145,7 @@ struct ActiveAgentProcessDiscovery {
                     terminalTTY: process.terminalTTY,
                     terminalApp: terminalApp(for: process, processesByPID: processesByPID)
                 ))
+                continue
             }
         }
 
