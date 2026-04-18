@@ -346,6 +346,18 @@ final class ProcessMonitoringCoordinator {
             claimedGeminiSessionIDs.insert(matched.id)
         }
 
+        // Kimi sessions are hook-managed and use UUIDs that Open Island cannot
+        // recover from ps/lsof. As long as any kimi process exists, keep every
+        // tracked Kimi session alive so Stop/completed sessions don't get
+        // evicted by the hook-managed liveness fallback in
+        // SessionState.markProcessLiveness.
+        let hasKimiProcess = activeProcesses.contains { $0.tool == .kimiCLI }
+        if hasKimiProcess {
+            for session in sessions where session.tool == .kimiCLI && !session.isDemoSession {
+                aliveIDs.insert(session.id)
+            }
+        }
+
         // Cursor sessions: Cursor is an Electron IDE — we cannot match
         // individual session IDs from ps/lsof.  Keep all Cursor sessions
         // alive as long as Cursor.app is running.
