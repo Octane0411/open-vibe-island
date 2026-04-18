@@ -10,6 +10,7 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
     case factory
     case codebuddy
     case cursor
+    case kimiCLI
 
     public var displayName: String {
         switch self {
@@ -31,6 +32,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "CodeBuddy"
         case .cursor:
             "Cursor"
+        case .kimiCLI:
+            "Kimi CLI"
         }
     }
 
@@ -54,6 +57,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "CODEBUDDY"
         case .cursor:
             "CURSOR"
+        case .kimiCLI:
+            "KIMI"
         }
     }
 

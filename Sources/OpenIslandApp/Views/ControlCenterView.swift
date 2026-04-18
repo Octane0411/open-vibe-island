@@ -117,6 +117,8 @@ struct ControlCenterView: View {
 
                 geminiHookCard
 
+                kimiHookCard
+
                 usageDebugCard(
                     title: "Claude Usage",
                     statusTitle: model.claudeUsageStatusTitle,
@@ -278,6 +280,35 @@ struct ControlCenterView: View {
                 }
                 .buttonStyle(DebugActionButtonStyle(kind: .primary))
                 .disabled(model.isGeminiHookSetupBusy || model.hooksBinaryURL == nil)
+            }
+        }
+    }
+
+    private var kimiHookCard: some View {
+        usageDebugCard(
+            title: "Kimi Hooks",
+            statusTitle: model.kimiHookStatusTitle,
+            statusSummary: model.kimiHookStatusSummary,
+            isActive: model.kimiHooksInstalled,
+            accentColor: model.kimiHooksInstalled ? .mint : .blue
+        ) {
+            EmptyView()
+        } actions: {
+            HStack(spacing: 10) {
+                Button(lang.t("debug.refresh")) {
+                    model.refreshKimiHookStatus()
+                }
+                .buttonStyle(DebugActionButtonStyle(kind: .secondary))
+
+                Button(model.kimiHooksInstalled ? lang.t("debug.removeHooks") : lang.t("debug.installHooks")) {
+                    if model.kimiHooksInstalled {
+                        model.uninstallKimiHooks()
+                    } else {
+                        model.installKimiHooks()
+                    }
+                }
+                .buttonStyle(DebugActionButtonStyle(kind: .primary))
+                .disabled(model.isKimiHookSetupBusy || model.hooksBinaryURL == nil)
             }
         }
     }

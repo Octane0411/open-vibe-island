@@ -906,6 +906,8 @@ final class ProcessMonitoringCoordinator {
             return "CodeBuddy \(session.id.prefix(8))"
         case .cursor:
             return "Cursor \(session.id.prefix(8))"
+        case .kimiCLI:
+            return "Kimi \(session.id.prefix(8))"
         }
     }
 }

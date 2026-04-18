@@ -21,6 +21,7 @@ final class HookInstallationCoordinator {
     var openCodePluginStatus: OpenCodePluginInstallationStatus?
     var cursorHookStatus: CursorHookInstallationStatus?
     var geminiHookStatus: GeminiHookInstallationStatus?
+    var kimiHookStatus: KimiHookInstallationStatus?
     var claudeStatusLineStatus: ClaudeStatusLineInstallationStatus?
     var claudeUsageSnapshot: ClaudeUsageSnapshot?
     var codexUsageSnapshot: CodexUsageSnapshot?
@@ -34,6 +35,7 @@ final class HookInstallationCoordinator {
     var isOpenCodeSetupBusy = false
     var isCursorHookSetupBusy = false
     var isGeminiHookSetupBusy = false
+    var isKimiHookSetupBusy = false
     var isClaudeUsageSetupBusy = false
 
     @ObservationIgnored
@@ -79,6 +81,9 @@ final class HookInstallationCoordinator {
 
     @ObservationIgnored
     private let geminiHookInstallationManager = GeminiHookInstallationManager()
+
+    @ObservationIgnored
+    private let kimiHookInstallationManager = KimiHookInstallationManager()
 
     /// Computed so it always reflects the latest `ClaudeConfigDirectory` setting.
     private var claudeStatusLineInstallationManager: ClaudeStatusLineInstallationManager {
@@ -134,6 +139,10 @@ final class HookInstallationCoordinator {
 
     var geminiHooksInstalled: Bool {
         geminiHookStatus?.managedHooksPresent == true
+    }
+
+    var kimiHooksInstalled: Bool {
+        kimiHookStatus?.managedHooksPresent == true
     }
 
     var claudeUsageInstalled: Bool {
@@ -339,6 +348,34 @@ final class HookInstallationCoordinator {
         }
 
         return status.managedHooksPresent ? "managed hooks present" : "no managed Gemini hooks"
+    }
+
+    var kimiHookStatusTitle: String {
+        if kimiHooksInstalled {
+            return "Kimi hooks installed"
+        }
+
+        if hooksBinaryURL == nil {
+            return "Hook binary not found"
+        }
+
+        return "Kimi hooks not installed"
+    }
+
+    var kimiHookStatusSummary: String {
+        guard kimiHookStatus != nil else {
+            return "Reading ~/.kimi/config.toml."
+        }
+
+        if kimiHooksInstalled {
+            return "managed hooks present"
+        }
+
+        if hooksBinaryURL == nil {
+            return "Build OpenIslandHooks before installing."
+        }
+
+        return "no managed Kimi hooks"
     }
 
     var codexHookStatusTitle: String {
@@ -624,6 +661,16 @@ final class HookInstallationCoordinator {
                     self.onStatusMessage?("Failed to read Gemini hook status: \(error.localizedDescription)")
                 }
             }
+
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    let status = try self.kimiHookInstallationManager.status(hooksBinaryURL: self.hooksBinaryURL)
+                    self.kimiHookStatus = status
+                } catch {
+                    self.onStatusMessage?("Failed to read Kimi hook status: \(error.localizedDescription)")
+                }
+            }
         }
     }
 
@@ -662,6 +709,19 @@ final class HookInstallationCoordinator {
                 self.geminiHookStatus = status
             } catch {
                 self.onStatusMessage?("Failed to read Gemini hook status: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func refreshKimiHookStatus() {
+        Task { [weak self] in
+            guard let self else { return }
+
+            do {
+                let status = try self.kimiHookInstallationManager.status(hooksBinaryURL: self.hooksBinaryURL)
+                self.kimiHookStatus = status
+            } catch {
+                self.onStatusMessage?("Failed to read Kimi hook status: \(error.localizedDescription)")
             }
         }
     }
@@ -952,6 +1012,23 @@ final class HookInstallationCoordinator {
         }
     }
 
+    func installKimiHooks() {
+        guard let hooksBinaryURL else {
+            onStatusMessage?("Could not find a local OpenIslandHooks binary. Build the package first.")
+            return
+        }
+
+        updateKimiHooks(userMessage: "Installing Kimi hooks.") { manager in
+            try manager.install(hooksBinaryURL: hooksBinaryURL)
+        }
+    }
+
+    func uninstallKimiHooks() {
+        updateKimiHooks(userMessage: "Removing Kimi hooks.") { manager in
+            try manager.uninstall()
+        }
+    }
+
     func installClaudeUsageBridge() {
         updateClaudeUsageBridge(userMessage: "Installing Claude usage bridge.", intent: .installed) { manager in
             do {
@@ -1132,6 +1209,32 @@ final class HookInstallationCoordinator {
                 }
             } catch {
                 self.onStatusMessage?("Gemini hook update failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func updateKimiHooks(
+        userMessage: String,
+        operation: @escaping (KimiHookInstallationManager) throws -> KimiHookInstallationStatus
+    ) {
+        isKimiHookSetupBusy = true
+        onStatusMessage?(userMessage)
+
+        Task { [weak self] in
+            guard let self else { return }
+
+            defer { self.isKimiHookSetupBusy = false }
+
+            do {
+                let status = try operation(self.kimiHookInstallationManager)
+                self.kimiHookStatus = status
+                if status.managedHooksPresent {
+                    self.onStatusMessage?("Kimi hooks are installed and ready.")
+                } else {
+                    self.onStatusMessage?("Kimi hooks are not installed.")
+                }
+            } catch {
+                self.onStatusMessage?("Kimi hook update failed: \(error.localizedDescription)")
             }
         }
     }

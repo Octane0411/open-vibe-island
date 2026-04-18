@@ -125,6 +125,11 @@ final class AppModel {
     var geminiHookStatus: GeminiHookInstallationStatus? { hooks.geminiHookStatus }
     var geminiHookStatusTitle: String { hooks.geminiHookStatusTitle }
     var geminiHookStatusSummary: String { hooks.geminiHookStatusSummary }
+    var kimiHooksInstalled: Bool { hooks.kimiHooksInstalled }
+    var isKimiHookSetupBusy: Bool { hooks.isKimiHookSetupBusy }
+    var kimiHookStatus: KimiHookInstallationStatus? { hooks.kimiHookStatus }
+    var kimiHookStatusTitle: String { hooks.kimiHookStatusTitle }
+    var kimiHookStatusSummary: String { hooks.kimiHookStatusSummary }
     var codexHookStatusTitle: String { hooks.codexHookStatusTitle }
     var codexHookStatusSummary: String { hooks.codexHookStatusSummary }
 
@@ -177,6 +182,9 @@ final class AppModel {
     func refreshGeminiHookStatus() { hooks.refreshGeminiHookStatus() }
     func installGeminiHooks() { hooks.installGeminiHooks() }
     func uninstallGeminiHooks() { hooks.uninstallGeminiHooks() }
+    func refreshKimiHookStatus() { hooks.refreshKimiHookStatus() }
+    func installKimiHooks() { hooks.installKimiHooks() }
+    func uninstallKimiHooks() { hooks.uninstallKimiHooks() }
     func installClaudeUsageBridge() { hooks.installClaudeUsageBridge() }
     func uninstallClaudeUsageBridge() { hooks.uninstallClaudeUsageBridge() }
     func updateClaudeConfigDirectory(to newDirectory: URL?) { hooks.updateClaudeConfigDirectory(to: newDirectory) }
