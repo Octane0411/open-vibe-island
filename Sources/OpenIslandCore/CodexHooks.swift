@@ -192,6 +192,7 @@ public struct CodexHookPayload: Equatable, Codable, Sendable {
 }
 
 public enum CodexHookDirective: Equatable, Codable, Sendable {
+    case allow
     case deny(reason: String)
 
     private enum CodingKeys: String, CodingKey {
@@ -200,6 +201,7 @@ public enum CodexHookDirective: Equatable, Codable, Sendable {
     }
 
     private enum DirectiveType: String, Codable {
+        case allow
         case deny
     }
 
@@ -208,6 +210,8 @@ public enum CodexHookDirective: Equatable, Codable, Sendable {
         let type = try container.decode(DirectiveType.self, forKey: .type)
 
         switch type {
+        case .allow:
+            self = .allow
         case .deny:
             self = .deny(reason: try container.decode(String.self, forKey: .reason))
         }
@@ -217,6 +221,8 @@ public enum CodexHookDirective: Equatable, Codable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
 
         switch self {
+        case .allow:
+            try container.encode(DirectiveType.allow, forKey: .type)
         case let .deny(reason):
             try container.encode(DirectiveType.deny, forKey: .type)
             try container.encode(reason, forKey: .reason)
@@ -225,9 +231,25 @@ public enum CodexHookDirective: Equatable, Codable, Sendable {
 }
 
 public enum CodexHookOutputEncoder {
-    private struct LegacyBlockOutput: Codable {
+    /// Codex CLI accepts the Claude-compatible `{"decision":"block",...}`
+    /// shape for Stop/PreToolUse blocking. Allow emits an explicit
+    /// `{"hookSpecificOutput":{"permissionDecision":"allow"}}` plus
+    /// `continue:true` per the PreToolUse output schema bundled with the
+    /// Codex binary; `decision` is intentionally omitted because Codex
+    /// currently rejects `decision:"approve"` on PreToolUse.
+    private struct BlockOutput: Encodable {
         var decision = "block"
         var reason: String
+    }
+
+    private struct AllowOutput: Encodable {
+        struct HookSpecificOutput: Encodable {
+            let hookEventName = "PreToolUse"
+            let permissionDecision = "allow"
+        }
+
+        var `continue` = true
+        var hookSpecificOutput = HookSpecificOutput()
     }
 
     public static func standardOutput(for response: BridgeResponse) throws -> Data? {
@@ -241,8 +263,10 @@ public enum CodexHookOutputEncoder {
             let data: Data
 
             switch directive {
+            case .allow:
+                data = try encoder.encode(AllowOutput())
             case let .deny(reason):
-                data = try encoder.encode(LegacyBlockOutput(reason: reason))
+                data = try encoder.encode(BlockOutput(reason: reason))
             }
 
             var line = data
