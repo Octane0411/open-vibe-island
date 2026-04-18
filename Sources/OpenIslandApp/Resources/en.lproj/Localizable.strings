@@ -36,6 +36,11 @@
 "settings.general.uninstallConfirmAction" = "Uninstall";
 "settings.general.uninstallConfirmMessage.claude" = "This will remove Open Island hooks from Claude Code. You can reinstall them at any time.";
 "settings.general.uninstallConfirmMessage.codex" = "This will remove Open Island hooks from Codex. You can reinstall them at any time.";
+"settings.codex.hookMode.title" = "Codex Integration";
+"settings.codex.hookMode.notifyOnly" = "Notify Only";
+"settings.codex.hookMode.fullControl" = "Full Control";
+"settings.codex.hookMode.notifyOnly.description" = "Surface Codex session events and prompts in the island. Tool execution runs without interception.";
+"settings.codex.hookMode.fullControl.description" = "Approve or deny each Bash command before Codex runs it, matching Claude Code. Raises per-turn notification volume.";
 "settings.general.uninstallConfirmMessage.claudeUsage" = "This will remove the Claude usage bridge. You can reinstall it at any time.";
 "settings.general.cancel" = "Cancel";
 "settings.general.language" = "Language";

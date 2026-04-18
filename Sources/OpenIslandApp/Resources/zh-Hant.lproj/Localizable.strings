@@ -36,6 +36,11 @@
 "settings.general.uninstallConfirmAction" = "移除";
 "settings.general.uninstallConfirmMessage.claude" = "這將從 Claude Code 中移除 Open Island 的 hooks。您可以隨時重新安裝。";
 "settings.general.uninstallConfirmMessage.codex" = "這將從 Codex 中移除 Open Island 的 hooks。您可以隨時重新安裝。";
+"settings.codex.hookMode.title" = "Codex 整合模式";
+"settings.codex.hookMode.notifyOnly" = "僅通知";
+"settings.codex.hookMode.fullControl" = "完全控制";
+"settings.codex.hookMode.notifyOnly.description" = "在靈動島中展示 Codex 會話事件與提示詞，不攔截工具執行。";
+"settings.codex.hookMode.fullControl.description" = "在 Codex 執行每條 Bash 命令前先於靈動島中批准或拒絕，對齊 Claude Code 體驗。每一輪互動的通知量會更高。";
 "settings.general.uninstallConfirmMessage.claudeUsage" = "這將移除 Claude 用量橋接。您可以隨時重新安裝。";
 "settings.general.cancel" = "取消";
 "settings.general.language" = "語言";
