@@ -350,8 +350,18 @@ private enum DebugSessionFactory {
             summary: "这个提醒态需要自动收起吗？",
             updatedAt: now.addingTimeInterval(-18),
             questionPrompt: QuestionPrompt(
-                title: "这个提醒态需要自动收起吗？",
-                options: ["10 秒", "鼠标离开收起", "都要"]
+                title: "Which authentication method should we use?",
+                questions: [
+                    QuestionPromptItem(
+                        question: "Which authentication method should we use?",
+                        header: "Auth",
+                        options: [
+                            QuestionOption(label: "JWT tokens", description: "Stateless, scalable"),
+                            QuestionOption(label: "Session cookies", description: "Traditional approach"),
+                            QuestionOption(label: "OAuth 2.0", description: "Third-party auth"),
+                        ]
+                    )
+                ]
             ),
             jumpTarget: JumpTarget(
                 terminalApp: "Ghostty",

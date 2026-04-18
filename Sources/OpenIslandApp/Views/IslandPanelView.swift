@@ -1593,7 +1593,7 @@ private struct StructuredQuestionPromptView: View {
     @State private var selections: [String: Set<String>] = [:]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             if showsPromptTitle {
                 Text(promptTitle)
                     .font(.system(size: 13, weight: .semibold))
@@ -1601,55 +1601,20 @@ private struct StructuredQuestionPromptView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if structuredQuestions.isEmpty {
-                HStack(spacing: 10) {
-                    ForEach(prompt?.options.prefix(3) ?? [], id: \.self) { option in
-                        Button(option) {
-                            onAnswer(QuestionPromptResponse(answer: option))
-                        }
-                        .buttonStyle(IslandWideButtonStyle(kind: .secondary))
-                    }
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(structuredQuestions, id: \.question) { question in
+                    questionRow(question)
                 }
-            } else {
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        ForEach(structuredQuestions, id: \.question) { question in
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(question.header)
-                                    .font(.system(size: 10.5, weight: .bold))
-                                    .foregroundStyle(.white.opacity(0.5))
 
-                                Text(question.question)
-                                    .font(.system(size: 12.5, weight: .medium))
-                                    .foregroundStyle(.white.opacity(0.88))
-                                    .fixedSize(horizontal: false, vertical: true)
-
-                                HStack(spacing: 8) {
-                                    ForEach(question.options.prefix(4), id: \.label) { option in
-                                        Button(option.label) {
-                                            toggle(option: option.label, for: question)
-                                        }
-                                        .buttonStyle(
-                                            IslandWideButtonStyle(
-                                                kind: selectedLabels(for: question).contains(option.label) ? .primary : .secondary
-                                            )
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        Button(lang.t("question.submit")) {
-                            onAnswer(QuestionPromptResponse(answers: answerMap))
-                        }
-                        .buttonStyle(IslandWideButtonStyle(kind: .primary))
-                        .disabled(!hasCompleteSelection)
-                    }
+                Button(lang.t("question.submit")) {
+                    onAnswer(QuestionPromptResponse(answers: answerMap))
                 }
+                .buttonStyle(IslandWideButtonStyle(kind: .primary))
+                .disabled(!hasCompleteSelection)
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -1660,6 +1625,76 @@ private struct StructuredQuestionPromptView: View {
                 .strokeBorder(.white.opacity(0.06))
         )
     }
+
+    // MARK: - Per-question row
+
+    /// Renders a single question with its header, text, and vertical option list.
+    @ViewBuilder
+    private func questionRow(_ question: QuestionPromptItem) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if structuredQuestions.count > 1 {
+                Text(question.header)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+
+            Text(question.question)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.white.opacity(0.88))
+                .fixedSize(horizontal: false, vertical: true)
+
+            // Vertical option list
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(question.options) { option in
+                    optionRow(option, question: question)
+                }
+            }
+        }
+    }
+
+    // MARK: - Option row (vertical, CLI-style)
+
+    /// Renders a single option as a selectable row with checkmark indicator, label, and optional description.
+    private func optionRow(_ option: QuestionOption, question: QuestionPromptItem) -> some View {
+        let isSelected = selectedLabels(for: question).contains(option.label)
+        return Button {
+            toggle(option: option.label, for: question)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(isSelected ? .yellow : .white.opacity(0.35))
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(option.label)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(isSelected ? 1 : 0.78))
+
+                    if !option.description.isEmpty {
+                        Text(option.description)
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(.white.opacity(0.4))
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 5)
+            .padding(.horizontal, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(isSelected ? Color.yellow.opacity(0.10) : Color.white.opacity(0.04))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(isSelected ? .yellow.opacity(0.25) : .clear)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Helpers
 
     private var structuredQuestions: [QuestionPromptItem] {
         prompt?.questions ?? []
@@ -1688,7 +1723,6 @@ private struct StructuredQuestionPromptView: View {
             guard !selected.isEmpty else {
                 return nil
             }
-
             return (question.question, selected.sorted().joined(separator: ", "))
         })
     }

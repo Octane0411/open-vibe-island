@@ -193,11 +193,14 @@ public struct PermissionRequest: Equatable, Identifiable, Codable, Sendable {
     }
 }
 
-public struct QuestionOption: Equatable, Codable, Sendable {
+/// A single selectable option within a structured question prompt.
+public struct QuestionOption: Equatable, Identifiable, Codable, Sendable {
+    public var id: UUID
     public var label: String
     public var description: String
 
-    public init(label: String, description: String = "") {
+    public init(id: UUID = UUID(), label: String, description: String = "") {
+        self.id = id
         self.label = label
         self.description = description
     }
