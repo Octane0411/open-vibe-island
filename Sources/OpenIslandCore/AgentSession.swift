@@ -198,11 +198,19 @@ public struct QuestionOption: Equatable, Identifiable, Codable, Sendable {
     public var id: UUID
     public var label: String
     public var description: String
+    /// When true, the submitted answer is the user's typed text, not the label.
+    public var allowsFreeform: Bool
 
-    public init(id: UUID = UUID(), label: String, description: String = "") {
+    public init(
+        id: UUID = UUID(),
+        label: String,
+        description: String = "",
+        allowsFreeform: Bool = false
+    ) {
         self.id = id
         self.label = label
         self.description = description
+        self.allowsFreeform = allowsFreeform
     }
 }
 

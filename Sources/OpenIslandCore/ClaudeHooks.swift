@@ -837,10 +837,16 @@ public extension ClaudeHookPayload {
                 return nil
             }
 
+            // CLIs add "Other" client-side and tell the model not to include one; mirror that here.
+            var resolvedOptions = options
+            resolvedOptions.append(
+                QuestionOption(label: "Other", description: "", allowsFreeform: true)
+            )
+
             return QuestionPromptItem(
                 question: questionText,
                 header: header,
-                options: options,
+                options: resolvedOptions,
                 multiSelect: questionObject["multiSelect"]?.boolValue ?? false
             )
         }

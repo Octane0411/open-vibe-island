@@ -151,6 +151,7 @@
 /* Island Panel - Question */
 "question.submit" = "提交答案";
 "question.answerNeeded" = "需要回答";
+"question.otherPlaceholder" = "输入你的回答…";
 
 /* Island Panel - Completion */
 "completion.done" = "完成";

@@ -359,6 +359,7 @@ private enum DebugSessionFactory {
                             QuestionOption(label: "JWT tokens", description: "Stateless, scalable"),
                             QuestionOption(label: "Session cookies", description: "Traditional approach"),
                             QuestionOption(label: "OAuth 2.0", description: "Third-party auth"),
+                            QuestionOption(label: "Other", description: "", allowsFreeform: true),
                         ]
                     )
                 ]

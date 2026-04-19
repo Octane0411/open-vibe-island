@@ -377,6 +377,34 @@ struct ClaudeHooksTests {
     }
 
     @Test
+    func questionPromptAlwaysAppendsOtherFreeformOption() throws {
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp",
+            hookEventName: .preToolUse,
+            sessionID: "s1",
+            toolName: "AskUserQuestion",
+            toolInput: .object([
+                "questions": .array([
+                    .object([
+                        "question": .string("Pick one"),
+                        "header": .string("Pick"),
+                        "options": .array([
+                            option(label: "Production", description: ""),
+                            option(label: "Staging", description: ""),
+                        ]),
+                    ]),
+                ]),
+            ])
+        )
+
+        let prompt = try #require(payload.questionPrompt)
+        let options = try #require(prompt.questions.first?.options)
+        #expect(options.map(\.label) == ["Production", "Staging", "Other"])
+        #expect(options.last?.allowsFreeform == true)
+        #expect(options.dropLast().allSatisfy { !$0.allowsFreeform })
+    }
+
+    @Test
     func claudeDefaultJumpTargetForwardsWarpPaneUUID() {
         let payload = ClaudeHookPayload(
             cwd: "/tmp/demo",
