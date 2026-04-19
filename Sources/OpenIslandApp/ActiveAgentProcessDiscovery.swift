@@ -128,6 +128,23 @@ struct ActiveAgentProcessDiscovery {
                     terminalTTY: process.terminalTTY,
                     terminalApp: terminalApp(for: process, processesByPID: processesByPID)
                 ))
+                continue
+            }
+
+            if isHermesProcess(command: process.command) {
+                let claimKey = "hermes:\(process.pid)"
+                guard claimedKeys.insert(claimKey).inserted else {
+                    continue
+                }
+
+                let lsofOutput = lsofOutput(pid: process.pid)
+                snapshots.append(ProcessSnapshot(
+                    tool: .hermes,
+                    sessionID: nil,
+                    workingDirectory: lsofOutput.flatMap(workingDirectory(from:)),
+                    terminalTTY: process.terminalTTY,
+                    terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+                ))
             }
         }
 
@@ -532,6 +549,37 @@ struct ActiveAgentProcessDiscovery {
             || lowered.contains("/bin/gemini")
             || lowered.contains("/google/gemini-cli")
             || lowered.contains("/@google/gemini-cli")
+    }
+
+    /// Matches Hermes CLI processes (`hermes` / `python -m hermes_cli.main`).
+    /// Excludes `hermes gateway`, which runs Hermes as a background daemon
+    /// rather than as an interactive coding agent in a terminal.
+    private func isHermesProcess(command: String) -> Bool {
+        let lowered = command.lowercased()
+        let tokens = lowered.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+        guard let firstToken = tokens.first else {
+            return false
+        }
+
+        let matchesHermesBinary = firstToken == "hermes"
+            || firstToken.hasSuffix("/hermes")
+            || lowered.contains("/bin/hermes")
+
+        let matchesHermesModule = lowered.contains("hermes_cli.main")
+            || lowered.contains("hermes_cli/main")
+            || lowered.contains("-m hermes_cli")
+
+        guard matchesHermesBinary || matchesHermesModule else {
+            return false
+        }
+
+        // Exclude gateway/daemon invocations: `hermes gateway ...` or
+        // `python -m hermes_cli.main gateway ...`.
+        if tokens.dropFirst().contains("gateway") {
+            return false
+        }
+
+        return true
     }
 
     /// Returns `true` when the given `ps` command string belongs to a Claude Code process.

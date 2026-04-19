@@ -434,6 +434,9 @@ public final class BridgeServer: @unchecked Sendable {
 
         case let .processGeminiHook(payload):
             handleGeminiHook(payload, from: clientID)
+
+        case let .processHermesHook(payload):
+            handleHermesHook(payload, from: clientID)
         }
     }
 
@@ -1383,6 +1386,157 @@ public final class BridgeServer: @unchecked Sendable {
                 GeminiSessionMetadataUpdated(
                     sessionID: payload.sessionID,
                     geminiMetadata: merged,
+                    timestamp: .now
+                )
+            )
+        )
+    }
+
+    private func handleHermesHook(_ payload: HermesHookPayload, from clientID: UUID) {
+        switch payload.hookEventName {
+        case .sessionStart:
+            emit(
+                .sessionStarted(
+                    SessionStarted(
+                        sessionID: payload.sessionID,
+                        title: payload.sessionTitle,
+                        tool: .hermes,
+                        origin: .live,
+                        initialPhase: .running,
+                        summary: payload.implicitSummary,
+                        timestamp: .now,
+                        jumpTarget: payload.defaultJumpTarget,
+                        hermesMetadata: payload.defaultHermesMetadata.isEmpty ? nil : payload.defaultHermesMetadata
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .preToolCall:
+            ensureHermesSessionExists(for: payload)
+            synchronizeHermesJumpTarget(for: payload)
+            synchronizeHermesMetadata(for: payload, clearToolState: false)
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitSummary,
+                        phase: .running,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .postToolCall:
+            ensureHermesSessionExists(for: payload)
+            synchronizeHermesJumpTarget(for: payload)
+            synchronizeHermesMetadata(for: payload, clearToolState: true)
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitSummary,
+                        phase: .running,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .sessionEnd:
+            ensureHermesSessionExists(for: payload)
+            synchronizeHermesJumpTarget(for: payload)
+            synchronizeHermesMetadata(for: payload, clearToolState: true)
+            emit(
+                .sessionCompleted(
+                    SessionCompleted(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitSummary,
+                        timestamp: .now,
+                        isInterrupt: payload.interrupted == true ? true : nil,
+                        isSessionEnd: true
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+        }
+    }
+
+    private func ensureHermesSessionExists(for payload: HermesHookPayload) {
+        guard !hasSession(id: payload.sessionID) else {
+            return
+        }
+
+        emit(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: payload.sessionID,
+                    title: payload.sessionTitle,
+                    tool: .hermes,
+                    origin: .live,
+                    initialPhase: .running,
+                    summary: payload.implicitSummary,
+                    timestamp: .now,
+                    jumpTarget: payload.defaultJumpTarget,
+                    hermesMetadata: payload.defaultHermesMetadata.isEmpty ? nil : payload.defaultHermesMetadata
+                )
+            )
+        )
+    }
+
+    private func synchronizeHermesJumpTarget(for payload: HermesHookPayload) {
+        guard let existingSession = localState.session(id: payload.sessionID) else {
+            return
+        }
+
+        let jumpTarget = Self.mergeJumpTargetPreservingExistingResolvedFields(
+            incoming: payload.defaultJumpTarget,
+            existing: existingSession.jumpTarget
+        )
+
+        guard existingSession.jumpTarget != jumpTarget else {
+            return
+        }
+
+        emit(
+            .jumpTargetUpdated(
+                JumpTargetUpdated(
+                    sessionID: payload.sessionID,
+                    jumpTarget: jumpTarget,
+                    timestamp: .now
+                )
+            )
+        )
+    }
+
+    private func synchronizeHermesMetadata(for payload: HermesHookPayload, clearToolState: Bool) {
+        guard let existingSession = localState.session(id: payload.sessionID) else {
+            return
+        }
+
+        let update = payload.defaultHermesMetadata
+        let existing = existingSession.hermesMetadata
+
+        let merged = HermesSessionMetadata(
+            initialUserPrompt: existing?.initialUserPrompt ?? update.initialUserPrompt,
+            lastUserPrompt: update.lastUserPrompt ?? existing?.lastUserPrompt,
+            lastAssistantMessage: update.lastAssistantMessage ?? existing?.lastAssistantMessage,
+            currentTool: clearToolState ? nil : (update.currentTool ?? existing?.currentTool),
+            currentToolInputPreview: clearToolState ? nil : (update.currentToolInputPreview ?? existing?.currentToolInputPreview),
+            model: update.model ?? existing?.model,
+            cwd: update.cwd ?? existing?.cwd
+        )
+
+        guard existing != merged else {
+            return
+        }
+
+        emit(
+            .hermesSessionMetadataUpdated(
+                HermesSessionMetadataUpdated(
+                    sessionID: payload.sessionID,
+                    hermesMetadata: merged,
                     timestamp: .now
                 )
             )

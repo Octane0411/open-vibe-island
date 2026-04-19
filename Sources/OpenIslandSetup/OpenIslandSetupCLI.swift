@@ -25,11 +25,15 @@ private struct SetupCommand {
         case installClaude
         case uninstallClaude
         case statusClaude
+        case installHermes
+        case uninstallHermes
+        case statusHermes
     }
 
     let action: Action
     let codexDirectory: URL
     let claudeDirectory: URL
+    let hermesDirectory: URL
     let hooksBinary: URL?
 
     init(arguments: [String]) throws {
@@ -43,6 +47,7 @@ private struct SetupCommand {
         var hooksBinary: URL?
         var codexDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex", isDirectory: true)
         var claudeDirectory = ClaudeConfigDirectory.resolved()
+        var hermesDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".hermes", isDirectory: true)
 
         var index = 1
         while index < arguments.count {
@@ -68,6 +73,13 @@ private struct SetupCommand {
                 }
                 claudeDirectory = URL(fileURLWithPath: arguments[index]).standardizedFileURL
 
+            case "--hermes-dir":
+                index += 1
+                guard index < arguments.count else {
+                    throw SetupError.missingValue("--hermes-dir")
+                }
+                hermesDirectory = URL(fileURLWithPath: arguments[index]).standardizedFileURL
+
             default:
                 throw SetupError.unexpectedArgument(arguments[index])
             }
@@ -75,12 +87,13 @@ private struct SetupCommand {
             index += 1
         }
 
-        if (action == .install || action == .installClaude), hooksBinary == nil {
+        if action == .install || action == .installClaude || action == .installHermes, hooksBinary == nil {
             hooksBinary = HooksBinaryLocator.locate()
         }
 
         self.codexDirectory = codexDirectory
         self.claudeDirectory = claudeDirectory
+        self.hermesDirectory = hermesDirectory
         self.hooksBinary = hooksBinary
     }
 
@@ -98,6 +111,12 @@ private struct SetupCommand {
             try uninstallClaude()
         case .statusClaude:
             try statusClaude()
+        case .installHermes:
+            try installHermes()
+        case .uninstallHermes:
+            try uninstallHermes()
+        case .statusHermes:
+            try statusHermes()
         }
     }
 
@@ -192,6 +211,53 @@ private struct SetupCommand {
             print("Manifest: missing")
         }
     }
+
+    private func installHermes() throws {
+        guard let hooksBinary else {
+            throw SetupError.usage
+        }
+
+        let manager = HermesHookInstallationManager(hermesDirectory: hermesDirectory)
+        let status = try manager.install(hooksBinaryURL: hooksBinary)
+
+        print("Installed Open Island Hermes plugin.")
+        print("Hermes dir: \(status.hermesDirectory.path)")
+        print("Plugin dir: \(status.pluginDirectory.path)")
+        print("Hooks binary: \(hooksBinary.path)")
+    }
+
+    private func uninstallHermes() throws {
+        let manager = HermesHookInstallationManager(hermesDirectory: hermesDirectory)
+        let status = try manager.uninstall()
+
+        print("Removed Open Island Hermes plugin.")
+        print("Hermes dir: \(status.hermesDirectory.path)")
+        if status.hasForeignPluginDirectory {
+            print("Preserved non-Open-Island plugin at \(status.pluginDirectory.path).")
+        }
+    }
+
+    private func statusHermes() throws {
+        let manager = HermesHookInstallationManager(hermesDirectory: hermesDirectory)
+        let status = try manager.status(hooksBinaryURL: hooksBinary)
+
+        print("Hermes dir: \(status.hermesDirectory.path)")
+        print("Plugin dir: \(status.pluginDirectory.path)")
+        print("Managed plugin present: \(status.managedHooksPresent ? "yes" : "no")")
+        if status.hasForeignPluginDirectory {
+            print("Foreign plugin at plugin dir: yes")
+        }
+        if let hooksBinary = status.hooksBinaryURL {
+            print("Hooks binary: \(hooksBinary.path)")
+        }
+        if let manifest = status.manifest {
+            print("Manifest: present")
+            print("Plugin version: \(manifest.pluginVersion)")
+            print("Hook binary path: \(manifest.hookBinaryPath)")
+        } else {
+            print("Manifest: missing")
+        }
+    }
 }
 
 private enum SetupError: Error, LocalizedError {
@@ -210,6 +276,9 @@ private enum SetupError: Error, LocalizedError {
               swift run OpenIslandSetup installClaude [--hooks-binary /abs/path/to/OpenIslandHooks] [--claude-dir /abs/path/to/.claude]
               swift run OpenIslandSetup uninstallClaude [--claude-dir /abs/path/to/.claude]
               swift run OpenIslandSetup statusClaude [--hooks-binary /abs/path/to/OpenIslandHooks] [--claude-dir /abs/path/to/.claude]
+              swift run OpenIslandSetup installHermes [--hooks-binary /abs/path/to/OpenIslandHooks] [--hermes-dir /abs/path/to/.hermes]
+              swift run OpenIslandSetup uninstallHermes [--hermes-dir /abs/path/to/.hermes]
+              swift run OpenIslandSetup statusHermes [--hooks-binary /abs/path/to/OpenIslandHooks] [--hermes-dir /abs/path/to/.hermes]
             """
         case let .missingValue(flag):
             "Missing value for \(flag)"

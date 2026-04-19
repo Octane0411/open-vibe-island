@@ -1179,6 +1179,7 @@ final class AppModel {
                 case let .geminiSessionMetadataUpdated(p): return p.sessionID
                 case let .openCodeSessionMetadataUpdated(p): return p.sessionID
                 case let .cursorSessionMetadataUpdated(p): return p.sessionID
+                case let .hermesSessionMetadataUpdated(p): return p.sessionID
                 case let .actionableStateResolved(p): return p.sessionID
                 }
             }()
@@ -1439,6 +1440,12 @@ final class AppModel {
             }
 
             return payload.cursorMetadata.lastAssistantMessage ?? "Cursor session metadata updated."
+        case let .hermesSessionMetadataUpdated(payload):
+            if let currentTool = payload.hermesMetadata.currentTool {
+                return "Hermes is running \(currentTool)."
+            }
+
+            return payload.hermesMetadata.lastAssistantMessage ?? "Hermes session metadata updated."
         case let .actionableStateResolved(payload):
             return "Actionable state resolved for session \(payload.sessionID)."
         }
