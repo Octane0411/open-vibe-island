@@ -24,7 +24,8 @@ final class OverlayPanelController {
     // Approval card: header row (~72) + actionableBody padding (16*2 + 14 bottom) + body content (~186)
     // Bumped to 310 to ensure the estimated panel height is never smaller than the actual rendered card.
     private static let approvalCardHeight: CGFloat = 310
-    private static let questionCardHeight: CGFloat = 110
+    private static let questionCardBaseHeight: CGFloat = 110
+    private static let questionCardMaxHeight: CGFloat = 420
     // Completion card chrome breakdown (everything except the scrollable text):
     // openedContent vertical padding: 24, card container padding: 28,
     // card VStack spacing: 14, card header (title+prompt): ~50,
@@ -131,7 +132,7 @@ final class OverlayPanelController {
         panel.isMovable = false
         panel.hidesOnDeactivate = false
         panel.acceptsMouseMovedEvents = false
-        panel.collectionBehavior = [.fullScreenAuxiliary, .stationary, .canJoinAllSpaces, .ignoresCycle]
+        panel.collectionBehavior = [.fullScreenAuxiliary, .canJoinAllSpaces, .ignoresCycle]
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.ignoresMouseEvents = true
@@ -626,8 +627,34 @@ final class OverlayPanelController {
         return headerHeight + 1 + markdownHeight + replyInputHeight
     }
 
+    /// Estimates the question card height based on prompt content (question count,
+    /// option count per question, and whether the prompt title is shown).
     private func questionCardHeight(for prompt: QuestionPrompt?) -> CGFloat {
-        Self.questionCardHeight
+        guard let prompt, !prompt.questions.isEmpty else {
+            return Self.questionCardBaseHeight
+        }
+
+        // Card chrome: outer padding + submit button ≈ 90pt.
+        // When the prompt title is suppressed (single question whose title
+        // matches the question text), reduce chrome by ~20pt.
+        let titleSuppressed = prompt.questions.count == 1
+            && prompt.title == prompt.questions.first?.question
+        let chromeHeight: CGFloat = titleSuppressed ? 70 : 90
+        var contentHeight: CGFloat = 0
+
+        for question in prompt.questions {
+            if prompt.questions.count > 1 {
+                contentHeight += 16 // header
+            }
+            contentHeight += 20 // question text
+            contentHeight += CGFloat(question.options.count) * 30 // option rows
+        }
+
+        // Inter-question spacing (only between questions, not after the last).
+        contentHeight += CGFloat(max(0, prompt.questions.count - 1)) * 10
+
+        let estimated = chromeHeight + contentHeight
+        return min(Self.questionCardMaxHeight, max(Self.questionCardBaseHeight, estimated))
     }
 
     private func completionCardHeight(for model: AppModel) -> CGFloat {

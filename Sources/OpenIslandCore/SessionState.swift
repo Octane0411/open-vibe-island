@@ -74,6 +74,10 @@ public struct SessionState: Equatable, Sendable {
             )
             session.isRemote = payload.isRemote
             session.isHookManaged = payload.origin == .live
+            // Codex.app sessions use app-level liveness (NSRunningApplication)
+            // rather than hook-managed processNotSeenCount polling — flag is
+            // derived from jumpTarget.terminalApp via the shared helper.
+            Self.refreshCodexAppClassification(for: &session)
             session.isSessionEnded = false
             session.isProcessAlive = true
             session.processNotSeenCount = 0
@@ -152,6 +156,7 @@ public struct SessionState: Equatable, Sendable {
 
             session.jumpTarget = payload.jumpTarget
             session.updatedAt = payload.timestamp
+            Self.refreshCodexAppClassification(for: &session)
             upsert(session)
 
         case let .sessionMetadataUpdated(payload):
@@ -232,7 +237,7 @@ public struct SessionState: Equatable, Sendable {
         if resolution.isApproved {
             session.phase = .running
             switch session.tool {
-            case .claudeCode, .geminiCLI, .qoder, .qwenCode, .factory, .codebuddy:
+            case .claudeCode, .geminiCLI, .qoder, .qwenCode, .factory, .codebuddy, .kimiCLI:
                 session.summary = "Permission approved. \(session.tool.displayName) continued the tool."
             case .openCode:
                 session.summary = "Permission approved. OpenCode continued the tool."
@@ -242,7 +247,7 @@ public struct SessionState: Equatable, Sendable {
         } else {
             session.phase = .completed
             switch session.tool {
-            case .claudeCode, .geminiCLI, .qoder, .qwenCode, .factory, .codebuddy:
+            case .claudeCode, .geminiCLI, .qoder, .qwenCode, .factory, .codebuddy, .kimiCLI:
                 session.summary = "Permission denied in Open Island."
             case .openCode:
                 session.summary = "Permission denied in Open Island."
@@ -300,11 +305,26 @@ public struct SessionState: Equatable, Sendable {
             }
 
             session.jumpTarget = jumpTarget
+            Self.refreshCodexAppClassification(for: &session)
             upsert(session)
             changed = true
         }
 
         return changed
+    }
+
+    /// Upgrade `isCodexAppSession` if the session's current jumpTarget
+    /// identifies it as a Codex.app session.  Never downgrades — once a
+    /// session is classified as Codex.app, it stays classified even if a
+    /// later resolver pass replaces the jumpTarget with a generic one.
+    /// This handles the case where the first hook fires before terminalApp
+    /// is known and a later `jumpTargetUpdated` fills it in.
+    static func refreshCodexAppClassification(for session: inout AgentSession) {
+        if session.jumpTarget?.terminalApp == "Codex.app" {
+            session.isCodexAppSession = true
+            // Codex.app sessions use app-level liveness, not hook-managed polling.
+            session.isHookManaged = false
+        }
     }
 
     /// Mark a single session as alive (e.g. when a hook event is received).
@@ -320,13 +340,29 @@ public struct SessionState: Equatable, Sendable {
     /// Update process liveness for all tracked sessions based on process discovery.
     /// Returns the set of session IDs whose `isProcessAlive` changed.
     @discardableResult
-    public mutating func markProcessLiveness(aliveSessionIDs: Set<String>) -> Set<String> {
+    public mutating func markProcessLiveness(
+        aliveSessionIDs: Set<String>,
+        isCodexAppRunning: Bool = false
+    ) -> Set<String> {
         var changed: Set<String> = []
 
         for (id, var session) in sessionsByID {
             // Remote sessions have no local process — keep them alive as long
             // as the bridge is delivering hook events.
             if session.isRemote {
+                continue
+            }
+
+            // Codex.app sessions use app-level liveness (NSRunningApplication)
+            // rather than subprocess matching.  Phase is driven by hooks or
+            // the rollout watcher / app-server notifications.
+            if session.isCodexAppSession {
+                let wasAlive = session.isProcessAlive
+                session.isProcessAlive = aliveSessionIDs.contains(id)
+                if session.isProcessAlive != wasAlive {
+                    changed.insert(id)
+                }
+                upsert(session)
                 continue
             }
 
@@ -339,6 +375,16 @@ public struct SessionState: Equatable, Sendable {
             // cleaned up.
             if session.isHookManaged {
                 if session.isSessionEnded {
+                    continue
+                }
+
+                // When a Codex session reached .completed via hooks (.stop)
+                // and Codex.app is still running, don't kill it through
+                // process polling — the CLI subprocess exits after each turn
+                // but the desktop app session is still valid.  The session
+                // stays visible as "Completed" and fades via island presence.
+                if session.tool == .codex && session.phase == .completed && isCodexAppRunning {
+                    upsert(session)
                     continue
                 }
 

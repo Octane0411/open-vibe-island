@@ -407,6 +407,64 @@ final class TerminalJumpServiceTests: XCTestCase {
         XCTAssertEqual(openedArguments.values, [["-b", "cn.trae.app"]])
     }
 
+    func testCodexAppJumpActivatesCodexDesktopApp() throws {
+        let openedArguments = OpenedArgumentsBox()
+        let service = TerminalJumpService(
+            applicationResolver: { bundleIdentifier in
+                bundleIdentifier == "com.openai.codex" ? URL(fileURLWithPath: "/Applications/Codex.app") : nil
+            },
+            appRunningChecker: { bundleIdentifier in
+                bundleIdentifier == "com.openai.codex"
+            },
+            openAction: { arguments in
+                openedArguments.values.append(arguments)
+            },
+            appleScriptRunner: { _ in "" }
+        )
+
+        let result = try service.jump(
+            to: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "my-project",
+                paneTitle: "",
+                workingDirectory: "/Users/test/my-project"
+            )
+        )
+
+        XCTAssertEqual(result, "Activated Codex.app.")
+        XCTAssertEqual(openedArguments.values, [["-b", "com.openai.codex"]])
+    }
+
+    func testCodexAppJumpOpensSpecificThreadWhenThreadIDProvided() throws {
+        let openedArguments = OpenedArgumentsBox()
+        let service = TerminalJumpService(
+            applicationResolver: { bundleIdentifier in
+                bundleIdentifier == "com.openai.codex" ? URL(fileURLWithPath: "/Applications/Codex.app") : nil
+            },
+            appRunningChecker: { bundleIdentifier in
+                bundleIdentifier == "com.openai.codex"
+            },
+            openAction: { arguments in
+                openedArguments.values.append(arguments)
+            },
+            appleScriptRunner: { _ in "" }
+        )
+
+        let threadID = "019d9a98-d3ab-7060-95b2-0a435912da57"
+        let result = try service.jump(
+            to: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "my-project",
+                paneTitle: "",
+                workingDirectory: "/Users/test/my-project",
+                codexThreadID: threadID
+            )
+        )
+
+        XCTAssertEqual(result, "Focused the Codex.app conversation.")
+        XCTAssertEqual(openedArguments.values, [["codex://threads/\(threadID)"]])
+    }
+
     func testTraeCNJumpFallsBackToWorkspaceViaTraeCLI() throws {
         let openedArguments = OpenedArgumentsBox()
         let processInvocations = ProcessInvocationBox()

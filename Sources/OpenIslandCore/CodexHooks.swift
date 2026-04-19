@@ -279,7 +279,10 @@ public extension CodexHookPayload {
             workingDirectory: cwd,
             terminalSessionID: terminalSessionID,
             terminalTTY: terminalTTY,
-            warpPaneUUID: warpPaneUUID
+            warpPaneUUID: warpPaneUUID,
+            // For Codex.app sessions, session ID is the thread ID — used
+            // for `codex://threads/<id>` deep-link jumps.
+            codexThreadID: terminalApp == "Codex.app" ? sessionID : nil
         )
     }
 
@@ -481,7 +484,7 @@ public extension CodexHookPayload {
     }
 
     private static let noLocatorTerminalApps: Set<String> = [
-        "cmux", "kaku", "wezterm", "zellij",
+        "cmux", "codex.app", "kaku", "wezterm", "zellij",
         "vs code", "vs code insiders", "cursor", "windsurf", "trae",
         "intellij idea", "webstorm", "pycharm", "goland", "clion",
         "rubymine", "phpstorm", "rider", "rustrover",
@@ -517,6 +520,20 @@ public extension CodexHookPayload {
         }
         if environment["ZELLIJ"] != nil {
             return "Zellij"
+        }
+
+        // Codex desktop app — the hook binary runs as a child of Codex.app,
+        // which sets __CFBundleIdentifier to its own bundle ID.  Must be
+        // checked BEFORE TERM_PROGRAM: when Codex.app is launched from a
+        // terminal (e.g. `open -a Codex` from Ghostty), TERM_PROGRAM leaks
+        // from the parent shell env, which would incorrectly classify
+        // Codex.app's hook subprocess as the launching terminal.
+        // __CFBundleIdentifier is safe here because a real terminal session
+        // would have its own terminal's bundle ID (e.g. com.mitchellh.ghostty),
+        // not one containing both "openai" and "codex".
+        if let bundleID = environment["__CFBundleIdentifier"]?.lowercased(),
+           bundleID.contains("openai") && bundleID.contains("codex") {
+            return "Codex.app"
         }
 
         // TERM_PROGRAM is the only authoritative terminal signal. Each

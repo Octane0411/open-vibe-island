@@ -74,6 +74,11 @@ struct TerminalJumpService {
             aliases: ["wezterm"]
         ),
         TerminalAppDescriptor(
+            displayName: "Codex.app",
+            bundleIdentifier: "com.openai.codex",
+            aliases: ["codex.app"]
+        ),
+        TerminalAppDescriptor(
             displayName: "Kaku",
             bundleIdentifier: "fun.tw93.kaku",
             aliases: ["kaku"]
@@ -329,6 +334,16 @@ struct TerminalJumpService {
 
         if let descriptor {
             switch resolvedBundleIdentifier ?? descriptor.bundleIdentifier {
+            case "com.openai.codex":
+                // If we have a thread ID, use the codex:// URL scheme to
+                // open the specific conversation directly.  Otherwise just
+                // activate the app.
+                if let threadID = target.codexThreadID, !threadID.isEmpty {
+                    try openAction(["codex://threads/\(threadID)"])
+                    return "Focused the Codex.app conversation."
+                }
+                try openAction(["-b", "com.openai.codex"])
+                return "Activated Codex.app."
             case "com.googlecode.iterm2":
                 if try jumpToITermSession(target) {
                     return "Focused the matching iTerm session."

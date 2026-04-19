@@ -209,6 +209,17 @@ struct IslandPanelView: View {
             || targetOverlayScreen?.safeAreaInsets.top ?? 0 > 0
     }
 
+    /// True when the closed island sits on an external (non-notched) display.
+    /// The central black rectangle is otherwise aligned with the physical
+    /// notch, so center content is only useful here.
+    private var isExternalDisplayPlacement: Bool {
+        if let mode = model.overlayPlacementDiagnostics?.mode {
+            return mode == .topBar
+        }
+        // Fallback when diagnostics haven't been populated yet.
+        return (targetOverlayScreen?.safeAreaInsets.top ?? 0) == 0
+    }
+
     private var openedHeaderButtonsWidth: CGFloat {
         (Self.headerControlButtonSize * 2) + Self.headerControlSpacing
     }
@@ -374,6 +385,13 @@ struct IslandPanelView: View {
                     Rectangle()
                         .fill(Color.black)
                         .frame(width: closedNotchWidth - NotchShape.closedTopRadius + (isPopping ? 18 : 0))
+                        .overlay(
+                            CentralActivityLabel(
+                                toolName: closedSpotlightSession?.currentToolName,
+                                preview: closedSpotlightSession?.currentCommandPreviewText,
+                                isVisible: isExternalDisplayPlacement && hasClosedPresence
+                            )
+                        )
                 }
 
                 if hasClosedPresence {
@@ -458,7 +476,11 @@ struct IslandPanelView: View {
     }
 
     private var openedContent: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 8) {
+            if !model.hasAnyInstalledAgent {
+                installHooksHint
+            }
+
             if model.shouldShowSessionBootstrapPlaceholder {
                 sessionBootstrapPlaceholder
             } else if model.islandListSessions.isEmpty {
@@ -470,6 +492,43 @@ struct IslandPanelView: View {
         .padding(.horizontal, 18)
         .padding(.top, 8)
         .padding(.bottom, 0)
+    }
+
+    /// Persistent hint at the top of the expanded island while no agent
+    /// hooks are installed. Decoupled from session presence — process
+    /// discovery routinely surfaces sessions even on a freshly cleaned
+    /// install, so the empty-state branch alone never reaches users who
+    /// already run an agent.
+    private var installHooksHint: some View {
+        Button {
+            model.showOnboarding()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                Text(model.lang.t("island.hint.installHooks"))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.4))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.14))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Color.accentColor.opacity(0.35), lineWidth: 0.5)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private var sessionBootstrapPlaceholder: some View {
@@ -1552,7 +1611,7 @@ private struct StructuredQuestionPromptView: View {
     @State private var selections: [String: Set<String>] = [:]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             if showsPromptTitle {
                 Text(promptTitle)
                     .font(.system(size: 13, weight: .semibold))
@@ -1560,55 +1619,20 @@ private struct StructuredQuestionPromptView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if structuredQuestions.isEmpty {
-                HStack(spacing: 10) {
-                    ForEach(prompt?.options.prefix(3) ?? [], id: \.self) { option in
-                        Button(option) {
-                            onAnswer(QuestionPromptResponse(answer: option))
-                        }
-                        .buttonStyle(IslandWideButtonStyle(kind: .secondary))
-                    }
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(structuredQuestions, id: \.question) { question in
+                    questionRow(question)
                 }
-            } else {
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        ForEach(structuredQuestions, id: \.question) { question in
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(question.header)
-                                    .font(.system(size: 10.5, weight: .bold))
-                                    .foregroundStyle(.white.opacity(0.5))
 
-                                Text(question.question)
-                                    .font(.system(size: 12.5, weight: .medium))
-                                    .foregroundStyle(.white.opacity(0.88))
-                                    .fixedSize(horizontal: false, vertical: true)
-
-                                HStack(spacing: 8) {
-                                    ForEach(question.options.prefix(4), id: \.label) { option in
-                                        Button(option.label) {
-                                            toggle(option: option.label, for: question)
-                                        }
-                                        .buttonStyle(
-                                            IslandWideButtonStyle(
-                                                kind: selectedLabels(for: question).contains(option.label) ? .primary : .secondary
-                                            )
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        Button(lang.t("question.submit")) {
-                            onAnswer(QuestionPromptResponse(answers: answerMap))
-                        }
-                        .buttonStyle(IslandWideButtonStyle(kind: .primary))
-                        .disabled(!hasCompleteSelection)
-                    }
+                Button(lang.t("question.submit")) {
+                    onAnswer(QuestionPromptResponse(answers: answerMap))
                 }
+                .buttonStyle(IslandWideButtonStyle(kind: .primary))
+                .disabled(!hasCompleteSelection)
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -1619,6 +1643,76 @@ private struct StructuredQuestionPromptView: View {
                 .strokeBorder(.white.opacity(0.06))
         )
     }
+
+    // MARK: - Per-question row
+
+    /// Renders a single question with its header, text, and vertical option list.
+    @ViewBuilder
+    private func questionRow(_ question: QuestionPromptItem) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if structuredQuestions.count > 1 {
+                Text(question.header)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+
+            Text(question.question)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.white.opacity(0.88))
+                .fixedSize(horizontal: false, vertical: true)
+
+            // Vertical option list
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(question.options) { option in
+                    optionRow(option, question: question)
+                }
+            }
+        }
+    }
+
+    // MARK: - Option row (vertical, CLI-style)
+
+    /// Renders a single option as a selectable row with checkmark indicator, label, and optional description.
+    private func optionRow(_ option: QuestionOption, question: QuestionPromptItem) -> some View {
+        let isSelected = selectedLabels(for: question).contains(option.label)
+        return Button {
+            toggle(option: option.label, for: question)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(isSelected ? .yellow : .white.opacity(0.35))
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(option.label)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(isSelected ? 1 : 0.78))
+
+                    if !option.description.isEmpty {
+                        Text(option.description)
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(.white.opacity(0.4))
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 5)
+            .padding(.horizontal, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(isSelected ? Color.yellow.opacity(0.10) : Color.white.opacity(0.04))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(isSelected ? .yellow.opacity(0.25) : .clear)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Helpers
 
     private var structuredQuestions: [QuestionPromptItem] {
         prompt?.questions ?? []
@@ -1647,7 +1741,6 @@ private struct StructuredQuestionPromptView: View {
             guard !selected.isEmpty else {
                 return nil
             }
-
             return (question.question, selected.sorted().joined(separator: ", "))
         })
     }
@@ -1860,6 +1953,109 @@ private struct ClosedCountBadge: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 2)
             .background(Color(red: 0.14, green: 0.14, blue: 0.15), in: Capsule())
+    }
+}
+
+// MARK: - Central activity overlay (external-display only)
+
+/// Renders the focus session's current tool call inside the central black
+/// rectangle of the closed island. The notch on built-in displays physically
+/// covers this area, so we gate rendering on `placementMode == .topBar`.
+///
+/// State machine: while a tool is active the label tracks it live. When the
+/// tool clears (PostToolUse fires or metadata drops the field), the last
+/// value lingers for `fadeDelay` then disappears.
+private struct CentralActivityLabel: View {
+    let toolName: String?
+    let preview: String?
+    let isVisible: Bool
+
+    @State private var displayed: DisplayedActivity?
+
+    private static let fadeDelay: Duration = .seconds(2)
+
+    struct DisplayedActivity: Equatable {
+        var tool: String
+        var preview: String?
+    }
+
+    var body: some View {
+        Group {
+            if isVisible, let displayed {
+                HStack(spacing: 4) {
+                    Image(systemName: Self.icon(for: displayed.tool))
+                        .font(.system(size: 9, weight: .semibold))
+                    Text(Self.label(for: displayed))
+                        .font(.system(size: 10, weight: .semibold))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .foregroundStyle(.white.opacity(0.85))
+                .padding(.horizontal, 8)
+                .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            }
+        }
+        .animation(.easeOut(duration: 0.22), value: displayed)
+        .onChange(of: trackingKey, initial: true) { _, _ in
+            sync()
+        }
+        .task(id: clearTaskID) {
+            guard toolName == nil, displayed != nil else { return }
+            do {
+                try await Task.sleep(for: Self.fadeDelay)
+                displayed = nil
+            } catch {
+                // cancelled — a new tool arrived, let sync() handle it
+            }
+        }
+    }
+
+    /// Composite key so `.onChange` fires on either tool or preview change.
+    private var trackingKey: String {
+        "\(toolName ?? "")|\(preview ?? "")"
+    }
+
+    /// Key used to (re)start the clear timer. Changes whenever we transition
+    /// between active/idle so `.task(id:)` cancels and restarts cleanly.
+    private var clearTaskID: String {
+        toolName == nil ? "clearing-\(displayed?.tool ?? "")" : "active-\(toolName ?? "")"
+    }
+
+    private func sync() {
+        if let toolName, !toolName.isEmpty {
+            displayed = DisplayedActivity(tool: toolName, preview: preview)
+        }
+    }
+
+    private static func label(for activity: DisplayedActivity) -> String {
+        if let preview = activity.preview?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !preview.isEmpty {
+            return "\(activity.tool) · \(preview)"
+        }
+        return activity.tool
+    }
+
+    private static func icon(for tool: String) -> String {
+        let lower = tool.lowercased()
+        if lower.contains("grep") || lower.contains("search") || lower.contains("glob") {
+            return "magnifyingglass"
+        }
+        if lower.contains("edit") || lower.contains("write") {
+            return "pencil"
+        }
+        if lower.contains("bash") || lower.contains("shell") || lower.contains("exec") || lower.contains("run") {
+            return "terminal"
+        }
+        if lower.contains("read") {
+            return "doc.text"
+        }
+        if lower.contains("web") || lower.contains("fetch") {
+            return "globe"
+        }
+        if lower.contains("task") || lower.contains("agent") || lower.contains("subagent") {
+            return "sparkles"
+        }
+        return "wrench.and.screwdriver"
     }
 }
 

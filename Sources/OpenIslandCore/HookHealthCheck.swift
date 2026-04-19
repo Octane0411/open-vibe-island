@@ -22,6 +22,8 @@ public struct HookHealthReport: Equatable, Sendable {
         case otherHooksDetected(names: [String])
         /// The manifest file is missing even though hooks appear installed.
         case manifestMissing(expectedPath: String)
+        /// The OpenCode plugin file is missing even though it should be installed.
+        case pluginMissing(expectedPath: String)
 
         public var description: String {
             switch self {
@@ -37,6 +39,8 @@ public struct HookHealthReport: Equatable, Sendable {
                 "Other hooks coexist: \(names.joined(separator: ", "))"
             case .manifestMissing(let expectedPath):
                 "Installation manifest missing: \(expectedPath)"
+            case .pluginMissing(let expectedPath):
+                "OpenCode plugin file is missing: \(expectedPath)"
             }
         }
 
@@ -51,7 +55,7 @@ public struct HookHealthReport: Equatable, Sendable {
 
         public var isAutoRepairable: Bool {
             switch self {
-            case .staleCommandPath, .binaryNotExecutable, .manifestMissing:
+            case .staleCommandPath, .binaryNotExecutable, .manifestMissing, .pluginMissing:
                 true
             default:
                 false
@@ -224,6 +228,31 @@ public enum HookHealthCheck {
             issues: issues,
             binaryPath: resolvedBinaryPath,
             configPath: hooksPath
+        )
+    }
+
+    /// Check OpenCode plugin health.
+    public static func checkOpenCode(
+        opencodeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/opencode", isDirectory: true),
+        fileManager: FileManager = .default
+    ) -> HookHealthReport {
+        var issues: [HookHealthReport.Issue] = []
+        let pluginsDir = opencodeDirectory.appendingPathComponent("plugins", isDirectory: true)
+        let pluginFileURL = pluginsDir.appendingPathComponent("open-island.js")
+
+        if !fileManager.fileExists(atPath: pluginFileURL.path) {
+            // Only report as an issue if the plugins directory itself exists,
+            // implying OpenCode is likely installed and intended to be used.
+            if fileManager.fileExists(atPath: opencodeDirectory.path) {
+                issues.append(.pluginMissing(expectedPath: pluginFileURL.path))
+            }
+        }
+
+        return HookHealthReport(
+            agent: "opencode",
+            issues: issues,
+            binaryPath: nil,
+            configPath: pluginFileURL.path
         )
     }
 

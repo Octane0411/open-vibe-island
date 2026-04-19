@@ -103,6 +103,9 @@ struct SettingsView: View {
         }
         .frame(minWidth: 680, idealWidth: 780, minHeight: 480, idealHeight: 560)
         .preferredColorScheme(.dark)
+        .onReceive(NotificationCenter.default.publisher(for: .openIslandSelectSetupTab)) { _ in
+            selectedTab = .setup
+        }
     }
 
     // MARK: Sidebar
@@ -413,12 +416,17 @@ struct SetupSettingsPane: View {
     @State private var confirmingUninstallCodebuddy = false
     @State private var confirmingUninstallCursor = false
     @State private var confirmingUninstallGemini = false
+    @State private var confirmingUninstallKimi = false
     @State private var confirmingUninstallClaudeUsage = false
 
     private var lang: LanguageManager { model.lang }
 
     var body: some View {
         Form {
+            if !model.hasAnyInstalledAgent {
+                emptyStateBanner
+            }
+
             claudeConfigDirectorySection
 
             Section(lang.t("setup.section.hooks")) {
@@ -576,6 +584,23 @@ struct SetupSettingsPane: View {
                 } message: {
                     Text("This will remove Open Island hooks from ~/.gemini/settings.json.")
                 }
+
+                hookRow(
+                    name: "Kimi CLI",
+                    installed: model.kimiHooksInstalled,
+                    busy: model.isKimiHookSetupBusy,
+                    configLocationURL: model.kimiHookStatus?.configURL,
+                    installAction: { model.installKimiHooks() },
+                    uninstallAction: { confirmingUninstallKimi = true }
+                )
+                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallKimi) {
+                    Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
+                        model.uninstallKimiHooks()
+                    }
+                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
+                } message: {
+                    Text("This will remove Open Island hooks from ~/.kimi/config.toml.")
+                }
             }
 
             Section {
@@ -652,6 +677,7 @@ struct SetupSettingsPane: View {
                     if !model.codebuddyHooksInstalled { model.installCodebuddyHooks() }
                     if !model.cursorHooksInstalled { model.installCursorHooks() }
                     if !model.geminiHooksInstalled { model.installGeminiHooks() }
+                    if !model.kimiHooksInstalled { model.installKimiHooks() }
                     if !model.claudeUsageInstalled { model.installClaudeUsageBridge() }
                 }
                 .disabled(model.hooksBinaryURL == nil || allReady)
@@ -690,6 +716,7 @@ struct SetupSettingsPane: View {
                     panel.canChooseDirectories = true
                     panel.canChooseFiles = false
                     panel.canCreateDirectories = true
+                    panel.showsHiddenFiles = true
                     panel.prompt = lang.t("setup.claudeConfigDir.choose")
                     if panel.runModal() == .OK, let url = panel.url {
                         model.updateClaudeConfigDirectory(to: url)
@@ -712,7 +739,31 @@ struct SetupSettingsPane: View {
     private var allReady: Bool {
         model.claudeHooksInstalled && model.codexHooksInstalled && model.openCodePluginInstalled
             && model.qoderHooksInstalled && model.qwenCodeHooksInstalled && model.factoryHooksInstalled && model.codebuddyHooksInstalled
-            && model.cursorHooksInstalled && model.geminiHooksInstalled && model.claudeUsageInstalled
+            && model.cursorHooksInstalled && model.geminiHooksInstalled && model.kimiHooksInstalled && model.claudeUsageInstalled
+    }
+
+    @ViewBuilder
+    private var emptyStateBanner: some View {
+        Section {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.tint)
+                    .frame(width: 28)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(lang.t("setup.banner.noHooks.title"))
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(lang.t("setup.banner.noHooks.message"))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+            }
+            .padding(.vertical, 4)
+        }
     }
 
     private var codexHookConfigURL: URL? {

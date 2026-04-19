@@ -66,4 +66,24 @@ struct CodexHooksTests {
         #expect(resolverCalls == 0)
     }
 
+    @Test
+    func codexWithRuntimeContextDetectsCodexDesktopApp() {
+        let payload = CodexHookPayload(
+            cwd: "/Users/u/project",
+            hookEventName: .sessionStart,
+            model: "gpt-4o",
+            permissionMode: .default,
+            sessionID: "s1",
+            transcriptPath: nil
+        ).withRuntimeContext(
+            environment: ["__CFBundleIdentifier": "com.openai.codex"],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) },
+            warpPaneResolver: { _ in nil }
+        )
+
+        #expect(payload.terminalApp == "Codex.app")
+        #expect(payload.warpPaneUUID == nil)
+    }
+
 }

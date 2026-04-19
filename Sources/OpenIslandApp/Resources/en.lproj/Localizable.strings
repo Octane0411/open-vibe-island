@@ -107,6 +107,8 @@
 "setup.permissionsTitle" = "Accessibility";
 "setup.permissionsDesc" = "Open Island may need Accessibility permission to detect terminal windows. Grant it in System Settings → Privacy & Security → Accessibility.";
 "setup.installAll" = "Install All";
+"setup.banner.noHooks.title" = "Get started with Open Island";
+"setup.banner.noHooks.message" = "Install hooks for the agents you use below — Open Island will start monitoring those sessions.";
 "setup.revealConfigLocation" = "Reveal config in Finder";
 "setup.section.diagnostics" = "Hook Diagnostics";
 "setup.diagnostics.notRun" = "Health check not yet run.";
@@ -133,6 +135,7 @@
 "island.noTerminals" = "No open terminal sessions";
 "island.startAgent" = "Start a coding agent in your terminal";
 "island.recentSessions" = "Recent sessions remain in Control Center until the terminal is open again";
+"island.hint.installHooks" = "No agent hooks installed — sessions won't surface events. Tap to set up.";
 
 /* Island Panel - Session List */
 "island.showAll" = "Show all %lld sessions";

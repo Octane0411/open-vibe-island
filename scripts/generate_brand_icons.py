@@ -44,6 +44,11 @@ APP_ICON_SPECS = [
     ("icon_512x512@2x.png", "512x512", "2x", 1024),
 ]
 
+# Apple's macOS icon grid (Big Sur+): the art occupies an 824×824 region
+# centered in a 1024×1024 canvas, leaving a transparent safe zone so our
+# squircle visually matches stock macOS icons in Finder/Launchpad/Dock.
+MACOS_ICON_CONTENT_RATIO = 824 / 1024
+
 
 def main() -> None:
     ensure_clean_dir(APP_ICONSET_DIR)
@@ -288,9 +293,13 @@ def write_app_icons() -> None:
     if cat_icon_path.exists():
         src = Image.open(cat_icon_path).convert("RGBA")
         for filename, _, _, pixel_size in APP_ICON_SPECS:
-            resized = src.resize((pixel_size, pixel_size), Image.Resampling.LANCZOS)
-            resized.save(APP_ICONSET_DIR / filename)
-            resized.save(ICONSET_DIR / filename)
+            canvas = Image.new("RGBA", (pixel_size, pixel_size), (0, 0, 0, 0))
+            content_size = max(1, round(pixel_size * MACOS_ICON_CONTENT_RATIO))
+            offset = (pixel_size - content_size) // 2
+            resized = src.resize((content_size, content_size), Image.Resampling.LANCZOS)
+            canvas.alpha_composite(resized, (offset, offset))
+            canvas.save(APP_ICONSET_DIR / filename)
+            canvas.save(ICONSET_DIR / filename)
     else:
         for filename, _, _, pixel_size in APP_ICON_SPECS:
             icon = render_app_icon(pixel_size)

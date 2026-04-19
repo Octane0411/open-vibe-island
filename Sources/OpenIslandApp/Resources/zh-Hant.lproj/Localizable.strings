@@ -107,6 +107,8 @@
 "setup.permissionsTitle" = "輔助使用";
 "setup.permissionsDesc" = "Open Island 可能需要輔助使用權限來偵測終端機視窗。請在「系統設定 → 隱私權與安全性 → 輔助使用」中授權。";
 "setup.installAll" = "全部安裝";
+"setup.banner.noHooks.title" = "開始使用 Open Island";
+"setup.banner.noHooks.message" = "在下方為你使用的 Agent 安裝 hook，Open Island 就會開始監聽對應工作階段。";
 "setup.revealConfigLocation" = "在 Finder 中顯示設定";
 "setup.section.diagnostics" = "Hooks 診斷";
 "setup.diagnostics.notRun" = "尚未執行健康檢查。";
@@ -133,6 +135,7 @@
 "island.noTerminals" = "沒有已開啟的終端機工作階段";
 "island.startAgent" = "在終端機中啟動編碼代理";
 "island.recentSessions" = "最近的工作階段將保留在控制中心，直到終端機重新開啟";
+"island.hint.installHooks" = "尚未安裝任何 Agent hook，工作階段不會觸發事件 · 點擊設定";
 
 /* Island Panel - Session List */
 "island.showAll" = "顯示全部 %lld 個工作階段";

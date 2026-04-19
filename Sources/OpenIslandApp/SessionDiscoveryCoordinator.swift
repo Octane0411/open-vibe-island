@@ -12,6 +12,8 @@ final class SessionDiscoveryCoordinator {
         var codexRecordsNeedPrune: Bool
         var claudeRecords: [ClaudeTrackedSessionRecord]
         var claudeRecordsNeedPrune: Bool
+        var openCodeRecords: [OpenCodeTrackedSessionRecord]
+        var openCodeRecordsNeedPrune: Bool
         var cursorRecords: [CursorTrackedSessionRecord]
         var cursorRecordsNeedPrune: Bool
         var discoveredCodexRecords: [CodexTrackedSessionRecord]
@@ -41,6 +43,9 @@ final class SessionDiscoveryCoordinator {
     private let claudeSessionRegistry = ClaudeSessionRegistry()
 
     @ObservationIgnored
+    private let openCodeSessionRegistry = OpenCodeSessionRegistry()
+
+    @ObservationIgnored
     private let cursorSessionRegistry = CursorSessionRegistry()
 
     @ObservationIgnored
@@ -57,6 +62,9 @@ final class SessionDiscoveryCoordinator {
 
     @ObservationIgnored
     private var claudeSessionPersistenceTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var openCodeSessionPersistenceTask: Task<Void, Never>?
 
     @ObservationIgnored
     private var cursorSessionPersistenceTask: Task<Void, Never>?
@@ -81,6 +89,9 @@ final class SessionDiscoveryCoordinator {
         let allClaude = (try? claudeSessionRegistry.load()) ?? []
         let claudeRecords = allClaude.filter { $0.updatedAt >= cutoff && $0.shouldRestoreToLiveState }
 
+        let allOpenCode = (try? openCodeSessionRegistry.load()) ?? []
+        let openCodeRecords = allOpenCode.filter { $0.updatedAt >= cutoff }
+
         let allCursor = (try? cursorSessionRegistry.load()) ?? []
         let cursorRecords = allCursor.filter { $0.updatedAt >= cutoff && $0.shouldRestoreToLiveState }
 
@@ -92,6 +103,8 @@ final class SessionDiscoveryCoordinator {
             codexRecordsNeedPrune: codexRecords != allCodex,
             claudeRecords: claudeRecords,
             claudeRecordsNeedPrune: claudeRecords != allClaude,
+            openCodeRecords: openCodeRecords,
+            openCodeRecordsNeedPrune: openCodeRecords != allOpenCode,
             cursorRecords: cursorRecords,
             cursorRecordsNeedPrune: cursorRecords != allCursor,
             discoveredCodexRecords: discoveredCodex,
@@ -112,6 +125,9 @@ final class SessionDiscoveryCoordinator {
         if payload.claudeRecordsNeedPrune {
             try? claudeSessionRegistry.save(payload.claudeRecords)
         }
+        if payload.openCodeRecordsNeedPrune {
+            try? openCodeSessionRegistry.save(payload.openCodeRecords)
+        }
         if payload.cursorRecordsNeedPrune {
             try? cursorSessionRegistry.save(payload.cursorRecords)
         }
@@ -127,6 +143,13 @@ final class SessionDiscoveryCoordinator {
             let restoredSessions = payload.claudeRecords.map(\.restorableSession)
             state = SessionState(sessions: mergeDiscoveredSessions(restoredSessions))
             onStatusMessage?("Restored \(payload.claudeRecords.count) recent Claude session(s) from local registry.")
+        }
+
+        // Restore persisted OpenCode sessions.
+        if !payload.openCodeRecords.isEmpty {
+            let restoredSessions = payload.openCodeRecords.map(\.restorableSession)
+            state = SessionState(sessions: mergeDiscoveredSessions(restoredSessions))
+            onStatusMessage?("Restored \(payload.openCodeRecords.count) recent OpenCode session(s) from local registry.")
         }
 
         // Restore persisted Cursor sessions.
@@ -206,9 +229,37 @@ final class SessionDiscoveryCoordinator {
         merged.jumpTarget = existing.jumpTarget ?? discovered.jumpTarget
         merged.codexMetadata = mergeCodexMetadata(existing.codexMetadata, discovered.codexMetadata)
         merged.claudeMetadata = mergeClaudeMetadata(existing.claudeMetadata, discovered.claudeMetadata)
+        merged.openCodeMetadata = mergeOpenCodeMetadata(existing.openCodeMetadata, discovered.openCodeMetadata)
         merged.cursorMetadata = mergeCursorMetadata(existing.cursorMetadata, discovered.cursorMetadata)
+        // Once a session is identified as a Codex.app session by any source
+        // (hook or rediscovery), preserve that flag so liveness uses the
+        // app-level check instead of subprocess polling.
+        merged.isCodexAppSession = existing.isCodexAppSession || discovered.isCodexAppSession
 
         return merged
+    }
+
+    private func mergeOpenCodeMetadata(
+        _ existing: OpenCodeSessionMetadata?,
+        _ discovered: OpenCodeSessionMetadata?
+    ) -> OpenCodeSessionMetadata? {
+        guard let existing else {
+            return discovered?.isEmpty == true ? nil : discovered
+        }
+
+        guard let discovered else {
+            return existing.isEmpty ? nil : existing
+        }
+
+        let merged = OpenCodeSessionMetadata(
+            initialUserPrompt: existing.initialUserPrompt ?? discovered.initialUserPrompt ?? discovered.lastUserPrompt,
+            lastUserPrompt: discovered.lastUserPrompt ?? existing.lastUserPrompt,
+            lastAssistantMessage: discovered.lastAssistantMessage ?? existing.lastAssistantMessage,
+            currentTool: discovered.currentTool ?? existing.currentTool,
+            currentToolInputPreview: discovered.currentToolInputPreview ?? existing.currentToolInputPreview,
+            model: discovered.model ?? existing.model
+        )
+        return merged.isEmpty ? nil : merged
     }
 
     private func mergeCursorMetadata(
@@ -315,6 +366,12 @@ final class SessionDiscoveryCoordinator {
                   !transcriptPath.isEmpty else {
                 return nil
             }
+            // Codex.app sessions already get their lifecycle from hooks
+            // (and eventually app-server). The rollout watcher would
+            // duplicate completion notifications and is not needed.
+            if session.isCodexAppSession {
+                return nil
+            }
 
             return CodexRolloutWatchTarget(
                 sessionID: session.id,
@@ -323,6 +380,69 @@ final class SessionDiscoveryCoordinator {
         }
 
         codexRolloutWatcher.sync(targets: targets)
+    }
+
+    // MARK: - Codex.app periodic re-discovery
+
+    @ObservationIgnored
+    private var lastCodexAppRescanDate: Date = .distantPast
+
+    /// Re-scan `~/.codex/sessions/` for rollout files not yet tracked.
+    /// Called periodically when Codex.app is running as a fallback when
+    /// the app-server connection is unavailable.  Throttled to at most
+    /// once per 10 seconds.
+    func rediscoverCodexAppSessionsIfNeeded() {
+        let now = Date.now
+        guard now.timeIntervalSince(lastCodexAppRescanDate) >= 10 else { return }
+        lastCodexAppRescanDate = now
+
+        let discovery = codexRolloutDiscovery
+        Task.detached(priority: .utility) { [weak self] in
+            let discovered = discovery.discoverRecentSessions()
+            guard !discovered.isEmpty else { return }
+            await MainActor.run { [weak self] in
+                self?.applyCodexAppRediscovery(discovered)
+            }
+        }
+    }
+
+    private func applyCodexAppRediscovery(_ records: [CodexTrackedSessionRecord]) {
+        let existingIDs = Set(state.sessions.filter { $0.tool == .codex }.map(\.id))
+        let existingPaths = Set(state.sessions.compactMap(\.codexMetadata?.transcriptPath))
+
+        let newRecords = records.filter { record in
+            !existingIDs.contains(record.sessionID)
+                && (record.codexMetadata?.transcriptPath).map { !existingPaths.contains($0) } ?? true
+        }
+        guard !newRecords.isEmpty else { return }
+
+        let newSessions = newRecords.map { record -> AgentSession in
+            var session = record.session
+            session.isCodexAppSession = true
+            session.isProcessAlive = true
+            // Prefer the discovered record's cwd (sourced from the rollout
+            // file's session_meta) over an empty fallback.
+            let cwd = record.jumpTarget?.workingDirectory ?? ""
+            if session.jumpTarget == nil {
+                session.jumpTarget = JumpTarget(
+                    terminalApp: "Codex.app",
+                    workspaceName: URL(fileURLWithPath: cwd).lastPathComponent,
+                    paneTitle: session.title,
+                    workingDirectory: cwd.isEmpty ? nil : cwd,
+                    codexThreadID: session.id
+                )
+            } else {
+                session.jumpTarget?.terminalApp = "Codex.app"
+                session.jumpTarget?.codexThreadID = session.id
+            }
+            return session
+        }
+
+        let merged = mergeDiscoveredSessions(newSessions)
+        state = SessionState(sessions: merged)
+        refreshCodexRolloutTracking()
+        scheduleCodexSessionPersistence()
+        onStatusMessage?("Discovered \(newRecords.count) new Codex.app session(s) via rollout re-scan.")
     }
 
     // MARK: - Persistence scheduling
@@ -357,6 +477,24 @@ final class SessionDiscoveryCoordinator {
         let registry = claudeSessionRegistry
 
         claudeSessionPersistenceTask = Task.detached(priority: .utility) {
+            try? await Task.sleep(for: .milliseconds(250))
+            try? registry.save(records)
+        }
+    }
+
+    func scheduleOpenCodeSessionPersistence() {
+        openCodeSessionPersistenceTask?.cancel()
+
+        let records = state.sessions
+            .filter {
+                $0.tool == .openCode
+                    && $0.isTrackedLiveSession
+                    && $0.updatedAt >= Date.now.addingTimeInterval(-86_400)
+            }
+            .map(OpenCodeTrackedSessionRecord.init(session:))
+        let registry = openCodeSessionRegistry
+
+        openCodeSessionPersistenceTask = Task.detached(priority: .utility) {
             try? await Task.sleep(for: .milliseconds(250))
             try? registry.save(records)
         }

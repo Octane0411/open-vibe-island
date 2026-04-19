@@ -83,7 +83,7 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
     }
 
     public var session: AgentSession {
-        AgentSession(
+        var session = AgentSession(
             id: sessionID,
             title: title,
             tool: .codex,
@@ -95,6 +95,11 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
             jumpTarget: jumpTarget,
             codexMetadata: codexMetadata
         )
+        // Re-derive the Codex.app flag from the persisted terminalApp so
+        // restarted sessions continue to use app-level liveness rather than
+        // falling back to CLI subprocess matching (which would kill them).
+        session.isCodexAppSession = jumpTarget?.terminalApp == "Codex.app"
+        return session
     }
 
     private enum CodingKeys: String, CodingKey {

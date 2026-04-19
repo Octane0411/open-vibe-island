@@ -239,6 +239,34 @@ jobs:
           EOF
           )"
 
+      - name: Refresh contributors image cache via PR
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          timestamp="$(date +%s)"
+          branch="chore/contributors-v${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -f -b "$branch" origin/main
+          for file in README.md README.zh-CN.md; do
+            sed -i '' "s|contrib.rocks/image?repo=Octane0411/open-vibe-island&t=[0-9]*|contrib.rocks/image?repo=Octane0411/open-vibe-island\&t=${timestamp}|g" "$file"
+          done
+          if git diff --quiet; then
+            echo "No contributors timestamp changes detected, skipping."
+            exit 0
+          fi
+          git add README.md README.zh-CN.md
+          git commit -m "chore: refresh contributors image cache for v${{ steps.version.outputs.version }}"
+          git push --force origin "$branch"
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "chore: refresh contributors image cache for v${{ steps.version.outputs.version }}" \
+            --body "Automated contrib.rocks cache-bust from release workflow."
+          gh pr merge "$branch" --merge --admin --delete-branch
+
       - name: Cleanup keychain
         if: always()
         run: |
