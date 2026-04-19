@@ -552,6 +552,7 @@ final class AppModel {
         monitoring.onPersistenceNeeded = { [weak self] in
             self?.discovery.scheduleCodexSessionPersistence()
             self?.discovery.scheduleClaudeSessionPersistence()
+            self?.discovery.scheduleOpenCodeSessionPersistence()
             self?.discovery.scheduleCursorSessionPersistence()
         }
         monitoring.onCodexAppRunningChanged = { [weak self] isRunning in
@@ -1162,6 +1163,7 @@ final class AppModel {
         refreshOverlayPlacementIfVisible()
         discovery.scheduleCodexSessionPersistence()
         discovery.scheduleClaudeSessionPersistence()
+        discovery.scheduleOpenCodeSessionPersistence()
         discovery.scheduleCursorSessionPersistence()
 
         // Push relevant events to the Watch/iPhone via the relay

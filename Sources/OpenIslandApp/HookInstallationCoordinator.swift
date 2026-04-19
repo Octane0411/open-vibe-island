@@ -415,28 +415,35 @@ final class HookInstallationCoordinator {
 
     // MARK: - Health check & auto-repair
 
-    var claudeHealthReport: HookHealthReport?
     var codexHealthReport: HookHealthReport?
+    var claudeHealthReport: HookHealthReport?
+    var openCodeHealthReport: HookHealthReport?
+    var cursorHealthReport: HookHealthReport?
+    var geminiHealthReport: HookHealthReport?
 
-    /// Runs health checks for both Claude and Codex hooks.
+
+    /// Runs health checks for Claude, Codex and OpenCode hooks.
     func runHealthChecks() {
         Task { @MainActor [weak self] in
             guard let self else { return }
 
             let binaryURL = self.hooksBinaryURL
-            let (claudeReport, codexReport) = await Task.detached(priority: .utility) {
+            let (claudeReport, codexReport, openCodeReport) = await Task.detached(priority: .utility) {
                 let claude = HookHealthCheck.checkClaude(hooksBinaryURL: binaryURL)
                 let codex = HookHealthCheck.checkCodex(hooksBinaryURL: binaryURL)
-                return (claude, codex)
+                let openCode = HookHealthCheck.checkOpenCode()
+                return (claude, codex, openCode)
             }.value
 
             self.claudeHealthReport = claudeReport
             self.codexHealthReport = codexReport
+            self.openCodeHealthReport = openCodeReport
 
-            if !claudeReport.isHealthy || !codexReport.isHealthy {
-                let claudeIssueCount = claudeReport.issues.count
-                let codexIssueCount = codexReport.issues.count
-                self.onStatusMessage?("Hook health check: \(claudeIssueCount) Claude issue(s), \(codexIssueCount) Codex issue(s).")
+            if !claudeReport.isHealthy || !codexReport.isHealthy || !openCodeReport.isHealthy {
+                let claudeIssueCount = claudeReport.errors.count
+                let codexIssueCount = codexReport.errors.count
+                let openCodeIssueCount = openCodeReport.errors.count
+                self.onStatusMessage?("Hook health check: \(claudeIssueCount) Claude, \(codexIssueCount) Codex, \(openCodeIssueCount) OpenCode issue(s).")
             }
         }
     }
@@ -449,14 +456,16 @@ final class HookInstallationCoordinator {
 
         // Re-run health checks first
         let binaryURL = hooksBinaryURL
-        let (claudeReport, codexReport) = await Task.detached(priority: .utility) {
+        let (claudeReport, codexReport, openCodeReport) = await Task.detached(priority: .utility) {
             let claude = HookHealthCheck.checkClaude(hooksBinaryURL: binaryURL)
             let codex = HookHealthCheck.checkCodex(hooksBinaryURL: binaryURL)
-            return (claude, codex)
+            let openCode = HookHealthCheck.checkOpenCode()
+            return (claude, codex, openCode)
         }.value
 
         claudeHealthReport = claudeReport
         codexHealthReport = codexReport
+        openCodeHealthReport = openCodeReport
 
         // Repair Claude hooks if there are repairable issues
         if !claudeReport.repairableIssues.isEmpty, hooksBinaryURL != nil {
@@ -472,22 +481,31 @@ final class HookInstallationCoordinator {
             repaired = true
         }
 
+        // Repair OpenCode plugin if there are repairable issues
+        if !openCodeReport.repairableIssues.isEmpty {
+            onStatusMessage?("Repairing OpenCode plugin: \(openCodeReport.repairableIssues.map(\.description).joined(separator: "; "))")
+            installOpenCodePlugin()
+            repaired = true
+        }
+
         // Refresh health reports after repair
         if repaired {
             try? await Task.sleep(for: .milliseconds(500))
-            let (updatedClaude, updatedCodex) = await Task.detached(priority: .utility) {
+            let (updatedClaude, updatedCodex, updatedOpenCode) = await Task.detached(priority: .utility) {
                 let claude = HookHealthCheck.checkClaude(hooksBinaryURL: binaryURL)
                 let codex = HookHealthCheck.checkCodex(hooksBinaryURL: binaryURL)
-                return (claude, codex)
+                let openCode = HookHealthCheck.checkOpenCode()
+                return (claude, codex, openCode)
             }.value
             claudeHealthReport = updatedClaude
             codexHealthReport = updatedCodex
+            openCodeHealthReport = updatedOpenCode
 
-            if updatedClaude.isHealthy && updatedCodex.isHealthy {
+            if updatedClaude.isHealthy && updatedCodex.isHealthy && updatedOpenCode.isHealthy {
                 onStatusMessage?("Hook repair completed successfully.")
             } else {
-                let remaining = updatedClaude.errors.count + updatedCodex.errors.count
-                onStatusMessage?("Hook repair completed with \(remaining) remaining issue(s) that need manual attention.")
+                let remaining = updatedClaude.errors.count + updatedCodex.errors.count + updatedOpenCode.errors.count
+                onStatusMessage?("Hook repair finished with \(remaining) remaining issue(s).")
             }
         }
 

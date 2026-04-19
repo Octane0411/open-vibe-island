@@ -12,6 +12,8 @@ final class SessionDiscoveryCoordinator {
         var codexRecordsNeedPrune: Bool
         var claudeRecords: [ClaudeTrackedSessionRecord]
         var claudeRecordsNeedPrune: Bool
+        var openCodeRecords: [OpenCodeTrackedSessionRecord]
+        var openCodeRecordsNeedPrune: Bool
         var cursorRecords: [CursorTrackedSessionRecord]
         var cursorRecordsNeedPrune: Bool
         var discoveredCodexRecords: [CodexTrackedSessionRecord]
@@ -41,6 +43,9 @@ final class SessionDiscoveryCoordinator {
     private let claudeSessionRegistry = ClaudeSessionRegistry()
 
     @ObservationIgnored
+    private let openCodeSessionRegistry = OpenCodeSessionRegistry()
+
+    @ObservationIgnored
     private let cursorSessionRegistry = CursorSessionRegistry()
 
     @ObservationIgnored
@@ -57,6 +62,9 @@ final class SessionDiscoveryCoordinator {
 
     @ObservationIgnored
     private var claudeSessionPersistenceTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var openCodeSessionPersistenceTask: Task<Void, Never>?
 
     @ObservationIgnored
     private var cursorSessionPersistenceTask: Task<Void, Never>?
@@ -81,6 +89,9 @@ final class SessionDiscoveryCoordinator {
         let allClaude = (try? claudeSessionRegistry.load()) ?? []
         let claudeRecords = allClaude.filter { $0.updatedAt >= cutoff && $0.shouldRestoreToLiveState }
 
+        let allOpenCode = (try? openCodeSessionRegistry.load()) ?? []
+        let openCodeRecords = allOpenCode.filter { $0.updatedAt >= cutoff }
+
         let allCursor = (try? cursorSessionRegistry.load()) ?? []
         let cursorRecords = allCursor.filter { $0.updatedAt >= cutoff && $0.shouldRestoreToLiveState }
 
@@ -92,6 +103,8 @@ final class SessionDiscoveryCoordinator {
             codexRecordsNeedPrune: codexRecords != allCodex,
             claudeRecords: claudeRecords,
             claudeRecordsNeedPrune: claudeRecords != allClaude,
+            openCodeRecords: openCodeRecords,
+            openCodeRecordsNeedPrune: openCodeRecords != allOpenCode,
             cursorRecords: cursorRecords,
             cursorRecordsNeedPrune: cursorRecords != allCursor,
             discoveredCodexRecords: discoveredCodex,
@@ -112,6 +125,9 @@ final class SessionDiscoveryCoordinator {
         if payload.claudeRecordsNeedPrune {
             try? claudeSessionRegistry.save(payload.claudeRecords)
         }
+        if payload.openCodeRecordsNeedPrune {
+            try? openCodeSessionRegistry.save(payload.openCodeRecords)
+        }
         if payload.cursorRecordsNeedPrune {
             try? cursorSessionRegistry.save(payload.cursorRecords)
         }
@@ -127,6 +143,13 @@ final class SessionDiscoveryCoordinator {
             let restoredSessions = payload.claudeRecords.map(\.restorableSession)
             state = SessionState(sessions: mergeDiscoveredSessions(restoredSessions))
             onStatusMessage?("Restored \(payload.claudeRecords.count) recent Claude session(s) from local registry.")
+        }
+
+        // Restore persisted OpenCode sessions.
+        if !payload.openCodeRecords.isEmpty {
+            let restoredSessions = payload.openCodeRecords.map(\.restorableSession)
+            state = SessionState(sessions: mergeDiscoveredSessions(restoredSessions))
+            onStatusMessage?("Restored \(payload.openCodeRecords.count) recent OpenCode session(s) from local registry.")
         }
 
         // Restore persisted Cursor sessions.
@@ -206,6 +229,7 @@ final class SessionDiscoveryCoordinator {
         merged.jumpTarget = existing.jumpTarget ?? discovered.jumpTarget
         merged.codexMetadata = mergeCodexMetadata(existing.codexMetadata, discovered.codexMetadata)
         merged.claudeMetadata = mergeClaudeMetadata(existing.claudeMetadata, discovered.claudeMetadata)
+        merged.openCodeMetadata = mergeOpenCodeMetadata(existing.openCodeMetadata, discovered.openCodeMetadata)
         merged.cursorMetadata = mergeCursorMetadata(existing.cursorMetadata, discovered.cursorMetadata)
         // Once a session is identified as a Codex.app session by any source
         // (hook or rediscovery), preserve that flag so liveness uses the
@@ -213,6 +237,29 @@ final class SessionDiscoveryCoordinator {
         merged.isCodexAppSession = existing.isCodexAppSession || discovered.isCodexAppSession
 
         return merged
+    }
+
+    private func mergeOpenCodeMetadata(
+        _ existing: OpenCodeSessionMetadata?,
+        _ discovered: OpenCodeSessionMetadata?
+    ) -> OpenCodeSessionMetadata? {
+        guard let existing else {
+            return discovered?.isEmpty == true ? nil : discovered
+        }
+
+        guard let discovered else {
+            return existing.isEmpty ? nil : existing
+        }
+
+        let merged = OpenCodeSessionMetadata(
+            initialUserPrompt: existing.initialUserPrompt ?? discovered.initialUserPrompt ?? discovered.lastUserPrompt,
+            lastUserPrompt: discovered.lastUserPrompt ?? existing.lastUserPrompt,
+            lastAssistantMessage: discovered.lastAssistantMessage ?? existing.lastAssistantMessage,
+            currentTool: discovered.currentTool ?? existing.currentTool,
+            currentToolInputPreview: discovered.currentToolInputPreview ?? existing.currentToolInputPreview,
+            model: discovered.model ?? existing.model
+        )
+        return merged.isEmpty ? nil : merged
     }
 
     private func mergeCursorMetadata(
@@ -430,6 +477,24 @@ final class SessionDiscoveryCoordinator {
         let registry = claudeSessionRegistry
 
         claudeSessionPersistenceTask = Task.detached(priority: .utility) {
+            try? await Task.sleep(for: .milliseconds(250))
+            try? registry.save(records)
+        }
+    }
+
+    func scheduleOpenCodeSessionPersistence() {
+        openCodeSessionPersistenceTask?.cancel()
+
+        let records = state.sessions
+            .filter {
+                $0.tool == .openCode
+                    && $0.isTrackedLiveSession
+                    && $0.updatedAt >= Date.now.addingTimeInterval(-86_400)
+            }
+            .map(OpenCodeTrackedSessionRecord.init(session:))
+        let registry = openCodeSessionRegistry
+
+        openCodeSessionPersistenceTask = Task.detached(priority: .utility) {
             try? await Task.sleep(for: .milliseconds(250))
             try? registry.save(records)
         }

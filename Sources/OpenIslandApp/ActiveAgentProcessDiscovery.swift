@@ -100,17 +100,55 @@ struct ActiveAgentProcessDiscovery {
             }
 
             if isOpenCodeProcess(command: process.command) {
-                let claimKey = "opencode:\(process.pid)"
+                let lsofOutput = lsofOutput(pid: process.pid)
+                let cwd = lsofOutput.flatMap(workingDirectory(from:))
+
+                // Deduplicate by TTY and working directory instead of PID.
+                // Wrappers like `npm exec` and their child `node` process share the same TTY and CWD.
+                // Treat a missing cwd as a wildcard for the TTY to match existing claims, but let concrete cwd overwrite wildcard.
+                let ttyId = process.terminalTTY ?? process.pid
+                
+                if cwd == nil {
+                    // Only insert wildcard if no concrete claim exists for this TTY.
+                    if claimedKeys.contains(where: { $0.hasPrefix("opencode:\(ttyId):") && $0 != "opencode:\(ttyId):" }) {
+                        continue
+                    }
+                } else {
+                    // Concrete CWD: remove any existing wildcard claim for this TTY before claiming.
+                    if claimedKeys.remove("opencode:\(ttyId):") != nil {
+                        // Also remove the orphaned snapshot that was previously appended.
+                        snapshots.removeAll {
+                            $0.tool == .openCode && $0.terminalTTY == process.terminalTTY && $0.workingDirectory == nil
+                        }
+                    }
+                }
+
+                let claimKey = "opencode:\(ttyId):\(cwd ?? "")"
                 guard claimedKeys.insert(claimKey).inserted else {
                     continue
                 }
 
-                snapshots.append(ProcessSnapshot(
+                var snapshot = ProcessSnapshot(
                     tool: .openCode,
                     sessionID: nil,
-                    workingDirectory: nil,
-                    terminalTTY: process.terminalTTY
-                ))
+                    workingDirectory: cwd,
+                    terminalTTY: process.terminalTTY,
+                    terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+                )
+
+                if snapshot.terminalApp == nil, let agentTTY = process.terminalTTY {
+                    if let (tmuxTarget, hostTerminalApp, socketPath) = resolveTmuxInfo(
+                        agentTTY: agentTTY,
+                        processes: processesByPID.values.map { $0 },
+                        processesByPID: processesByPID
+                    ) {
+                        snapshot.terminalApp = hostTerminalApp
+                        snapshot.tmuxTarget = tmuxTarget
+                        snapshot.tmuxSocketPath = socketPath
+                    }
+                }
+
+                snapshots.append(snapshot)
                 continue
             }
 
@@ -517,8 +555,70 @@ struct ActiveAgentProcessDiscovery {
 
     private func isOpenCodeProcess(command: String) -> Bool {
         let lowered = command.lowercased()
-        return lowered.contains("/opencode-ai/") || lowered.contains("/opencode")
-            || lowered.contains("/.opencode")
+
+        guard let firstToken = lowered.split(separator: " ").first.map(String.init) else {
+            return false
+        }
+
+        // Fast path: explicitly launched as opencode or opencode-ai
+        if firstToken == "opencode"
+            || firstToken == "opencode-ai"
+            || firstToken.hasSuffix("/opencode")
+            || firstToken.hasSuffix("/opencode-ai")
+        {
+            return true
+        }
+
+        guard lowered.contains("opencode") else {
+            return false
+        }
+
+        // Wrappers: npx, npm exec, yarn, pnpm dlx, bunx
+        let isPackageRunner = firstToken == "npx" || firstToken.hasSuffix("/npx")
+            || firstToken == "pnpx" || firstToken.hasSuffix("/pnpx")
+            || firstToken == "bunx" || firstToken.hasSuffix("/bunx")
+            || ((firstToken == "npm" || firstToken.hasSuffix("/npm")) && (lowered.contains(" exec ") || lowered.contains(" run ")))
+            || ((firstToken == "pnpm" || firstToken.hasSuffix("/pnpm")) && (lowered.contains(" dlx ") || lowered.contains(" exec ") || lowered.contains(" run ")))
+            || firstToken == "yarn" || firstToken.hasSuffix("/yarn")
+
+        if isPackageRunner {
+            let tokens = lowered.split(separator: " ")
+            let packageIndex = tokens.firstIndex { token in
+                if token.hasPrefix("@opencode-ai/") {
+                    return true
+                }
+                let baseToken = token.hasPrefix("@") ? String(token) : (token.split(separator: "@").first.map(String.init) ?? String(token))
+                return baseToken == "opencode" || baseToken == "opencode-ai"
+            }
+            
+            if let packageIndex = packageIndex {
+                let installLike: Set<Substring> = ["install", "i", "add", "remove", "rm", "uninstall", "update", "upgrade", "up", "unlink"]
+                let isInstallCommand = tokens[..<packageIndex].contains(where: { installLike.contains($0) })
+                if !isInstallCommand {
+                    return true
+                }
+            }
+        }
+
+        // Node / Bun executing the specific CLI script
+        let isNode = firstToken == "node" || firstToken.hasSuffix("/node") || firstToken == "bun" || firstToken.hasSuffix("/bun")
+        if isNode && (
+            lowered.contains("/opencode-ai/")
+            || lowered.contains("/@opencode-ai/")
+            || lowered.contains("/node_modules/opencode/")
+            || lowered.contains("/node_modules/opencode-ai/")
+            || lowered.contains("/node_modules/@opencode-ai/")
+            || lowered.hasSuffix("/.bin/opencode")
+            || lowered.contains("/.bin/opencode ")
+            || lowered.hasSuffix("/.bin/opencode-ai")
+            || lowered.contains("/.bin/opencode-ai ")
+            || lowered.hasSuffix("/.bin/@opencode-ai")
+            || lowered.contains("/.bin/@opencode-ai ")
+        ) {
+            return true
+        }
+
+        return false
     }
 
     private func isGeminiProcess(command: String) -> Bool {
