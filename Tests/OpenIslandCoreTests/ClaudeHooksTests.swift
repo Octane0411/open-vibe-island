@@ -408,6 +408,85 @@ struct ClaudeHooksTests {
         #expect(payload.defaultJumpTarget.warpPaneUUID == "DEADBEEFDEADBEEFDEADBEEFDEADBEEF")
     }
 
+    /// Regression: a `subagentStop` (and other "intermediate" hook events)
+    /// arriving after the parent's `Stop` must not flip the session from
+    /// `.completed` back to `.running`.  Subagents run in their own process,
+    /// so their hook delivery can race the parent's `Stop` hook; without the
+    /// guard the island would show "Running" forever even though Claude is
+    /// idle.
+    @Test
+    func lateSubagentStopDoesNotResurrectCompletedClaudeSession() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
+
+        let sessionID = "claude-session-late-subagent"
+        let cwd = "/tmp/worktree-late"
+
+        let promptPayload = ClaudeHookPayload(
+            cwd: cwd,
+            hookEventName: .userPromptSubmit,
+            sessionID: sessionID,
+            prompt: "do the thing"
+        )
+        let stopPayload = ClaudeHookPayload(
+            cwd: cwd,
+            hookEventName: .stop,
+            sessionID: sessionID,
+            lastAssistantMessage: "done"
+        )
+        let lateSubagentStopPayload = ClaudeHookPayload(
+            cwd: cwd,
+            hookEventName: .subagentStop,
+            sessionID: sessionID,
+            agentType: "general-purpose"
+        )
+        let latePostToolUsePayload = ClaudeHookPayload(
+            cwd: cwd,
+            hookEventName: .postToolUse,
+            sessionID: sessionID,
+            toolName: "Bash"
+        )
+
+        let client = BridgeCommandClient(socketURL: socketURL)
+        _ = try client.send(.processClaudeHook(promptPayload))
+        _ = try client.send(.processClaudeHook(stopPayload))
+        _ = try client.send(.processClaudeHook(lateSubagentStopPayload))
+        _ = try client.send(.processClaudeHook(latePostToolUsePayload))
+
+        var iterator = stream.makeAsyncIterator()
+        var sawCompletion = false
+        var lastActivityPhase: SessionPhase?
+        for _ in 0..<24 {
+            let event = try await nextEvent(from: &iterator)
+            switch event {
+            case let .sessionCompleted(payload) where payload.sessionID == sessionID:
+                sawCompletion = true
+            case let .activityUpdated(payload) where payload.sessionID == sessionID:
+                if sawCompletion {
+                    lastActivityPhase = payload.phase
+                }
+            default:
+                break
+            }
+            if sawCompletion, lastActivityPhase != nil {
+                break
+            }
+        }
+
+        #expect(sawCompletion, "Stop hook should produce a sessionCompleted event")
+        #expect(
+            lastActivityPhase == .completed,
+            "Late subagentStop / postToolUse must not downgrade a completed session back to .running"
+        )
+    }
+
     @Test
     func claudeWithRuntimeContextSkipsWarpResolverForNonWarpTerminal() {
         var resolverCalls = 0

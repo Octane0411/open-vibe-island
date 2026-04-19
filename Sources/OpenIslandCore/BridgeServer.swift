@@ -733,7 +733,7 @@ public final class BridgeServer: @unchecked Sendable {
                     SessionActivityUpdated(
                         sessionID: payload.sessionID,
                         summary: summary,
-                        phase: .running,
+                        phase: claudeIntermediatePhase(for: payload.sessionID),
                         timestamp: .now
                     )
                 )
@@ -752,7 +752,9 @@ public final class BridgeServer: @unchecked Sendable {
                     SessionActivityUpdated(
                         sessionID: payload.sessionID,
                         summary: payload.error ?? "Claude tool failed.",
-                        phase: payload.isInterrupt == true ? .completed : .running,
+                        phase: payload.isInterrupt == true
+                            ? .completed
+                            : claudeIntermediatePhase(for: payload.sessionID),
                         timestamp: .now
                     )
                 )
@@ -868,7 +870,7 @@ public final class BridgeServer: @unchecked Sendable {
                     SessionActivityUpdated(
                         sessionID: payload.sessionID,
                         summary: summary,
-                        phase: .running,
+                        phase: claudeIntermediatePhase(for: payload.sessionID),
                         timestamp: .now
                     )
                 )
@@ -892,7 +894,7 @@ public final class BridgeServer: @unchecked Sendable {
                     SessionActivityUpdated(
                         sessionID: payload.sessionID,
                         summary: summary,
-                        phase: .running,
+                        phase: claudeIntermediatePhase(for: payload.sessionID),
                         timestamp: .now
                     )
                 )
@@ -909,7 +911,7 @@ public final class BridgeServer: @unchecked Sendable {
                     SessionActivityUpdated(
                         sessionID: payload.sessionID,
                         summary: "Claude is compacting the conversation.",
-                        phase: .running,
+                        phase: claudeIntermediatePhase(for: payload.sessionID),
                         timestamp: .now
                     )
                 )
@@ -1736,6 +1738,18 @@ public final class BridgeServer: @unchecked Sendable {
                 )
             )
         )
+    }
+
+    /// Phase to use for "intermediate" Claude hook events (postToolUse,
+    /// subagentStart/Stop, preCompact, ...) that semantically mean "Claude is
+    /// still working".  These events can legitimately arrive after the
+    /// authoritative `Stop` hook — `subagentStop` is emitted from a child
+    /// process whose IPC ordering relative to the parent is not guaranteed,
+    /// and a delayed `postToolUse` can race the same way.  Without this guard
+    /// a late event would flip an already-`.completed` session back to
+    /// `.running` and leave it stuck.
+    private func claudeIntermediatePhase(for sessionID: String) -> SessionPhase {
+        localState.session(id: sessionID)?.phase == .completed ? .completed : .running
     }
 
     private func ensureSessionExists(for payload: CodexHookPayload) {
