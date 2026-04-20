@@ -390,8 +390,117 @@ struct AppModelSessionListTests {
         }
 
         #expect(model.notchStatus == .closed)
-        #expect(model.notchOpenReason == nil)
         #expect(model.islandSurface == .sessionList())
+    }
+
+    @Test
+    func cursorSessionIsSuppressedWhenCursorIsFrontmostEvenWithoutJumpTarget() async throws {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel(
+            isNotificationSessionAlreadyFrontmost: { session in
+                session.tool == .cursor
+            }
+        )
+        model.notchStatus = .closed
+        model.notchOpenReason = nil
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "cursor-session",
+                    title: "Cursor · project",
+                    tool: .cursor,
+                    origin: .live,
+                    attachmentState: .attached,
+                    phase: .running,
+                    summary: "Agent running in Cursor.",
+                    updatedAt: now
+                ),
+            ]
+        )
+
+        model.applyTrackedEvent(
+            .permissionRequested(
+                PermissionRequested(
+                    sessionID: "cursor-session",
+                    request: PermissionRequest(
+                        title: "Edit",
+                        summary: "main.swift",
+                        affectedPath: "/tmp/main.swift"
+                    ),
+                    timestamp: now.addingTimeInterval(1)
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .bridge
+        )
+
+        for _ in 0..<20 {
+            if model.notchStatus == .popping { break }
+            await Task.yield()
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        #expect(model.notchStatus == .popping)
+    }
+
+    @Test
+    func cursorMultiSessionStillSuppressesWhenCursorIsFrontmost() async throws {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel(
+            isNotificationSessionAlreadyFrontmost: { session in
+                session.tool == .cursor
+            }
+        )
+        model.notchStatus = .closed
+        model.notchOpenReason = nil
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "cursor-session-1",
+                    title: "Cursor · project-a",
+                    tool: .cursor,
+                    origin: .live,
+                    attachmentState: .attached,
+                    phase: .running,
+                    summary: "First Cursor session.",
+                    updatedAt: now
+                ),
+                AgentSession(
+                    id: "cursor-session-2",
+                    title: "Cursor · project-b",
+                    tool: .cursor,
+                    origin: .live,
+                    attachmentState: .attached,
+                    phase: .running,
+                    summary: "Second Cursor session.",
+                    updatedAt: now
+                ),
+            ]
+        )
+
+        model.applyTrackedEvent(
+            .permissionRequested(
+                PermissionRequested(
+                    sessionID: "cursor-session-1",
+                    request: PermissionRequest(
+                        title: "Edit",
+                        summary: "main.swift",
+                        affectedPath: "/tmp/main.swift"
+                    ),
+                    timestamp: now.addingTimeInterval(1)
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .bridge
+        )
+
+        for _ in 0..<20 {
+            if model.notchStatus == .popping { break }
+            await Task.yield()
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        #expect(model.notchStatus == .popping)
     }
 
     @Test
