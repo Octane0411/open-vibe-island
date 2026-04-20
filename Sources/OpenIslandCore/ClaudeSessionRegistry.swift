@@ -10,6 +10,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
     public var updatedAt: Date
     public var jumpTarget: JumpTarget?
     public var claudeMetadata: ClaudeSessionMetadata?
+    public var agentPID: Int32?
 
     public init(
         sessionID: String,
@@ -20,7 +21,8 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
         phase: SessionPhase,
         updatedAt: Date,
         jumpTarget: JumpTarget? = nil,
-        claudeMetadata: ClaudeSessionMetadata? = nil
+        claudeMetadata: ClaudeSessionMetadata? = nil,
+        agentPID: Int32? = nil
     ) {
         self.sessionID = sessionID
         self.title = title
@@ -31,6 +33,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
         self.updatedAt = updatedAt
         self.jumpTarget = jumpTarget
         self.claudeMetadata = claudeMetadata
+        self.agentPID = agentPID
     }
 
     public init(session: AgentSession) {
@@ -43,12 +46,21 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
             phase: session.phase,
             updatedAt: session.updatedAt,
             jumpTarget: session.jumpTarget,
-            claudeMetadata: session.claudeMetadata
+            claudeMetadata: session.claudeMetadata,
+            agentPID: session.claudeMetadata?.agentPID
         )
     }
 
     public var session: AgentSession {
-        AgentSession(
+        var metadata = claudeMetadata
+        if let agentPID {
+            if metadata == nil {
+                metadata = ClaudeSessionMetadata(agentPID: agentPID)
+            } else if metadata?.agentPID == nil {
+                metadata?.agentPID = agentPID
+            }
+        }
+        return AgentSession(
             id: sessionID,
             title: title,
             tool: .claudeCode,
@@ -58,7 +70,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
             summary: summary,
             updatedAt: updatedAt,
             jumpTarget: jumpTarget,
-            claudeMetadata: claudeMetadata
+            claudeMetadata: metadata
         )
     }
 
@@ -78,6 +90,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
         case updatedAt
         case jumpTarget
         case claudeMetadata
+        case agentPID
     }
 
     public init(from decoder: any Decoder) throws {
@@ -91,6 +104,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         jumpTarget = try container.decodeIfPresent(JumpTarget.self, forKey: .jumpTarget)
         claudeMetadata = try container.decodeIfPresent(ClaudeSessionMetadata.self, forKey: .claudeMetadata)
+        agentPID = try container.decodeIfPresent(Int32.self, forKey: .agentPID)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -104,6 +118,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(jumpTarget, forKey: .jumpTarget)
         try container.encodeIfPresent(claudeMetadata, forKey: .claudeMetadata)
+        try container.encodeIfPresent(agentPID, forKey: .agentPID)
     }
 }
 

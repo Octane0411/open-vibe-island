@@ -53,6 +53,7 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private let socketURL: URL
+    private let claudePIDMonitor: ClaudePIDMonitor
     private let queue = DispatchQueue(label: "app.openisland.bridge.server")
     private let queueKey = DispatchSpecificKey<Void>()
 
@@ -75,9 +76,11 @@ public final class BridgeServer: @unchecked Sendable {
     private var localState = SessionState()
 
     public init(
-        socketURL: URL = BridgeSocketLocation.defaultURL
+        socketURL: URL = BridgeSocketLocation.defaultURL,
+        claudePIDMonitor: ClaudePIDMonitor = ClaudePIDMonitor()
     ) {
         self.socketURL = socketURL
+        self.claudePIDMonitor = claudePIDMonitor
         queue.setSpecific(key: queueKey, value: ())
     }
 
@@ -177,6 +180,7 @@ public final class BridgeServer: @unchecked Sendable {
         pendingClaudeToolContexts.removeAll()
         pendingOpenCodeInteractions.removeAll()
         pendingCursorInteractions.removeAll()
+        claudePIDMonitor.untrackAll()
 
         let activeConnections = Array(clients.values)
         activeConnections.forEach { $0.readSource.cancel() }
@@ -563,6 +567,20 @@ public final class BridgeServer: @unchecked Sendable {
         // subagents whose SubagentStop was never received.
         cleanUpStaleSubagents(forSession: payload.sessionID)
 
+        // Any parent-session Claude hook with a concrete PID proves the CLI
+        // process is currently alive. Attach/replace the kernel-level exit
+        // monitor so we can notice the process dying even if SessionEnd never
+        // fires (SIGKILL, crash, terminal closed without a clean exit).
+        if let pid = payload.agentPID,
+           pid > 0,
+           payload.hookEventName != .sessionEnd {
+            claudePIDMonitor.track(
+                sessionID: payload.sessionID,
+                pid: pid,
+                onExit: makeClaudeExitHandler()
+            )
+        }
+
         switch payload.hookEventName {
         case .sessionStart:
             clearStaleClaudeInteractionIfNeeded(for: payload.sessionID)
@@ -936,6 +954,7 @@ public final class BridgeServer: @unchecked Sendable {
                     )
                 )
             )
+            claudePIDMonitor.untrack(sessionID: payload.sessionID)
             send(.response(.acknowledged), to: clientID)
         }
     }
@@ -2432,6 +2451,49 @@ public final class BridgeServer: @unchecked Sendable {
     private func emit(_ event: AgentEvent) {
         localState.apply(event)
         broadcast([.event(event)])
+    }
+
+    private func handleClaudeProcessExit(sessionID: String, pid: Int32, at exitTime: Date) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            // Guard against resume-flow races: if a newer monitor has already
+            // registered a different PID for this session, this exit callback
+            // is stale — ignore it rather than spuriously ending the session.
+            if let current = self.claudePIDMonitor.currentPID(for: sessionID), current != pid {
+                return
+            }
+            self.claudePIDMonitor.untrack(sessionID: sessionID)
+            self.emit(.claudeProcessExited(ClaudeProcessExited(
+                sessionID: sessionID,
+                pid: pid,
+                timestamp: exitTime
+            )))
+        }
+    }
+
+    private func makeClaudeExitHandler() -> (ClaudePIDMonitor.ExitEvent) -> Void {
+        return { [weak self] exit in
+            self?.handleClaudeProcessExit(sessionID: exit.sessionID, pid: exit.pid, at: exit.exitedAt)
+        }
+    }
+
+    /// Reattaches a kernel PID monitor for a Claude session whose CLI process
+    /// persisted across an app restart. The restored session's persisted PID is
+    /// still alive; this call rehydrates exit notifications so the next kill
+    /// flows through the same `.claudeProcessExited` path as the live-hook path.
+    public func adoptClaudeSessionProcess(sessionID: String, pid: Int32) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.claudePIDMonitor.track(
+                sessionID: sessionID,
+                pid: pid,
+                onExit: self.makeClaudeExitHandler()
+            )
+        }
+    }
+
+    public func hasClaudeMonitorForSession(_ sessionID: String) -> Bool {
+        claudePIDMonitor.isTracking(sessionID: sessionID)
     }
 
     private func hasSession(id: String) -> Bool {

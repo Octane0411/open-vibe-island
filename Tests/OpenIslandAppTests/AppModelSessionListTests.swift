@@ -609,6 +609,82 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func restoringSessionWithAliveAgentPIDReattachesMonitor() throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        process.arguments = ["10"]
+        try process.run()
+        defer {
+            if process.isRunning { process.terminate() }
+            process.waitUntilExit()
+        }
+
+        let pid = process.processIdentifier
+        #expect(pid > 0)
+
+        let model = AppModel()
+        var session = AgentSession(
+            id: "claude-rehydrate-alive",
+            title: "Claude · alive",
+            tool: .claudeCode,
+            origin: .live,
+            attachmentState: .stale,
+            phase: .running,
+            summary: "Restored",
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            claudeMetadata: ClaudeSessionMetadata(agentPID: pid)
+        )
+        session.isHookManaged = true
+        model.state = SessionState(sessions: [session])
+
+        model.rehydrateClaudePIDMonitorsForRestoredSessions()
+
+        // adoptClaudeSessionProcess hops onto the bridge's internal queue. Give
+        // the async track a moment to register before asserting.
+        let deadline = Date().addingTimeInterval(1.0)
+        while Date() < deadline,
+              !model.bridgeServer.hasClaudeMonitorForSession(session.id) {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+
+        #expect(model.bridgeServer.hasClaudeMonitorForSession(session.id))
+    }
+
+    @Test
+    func restoringSessionWithDeadAgentPIDMarksSessionEnded() throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        process.arguments = ["0"]
+        try process.run()
+        process.waitUntilExit()
+        let deadPID = process.processIdentifier
+        #expect(deadPID > 0)
+        #expect(kill(deadPID, 0) != 0)
+
+        let model = AppModel()
+        var session = AgentSession(
+            id: "claude-rehydrate-dead",
+            title: "Claude · dead",
+            tool: .claudeCode,
+            origin: .live,
+            attachmentState: .stale,
+            phase: .running,
+            summary: "Restored",
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            claudeMetadata: ClaudeSessionMetadata(agentPID: deadPID)
+        )
+        session.isHookManaged = true
+        model.state = SessionState(sessions: [session])
+
+        model.rehydrateClaudePIDMonitorsForRestoredSessions()
+
+        let updated = model.state.session(id: session.id)
+        #expect(updated?.isSessionEnded == true)
+        #expect(updated?.phase == .completed)
+        #expect(model.bridgeServer.hasClaudeMonitorForSession(session.id) == false)
+    }
+
+    @Test
     func mergedWithSyntheticClaudeSessionsAddsGhosttyClaudeProcessWhenNoTrackedSessionExists() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
@@ -883,5 +959,118 @@ struct AppModelSessionListTests {
 
         let claudeSessions = model.state.sessions.filter { $0.tool == .claudeCode }
         #expect(claudeSessions.count == 2)
+    }
+
+    @Test
+    func mergeKeepsEarlierAgentPIDWhenLaterIsNil() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "claude-pid-session",
+                    title: "Claude · open-island",
+                    tool: .claudeCode,
+                    origin: .live,
+                    attachmentState: .stale,
+                    phase: .running,
+                    summary: "Running",
+                    updatedAt: now.addingTimeInterval(-30),
+                    jumpTarget: JumpTarget(
+                        terminalApp: "Ghostty",
+                        workspaceName: "open-island",
+                        paneTitle: "claude ~/open-island",
+                        workingDirectory: "/tmp/open-island"
+                    ),
+                    claudeMetadata: ClaudeSessionMetadata(
+                        transcriptPath: "/tmp/claude.jsonl",
+                        agentPID: 100
+                    )
+                ),
+            ]
+        )
+
+        let merged = model.discovery.mergeDiscoveredSessions([
+            AgentSession(
+                id: "claude-pid-session",
+                title: "Claude · open-island",
+                tool: .claudeCode,
+                origin: .live,
+                attachmentState: .stale,
+                phase: .running,
+                summary: "Running",
+                updatedAt: now,
+                jumpTarget: JumpTarget(
+                    terminalApp: "Ghostty",
+                    workspaceName: "open-island",
+                    paneTitle: "claude ~/open-island",
+                    workingDirectory: "/tmp/open-island"
+                ),
+                claudeMetadata: ClaudeSessionMetadata(
+                    transcriptPath: "/tmp/claude.jsonl",
+                    lastUserPrompt: "New prompt."
+                )
+            ),
+        ])
+
+        #expect(merged.count == 1)
+        #expect(merged.first?.claudeMetadata?.agentPID == 100)
+        #expect(merged.first?.claudeMetadata?.lastUserPrompt == "New prompt.")
+    }
+
+    @Test
+    func mergeAdoptsNewerAgentPIDWhenSpecified() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "claude-pid-session",
+                    title: "Claude · open-island",
+                    tool: .claudeCode,
+                    origin: .live,
+                    attachmentState: .stale,
+                    phase: .running,
+                    summary: "Running",
+                    updatedAt: now.addingTimeInterval(-30),
+                    jumpTarget: JumpTarget(
+                        terminalApp: "Ghostty",
+                        workspaceName: "open-island",
+                        paneTitle: "claude ~/open-island",
+                        workingDirectory: "/tmp/open-island"
+                    ),
+                    claudeMetadata: ClaudeSessionMetadata(
+                        transcriptPath: "/tmp/claude.jsonl",
+                        agentPID: 100
+                    )
+                ),
+            ]
+        )
+
+        let merged = model.discovery.mergeDiscoveredSessions([
+            AgentSession(
+                id: "claude-pid-session",
+                title: "Claude · open-island",
+                tool: .claudeCode,
+                origin: .live,
+                attachmentState: .stale,
+                phase: .running,
+                summary: "Running",
+                updatedAt: now,
+                jumpTarget: JumpTarget(
+                    terminalApp: "Ghostty",
+                    workspaceName: "open-island",
+                    paneTitle: "claude ~/open-island",
+                    workingDirectory: "/tmp/open-island"
+                ),
+                claudeMetadata: ClaudeSessionMetadata(
+                    transcriptPath: "/tmp/claude.jsonl",
+                    agentPID: 200
+                )
+            ),
+        ])
+
+        #expect(merged.count == 1)
+        #expect(merged.first?.claudeMetadata?.agentPID == 200)
     }
 }

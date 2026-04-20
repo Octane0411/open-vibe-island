@@ -352,7 +352,8 @@ final class SessionDiscoveryCoordinator {
             agentID: discovered.agentID ?? existing.agentID,
             agentType: discovered.agentType ?? existing.agentType,
             worktreeBranch: discovered.worktreeBranch ?? existing.worktreeBranch,
-            activeSubagents: existing.activeSubagents.isEmpty ? discovered.activeSubagents : existing.activeSubagents
+            activeSubagents: existing.activeSubagents.isEmpty ? discovered.activeSubagents : existing.activeSubagents,
+            agentPID: discovered.agentPID ?? existing.agentPID
         )
         return merged.isEmpty ? nil : merged
     }

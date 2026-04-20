@@ -258,6 +258,7 @@ public struct ClaudeSessionMetadata: Equatable, Codable, Sendable {
     public var worktreeBranch: String?
     public var activeSubagents: [ClaudeSubagentInfo]
     public var activeTasks: [ClaudeTaskInfo]
+    public var agentPID: Int32?
 
     public init(
         transcriptPath: String? = nil,
@@ -273,7 +274,8 @@ public struct ClaudeSessionMetadata: Equatable, Codable, Sendable {
         agentType: String? = nil,
         worktreeBranch: String? = nil,
         activeSubagents: [ClaudeSubagentInfo] = [],
-        activeTasks: [ClaudeTaskInfo] = []
+        activeTasks: [ClaudeTaskInfo] = [],
+        agentPID: Int32? = nil
     ) {
         self.transcriptPath = transcriptPath
         self.initialUserPrompt = initialUserPrompt
@@ -289,6 +291,7 @@ public struct ClaudeSessionMetadata: Equatable, Codable, Sendable {
         self.worktreeBranch = worktreeBranch
         self.activeSubagents = activeSubagents
         self.activeTasks = activeTasks
+        self.agentPID = agentPID
     }
 
     public var isEmpty: Bool {
@@ -306,6 +309,7 @@ public struct ClaudeSessionMetadata: Equatable, Codable, Sendable {
             && worktreeBranch == nil
             && activeSubagents.isEmpty
             && activeTasks.isEmpty
+            && agentPID == nil
     }
 }
 
@@ -366,6 +370,7 @@ public struct ClaudeHookPayload: Equatable, Codable, Sendable {
     /// at hook runtime. Not sent over the wire by the hook script — populated
     /// in `withRuntimeContext` and serialized through the bridge.
     public var warpPaneUUID: String?
+    public var agentPID: Int32?
     /// Set to `true` by the Python hook client to indicate a remote (SSH) session.
     public var remote: Bool?
 
@@ -406,6 +411,7 @@ public struct ClaudeHookPayload: Equatable, Codable, Sendable {
         case terminalTTY = "terminal_tty"
         case terminalTitle = "terminal_title"
         case warpPaneUUID = "warp_pane_uuid"
+        case agentPID = "agent_pid"
         case remote
     }
 
@@ -439,6 +445,7 @@ public struct ClaudeHookPayload: Equatable, Codable, Sendable {
         terminalTTY: String? = nil,
         terminalTitle: String? = nil,
         warpPaneUUID: String? = nil,
+        agentPID: Int32? = nil,
         remote: Bool? = nil
     ) {
         self.cwd = cwd
@@ -470,6 +477,7 @@ public struct ClaudeHookPayload: Equatable, Codable, Sendable {
         self.terminalTTY = terminalTTY
         self.terminalTitle = terminalTitle
         self.warpPaneUUID = warpPaneUUID
+        self.agentPID = agentPID
         self.remote = remote
     }
 }
@@ -709,7 +717,8 @@ public extension ClaudeHookPayload {
             permissionMode: permissionMode,
             agentID: agentID,
             agentType: agentType,
-            worktreeBranch: worktreeBranch
+            worktreeBranch: worktreeBranch,
+            agentPID: agentPID
         )
     }
 
@@ -1025,6 +1034,15 @@ public extension ClaudeHookPayload {
             }
             if payload.terminalTitle == nil {
                 payload.terminalTitle = locator.title
+            }
+        }
+
+        if payload.agentPID == nil {
+            // Parent PID = the Claude CLI that spawned this hook. Captured here so the
+            // app can kernel-monitor its exit, rather than polling ps/lsof for liveness.
+            let pid = getppid()
+            if pid > 1 {
+                payload.agentPID = pid
             }
         }
 

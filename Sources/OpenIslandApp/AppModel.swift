@@ -457,7 +457,7 @@ final class AppModel {
     private var hasStarted = false
 
     @ObservationIgnored
-    private let bridgeServer = BridgeServer()
+    let bridgeServer = BridgeServer()
 
     @ObservationIgnored
     private var bridgeClient = LocalBridgeClient()
@@ -1232,6 +1232,7 @@ final class AppModel {
                 case let .openCodeSessionMetadataUpdated(p): return p.sessionID
                 case let .cursorSessionMetadataUpdated(p): return p.sessionID
                 case let .actionableStateResolved(p): return p.sessionID
+                case let .claudeProcessExited(p): return p.sessionID
                 }
             }()
             let session = eventSessionID.flatMap { state.session(id: $0) }
@@ -1319,6 +1320,8 @@ final class AppModel {
     private func applyStartupDiscoveryPayload(_ payload: SessionDiscoveryCoordinator.StartupDiscoveryPayload) {
         discovery.applyStartupDiscoveryPayload(payload)
 
+        rehydrateClaudePIDMonitorsForRestoredSessions()
+
         // Apply hooks binary URL and update the installed copy if the app ships a newer version.
         hooks.hooksBinaryURL = payload.hooksBinaryURL
         hooks.updateHooksBinaryIfNeeded()
@@ -1363,6 +1366,36 @@ final class AppModel {
         // Reconcile attachments and start monitoring (requires sessions to be loaded).
         monitoring.reconcileSessionAttachments()
         monitoring.startMonitoringIfNeeded()
+    }
+
+    /// Task 5 rehydration: reattach kernel PID monitors for Claude sessions whose
+    /// CLI process persisted across the app restart. If the PID is already dead,
+    /// apply a synthetic exit event directly through the reducer so the session
+    /// is marked Completed immediately (the bridge is the authoritative path for
+    /// live exits, but at rehydration time we may not have any subscribers yet).
+    func rehydrateClaudePIDMonitorsForRestoredSessions() {
+        for session in state.sessions {
+            guard session.tool == .claudeCode,
+                  session.isHookManaged,
+                  !session.isSessionEnded,
+                  let pid = session.claudeMetadata?.agentPID,
+                  pid > 0 else {
+                continue
+            }
+            if kill(pid, 0) == 0 {
+                bridgeServer.adoptClaudeSessionProcess(sessionID: session.id, pid: pid)
+            } else {
+                applyTrackedEvent(
+                    .claudeProcessExited(ClaudeProcessExited(
+                        sessionID: session.id,
+                        pid: pid,
+                        timestamp: .now
+                    )),
+                    updateLastActionMessage: false,
+                    ingress: .rollout
+                )
+            }
+        }
     }
 
 
@@ -1505,6 +1538,8 @@ final class AppModel {
             return payload.cursorMetadata.lastAssistantMessage ?? "Cursor session metadata updated."
         case let .actionableStateResolved(payload):
             return "Actionable state resolved for session \(payload.sessionID)."
+        case let .claudeProcessExited(payload):
+            return "Claude process exited for session \(payload.sessionID)."
         }
     }
 
