@@ -8,7 +8,7 @@
 ## 架构总览
 
 ```
-┌─ Mac (OpenIslandApp 进程内) ──────────────────────────────────────┐
+┌─ Mac (AgentDeckApp 进程内) ──────────────────────────────────────┐
 │                                                                   │
 │  Agent → Hook → BridgeServer → AppModel                           │
 │                                    │                              │
@@ -29,7 +29,7 @@
                                                                ││
                          ～～～ 同一 WiFi ～～～                   ││
                                                                ││
-┌─ iPhone (OpenIslandMobile) ──────────────────────────────────┼┼───┐
+┌─ iPhone (AgentDeckMobile) ──────────────────────────────────┼┼───┐
 │                                                              ││   │
 │  NWBrowser (Bonjour 发现) → SSEClient (长连接) ←─────────────┘│   │
 │       │                                                       │   │
@@ -57,13 +57,13 @@
 
 | 文件 | 职责 |
 |---|---|
-| `Sources/OpenIslandCore/WatchHTTPEndpoint.swift` | NWListener TCP server，Bonjour 广播，HTTP 路由，配对/token 管理 |
-| `Sources/OpenIslandCore/WatchNotificationRelay.swift` | 监听 AppModel 状态变化，构造 SSE 事件，处理 resolution 回传 |
+| `Sources/AgentDeckCore/WatchHTTPEndpoint.swift` | NWListener TCP server，Bonjour 广播，HTTP 路由，配对/token 管理 |
+| `Sources/AgentDeckCore/WatchNotificationRelay.swift` | 监听 AppModel 状态变化，构造 SSE 事件，处理 resolution 回传 |
 
 ### WatchHTTPEndpoint 详细设计
 
 - 用 `NWListener`（Network.framework）创建 TCP server，自带 Bonjour 支持
-- 服务类型：`_openisland._tcp`，TXT record 含设备名
+- 服务类型：`_agentdeck._tcp`，TXT record 含设备名
 - 手动解析 HTTP/1.1 请求（NWListener 给的是 raw TCP，需要自己解析 HTTP）
 - SSE 响应：`Content-Type: text/event-stream`，保持连接不关闭
 
@@ -96,8 +96,8 @@
 
 | 文件 | 改动 |
 |---|---|
-| `Sources/OpenIslandApp/AppModel.swift` | 新增 `watchRelay` 属性；`applyTrackedEvent()` (~L745) 中事件应用后通知 relay |
-| `Sources/OpenIslandCore/BridgeServer.swift` | 暴露 `resolvePendingClaudeInteraction()` (~L1638) 和 `resolvePendingClaudeQuestion()` (~L1704) 或通过 BridgeCommand 转发 |
+| `Sources/AgentDeckApp/AppModel.swift` | 新增 `watchRelay` 属性；`applyTrackedEvent()` (~L745) 中事件应用后通知 relay |
+| `Sources/AgentDeckCore/BridgeServer.swift` | 暴露 `resolvePendingClaudeInteraction()` (~L1638) 和 `resolvePendingClaudeQuestion()` (~L1704) 或通过 BridgeCommand 转发 |
 
 ### 验证
 
@@ -129,12 +129,12 @@ curl -X POST -H "Authorization: Bearer uuid-xxx" \
 
 ```
 ios/
-├── OpenIslandMobile.xcodeproj
-└── OpenIslandMobile/
+├── AgentDeckMobile.xcodeproj
+└── AgentDeckMobile/
     ├── App.swift                    # SwiftUI 入口
     ├── ContentView.swift            # 主页：连接状态 + 通知历史
     ├── Network/
-    │   ├── BonjourDiscovery.swift   # NWBrowser 搜索 _openisland._tcp
+    │   ├── BonjourDiscovery.swift   # NWBrowser 搜索 _agentdeck._tcp
     │   ├── SSEClient.swift          # HTTP SSE 长连接
     │   └── ConnectionManager.swift  # 发现→配对→SSE 生命周期
     ├── Views/
@@ -149,10 +149,10 @@ ios/
 
 ```xml
 <key>NSLocalNetworkUsageDescription</key>
-<string>Open Island needs to discover your Mac on the local network to receive agent notifications.</string>
+<string>Agent Deck needs to discover your Mac on the local network to receive agent notifications.</string>
 <key>NSBonjourServices</key>
 <array>
-    <string>_openisland._tcp</string>
+    <string>_agentdeck._tcp</string>
 </array>
 ```
 

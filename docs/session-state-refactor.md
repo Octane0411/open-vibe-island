@@ -132,23 +132,23 @@ After refactoring, AppleScript is used ONLY for jump precision (#2). This is ext
 ## 6. File Changes
 
 ### Delete entirely
-- `Sources/OpenIslandApp/TerminalSessionAttachmentProbe.swift` (1170 lines)
+- `Sources/AgentDeckApp/TerminalSessionAttachmentProbe.swift` (1170 lines)
 
 ### New file
-- `Sources/OpenIslandApp/TerminalJumpTargetResolver.swift` (~250 lines) — AppleScript snapshot matching for jump target precision only
+- `Sources/AgentDeckApp/TerminalJumpTargetResolver.swift` (~250 lines) — AppleScript snapshot matching for jump target precision only
 
 ### Simplify or delete
-- `Sources/OpenIslandCore/ClaudeSessionRegistry.swift` (159 lines) — delete or gut to ~30 lines for pending-interaction-only persistence
+- `Sources/AgentDeckCore/ClaudeSessionRegistry.swift` (159 lines) — delete or gut to ~30 lines for pending-interaction-only persistence
 
-### Modify: `Sources/OpenIslandCore/AgentSession.swift`
+### Modify: `Sources/AgentDeckCore/AgentSession.swift`
 - Remove: `SessionAttachmentState`, `SessionOrigin`, `attachmentState`, `origin`, `isAttachedToTerminal`
 - Add: `isProcessAlive`, `processNotSeenCount`, `isVisibleInIsland`
 
-### Modify: `Sources/OpenIslandCore/SessionState.swift`
+### Modify: `Sources/AgentDeckCore/SessionState.swift`
 - Remove: `reconcileAttachmentStates()`, `reconcileJumpTargets()`, attachment-based counts
 - Add: `markProcessAlive()`, `removeSession()`, `removeInvisibleSessions()`
 
-### Modify: `Sources/OpenIslandApp/AppModel.swift` (~450 lines removed)
+### Modify: `Sources/AgentDeckApp/AppModel.swift` (~450 lines removed)
 - Remove: synthetic session infrastructure, `adoptProcessTTYsForClaudeSessions`, `sanitizeCrossToolGhosttyJumpTargets`, `mergeAttachmentState`, `liveAttachmentKey`, complex `displayPriority`
 - Rewrite `reconcileSessionAttachments()` (~70 lines → ~30 lines):
   1. Run process discovery
@@ -158,7 +158,7 @@ After refactoring, AppleScript is used ONLY for jump precision (#2). This is ext
   5. Run jump target resolver for Ghostty/Terminal precision
 - Rewrite `computeSessionBuckets()` (~35 lines → ~10 lines): filter by `isVisibleInIsland`, sort by attention > running > updatedAt
 
-### Modify: `Sources/OpenIslandCore/BridgeServer.swift`
+### Modify: `Sources/AgentDeckCore/BridgeServer.swift`
 - Minimal changes. SessionEnd handler can set `phase = .completed` as before. Hooks continue to create and update sessions as they do now.
 
 ## 7. Migration Phases

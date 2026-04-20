@@ -1,6 +1,6 @@
 # Releasing
 
-How to cut a new GitHub release for Open Island.
+How to cut a new GitHub release for Agent Deck.
 
 ## Versioning
 
@@ -16,15 +16,15 @@ Follow [Semantic Versioning](https://semver.org/):
 2. **Build & package**:
    ```bash
    git checkout main && git pull
-   OPEN_ISLAND_VERSION=<version> \
-   OPEN_ISLAND_EDDSA_PUBLIC_KEY="<your-public-key>" \
+   AGENT_DECK_VERSION=<version> \
+   AGENT_DECK_EDDSA_PUBLIC_KEY="<your-public-key>" \
    zsh scripts/package-app.sh
    ```
-   This produces `output/package/Open Island.dmg` and `output/package/Open Island.zip`.
+   This produces `output/package/Agent Deck.dmg` and `output/package/Agent Deck.zip`.
 3. **Sign the update zip with EdDSA** (for Sparkle auto-update):
    ```bash
    .build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework/Versions/B/bin/sign_update \
-     "output/package/Open Island.zip"
+     "output/package/Agent Deck.zip"
    ```
    Copy the `sparkle:edSignature` and `length` values for the appcast entry.
 4. **Update `appcast.xml`** in the repo root — add a new `<item>` entry with the version, download URL, EdDSA signature, and length. See the "Sparkle Appcast" section below.
@@ -32,10 +32,10 @@ Follow [Semantic Versioning](https://semver.org/):
 6. **Create the release**:
    ```bash
    gh release create v<version> \
-     "output/package/Open Island.dmg#Open.Island.dmg" \
-     "output/package/Open Island.zip#Open.Island.zip" \
+     "output/package/Agent Deck.dmg#Open.Island.dmg" \
+     "output/package/Agent Deck.zip#Open.Island.zip" \
      --target main \
-     --title "Open Island v<version> — <Title>" \
+     --title "Agent Deck v<version> — <Title>" \
      --notes-file release-notes.md
    ```
 7. **Verify**: open the release page and confirm assets are downloadable.
@@ -45,7 +45,7 @@ Follow [Semantic Versioning](https://semver.org/):
 All release notes **must be bilingual** (English + Simplified Chinese). Use the following template:
 
 ```markdown
-## Open Island v<version> — <Title>
+## Agent Deck v<version> — <Title>
 
 ### Changes since v<prev> | 自 v<prev> 以来的变更
 
@@ -78,14 +78,14 @@ All release notes **must be bilingual** (English + Simplified Chinese). Use the 
 ```markdown
 ## Installation | 安装说明
 
-1. Download **Open Island.dmg**, open it, and drag **Open Island** to **Applications**.
-   下载 **Open Island.dmg**，打开后将 **Open Island** 拖入 **Applications**。
+1. Download **Agent Deck.dmg**, open it, and drag **Agent Deck** to **Applications**.
+   下载 **Agent Deck.dmg**，打开后将 **Agent Deck** 拖入 **Applications**。
 
-2. Since this is an unsigned app, macOS will show **"Open Island is damaged"** when you try to open it. Run this command in Terminal to fix it:
-   由于应用未签名，macOS 会提示**「"Open Island"已损坏」**。请在终端中执行以下命令：
+2. Since this is an unsigned app, macOS will show **"Agent Deck is damaged"** when you try to open it. Run this command in Terminal to fix it:
+   由于应用未签名，macOS 会提示**「"Agent Deck"已损坏」**。请在终端中执行以下命令：
 
    ```bash
-   xattr -dr com.apple.quarantine "/Applications/Open Island.app"
+   xattr -dr com.apple.quarantine "/Applications/Agent Deck.app"
    ```
 
 3. Requirements: **macOS 14+**, **Apple Silicon** (M1/M2/M3/M4/M5).
@@ -101,15 +101,15 @@ Every release ships two artifacts:
 
 | File | Purpose |
 |------|---------|
-| `Open Island.dmg` | Styled disk image with drag-to-Applications |
-| `Open Island.zip` | Plain zip for automation / CI downloads |
+| `Agent Deck.dmg` | Styled disk image with drag-to-Applications |
+| `Agent Deck.zip` | Plain zip for automation / CI downloads |
 
 ## Sparkle Appcast
 
 The file `appcast.xml` in the repo root is the Sparkle update feed. It is served via GitHub raw content at:
 
 ```
-https://raw.githubusercontent.com/Octane0411/open-vibe-island/main/appcast.xml
+https://raw.githubusercontent.com/Octane0411/agent-deck/main/appcast.xml
 ```
 
 Each release needs a new `<item>` entry. Template:
@@ -122,7 +122,7 @@ Each release needs a new `<item>` entry. Template:
     <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
     <pubDate>Thu, 06 Apr 2026 00:00:00 +0000</pubDate>
     <enclosure
-        url="https://github.com/Octane0411/open-vibe-island/releases/download/vX.Y.Z/Open.Island.zip"
+        url="https://github.com/Octane0411/agent-deck/releases/download/vX.Y.Z/Open.Island.zip"
         type="application/octet-stream"
         sparkle:edSignature="PASTE_SIGNATURE_HERE"
         length="PASTE_LENGTH_HERE"
@@ -138,11 +138,11 @@ Generate a key pair with Sparkle's tool:
 .build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework/Versions/B/bin/generate_keys
 ```
 
-This stores the private key in your macOS Keychain and prints the public key. Save the public key — it goes into `OPEN_ISLAND_EDDSA_PUBLIC_KEY` env var during packaging and into `SUPublicEDKey` in Info.plist.
+This stores the private key in your macOS Keychain and prints the public key. Save the public key — it goes into `AGENT_DECK_EDDSA_PUBLIC_KEY` env var during packaging and into `SUPublicEDKey` in Info.plist.
 
 ## Signing (future)
 
-When `OPEN_ISLAND_SIGN_IDENTITY` is set, `package-app.sh` handles codesign + notarization automatically. At that point:
+When `AGENT_DECK_SIGN_IDENTITY` is set, `package-app.sh` handles codesign + notarization automatically. At that point:
 
 1. Remove the "Installation Section" Gatekeeper instructions from future release notes.
 2. Add `--verify` step to the checklist.

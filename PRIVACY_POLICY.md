@@ -4,7 +4,7 @@
 
 ## English
 
-Open Island ("the App") is a companion app for AI coding agents. We are committed to protecting your privacy.
+Agent Deck ("the App") is a companion app for AI coding agents. We are committed to protecting your privacy.
 
 ### Data Collection
 
@@ -24,13 +24,13 @@ The App stores minimal preferences (e.g., notification settings, pairing token) 
 ### Contact
 
 If you have any questions about this privacy policy, please open an issue at:
-https://github.com/Octane0411/open-vibe-island/issues
+https://github.com/Octane0411/agent-deck/issues
 
 ---
 
 ## 中文
 
-Open Island（"本应用"）是一款 AI 编程助手的配套应用。我们致力于保护您的隐私。
+Agent Deck（"本应用"）是一款 AI 编程助手的配套应用。我们致力于保护您的隐私。
 
 ### 数据收集
 
@@ -50,4 +50,4 @@ Open Island（"本应用"）是一款 AI 编程助手的配套应用。我们致
 ### 联系方式
 
 如果您对本隐私政策有任何疑问，请在以下地址提交 issue：
-https://github.com/Octane0411/open-vibe-island/issues
+https://github.com/Octane0411/agent-deck/issues

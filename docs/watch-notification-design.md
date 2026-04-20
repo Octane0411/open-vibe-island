@@ -131,7 +131,7 @@ Claude Code / Codex
     │
     │  Hook (stdin/stdout)
     ↓
-OpenIslandHooks (CLI)
+AgentDeckHooks (CLI)
     │
     │  Unix socket
     ↓
@@ -140,13 +140,13 @@ BridgeServer (macOS app 内, 已有)
     │  AppModel 状态变更
     ↓
 WatchHTTPEndpoint (新增, macOS 端)
-    │  - Bonjour 广播 _openisland._tcp
+    │  - Bonjour 广播 _agentdeck._tcp
     │  - /events (SSE 实时推送)
     │  - /resolution (接收操作回传)
     │
     │  HTTP (局域网, 同一 WiFi)
     ↓
-iPhone App (OpenIslandMobile)
+iPhone App (AgentDeckMobile)
     │  - Bonjour 发现 Mac
     │  - SSE 接收事件 → 本地通知
     │  - WCSession 中继到 Watch
@@ -221,7 +221,7 @@ POST /resolution
 Mac                              iPhone
  │                                 │
  │  1. Bonjour 广播                │
- │  _openisland._tcp               │
+ │  _agentdeck._tcp               │
  │  TXT: { name: "王的MacBook Pro" } │
  │ ──────────────────────────────→ │
  │                                 │  2. 发现 Mac，显示设备名
@@ -264,14 +264,14 @@ Mac                              iPhone
 
 | Target | 类型 | 职责 |
 |---|---|---|
-| `OpenIslandMobile` | iOS App | Bonjour 发现 Mac、SSE 接收事件、本地通知、WCSession 中继到 Watch |
-| `OpenIslandShared` | 共享 Framework | 消息类型定义、编解码，macOS 和 iOS 共用 |
+| `AgentDeckMobile` | iOS App | Bonjour 发现 Mac、SSE 接收事件、本地通知、WCSession 中继到 Watch |
+| `AgentDeckShared` | 共享 Framework | 消息类型定义、编解码，macOS 和 iOS 共用 |
 
 **不需要独立 watchOS App target**（v1）。Watch 通知通过 iOS app 的 `UNNotificationCategory` + `UNNotificationAction` 实现，利用系统自动镜像。
 
 ### macOS 端改动
 
-在 `OpenIslandApp` 中新增 `WatchHTTPEndpoint`：
+在 `AgentDeckApp` 中新增 `WatchHTTPEndpoint`：
 
 ```swift
 /// 在 macOS app 内启动一个轻量 HTTP server，通过 Bonjour 广播服务。
@@ -279,7 +279,7 @@ Mac                              iPhone
 class WatchHTTPEndpoint {
     let appModel: AppModel
 
-    // Bonjour 广播 _openisland._tcp
+    // Bonjour 广播 _agentdeck._tcp
     func startAdvertising() { ... }
 
     // SSE: 当 session phase 变为 waitingForApproval / waitingForAnswer / completed 时推送事件
@@ -290,7 +290,7 @@ class WatchHTTPEndpoint {
 }
 ```
 
-### iOS App（OpenIslandMobile）
+### iOS App（AgentDeckMobile）
 
 **极简，但有足够内容过审：**
 
@@ -335,14 +335,14 @@ let permissionCategory = UNNotificationCategory(
 
 ### Step 1: macOS 端 — WatchHTTPEndpoint
 - 在 macOS app 内用 `NWListener` 起一个 HTTP server
-- 注册 Bonjour 服务 `_openisland._tcp`
+- 注册 Bonjour 服务 `_agentdeck._tcp`
 - 实现 `/events` SSE 端点：监听 `AppModel` 的 session phase 变化，推送 JSON 事件
 - 实现 `/resolution` POST 端点：接收决策，调用 `AppModel` 执行
 - **可以纯 Mac 端开发和测试**（用 curl 模拟 iPhone 连接验证 SSE 推送）
 
 ### Step 2: iOS App — 骨架 + Bonjour 发现 + 配对
-- 新建 Xcode project（OpenIslandMobile）
-- 用 `NWBrowser` 搜索 `_openisland._tcp`，发现 Mac 后显示设备名
+- 新建 Xcode project（AgentDeckMobile）
+- 用 `NWBrowser` 搜索 `_agentdeck._tcp`，发现 Mac 后显示设备名
 - 实现配对流程：用户选择 Mac → 输入 4 位配对码 → 获取 session token
 - 连接 SSE，控制台打印收到的事件
 - **验证 Mac ↔ iPhone 通信链路 + 配对机制**
@@ -374,7 +374,7 @@ let permissionCategory = UNNotificationCategory(
 
 1. **iOS app 审核** — 需要足够的 UI 内容。方案：最近通知历史列表 + 设置页 + 连接状态页。
 2. **后台 SSE 连接** — iPhone app 在后台时 SSE 长连接可能被系统断开。需要处理重连逻辑，以及评估是否需要 Background Modes（如 `background fetch` 或 `remote notifications`）。
-3. **多 Mac 发现** — 同一 WiFi 下多台 Mac 运行 Open Island 时，Bonjour 会发现多个服务。iPhone 列出设备名让用户选择并配对，token 机制确保后续自动连接正确的 Mac。
+3. **多 Mac 发现** — 同一 WiFi 下多台 Mac 运行 Agent Deck 时，Bonjour 会发现多个服务。iPhone 列出设备名让用户选择并配对，token 机制确保后续自动连接正确的 Mac。
 4. **Xcode 项目结构** — 当前项目用 Swift Package Manager，iOS target 需要 Xcode project 或 workspace。需评估是在 Package.swift 中添加还是单独建 Xcode project。
 5. **局域网权限** — iOS 14+ 首次访问局域网时会弹出权限请求，需要在 Info.plist 中声明 `NSLocalNetworkUsageDescription` 和 Bonjour 服务类型。
 

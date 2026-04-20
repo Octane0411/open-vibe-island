@@ -23,18 +23,18 @@ The repository harness exists to make a round of work mechanically checkable. Th
 
 ## Smoke Mode
 
-`scripts/smoke-dev-app.sh` sets harness environment variables before launching `OpenIslandApp`.
+`scripts/smoke-dev-app.sh` sets harness environment variables before launching `AgentDeckApp`.
 
-The smoke path is intentionally aimed at the repository executable, not `~/Applications/Open Island Dev.app`. The dev bundle remains useful for manual end-to-end OSS verification, but harness automation should target the current branch's `OpenIslandApp` binary so the verification result matches the checked-out code exactly.
+The smoke path is intentionally aimed at the repository executable, not `~/Applications/Agent Deck Dev.app`. The dev bundle remains useful for manual end-to-end OSS verification, but harness automation should target the current branch's `AgentDeckApp` binary so the verification result matches the checked-out code exactly.
 
-- `OPEN_ISLAND_HARNESS_SCENARIO` selects a case from `IslandDebugScenario`
-- `OPEN_ISLAND_HARNESS_PRESENT_OVERLAY` mirrors the scenario onto the real island overlay
-- `OPEN_ISLAND_HARNESS_SHOW_CONTROL_CENTER` controls whether the debug window is frontmost
-- `OPEN_ISLAND_HARNESS_START_BRIDGE` skips live socket setup when disabled
-- `OPEN_ISLAND_HARNESS_BOOT_ANIMATION` disables the normal boot animation for deterministic runs
-- `OPEN_ISLAND_HARNESS_CAPTURE_DELAY_SECONDS` controls when artifact capture runs after launch
-- `OPEN_ISLAND_HARNESS_AUTO_EXIT_SECONDS` terminates the app automatically after the selected duration
-- `OPEN_ISLAND_HARNESS_ARTIFACT_DIR` selects the output directory for `report.json`, `timeline.json`, `runtime.log`, PNG captures, and `.ax.json` accessibility snapshots
+- `AGENT_DECK_HARNESS_SCENARIO` selects a case from `IslandDebugScenario`
+- `AGENT_DECK_HARNESS_PRESENT_OVERLAY` mirrors the scenario onto the real island overlay
+- `AGENT_DECK_HARNESS_SHOW_CONTROL_CENTER` controls whether the debug window is frontmost
+- `AGENT_DECK_HARNESS_START_BRIDGE` skips live socket setup when disabled
+- `AGENT_DECK_HARNESS_BOOT_ANIMATION` disables the normal boot animation for deterministic runs
+- `AGENT_DECK_HARNESS_CAPTURE_DELAY_SECONDS` controls when artifact capture runs after launch
+- `AGENT_DECK_HARNESS_AUTO_EXIT_SECONDS` terminates the app automatically after the selected duration
+- `AGENT_DECK_HARNESS_ARTIFACT_DIR` selects the output directory for `report.json`, `timeline.json`, `runtime.log`, PNG captures, and `.ax.json` accessibility snapshots
 
 The default smoke path writes artifacts under `output/harness/`.
 

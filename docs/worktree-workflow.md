@@ -13,7 +13,7 @@ This repository should use Git worktrees as the default shape for parallel devel
 
 ### 1. Integration worktree
 
-- Path: `/Users/wangruobing/Personal/open-island`
+- Path: `/Users/wangruobing/Personal/agent-deck`
 - Branch: `main`
 - Purpose: fetch, integrate, verify, and push
 
@@ -24,7 +24,7 @@ Rules:
 
 ### 2. Topic worktrees
 
-- Path pattern: `/Users/wangruobing/Personal/open-island-<topic>`
+- Path pattern: `/Users/wangruobing/Personal/agent-deck-<topic>`
 - Branch pattern: `feat/<topic>`, `fix/<topic>`, `docs/<topic>`, `investigate/<topic>`
 - Purpose: isolated implementation for one slice
 
@@ -43,14 +43,14 @@ From the integration worktree:
 
 ```bash
 git fetch origin
-git worktree add /Users/wangruobing/Personal/open-island-<topic> -b <branch-name> origin/main
+git worktree add /Users/wangruobing/Personal/agent-deck-<topic> -b <branch-name> origin/main
 ```
 
 Example:
 
 ```bash
 git fetch origin
-git worktree add /Users/wangruobing/Personal/open-island-island-polish -b feat/island-polish origin/main
+git worktree add /Users/wangruobing/Personal/agent-deck-island-polish -b feat/island-polish origin/main
 ```
 
 ## Work inside the topic worktree
@@ -117,7 +117,7 @@ If only part of a topic branch is ready, use `git cherry-pick` from the integrat
 After the topic branch is merged:
 
 ```bash
-git worktree remove /Users/wangruobing/Personal/open-island-<topic>
+git worktree remove /Users/wangruobing/Personal/agent-deck-<topic>
 git branch -d <branch-name>
 ```
 
@@ -139,8 +139,8 @@ git push origin --delete <branch-name>
 
 Good parallel split:
 
-- `feat/island-visual-polish`: `Sources/OpenIslandApp/Views/*`
-- `fix/codex-hook-installer`: `Sources/OpenIslandCore/CodexHookInstaller.swift`
+- `feat/island-visual-polish`: `Sources/AgentDeckApp/Views/*`
+- `fix/codex-hook-installer`: `Sources/AgentDeckCore/CodexHookInstaller.swift`
 - `investigate/jump-accuracy`: terminal jump diagnostics and docs
 
 Bad parallel split:

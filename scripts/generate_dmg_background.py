@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Generate the DMG installer background image for Open Island.
+"""Generate the DMG installer background image for Agent Deck.
 
 Produces a 660x400 (Retina: 1320x800) PNG with:
 - Dark gradient background matching the app's brand palette
-- "OPEN ISLAND" pixel-art-style title
+- "AGENT DECK" pixel-art-style title
 - Dashed arrow with "drag to install" label between icon positions
 - Subtle star-field decoration
 """
@@ -58,7 +58,7 @@ def draw_stars(draw, w, h, count=80):
 
 
 def draw_corner_brackets(draw, w, h):
-    """Draw decorative corner brackets like Vibe Island."""
+    """Draw decorative corner brackets like Agent Deck."""
     length = 50
     thickness = 2
     margin = 60

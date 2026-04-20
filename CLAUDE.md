@@ -2,29 +2,29 @@
 
 ## What is this project?
 
-Open Island is a native macOS companion app for AI coding agents. It sits in the notch/top-bar area and monitors local agent sessions, surfaces permission requests, answers questions, and provides "jump back" to the correct terminal context. Local-first, no server dependency.
+Agent Deck is a native macOS companion app for AI coding agents. It sits in the notch/top-bar area and monitors local agent sessions, surfaces permission requests, answers questions, and provides "jump back" to the correct terminal context. Local-first, no server dependency.
 
 ## References
 
-- **Target product**: https://vibeisland.app/ — the commercial product we are building toward feature parity with
+- **Target product**: the commercial reference app — the commercial product we are building toward feature parity with
 - **Reference OSS repo**: https://github.com/farouqaldori/claude-island — open-source implementation we can study for design patterns and ideas
 
 ## Architecture
 
-Four targets in one Swift package (`OpenIsland`):
+Four targets in one Swift package (`AgentDeck`):
 
-1. **OpenIslandApp** — SwiftUI + AppKit shell. Menu bar extra, overlay panel (notch/top-bar), and control center window. Entry point: `OpenIslandApp.swift` with `AppModel` as the central `@Observable` state owner.
-2. **OpenIslandCore** — Shared library. Models (`AgentSession`, `AgentEvent`, `SessionState`), bridge transport (Unix socket IPC with JSON line protocol), hook models/installers for both Codex and Claude Code, transcript discovery, session persistence/registry.
-3. **OpenIslandHooks** — Lightweight CLI executable invoked by agent hooks. Reads hook payload from stdin, forwards to app bridge via Unix socket, writes blocking JSON to stdout only when island denies a `PreToolUse`.
-4. **OpenIslandSetup** — Installer CLI for managing `~/.codex/config.toml` and `hooks.json`.
+1. **AgentDeckApp** — SwiftUI + AppKit shell. Menu bar extra, overlay panel (notch/top-bar), and control center window. Entry point: `AgentDeckApp.swift` with `AppModel` as the central `@Observable` state owner.
+2. **AgentDeckCore** — Shared library. Models (`AgentSession`, `AgentEvent`, `SessionState`), bridge transport (Unix socket IPC with JSON line protocol), hook models/installers for both Codex and Claude Code, transcript discovery, session persistence/registry.
+3. **AgentDeckHooks** — Lightweight CLI executable invoked by agent hooks. Reads hook payload from stdin, forwards to app bridge via Unix socket, writes blocking JSON to stdout only when island denies a `PreToolUse`.
+4. **AgentDeckSetup** — Installer CLI for managing `~/.codex/config.toml` and `hooks.json`.
 
 ## Key data flow
 
 ### Codex path
-Codex → hooks.json → OpenIslandHooks (stdin/stdout) → Unix socket → BridgeServer → AppModel → UI
+Codex → hooks.json → AgentDeckHooks (stdin/stdout) → Unix socket → BridgeServer → AppModel → UI
 
 ### Claude Code path
-Claude Code → settings.json hooks → OpenIslandHooks (stdin/stdout) → Unix socket → BridgeServer.handleClaudeHook → AppModel → UI
+Claude Code → settings.json hooks → AgentDeckHooks (stdin/stdout) → Unix socket → BridgeServer.handleClaudeHook → AppModel → UI
 
 ### Session discovery (on launch)
 Restore cached sessions from registry → discover recent JSONL transcripts (`~/.claude/projects/`) → reconcile with active terminal processes → start live bridge.
@@ -41,8 +41,8 @@ Restore cached sessions from registry → discover recent JSONL transcripts (`~/
 ```bash
 swift build
 swift test
-swift run OpenIslandApp                            # run the app
-swift build -c release --product OpenIslandHooks   # build hook binary
+swift run AgentDeckApp                            # run the app
+swift build -c release --product AgentDeckHooks   # build hook binary
 ```
 
 Open `Package.swift` in Xcode for the app target. Requires macOS 14+, Swift 6.2.
@@ -89,22 +89,22 @@ Open `Package.swift` in Xcode for the app target. Requires macOS 14+, Swift 6.2.
 - **Bilingual required**: Every release MUST include both English and Chinese (Simplified) descriptions. Use the template in `.github/RELEASE_TEMPLATE.md`.
 - Before creating a release, fetch remote `main` and review ALL merged PRs since the last tag to avoid missing changes.
 - Each changelog entry follows the format: `- **Category**: English description (#PR)\n  中文描述 (#PR)`. For external contributors, append `— Thanks @username` to the English line.
-- The release title follows: `Open Island vX.Y.Z — Short English Title`
+- The release title follows: `Agent Deck vX.Y.Z — Short English Title`
 - The Installation section must be bilingual.
 - Release is triggered by pushing a `v*` tag to `main`. The GitHub Actions workflow builds, signs, notarizes, and publishes the DMG automatically.
 
 ## App Targets And Naming
 
-- `OpenIslandApp` (via `swift run OpenIslandApp` or the Xcode target) is the canonical development runtime.
-- `~/Applications/Open Island Dev.app` is a local bundle wrapper around the repo-built binary, not a separate product.
-- When launching `Open Island Dev.app`, refresh the bundle first with `zsh scripts/launch-dev-app.sh` instead of only `open -na` (avoids stale binaries).
+- `AgentDeckApp` (via `swift run AgentDeckApp` or the Xcode target) is the canonical development runtime.
+- `~/Applications/Agent Deck Dev.app` is a local bundle wrapper around the repo-built binary, not a separate product.
+- When launching `Agent Deck Dev.app`, refresh the bundle first with `zsh scripts/launch-dev-app.sh` instead of only `open -na` (avoids stale binaries).
 - **One-time setup**: run `zsh scripts/setup-dev-signing.sh` once to create a local self-signed code signing identity. Without it the dev bundle is ad-hoc signed, which changes cdhash every rebuild and silently invalidates any macOS TCC grant (Accessibility, Automation) you gave the previous build. Required when iterating on features that touch AX API (precision jump, keystroke/menu injection, etc.).
 - Use `scripts/harness.sh smoke` or `scripts/smoke-dev-app.sh` only for deterministic harness runs.
-- `/Applications/Vibe Island.app` and `https://vibeisland.app/` are closed-source reference baselines only — behavior benchmarks, not the development runtime.
+- `/Applications/Agent Deck.app` and `the commercial reference app` are closed-source reference baselines only — behavior benchmarks, not the development runtime.
 
 ## Reference Baselines
 
-- Official product reference: `https://vibeisland.app/`
+- Official product reference: `the commercial reference app`
 - On Macs with a built-in notch, the island sits in the notch area; on external displays or non-notch Macs, it falls back to a compact top-center bar.
 - Community reference: `https://github.com/farouqaldori/claude-island` — useful for design patterns, not a product spec.
 - Do NOT import from `claude-island` unless explicitly asked: analytics (Mixpanel etc.), window-manager scope (`yabai`), Claude-only assumptions that weaken the shared agent model, raising the support boundary beyond the surfaces already listed.
@@ -125,20 +125,20 @@ Open `Package.swift` in Xcode for the app target. Requires macOS 14+, Swift 6.2.
 
 ## Important files
 
-- `Sources/OpenIslandApp/AppModel.swift` — Central app state, session management, bridge lifecycle
-- `Sources/OpenIslandApp/TerminalSessionAttachmentProbe.swift` — Ghostty/Terminal attachment matching
-- `Sources/OpenIslandApp/ActiveAgentProcessDiscovery.swift` — Process discovery via ps/lsof
-- `Sources/OpenIslandCore/SessionState.swift` — Pure state reducer for agent sessions
-- `Sources/OpenIslandCore/AgentSession.swift` — Core session model and related types
-- `Sources/OpenIslandCore/AgentEvent.swift` — Event enum driving all state transitions
-- `Sources/OpenIslandCore/BridgeTransport.swift` — Unix socket protocol, codec, envelope types
-- `Sources/OpenIslandCore/BridgeServer.swift` — Bridge server handling hook payloads
-- `Sources/OpenIslandCore/ClaudeHooks.swift` — Claude Code hook payload model and terminal detection
-- `Sources/OpenIslandCore/ClaudeTranscriptDiscovery.swift` — Discovers sessions from `~/.claude/projects/` JSONL files
-- `Sources/OpenIslandCore/ClaudeSessionRegistry.swift` — Persists/restores Claude sessions across app launches
-- `Sources/OpenIslandCore/CodexHooks.swift` — Codex hook payload model
-- `Sources/OpenIslandHooks/main.swift` — Hook CLI entry point
-- `Sources/OpenIslandApp/OverlayPanelController.swift` — Notch/top-bar overlay window
+- `Sources/AgentDeckApp/AppModel.swift` — Central app state, session management, bridge lifecycle
+- `Sources/AgentDeckApp/TerminalSessionAttachmentProbe.swift` — Ghostty/Terminal attachment matching
+- `Sources/AgentDeckApp/ActiveAgentProcessDiscovery.swift` — Process discovery via ps/lsof
+- `Sources/AgentDeckCore/SessionState.swift` — Pure state reducer for agent sessions
+- `Sources/AgentDeckCore/AgentSession.swift` — Core session model and related types
+- `Sources/AgentDeckCore/AgentEvent.swift` — Event enum driving all state transitions
+- `Sources/AgentDeckCore/BridgeTransport.swift` — Unix socket protocol, codec, envelope types
+- `Sources/AgentDeckCore/BridgeServer.swift` — Bridge server handling hook payloads
+- `Sources/AgentDeckCore/ClaudeHooks.swift` — Claude Code hook payload model and terminal detection
+- `Sources/AgentDeckCore/ClaudeTranscriptDiscovery.swift` — Discovers sessions from `~/.claude/projects/` JSONL files
+- `Sources/AgentDeckCore/ClaudeSessionRegistry.swift` — Persists/restores Claude sessions across app launches
+- `Sources/AgentDeckCore/CodexHooks.swift` — Codex hook payload model
+- `Sources/AgentDeckHooks/main.swift` — Hook CLI entry point
+- `Sources/AgentDeckApp/OverlayPanelController.swift` — Notch/top-bar overlay window
 - `docs/product.md` — Product scope and MVP boundary
 - `docs/architecture.md` — System design and engineering decisions
 - `AGENTS.md` — Working agreement for agent workflow

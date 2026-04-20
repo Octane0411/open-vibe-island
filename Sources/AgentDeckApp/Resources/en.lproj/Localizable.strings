@@ -1,0 +1,202 @@
+/* Common */
+"app.name" = "Agent Deck";
+"app.name.oss" = "Agent Deck OSS";
+"app.description" = "macOS companion for AI coding agents";
+
+/* Settings - Tab Labels */
+"settings.tab.general" = "General";
+"settings.tab.display" = "Display";
+"settings.tab.sound" = "Sound";
+"settings.tab.shortcuts" = "Shortcuts";
+"settings.tab.lab" = "Lab";
+"settings.tab.about" = "About";
+
+/* Settings - Section Headers */
+"settings.section.system" = "System";
+"settings.section.advanced" = "Advanced";
+
+/* Settings - General */
+"settings.general.launchAtLogin" = "Launch at Login";
+"settings.general.monitor" = "Monitor";
+"settings.general.automatic" = "Automatic";
+"settings.general.behavior" = "Behavior";
+"settings.general.hideFullscreen" = "Hide in fullscreen";
+"settings.general.autoHideNoSessions" = "Auto-hide without active sessions";
+"settings.general.autoCollapse" = "Auto-collapse on mouse exit";
+"settings.general.showDockIcon" = "Show icon in Dock";
+"settings.general.hapticFeedback" = "Haptic feedback on hover";
+"settings.general.suppressFrontmostNotifications" = "Suppress notifications for focused sessions";
+"settings.general.showCodexUsage" = "Show Codex usage";
+"settings.general.completionReply" = "Reply from completion card";
+"settings.general.cliHooks" = "CLI Hooks";
+"settings.general.activated" = "Activated";
+"settings.general.install" = "Install";
+"settings.general.uninstall" = "Uninstall";
+"settings.general.uninstallConfirmTitle" = "Uninstall Hooks?";
+"settings.general.uninstallConfirmAction" = "Uninstall";
+"settings.general.uninstallConfirmMessage.claude" = "This will remove Agent Deck hooks from Claude Code. You can reinstall them at any time.";
+"settings.general.uninstallConfirmMessage.codex" = "This will remove Agent Deck hooks from Codex. You can reinstall them at any time.";
+"settings.general.uninstallConfirmMessage.claudeUsage" = "This will remove the Claude usage bridge. You can reinstall it at any time.";
+"settings.general.cancel" = "Cancel";
+"settings.general.language" = "Language";
+"settings.general.languageSystem" = "System";
+"settings.general.languageEnglish" = "English";
+"settings.general.languageChinese" = "Chinese (Simplified)";
+"settings.general.languageTraditionalChinese" = "Chinese (Traditional)";
+
+/* Settings - Appearance */
+"settings.tab.appearance" = "Appearance";
+"settings.appearance.mode" = "Mode";
+"settings.appearance.mode.default" = "Default";
+"settings.appearance.mode.custom" = "Custom";
+"settings.appearance.mode.defaultDesc" = "Use the built-in island appearance. Switch to Custom to personalize colors, glyph style, and layout.";
+"settings.appearance.preview" = "Preview";
+"settings.appearance.preview.sessions" = "sessions";
+"settings.appearance.style" = "Style";
+"settings.appearance.closedStyle" = "Closed Style";
+"settings.appearance.style.minimal" = "Minimal";
+"settings.appearance.style.detailed" = "Detailed";
+"settings.appearance.hideIdleToEdge" = "Hide To Edge When Idle";
+"settings.appearance.hideIdleToEdge.help" = "When the island is collapsed without an active notification card, keep only a thin black edge visible. Hovering or clicking still opens it.";
+"settings.appearance.pixelShape" = "Pixel Glyph";
+"settings.appearance.pixelShape.bars" = "Cat";
+"settings.appearance.pixelShape.steps" = "Steps";
+"settings.appearance.pixelShape.blocks" = "Blocks";
+"settings.appearance.pixelShape.custom" = "Custom";
+"settings.appearance.avatar.upload" = "Upload Image";
+"settings.appearance.avatar.remove" = "Remove";
+"settings.appearance.avatar.help" = "Supports PNG, JPEG, HEIC, TIFF. Max 10 MB.";
+"settings.appearance.statusColors" = "Status Colors";
+"settings.appearance.status.running" = "Running";
+"settings.appearance.status.approval" = "Approval";
+"settings.appearance.status.answer" = "Answer";
+"settings.appearance.status.completed" = "Completed";
+"settings.appearance.communityNote" = "Much of this was built by the community.\nGot your own workflow? We'd love a PR.";
+
+/* Settings - Display */
+"settings.display.monitor" = "Monitor";
+"settings.display.position" = "Display Position";
+"settings.display.diagnostics" = "Diagnostics";
+"settings.display.currentScreen" = "Current Screen";
+"settings.display.layoutMode" = "Layout Mode";
+
+/* Settings - Sound */
+"settings.sound.notifications" = "Notification Sounds";
+"settings.sound.mute" = "Mute";
+"settings.sound.selectSound" = "Select Sound";
+
+/* Settings - Setup */
+"settings.tab.setup" = "Setup";
+"setup.section.binary" = "Hook Binary";
+"setup.claudeConfigDir.section" = "Claude Config Directory";
+"setup.claudeConfigDir.title" = "Config Directory";
+"setup.claudeConfigDir.choose" = "Choose…";
+"setup.claudeConfigDir.reset" = "Reset";
+"setup.claudeConfigDir.footer" = "For users who run Claude Code with CLAUDE_CONFIG_DIR. Leave default unless you use a custom config path.";
+"setup.section.hooks" = "CLI Hooks";
+"setup.section.usage" = "Usage Bridge";
+"setup.section.permissions" = "Permissions";
+"setup.binaryReady" = "Ready";
+"setup.binaryMissing" = "Not found — build AgentDeckHooks first";
+"setup.hookReady" = "Hooks installed";
+"setup.hookMissing" = "Hooks not installed";
+"setup.usageBridge" = "Claude Usage Bridge";
+"setup.usageBridgeReady" = "Installed";
+"setup.usageBridgeDesc" = "Tracks Claude API usage locally";
+"setup.optional" = "Optional";
+"setup.permissionsTitle" = "Accessibility";
+"setup.permissionsDesc" = "Agent Deck may need Accessibility permission to detect terminal windows. Grant it in System Settings → Privacy & Security → Accessibility.";
+"setup.installAll" = "Install All";
+"setup.banner.noHooks.title" = "Get started with Agent Deck";
+"setup.banner.noHooks.message" = "Install hooks for the agents you use below — Agent Deck will start monitoring those sessions.";
+"setup.revealConfigLocation" = "Reveal config in Finder";
+"setup.section.diagnostics" = "Hook Diagnostics";
+"setup.diagnostics.notRun" = "Health check not yet run.";
+"setup.diagnostics.runCheck" = "Run Check";
+"setup.diagnostics.recheck" = "Re-check";
+"setup.diagnostics.repair" = "Repair Hooks";
+"setup.diagnostics.allHealthy" = "All hooks are healthy.";
+
+/* Settings - Placeholder */
+"settings.shortcuts.comingSoon" = "Keyboard shortcuts coming soon.";
+"settings.lab.comingSoon" = "Experimental features coming soon.";
+
+/* Settings - About */
+"settings.about.version" = "Version %@";
+"settings.about.checkForUpdates" = "Check for Updates…";
+"settings.about.quitApp" = "Quit Agent Deck";
+
+/* Settings - Update */
+"settings.update.available" = "v%@ Available — Update";
+
+/* Island Panel - Bootstrap */
+"island.checkingTerminals" = "Checking open terminal sessions";
+"island.terminalOwnership" = "Agent Deck will show live agents after terminal ownership is confirmed";
+"island.noTerminals" = "No open terminal sessions";
+"island.startAgent" = "Start a coding agent in your terminal";
+"island.recentSessions" = "Recent sessions remain in Control Center until the terminal is open again";
+"island.hint.installHooks" = "No agent hooks installed — sessions won't surface events. Tap to set up.";
+
+/* Island Panel - Session List */
+"island.showAll" = "Show all %lld sessions";
+"island.collapseList" = "Collapse list";
+"island.usageWaiting" = "Usage waiting";
+
+
+/* Island Panel - Subagents & Tasks */
+"subagents.title" = "Subagents (%lld)";
+"subagents.completed" = "Completed";
+"tasks.summary" = "Tasks (%lld completed, %lld in progress, %lld pending)";
+
+/* Island Panel - Question */
+"question.submit" = "Submit Answers";
+"question.answerNeeded" = "Answer needed";
+
+/* Island Panel - Completion */
+"completion.done" = "Done";
+"completion.replyPlaceholder" = "Reply to Claude…";
+
+/* Menu Bar */
+"menu.status" = "%lld live · %lld attention";
+"menu.settings" = "Settings…";
+"menu.openDebug" = "Open Debug Panel";
+"menu.hideOverlay" = "Hide Island Overlay";
+"menu.showOverlay" = "Show Island Overlay";
+"menu.refreshCodexHooks" = "Refresh Codex Hook Status";
+"menu.uninstallCodexHooks" = "Uninstall Codex Hooks";
+"menu.installCodexHooks" = "Install Codex Hooks";
+"menu.refreshClaudeHooks" = "Refresh Claude Hook Status";
+"menu.uninstallClaudeHooks" = "Uninstall Claude Hooks";
+"menu.installClaudeHooks" = "Install Claude Hooks";
+"menu.liveTool" = "Live tool: %@";
+"menu.tracking" = "Tracking: %@";
+
+/* Debug Panel */
+"debug.title" = "Agent Deck Debug";
+"debug.description" = "Mock-driven notch surface harness for validating session list, approval, question, and completion cards.";
+"debug.scenarios" = "Scenarios";
+"debug.actions" = "Actions";
+"debug.actionsDescription" = "The inline preview is isolated. Use the button below if you want the real top-of-screen island to mirror the current mock.";
+"debug.mirrorToIsland" = "Mirror To Island";
+"debug.closeIsland" = "Close Island";
+"debug.currentMock" = "Current Mock";
+"debug.liveOverlay" = "Live Overlay";
+"debug.inlinePreview" = "Inline Preview";
+"debug.previewDescription" = "This preview is stable and ignores live bridge activity.";
+"debug.visible" = "Visible";
+"debug.surface" = "Surface";
+"debug.sessions" = "Sessions";
+"debug.message" = "Message";
+"debug.yes" = "Yes";
+"debug.no" = "No";
+"debug.refresh" = "Refresh";
+"debug.removeHooks" = "Remove Hooks";
+"debug.installHooks" = "Install Hooks";
+"debug.removeBridge" = "Remove Bridge";
+"debug.installBridge" = "Install Bridge";
+"debug.sessionList" = "Session List";
+"debug.sessionListActionable" = "Session List (Actionable)";
+
+/* Window Titles */
+"window.settings" = "Agent Deck Settings";
+"window.debug" = "Agent Deck Debug";

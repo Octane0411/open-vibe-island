@@ -3,27 +3,27 @@
 import PackageDescription
 
 let package = Package(
-    name: "OpenIsland",
+    name: "AgentDeck",
     defaultLocalization: "en",
     platforms: [
         .macOS(.v14),
     ],
     products: [
         .library(
-            name: "OpenIslandCore",
-            targets: ["OpenIslandCore"]
+            name: "AgentDeckCore",
+            targets: ["AgentDeckCore"]
         ),
         .executable(
-            name: "OpenIslandHooks",
-            targets: ["OpenIslandHooks"]
+            name: "AgentDeckHooks",
+            targets: ["AgentDeckHooks"]
         ),
         .executable(
-            name: "OpenIslandSetup",
-            targets: ["OpenIslandSetup"]
+            name: "AgentDeckSetup",
+            targets: ["AgentDeckSetup"]
         ),
         .executable(
-            name: "OpenIslandApp",
-            targets: ["OpenIslandApp"]
+            name: "AgentDeckApp",
+            targets: ["AgentDeckApp"]
         ),
     ],
     dependencies: [
@@ -32,20 +32,20 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "OpenIslandCore"
+            name: "AgentDeckCore"
         ),
         .executableTarget(
-            name: "OpenIslandHooks",
-            dependencies: ["OpenIslandCore"]
+            name: "AgentDeckHooks",
+            dependencies: ["AgentDeckCore"]
         ),
         .executableTarget(
-            name: "OpenIslandSetup",
-            dependencies: ["OpenIslandCore"]
+            name: "AgentDeckSetup",
+            dependencies: ["AgentDeckCore"]
         ),
         .executableTarget(
-            name: "OpenIslandApp",
+            name: "AgentDeckApp",
             dependencies: [
-                "OpenIslandCore",
+                "AgentDeckCore",
                 .product(name: "MarkdownUI", package: "swift-markdown-ui"),
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
@@ -54,12 +54,12 @@ let package = Package(
             ]
         ),
         .testTarget(
-            name: "OpenIslandCoreTests",
-            dependencies: ["OpenIslandCore"]
+            name: "AgentDeckCoreTests",
+            dependencies: ["AgentDeckCore"]
         ),
         .testTarget(
-            name: "OpenIslandAppTests",
-            dependencies: ["OpenIslandApp", "OpenIslandCore"]
+            name: "AgentDeckAppTests",
+            dependencies: ["AgentDeckApp", "AgentDeckCore"]
         ),
     ]
 )
