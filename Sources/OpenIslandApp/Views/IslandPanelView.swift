@@ -377,27 +377,29 @@ struct IslandPanelView: View {
                     .frame(width: sideWidth + 8 + (closedSpotlightSession?.phase.requiresAttention == true ? 18 : 0))
                 }
 
-                if !hasClosedPresence {
-                    Rectangle()
-                        .fill(Color.clear)
-                        .frame(width: closedNotchWidth - 20)
-                } else {
-                    Rectangle()
-                        .fill(Color.black)
-                        .frame(width: closedNotchWidth - NotchShape.closedTopRadius + (isPopping ? 18 : 0))
-                        .overlay(
-                            CentralActivityLabel(
-                                toolName: closedSpotlightSession?.currentToolName,
-                                preview: closedSpotlightSession?.currentCommandPreviewText,
-                                isVisible: isExternalDisplayPlacement && hasClosedPresence
+                Group {
+                    if !hasClosedPresence {
+                        Rectangle()
+                            .fill(Color.clear)
+                            .frame(width: closedNotchWidth - 20)
+                    } else {
+                        Rectangle()
+                            .fill(Color.black)
+                            .frame(width: closedNotchWidth - NotchShape.closedTopRadius + (isPopping ? 18 : 0))
+                            .overlay(
+                                CentralActivityLabel(
+                                    toolName: closedSpotlightSession?.currentToolName,
+                                    preview: closedSpotlightSession?.currentCommandPreviewText,
+                                    isVisible: isExternalDisplayPlacement && hasClosedPresence
+                                )
                             )
-                        )
-                        .overlay {
-                            ClaudeUsageBadge(
-                                fiveHourPercent: model.claudeUsageSnapshot?.fiveHour?.roundedUsedPercentage,
-                                sevenDayPercent: model.claudeUsageSnapshot?.sevenDay?.roundedUsedPercentage
-                            )
-                        }
+                    }
+                }
+                .overlay {
+                    ClaudeUsageBadge(
+                        fiveHourPercent: model.claudeUsageSnapshot?.fiveHour?.roundedUsedPercentage,
+                        sevenDayPercent: model.claudeUsageSnapshot?.sevenDay?.roundedUsedPercentage
+                    )
                 }
 
                 if hasClosedPresence {
