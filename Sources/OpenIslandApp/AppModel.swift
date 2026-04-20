@@ -626,19 +626,33 @@ final class AppModel {
             guard n > 0 else { return nil }
             return .count(n)
         case .agents:
-            // De-dup by tool, preserving first-occurrence order. Cap at 5
-            // dots to avoid overflowing the slot on very busy desktops.
-            var seen = Set<AgentTool>()
-            var colors: [Color] = []
-            for session in sessions {
-                guard seen.insert(session.tool).inserted else { continue }
-                if let color = Color(hex: session.tool.brandColorHex) {
-                    colors.append(color)
-                }
-                if colors.count == 5 { break }
+            // Display order is locked to first-seen ascending so the right-
+            // slot grid stays stable regardless of how the panel list is
+            // sorted. Up to 9 sessions render one tile each; 10+ shows the
+            // first 7 by firstSeenAt plus a single "+N" overflow tile.
+            let ordered = sessions.sorted { $0.firstSeenAt < $1.firstSeenAt }
+            var cells: [AgentGridCell] = []
+            if ordered.count <= 9 {
+                cells = ordered.map(Self.agentsGridCell(for:))
+            } else {
+                cells = ordered.prefix(7).map(Self.agentsGridCell(for:))
+                cells.append(.overflow(ordered.count - 7))
             }
-            return colors.isEmpty ? nil : .agents(colors)
+            return cells.isEmpty ? nil : .agents(cells)
         }
+    }
+
+    private static func agentsGridCell(for session: AgentSession) -> AgentGridCell {
+        let color = Color(hex: session.tool.brandColorHex) ?? .gray
+        let state: AgentGridCellState
+        if session.phase.requiresAttention {
+            state = .waiting
+        } else if session.phase == .running {
+            state = .running
+        } else {
+            state = .idle
+        }
+        return .session(color: color, state: state)
     }
 
     var shouldShowSessionBootstrapPlaceholder: Bool {

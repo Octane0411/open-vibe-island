@@ -56,6 +56,7 @@ public struct SessionState: Equatable, Sendable {
     public mutating func apply(_ event: AgentEvent) {
         switch event {
         case let .sessionStarted(payload):
+            let preservedFirstSeenAt = sessionsByID[payload.sessionID]?.firstSeenAt
             var session = AgentSession(
                 id: payload.sessionID,
                 title: payload.title,
@@ -65,6 +66,7 @@ public struct SessionState: Equatable, Sendable {
                 phase: payload.initialPhase,
                 summary: payload.summary,
                 updatedAt: payload.timestamp,
+                firstSeenAt: preservedFirstSeenAt,
                 jumpTarget: payload.jumpTarget,
                 codexMetadata: payload.codexMetadata?.isEmpty == true ? nil : payload.codexMetadata,
                 claudeMetadata: payload.claudeMetadata?.isEmpty == true ? nil : payload.claudeMetadata,

@@ -166,7 +166,7 @@ struct AppearanceSettingsPane: View {
         HStack(spacing: 12) {
             rightSlotCard(.count,  icon: { CountBadgePreview(count: 3) },
                           title: lang.t("settings.appearance.rightSlot.count"))
-            rightSlotCard(.agents, icon: { AgentDotsPreview(colors: previewAgentColors) },
+            rightSlotCard(.agents, icon: { AgentsMiniGridPreview() },
                           title: lang.t("settings.appearance.rightSlot.agents"))
             rightSlotCard(.none,   icon: { Text("—")
                                       .font(.system(size: 14, weight: .semibold, design: .monospaced))
@@ -316,9 +316,17 @@ struct AppearanceSettingsPane: View {
         }
     }
 
-    private var previewAgentColors: [Color] {
-        [AgentTool.claudeCode, .codex, .cursor]
-            .map { Color(hex: $0.brandColorHex) ?? .white }
+    private var previewAgentCells: [AgentGridCell] {
+        // Three Claude sessions, with one waiting when the preview mode is
+        // `waiting` so the breathing tile is visible in the live preview.
+        let claude = Color(hex: AgentTool.claudeCode.brandColorHex) ?? .white
+        let waitingIdx = previewMode == .waiting ? 1 : -1
+        return (0..<3).map { idx in
+            if idx == waitingIdx {
+                return .session(color: claude, state: .waiting)
+            }
+            return .session(color: claude, state: .running)
+        }
     }
 
     private var previewLabel: String? {
@@ -339,7 +347,7 @@ struct AppearanceSettingsPane: View {
         case .none: return nil
         case .count: return .count(3)
         case .agents:
-            return .agents(previewAgentColors)
+            return .agents(previewAgentCells)
         }
     }
 }
@@ -363,12 +371,14 @@ private struct CountBadgePreview: View {
     }
 }
 
-private struct AgentDotsPreview: View {
-    let colors: [Color]
+private struct AgentsMiniGridPreview: View {
     var body: some View {
-        HStack(spacing: 4) {
-            ForEach(Array(colors.enumerated()), id: \.offset) { _, color in
-                Circle().fill(color).frame(width: 8, height: 8)
+        let claude = Color(hex: AgentTool.claudeCode.brandColorHex) ?? .white
+        HStack(spacing: 2) {
+            ForEach(0..<3, id: \.self) { _ in
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .fill(claude)
+                    .frame(width: 8, height: 8)
             }
         }
     }
