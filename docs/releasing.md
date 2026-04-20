@@ -32,8 +32,8 @@ Follow [Semantic Versioning](https://semver.org/):
 6. **Create the release**:
    ```bash
    gh release create v<version> \
-     "output/package/Agent Deck.dmg#Open.Island.dmg" \
-     "output/package/Agent Deck.zip#Open.Island.zip" \
+     "output/package/Agent Deck.dmg#Agent Deck.dmg" \
+     "output/package/Agent Deck.zip#Agent Deck.zip" \
      --target main \
      --title "Agent Deck v<version> — <Title>" \
      --notes-file release-notes.md
@@ -122,7 +122,7 @@ Each release needs a new `<item>` entry. Template:
     <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
     <pubDate>Thu, 06 Apr 2026 00:00:00 +0000</pubDate>
     <enclosure
-        url="https://github.com/Octane0411/agent-deck/releases/download/vX.Y.Z/Open.Island.zip"
+        url="https://github.com/Octane0411/agent-deck/releases/download/vX.Y.Z/Agent%20Deck.zip"
         type="application/octet-stream"
         sparkle:edSignature="PASTE_SIGNATURE_HERE"
         length="PASTE_LENGTH_HERE"

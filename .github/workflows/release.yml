@@ -57,7 +57,7 @@ jobs:
           security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
 
           # Store notarytool credentials in the keychain
-          xcrun notarytool store-credentials "open-island-notary" \
+          xcrun notarytool store-credentials "agent-deck-notary" \
             --apple-id "${{ secrets.APPLE_ID }}" \
             --team-id "${{ secrets.APPLE_TEAM_ID }}" \
             --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" \
@@ -68,23 +68,23 @@ jobs:
 
       - name: Build and package (signed)
         env:
-          OPEN_ISLAND_APP_NAME: "Open Island"
-          OPEN_ISLAND_BUNDLE_ID: "app.openisland.OpenIsland"
-          OPEN_ISLAND_VERSION: ${{ steps.version.outputs.version }}
-          OPEN_ISLAND_BUILD_NUMBER: ${{ github.run_number }}
-          OPEN_ISLAND_SIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          OPEN_ISLAND_UNIVERSAL: "true"
+          AGENT_DECK_APP_NAME: "Agent Deck"
+          AGENT_DECK_BUNDLE_ID: "app.agentdeck.dev"
+          AGENT_DECK_VERSION: ${{ steps.version.outputs.version }}
+          AGENT_DECK_BUILD_NUMBER: ${{ github.run_number }}
+          AGENT_DECK_SIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          AGENT_DECK_UNIVERSAL: "true"
         run: zsh scripts/package-app.sh
 
       - name: Verify artifacts
         run: |
-          test -f "output/package/Open Island.zip"
-          test -f "output/package/Open Island.dmg"
+          test -f "output/package/Agent Deck.zip"
+          test -f "output/package/Agent Deck.dmg"
           ls -lh output/package/
 
       - name: Verify code signature
         run: |
-          bundle="output/package/Open Island.app"
+          bundle="output/package/Agent Deck.app"
           echo "--- Signature info ---"
           codesign -dvv "$bundle"
           echo ""
@@ -93,17 +93,17 @@ jobs:
 
       - name: Verify bundle structure
         run: |
-          bundle="output/package/Open Island.app"
+          bundle="output/package/Agent Deck.app"
           echo "--- Bundle contents ---"
           find "$bundle" -maxdepth 3 -type f | sort
 
           # Required files
           for f in \
-            "Contents/MacOS/OpenIslandApp" \
-            "Contents/Helpers/OpenIslandHooks" \
-            "Contents/Helpers/OpenIslandSetup" \
-            "Contents/Resources/OpenIsland.icns" \
-            "Contents/Resources/OpenIsland_OpenIslandApp.bundle" \
+            "Contents/MacOS/AgentDeckApp" \
+            "Contents/Helpers/AgentDeckHooks" \
+            "Contents/Helpers/AgentDeckSetup" \
+            "Contents/Resources/AgentDeck.icns" \
+            "Contents/Resources/AgentDeck_AgentDeckApp.bundle" \
           ; do
             if [[ ! -e "$bundle/$f" ]]; then
               echo "::error::Missing required file: $f"
@@ -118,15 +118,15 @@ jobs:
         id: notarize
         continue-on-error: true
         env:
-          OPEN_ISLAND_APP_NAME: "Open Island"
+          AGENT_DECK_APP_NAME: "Agent Deck"
         run: |
-          bundle="output/package/$OPEN_ISLAND_APP_NAME.app"
-          zip_path="output/package/$OPEN_ISLAND_APP_NAME.zip"
-          dmg_path="output/package/$OPEN_ISLAND_APP_NAME.dmg"
+          bundle="output/package/$AGENT_DECK_APP_NAME.app"
+          zip_path="output/package/$AGENT_DECK_APP_NAME.zip"
+          dmg_path="output/package/$AGENT_DECK_APP_NAME.dmg"
 
           echo "Submitting for notarization..."
           xcrun notarytool submit "$zip_path" \
-            --keychain-profile "open-island-notary" \
+            --keychain-profile "agent-deck-notary" \
             --wait --timeout 10m || { echo "::warning::Notarization failed or timed out"; exit 1; }
 
           echo "Stapling app bundle..."
@@ -139,7 +139,7 @@ jobs:
           # Re-sign and notarize DMG
           codesign --force --sign "${{ secrets.APPLE_SIGNING_IDENTITY }}" --timestamp "$dmg_path"
           xcrun notarytool submit "$dmg_path" \
-            --keychain-profile "open-island-notary" \
+            --keychain-profile "agent-deck-notary" \
             --wait --timeout 10m || { echo "::warning::DMG notarization failed or timed out"; exit 1; }
           xcrun stapler staple -v "$dmg_path"
 
@@ -151,7 +151,7 @@ jobs:
           SPARKLE_EDDSA_KEY: ${{ secrets.SPARKLE_EDDSA_KEY }}
         run: |
           sign_tool=".build/artifacts/sparkle/Sparkle/bin/sign_update"
-          zip_path="output/package/Open Island.zip"
+          zip_path="output/package/Agent Deck.zip"
 
           if [[ -z "$SPARKLE_EDDSA_KEY" ]]; then
             echo "::warning::SPARKLE_EDDSA_KEY not set — skipping appcast update"
@@ -207,12 +207,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
-            --title "Open Island $GITHUB_REF_NAME" \
+            --title "Agent Deck $GITHUB_REF_NAME" \
             --generate-notes \
             --notes-start-tag "$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo '')" \
             --draft \
-            "output/package/Open Island.dmg#Open Island.dmg (macOS, Universal)" \
-            "output/package/Open Island.zip#Open Island.zip (macOS, Universal)"
+            "output/package/Agent Deck.dmg#Agent Deck.dmg (macOS, Universal)" \
+            "output/package/Agent Deck.zip#Agent Deck.zip (macOS, Universal)"
 
       - name: Append install instructions to release notes
         env:
@@ -232,7 +232,7 @@ jobs:
 
           ## Installation
 
-          1. Download **Open Island.dmg**, open it, and drag **Open Island** to **Applications**.
+          1. Download **Agent Deck.dmg**, open it, and drag **Agent Deck** to **Applications**.
           2. Requires **macOS 14+** (Apple Silicon and Intel).
 
           ${install_note}
@@ -251,7 +251,7 @@ jobs:
           git fetch origin main
           git checkout -f -b "$branch" origin/main
           for file in README.md README.zh-CN.md; do
-            sed -i '' "s|contrib.rocks/image?repo=Octane0411/open-vibe-island&t=[0-9]*|contrib.rocks/image?repo=Octane0411/open-vibe-island\&t=${timestamp}|g" "$file"
+            sed -i '' "s|contrib.rocks/image?repo=Octane0411/agent-deck&t=[0-9]*|contrib.rocks/image?repo=Octane0411/agent-deck\&t=${timestamp}|g" "$file"
           done
           if git diff --quiet; then
             echo "No contributors timestamp changes detected, skipping."
