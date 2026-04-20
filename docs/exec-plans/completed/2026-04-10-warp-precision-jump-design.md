@@ -6,7 +6,7 @@ Follows: `fix-warp-terminal-identification` (merged in PR #254 / v1.0.14) — Wa
 
 ## Problem
 
-When multiple Claude Code (and eventually Codex) sessions run concurrently in different Warp tabs, clicking the jump affordance in Open Island today only activates the Warp application. The user must then visually scan the tab bar and click the correct tab manually. With 4+ concurrent Claude tabs this is the dominant friction point in the Warp experience. The desired outcome is **one click → Warp activates AND the correct tab becomes focused**, matching the behavior the user has observed in a competitor product.
+When multiple Claude Code (and eventually Codex) sessions run concurrently in different Warp tabs, clicking the jump affordance in Agent Deck today only activates the Warp application. The user must then visually scan the tab bar and click the correct tab manually. With 4+ concurrent Claude tabs this is the dominant friction point in the Warp experience. The desired outcome is **one click → Warp activates AND the correct tab becomes focused**, matching the behavior the user has observed in a competitor product.
 
 ## Prior art and why the easy answers don't work
 
@@ -97,7 +97,7 @@ The lookup uses the join query above. If it returns `nil` (pane uuid could not b
 
 **Cache policy**: once resolved, the pane_uuid is persisted in the session registry alongside other jump target fields. It does not need to be re-resolved on every hook event. If Warp is restarted, the pane_uuids may still be valid (Warp restores tabs from SQLite and keeps their uuids), but if they're not we lazily re-resolve on the next hook event by overwriting.
 
-### Phase 2 — Jump (when user clicks jump in Open Island)
+### Phase 2 — Jump (when user clicks jump in Agent Deck)
 
 ```
 target_pane_uuid = session.jumpTarget.warpPaneUUID
@@ -134,9 +134,9 @@ return "Activated Warp but could not confirm precision focus (target pane may ha
 
 ### Phase 3 — Permission handling
 
-`CGEventPost` requires macOS Accessibility permission for the parent process (Open Island). On first jump attempt, if `AXIsProcessTrustedWithOptions` returns false:
+`CGEventPost` requires macOS Accessibility permission for the parent process (Agent Deck). On first jump attempt, if `AXIsProcessTrustedWithOptions` returns false:
 
-- Show a one-time in-app prompt explaining why the permission is needed ("so Open Island can focus the exact Warp tab for your agent session")
+- Show a one-time in-app prompt explaining why the permission is needed ("so Agent Deck can focus the exact Warp tab for your agent session")
 - Provide a button that opens `System Settings → Privacy & Security → Accessibility` via `x-apple.systempreferences:`
 - If the user denies, Phase 2 silently degrades to "Phase 2 step 1 only" (activate Warp app, no cycling) and the session remembers the denial so we don't prompt every jump
 
@@ -144,7 +144,7 @@ return "Activated Warp but could not confirm precision focus (target pane may ha
 
 ### New files
 
-**`Sources/OpenIslandCore/WarpSQLiteReader.swift`** (~150 lines)
+**`Sources/AgentDeckCore/WarpSQLiteReader.swift`** (~150 lines)
 
 Encapsulates all SQLite access. Uses libsqlite3 via Swift's C interop (no new dependency — libsqlite3 is in the macOS SDK). Offers:
 
@@ -155,7 +155,7 @@ Encapsulates all SQLite access. Uses libsqlite3 via Swift's C interop (no new de
 - Resolves the database path via `FileManager.default.url(for: .libraryDirectory, in: .userDomainMask, appropriateFor: nil, create: false)` and then into the known Group Container subpath.
 - All failures (file missing, schema mismatch, query error) log once and return nil. No throws escape.
 
-**`Sources/OpenIslandApp/AccessibilityPermissionCoordinator.swift`** (~80 lines)
+**`Sources/AgentDeckApp/AccessibilityPermissionCoordinator.swift`** (~80 lines)
 
 - `isTrusted() -> Bool` wrapping `AXIsProcessTrustedWithOptions(nil as CFDictionary?)`
 - `requestTrustAndOpenSettings()` — calls `AXIsProcessTrustedWithOptions` with the `kAXTrustedCheckOptionPrompt` key, then opens `x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility` if still denied
@@ -163,13 +163,13 @@ Encapsulates all SQLite access. Uses libsqlite3 via Swift's C interop (no new de
 
 ### Modified files
 
-**`Sources/OpenIslandCore/JumpTarget.swift`** — add one field:
+**`Sources/AgentDeckCore/JumpTarget.swift`** — add one field:
 ```swift
 public var warpPaneUUID: String?
 ```
 Stable field; backward-compatible decoding (nil default).
 
-**`Sources/OpenIslandCore/ClaudeHooks.swift`** — in `withRuntimeContext`, after the existing `terminalApp` inference:
+**`Sources/AgentDeckCore/ClaudeHooks.swift`** — in `withRuntimeContext`, after the existing `terminalApp` inference:
 ```swift
 if payload.terminalApp == "Warp", payload.jumpTarget.warpPaneUUID == nil {
     payload.jumpTarget.warpPaneUUID = WarpSQLiteReader.shared.lookupPaneUUID(forCwd: payload.cwd)
@@ -177,9 +177,9 @@ if payload.terminalApp == "Warp", payload.jumpTarget.warpPaneUUID == nil {
 ```
 Guard on `terminalApp == "Warp"` so non-Warp hosts incur zero cost.
 
-**`Sources/OpenIslandCore/CodexHooks.swift`** — same addition, so Codex sessions in Warp get the same precision jump. (Open Code can follow in a separate slice if we want to limit scope.)
+**`Sources/AgentDeckCore/CodexHooks.swift`** — same addition, so Codex sessions in Warp get the same precision jump. (Open Code can follow in a separate slice if we want to limit scope.)
 
-**`Sources/OpenIslandApp/TerminalJumpService.swift`** — in the `switch descriptor.bundleIdentifier` at line ~200, add:
+**`Sources/AgentDeckApp/TerminalJumpService.swift`** — in the `switch descriptor.bundleIdentifier` at line ~200, add:
 ```swift
 case "dev.warp.Warp-Stable":
     if try jumpToWarpPane(target) {
@@ -188,12 +188,12 @@ case "dev.warp.Warp-Stable":
 ```
 and implement `jumpToWarpPane(_:)` as a private method that performs the Phase 2 algorithm. It depends on `WarpSQLiteReader` (Core) and a new `KeystrokeInjector` helper.
 
-**`Sources/OpenIslandApp/KeystrokeInjector.swift`** (new, ~40 lines) — thin wrapper around `CGEventCreateKeyboardEvent` / `CGEventPost` with a single public method `sendCmdShiftRightBracket()`. Isolated so it's easy to mock in tests.
+**`Sources/AgentDeckApp/KeystrokeInjector.swift`** (new, ~40 lines) — thin wrapper around `CGEventCreateKeyboardEvent` / `CGEventPost` with a single public method `sendCmdShiftRightBracket()`. Isolated so it's easy to mock in tests.
 
 ### Test changes
 
-- `Tests/OpenIslandCoreTests/WarpSQLiteReaderTests.swift` (new) — creates a temp SQLite database seeded with synthetic `windows`/`tabs`/`pane_nodes`/`terminal_panes`/`commands`/`blocks` rows reproducing the real schema, then asserts `lookupPaneUUID` and `currentFocusedPaneUUID` return the expected values for various scenarios (single window single tab, multiple tabs, non-Warp cwd, nonexistent file, etc.)
-- `Tests/OpenIslandAppTests/TerminalJumpServiceTests.swift` — add tests for the Warp branch using an injected `WarpSQLiteReader` protocol stub and a `KeystrokeInjector` spy. Cover: already-at-target (no keystrokes), reaches-target-after-2-cycles, never-reaches-target (falls through cleanly).
+- `Tests/AgentDeckCoreTests/WarpSQLiteReaderTests.swift` (new) — creates a temp SQLite database seeded with synthetic `windows`/`tabs`/`pane_nodes`/`terminal_panes`/`commands`/`blocks` rows reproducing the real schema, then asserts `lookupPaneUUID` and `currentFocusedPaneUUID` return the expected values for various scenarios (single window single tab, multiple tabs, non-Warp cwd, nonexistent file, etc.)
+- `Tests/AgentDeckAppTests/TerminalJumpServiceTests.swift` — add tests for the Warp branch using an injected `WarpSQLiteReader` protocol stub and a `KeystrokeInjector` spy. Cover: already-at-target (no keystrokes), reaches-target-after-2-cycles, never-reaches-target (falls through cleanly).
 
 ## Verification path
 
@@ -203,9 +203,9 @@ and implement `jumpToWarpPane(_:)` as a private method that performs the Phase 2
 
 ### Manual verification (the real test)
 1. In a fresh Warp window, open 4 tabs each with a different Claude Code session in a different cwd.
-2. Launch the development `OpenIslandApp` build.
+2. Launch the development `AgentDeckApp` build.
 3. Grant Accessibility permission when prompted.
-4. Click jump on the 2nd session in the Open Island session list while the 4th session is currently focused in Warp.
+4. Click jump on the 2nd session in the Agent Deck session list while the 4th session is currently focused in Warp.
 5. Observe: Warp activates, tab bar flickers through the cycles, comes to rest on the 2nd session's tab. Total elapsed < 500ms.
 6. Repeat for several targets in different directions. Repeat with the target already focused (expect zero keystrokes).
 7. Revoke Accessibility permission. Click jump. Verify: Warp still activates; no runtime crash; a one-line "degraded" log appears and behavior matches pre-feature state.
@@ -238,9 +238,9 @@ and implement `jumpToWarpPane(_:)` as a private method that performs the Phase 2
 
 ## Followups
 
-1. **Upstream feature request to Warp** — draft and file a GitHub issue requesting a `warp://action/focus_cli_agent?session_id=…` URL scheme action. Point out that `CLIAgentSessionsModel` already tracks every session internally, and a public entry point would allow any external integration (not just Open Island) to do one-click precision jump without scraping SQLite. Reference the `claude-code-warp` plugin's current one-way integration as the motivating use case.
+1. **Upstream feature request to Warp** — draft and file a GitHub issue requesting a `warp://action/focus_cli_agent?session_id=…` URL scheme action. Point out that `CLIAgentSessionsModel` already tracks every session internally, and a public entry point would allow any external integration (not just Agent Deck) to do one-click precision jump without scraping SQLite. Reference the `claude-code-warp` plugin's current one-way integration as the motivating use case.
 2. **Open Code agent support** — extend the `commands.command LIKE 'claude%'` filter to also match Open Code's entry binary. Separate slice after V1 ships.
 3. **Multi-window precision** — manual test with 2+ Warp windows, add window-activation keystroke (`Cmd+` backtick or Mission Control) if needed.
-4. **Settings for cycle keystroke** — expose a text field in Open Island settings for the cycle keystroke, default `Cmd+Shift+]`.
+4. **Settings for cycle keystroke** — expose a text field in Agent Deck settings for the cycle keystroke, default `Cmd+Shift+]`.
 5. **SQLite schema version guard** — on every Warp version bump, re-verify the query still works. Automate via a startup self-test that runs the query against its own synthetic database and compares to the live one's schema.
 6. **Benchmark and tune the 50ms poll delay** — try 20ms, 30ms on several machines. Lower is better UX (fewer visible tab flickers).

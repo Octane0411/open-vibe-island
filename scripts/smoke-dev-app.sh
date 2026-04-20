@@ -3,7 +3,7 @@
 set -euo pipefail
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
-    echo "Open Island smoke runs only on macOS." >&2
+    echo "Agent Deck smoke runs only on macOS." >&2
     exit 1
 fi
 
@@ -11,21 +11,21 @@ repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo_root"
 
 timestamp="$(date +%Y%m%d-%H%M%S)"
-artifact_dir="${OPEN_ISLAND_HARNESS_ARTIFACT_DIR:-$repo_root/output/harness/smoke-$timestamp}"
+artifact_dir="${AGENT_DECK_HARNESS_ARTIFACT_DIR:-$repo_root/output/harness/smoke-$timestamp}"
 
-export OPEN_ISLAND_HARNESS_SCENARIO="${OPEN_ISLAND_HARNESS_SCENARIO:-approvalCard}"
-export OPEN_ISLAND_HARNESS_PRESENT_OVERLAY="${OPEN_ISLAND_HARNESS_PRESENT_OVERLAY:-1}"
-export OPEN_ISLAND_HARNESS_SHOW_CONTROL_CENTER="${OPEN_ISLAND_HARNESS_SHOW_CONTROL_CENTER:-0}"
-export OPEN_ISLAND_HARNESS_START_BRIDGE="${OPEN_ISLAND_HARNESS_START_BRIDGE:-0}"
-export OPEN_ISLAND_HARNESS_BOOT_ANIMATION="${OPEN_ISLAND_HARNESS_BOOT_ANIMATION:-0}"
-export OPEN_ISLAND_HARNESS_CAPTURE_DELAY_SECONDS="${OPEN_ISLAND_HARNESS_CAPTURE_DELAY_SECONDS:-1}"
-export OPEN_ISLAND_HARNESS_AUTO_EXIT_SECONDS="${OPEN_ISLAND_HARNESS_AUTO_EXIT_SECONDS:-2}"
-export OPEN_ISLAND_HARNESS_ARTIFACT_DIR="$artifact_dir"
+export AGENT_DECK_HARNESS_SCENARIO="${AGENT_DECK_HARNESS_SCENARIO:-approvalCard}"
+export AGENT_DECK_HARNESS_PRESENT_OVERLAY="${AGENT_DECK_HARNESS_PRESENT_OVERLAY:-1}"
+export AGENT_DECK_HARNESS_SHOW_CONTROL_CENTER="${AGENT_DECK_HARNESS_SHOW_CONTROL_CENTER:-0}"
+export AGENT_DECK_HARNESS_START_BRIDGE="${AGENT_DECK_HARNESS_START_BRIDGE:-0}"
+export AGENT_DECK_HARNESS_BOOT_ANIMATION="${AGENT_DECK_HARNESS_BOOT_ANIMATION:-0}"
+export AGENT_DECK_HARNESS_CAPTURE_DELAY_SECONDS="${AGENT_DECK_HARNESS_CAPTURE_DELAY_SECONDS:-1}"
+export AGENT_DECK_HARNESS_AUTO_EXIT_SECONDS="${AGENT_DECK_HARNESS_AUTO_EXIT_SECONDS:-2}"
+export AGENT_DECK_HARNESS_ARTIFACT_DIR="$artifact_dir"
 
 mkdir -p "$artifact_dir"
 
-echo "Launching OpenIslandApp smoke scenario '${OPEN_ISLAND_HARNESS_SCENARIO}' for ${OPEN_ISLAND_HARNESS_AUTO_EXIT_SECONDS}s"
-swift run OpenIslandApp
+echo "Launching AgentDeckApp smoke scenario '${AGENT_DECK_HARNESS_SCENARIO}' for ${AGENT_DECK_HARNESS_AUTO_EXIT_SECONDS}s"
+swift run AgentDeckApp
 
 report_path="$artifact_dir/report.json"
 if [[ ! -f "$report_path" ]]; then
@@ -56,4 +56,4 @@ subprocess.run(
 PY
 
 echo "Artifacts written to $artifact_dir"
-echo "OpenIslandApp smoke passed"
+echo "AgentDeckApp smoke passed"

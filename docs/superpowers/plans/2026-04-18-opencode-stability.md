@@ -13,7 +13,7 @@
 ### Task 1: Create OpenCodeSessionRegistry
 
 **Files:**
-- Create: `Sources/OpenIslandCore/OpenCodeSessionRegistry.swift`
+- Create: `Sources/AgentDeckCore/OpenCodeSessionRegistry.swift`
 
 - [ ] **Step 1: Implement OpenCodeTrackedSessionRecord and OpenCodeSessionRegistry**
 
@@ -137,7 +137,7 @@ public final class OpenCodeSessionRegistry: @unchecked Sendable {
 - [ ] **Step 2: Commit**
 
 ```bash
-git add Sources/OpenIslandCore/OpenCodeSessionRegistry.swift
+git add Sources/AgentDeckCore/OpenCodeSessionRegistry.swift
 git commit -m "feat: add OpenCodeSessionRegistry for session persistence"
 ```
 
@@ -146,7 +146,7 @@ git commit -m "feat: add OpenCodeSessionRegistry for session persistence"
 ### Task 2: Integrate into SessionDiscoveryCoordinator
 
 **Files:**
-- Modify: `Sources/OpenIslandApp/SessionDiscoveryCoordinator.swift`
+- Modify: `Sources/AgentDeckApp/SessionDiscoveryCoordinator.swift`
 
 - [ ] **Step 1: Add OpenCode fields to StartupDiscoveryPayload**
 
@@ -263,7 +263,7 @@ git commit -m "feat: add OpenCodeSessionRegistry for session persistence"
 - [ ] **Step 7: Commit**
 
 ```bash
-git add Sources/OpenIslandApp/SessionDiscoveryCoordinator.swift
+git add Sources/AgentDeckApp/SessionDiscoveryCoordinator.swift
 git commit -m "feat: integrate OpenCode session persistence into SessionDiscoveryCoordinator"
 ```
 
@@ -272,8 +272,8 @@ git commit -m "feat: integrate OpenCode session persistence into SessionDiscover
 ### Task 3: Update AppModel and ProcessMonitoringCoordinator
 
 **Files:**
-- Modify: `Sources/OpenIslandApp/AppModel.swift`
-- Modify: `Sources/OpenIslandApp/ProcessMonitoringCoordinator.swift`
+- Modify: `Sources/AgentDeckApp/AppModel.swift`
+- Modify: `Sources/AgentDeckApp/ProcessMonitoringCoordinator.swift`
 
 - [ ] **Step 1: Call scheduleOpenCodeSessionPersistence in AppModel**
 
@@ -300,7 +300,7 @@ Modify `AppModel.swift` in `handleOpenCodeHook`:
 - [ ] **Step 4: Commit**
 
 ```bash
-git add Sources/OpenIslandApp/AppModel.swift Sources/OpenIslandApp/ProcessMonitoringCoordinator.swift
+git add Sources/AgentDeckApp/AppModel.swift Sources/AgentDeckApp/ProcessMonitoringCoordinator.swift
 git commit -m "feat: mark OpenCode sessions as hook-managed and trigger persistence"
 ```
 
@@ -310,8 +310,8 @@ git commit -m "feat: mark OpenCode sessions as hook-managed and trigger persiste
 
 - [ ] **Step 1: Verify OpenCode sessions are saved and restored**
 1. Start OpenCode session (via script or real usage).
-2. Check `~/Library/Application Support/open-island/opencode-session-registry.json`.
-3. Restart Open Island.
+2. Check `~/Library/Application Support/agent-deck/opencode-session-registry.json`.
+3. Restart Agent Deck.
 4. Verify session is restored in the UI.
 
 - [ ] **Step 2: Verify metadata merging**

@@ -2,7 +2,7 @@
 
 Reviewed on 2026-04-02 against the locally installed app bundle:
 
-- app: `/Applications/Vibe Island.app`
+- app: `/Applications/Agent Deck.app`
 - app version: `1.0.15`
 - focus: how the installed app tracks and enriches Codex sessions running inside Ghostty
 
@@ -12,7 +12,7 @@ This chain is not implemented by plain Codex hooks alone.
 
 The installed app appears to combine at least four local channels:
 
-1. Codex hook ingress into `vibe-island-bridge`
+1. Codex hook ingress into `agent-deck-bridge`
 2. terminal identity capture from Ghostty-provided env plus the session TTY
 3. Codex rollout / session-file watching under `~/.codex/sessions`
 4. Ghostty-specific title / cache / likely Accessibility-based recovery on the app side
@@ -21,7 +21,7 @@ Current best answer on the specific "sessions files vs app-server" question:
 
 - the app is definitely using local Codex session files
 - the app binary also contains Codex app-server support code paths
-- but during this analysis pass we did not observe an active Codex app-server process or localhost WebSocket connection attributable to Vibe Island
+- but during this analysis pass we did not observe an active Codex app-server process or localhost WebSocket connection attributable to Agent Deck
 
 So on this machine, the evidence currently favors:
 
@@ -34,8 +34,8 @@ High-confidence model:
 Ghostty tab
   -> launches shell with TERM_PROGRAM=ghostty / TERM=xterm-ghostty
   -> runs Codex CLI on a concrete tty like /dev/ttys025
-  -> Codex hook calls ~/.vibe-island/bin/vibe-island-bridge --source codex
-  -> bridge sends terminal + Codex metadata to /tmp/vibe-island.sock
+  -> Codex hook calls ~/.agent-deck/bin/agent-deck-bridge --source codex
+  -> bridge sends terminal + Codex metadata to /tmp/agent-deck.sock
   -> app stores session metadata in session-terminals.json
   -> app watches ~/.codex/sessions/*.jsonl for richer state deltas
   -> app updates Ghostty-facing title/cache state and uses that to recover the right tab later
@@ -62,19 +62,19 @@ Observed inherited environment on live Codex processes:
 - `TERM=xterm-ghostty`
 - `__CFBundleIdentifier=com.mitchellh.ghostty`
 - `GHOSTTY_SHELL_FEATURES=cursor:blink,path,title`
-- `PWD=/Users/wangruobing/Personal/vibe-island`
+- `PWD=/Users/wangruobing/Personal/agent-deck`
 
-That gives Vibe Island a reliable `(tool=session, tty, cwd, termProgram)` identity seed, but not a stable Ghostty tab id.
+That gives Agent Deck a reliable `(tool=session, tty, cwd, termProgram)` identity seed, but not a stable Ghostty tab id.
 
 ### 2. The installed app persists Codex sessions as Ghostty sessions
 
-`~/Library/Application Support/vibe-island/session-terminals.json` currently contains multiple records like:
+`~/Library/Application Support/agent-deck/session-terminals.json` currently contains multiple records like:
 
 - `source: codex`
 - `bundleIdentifier: com.mitchellh.ghostty`
 - `termProgram: ghostty`
 - `tty: /dev/ttys025`
-- `cwd: /Users/wangruobing/Personal/vibe-island`
+- `cwd: /Users/wangruobing/Personal/agent-deck`
 - `codexOrigin: cli`
 - `codexOriginator: codex-tui`
 - `codexThreadSource: cli`
@@ -85,7 +85,7 @@ This is the strongest runtime proof that the app is explicitly modeling "Codex i
 
 ### 3. The bridge helper expects both terminal metadata and Codex-specific metadata
 
-Strings from `/Applications/Vibe Island.app/Contents/Helpers/vibe-island-bridge` show the helper knows about:
+Strings from `/Applications/Agent Deck.app/Contents/Helpers/agent-deck-bridge` show the helper knows about:
 
 - terminal env:
   - `TERM_PROGRAM`
@@ -104,7 +104,7 @@ Strings from `/Applications/Vibe Island.app/Contents/Helpers/vibe-island-bridge`
   - `hook-session-start`
   - `hook-user-prompt-submit`
 - Ghostty-specific title path:
-  - `/tmp/vibe-island-osc2-title-`
+  - `/tmp/agent-deck-osc2-title-`
 
 That means the bridge is not just relaying a generic "hook happened" signal. It is normalizing terminal identity and Codex session fields into a local event payload.
 
@@ -126,7 +126,7 @@ Even if we ignore the extra local dev hooks, the installed app bridge still only
 
 ### 5. The app side has dedicated Codex watchers beyond hook ingress
 
-Strings from `/Applications/Vibe Island.app/Contents/MacOS/vibe-island` show dedicated Codex integration components:
+Strings from `/Applications/Agent Deck.app/Contents/MacOS/agent-deck` show dedicated Codex integration components:
 
 - `CodexSessionWatcher`
 - `CodexSessionIndexStore`
@@ -157,7 +157,7 @@ Sample contents confirm these are real Codex session streams, starting with:
 - `event_msg.task_started`
 - `response_item.message`
 
-The `session_meta.payload.id` matches the `codexNotifyThreadId` stored by Vibe Island.
+The `session_meta.payload.id` matches the `codexNotifyThreadId` stored by Agent Deck.
 
 So the app does not have to infer session history from hooks only. It can reopen the rollout file for the same session and mine richer state directly.
 
@@ -167,7 +167,7 @@ This pass added a more direct runtime comparison.
 
 Observed facts:
 
-- `~/Library/Logs/VibeIsland/bridge.log` only shows Codex hook ingress at:
+- `~/Library/Logs/AgentDeck/bridge.log` only shows Codex hook ingress at:
   - `SessionStart`
   - `UserPromptSubmit`
   - `Stop`
@@ -192,13 +192,13 @@ So the simplest explanation for the app's current live state is:
 
 We also checked for active app-server evidence and did not see it:
 
-- `vibe-island` has no child process resembling `codex app-server`
+- `agent-deck` has no child process resembling `codex app-server`
 - `ps` showed no running Codex process with `app-server` arguments
-- `lsof -a -p <vibe-island-pid> -iTCP -iUDP` only showed the app's proxy connection to `127.0.0.1:7897`, not a Codex localhost port
+- `lsof -a -p <agent-deck-pid> -iTCP -iUDP` only showed the app's proxy connection to `127.0.0.1:7897`, not a Codex localhost port
 - `~/.codex/config.toml` enables `codex_hooks = true` but does not enable any app-server-specific setting
 - `~/.codex/session_index.jsonl` is stale on this machine and only contains two old March sessions, so it cannot explain the app's live April session tracking
 
-The Codex CLI definitely supports an `app-server` subcommand, and the Vibe Island binary contains strings such as:
+The Codex CLI definitely supports an `app-server` subcommand, and the Agent Deck binary contains strings such as:
 
 - `enableCodexAppServer`
 - `spawnAppServer(binaryPath:manager:)`
@@ -238,8 +238,8 @@ That gap explains why the app binary contains Ghostty-specific title machinery:
 
 - `GhosttyTabCacheEntry`
 - `TerminalTitleManager`
-- `/tmp/vibe-island-osc2-title-`
-- `/tmp/vibe-island-ghostty-title-`
+- `/tmp/agent-deck-osc2-title-`
+- `/tmp/agent-deck-ghostty-title-`
 - `ghosttyPid`
 - `hasConfiguredGhosttyEnv`
 
@@ -290,15 +290,15 @@ Ghostty launches the shell and Codex inherits:
 
 Codex fires hook events and invokes:
 
-- `~/.vibe-island/bin/vibe-island-bridge --source codex`
+- `~/.agent-deck/bin/agent-deck-bridge --source codex`
 
 The wrapper then forwards into:
 
-- `/Applications/Vibe Island.app/Contents/Helpers/vibe-island-bridge`
+- `/Applications/Agent Deck.app/Contents/Helpers/agent-deck-bridge`
 
 The helper reads stdin JSON plus terminal env, then sends a normalized payload into:
 
-- `/tmp/vibe-island.sock`
+- `/tmp/agent-deck.sock`
 
 ### Stage C. App-side session model
 
@@ -313,7 +313,7 @@ The main app receives the event and updates its session store with:
 
 persisted to:
 
-- `~/Library/Application Support/vibe-island/session-terminals.json`
+- `~/Library/Application Support/agent-deck/session-terminals.json`
 
 ### Stage D. Richer Codex state tracking
 
@@ -360,7 +360,7 @@ to recover the correct tab or at least the correct terminal surface.
 
 ### Not yet proven
 
-- that Vibe Island is actively using Codex app-server on this machine
+- that Agent Deck is actively using Codex app-server on this machine
 - the exact function that turns a clicked island item into a concrete Ghostty tab focus action
 - whether Ghostty recovery is title-only, AX-only, or hybrid
 - when the Codex app-server path is enabled versus falling back to file polling
@@ -370,6 +370,6 @@ to recover the correct tab or at least the correct terminal surface.
 To fully close this chain, the next dynamic pass should focus on:
 
 1. Trigger a fresh Codex prompt in Ghostty and diff `session-terminals.json` before/after.
-2. Watch whether `/tmp/vibe-island-osc2-title-*` or `/tmp/vibe-island-ghostty-title-*` appears during active Codex turns.
+2. Watch whether `/tmp/agent-deck-osc2-title-*` or `/tmp/agent-deck-ghostty-title-*` appears during active Codex turns.
 3. Observe whether the app opens a localhost port or WebSocket connection when Codex enters approval or running-tool states.
 4. Capture the Ghostty focus/jump path at click time to see whether it goes through AX, title matching, or another local IPC route.

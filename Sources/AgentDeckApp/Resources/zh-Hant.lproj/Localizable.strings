@@ -1,0 +1,201 @@
+/* Common */
+"app.name" = "Agent Deck";
+"app.name.oss" = "Agent Deck OSS";
+"app.description" = "macOS AI 程式代理伴侶";
+
+/* Settings - Tab Labels */
+"settings.tab.general" = "一般";
+"settings.tab.display" = "顯示";
+"settings.tab.sound" = "聲音";
+"settings.tab.shortcuts" = "快捷鍵";
+"settings.tab.lab" = "實驗室";
+"settings.tab.about" = "關於";
+
+/* Settings - Section Headers */
+"settings.section.system" = "系統";
+"settings.section.advanced" = "進階";
+
+/* Settings - General */
+"settings.general.launchAtLogin" = "登入時開啟";
+"settings.general.monitor" = "顯示器";
+"settings.general.automatic" = "自動";
+"settings.general.behavior" = "行為";
+"settings.general.hideFullscreen" = "全螢幕時隱藏";
+"settings.general.autoHideNoSessions" = "無活躍工作階段時自動隱藏";
+"settings.general.autoCollapse" = "滑鼠離開時自動收起";
+"settings.general.showDockIcon" = "在 Dock 中顯示圖示";
+"settings.general.hapticFeedback" = "懸停時震動回饋";
+"settings.general.suppressFrontmostNotifications" = "前台工作階段不彈出通知";
+"settings.general.showCodexUsage" = "顯示 Codex 用量";
+"settings.general.completionReply" = "在完成卡片中回覆";
+"settings.general.cliHooks" = "CLI Hooks";
+"settings.general.activated" = "已啟用";
+"settings.general.install" = "安裝";
+"settings.general.uninstall" = "移除";
+"settings.general.uninstallConfirmTitle" = "確認移除 Hooks？";
+"settings.general.uninstallConfirmAction" = "移除";
+"settings.general.uninstallConfirmMessage.claude" = "這將從 Claude Code 中移除 Agent Deck 的 hooks。您可以隨時重新安裝。";
+"settings.general.uninstallConfirmMessage.codex" = "這將從 Codex 中移除 Agent Deck 的 hooks。您可以隨時重新安裝。";
+"settings.general.uninstallConfirmMessage.claudeUsage" = "這將移除 Claude 用量橋接。您可以隨時重新安裝。";
+"settings.general.cancel" = "取消";
+"settings.general.language" = "語言";
+"settings.general.languageSystem" = "跟隨系統";
+"settings.general.languageEnglish" = "English";
+"settings.general.languageChinese" = "简体中文";
+"settings.general.languageTraditionalChinese" = "繁體中文";
+
+/* Settings - Appearance */
+"settings.tab.appearance" = "個人化";
+"settings.appearance.mode" = "模式";
+"settings.appearance.mode.default" = "預設";
+"settings.appearance.mode.custom" = "自訂";
+"settings.appearance.mode.defaultDesc" = "使用內建的島嶼外觀。切換至自訂可個人化顏色、圖形樣式和版面配置。";
+"settings.appearance.preview" = "預覽";
+"settings.appearance.preview.sessions" = "個工作階段";
+"settings.appearance.style" = "樣式";
+"settings.appearance.closedStyle" = "收起樣式";
+"settings.appearance.style.minimal" = "簡潔";
+"settings.appearance.style.detailed" = "詳細";
+"settings.appearance.hideIdleToEdge" = "閒置時隱藏至黑邊";
+"settings.appearance.hideIdleToEdge.help" = "當島處於收起狀態且沒有活躍通知卡片時，只保留一條細黑邊。滑鼠懸停或點擊仍可展開。";
+"settings.appearance.pixelShape" = "像素圖形";
+"settings.appearance.pixelShape.bars" = "貓咪";
+"settings.appearance.pixelShape.steps" = "階梯";
+"settings.appearance.pixelShape.blocks" = "方塊";
+"settings.appearance.pixelShape.custom" = "自訂";
+"settings.appearance.avatar.upload" = "上傳圖片";
+"settings.appearance.avatar.remove" = "移除";
+"settings.appearance.avatar.help" = "支援 PNG、JPEG、HEIC、TIFF，最大 10 MB。";
+"settings.appearance.statusColors" = "狀態顏色";
+"settings.appearance.status.running" = "執行中";
+"settings.appearance.status.approval" = "等待核准";
+"settings.appearance.status.answer" = "等待回答";
+"settings.appearance.status.completed" = "已完成";
+"settings.appearance.communityNote" = "這裡的大部分內容由社群建構。\n有自己的 vibe？歡迎提 PR。";
+
+/* Settings - Display */
+"settings.display.monitor" = "顯示器";
+"settings.display.position" = "顯示位置";
+"settings.display.diagnostics" = "診斷";
+"settings.display.currentScreen" = "目前螢幕";
+"settings.display.layoutMode" = "版面模式";
+
+/* Settings - Sound */
+"settings.sound.notifications" = "通知音效";
+"settings.sound.mute" = "靜音";
+"settings.sound.selectSound" = "選擇音效";
+
+/* Settings - Setup */
+"settings.tab.setup" = "安裝引導";
+"setup.section.binary" = "Hook 二進位檔";
+"setup.claudeConfigDir.section" = "Claude 設定目錄";
+"setup.claudeConfigDir.title" = "設定目錄";
+"setup.claudeConfigDir.choose" = "選擇…";
+"setup.claudeConfigDir.reset" = "重設";
+"setup.claudeConfigDir.footer" = "適用於透過 CLAUDE_CONFIG_DIR 使用自訂設定路徑啟動 Claude Code 的使用者。如無需要請保持預設。";
+"setup.section.hooks" = "CLI Hooks";
+"setup.section.usage" = "用量橋接";
+"setup.section.permissions" = "權限";
+"setup.binaryReady" = "就緒";
+"setup.binaryMissing" = "未找到 — 請先建構 AgentDeckHooks";
+"setup.hookReady" = "Hooks 已安裝";
+"setup.hookMissing" = "Hooks 未安裝";
+"setup.usageBridge" = "Claude 用量橋接";
+"setup.usageBridgeReady" = "已安裝";
+"setup.usageBridgeDesc" = "在本機追蹤 Claude API 用量";
+"setup.optional" = "選用";
+"setup.permissionsTitle" = "輔助使用";
+"setup.permissionsDesc" = "Agent Deck 可能需要輔助使用權限來偵測終端機視窗。請在「系統設定 → 隱私權與安全性 → 輔助使用」中授權。";
+"setup.installAll" = "全部安裝";
+"setup.banner.noHooks.title" = "開始使用 Agent Deck";
+"setup.banner.noHooks.message" = "在下方為你使用的 Agent 安裝 hook，Agent Deck 就會開始監聽對應工作階段。";
+"setup.revealConfigLocation" = "在 Finder 中顯示設定";
+"setup.section.diagnostics" = "Hooks 診斷";
+"setup.diagnostics.notRun" = "尚未執行健康檢查。";
+"setup.diagnostics.runCheck" = "執行檢查";
+"setup.diagnostics.recheck" = "重新檢查";
+"setup.diagnostics.repair" = "修復 Hooks";
+"setup.diagnostics.allHealthy" = "所有 Hooks 運作正常。";
+
+/* Settings - Placeholder */
+"settings.shortcuts.comingSoon" = "快捷鍵設定即將推出。";
+"settings.lab.comingSoon" = "實驗性功能即將推出。";
+
+/* Settings - About */
+"settings.about.version" = "版本 %@";
+"settings.about.checkForUpdates" = "檢查更新…";
+"settings.about.quitApp" = "結束 Agent Deck";
+
+/* Settings - Update */
+"settings.update.available" = "v%@ 可更新 — 點擊更新";
+
+/* Island Panel - Bootstrap */
+"island.checkingTerminals" = "正在檢查已開啟的終端機工作階段";
+"island.terminalOwnership" = "Agent Deck 將在確認終端機歸屬後顯示即時代理";
+"island.noTerminals" = "沒有已開啟的終端機工作階段";
+"island.startAgent" = "在終端機中啟動編碼代理";
+"island.recentSessions" = "最近的工作階段將保留在控制中心，直到終端機重新開啟";
+"island.hint.installHooks" = "尚未安裝任何 Agent hook，工作階段不會觸發事件 · 點擊設定";
+
+/* Island Panel - Session List */
+"island.showAll" = "顯示全部 %lld 個工作階段";
+"island.collapseList" = "收起清單";
+"island.usageWaiting" = "等待用量資料";
+
+/* Island Panel - Subagents & Tasks */
+"subagents.title" = "子代理 (%lld)";
+"subagents.completed" = "完成";
+"tasks.summary" = "任務 (%lld 已完成, %lld 進行中, %lld 待處理)";
+
+/* Island Panel - Question */
+"question.submit" = "提交答案";
+"question.answerNeeded" = "需要回答";
+
+/* Island Panel - Completion */
+"completion.done" = "完成";
+"completion.replyPlaceholder" = "回覆 Claude…";
+
+/* Menu Bar */
+"menu.status" = "%lld 活躍 · %lld 待處理";
+"menu.settings" = "設定…";
+"menu.openDebug" = "開啟除錯面板";
+"menu.hideOverlay" = "隱藏島嶼浮層";
+"menu.showOverlay" = "顯示島嶼浮層";
+"menu.refreshCodexHooks" = "重新整理 Codex Hook 狀態";
+"menu.uninstallCodexHooks" = "移除 Codex Hooks";
+"menu.installCodexHooks" = "安裝 Codex Hooks";
+"menu.refreshClaudeHooks" = "重新整理 Claude Hook 狀態";
+"menu.uninstallClaudeHooks" = "移除 Claude Hooks";
+"menu.installClaudeHooks" = "安裝 Claude Hooks";
+"menu.liveTool" = "目前工具: %@";
+"menu.tracking" = "追蹤: %@";
+
+/* Debug Panel */
+"debug.title" = "Agent Deck 除錯";
+"debug.description" = "基於 Mock 的 Notch 介面測試工具，用於驗證工作階段清單、核准、問答和完成卡片。";
+"debug.scenarios" = "情境";
+"debug.actions" = "操作";
+"debug.actionsDescription" = "內嵌預覽是隔離的。如果您想讓真實的頂部島嶼鏡像目前 Mock，請使用下方按鈕。";
+"debug.mirrorToIsland" = "鏡像至島嶼";
+"debug.closeIsland" = "關閉島嶼";
+"debug.currentMock" = "目前 Mock";
+"debug.liveOverlay" = "即時浮層";
+"debug.inlinePreview" = "內嵌預覽";
+"debug.previewDescription" = "此預覽是穩定的，忽略即時 Bridge 活動。";
+"debug.visible" = "可見";
+"debug.surface" = "介面";
+"debug.sessions" = "工作階段";
+"debug.message" = "訊息";
+"debug.yes" = "是";
+"debug.no" = "否";
+"debug.refresh" = "重新整理";
+"debug.removeHooks" = "移除 Hooks";
+"debug.installHooks" = "安裝 Hooks";
+"debug.removeBridge" = "移除 Bridge";
+"debug.installBridge" = "安裝 Bridge";
+"debug.sessionList" = "工作階段清單";
+"debug.sessionListActionable" = "工作階段清單 (可操作)";
+
+/* Window Titles */
+"window.settings" = "Agent Deck 設定";
+"window.debug" = "Agent Deck 除錯";

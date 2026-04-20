@@ -2,11 +2,11 @@
 
 Reviewed on 2026-04-02 against the locally installed app:
 
-- bundle: `/Applications/Vibe Island.app`
+- bundle: `/Applications/Agent Deck.app`
 - version: `1.0.15`
-- bundle id: `app.vibeisland.macos`
+- bundle id: `app.agentdeck.macos`
 - analysis branch: `docs/analyze-installed-app-bundle`
-- analysis worktree: `/Users/wangruobing/Personal/vibe-island-app-analysis`
+- analysis worktree: `/Users/wangruobing/Personal/agent-deck-app-analysis`
 
 ## Scope
 
@@ -28,21 +28,21 @@ No. The installed app is not "just a hook script."
 
 It is a multi-surface local integration product built from these layers:
 
-- a resident menu bar app with a local Unix socket server at `/tmp/vibe-island.sock`
-- a bundled helper binary at `Contents/Helpers/vibe-island-bridge`
+- a resident menu bar app with a local Unix socket server at `/tmp/agent-deck.sock`
+- a bundled helper binary at `Contents/Helpers/agent-deck-bridge`
 - auto-installed CLI hook wiring for Claude, Codex, Gemini, and Cursor
-- a Claude statusline bridge that writes quota payloads into `/tmp/vibe-island-rl.json`
+- a Claude statusline bridge that writes quota payloads into `/tmp/agent-deck-rl.json`
 - IDE extensions for Cursor and VS Code to focus the correct integrated terminal by PID
 - Apple Events / AppleScript automation for Terminal and iTerm2
 - additional richer integrations beyond plain hooks, especially for Codex and OpenCode
-- local session persistence under `~/Library/Application Support/vibe-island/session-terminals.json`
+- local session persistence under `~/Library/Application Support/agent-deck/session-terminals.json`
 
 ## Bundle Anatomy
 
-Observed inside `/Applications/Vibe Island.app/Contents`:
+Observed inside `/Applications/Agent Deck.app/Contents`:
 
-- main executable: `MacOS/vibe-island`
-- helper executable: `Helpers/vibe-island-bridge`
+- main executable: `MacOS/agent-deck`
+- helper executable: `Helpers/agent-deck-bridge`
 - frameworks: `Sparkle.framework`, `Sentry.framework`
 - Sparkle XPC services:
   - `Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc`
@@ -60,12 +60,12 @@ There are no custom macOS app extensions or login items embedded in the bundle b
 
 Runtime inspection shows the app itself listening on:
 
-- `/tmp/vibe-island.sock`
+- `/tmp/agent-deck.sock`
 
 Observed with `lsof`:
 
-- process `/Applications/Vibe Island.app/Contents/MacOS/vibe-island`
-- open Unix domain socket fd on `/tmp/vibe-island.sock`
+- process `/Applications/Agent Deck.app/Contents/MacOS/agent-deck`
+- open Unix domain socket fd on `/tmp/agent-deck.sock`
 
 This is the main local bridge endpoint.
 
@@ -73,17 +73,17 @@ This is the main local bridge endpoint.
 
 The app ships a real helper binary:
 
-- `/Applications/Vibe Island.app/Contents/Helpers/vibe-island-bridge`
+- `/Applications/Agent Deck.app/Contents/Helpers/agent-deck-bridge`
 
 The user-facing launcher installed under the home directory is only a wrapper:
 
-- `~/.vibe-island/bin/vibe-island-bridge`
+- `~/.agent-deck/bin/agent-deck-bridge`
 
 That wrapper:
 
 - looks for the app in `/Applications` and `$HOME/Applications`
 - falls back to Spotlight `mdfind` lookup by bundle identifier
-- caches the resolved app path in `~/.vibe-island/bin/.bridge-cache`
+- caches the resolved app path in `~/.agent-deck/bin/.bridge-cache`
 - then `exec`s the bundled helper inside the app bundle
 
 So the durable integration point is the installed app, not a standalone script copied out of the repo.
@@ -99,7 +99,7 @@ The app has modified local CLI config files on this machine:
 
 All of them point to:
 
-- `~/.vibe-island/bin/vibe-island-bridge --source <tool>`
+- `~/.agent-deck/bin/agent-deck-bridge --source <tool>`
 
 Current observed coverage:
 
@@ -140,11 +140,11 @@ This proves the product is already multi-tool and not Codex-only.
 
 Claude is configured with:
 
-- `statusLine.command = /Users/wangruobing/.vibe-island/bin/vibe-island-statusline`
+- `statusLine.command = /Users/wangruobing/.agent-deck/bin/agent-deck-statusline`
 
 That script reads Claude JSON from stdin and writes:
 
-- `.rate_limits` payload into `/tmp/vibe-island-rl.json`
+- `.rate_limits` payload into `/tmp/agent-deck-rl.json`
 
 So Claude quota / usage display is not coming from ordinary event hooks alone. There is a second path via statusline output.
 
@@ -152,8 +152,8 @@ So Claude quota / usage display is not coming from ordinary event hooks alone. T
 
 Installed extensions found in both:
 
-- `~/.cursor/extensions/vibe-island.terminal-focus-1.0.0`
-- `~/.vscode/extensions/vibe-island.terminal-focus-1.0.0`
+- `~/.cursor/extensions/agent-deck.terminal-focus-1.0.0`
+- `~/.vscode/extensions/agent-deck.terminal-focus-1.0.0`
 
 The extension registers `vscode.window.registerUriHandler(...)` and:
 
@@ -165,7 +165,7 @@ The extension registers `vscode.window.registerUriHandler(...)` and:
 This is an important answer to the "how can it jump so precisely?" question:
 
 - ordinary shell hooks cannot focus the correct integrated terminal tab inside Cursor / VS Code
-- Vibe Island solves that by installing an IDE extension and using a URI handler as a second communication channel
+- Agent Deck solves that by installing an IDE extension and using a URI handler as a second communication channel
 
 ### 6. Apple Events for Terminal / iTerm2
 
@@ -190,7 +190,7 @@ That means native terminal jump is handled with Apple Events / AppleScript autom
 
 The app stores session state here:
 
-- `~/Library/Application Support/vibe-island/session-terminals.json`
+- `~/Library/Application Support/agent-deck/session-terminals.json`
 
 Observed fields include:
 
@@ -218,22 +218,22 @@ Hooks alone do not give you a durable multi-session index like this unless the a
 
 Found on disk:
 
-- `~/.config/opencode/plugins/vibe-island.js`
+- `~/.config/opencode/plugins/agent-deck.js`
 
 This plugin is much richer than a plain hook bridge:
 
-- connects directly to `/tmp/vibe-island.sock`
+- connects directly to `/tmp/agent-deck.sock`
 - supports fire-and-forget and wait-for-response socket modes
 - injects terminal environment details into the tool runtime
 - derives TTY by walking the process tree
 - writes Ghostty OSC 2 tab titles
-- maps OpenCode events into Vibe Island hook-shaped payloads
+- maps OpenCode events into Agent Deck hook-shaped payloads
 - handles question replies via:
   - `http://localhost:${serverPort}/question/{id}/reply`
 - handles permission replies via:
   - `http://localhost:${serverPort}/permission/{id}/reply`
 
-So for OpenCode, Vibe Island is not merely listening. It actively participates in in-process approval and question response flow.
+So for OpenCode, Agent Deck is not merely listening. It actively participates in in-process approval and question response flow.
 
 ### Codex Advanced Integration
 
@@ -249,10 +249,10 @@ That alone is not enough to explain approval handling, richer session monitoring
 
 But the installed main binary contains these symbols / strings:
 
-- `VibeIsland.CodexAppServerClient`
-- `VibeIsland.CodexAppServerManager`
-- `VibeIsland.CodexDesktopApprovalWatcher`
-- `VibeIsland.CodexSessionWatcher`
+- `AgentDeck.CodexAppServerClient`
+- `AgentDeck.CodexAppServerManager`
+- `AgentDeck.CodexDesktopApprovalWatcher`
+- `AgentDeck.CodexSessionWatcher`
 - `enableCodexAppServer`
 - `webSocketTask`
 - `ws://127.0.0.1:0`
@@ -284,9 +284,9 @@ This matches the intuition that "ordinary hooks" are insufficient for the full b
 Confirmed from `Info.plist`, embedded frameworks, and binary strings:
 
 - Sparkle update feed:
-  - `https://edwluo.github.io/vibe-island-updates/appcast.xml`
+  - `https://edwluo.github.io/agent-deck-updates/appcast.xml`
 - release notes:
-  - `https://dl.vibeisland.app/release-notes/`
+  - `release notes URL`
 - Sentry ingestion:
   - `https://375861f9d4f0bfd47ed9f9b44b1872fd@o4510782780014592.ingest.us.sentry.io/4510782787289088`
 - PostHog analytics:
@@ -304,17 +304,17 @@ So the installed app communicates both locally and externally.
 Confirmed present:
 
 - bundled helper binary:
-  - `Contents/Helpers/vibe-island-bridge`
+  - `Contents/Helpers/agent-deck-bridge`
 - home-level bridge launcher:
-  - `~/.vibe-island/bin/vibe-island-bridge`
+  - `~/.agent-deck/bin/agent-deck-bridge`
 - Claude statusline helper:
-  - `~/.vibe-island/bin/vibe-island-statusline`
+  - `~/.agent-deck/bin/agent-deck-statusline`
 - Cursor extension:
-  - `~/.cursor/extensions/vibe-island.terminal-focus-1.0.0`
+  - `~/.cursor/extensions/agent-deck.terminal-focus-1.0.0`
 - VS Code extension:
-  - `~/.vscode/extensions/vibe-island.terminal-focus-1.0.0`
+  - `~/.vscode/extensions/agent-deck.terminal-focus-1.0.0`
 - OpenCode plugin:
-  - `~/.config/opencode/plugins/vibe-island.js`
+  - `~/.config/opencode/plugins/agent-deck.js`
 - Sparkle updater XPC services:
   - `Downloader.xpc`
   - `Installer.xpc`
@@ -322,7 +322,7 @@ Confirmed present:
 Not observed:
 
 - custom login item in `~/Library/LaunchAgents`
-- custom app extension bundles inside the Vibe Island app itself
+- custom app extension bundles inside the Agent Deck app itself
 
 ## Hook Management Evidence
 
@@ -332,8 +332,8 @@ The main binary contains strings indicating hook lifecycle management:
 - `settings.json.backup`
 - `hookRepairTimestamps`
 - `hookRepairMaxPerHour`
-- `com.vibe-island.repairHooks`
-- `com.vibe-island.repairHooksCompleted`
+- `com.agent-deck.repairHooks`
+- `com.agent-deck.repairHooksCompleted`
 - `Hooks are configured automatically when a CLI tool is detected.`
 
 So hook install / repair is a managed subsystem, not a one-time manual write.
@@ -355,7 +355,7 @@ Hooks are only one ingress layer.
 
 ## Most Important Architectural Takeaway
 
-If we want Vibe Island OSS to approach the behavior of the installed app, the right mental model is:
+If we want Agent Deck OSS to approach the behavior of the installed app, the right mental model is:
 
 1. hooks for basic event ingress
 2. a resident local bridge/server
@@ -371,19 +371,19 @@ Trying to reproduce the installed product with hooks alone would leave out the c
 The main commands used for this analysis:
 
 ```bash
-find '/Applications/Vibe Island.app/Contents' -maxdepth 3 -print | sort
-plutil -p '/Applications/Vibe Island.app/Contents/Info.plist'
-codesign -d --entitlements :- '/Applications/Vibe Island.app'
-otool -L '/Applications/Vibe Island.app/Contents/MacOS/vibe-island'
-strings -a '/Applications/Vibe Island.app/Contents/MacOS/vibe-island'
-lsof -nP -U | rg '/tmp/vibe-island.sock|vibe-island'
+find '/Applications/Agent Deck.app/Contents' -maxdepth 3 -print | sort
+plutil -p '/Applications/Agent Deck.app/Contents/Info.plist'
+codesign -d --entitlements :- '/Applications/Agent Deck.app'
+otool -L '/Applications/Agent Deck.app/Contents/MacOS/agent-deck'
+strings -a '/Applications/Agent Deck.app/Contents/MacOS/agent-deck'
+lsof -nP -U | rg '/tmp/agent-deck.sock|agent-deck'
 sed -n '1,260p' ~/.claude/settings.json
 sed -n '1,260p' ~/.codex/hooks.json
 sed -n '1,260p' ~/.cursor/hooks.json
 sed -n '1,260p' ~/.gemini/settings.json
-sed -n '1,260p' ~/.config/opencode/plugins/vibe-island.js
-sed -n '1,260p' ~/.cursor/extensions/vibe-island.terminal-focus-1.0.0/extension.js
-sed -n '1,220p' ~/Library/Application\ Support/vibe-island/session-terminals.json
+sed -n '1,260p' ~/.config/opencode/plugins/agent-deck.js
+sed -n '1,260p' ~/.cursor/extensions/agent-deck.terminal-focus-1.0.0/extension.js
+sed -n '1,220p' ~/Library/Application\ Support/agent-deck/session-terminals.json
 ```
 
 ## Confidence Notes

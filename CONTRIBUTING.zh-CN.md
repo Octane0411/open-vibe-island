@@ -1,8 +1,8 @@
-# 为 Open Island 做贡献
+# 为 Agent Deck 做贡献
 
 <strong>中文</strong> | <a href="CONTRIBUTING.md">English</a>
 
-感谢你对 Open Island 项目的关注与贡献！
+感谢你对 Agent Deck 项目的关注与贡献！
 
 ---
 
@@ -33,14 +33,14 @@
 <summary>点击展开 prompt</summary>
 
 ```
-我在使用 Open Island (https://github.com/Octane0411/open-vibe-island) 时遇到了问题。
+我在使用 Agent Deck (https://github.com/Octane0411/agent-deck) 时遇到了问题。
 
 请帮我提交一个 GitHub issue，步骤如下：
 
 1. 收集我的环境信息：
    - 运行 `sw_vers` 获取 macOS 版本
    - 运行 `swift --version` 获取 Swift 版本
-   - 检查 Open Island 是否在运行：`ps aux | grep -i "open.island\|OpenIslandApp" | grep -v grep`
+   - 检查 Agent Deck 是否在运行：`ps aux | grep -i "agentdeck\|AgentDeckApp" | grep -v grep`
    - 获取应用版本：`defaults read ~/Applications/Open\ Island\ Dev.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null || echo "unknown"`
    - 检查我正在使用的终端
 
@@ -54,7 +54,7 @@
    - 正文包含以下部分：**环境信息**、**问题描述**、**复现步骤**、**期望行为 vs 实际行为**
    - 如适用，添加 "bug" 标签
 
-仓库：Octane0411/open-vibe-island
+仓库：Octane0411/agent-deck
 ```
 
 </details>
@@ -67,7 +67,7 @@
 <summary>点击展开 prompt</summary>
 
 ```
-我想为 Open Island (https://github.com/Octane0411/open-vibe-island) 提一个功能建议。
+我想为 Agent Deck (https://github.com/Octane0411/agent-deck) 提一个功能建议。
 
 请帮我提交一个 GitHub issue，步骤如下：
 
@@ -81,7 +81,7 @@
    - 正文包含以下部分：**功能描述**、**动机**、**预期行为**
    - 如适用，添加 "enhancement" 标签
 
-仓库：Octane0411/open-vibe-island
+仓库：Octane0411/agent-deck
 ```
 
 </details>
@@ -94,7 +94,7 @@
 
 ### 项目简介
 
-Open Island 是一个原生 macOS 应用，作为 AI 编程代理的桌面伴侣。它驻留在刘海/顶栏区域，监控本地代理会话、展示权限请求、回答问题，并提供"跳转回"对应终端上下文的能力。完全本地运行，无需服务端。
+Agent Deck 是一个原生 macOS 应用，作为 AI 编程代理的桌面伴侣。它驻留在刘海/顶栏区域，监控本地代理会话、展示权限请求、回答问题，并提供"跳转回"对应终端上下文的能力。完全本地运行，无需服务端。
 
 **支持的代理**: Codex, Claude Code
 
@@ -116,10 +116,10 @@ swift build
 swift test
 
 # 运行应用
-swift run OpenIslandApp
+swift run AgentDeckApp
 
 # 构建 Hook 可执行文件（Release）
-swift build -c release --product OpenIslandHooks
+swift build -c release --product AgentDeckHooks
 ```
 
 也可以在 Xcode 中打开 `Package.swift`，直接构建和运行应用。

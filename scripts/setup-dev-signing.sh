@@ -1,6 +1,6 @@
 #!/bin/zsh
 #
-# Create a local self-signed code signing identity for Open Island dev
+# Create a local self-signed code signing identity for Agent Deck dev
 # builds. One-time setup; idempotent on re-run.
 #
 # Why this exists
@@ -46,7 +46,7 @@
 
 set -euo pipefail
 
-IDENTITY_NAME="Open Island Dev Local"
+IDENTITY_NAME="Agent Deck Dev Local"
 KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
 
 if security find-identity -p codesigning -v "$KEYCHAIN" 2>/dev/null | grep -q "\"$IDENTITY_NAME\""; then
@@ -114,4 +114,4 @@ security find-identity -p codesigning -v "$KEYCHAIN" | grep "\"$IDENTITY_NAME\""
 echo
 echo "Next: run \`zsh scripts/launch-dev-app.sh\`. The bundle will now be"
 echo "signed with this identity, and any Accessibility/Automation grant"
-echo "you give Open Island Dev will persist across rebuilds."
+echo "you give Agent Deck Dev will persist across rebuilds."

@@ -40,11 +40,11 @@ Keep all work incremental, reviewable, and reversible. Every meaningful round of
 
 ## Parallel Worktree Rules
 
-- Treat `/Users/wangruobing/Personal/open-island` on `main` as the shared integration worktree.
+- Treat `/Users/wangruobing/Personal/agent-deck` on `main` as the shared integration worktree.
 - Do not do day-to-day feature development directly on the shared `main` worktree when parallel work is active.
 - Create one worktree per branch and one branch per worktree. Never attach two worktrees to the same branch.
 - Create new worktrees from `origin/main`, not from a locally drifted feature branch.
-- Use sibling worktree paths named like `/Users/wangruobing/Personal/open-island-<topic>`.
+- Use sibling worktree paths named like `/Users/wangruobing/Personal/agent-deck-<topic>`.
 - Use branch names that match the workstream, such as `feat/<topic>`, `fix/<topic>`, `docs/<topic>`, or `investigate/<topic>`.
 - Keep each worktree focused on one coherent slice with a narrow file ownership area when possible.
 - Rebase or merge the latest `origin/main` into the feature branch before integrating it back.
@@ -52,7 +52,7 @@ Keep all work incremental, reviewable, and reversible. Every meaningful round of
 - Remove merged worktrees and delete merged branches after the integration round is complete.
 - If multiple agents are working in parallel, assign each agent its own worktree instead of sharing one checkout.
 
-See [docs/worktree-workflow.md](/Users/wangruobing/Personal/open-island/docs/worktree-workflow.md) for the concrete commands and lifecycle.
+See [docs/worktree-workflow.md](/Users/wangruobing/Personal/agent-deck/docs/worktree-workflow.md) for the concrete commands and lifecycle.
 
 ## Reproduction Scope
 
@@ -64,19 +64,19 @@ See [docs/worktree-workflow.md](/Users/wangruobing/Personal/open-island/docs/wor
 
 ## App Targets And Naming
 
-- Treat the repository executable product `OpenIslandApp` as the canonical OSS app runtime.
-- Treat `swift run OpenIslandApp` and the Xcode app target as the source-of-truth way to run the current branch's app code.
-- Treat `~/Applications/Open Island Dev.app` as a local development bundle wrapper around the repo-built `OpenIslandApp`, not as a separate product line.
-- Use `Open Island Dev.app` for manual OSS app verification when bundle semantics, LaunchServices, or installed-hook behavior matter.
-- When the user asks to launch or restart `Open Island Dev.app`, refresh the bundle from the current repo first with `zsh scripts/launch-dev-app.sh` instead of only running `open -na`. Opening the bundle alone can relaunch a stale binary.
+- Treat the repository executable product `AgentDeckApp` as the canonical OSS app runtime.
+- Treat `swift run AgentDeckApp` and the Xcode app target as the source-of-truth way to run the current branch's app code.
+- Treat `~/Applications/Agent Deck Dev.app` as a local development bundle wrapper around the repo-built `AgentDeckApp`, not as a separate product line.
+- Use `Agent Deck Dev.app` for manual OSS app verification when bundle semantics, LaunchServices, or installed-hook behavior matter.
+- When the user asks to launch or restart `Agent Deck Dev.app`, refresh the bundle from the current repo first with `zsh scripts/launch-dev-app.sh` instead of only running `open -na`. Opening the bundle alone can relaunch a stale binary.
 - Use `scripts/harness.sh smoke` or `scripts/smoke-dev-app.sh` only for deterministic harness runs; those commands intentionally launch the repo executable directly rather than the installed dev bundle.
-- Treat any in-app label such as `Open Island OSS` as UI copy only, not as evidence of a third app target.
-- Treat `/Applications/Vibe Island.app` and `https://vibeisland.app/` as closed-source reference baselines only. They are behavior benchmarks, not the development runtime for this repository.
-- Unless the user explicitly asks otherwise, build, debug, and verify OSS changes against `OpenIslandApp`, then compare behavior against the reference app separately when needed.
+- Treat any in-app label such as `Agent Deck OSS` as UI copy only, not as evidence of a third app target.
+- Treat `/Applications/Agent Deck.app` and `the commercial reference app` as closed-source reference baselines only. They are behavior benchmarks, not the development runtime for this repository.
+- Unless the user explicitly asks otherwise, build, debug, and verify OSS changes against `AgentDeckApp`, then compare behavior against the reference app separately when needed.
 
 ## Reference Baselines
 
-- Official product reference: `https://vibeisland.app/`
+- Official product reference: `the commercial reference app`
 - Treat the official site as the primary behavior benchmark for notch placement, compact-vs-expanded island behavior, and external-display fallback behavior.
 - Current official-product constraint to preserve: on Macs with a built-in notch, the island should sit in the notch area; on external displays or non-notch Macs, it should fall back to a compact top-center bar.
 - Community implementation reference: `https://github.com/farouqaldori/claude-island`
@@ -86,7 +86,7 @@ See [docs/worktree-workflow.md](/Users/wangruobing/Personal/open-island/docs/wor
   - separate compact closed state from expanded actionable state instead of treating the island as one always-expanded panel
   - keep hook installation and Unix-socket request/response loops explicit and local-first
   - enrich live session state from transcript or history parsing when hooks alone are too shallow
-- Do not treat `claude-island` as a product spec. It is a reference implementation, not the source of truth for Open Island.
+- Do not treat `claude-island` as a product spec. It is a reference implementation, not the source of truth for Agent Deck.
 - Unless the user explicitly asks, do not import or prioritize these `claude-island` choices into this repository:
   - Mixpanel or other analytics
   - `yabai` or window-manager-specific scope expansion

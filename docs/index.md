@@ -44,7 +44,7 @@ This index is the repository map for humans and coding agents. Read these files 
 
 ## Remote / SSH
 
-- [docs/ssh-setup.md](./ssh-setup.md) for connecting Open Island to Claude Code running on remote servers via SSH socket forwarding
+- [docs/ssh-setup.md](./ssh-setup.md) for connecting Agent Deck to Claude Code running on remote servers via SSH socket forwarding
 
 ## Release
 

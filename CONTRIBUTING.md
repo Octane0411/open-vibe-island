@@ -1,8 +1,8 @@
-# Contributing to Open Island
+# Contributing to Agent Deck
 
 <a href="CONTRIBUTING.zh-CN.md">中文</a> | <strong>English</strong>
 
-Thank you for your interest in contributing to Open Island!
+Thank you for your interest in contributing to Agent Deck!
 
 ---
 
@@ -33,14 +33,14 @@ If you run into a problem, copy the prompt below into your code agent (Claude Co
 <summary>Click to expand the prompt</summary>
 
 ```
-I'm having an issue with Open Island (https://github.com/Octane0411/open-vibe-island).
+I'm having an issue with Agent Deck (https://github.com/Octane0411/agent-deck).
 
 Please help me file a GitHub issue. Do the following:
 
 1. Collect my environment info:
    - Run `sw_vers` to get macOS version
    - Run `swift --version` to get Swift version
-   - Check if Open Island is running: `ps aux | grep -i "open.island\|OpenIslandApp" | grep -v grep`
+   - Check if Agent Deck is running: `ps aux | grep -i "agentdeck\|AgentDeckApp" | grep -v grep`
    - Get the app version: `defaults read ~/Applications/Open\ Island\ Dev.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null || echo "unknown"`
    - Check which terminal I'm using
 
@@ -54,7 +54,7 @@ Please help me file a GitHub issue. Do the following:
    - Body with sections: **Environment**, **Description**, **Steps to Reproduce**, **Expected vs Actual Behavior**
    - Add label "bug" if applicable
 
-Repository: Octane0411/open-vibe-island
+Repository: Octane0411/agent-deck
 ```
 
 </details>
@@ -67,7 +67,7 @@ Have an idea? Let your agent draft the proposal for you.
 <summary>Click to expand the prompt</summary>
 
 ```
-I'd like to request a feature for Open Island (https://github.com/Octane0411/open-vibe-island).
+I'd like to request a feature for Agent Deck (https://github.com/Octane0411/agent-deck).
 
 Please help me file a GitHub issue. Do the following:
 
@@ -81,7 +81,7 @@ Please help me file a GitHub issue. Do the following:
    - Body with sections: **Feature Description**, **Motivation**, **Proposed Behavior**
    - Add label "enhancement" if applicable
 
-Repository: Octane0411/open-vibe-island
+Repository: Octane0411/agent-deck
 ```
 
 </details>
@@ -94,7 +94,7 @@ Repository: Octane0411/open-vibe-island
 
 ### About the Project
 
-Open Island is a native macOS companion app for AI coding agents. It sits in the notch/top-bar area and monitors local agent sessions, surfaces permission requests, answers questions, and provides "jump back" to the correct terminal context. Local-first, no server dependency.
+Agent Deck is a native macOS companion app for AI coding agents. It sits in the notch/top-bar area and monitors local agent sessions, surfaces permission requests, answers questions, and provides "jump back" to the correct terminal context. Local-first, no server dependency.
 
 **Supported agents**: Codex, Claude Code
 
@@ -116,10 +116,10 @@ swift build
 swift test
 
 # Run the app
-swift run OpenIslandApp
+swift run AgentDeckApp
 
 # Build hook binary (release)
-swift build -c release --product OpenIslandHooks
+swift build -c release --product AgentDeckHooks
 ```
 
 You can also open `Package.swift` in Xcode to build and run the app target directly.

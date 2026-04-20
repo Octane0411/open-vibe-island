@@ -1,6 +1,6 @@
 # Hook System
 
-OpenIsland receives hook events from AI agents (Codex / Claude Code / Gemini CLI) via the `OpenIslandHooks` CLI. The CLI forwards payloads to the app over a Unix socket and, when necessary, writes a directive back to stdout so the agent can act on it (e.g. block a tool call).
+AgentDeck receives hook events from AI agents (Codex / Claude Code / Gemini CLI) via the `AgentDeckHooks` CLI. The CLI forwards payloads to the app over a Unix socket and, when necessary, writes a directive back to stdout so the agent can act on it (e.g. block a tool call).
 
 ## Architecture
 
@@ -8,13 +8,13 @@ OpenIsland receives hook events from AI agents (Codex / Claude Code / Gemini CLI
 Agent (Codex / Claude Code / Gemini CLI)
   │  stdin: JSON payload
   ▼
-OpenIslandHooks CLI  (--source codex | --source claude | --source gemini)
+AgentDeckHooks CLI  (--source codex | --source claude | --source gemini)
   │  Unix socket
   ▼
 BridgeServer → AppModel → UI
   │  BridgeResponse
   ▼
-OpenIslandHooks CLI
+AgentDeckHooks CLI
   │  stdout: JSON directive (only when a response is needed)
   ▼
 Agent
@@ -22,14 +22,14 @@ Agent
 
 **Fail-open principle**: if the bridge is unavailable the hook process exits silently without writing to stdout, so the agent continues running unaffected.
 
-**Entry point**: [`Sources/OpenIslandHooks/main.swift`](../Sources/OpenIslandHooks/main.swift)
+**Entry point**: [`Sources/AgentDeckHooks/main.swift`](../Sources/AgentDeckHooks/main.swift)
 
 ---
 
 ## Codex Hooks (`--source codex`)
 
 **Payload type**: `CodexHookPayload`  
-**Source**: [`Sources/OpenIslandCore/CodexHooks.swift`](../Sources/OpenIslandCore/CodexHooks.swift)
+**Source**: [`Sources/AgentDeckCore/CodexHooks.swift`](../Sources/AgentDeckCore/CodexHooks.swift)
 
 ### Events
 
@@ -69,7 +69,7 @@ Agent
 The app can block a command by writing this to stdout:
 
 ```json
-{"decision": "block", "reason": "Blocked by Open Island"}
+{"decision": "block", "reason": "Blocked by Agent Deck"}
 ```
 
 All other events require no stdout response.
@@ -79,7 +79,7 @@ All other events require no stdout response.
 ## Claude Code Hooks (`--source claude`)
 
 **Payload type**: `ClaudeHookPayload`  
-**Source**: [`Sources/OpenIslandCore/ClaudeHooks.swift`](../Sources/OpenIslandCore/ClaudeHooks.swift)
+**Source**: [`Sources/AgentDeckCore/ClaudeHooks.swift`](../Sources/AgentDeckCore/ClaudeHooks.swift)
 
 ### Events
 
@@ -201,11 +201,11 @@ Setting `interrupt: true` terminates the current agent turn immediately.
 ## Gemini CLI Hooks (`--source gemini`)
 
 **Payload type**: `GeminiHookPayload`  
-**Source**: [`Sources/OpenIslandCore/GeminiHooks.swift`](../Sources/OpenIslandCore/GeminiHooks.swift)
+**Source**: [`Sources/AgentDeckCore/GeminiHooks.swift`](../Sources/AgentDeckCore/GeminiHooks.swift)
 
 ### Events
 
-| `hook_event_name` | When it fires | Current OpenIsland behavior |
+| `hook_event_name` | When it fires | Current AgentDeck behavior |
 |---|---|---|
 | `SessionStart` | Session starts or resumes | Creates or restores the Gemini session, title, jump target, and transcript metadata |
 | `BeforeAgent` | Gemini starts handling a prompt / turn | Marks the session running, updates prompt text, refreshes terminal metadata |
@@ -237,7 +237,7 @@ Setting `interrupt: true` terminates the current agent turn immediately.
 
 ### Current feature coverage
 
-- Session lifecycle ingestion for Gemini CLI via `OpenIslandHooks --source gemini`
+- Session lifecycle ingestion for Gemini CLI via `AgentDeckHooks --source gemini`
 - Session list and island visibility updates from Gemini hook events
 - Prompt / response metadata capture for completion cards and session details
 - Terminal jump metadata enrichment for Terminal.app, iTerm2, Ghostty, and other supported terminals
@@ -245,8 +245,8 @@ Setting `interrupt: true` terminates the current agent turn immediately.
 
 ### Current limitations
 
-- Gemini hooks are currently treated as fire-and-forget. OpenIsland does not send Gemini-specific approval or modification directives back to stdout.
-- Gemini hook payloads sometimes include a duplicated copy of the final response body, often with whitespace-only differences. OpenIsland applies a best-effort compatibility pass before rendering completion content, but the result is not guaranteed to be perfect for every response shape.
+- Gemini hooks are currently treated as fire-and-forget. AgentDeck does not send Gemini-specific approval or modification directives back to stdout.
+- Gemini hook payloads sometimes include a duplicated copy of the final response body, often with whitespace-only differences. AgentDeck applies a best-effort compatibility pass before rendering completion content, but the result is not guaranteed to be perfect for every response shape.
 - Gemini support is currently limited to the hook events and UI/session behaviors listed above. It does not yet match the richer permission / interaction flows available for Claude Code or OpenCode.
 
 ---
@@ -283,9 +283,9 @@ For iTerm, Terminal, and Ghostty the process additionally runs an AppleScript qu
 
 | File | Responsibility |
 |---|---|
-| [`Sources/OpenIslandHooks/main.swift`](../Sources/OpenIslandHooks/main.swift) | Hook CLI entry point — routes to Codex, Claude, or Gemini path |
-| [`Sources/OpenIslandCore/CodexHooks.swift`](../Sources/OpenIslandCore/CodexHooks.swift) | Codex payload model, output encoder, terminal detection |
-| [`Sources/OpenIslandCore/ClaudeHooks.swift`](../Sources/OpenIslandCore/ClaudeHooks.swift) | Claude Code payload model, directive types, output encoder |
-| [`Sources/OpenIslandCore/GeminiHooks.swift`](../Sources/OpenIslandCore/GeminiHooks.swift) | Gemini CLI payload model, terminal detection, metadata helpers |
-| [`Sources/OpenIslandCore/BridgeServer.swift`](../Sources/OpenIslandCore/BridgeServer.swift) | Unix socket server — handles incoming hook payloads |
-| [`Sources/OpenIslandCore/BridgeTransport.swift`](../Sources/OpenIslandCore/BridgeTransport.swift) | Protocol codec and envelope types |
+| [`Sources/AgentDeckHooks/main.swift`](../Sources/AgentDeckHooks/main.swift) | Hook CLI entry point — routes to Codex, Claude, or Gemini path |
+| [`Sources/AgentDeckCore/CodexHooks.swift`](../Sources/AgentDeckCore/CodexHooks.swift) | Codex payload model, output encoder, terminal detection |
+| [`Sources/AgentDeckCore/ClaudeHooks.swift`](../Sources/AgentDeckCore/ClaudeHooks.swift) | Claude Code payload model, directive types, output encoder |
+| [`Sources/AgentDeckCore/GeminiHooks.swift`](../Sources/AgentDeckCore/GeminiHooks.swift) | Gemini CLI payload model, terminal detection, metadata helpers |
+| [`Sources/AgentDeckCore/BridgeServer.swift`](../Sources/AgentDeckCore/BridgeServer.swift) | Unix socket server — handles incoming hook payloads |
+| [`Sources/AgentDeckCore/BridgeTransport.swift`](../Sources/AgentDeckCore/BridgeTransport.swift) | Protocol codec and envelope types |

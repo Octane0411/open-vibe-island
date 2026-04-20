@@ -1,10 +1,10 @@
 # Island Position Investigation
 
-Reviewed on 2026-04-02 in worktree `../open-island-island-investigate` on branch `investigate/island-position`.
+Reviewed on 2026-04-02 in worktree `../agent-deck-island-investigate` on branch `investigate/island-position`.
 
 ## Question
 
-Why does the current open-source island feel "off" compared with the official Open Island behavior on a MacBook with a built-in notch?
+Why does the current open-source island feel "off" compared with the official Agent Deck behavior on a MacBook with a built-in notch?
 
 ## Short Answer
 
@@ -22,7 +22,7 @@ That combination makes it behave like a generic top-center floating window, not 
 
 ### 1. The code picks the wrong screen
 
-Current positioning logic in `Sources/OpenIslandApp/OverlayPanelController.swift`:
+Current positioning logic in `Sources/AgentDeckApp/OverlayPanelController.swift`:
 
 ```swift
 let screen = NSScreen.main ?? NSScreen.screens.first
@@ -92,7 +92,7 @@ contentRect: NSRect(x: 0, y: 0, width: 520, height: 256)
 
 The official product behavior is different:
 
-- `vibeisland.app` says: on Macs with a built-in notch, the panel "sits in the notch area"
+- Commercial reference behavior says: on Macs with a built-in notch, the panel "sits in the notch area"
 - the same FAQ says external or non-notch displays should use "a compact floating bar at the top center of the screen"
 - the website demo uses a compact notch state first, then expands into richer approval / question / jump states
 

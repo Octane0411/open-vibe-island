@@ -3,53 +3,54 @@
 set -euo pipefail
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
-    echo "Open Island packaging runs only on macOS." >&2
+    echo "Agent Deck packaging runs only on macOS." >&2
     exit 1
 fi
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-app_name="${OPEN_ISLAND_APP_NAME:-Open Island}"
-bundle_identifier="${OPEN_ISLAND_BUNDLE_ID:-app.openisland.dev}"
-version="${OPEN_ISLAND_VERSION:-0.1.0}"
-build_number="${OPEN_ISLAND_BUILD_NUMBER:-$(git -C "$repo_root" rev-list --count HEAD 2>/dev/null || echo 1)}"
-package_root="${OPEN_ISLAND_PACKAGE_ROOT:-$repo_root/output/package}"
-bundle_dir="${OPEN_ISLAND_BUNDLE_DIR:-$package_root/$app_name.app}"
-zip_path="${OPEN_ISLAND_ZIP_PATH:-$package_root/$app_name.zip}"
-dmg_path="${OPEN_ISLAND_DMG_PATH:-$package_root/$app_name.dmg}"
-signing_identity="${OPEN_ISLAND_SIGN_IDENTITY:-}"
-notary_profile="${OPEN_ISLAND_NOTARY_PROFILE:-}"
+app_name="${AGENT_DECK_APP_NAME:-Agent Deck}"
+bundle_identifier="${AGENT_DECK_BUNDLE_ID:-app.agentdeck.dev}"
+version="${AGENT_DECK_VERSION:-0.1.0}"
+build_number="${AGENT_DECK_BUILD_NUMBER:-$(git -C "$repo_root" rev-list --count HEAD 2>/dev/null || echo 1)}"
+package_root="${AGENT_DECK_PACKAGE_ROOT:-$repo_root/output/package}"
+bundle_dir="${AGENT_DECK_BUNDLE_DIR:-$package_root/$app_name.app}"
+zip_path="${AGENT_DECK_ZIP_PATH:-$package_root/$app_name.zip}"
+dmg_path="${AGENT_DECK_DMG_PATH:-$package_root/$app_name.dmg}"
+signing_identity="${AGENT_DECK_SIGN_IDENTITY:-}"
+notary_profile="${AGENT_DECK_NOTARY_PROFILE:-}"
+python_bin="${AGENT_DECK_PYTHON:-python3}"
 
 brand_script="$repo_root/scripts/generate_brand_icons.py"
 dmg_bg_script="$repo_root/scripts/generate_dmg_background.py"
-entitlements_path="$repo_root/config/packaging/OpenIslandApp.entitlements"
+entitlements_path="$repo_root/config/packaging/AgentDeckApp.entitlements"
 
 cd "$repo_root"
 
 arch_flags=()
-if [[ "${OPEN_ISLAND_UNIVERSAL:-false}" == "true" ]]; then
+if [[ "${AGENT_DECK_UNIVERSAL:-false}" == "true" ]]; then
     arch_flags=(--arch arm64 --arch x86_64)
 fi
 
-swift build -c release "${arch_flags[@]}" --product OpenIslandApp
-swift build -c release "${arch_flags[@]}" --product OpenIslandHooks
-swift build -c release "${arch_flags[@]}" --product OpenIslandSetup
+swift build -c release "${arch_flags[@]}" --product AgentDeckApp
+swift build -c release "${arch_flags[@]}" --product AgentDeckHooks
+swift build -c release "${arch_flags[@]}" --product AgentDeckSetup
 
 build_bin_dir="$(swift build -c release "${arch_flags[@]}" --show-bin-path)"
-app_binary="$build_bin_dir/OpenIslandApp"
-hooks_binary="$build_bin_dir/OpenIslandHooks"
-setup_binary="$build_bin_dir/OpenIslandSetup"
-brand_icon="$repo_root/Assets/Brand/OpenIsland.icns"
+app_binary="$build_bin_dir/AgentDeckApp"
+hooks_binary="$build_bin_dir/AgentDeckHooks"
+setup_binary="$build_bin_dir/AgentDeckSetup"
+brand_icon="$repo_root/Assets/Brand/AgentDeck.icns"
 
-python3 "$brand_script"
-python3 "$dmg_bg_script"
+"$python_bin" "$brand_script"
+"$python_bin" "$dmg_bg_script"
 
 rm -rf "$bundle_dir" "$zip_path" "$dmg_path"
 mkdir -p "$bundle_dir/Contents/MacOS" "$bundle_dir/Contents/Helpers" "$bundle_dir/Contents/Resources" "$bundle_dir/Contents/Frameworks"
 
-cp "$app_binary" "$bundle_dir/Contents/MacOS/OpenIslandApp"
-cp "$hooks_binary" "$bundle_dir/Contents/Helpers/OpenIslandHooks"
-cp "$setup_binary" "$bundle_dir/Contents/Helpers/OpenIslandSetup"
-cp "$brand_icon" "$bundle_dir/Contents/Resources/OpenIsland.icns"
+cp "$app_binary" "$bundle_dir/Contents/MacOS/AgentDeckApp"
+cp "$hooks_binary" "$bundle_dir/Contents/Helpers/AgentDeckHooks"
+cp "$setup_binary" "$bundle_dir/Contents/Helpers/AgentDeckSetup"
+cp "$brand_icon" "$bundle_dir/Contents/Resources/AgentDeck.icns"
 
 # Copy Sparkle.framework for auto-update support.
 sparkle_framework="$repo_root/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
@@ -62,7 +63,7 @@ fi
 # Copy SPM resource bundle into Contents/Resources/ so the .app root stays
 # clean for code signing (no unsealed contents). Our custom
 # resource_bundle_accessor.swift searches Bundle.main.resourceURL first.
-spm_resource_bundle="$build_bin_dir/OpenIsland_OpenIslandApp.bundle"
+spm_resource_bundle="$build_bin_dir/AgentDeck_AgentDeckApp.bundle"
 if [[ -d "$spm_resource_bundle" ]]; then
     cp -R "$spm_resource_bundle" "$bundle_dir/Contents/Resources/"
 else
@@ -70,12 +71,12 @@ else
 fi
 
 chmod +x \
-    "$bundle_dir/Contents/MacOS/OpenIslandApp" \
-    "$bundle_dir/Contents/Helpers/OpenIslandHooks" \
-    "$bundle_dir/Contents/Helpers/OpenIslandSetup"
+    "$bundle_dir/Contents/MacOS/AgentDeckApp" \
+    "$bundle_dir/Contents/Helpers/AgentDeckHooks" \
+    "$bundle_dir/Contents/Helpers/AgentDeckSetup"
 
 # Add rpath so the binary can find Sparkle.framework in Contents/Frameworks/.
-install_name_tool -add_rpath @loader_path/../Frameworks "$bundle_dir/Contents/MacOS/OpenIslandApp" 2>/dev/null || true
+install_name_tool -add_rpath @loader_path/../Frameworks "$bundle_dir/Contents/MacOS/AgentDeckApp" 2>/dev/null || true
 
 cat > "$bundle_dir/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -87,9 +88,9 @@ cat > "$bundle_dir/Contents/Info.plist" <<EOF
     <key>CFBundleDisplayName</key>
     <string>$app_name</string>
     <key>CFBundleExecutable</key>
-    <string>OpenIslandApp</string>
+    <string>AgentDeckApp</string>
     <key>CFBundleIconFile</key>
-    <string>OpenIsland</string>
+    <string>AgentDeck</string>
     <key>CFBundleIdentifier</key>
     <string>$bundle_identifier</string>
     <key>CFBundleInfoDictionaryVersion</key>
@@ -105,15 +106,15 @@ cat > "$bundle_dir/Contents/Info.plist" <<EOF
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Open Island needs automation access to focus Terminal and iTerm sessions for jump-back.</string>
+    <string>Agent Deck needs automation access to focus Terminal and iTerm sessions for jump-back.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>SUFeedURL</key>
-    <string>https://raw.githubusercontent.com/Octane0411/open-vibe-island/main/appcast.xml</string>
+    <string>https://raw.githubusercontent.com/Octane0411/agent-deck/main/appcast.xml</string>
     <key>SUPublicEDKey</key>
-    <string>${OPEN_ISLAND_EDDSA_PUBLIC_KEY:-3IF8txq9RRNanzE2FNhyGRcwhslTucCcJHpTkpxcgBQ=}</string>
+    <string>${AGENT_DECK_EDDSA_PUBLIC_KEY:-3IF8txq9RRNanzE2FNhyGRcwhslTucCcJHpTkpxcgBQ=}</string>
 </dict>
 </plist>
 EOF
@@ -123,11 +124,11 @@ plutil -lint "$bundle_dir/Contents/Info.plist" >/dev/null
 # --- Verify bundle structure matches what the app expects at runtime ---
 verify_errors=0
 for required in \
-    "Contents/MacOS/OpenIslandApp" \
-    "Contents/Helpers/OpenIslandHooks" \
-    "Contents/Helpers/OpenIslandSetup" \
-    "Contents/Resources/OpenIsland.icns" \
-    "Contents/Resources/OpenIsland_OpenIslandApp.bundle" \
+    "Contents/MacOS/AgentDeckApp" \
+    "Contents/Helpers/AgentDeckHooks" \
+    "Contents/Helpers/AgentDeckSetup" \
+    "Contents/Resources/AgentDeck.icns" \
+    "Contents/Resources/AgentDeck_AgentDeckApp.bundle" \
 ; do
     if [[ ! -e "$bundle_dir/$required" ]]; then
         echo "ERROR: missing required file: $required" >&2
@@ -148,7 +149,7 @@ smoke_dir="$(mktemp -d)/smoke-test"
 mkdir -p "$smoke_dir"
 cp -R "$bundle_dir" "$smoke_dir/"
 smoke_app="$smoke_dir/$(basename "$bundle_dir")"
-smoke_binary="$smoke_app/Contents/MacOS/OpenIslandApp"
+smoke_binary="$smoke_app/Contents/MacOS/AgentDeckApp"
 if [[ -x "$smoke_binary" ]]; then
     # Launch and give it a few seconds — if it crashes, the pid disappears.
     "$smoke_binary" &
@@ -187,9 +188,9 @@ if [[ -n "$signing_identity" ]]; then
     fi
 
     codesign --force --options runtime --timestamp --sign "$signing_identity" \
-        "$bundle_dir/Contents/Helpers/OpenIslandHooks"
+        "$bundle_dir/Contents/Helpers/AgentDeckHooks"
     codesign --force --options runtime --timestamp --sign "$signing_identity" \
-        "$bundle_dir/Contents/Helpers/OpenIslandSetup"
+        "$bundle_dir/Contents/Helpers/AgentDeckSetup"
 
     codesign \
         --force \
@@ -208,8 +209,8 @@ else
         done
         codesign --force --sign - "$sparkle_fw" 2>/dev/null || true
     fi
-    codesign --force --sign - "$bundle_dir/Contents/Helpers/OpenIslandHooks" 2>/dev/null || true
-    codesign --force --sign - "$bundle_dir/Contents/Helpers/OpenIslandSetup" 2>/dev/null || true
+    codesign --force --sign - "$bundle_dir/Contents/Helpers/AgentDeckHooks" 2>/dev/null || true
+    codesign --force --sign - "$bundle_dir/Contents/Helpers/AgentDeckSetup" 2>/dev/null || true
     codesign --force --sign - "$bundle_dir" 2>/dev/null || true
 fi
 
