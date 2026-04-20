@@ -507,6 +507,87 @@ struct SessionStateTests {
     }
 
     @Test
+    func codexPermissionRequestReturnsAllowDirectiveAfterApproval() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
+
+        let payload = CodexHookPayload(
+            cwd: "/tmp/worktree",
+            hookEventName: .permissionRequest,
+            model: "gpt-5-codex",
+            permissionMode: .default,
+            sessionID: "codex-session-permission-allow",
+            transcriptPath: nil,
+            turnID: "turn-1",
+            toolName: "Bash",
+            toolInput: CodexHookToolInput(command: "curl https://example.com", description: "network-access example.com")
+        )
+
+        async let responseTask = sendOnGCDThread(.processCodexHook(payload), socketURL: socketURL)
+
+        var iterator = stream.makeAsyncIterator()
+        let startedEvent = try await nextEvent(from: &iterator)
+        let permissionEvent = try await nextEvent(from: &iterator)
+
+        #expect(startedEvent.isSessionStarted)
+        #expect(permissionEvent.isPermissionRequested)
+
+        try await observer.send(.resolvePermission(sessionID: "codex-session-permission-allow", resolution: .allowOnce()))
+
+        let activityEvent = try await nextEvent(from: &iterator)
+        let response = try await responseTask
+
+        #expect(activityEvent.activityUpdate?.summary == "Permission approved. Codex continued the command.")
+        #expect(response == .codexHookDirective(.permissionRequest(.allow)))
+    }
+
+    @Test
+    func codexPermissionRequestReturnsDenyDirectiveAfterRejection() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
+
+        let payload = CodexHookPayload(
+            cwd: "/tmp/worktree",
+            hookEventName: .permissionRequest,
+            model: "gpt-5-codex",
+            permissionMode: .default,
+            sessionID: "codex-session-permission-deny",
+            transcriptPath: nil,
+            turnID: "turn-1",
+            toolName: "Bash",
+            toolInput: CodexHookToolInput(command: "rm -rf /tmp/demo")
+        )
+
+        async let responseTask = sendOnGCDThread(.processCodexHook(payload), socketURL: socketURL)
+
+        var iterator = stream.makeAsyncIterator()
+        let startedEvent = try await nextEvent(from: &iterator)
+        let permissionEvent = try await nextEvent(from: &iterator)
+
+        #expect(startedEvent.isSessionStarted)
+        #expect(permissionEvent.isPermissionRequested)
+
+        try await observer.send(.resolvePermission(sessionID: "codex-session-permission-deny", resolution: .deny()))
+
+        let response = try await responseTask
+        #expect(response == .codexHookDirective(.permissionRequest(.deny(message: "Permission denied in Open Island."))))
+    }
+
+    @Test
     func codexHookUpdatesJumpTargetWhenLaterHooksLearnMoreAboutTheTerminal() async throws {
         let socketURL = BridgeSocketLocation.uniqueTestURL()
         let server = BridgeServer(socketURL: socketURL)
@@ -699,6 +780,13 @@ struct SessionStateTests {
 
         let sessionStartGroups = hooks?["SessionStart"] as? [[String: Any]]
         #expect(sessionStartGroups?.contains(where: { $0["matcher"] as? String == "startup|resume" }) == true)
+        let permissionGroups = hooks?["PermissionRequest"] as? [[String: Any]]
+        #expect(permissionGroups?.isEmpty == false)
+        let managedPermissionHook = permissionGroups?
+            .compactMap { $0["hooks"] as? [[String: Any]] }
+            .flatMap { $0 }
+            .first(where: { $0["command"] as? String == "'/tmp/OpenIslandHooks'" })
+        #expect(managedPermissionHook?["timeout"] as? Int == CodexHookInstaller.managedInteractiveTimeout)
         #expect(hooks?["PreToolUse"] == nil)
         #expect(hooks?["PostToolUse"] == nil)
     }
