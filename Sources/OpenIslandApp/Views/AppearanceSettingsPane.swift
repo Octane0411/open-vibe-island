@@ -1,294 +1,237 @@
 import SwiftUI
 import OpenIslandCore
 
+/// v6 Personalization tab.
+///
+/// Two concerns, one preview:
+/// - **Right slot** — what shows on the right of the closed island.
+/// - **Center label** — what shows in the middle on external displays.
+///
+/// Everything else (idle behavior, per-tool agent colors, spinner, custom
+/// avatars) was cut in the v6 redesign round.
 struct AppearanceSettingsPane: View {
     var model: AppModel
-    @State private var previewPhase: SessionPhase = .running
+    @State private var previewMode: UnifiedBars.Mode = .running
+    @State private var previewLayout: V6ClosedLayout = .external
 
     private var lang: LanguageManager { model.lang }
-    private var isCustom: Bool { model.islandAppearanceMode == .custom }
 
     var body: some View {
-        Form {
-            Section(lang.t("settings.appearance.mode")) {
-                Picker(lang.t("settings.appearance.mode"), selection: Binding(
-                    get: { model.islandAppearanceMode },
-                    set: { model.islandAppearanceMode = $0 }
-                )) {
-                    Text(lang.t("settings.appearance.mode.default")).tag(IslandAppearanceMode.default)
-                    Text(lang.t("settings.appearance.mode.custom")).tag(IslandAppearanceMode.custom)
-                }
-                .pickerStyle(.segmented)
-
-                if !isCustom {
-                    Text(lang.t("settings.appearance.mode.defaultDesc"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                previewSection
+                rightSlotSection
+                centerLabelSection
             }
-
-            Section(lang.t("settings.appearance.style")) {
-                if isCustom {
-                    Picker(lang.t("settings.appearance.closedStyle"), selection: Binding(
-                        get: { model.islandClosedDisplayStyle },
-                        set: { model.islandClosedDisplayStyle = $0 }
-                    )) {
-                        Text(lang.t("settings.appearance.style.minimal")).tag(IslandClosedDisplayStyle.minimal)
-                        Text(lang.t("settings.appearance.style.detailed")).tag(IslandClosedDisplayStyle.detailed)
-                    }
-                    .pickerStyle(.segmented)
-                }
-
-                Toggle(lang.t("settings.appearance.hideIdleToEdge"), isOn: Binding(
-                    get: { model.hideIdleIslandToEdge },
-                    set: { model.hideIdleIslandToEdge = $0 }
-                ))
-
-                Text(lang.t("settings.appearance.hideIdleToEdge.help"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if isCustom {
-                Section(lang.t("settings.appearance.preview")) {
-                    notchPreviewCard
-                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                        .listRowBackground(Color.clear)
-                }
-
-                Section(lang.t("settings.appearance.pixelShape")) {
-                    HStack(spacing: 12) {
-                        ForEach(IslandPixelShapeStyle.allCases) { style in
-                            pixelShapeCard(style)
-                        }
-                    }
-
-                    if model.islandPixelShapeStyle == .custom {
-                        HStack(spacing: 12) {
-                            Button(lang.t("settings.appearance.avatar.upload")) {
-                                model.importCustomAvatar()
-                            }
-                            if model.customAvatarImage != nil {
-                                Button(lang.t("settings.appearance.avatar.remove")) {
-                                    model.removeCustomAvatar()
-                                }
-                                .foregroundStyle(.red)
-                            }
-                        }
-
-                        Text(lang.t("settings.appearance.avatar.help"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Section(lang.t("settings.appearance.statusColors")) {
-                    ForEach(SessionPhase.allCases, id: \.self) { phase in
-                        statusColorRow(phase)
-                    }
-                }
-            }
-
-            Section {
-                Text(lang.t("settings.appearance.communityNote"))
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .multilineTextAlignment(.center)
-            }
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .formStyle(.grouped)
+        .background(Color(red: 0.055, green: 0.055, blue: 0.06))
         .navigationTitle(lang.t("settings.tab.appearance"))
     }
 
-    // MARK: - Preview card
+    // MARK: - Preview
 
-    private var notchPreviewCard: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(white: 0.12))
+    @ViewBuilder
+    private var previewSection: some View {
+        sectionHeader(title: lang.t("settings.appearance.preview"), note: nil)
 
-            VStack(spacing: 14) {
-                previewIslandBar
-                previewPhaseSelector
-            }
-            .padding(16)
+        VStack(spacing: 14) {
+            previewStage
+            previewControls
         }
+        .padding(20)
         .frame(maxWidth: .infinity)
-        .frame(height: 140)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(red: 0.1, green: 0.1, blue: 0.115))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.white.opacity(0.06), lineWidth: 1)
+        )
     }
 
-    private var previewIslandBar: some View {
-        if shouldPreviewIdleEdgeOnly {
-            return AnyView(previewIdleEdge)
-        }
+    private var previewStage: some View {
+        let frameW: CGFloat = 420
+        let frameH: CGFloat = 44
+        let physicalNotchW: CGFloat = 180
 
-        let tint = model.statusColor(for: previewPhase)
-        let isDetailed = model.islandClosedDisplayStyle == .detailed
-
-        return AnyView(HStack(spacing: 8) {
-            IslandPixelGlyph(
-                tint: tint,
-                style: model.islandPixelShapeStyle,
-                isAnimating: previewPhase != .completed,
-                customAvatarImage: model.customAvatarImage
+        return ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.16, green: 0.16, blue: 0.19),
+                    Color(red: 0.12, green: 0.12, blue: 0.14),
+                ],
+                startPoint: .top, endPoint: .bottom
             )
 
-            if previewPhase.requiresAttention {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 10.5, weight: .bold))
-                    .foregroundStyle(tint)
+            if previewLayout == .macbook {
+                // Physical hardware notch mock
+                V6ClosedPillShape()
+                    .fill(Color.black)
+                    .frame(width: physicalNotchW, height: 32)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .frame(height: frameH, alignment: .top)
             }
 
-            if isDetailed {
-                Text(phaseTitle(previewPhase))
-                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.92))
-                    .lineLimit(1)
-            }
-
-            Spacer()
-
-            Text("2")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(tint)
-
-            if isDetailed {
-                Text(lang.t("settings.appearance.preview.sessions"))
-                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.72))
+            TimelineView(.periodic(from: .now, by: 0.25)) { context in
+                IslandPreviewPill(
+                    mode: previewMode,
+                    label: previewLabel,
+                    rightSlot: previewRightContent,
+                    layout: previewLayout,
+                    physicalNotchWidth: physicalNotchW,
+                    now: context.date
+                )
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 10)
-        .background(Color.black, in: RoundedRectangle(cornerRadius: 18, style: .continuous)))
+        .frame(width: frameW, height: frameH)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.white.opacity(0.05), lineWidth: 1)
+        )
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
-    private var shouldPreviewIdleEdgeOnly: Bool {
-        model.hideIdleIslandToEdge && previewPhase == .running
-    }
-
-    private var previewIdleEdge: some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: 0)
-            Capsule()
-                .fill(Color.black)
-                .frame(height: 4)
-                .overlay {
-                    Capsule()
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                }
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private var previewPhaseSelector: some View {
-        HStack(spacing: 8) {
-            ForEach(SessionPhase.allCases, id: \.self) { phase in
-                Button {
-                    previewPhase = phase
-                } label: {
-                    Text(phaseTitle(phase))
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundStyle(previewPhase == phase ? .white : .white.opacity(0.5))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(
-                            Capsule().fill(
-                                previewPhase == phase
-                                    ? model.statusColor(for: phase).opacity(0.35)
-                                    : Color.white.opacity(0.06)
-                            )
-                        )
-                }
-                .buttonStyle(.plain)
+    private var previewControls: some View {
+        HStack(spacing: 16) {
+            // Layout toggle
+            Picker("", selection: $previewLayout) {
+                Text(lang.t("settings.appearance.preview.external")).tag(V6ClosedLayout.external)
+                Text(lang.t("settings.appearance.preview.macbook")).tag(V6ClosedLayout.macbook)
             }
-        }
-    }
-
-    // MARK: - Status color row
-
-    private func statusColorRow(_ phase: SessionPhase) -> some View {
-        HStack(spacing: 12) {
-            Circle()
-                .fill(model.statusColor(for: phase))
-                .frame(width: 10, height: 10)
-
-            Text(phaseTitle(phase))
-
-            Spacer()
-
-            Text(model.statusColorHexes[phase] ?? "#6E9FFF")
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(.secondary)
-
-            ColorPicker(
-                "",
-                selection: Binding(
-                    get: { model.statusColor(for: phase) },
-                    set: { model.setStatusColor($0, for: phase) }
-                ),
-                supportsOpacity: false
-            )
             .labelsHidden()
+            .pickerStyle(.segmented)
+            .frame(width: 220)
+
+            Spacer()
+
+            // State toggle
+            ForEach([UnifiedBars.Mode.idle, .running, .waiting, .done], id: \.self) { mode in
+                monoChip(title: title(for: mode), selected: previewMode == mode) {
+                    previewMode = mode
+                }
+            }
         }
     }
 
-    // MARK: - Pixel shape card
+    // MARK: - 01 · Right slot
 
-    private func pixelShapeCard(_ style: IslandPixelShapeStyle) -> some View {
-        let selected = model.islandPixelShapeStyle == style
+    @ViewBuilder
+    private var rightSlotSection: some View {
+        sectionHeader(
+            title: lang.t("settings.appearance.rightSlot.title"),
+            note: lang.t("settings.appearance.rightSlot.note")
+        )
+
+        HStack(spacing: 12) {
+            rightSlotCard(.count,  icon: { CountBadgePreview(count: 3) },
+                          title: lang.t("settings.appearance.rightSlot.count"))
+            rightSlotCard(.agents, icon: { AgentDotsPreview(colors: previewAgentColors) },
+                          title: lang.t("settings.appearance.rightSlot.agents"))
+            rightSlotCard(.time,   icon: { TimeLeftPreview(text: "2m") },
+                          title: lang.t("settings.appearance.rightSlot.time"))
+            rightSlotCard(.none,   icon: { Text("—")
+                                      .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                                      .foregroundStyle(V6Palette.paper.opacity(0.5)) },
+                          title: lang.t("settings.appearance.rightSlot.none"))
+        }
+    }
+
+    private func rightSlotCard<Content: View>(
+        _ option: IslandRightSlot,
+        @ViewBuilder icon: () -> Content,
+        title: String
+    ) -> some View {
+        let selected = model.islandRightSlot == option
         return Button {
-            if style == .custom && model.customAvatarImage == nil {
-                model.importCustomAvatar()
-            } else {
-                model.islandPixelShapeStyle = style
-            }
+            model.islandRightSlot = option
         } label: {
-            VStack(spacing: 8) {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.white.opacity(0.05))
-                    .frame(height: 48)
-                    .overlay {
-                        if style == .custom {
-                            if let avatar = model.customAvatarImage {
-                                Image(nsImage: avatar)
-                                    .resizable()
-                                    .interpolation(.high)
-                                    .scaledToFill()
-                                    .frame(width: 28, height: 28)
-                                    .clipShape(Circle())
-                            } else {
-                                Image(systemName: "person.crop.circle.badge.plus")
-                                    .font(.system(size: 20))
-                                    .foregroundStyle(.secondary)
-                            }
-                        } else {
-                            IslandPixelGlyph(
-                                tint: model.statusColor(for: previewPhase),
-                                style: style,
-                                isAnimating: previewPhase != .completed,
-                                width: 30,
-                                height: 18
-                            )
-                        }
-                    }
+            VStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.white.opacity(0.04))
+                    icon()
+                }
+                .frame(height: 56)
 
-                Text(pixelShapeTitle(style))
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(.primary)
+                Text(title)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.85))
             }
-            .padding(10)
+            .padding(12)
             .frame(maxWidth: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.white.opacity(selected ? 0.06 : 0.02))
+                    .fill(Color.white.opacity(selected ? 0.07 : 0.02))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(
-                        selected ? Color.accentColor : Color.white.opacity(0.08),
-                        lineWidth: selected ? 2 : 1
+                        selected ? V6Palette.paper.opacity(0.9) : Color.white.opacity(0.08),
+                        lineWidth: selected ? 1.5 : 1
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - 02 · Center label
+
+    @ViewBuilder
+    private var centerLabelSection: some View {
+        sectionHeader(
+            title: lang.t("settings.appearance.centerLabel.title"),
+            note: lang.t("settings.appearance.centerLabel.note")
+        )
+
+        HStack(spacing: 12) {
+            centerLabelCard(.agentAction, sample: "Claude · editing")
+            centerLabelCard(.sessionName,  sample: "open-island")
+            centerLabelCard(.off,          sample: "—")
+        }
+    }
+
+    private func centerLabelCard(_ option: IslandCenterLabel, sample: String) -> some View {
+        let selected = model.islandCenterLabel == option
+        let title: String = switch option {
+        case .agentAction: lang.t("settings.appearance.centerLabel.agentAction")
+        case .sessionName: lang.t("settings.appearance.centerLabel.sessionName")
+        case .off:         lang.t("settings.appearance.centerLabel.off")
+        }
+        return Button {
+            model.islandCenterLabel = option
+        } label: {
+            VStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.white.opacity(0.04))
+                    Text(sample)
+                        .font(.system(size: 11.5, weight: .medium, design: .monospaced))
+                        .foregroundStyle(V6Palette.paper.opacity(option == .off ? 0.4 : 0.9))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .padding(.horizontal, 12)
+                }
+                .frame(height: 56)
+
+                Text(title)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.85))
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(selected ? 0.07 : 0.02))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(
+                        selected ? V6Palette.paper.opacity(0.9) : Color.white.opacity(0.08),
+                        lineWidth: selected ? 1.5 : 1
                     )
             )
         }
@@ -297,21 +240,110 @@ struct AppearanceSettingsPane: View {
 
     // MARK: - Helpers
 
-    private func phaseTitle(_ phase: SessionPhase) -> String {
-        switch phase {
-        case .running:            lang.t("settings.appearance.status.running")
-        case .waitingForApproval: lang.t("settings.appearance.status.approval")
-        case .waitingForAnswer:   lang.t("settings.appearance.status.answer")
-        case .completed:          lang.t("settings.appearance.status.completed")
+    private func sectionHeader(title: String, note: String?) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title.uppercased())
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .tracking(1.2)
+                .foregroundStyle(Color.white.opacity(0.55))
+            if let note {
+                Text(note)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Color.white.opacity(0.38))
+            }
         }
     }
 
-    private func pixelShapeTitle(_ style: IslandPixelShapeStyle) -> String {
-        switch style {
-        case .bars:   lang.t("settings.appearance.pixelShape.bars")
-        case .steps:  lang.t("settings.appearance.pixelShape.steps")
-        case .blocks: lang.t("settings.appearance.pixelShape.blocks")
-        case .custom: lang.t("settings.appearance.pixelShape.custom")
+    private func monoChip(title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .foregroundStyle(selected ? V6Palette.ink : V6Palette.paper.opacity(0.7))
+                .background(
+                    Capsule().fill(
+                        selected ? V6Palette.paper : Color.white.opacity(0.06)
+                    )
+                )
         }
+        .buttonStyle(.plain)
+    }
+
+    private func title(for mode: UnifiedBars.Mode) -> String {
+        switch mode {
+        case .idle:    lang.t("settings.appearance.state.idle")
+        case .running: lang.t("settings.appearance.state.running")
+        case .waiting: lang.t("settings.appearance.state.waiting")
+        case .done:    lang.t("settings.appearance.state.done")
+        }
+    }
+
+    private var previewAgentColors: [Color] {
+        [AgentTool.claudeCode, .codex, .cursor]
+            .map { Color(hex: $0.brandColorHex) ?? .white }
+    }
+
+    private var previewLabel: String? {
+        guard previewLayout == .external,
+              model.islandCenterLabel != .off else { return nil }
+        switch (previewMode, model.islandCenterLabel) {
+        case (.idle, _):           return nil
+        case (.done, _):           return "Commit pushed"
+        case (.waiting, _):        return "Permission needed"
+        case (.running, .agentAction): return "Claude · editing"
+        case (.running, .sessionName): return "open-island"
+        case (.running, .off):         return nil
+        }
+    }
+
+    private var previewRightContent: IslandRightSlotContent? {
+        switch model.islandRightSlot {
+        case .none: return nil
+        case .count: return .count(3)
+        case .agents:
+            return .agents(previewAgentColors)
+        case .time:
+            return previewMode == .waiting ? .time("2m") : .time("1m 24s")
+        }
+    }
+}
+
+// MARK: - Small preview ornaments
+
+private struct CountBadgePreview: View {
+    let count: Int
+    var body: some View {
+        Text("×\(count)")
+            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+            .foregroundStyle(V6Palette.paper)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(
+                Capsule().fill(V6Palette.paper.opacity(0.14))
+            )
+            .overlay(
+                Capsule().stroke(V6Palette.paper.opacity(0.35), lineWidth: 1)
+            )
+    }
+}
+
+private struct AgentDotsPreview: View {
+    let colors: [Color]
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(Array(colors.enumerated()), id: \.offset) { _, color in
+                Circle().fill(color).frame(width: 8, height: 8)
+            }
+        }
+    }
+}
+
+private struct TimeLeftPreview: View {
+    let text: String
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11.5, weight: .medium, design: .monospaced))
+            .foregroundStyle(V6Palette.paper.opacity(0.75))
     }
 }

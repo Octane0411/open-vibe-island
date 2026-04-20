@@ -76,14 +76,6 @@ private let openAnimation = Animation.spring(response: 0.42, dampingFraction: 0.
 private let closeAnimation = Animation.smooth(duration: 0.3)
 private let popAnimation = Animation.spring(response: 0.3, dampingFraction: 0.5)
 
-/// Composite equatable key so `hasClosedPresence` and `expansionWidth` share
-/// a single `.animation(.smooth, value:)` modifier instead of two separate
-/// ones that can conflict when both change simultaneously.
-private struct ClosedPresenceKey: Equatable {
-    var present: Bool
-    var width: CGFloat
-}
-
 private struct ConditionalDrawingGroup: ViewModifier {
     let enabled: Bool
 
@@ -104,11 +96,9 @@ struct IslandPanelView: View {
     private static let headerHorizontalPadding: CGFloat = 18
     private static let headerTopPadding: CGFloat = 2
     private static let notchLaneSafetyInset: CGFloat = 12
-    private static let closedIdleEdgeHeight: CGFloat = 4
 
     var model: AppModel
 
-    @Namespace private var notchNamespace
     @State private var isHovering = false
 
     private var isOpened: Bool {
@@ -130,69 +120,6 @@ struct IslandPanelView: View {
         case .closed:  return closeAnimation
         case .popping: return popAnimation
         }
-    }
-
-    private var closedSpotlightSession: AgentSession? {
-        model.surfacedSessions.first(where: { $0.phase.requiresAttention })
-            ?? model.surfacedSessions.first(where: { $0.phase == .running })
-            ?? model.surfacedSessions.first
-    }
-
-    private var hasClosedPresence: Bool {
-        model.liveSessionCount > 0
-    }
-
-    private var showsIdleEdgeWhenCollapsed: Bool {
-        model.showsIdleEdgeWhenCollapsed
-    }
-
-    /// Whether any session has activity worth showing in the closed notch
-    private var hasClosedActivity: Bool {
-        guard let session = closedSpotlightSession else {
-            return false
-        }
-        return session.phase == .running || session.phase.requiresAttention
-    }
-
-    /// Scout icon tint: blue if any running, green if any live, else gray.
-    private var scoutTint: Color {
-        if model.isCustomAppearance, let phase = closedSpotlightSession?.phase {
-            return model.statusColor(for: phase)
-        }
-        let sessions = model.surfacedSessions
-        if sessions.contains(where: { $0.phase == .running }) {
-            return Color(red: 0.43, green: 0.62, blue: 1.0) // #6E9FFF working blue
-        }
-        if !sessions.isEmpty {
-            return Color(red: 0.26, green: 0.91, blue: 0.42) // #42E86B idle green
-        }
-        return Color.white.opacity(0.4) // gray
-    }
-
-    private var countBadgeWidth: CGFloat {
-        let digits = max(1, "\(model.liveSessionCount)".count)
-        return CGFloat(26 + max(0, digits - 1) * 8)
-    }
-
-    private var expansionWidth: CGFloat {
-        guard !showsIdleEdgeWhenCollapsed else { return 0 }
-        guard hasClosedPresence else { return 0 }
-        let hasPending = closedSpotlightSession?.phase.requiresAttention == true
-        let leftWidth = sideWidth + 8 + (hasPending ? 18 : 0)
-        let rightWidth = max(sideWidth, countBadgeWidth) + (hasPending ? 18 : 0)
-        return leftWidth + rightWidth + 16 + (hasPending ? 6 : 0)
-    }
-
-    /// Composite key combining `hasClosedPresence` and `expansionWidth` so a
-    /// single `.animation(.smooth)` modifier drives both values.  Previously
-    /// they had two separate `.animation(.smooth, value:)` modifiers that
-    /// could conflict when they changed in the same runloop pass.
-    private var closedPresenceAnimationKey: ClosedPresenceKey {
-        ClosedPresenceKey(present: hasClosedPresence, width: expansionWidth)
-    }
-
-    private var sideWidth: CGFloat {
-        max(0, closedNotchHeight - 12) + 10
     }
 
     private var targetOverlayScreen: NSScreen? {
@@ -246,80 +173,27 @@ struct IslandPanelView: View {
         let layoutWidth = max(0, availableSize.width - (panelShadowHorizontalInset * 2))
         let layoutHeight = max(0, availableSize.height - panelShadowBottomInset)
 
-        // Opened dimensions: fill the layout area with outer padding.
         let outerHorizontalPadding: CGFloat = 28
         let outerBottomPadding: CGFloat = 14
         let openedWidth = max(0, layoutWidth - outerHorizontalPadding)
         let openedHeight = max(closedNotchHeight, layoutHeight - outerBottomPadding)
 
-        // Closed dimensions: sized to the actual notch + session indicators.
-        let closedTotalWidth = closedNotchWidth + expansionWidth + (isPopping ? 18 : 0)
-        let closedTotalHeight = closedNotchHeight
-
-        let currentWidth = usesOpenedVisualState ? openedWidth : closedTotalWidth
-        let currentHeight = usesOpenedVisualState ? openedHeight : closedTotalHeight
-        let horizontalInset = usesOpenedVisualState ? 14.0 : 0.0
-        let bottomInset = usesOpenedVisualState ? 14.0 : 0.0
-        let surfaceWidth = currentWidth + (horizontalInset * 2)
-        let surfaceHeight = currentHeight + bottomInset
-        let surfaceShape = NotchShape(
-            topCornerRadius: usesOpenedVisualState ? NotchShape.openedTopRadius : NotchShape.closedTopRadius,
-            bottomCornerRadius: usesOpenedVisualState ? NotchShape.openedBottomRadius : NotchShape.closedBottomRadius
-        )
-        let hidesClosedSurfaceChrome = showsIdleEdgeWhenCollapsed && !usesOpenedVisualState
-        let idleEdgeWidth = closedNotchWidth + (isPopping ? 18 : 0)
-
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
-                surfaceShape
-                    .fill(Color.black.opacity(hidesClosedSurfaceChrome ? 0 : 1))
-                    .frame(width: surfaceWidth, height: surfaceHeight)
-
-                VStack(spacing: 0) {
-                    headerRow
-                        .frame(height: closedNotchHeight)
-                        .opacity(hidesClosedSurfaceChrome ? 0 : 1)
-
-                    openedContent
-                        .frame(width: openedWidth - 24)
-                        .frame(maxHeight: usesOpenedVisualState ? currentHeight - closedNotchHeight - 12 : 0, alignment: .top)
-                        .opacity(usesOpenedVisualState ? 1 : 0)
-                        .clipped()
-                }
-                .frame(width: currentWidth, height: currentHeight, alignment: .top)
-                .padding(.horizontal, horizontalInset)
-                .padding(.bottom, bottomInset)
-                .clipShape(surfaceShape)
-                .overlay(alignment: .top) {
-                    // Black strip to blend with physical notch at the very top
-                    Rectangle()
-                        .fill(Color.black)
-                        .frame(height: 1)
-                        .padding(.horizontal, usesOpenedVisualState ? NotchShape.openedTopRadius : NotchShape.closedTopRadius)
-                        .opacity(hidesClosedSurfaceChrome ? 0 : 1)
-                }
-                .overlay {
-                    surfaceShape
-                        .stroke(Color.white.opacity(hidesClosedSurfaceChrome ? 0 : (usesOpenedVisualState ? 0.07 : 0.04)), lineWidth: 1)
-                }
-                .overlay(alignment: .top) {
-                    Capsule()
-                        .fill(Color.black)
-                        .frame(width: idleEdgeWidth, height: Self.closedIdleEdgeHeight)
-                        .overlay {
-                            Capsule()
-                                .stroke(Color.white.opacity(0.05), lineWidth: 1)
-                        }
-                        .opacity(showsIdleEdgeWhenCollapsed ? 1 : 0)
+                if usesOpenedVisualState {
+                    openedSurface(width: openedWidth, height: openedHeight)
+                        .transition(.opacity)
+                } else {
+                    v6ClosedSurface()
+                        .transition(.opacity)
                 }
             }
-            .frame(width: surfaceWidth, height: surfaceHeight, alignment: .top)
+            .frame(maxWidth: .infinity, alignment: .top)
         }
         .scaleEffect(usesOpenedVisualState ? 1 : (isHovering ? IslandChromeMetrics.closedHoverScale : 1), anchor: .top)
         .padding(.horizontal, panelShadowHorizontalInset)
         .padding(.bottom, panelShadowBottomInset)
         .animation(notchTransitionAnimation, value: model.notchStatus)
-        .animation(.smooth, value: closedPresenceAnimationKey)
         .contentShape(Rectangle())
         .onHover { hovering in
             withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {
@@ -333,6 +207,70 @@ struct IslandPanelView: View {
         }
     }
 
+    // MARK: - v6 closed surface
+
+    /// Closed island per v6 spec. Renders the flat-top pill with the
+    /// UnifiedBars glyph, respecting the user's right-slot / center-label
+    /// preferences. Refreshes every 0.5s so time-left right-slot stays
+    /// live without forcing a redraw on every bar-animation tick.
+    @ViewBuilder
+    private func v6ClosedSurface() -> some View {
+        TimelineView(.periodic(from: .now, by: 0.5)) { context in
+            let layout: V6ClosedLayout = isExternalDisplayPlacement ? .external : .macbook
+            let physicalNotchWidth: CGFloat = targetOverlayScreen?.notchSize.width ?? 180
+            V6ClosedPill(
+                mode: model.islandClosedMode,
+                label: layout == .external ? model.islandClosedLabel() : nil,
+                rightSlot: model.islandClosedRightSlotContent(now: context.date),
+                layout: layout,
+                height: closedNotchHeight,
+                physicalNotchWidth: layout == .macbook ? physicalNotchWidth : 0,
+                minWidth: 70
+            )
+            .scaleEffect(isPopping ? 1.04 : 1, anchor: .top)
+            .animation(popAnimation, value: isPopping)
+        }
+    }
+
+    // MARK: - Opened surface
+
+    @ViewBuilder
+    private func openedSurface(width openedWidth: CGFloat, height openedHeight: CGFloat) -> some View {
+        let horizontalInset = 14.0
+        let bottomInset = 14.0
+        let surfaceWidth = openedWidth + (horizontalInset * 2)
+        let surfaceHeight = openedHeight + bottomInset
+        let surfaceShape = NotchShape(
+            topCornerRadius: NotchShape.openedTopRadius,
+            bottomCornerRadius: NotchShape.openedBottomRadius
+        )
+
+        ZStack(alignment: .top) {
+            surfaceShape
+                .fill(V6Palette.ink)
+                .frame(width: surfaceWidth, height: surfaceHeight)
+
+            VStack(spacing: 0) {
+                openedHeaderContent
+                    .frame(height: closedNotchHeight)
+
+                openedContent
+                    .frame(width: openedWidth - 24)
+                    .frame(maxHeight: max(0, openedHeight - closedNotchHeight - 12), alignment: .top)
+                    .clipped()
+            }
+            .frame(width: openedWidth, height: openedHeight, alignment: .top)
+            .padding(.horizontal, horizontalInset)
+            .padding(.bottom, bottomInset)
+            .clipShape(surfaceShape)
+            .overlay {
+                surfaceShape
+                    .stroke(Color.white.opacity(0.07), lineWidth: 1)
+            }
+        }
+        .frame(width: surfaceWidth, height: surfaceHeight, alignment: .top)
+    }
+
     // MARK: - Closed state
 
     private var closedNotchWidth: CGFloat {
@@ -341,71 +279,6 @@ struct IslandPanelView: View {
 
     private var closedNotchHeight: CGFloat {
         (targetOverlayScreen ?? NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }))?.islandClosedHeight ?? 24
-    }
-
-    // MARK: - Header row (shared between closed and opened)
-
-    @ViewBuilder
-    private var headerRow: some View {
-        if usesOpenedVisualState {
-            openedHeaderContent
-                .frame(height: closedNotchHeight)
-        } else {
-            HStack(spacing: 0) {
-                if hasClosedPresence {
-                    HStack(spacing: 4) {
-                        if model.isCustomAppearance {
-                            IslandPixelGlyph(
-                                tint: scoutTint,
-                                style: model.islandPixelShapeStyle,
-                                isAnimating: hasClosedActivity,
-                                customAvatarImage: model.customAvatarImage
-                            )
-                            .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
-                        } else {
-                            OpenIslandIcon(size: 14, isAnimating: hasClosedActivity, tint: scoutTint)
-                                .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
-                        }
-
-                        if closedSpotlightSession?.phase.requiresAttention == true {
-                            AttentionIndicator(
-                                size: 14,
-                                color: phaseColor(closedSpotlightSession?.phase ?? .running)
-                            )
-                        }
-                    }
-                    .frame(width: sideWidth + 8 + (closedSpotlightSession?.phase.requiresAttention == true ? 18 : 0))
-                }
-
-                if !hasClosedPresence {
-                    Rectangle()
-                        .fill(Color.clear)
-                        .frame(width: closedNotchWidth - 20)
-                } else {
-                    Rectangle()
-                        .fill(Color.black)
-                        .frame(width: closedNotchWidth - NotchShape.closedTopRadius + (isPopping ? 18 : 0))
-                        .overlay(
-                            CentralActivityLabel(
-                                toolName: closedSpotlightSession?.currentToolName,
-                                preview: closedSpotlightSession?.currentCommandPreviewText,
-                                isVisible: isExternalDisplayPlacement && hasClosedPresence
-                            )
-                        )
-                }
-
-                if hasClosedPresence {
-                    let attentionBalanceWidth: CGFloat = closedSpotlightSession?.phase.requiresAttention == true ? 18 : 0
-                    ClosedCountBadge(
-                        liveCount: model.liveSessionCount,
-                        tint: closedSpotlightSession?.phase.requiresAttention == true ? .orange : scoutTint
-                    )
-                    .matchedGeometryEffect(id: "right-indicator", in: notchNamespace, isSource: true)
-                    .frame(width: max(sideWidth, countBadgeWidth) + attentionBalanceWidth)
-                }
-            }
-            .frame(height: closedNotchHeight)
-        }
     }
 
     @ViewBuilder
@@ -662,22 +535,6 @@ struct IslandPanelView: View {
     }
 
     // MARK: - Helpers
-
-    private var surfaceFill: some ShapeStyle {
-        Color.black
-    }
-
-    private func phaseColor(_ phase: SessionPhase) -> Color {
-        if model.isCustomAppearance {
-            return model.statusColor(for: phase)
-        }
-        return switch phase {
-        case .running: .mint
-        case .waitingForApproval: .orange
-        case .waitingForAnswer: .yellow
-        case .completed: .blue
-        }
-    }
 
     @ViewBuilder
     private var openedUsageSummary: some View {
@@ -1907,155 +1764,6 @@ private struct IslandWideButtonStyle: ButtonStyle {
         case .danger:
             return Color(red: 0.82, green: 0.22, blue: 0.22).opacity(pressedFactor)
         }
-    }
-}
-
-// MARK: - Open Island icon (left side of closed notch)
-
-private struct OpenIslandIcon: View {
-    let size: CGFloat
-    var isAnimating: Bool = false
-    var tint: Color = .mint
-
-    var body: some View {
-        OpenIslandBrandMark(
-            size: size,
-            tint: tint,
-            isAnimating: isAnimating,
-            style: .duotone
-        )
-    }
-}
-
-// MARK: - Attention indicator (permission/question dot)
-
-private struct AttentionIndicator: View {
-    let size: CGFloat
-    let color: Color
-
-    var body: some View {
-        Image(systemName: "exclamationmark.triangle.fill")
-            .font(.system(size: size * 0.75, weight: .bold))
-            .foregroundStyle(color)
-    }
-}
-
-// MARK: - Closed count badge (right side of closed notch)
-
-private struct ClosedCountBadge: View {
-    let liveCount: Int
-    let tint: Color
-
-    var body: some View {
-        Text("\(liveCount)")
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(tint)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 2)
-            .background(Color(red: 0.14, green: 0.14, blue: 0.15), in: Capsule())
-    }
-}
-
-// MARK: - Central activity overlay (external-display only)
-
-/// Renders the focus session's current tool call inside the central black
-/// rectangle of the closed island. The notch on built-in displays physically
-/// covers this area, so we gate rendering on `placementMode == .topBar`.
-///
-/// State machine: while a tool is active the label tracks it live. When the
-/// tool clears (PostToolUse fires or metadata drops the field), the last
-/// value lingers for `fadeDelay` then disappears.
-private struct CentralActivityLabel: View {
-    let toolName: String?
-    let preview: String?
-    let isVisible: Bool
-
-    @State private var displayed: DisplayedActivity?
-
-    private static let fadeDelay: Duration = .seconds(2)
-
-    struct DisplayedActivity: Equatable {
-        var tool: String
-        var preview: String?
-    }
-
-    var body: some View {
-        Group {
-            if isVisible, let displayed {
-                HStack(spacing: 4) {
-                    Image(systemName: Self.icon(for: displayed.tool))
-                        .font(.system(size: 9, weight: .semibold))
-                    Text(Self.label(for: displayed))
-                        .font(.system(size: 10, weight: .semibold))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-                .foregroundStyle(.white.opacity(0.85))
-                .padding(.horizontal, 8)
-                .transition(.opacity.combined(with: .scale(scale: 0.96)))
-            }
-        }
-        .animation(.easeOut(duration: 0.22), value: displayed)
-        .onChange(of: trackingKey, initial: true) { _, _ in
-            sync()
-        }
-        .task(id: clearTaskID) {
-            guard toolName == nil, displayed != nil else { return }
-            do {
-                try await Task.sleep(for: Self.fadeDelay)
-                displayed = nil
-            } catch {
-                // cancelled — a new tool arrived, let sync() handle it
-            }
-        }
-    }
-
-    /// Composite key so `.onChange` fires on either tool or preview change.
-    private var trackingKey: String {
-        "\(toolName ?? "")|\(preview ?? "")"
-    }
-
-    /// Key used to (re)start the clear timer. Changes whenever we transition
-    /// between active/idle so `.task(id:)` cancels and restarts cleanly.
-    private var clearTaskID: String {
-        toolName == nil ? "clearing-\(displayed?.tool ?? "")" : "active-\(toolName ?? "")"
-    }
-
-    private func sync() {
-        if let toolName, !toolName.isEmpty {
-            displayed = DisplayedActivity(tool: toolName, preview: preview)
-        }
-    }
-
-    private static func label(for activity: DisplayedActivity) -> String {
-        if let preview = activity.preview?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !preview.isEmpty {
-            return "\(activity.tool) · \(preview)"
-        }
-        return activity.tool
-    }
-
-    private static func icon(for tool: String) -> String {
-        let lower = tool.lowercased()
-        if lower.contains("grep") || lower.contains("search") || lower.contains("glob") {
-            return "magnifyingglass"
-        }
-        if lower.contains("edit") || lower.contains("write") {
-            return "pencil"
-        }
-        if lower.contains("bash") || lower.contains("shell") || lower.contains("exec") || lower.contains("run") {
-            return "terminal"
-        }
-        if lower.contains("read") {
-            return "doc.text"
-        }
-        if lower.contains("web") || lower.contains("fetch") {
-            return "globe"
-        }
-        if lower.contains("task") || lower.contains("agent") || lower.contains("subagent") {
-            return "sparkles"
-        }
-        return "wrench.and.screwdriver"
     }
 }
 

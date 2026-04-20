@@ -70,6 +70,25 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             false
         }
     }
+
+    /// Per-tool brand color used by the closed island right-slot "agents"
+    /// variant (and reused by v7 session rows / notifications later).
+    /// Palette is hard-coded from the v6 Claude Design handoff so every
+    /// surface that tags an agent by color agrees.
+    public var brandColorHex: String {
+        switch self {
+        case .claudeCode: "#d97742"
+        case .codex:      "#4aa3df"
+        case .cursor:     "#7a5cff"
+        case .geminiCLI:  "#42e86b"
+        case .openCode:   "#ffb547"
+        case .qoder:      "#ff6b9f"
+        case .qwenCode:   "#c084fc"
+        case .factory:    "#6e9fff"
+        case .codebuddy:  "#fca5a5"
+        case .kimiCLI:    "#fde047"
+        }
+    }
 }
 
 public enum SessionOrigin: String, Codable, Sendable {

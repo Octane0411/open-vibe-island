@@ -20,27 +20,26 @@ enum TrackedEventIngress {
     case rollout
 }
 
-// MARK: - Island appearance
+// MARK: - v6 island preferences
 
-enum IslandAppearanceMode: String, CaseIterable, Identifiable {
-    case `default`
-    case custom
-
-    var id: String { rawValue }
-}
-
-enum IslandClosedDisplayStyle: String, CaseIterable, Identifiable {
-    case minimal
-    case detailed
+/// What the closed island renders in the right slot. Chosen in the
+/// Personalization tab; the pill layout only varies by content width.
+enum IslandRightSlot: String, CaseIterable, Identifiable, Sendable {
+    case count   // "×N" badge
+    case agents  // colored dot stack, one per active agent tool
+    case time    // mono countdown for the waiting session
+    case none    // pill collapses — useful if you just want the bars
 
     var id: String { rawValue }
 }
 
-enum IslandPixelShapeStyle: String, CaseIterable, Identifiable {
-    case bars
-    case steps
-    case blocks
-    case custom
+/// What the closed island renders in the center label (external displays
+/// only — on MacBook the physical notch covers this space so we suppress
+/// the label regardless).
+enum IslandCenterLabel: String, CaseIterable, Identifiable, Sendable {
+    case sessionName  // e.g. "open-island"
+    case agentAction  // e.g. "Claude · editing"
+    case off
 
     var id: String { rawValue }
 }

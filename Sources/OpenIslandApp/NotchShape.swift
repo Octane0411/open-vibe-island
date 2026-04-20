@@ -63,14 +63,12 @@ struct NotchShape: Shape {
 }
 
 extension NotchShape {
-    static let closedTopRadius: CGFloat = 6
-    static let closedBottomRadius: CGFloat = 20
+    /// The opened island uses a concave-top-corner notch shape so it blends
+    /// with the physical MacBook notch on built-in displays. The closed
+    /// state no longer uses this shape — it renders via `V6ClosedPillShape`
+    /// instead.
     static let openedTopRadius: CGFloat = 22
     static let openedBottomRadius: CGFloat = 36
-
-    static var closed: NotchShape {
-        NotchShape(topCornerRadius: closedTopRadius, bottomCornerRadius: closedBottomRadius)
-    }
 
     static var opened: NotchShape {
         NotchShape(topCornerRadius: openedTopRadius, bottomCornerRadius: openedBottomRadius)

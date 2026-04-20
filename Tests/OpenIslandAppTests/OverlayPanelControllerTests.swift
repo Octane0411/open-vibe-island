@@ -46,47 +46,37 @@ struct OverlayPanelControllerTests {
     }
 
     @Test
-    func hiddenIdleEdgeClosedWidthStaysAtNotchWidth() {
+    func notchedDisplayClosedWidthWrapsPhysicalNotchWithFixedReserve() {
+        // v6 MacBook layout: outer width = 44 + physical notch + 44.
         let width = OverlayPanelController.closedPanelWidth(
             notchWidth: 224,
-            notchHeight: 38,
-            liveSessionCount: 3,
-            hasAttention: true,
-            notchStatus: .closed,
-            showsIdleEdgeWhenCollapsed: true
+            isNotchedDisplay: true,
+            notchStatus: .closed
         )
-
-        #expect(width == 224)
+        #expect(width == CGFloat(224 + 88))
     }
 
     @Test
-    func regularClosedWidthStillIncludesSessionIndicators() {
+    func externalDisplayClosedWidthUsesFixedHitArea() {
+        // v6 external layout: fluid in SwiftUI, but the controller uses a
+        // generous fixed hit-area so hover/click works without knowing the
+        // live content width.
         let width = OverlayPanelController.closedPanelWidth(
-            notchWidth: 224,
-            notchHeight: 38,
-            liveSessionCount: 3,
-            hasAttention: true,
-            notchStatus: .closed,
-            showsIdleEdgeWhenCollapsed: false
+            notchWidth: 0,
+            isNotchedDisplay: false,
+            notchStatus: .closed
         )
-
-        // 344 + 18 (attention balance on right side keeps center rect aligned with physical notch)
-        #expect(width == 362)
+        #expect(width == CGFloat(360))
     }
 
     @Test
-    func hiddenIdleEdgeHoverRectAnchorsToTopOfClosedArea() {
-        let notchRect = NSRect(x: 400, y: 1_000, width: 224, height: 38)
-
-        let rect = OverlayPanelController.hiddenIdleEdgeHoverRect(
-            notchRect: notchRect,
-            closedWidth: 224,
-            hoverHitHeight: 8
+    func poppingStatusAddsHoverBudget() {
+        let width = OverlayPanelController.closedPanelWidth(
+            notchWidth: 224,
+            isNotchedDisplay: true,
+            notchStatus: .popping
         )
-
-        #expect(rect.minX == 400)
-        #expect(rect.maxY == notchRect.maxY)
-        #expect(rect.height == 8)
+        #expect(width == CGFloat(224 + 88 + 18))
     }
 
     @Test

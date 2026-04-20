@@ -44,34 +44,26 @@
 "settings.general.languageChinese" = "简体中文";
 "settings.general.languageTraditionalChinese" = "繁體中文";
 
-/* Settings - Appearance */
+/* Settings - Personalization (v6) */
 "settings.tab.appearance" = "个性化";
-"settings.appearance.mode" = "模式";
-"settings.appearance.mode.default" = "默认";
-"settings.appearance.mode.custom" = "自定义";
-"settings.appearance.mode.defaultDesc" = "使用内置的岛屿外观。切换到自定义可个性化颜色、图形样式和布局。";
 "settings.appearance.preview" = "预览";
-"settings.appearance.preview.sessions" = "个会话";
-"settings.appearance.style" = "样式";
-"settings.appearance.closedStyle" = "收起样式";
-"settings.appearance.style.minimal" = "简洁";
-"settings.appearance.style.detailed" = "详细";
-"settings.appearance.hideIdleToEdge" = "空闲时隐藏到黑边";
-"settings.appearance.hideIdleToEdge.help" = "当岛处于收起状态且没有活跃通知卡片时，只保留一条细黑边。鼠标悬停或点击仍可展开。";
-"settings.appearance.pixelShape" = "像素图形";
-"settings.appearance.pixelShape.bars" = "猫咪";
-"settings.appearance.pixelShape.steps" = "阶梯";
-"settings.appearance.pixelShape.blocks" = "方块";
-"settings.appearance.pixelShape.custom" = "自定义";
-"settings.appearance.avatar.upload" = "上传图片";
-"settings.appearance.avatar.remove" = "移除";
-"settings.appearance.avatar.help" = "支持 PNG、JPEG、HEIC、TIFF，最大 10 MB。";
-"settings.appearance.statusColors" = "状态颜色";
-"settings.appearance.status.running" = "运行中";
-"settings.appearance.status.approval" = "等待审批";
-"settings.appearance.status.answer" = "等待回答";
-"settings.appearance.status.completed" = "已完成";
-"settings.appearance.communityNote" = "这里的大部分内容由社区构建。\n有自己的 vibe？欢迎提 PR。";
+"settings.appearance.preview.external" = "外接屏";
+"settings.appearance.preview.macbook" = "MacBook";
+"settings.appearance.state.idle" = "空闲";
+"settings.appearance.state.running" = "运行";
+"settings.appearance.state.waiting" = "等待";
+"settings.appearance.state.done" = "完成";
+"settings.appearance.rightSlot.title" = "01 · 右槽";
+"settings.appearance.rightSlot.note" = "收起状态下 notch 右侧显示的内容。";
+"settings.appearance.rightSlot.count" = "会话数";
+"settings.appearance.rightSlot.agents" = "Agents";
+"settings.appearance.rightSlot.time" = "剩余时长";
+"settings.appearance.rightSlot.none" = "不显示";
+"settings.appearance.centerLabel.title" = "02 · 中央标签";
+"settings.appearance.centerLabel.note" = "仅外接屏显示 — MacBook 的物理刘海会遮挡中央区域。";
+"settings.appearance.centerLabel.agentAction" = "Agent · 动作";
+"settings.appearance.centerLabel.sessionName" = "会话名";
+"settings.appearance.centerLabel.off" = "关闭";
 
 /* Settings - Display */
 "settings.display.monitor" = "显示器";
