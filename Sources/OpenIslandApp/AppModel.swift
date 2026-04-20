@@ -1232,6 +1232,7 @@ final class AppModel {
                 case let .openCodeSessionMetadataUpdated(p): return p.sessionID
                 case let .cursorSessionMetadataUpdated(p): return p.sessionID
                 case let .actionableStateResolved(p): return p.sessionID
+                case let .claudeProcessExited(p): return p.sessionID
                 }
             }()
             let session = eventSessionID.flatMap { state.session(id: $0) }
@@ -1505,6 +1506,8 @@ final class AppModel {
             return payload.cursorMetadata.lastAssistantMessage ?? "Cursor session metadata updated."
         case let .actionableStateResolved(payload):
             return "Actionable state resolved for session \(payload.sessionID)."
+        case let .claudeProcessExited(payload):
+            return "Claude process exited for session \(payload.sessionID)."
         }
     }
 

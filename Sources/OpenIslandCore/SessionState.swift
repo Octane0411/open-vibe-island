@@ -177,6 +177,16 @@ public struct SessionState: Equatable, Sendable {
             session.updatedAt = payload.timestamp
             upsert(session)
 
+        case let .claudeProcessExited(payload):
+            guard var session = sessionsByID[payload.sessionID] else { return }
+            guard !session.isSessionEnded else { return }
+            session.isSessionEnded = true
+            session.phase = .completed
+            session.isProcessAlive = false
+            session.updatedAt = payload.timestamp
+            session.processNotSeenCount = 0
+            upsert(session)
+
         case let .geminiSessionMetadataUpdated(payload):
             guard var session = sessionsByID[payload.sessionID] else {
                 return
@@ -375,6 +385,16 @@ public struct SessionState: Equatable, Sendable {
             // cleaned up.
             if session.isHookManaged {
                 if session.isSessionEnded {
+                    continue
+                }
+
+                if session.tool == .claudeCode {
+                    // Lifecycle is driven by hook events + ClaudePIDMonitor exit signals.
+                    // ps/lsof is unreliable under load and must not evict healthy sessions.
+                    if aliveSessionIDs.contains(id) {
+                        session.processNotSeenCount = 0
+                        upsert(session)
+                    }
                     continue
                 }
 

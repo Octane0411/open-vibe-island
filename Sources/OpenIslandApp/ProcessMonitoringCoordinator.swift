@@ -252,6 +252,8 @@ final class ProcessMonitoringCoordinator {
             payload.sessionID
         case let .actionableStateResolved(payload):
             payload.sessionID
+        case let .claudeProcessExited(payload):
+            payload.sessionID
         }
     }
 
