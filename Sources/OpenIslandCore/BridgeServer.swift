@@ -2303,9 +2303,10 @@ public final class BridgeServer: @unchecked Sendable {
                 ? .codexHookDirective(.permissionRequest(.allow))
                 : .codexHookDirective(.permissionRequest(.deny(message: denyReason)))
         case .sessionStart, .userPromptSubmit, .postToolUse, .stop:
-            response = approved
-                ? .acknowledged
-                : .codexHookDirective(.deny(reason: denyReason))
+            assertionFailure("Unexpected pending approval event: \(pendingApproval.hookEventName.rawValue)")
+            // This branch should be unreachable because only PreToolUse/PermissionRequest register approvals.
+            // Fail open with acknowledged so Codex never receives a mismatched directive payload.
+            response = .acknowledged
         }
 
         send(.response(response), to: pendingApproval.clientID)

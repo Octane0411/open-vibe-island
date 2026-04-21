@@ -59,6 +59,8 @@ public enum CodexHookInstaller {
     public static let managedStatusMessage = "Managed by Open Island"
     public static let legacyManagedStatusMessage = "Managed by Vibe Island"
     public static let managedTimeout = 45
+    // Intentionally above OpenIslandHooksCLI.interactiveCodexHookTimeout (3500) so the CLI can
+    // fail open first instead of waiting for the full Codex-managed window.
     public static let managedInteractiveTimeout = 3600
 
     // Keep the managed Codex install low-noise while still surfacing approval prompts.

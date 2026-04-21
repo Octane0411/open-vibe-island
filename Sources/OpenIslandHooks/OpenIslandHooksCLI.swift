@@ -4,6 +4,8 @@ import OpenIslandCore
 @main
 struct OpenIslandHooksCLI {
     private static let interactiveClaudeHookTimeout: TimeInterval = 24 * 60 * 60
+    // Keep this slightly below CodexHookInstaller.managedInteractiveTimeout (3600).
+    // This lets the CLI fail open before Codex reaches its full managed timeout window.
     private static let interactiveCodexHookTimeout: TimeInterval = 3500
 
     private enum HookSource: String {

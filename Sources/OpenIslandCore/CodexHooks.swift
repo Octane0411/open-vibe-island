@@ -282,7 +282,7 @@ public enum CodexHookOutputEncoder {
 
     private struct PermissionRequestOutput: Encodable {
         struct HookSpecificOutput: Encodable {
-            let hookEventName = CodexHookEventName.permissionRequest.rawValue
+            let hookEventName: String = CodexHookEventName.permissionRequest.rawValue
             let decision: CodexPermissionRequestDecision
         }
 

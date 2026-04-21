@@ -457,7 +457,9 @@ struct SessionStateTests {
 
         try await observer.send(.resolvePermission(sessionID: "codex-session-1", resolution: .deny()))
 
+        let completionEvent = try await nextEvent(from: &iterator)
         let response = try await responseTask
+        #expect(completionEvent.sessionCompleted?.summary == "Permission denied in Open Island.")
         #expect(response == .codexHookDirective(.deny(reason: "Permission denied in Open Island.")))
     }
 
@@ -583,7 +585,9 @@ struct SessionStateTests {
 
         try await observer.send(.resolvePermission(sessionID: "codex-session-permission-deny", resolution: .deny()))
 
+        let completionEvent = try await nextEvent(from: &iterator)
         let response = try await responseTask
+        #expect(completionEvent.sessionCompleted?.summary == "Permission denied in Open Island.")
         #expect(response == .codexHookDirective(.permissionRequest(.deny(message: "Permission denied in Open Island."))))
     }
 
