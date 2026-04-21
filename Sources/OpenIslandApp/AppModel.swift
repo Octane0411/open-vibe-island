@@ -130,6 +130,11 @@ final class AppModel {
     var kimiHookStatus: KimiHookInstallationStatus? { hooks.kimiHookStatus }
     var kimiHookStatusTitle: String { hooks.kimiHookStatusTitle }
     var kimiHookStatusSummary: String { hooks.kimiHookStatusSummary }
+    var catPawHooksInstalled: Bool { hooks.catPawHooksInstalled }
+    var isCatPawHookSetupBusy: Bool { hooks.isCatPawHookSetupBusy }
+    var catPawHookStatus: CatPawHookInstallationStatus? { hooks.catPawHookStatus }
+    var catPawHookStatusTitle: String { hooks.catPawHookStatusTitle }
+    var catPawHookStatusSummary: String { hooks.catPawHookStatusSummary }
     var codexHookStatusTitle: String { hooks.codexHookStatusTitle }
     var codexHookStatusSummary: String { hooks.codexHookStatusSummary }
 
@@ -156,6 +161,7 @@ final class AppModel {
             || hooks.openCodePluginInstalled
             || hooks.geminiHooksInstalled
             || hooks.kimiHooksInstalled
+            || hooks.catPawHooksInstalled
     }
     func refreshCodexHookStatus() { hooks.refreshCodexHookStatus() }
     func refreshClaudeHookStatus() { hooks.refreshClaudeHookStatus() }
@@ -186,6 +192,9 @@ final class AppModel {
     func refreshKimiHookStatus() { hooks.refreshKimiHookStatus() }
     func installKimiHooks() { hooks.installKimiHooks() }
     func uninstallKimiHooks() { hooks.uninstallKimiHooks() }
+    func refreshCatPawHookStatus() { hooks.refreshCatPawHookStatus() }
+    func installCatPawHooks() { hooks.installCatPawHooks() }
+    func uninstallCatPawHooks() { hooks.uninstallCatPawHooks() }
     func installClaudeUsageBridge() { hooks.installClaudeUsageBridge() }
     func uninstallClaudeUsageBridge() { hooks.uninstallClaudeUsageBridge() }
     func updateClaudeConfigDirectory(to newDirectory: URL?) { hooks.updateClaudeConfigDirectory(to: newDirectory) }

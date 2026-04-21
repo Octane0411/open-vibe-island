@@ -22,6 +22,7 @@ final class HookInstallationCoordinator {
     var cursorHookStatus: CursorHookInstallationStatus?
     var geminiHookStatus: GeminiHookInstallationStatus?
     var kimiHookStatus: KimiHookInstallationStatus?
+    var catPawHookStatus: CatPawHookInstallationStatus?
     var claudeStatusLineStatus: ClaudeStatusLineInstallationStatus?
     var claudeUsageSnapshot: ClaudeUsageSnapshot?
     var codexUsageSnapshot: CodexUsageSnapshot?
@@ -36,6 +37,7 @@ final class HookInstallationCoordinator {
     var isCursorHookSetupBusy = false
     var isGeminiHookSetupBusy = false
     var isKimiHookSetupBusy = false
+    var isCatPawHookSetupBusy = false
     var isClaudeUsageSetupBusy = false
 
     @ObservationIgnored
@@ -84,6 +86,9 @@ final class HookInstallationCoordinator {
 
     @ObservationIgnored
     private let kimiHookInstallationManager = KimiHookInstallationManager()
+
+    @ObservationIgnored
+    private let catPawHookInstallationManager = CatPawHookInstallationManager()
 
     /// Computed so it always reflects the latest `ClaudeConfigDirectory` setting.
     private var claudeStatusLineInstallationManager: ClaudeStatusLineInstallationManager {
@@ -143,6 +148,10 @@ final class HookInstallationCoordinator {
 
     var kimiHooksInstalled: Bool {
         kimiHookStatus?.managedHooksPresent == true
+    }
+
+    var catPawHooksInstalled: Bool {
+        catPawHookStatus?.managedHooksPresent == true
     }
 
     var claudeUsageInstalled: Bool {
@@ -378,6 +387,34 @@ final class HookInstallationCoordinator {
         return "no managed Kimi hooks"
     }
 
+    var catPawHookStatusTitle: String {
+        if catPawHooksInstalled {
+            return "CatPaw hooks installed"
+        }
+
+        if hooksBinaryURL == nil {
+            return "Hook binary not found"
+        }
+
+        return "CatPaw hooks not installed"
+    }
+
+    var catPawHookStatusSummary: String {
+        guard catPawHookStatus != nil else {
+            return "Reading ~/.catpaw/settings.json."
+        }
+
+        if catPawHooksInstalled {
+            return "managed hooks present"
+        }
+
+        if hooksBinaryURL == nil {
+            return "Build OpenIslandHooks before installing."
+        }
+
+        return "no managed CatPaw hooks"
+    }
+
     var codexHookStatusTitle: String {
         if codexHooksInstalled {
             return "Codex hooks installed"
@@ -450,6 +487,7 @@ final class HookInstallationCoordinator {
                     self.refreshCodexHookStatus()
                     self.refreshClaudeHookStatus()
                     self.refreshCursorHookStatus()
+                    self.refreshCatPawHookStatus()
                 }
             } catch {
                 self.onStatusMessage?("Failed to update hooks binary: \(error.localizedDescription)")
@@ -689,6 +727,16 @@ final class HookInstallationCoordinator {
                     self.onStatusMessage?("Failed to read Kimi hook status: \(error.localizedDescription)")
                 }
             }
+
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    let status = try self.catPawHookInstallationManager.status(hooksBinaryURL: self.hooksBinaryURL)
+                    self.catPawHookStatus = status
+                } catch {
+                    self.onStatusMessage?("Failed to read CatPaw hook status: \(error.localizedDescription)")
+                }
+            }
         }
     }
 
@@ -740,6 +788,19 @@ final class HookInstallationCoordinator {
                 self.kimiHookStatus = status
             } catch {
                 self.onStatusMessage?("Failed to read Kimi hook status: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func refreshCatPawHookStatus() {
+        Task { [weak self] in
+            guard let self else { return }
+
+            do {
+                let status = try self.catPawHookInstallationManager.status(hooksBinaryURL: self.hooksBinaryURL)
+                self.catPawHookStatus = status
+            } catch {
+                self.onStatusMessage?("Failed to read CatPaw hook status: \(error.localizedDescription)")
             }
         }
     }
@@ -814,6 +875,7 @@ final class HookInstallationCoordinator {
         case .openCode: return !openCodePluginInstalled
         case .gemini: return !geminiHooksInstalled
         case .kimi: return !kimiHooksInstalled
+        case .catPaw: return !catPawHooksInstalled
         case .claudeUsageBridge: return !claudeUsageInstalled
         }
     }
@@ -838,6 +900,7 @@ final class HookInstallationCoordinator {
             case .openCode: return openCodePluginInstalled
             case .gemini: return geminiHooksInstalled
             case .kimi: return kimiHooksInstalled
+            case .catPaw: return catPawHooksInstalled
             case .claudeUsageBridge: return claudeUsageInstalled
             }
         }
@@ -1045,6 +1108,23 @@ final class HookInstallationCoordinator {
 
     func uninstallKimiHooks() {
         updateKimiHooks(userMessage: "Removing Kimi hooks.", intent: .uninstalled) { manager in
+            try manager.uninstall()
+        }
+    }
+
+    func installCatPawHooks() {
+        guard let hooksBinaryURL else {
+            onStatusMessage?("Could not find a local OpenIslandHooks binary. Build the package first.")
+            return
+        }
+
+        updateCatPawHooks(userMessage: "Installing CatPaw hooks.", intent: .installed) { manager in
+            try manager.install(hooksBinaryURL: hooksBinaryURL)
+        }
+    }
+
+    func uninstallCatPawHooks() {
+        updateCatPawHooks(userMessage: "Removing CatPaw hooks.", intent: .uninstalled) { manager in
             try manager.uninstall()
         }
     }
@@ -1257,6 +1337,34 @@ final class HookInstallationCoordinator {
                 }
             } catch {
                 self.onStatusMessage?("Kimi hook update failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func updateCatPawHooks(
+        userMessage: String,
+        intent: AgentHookIntent,
+        operation: @escaping (CatPawHookInstallationManager) throws -> CatPawHookInstallationStatus
+    ) {
+        isCatPawHookSetupBusy = true
+        onStatusMessage?(userMessage)
+
+        Task { [weak self] in
+            guard let self else { return }
+
+            defer { self.isCatPawHookSetupBusy = false }
+
+            do {
+                let status = try operation(self.catPawHookInstallationManager)
+                self.catPawHookStatus = status
+                self.intentStore.setIntent(intent, for: .catPaw)
+                if status.managedHooksPresent {
+                    self.onStatusMessage?("CatPaw hooks are installed and ready.")
+                } else {
+                    self.onStatusMessage?("CatPaw hooks are not installed.")
+                }
+            } catch {
+                self.onStatusMessage?("CatPaw hook update failed: \(error.localizedDescription)")
             }
         }
     }

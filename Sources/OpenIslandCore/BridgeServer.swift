@@ -566,18 +566,20 @@ public final class BridgeServer: @unchecked Sendable {
         switch payload.hookEventName {
         case .sessionStart:
             clearStaleClaudeInteractionIfNeeded(for: payload.sessionID)
+            let isCatPaw = payload.resolvedAgentTool == .catPaw
             emit(
                 .sessionStarted(
                     SessionStarted(
                         sessionID: payload.sessionID,
-                        title: payload.sessionTitle,
+                        title: isCatPaw ? payload.catPawSessionTitle : payload.sessionTitle,
                         tool: payload.resolvedAgentTool,
                         origin: .live,
                         initialPhase: .completed,
                         summary: payload.implicitStartSummary,
                         timestamp: .now,
                         jumpTarget: payload.defaultJumpTarget,
-                        claudeMetadata: payload.defaultClaudeMetadata.isEmpty ? nil : payload.defaultClaudeMetadata,
+                        claudeMetadata: isCatPaw ? nil : (payload.defaultClaudeMetadata.isEmpty ? nil : payload.defaultClaudeMetadata),
+                        catPawMetadata: isCatPaw ? (payload.defaultCatPawMetadata.isEmpty ? nil : payload.defaultCatPawMetadata) : nil,
                         isRemote: payload.remote == true
                     )
                 )
@@ -1824,18 +1826,20 @@ public final class BridgeServer: @unchecked Sendable {
             return
         }
 
+        let isCatPaw = payload.resolvedAgentTool == .catPaw
         emit(
             .sessionStarted(
                 SessionStarted(
                     sessionID: payload.sessionID,
-                    title: payload.sessionTitle,
+                    title: isCatPaw ? payload.catPawSessionTitle : payload.sessionTitle,
                     tool: payload.resolvedAgentTool,
                     origin: .live,
                     initialPhase: .completed,
                     summary: payload.implicitStartSummary,
                     timestamp: .now,
                     jumpTarget: payload.defaultJumpTarget,
-                    claudeMetadata: payload.defaultClaudeMetadata.isEmpty ? nil : payload.defaultClaudeMetadata,
+                    claudeMetadata: isCatPaw ? nil : (payload.defaultClaudeMetadata.isEmpty ? nil : payload.defaultClaudeMetadata),
+                    catPawMetadata: isCatPaw ? (payload.defaultCatPawMetadata.isEmpty ? nil : payload.defaultCatPawMetadata) : nil,
                     isRemote: payload.remote == true
                 )
             )
@@ -1912,6 +1916,12 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func synchronizeClaudeMetadata(for payload: ClaudeHookPayload) {
+        // CatPaw sessions use catPawMetadata instead of claudeMetadata.
+        if payload.resolvedAgentTool == .catPaw {
+            synchronizeCatPawMetadata(for: payload)
+            return
+        }
+
         guard let existingSession = localState.session(id: payload.sessionID) else {
             return
         }
@@ -1934,6 +1944,42 @@ public final class BridgeServer: @unchecked Sendable {
                 ClaudeSessionMetadataUpdated(
                     sessionID: payload.sessionID,
                     claudeMetadata: mergedMetadata,
+                    timestamp: .now
+                )
+            )
+        )
+    }
+
+    private func synchronizeCatPawMetadata(for payload: ClaudeHookPayload) {
+        guard let existingSession = localState.session(id: payload.sessionID) else {
+            return
+        }
+
+        let incoming = payload.defaultCatPawMetadata
+        let existing = existingSession.catPawMetadata
+        let merged = CatPawSessionMetadata(
+            transcriptPath: incoming.transcriptPath ?? existing?.transcriptPath,
+            initialUserPrompt: existing?.initialUserPrompt ?? incoming.initialUserPrompt ?? incoming.lastUserPrompt,
+            lastUserPrompt: incoming.lastUserPrompt ?? existing?.lastUserPrompt,
+            lastAssistantMessage: incoming.lastAssistantMessage ?? existing?.lastAssistantMessage,
+            currentTool: incoming.currentTool,
+            currentToolInputPreview: incoming.currentToolInputPreview,
+            model: incoming.model ?? existing?.model
+        )
+
+        guard !merged.isEmpty else {
+            return
+        }
+
+        guard existingSession.catPawMetadata != merged else {
+            return
+        }
+
+        emit(
+            .catPawSessionMetadataUpdated(
+                CatPawSessionMetadataUpdated(
+                    sessionID: payload.sessionID,
+                    catPawMetadata: merged,
                     timestamp: .now
                 )
             )
