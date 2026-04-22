@@ -169,6 +169,30 @@ struct ControlCenterView: View {
                         if let snapshot = model.codexUsageSnapshot {
                             metadataRow(title: "latest rollout", value: snapshot.sourceFilePath)
 
+                            if let totalTokenUsage = snapshot.totalTokenUsage,
+                               let breakdown = model.hooks.codexTokenUsageBreakdownText(totalTokenUsage) {
+                                metadataRow(title: "total", value: breakdown)
+                            }
+
+                            if let lastTokenUsage = snapshot.lastTokenUsage,
+                               let breakdown = model.hooks.codexTokenUsageBreakdownText(lastTokenUsage) {
+                                metadataRow(title: "last", value: breakdown)
+                            }
+
+                            if let recentTotalTokenRate = snapshot.recentTotalTokenRate {
+                                metadataRow(
+                                    title: "recent rate",
+                                    value: model.hooks.codexRecentRateText(recentTotalTokenRate)
+                                )
+                            }
+
+                            if let modelContextWindow = snapshot.modelContextWindow {
+                                metadataRow(
+                                    title: "context",
+                                    value: model.hooks.codexModelContextWindowText(modelContextWindow)
+                                )
+                            }
+
                             if let planType = snapshot.planType {
                                 metadataRow(title: "plan", value: planType)
                             }
