@@ -247,7 +247,11 @@ final class HookInstallationCoordinator {
 
     var codexUsageStatusTitle: String {
         if codexUsageSnapshot?.isEmpty == false {
-            return "Codex rate limits detected"
+            if codexUsageSnapshot?.windows.isEmpty == false {
+                return "Codex rate limits detected"
+            }
+
+            return "Codex token usage detected"
         }
 
         return "Waiting for Codex rate limits"
@@ -258,7 +262,7 @@ final class HookInstallationCoordinator {
             return "Reading the latest local rollout token_count snapshots · \(summary)"
         }
 
-        return "Passively reading ~/.codex/sessions/**/rollout-*.jsonl and extracting token_count.rate_limits."
+        return "Passively reading ~/.codex/sessions/**/rollout-*.jsonl and extracting token_count.info/rate_limits."
     }
 
     var codexUsageSummaryText: String? {
@@ -270,6 +274,22 @@ final class HookInstallationCoordinator {
             "\(window.label) \(window.roundedUsedPercentage)%"
         }
 
+        if let lastTotalTokens = snapshot.lastTokenUsage?.totalTokens {
+            components.append("last \(abbreviatedTokenCount(lastTotalTokens)) tok")
+        }
+
+        if let totalTokens = snapshot.totalTokenUsage?.totalTokens {
+            components.append("total \(abbreviatedTokenCount(totalTokens)) tok")
+        }
+
+        if let recentRate = snapshot.recentTotalTokenRate?.tokensPerSecond {
+            components.append("recent \(abbreviatedTokenRate(recentRate)) tok/s")
+        }
+
+        if let modelContextWindow = snapshot.modelContextWindow {
+            components.append("ctx \(abbreviatedTokenCount(modelContextWindow))")
+        }
+
         if let planType = snapshot.planType {
             components.append("plan \(planType)")
         }
@@ -279,6 +299,74 @@ final class HookInstallationCoordinator {
         }
 
         return components.isEmpty ? nil : components.joined(separator: " · ")
+    }
+
+    func codexTokenUsageBreakdownText(_ usage: CodexTokenUsage) -> String? {
+        var components: [String] = []
+
+        if let totalTokens = usage.totalTokens {
+            components.append("total \(abbreviatedTokenCount(totalTokens))")
+        }
+        if let inputTokens = usage.inputTokens {
+            components.append("in \(abbreviatedTokenCount(inputTokens))")
+        }
+        if let cachedInputTokens = usage.cachedInputTokens {
+            components.append("cached \(abbreviatedTokenCount(cachedInputTokens))")
+        }
+        if let outputTokens = usage.outputTokens {
+            components.append("out \(abbreviatedTokenCount(outputTokens))")
+        }
+        if let reasoningOutputTokens = usage.reasoningOutputTokens {
+            components.append("reason \(abbreviatedTokenCount(reasoningOutputTokens))")
+        }
+
+        return components.isEmpty ? nil : components.joined(separator: " · ")
+    }
+
+    func codexRecentRateText(_ rate: CodexTokenRate) -> String {
+        "\(abbreviatedTokenRate(rate.tokensPerSecond)) tok/s over \(String(format: "%.1fs", rate.sampleInterval))"
+    }
+
+    func codexModelContextWindowText(_ tokens: Int) -> String {
+        "\(abbreviatedTokenCount(tokens)) tokens"
+    }
+
+    private func abbreviatedTokenCount(_ value: Int) -> String {
+        abbreviatedNumber(Double(value))
+    }
+
+    private func abbreviatedTokenRate(_ value: Double) -> String {
+        abbreviatedNumber(value)
+    }
+
+    private func abbreviatedNumber(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 1
+        formatter.minimumFractionDigits = 0
+
+        let absoluteValue = abs(value)
+        let divisor: Double
+        let suffix: String
+
+        switch absoluteValue {
+        case 1_000_000_000...:
+            divisor = 1_000_000_000
+            suffix = "B"
+        case 1_000_000...:
+            divisor = 1_000_000
+            suffix = "M"
+        case 1_000...:
+            divisor = 1_000
+            suffix = "k"
+        default:
+            divisor = 1
+            suffix = ""
+        }
+
+        let scaled = value / divisor
+        let number = NSNumber(value: scaled)
+        return (formatter.string(from: number) ?? String(format: "%.1f", scaled)) + suffix
     }
 
     var openCodePluginStatusTitle: String {

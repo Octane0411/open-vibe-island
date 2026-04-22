@@ -23,8 +23,20 @@ struct CodexUsageTests {
                         "type": "token_count",
                         "info": [
                             "total_token_usage": [
+                                "input_tokens": 999_000,
+                                "cached_input_tokens": 900_000,
+                                "output_tokens": 999,
+                                "reasoning_output_tokens": 111,
                                 "total_tokens": 999_999,
                             ],
+                            "last_token_usage": [
+                                "input_tokens": 5_000,
+                                "cached_input_tokens": 4_000,
+                                "output_tokens": 80,
+                                "reasoning_output_tokens": 20,
+                                "total_tokens": 5_100,
+                            ],
+                            "model_context_window": 128_000,
                         ],
                         "rate_limits": [
                             "limit_id": "codex",
@@ -49,8 +61,20 @@ struct CodexUsageTests {
                         "type": "token_count",
                         "info": [
                             "total_token_usage": [
+                                "input_tokens": 1_234_000,
+                                "cached_input_tokens": 1_100_000,
+                                "output_tokens": 567,
+                                "reasoning_output_tokens": 111,
                                 "total_tokens": 1_234_567,
                             ],
+                            "last_token_usage": [
+                                "input_tokens": 8_000,
+                                "cached_input_tokens": 7_000,
+                                "output_tokens": 120,
+                                "reasoning_output_tokens": 30,
+                                "total_tokens": 8_150,
+                            ],
+                            "model_context_window": 258_400,
                         ],
                         "rate_limits": [
                             "limit_id": "codex",
@@ -85,7 +109,72 @@ struct CodexUsageTests {
         #expect(snapshot?.windows.map(\.roundedUsedPercentage) == [13, 25])
         #expect(snapshot?.windows.first?.leftPercentage == 87)
         #expect(snapshot?.windows.first?.resetsAt == Date(timeIntervalSince1970: 1_775_158_295))
+        #expect(snapshot?.totalTokenUsage?.totalTokens == 1_234_567)
+        #expect(snapshot?.totalTokenUsage?.inputTokens == 1_234_000)
+        #expect(snapshot?.lastTokenUsage?.totalTokens == 8_150)
+        #expect(snapshot?.modelContextWindow == 258_400)
+        #expect(snapshot?.recentTotalTokenRate?.deltaTokens == 234_568)
+        #expect(snapshot?.recentTotalTokenRate?.sampleInterval == 60)
+        #expect(abs((snapshot?.recentTotalTokenRate?.tokensPerSecond ?? 0) - 3_909.466_666_666_667) < 0.001)
         #expect(snapshot?.capturedAt == isoDate("2026-04-03T01:50:35.000Z"))
+    }
+
+    @Test
+    func codexUsageLoaderParsesInfoOnlySnapshotsWithoutRateLimitWindows() throws {
+        let rootURL = temporaryRootURL(named: "codex-usage-info-only")
+        let rolloutURL = rootURL
+            .appendingPathComponent("2026/04/22", isDirectory: true)
+            .appendingPathComponent("rollout-info-only.jsonl")
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        try writeRollout(
+            [
+                rolloutLine(
+                    timestamp: "2026-04-22T03:18:20.834Z",
+                    type: "event_msg",
+                    payload: [
+                        "type": "token_count",
+                        "info": [
+                            "total_token_usage": [
+                                "input_tokens": 44_012_009,
+                                "cached_input_tokens": 42_987_904,
+                                "output_tokens": 113_981,
+                                "reasoning_output_tokens": 40_485,
+                                "total_tokens": 44_125_990,
+                            ],
+                            "last_token_usage": [
+                                "input_tokens": 208_958,
+                                "cached_input_tokens": 208_768,
+                                "output_tokens": 37,
+                                "reasoning_output_tokens": 0,
+                                "total_tokens": 208_995,
+                            ],
+                            "model_context_window": 258_400,
+                        ],
+                        "rate_limits": [
+                            "limit_id": "codex",
+                            "primary": NSNull(),
+                            "secondary": NSNull(),
+                        ],
+                    ]
+                ),
+            ],
+            to: rolloutURL
+        )
+
+        let snapshot = try CodexUsageLoader.load(fromRootURL: rootURL)
+
+        #expect(resolvedPath(snapshot?.sourceFilePath) == rolloutURL.resolvingSymlinksInPath().path)
+        #expect(snapshot?.windows.isEmpty == true)
+        #expect(snapshot?.isEmpty == false)
+        #expect(snapshot?.limitID == "codex")
+        #expect(snapshot?.totalTokenUsage?.totalTokens == 44_125_990)
+        #expect(snapshot?.lastTokenUsage?.totalTokens == 208_995)
+        #expect(snapshot?.modelContextWindow == 258_400)
+        #expect(snapshot?.recentTotalTokenRate == nil)
     }
 
     @Test
