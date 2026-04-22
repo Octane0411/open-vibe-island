@@ -97,6 +97,9 @@ final class HookInstallationCoordinator {
     private var codexUsageMonitorTask: Task<Void, Never>?
 
     @ObservationIgnored
+    private let codexUsageRefreshInterval: Duration = .seconds(10)
+
+    @ObservationIgnored
     private var relativeTimestampFormatter: RelativeDateTimeFormatter {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
@@ -1178,7 +1181,7 @@ final class HookInstallationCoordinator {
 
             while !Task.isCancelled {
                 self.refreshCodexUsageState()
-                try? await Task.sleep(for: .seconds(120))
+                try? await Task.sleep(for: self.codexUsageRefreshInterval)
             }
         }
     }
