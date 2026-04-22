@@ -389,6 +389,7 @@ struct IslandPanelView: View {
                             CentralActivityLabel(
                                 toolName: closedSpotlightSession?.currentToolName,
                                 preview: closedSpotlightSession?.currentCommandPreviewText,
+                                tokenLabel: closedCodexTokenLabel,
                                 isVisible: isExternalDisplayPlacement && hasClosedPresence
                             )
                         )
@@ -716,8 +717,10 @@ struct IslandPanelView: View {
                     UsageWindowPresentation(
                         id: "claude-5h",
                         label: "5h",
-                        usedPercentage: fiveHour.usedPercentage,
-                        resetsAt: fiveHour.resetsAt
+                        metric: .percentage(
+                            usedPercentage: fiveHour.usedPercentage,
+                            resetsAt: fiveHour.resetsAt
+                        )
                     )
                 )
             }
@@ -727,8 +730,10 @@ struct IslandPanelView: View {
                     UsageWindowPresentation(
                         id: "claude-7d",
                         label: "7d",
-                        usedPercentage: sevenDay.usedPercentage,
-                        resetsAt: sevenDay.resetsAt
+                        metric: .percentage(
+                            usedPercentage: sevenDay.usedPercentage,
+                            resetsAt: sevenDay.resetsAt
+                        )
                     )
                 )
             }
@@ -747,12 +752,28 @@ struct IslandPanelView: View {
         if model.showCodexUsage,
            let snapshot = model.codexUsageSnapshot,
            snapshot.isEmpty == false {
-            let windows = snapshot.windows.map { window in
+            var windows = snapshot.windows.map { window in
                 UsageWindowPresentation(
                     id: "codex-\(window.key)",
                     label: window.label,
-                    usedPercentage: window.usedPercentage,
-                    resetsAt: window.resetsAt
+                    metric: .percentage(
+                        usedPercentage: window.usedPercentage,
+                        resetsAt: window.resetsAt
+                    )
+                )
+            }
+
+            if windows.isEmpty,
+               let totalTokens = snapshot.totalTokenUsage?.totalTokens {
+                windows.append(
+                    UsageWindowPresentation(
+                        id: "codex-total-tokens",
+                        label: "tok",
+                        metric: .tokenCount(
+                            totalTokens: totalTokens,
+                            recentTokensPerSecond: snapshot.recentTotalTokenRate?.tokensPerSecond
+                        )
+                    )
                 )
             }
 
@@ -768,6 +789,16 @@ struct IslandPanelView: View {
         }
 
         return providers
+    }
+
+    private var closedCodexTokenLabel: String? {
+        guard model.showCodexUsage,
+              closedSpotlightSession?.currentToolName?.isEmpty != false,
+              let totalTokens = model.codexUsageSnapshot?.totalTokenUsage?.totalTokens else {
+            return nil
+        }
+
+        return "Codex · \(abbreviatedTokenCount(totalTokens)) tok"
     }
 
     private func splitUsageProviders(
@@ -902,18 +933,79 @@ struct IslandPanelView: View {
                     .foregroundStyle(.white.opacity(0.55))
             }
 
-            Text("\(window.roundedUsedPercentage)%")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(usageColor(for: window.usedPercentage))
+            switch window.metric {
+            case let .percentage(usedPercentage, resetsAt):
+                Text("\(window.roundedUsedPercentage)%")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(usageColor(for: usedPercentage))
 
-            if layout.showsResetTime,
-               let resetsAt = window.resetsAt,
-               let remaining = remainingDurationString(until: resetsAt) {
-                Text(remaining)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.35))
+                if layout.showsResetTime,
+                   let resetsAt,
+                   let remaining = remainingDurationString(until: resetsAt) {
+                    Text(remaining)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.35))
+                }
+            case let .tokenCount(totalTokens, recentTokensPerSecond):
+                tokenUsageValueText(totalTokens)
+
+                if layout.showsResetTime,
+                   let recentTokensPerSecond,
+                   recentTokensPerSecond > 0 {
+                    Text("+\(abbreviatedTokenRate(recentTokensPerSecond))/s")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.35))
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                }
             }
         }
+    }
+
+    private func tokenUsageValueText(_ totalTokens: Int) -> some View {
+        Text(abbreviatedTokenCount(totalTokens))
+            .font(.system(size: 12, weight: .bold, design: .rounded))
+            .foregroundStyle(.mint.opacity(0.95))
+            .monospacedDigit()
+            .contentTransition(.numericText())
+    }
+
+    private func abbreviatedTokenCount(_ value: Int) -> String {
+        abbreviatedNumber(Double(value))
+    }
+
+    private func abbreviatedTokenRate(_ value: Double) -> String {
+        abbreviatedNumber(value)
+    }
+
+    private func abbreviatedNumber(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 1
+        formatter.minimumFractionDigits = 0
+
+        let absoluteValue = abs(value)
+        let divisor: Double
+        let suffix: String
+
+        switch absoluteValue {
+        case 1_000_000_000...:
+            divisor = 1_000_000_000
+            suffix = "B"
+        case 1_000_000...:
+            divisor = 1_000_000
+            suffix = "M"
+        case 1_000...:
+            divisor = 1_000
+            suffix = "k"
+        default:
+            divisor = 1
+            suffix = ""
+        }
+
+        let scaled = value / divisor
+        let number = NSNumber(value: scaled)
+        return (formatter.string(from: number) ?? String(format: "%.1f", scaled)) + suffix
     }
 
     private func usageSeparator(_ title: String, opacity: Double) -> some View {
@@ -986,11 +1078,29 @@ private struct UsageProviderPresentation: Identifiable {
 private struct UsageWindowPresentation: Identifiable {
     let id: String
     let label: String
-    let usedPercentage: Double
-    let resetsAt: Date?
+    let metric: UsageMetricPresentation
 
     var roundedUsedPercentage: Int {
-        Int(usedPercentage.rounded())
+        switch metric {
+        case let .percentage(usedPercentage, _):
+            Int(usedPercentage.rounded())
+        case .tokenCount:
+            0
+        }
+    }
+}
+
+private enum UsageMetricPresentation: Equatable {
+    case percentage(usedPercentage: Double, resetsAt: Date?)
+    case tokenCount(totalTokens: Int, recentTokensPerSecond: Double?)
+
+    var usedPercentage: Double {
+        switch self {
+        case let .percentage(usedPercentage, _):
+            usedPercentage
+        case .tokenCount:
+            0
+        }
     }
 }
 
@@ -2037,6 +2147,7 @@ private struct ClosedCountBadge: View {
 private struct CentralActivityLabel: View {
     let toolName: String?
     let preview: String?
+    let tokenLabel: String?
     let isVisible: Bool
 
     @State private var displayed: DisplayedActivity?
@@ -2062,9 +2173,20 @@ private struct CentralActivityLabel: View {
                 .foregroundStyle(.white.opacity(0.85))
                 .padding(.horizontal, 8)
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            } else if isVisible, let tokenLabel {
+                Text(tokenLabel)
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.72))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .padding(.horizontal, 8)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
         }
         .animation(.easeOut(duration: 0.22), value: displayed)
+        .animation(.easeOut(duration: 0.18), value: tokenLabel)
         .onChange(of: trackingKey, initial: true) { _, _ in
             sync()
         }
@@ -2081,7 +2203,7 @@ private struct CentralActivityLabel: View {
 
     /// Composite key so `.onChange` fires on either tool or preview change.
     private var trackingKey: String {
-        "\(toolName ?? "")|\(preview ?? "")"
+        "\(toolName ?? "")|\(preview ?? "")|\(tokenLabel ?? "")"
     }
 
     /// Key used to (re)start the clear timer. Changes whenever we transition
