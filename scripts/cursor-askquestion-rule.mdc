@@ -1,0 +1,24 @@
+---
+description: Notify Open Island notch before AskQuestion
+globs:
+alwaysApply: true
+---
+
+# AskQuestion Notch Notification
+
+Before every AskQuestion call, run a Shell command to notify the MacBook notch
+(Open Island). This lets the user see the question in the notch and click to
+jump back to Cursor when they are in another app.
+
+## Rule
+
+Immediately before calling AskQuestion, call Shell (with `block_until_ms: 3000`) to run:
+
+```
+python3 ~/.cursor/scripts/cursor-askquestion-notifier.py "CONVERSATION_ID" "QUESTION_TITLE"
+```
+
+- `CONVERSATION_ID`: the current conversation/session UUID
+- `QUESTION_TITLE`: the `title` field you are about to pass to AskQuestion
+
+Run this Shell call in parallel with the AskQuestion call (same tool-call batch).
