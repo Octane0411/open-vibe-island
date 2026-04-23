@@ -287,41 +287,8 @@ final class ProcessMonitoringCoordinator {
             claimedCodexSessionIDs.insert(matched.session.id)
         }
 
-        // Claude sessions: reuse the multi-pass matching from representedClaudeProcessKeys.
-        let claudeProcesses = activeProcesses.filter { $0.tool == .claudeCode }
-        let trackedClaudeSessions = sessions.filter { $0.tool == .claudeCode && !isSyntheticClaudeSession($0) }
-        var claimedSessionIDs: Set<String> = []
-
-        // Pass 1: exact session ID match.
-        for process in claudeProcesses {
-            guard let processSessionID = process.sessionID,
-                  let matched = trackedClaudeSessions.first(where: {
-                      !claimedSessionIDs.contains($0.id) && $0.id == processSessionID
-                  }) else { continue }
-            record(matched.id, strength: .sessionID)
-            claimedSessionIDs.insert(matched.id)
-        }
-
-        // Pass 2: transcript path match.
-        for process in claudeProcesses {
-            guard let transcriptPath = process.transcriptPath,
-                  let matched = trackedClaudeSessions.first(where: {
-                      !claimedSessionIDs.contains($0.id)
-                          && $0.claudeMetadata?.transcriptPath == transcriptPath
-                  }) else { continue }
-            record(matched.id, strength: .transcriptPath)
-            claimedSessionIDs.insert(matched.id)
-        }
-
-        // Pass 3: TTY + CWD fallback match.
-        for process in claudeProcesses {
-            guard let matched = uniqueTrackedClaudeSession(
-                for: process,
-                sessions: trackedClaudeSessions,
-                claimedSessionIDs: claimedSessionIDs
-            ) else { continue }
+        for matched in matchedClaudeProcesses(activeProcesses: activeProcesses, sessions: sessions).values {
             record(matched.session.id, strength: matched.strength)
-            claimedSessionIDs.insert(matched.session.id)
         }
 
         // OpenCode sessions are hook-managed, but OpenCode does not expose a stable
@@ -700,44 +667,58 @@ final class ProcessMonitoringCoordinator {
         sessions: [AgentSession],
         activeProcesses: [ActiveProcessSnapshot]
     ) -> Set<String> {
-        let trackedClaudeSessions = sessions.filter { session in
-            session.tool == .claudeCode && !isSyntheticClaudeSession(session)
-        }
+        Set(matchedClaudeProcesses(activeProcesses: activeProcesses, sessions: sessions).keys)
+    }
 
-        var representedProcessKeys: Set<String> = []
+    private func matchedClaudeProcesses(
+        activeProcesses: [ActiveProcessSnapshot],
+        sessions: [AgentSession]
+    ) -> [String: MatchedSessionEvidence] {
+        let claudeProcesses = activeProcesses.filter { $0.tool == .claudeCode }
+        let trackedClaudeSessions = sessions.filter { $0.tool == .claudeCode && !isSyntheticClaudeSession($0) }
+        var matchesByProcessKey: [String: MatchedSessionEvidence] = [:]
         var claimedSessionIDs: Set<String> = []
 
-        for process in activeProcesses {
+        func claim(_ process: ActiveProcessSnapshot, matched: MatchedSessionEvidence) {
+            matchesByProcessKey[processIdentityKey(process)] = matched
+            claimedSessionIDs.insert(matched.session.id)
+        }
+
+        for process in claudeProcesses {
             guard let processSessionID = process.sessionID,
-                  let matchedSession = trackedClaudeSessions.first(where: {
+                  let matched = trackedClaudeSessions.first(where: {
                       !claimedSessionIDs.contains($0.id) && $0.id == processSessionID
                   }) else {
                 continue
             }
 
-            representedProcessKeys.insert(processIdentityKey(process))
-            claimedSessionIDs.insert(matchedSession.id)
+            claim(
+                process,
+                matched: MatchedSessionEvidence(session: matched, strength: .sessionID)
+            )
         }
 
-        for process in activeProcesses {
+        for process in claudeProcesses {
             let processKey = processIdentityKey(process)
-            guard !representedProcessKeys.contains(processKey),
+            guard matchesByProcessKey[processKey] == nil,
                   let transcriptPath = process.transcriptPath,
-                  let matchedSession = trackedClaudeSessions.first(where: {
+                  let matched = trackedClaudeSessions.first(where: {
                       !claimedSessionIDs.contains($0.id)
                           && $0.claudeMetadata?.transcriptPath == transcriptPath
                   }) else {
                 continue
             }
 
-            representedProcessKeys.insert(processKey)
-            claimedSessionIDs.insert(matchedSession.id)
+            claim(
+                process,
+                matched: MatchedSessionEvidence(session: matched, strength: .transcriptPath)
+            )
         }
 
-        for process in activeProcesses {
+        for process in claudeProcesses {
             let processKey = processIdentityKey(process)
-            guard !representedProcessKeys.contains(processKey),
-                  let matchedSession = uniqueTrackedClaudeSession(
+            guard matchesByProcessKey[processKey] == nil,
+                  let matched = uniqueTrackedClaudeSession(
                       for: process,
                       sessions: trackedClaudeSessions,
                       claimedSessionIDs: claimedSessionIDs
@@ -745,11 +726,10 @@ final class ProcessMonitoringCoordinator {
                 continue
             }
 
-            representedProcessKeys.insert(processKey)
-            claimedSessionIDs.insert(matchedSession.session.id)
+            claim(process, matched: matched)
         }
 
-        return representedProcessKeys
+        return matchesByProcessKey
     }
 
     private func uniqueTrackedClaudeSession(
