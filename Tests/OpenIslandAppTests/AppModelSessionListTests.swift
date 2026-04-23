@@ -306,7 +306,7 @@ struct AppModelSessionListTests {
     }
 
     @Test
-    func rolloutBootstrapDoesNotRefreshRecoveredCodexLiveness() {
+    func rolloutBootstrapSeedsRecoveredHookManagedCodexFallbackPresence() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
 
@@ -346,9 +346,10 @@ struct AppModelSessionListTests {
             ingress: .rolloutBootstrap
         )
 
-        #expect(model.state.session(id: "hook-managed-codex")?.presenceMissCount == 1)
-        #expect(model.state.session(id: "hook-managed-codex")?.hasPresenceEvidence == false)
-        #expect(model.liveSessionCount == 0)
+        #expect(model.state.session(id: "hook-managed-codex")?.livenessObservation.lastEventSource == .rolloutBootstrap)
+        #expect(model.state.session(id: "hook-managed-codex")?.presenceMissCount == 0)
+        #expect(model.state.session(id: "hook-managed-codex")?.hasPresenceEvidence == true)
+        #expect(model.liveSessionCount == 1)
     }
 
     @Test

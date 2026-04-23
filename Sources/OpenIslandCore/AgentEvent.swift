@@ -391,7 +391,7 @@ public enum TrackedEventIngress: Equatable, Codable, Sendable {
         case .bridge:
             .bridge
         case .rolloutBootstrap:
-            nil
+            .rolloutBootstrap
         case .rolloutLive:
             .rolloutLive
         }

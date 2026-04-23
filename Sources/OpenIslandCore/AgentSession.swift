@@ -138,6 +138,7 @@ public enum SessionRuntimeMatchStrength: Int, Codable, Comparable, Sendable {
 
 public enum SessionEventPresenceSource: String, Codable, Sendable {
     case bridge
+    case rolloutBootstrap
     case rolloutLive
 }
 

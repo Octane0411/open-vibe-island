@@ -331,7 +331,9 @@ struct SessionStateTests {
     }
 
     @Test
-    func restoredHookManagedSessionsStayHiddenUntilFreshLivenessEvidenceArrives() {
+    func rolloutBootstrapSeedsRestoredHookManagedLivenessUntilRuntimeDiscoveryCatchesUp() {
+        let restoredAt = Date(timeIntervalSince1970: 1_000)
+        let bootstrapAt = restoredAt.addingTimeInterval(1)
         let restored = AgentSession(
             id: "restored-codex",
             title: "Codex · open-island",
@@ -340,15 +342,35 @@ struct SessionStateTests {
             attachmentState: .stale,
             phase: .running,
             summary: "Recovered from cache",
-            updatedAt: .now,
+            updatedAt: restoredAt,
             lifecyclePolicy: .hookDrivenWithProcessFallback
         )
         var state = SessionState(sessions: [restored])
         #expect(state.liveSessionCount == 0)
 
-        state.observeEventPresence(sessionID: "restored-codex", source: .bridge)
+        state.apply(
+            .sessionMetadataUpdated(
+                SessionMetadataUpdated(
+                    sessionID: "restored-codex",
+                    codexMetadata: CodexSessionMetadata(
+                        transcriptPath: "/tmp/restored-codex.jsonl"
+                    ),
+                    timestamp: bootstrapAt
+                )
+            ),
+            ingress: .rolloutBootstrap
+        )
 
         #expect(state.session(id: "restored-codex")?.hasPresenceEvidence == true)
+        #expect(state.session(id: "restored-codex")?.livenessObservation.lastEventSource == .rolloutBootstrap)
+        #expect(state.session(id: "restored-codex")?.presenceMissCount == 0)
+        #expect(state.liveSessionCount == 1)
+
+        _ = state.reconcileRuntimePresence(evidenceBySessionID: [:])
+
+        #expect(state.session(id: "restored-codex")?.isSessionEnded == false)
+        #expect(state.session(id: "restored-codex")?.hasPresenceEvidence == true)
+        #expect(state.session(id: "restored-codex")?.presenceMissCount == 1)
         #expect(state.liveSessionCount == 1)
     }
 
