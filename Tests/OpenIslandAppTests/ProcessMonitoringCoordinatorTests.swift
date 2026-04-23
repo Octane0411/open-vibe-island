@@ -198,6 +198,57 @@ struct ProcessMonitoringCoordinatorTests {
 
         #expect(aliveIDs.isEmpty)
     }
+
+    @Test
+    func reconcileSessionAttachmentsUsesLocallyUpdatedSessionSnapshotForRuntimeEvidence() {
+        let coordinator = ProcessMonitoringCoordinator()
+        coordinator.syntheticClaudeSessionPrefix = "synthetic-"
+        let now = Date(timeIntervalSince1970: 2_000)
+        var state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "tracked-claude",
+                    title: "Claude · open-island",
+                    tool: .claudeCode,
+                    origin: .live,
+                    attachmentState: .stale,
+                    phase: .running,
+                    summary: "Working",
+                    updatedAt: now,
+                    jumpTarget: JumpTarget(
+                        terminalApp: "Ghostty",
+                        workspaceName: "open-island",
+                        paneTitle: "claude ~/tmp/open-island",
+                        workingDirectory: "/tmp/open-island",
+                        terminalTTY: "/dev/ttys009"
+                    ),
+                    lifecyclePolicy: .hookDrivenWithProcessFallback
+                ),
+            ]
+        )
+        coordinator.stateAccessor = { state }
+        coordinator.stateUpdater = { state = $0 }
+
+        coordinator.reconcileSessionAttachments(
+            activeProcesses: [
+                .init(
+                    tool: .claudeCode,
+                    sessionID: nil,
+                    workingDirectory: "/tmp/open-island",
+                    terminalTTY: "/dev/ttys001",
+                    terminalApp: "Ghostty"
+                ),
+            ],
+            ghosttyAvailability: .available([], appIsRunning: true),
+            terminalAvailability: .available([], appIsRunning: false),
+            preResolvedJumpTargets: [:]
+        )
+
+        #expect(state.sessions.map(\.id) == ["tracked-claude"])
+        #expect(state.session(id: "tracked-claude")?.jumpTarget?.terminalTTY == "/dev/ttys001")
+        #expect(state.session(id: "tracked-claude")?.hasRuntimePresence == true)
+        #expect(state.session(id: "tracked-claude")?.isVisibleInIsland == true)
+    }
 }
 
 private func codexSession(

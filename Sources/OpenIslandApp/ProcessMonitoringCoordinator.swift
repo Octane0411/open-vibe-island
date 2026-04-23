@@ -106,6 +106,12 @@ final class ProcessMonitoringCoordinator {
             local = SessionState(sessions: sanitizedSessions)
         }
 
+        // Let recovered Claude sessions adopt the live process TTY before we
+        // synthesize fallback rows. Otherwise a synthetic session can claim the
+        // process slot first and prevent the recovered session from re-homing
+        // within the same reconciliation pass.
+        adoptProcessTTYsForClaudeSessions(activeProcesses: activeProcesses, sessions: &local)
+
         let mergedSessions = mergedWithSyntheticClaudeSessions(
             existingSessions: local.sessions,
             activeProcesses: activeProcesses
@@ -113,9 +119,6 @@ final class ProcessMonitoringCoordinator {
         if mergedSessions != local.sessions {
             local = SessionState(sessions: mergedSessions)
         }
-
-        // Adopt process TTYs inline on local copy.
-        adoptProcessTTYsForClaudeSessions(activeProcesses: activeProcesses, sessions: &local)
 
         // Detect Codex.app running state BEFORE the empty-sessions early
         // return — we need to fire the callback on a brand-new Codex.app
@@ -165,7 +168,10 @@ final class ProcessMonitoringCoordinator {
         _ = local.reconcileJumpTargets(jumpTargetUpdates)
 
         // Phase 1: reconcile runtime evidence with explicit match strengths.
-        let runtimeEvidence = runtimeEvidenceBySessionID(activeProcesses: activeProcesses)
+        let runtimeEvidence = runtimeEvidenceBySessionID(
+            activeProcesses: activeProcesses,
+            sessions: local.sessions
+        )
         _ = local.reconcileRuntimePresence(evidenceBySessionID: runtimeEvidence)
 
         // Resolve jump targets via the new focused resolver.
@@ -219,10 +225,11 @@ final class ProcessMonitoringCoordinator {
     /// Returns explicit runtime evidence keyed by session ID. The values encode
     /// how strongly a live process/app observation matches the tracked session.
     func runtimeEvidenceBySessionID(
-        activeProcesses: [ActiveProcessSnapshot]
+        activeProcesses: [ActiveProcessSnapshot],
+        sessions: [AgentSession]? = nil
     ) -> [String: SessionRuntimeMatchStrength] {
         var evidenceBySessionID: [String: SessionRuntimeMatchStrength] = [:]
-        let sessions = state.sessions
+        let sessions = sessions ?? state.sessions
 
         func record(_ sessionID: String, strength: SessionRuntimeMatchStrength) {
             guard let existing = evidenceBySessionID[sessionID] else {
