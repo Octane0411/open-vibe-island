@@ -31,7 +31,7 @@ struct AppModelSessionListTests {
                 currentTool: "Task"
             )
         )
-        liveSession.isProcessAlive = true
+        liveSession.livenessObservation.seedRuntimePresence(.toolFamily)
 
         model.state = SessionState(
             sessions: [
@@ -87,7 +87,7 @@ struct AppModelSessionListTests {
                 terminalSessionID: "ghostty-split-1"
             )
         )
-        runningLive.isProcessAlive = true
+        runningLive.livenessObservation.seedRuntimePresence(.toolFamily)
 
         var oldTurnSameSplit = AgentSession(
             id: "old-turn-same-split",
@@ -106,7 +106,7 @@ struct AppModelSessionListTests {
                 terminalSessionID: "ghostty-split-1"
             )
         )
-        oldTurnSameSplit.isProcessAlive = true
+        oldTurnSameSplit.livenessObservation.seedRuntimePresence(.toolFamily)
 
         var otherLive = AgentSession(
             id: "other-live",
@@ -125,7 +125,7 @@ struct AppModelSessionListTests {
                 terminalSessionID: "ghostty-split-2"
             )
         )
-        otherLive.isProcessAlive = true
+        otherLive.livenessObservation.seedRuntimePresence(.toolFamily)
 
         model.state = SessionState(
             sessions: [runningLive, oldTurnSameSplit, otherLive]
@@ -178,7 +178,7 @@ struct AppModelSessionListTests {
             summary: "Working",
             updatedAt: now
         )
-        liveSession.isProcessAlive = true
+        liveSession.livenessObservation.seedRuntimePresence(.toolFamily)
 
         model.state = SessionState(sessions: [liveSession])
 
@@ -327,9 +327,8 @@ struct AppModelSessionListTests {
                 terminalTTY: "/dev/ttys001"
             )
         )
-        hookManagedSession.isHookManaged = true
-        hookManagedSession.isProcessAlive = false
-        hookManagedSession.processNotSeenCount = 1
+        hookManagedSession.lifecyclePolicy = .hookDrivenWithProcessFallback
+        hookManagedSession.livenessObservation = SessionLivenessObservation(observationCycle: 1)
 
         model.state = SessionState(sessions: [hookManagedSession])
 
@@ -347,8 +346,8 @@ struct AppModelSessionListTests {
             ingress: .rolloutBootstrap
         )
 
-        #expect(model.state.session(id: "hook-managed-codex")?.processNotSeenCount == 1)
-        #expect(model.state.session(id: "hook-managed-codex")?.isProcessAlive == false)
+        #expect(model.state.session(id: "hook-managed-codex")?.presenceMissCount == 1)
+        #expect(model.state.session(id: "hook-managed-codex")?.hasPresenceEvidence == false)
         #expect(model.liveSessionCount == 0)
     }
 
@@ -374,9 +373,8 @@ struct AppModelSessionListTests {
                 terminalTTY: "/dev/ttys001"
             )
         )
-        hookManagedSession.isHookManaged = true
-        hookManagedSession.isProcessAlive = false
-        hookManagedSession.processNotSeenCount = 1
+        hookManagedSession.lifecyclePolicy = .hookDrivenWithProcessFallback
+        hookManagedSession.livenessObservation = SessionLivenessObservation(observationCycle: 1)
 
         model.state = SessionState(sessions: [hookManagedSession])
 
@@ -394,8 +392,8 @@ struct AppModelSessionListTests {
             ingress: .rolloutLive
         )
 
-        #expect(model.state.session(id: "hook-managed-codex")?.processNotSeenCount == 0)
-        #expect(model.state.session(id: "hook-managed-codex")?.isProcessAlive == true)
+        #expect(model.state.session(id: "hook-managed-codex")?.presenceMissCount == 0)
+        #expect(model.state.session(id: "hook-managed-codex")?.hasPresenceEvidence == true)
         #expect(model.state.session(id: "hook-managed-codex")?.attachmentState == .stale)
         #expect(model.liveSessionCount == 1)
     }
@@ -724,7 +722,7 @@ struct AppModelSessionListTests {
         )
 
         #expect(merged.count == 1)
-        #expect(merged.first?.id.hasPrefix("claude-process:") == true)
+        #expect(merged.first?.id.hasPrefix(SessionTrackingDefaults.syntheticClaudeSessionPrefix) == true)
         #expect(merged.first?.attachmentState == .attached)
         #expect(merged.first?.jumpTarget?.terminalApp == "Ghostty")
         #expect(merged.first?.jumpTarget?.terminalTTY == "/dev/ttys002")
@@ -862,7 +860,7 @@ struct AppModelSessionListTests {
                 affectedPath: "/tmp/file_a.swift"
             )
         )
-        sessionA.isProcessAlive = true
+        sessionA.livenessObservation.seedRuntimePresence(.toolFamily)
 
         var sessionB = AgentSession(
             id: "approval-session-B",
@@ -878,7 +876,7 @@ struct AppModelSessionListTests {
                 affectedPath: "/tmp/file_b.swift"
             )
         )
-        sessionB.isProcessAlive = true
+        sessionB.livenessObservation.seedRuntimePresence(.toolFamily)
 
         model.state = SessionState(sessions: [sessionA, sessionB])
 
@@ -956,7 +954,7 @@ struct AppModelSessionListTests {
         // With relaxed CWD matching, recovered session matches the process
         // so no synthetic session is created.
         #expect(merged.count == 2)
-        #expect(merged.allSatisfy { !$0.id.hasPrefix("claude-process:") })
+        #expect(merged.allSatisfy { !$0.id.hasPrefix(SessionTrackingDefaults.syntheticClaudeSessionPrefix) })
 
         let probe = TerminalSessionAttachmentProbe()
         let resolutions = probe.sessionResolutions(

@@ -107,9 +107,9 @@ struct CodexSessionTrackingTests {
         )
 
         #expect(record.session.attachmentState == .attached)
-        #expect(record.session.isHookManaged)
+        #expect(record.session.lifecyclePolicy == .hookDrivenWithProcessFallback)
         #expect(record.restorableSession.attachmentState == .stale)
-        #expect(record.restorableSession.isHookManaged)
+        #expect(record.restorableSession.lifecyclePolicy == .hookDrivenWithProcessFallback)
     }
 
     @Test

@@ -332,7 +332,7 @@ struct SessionStateTests {
 
     @Test
     func restoredHookManagedSessionsStayHiddenUntilFreshLivenessEvidenceArrives() {
-        var restored = AgentSession(
+        let restored = AgentSession(
             id: "restored-codex",
             title: "Codex · open-island",
             tool: .codex,
@@ -343,14 +343,12 @@ struct SessionStateTests {
             updatedAt: .now,
             lifecyclePolicy: .hookDrivenWithProcessFallback
         )
-        restored.isProcessAlive = false
-
         var state = SessionState(sessions: [restored])
         #expect(state.liveSessionCount == 0)
 
         state.observeEventPresence(sessionID: "restored-codex", source: .bridge)
 
-        #expect(state.session(id: "restored-codex")?.isProcessAlive == true)
+        #expect(state.session(id: "restored-codex")?.hasPresenceEvidence == true)
         #expect(state.liveSessionCount == 1)
     }
 
@@ -374,7 +372,7 @@ struct SessionStateTests {
 
         _ = state.reconcileRuntimePresence(evidenceBySessionID: [:])
         #expect(state.session(id: "recovered-codex")?.isSessionEnded == false)
-        #expect(state.session(id: "recovered-codex")?.isProcessAlive == true)
+        #expect(state.session(id: "recovered-codex")?.hasPresenceEvidence == true)
 
         _ = state.reconcileRuntimePresence(evidenceBySessionID: [:])
         #expect(state.session(id: "recovered-codex")?.isSessionEnded == true)
@@ -430,7 +428,7 @@ struct SessionStateTests {
             summary: "Working",
             updatedAt: .now
         )
-        liveRunning.isProcessAlive = true
+        liveRunning.livenessObservation.seedRuntimePresence(.toolFamily)
 
         var liveAttention = AgentSession(
             id: "live-attention",
@@ -441,7 +439,7 @@ struct SessionStateTests {
             summary: "Needs approval",
             updatedAt: .now
         )
-        liveAttention.isProcessAlive = true
+        liveAttention.livenessObservation.seedRuntimePresence(.toolFamily)
 
         let state = SessionState(
             sessions: [

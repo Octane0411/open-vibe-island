@@ -15,6 +15,10 @@ enum NotchOpenReason: Equatable {
     case boot
 }
 
+enum SessionTrackingDefaults {
+    static let syntheticClaudeSessionPrefix = "claude-process:"
+}
+
 // MARK: - Island appearance
 
 enum IslandAppearanceMode: String, CaseIterable, Identifiable {

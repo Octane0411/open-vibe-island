@@ -110,10 +110,13 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
             lifecyclePolicy: lifecyclePolicy,
             isSessionEnded: isSessionEnded
         )
-        // Re-derive the Codex.app flag from the persisted terminalApp so
-        // restarted sessions continue to use app-level liveness rather than
+        // Re-derive the app-driven lifecycle from the persisted terminalApp so
+        // restarted sessions continue to use desktop-app liveness rather than
         // falling back to CLI subprocess matching (which would kill them).
-        session.isCodexAppSession = jumpTarget?.terminalApp == "Codex.app"
+        if jumpTarget?.terminalApp == "Codex.app" {
+            session.lifecyclePolicy = .appDriven
+            session.livenessObservation.seedRuntimePresence(.desktopApp)
+        }
         return session
     }
 

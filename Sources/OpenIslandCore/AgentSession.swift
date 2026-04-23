@@ -216,20 +216,6 @@ public struct SessionLivenessObservation: Equatable, Sendable {
         strongestRuntimeMatch = nil
     }
 
-    public mutating func setLegacyRuntimeMissCount(_ missCount: Int) {
-        observationCycle = max(observationCycle, missCount)
-        if missCount == 0 {
-            if let strongestRuntimeMatch {
-                seedRuntimePresence(strongestRuntimeMatch)
-            } else {
-                seedRuntimePresence(.toolFamily)
-            }
-            return
-        }
-
-        clearRuntimePresence()
-    }
-
     private func missCount(since positiveCycle: Int?) -> Int {
         guard let positiveCycle else {
             return observationCycle
@@ -511,33 +497,6 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     /// persisted; restored sessions must earn freshness again via new evidence.
     public var livenessObservation = SessionLivenessObservation()
 
-    /// Compatibility facade for older UI/tests. This is derived from the
-    /// explicit evidence model rather than persisted as a source of truth.
-    public var isProcessAlive: Bool {
-        get {
-            hasPresenceEvidence
-        }
-        set {
-            if newValue {
-                let match: SessionRuntimeMatchStrength = lifecyclePolicy == .appDriven ? .desktopApp : .toolFamily
-                livenessObservation.seedRuntimePresence(match)
-            } else {
-                livenessObservation.clearRuntimePresence()
-            }
-        }
-    }
-
-    /// Compatibility facade for older UI/tests. The canonical data lives in
-    /// `livenessObservation`.
-    public var processNotSeenCount: Int {
-        get {
-            presenceMissCount
-        }
-        set {
-            livenessObservation.setLegacyRuntimeMissCount(newValue)
-        }
-    }
-
     public init(
         id: String,
         title: String,
@@ -557,9 +516,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         cursorMetadata: CursorSessionMetadata? = nil,
         isRemote: Bool = false,
         lifecyclePolicy: SessionLifecyclePolicy = .processDriven,
-        isSessionEnded: Bool = false,
-        isProcessAlive: Bool = false,
-        processNotSeenCount: Int = 0
+        isSessionEnded: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -580,11 +537,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         self.isRemote = isRemote
         self.lifecyclePolicy = lifecyclePolicy
         self.isSessionEnded = isSessionEnded
-        self.livenessObservation = SessionLivenessObservation(
-            observationCycle: processNotSeenCount,
-            lastRuntimePositiveCycle: isProcessAlive ? processNotSeenCount : nil,
-            strongestRuntimeMatch: isProcessAlive ? (lifecyclePolicy == .appDriven ? .desktopApp : .toolFamily) : nil
-        )
+        self.livenessObservation = SessionLivenessObservation()
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -691,29 +644,6 @@ public extension AgentSession {
         tool == .codex && !isDemoSession
     }
 
-    var isHookManaged: Bool {
-        get { lifecyclePolicy == .hookDrivenWithProcessFallback }
-        set {
-            guard lifecyclePolicy != .appDriven else { return }
-            if newValue {
-                lifecyclePolicy = .hookDrivenWithProcessFallback
-            } else if lifecyclePolicy == .hookDrivenWithProcessFallback {
-                lifecyclePolicy = .processDriven
-            }
-        }
-    }
-
-    var isCodexAppSession: Bool {
-        get { lifecyclePolicy == .appDriven }
-        set {
-            if newValue {
-                lifecyclePolicy = .appDriven
-            } else if lifecyclePolicy == .appDriven {
-                lifecyclePolicy = .processDriven
-            }
-        }
-    }
-
     var isAttachedToTerminal: Bool {
         attachmentState.isLive
     }
@@ -730,9 +660,7 @@ public extension AgentSession {
         hasRuntimePresence || hasEventPresence
     }
 
-    /// Policy-aware presence used by the core reducer and UI. This is the
-    /// canonical meaning behind the older `isProcessAlive` compatibility
-    /// facade.
+    /// Policy-aware presence used by the core reducer and UI.
     var hasPresenceEvidence: Bool {
         switch lifecyclePolicy {
         case .appDriven, .processDriven:
@@ -742,9 +670,9 @@ public extension AgentSession {
         }
     }
 
-    /// Policy-aware miss count used by the compatibility `processNotSeenCount`
-    /// facade. Process-driven sessions expire on runtime misses; hook-managed
-    /// sessions expire on the first missing source among runtime or events.
+    /// Policy-aware miss count. Process-driven sessions expire on runtime
+    /// misses; hook-managed sessions expire on the first missing source among
+    /// runtime or events.
     var presenceMissCount: Int {
         switch lifecyclePolicy {
         case .appDriven, .processDriven:

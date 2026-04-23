@@ -90,8 +90,8 @@ public struct SessionState: Equatable, Sendable {
                 jumpTarget: payload.jumpTarget
             )
             // Codex.app sessions use app-level liveness (NSRunningApplication)
-            // rather than hook-managed processNotSeenCount polling — flag is
-            // derived from jumpTarget.terminalApp via the shared helper.
+            // rather than CLI subprocess polling. Their app-driven lifecycle
+            // is derived from jumpTarget.terminalApp via the shared helper.
             Self.refreshCodexAppClassification(for: &session)
             session.isSessionEnded = false
             if session.lifecyclePolicy == .appDriven {
@@ -340,9 +340,9 @@ public struct SessionState: Equatable, Sendable {
         return changed
     }
 
-    /// Upgrade `isCodexAppSession` if the session's current jumpTarget
-    /// identifies it as a Codex.app session.  Never downgrades — once a
-    /// session is classified as Codex.app, it stays classified even if a
+    /// Upgrade lifecycle policy if the session's current jumpTarget
+    /// identifies it as a Codex.app session. Never downgrades — once a
+    /// session is classified as app-driven, it stays classified even if a
     /// later resolver pass replaces the jumpTarget with a generic one.
     /// This handles the case where the first hook fires before terminalApp
     /// is known and a later `jumpTargetUpdated` fills it in.
@@ -361,7 +361,7 @@ public struct SessionState: Equatable, Sendable {
             return
         }
 
-        guard session.isHookManaged else {
+        guard session.lifecyclePolicy == .hookDrivenWithProcessFallback else {
             return
         }
 
@@ -401,7 +401,9 @@ public struct SessionState: Equatable, Sendable {
             // App-driven sessions use the same reducer, but their runtime
             // evidence normally arrives via `.desktopApp` instead of CLI
             // subprocess matching.
-            if session.isHookManaged && !session.isSessionEnded && !session.hasFallbackPresence {
+            if session.lifecyclePolicy == .hookDrivenWithProcessFallback
+                && !session.isSessionEnded
+                && !session.hasFallbackPresence {
                 session.isSessionEnded = true
                 session.phase = .completed
             }

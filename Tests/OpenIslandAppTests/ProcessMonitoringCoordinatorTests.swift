@@ -21,7 +21,8 @@ struct ProcessMonitoringCoordinatorTests {
         coordinator.stateAccessor = { state }
         coordinator.stateUpdater = { state = $0 }
 
-        let aliveIDs = coordinator.sessionIDsWithAliveProcesses(
+        let aliveIDs = aliveSessionIDs(
+            coordinator,
             activeProcesses: [
                 .init(
                     tool: .codex,
@@ -84,7 +85,8 @@ struct ProcessMonitoringCoordinatorTests {
         coordinator.stateAccessor = { state }
         coordinator.stateUpdater = { state = $0 }
 
-        let aliveIDs = coordinator.sessionIDsWithAliveProcesses(
+        let aliveIDs = aliveSessionIDs(
+            coordinator,
             activeProcesses: [
                 .init(
                     tool: .codex,
@@ -114,7 +116,8 @@ struct ProcessMonitoringCoordinatorTests {
         coordinator.stateAccessor = { state }
         coordinator.stateUpdater = { state = $0 }
 
-        let aliveIDs = coordinator.sessionIDsWithAliveProcesses(
+        let aliveIDs = aliveSessionIDs(
+            coordinator,
             activeProcesses: [
                 .init(
                     tool: .codex,
@@ -149,7 +152,8 @@ struct ProcessMonitoringCoordinatorTests {
         coordinator.stateAccessor = { state }
         coordinator.stateUpdater = { state = $0 }
 
-        let aliveIDs = coordinator.sessionIDsWithAliveProcesses(
+        let aliveIDs = aliveSessionIDs(
+            coordinator,
             activeProcesses: [
                 .init(
                     tool: .codex,
@@ -184,7 +188,8 @@ struct ProcessMonitoringCoordinatorTests {
         coordinator.stateAccessor = { state }
         coordinator.stateUpdater = { state = $0 }
 
-        let aliveIDs = coordinator.sessionIDsWithAliveProcesses(
+        let aliveIDs = aliveSessionIDs(
+            coordinator,
             activeProcesses: [
                 .init(
                     tool: .codex,
@@ -202,7 +207,6 @@ struct ProcessMonitoringCoordinatorTests {
     @Test
     func reconcileSessionAttachmentsUsesLocallyUpdatedSessionSnapshotForRuntimeEvidence() {
         let coordinator = ProcessMonitoringCoordinator()
-        coordinator.syntheticClaudeSessionPrefix = "synthetic-"
         let now = Date(timeIntervalSince1970: 2_000)
         var state = SessionState(
             sessions: [
@@ -249,6 +253,14 @@ struct ProcessMonitoringCoordinatorTests {
         #expect(state.session(id: "tracked-claude")?.hasRuntimePresence == true)
         #expect(state.session(id: "tracked-claude")?.isVisibleInIsland == true)
     }
+}
+
+@MainActor
+private func aliveSessionIDs(
+    _ coordinator: ProcessMonitoringCoordinator,
+    activeProcesses: [ActiveProcessSnapshot]
+) -> Set<String> {
+    Set(coordinator.runtimeEvidenceBySessionID(activeProcesses: activeProcesses).keys)
 }
 
 private func codexSession(

@@ -33,7 +33,6 @@ final class AppModel {
         .waitingForAnswer: "#FFD95A",
         .completed: "#42E86B",
     ]
-    private static let syntheticClaudeSessionPrefix = "claude-process:"
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
     private static let jumpOverlayDismissLeadTime: Duration = .milliseconds(20)
     static let hoverOpenDelay: TimeInterval = 0.15
@@ -552,7 +551,6 @@ final class AppModel {
             self?.lastActionMessage = message
         }
 
-        discovery.syntheticClaudeSessionPrefix = Self.syntheticClaudeSessionPrefix
         discovery.onStatusMessage = { [weak self] message in
             self?.lastActionMessage = message
         }
@@ -583,7 +581,6 @@ final class AppModel {
             self?.state.session(id: id) != nil
         }
 
-        monitoring.syntheticClaudeSessionPrefix = Self.syntheticClaudeSessionPrefix
         monitoring.stateAccessor = { [weak self] in self?.state ?? SessionState() }
         monitoring.stateUpdater = { [weak self] in self?.state = $0 }
         monitoring.onSessionsReconciled = { [weak self] in

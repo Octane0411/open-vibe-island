@@ -1,5 +1,11 @@
 # Session State Management Refactoring Plan
 
+> Historical design note. This plan predates the current
+> `SessionLifecyclePolicy` + `SessionLivenessObservation` model and is kept as
+> background context, not as the source of truth for current behavior. See
+> [docs/session-lifecycle-policy.md](./session-lifecycle-policy.md) for the
+> current lifecycle model.
+
 ## 1. Problem Statement
 
 The current session state management is overly complex: a 3-state attachment model (`attached`/`stale`/`detached`) with 6+ reconciliation passes, AppleScript snapshots driving visibility, multi-pass matching, 15-minute grace windows, synthetic session creation, and CWD-based fallback matching. Every new terminal (e.g., cmux) requires patches across multiple code paths.

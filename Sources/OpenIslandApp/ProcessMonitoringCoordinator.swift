@@ -11,7 +11,7 @@ final class ProcessMonitoringCoordinator {
     var isResolvingInitialLiveSessions = false
 
     @ObservationIgnored
-    var syntheticClaudeSessionPrefix = ""
+    var syntheticClaudeSessionPrefix = SessionTrackingDefaults.syntheticClaudeSessionPrefix
 
     @ObservationIgnored
     var stateAccessor: (() -> SessionState)?
@@ -243,7 +243,7 @@ final class ProcessMonitoringCoordinator {
         // Codex.app sessions: keep alive while the desktop app is running.
         let isCodexAppRunning = Self.isCodexDesktopAppRunning()
         for session in sessions where session.tool == .codex && !session.isDemoSession {
-            if session.isCodexAppSession {
+            if session.lifecyclePolicy == .appDriven {
                 if isCodexAppRunning { record(session.id, strength: .desktopApp) }
             }
         }
@@ -254,7 +254,7 @@ final class ProcessMonitoringCoordinator {
         // UUID from lsof on a given poll.
         let codexProcesses = activeProcesses.filter { $0.tool == .codex }
         let trackedCodexSessions = sessions.filter {
-            $0.tool == .codex && !$0.isDemoSession && !$0.isCodexAppSession
+            $0.tool == .codex && !$0.isDemoSession && $0.lifecyclePolicy != .appDriven
         }
         var claimedCodexSessionIDs: Set<String> = []
 
@@ -384,12 +384,6 @@ final class ProcessMonitoringCoordinator {
         }
 
         return evidenceBySessionID
-    }
-
-    func sessionIDsWithAliveProcesses(
-        activeProcesses: [ActiveProcessSnapshot]
-    ) -> Set<String> {
-        Set(runtimeEvidenceBySessionID(activeProcesses: activeProcesses).keys)
     }
 
     private struct MatchedSessionEvidence {

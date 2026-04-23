@@ -41,7 +41,7 @@ final class OpenCodeSessionRegistryTests: XCTestCase {
         XCTAssertEqual(loaded[0].sessionID, "opencode-1")
         XCTAssertEqual(loaded[0].openCodeMetadata?.initialUserPrompt, "Hello")
         XCTAssertEqual(loaded[0].session.lifecyclePolicy, .hookDrivenWithProcessFallback)
-        XCTAssertTrue(loaded[0].restorableSession.isHookManaged)
+        XCTAssertEqual(loaded[0].restorableSession.lifecyclePolicy, .hookDrivenWithProcessFallback)
     }
 
     func testLoadEmpty() throws {

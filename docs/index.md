@@ -35,7 +35,7 @@ This index is the repository map for humans and coding agents. Read these files 
 
 ## Refactoring Plans
 
-- [docs/session-state-refactor.md](./session-state-refactor.md) for the session state management refactoring plan (process discovery as source of truth)
+- [docs/session-state-refactor.md](./session-state-refactor.md) for the historical session state refactoring plan that predates the current lifecycle-policy/evidence model
 
 ## Watch / iOS
 

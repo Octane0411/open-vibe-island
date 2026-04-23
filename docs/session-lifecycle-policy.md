@@ -37,10 +37,10 @@ reconstructing behavior from incidental booleans at restore time.
   - event presence from bridge events or live rollout appends
 - Hook-managed sessions end only after two consecutive reconciliation polls
   without either runtime evidence or event presence.
-- Bridge and rollout ingress do not directly mutate `isProcessAlive`; they add
-  evidence that the reducer interprets.
-- `isProcessAlive` and `processNotSeenCount` remain compatibility facades only.
-  Core reducers and app logic should use policy-aware presence helpers instead.
+- Bridge and rollout ingress add evidence to `livenessObservation`; the reducer
+  interprets that evidence according to `lifecyclePolicy`.
+- Core reducers and app logic should use policy-aware helpers such as
+  `hasPresenceEvidence` and `presenceMissCount`.
 
 ## Match Strength
 

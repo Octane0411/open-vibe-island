@@ -22,7 +22,7 @@ final class SessionDiscoveryCoordinator {
     }
 
     @ObservationIgnored
-    var syntheticClaudeSessionPrefix = ""
+    var syntheticClaudeSessionPrefix = SessionTrackingDefaults.syntheticClaudeSessionPrefix
 
     @ObservationIgnored
     var onStatusMessage: ((String) -> Void)?
@@ -383,7 +383,7 @@ final class SessionDiscoveryCoordinator {
             // Codex.app sessions already get their lifecycle from hooks
             // (and eventually app-server). The rollout watcher would
             // duplicate completion notifications and is not needed.
-            if session.isCodexAppSession {
+            if session.lifecyclePolicy == .appDriven {
                 return nil
             }
 
@@ -432,7 +432,7 @@ final class SessionDiscoveryCoordinator {
 
         let newSessions = newRecords.map { record -> AgentSession in
             var session = record.session
-            session.isCodexAppSession = true
+            session.lifecyclePolicy = .appDriven
             session.livenessObservation.seedRuntimePresence(.desktopApp)
             // Prefer the discovered record's cwd (sourced from the rollout
             // file's session_meta) over an empty fallback.

@@ -75,6 +75,6 @@ struct ClaudeSessionRegistryTests {
         #expect(record.session.attachmentState == .attached)
         #expect(record.restorableSession.attachmentState == .stale)
         #expect(record.restorableSession.jumpTarget?.terminalSessionID == "ghostty-claude")
-        #expect(record.restorableSession.isHookManaged)
+        #expect(record.restorableSession.lifecyclePolicy == .hookDrivenWithProcessFallback)
     }
 }
