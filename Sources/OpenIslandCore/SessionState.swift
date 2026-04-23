@@ -1,6 +1,13 @@
 import Foundation
 
 public struct SessionState: Equatable, Sendable {
+    /// Number of consecutive process-discovery misses before a hook-managed
+    /// session is assumed crashed and marked ended. Raised from 2 — the old
+    /// threshold killed live Claude Code sessions within seconds of any
+    /// discovery hiccup. Any incoming hook event (activity, permission,
+    /// question, turn completion) resets this counter to 0.
+    static let hookManagedProcessDiscoveryMissThreshold = 30
+
     public private(set) var sessionsByID: [String: AgentSession]
 
     public init(sessions: [AgentSession] = []) {
@@ -107,6 +114,10 @@ public struct SessionState: Equatable, Sendable {
                 }
             }
 
+            // Any activity hook proves the agent is alive. Revive the session
+            // even if a prior process-liveness sweep had marked it ended.
+            session.isSessionEnded = false
+            session.processNotSeenCount = 0
             session.updatedAt = payload.timestamp
             upsert(session)
 
@@ -119,6 +130,8 @@ public struct SessionState: Equatable, Sendable {
             session.summary = payload.request.summary
             session.permissionRequest = payload.request
             session.questionPrompt = nil
+            session.isSessionEnded = false
+            session.processNotSeenCount = 0
             session.updatedAt = payload.timestamp
             upsert(session)
 
@@ -131,6 +144,8 @@ public struct SessionState: Equatable, Sendable {
             session.summary = payload.prompt.title
             session.questionPrompt = payload.prompt
             session.permissionRequest = nil
+            session.isSessionEnded = false
+            session.processNotSeenCount = 0
             session.updatedAt = payload.timestamp
             upsert(session)
 
@@ -146,6 +161,12 @@ public struct SessionState: Equatable, Sendable {
             session.updatedAt = payload.timestamp
             if payload.isSessionEnd == true {
                 session.isSessionEnded = true
+            } else {
+                // Claude's Stop/PostToolUse "turn complete" hook is NOT a
+                // session end — the agent is still running and can accept
+                // a new prompt. Reset the process-liveness counter so
+                // subsequent discovery misses don't kill it.
+                session.processNotSeenCount = 0
             }
             upsert(session)
 
@@ -392,7 +413,15 @@ public struct SessionState: Equatable, Sendable {
                     session.processNotSeenCount = 0
                 } else {
                     session.processNotSeenCount += 1
-                    if session.processNotSeenCount >= 2 {
+                    // Process discovery for Claude Code is unreliable — node
+                    // processes expose no session hint on the command line, so
+                    // the heuristic misses frequently. Only use this as a last-
+                    // resort crash detector: require a long streak of misses
+                    // (was 2, wildly too aggressive) AND never kill a session
+                    // still blocking on the user.
+                    let blocksOnUser = session.phase.requiresAttention
+                    if session.processNotSeenCount >= Self.hookManagedProcessDiscoveryMissThreshold,
+                       !blocksOnUser {
                         session.isSessionEnded = true
                         session.phase = .completed
                         changed.insert(id)
