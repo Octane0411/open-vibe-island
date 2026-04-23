@@ -149,6 +149,40 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func legacyCodexRecordWithoutOriginDecodesAsHookDriven() throws {
+        let legacyJSON = """
+        {
+          "sessionID": "codex-legacy-1",
+          "title": "Codex · legacy",
+          "attachmentState": "attached",
+          "summary": "Restored from a pre-origin registry.",
+          "phase": "running",
+          "updatedAt": 0,
+          "jumpTarget": {
+            "terminalApp": "Ghostty",
+            "workspaceName": "open-island",
+            "paneTitle": "codex ~/src/open-vibe-island"
+          },
+          "codexMetadata": {
+            "transcriptPath": "/tmp/codex-legacy.jsonl",
+            "lastAssistantMessage": "Restored legacy Codex session."
+          }
+        }
+        """.data(using: .utf8)!
+
+        let record = try JSONDecoder().decode(CodexTrackedSessionRecord.self, from: legacyJSON)
+        let session = record.session
+
+        #expect(record.origin == nil)
+        #expect(record.lifecyclePolicy == .hookDrivenWithProcessFallback)
+        #expect(session.lifecyclePolicy == .hookDrivenWithProcessFallback)
+        #expect(session.jumpTarget?.terminalApp == "Ghostty")
+        #expect(session.codexMetadata?.transcriptPath == "/tmp/codex-legacy.jsonl")
+        #expect(session.livenessObservation.lastRuntimePositiveCycle == nil)
+        #expect(session.livenessObservation.strongestRuntimeMatch == nil)
+    }
+
+    @Test
     func codexSessionStoreLoadsLegacyRecordsWithoutAttachmentState() throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("open-island-legacy-tracking-\(UUID().uuidString)", isDirectory: true)

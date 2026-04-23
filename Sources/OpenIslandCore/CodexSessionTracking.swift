@@ -95,10 +95,34 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
     }
 
     public var session: AgentSession {
-        let restoredLifecyclePolicy: SessionLifecyclePolicy
+        func makeSession(lifecyclePolicy restoredLifecyclePolicy: SessionLifecyclePolicy) -> AgentSession {
+            AgentSession(
+                id: sessionID,
+                title: title,
+                tool: .codex,
+                origin: origin,
+                attachmentState: attachmentState,
+                phase: phase,
+                summary: summary,
+                updatedAt: updatedAt,
+                jumpTarget: jumpTarget,
+                codexMetadata: codexMetadata,
+                isRemote: isRemote,
+                lifecyclePolicy: restoredLifecyclePolicy,
+                isSessionEnded: isSessionEnded
+            )
+        }
+
         if jumpTarget?.terminalApp == "Codex.app" {
-            restoredLifecyclePolicy = .appDriven
-        } else if lifecyclePolicy == .appDriven {
+            let restoredLifecyclePolicy: SessionLifecyclePolicy = .appDriven
+            var session = makeSession(lifecyclePolicy: restoredLifecyclePolicy)
+            session.lifecyclePolicy = restoredLifecyclePolicy
+            session.livenessObservation.seedRuntimePresence(.desktopApp)
+            return session
+        }
+
+        let restoredLifecyclePolicy: SessionLifecyclePolicy
+        if lifecyclePolicy == .appDriven {
             restoredLifecyclePolicy = AgentSession.inferredLifecyclePolicy(
                 tool: .codex,
                 origin: origin,
@@ -108,29 +132,7 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
             restoredLifecyclePolicy = lifecyclePolicy
         }
 
-        var session = AgentSession(
-            id: sessionID,
-            title: title,
-            tool: .codex,
-            origin: origin,
-            attachmentState: attachmentState,
-            phase: phase,
-            summary: summary,
-            updatedAt: updatedAt,
-            jumpTarget: jumpTarget,
-            codexMetadata: codexMetadata,
-            isRemote: isRemote,
-            lifecyclePolicy: restoredLifecyclePolicy,
-            isSessionEnded: isSessionEnded
-        )
-        // Re-derive the app-driven lifecycle from the persisted terminalApp so
-        // restarted sessions continue to use desktop-app liveness rather than
-        // falling back to CLI subprocess matching (which would kill them).
-        if jumpTarget?.terminalApp == "Codex.app" {
-            session.lifecyclePolicy = .appDriven
-            session.livenessObservation.seedRuntimePresence(.desktopApp)
-        }
-        return session
+        return makeSession(lifecyclePolicy: restoredLifecyclePolicy)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -160,12 +162,17 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
         jumpTarget = try container.decodeIfPresent(JumpTarget.self, forKey: .jumpTarget)
         codexMetadata = try container.decodeIfPresent(CodexSessionMetadata.self, forKey: .codexMetadata)
         isRemote = try container.decodeIfPresent(Bool.self, forKey: .isRemote) ?? false
-        lifecyclePolicy = try container.decodeIfPresent(SessionLifecyclePolicy.self, forKey: .lifecyclePolicy)
-            ?? AgentSession.inferredLifecyclePolicy(
+        if let decodedLifecyclePolicy = try container.decodeIfPresent(SessionLifecyclePolicy.self, forKey: .lifecyclePolicy) {
+            lifecyclePolicy = decodedLifecyclePolicy
+        } else if origin == nil {
+            lifecyclePolicy = .hookDrivenWithProcessFallback
+        } else {
+            lifecyclePolicy = AgentSession.inferredLifecyclePolicy(
                 tool: .codex,
                 origin: origin,
                 jumpTarget: jumpTarget
             )
+        }
         isSessionEnded = try container.decodeIfPresent(Bool.self, forKey: .isSessionEnded) ?? false
     }
 
