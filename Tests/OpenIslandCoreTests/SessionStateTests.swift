@@ -1104,6 +1104,22 @@ struct SessionStateTests {
     }
 
     @Test
+    func sessionTrackingIdentityRoundTripsThroughCodable() throws {
+        let identity = SessionTrackingIdentity(
+            sessionID: "session-1",
+            transcriptPath: "/tmp/session-1.jsonl",
+            workingDirectory: "/Users/example/project",
+            terminalTTY: "/dev/ttys001",
+            terminalSessionID: "terminal-session-1"
+        )
+
+        let data = try JSONEncoder().encode(identity)
+        let decoded = try JSONDecoder().decode(SessionTrackingIdentity.self, from: data)
+
+        #expect(decoded == identity)
+    }
+
+    @Test
     func jumpTargetRoundTripsWarpPaneUUIDThroughCodable() throws {
         let target = JumpTarget(
             terminalApp: "Warp",

@@ -226,7 +226,7 @@ public struct SessionLivenessObservation: Equatable, Sendable {
     }
 }
 
-public struct SessionTrackingIdentity: Equatable, Sendable {
+public struct SessionTrackingIdentity: Equatable, Codable, Sendable {
     public var sessionID: String
     public var transcriptPath: String?
     public var workingDirectory: String?
