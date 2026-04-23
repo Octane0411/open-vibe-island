@@ -274,6 +274,31 @@ struct SessionStateTests {
         #expect(state.session(id: "live-session-1")?.origin == .live)
         #expect(state.session(id: "live-session-1")?.isDemoSession == false)
         #expect(state.session(id: "live-session-1")?.attachmentState == .attached)
+        #expect(state.session(id: "live-session-1")?.lifecyclePolicy == .hookDrivenWithProcessFallback)
+    }
+
+    @Test
+    func restoredHookManagedSessionsStayHiddenUntilFreshLivenessEvidenceArrives() {
+        var restored = AgentSession(
+            id: "restored-codex",
+            title: "Codex · open-island",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .stale,
+            phase: .running,
+            summary: "Recovered from cache",
+            updatedAt: .now,
+            lifecyclePolicy: .hookDrivenWithProcessFallback
+        )
+        restored.isProcessAlive = false
+
+        var state = SessionState(sessions: [restored])
+        #expect(state.liveSessionCount == 0)
+
+        state.markSingleSessionAlive(sessionID: "restored-codex")
+
+        #expect(state.session(id: "restored-codex")?.isProcessAlive == true)
+        #expect(state.liveSessionCount == 1)
     }
 
     @Test

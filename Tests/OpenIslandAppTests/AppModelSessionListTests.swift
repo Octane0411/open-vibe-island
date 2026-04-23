@@ -305,6 +305,101 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func rolloutBootstrapDoesNotRefreshRecoveredCodexLiveness() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+
+        var hookManagedSession = AgentSession(
+            id: "hook-managed-codex",
+            title: "Codex · open-island",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .stale,
+            phase: .running,
+            summary: "Working",
+            updatedAt: now,
+            jumpTarget: JumpTarget(
+                terminalApp: "WezTerm",
+                workspaceName: "open-island",
+                paneTitle: "codex ~/tmp/open-island",
+                workingDirectory: "/tmp/open-island",
+                terminalTTY: "/dev/ttys001"
+            )
+        )
+        hookManagedSession.isHookManaged = true
+        hookManagedSession.isProcessAlive = false
+        hookManagedSession.processNotSeenCount = 1
+
+        model.state = SessionState(sessions: [hookManagedSession])
+
+        model.applyTrackedEvent(
+            .sessionMetadataUpdated(
+                SessionMetadataUpdated(
+                    sessionID: "hook-managed-codex",
+                    codexMetadata: CodexSessionMetadata(
+                        transcriptPath: "/Users/test/.codex/sessions/2026/04/23/rollout-2026-04-23T12-00-00-019d516f-71ee-7e40-bcff-502fedac0928.jsonl"
+                    ),
+                    timestamp: now.addingTimeInterval(1)
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .rolloutBootstrap
+        )
+
+        #expect(model.state.session(id: "hook-managed-codex")?.processNotSeenCount == 1)
+        #expect(model.state.session(id: "hook-managed-codex")?.isProcessAlive == false)
+        #expect(model.liveSessionCount == 0)
+    }
+
+    @Test
+    func rolloutLiveEventsRefreshRecoveredHookManagedCodexSessions() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+
+        var hookManagedSession = AgentSession(
+            id: "hook-managed-codex",
+            title: "Codex · open-island",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .stale,
+            phase: .running,
+            summary: "Working",
+            updatedAt: now,
+            jumpTarget: JumpTarget(
+                terminalApp: "WezTerm",
+                workspaceName: "open-island",
+                paneTitle: "codex ~/tmp/open-island",
+                workingDirectory: "/tmp/open-island",
+                terminalTTY: "/dev/ttys001"
+            )
+        )
+        hookManagedSession.isHookManaged = true
+        hookManagedSession.isProcessAlive = false
+        hookManagedSession.processNotSeenCount = 1
+
+        model.state = SessionState(sessions: [hookManagedSession])
+
+        model.applyTrackedEvent(
+            .sessionMetadataUpdated(
+                SessionMetadataUpdated(
+                    sessionID: "hook-managed-codex",
+                    codexMetadata: CodexSessionMetadata(
+                        transcriptPath: "/Users/test/.codex/sessions/2026/04/23/rollout-2026-04-23T12-00-00-019d516f-71ee-7e40-bcff-502fedac0928.jsonl"
+                    ),
+                    timestamp: now.addingTimeInterval(1)
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .rolloutLive
+        )
+
+        #expect(model.state.session(id: "hook-managed-codex")?.processNotSeenCount == 0)
+        #expect(model.state.session(id: "hook-managed-codex")?.isProcessAlive == true)
+        #expect(model.state.session(id: "hook-managed-codex")?.attachmentState == .stale)
+        #expect(model.liveSessionCount == 1)
+    }
+
+    @Test
     func rolloutCompletionDoesNotPresentNotificationDuringColdStart() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()

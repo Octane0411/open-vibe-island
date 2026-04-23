@@ -73,7 +73,11 @@ public struct SessionState: Equatable, Sendable {
                 cursorMetadata: payload.cursorMetadata?.isEmpty == true ? nil : payload.cursorMetadata
             )
             session.isRemote = payload.isRemote
-            session.isHookManaged = payload.origin == .live
+            session.lifecyclePolicy = AgentSession.inferredLifecyclePolicy(
+                tool: payload.tool,
+                origin: payload.origin,
+                jumpTarget: payload.jumpTarget
+            )
             // Codex.app sessions use app-level liveness (NSRunningApplication)
             // rather than hook-managed processNotSeenCount polling — flag is
             // derived from jumpTarget.terminalApp via the shared helper.
@@ -321,9 +325,7 @@ public struct SessionState: Equatable, Sendable {
     /// is known and a later `jumpTargetUpdated` fills it in.
     static func refreshCodexAppClassification(for session: inout AgentSession) {
         if session.jumpTarget?.terminalApp == "Codex.app" {
-            session.isCodexAppSession = true
-            // Codex.app sessions use app-level liveness, not hook-managed polling.
-            session.isHookManaged = false
+            session.lifecyclePolicy = .appDriven
         }
     }
 

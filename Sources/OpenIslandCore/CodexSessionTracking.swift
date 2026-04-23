@@ -45,6 +45,9 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
     public var updatedAt: Date
     public var jumpTarget: JumpTarget?
     public var codexMetadata: CodexSessionMetadata?
+    public var isRemote: Bool
+    public var lifecyclePolicy: SessionLifecyclePolicy
+    public var isSessionEnded: Bool
 
     public init(
         sessionID: String,
@@ -55,7 +58,10 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
         phase: SessionPhase,
         updatedAt: Date,
         jumpTarget: JumpTarget? = nil,
-        codexMetadata: CodexSessionMetadata? = nil
+        codexMetadata: CodexSessionMetadata? = nil,
+        isRemote: Bool = false,
+        lifecyclePolicy: SessionLifecyclePolicy = .hookDrivenWithProcessFallback,
+        isSessionEnded: Bool = false
     ) {
         self.sessionID = sessionID
         self.title = title
@@ -66,6 +72,9 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
         self.updatedAt = updatedAt
         self.jumpTarget = jumpTarget
         self.codexMetadata = codexMetadata
+        self.isRemote = isRemote
+        self.lifecyclePolicy = lifecyclePolicy
+        self.isSessionEnded = isSessionEnded
     }
 
     public init(session: AgentSession) {
@@ -78,7 +87,10 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
             phase: session.phase,
             updatedAt: session.updatedAt,
             jumpTarget: session.jumpTarget,
-            codexMetadata: session.codexMetadata
+            codexMetadata: session.codexMetadata,
+            isRemote: session.isRemote,
+            lifecyclePolicy: session.lifecyclePolicy,
+            isSessionEnded: session.isSessionEnded
         )
     }
 
@@ -93,7 +105,10 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
             summary: summary,
             updatedAt: updatedAt,
             jumpTarget: jumpTarget,
-            codexMetadata: codexMetadata
+            codexMetadata: codexMetadata,
+            isRemote: isRemote,
+            lifecyclePolicy: lifecyclePolicy,
+            isSessionEnded: isSessionEnded
         )
         // Re-derive the Codex.app flag from the persisted terminalApp so
         // restarted sessions continue to use app-level liveness rather than
@@ -112,6 +127,9 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
         case updatedAt
         case jumpTarget
         case codexMetadata
+        case isRemote
+        case lifecyclePolicy
+        case isSessionEnded
     }
 
     public init(from decoder: any Decoder) throws {
@@ -125,6 +143,14 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         jumpTarget = try container.decodeIfPresent(JumpTarget.self, forKey: .jumpTarget)
         codexMetadata = try container.decodeIfPresent(CodexSessionMetadata.self, forKey: .codexMetadata)
+        isRemote = try container.decodeIfPresent(Bool.self, forKey: .isRemote) ?? false
+        lifecyclePolicy = try container.decodeIfPresent(SessionLifecyclePolicy.self, forKey: .lifecyclePolicy)
+            ?? AgentSession.inferredLifecyclePolicy(
+                tool: .codex,
+                origin: origin,
+                jumpTarget: jumpTarget
+            )
+        isSessionEnded = try container.decodeIfPresent(Bool.self, forKey: .isSessionEnded) ?? false
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -138,6 +164,9 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(jumpTarget, forKey: .jumpTarget)
         try container.encodeIfPresent(codexMetadata, forKey: .codexMetadata)
+        try container.encode(isRemote, forKey: .isRemote)
+        try container.encode(lifecyclePolicy, forKey: .lifecyclePolicy)
+        try container.encode(isSessionEnded, forKey: .isSessionEnded)
     }
 }
 
@@ -828,6 +857,21 @@ public enum CodexRolloutReducer {
     }
 }
 
+public enum CodexRolloutEventFreshness: String, Codable, Sendable {
+    case bootstrap
+    case live
+}
+
+public struct CodexRolloutObservedEvent: Sendable {
+    public var event: AgentEvent
+    public var freshness: CodexRolloutEventFreshness
+
+    public init(event: AgentEvent, freshness: CodexRolloutEventFreshness) {
+        self.event = event
+        self.freshness = freshness
+    }
+}
+
 public final class CodexRolloutWatcher: @unchecked Sendable {
     private struct Observation {
         var target: CodexRolloutWatchTarget
@@ -835,9 +879,10 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
         var pendingBuffer = Data()
         var snapshot = CodexRolloutSnapshot()
         var shouldTrimLeadingPartialLine = false
+        var hasDeliveredInitialEvents = false
     }
 
-    public var eventHandler: (@Sendable (AgentEvent) -> Void)?
+    public var eventHandler: (@Sendable (CodexRolloutObservedEvent) -> Void)?
 
     private let pollInterval: TimeInterval
     private let initialReadLimit: UInt64
@@ -920,13 +965,13 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
                 continue
             }
 
-            let events = refresh(observation: &observation)
+            let observedEvents = refresh(observation: &observation)
             observations[sessionID] = observation
-            events.forEach { eventHandler?($0) }
+            observedEvents.forEach { eventHandler?($0) }
         }
     }
 
-    private func refresh(observation: inout Observation) -> [AgentEvent] {
+    private func refresh(observation: inout Observation) -> [CodexRolloutObservedEvent] {
         let fileURL = URL(fileURLWithPath: observation.target.transcriptPath)
         guard FileManager.default.fileExists(atPath: fileURL.path),
               let fileHandle = try? FileHandle(forReadingFrom: fileURL) else {
@@ -942,6 +987,7 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
             observation.offset = 0
             observation.pendingBuffer.removeAll(keepingCapacity: false)
             observation.snapshot = CodexRolloutSnapshot()
+            observation.hasDeliveredInitialEvents = false
         }
 
         do {
@@ -966,13 +1012,14 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
 
             let oldSnapshot = observation.snapshot
             lines.forEach { CodexRolloutReducer.apply(line: $0, to: &observation.snapshot) }
-
+            let freshness: CodexRolloutEventFreshness = observation.hasDeliveredInitialEvents ? .live : .bootstrap
+            observation.hasDeliveredInitialEvents = true
             return CodexRolloutReducer.events(
                 from: oldSnapshot,
                 to: observation.snapshot,
                 sessionID: observation.target.sessionID,
                 transcriptPath: observation.target.transcriptPath
-            )
+            ).map { CodexRolloutObservedEvent(event: $0, freshness: freshness) }
         } catch {
             return []
         }

@@ -269,20 +269,51 @@ final class ProcessMonitoringCoordinator {
         var aliveIDs: Set<String> = []
         let sessions = state.sessions
 
-        // Codex CLI sessions: match by session ID directly.
-        let codexProcessIDs = Set(
-            activeProcesses
-                .filter { $0.tool == .codex }
-                .compactMap(\.sessionID)
-        )
         // Codex.app sessions: keep alive while the desktop app is running.
         let isCodexAppRunning = Self.isCodexDesktopAppRunning()
         for session in sessions where session.tool == .codex && !session.isDemoSession {
             if session.isCodexAppSession {
                 if isCodexAppRunning { aliveIDs.insert(session.id) }
-            } else if codexProcessIDs.contains(session.id) {
-                aliveIDs.insert(session.id)
             }
+        }
+
+        // Codex CLI sessions use the same multi-pass reconciliation as Claude:
+        // exact session ID first, then rollout transcript identity, then a
+        // unique terminal TTY + cwd fallback when discovery cannot recover the
+        // UUID from lsof on a given poll.
+        let codexProcesses = activeProcesses.filter { $0.tool == .codex }
+        let trackedCodexSessions = sessions.filter {
+            $0.tool == .codex && !$0.isDemoSession && !$0.isCodexAppSession
+        }
+        var claimedCodexSessionIDs: Set<String> = []
+
+        for process in codexProcesses {
+            guard let processSessionID = process.sessionID,
+                  let matched = trackedCodexSessions.first(where: {
+                      !claimedCodexSessionIDs.contains($0.id) && $0.id == processSessionID
+                  }) else { continue }
+            aliveIDs.insert(matched.id)
+            claimedCodexSessionIDs.insert(matched.id)
+        }
+
+        for process in codexProcesses {
+            guard let transcriptPath = process.transcriptPath,
+                  let matched = trackedCodexSessions.first(where: {
+                      !claimedCodexSessionIDs.contains($0.id)
+                          && $0.codexMetadata?.transcriptPath == transcriptPath
+                  }) else { continue }
+            aliveIDs.insert(matched.id)
+            claimedCodexSessionIDs.insert(matched.id)
+        }
+
+        for process in codexProcesses {
+            guard let matched = uniqueTrackedCodexSession(
+                for: process,
+                sessions: trackedCodexSessions,
+                claimedSessionIDs: claimedCodexSessionIDs
+            ) else { continue }
+            aliveIDs.insert(matched.id)
+            claimedCodexSessionIDs.insert(matched.id)
         }
 
         // Claude sessions: reuse the multi-pass matching from representedClaudeProcessKeys.
@@ -326,7 +357,6 @@ final class ProcessMonitoringCoordinator {
         // session ID through process discovery. Match each active OpenCode process
         // to at most one tracked session.
         let openCodeProcesses = activeProcesses.filter { $0.tool == .openCode }
-        // Do not filter by `isHookManaged` here because restored sessions drop that flag.
         let trackedOpenCodeSessions = sessions.filter { $0.tool == .openCode && !$0.isDemoSession }
         var claimedOpenCodeSessionIDs: Set<String> = []
         var hasUnmatchedOpenCodeProcess = false
@@ -418,6 +448,51 @@ final class ProcessMonitoringCoordinator {
         return aliveIDs
     }
 
+    private func uniqueTrackedCodexSession(
+        for process: ActiveProcessSnapshot,
+        sessions: [AgentSession],
+        claimedSessionIDs: Set<String>
+    ) -> AgentSession? {
+        guard let terminalTTY = normalizedTTYForMatching(process.terminalTTY) else {
+            return nil
+        }
+
+        if let workingDirectory = normalizedPathForMatching(process.workingDirectory) {
+            let candidates = sessions.filter { session in
+                let identity = session.trackingIdentity
+                guard session.tool == .codex,
+                      !claimedSessionIDs.contains(session.id),
+                      normalizedTTYForMatching(identity.terminalTTY) == terminalTTY,
+                      normalizedPathForMatching(identity.workingDirectory) == workingDirectory else {
+                    return false
+                }
+
+                return true
+            }
+
+            guard candidates.count == 1 else {
+                return nil
+            }
+
+            return candidates[0]
+        }
+
+        // `lsof` is enrichment, not truth. If it times out on a healthy Codex
+        // process, keep a uniquely bound TTY alive rather than ending the
+        // session after two missed polls.
+        let candidates = sessions.filter { session in
+            session.tool == .codex
+                && !claimedSessionIDs.contains(session.id)
+                && normalizedTTYForMatching(session.trackingIdentity.terminalTTY) == terminalTTY
+        }
+
+        guard candidates.count == 1 else {
+            return nil
+        }
+
+        return candidates[0]
+    }
+
     private enum OpenCodeMatchResult {
         case matched(AgentSession)
         case ambiguous
@@ -436,12 +511,12 @@ final class ProcessMonitoringCoordinator {
 
         if let terminalTTY = normalizedTTYForMatching(process.terminalTTY) {
             let candidates = unclaimedSessions.filter {
-                normalizedTTYForMatching($0.jumpTarget?.terminalTTY) == terminalTTY
+                normalizedTTYForMatching($0.trackingIdentity.terminalTTY) == terminalTTY
             }
             if candidates.count == 1 {
                 let candidate = candidates[0]
                 if let processCWD = normalizedPathForMatching(process.workingDirectory),
-                   let sessionCWD = normalizedPathForMatching(candidate.jumpTarget?.workingDirectory),
+                   let sessionCWD = normalizedPathForMatching(candidate.trackingIdentity.workingDirectory),
                    processCWD != sessionCWD {
                     // TTY matched, but CWD explicitly differs (e.g., terminal tab was reused in another directory).
                     return .rejectedConflict
@@ -451,7 +526,7 @@ final class ProcessMonitoringCoordinator {
             if !candidates.isEmpty {
                 if let processCWD = normalizedPathForMatching(process.workingDirectory) {
                     let cwdCandidates = candidates.filter {
-                        normalizedPathForMatching($0.jumpTarget?.workingDirectory) == processCWD
+                        normalizedPathForMatching($0.trackingIdentity.workingDirectory) == processCWD
                     }
                     if cwdCandidates.count == 1 {
                         return .matched(cwdCandidates[0])
@@ -463,7 +538,7 @@ final class ProcessMonitoringCoordinator {
 
         if let processCWD = normalizedPathForMatching(process.workingDirectory) {
             let workspaceMatches = unclaimedSessions.filter {
-                normalizedPathForMatching($0.jumpTarget?.workingDirectory) == processCWD
+                normalizedPathForMatching($0.trackingIdentity.workingDirectory) == processCWD
             }
             if workspaceMatches.count == 1 {
                 return .matched(workspaceMatches[0])
@@ -728,12 +803,12 @@ final class ProcessMonitoringCoordinator {
             }
 
             if let terminalTTY,
-               normalizedTTYForMatching(session.jumpTarget?.terminalTTY) != terminalTTY {
+               normalizedTTYForMatching(session.trackingIdentity.terminalTTY) != terminalTTY {
                 return false
             }
 
             if let workingDirectory,
-               normalizedPathForMatching(session.jumpTarget?.workingDirectory) != workingDirectory {
+               normalizedPathForMatching(session.trackingIdentity.workingDirectory) != workingDirectory {
                 return false
             }
 

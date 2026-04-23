@@ -49,6 +49,7 @@ struct ClaudeSessionRegistryTests {
         #expect(reloaded == records)
         #expect(reloaded.first?.session.claudeMetadata?.transcriptPath == "/tmp/claude.jsonl")
         #expect(reloaded.first?.session.jumpTarget?.terminalTTY == "/dev/ttys002")
+        #expect(reloaded.first?.session.lifecyclePolicy == .hookDrivenWithProcessFallback)
     }
 
     @Test
@@ -74,5 +75,6 @@ struct ClaudeSessionRegistryTests {
         #expect(record.session.attachmentState == .attached)
         #expect(record.restorableSession.attachmentState == .stale)
         #expect(record.restorableSession.jumpTarget?.terminalSessionID == "ghostty-claude")
+        #expect(record.restorableSession.isHookManaged)
     }
 }

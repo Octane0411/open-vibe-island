@@ -57,7 +57,8 @@ struct ActiveAgentProcessDiscoveryTests {
             sessionID: "019d516f-71ee-7e40-bcff-502fedac0928",
             workingDirectory: "/tmp/open-island",
             terminalTTY: "/dev/ttys001",
-            terminalApp: "Ghostty"
+            terminalApp: "Ghostty",
+            transcriptPath: "/Users/test/.codex/sessions/2026/04/03/rollout-2026-04-03T11-42-31-019d516f-71ee-7e40-bcff-502fedac0928.jsonl"
         )))
     }
 
@@ -91,6 +92,81 @@ struct ActiveAgentProcessDiscoveryTests {
                 workingDirectory: "/tmp/open-island",
                 terminalTTY: "/dev/ttys002",
                 terminalApp: "Ghostty"
+            ),
+        ])
+    }
+
+    @Test
+    func discoverCodexProcessWithoutTranscriptStillKeepsTTYAndWorkingDirectory() {
+        let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
+            if executablePath == "/bin/ps" {
+                return """
+                  202 401 ttys001 codex
+                  401 900 ttys001 -/opt/homebrew/bin/fish
+                  900 1 ?? /Applications/WezTerm.app/Contents/MacOS/wezterm-gui
+                """
+            }
+
+            guard executablePath == "/usr/sbin/lsof",
+                  let pid = arguments.dropFirst(2).first else {
+                return nil
+            }
+
+            switch pid {
+            case "202":
+                return """
+                fcwd
+                n/tmp/open-island
+                """
+            default:
+                Issue.record("unexpected lsof lookup for pid \(pid)")
+                return nil
+            }
+        }
+
+        let snapshots = discovery.discover()
+
+        #expect(snapshots == [
+            .init(
+                tool: .codex,
+                sessionID: nil,
+                workingDirectory: "/tmp/open-island",
+                terminalTTY: "/dev/ttys001",
+                terminalApp: "WezTerm"
+            ),
+        ])
+    }
+
+    @Test
+    func discoverCodexProcessWhenLsofTimesOutStillKeepsTTY() {
+        let discovery = ActiveAgentProcessDiscovery { executablePath, _ in
+            if executablePath == "/bin/ps" {
+                return """
+                  202 401 ttys001 codex --enable web_search_request
+                  401 900 ttys001 -/opt/homebrew/bin/fish
+                  900 1 ?? /Applications/WezTerm.app/Contents/MacOS/wezterm-gui
+                """
+            }
+
+            guard executablePath == "/usr/sbin/lsof" else {
+                return nil
+            }
+
+            // Simulate the production timeout path: the process is still
+            // clearly interactive in `ps`, but `lsof` failed to return before
+            // the deadline.
+            return nil
+        }
+
+        let snapshots = discovery.discover()
+
+        #expect(snapshots == [
+            .init(
+                tool: .codex,
+                sessionID: nil,
+                workingDirectory: nil,
+                terminalTTY: "/dev/ttys001",
+                terminalApp: "WezTerm"
             ),
         ])
     }

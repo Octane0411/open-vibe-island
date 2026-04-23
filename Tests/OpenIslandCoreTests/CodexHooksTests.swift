@@ -86,4 +86,29 @@ struct CodexHooksTests {
         #expect(payload.warpPaneUUID == nil)
     }
 
+    @Test
+    func codexWithRuntimeContextPreservesTranscriptPathForWezTermWithoutSessionLocator() {
+        let payload = CodexHookPayload(
+            cwd: "/Users/u/project",
+            hookEventName: .sessionStart,
+            model: "gpt-5-codex",
+            permissionMode: .default,
+            sessionID: "s1",
+            transcriptPath: "/Users/u/.codex/sessions/2026/04/23/rollout-2026-04-23T12-00-00-s1.jsonl"
+        ).withRuntimeContext(
+            environment: ["TERM_PROGRAM": "WezTerm"],
+            currentTTYProvider: { "/dev/ttys042" },
+            terminalLocatorProvider: { _ in
+                Issue.record("WezTerm should not attempt focused terminal locator enrichment")
+                return (sessionID: "unexpected", tty: "unexpected", title: "unexpected")
+            },
+            warpPaneResolver: { _ in nil }
+        )
+
+        #expect(payload.terminalApp == "WezTerm")
+        #expect(payload.terminalTTY == "/dev/ttys042")
+        #expect(payload.terminalSessionID == nil)
+        #expect(payload.transcriptPath == "/Users/u/.codex/sessions/2026/04/23/rollout-2026-04-23T12-00-00-s1.jsonl")
+    }
+
 }

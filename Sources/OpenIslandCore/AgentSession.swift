@@ -116,6 +116,34 @@ public enum SessionPhase: String, Codable, Sendable, CaseIterable {
     }
 }
 
+public enum SessionLifecyclePolicy: String, Codable, Sendable {
+    case processDriven
+    case hookDrivenWithProcessFallback
+    case appDriven
+}
+
+public struct SessionTrackingIdentity: Equatable, Sendable {
+    public var sessionID: String
+    public var transcriptPath: String?
+    public var workingDirectory: String?
+    public var terminalTTY: String?
+    public var terminalSessionID: String?
+
+    public init(
+        sessionID: String,
+        transcriptPath: String? = nil,
+        workingDirectory: String? = nil,
+        terminalTTY: String? = nil,
+        terminalSessionID: String? = nil
+    ) {
+        self.sessionID = sessionID
+        self.transcriptPath = transcriptPath
+        self.workingDirectory = workingDirectory
+        self.terminalTTY = terminalTTY
+        self.terminalSessionID = terminalSessionID
+    }
+}
+
 public struct JumpTarget: Equatable, Codable, Sendable {
     public var terminalApp: String
     public var workspaceName: String
@@ -354,16 +382,9 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     /// Whether this session originates from a remote (SSH) connection.
     public var isRemote: Bool = false
 
-    /// Whether this session's lifecycle is driven by hook events rather than
-    /// process polling. When `true`, visibility is determined by hook signals
-    /// (`SessionStart` / `SessionEnd`) instead of `ps`/`lsof` process discovery.
-    public var isHookManaged: Bool = false
-
-    /// Whether this Codex session originates from the Codex desktop app
-    /// rather than the Codex CLI.  When `true`, liveness is determined by
-    /// whether Codex.app is running (`NSRunningApplication`), not by
-    /// matching individual CLI subprocess PIDs.
-    public var isCodexAppSession: Bool = false
+    /// The authoritative lifecycle law for this session. Persisted so restored
+    /// sessions retain the same liveness semantics as live ones.
+    public var lifecyclePolicy: SessionLifecyclePolicy = .processDriven
 
     /// Whether the agent session has ended (received `SessionEnd` hook).
     /// Only meaningful for hook-managed sessions.
@@ -394,7 +415,12 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         claudeMetadata: ClaudeSessionMetadata? = nil,
         geminiMetadata: GeminiSessionMetadata? = nil,
         openCodeMetadata: OpenCodeSessionMetadata? = nil,
-        cursorMetadata: CursorSessionMetadata? = nil
+        cursorMetadata: CursorSessionMetadata? = nil,
+        isRemote: Bool = false,
+        lifecyclePolicy: SessionLifecyclePolicy = .processDriven,
+        isSessionEnded: Bool = false,
+        isProcessAlive: Bool = false,
+        processNotSeenCount: Int = 0
     ) {
         self.id = id
         self.title = title
@@ -412,6 +438,11 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         self.geminiMetadata = geminiMetadata
         self.openCodeMetadata = openCodeMetadata
         self.cursorMetadata = cursorMetadata
+        self.isRemote = isRemote
+        self.lifecyclePolicy = lifecyclePolicy
+        self.isSessionEnded = isSessionEnded
+        self.isProcessAlive = isProcessAlive
+        self.processNotSeenCount = processNotSeenCount
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -431,6 +462,11 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         case geminiMetadata
         case openCodeMetadata
         case cursorMetadata
+        case isRemote
+        case lifecyclePolicy
+        case isSessionEnded
+        case isProcessAlive
+        case processNotSeenCount
     }
 
     public init(from decoder: any Decoder) throws {
@@ -451,6 +487,16 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         geminiMetadata = try container.decodeIfPresent(GeminiSessionMetadata.self, forKey: .geminiMetadata)
         openCodeMetadata = try container.decodeIfPresent(OpenCodeSessionMetadata.self, forKey: .openCodeMetadata)
         cursorMetadata = try container.decodeIfPresent(CursorSessionMetadata.self, forKey: .cursorMetadata)
+        isRemote = try container.decodeIfPresent(Bool.self, forKey: .isRemote) ?? false
+        lifecyclePolicy = try container.decodeIfPresent(SessionLifecyclePolicy.self, forKey: .lifecyclePolicy)
+            ?? Self.inferredLifecyclePolicy(
+                tool: tool,
+                origin: origin,
+                jumpTarget: jumpTarget
+            )
+        isSessionEnded = try container.decodeIfPresent(Bool.self, forKey: .isSessionEnded) ?? false
+        isProcessAlive = try container.decodeIfPresent(Bool.self, forKey: .isProcessAlive) ?? false
+        processNotSeenCount = try container.decodeIfPresent(Int.self, forKey: .processNotSeenCount) ?? 0
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -471,10 +517,31 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         try container.encodeIfPresent(geminiMetadata, forKey: .geminiMetadata)
         try container.encodeIfPresent(openCodeMetadata, forKey: .openCodeMetadata)
         try container.encodeIfPresent(cursorMetadata, forKey: .cursorMetadata)
+        try container.encode(isRemote, forKey: .isRemote)
+        try container.encode(lifecyclePolicy, forKey: .lifecyclePolicy)
+        try container.encode(isSessionEnded, forKey: .isSessionEnded)
+        try container.encode(isProcessAlive, forKey: .isProcessAlive)
+        try container.encode(processNotSeenCount, forKey: .processNotSeenCount)
     }
 }
 
 public extension AgentSession {
+    static func inferredLifecyclePolicy(
+        tool: AgentTool,
+        origin: SessionOrigin?,
+        jumpTarget: JumpTarget?
+    ) -> SessionLifecyclePolicy {
+        if tool == .codex && jumpTarget?.terminalApp == "Codex.app" {
+            return .appDriven
+        }
+
+        if origin == .live && tool.supportsHookLifecycleSignals {
+            return .hookDrivenWithProcessFallback
+        }
+
+        return .processDriven
+    }
+
     var isDemoSession: Bool {
         origin == .demo
     }
@@ -487,8 +554,41 @@ public extension AgentSession {
         tool == .codex && !isDemoSession
     }
 
+    var isHookManaged: Bool {
+        get { lifecyclePolicy == .hookDrivenWithProcessFallback }
+        set {
+            guard lifecyclePolicy != .appDriven else { return }
+            if newValue {
+                lifecyclePolicy = .hookDrivenWithProcessFallback
+            } else if lifecyclePolicy == .hookDrivenWithProcessFallback {
+                lifecyclePolicy = .processDriven
+            }
+        }
+    }
+
+    var isCodexAppSession: Bool {
+        get { lifecyclePolicy == .appDriven }
+        set {
+            if newValue {
+                lifecyclePolicy = .appDriven
+            } else if lifecyclePolicy == .appDriven {
+                lifecyclePolicy = .processDriven
+            }
+        }
+    }
+
     var isAttachedToTerminal: Bool {
         attachmentState.isLive
+    }
+
+    var trackingIdentity: SessionTrackingIdentity {
+        SessionTrackingIdentity(
+            sessionID: id,
+            transcriptPath: trackingTranscriptPath,
+            workingDirectory: jumpTarget?.workingDirectory,
+            terminalTTY: jumpTarget?.terminalTTY,
+            terminalSessionID: jumpTarget?.terminalSessionID
+        )
     }
 
     /// Visibility rule for the island UI.
@@ -497,13 +597,17 @@ public extension AgentSession {
     var isVisibleInIsland: Bool {
         if isDemoSession { return true }
         if phase.requiresAttention { return true }
-        // Codex.app sessions stay visible while the desktop app is running.
-        // Checked before isHookManaged because a Codex.app session may also
-        // be hook-managed (when both hook and rediscovery converge on it).
-        if isCodexAppSession { return isProcessAlive }
-        if isHookManaged { return !isSessionEnded }
-        if isProcessAlive { return true }
-        return false
+        switch lifecyclePolicy {
+        case .appDriven:
+            return isProcessAlive
+        case .hookDrivenWithProcessFallback:
+            if attachmentState.isLive {
+                return !isSessionEnded
+            }
+            return isProcessAlive
+        case .processDriven:
+            return isProcessAlive
+        }
     }
 
     var currentToolName: String? {
@@ -702,5 +806,14 @@ private extension AgentSession {
         }
 
         return boundary
+    }
+}
+
+public extension AgentTool {
+    var supportsHookLifecycleSignals: Bool {
+        switch self {
+        case .codex, .claudeCode, .geminiCLI, .openCode, .qoder, .qwenCode, .factory, .codebuddy, .cursor, .kimiCLI:
+            true
+        }
     }
 }

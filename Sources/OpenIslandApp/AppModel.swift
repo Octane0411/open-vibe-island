@@ -563,12 +563,12 @@ final class AppModel {
             self?.refreshOverlayPlacementIfVisible()
         }
 
-        discovery.codexRolloutWatcher.eventHandler = { [weak self] event in
+        discovery.codexRolloutWatcher.eventHandler = { [weak self] observed in
             Task { @MainActor [weak self] in
                 self?.applyTrackedEvent(
-                    event,
+                    observed.event,
                     updateLastActionMessage: false,
-                    ingress: .rollout
+                    ingress: observed.freshness == .bootstrap ? .rolloutBootstrap : .rolloutLive
                 )
             }
         }
@@ -1182,6 +1182,8 @@ final class AppModel {
         updateLastActionMessage: Bool = true,
         ingress: TrackedEventIngress = .bridge
     ) {
+        let eventSessionID = trackedEventSessionID(for: event)
+
         // Snapshot whether this session was already completed before applying
         // the event. Used to suppress duplicate/stale completion notifications
         // (e.g. rollout watcher re-discovering an old completion on startup,
@@ -1195,7 +1197,7 @@ final class AppModel {
         // back to running. The bridge's sessionCompleted is authoritative; the
         // rollout watcher may have read the JSONL before task_complete was
         // flushed, producing a stale activityUpdated(phase: .running).
-        if ingress == .rollout,
+        if ingress.isRollout,
            case let .activityUpdated(payload) = event,
            payload.phase == .running,
            state.session(id: payload.sessionID)?.phase == .completed {
@@ -1204,8 +1206,11 @@ final class AppModel {
 
         state.apply(event)
         reconcileIslandSurfaceAfterStateChange()
-        if ingress == .bridge {
+        if ingress.isBridge {
             monitoring.markSessionAttached(for: event)
+            monitoring.markSessionProcessAlive(for: event)
+        } else if ingress.refreshesRolloutLiveness,
+                  shouldRefreshCodexLivenessFromRollout(eventSessionID: eventSessionID) {
             monitoring.markSessionProcessAlive(for: event)
         }
         synchronizeSelection()
@@ -1218,22 +1223,6 @@ final class AppModel {
 
         // Push relevant events to the Watch/iPhone via the relay
         if let relay = watchRelay {
-            let eventSessionID: String? = {
-                switch event {
-                case let .sessionStarted(p): return p.sessionID
-                case let .activityUpdated(p): return p.sessionID
-                case let .permissionRequested(p): return p.sessionID
-                case let .questionAsked(p): return p.sessionID
-                case let .sessionCompleted(p): return p.sessionID
-                case let .jumpTargetUpdated(p): return p.sessionID
-                case let .sessionMetadataUpdated(p): return p.sessionID
-                case let .claudeSessionMetadataUpdated(p): return p.sessionID
-                case let .geminiSessionMetadataUpdated(p): return p.sessionID
-                case let .openCodeSessionMetadataUpdated(p): return p.sessionID
-                case let .cursorSessionMetadataUpdated(p): return p.sessionID
-                case let .actionableStateResolved(p): return p.sessionID
-                }
-            }()
             let session = eventSessionID.flatMap { state.session(id: $0) }
             relay.notifyEvent(event, session: session)
         }
@@ -1249,6 +1238,44 @@ final class AppModel {
                 ingress: ingress
             )
         }
+    }
+
+    private func trackedEventSessionID(for event: AgentEvent) -> String? {
+        switch event {
+        case let .sessionStarted(payload):
+            payload.sessionID
+        case let .activityUpdated(payload):
+            payload.sessionID
+        case let .permissionRequested(payload):
+            payload.sessionID
+        case let .questionAsked(payload):
+            payload.sessionID
+        case let .sessionCompleted(payload):
+            payload.sessionID
+        case let .jumpTargetUpdated(payload):
+            payload.sessionID
+        case let .sessionMetadataUpdated(payload):
+            payload.sessionID
+        case let .claudeSessionMetadataUpdated(payload):
+            payload.sessionID
+        case let .geminiSessionMetadataUpdated(payload):
+            payload.sessionID
+        case let .openCodeSessionMetadataUpdated(payload):
+            payload.sessionID
+        case let .cursorSessionMetadataUpdated(payload):
+            payload.sessionID
+        case let .actionableStateResolved(payload):
+            payload.sessionID
+        }
+    }
+
+    private func shouldRefreshCodexLivenessFromRollout(eventSessionID: String?) -> Bool {
+        guard let sessionID = eventSessionID,
+              let session = state.session(id: sessionID) else {
+            return false
+        }
+
+        return session.tool == .codex && session.isHookManaged
     }
 
     private func scheduleNotificationSurfacePresentationIfNeeded(
@@ -1294,7 +1321,7 @@ final class AppModel {
             return false
         }
 
-        return (ingress == .bridge || !isResolvingInitialLiveSessions)
+        return (ingress.isBridge || !isResolvingInitialLiveSessions)
             && (notchStatus == .closed || notchOpenReason == .notification)
             && surface.matchesCurrentState(of: session)
     }

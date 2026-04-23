@@ -48,6 +48,7 @@ struct CodexSessionTrackingTests {
         #expect(reloaded.first?.session.codexMetadata?.lastUserPrompt == "Check the rollout watcher state.")
         #expect(reloaded.first?.session.origin == .live)
         #expect(reloaded.first?.session.attachmentState == .attached)
+        #expect(reloaded.first?.session.lifecyclePolicy == .hookDrivenWithProcessFallback)
     }
 
     @Test
@@ -106,7 +107,9 @@ struct CodexSessionTrackingTests {
         )
 
         #expect(record.session.attachmentState == .attached)
+        #expect(record.session.isHookManaged)
         #expect(record.restorableSession.attachmentState == .stale)
+        #expect(record.restorableSession.isHookManaged)
     }
 
     @Test
@@ -145,6 +148,7 @@ struct CodexSessionTrackingTests {
         #expect(records.count == 1)
         #expect(records.first?.attachmentState == .stale)
         #expect(records.first?.session.attachmentState == .stale)
+        #expect(records.first?.session.lifecyclePolicy == .hookDrivenWithProcessFallback)
     }
 
     @Test
@@ -360,11 +364,11 @@ struct CodexSessionTrackingTests {
             try? FileManager.default.removeItem(at: rootURL)
         }
 
-        let recorder = EventRecorder()
+        let recorder = ObservedEventRecorder()
         let watcher = CodexRolloutWatcher(pollInterval: 0.05)
-        watcher.eventHandler = { event in
+        watcher.eventHandler = { observed in
             Task {
-                await recorder.append(event)
+                await recorder.append(observed)
             }
         }
         watcher.sync(targets: [
@@ -425,7 +429,7 @@ struct CodexSessionTrackingTests {
         try await Task.sleep(for: .milliseconds(200))
         watcher.stop()
 
-        let events = await recorder.snapshot()
+        let events = await recorder.snapshotEvents()
         #expect(events.contains(where: { $0.trackedMetadataUpdate?.codexMetadata.lastUserPrompt == "Inspect the README." }))
         #expect(events.contains(where: { $0.trackedMetadataUpdate?.codexMetadata.currentTool == "exec_command" }))
         #expect(events.contains(where: { $0.trackedMetadataUpdate?.codexMetadata.currentCommandPreview == "git status -sb" }))
@@ -531,15 +535,15 @@ struct CodexSessionTrackingTests {
 
         try lines.joined(separator: "\n").appending("\n").write(to: rolloutURL, atomically: true, encoding: .utf8)
 
-        let recorder = EventRecorder()
+        let recorder = ObservedEventRecorder()
         let watcher = CodexRolloutWatcher(
             pollInterval: 0.05,
             initialReadLimit: 512,
             initialPromptBootstrapLimit: 4_096
         )
-        watcher.eventHandler = { event in
+        watcher.eventHandler = { observed in
             Task {
-                await recorder.append(event)
+                await recorder.append(observed)
             }
         }
         watcher.sync(targets: [
@@ -552,7 +556,7 @@ struct CodexSessionTrackingTests {
         try await Task.sleep(for: .milliseconds(200))
         watcher.stop()
 
-        let events = await recorder.snapshot()
+        let events = await recorder.snapshotEvents()
         #expect(events.contains(where: {
             $0.trackedMetadataUpdate?.codexMetadata.initialUserPrompt == "读一下这篇论文 https://arxiv.org/html/2603.28052v1，然后对比一下 autoresearch 的实现。"
         }))
@@ -598,11 +602,11 @@ struct CodexSessionTrackingTests {
             .appending("\n")
             .write(to: rolloutURL, atomically: true, encoding: .utf8)
 
-        let recorder = EventRecorder()
+        let recorder = ObservedEventRecorder()
         let watcher = CodexRolloutWatcher(pollInterval: 0.05, initialReadLimit: 160)
-        watcher.eventHandler = { event in
+        watcher.eventHandler = { observed in
             Task {
-                await recorder.append(event)
+                await recorder.append(observed)
             }
         }
         watcher.sync(targets: [
@@ -615,9 +619,77 @@ struct CodexSessionTrackingTests {
         try await Task.sleep(for: .milliseconds(200))
         watcher.stop()
 
-        let events = await recorder.snapshot()
+        let events = await recorder.snapshotEvents()
         #expect(events.contains(where: { $0.trackedActivityUpdate?.summary == "Tail bootstrap kept the watcher responsive." }))
         #expect(!events.contains(where: { $0.trackedActivityUpdate?.summary == oldMessage }))
+    }
+
+    @Test
+    func codexRolloutWatcherLabelsBootstrapAndLiveEventsSeparately() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-rollout-freshness-\(UUID().uuidString)", isDirectory: true)
+        let rolloutURL = rootURL.appendingPathComponent("rollout.jsonl")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        let initialLines = [
+            sessionMetaLine(
+                sessionID: "codex-session-freshness",
+                timestamp: "2026-04-02T04:03:44.000Z",
+                cwd: "/Users/wangruobing/Personal/open-island"
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": "Bootstrap snapshot should stay metadata-only.",
+                ]
+            ),
+        ]
+        try initialLines.joined(separator: "\n").appending("\n").write(to: rolloutURL, atomically: true, encoding: .utf8)
+
+        let recorder = ObservedEventRecorder()
+        let watcher = CodexRolloutWatcher(pollInterval: 0.05)
+        watcher.eventHandler = { observed in
+            Task {
+                await recorder.append(observed)
+            }
+        }
+        watcher.sync(targets: [
+            CodexRolloutWatchTarget(
+                sessionID: "codex-session-freshness",
+                transcriptPath: rolloutURL.path
+            )
+        ])
+
+        try await Task.sleep(for: .milliseconds(150))
+        try appendRolloutLine(
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:46.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": "Live append should count as keepalive evidence.",
+                ]
+            ),
+            to: rolloutURL
+        )
+        try await Task.sleep(for: .milliseconds(150))
+        watcher.stop()
+
+        let observed = await recorder.snapshot()
+        #expect(observed.contains(where: {
+            $0.freshness == .bootstrap
+                && $0.event.trackedActivityUpdate?.summary == "Bootstrap snapshot should stay metadata-only."
+        }))
+        #expect(observed.contains(where: {
+            $0.freshness == .live
+                && $0.event.trackedActivityUpdate?.summary == "Live append should count as keepalive evidence."
+        }))
     }
 
     @Test
@@ -710,15 +782,19 @@ struct CodexSessionTrackingTests {
     }
 }
 
-private actor EventRecorder {
-    private var events: [AgentEvent] = []
+private actor ObservedEventRecorder {
+    private var observedEvents: [CodexRolloutObservedEvent] = []
 
-    func append(_ event: AgentEvent) {
-        events.append(event)
+    func append(_ observed: CodexRolloutObservedEvent) {
+        observedEvents.append(observed)
     }
 
-    func snapshot() -> [AgentEvent] {
-        events
+    func snapshot() -> [CodexRolloutObservedEvent] {
+        observedEvents
+    }
+
+    func snapshotEvents() -> [AgentEvent] {
+        observedEvents.map(\.event)
     }
 }
 
