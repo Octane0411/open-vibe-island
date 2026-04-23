@@ -95,6 +95,19 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
     }
 
     public var session: AgentSession {
+        let restoredLifecyclePolicy: SessionLifecyclePolicy
+        if jumpTarget?.terminalApp == "Codex.app" {
+            restoredLifecyclePolicy = .appDriven
+        } else if lifecyclePolicy == .appDriven {
+            restoredLifecyclePolicy = AgentSession.inferredLifecyclePolicy(
+                tool: .codex,
+                origin: origin,
+                jumpTarget: jumpTarget
+            )
+        } else {
+            restoredLifecyclePolicy = lifecyclePolicy
+        }
+
         var session = AgentSession(
             id: sessionID,
             title: title,
@@ -107,7 +120,7 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
             jumpTarget: jumpTarget,
             codexMetadata: codexMetadata,
             isRemote: isRemote,
-            lifecyclePolicy: lifecyclePolicy,
+            lifecyclePolicy: restoredLifecyclePolicy,
             isSessionEnded: isSessionEnded
         )
         // Re-derive the app-driven lifecycle from the persisted terminalApp so

@@ -124,6 +124,31 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexSessionClampsStaleAppDrivenPolicyForNonCodexApp() {
+        let record = CodexTrackedSessionRecord(
+            sessionID: "codex-live-1",
+            title: "Codex · open-island",
+            origin: .live,
+            attachmentState: .attached,
+            summary: "Working",
+            phase: .running,
+            updatedAt: .now,
+            jumpTarget: JumpTarget(
+                terminalApp: "Ghostty",
+                workspaceName: "open-island",
+                paneTitle: "codex ~/Personal/open-island"
+            ),
+            lifecyclePolicy: .appDriven
+        )
+
+        let session = record.session
+
+        #expect(session.lifecyclePolicy == .hookDrivenWithProcessFallback)
+        #expect(session.livenessObservation.lastRuntimePositiveCycle == nil)
+        #expect(session.livenessObservation.strongestRuntimeMatch == nil)
+    }
+
+    @Test
     func codexSessionStoreLoadsLegacyRecordsWithoutAttachmentState() throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("open-island-legacy-tracking-\(UUID().uuidString)", isDirectory: true)
