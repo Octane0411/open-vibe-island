@@ -344,7 +344,7 @@ extension AgentSession {
     }
 
     private var prefersLivePromptHeadline: Bool {
-        isProcessAlive || phase == .running || phase.requiresAttention
+        hasPresenceEvidence || phase == .running || phase.requiresAttention
     }
 }
 

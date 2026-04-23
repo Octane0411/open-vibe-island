@@ -282,7 +282,8 @@ struct AppModelSessionListTests {
                     attachmentState: .stale,
                     phase: .running,
                     summary: "Recovered from cache",
-                    updatedAt: now
+                    updatedAt: now,
+                    lifecyclePolicy: .hookDrivenWithProcessFallback
                 ),
             ]
         )

@@ -164,12 +164,9 @@ final class ProcessMonitoringCoordinator {
         _ = local.reconcileAttachmentStates(attachmentUpdates)
         _ = local.reconcileJumpTargets(jumpTargetUpdates)
 
-        // Phase 1: populate isProcessAlive in parallel with existing system.
-        let aliveIDs = sessionIDsWithAliveProcesses(activeProcesses: activeProcesses)
-        _ = local.markProcessLiveness(
-            aliveSessionIDs: aliveIDs,
-            isCodexAppRunning: isCodexAppRunning
-        )
+        // Phase 1: reconcile runtime evidence with explicit match strengths.
+        let runtimeEvidence = runtimeEvidenceBySessionID(activeProcesses: activeProcesses)
+        _ = local.reconcileRuntimePresence(evidenceBySessionID: runtimeEvidence)
 
         // Resolve jump targets via the new focused resolver.
         // When pre-resolved targets are provided (computed off-main-actor),
@@ -191,12 +188,15 @@ final class ProcessMonitoringCoordinator {
         // (including liveness and resolver jump targets) and skip the
         // write when nothing actually changed, avoiding unnecessary
         // SwiftUI view invalidation.
-        let anyChange = local != originalState
-        if anyChange {
+        let anyStateChange = local != originalState
+        let presentationChanged = local.presentationComparableState != originalState.presentationComparableState
+        let persistenceChanged = local.persistenceComparableState != originalState.persistenceComparableState
+
+        if anyStateChange {
             state = local
         }
 
-        guard anyChange else {
+        guard anyStateChange else {
             if resolutionReport.isAuthoritative {
                 isResolvingInitialLiveSessions = false
             }
@@ -206,74 +206,38 @@ final class ProcessMonitoringCoordinator {
         if resolutionReport.isAuthoritative {
             isResolvingInitialLiveSessions = false
         }
-        onSessionsReconciled?()
-        onPersistenceNeeded?()
-    }
-
-    // MARK: - Event helpers
-
-    func markSessionAttached(for event: AgentEvent) {
-        guard let sessionID = sessionID(for: event) else {
-            return
+        if presentationChanged {
+            onSessionsReconciled?()
         }
-
-        _ = state.reconcileAttachmentStates([sessionID: .attached])
-    }
-
-    func markSessionProcessAlive(for event: AgentEvent) {
-        guard let sessionID = sessionID(for: event) else {
-            return
-        }
-
-        state.markSingleSessionAlive(sessionID: sessionID)
-    }
-
-    private func sessionID(for event: AgentEvent) -> String? {
-        switch event {
-        case let .sessionStarted(payload):
-            payload.sessionID
-        case let .activityUpdated(payload):
-            payload.sessionID
-        case let .permissionRequested(payload):
-            payload.sessionID
-        case let .questionAsked(payload):
-            payload.sessionID
-        case let .sessionCompleted(payload):
-            payload.sessionID
-        case let .jumpTargetUpdated(payload):
-            payload.sessionID
-        case let .sessionMetadataUpdated(payload):
-            payload.sessionID
-        case let .claudeSessionMetadataUpdated(payload):
-            payload.sessionID
-        case let .geminiSessionMetadataUpdated(payload):
-            payload.sessionID
-        case let .openCodeSessionMetadataUpdated(payload):
-            payload.sessionID
-        case let .cursorSessionMetadataUpdated(payload):
-            payload.sessionID
-        case let .actionableStateResolved(payload):
-            payload.sessionID
+        if persistenceChanged {
+            onPersistenceNeeded?()
         }
     }
 
     // MARK: - Process liveness
 
-    /// Returns the set of session IDs whose backing agent process is still
-    /// alive, based on ``ActiveProcessSnapshot`` matching and per-tool
-    /// heuristics (e.g. bundle-ID liveness for Cursor, PID matching for
-    /// Codex/Claude/Gemini).
-    func sessionIDsWithAliveProcesses(
+    /// Returns explicit runtime evidence keyed by session ID. The values encode
+    /// how strongly a live process/app observation matches the tracked session.
+    func runtimeEvidenceBySessionID(
         activeProcesses: [ActiveProcessSnapshot]
-    ) -> Set<String> {
-        var aliveIDs: Set<String> = []
+    ) -> [String: SessionRuntimeMatchStrength] {
+        var evidenceBySessionID: [String: SessionRuntimeMatchStrength] = [:]
         let sessions = state.sessions
+
+        func record(_ sessionID: String, strength: SessionRuntimeMatchStrength) {
+            guard let existing = evidenceBySessionID[sessionID] else {
+                evidenceBySessionID[sessionID] = strength
+                return
+            }
+
+            evidenceBySessionID[sessionID] = max(existing, strength)
+        }
 
         // Codex.app sessions: keep alive while the desktop app is running.
         let isCodexAppRunning = Self.isCodexDesktopAppRunning()
         for session in sessions where session.tool == .codex && !session.isDemoSession {
             if session.isCodexAppSession {
-                if isCodexAppRunning { aliveIDs.insert(session.id) }
+                if isCodexAppRunning { record(session.id, strength: .desktopApp) }
             }
         }
 
@@ -292,7 +256,7 @@ final class ProcessMonitoringCoordinator {
                   let matched = trackedCodexSessions.first(where: {
                       !claimedCodexSessionIDs.contains($0.id) && $0.id == processSessionID
                   }) else { continue }
-            aliveIDs.insert(matched.id)
+            record(matched.id, strength: .sessionID)
             claimedCodexSessionIDs.insert(matched.id)
         }
 
@@ -302,7 +266,7 @@ final class ProcessMonitoringCoordinator {
                       !claimedCodexSessionIDs.contains($0.id)
                           && $0.codexMetadata?.transcriptPath == transcriptPath
                   }) else { continue }
-            aliveIDs.insert(matched.id)
+            record(matched.id, strength: .transcriptPath)
             claimedCodexSessionIDs.insert(matched.id)
         }
 
@@ -312,8 +276,8 @@ final class ProcessMonitoringCoordinator {
                 sessions: trackedCodexSessions,
                 claimedSessionIDs: claimedCodexSessionIDs
             ) else { continue }
-            aliveIDs.insert(matched.id)
-            claimedCodexSessionIDs.insert(matched.id)
+            record(matched.session.id, strength: matched.strength)
+            claimedCodexSessionIDs.insert(matched.session.id)
         }
 
         // Claude sessions: reuse the multi-pass matching from representedClaudeProcessKeys.
@@ -327,7 +291,7 @@ final class ProcessMonitoringCoordinator {
                   let matched = trackedClaudeSessions.first(where: {
                       !claimedSessionIDs.contains($0.id) && $0.id == processSessionID
                   }) else { continue }
-            aliveIDs.insert(matched.id)
+            record(matched.id, strength: .sessionID)
             claimedSessionIDs.insert(matched.id)
         }
 
@@ -338,7 +302,7 @@ final class ProcessMonitoringCoordinator {
                       !claimedSessionIDs.contains($0.id)
                           && $0.claudeMetadata?.transcriptPath == transcriptPath
                   }) else { continue }
-            aliveIDs.insert(matched.id)
+            record(matched.id, strength: .transcriptPath)
             claimedSessionIDs.insert(matched.id)
         }
 
@@ -349,8 +313,8 @@ final class ProcessMonitoringCoordinator {
                 sessions: trackedClaudeSessions,
                 claimedSessionIDs: claimedSessionIDs
             ) else { continue }
-            aliveIDs.insert(matched.id)
-            claimedSessionIDs.insert(matched.id)
+            record(matched.session.id, strength: matched.strength)
+            claimedSessionIDs.insert(matched.session.id)
         }
 
         // OpenCode sessions are hook-managed, but OpenCode does not expose a stable
@@ -369,8 +333,8 @@ final class ProcessMonitoringCoordinator {
             )
             switch matchResult {
             case .matched(let matched):
-                aliveIDs.insert(matched.id)
-                claimedOpenCodeSessionIDs.insert(matched.id)
+                record(matched.session.id, strength: matched.strength)
+                claimedOpenCodeSessionIDs.insert(matched.session.id)
             case .ambiguous:
                 hasUnmatchedOpenCodeProcess = true
             case .rejectedConflict:
@@ -383,7 +347,7 @@ final class ProcessMonitoringCoordinator {
         // incorrectly marking them as ended.
         if hasUnmatchedOpenCodeProcess {
             for session in trackedOpenCodeSessions where !claimedOpenCodeSessionIDs.contains(session.id) {
-                aliveIDs.insert(session.id)
+                record(session.id, strength: .toolFamily)
             }
         }
 
@@ -403,19 +367,19 @@ final class ProcessMonitoringCoordinator {
             ) else {
                 continue
             }
-            aliveIDs.insert(matched.id)
-            claimedGeminiSessionIDs.insert(matched.id)
+            record(matched.session.id, strength: matched.strength)
+            claimedGeminiSessionIDs.insert(matched.session.id)
         }
 
         // Kimi sessions are hook-managed and use UUIDs that Open Island cannot
         // recover from ps/lsof. As long as any kimi process exists, keep every
         // tracked Kimi session alive so Stop/completed sessions don't get
         // evicted by the hook-managed liveness fallback in
-        // SessionState.markProcessLiveness.
+        // SessionState.reconcileRuntimePresence.
         let hasKimiProcess = activeProcesses.contains { $0.tool == .kimiCLI }
         if hasKimiProcess {
             for session in sessions where session.tool == .kimiCLI && !session.isDemoSession {
-                aliveIDs.insert(session.id)
+                record(session.id, strength: .toolFamily)
             }
         }
 
@@ -434,7 +398,7 @@ final class ProcessMonitoringCoordinator {
                 let isStale = session.phase == .completed
                     && session.updatedAt.addingTimeInterval(Self.cursorStalenessTimeout) < Date.now
                 if !isStale {
-                    aliveIDs.insert(session.id)
+                    record(session.id, strength: .desktopApp)
                 }
             }
         }
@@ -442,17 +406,28 @@ final class ProcessMonitoringCoordinator {
         // Synthetic sessions: always alive if the process exists.
         let syntheticSessions = sessions.filter { isSyntheticClaudeSession($0) }
         for session in syntheticSessions {
-            aliveIDs.insert(session.id)
+            record(session.id, strength: syntheticMatchStrength(for: session))
         }
 
-        return aliveIDs
+        return evidenceBySessionID
+    }
+
+    func sessionIDsWithAliveProcesses(
+        activeProcesses: [ActiveProcessSnapshot]
+    ) -> Set<String> {
+        Set(runtimeEvidenceBySessionID(activeProcesses: activeProcesses).keys)
+    }
+
+    private struct MatchedSessionEvidence {
+        var session: AgentSession
+        var strength: SessionRuntimeMatchStrength
     }
 
     private func uniqueTrackedCodexSession(
         for process: ActiveProcessSnapshot,
         sessions: [AgentSession],
         claimedSessionIDs: Set<String>
-    ) -> AgentSession? {
+    ) -> MatchedSessionEvidence? {
         guard let terminalTTY = normalizedTTYForMatching(process.terminalTTY) else {
             return nil
         }
@@ -474,7 +449,10 @@ final class ProcessMonitoringCoordinator {
                 return nil
             }
 
-            return candidates[0]
+            return MatchedSessionEvidence(
+                session: candidates[0],
+                strength: .terminalTTYAndWorkingDirectory
+            )
         }
 
         // `lsof` is enrichment, not truth. If it times out on a healthy Codex
@@ -490,11 +468,11 @@ final class ProcessMonitoringCoordinator {
             return nil
         }
 
-        return candidates[0]
+        return MatchedSessionEvidence(session: candidates[0], strength: .terminalTTY)
     }
 
     private enum OpenCodeMatchResult {
-        case matched(AgentSession)
+        case matched(MatchedSessionEvidence)
         case ambiguous
         case rejectedConflict
     }
@@ -521,7 +499,10 @@ final class ProcessMonitoringCoordinator {
                     // TTY matched, but CWD explicitly differs (e.g., terminal tab was reused in another directory).
                     return .rejectedConflict
                 }
-                return .matched(candidate)
+                let strength: SessionRuntimeMatchStrength = normalizedPathForMatching(process.workingDirectory) == normalizedPathForMatching(candidate.trackingIdentity.workingDirectory)
+                    ? .terminalTTYAndWorkingDirectory
+                    : .terminalTTY
+                return .matched(MatchedSessionEvidence(session: candidate, strength: strength))
             }
             if !candidates.isEmpty {
                 if let processCWD = normalizedPathForMatching(process.workingDirectory) {
@@ -529,7 +510,12 @@ final class ProcessMonitoringCoordinator {
                         normalizedPathForMatching($0.trackingIdentity.workingDirectory) == processCWD
                     }
                     if cwdCandidates.count == 1 {
-                        return .matched(cwdCandidates[0])
+                        return .matched(
+                            MatchedSessionEvidence(
+                                session: cwdCandidates[0],
+                                strength: .terminalTTYAndWorkingDirectory
+                            )
+                        )
                     }
                 }
                 return .ambiguous
@@ -541,7 +527,12 @@ final class ProcessMonitoringCoordinator {
                 normalizedPathForMatching($0.trackingIdentity.workingDirectory) == processCWD
             }
             if workspaceMatches.count == 1 {
-                return .matched(workspaceMatches[0])
+                return .matched(
+                    MatchedSessionEvidence(
+                        session: workspaceMatches[0],
+                        strength: .workingDirectory
+                    )
+                )
             }
         }
 
@@ -554,7 +545,7 @@ final class ProcessMonitoringCoordinator {
         for process: ActiveProcessSnapshot,
         sessions: [AgentSession],
         claimedSessionIDs: Set<String>
-    ) -> AgentSession? {
+    ) -> MatchedSessionEvidence? {
         let unclaimedSessions = sessions.filter { !claimedSessionIDs.contains($0.id) }
         guard !unclaimedSessions.isEmpty else {
             return nil
@@ -562,7 +553,7 @@ final class ProcessMonitoringCoordinator {
 
         if let transcriptPath = process.transcriptPath,
            let transcriptMatched = unclaimedSessions.first(where: { $0.geminiMetadata?.transcriptPath == transcriptPath }) {
-            return transcriptMatched
+            return MatchedSessionEvidence(session: transcriptMatched, strength: .transcriptPath)
         }
 
         if let processWorkingDirectory = process.workingDirectory {
@@ -570,12 +561,18 @@ final class ProcessMonitoringCoordinator {
                 $0.jumpTarget?.workingDirectory == processWorkingDirectory
             }
             if !workspaceMatches.isEmpty {
-                return preferredGeminiSession(from: workspaceMatches)
+                return preferredGeminiSession(from: workspaceMatches).map {
+                    MatchedSessionEvidence(session: $0, strength: .workingDirectory)
+                }
             }
             return nil
         }
 
-        return unclaimedSessions.count == 1 ? unclaimedSessions[0] : nil
+        if unclaimedSessions.count == 1, let session = unclaimedSessions.first {
+            return MatchedSessionEvidence(session: session, strength: .toolFamily)
+        }
+
+        return nil
     }
 
     private func preferredGeminiSession(from sessions: [AgentSession]) -> AgentSession? {
@@ -666,12 +663,28 @@ final class ProcessMonitoringCoordinator {
                 tmuxSocketPath: process.tmuxSocketPath
             )
         )
-        session.isProcessAlive = true
+        session.livenessObservation.seedRuntimePresence(syntheticMatchStrength(for: session))
         return session
     }
 
     func isSyntheticClaudeSession(_ session: AgentSession) -> Bool {
         session.tool == .claudeCode && session.id.hasPrefix(syntheticClaudeSessionPrefix)
+    }
+
+    private func syntheticMatchStrength(for session: AgentSession) -> SessionRuntimeMatchStrength {
+        let hasTTY = normalizedTTYForMatching(session.jumpTarget?.terminalTTY) != nil
+        let hasCWD = normalizedPathForMatching(session.jumpTarget?.workingDirectory) != nil
+
+        if hasTTY && hasCWD {
+            return .terminalTTYAndWorkingDirectory
+        }
+        if hasTTY {
+            return .terminalTTY
+        }
+        if hasCWD {
+            return .workingDirectory
+        }
+        return .toolFamily
     }
 
     // MARK: - Process matching
@@ -726,7 +739,7 @@ final class ProcessMonitoringCoordinator {
             }
 
             representedProcessKeys.insert(processKey)
-            claimedSessionIDs.insert(matchedSession.id)
+            claimedSessionIDs.insert(matchedSession.session.id)
         }
 
         return representedProcessKeys
@@ -736,7 +749,7 @@ final class ProcessMonitoringCoordinator {
         for process: ActiveProcessSnapshot,
         sessions: [AgentSession],
         claimedSessionIDs: Set<String>
-    ) -> AgentSession? {
+    ) -> MatchedSessionEvidence? {
         if let terminalTTY = normalizedTTYForMatching(process.terminalTTY),
            let workingDirectory = normalizedPathForMatching(process.workingDirectory) {
             let candidates = claudeTrackedSessions(
@@ -746,7 +759,10 @@ final class ProcessMonitoringCoordinator {
                 workingDirectory: workingDirectory
             )
             if candidates.count == 1 {
-                return candidates[0]
+                return MatchedSessionEvidence(
+                    session: candidates[0],
+                    strength: .terminalTTYAndWorkingDirectory
+                )
             }
         }
 
@@ -758,7 +774,7 @@ final class ProcessMonitoringCoordinator {
                 workingDirectory: nil
             )
             if candidates.count == 1 {
-                return candidates[0]
+                return MatchedSessionEvidence(session: candidates[0], strength: .terminalTTY)
             }
         }
 
@@ -779,11 +795,13 @@ final class ProcessMonitoringCoordinator {
                 return processTTY == nil || sessionTTY == processTTY
             }
             if candidates.count == 1 {
-                return candidates[0]
+                return MatchedSessionEvidence(session: candidates[0], strength: .workingDirectory)
             }
 
             if candidates.count > 1 {
-                return candidates.max(by: { $0.updatedAt < $1.updatedAt })
+                return candidates.max(by: { $0.updatedAt < $1.updatedAt }).map {
+                    MatchedSessionEvidence(session: $0, strength: .workingDirectory)
+                }
             }
         }
 

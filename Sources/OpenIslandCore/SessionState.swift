@@ -45,6 +45,14 @@ public struct SessionState: Equatable, Sendable {
         sessionsByID.values.filter { $0.phase == .completed }.count
     }
 
+    public var presentationComparableState: Self {
+        SessionState(sessions: sessions.map { $0.normalizedForPresentationComparison() })
+    }
+
+    public var persistenceComparableState: Self {
+        SessionState(sessions: sessions.map { $0.normalizedForPersistenceComparison() })
+    }
+
     public func session(id: String?) -> AgentSession? {
         guard let id else {
             return nil
@@ -53,7 +61,10 @@ public struct SessionState: Equatable, Sendable {
         return sessionsByID[id]
     }
 
-    public mutating func apply(_ event: AgentEvent) {
+    public mutating func apply(
+        _ event: AgentEvent,
+        ingress: TrackedEventIngress = .bridge
+    ) {
         switch event {
         case let .sessionStarted(payload):
             var session = AgentSession(
@@ -83,8 +94,11 @@ public struct SessionState: Equatable, Sendable {
             // derived from jumpTarget.terminalApp via the shared helper.
             Self.refreshCodexAppClassification(for: &session)
             session.isSessionEnded = false
-            session.isProcessAlive = true
-            session.processNotSeenCount = 0
+            if session.lifecyclePolicy == .appDriven {
+                session.livenessObservation.seedRuntimePresence(.desktopApp)
+            } else if session.lifecyclePolicy == .processDriven {
+                session.livenessObservation.seedRuntimePresence(.toolFamily)
+            }
             upsert(session)
 
         case let .activityUpdated(payload):
@@ -224,6 +238,15 @@ public struct SessionState: Equatable, Sendable {
             session.updatedAt = payload.timestamp
             upsert(session)
         }
+
+        if let sessionID = event.sessionID {
+            if ingress.isBridge {
+                _ = reconcileAttachmentStates([sessionID: .attached])
+            }
+            if let source = ingress.eventPresenceSource {
+                observeEventPresence(sessionID: sessionID, source: source)
+            }
+        }
     }
 
     public mutating func resolvePermission(
@@ -326,25 +349,31 @@ public struct SessionState: Equatable, Sendable {
     static func refreshCodexAppClassification(for session: inout AgentSession) {
         if session.jumpTarget?.terminalApp == "Codex.app" {
             session.lifecyclePolicy = .appDriven
+            session.livenessObservation.seedRuntimePresence(.desktopApp)
         }
     }
 
-    /// Mark a single session as alive (e.g. when a hook event is received).
-    /// Does not affect other sessions' processNotSeenCount.
-    public mutating func markSingleSessionAlive(sessionID: String) {
-        guard var session = sessionsByID[sessionID] else { return }
-        guard !session.isProcessAlive || session.processNotSeenCount != 0 else { return }
-        session.isProcessAlive = true
-        session.processNotSeenCount = 0
+    public mutating func observeEventPresence(
+        sessionID: String,
+        source: SessionEventPresenceSource
+    ) {
+        guard var session = sessionsByID[sessionID] else {
+            return
+        }
+
+        guard session.isHookManaged else {
+            return
+        }
+
+        session.livenessObservation.recordEventPresence(source)
         upsert(session)
     }
 
-    /// Update process liveness for all tracked sessions based on process discovery.
-    /// Returns the set of session IDs whose `isProcessAlive` changed.
+    /// Update runtime liveness for all tracked sessions from explicit
+    /// runtime evidence rather than ad hoc process booleans.
     @discardableResult
-    public mutating func markProcessLiveness(
-        aliveSessionIDs: Set<String>,
-        isCodexAppRunning: Bool = false
+    public mutating func reconcileRuntimePresence(
+        evidenceBySessionID: [String: SessionRuntimeMatchStrength]
     ) -> Set<String> {
         var changed: Set<String> = []
 
@@ -355,72 +384,35 @@ public struct SessionState: Equatable, Sendable {
                 continue
             }
 
-            // Codex.app sessions use app-level liveness (NSRunningApplication)
-            // rather than subprocess matching.  Phase is driven by hooks or
-            // the rollout watcher / app-server notifications.
-            if session.isCodexAppSession {
-                let wasAlive = session.isProcessAlive
-                session.isProcessAlive = aliveSessionIDs.contains(id)
-                if session.isProcessAlive != wasAlive {
-                    changed.insert(id)
-                }
-                upsert(session)
-                continue
-            }
+            let hadPresenceEvidence = session.hasPresenceEvidence
+            let wasVisible = session.isVisibleInIsland
+            let wasEnded = session.isSessionEnded
+
+            session.livenessObservation.advanceRuntimeObservation(match: evidenceBySessionID[id])
 
             // Hook-managed sessions primarily rely on hook lifecycle signals
             // (SessionStart / SessionEnd).  However, if the bridge becomes
             // unavailable the SessionEnd hook can never arrive, leaving the
             // session permanently stuck as visible.  As a fallback, we also
-            // check process liveness: when the agent process is confirmed dead
-            // by two consecutive polls we mark the session ended so it can be
-            // cleaned up.
-            if session.isHookManaged {
-                if session.isSessionEnded {
-                    continue
-                }
-
-                // When a Codex session reached .completed via hooks (.stop)
-                // and Codex.app is still running, don't kill it through
-                // process polling — the CLI subprocess exits after each turn
-                // but the desktop app session is still valid.  The session
-                // stays visible as "Completed" and fades via island presence.
-                if session.tool == .codex && session.phase == .completed && isCodexAppRunning {
-                    upsert(session)
-                    continue
-                }
-
-                if aliveSessionIDs.contains(id) {
-                    session.processNotSeenCount = 0
-                } else {
-                    session.processNotSeenCount += 1
-                    if session.processNotSeenCount >= 2 {
-                        session.isSessionEnded = true
-                        session.phase = .completed
-                        changed.insert(id)
-                    }
-                }
-
-                upsert(session)
-                continue
+            // check runtime evidence: when the session receives neither event
+            // nor runtime presence for two consecutive polls we mark it ended.
+            // This keeps the rule deterministic regardless of ingress.
+            //
+            // App-driven sessions use the same reducer, but their runtime
+            // evidence normally arrives via `.desktopApp` instead of CLI
+            // subprocess matching.
+            if session.isHookManaged && !session.isSessionEnded && !session.hasFallbackPresence {
+                session.isSessionEnded = true
+                session.phase = .completed
             }
 
-            let wasAlive = session.isProcessAlive
-
-            if aliveSessionIDs.contains(id) {
-                session.isProcessAlive = true
-                session.processNotSeenCount = 0
-            } else {
-                session.processNotSeenCount += 1
-                session.isProcessAlive = session.processNotSeenCount < 2
-            }
-
-            if session.isProcessAlive != wasAlive {
+            if session.hasPresenceEvidence != hadPresenceEvidence
+                || session.isVisibleInIsland != wasVisible
+                || session.isSessionEnded != wasEnded {
                 changed.insert(id)
-                upsert(session)
-            } else if !aliveSessionIDs.contains(id), session.processNotSeenCount >= 1 {
-                upsert(session)
             }
+
+            upsert(session)
         }
 
         return changed
@@ -428,7 +420,6 @@ public struct SessionState: Equatable, Sendable {
 
     /// Remove sessions that are no longer visible in the island.
     /// Returns `true` if any sessions were removed.
-    @discardableResult
     /// Manually mark a session as completed and ended.
     /// Intended for remote sessions whose SSH tunnel dropped without a
     /// SessionEnd hook.

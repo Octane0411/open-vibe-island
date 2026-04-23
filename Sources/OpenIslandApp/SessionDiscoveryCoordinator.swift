@@ -433,7 +433,7 @@ final class SessionDiscoveryCoordinator {
         let newSessions = newRecords.map { record -> AgentSession in
             var session = record.session
             session.isCodexAppSession = true
-            session.isProcessAlive = true
+            session.livenessObservation.seedRuntimePresence(.desktopApp)
             // Prefer the discovered record's cwd (sourced from the rollout
             // file's session_meta) over an empty fallback.
             let cwd = record.jumpTarget?.workingDirectory ?? ""

@@ -122,6 +122,123 @@ public enum SessionLifecyclePolicy: String, Codable, Sendable {
     case appDriven
 }
 
+public enum SessionRuntimeMatchStrength: Int, Codable, Comparable, Sendable {
+    case toolFamily
+    case terminalTTY
+    case workingDirectory
+    case terminalTTYAndWorkingDirectory
+    case transcriptPath
+    case sessionID
+    case desktopApp
+
+    public static func < (lhs: SessionRuntimeMatchStrength, rhs: SessionRuntimeMatchStrength) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+public enum SessionEventPresenceSource: String, Codable, Sendable {
+    case bridge
+    case rolloutLive
+}
+
+public struct SessionLivenessObservation: Equatable, Sendable {
+    public var observationCycle: Int
+    public var lastRuntimePositiveCycle: Int?
+    public var strongestRuntimeMatch: SessionRuntimeMatchStrength?
+    public var lastEventPositiveCycle: Int?
+    public var lastEventSource: SessionEventPresenceSource?
+
+    public init(
+        observationCycle: Int = 0,
+        lastRuntimePositiveCycle: Int? = nil,
+        strongestRuntimeMatch: SessionRuntimeMatchStrength? = nil,
+        lastEventPositiveCycle: Int? = nil,
+        lastEventSource: SessionEventPresenceSource? = nil
+    ) {
+        self.observationCycle = observationCycle
+        self.lastRuntimePositiveCycle = lastRuntimePositiveCycle
+        self.strongestRuntimeMatch = strongestRuntimeMatch
+        self.lastEventPositiveCycle = lastEventPositiveCycle
+        self.lastEventSource = lastEventSource
+    }
+
+    public var runtimeMissCount: Int {
+        missCount(since: lastRuntimePositiveCycle)
+    }
+
+    public var eventMissCount: Int {
+        missCount(since: lastEventPositiveCycle)
+    }
+
+    public var fallbackMissCount: Int {
+        [lastRuntimePositiveCycle.map { _ in runtimeMissCount }, lastEventPositiveCycle.map { _ in eventMissCount }]
+            .compactMap { $0 }
+            .min()
+            ?? observationCycle
+    }
+
+    public var hasRuntimePresence: Bool {
+        guard lastRuntimePositiveCycle != nil else {
+            return false
+        }
+        return runtimeMissCount < 2
+    }
+
+    public var hasEventPresence: Bool {
+        guard lastEventPositiveCycle != nil else {
+            return false
+        }
+        return eventMissCount < 2
+    }
+
+    public mutating func advanceRuntimeObservation(match: SessionRuntimeMatchStrength?) {
+        observationCycle += 1
+        guard let match else {
+            return
+        }
+
+        lastRuntimePositiveCycle = observationCycle
+        strongestRuntimeMatch = match
+    }
+
+    public mutating func recordEventPresence(_ source: SessionEventPresenceSource) {
+        lastEventPositiveCycle = observationCycle
+        lastEventSource = source
+    }
+
+    public mutating func seedRuntimePresence(_ match: SessionRuntimeMatchStrength) {
+        lastRuntimePositiveCycle = observationCycle
+        strongestRuntimeMatch = match
+    }
+
+    public mutating func clearRuntimePresence() {
+        lastRuntimePositiveCycle = nil
+        strongestRuntimeMatch = nil
+    }
+
+    public mutating func setLegacyRuntimeMissCount(_ missCount: Int) {
+        observationCycle = max(observationCycle, missCount)
+        if missCount == 0 {
+            if let strongestRuntimeMatch {
+                seedRuntimePresence(strongestRuntimeMatch)
+            } else {
+                seedRuntimePresence(.toolFamily)
+            }
+            return
+        }
+
+        clearRuntimePresence()
+    }
+
+    private func missCount(since positiveCycle: Int?) -> Int {
+        guard let positiveCycle else {
+            return observationCycle
+        }
+
+        return max(0, observationCycle - positiveCycle)
+    }
+}
+
 public struct SessionTrackingIdentity: Equatable, Sendable {
     public var sessionID: String
     public var transcriptPath: String?
@@ -390,14 +507,36 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     /// Only meaningful for hook-managed sessions.
     public var isSessionEnded: Bool = false
 
-    /// Whether the agent process is currently alive according to process discovery.
-    /// Used for non-hook-managed sessions (e.g. Codex, synthetic Claude sessions).
-    public var isProcessAlive: Bool = false
+    /// Runtime and ingress evidence is ephemeral. It is intentionally not
+    /// persisted; restored sessions must earn freshness again via new evidence.
+    public var livenessObservation = SessionLivenessObservation()
 
-    /// Number of consecutive reconciliation polls where the process was not found.
-    /// Reset to 0 when the process is found. When >= 2 (~6 seconds), the session
-    /// is considered gone. This prevents flicker from momentary `ps` gaps.
-    public var processNotSeenCount: Int = 0
+    /// Compatibility facade for older UI/tests. This is derived from the
+    /// explicit evidence model rather than persisted as a source of truth.
+    public var isProcessAlive: Bool {
+        get {
+            hasPresenceEvidence
+        }
+        set {
+            if newValue {
+                let match: SessionRuntimeMatchStrength = lifecyclePolicy == .appDriven ? .desktopApp : .toolFamily
+                livenessObservation.seedRuntimePresence(match)
+            } else {
+                livenessObservation.clearRuntimePresence()
+            }
+        }
+    }
+
+    /// Compatibility facade for older UI/tests. The canonical data lives in
+    /// `livenessObservation`.
+    public var processNotSeenCount: Int {
+        get {
+            presenceMissCount
+        }
+        set {
+            livenessObservation.setLegacyRuntimeMissCount(newValue)
+        }
+    }
 
     public init(
         id: String,
@@ -441,8 +580,11 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         self.isRemote = isRemote
         self.lifecyclePolicy = lifecyclePolicy
         self.isSessionEnded = isSessionEnded
-        self.isProcessAlive = isProcessAlive
-        self.processNotSeenCount = processNotSeenCount
+        self.livenessObservation = SessionLivenessObservation(
+            observationCycle: processNotSeenCount,
+            lastRuntimePositiveCycle: isProcessAlive ? processNotSeenCount : nil,
+            strongestRuntimeMatch: isProcessAlive ? (lifecyclePolicy == .appDriven ? .desktopApp : .toolFamily) : nil
+        )
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -465,8 +607,6 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         case isRemote
         case lifecyclePolicy
         case isSessionEnded
-        case isProcessAlive
-        case processNotSeenCount
     }
 
     public init(from decoder: any Decoder) throws {
@@ -495,8 +635,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
                 jumpTarget: jumpTarget
             )
         isSessionEnded = try container.decodeIfPresent(Bool.self, forKey: .isSessionEnded) ?? false
-        isProcessAlive = try container.decodeIfPresent(Bool.self, forKey: .isProcessAlive) ?? false
-        processNotSeenCount = try container.decodeIfPresent(Int.self, forKey: .processNotSeenCount) ?? 0
+        livenessObservation = SessionLivenessObservation()
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -520,8 +659,6 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         try container.encode(isRemote, forKey: .isRemote)
         try container.encode(lifecyclePolicy, forKey: .lifecyclePolicy)
         try container.encode(isSessionEnded, forKey: .isSessionEnded)
-        try container.encode(isProcessAlive, forKey: .isProcessAlive)
-        try container.encode(processNotSeenCount, forKey: .processNotSeenCount)
     }
 }
 
@@ -581,6 +718,60 @@ public extension AgentSession {
         attachmentState.isLive
     }
 
+    var hasEventPresence: Bool {
+        livenessObservation.hasEventPresence
+    }
+
+    var hasRuntimePresence: Bool {
+        livenessObservation.hasRuntimePresence
+    }
+
+    var hasFallbackPresence: Bool {
+        hasRuntimePresence || hasEventPresence
+    }
+
+    /// Policy-aware presence used by the core reducer and UI. This is the
+    /// canonical meaning behind the older `isProcessAlive` compatibility
+    /// facade.
+    var hasPresenceEvidence: Bool {
+        switch lifecyclePolicy {
+        case .appDriven, .processDriven:
+            return hasRuntimePresence
+        case .hookDrivenWithProcessFallback:
+            return hasFallbackPresence
+        }
+    }
+
+    /// Policy-aware miss count used by the compatibility `processNotSeenCount`
+    /// facade. Process-driven sessions expire on runtime misses; hook-managed
+    /// sessions expire on the first missing source among runtime or events.
+    var presenceMissCount: Int {
+        switch lifecyclePolicy {
+        case .appDriven, .processDriven:
+            return livenessObservation.runtimeMissCount
+        case .hookDrivenWithProcessFallback:
+            return livenessObservation.fallbackMissCount
+        }
+    }
+
+    func normalizedForPresentationComparison() -> Self {
+        var normalized = self
+        normalized.livenessObservation = SessionLivenessObservation(
+            observationCycle: 0,
+            lastRuntimePositiveCycle: hasRuntimePresence ? 0 : nil,
+            strongestRuntimeMatch: hasRuntimePresence ? livenessObservation.strongestRuntimeMatch : nil,
+            lastEventPositiveCycle: hasEventPresence ? 0 : nil,
+            lastEventSource: hasEventPresence ? livenessObservation.lastEventSource : nil
+        )
+        return normalized
+    }
+
+    func normalizedForPersistenceComparison() -> Self {
+        var normalized = self
+        normalized.livenessObservation = SessionLivenessObservation()
+        return normalized
+    }
+
     var trackingIdentity: SessionTrackingIdentity {
         SessionTrackingIdentity(
             sessionID: id,
@@ -599,14 +790,14 @@ public extension AgentSession {
         if phase.requiresAttention { return true }
         switch lifecyclePolicy {
         case .appDriven:
-            return isProcessAlive
+            return hasRuntimePresence
         case .hookDrivenWithProcessFallback:
             if attachmentState.isLive {
                 return !isSessionEnded
             }
-            return isProcessAlive
+            return hasFallbackPresence
         case .processDriven:
-            return isProcessAlive
+            return hasRuntimePresence
         }
     }
 

@@ -1182,7 +1182,7 @@ final class AppModel {
         updateLastActionMessage: Bool = true,
         ingress: TrackedEventIngress = .bridge
     ) {
-        let eventSessionID = trackedEventSessionID(for: event)
+        let eventSessionID = event.sessionID
 
         // Snapshot whether this session was already completed before applying
         // the event. Used to suppress duplicate/stale completion notifications
@@ -1204,15 +1204,8 @@ final class AppModel {
             return
         }
 
-        state.apply(event)
+        state.apply(event, ingress: ingress)
         reconcileIslandSurfaceAfterStateChange()
-        if ingress.isBridge {
-            monitoring.markSessionAttached(for: event)
-            monitoring.markSessionProcessAlive(for: event)
-        } else if ingress.refreshesRolloutLiveness,
-                  shouldRefreshCodexLivenessFromRollout(eventSessionID: eventSessionID) {
-            monitoring.markSessionProcessAlive(for: event)
-        }
         synchronizeSelection()
         discovery.refreshCodexRolloutTracking()
         refreshOverlayPlacementIfVisible()
@@ -1238,44 +1231,6 @@ final class AppModel {
                 ingress: ingress
             )
         }
-    }
-
-    private func trackedEventSessionID(for event: AgentEvent) -> String? {
-        switch event {
-        case let .sessionStarted(payload):
-            payload.sessionID
-        case let .activityUpdated(payload):
-            payload.sessionID
-        case let .permissionRequested(payload):
-            payload.sessionID
-        case let .questionAsked(payload):
-            payload.sessionID
-        case let .sessionCompleted(payload):
-            payload.sessionID
-        case let .jumpTargetUpdated(payload):
-            payload.sessionID
-        case let .sessionMetadataUpdated(payload):
-            payload.sessionID
-        case let .claudeSessionMetadataUpdated(payload):
-            payload.sessionID
-        case let .geminiSessionMetadataUpdated(payload):
-            payload.sessionID
-        case let .openCodeSessionMetadataUpdated(payload):
-            payload.sessionID
-        case let .cursorSessionMetadataUpdated(payload):
-            payload.sessionID
-        case let .actionableStateResolved(payload):
-            payload.sessionID
-        }
-    }
-
-    private func shouldRefreshCodexLivenessFromRollout(eventSessionID: String?) -> Bool {
-        guard let sessionID = eventSessionID,
-              let session = state.session(id: sessionID) else {
-            return false
-        }
-
-        return session.tool == .codex && session.isHookManaged
     }
 
     private func scheduleNotificationSurfacePresentationIfNeeded(
@@ -1444,7 +1399,7 @@ final class AppModel {
 
         let presence = session.islandPresence(at: now)
 
-        if session.isProcessAlive {
+        if session.hasPresenceEvidence {
             score += presence == .inactive ? 3_000 : 12_000
         } else if session.isDemoSession || session.phase.requiresAttention {
             score += 6_000

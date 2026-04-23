@@ -15,28 +15,6 @@ enum NotchOpenReason: Equatable {
     case boot
 }
 
-enum TrackedEventIngress: Equatable {
-    case bridge
-    case rolloutBootstrap
-    case rolloutLive
-
-    static var rollout: Self {
-        .rolloutLive
-    }
-
-    var isBridge: Bool {
-        self == .bridge
-    }
-
-    var isRollout: Bool {
-        self == .rolloutBootstrap || self == .rolloutLive
-    }
-
-    var refreshesRolloutLiveness: Bool {
-        self == .rolloutLive
-    }
-}
-
 // MARK: - Island appearance
 
 enum IslandAppearanceMode: String, CaseIterable, Identifiable {

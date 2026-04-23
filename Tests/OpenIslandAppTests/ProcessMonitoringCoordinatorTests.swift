@@ -38,6 +38,38 @@ struct ProcessMonitoringCoordinatorTests {
     }
 
     @Test
+    func codexRuntimeEvidenceCarriesMatchStrength() {
+        let coordinator = ProcessMonitoringCoordinator()
+        var state = SessionState(
+            sessions: [
+                codexSession(
+                    id: "tracked-codex",
+                    workingDirectory: "/tmp/open-island",
+                    terminalTTY: "/dev/ttys001",
+                    transcriptPath: "/Users/test/.codex/sessions/2026/04/03/rollout-2026-04-03T11-42-31-019d516f-71ee-7e40-bcff-502fedac0928.jsonl"
+                ),
+            ]
+        )
+        coordinator.stateAccessor = { state }
+        coordinator.stateUpdater = { state = $0 }
+
+        let evidence = coordinator.runtimeEvidenceBySessionID(
+            activeProcesses: [
+                .init(
+                    tool: .codex,
+                    sessionID: nil,
+                    workingDirectory: "/tmp/open-island",
+                    terminalTTY: "/dev/ttys001",
+                    terminalApp: "WezTerm",
+                    transcriptPath: "/Users/test/.codex/sessions/2026/04/03/rollout-2026-04-03T11-42-31-019d516f-71ee-7e40-bcff-502fedac0928.jsonl"
+                ),
+            ]
+        )
+
+        #expect(evidence["tracked-codex"] == .transcriptPath)
+    }
+
+    @Test
     func codexLivenessFallsBackToUniqueTTYAndWorkingDirectory() {
         let coordinator = ProcessMonitoringCoordinator()
         var state = SessionState(

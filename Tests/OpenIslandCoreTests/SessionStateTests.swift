@@ -153,6 +153,59 @@ struct SessionStateTests {
     }
 
     @Test
+    func comparisonProjectionsIgnoreObservationCyclesButPreservePresenceShape() {
+        var earlier = AgentSession(
+            id: "codex-1",
+            title: "Codex · repo",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .stale,
+            phase: .running,
+            summary: "Working",
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            lifecyclePolicy: .hookDrivenWithProcessFallback
+        )
+        earlier.livenessObservation = SessionLivenessObservation(
+            observationCycle: 3,
+            lastRuntimePositiveCycle: 2,
+            strongestRuntimeMatch: .terminalTTY,
+            lastEventPositiveCycle: 3,
+            lastEventSource: .bridge
+        )
+
+        var laterSamePresence = earlier
+        laterSamePresence.livenessObservation = SessionLivenessObservation(
+            observationCycle: 9,
+            lastRuntimePositiveCycle: 8,
+            strongestRuntimeMatch: .terminalTTY,
+            lastEventPositiveCycle: 9,
+            lastEventSource: .bridge
+        )
+
+        var differentPresence = earlier
+        differentPresence.livenessObservation = SessionLivenessObservation(
+            observationCycle: 9,
+            lastRuntimePositiveCycle: nil,
+            strongestRuntimeMatch: nil,
+            lastEventPositiveCycle: nil,
+            lastEventSource: nil
+        )
+
+        #expect(
+            SessionState(sessions: [earlier]).presentationComparableState
+                == SessionState(sessions: [laterSamePresence]).presentationComparableState
+        )
+        #expect(
+            SessionState(sessions: [earlier]).presentationComparableState
+                != SessionState(sessions: [differentPresence]).presentationComparableState
+        )
+        #expect(
+            SessionState(sessions: [earlier]).persistenceComparableState
+                == SessionState(sessions: [differentPresence]).persistenceComparableState
+        )
+    }
+
+    @Test
     func actionableStateResolvedClearsWaitingForApproval() {
         let startedAt = Date(timeIntervalSince1970: 5_000)
         var state = SessionState(
@@ -295,10 +348,38 @@ struct SessionStateTests {
         var state = SessionState(sessions: [restored])
         #expect(state.liveSessionCount == 0)
 
-        state.markSingleSessionAlive(sessionID: "restored-codex")
+        state.observeEventPresence(sessionID: "restored-codex", source: .bridge)
 
         #expect(state.session(id: "restored-codex")?.isProcessAlive == true)
         #expect(state.liveSessionCount == 1)
+    }
+
+    @Test
+    func hookManagedEventPresenceExpiresAfterTwoRuntimeMisses() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        var session = AgentSession(
+            id: "recovered-codex",
+            title: "Codex · open-island",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .stale,
+            phase: .running,
+            summary: "Recovered from cache",
+            updatedAt: now,
+            lifecyclePolicy: .hookDrivenWithProcessFallback
+        )
+        session.livenessObservation.recordEventPresence(.bridge)
+
+        var state = SessionState(sessions: [session])
+
+        _ = state.reconcileRuntimePresence(evidenceBySessionID: [:])
+        #expect(state.session(id: "recovered-codex")?.isSessionEnded == false)
+        #expect(state.session(id: "recovered-codex")?.isProcessAlive == true)
+
+        _ = state.reconcileRuntimePresence(evidenceBySessionID: [:])
+        #expect(state.session(id: "recovered-codex")?.isSessionEnded == true)
+        #expect(state.session(id: "recovered-codex")?.phase == .completed)
+        #expect(state.liveSessionCount == 0)
     }
 
     @Test
