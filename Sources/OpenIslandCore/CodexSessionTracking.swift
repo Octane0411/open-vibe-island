@@ -116,7 +116,6 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
         if jumpTarget?.terminalApp == "Codex.app" {
             let restoredLifecyclePolicy: SessionLifecyclePolicy = .appDriven
             var session = makeSession(lifecyclePolicy: restoredLifecyclePolicy)
-            session.lifecyclePolicy = restoredLifecyclePolicy
             session.livenessObservation.seedRuntimePresence(.desktopApp)
             return session
         }
@@ -887,7 +886,7 @@ public enum CodexRolloutEventFreshness: String, Codable, Sendable {
     case live
 }
 
-public struct CodexRolloutObservedEvent: Sendable {
+public struct CodexRolloutObservedEvent: Codable, Sendable {
     public var event: AgentEvent
     public var freshness: CodexRolloutEventFreshness
 

@@ -735,8 +735,14 @@ struct CodexSessionTrackingTests {
                 transcriptPath: rolloutURL.path
             )
         ])
+        defer {
+            watcher.stop()
+        }
 
-        try await Task.sleep(for: .milliseconds(150))
+        _ = try await waitForObservedEvent(in: recorder) {
+            $0.freshness == .bootstrap
+                && $0.event.trackedActivityUpdate?.summary == "Bootstrap snapshot should stay metadata-only."
+        }
         try appendRolloutLine(
             rolloutLine(
                 timestamp: "2026-04-02T04:03:46.000Z",
@@ -748,8 +754,10 @@ struct CodexSessionTrackingTests {
             ),
             to: rolloutURL
         )
-        try await Task.sleep(for: .milliseconds(150))
-        watcher.stop()
+        _ = try await waitForObservedEvent(in: recorder) {
+            $0.freshness == .live
+                && $0.event.trackedActivityUpdate?.summary == "Live append should count as keepalive evidence."
+        }
 
         let observed = await recorder.snapshot()
         #expect(observed.contains(where: {
@@ -866,6 +874,33 @@ private actor ObservedEventRecorder {
     func snapshotEvents() -> [AgentEvent] {
         observedEvents.map(\.event)
     }
+}
+
+private func waitForObservedEvent(
+    in recorder: ObservedEventRecorder,
+    timeout: Duration = .seconds(1),
+    pollInterval: Duration = .milliseconds(10),
+    matching predicate: (CodexRolloutObservedEvent) -> Bool
+) async throws -> CodexRolloutObservedEvent {
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: timeout)
+
+    repeat {
+        let observed = await recorder.snapshot()
+        if let event = observed.first(where: predicate) {
+            return event
+        }
+
+        try await Task.sleep(for: pollInterval)
+    } while clock.now < deadline
+
+    let observed = await recorder.snapshot()
+    if let event = observed.first(where: predicate) {
+        return event
+    }
+
+    Issue.record("Expected matching Codex rollout observation within \(timeout); observed \(observed.count) events")
+    throw CancellationError()
 }
 
 private func appendRolloutLine(_ line: String, to fileURL: URL) throws {
