@@ -110,12 +110,17 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
         jumpTarget = try container.decodeIfPresent(JumpTarget.self, forKey: .jumpTarget)
         claudeMetadata = try container.decodeIfPresent(ClaudeSessionMetadata.self, forKey: .claudeMetadata)
         isRemote = try container.decodeIfPresent(Bool.self, forKey: .isRemote) ?? false
-        lifecyclePolicy = try container.decodeIfPresent(SessionLifecyclePolicy.self, forKey: .lifecyclePolicy)
-            ?? AgentSession.inferredLifecyclePolicy(
+        if let decodedLifecyclePolicy = try container.decodeIfPresent(SessionLifecyclePolicy.self, forKey: .lifecyclePolicy) {
+            lifecyclePolicy = decodedLifecyclePolicy
+        } else if origin == nil {
+            lifecyclePolicy = .hookDrivenWithProcessFallback
+        } else {
+            lifecyclePolicy = AgentSession.inferredLifecyclePolicy(
                 tool: .claudeCode,
                 origin: origin,
                 jumpTarget: jumpTarget
             )
+        }
         isSessionEnded = try container.decodeIfPresent(Bool.self, forKey: .isSessionEnded) ?? false
     }
 

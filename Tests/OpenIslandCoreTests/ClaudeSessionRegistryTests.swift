@@ -79,6 +79,26 @@ struct ClaudeSessionRegistryTests {
     }
 
     @Test
+    func legacyClaudeRecordWithoutOriginDecodesAsHookDriven() throws {
+        let legacyJSON = """
+        {
+          "sessionID": "claude-legacy-1",
+          "title": "Claude · legacy",
+          "attachmentState": "attached",
+          "summary": "Restored from a pre-origin registry.",
+          "phase": "running",
+          "updatedAt": 0
+        }
+        """.data(using: .utf8)!
+
+        let record = try JSONDecoder().decode(ClaudeTrackedSessionRecord.self, from: legacyJSON)
+
+        #expect(record.origin == nil)
+        #expect(record.lifecyclePolicy == .hookDrivenWithProcessFallback)
+        #expect(record.session.lifecyclePolicy == .hookDrivenWithProcessFallback)
+    }
+
+    @Test
     func claudeTrackedSessionRecordRejectsEndedAndDemoSessionsForLiveRestore() {
         let liveRecord = ClaudeTrackedSessionRecord(
             sessionID: "claude-live-1",
