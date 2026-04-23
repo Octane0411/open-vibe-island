@@ -48,8 +48,8 @@ Notchi auto-writes hook configuration into the tool's settings and installs a bu
 
 Open Island already has the beginning of the Codex side:
 
-- [Sources/OpenIslandCore/CodexHooks.swift](/Users/wangruobing/Personal/open-island/Sources/OpenIslandCore/CodexHooks.swift)
-- [Sources/OpenIslandHooks/main.swift](/Users/wangruobing/Personal/open-island/Sources/OpenIslandHooks/main.swift)
+- [Sources/OpenIslandCore/CodexHooks.swift](../Sources/OpenIslandCore/CodexHooks.swift)
+- [Sources/OpenIslandHooks/OpenIslandHooksCLI.swift](../Sources/OpenIslandHooks/OpenIslandHooksCLI.swift)
 
 The next step is to add a native installer that:
 
@@ -91,9 +91,9 @@ Notchi demonstrates that a narrow first integration is enough to ship. Open Isla
 
 The current shared model and bridge transport already point in the right direction:
 
-- [Sources/OpenIslandCore/AgentEvent.swift](/Users/wangruobing/Personal/open-island/Sources/OpenIslandCore/AgentEvent.swift)
-- [Sources/OpenIslandCore/BridgeTransport.swift](/Users/wangruobing/Personal/open-island/Sources/OpenIslandCore/BridgeTransport.swift)
-- [Sources/OpenIslandCore/SessionState.swift](/Users/wangruobing/Personal/open-island/Sources/OpenIslandCore/SessionState.swift)
+- [Sources/OpenIslandCore/AgentEvent.swift](../Sources/OpenIslandCore/AgentEvent.swift)
+- [Sources/OpenIslandCore/BridgeTransport.swift](../Sources/OpenIslandCore/BridgeTransport.swift)
+- [Sources/OpenIslandCore/SessionState.swift](../Sources/OpenIslandCore/SessionState.swift)
 
 That should remain the center of gravity.
 

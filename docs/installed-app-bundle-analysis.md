@@ -6,7 +6,7 @@ Reviewed on 2026-04-02 against the locally installed app:
 - version: `1.0.15`
 - bundle id: `app.vibeisland.macos`
 - analysis branch: `docs/analyze-installed-app-bundle`
-- analysis worktree: `/Users/wangruobing/Personal/vibe-island-app-analysis`
+- analysis worktree: `<analysis-worktree>`
 
 ## Scope
 
@@ -140,7 +140,7 @@ This proves the product is already multi-tool and not Codex-only.
 
 Claude is configured with:
 
-- `statusLine.command = /Users/wangruobing/.vibe-island/bin/vibe-island-statusline`
+- `statusLine.command = $HOME/.vibe-island/bin/vibe-island-statusline`
 
 That script reads Claude JSON from stdin and writes:
 

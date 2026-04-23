@@ -22,7 +22,7 @@ Agent
 
 **Fail-open principle**: if the bridge is unavailable the hook process exits silently without writing to stdout, so the agent continues running unaffected.
 
-**Entry point**: [`Sources/OpenIslandHooks/main.swift`](../Sources/OpenIslandHooks/main.swift)
+**Entry point**: [`Sources/OpenIslandHooks/OpenIslandHooksCLI.swift`](../Sources/OpenIslandHooks/OpenIslandHooksCLI.swift)
 
 ---
 
@@ -41,7 +41,7 @@ Agent
 | `UserPromptSubmit` | User submits a new prompt | `prompt`, `turn_id` |
 | `Stop` | A turn completes | `last_assistant_message`, `stop_hook_active` |
 
-Current Codex source in `~/work/codex` defines the raw wire payload with `session_id` and `transcript_path`, and those values identify the same rollout thread. `terminal_*` fields are not currently part of the raw Codex schema; `OpenIslandHooks` enriches them at runtime before forwarding the payload to the app.
+Within Open Island, `session_id` and `transcript_path` are the durable Codex identity fields used to correlate hook events with rollout-backed session state. `OpenIslandHooks` may enrich `terminal_*` fields at runtime before forwarding the payload to the app.
 
 ### Common payload fields
 
@@ -49,7 +49,7 @@ Current Codex source in `~/work/codex` defines the raw wire payload with `sessio
 |---|---|---|
 | `cwd` | `cwd` | Working directory |
 | `hook_event_name` | `hookEventName` | Event type |
-| `session_id` | `sessionID` | Session UUID; matches the rollout thread identity in current Codex source |
+| `session_id` | `sessionID` | Session UUID; used with `transcript_path` to correlate the rollout-backed session |
 | `model` | `model` | Model name |
 | `permission_mode` | `permissionMode` | `default` / `acceptEdits` / `plan` / `dontAsk` / `bypassPermissions` |
 | `transcript_path` | `transcriptPath` | JSONL transcript file path |
@@ -285,7 +285,7 @@ For iTerm, Terminal, and Ghostty the process additionally runs an AppleScript qu
 
 | File | Responsibility |
 |---|---|
-| [`Sources/OpenIslandHooks/main.swift`](../Sources/OpenIslandHooks/main.swift) | Hook CLI entry point — routes to Codex, Claude, or Gemini path |
+| [`Sources/OpenIslandHooks/OpenIslandHooksCLI.swift`](../Sources/OpenIslandHooks/OpenIslandHooksCLI.swift) | Hook CLI entry point — routes to Codex, Claude, or Gemini path |
 | [`Sources/OpenIslandCore/CodexHooks.swift`](../Sources/OpenIslandCore/CodexHooks.swift) | Codex payload model, output encoder, terminal detection |
 | [`Sources/OpenIslandCore/ClaudeHooks.swift`](../Sources/OpenIslandCore/ClaudeHooks.swift) | Claude Code payload model, directive types, output encoder |
 | [`Sources/OpenIslandCore/GeminiHooks.swift`](../Sources/OpenIslandCore/GeminiHooks.swift) | Gemini CLI payload model, terminal detection, metadata helpers |

@@ -62,7 +62,7 @@ Observed inherited environment on live Codex processes:
 - `TERM=xterm-ghostty`
 - `__CFBundleIdentifier=com.mitchellh.ghostty`
 - `GHOSTTY_SHELL_FEATURES=cursor:blink,path,title`
-- `PWD=/Users/wangruobing/Personal/vibe-island`
+- `PWD=<repo-root>`
 
 That gives Vibe Island a reliable `(tool=session, tty, cwd, termProgram)` identity seed, but not a stable Ghostty tab id.
 
@@ -74,7 +74,7 @@ That gives Vibe Island a reliable `(tool=session, tty, cwd, termProgram)` identi
 - `bundleIdentifier: com.mitchellh.ghostty`
 - `termProgram: ghostty`
 - `tty: /dev/ttys025`
-- `cwd: /Users/wangruobing/Personal/vibe-island`
+- `cwd: <repo-root>`
 - `codexOrigin: cli`
 - `codexOriginator: codex-tui`
 - `codexThreadSource: cli`
