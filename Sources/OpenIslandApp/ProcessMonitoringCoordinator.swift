@@ -51,7 +51,40 @@ final class ProcessMonitoringCoordinator {
         set { stateUpdater?(newValue) }
     }
 
+    @ObservationIgnored
+    private var immediateReconciliationTask: Task<Void, Never>?
+
     // MARK: - Monitoring lifecycle
+
+    /// Trigger an immediate process discovery + reconciliation cycle off the
+    /// normal 2-second polling schedule.  Safe to call repeatedly — concurrent
+    /// requests are coalesced (the second call is a no-op while a scan is
+    /// already in-flight).
+    func triggerImmediateReconciliation() {
+        guard immediateReconciliationTask == nil else { return }
+
+        immediateReconciliationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let discovery = self.activeAgentProcessDiscovery
+            let probe = self.terminalSessionAttachmentProbe
+            let resolver = self.terminalJumpTargetResolver
+            let liveSessions = self.state.sessions.filter(\.isTrackedLiveSession)
+            let (snapshots, ghosttyAvail, terminalAvail, jumpTargets) = await Task.detached(priority: .userInitiated) {
+                let s = discovery.discover()
+                let g = probe.ghosttySnapshotAvailability()
+                let t = probe.terminalSnapshotAvailability()
+                let j = resolver.resolveJumpTargets(for: liveSessions, activeProcesses: s)
+                return (s, g, t, j)
+            }.value
+            self.reconcileSessionAttachments(
+                activeProcesses: snapshots,
+                ghosttyAvailability: ghosttyAvail,
+                terminalAvailability: terminalAvail,
+                preResolvedJumpTargets: jumpTargets
+            )
+            self.immediateReconciliationTask = nil
+        }
+    }
 
     func startMonitoringIfNeeded() {
         guard sessionAttachmentMonitorTask == nil else {
