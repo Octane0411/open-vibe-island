@@ -181,7 +181,9 @@ public extension CodexTrackedSessionRecord {
     }
 
     var shouldRestoreToLiveState: Bool {
-        origin != .demo && !LegacyMockSessionIDs.all.contains(sessionID)
+        !isSessionEnded
+            && origin != .demo
+            && !LegacyMockSessionIDs.all.contains(sessionID)
     }
 }
 

@@ -138,7 +138,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
 
 public extension ClaudeTrackedSessionRecord {
     var shouldRestoreToLiveState: Bool {
-        origin != .demo
+        !isSessionEnded && origin != .demo
     }
 }
 

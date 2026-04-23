@@ -87,11 +87,22 @@ struct CodexSessionTrackingTests {
             phase: .waitingForApproval,
             updatedAt: .now
         )
+        let endedRecord = CodexTrackedSessionRecord(
+            sessionID: "codex-ended-1",
+            title: "Codex · ended",
+            origin: .live,
+            attachmentState: .stale,
+            summary: "Finished",
+            phase: .completed,
+            updatedAt: .now,
+            isSessionEnded: true
+        )
 
         #expect(liveRecord.shouldRestoreToLiveState)
         #expect(!demoRecord.shouldRestoreToLiveState)
         #expect(!legacyMockRecord.shouldRestoreToLiveState)
         #expect(!debugScenarioRecord.shouldRestoreToLiveState)
+        #expect(!endedRecord.shouldRestoreToLiveState)
     }
 
     @Test

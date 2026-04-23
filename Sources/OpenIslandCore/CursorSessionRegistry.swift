@@ -138,7 +138,7 @@ public struct CursorTrackedSessionRecord: Equatable, Codable, Sendable {
 
 public extension CursorTrackedSessionRecord {
     var shouldRestoreToLiveState: Bool {
-        origin != .demo
+        !isSessionEnded && origin != .demo
     }
 }
 
