@@ -904,6 +904,7 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
         var snapshot = CodexRolloutSnapshot()
         var shouldTrimLeadingPartialLine = false
         var hasDeliveredInitialEvents = false
+        var startedWithEmptyTranscript = false
     }
 
     public var eventHandler: (@Sendable (CodexRolloutObservedEvent) -> Void)?
@@ -1012,6 +1013,7 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
             observation.pendingBuffer.removeAll(keepingCapacity: false)
             observation.snapshot = CodexRolloutSnapshot()
             observation.hasDeliveredInitialEvents = false
+            observation.startedWithEmptyTranscript = fileSize == 0
         }
 
         do {
@@ -1036,8 +1038,12 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
 
             let oldSnapshot = observation.snapshot
             lines.forEach { CodexRolloutReducer.apply(line: $0, to: &observation.snapshot) }
-            let freshness: CodexRolloutEventFreshness = observation.hasDeliveredInitialEvents ? .live : .bootstrap
+            let freshness: CodexRolloutEventFreshness =
+                observation.hasDeliveredInitialEvents || observation.startedWithEmptyTranscript
+                    ? .live
+                    : .bootstrap
             observation.hasDeliveredInitialEvents = true
+            observation.startedWithEmptyTranscript = false
             return CodexRolloutReducer.events(
                 from: oldSnapshot,
                 to: observation.snapshot,
@@ -1071,7 +1077,7 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
         let fileURL = URL(fileURLWithPath: target.transcriptPath)
         guard FileManager.default.fileExists(atPath: fileURL.path),
               let fileHandle = try? FileHandle(forReadingFrom: fileURL) else {
-            return Observation(target: target)
+            return Observation(target: target, startedWithEmptyTranscript: true)
         }
 
         defer {
@@ -1080,7 +1086,7 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
 
         let fileSize = (try? fileHandle.seekToEnd()) ?? 0
         guard fileSize > initialReadLimit else {
-            return Observation(target: target)
+            return Observation(target: target, startedWithEmptyTranscript: fileSize == 0)
         }
 
         let bootstrapSnapshot = bootstrapPromptSnapshot(

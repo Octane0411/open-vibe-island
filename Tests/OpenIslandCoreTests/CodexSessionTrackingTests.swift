@@ -507,6 +507,60 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutWatcherLabelsFirstAppendToEmptyTranscriptAsLive() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-rollout-empty-live-\(UUID().uuidString)", isDirectory: true)
+        let rolloutURL = rootURL.appendingPathComponent("rollout.jsonl")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try Data().write(to: rolloutURL)
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        let recorder = ObservedEventRecorder()
+        let watcher = CodexRolloutWatcher(pollInterval: 0.05)
+        watcher.eventHandler = { observed in
+            Task {
+                await recorder.append(observed)
+            }
+        }
+        watcher.sync(targets: [
+            CodexRolloutWatchTarget(
+                sessionID: "codex-session-empty-live",
+                transcriptPath: rolloutURL.path
+            )
+        ])
+        defer {
+            watcher.stop()
+        }
+
+        try appendRolloutLine(
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": "First append after watch start is live.",
+                ]
+            ),
+            to: rolloutURL
+        )
+
+        let event = try await waitForObservedEvent(in: recorder) {
+            $0.freshness == .live
+                && $0.event.trackedActivityUpdate?.summary == "First append after watch start is live."
+        }
+        #expect(event.freshness == .live)
+
+        let observed = await recorder.snapshot()
+        #expect(!observed.contains(where: {
+            $0.freshness == .bootstrap
+                && $0.event.trackedActivityUpdate?.summary == "First append after watch start is live."
+        }))
+    }
+
+    @Test
     func codexRolloutWatcherBootstrapsPromptMetadataFromHeadWhenTailMissesIt() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("open-island-rollout-head-bootstrap-\(UUID().uuidString)", isDirectory: true)
