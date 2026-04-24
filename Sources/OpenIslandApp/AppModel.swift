@@ -1182,6 +1182,7 @@ final class AppModel {
         updateLastActionMessage: Bool = true,
         ingress: TrackedEventIngress = .bridge
     ) {
+
         // Snapshot whether this session was already completed before applying
         // the event. Used to suppress duplicate/stale completion notifications
         // (e.g. rollout watcher re-discovering an old completion on startup,
@@ -1264,6 +1265,14 @@ final class AppModel {
         }
 
         guard suppressFrontmostNotifications else {
+            presentNotificationSurface(surface)
+            return
+        }
+
+        let isActionable = session.phase == .waitingForApproval || session.phase == .waitingForAnswer
+        if isActionable {
+            notificationPresentationTask?.cancel()
+            notificationPresentationTask = nil
             presentNotificationSurface(surface)
             return
         }
