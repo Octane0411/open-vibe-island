@@ -673,6 +673,7 @@ struct IslandPanelView: View {
                         onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                             ? { model.replyToSession(session, text: $0) } : nil,
                         onJump: { model.jumpToSession(session) },
+                        onSelect: { model.select(sessionID: session.id) },
                         onDismiss: session.isRemote ? { model.dismissSession(session.id) } : nil
                     )
                 }
@@ -1101,6 +1102,7 @@ private struct IslandSessionRow: View {
     var onAnswer: ((QuestionPromptResponse) -> Void)?
     var onReply: ((String) -> Void)?
     let onJump: () -> Void
+    var onSelect: (() -> Void)?
     var onDismiss: (() -> Void)?
 
     @State private var isHighlighted = false
@@ -1558,6 +1560,7 @@ private struct IslandSessionRow: View {
                 isManuallyExpanded = true
             }
         } else {
+            onSelect?()
             onJump()
         }
     }
@@ -2235,7 +2238,7 @@ struct MenuBarContentView: View {
 
             if let session = model.focusedSession {
                 Divider()
-                Text(session.title)
+                Text(session.displayName ?? session.title)
                     .font(.subheadline.weight(.semibold))
                 Text(session.spotlightPrimaryText)
                     .font(.caption)

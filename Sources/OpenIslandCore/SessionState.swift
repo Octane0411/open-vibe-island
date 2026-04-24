@@ -219,6 +219,22 @@ public struct SessionState: Equatable, Sendable {
             session.questionPrompt = nil
             session.updatedAt = payload.timestamp
             upsert(session)
+
+        case let .sessionRenamed(payload):
+            guard var session = sessionsByID[payload.sessionID] else {
+                return
+            }
+
+            // Empty title means "clear the rename" — fall back to title-derived UI.
+            let newDisplayName: String? = payload.title.isEmpty ? nil : payload.title
+
+            guard session.displayName != newDisplayName else {
+                return
+            }
+
+            session.displayName = newDisplayName
+            session.updatedAt = payload.timestamp
+            upsert(session)
         }
     }
 

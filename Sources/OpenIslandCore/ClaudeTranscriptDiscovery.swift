@@ -80,6 +80,7 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
         var model: String?
         var currentTool: String?
         var currentToolInputPreview: String?
+        var customAgentName: String?
         var pendingToolUses: [String: (name: String, preview: String?)] = [:]
 
         for line in contents.split(separator: "\n") {
@@ -92,7 +93,12 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
                 sessionID = value
             }
 
-            if let value = object["cwd"] as? String, !value.isEmpty {
+            // First-wins on cwd: Claude Code records every tool-call's cwd
+            // here, including child workdirs (`cd subdir && cmd`). The
+            // session-startup cwd is what `lsof fcwd` reports for the
+            // actual claude PID, so use the first non-empty entry to keep
+            // process matching consistent across passes.
+            if cwd == nil, let value = object["cwd"] as? String, !value.isEmpty {
                 cwd = value
             }
 
@@ -104,6 +110,17 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
             let topLevelType = object["type"] as? String
             let message = object["message"] as? [String: Any]
             let role = message?["role"] as? String
+
+            // `/rename <name>` in Claude Code appends one of these lines each
+            // time the user renames the session. Last one wins. An empty
+            // `agentName` means the user cleared the name — fall back to the
+            // default `Claude · <workspace>` title.
+            if topLevelType == "agent-name" {
+                let value = (object["agentName"] as? String)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                customAgentName = value.isEmpty ? nil : value
+                continue
+            }
 
             if role == "user" {
                 if let prompt = promptText(from: message?["content"]) {
@@ -173,6 +190,7 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
         return AgentSession(
             id: sessionID,
             title: "Claude · \(workspaceName)",
+            displayName: customAgentName,
             tool: .claudeCode,
             origin: .live,
             attachmentState: .stale,
@@ -187,6 +205,59 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
             ),
             claudeMetadata: metadata.isEmpty ? nil : metadata
         )
+    }
+
+    /// Reads the latest `agent-name` entry from a Claude Code JSONL transcript.
+    /// Returns the trimmed custom name, or `nil` if absent/empty.
+    ///
+    /// Used by the live hook path (BridgeServer) to pick up `/rename` while a
+    /// session is running — rename does not emit a hook, it only appends
+    /// `{"type":"agent-name","agentName":...}` to the transcript.
+    ///
+    /// Reads the tail of the file (bounded window) to avoid parsing multi-MB
+    /// transcripts on every hook event.
+    public static func latestCustomAgentName(
+        transcriptPath: String,
+        tailBytes: Int = 64 * 1024,
+        fileManager: FileManager = .default
+    ) -> String? {
+        guard !transcriptPath.isEmpty,
+              fileManager.fileExists(atPath: transcriptPath) else {
+            return nil
+        }
+
+        guard let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: transcriptPath)) else {
+            return nil
+        }
+        defer { try? handle.close() }
+
+        let data: Data
+        do {
+            let size = try handle.seekToEnd()
+            let offset = size > UInt64(tailBytes) ? size - UInt64(tailBytes) : 0
+            try handle.seek(toOffset: offset)
+            data = handle.readDataToEndOfFile()
+        } catch {
+            return nil
+        }
+
+        guard let text = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+
+        var result: String?
+        for rawLine in text.split(separator: "\n") {
+            guard let lineData = rawLine.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+                  object["type"] as? String == "agent-name" else {
+                continue
+            }
+            let value = (object["agentName"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            // Empty string clears the name — reflect that in the output.
+            result = value.isEmpty ? nil : value
+        }
+        return result
     }
 
     private func promptText(from content: Any?) -> String? {

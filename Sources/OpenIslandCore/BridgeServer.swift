@@ -68,6 +68,17 @@ public final class BridgeServer: @unchecked Sendable {
     /// Maps toolUseID → temporary task ID for TaskCreate, so postToolUse can update with real ID.
     private var pendingTaskCreations: [String: String] = [:]
     private var stateSnapshot = SessionState()
+    /// Periodic timer that polls active Claude sessions for `/rename`
+    /// (which writes only to the JSONL transcript and does not fire any
+    /// hook). Hook-driven detection is the primary path; polling is the
+    /// safety net for renames that happen during long idle periods or
+    /// when no hook event happens to fire afterwards.
+    private var renamePollingTimer: DispatchSourceTimer?
+    /// Optional callback invoked on the bridge queue whenever a rename is
+    /// detected. AppModel registers this to apply the event directly,
+    /// bypassing the socket broadcast path which can momentarily miss
+    /// events if the observer connection has just dropped.
+    public var onRenameDetected: ((AgentEvent) -> Void)?
     /// Local working state: tracks sessions emitted by this server between
     /// snapshot pushes from AppModel. This is NOT a duplicate of AppModel's
     /// state — it only contains sessions created via bridge hooks and is
@@ -102,6 +113,8 @@ public final class BridgeServer: @unchecked Sendable {
                 listeners.append(legacyListener)
             }
         }
+
+        startRenamePolling()
     }
 
     private func bindListener(at url: URL) throws -> Listener {
@@ -172,6 +185,8 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func stopLocked() {
+        renamePollingTimer?.cancel()
+        renamePollingTimer = nil
         pendingApprovals.removeAll()
         pendingClaudeInteractions.removeAll()
         pendingClaudeToolContexts.removeAll()
@@ -1921,6 +1936,16 @@ public final class BridgeServer: @unchecked Sendable {
             update: payload.defaultClaudeMetadata,
             hookEventName: payload.hookEventName
         )
+
+        // Rename uses the JSONL transcript only — no hook fires for it. Tail
+        // the file on each Claude hook and emit `sessionRenamed` if the
+        // latest `agent-name` entry differs from what we have on the session.
+        synchronizeClaudeDisplayName(
+            sessionID: payload.sessionID,
+            transcriptPath: mergedMetadata.transcriptPath ?? existingSession.claudeMetadata?.transcriptPath,
+            currentDisplayName: existingSession.displayName
+        )
+
         guard !mergedMetadata.isEmpty else {
             return
         }
@@ -1938,6 +1963,95 @@ public final class BridgeServer: @unchecked Sendable {
                 )
             )
         )
+    }
+
+    /// Compare the latest `agent-name` in the transcript against the session's
+    /// `displayName` and emit `sessionRenamed` if they differ. A cleared name
+    /// is encoded as an empty string on the wire (the reducer turns it back
+    /// into `nil` so the UI falls back to the derived label).
+    private func synchronizeClaudeDisplayName(
+        sessionID: String,
+        transcriptPath: String?,
+        currentDisplayName: String?
+    ) {
+        guard let transcriptPath, !transcriptPath.isEmpty else {
+            return
+        }
+
+        let latestName = ClaudeTranscriptDiscovery.latestCustomAgentName(
+            transcriptPath: transcriptPath,
+            tailBytes: 256 * 1024
+        )
+
+        guard latestName != currentDisplayName else {
+            return
+        }
+
+        let event = AgentEvent.sessionRenamed(
+            SessionRenamed(
+                sessionID: sessionID,
+                title: latestName ?? "",
+                timestamp: .now
+            )
+        )
+
+        emit(event)
+        // Apply to stateSnapshot too so the rename poller doesn't re-fire
+        // for the same change before AppModel's next snapshot push.
+        stateSnapshot.apply(event)
+        // Also notify AppModel directly — the socket broadcast path can
+        // miss events if the observer connection is momentarily stale.
+        onRenameDetected?(event)
+    }
+
+    // MARK: - Rename polling
+
+    /// Periodic timer that checks every active Claude session for a `/rename`
+    /// every 3 seconds. Rename only writes to the JSONL transcript (no hook),
+    /// so polling is the only reliable way to detect it between hook events.
+    private func startRenamePolling() {
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 3, repeating: 3)
+        timer.setEventHandler { [weak self] in
+            self?.pollClaudeRenames()
+        }
+        timer.resume()
+        renamePollingTimer = timer
+    }
+
+    private func pollClaudeRenames() {
+        for session in stateSnapshot.sessions where session.tool.isClaudeCodeFork {
+            guard let transcriptPath = session.claudeMetadata?.transcriptPath,
+                  !transcriptPath.isEmpty else {
+                continue
+            }
+
+            let latestName = ClaudeTranscriptDiscovery.latestCustomAgentName(
+                transcriptPath: transcriptPath,
+                tailBytes: 256 * 1024
+            )
+
+            // Skip when neither side has a name (avoid emitting a no-op).
+            guard latestName != nil || session.displayName != nil else {
+                continue
+            }
+
+            guard latestName != session.displayName else {
+                continue
+            }
+
+            let event = AgentEvent.sessionRenamed(
+                SessionRenamed(
+                    sessionID: session.id,
+                    title: latestName ?? "",
+                    timestamp: .now
+                )
+            )
+
+            localState.apply(event)
+            stateSnapshot.apply(event)
+            onRenameDetected?(event)
+        }
     }
 
     private func mergedCodexMetadata(
