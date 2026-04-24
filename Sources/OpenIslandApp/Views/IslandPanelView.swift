@@ -1691,6 +1691,12 @@ private struct StructuredQuestionPromptView: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(.white.opacity(0.06))
         )
+        .onChange(of: prompt?.id) { _, _ in
+            selections = [:]
+            freeformTexts = [:]
+            currentStep = 0
+            stepDirection = true
+        }
         .animation(.easeInOut(duration: 0.2), value: stepDirection)
     }
 
