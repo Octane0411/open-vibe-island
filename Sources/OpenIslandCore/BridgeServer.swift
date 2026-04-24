@@ -1883,6 +1883,15 @@ public final class BridgeServer: @unchecked Sendable {
            !existingUUID.isEmpty {
             merged.warpPaneUUID = existingUUID
         }
+        // Don't let a later hook with a stripped environment regress a
+        // previously-resolved terminal app back to "Unknown". Once we've
+        // identified the terminal, keep it pinned unless incoming has a
+        // concrete non-Unknown replacement.
+        if merged.terminalApp.isEmpty || merged.terminalApp == "Unknown",
+           let existingApp = existing?.terminalApp,
+           !existingApp.isEmpty, existingApp != "Unknown" {
+            merged.terminalApp = existingApp
+        }
         return merged
     }
 
