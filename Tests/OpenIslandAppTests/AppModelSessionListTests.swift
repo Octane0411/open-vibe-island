@@ -231,9 +231,21 @@ struct AppModelSessionListTests {
         model.state = SessionState(sessions: [session])
         model.discovery.refreshCodexRolloutTracking()
 
-        try await Task.sleep(for: .milliseconds(200))
+        var observedSession = model.state.session(id: "codex-desktop-abort")
+        for _ in 0..<20 {
+            if observedSession?.phase == .completed,
+               observedSession?.summary == "Codex turn was interrupted." {
+                break
+            }
 
-        let updatedSession = try #require(model.state.session(id: "codex-desktop-abort"))
+            // Poll because rollout watcher delivery can vary on loaded CI
+            // runners, while the success path should still finish quickly.
+            await Task.yield()
+            try await Task.sleep(for: .milliseconds(10))
+            observedSession = model.state.session(id: "codex-desktop-abort")
+        }
+
+        let updatedSession = try #require(observedSession)
         #expect(updatedSession.phase == .completed)
         #expect(updatedSession.summary == "Codex turn was interrupted.")
     }
