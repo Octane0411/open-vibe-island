@@ -289,6 +289,12 @@ final class ProcessMonitoringCoordinator {
         let claudeProcesses = activeProcesses.filter { $0.tool == .claudeCode }
         let trackedClaudeSessions = sessions.filter { $0.tool == .claudeCode && !isSyntheticClaudeSession($0) }
         var claimedSessionIDs: Set<String> = []
+        // Track which processes have already been matched. Pass 3's CWD-only
+        // fallback would otherwise re-assign already-matched processes to
+        // unrelated sessions sharing the same cwd, marking stale closed
+        // sessions as alive forever (the "TV-Pine / US-ETF stuck visible"
+        // bug in setups with several Claude sessions in $HOME).
+        var matchedProcessKeys: Set<String> = []
 
         // Pass 1: exact session ID match.
         for process in claudeProcesses {
@@ -298,10 +304,11 @@ final class ProcessMonitoringCoordinator {
                   }) else { continue }
             aliveIDs.insert(matched.id)
             claimedSessionIDs.insert(matched.id)
+            matchedProcessKeys.insert(processIdentityKey(process))
         }
 
         // Pass 2: transcript path match.
-        for process in claudeProcesses {
+        for process in claudeProcesses where !matchedProcessKeys.contains(processIdentityKey(process)) {
             guard let transcriptPath = process.transcriptPath,
                   let matched = trackedClaudeSessions.first(where: {
                       !claimedSessionIDs.contains($0.id)
@@ -309,10 +316,11 @@ final class ProcessMonitoringCoordinator {
                   }) else { continue }
             aliveIDs.insert(matched.id)
             claimedSessionIDs.insert(matched.id)
+            matchedProcessKeys.insert(processIdentityKey(process))
         }
 
         // Pass 3: TTY + CWD fallback match.
-        for process in claudeProcesses {
+        for process in claudeProcesses where !matchedProcessKeys.contains(processIdentityKey(process)) {
             guard let matched = uniqueTrackedClaudeSession(
                 for: process,
                 sessions: trackedClaudeSessions,
@@ -320,6 +328,51 @@ final class ProcessMonitoringCoordinator {
             ) else { continue }
             aliveIDs.insert(matched.id)
             claimedSessionIDs.insert(matched.id)
+            matchedProcessKeys.insert(processIdentityKey(process))
+        }
+
+        // Pass 4: cwd + transcript mtime heuristic.
+        // Claude 2.1+ stops holding fds on `~/.claude/projects/<uuid>.jsonl`
+        // and on `~/.claude/tasks/<uuid>/` while resuming a session
+        // interactively (`claude -r` before the user picks a session). In
+        // that state lsof reports neither path, so Pass 1/2 fail; if
+        // multiple Claude processes share the same cwd, Pass 3 also fails.
+        // For each remaining process, claim the unclaimed session in the
+        // same cwd whose transcript file is most recently mtime-fresh.
+        // This runs LAST so it never overrides an exact-ID match.
+        for process in claudeProcesses where !matchedProcessKeys.contains(processIdentityKey(process)) {
+            guard let cwd = normalizedPathForMatching(process.workingDirectory) else {
+                continue
+            }
+            let cwdCandidates = trackedClaudeSessions.filter { session in
+                guard !claimedSessionIDs.contains(session.id) else { return false }
+                guard let path = session.claudeMetadata?.transcriptPath, !path.isEmpty else {
+                    return false
+                }
+                guard normalizedPathForMatching(session.jumpTarget?.workingDirectory) == cwd else {
+                    return false
+                }
+                return true
+            }
+            // Pick by transcript mtime (real ground truth for "actively
+            // being written"). Fall back to session.updatedAt if mtime
+            // unavailable. Cap to "fresh" (< 5 min) to avoid claiming
+            // stale sessions that happen to share the cwd.
+            let now = Date()
+            let freshness: TimeInterval = 300
+            let scored: [(AgentSession, Date)] = cwdCandidates.compactMap { session in
+                let path = session.claudeMetadata?.transcriptPath
+                let mtime: Date? = path.flatMap {
+                    (try? FileManager.default.attributesOfItem(atPath: $0)[.modificationDate]) as? Date
+                }
+                let stamp = mtime ?? session.updatedAt
+                guard now.timeIntervalSince(stamp) < freshness else { return nil }
+                return (session, stamp)
+            }
+            guard let pick = scored.max(by: { $0.1 < $1.1 })?.0 else { continue }
+            aliveIDs.insert(pick.id)
+            claimedSessionIDs.insert(pick.id)
+            matchedProcessKeys.insert(processIdentityKey(process))
         }
 
         // OpenCode sessions are hook-managed, but OpenCode does not expose a stable
@@ -755,42 +808,86 @@ final class ProcessMonitoringCoordinator {
         var sessions = localState.sessions
         var changed = false
 
-        for process in claudeProcesses {
+        let now = Date()
+        let freshness: TimeInterval = 300
+        let fileManager = FileManager.default
+
+        // Helper: index-by-id lookup so we can mutate by id without breaking
+        // the index after each adoption.
+        func indexOfSession(id: String) -> Int? {
+            sessions.firstIndex(where: { $0.id == id })
+        }
+
+        // Sort processes so signal-rich ones (with `sessionID` extracted from
+        // lsof tasks/UUID) are processed FIRST. Otherwise a same-cwd process
+        // without a sessionID could greedy-grab the freshest session via the
+        // mtime fallback, leaving the rightful owner unmatched.
+        let orderedProcesses = claudeProcesses.sorted { lhs, rhs in
+            (lhs.sessionID != nil ? 0 : 1) < (rhs.sessionID != nil ? 0 : 1)
+        }
+
+        var ttyClaimedSessionIDs: Set<String> = []
+
+        for process in orderedProcesses {
             guard let processTTY = process.terminalTTY, !processTTY.isEmpty else { continue }
             let processCWD = normalizedPathForMatching(process.workingDirectory)
 
-            for index in sessions.indices {
-                let session = sessions[index]
+            // 1) If we know the session ID (Pass-1-equivalent), adopt onto
+            //    that exact session even when its TTY is already set — the
+            //    UUID match is authoritative.
+            if let processSessionID = process.sessionID,
+               let idx = indexOfSession(id: processSessionID),
+               !ttyClaimedSessionIDs.contains(processSessionID),
+               sessions[idx].tool == .claudeCode,
+               !isSyntheticClaudeSession(sessions[idx]),
+               let jt = sessions[idx].jumpTarget,
+               normalizedPathForMatching(jt.workingDirectory) == processCWD,
+               normalizedTTYForMatching(jt.terminalTTY) != normalizedTTYForMatching(processTTY) {
+                sessions[idx].jumpTarget?.terminalTTY = processTTY
+                sessions[idx].attachmentState = .attached
+                sessions[idx].updatedAt = .now
+                ttyClaimedSessionIDs.insert(processSessionID)
+                changed = true
+                continue
+            }
+
+            // 2) No sessionID — fall back to "freshest unclaimed session
+            //    in same cwd whose TTY is still nil and whose transcript
+            //    has been written within the freshness window".
+            struct AdoptionCandidate {
+                let id: String
+                let index: Int
+                let mtime: Date
+            }
+
+            let candidates: [AdoptionCandidate] = sessions.indices.compactMap { idx in
+                let session = sessions[idx]
                 guard session.tool == .claudeCode,
                       !isSyntheticClaudeSession(session),
+                      !ttyClaimedSessionIDs.contains(session.id),
                       let jumpTarget = session.jumpTarget,
                       normalizedPathForMatching(jumpTarget.workingDirectory) == processCWD,
-                      normalizedTTYForMatching(jumpTarget.terminalTTY) != normalizedTTYForMatching(processTTY) else {
-                    continue
+                      normalizedTTYForMatching(jumpTarget.terminalTTY) == nil else {
+                    return nil
                 }
-
-                // Only adopt if no other session already owns this TTY.
-                let ttyAlreadyClaimed = sessions.contains { other in
-                    other.id != session.id
-                        && other.tool == .claudeCode
-                        && normalizedTTYForMatching(other.jumpTarget?.terminalTTY) == normalizedTTYForMatching(processTTY)
+                let path = session.claudeMetadata?.transcriptPath
+                let mtime: Date? = path.flatMap {
+                    (try? fileManager.attributesOfItem(atPath: $0)[.modificationDate]) as? Date
                 }
-                guard !ttyAlreadyClaimed else { continue }
-
-                // Only adopt if no other process has the same cwd and already
-                // matches this session's TTY (would mean a different process owns it).
-                let sessionOwnedByOtherProcess = claudeProcesses.contains { other in
-                    normalizedTTYForMatching(other.terminalTTY) == normalizedTTYForMatching(session.jumpTarget?.terminalTTY)
-                        && normalizedPathForMatching(other.workingDirectory) == processCWD
-                }
-                guard !sessionOwnedByOtherProcess else { continue }
-
-                sessions[index].jumpTarget?.terminalTTY = processTTY
-                sessions[index].attachmentState = .attached
-                sessions[index].updatedAt = .now
-                changed = true
-                break
+                let stamp = mtime ?? session.updatedAt
+                guard now.timeIntervalSince(stamp) < freshness else { return nil }
+                return AdoptionCandidate(id: session.id, index: idx, mtime: stamp)
             }
+
+            guard let pick = candidates.max(by: { $0.mtime < $1.mtime }) else {
+                continue
+            }
+
+            sessions[pick.index].jumpTarget?.terminalTTY = processTTY
+            sessions[pick.index].attachmentState = .attached
+            sessions[pick.index].updatedAt = .now
+            ttyClaimedSessionIDs.insert(pick.id)
+            changed = true
         }
 
         if changed {

@@ -92,7 +92,12 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
                 sessionID = value
             }
 
-            if let value = object["cwd"] as? String, !value.isEmpty {
+            // First-wins on cwd: Claude Code records every tool-call's cwd
+            // here, including child workdirs (`cd subdir && cmd`). The
+            // session-startup cwd is what `lsof fcwd` reports for the
+            // actual claude PID, so use the first non-empty entry to keep
+            // process matching consistent across passes.
+            if cwd == nil, let value = object["cwd"] as? String, !value.isEmpty {
                 cwd = value
             }
 
