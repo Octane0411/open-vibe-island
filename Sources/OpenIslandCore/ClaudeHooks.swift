@@ -8,6 +8,7 @@ public enum ClaudePermissionMode: String, Codable, Sendable {
     case plan
     case dontAsk
     case bypassPermissions
+    case auto
 }
 
 public enum ClaudePermissionBehavior: String, Codable, Sendable {
@@ -163,6 +164,8 @@ public enum ClaudePermissionUpdate: Equatable, Codable, Sendable {
                 return "Plan Mode"
             case .default:
                 return "Manual Mode"
+            case .auto:
+                return "Auto Mode"
             }
         case .replaceRules:
             return "Update Rules"
