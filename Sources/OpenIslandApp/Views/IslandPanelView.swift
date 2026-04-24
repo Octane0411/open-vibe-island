@@ -1400,8 +1400,9 @@ private struct IslandSessionRow: View {
                 .frame(height: 1)
 
             AutoHeightScrollView(maxHeight: 260) {
-                Markdown(completionMessageText)
-                    .markdownTheme(.completionCard)
+                Text(completionMessageText.strippingMarkdownForPreview)
+                    .font(.system(size: 13.5, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.88))
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
@@ -1933,6 +1934,25 @@ private struct ReplyTextField: NSViewRepresentable {
 private extension String {
     var trimmedForNotificationCard: String {
         trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Strips common markdown syntax so text reads cleanly as plain text.
+    var strippingMarkdownForPreview: String {
+        var s = self
+        // Code blocks (``` ... ```) → remove
+        s = s.replacingOccurrences(of: "```[^`]*```", with: "", options: .regularExpression)
+        // Inline code `text` → text
+        s = s.replacingOccurrences(of: "`([^`]+)`", with: "$1", options: .regularExpression)
+        // Bold/italic markers
+        s = s.replacingOccurrences(of: "\\*{1,3}(.+?)\\*{1,3}", with: "$1", options: .regularExpression)
+        s = s.replacingOccurrences(of: "_{1,3}(.+?)_{1,3}", with: "$1", options: .regularExpression)
+        // Heading markers
+        s = s.replacingOccurrences(of: "(?m)^#{1,6}\\s+", with: "", options: .regularExpression)
+        // Links [text](url) → text
+        s = s.replacingOccurrences(of: "\\[([^\\]]+)\\]\\([^)]+\\)", with: "$1", options: .regularExpression)
+        // Collapse multiple whitespace/newlines
+        s = s.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
