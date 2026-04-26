@@ -128,14 +128,32 @@ struct OpenIslandApp: App {
         } label: {
             OpenIslandBrandMark(size: 18, style: .template)
                 .accessibilityLabel("Open Island")
+                .background(SettingsOpenerRegistrar(model: appDelegate.model))
         }
         .menuBarExtraStyle(.window)
     }
 }
 
-/// Injects the SwiftUI `openWindow` action into `AppModel` so that
-/// `model.showSettings()` can materialize the window even if it has
-/// never been shown before (SwiftUI `Window` scenes are lazy).
+/// Registers `openWindow` into `AppModel` from the MenuBarExtra label,
+/// which is always rendered at app startup — guaranteeing that
+/// `model.showSettings()` works even before the settings window has
+/// ever been opened.
+private struct SettingsOpenerRegistrar: View {
+    var model: AppModel
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Color.clear
+            .onAppear {
+                model.openSettingsWindow = { [openWindow] in
+                    openWindow(id: "settings")
+                }
+            }
+    }
+}
+
+/// Refreshes the `openWindow` registration each time the settings
+/// window opens, keeping the closure current after window recreation.
 private struct SettingsWindowContent: View {
     var model: AppModel
     @Environment(\.openWindow) private var openWindow
