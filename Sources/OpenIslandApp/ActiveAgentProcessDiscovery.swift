@@ -274,8 +274,26 @@ struct ActiveAgentProcessDiscovery {
         let transcriptPath = lsofOutput.flatMap {
             bestClaudeTranscriptPath(in: $0, workingDirectory: workingDirectory)
         }
+        // Claude Code 2.1.x stopped keeping the JSONL transcript file open
+        // (writes are batched then closed), so lsof no longer reports the
+        // `~/.claude/projects/<encoded>/<uuid>.jsonl` path. The CLI still
+        // holds an fd on `~/.claude/tasks/<uuid>/` (the session state
+        // directory), and the trailing UUID is the session ID. Falling
+        // back to that pattern restores the Pass 1 (sessionID) match in
+        // ProcessMonitoringCoordinator and prevents the "session disappears
+        // after a few seconds" symptom.
+        let tasksSessionID = lsofOutput.flatMap {
+            claudeTasksDirSessionID(in: $0)
+        }
         let sessionID = transcriptPath.flatMap(firstUUID(in:))
+            ?? tasksSessionID
             ?? claudeSessionID(from: process.command)
+
+        // Reconstruct the transcript path when only `tasks/` was visible —
+        // Pass 2 (transcriptPath match) and the rename poller both depend
+        // on `claudeMetadata.transcriptPath` being populated.
+        let resolvedTranscriptPath = transcriptPath
+            ?? sessionID.flatMap { reconstructClaudeTranscriptPath(sessionID: $0, cwd: workingDirectory) }
 
         guard workingDirectory != nil || sessionID != nil else {
             return nil
@@ -287,7 +305,7 @@ struct ActiveAgentProcessDiscovery {
             workingDirectory: workingDirectory,
             terminalTTY: process.terminalTTY,
             terminalApp: terminalApp(for: process, processesByPID: processesByPID),
-            transcriptPath: transcriptPath
+            transcriptPath: resolvedTranscriptPath
         )
 
         // If terminalApp is nil and we have a TTY, try to resolve tmux info
@@ -324,6 +342,37 @@ struct ActiveAgentProcessDiscovery {
         }
 
         return paths.first
+    }
+
+    /// Claude Code 2.1+ keeps `~/.claude/tasks/<sessionID>/` open even after
+    /// it closes the JSONL transcript file. The trailing path component is
+    /// the session UUID — extract it as a fallback identifier.
+    private func claudeTasksDirSessionID(in lsofOutput: String) -> String? {
+        for line in lsofOutput.split(whereSeparator: \.isNewline) {
+            guard line.first == "n" else {
+                continue
+            }
+            let value = String(line.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard value.contains("/.claude/tasks/") else {
+                continue
+            }
+            if let uuid = firstUUID(in: value) {
+                return uuid
+            }
+        }
+        return nil
+    }
+
+    /// Reconstruct `~/.claude/projects/<encoded-cwd>/<sessionID>.jsonl` when
+    /// lsof showed only the `tasks/` directory. The encoding rule used by
+    /// Claude Code is `cwd.replacingOccurrences(of: "/", with: "-")`.
+    private func reconstructClaudeTranscriptPath(sessionID: String, cwd: String?) -> String? {
+        guard let cwd, !cwd.isEmpty else {
+            return nil
+        }
+        let home = NSHomeDirectory()
+        let encodedCWD = cwd.replacingOccurrences(of: "/", with: "-")
+        return "\(home)/.claude/projects/\(encodedCWD)/\(sessionID).jsonl"
     }
 
     private func allMatchingPaths(in lsofOutput: String, containing fragment: String, suffix: String) -> [String] {
