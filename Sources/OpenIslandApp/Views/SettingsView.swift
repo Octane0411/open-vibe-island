@@ -222,6 +222,13 @@ struct GeneralSettingsPane: View {
                     get: { model.suppressFrontmostNotifications },
                     set: { model.suppressFrontmostNotifications = $0 }
                 ))
+                Picker(lang.t("settings.general.notificationLevel"), selection: Binding(
+                    get: { model.notificationLevel },
+                    set: { model.notificationLevel = $0 }
+                )) {
+                    Text(lang.t("settings.general.notificationLevel.mainAgentOnly")).tag(NotificationLevel.mainAgentOnly)
+                    Text(lang.t("settings.general.notificationLevel.all")).tag(NotificationLevel.all)
+                }
             }
 
         }

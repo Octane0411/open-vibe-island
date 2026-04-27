@@ -634,24 +634,23 @@ final class OverlayPanelController {
             return Self.questionCardBaseHeight
         }
 
-        // Card chrome: outer padding + submit button ≈ 90pt.
-        // When the prompt title is suppressed (single question whose title
-        // matches the question text), reduce chrome by ~20pt.
         let titleSuppressed = prompt.questions.count == 1
             && prompt.title == prompt.questions.first?.question
-        let chromeHeight: CGFloat = titleSuppressed ? 70 : 90
+        let isStepper = prompt.questions.count > 1
+        let chromeHeight: CGFloat = titleSuppressed ? 70 : (isStepper ? 100 : 90)
         var contentHeight: CGFloat = 0
 
-        for question in prompt.questions {
-            if prompt.questions.count > 1 {
-                contentHeight += 16 // header
+        if isStepper {
+            let tallest = prompt.questions.map { question in
+                20 + CGFloat(question.options.count) * 30
+            }.max() ?? 0
+            contentHeight = tallest
+        } else {
+            for question in prompt.questions {
+                contentHeight += 20
+                contentHeight += CGFloat(question.options.count) * 30
             }
-            contentHeight += 20 // question text
-            contentHeight += CGFloat(question.options.count) * 30 // option rows
         }
-
-        // Inter-question spacing (only between questions, not after the last).
-        contentHeight += CGFloat(max(0, prompt.questions.count - 1)) * 10
 
         let estimated = chromeHeight + contentHeight
         return min(Self.questionCardMaxHeight, max(Self.questionCardBaseHeight, estimated))

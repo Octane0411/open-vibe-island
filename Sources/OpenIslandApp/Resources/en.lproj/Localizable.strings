@@ -26,6 +26,9 @@
 "settings.general.showDockIcon" = "Show icon in Dock";
 "settings.general.hapticFeedback" = "Haptic feedback on hover";
 "settings.general.suppressFrontmostNotifications" = "Suppress notifications for focused sessions";
+"settings.general.notificationLevel" = "Notification level";
+"settings.general.notificationLevel.mainAgentOnly" = "Main agent only";
+"settings.general.notificationLevel.all" = "All (including subagents)";
 "settings.general.showCodexUsage" = "Show Codex usage";
 "settings.general.completionReply" = "Reply from completion card";
 "settings.general.cliHooks" = "CLI Hooks";
@@ -153,6 +156,8 @@
 
 /* Island Panel - Question */
 "question.submit" = "Submit Answers";
+"question.next" = "Next";
+"question.back" = "Back";
 "question.answerNeeded" = "Answer needed";
 "question.otherPlaceholder" = "Type your answer…";
 

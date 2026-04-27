@@ -26,6 +26,9 @@
 "settings.general.showDockIcon" = "在 Dock 中顯示圖示";
 "settings.general.hapticFeedback" = "懸停時震動回饋";
 "settings.general.suppressFrontmostNotifications" = "前台工作階段不彈出通知";
+"settings.general.notificationLevel" = "通知層級";
+"settings.general.notificationLevel.mainAgentOnly" = "僅主代理";
+"settings.general.notificationLevel.all" = "全部（包括子代理）";
 "settings.general.showCodexUsage" = "顯示 Codex 用量";
 "settings.general.completionReply" = "在完成卡片中回覆";
 "settings.general.cliHooks" = "CLI Hooks";
@@ -152,6 +155,8 @@
 
 /* Island Panel - Question */
 "question.submit" = "提交答案";
+"question.next" = "下一步";
+"question.back" = "上一步";
 "question.answerNeeded" = "需要回答";
 "question.otherPlaceholder" = "輸入你的回答…";
 

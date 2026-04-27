@@ -1629,10 +1629,28 @@ private struct StructuredQuestionPromptView: View {
 
     @State private var selections: [String: Set<String>] = [:]
     @State private var freeformTexts: [String: String] = [:]
+    @State private var currentStep: Int = 0
+    @State private var stepDirection: Bool = true
+
+    private var isStepper: Bool { structuredQuestions.count > 1 }
+    private var isLastStep: Bool { currentStep >= structuredQuestions.count - 1 }
+
+    private var currentStepHasSelection: Bool {
+        guard currentStep < structuredQuestions.count else { return false }
+        let question = structuredQuestions[currentStep]
+        let selected = selectedLabels(for: question)
+        guard !selected.isEmpty else { return false }
+        for option in question.options where option.allowsFreeform && selected.contains(option.label) {
+            if trimmedFreeform(for: question, option: option).isEmpty { return false }
+        }
+        return true
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if showsPromptTitle {
+            if isStepper {
+                stepperHeader
+            } else if showsPromptTitle {
                 Text(promptTitle)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.yellow.opacity(0.96))
@@ -1640,15 +1658,26 @@ private struct StructuredQuestionPromptView: View {
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(structuredQuestions, id: \.question) { question in
-                    questionRow(question)
+                if isStepper {
+                    if currentStep < structuredQuestions.count {
+                        questionRow(structuredQuestions[currentStep])
+                            .id(currentStep)
+                            .transition(.asymmetric(
+                                insertion: .move(edge: stepDirection ? .trailing : .leading).combined(with: .opacity),
+                                removal: .move(edge: stepDirection ? .leading : .trailing).combined(with: .opacity)
+                            ))
+                    }
+                    stepperButtons
+                } else {
+                    ForEach(structuredQuestions, id: \.question) { question in
+                        questionRow(question)
+                    }
+                    Button(lang.t("question.submit")) {
+                        onAnswer(QuestionPromptResponse(answers: answerMap))
+                    }
+                    .buttonStyle(IslandWideButtonStyle(kind: .primary))
+                    .disabled(!hasCompleteSelection)
                 }
-
-                Button(lang.t("question.submit")) {
-                    onAnswer(QuestionPromptResponse(answers: answerMap))
-                }
-                .buttonStyle(IslandWideButtonStyle(kind: .primary))
-                .disabled(!hasCompleteSelection)
             }
         }
         .padding(.horizontal, 14)
@@ -1662,10 +1691,78 @@ private struct StructuredQuestionPromptView: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(.white.opacity(0.06))
         )
+        .onChange(of: prompt?.id) { _, _ in
+            selections = [:]
+            freeformTexts = [:]
+            currentStep = 0
+            stepDirection = true
+        }
+        .animation(.easeInOut(duration: 0.2), value: stepDirection)
+    }
+
+    // MARK: - Stepper chrome
+
+    private var stepperHeader: some View {
+        HStack {
+            if showsPromptTitle {
+                Text(promptTitle)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.yellow.opacity(0.96))
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            Text("\(currentStep + 1)/\(structuredQuestions.count)")
+                .font(.system(size: 11, weight: .medium).monospacedDigit())
+                .foregroundStyle(.white.opacity(0.45))
+        }
+    }
+
+    private var stepperButtons: some View {
+        HStack(spacing: 8) {
+            if currentStep > 0 {
+                Button {
+                    stepDirection = false
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        currentStep -= 1
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text(lang.t("question.back"))
+                    }
+                }
+                .buttonStyle(IslandWideButtonStyle(kind: .secondary))
+            }
+
+            if isLastStep {
+                Button(lang.t("question.submit")) {
+                    onAnswer(QuestionPromptResponse(answers: answerMap))
+                }
+                .buttonStyle(IslandWideButtonStyle(kind: .primary))
+                .disabled(!hasCompleteSelection)
+            } else {
+                Button {
+                    stepDirection = true
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        currentStep += 1
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(lang.t("question.next"))
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                }
+                .buttonStyle(IslandWideButtonStyle(kind: .primary))
+                .disabled(!currentStepHasSelection)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {}
     }
 
     // MARK: - Per-question row
-
     /// Renders a single question with its header, text, and vertical option list.
     @ViewBuilder
     private func questionRow(_ question: QuestionPromptItem) -> some View {
