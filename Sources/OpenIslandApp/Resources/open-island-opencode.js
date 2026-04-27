@@ -42,20 +42,30 @@ function sendAndWaitResponse(json, timeoutMs = 300000) {
       let buf = "";
       sock.on("data", (chunk) => {
         buf += chunk.toString();
-        // BridgeServer sends hello first, then response after processing
         const lines = buf.split("\n").filter(Boolean);
-        if (lines.length >= 2) {
-          sock.destroy();
-          try { resolve(JSON.parse(lines[1])); } catch { resolve(null); }
+        for (const line of lines) {
+          try {
+            const parsed = JSON.parse(line);
+            if (parsed.type === "response") {
+              sock.destroy();
+              resolve(parsed);
+              return;
+            }
+          } catch {}
         }
       });
       sock.on("end", () => {
         const lines = buf.split("\n").filter(Boolean);
-        if (lines.length >= 2) {
-          try { resolve(JSON.parse(lines[1])); } catch { resolve(null); }
-        } else {
-          resolve(null);
+        for (const line of lines) {
+          try {
+            const parsed = JSON.parse(line);
+            if (parsed.type === "response") {
+              resolve(parsed);
+              return;
+            }
+          } catch {}
         }
+        resolve(null);
       });
       sock.on("error", () => resolve(null));
       sock.setTimeout(timeoutMs, () => { sock.destroy(); resolve(null); });
@@ -135,6 +145,8 @@ export default async ({ client, serverUrl }) => {
   const msgRoles = new Map();
   const sessionCwd = new Map();
   const sessions = new Map();
+  const busySessions = new Set();
+  const subagentSessions = new Set();
 
   function getSession(sid) {
     if (!sessions.has(sid)) sessions.set(sid, { lastAssistantText: "" });
@@ -149,13 +161,18 @@ export default async ({ client, serverUrl }) => {
     if (t === "session.created" && p.info) {
       const cwd = p.info.directory || "";
       sessionCwd.set(p.info.id, cwd);
-      return makePayload("SessionStart", p.info.id, cwd);
+      if (busySessions.size > 0) subagentSessions.add(p.info.id);
+      return makePayload("SessionStart", p.info.id, cwd, {
+        ...(subagentSessions.has(p.info.id) ? { is_subagent: true } : {}),
+      });
     }
 
     // session.deleted
     if (t === "session.deleted" && p.info) {
       sessions.delete(p.info.id);
       sessionCwd.delete(p.info.id);
+      busySessions.delete(p.info.id);
+      subagentSessions.delete(p.info.id);
       return makePayload("SessionEnd", p.info.id, sessionCwd.get(p.info.id));
     }
 
@@ -173,10 +190,17 @@ export default async ({ client, serverUrl }) => {
     // session.status → idle = Stop (busy is ignored; session creation
     // comes from session.created or ensureOpenCodeSessionExists on first event)
     if (t === "session.status" && p.sessionID) {
+      if (p.status?.type === "busy") {
+        busySessions.add(p.sessionID);
+        return null;
+      }
       if (p.status?.type === "idle") {
+        busySessions.delete(p.sessionID);
         const s = getSession(p.sessionID);
+        const isSubagent = subagentSessions.has(p.sessionID);
         return makePayload("Stop", p.sessionID, sessionCwd.get(p.sessionID), {
           last_assistant_message: s.lastAssistantText || undefined,
+          ...(isSubagent ? { is_subagent: true } : {}),
         });
       }
       return null;
@@ -259,6 +283,15 @@ export default async ({ client, serverUrl }) => {
       return makePayload("QuestionAsked", p.sessionID, sessionCwd.get(p.sessionID), {
         question_id: p.id,
         question_text: (p.questions || []).map(q => q.question).join("; ") || "OpenCode has a question",
+        questions: (p.questions || []).map(q => ({
+          question: q.question || "",
+          header: q.header || "",
+          options: (q.options || []).map(o => ({
+            label: o.label || "",
+            description: o.description || "",
+          })),
+          multiple: q.multiple || false,
+        })),
         _opencode_request_id: p.id,
       });
     }
@@ -308,7 +341,15 @@ export default async ({ client, serverUrl }) => {
             if (!response) return;
             const directive = response?.response?.directive;
             if (!directive) return;
-            if (directive.type === "answer") {
+            if (directive.type === "structuredAnswer" && directive.answers) {
+              try {
+                await internalFetch(new Request(`http://localhost:${serverPort}/question/${requestId}/reply`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ answers: directive.answers }),
+                }));
+              } catch {}
+            } else if (directive.type === "answer") {
               try {
                 await internalFetch(new Request(`http://localhost:${serverPort}/question/${requestId}/reply`, {
                   method: "POST",

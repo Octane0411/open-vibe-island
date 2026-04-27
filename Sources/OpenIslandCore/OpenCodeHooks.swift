@@ -11,6 +11,35 @@ public enum OpenCodeHookEventName: String, Codable, Sendable {
     case stop = "Stop"
 }
 
+public struct OpenCodeQuestionOption: Equatable, Codable, Sendable {
+    public var label: String
+    public var description: String
+
+    public init(label: String, description: String = "") {
+        self.label = label
+        self.description = description
+    }
+}
+
+public struct OpenCodeQuestion: Equatable, Codable, Sendable {
+    public var question: String
+    public var header: String
+    public var options: [OpenCodeQuestionOption]
+    public var multiple: Bool
+
+    public init(
+        question: String,
+        header: String = "",
+        options: [OpenCodeQuestionOption] = [],
+        multiple: Bool = false
+    ) {
+        self.question = question
+        self.header = header
+        self.options = options
+        self.multiple = multiple
+    }
+}
+
 public struct OpenCodeHookPayload: Equatable, Codable, Sendable {
     public var hookEventName: OpenCodeHookEventName
     public var sessionID: String
@@ -22,6 +51,7 @@ public struct OpenCodeHookPayload: Equatable, Codable, Sendable {
     public var permissionDescription: String?
     public var questionID: String?
     public var questionText: String?
+    public var questions: [OpenCodeQuestion]?
     public var messageContent: String?
     public var model: String?
     public var prompt: String?
@@ -30,6 +60,7 @@ public struct OpenCodeHookPayload: Equatable, Codable, Sendable {
     public var terminalSessionID: String?
     public var terminalTTY: String?
     public var terminalTitle: String?
+    public var isSubagent: Bool?
 
     private enum CodingKeys: String, CodingKey {
         case hookEventName = "hook_event_name"
@@ -42,6 +73,7 @@ public struct OpenCodeHookPayload: Equatable, Codable, Sendable {
         case permissionDescription = "permission_description"
         case questionID = "question_id"
         case questionText = "question_text"
+        case questions
         case messageContent = "message_content"
         case model
         case prompt
@@ -50,6 +82,7 @@ public struct OpenCodeHookPayload: Equatable, Codable, Sendable {
         case terminalSessionID = "terminal_session_id"
         case terminalTTY = "terminal_tty"
         case terminalTitle = "terminal_title"
+        case isSubagent = "is_subagent"
     }
 
     public init(
@@ -63,6 +96,7 @@ public struct OpenCodeHookPayload: Equatable, Codable, Sendable {
         permissionDescription: String? = nil,
         questionID: String? = nil,
         questionText: String? = nil,
+        questions: [OpenCodeQuestion]? = nil,
         messageContent: String? = nil,
         model: String? = nil,
         prompt: String? = nil,
@@ -70,7 +104,8 @@ public struct OpenCodeHookPayload: Equatable, Codable, Sendable {
         terminalApp: String? = nil,
         terminalSessionID: String? = nil,
         terminalTTY: String? = nil,
-        terminalTitle: String? = nil
+        terminalTitle: String? = nil,
+        isSubagent: Bool? = nil
     ) {
         self.hookEventName = hookEventName
         self.sessionID = sessionID
@@ -82,6 +117,7 @@ public struct OpenCodeHookPayload: Equatable, Codable, Sendable {
         self.permissionDescription = permissionDescription
         self.questionID = questionID
         self.questionText = questionText
+        self.questions = questions
         self.messageContent = messageContent
         self.model = model
         self.prompt = prompt
@@ -90,6 +126,7 @@ public struct OpenCodeHookPayload: Equatable, Codable, Sendable {
         self.terminalSessionID = terminalSessionID
         self.terminalTTY = terminalTTY
         self.terminalTitle = terminalTitle
+        self.isSubagent = isSubagent
     }
 }
 
@@ -97,17 +134,20 @@ public enum OpenCodeHookDirective: Equatable, Codable, Sendable {
     case allow
     case deny(reason: String?)
     case answer(text: String)
+    case structuredAnswer(answers: [[String]])
 
     private enum CodingKeys: String, CodingKey {
         case type
         case reason
         case text
+        case answers
     }
 
     private enum DirectiveType: String, Codable {
         case allow
         case deny
         case answer
+        case structuredAnswer
     }
 
     public init(from decoder: any Decoder) throws {
@@ -121,6 +161,8 @@ public enum OpenCodeHookDirective: Equatable, Codable, Sendable {
             self = .deny(reason: try container.decodeIfPresent(String.self, forKey: .reason))
         case .answer:
             self = .answer(text: try container.decode(String.self, forKey: .text))
+        case .structuredAnswer:
+            self = .structuredAnswer(answers: try container.decode([[String]].self, forKey: .answers))
         }
     }
 
@@ -136,6 +178,9 @@ public enum OpenCodeHookDirective: Equatable, Codable, Sendable {
         case let .answer(text):
             try container.encode(DirectiveType.answer, forKey: .type)
             try container.encode(text, forKey: .text)
+        case let .structuredAnswer(answers):
+            try container.encode(DirectiveType.structuredAnswer, forKey: .type)
+            try container.encode(answers, forKey: .answers)
         }
     }
 }
