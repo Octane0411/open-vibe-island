@@ -186,6 +186,70 @@ struct AppModelSessionListTests {
         #expect(!model.shouldShowSessionBootstrapPlaceholder)
     }
 
+    /// Verifies that Codex Desktop sessions consume rollout abort events so a
+    /// user clicking Stop clears the island's running state.
+    @Test
+    func codexDesktopRolloutAbortClearsRunningState() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-codex-app-abort-\(UUID().uuidString)", isDirectory: true)
+        let rolloutURL = rootURL.appendingPathComponent("rollout.jsonl")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try Data(
+            """
+            {"timestamp":"2026-04-24T03:09:32.992Z","type":"event_msg","payload":{"type":"turn_aborted","turn_id":"turn-1","reason":"interrupted"}}
+
+            """.utf8
+        ).write(to: rolloutURL)
+
+        let model = AppModel()
+        defer {
+            model.discovery.codexRolloutWatcher.stop()
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        var session = AgentSession(
+            id: "codex-desktop-abort",
+            title: "Codex · open-vibe-island",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Codex is working...",
+            updatedAt: Date(timeIntervalSince1970: 2_000),
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "open-vibe-island",
+                paneTitle: "Codex · open-vibe-island",
+                workingDirectory: "/tmp/open-vibe-island",
+                codexThreadID: "codex-desktop-abort"
+            ),
+            codexMetadata: CodexSessionMetadata(transcriptPath: rolloutURL.path)
+        )
+        session.isCodexAppSession = true
+        session.isProcessAlive = true
+
+        model.state = SessionState(sessions: [session])
+        model.discovery.refreshCodexRolloutTracking()
+
+        var observedSession = model.state.session(id: "codex-desktop-abort")
+        for _ in 0..<20 {
+            if observedSession?.phase == .completed,
+               observedSession?.summary == "Codex turn was interrupted." {
+                break
+            }
+
+            // Poll because rollout watcher delivery can vary on loaded CI
+            // runners, while the success path should still finish quickly.
+            await Task.yield()
+            try await Task.sleep(for: .milliseconds(10))
+            observedSession = model.state.session(id: "codex-desktop-abort")
+        }
+
+        let updatedSession = try #require(observedSession)
+        #expect(updatedSession.phase == .completed)
+        #expect(updatedSession.summary == "Codex turn was interrupted.")
+    }
+
     @Test
     func jumpToSessionClosesOverlayBeforeTerminalJumpFinishes() async throws {
         let now = Date(timeIntervalSince1970: 2_000)
