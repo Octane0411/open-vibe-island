@@ -336,6 +336,11 @@ public enum PermissionResolution: Equatable, Codable, Sendable {
 public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     public var id: String
     public var title: String
+    /// User-chosen name for the session (e.g. from Claude Code's `/rename`).
+    /// When non-nil and non-empty, the UI prefers this over the derived
+    /// `spotlightHeadlineText`. Title is kept unchanged so menu bar, tests
+    /// and persistence paths see the agent-derived default.
+    public var displayName: String?
     public var tool: AgentTool
     public var origin: SessionOrigin?
     public var attachmentState: SessionAttachmentState
@@ -381,6 +386,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     public init(
         id: String,
         title: String,
+        displayName: String? = nil,
         tool: AgentTool,
         origin: SessionOrigin? = nil,
         attachmentState: SessionAttachmentState = .stale,
@@ -398,6 +404,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     ) {
         self.id = id
         self.title = title
+        self.displayName = displayName
         self.tool = tool
         self.origin = origin
         self.attachmentState = attachmentState
@@ -417,6 +424,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id
         case title
+        case displayName
         case tool
         case origin
         case attachmentState
@@ -437,6 +445,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
         title = try container.decode(String.self, forKey: .title)
+        displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
         tool = try container.decode(AgentTool.self, forKey: .tool)
         origin = try container.decodeIfPresent(SessionOrigin.self, forKey: .origin)
         attachmentState = try container.decodeIfPresent(SessionAttachmentState.self, forKey: .attachmentState) ?? .stale
@@ -457,6 +466,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(title, forKey: .title)
+        try container.encodeIfPresent(displayName, forKey: .displayName)
         try container.encode(tool, forKey: .tool)
         try container.encodeIfPresent(origin, forKey: .origin)
         try container.encode(attachmentState, forKey: .attachmentState)

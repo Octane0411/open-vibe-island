@@ -254,6 +254,8 @@ final class ProcessMonitoringCoordinator {
             payload.sessionID
         case let .actionableStateResolved(payload):
             payload.sessionID
+        case let .sessionRenamed(payload):
+            payload.sessionID
         }
     }
 

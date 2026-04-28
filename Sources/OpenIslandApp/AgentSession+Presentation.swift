@@ -148,6 +148,12 @@ extension AgentSession {
     }
 
     var spotlightHeadlineText: String {
+        // User-chosen rename (e.g. Claude Code's `/rename`) wins outright.
+        if let renamed = displayName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !renamed.isEmpty {
+            return renamed
+        }
+
         var headline = spotlightWorkspaceName
 
         if let branch = spotlightWorktreeBranch {
