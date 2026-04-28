@@ -11,6 +11,7 @@ Structure:
 Generation workflow:
 
 - regenerate everything with `python3 scripts/generate_brand_icons.py`
+- `zsh scripts/launch-dev-app.sh` uses `python3 scripts/generate_brand_icons.py --output-root <temp-dir> --icns-only` so dev launches do not rewrite tracked brand assets
 - the script outputs:
   - `AppIcon.appiconset/` for future asset-catalog use
   - `OpenIsland.iconset/` and `OpenIsland.icns` for manual macOS bundle packaging
