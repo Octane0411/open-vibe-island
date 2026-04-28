@@ -180,13 +180,16 @@ struct IslandPanelView: View {
 
     var model: AppModel
 
-    @Environment(\.colorScheme) private var colorScheme
     @Namespace private var notchNamespace
     @State private var isHovering = false
     @State private var showingQuitConfirmation = false
 
+    private var effectiveColorScheme: ColorScheme {
+        model.prefersLightIslandTheme ? .light : .dark
+    }
+
     private var palette: IslandPalette {
-        IslandPalette(colorScheme: colorScheme)
+        IslandPalette(colorScheme: effectiveColorScheme)
     }
 
     private var isOpened: Bool {
@@ -313,7 +316,7 @@ struct IslandPanelView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .ignoresSafeArea()
-        .preferredColorScheme(model.prefersLightIslandTheme ? .light : .dark)
+        .preferredColorScheme(effectiveColorScheme)
         .alert(model.lang.t("island.quit.confirmTitle"), isPresented: $showingQuitConfirmation) {
             Button(model.lang.t("island.quit.confirmAction"), role: .destructive) {
                 model.quitApplication()
@@ -1519,6 +1522,7 @@ private struct IslandSessionRow: View {
             ReplyTextField(
                 placeholder: lang.t("completion.replyPlaceholder"),
                 text: $replyText,
+                colorScheme: colorScheme,
                 onSubmit: { submitReply() }
             )
             .frame(height: 32)
@@ -1851,6 +1855,7 @@ private struct StructuredQuestionPromptView: View {
                 get: { freeformTexts[key] ?? "" },
                 set: { freeformTexts[key] = $0 }
             ),
+            colorScheme: colorScheme,
             onSubmit: {
                 if hasCompleteSelection {
                     onAnswer(QuestionPromptResponse(answers: answerMap))
@@ -1970,7 +1975,18 @@ private struct StructuredQuestionPromptView: View {
 private struct ReplyTextField: NSViewRepresentable {
     var placeholder: String
     @Binding var text: String
+    var colorScheme: ColorScheme
     var onSubmit: () -> Void
+
+    private var textColor: NSColor {
+        colorScheme == .light ? NSColor.black.withAlphaComponent(0.88) : .white
+    }
+
+    private var placeholderColor: NSColor {
+        colorScheme == .light
+            ? NSColor.black.withAlphaComponent(0.40)
+            : NSColor.white.withAlphaComponent(0.35)
+    }
 
     func makeNSView(context: Context) -> NSTextField {
         let field = NSTextField()
@@ -1978,11 +1994,11 @@ private struct ReplyTextField: NSViewRepresentable {
         field.drawsBackground = false
         field.focusRingType = .none
         field.font = .systemFont(ofSize: 13)
-        field.textColor = .white
+        field.textColor = textColor
         field.placeholderAttributedString = NSAttributedString(
             string: placeholder,
             attributes: [
-                .foregroundColor: NSColor.white.withAlphaComponent(0.35),
+                .foregroundColor: placeholderColor,
                 .font: NSFont.systemFont(ofSize: 13),
             ]
         )
@@ -1996,6 +2012,14 @@ private struct ReplyTextField: NSViewRepresentable {
         if nsView.stringValue != text {
             nsView.stringValue = text
         }
+        nsView.textColor = textColor
+        nsView.placeholderAttributedString = NSAttributedString(
+            string: placeholder,
+            attributes: [
+                .foregroundColor: placeholderColor,
+                .font: NSFont.systemFont(ofSize: 13),
+            ]
+        )
         context.coordinator.onSubmit = onSubmit
     }
 

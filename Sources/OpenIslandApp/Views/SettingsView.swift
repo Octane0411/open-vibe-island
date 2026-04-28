@@ -315,8 +315,12 @@ struct SoundSettingsPane: View {
 struct AboutSettingsPane: View {
     var model: AppModel
 
+    @Environment(\.colorScheme) private var colorScheme
     private var lang: LanguageManager { model.lang }
-    private let primaryInk = Color.white.opacity(0.94)
+
+    private var primaryInk: Color {
+        (colorScheme == .light ? Color.black : Color.white).opacity(0.94)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
