@@ -24,5 +24,7 @@ output/
 # Logs and temp files
 *.log
 *.tmp
+*.profraw
+*.profdata
 .worktrees/
 .air/

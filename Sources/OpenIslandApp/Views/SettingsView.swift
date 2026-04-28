@@ -102,7 +102,7 @@ struct SettingsView: View {
             detailView
         }
         .frame(minWidth: 680, idealWidth: 780, minHeight: 480, idealHeight: 560)
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(model.prefersLightIslandTheme ? .light : .dark)
         .onReceive(NotificationCenter.default.publisher(for: .openIslandSelectSetupTab)) { _ in
             selectedTab = .setup
         }

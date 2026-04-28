@@ -96,6 +96,78 @@ private struct ConditionalDrawingGroup: ViewModifier {
     }
 }
 
+private struct IslandPalette {
+    let colorScheme: ColorScheme
+
+    var isLight: Bool { colorScheme == .light }
+
+    var surfaceFill: Color {
+        isLight ? Color(red: 0.965, green: 0.972, blue: 0.985) : .black
+    }
+
+    var raisedSurfaceFill: Color {
+        isLight ? Color.white.opacity(0.92) : .black
+    }
+
+    var surfaceStroke: Color {
+        isLight ? Color.black.opacity(0.10) : Color.white.opacity(0.07)
+    }
+
+    var idleEdgeStroke: Color {
+        isLight ? Color.black.opacity(0.08) : Color.white.opacity(0.05)
+    }
+
+    var chipFill: Color {
+        isLight ? Color.black.opacity(0.05) : Color.white.opacity(0.08)
+    }
+
+    var cardFill: Color {
+        isLight ? Color.black.opacity(0.035) : Color.white.opacity(0.045)
+    }
+
+    var cardBorder: Color {
+        isLight ? Color.black.opacity(0.06) : Color.white.opacity(0.06)
+    }
+
+    var shadowColor: Color {
+        isLight ? Color.black.opacity(0.12) : Color.black.opacity(0.24)
+    }
+
+    func text(light: Double, dark: Double) -> Color {
+        (isLight ? Color.black : Color.white).opacity(isLight ? light : dark)
+    }
+
+    func rowFill(isHighlighted: Bool, isActionable: Bool) -> Color {
+        if isLight {
+            return isHighlighted
+                ? Color.black.opacity(isActionable ? 0.06 : 0.04)
+                : Color.white.opacity(0.84)
+        }
+
+        return isHighlighted ? Color.white.opacity(isActionable ? 0.06 : 0.05) : .black
+    }
+
+    func rowBorder(isHighlighted: Bool, isActionable: Bool, statusTint: Color) -> Color {
+        if isActionable {
+            return statusTint.opacity(isHighlighted ? 0.45 : 0.28)
+        }
+
+        if isLight {
+            return Color.black.opacity(isHighlighted ? 0.16 : 0.06)
+        }
+
+        return isHighlighted ? .white.opacity(0.24) : .white.opacity(0.04)
+    }
+
+    func rowSeparator(isHighlighted: Bool) -> Color {
+        if isLight {
+            return Color.black.opacity(isHighlighted ? 0 : 0.05)
+        }
+
+        return Color.white.opacity(isHighlighted ? 0 : 0.02)
+    }
+}
+
 // MARK: - Main island view
 
 struct IslandPanelView: View {
@@ -108,9 +180,14 @@ struct IslandPanelView: View {
 
     var model: AppModel
 
+    @Environment(\.colorScheme) private var colorScheme
     @Namespace private var notchNamespace
     @State private var isHovering = false
     @State private var showingQuitConfirmation = false
+
+    private var palette: IslandPalette {
+        IslandPalette(colorScheme: colorScheme)
+    }
 
     private var isOpened: Bool {
         model.notchStatus == .opened
@@ -167,7 +244,7 @@ struct IslandPanelView: View {
         if !sessions.isEmpty {
             return Color(red: 0.26, green: 0.91, blue: 0.42) // #42E86B idle green
         }
-        return Color.white.opacity(0.4) // gray
+        return palette.text(light: 0.32, dark: 0.4) // gray
     }
 
     private var countBadgeWidth: CGFloat {
@@ -236,7 +313,7 @@ struct IslandPanelView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .ignoresSafeArea()
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(model.prefersLightIslandTheme ? .light : .dark)
         .alert(model.lang.t("island.quit.confirmTitle"), isPresented: $showingQuitConfirmation) {
             Button(model.lang.t("island.quit.confirmAction"), role: .destructive) {
                 model.quitApplication()
@@ -281,7 +358,7 @@ struct IslandPanelView: View {
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
                 surfaceShape
-                    .fill(Color.black.opacity(hidesClosedSurfaceChrome ? 0 : 1))
+                    .fill(palette.surfaceFill.opacity(hidesClosedSurfaceChrome ? 0 : 1))
                     .frame(width: surfaceWidth, height: surfaceHeight)
 
                 VStack(spacing: 0) {
@@ -300,24 +377,27 @@ struct IslandPanelView: View {
                 .padding(.bottom, bottomInset)
                 .clipShape(surfaceShape)
                 .overlay(alignment: .top) {
-                    // Black strip to blend with physical notch at the very top
+                    // Blend the top seam with the island surface in either theme.
                     Rectangle()
-                        .fill(Color.black)
+                        .fill(palette.surfaceFill)
                         .frame(height: 1)
                         .padding(.horizontal, usesOpenedVisualState ? NotchShape.openedTopRadius : NotchShape.closedTopRadius)
                         .opacity(hidesClosedSurfaceChrome ? 0 : 1)
                 }
                 .overlay {
                     surfaceShape
-                        .stroke(Color.white.opacity(hidesClosedSurfaceChrome ? 0 : (usesOpenedVisualState ? 0.07 : 0.04)), lineWidth: 1)
+                        .stroke(
+                            palette.surfaceStroke.opacity(hidesClosedSurfaceChrome ? 0 : (usesOpenedVisualState ? 1 : 0.7)),
+                            lineWidth: 1
+                        )
                 }
                 .overlay(alignment: .top) {
                     Capsule()
-                        .fill(Color.black)
+                        .fill(palette.surfaceFill)
                         .frame(width: idleEdgeWidth, height: Self.closedIdleEdgeHeight)
                         .overlay {
                             Capsule()
-                                .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                                .stroke(palette.idleEdgeStroke, lineWidth: 1)
                         }
                         .opacity(showsIdleEdgeWhenCollapsed ? 1 : 0)
                 }
@@ -392,7 +472,7 @@ struct IslandPanelView: View {
                         .frame(width: closedNotchWidth - 20)
                 } else {
                     Rectangle()
-                        .fill(Color.black)
+                        .fill(palette.raisedSurfaceFill)
                         .frame(width: closedNotchWidth - NotchShape.closedTopRadius + (isPopping ? 18 : 0))
                         .overlay(
                             CentralActivityLabel(
@@ -458,18 +538,18 @@ struct IslandPanelView: View {
         HStack(spacing: Self.headerControlSpacing) {
             headerIconButton(
                 systemName: model.isSoundMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
-                tint: model.isSoundMuted ? .orange.opacity(0.92) : .white.opacity(0.62)
+                tint: model.isSoundMuted ? .orange.opacity(0.92) : palette.text(light: 0.56, dark: 0.62)
             ) {
                 model.toggleSoundMuted()
             }
 
-            headerIconButton(systemName: "gearshape.fill", tint: .white.opacity(0.62)) {
+            headerIconButton(systemName: "gearshape.fill", tint: palette.text(light: 0.56, dark: 0.62)) {
                 model.showSettings()
             }
 
             headerIconButton(
                 systemName: "power",
-                tint: .white.opacity(0.62),
+                tint: palette.text(light: 0.56, dark: 0.62),
                 accessibilityLabel: model.lang.t("island.quit.confirmTitle")
             ) {
                 showingQuitConfirmation = true
@@ -488,7 +568,7 @@ struct IslandPanelView: View {
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(tint)
                 .frame(width: Self.headerControlButtonSize, height: Self.headerControlButtonSize)
-                .background(.white.opacity(0.08), in: Circle())
+                .background(palette.chipFill, in: Circle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel ?? systemName)
@@ -528,13 +608,13 @@ struct IslandPanelView: View {
                     .foregroundStyle(Color.accentColor)
                 Text(model.lang.t("island.hint.installHooks"))
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.85))
+                    .foregroundStyle(palette.text(light: 0.80, dark: 0.85))
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.4))
+                    .foregroundStyle(palette.text(light: 0.32, dark: 0.4))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -555,14 +635,14 @@ struct IslandPanelView: View {
             Spacer()
             ProgressView()
                 .progressViewStyle(.circular)
-                .tint(.white.opacity(0.7))
+                .tint(palette.text(light: 0.55, dark: 0.7))
                 .scaleEffect(0.8)
             Text(model.lang.t("island.checkingTerminals"))
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.white.opacity(0.58))
+                .foregroundStyle(palette.text(light: 0.56, dark: 0.58))
             Text(model.lang.t("island.terminalOwnership"))
                 .font(.system(size: 12))
-                .foregroundStyle(.white.opacity(0.28))
+                .foregroundStyle(palette.text(light: 0.32, dark: 0.28))
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -573,12 +653,12 @@ struct IslandPanelView: View {
             Spacer()
             Text(model.lang.t("island.noTerminals"))
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(palette.text(light: 0.44, dark: 0.4))
             Text(model.recentSessions.isEmpty
                 ? model.lang.t("island.startAgent")
                 : model.lang.t("island.recentSessions"))
                 .font(.system(size: 12))
-                .foregroundStyle(.white.opacity(0.25))
+                .foregroundStyle(palette.text(light: 0.28, dark: 0.25))
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -653,7 +733,7 @@ struct IslandPanelView: View {
                     } label: {
                         Text(model.lang.t("island.showAll", model.allSessions.count))
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.45))
+                            .foregroundStyle(palette.text(light: 0.42, dark: 0.45))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 8)
                     }
@@ -683,7 +763,7 @@ struct IslandPanelView: View {
     // MARK: - Helpers
 
     private var surfaceFill: some ShapeStyle {
-        Color.black
+        palette.surfaceFill
     }
 
     private func phaseColor(_ phase: SessionPhase) -> Color {
@@ -713,11 +793,11 @@ struct IslandPanelView: View {
             HStack(spacing: 8) {
                 Text(model.lang.t("app.name"))
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(palette.text(light: 0.82, dark: 0.9))
 
                 Text(model.lang.t("island.usageWaiting"))
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.4))
+                    .foregroundStyle(palette.text(light: 0.38, dark: 0.4))
             }
             .lineLimit(1)
         }
@@ -889,7 +969,7 @@ struct IslandPanelView: View {
         HStack(spacing: 8) {
             Text(layout.usesShortProviderTitle ? provider.shortTitle : provider.title)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.9))
+                .foregroundStyle(palette.text(light: 0.82, dark: 0.9))
 
             ForEach(Array(provider.windows.enumerated()), id: \.element.id) { index, window in
                 if index > 0 {
@@ -918,7 +998,7 @@ struct IslandPanelView: View {
             if layout.showsWindowLabel {
                 Text(window.label)
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.55))
+                    .foregroundStyle(palette.text(light: 0.48, dark: 0.55))
             }
 
             Text("\(window.roundedUsedPercentage)%")
@@ -930,7 +1010,7 @@ struct IslandPanelView: View {
                let remaining = remainingDurationString(until: resetsAt) {
                 Text(remaining)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.35))
+                    .foregroundStyle(palette.text(light: 0.38, dark: 0.35))
             }
         }
     }
@@ -938,7 +1018,7 @@ struct IslandPanelView: View {
     private func usageSeparator(_ title: String, opacity: Double) -> some View {
         Text(title)
             .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.white.opacity(opacity))
+            .foregroundStyle(palette.text(light: max(0.24, opacity + 0.02), dark: opacity))
     }
 
     private func headerPill(_ title: String, tint: Color) -> some View {
@@ -947,7 +1027,7 @@ struct IslandPanelView: View {
             .foregroundStyle(tint)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(.white.opacity(0.08), in: Capsule())
+            .background(palette.chipFill, in: Capsule())
     }
 
     private func usageColor(for percentage: Double) -> Color {
@@ -1103,9 +1183,14 @@ private struct IslandSessionRow: View {
     let onJump: () -> Void
     var onDismiss: (() -> Void)?
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isHighlighted = false
     @State private var isManuallyExpanded = false
     @State private var replyText: String = ""
+
+    private var palette: IslandPalette {
+        IslandPalette(colorScheme: colorScheme)
+    }
 
     var body: some View {
         rowBody(referenceDate: referenceDate)
@@ -1147,7 +1232,7 @@ private struct IslandSessionRow: View {
                        let promptLine = session.spotlightPromptLineText ?? expandedPromptLineText {
                         Text(promptLine)
                             .font(.system(size: 11.5, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.62))
+                            .foregroundStyle(palette.text(light: 0.56, dark: 0.62))
                             .lineLimit(1)
                     }
 
@@ -1180,24 +1265,24 @@ private struct IslandSessionRow: View {
                                         .frame(width: 6, height: 6)
                                     Text(sub.agentType ?? sub.agentID)
                                         .font(.system(size: 11, weight: .medium))
-                                        .foregroundStyle(.white.opacity(0.8))
+                                        .foregroundStyle(palette.text(light: 0.74, dark: 0.8))
                                         .lineLimit(1)
                                     if let desc = sub.taskDescription {
                                         Text("(\(desc))")
                                             .font(.system(size: 10.5))
-                                            .foregroundStyle(.white.opacity(0.5))
+                                            .foregroundStyle(palette.text(light: 0.45, dark: 0.5))
                                             .lineLimit(1)
                                     }
                                     Spacer(minLength: 0)
                                     if sub.summary != nil {
                                         Text(lang.t("subagents.completed"))
                                             .font(.system(size: 10, weight: .medium))
-                                            .foregroundStyle(.white.opacity(0.4))
+                                            .foregroundStyle(palette.text(light: 0.38, dark: 0.4))
                                     } else if let started = sub.startedAt {
                                         TimelineView(.periodic(from: .now, by: 1)) { timeline in
                                             Text(subagentElapsed(since: started, at: timeline.date))
                                                 .font(.system(size: 10, weight: .medium))
-                                                .foregroundStyle(.white.opacity(0.4))
+                                                .foregroundStyle(palette.text(light: 0.38, dark: 0.4))
                                         }
                                     }
                                 }
@@ -1211,15 +1296,15 @@ private struct IslandSessionRow: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(taskSummary(tasks))
                                 .font(.system(size: 10.5, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.45))
+                                .foregroundStyle(palette.text(light: 0.42, dark: 0.45))
                             ForEach(tasks) { task in
                                 HStack(spacing: 5) {
                                     taskStatusIcon(task.status)
                                     Text(task.title)
                                         .font(.system(size: 10.5, weight: .medium))
                                         .foregroundStyle(task.status == .completed
-                                            ? .white.opacity(0.4)
-                                            : .white.opacity(0.7))
+                                            ? palette.text(light: 0.38, dark: 0.4)
+                                            : palette.text(light: 0.68, dark: 0.7))
                                         .strikethrough(task.status == .completed)
                                         .lineLimit(1)
                                 }
@@ -1239,19 +1324,19 @@ private struct IslandSessionRow: View {
         }
         .background(
             RoundedRectangle(cornerRadius: isActionable ? 24 : 22, style: .continuous)
-                .fill(isHighlighted ? Color.white.opacity(isActionable ? 0.06 : 0.05) : Color.black)
+                .fill(palette.rowFill(isHighlighted: isHighlighted, isActionable: isActionable))
         )
         .overlay(
             RoundedRectangle(cornerRadius: isActionable ? 24 : 22, style: .continuous)
                 .strokeBorder(actionableBorderColor)
         )
         .compositingGroup()
-        .shadow(color: .black.opacity(0.24), radius: isHighlighted ? 8 : 0, y: isHighlighted ? 6 : 0)
+        .shadow(color: palette.shadowColor, radius: isHighlighted ? 8 : 0, y: isHighlighted ? 6 : 0)
         .overlay(
             Group {
                 if !isActionable {
                     Rectangle()
-                        .fill(Color.white.opacity(isHighlighted ? 0 : 0.02))
+                        .fill(palette.rowSeparator(isHighlighted: isHighlighted))
                         .frame(height: 1)
                 }
             },
@@ -1273,10 +1358,11 @@ private struct IslandSessionRow: View {
     }
 
     private var actionableBorderColor: Color {
-        if isActionable {
-            return actionableStatusTint.opacity(isHighlighted ? 0.45 : 0.28)
-        }
-        return isHighlighted ? .white.opacity(0.24) : .white.opacity(0.04)
+        palette.rowBorder(
+            isHighlighted: isHighlighted,
+            isActionable: isActionable,
+            statusTint: actionableStatusTint
+        )
     }
 
     private var actionableStatusTint: Color {
@@ -1322,14 +1408,14 @@ private struct IslandSessionRow: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(commandPreviewText)
                     .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(palette.text(light: 0.82, dark: 0.9))
                     .fixedSize(horizontal: false, vertical: true)
 
                 if let path = session.permissionRequest?.affectedPath.trimmedForNotificationCard,
                    !path.isEmpty {
                     Text(path)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.42))
+                        .foregroundStyle(palette.text(light: 0.38, dark: 0.42))
                         .lineLimit(1)
                 }
             }
@@ -1338,7 +1424,9 @@ private struct IslandSessionRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color(red: 0.11, green: 0.08, blue: 0.03))
+                    .fill(colorScheme == .light
+                        ? Color.orange.opacity(0.10)
+                        : Color(red: 0.11, green: 0.08, blue: 0.03))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -1383,7 +1471,7 @@ private struct IslandSessionRow: View {
             HStack(alignment: .top, spacing: 12) {
                 Text(completionPromptLabel)
                     .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.8))
+                    .foregroundStyle(palette.text(light: 0.74, dark: 0.8))
                     .lineLimit(2)
 
                 Spacer(minLength: 8)
@@ -1396,12 +1484,12 @@ private struct IslandSessionRow: View {
             .padding(.vertical, 12)
 
             Rectangle()
-                .fill(.white.opacity(0.04))
+                .fill(palette.cardFill)
                 .frame(height: 1)
 
             AutoHeightScrollView(maxHeight: 260) {
                 Markdown(completionMessageText)
-                    .markdownTheme(.completionCard)
+                    .markdownTheme(.completionCard(colorScheme: colorScheme))
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
@@ -1409,7 +1497,7 @@ private struct IslandSessionRow: View {
 
             if onReply != nil {
                 Rectangle()
-                    .fill(.white.opacity(0.04))
+                    .fill(palette.cardFill)
                     .frame(height: 1)
 
                 completionReplyInput
@@ -1417,11 +1505,11 @@ private struct IslandSessionRow: View {
         }
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.045))
+                .fill(palette.cardFill)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(.white.opacity(0.08))
+                .strokeBorder(palette.cardBorder)
         )
     }
 
@@ -1441,7 +1529,8 @@ private struct IslandSessionRow: View {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 24))
                     .foregroundColor(replyText.trimmingCharacters(in: .whitespaces).isEmpty
-                        ? .white.opacity(0.2) : .white.opacity(0.9))
+                        ? palette.text(light: 0.18, dark: 0.2)
+                        : palette.text(light: 0.82, dark: 0.9))
             }
             .buttonStyle(.plain)
             .disabled(replyText.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -1515,14 +1604,14 @@ private struct IslandSessionRow: View {
         case .completed:
             Image(systemName: "checkmark.square.fill")
                 .font(.system(size: 9))
-                .foregroundStyle(.white.opacity(0.35))
+                .foregroundStyle(palette.text(light: 0.32, dark: 0.35))
         case .inProgress:
             Circle()
                 .fill(Color(red: 0.34, green: 0.61, blue: 0.99))
                 .frame(width: 6, height: 6)
         case .pending:
             Circle()
-                .strokeBorder(.white.opacity(0.3), lineWidth: 1)
+                .strokeBorder(palette.text(light: 0.28, dark: 0.3), lineWidth: 1)
                 .frame(width: 6, height: 6)
         }
     }
@@ -1578,15 +1667,19 @@ private struct IslandSessionRow: View {
         .foregroundStyle(badgeTextColor(for: presence))
         .padding(.horizontal, 7)
         .padding(.vertical, 3.5)
-        .background(Color(red: 0.14, green: 0.14, blue: 0.15), in: Capsule())
+        .background(palette.chipFill, in: Capsule())
     }
 
     private func headlineColor(for presence: IslandSessionPresence) -> Color {
-        presence == .inactive ? .white.opacity(0.78) : .white
+        presence == .inactive
+            ? palette.text(light: 0.70, dark: 0.78)
+            : palette.text(light: 0.88, dark: 1)
     }
 
     private func badgeTextColor(for presence: IslandSessionPresence) -> Color {
-        presence == .inactive ? .white.opacity(0.42) : .white.opacity(0.56)
+        presence == .inactive
+            ? palette.text(light: 0.40, dark: 0.42)
+            : palette.text(light: 0.54, dark: 0.56)
     }
 
     private func statusTint(for presence: IslandSessionPresence) -> Color {
@@ -1604,7 +1697,7 @@ private struct IslandSessionRow: View {
         case .active:
             return Color(red: 0.29, green: 0.86, blue: 0.46)
         case .inactive:
-            return .white.opacity(0.38)
+            return palette.text(light: 0.38, dark: 0.38)
         }
     }
 
@@ -1615,9 +1708,9 @@ private struct IslandSessionRow: View {
         case .live:
             statusTint(for: presence)
         case .idle:
-            .white.opacity(0.46)
+            palette.text(light: 0.42, dark: 0.46)
         case .ready:
-            presence == .inactive ? .white.opacity(0.46) : statusTint(for: presence)
+            presence == .inactive ? palette.text(light: 0.42, dark: 0.46) : statusTint(for: presence)
         }
     }
 }
@@ -1627,8 +1720,13 @@ private struct StructuredQuestionPromptView: View {
     var lang: LanguageManager = .shared
     let onAnswer: (QuestionPromptResponse) -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var selections: [String: Set<String>] = [:]
     @State private var freeformTexts: [String: String] = [:]
+
+    private var palette: IslandPalette {
+        IslandPalette(colorScheme: colorScheme)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1656,11 +1754,11 @@ private struct StructuredQuestionPromptView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.04))
+                .fill(palette.cardFill)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(.white.opacity(0.06))
+                .strokeBorder(palette.cardBorder)
         )
     }
 
@@ -1673,12 +1771,12 @@ private struct StructuredQuestionPromptView: View {
             if structuredQuestions.count > 1 {
                 Text(question.header)
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(palette.text(light: 0.42, dark: 0.5))
             }
 
             Text(question.question)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white.opacity(0.88))
+                .foregroundStyle(palette.text(light: 0.84, dark: 0.88))
                 .fixedSize(horizontal: false, vertical: true)
 
             // Vertical option list
@@ -1703,17 +1801,19 @@ private struct StructuredQuestionPromptView: View {
                 HStack(spacing: 8) {
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(isSelected ? .yellow : .white.opacity(0.35))
+                        .foregroundStyle(isSelected ? .yellow : palette.text(light: 0.3, dark: 0.35))
 
                     VStack(alignment: .leading, spacing: 1) {
                         Text(option.label)
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.white.opacity(isSelected ? 1 : 0.78))
+                            .foregroundStyle(
+                                palette.text(light: isSelected ? 0.88 : 0.72, dark: isSelected ? 1 : 0.78)
+                            )
 
                         if !option.description.isEmpty {
                             Text(option.description)
                                 .font(.system(size: 10.5))
-                                .foregroundStyle(.white.opacity(0.4))
+                                .foregroundStyle(palette.text(light: 0.36, dark: 0.4))
                                 .lineLimit(1)
                         }
                     }
@@ -1728,13 +1828,13 @@ private struct StructuredQuestionPromptView: View {
 
             if showsFreeform {
                 Divider()
-                    .overlay(Color.white.opacity(0.08))
+                    .overlay(palette.cardBorder)
                 freeformField(for: option, question: question)
             }
         }
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(isSelected ? Color.yellow.opacity(0.10) : Color.white.opacity(0.04))
+                .fill(isSelected ? Color.yellow.opacity(0.10) : palette.cardFill)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -1940,15 +2040,20 @@ private extension String {
 
 private struct IslandCompactButtonStyle: ButtonStyle {
     var tint: Color
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var palette: IslandPalette {
+        IslandPalette(colorScheme: colorScheme)
+    }
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(tint == .secondary ? .white.opacity(0.7) : tint)
+            .foregroundStyle(tint == .secondary ? palette.text(light: 0.58, dark: 0.7) : tint)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(
-                (tint == .secondary ? Color.white.opacity(0.08) : tint.opacity(0.15)),
+                (tint == .secondary ? palette.chipFill : tint.opacity(0.15)),
                 in: Capsule()
             )
             .opacity(configuration.isPressed ? 0.7 : 1)
@@ -1964,6 +2069,11 @@ private struct IslandWideButtonStyle: ButtonStyle {
     }
 
     let kind: Kind
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var palette: IslandPalette {
+        IslandPalette(colorScheme: colorScheme)
+    }
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -1979,7 +2089,7 @@ private struct IslandWideButtonStyle: ButtonStyle {
         case .primary, .warning, .danger:
             return .white
         case .secondary:
-            return .white.opacity(0.88)
+            return palette.text(light: 0.82, dark: 0.88)
         }
     }
 
@@ -1989,7 +2099,7 @@ private struct IslandWideButtonStyle: ButtonStyle {
         case .primary:
             return Color(red: 0.26, green: 0.45, blue: 0.86).opacity(pressedFactor)
         case .secondary:
-            return Color.white.opacity(isPressed ? 0.12 : 0.16)
+            return palette.chipFill.opacity(isPressed ? 1.35 : 1)
         case .warning:
             return Color(red: 0.85, green: 0.55, blue: 0.15).opacity(pressedFactor)
         case .danger:
@@ -2033,6 +2143,11 @@ private struct AttentionIndicator: View {
 private struct ClosedCountBadge: View {
     let liveCount: Int
     let tint: Color
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var palette: IslandPalette {
+        IslandPalette(colorScheme: colorScheme)
+    }
 
     var body: some View {
         Text("\(liveCount)")
@@ -2040,7 +2155,7 @@ private struct ClosedCountBadge: View {
             .foregroundStyle(tint)
             .padding(.horizontal, 8)
             .padding(.vertical, 2)
-            .background(Color(red: 0.14, green: 0.14, blue: 0.15), in: Capsule())
+            .background(palette.chipFill, in: Capsule())
     }
 }
 
@@ -2058,9 +2173,14 @@ private struct CentralActivityLabel: View {
     let preview: String?
     let isVisible: Bool
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var displayed: DisplayedActivity?
 
     private static let fadeDelay: Duration = .seconds(2)
+
+    private var palette: IslandPalette {
+        IslandPalette(colorScheme: colorScheme)
+    }
 
     struct DisplayedActivity: Equatable {
         var tool: String
@@ -2078,7 +2198,7 @@ private struct CentralActivityLabel: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
-                .foregroundStyle(.white.opacity(0.85))
+                .foregroundStyle(palette.text(light: 0.76, dark: 0.85))
                 .padding(.horizontal, 8)
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
@@ -2263,111 +2383,128 @@ struct MenuBarContentView: View {
 // MARK: - MarkdownUI Theme
 
 extension MarkdownUI.Theme {
-    @MainActor static let completionCard = Theme()
-        .text {
-            ForegroundColor(.white.opacity(0.88))
-            FontSize(13.5)
-            FontWeight(.medium)
-        }
-        .link {
-            ForegroundColor(.blue)
-        }
-        .strong {
-            FontWeight(.bold)
-        }
-        .code {
-            FontFamilyVariant(.monospaced)
-            FontSize(12.5)
-            ForegroundColor(.white.opacity(0.88))
-            BackgroundColor(.white.opacity(0.08))
-        }
-        .codeBlock { configuration in
-            configuration.label
-                .markdownTextStyle {
-                    FontFamilyVariant(.monospaced)
-                    FontSize(12.5)
-                    ForegroundColor(.white.opacity(0.88))
-                }
-                .padding(10)
-                .background(Color.white.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-        }
-        .heading1 { configuration in
-            configuration.label
-                .markdownTextStyle {
-                    FontSize(16)
-                    FontWeight(.bold)
-                    ForegroundColor(.white.opacity(0.88))
-                }
-                .markdownMargin(top: 8, bottom: 4)
-        }
-        .heading2 { configuration in
-            configuration.label
-                .markdownTextStyle {
-                    FontSize(15)
-                    FontWeight(.bold)
-                    ForegroundColor(.white.opacity(0.88))
-                }
-                .markdownMargin(top: 8, bottom: 4)
-        }
-        .heading3 { configuration in
-            configuration.label
-                .markdownTextStyle {
-                    FontSize(14)
-                    FontWeight(.semibold)
-                    ForegroundColor(.white.opacity(0.88))
-                }
-                .markdownMargin(top: 6, bottom: 2)
-        }
-        .blockquote { configuration in
-            configuration.label
-                .markdownTextStyle {
-                    ForegroundColor(.white.opacity(0.6))
-                    FontSize(13.5)
-                }
-                .padding(.leading, 12)
-                .overlay(alignment: .leading) {
-                    Rectangle()
-                        .fill(Color.white.opacity(0.2))
-                        .frame(width: 3)
-                }
-        }
-        .listItem { configuration in
-            configuration.label
-                .markdownMargin(top: 2, bottom: 2)
-        }
-        .table { configuration in
-            configuration.label
-                .fixedSize(horizontal: false, vertical: true)
-                .markdownTableBorderStyle(.init(.allBorders, color: .white.opacity(0.15), strokeStyle: .init(lineWidth: 1)))
-                .markdownTableBackgroundStyle(
-                    .alternatingRows(Color.white.opacity(0.04), Color.white.opacity(0.08))
-                )
-                .markdownMargin(top: 4, bottom: 8)
-        }
-        .tableCell { configuration in
-            configuration.label
-                .markdownTextStyle {
-                    if configuration.row == 0 {
-                        FontWeight(.semibold)
+    @MainActor static func completionCard(colorScheme: ColorScheme) -> Theme {
+        let isLight = colorScheme == .light
+        let primaryText = (isLight ? Color.black : Color.white).opacity(isLight ? 0.84 : 0.88)
+        let secondaryText = (isLight ? Color.black : Color.white).opacity(isLight ? 0.56 : 0.6)
+        let inlineCodeFill = isLight ? Color.black.opacity(0.06) : Color.white.opacity(0.08)
+        let codeBlockFill = isLight ? Color.black.opacity(0.045) : Color.white.opacity(0.08)
+        let quoteBarFill = isLight ? Color.black.opacity(0.18) : Color.white.opacity(0.2)
+        let tableBorder = isLight ? Color.black.opacity(0.12) : Color.white.opacity(0.15)
+        let tableRowA = isLight ? Color.black.opacity(0.025) : Color.white.opacity(0.04)
+        let tableRowB = isLight ? Color.black.opacity(0.05) : Color.white.opacity(0.08)
+
+        return Theme()
+            .text {
+                ForegroundColor(primaryText)
+                FontSize(13.5)
+                FontWeight(.medium)
+            }
+            .link {
+                ForegroundColor(.blue)
+            }
+            .strong {
+                FontWeight(.bold)
+            }
+            .code {
+                FontFamilyVariant(.monospaced)
+                FontSize(12.5)
+                ForegroundColor(primaryText)
+                BackgroundColor(inlineCodeFill)
+            }
+            .codeBlock { configuration in
+                configuration.label
+                    .markdownTextStyle {
+                        FontFamilyVariant(.monospaced)
+                        FontSize(12.5)
+                        ForegroundColor(primaryText)
                     }
-                }
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.vertical, 6)
-                .padding(.horizontal, 12)
-                .relativeLineSpacing(.em(0.25))
-        }
+                    .padding(10)
+                    .background(codeBlockFill)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+            .heading1 { configuration in
+                configuration.label
+                    .markdownTextStyle {
+                        FontSize(16)
+                        FontWeight(.bold)
+                        ForegroundColor(primaryText)
+                    }
+                    .markdownMargin(top: 8, bottom: 4)
+            }
+            .heading2 { configuration in
+                configuration.label
+                    .markdownTextStyle {
+                        FontSize(15)
+                        FontWeight(.bold)
+                        ForegroundColor(primaryText)
+                    }
+                    .markdownMargin(top: 8, bottom: 4)
+            }
+            .heading3 { configuration in
+                configuration.label
+                    .markdownTextStyle {
+                        FontSize(14)
+                        FontWeight(.semibold)
+                        ForegroundColor(primaryText)
+                    }
+                    .markdownMargin(top: 6, bottom: 2)
+            }
+            .blockquote { configuration in
+                configuration.label
+                    .markdownTextStyle {
+                        ForegroundColor(secondaryText)
+                        FontSize(13.5)
+                    }
+                    .padding(.leading, 12)
+                    .overlay(alignment: .leading) {
+                        Rectangle()
+                            .fill(quoteBarFill)
+                            .frame(width: 3)
+                    }
+            }
+            .listItem { configuration in
+                configuration.label
+                    .markdownMargin(top: 2, bottom: 2)
+            }
+            .table { configuration in
+                configuration.label
+                    .fixedSize(horizontal: false, vertical: true)
+                    .markdownTableBorderStyle(.init(.allBorders, color: tableBorder, strokeStyle: .init(lineWidth: 1)))
+                    .markdownTableBackgroundStyle(
+                        .alternatingRows(tableRowA, tableRowB)
+                    )
+                    .markdownMargin(top: 4, bottom: 8)
+            }
+            .tableCell { configuration in
+                configuration.label
+                    .markdownTextStyle {
+                        if configuration.row == 0 {
+                            FontWeight(.semibold)
+                        }
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 12)
+                    .relativeLineSpacing(.em(0.25))
+            }
+    }
 }
 
 private struct DismissButton: View {
     let action: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered = false
+
+    private var palette: IslandPalette {
+        IslandPalette(colorScheme: colorScheme)
+    }
 
     var body: some View {
         Button(action: action) {
             Image(systemName: "xmark.circle.fill")
                 .font(.system(size: 12))
-                .foregroundStyle(.white.opacity(isHovered ? 0.8 : 0.4))
+                .foregroundStyle(palette.text(light: isHovered ? 0.66 : 0.34, dark: isHovered ? 0.8 : 0.4))
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }

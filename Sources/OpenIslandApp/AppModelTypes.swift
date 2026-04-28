@@ -29,6 +29,13 @@ enum IslandAppearanceMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum IslandThemePreference: String, CaseIterable, Identifiable {
+    case dark
+    case light
+
+    var id: String { rawValue }
+}
+
 enum IslandClosedDisplayStyle: String, CaseIterable, Identifiable {
     case minimal
     case detailed
