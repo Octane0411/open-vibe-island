@@ -40,22 +40,27 @@ function sendAndWaitResponse(json, timeoutMs = 300000) {
         sock.write(encodeEnvelope(json));
       });
       let buf = "";
+      function tryResolveResponse() {
+        const lines = buf.split("\n").filter(Boolean);
+        for (const line of lines) {
+          try {
+            const parsed = JSON.parse(line);
+            // Only resolve on actual response messages, skip hello and event messages
+            if (parsed.type === "response" || parsed.response?.directive) {
+              sock.destroy();
+              resolve(parsed);
+              return true;
+            }
+          } catch {}
+        }
+        return false;
+      }
       sock.on("data", (chunk) => {
         buf += chunk.toString();
-        // BridgeServer sends hello first, then response after processing
-        const lines = buf.split("\n").filter(Boolean);
-        if (lines.length >= 2) {
-          sock.destroy();
-          try { resolve(JSON.parse(lines[1])); } catch { resolve(null); }
-        }
+        tryResolveResponse();
       });
       sock.on("end", () => {
-        const lines = buf.split("\n").filter(Boolean);
-        if (lines.length >= 2) {
-          try { resolve(JSON.parse(lines[1])); } catch { resolve(null); }
-        } else {
-          resolve(null);
-        }
+        if (!tryResolveResponse()) resolve(null);
       });
       sock.on("error", () => resolve(null));
       sock.setTimeout(timeoutMs, () => { sock.destroy(); resolve(null); });
