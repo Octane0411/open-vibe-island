@@ -22,6 +22,7 @@ final class AppModel {
     private static let islandClosedDisplayStyleDefaultsKey = "appearance.island.closedDisplayStyle"
     private static let islandHideIdleToEdgeDefaultsKey = "appearance.island.hideIdleToEdge"
     private static let islandPixelShapeStyleDefaultsKey = "appearance.island.pixelShapeStyle"
+    private static let islandDisablePixelAnimationDefaultsKey = "appearance.island.disablePixelAnimation"
     private static let islandStatusColorsDefaultsKey = "appearance.island.statusColors"
     private static let showCodexUsageDefaultsKey = "app.showCodexUsage"
     private static let completionReplyEnabledDefaultsKey = "feature.completionReply.enabled"
@@ -313,6 +314,12 @@ final class AppModel {
             UserDefaults.standard.set(islandPixelShapeStyle.rawValue, forKey: Self.islandPixelShapeStyleDefaultsKey)
         }
     }
+    var disablePixelAnimation: Bool = false {
+        didSet {
+            guard disablePixelAnimation != oldValue else { return }
+            UserDefaults.standard.set(disablePixelAnimation, forKey: Self.islandDisablePixelAnimationDefaultsKey)
+        }
+    }
     var statusColorHexes: [SessionPhase: String] = AppModel.defaultStatusColors {
         didSet {
             guard statusColorHexes != oldValue else { return }
@@ -518,6 +525,7 @@ final class AppModel {
         islandPixelShapeStyle = IslandPixelShapeStyle(
             rawValue: UserDefaults.standard.string(forKey: Self.islandPixelShapeStyleDefaultsKey) ?? ""
         ) ?? .bars
+        disablePixelAnimation = UserDefaults.standard.bool(forKey: Self.islandDisablePixelAnimationDefaultsKey)
         customAvatarImage = AvatarImageStore.currentImage()
         if let saved = UserDefaults.standard.dictionary(forKey: Self.islandStatusColorsDefaultsKey) as? [String: String] {
             var colors = Self.defaultStatusColors

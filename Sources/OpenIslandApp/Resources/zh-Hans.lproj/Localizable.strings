@@ -58,6 +58,8 @@
 "settings.appearance.style.detailed" = "详细";
 "settings.appearance.hideIdleToEdge" = "空闲时隐藏到黑边";
 "settings.appearance.hideIdleToEdge.help" = "当岛处于收起状态且没有活跃通知卡片时，只保留一条细黑边。鼠标悬停或点击仍可展开。";
+"settings.appearance.disablePixelAnimation" = "禁用像素动画";
+"settings.appearance.disablePixelAnimation.help" = "停止收起状态下像素图形的持续动画。可降低 CPU 与电池消耗，尤其在会话进行时。";
 "settings.appearance.pixelShape" = "像素图形";
 "settings.appearance.pixelShape.bars" = "猫咪";
 "settings.appearance.pixelShape.steps" = "阶梯";
