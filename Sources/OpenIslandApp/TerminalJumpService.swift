@@ -162,6 +162,19 @@ struct TerminalJumpService {
         ),
     ]
 
+    /// Returns all known bundle identifiers for a terminal/IDE app given its
+    /// display name (as stored in `JumpTarget.terminalApp`).  Used by
+    /// `ForegroundTerminalSessionProbe` to suppress notifications when the
+    /// agent's parent app is already frontmost.
+    static func bundleIdentifiers(forTerminalAppName name: String) -> [String] {
+        let lowered = name.lowercased()
+        for app in knownApps where app.displayName.lowercased() == lowered
+            || app.aliases.contains(lowered) {
+            return app.allBundleIdentifiers
+        }
+        return []
+    }
+
     /// Bundle identifiers of JetBrains IDEs.
     private static let jetbrainsBundleIDs: Set<String> = Set(
         knownApps

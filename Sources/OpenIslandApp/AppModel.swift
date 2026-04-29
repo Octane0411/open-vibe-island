@@ -823,6 +823,10 @@ final class AppModel {
 
     // MARK: - Bridge observer connection
 
+    private static let terminalAppsWithSessionLevelProbe: Set<String> = [
+        "ghostty", "terminal", "iterm",
+    ]
+
     private static let bridgeReconnectDelay: Duration = .seconds(2)
     private static let bridgeMaxReconnectDelay: Duration = .seconds(30)
 
@@ -1274,10 +1278,39 @@ final class AppModel {
                 return
             }
 
-            let shouldSuppress = await self.isNotificationSessionAlreadyFrontmost(session)
+            var shouldSuppress = await self.isNotificationSessionAlreadyFrontmost(session)
+            let isCursorIDEAgent = session.tool == .cursor
+
+            // Ghostty, Terminal.app, and iTerm2 have session-level probes
+            // (AppleScript) that correctly match the focused tab.  All other
+            // apps use a coarser app-level bundle-ID check that would
+            // over-suppress when multiple conversations share the same app.
+            // IDE-based agents (Cursor) are exempt: the user is already
+            // inside the IDE and can see agent activity directly.
+            if shouldSuppress {
+                let terminalApp = session.jumpTarget?.terminalApp.lowercased() ?? ""
+                let hasSessionLevelProbe = Self.terminalAppsWithSessionLevelProbe.contains(terminalApp)
+                if !hasSessionLevelProbe && !isCursorIDEAgent {
+                    let sameToolCount = self.state.sessions.filter {
+                        $0.tool == session.tool
+                            && $0.isVisibleInIsland
+                            && ($0.jumpTarget?.terminalApp.lowercased() ?? "") == terminalApp
+                    }.count
+                    if sameToolCount > 1 {
+                        shouldSuppress = false
+                    }
+                }
+            }
+
             guard !Task.isCancelled,
-                  !shouldSuppress,
                   self.notificationSurfaceIsEligibleForPresentation(surface, ingress: ingress) else {
+                return
+            }
+
+            if shouldSuppress {
+                if isCursorIDEAgent {
+                    self.notchPop()
+                }
                 return
             }
 

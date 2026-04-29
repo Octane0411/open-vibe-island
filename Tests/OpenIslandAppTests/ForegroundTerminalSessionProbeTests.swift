@@ -75,4 +75,69 @@ final class ForegroundTerminalSessionProbeTests: XCTestCase {
 
         XCTAssertFalse(matches)
     }
+
+    // MARK: - Cursor fast-path (session-level)
+
+    func testCursorSessionMatchesWhenCursorIsFrontmostEvenWithoutJumpTarget() async {
+        let probe = ForegroundTerminalSessionProbe(
+            frontmostBundleIdentifierProvider: { "com.todesktop.230313mzl4w4u92" },
+            appleScriptRunner: { _ in "" }
+        )
+
+        let session = AgentSession(
+            id: "cursor-1",
+            title: "Cursor · project",
+            tool: .cursor,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Running",
+            updatedAt: Date()
+        )
+
+        let result = await probe.matches(session: session)
+        XCTAssertTrue(result)
+    }
+
+    func testCursorSessionDoesNotMatchWhenDifferentAppIsFrontmost() async {
+        let probe = ForegroundTerminalSessionProbe(
+            frontmostBundleIdentifierProvider: { "com.mitchellh.ghostty" },
+            appleScriptRunner: { _ in "" }
+        )
+
+        let session = AgentSession(
+            id: "cursor-1",
+            title: "Cursor · project",
+            tool: .cursor,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Running",
+            updatedAt: Date()
+        )
+
+        let result = await probe.matches(session: session)
+        XCTAssertFalse(result)
+    }
+
+    func testNonCursorSessionWithNilJumpTargetDoesNotMatch() async {
+        let probe = ForegroundTerminalSessionProbe(
+            frontmostBundleIdentifierProvider: { "com.todesktop.230313mzl4w4u92" },
+            appleScriptRunner: { _ in "" }
+        )
+
+        let session = AgentSession(
+            id: "codex-1",
+            title: "Codex · project",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Running",
+            updatedAt: Date()
+        )
+
+        let result = await probe.matches(session: session)
+        XCTAssertFalse(result)
+    }
 }
