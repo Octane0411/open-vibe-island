@@ -261,9 +261,20 @@ export default async ({ client, serverUrl }) => {
 
     // question.asked
     if (t === "question.asked" && p.id && p.sessionID) {
+      const questions = p.questions || [];
+      const questionItems = questions.map(q => ({
+        question: q.question || "",
+        header: q.header || "",
+        options: (q.options || []).map(o => ({
+          label: o.label || "",
+          description: o.description || "",
+        })),
+        multiple: q.multiple || false,
+      }));
       return makePayload("QuestionAsked", p.sessionID, sessionCwd.get(p.sessionID), {
         question_id: p.id,
-        question_text: (p.questions || []).map(q => q.question).join("; ") || "OpenCode has a question",
+        question_text: questions.map(q => q.question).join("; ") || "OpenCode has a question",
+        question_items: questionItems,
         _opencode_request_id: p.id,
       });
     }
