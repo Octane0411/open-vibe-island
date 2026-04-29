@@ -496,20 +496,6 @@ struct AppModelSessionListTests {
     }
 
     @Test
-    func idleEdgeModeOnlyAppliesWhileCollapsed() {
-        let model = AppModel()
-        let originalSetting = model.hideIdleIslandToEdge
-        defer { model.hideIdleIslandToEdge = originalSetting }
-        model.hideIdleIslandToEdge = true
-
-        model.notchStatus = .closed
-        #expect(model.showsIdleEdgeWhenCollapsed)
-
-        model.notchStatus = .opened
-        #expect(!model.showsIdleEdgeWhenCollapsed)
-    }
-
-    @Test
     func completionNotificationRequiresSurfaceEntryBeforePointerExitCollapse() {
         let model = AppModel()
         // Add a completed session so autoDismissesWhenPresentedAsNotification can check phase

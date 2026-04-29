@@ -34,7 +34,6 @@ final class OverlayPanelController {
     private static let completionCardChromeHeight: CGFloat = 187
     private static let completionCardMinHeight: CGFloat = 210
     private static let completionCardMaxHeight: CGFloat = 400
-    private static let hiddenIdleEdgeHoverHitHeight: CGFloat = 8
 
     private var panel: NotchPanel?
     private var eventMonitors = NotchEventMonitors()
@@ -282,12 +281,7 @@ final class OverlayPanelController {
         hoverCancelGrace?.cancel()
         hoverCancelGrace = nil
 
-        guard let model else { return }
-
-        if model.showsIdleEdgeWhenCollapsed {
-            performHoverOpen(model)
-            return
-        }
+        guard model != nil else { return }
 
         guard hoverTimer == nil else { return }
 
@@ -413,21 +407,6 @@ final class OverlayPanelController {
         )
     }
 
-    nonisolated static func hiddenIdleEdgeHoverRect(
-        notchRect: NSRect,
-        closedWidth: CGFloat,
-        hoverHitHeight: CGFloat
-    ) -> NSRect {
-        let cx = notchRect.midX
-        let effectiveHeight = min(notchRect.height, max(1, hoverHitHeight))
-        return NSRect(
-            x: cx - closedWidth / 2,
-            y: notchRect.maxY - effectiveHeight,
-            width: closedWidth,
-            height: effectiveHeight
-        )
-    }
-
     nonisolated static func rectContainsIncludingEdges(_ rect: NSRect, point: NSPoint) -> Bool {
         point.x >= rect.minX
             && point.x <= rect.maxX
@@ -435,31 +414,23 @@ final class OverlayPanelController {
             && point.y <= rect.maxY
     }
 
+    /// Hit-area width of the v6 closed pill.
+    ///
+    /// - On a MacBook (physical notch present) the pill is locked to
+    ///   `44 + notchWidth + 44`, per the v6 design spec.
+    /// - On an external display the width is content-driven; we return a
+    ///   generous fixed hit-area so hover / click detection works without
+    ///   the controller having to introspect live session state.
     nonisolated static func closedPanelWidth(
         notchWidth: CGFloat,
-        notchHeight: CGFloat,
-        liveSessionCount: Int,
-        hasAttention: Bool,
-        notchStatus: NotchStatus,
-        showsIdleEdgeWhenCollapsed: Bool
+        isNotchedDisplay: Bool,
+        notchStatus: NotchStatus
     ) -> CGFloat {
-        let popWidth = notchStatus == .popping ? 18 : 0
-
-        guard !showsIdleEdgeWhenCollapsed else {
-            return notchWidth + CGFloat(popWidth)
+        let popBonus: CGFloat = notchStatus == .popping ? 18 : 0
+        if isNotchedDisplay {
+            return notchWidth + 88 + popBonus
         }
-
-        guard liveSessionCount > 0 else {
-            return notchWidth
-        }
-
-        let sideWidth = max(0, notchHeight - 12) + 10
-        let digits = max(1, "\(liveSessionCount)".count)
-        let countBadgeWidth = CGFloat(26 + max(0, digits - 1) * 8)
-        let leftWidth = sideWidth + 8 + (hasAttention ? 18 : 0)
-        let rightWidth = max(sideWidth, countBadgeWidth) + (hasAttention ? 18 : 0)
-        let expansionWidth = leftWidth + rightWidth + 16 + (hasAttention ? 6 : 0)
-        return notchWidth + expansionWidth + CGFloat(popWidth)
+        return 360 + popBonus
     }
 
     private func closedSurfaceRect(for model: AppModel) -> NSRect? {
@@ -468,14 +439,6 @@ final class OverlayPanelController {
         }
 
         let closedWidth = closedPanelWidth(for: model, on: screen)
-        if model.showsIdleEdgeWhenCollapsed {
-            return Self.hiddenIdleEdgeHoverRect(
-                notchRect: notchRect,
-                closedWidth: closedWidth,
-                hoverHitHeight: Self.hiddenIdleEdgeHoverHitHeight
-            )
-        }
-
         return Self.closedSurfaceRect(
             notchRect: notchRect,
             closedWidth: closedWidth
@@ -527,18 +490,11 @@ final class OverlayPanelController {
 
     private func closedPanelWidth(for model: AppModel, on screen: NSScreen) -> CGFloat {
         let notchWidth = screen.notchSize.width
-        let notchHeight = screen.islandClosedHeight
-        let spotlightSession = model.surfacedSessions.first(where: { $0.phase.requiresAttention })
-            ?? model.surfacedSessions.first(where: { $0.phase == .running })
-            ?? model.surfacedSessions.first
-
+        let isNotched = screen.safeAreaInsets.top > 0
         return Self.closedPanelWidth(
             notchWidth: notchWidth,
-            notchHeight: notchHeight,
-            liveSessionCount: model.liveSessionCount,
-            hasAttention: spotlightSession?.phase.requiresAttention == true,
-            notchStatus: model.notchStatus,
-            showsIdleEdgeWhenCollapsed: model.showsIdleEdgeWhenCollapsed
+            isNotchedDisplay: isNotched,
+            notchStatus: model.notchStatus
         )
     }
 

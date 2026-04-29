@@ -44,34 +44,26 @@
 "settings.general.languageChinese" = "简体中文";
 "settings.general.languageTraditionalChinese" = "繁體中文";
 
-/* Settings - Appearance */
+/* Settings - Personalization (v6) */
 "settings.tab.appearance" = "個人化";
-"settings.appearance.mode" = "模式";
-"settings.appearance.mode.default" = "預設";
-"settings.appearance.mode.custom" = "自訂";
-"settings.appearance.mode.defaultDesc" = "使用內建的島嶼外觀。切換至自訂可個人化顏色、圖形樣式和版面配置。";
 "settings.appearance.preview" = "預覽";
-"settings.appearance.preview.sessions" = "個工作階段";
-"settings.appearance.style" = "樣式";
-"settings.appearance.closedStyle" = "收起樣式";
-"settings.appearance.style.minimal" = "簡潔";
-"settings.appearance.style.detailed" = "詳細";
-"settings.appearance.hideIdleToEdge" = "閒置時隱藏至黑邊";
-"settings.appearance.hideIdleToEdge.help" = "當島處於收起狀態且沒有活躍通知卡片時，只保留一條細黑邊。滑鼠懸停或點擊仍可展開。";
-"settings.appearance.pixelShape" = "像素圖形";
-"settings.appearance.pixelShape.bars" = "貓咪";
-"settings.appearance.pixelShape.steps" = "階梯";
-"settings.appearance.pixelShape.blocks" = "方塊";
-"settings.appearance.pixelShape.custom" = "自訂";
-"settings.appearance.avatar.upload" = "上傳圖片";
-"settings.appearance.avatar.remove" = "移除";
-"settings.appearance.avatar.help" = "支援 PNG、JPEG、HEIC、TIFF，最大 10 MB。";
-"settings.appearance.statusColors" = "狀態顏色";
-"settings.appearance.status.running" = "執行中";
-"settings.appearance.status.approval" = "等待核准";
-"settings.appearance.status.answer" = "等待回答";
-"settings.appearance.status.completed" = "已完成";
-"settings.appearance.communityNote" = "這裡的大部分內容由社群建構。\n有自己的 vibe？歡迎提 PR。";
+"settings.appearance.preview.external" = "外接螢幕";
+"settings.appearance.preview.macbook" = "MacBook";
+"settings.appearance.state.idle" = "閒置";
+"settings.appearance.state.running" = "執行";
+"settings.appearance.state.waiting" = "等待";
+"settings.appearance.state.auto.on" = "自動 ✓";
+"settings.appearance.state.auto.off" = "自動";
+"settings.appearance.rightSlot.title" = "01 · 右側槽";
+"settings.appearance.rightSlot.note" = "收起狀態下 notch 右側顯示的內容。";
+"settings.appearance.rightSlot.count" = "會話數";
+"settings.appearance.rightSlot.agents" = "Agents";
+"settings.appearance.rightSlot.none" = "不顯示";
+"settings.appearance.centerLabel.title" = "02 · 中央標籤";
+"settings.appearance.centerLabel.note" = "僅外接螢幕顯示 — MacBook 的物理凹槽會遮擋中央區域。";
+"settings.appearance.centerLabel.agentAction" = "Agent · 動作";
+"settings.appearance.centerLabel.sessionName" = "會話名";
+"settings.appearance.centerLabel.off" = "關閉";
 
 /* Settings - Display */
 "settings.display.monitor" = "顯示器";

@@ -8,6 +8,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
     public var summary: String
     public var phase: SessionPhase
     public var updatedAt: Date
+    public var firstSeenAt: Date?
     public var jumpTarget: JumpTarget?
     public var claudeMetadata: ClaudeSessionMetadata?
 
@@ -19,6 +20,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
         summary: String,
         phase: SessionPhase,
         updatedAt: Date,
+        firstSeenAt: Date? = nil,
         jumpTarget: JumpTarget? = nil,
         claudeMetadata: ClaudeSessionMetadata? = nil
     ) {
@@ -29,6 +31,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
         self.summary = summary
         self.phase = phase
         self.updatedAt = updatedAt
+        self.firstSeenAt = firstSeenAt
         self.jumpTarget = jumpTarget
         self.claudeMetadata = claudeMetadata
     }
@@ -42,6 +45,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
             summary: session.summary,
             phase: session.phase,
             updatedAt: session.updatedAt,
+            firstSeenAt: session.firstSeenAt,
             jumpTarget: session.jumpTarget,
             claudeMetadata: session.claudeMetadata
         )
@@ -57,6 +61,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
             phase: phase,
             summary: summary,
             updatedAt: updatedAt,
+            firstSeenAt: firstSeenAt,
             jumpTarget: jumpTarget,
             claudeMetadata: claudeMetadata
         )
@@ -76,6 +81,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
         case summary
         case phase
         case updatedAt
+        case firstSeenAt
         case jumpTarget
         case claudeMetadata
     }
@@ -89,6 +95,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
         summary = try container.decode(String.self, forKey: .summary)
         phase = try container.decode(SessionPhase.self, forKey: .phase)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        firstSeenAt = try container.decodeIfPresent(Date.self, forKey: .firstSeenAt)
         jumpTarget = try container.decodeIfPresent(JumpTarget.self, forKey: .jumpTarget)
         claudeMetadata = try container.decodeIfPresent(ClaudeSessionMetadata.self, forKey: .claudeMetadata)
     }
@@ -102,6 +109,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
         try container.encode(summary, forKey: .summary)
         try container.encode(phase, forKey: .phase)
         try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encodeIfPresent(firstSeenAt, forKey: .firstSeenAt)
         try container.encodeIfPresent(jumpTarget, forKey: .jumpTarget)
         try container.encodeIfPresent(claudeMetadata, forKey: .claudeMetadata)
     }

@@ -997,6 +997,84 @@ struct SessionStateTests {
         let legacy = try JSONDecoder().decode(JumpTarget.self, from: legacyJSON)
         #expect(legacy.warpPaneUUID == nil)
     }
+
+    @Test
+    func firstSeenAtIsWrittenOnceAndPreservedAcrossSubsequentEvents() {
+        let t0 = Date(timeIntervalSince1970: 10_000)
+        var state = SessionState()
+        state.apply(.sessionStarted(SessionStarted(
+            sessionID: "s-1",
+            title: "First boot",
+            tool: .claudeCode,
+            summary: "Starting",
+            timestamp: t0
+        )))
+
+        #expect(state.session(id: "s-1")?.firstSeenAt == t0)
+
+        // A repeated sessionStarted (e.g. hook reconnect) must preserve the
+        // original firstSeenAt even though the payload timestamp is later.
+        state.apply(.sessionStarted(SessionStarted(
+            sessionID: "s-1",
+            title: "Re-attached",
+            tool: .claudeCode,
+            summary: "Reattached",
+            timestamp: t0.addingTimeInterval(120)
+        )))
+        #expect(state.session(id: "s-1")?.firstSeenAt == t0)
+        #expect(state.session(id: "s-1")?.updatedAt == t0.addingTimeInterval(120))
+
+        // Activity updates leave firstSeenAt untouched.
+        state.apply(.activityUpdated(SessionActivityUpdated(
+            sessionID: "s-1",
+            summary: "Working",
+            phase: .running,
+            timestamp: t0.addingTimeInterval(240)
+        )))
+        #expect(state.session(id: "s-1")?.firstSeenAt == t0)
+    }
+
+    @Test
+    func firstSeenAtPersistsThroughRegistryRoundTrip() throws {
+        let t0 = Date(timeIntervalSince1970: 20_000)
+        let session = AgentSession(
+            id: "claude-1",
+            title: "Repo",
+            tool: .claudeCode,
+            phase: .running,
+            summary: "Working",
+            updatedAt: t0.addingTimeInterval(60),
+            firstSeenAt: t0
+        )
+        let record = ClaudeTrackedSessionRecord(session: session)
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(record)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(ClaudeTrackedSessionRecord.self, from: data)
+
+        #expect(decoded.firstSeenAt == t0)
+        #expect(decoded.session.firstSeenAt == t0)
+
+        // Legacy records without firstSeenAt decode cleanly and fall back to
+        // updatedAt on the restored AgentSession.
+        let legacyJSON = """
+        {
+          "attachmentState": "stale",
+          "phase": "running",
+          "sessionID": "claude-legacy",
+          "summary": "Legacy",
+          "title": "Legacy",
+          "updatedAt": "2026-01-01T00:00:00Z"
+        }
+        """.data(using: .utf8)!
+        let legacy = try decoder.decode(ClaudeTrackedSessionRecord.self, from: legacyJSON)
+        #expect(legacy.firstSeenAt == nil)
+        let legacyUpdated = ISO8601DateFormatter().date(from: "2026-01-01T00:00:00Z")
+        #expect(legacy.session.firstSeenAt == legacyUpdated)
+    }
 }
 
 private enum SessionStateTestError: Error {

@@ -1,0 +1,331 @@
+@import url('styles_v3.css');
+
+/* ========== v7 — the pill IS the panel ========== */
+
+/* Stage — simulates a menu bar / wallpaper area */
+.v7-stage {
+  position: relative;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.v7-stage[data-wall="plum"]   { background: linear-gradient(135deg, #3c2344, #5f2e58 60%, #a8517a); }
+.v7-stage[data-wall="slate"]  { background: linear-gradient(135deg, #1e2530, #3a4a5c); }
+.v7-stage[data-wall="forest"] { background: linear-gradient(135deg, #1b2e22, #3a5a3f); }
+.v7-stage[data-wall="sand"]   { background: linear-gradient(135deg, #c8a576, #e8d4a0 60%, #f1ead9); }
+
+.v7-stage .menubar {
+  height: 28px; display: flex; align-items: center; padding: 0 14px;
+  background: rgba(0,0,0,0.28); backdrop-filter: blur(8px);
+  color: #f1ead9; font-size: 12px; position: relative; z-index: 1;
+}
+.v7-stage .menubar b { font-weight: 700; margin-right: 12px; }
+.v7-stage .menubar .m { opacity: 0.8; margin-right: 10px; }
+.v7-stage .menubar .spacer { flex: 1; }
+.v7-stage .menubar .time { font-family: 'JetBrains Mono', monospace; font-size: 11px; opacity: 0.75; }
+
+.v7-stage .desktop-fill {
+  height: 48px; background: transparent;
+}
+
+/* ------- THE PILL (shared shape for notch + expanded panel) ------- */
+/* This is the single unified shape. Top edge = 0. Rounds at bottom corners.
+   Content lives inside. Uses CSS `clip-path`: flat-top rect with rounded bottom corners.
+   We fake `border-radius: 0 0 R R` — because top is flush with screen edge.
+   For MacBook the physical notch is drawn on top as a separate pure-black path
+   that continues from the pill; the pill hugs its edges. */
+.oi-pill {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #0a0a0e;
+  color: #f1ead9;
+  font-family: 'Inter', sans-serif;
+  border-radius: 0 0 22px 22px;
+  box-shadow: 0 22px 50px rgba(0,0,0,0.5), 0 4px 14px rgba(0,0,0,0.3);
+  overflow: hidden;
+  transition:
+    width 0.5s cubic-bezier(.4,0,.2,1),
+    height 0.5s cubic-bezier(.4,0,.2,1),
+    border-radius 0.4s cubic-bezier(.4,0,.2,1);
+  z-index: 3;
+  will-change: width, height;
+}
+/* When notch collapsed (small), bottom corners are fully rounded to a pill */
+.oi-pill[data-mode="notch"] {
+  border-radius: 0 0 16px 16px;
+}
+/* Panel mode — bigger radius */
+.oi-pill[data-mode="panel"] {
+  border-radius: 0 0 22px 22px;
+}
+/* Notification mode — a rounded rectangle below, still flat top */
+.oi-pill[data-mode="notif"] {
+  border-radius: 0 0 22px 22px;
+}
+
+/* Top strip = the original notch — stays fixed at the top edge.
+   Inside the pill, the top 32px is reserved for the notch-row (glyph left, right slot). */
+.oi-notch-row {
+  height: 32px;
+  display: flex; align-items: center;
+  padding: 0 14px;
+  position: relative;
+}
+.oi-notch-row .glyph { width: 24px; height: 24px; display: grid; place-items: center; }
+.oi-notch-row .label {
+  margin-left: 6px; font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px; font-weight: 500; color: #f1ead9;
+  white-space: nowrap;
+}
+.oi-notch-row .spacer { flex: 1; }
+.oi-notch-row .right  {
+  font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+  color: rgba(241,234,217,0.75);
+  display: flex; align-items: center; gap: 6px;
+}
+
+/* MacBook mode — a physical notch is the visible top middle of the pill.
+   The pill must be WIDER than the physical notch, and content routes around it. */
+.oi-pill.macbook .oi-notch-row {
+  /* reserve center for physical notch, left glyph, right slot */
+  justify-content: space-between;
+}
+.oi-pill.macbook .oi-notch-row .phys-gap {
+  width: 180px;   /* matches physical notch */
+  pointer-events: none;
+}
+
+/* Usage strip — only visible in panel mode */
+.oi-usage {
+  display: flex; align-items: center; gap: 14px;
+  padding: 8px 16px 10px;
+  font-family: 'JetBrains Mono', monospace; font-size: 11.5px;
+  border-top: 1px solid rgba(255,255,255,0.05);
+}
+.oi-usage .lbl { font-weight: 600; }
+.oi-usage .lbl.claude { color: #e7a762; }
+.oi-usage .lbl.codex  { color: #8cb7ff; }
+.oi-usage .u { color: rgba(241,234,217,0.55); }
+.oi-usage .u b { color: #f1ead9; font-weight: 600; }
+.oi-usage .u.hot b { color: #e7a762; }
+.oi-usage .u.ok  b { color: #6fb982; }
+.oi-usage .sep { color: rgba(241,234,217,0.18); }
+.oi-usage .spacer { flex: 1; }
+.oi-usage .icon-btn {
+  width: 24px; height: 24px; display: grid; place-items: center;
+  border-radius: 6px; background: transparent; border: none;
+  color: rgba(241,234,217,0.55); cursor: pointer;
+}
+.oi-usage .icon-btn:hover { background: rgba(255,255,255,0.06); color: #f1ead9; }
+
+/* Session rows */
+.oi-list { padding: 0; }
+.oi-row {
+  display: grid; grid-template-columns: 20px 1fr auto; gap: 10px; align-items: center;
+  padding: 11px 16px;
+  border-top: 1px solid rgba(255,255,255,0.04);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.oi-row:hover { background: rgba(255,255,255,0.03); }
+.oi-row.compact { padding: 7px 16px; }
+
+.state-dot {
+  width: 8px; height: 8px; border-radius: 50%; justify-self: center; position: relative;
+}
+.state-dot.idle    { background: #6fb982; }
+.state-dot.running { background: #6ea7ff; }
+.state-dot.waiting { background: #e7a762; }
+.state-dot.done    { background: rgba(241,234,217,0.35); }
+.state-dot.running::after, .state-dot.waiting::after {
+  content: ''; position: absolute; inset: -4px; border-radius: 50%;
+  border: 1.5px solid currentColor; opacity: 0.35;
+  animation: dot-pulse 1.6s ease-out infinite;
+}
+.state-dot.running::after { color: #6ea7ff; }
+.state-dot.waiting::after { color: #e7a762; }
+@keyframes dot-pulse {
+  0%   { transform: scale(0.7); opacity: 0.6; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
+
+.oi-row .oi-main { min-width: 0; }
+.oi-row .title {
+  font-size: 13px; font-weight: 500; letter-spacing: -0.005em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.oi-row .title .proj { font-weight: 600; }
+.oi-row .title .branch { color: rgba(241,234,217,0.55); font-weight: 400; }
+.oi-row .title .msg { color: rgba(241,234,217,0.7); font-weight: 400; }
+.oi-row .title .sep { color: rgba(241,234,217,0.22); margin: 0 6px; }
+.oi-row .sub {
+  font-size: 11.5px; color: rgba(241,234,217,0.52); margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.oi-row .sub .you { color: rgba(241,234,217,0.35); font-family: 'JetBrains Mono', monospace; font-size: 10.5px; }
+
+.oi-row .side { display: flex; align-items: center; gap: 6px; }
+.oi-badge {
+  font-size: 10.5px; padding: 3px 8px; border-radius: 999px;
+  background: rgba(255,255,255,0.06); color: rgba(241,234,217,0.7);
+  white-space: nowrap;
+}
+.oi-badge.claude { background: rgba(231,167,98,0.13); color: #e7a762; }
+.oi-badge.codex  { background: rgba(140,183,255,0.13); color: #8cb7ff; }
+.oi-age {
+  font-size: 10.5px; color: rgba(241,234,217,0.45);
+  font-family: 'JetBrains Mono', monospace;
+  min-width: 32px; text-align: right;
+}
+
+/* Expanded detail (inline) */
+.oi-detail {
+  padding: 6px 16px 12px 42px;
+  font-size: 11.5px; color: rgba(241,234,217,0.65); line-height: 1.55;
+  border-top: 1px dashed rgba(255,255,255,0.06);
+  background: rgba(255,255,255,0.015);
+}
+.oi-detail .k {
+  font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.12em;
+  color: rgba(241,234,217,0.35);
+  margin-top: 8px; margin-bottom: 3px;
+}
+.oi-detail .acts { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.oi-detail .act {
+  font-size: 11px; padding: 5px 10px; border-radius: 6px;
+  background: rgba(255,255,255,0.06); color: #f1ead9;
+  border: 1px solid rgba(255,255,255,0.06);
+  font-family: 'JetBrains Mono', monospace; cursor: pointer;
+}
+.oi-detail .act:hover { background: rgba(255,255,255,0.1); }
+.oi-detail .act.primary { background: #f1ead9; color: #0a0a0e; border-color: #f1ead9; }
+
+/* Empty */
+.oi-empty {
+  padding: 40px 20px; text-align: center;
+  color: rgba(241,234,217,0.45);
+  display: grid; gap: 10px; justify-items: center;
+}
+.oi-empty .t { font-size: 14px; color: #f1ead9; font-weight: 500; }
+.oi-empty .h { font-size: 12px; max-width: 280px; line-height: 1.55; }
+.oi-empty .h code {
+  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 4px;
+  color: rgba(241,234,217,0.75);
+}
+
+/* ------- Notification mode content (lives inside pill, just like Dynamic Island) ------- */
+.oi-notif-body { padding: 4px 16px 14px; }
+.oi-notif-body .title {
+  font-size: 14px; font-weight: 600; letter-spacing: -0.005em; line-height: 1.35;
+  color: #f1ead9;
+}
+.oi-notif-body .sub {
+  font-size: 11.5px; color: rgba(241,234,217,0.5); margin-top: 2px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.oi-notif-body .code {
+  margin-top: 10px;
+  font-family: 'JetBrains Mono', monospace; font-size: 11.5px;
+  color: rgba(241,234,217,0.72);
+  background: rgba(255,255,255,0.04);
+  padding: 10px 12px; border-radius: 10px;
+  white-space: pre-wrap; word-break: break-all; line-height: 1.55;
+  border: 1px solid rgba(255,255,255,0.05);
+}
+.oi-notif-body .acts { display: flex; gap: 8px; margin-top: 12px; }
+.oi-notif-body .acts.wrap { flex-wrap: wrap; }
+.oi-notif-body .acts .btn {
+  flex: 1; min-width: 90px; padding: 9px 12px; border-radius: 10px;
+  font-size: 12px; font-weight: 500; cursor: pointer;
+  background: rgba(255,255,255,0.06); color: #f1ead9;
+  border: 1px solid rgba(255,255,255,0.07);
+  font-family: 'Inter', sans-serif;
+}
+.oi-notif-body .acts .btn:hover { background: rgba(255,255,255,0.1); }
+.oi-notif-body .acts .btn.primary { background: #f1ead9; color: #0a0a0e; border-color: #f1ead9; }
+.oi-notif-body .acts .btn.primary:hover { background: #fff; }
+.oi-notif-body .acts .btn.danger { color: #e7786a; }
+.oi-notif-body .hint {
+  margin-top: 10px; text-align: center;
+  font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+  color: rgba(241,234,217,0.4);
+}
+.oi-notif-body .hint kbd {
+  background: rgba(255,255,255,0.08); color: #f1ead9;
+  padding: 1px 6px; border-radius: 4px; margin: 0 2px;
+  border: 1px solid rgba(255,255,255,0.1);
+  font-family: 'JetBrains Mono', monospace; font-size: 10px;
+}
+
+/* ------- Variation card ------- */
+.v7-grid { display: grid; gap: 24px; grid-template-columns: 1fr; }
+.v7-grid.two  { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.v7-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+.v7-card { display: grid; gap: 10px; }
+.v7-card .label {
+  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  color: rgba(241,234,217,0.55); display: flex; align-items: center; gap: 8px;
+}
+.v7-card .label .num { color: #d97742; }
+.v7-card .label .name { color: #f1ead9; font-family: 'Inter', sans-serif; font-weight: 500; font-size: 13px; }
+.v7-card .hint { font-size: 11px; color: rgba(154,154,168,0.8); line-height: 1.55; }
+
+.mini-stage {
+  position: relative;
+  border-radius: 14px; overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.06);
+  display: flex; justify-content: center; align-items: flex-start;
+  padding-bottom: 30px;
+}
+/* Inside mini-stage, the pill becomes in-flow so container sizes around it */
+.mini-stage .oi-pill {
+  position: relative;
+  left: auto; top: auto; transform: none;
+  margin: 0 auto;
+  align-self: flex-start;  /* hug the top edge */
+}
+.mini-stage[data-wall="plum"]   { background: linear-gradient(135deg, #3c2344, #5f2e58 60%, #a8517a); }
+.mini-stage[data-wall="slate"]  { background: linear-gradient(135deg, #1e2530, #3a4a5c); }
+.mini-stage[data-wall="forest"] { background: linear-gradient(135deg, #1b2e22, #3a5a3f); }
+.mini-stage[data-wall="sand"]   { background: linear-gradient(135deg, #c8a576, #e8d4a0 60%, #f1ead9); }
+
+/* Mini-preview: pill centered at top, scales with card width */
+.v7-card .mini-stage { width: 100%; }
+.v7-card .mini-stage .oi-pill { max-width: calc(100% - 24px); }
+.v7-live {
+  position: relative;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+
+/* Floating trigger controls */
+.v7-triggers {
+  position: absolute; right: 14px; top: 44px; z-index: 8;
+  display: flex; flex-direction: column; gap: 5px;
+}
+.v7-triggers .t-hd {
+  font-family: 'JetBrains Mono', monospace; font-size: 9.5px;
+  color: rgba(255,255,255,0.5); text-transform: uppercase;
+  letter-spacing: 0.12em; margin-bottom: 2px;
+}
+.v7-triggers button {
+  background: rgba(0,0,0,0.5); backdrop-filter: blur(8px);
+  color: #f1ead9; border: 1px solid rgba(255,255,255,0.12);
+  padding: 6px 10px; border-radius: 7px; font-size: 11px;
+  font-family: 'JetBrains Mono', monospace; cursor: pointer;
+  text-align: left;
+}
+.v7-triggers button.on { background: #f1ead9; color: #0a0a0e; border-color: #f1ead9; }
+
+@media (max-width: 1100px) {
+  .v7-grid.three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  .v7-grid.three, .v7-grid.two { grid-template-columns: 1fr; }
+}

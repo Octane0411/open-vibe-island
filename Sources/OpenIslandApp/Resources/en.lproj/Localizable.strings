@@ -44,34 +44,26 @@
 "settings.general.languageChinese" = "Chinese (Simplified)";
 "settings.general.languageTraditionalChinese" = "Chinese (Traditional)";
 
-/* Settings - Appearance */
-"settings.tab.appearance" = "Appearance";
-"settings.appearance.mode" = "Mode";
-"settings.appearance.mode.default" = "Default";
-"settings.appearance.mode.custom" = "Custom";
-"settings.appearance.mode.defaultDesc" = "Use the built-in island appearance. Switch to Custom to personalize colors, glyph style, and layout.";
+/* Settings - Personalization (v6) */
+"settings.tab.appearance" = "Personalization";
 "settings.appearance.preview" = "Preview";
-"settings.appearance.preview.sessions" = "sessions";
-"settings.appearance.style" = "Style";
-"settings.appearance.closedStyle" = "Closed Style";
-"settings.appearance.style.minimal" = "Minimal";
-"settings.appearance.style.detailed" = "Detailed";
-"settings.appearance.hideIdleToEdge" = "Hide To Edge When Idle";
-"settings.appearance.hideIdleToEdge.help" = "When the island is collapsed without an active notification card, keep only a thin black edge visible. Hovering or clicking still opens it.";
-"settings.appearance.pixelShape" = "Pixel Glyph";
-"settings.appearance.pixelShape.bars" = "Cat";
-"settings.appearance.pixelShape.steps" = "Steps";
-"settings.appearance.pixelShape.blocks" = "Blocks";
-"settings.appearance.pixelShape.custom" = "Custom";
-"settings.appearance.avatar.upload" = "Upload Image";
-"settings.appearance.avatar.remove" = "Remove";
-"settings.appearance.avatar.help" = "Supports PNG, JPEG, HEIC, TIFF. Max 10 MB.";
-"settings.appearance.statusColors" = "Status Colors";
-"settings.appearance.status.running" = "Running";
-"settings.appearance.status.approval" = "Approval";
-"settings.appearance.status.answer" = "Answer";
-"settings.appearance.status.completed" = "Completed";
-"settings.appearance.communityNote" = "Much of this was built by the community.\nGot your own vibe? We'd love a PR.";
+"settings.appearance.preview.external" = "External";
+"settings.appearance.preview.macbook" = "MacBook";
+"settings.appearance.state.idle" = "idle";
+"settings.appearance.state.running" = "running";
+"settings.appearance.state.waiting" = "waiting";
+"settings.appearance.state.auto.on" = "auto ✓";
+"settings.appearance.state.auto.off" = "auto";
+"settings.appearance.rightSlot.title" = "01 · Right slot";
+"settings.appearance.rightSlot.note" = "What shows on the right of the closed island.";
+"settings.appearance.rightSlot.count" = "Count";
+"settings.appearance.rightSlot.agents" = "Agents";
+"settings.appearance.rightSlot.none" = "None";
+"settings.appearance.centerLabel.title" = "02 · Center label";
+"settings.appearance.centerLabel.note" = "External displays only — the physical notch covers this space on MacBook.";
+"settings.appearance.centerLabel.agentAction" = "Agent · action";
+"settings.appearance.centerLabel.sessionName" = "Session name";
+"settings.appearance.centerLabel.off" = "Off";
 
 /* Settings - Display */
 "settings.display.monitor" = "Monitor";

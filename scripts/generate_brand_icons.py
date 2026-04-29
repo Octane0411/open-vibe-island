@@ -289,22 +289,24 @@ def render_badge(size: int) -> Image.Image:
 
 
 def write_app_icons() -> None:
-    cat_icon_path = BRAND_ROOT / "app-icon-cat.png"
-    if cat_icon_path.exists():
-        src = Image.open(cat_icon_path).convert("RGBA")
-        for filename, _, _, pixel_size in APP_ICON_SPECS:
-            canvas = Image.new("RGBA", (pixel_size, pixel_size), (0, 0, 0, 0))
-            content_size = max(1, round(pixel_size * MACOS_ICON_CONTENT_RATIO))
-            offset = (pixel_size - content_size) // 2
-            resized = src.resize((content_size, content_size), Image.Resampling.LANCZOS)
-            canvas.alpha_composite(resized, (offset, offset))
-            canvas.save(APP_ICONSET_DIR / filename)
-            canvas.save(ICONSET_DIR / filename)
-    else:
-        for filename, _, _, pixel_size in APP_ICON_SPECS:
-            icon = render_app_icon(pixel_size)
-            icon.save(APP_ICONSET_DIR / filename)
-            icon.save(ICONSET_DIR / filename)
+    # v6 Bar+Dot master is the sole source. Run
+    # `swift scripts/generate-v6-appicon.swift` if it's missing.
+    source_path = BRAND_ROOT / "app-icon-v6.png"
+    if not source_path.exists():
+        raise SystemExit(
+            f"missing brand master at {source_path.relative_to(REPO_ROOT)} — "
+            "run `swift scripts/generate-v6-appicon.swift` first"
+        )
+
+    src = Image.open(source_path).convert("RGBA")
+    for filename, _, _, pixel_size in APP_ICON_SPECS:
+        canvas = Image.new("RGBA", (pixel_size, pixel_size), (0, 0, 0, 0))
+        content_size = max(1, round(pixel_size * MACOS_ICON_CONTENT_RATIO))
+        offset = (pixel_size - content_size) // 2
+        resized = src.resize((content_size, content_size), Image.Resampling.LANCZOS)
+        canvas.alpha_composite(resized, (offset, offset))
+        canvas.save(APP_ICONSET_DIR / filename)
+        canvas.save(ICONSET_DIR / filename)
 
 
 def write_internal_assets() -> None:

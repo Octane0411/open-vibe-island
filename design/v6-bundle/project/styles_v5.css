@@ -1,0 +1,32 @@
+/* v5 additions — stacked on top of v3 base */
+@import url('styles_v3.css');
+
+.sym-section { padding-bottom: 40px; border-bottom: 1px solid var(--line); }
+.sym-section:last-of-type { border-bottom: none; }
+
+.sym-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+.sym-col { background: var(--bg-soft); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+.col-hd { font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-mute); margin-bottom: 12px; font-family: 'JetBrains Mono', monospace; }
+
+.sym-col-notch { min-height: 140px; }
+.sym-col-logo, .sym-col-app { display: flex; flex-direction: column; align-items: stretch; }
+.logo-plate { flex: 1; display: grid; place-items: center; border-radius: 10px; min-height: 120px; }
+.logo-plate[data-tone="paper"] { background: #f1ead9; }
+.logo-plate[data-tone="ink"] { background: #0d0d0f; }
+.logo-plate[data-tone="bw"] { background: #fff; }
+.sym-col-app > div:last-child { margin: 0 auto; }
+
+.sym-notes { background: #13131a; border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; font-size: 12.5px; line-height: 1.6; color: var(--ink-soft); margin-bottom: 18px; }
+.sym-notes .k { color: var(--ink-mute); font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+.sym-notes > div + div { margin-top: 4px; }
+
+.wild { background: #13131a; border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+
+@media (max-width: 1100px) {
+  .sym-row { grid-template-columns: 1fr; }
+}
