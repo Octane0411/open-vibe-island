@@ -86,4 +86,21 @@ struct CodexHooksTests {
         #expect(payload.warpPaneUUID == nil)
     }
 
+    @Test
+    func codexHookPayloadRoundTripsRemoteFlag() throws {
+        let payload = CodexHookPayload(
+            cwd: "/Users/u/project",
+            hookEventName: .sessionStart,
+            model: "gpt-4o",
+            permissionMode: .default,
+            sessionID: "remote-codex-session",
+            transcriptPath: "/tmp/rollout.jsonl",
+            remote: true
+        )
+
+        let data = try JSONEncoder().encode(payload)
+        let decoded = try JSONDecoder().decode(CodexHookPayload.self, from: data)
+
+        #expect(decoded.remote == true)
+    }
 }

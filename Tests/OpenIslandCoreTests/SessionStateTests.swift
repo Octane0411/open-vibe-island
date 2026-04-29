@@ -557,6 +557,35 @@ struct SessionStateTests {
     }
 
     @Test
+    func codexSessionStartMarksRemoteSessionsAsRemote() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
+
+        let payload = CodexHookPayload(
+            cwd: "/tmp/remote-worktree",
+            hookEventName: .sessionStart,
+            model: "gpt-5-codex",
+            permissionMode: .default,
+            sessionID: "codex-remote-session",
+            transcriptPath: nil,
+            remote: true
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(.processCodexHook(payload))
+
+        var iterator = stream.makeAsyncIterator()
+        let startedEvent = try await nextEvent(from: &iterator)
+
+        #expect(startedEvent.startedSession?.isRemote == true)
+    }
+
+    @Test
     func cursorHookPreservesToolMetadataAcrossNonStopEvents() async throws {
         let socketURL = BridgeSocketLocation.uniqueTestURL()
         let server = BridgeServer(socketURL: socketURL)
@@ -1019,6 +1048,14 @@ private extension AgentEvent {
             true
         } else {
             false
+        }
+    }
+
+    var startedSession: SessionStarted? {
+        if case let .sessionStarted(payload) = self {
+            payload
+        } else {
+            nil
         }
     }
 
