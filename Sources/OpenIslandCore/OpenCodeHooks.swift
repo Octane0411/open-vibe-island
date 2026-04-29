@@ -11,6 +11,30 @@ public enum OpenCodeHookEventName: String, Codable, Sendable {
     case stop = "Stop"
 }
 
+public struct OpenCodeQuestionOption: Equatable, Codable, Sendable {
+    public var label: String
+    public var description: String
+
+    public init(label: String, description: String = "") {
+        self.label = label
+        self.description = description
+    }
+}
+
+public struct OpenCodeQuestionItem: Equatable, Codable, Sendable {
+    public var question: String
+    public var header: String
+    public var options: [OpenCodeQuestionOption]
+    public var multiple: Bool?
+
+    public init(question: String, header: String, options: [OpenCodeQuestionOption] = [], multiple: Bool? = nil) {
+        self.question = question
+        self.header = header
+        self.options = options
+        self.multiple = multiple
+    }
+}
+
 public struct OpenCodeHookPayload: Equatable, Codable, Sendable {
     public var hookEventName: OpenCodeHookEventName
     public var sessionID: String
@@ -22,6 +46,7 @@ public struct OpenCodeHookPayload: Equatable, Codable, Sendable {
     public var permissionDescription: String?
     public var questionID: String?
     public var questionText: String?
+    public var questionItems: [OpenCodeQuestionItem]?
     public var messageContent: String?
     public var model: String?
     public var prompt: String?
@@ -42,6 +67,7 @@ public struct OpenCodeHookPayload: Equatable, Codable, Sendable {
         case permissionDescription = "permission_description"
         case questionID = "question_id"
         case questionText = "question_text"
+        case questionItems = "question_items"
         case messageContent = "message_content"
         case model
         case prompt
@@ -63,6 +89,7 @@ public struct OpenCodeHookPayload: Equatable, Codable, Sendable {
         permissionDescription: String? = nil,
         questionID: String? = nil,
         questionText: String? = nil,
+        questionItems: [OpenCodeQuestionItem]? = nil,
         messageContent: String? = nil,
         model: String? = nil,
         prompt: String? = nil,
@@ -82,6 +109,7 @@ public struct OpenCodeHookPayload: Equatable, Codable, Sendable {
         self.permissionDescription = permissionDescription
         self.questionID = questionID
         self.questionText = questionText
+        self.questionItems = questionItems
         self.messageContent = messageContent
         self.model = model
         self.prompt = prompt

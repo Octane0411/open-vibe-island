@@ -1047,14 +1047,27 @@ public final class BridgeServer: @unchecked Sendable {
             synchronizeOpenCodeMetadata(for: payload)
 
             let questionTitle = payload.questionText ?? "OpenCode has a question for you."
+            let structuredQuestions: [QuestionPromptItem] = (payload.questionItems ?? []).map { item in
+                QuestionPromptItem(
+                    question: item.question,
+                    header: item.header,
+                    options: item.options.map { opt in
+                        QuestionOption(label: opt.label, description: opt.description)
+                    },
+                    multiSelect: item.multiple ?? false
+                )
+            }
+            let prompt: QuestionPrompt
+            if structuredQuestions.isEmpty {
+                prompt = QuestionPrompt(title: questionTitle, options: [])
+            } else {
+                prompt = QuestionPrompt(title: questionTitle, questions: structuredQuestions)
+            }
             emit(
                 .questionAsked(
                     QuestionAsked(
                         sessionID: payload.sessionID,
-                        prompt: QuestionPrompt(
-                            title: questionTitle,
-                            options: []
-                        ),
+                        prompt: prompt,
                         timestamp: .now
                     )
                 )
