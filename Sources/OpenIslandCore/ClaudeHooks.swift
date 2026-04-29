@@ -1236,6 +1236,56 @@ public extension ClaudeHookPayload {
             return "IntelliJ IDEA"  // Fallback for unknown JetBrains IDE
         }
 
+        // Last resort: some launchers (notably certain managed Claude Code
+        // setups) strip TERM_PROGRAM / GHOSTTY_RESOURCES_DIR / ITERM_*
+        // before spawning the hook. Walk the process ancestry and match
+        // the terminal by executable path. Unlike env vars, parent-chain
+        // lookup can't be fooled by GUI inheritance because every pane has
+        // its own real parent.
+        return inferTerminalAppFromProcessAncestry()
+    }
+
+    private func inferTerminalAppFromProcessAncestry() -> String? {
+        var pid = getppid()
+        var hops = 0
+        while pid > 1, hops < 12 {
+            guard let command = commandOutput(
+                executablePath: "/bin/ps",
+                arguments: ["-p", "\(pid)", "-o", "command="]
+            )?.lowercased() else {
+                return nil
+            }
+
+            if let app = Self.terminalAppName(forProcessCommand: command) {
+                return app
+            }
+
+            guard let ppidRaw = commandOutput(
+                executablePath: "/bin/ps",
+                arguments: ["-p", "\(pid)", "-o", "ppid="]
+            )?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  let next = Int32(ppidRaw), next > 1, next != pid else {
+                return nil
+            }
+            pid = next
+            hops += 1
+        }
+        return nil
+    }
+
+    private static func terminalAppName(forProcessCommand command: String) -> String? {
+        if command.contains("/ghostty.app/") || command.contains("ghostty-helper") { return "Ghostty" }
+        if command.contains("/iterm.app/") || command.contains("/iterm2") { return "iTerm" }
+        if command.contains("/warp.app/") || command.contains("/warp-stable") { return "Warp" }
+        if command.contains("/wezterm.app/") || command.contains("wezterm-gui") { return "WezTerm" }
+        if command.contains("/kaku.app/") { return "Kaku" }
+        if command.contains("/cmux.app/") { return "cmux" }
+        if command.contains("/terminal.app/") { return "Terminal" }
+        if command.contains("/visual studio code.app/") || command.contains("/code helper") { return "VS Code" }
+        if command.contains("/visual studio code - insiders.app/") { return "VS Code Insiders" }
+        if command.contains("/cursor.app/") { return "Cursor" }
+        if command.contains("/windsurf.app/") { return "Windsurf" }
+        if command.contains("/trae.app/") { return "Trae" }
         return nil
     }
 
