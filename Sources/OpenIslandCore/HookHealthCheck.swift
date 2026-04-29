@@ -24,6 +24,9 @@ public struct HookHealthReport: Equatable, Sendable {
         case manifestMissing(expectedPath: String)
         /// The OpenCode plugin file is missing even though it should be installed.
         case pluginMissing(expectedPath: String)
+        /// The agent appears to be installed (config dir or settings file exists), but no
+        /// Open Island managed hooks are present in its config — events won't be received.
+        case notInstalled(configPath: String)
 
         public var description: String {
             switch self {
@@ -41,6 +44,8 @@ public struct HookHealthReport: Equatable, Sendable {
                 "Installation manifest missing: \(expectedPath)"
             case .pluginMissing(let expectedPath):
                 "OpenCode plugin file is missing: \(expectedPath)"
+            case .notInstalled(let configPath):
+                "Open Island hooks are not installed in \(configPath) — events won't be received."
             }
         }
 
@@ -55,7 +60,7 @@ public struct HookHealthReport: Equatable, Sendable {
 
         public var isAutoRepairable: Bool {
             switch self {
-            case .staleCommandPath, .binaryNotExecutable, .manifestMissing, .pluginMissing:
+            case .staleCommandPath, .binaryNotExecutable, .manifestMissing, .pluginMissing, .notInstalled:
                 true
             default:
                 false
@@ -124,11 +129,13 @@ public enum HookHealthCheck {
 
         // 2. Check config file
         let settingsPath = settingsURL.path
+        var configMalformed = false
         if fileManager.fileExists(atPath: settingsPath) {
             if let data = try? Data(contentsOf: settingsURL) {
                 // Check JSON validity
                 if (try? JSONSerialization.jsonObject(with: data)) == nil {
                     issues.append(.configMalformedJSON(path: settingsPath))
+                    configMalformed = true
                 } else {
                     // Check command paths in hooks
                     let staleCommands = findStaleCommandPaths(
@@ -151,9 +158,20 @@ public enum HookHealthCheck {
             }
         }
 
-        // 3. Check manifest
-        if fileManager.fileExists(atPath: settingsPath),
-           hasOpenIslandHooks(in: settingsURL, fileManager: fileManager) {
+        // 3. Detect missing Open Island installation. The presence of the
+        // .claude directory is a strong signal that the user runs Claude
+        // Code; if our hooks aren't there we should surface it as an error
+        // rather than silently reporting "all healthy".
+        let claudeDirExists = fileManager.fileExists(atPath: claudeDirectory.path)
+        let openIslandInstalled = !configMalformed
+            && fileManager.fileExists(atPath: settingsPath)
+            && hasOpenIslandHooks(in: settingsURL, fileManager: fileManager)
+        if claudeDirExists && !openIslandInstalled && !configMalformed {
+            issues.append(.notInstalled(configPath: settingsPath))
+        }
+
+        // 4. Check manifest
+        if openIslandInstalled {
             let legacyManifestURL = claudeDirectory.appendingPathComponent(ClaudeHookInstallerManifest.legacyFileName)
             if !fileManager.fileExists(atPath: manifestURL.path) && !fileManager.fileExists(atPath: legacyManifestURL.path) {
                 issues.append(.manifestMissing(expectedPath: manifestURL.path))
@@ -196,10 +214,12 @@ public enum HookHealthCheck {
 
         // 2. Check config file
         let hooksPath = hooksURL.path
+        var configMalformed = false
         if fileManager.fileExists(atPath: hooksPath) {
             if let data = try? Data(contentsOf: hooksURL) {
                 if (try? JSONSerialization.jsonObject(with: data)) == nil {
                     issues.append(.configMalformedJSON(path: hooksPath))
+                    configMalformed = true
                 } else {
                     let staleCommands = findStaleCommandPaths(in: data, fileManager: fileManager)
                     for cmd in staleCommands {
@@ -214,9 +234,18 @@ public enum HookHealthCheck {
             }
         }
 
-        // 3. Check manifest
-        if fileManager.fileExists(atPath: hooksPath),
-           hasOpenIslandHooks(in: hooksURL, fileManager: fileManager) {
+        // 3. Detect missing Open Island installation. See the analogous
+        // block in checkClaude for the rationale.
+        let codexDirExists = fileManager.fileExists(atPath: codexDirectory.path)
+        let openIslandInstalled = !configMalformed
+            && fileManager.fileExists(atPath: hooksPath)
+            && hasOpenIslandHooks(in: hooksURL, fileManager: fileManager)
+        if codexDirExists && !openIslandInstalled && !configMalformed {
+            issues.append(.notInstalled(configPath: hooksPath))
+        }
+
+        // 4. Check manifest
+        if openIslandInstalled {
             let legacyManifestURL = codexDirectory.appendingPathComponent(CodexHookInstallerManifest.legacyFileName)
             if !fileManager.fileExists(atPath: manifestURL.path) && !fileManager.fileExists(atPath: legacyManifestURL.path) {
                 issues.append(.manifestMissing(expectedPath: manifestURL.path))
