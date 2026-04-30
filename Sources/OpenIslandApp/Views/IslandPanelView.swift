@@ -111,6 +111,7 @@ struct IslandPanelView: View {
     @Namespace private var notchNamespace
     @State private var isHovering = false
     @State private var showingQuitConfirmation = false
+    @State private var lastCompletionTimestamp: Date?
 
     private var isOpened: Bool {
         model.notchStatus == .opened
@@ -237,6 +238,11 @@ struct IslandPanelView: View {
         }
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
+        .onChange(of: closedSpotlightSession?.phase) { _, newPhase in
+            if newPhase == .completed {
+                lastCompletionTimestamp = Date()
+            }
+        }
         .alert(model.lang.t("island.quit.confirmTitle"), isPresented: $showingQuitConfirmation) {
             Button(model.lang.t("island.quit.confirmAction"), role: .destructive) {
                 model.quitApplication()
@@ -352,6 +358,19 @@ struct IslandPanelView: View {
         (targetOverlayScreen ?? NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }))?.islandClosedHeight ?? 24
     }
 
+    private var companionState: CompanionState {
+        let recently: Bool
+        if let ts = lastCompletionTimestamp {
+            recently = Date().timeIntervalSince(ts) < 8
+        } else {
+            recently = false
+        }
+        return CompanionState.derive(
+            spotlightPhase: closedSpotlightSession?.phase,
+            recentlyCompleted: recently
+        )
+    }
+
     // MARK: - Header row (shared between closed and opened)
 
     @ViewBuilder
@@ -364,13 +383,18 @@ struct IslandPanelView: View {
                 if hasClosedPresence {
                     HStack(spacing: 4) {
                         if model.isCustomAppearance {
-                            IslandPixelGlyph(
-                                tint: scoutTint,
-                                style: model.islandPixelShapeStyle,
-                                isAnimating: hasClosedActivity,
-                                customAvatarImage: model.customAvatarImage
-                            )
-                            .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
+                            ZStack(alignment: .bottomTrailing) {
+                                IslandPixelGlyph(
+                                    tint: scoutTint,
+                                    style: model.islandPixelShapeStyle,
+                                    isAnimating: hasClosedActivity,
+                                    customAvatarImage: model.customAvatarImage
+                                )
+                                .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
+
+                                CompanionStateOverlay(state: companionState)
+                                    .offset(x: 2, y: 2)
+                            }
                         } else {
                             OpenIslandIcon(size: 14, isAnimating: hasClosedActivity, tint: scoutTint)
                                 .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
