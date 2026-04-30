@@ -40,3 +40,10 @@ public protocol CodeburnRunner: Sendable {
     /// Run `codeburn status --format json`. Returns raw stdout bytes.
     func runStatus(timeout: TimeInterval) async throws -> Data
 }
+
+public extension CodeburnState {
+    var isOk: Bool {
+        if case .ok = self { return true }
+        return false
+    }
+}

@@ -243,6 +243,9 @@ struct IslandPanelView: View {
                 lastCompletionTimestamp = Date()
             }
         }
+        .onChange(of: model.notchStatus, initial: true) { _, newValue in
+            model.setHeaderNeedsCodeburn(newValue == .opened)
+        }
         .alert(model.lang.t("island.quit.confirmTitle"), isPresented: $showingQuitConfirmation) {
             Button(model.lang.t("island.quit.confirmAction"), role: .destructive) {
                 model.quitApplication()
@@ -494,8 +497,16 @@ struct IslandPanelView: View {
             }
         } else {
             HStack(spacing: 12) {
-                openedUsageSummary
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 8) {
+                    openedUsageSummary
+                    if model.codeburnClient?.state.isOk == true {
+                        Text("|")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.3))
+                        DollarTodayPill(state: model.codeburnClient!.state)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 openedHeaderButtons
             }
