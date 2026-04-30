@@ -405,12 +405,20 @@ struct IslandPanelView: View {
 
                 if hasClosedPresence {
                     let attentionBalanceWidth: CGFloat = closedSpotlightSession?.phase.requiresAttention == true ? 18 : 0
-                    ClosedCountBadge(
-                        liveCount: model.liveSessionCount,
-                        tint: closedSpotlightSession?.phase.requiresAttention == true ? .orange : scoutTint
+                    let slotWidth = max(sideWidth, countBadgeWidth) + attentionBalanceWidth
+                    NotchSlotHost(
+                        kind: model.notchWidgetConfig.rightSlot,
+                        availableWidth: slotWidth,
+                        liveSessionCount: model.liveSessionCount,
+                        spotlightTool: closedSpotlightSession?.tool,
+                        spotlightWorkspaceName: closedSpotlightSession?.jumpTarget?.workspaceName,
+                        spotlightWorkspaceKey: closedSpotlightSession?.jumpTarget?.workingDirectory
+                            ?? closedSpotlightSession?.jumpTarget?.workspaceName,
+                        projectColorRegistry: model.projectColorRegistry,
+                        codeburnState: model.codeburnClient?.state ?? .notProbed
                     )
                     .matchedGeometryEffect(id: "right-indicator", in: notchNamespace, isSource: true)
-                    .frame(width: max(sideWidth, countBadgeWidth) + attentionBalanceWidth)
+                    .frame(width: slotWidth)
                 }
             }
             .frame(height: closedNotchHeight)
