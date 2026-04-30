@@ -7,6 +7,35 @@ struct AppearanceSettingsPane: View {
 
     private var lang: LanguageManager { model.lang }
     private var isCustom: Bool { model.islandAppearanceMode == .custom }
+    private var usesLightTheme: Bool { model.prefersLightIslandTheme }
+
+    private var previewSurfaceColor: Color {
+        usesLightTheme ? Color(red: 0.965, green: 0.972, blue: 0.985) : .black
+    }
+
+    private var previewCanvasColor: Color {
+        usesLightTheme ? Color(red: 0.92, green: 0.94, blue: 0.97) : Color(white: 0.12)
+    }
+
+    private var previewSecondaryFill: Color {
+        usesLightTheme ? Color.black.opacity(0.05) : Color.white.opacity(0.06)
+    }
+
+    private var previewStrokeColor: Color {
+        usesLightTheme ? Color.black.opacity(0.08) : Color.white.opacity(0.08)
+    }
+
+    private var previewPrimaryText: Color {
+        usesLightTheme ? Color.black.opacity(0.88) : Color.white.opacity(0.92)
+    }
+
+    private var previewSecondaryText: Color {
+        usesLightTheme ? Color.black.opacity(0.58) : Color.white.opacity(0.72)
+    }
+
+    private var previewTertiaryText: Color {
+        usesLightTheme ? Color.black.opacity(0.42) : Color.white.opacity(0.5)
+    }
 
     var body: some View {
         Form {
@@ -28,6 +57,15 @@ struct AppearanceSettingsPane: View {
             }
 
             Section(lang.t("settings.appearance.style")) {
+                Picker(lang.t("settings.appearance.theme"), selection: Binding(
+                    get: { model.islandThemePreference },
+                    set: { model.islandThemePreference = $0 }
+                )) {
+                    Text(lang.t("settings.appearance.theme.light")).tag(IslandThemePreference.light)
+                    Text(lang.t("settings.appearance.theme.dark")).tag(IslandThemePreference.dark)
+                }
+                .pickerStyle(.segmented)
+
                 if isCustom {
                     Picker(lang.t("settings.appearance.closedStyle"), selection: Binding(
                         get: { model.islandClosedDisplayStyle },
@@ -106,7 +144,7 @@ struct AppearanceSettingsPane: View {
     private var notchPreviewCard: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(white: 0.12))
+                .fill(previewCanvasColor)
 
             VStack(spacing: 14) {
                 previewIslandBar
@@ -143,7 +181,7 @@ struct AppearanceSettingsPane: View {
             if isDetailed {
                 Text(phaseTitle(previewPhase))
                     .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.92))
+                    .foregroundStyle(previewPrimaryText)
                     .lineLimit(1)
             }
 
@@ -156,12 +194,12 @@ struct AppearanceSettingsPane: View {
             if isDetailed {
                 Text(lang.t("settings.appearance.preview.sessions"))
                     .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.72))
+                    .foregroundStyle(previewSecondaryText)
             }
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 10)
-        .background(Color.black, in: RoundedRectangle(cornerRadius: 18, style: .continuous)))
+        .background(previewSurfaceColor, in: RoundedRectangle(cornerRadius: 18, style: .continuous)))
     }
 
     private var shouldPreviewIdleEdgeOnly: Bool {
@@ -172,11 +210,11 @@ struct AppearanceSettingsPane: View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
             Capsule()
-                .fill(Color.black)
+                .fill(previewSurfaceColor)
                 .frame(height: 4)
                 .overlay {
                     Capsule()
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                        .stroke(previewStrokeColor, lineWidth: 1)
                 }
         }
         .frame(maxWidth: .infinity)
@@ -190,14 +228,14 @@ struct AppearanceSettingsPane: View {
                 } label: {
                     Text(phaseTitle(phase))
                         .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundStyle(previewPhase == phase ? .white : .white.opacity(0.5))
+                        .foregroundStyle(previewPhase == phase ? previewPrimaryText : previewTertiaryText)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
                         .background(
                             Capsule().fill(
                                 previewPhase == phase
                                     ? model.statusColor(for: phase).opacity(0.35)
-                                    : Color.white.opacity(0.06)
+                                    : previewSecondaryFill
                             )
                         )
                 }
@@ -247,7 +285,7 @@ struct AppearanceSettingsPane: View {
         } label: {
             VStack(spacing: 8) {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.white.opacity(0.05))
+                    .fill(previewSecondaryFill)
                     .frame(height: 48)
                     .overlay {
                         if style == .custom {
@@ -282,12 +320,12 @@ struct AppearanceSettingsPane: View {
             .frame(maxWidth: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.white.opacity(selected ? 0.06 : 0.02))
+                    .fill(usesLightTheme ? Color.black.opacity(selected ? 0.06 : 0.02) : Color.white.opacity(selected ? 0.06 : 0.02))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(
-                        selected ? Color.accentColor : Color.white.opacity(0.08),
+                        selected ? Color.accentColor : previewStrokeColor,
                         lineWidth: selected ? 2 : 1
                     )
             )

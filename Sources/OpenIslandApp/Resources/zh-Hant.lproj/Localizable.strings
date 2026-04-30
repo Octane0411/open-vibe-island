@@ -53,6 +53,9 @@
 "settings.appearance.preview" = "預覽";
 "settings.appearance.preview.sessions" = "個工作階段";
 "settings.appearance.style" = "樣式";
+"settings.appearance.theme" = "介面主題";
+"settings.appearance.theme.dark" = "暗色";
+"settings.appearance.theme.light" = "亮色";
 "settings.appearance.closedStyle" = "收起樣式";
 "settings.appearance.style.minimal" = "簡潔";
 "settings.appearance.style.detailed" = "詳細";

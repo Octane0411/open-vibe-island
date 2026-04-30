@@ -53,6 +53,9 @@
 "settings.appearance.preview" = "Preview";
 "settings.appearance.preview.sessions" = "sessions";
 "settings.appearance.style" = "Style";
+"settings.appearance.theme" = "UI Theme";
+"settings.appearance.theme.dark" = "Dark";
+"settings.appearance.theme.light" = "Light";
 "settings.appearance.closedStyle" = "Closed Style";
 "settings.appearance.style.minimal" = "Minimal";
 "settings.appearance.style.detailed" = "Detailed";
