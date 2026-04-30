@@ -694,6 +694,7 @@ struct IslandPanelView: View {
                     onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
                     onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                         ? { model.replyToSession(session, text: $0) } : nil,
+                    contextUsage: model.contextUsageRegistry.usage(for: session.id),
                     onJump: { model.jumpToSession(session) }
                 )
 
@@ -723,6 +724,7 @@ struct IslandPanelView: View {
                         onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
                         onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                             ? { model.replyToSession(session, text: $0) } : nil,
+                        contextUsage: model.contextUsageRegistry.usage(for: session.id),
                         onJump: { model.jumpToSession(session) },
                         onDismiss: session.isRemote ? { model.dismissSession(session.id) } : nil
                     )
@@ -1151,6 +1153,7 @@ private struct IslandSessionRow: View {
     var onApprove: ((ApprovalAction) -> Void)?
     var onAnswer: ((QuestionPromptResponse) -> Void)?
     var onReply: ((String) -> Void)?
+    var contextUsage: ContextUsage? = nil
     let onJump: () -> Void
     var onDismiss: (() -> Void)?
 
@@ -1186,6 +1189,9 @@ private struct IslandSessionRow: View {
                             }
                             if let terminalBadge = session.spotlightTerminalBadge {
                                 compactBadge(terminalBadge, presence: presence)
+                            }
+                            if presence != .inactive, let usage = contextUsage {
+                                ContextLeftBadge(usage: usage)
                             }
                             compactBadge(session.spotlightAgeBadge, presence: presence)
                             if let onDismiss {
