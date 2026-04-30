@@ -217,3 +217,11 @@
 "settings.notchWidgets.kind.agentToolIcon" = "Agent tool icon";
 "settings.notchWidgets.kind.dollarSpentToday" = "$ spent today";
 "settings.notchWidgets.codeburnHint" = "Requires codeburn — click to install";
+
+/* Project colors — added by feat/notch-personalization */
+/* TODO: translate */
+"settings.projectColors.title" = "Project colors";
+"settings.projectColors.help" = "Auto-assigned. Click any swatch to pick a different color.";
+"settings.projectColors.resetAll" = "Reset all to auto";
+"settings.projectColors.removeUnused" = "Remove unused";
+"settings.projectColors.empty" = "No projects seen yet.";

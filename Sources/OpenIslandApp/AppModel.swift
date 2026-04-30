@@ -687,6 +687,12 @@ final class AppModel {
         state.sessions
     }
 
+    var activeWorkspaceKeys: Set<String> {
+        Set(state.sessions.compactMap { session -> String? in
+            session.jumpTarget?.workingDirectory ?? session.jumpTarget?.workspaceName
+        })
+    }
+
     /// Measured by SwiftUI GeometryReader in notification mode. Used by panel controller for sizing.
     /// Uses a tolerance of 2pt to avoid infinite layout loops caused by floating-point jitter
     /// in GeometryReader measurements across consecutive layout passes.

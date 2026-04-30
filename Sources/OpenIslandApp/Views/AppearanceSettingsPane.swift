@@ -123,6 +123,32 @@ struct AppearanceSettingsPane: View {
             }
 
             Section {
+                DisclosureGroup(lang.t("settings.projectColors.title")) {
+                    let keys = model.projectColorRegistry.knownKeys().sorted()
+                    if keys.isEmpty {
+                        Text(lang.t("settings.projectColors.empty"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(keys, id: \.self) { key in
+                            projectColorRow(key)
+                        }
+                    }
+                    HStack {
+                        Button(lang.t("settings.projectColors.resetAll")) {
+                            model.projectColorRegistry.resetAll()
+                        }
+                        Button(lang.t("settings.projectColors.removeUnused")) {
+                            model.projectColorRegistry.pruneUnusedKeys(activePaths: model.activeWorkspaceKeys)
+                        }
+                    }
+                    Text(lang.t("settings.projectColors.help"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Section {
                 Text(lang.t("settings.appearance.communityNote"))
                     .font(.caption)
                     .foregroundStyle(.tertiary)
@@ -356,5 +382,70 @@ struct AppearanceSettingsPane: View {
         case .agentToolIcon:    return lang.t("settings.notchWidgets.kind.agentToolIcon")
         case .dollarSpentToday: return lang.t("settings.notchWidgets.kind.dollarSpentToday")
         }
+    }
+
+    // MARK: - Project colors
+
+    private static let projectColorPresets: [ProjectColor] = [
+        ProjectColor(red: 0.94, green: 0.40, blue: 0.40),  // red
+        ProjectColor(red: 0.96, green: 0.62, blue: 0.32),  // orange
+        ProjectColor(red: 0.95, green: 0.84, blue: 0.36),  // yellow
+        ProjectColor(red: 0.55, green: 0.85, blue: 0.45),  // green
+        ProjectColor(red: 0.40, green: 0.83, blue: 0.69),  // teal
+        ProjectColor(red: 0.36, green: 0.74, blue: 0.94),  // sky
+        ProjectColor(red: 0.45, green: 0.55, blue: 0.95),  // blue
+        ProjectColor(red: 0.65, green: 0.46, blue: 0.95),  // purple
+        ProjectColor(red: 0.92, green: 0.50, blue: 0.85),  // pink
+        ProjectColor(red: 0.78, green: 0.78, blue: 0.78),  // light gray
+        ProjectColor(red: 0.50, green: 0.50, blue: 0.50),  // mid gray
+        ProjectColor(red: 0.30, green: 0.30, blue: 0.30),  // dark gray
+    ]
+
+    @ViewBuilder
+    private func projectColorRow(_ key: String) -> some View {
+        let current = model.projectColorRegistry.color(for: key)
+        HStack(spacing: 10) {
+            Circle()
+                .fill(swiftUIColor(current))
+                .frame(width: 14, height: 14)
+            VStack(alignment: .leading, spacing: 2) {
+                Text((key as NSString).lastPathComponent)
+                    .font(.system(size: 12, weight: .medium))
+                Text(key)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer()
+            Menu {
+                ForEach(Array(Self.projectColorPresets.enumerated()), id: \.offset) { _, preset in
+                    Button {
+                        model.projectColorRegistry.setColor(preset, for: key)
+                    } label: {
+                        HStack {
+                            Circle().fill(swiftUIColor(preset)).frame(width: 12, height: 12)
+                            Text(hexLabel(preset))
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "paintpalette")
+                    .font(.system(size: 12))
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+    }
+
+    private func swiftUIColor(_ c: ProjectColor) -> Color {
+        Color(red: c.red, green: c.green, blue: c.blue)
+    }
+
+    private func hexLabel(_ c: ProjectColor) -> String {
+        let r = Int((c.red * 255).rounded())
+        let g = Int((c.green * 255).rounded())
+        let b = Int((c.blue * 255).rounded())
+        return String(format: "#%02X%02X%02X", r, g, b)
     }
 }
