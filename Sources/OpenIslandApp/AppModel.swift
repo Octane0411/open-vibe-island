@@ -52,6 +52,7 @@ final class AppModel {
         didSet {
             _cachedSessionBuckets = nil
             bridgeServer.updateStateSnapshot(state)
+            refreshContextUsageRegistry()
         }
     }
     @ObservationIgnored private var _cachedSessionBuckets: (primary: [AgentSession], overflow: [AgentSession])?
@@ -359,10 +360,22 @@ final class AppModel {
             .first!.appendingPathComponent("OpenIsland", isDirectory: true)
         return ProjectColorRegistry(storeURL: supportDir.appendingPathComponent("project-colors.json"))
     }()
+    let contextUsageRegistry = ContextUsageRegistry()
     private(set) var codeburnClient: CodeburnClient? = nil
     @ObservationIgnored
     private var codeburnTimerTask: Task<Void, Never>? = nil
     private var _cachedStatusColors: [SessionPhase: Color] = [:]
+
+    private func refreshContextUsageRegistry() {
+        let activeIDs = Set(state.sessions.map(\.id))
+        contextUsageRegistry.prune(activeSessionIDs: activeIDs)
+        for session in state.sessions {
+            guard let path = session.claudeMetadata?.transcriptPath else { continue }
+            if contextUsageRegistry.usage(for: session.id) == nil {
+                contextUsageRegistry.recordUsage(sessionID: session.id, transcriptPath: path)
+            }
+        }
+    }
 
     private func updateCodeburnPolling() {
         let needsCodeburn = notchWidgetConfig.rightSlot == .dollarSpentToday
