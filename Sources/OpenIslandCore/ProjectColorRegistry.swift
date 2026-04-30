@@ -12,6 +12,7 @@ public struct ProjectColor: Equatable, Codable, Sendable {
 public final class ProjectColorRegistry: @unchecked Sendable {
     private let storeURL: URL
     private var overrides: [String: ProjectColor] = [:]
+    private var seenKeys: Set<String> = []
     private let queue = DispatchQueue(label: "open-island.project-colors")
 
     public init(storeURL: URL) {
@@ -21,17 +22,16 @@ public final class ProjectColorRegistry: @unchecked Sendable {
 
     public func color(for key: String) -> ProjectColor {
         queue.sync {
+            seenKeys.insert(key)
             if let override = overrides[key] { return override }
-            let hashed = Self.hashColor(for: key)
-            overrides[key] = hashed
-            persist()
-            return hashed
+            return Self.hashColor(for: key)
         }
     }
 
     public func setColor(_ color: ProjectColor, for key: String) {
         queue.sync {
             overrides[key] = color
+            seenKeys.insert(key)
             persist()
         }
     }
@@ -46,12 +46,13 @@ public final class ProjectColorRegistry: @unchecked Sendable {
     public func pruneUnusedKeys(activePaths: Set<String>) {
         queue.sync {
             overrides = overrides.filter { activePaths.contains($0.key) }
+            seenKeys = seenKeys.filter { activePaths.contains($0) }
             persist()
         }
     }
 
     public func knownKeys() -> [String] {
-        queue.sync { Array(overrides.keys) }
+        queue.sync { Array(seenKeys.union(overrides.keys)) }
     }
 
     // MARK: - Private
