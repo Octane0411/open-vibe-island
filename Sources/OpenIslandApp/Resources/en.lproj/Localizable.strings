@@ -216,6 +216,11 @@
 "settings.notchWidgets.kind.agentToolIcon" = "Agent tool icon";
 "settings.notchWidgets.kind.dollarSpentToday" = "$ spent today";
 "settings.notchWidgets.codeburnHint" = "Requires codeburn — click to install";
+"settings.notchWidgets.closed.title" = "Closed notch";
+"settings.notchWidgets.expanded.title" = "Expanded notch";
+"settings.notchWidgets.leftSlot2" = "Left slot 2";
+"settings.notchWidgets.rightSlot1" = "Right slot 1";
+"settings.notchWidgets.rightSlot2" = "Right slot 2";
 
 /* Project colors — added by feat/notch-personalization */
 "settings.projectColors.title" = "Project colors";

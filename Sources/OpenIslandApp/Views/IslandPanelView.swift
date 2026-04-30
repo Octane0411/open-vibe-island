@@ -409,8 +409,24 @@ struct IslandPanelView: View {
                                 color: phaseColor(closedSpotlightSession?.phase ?? .running)
                             )
                         }
+
+                        if model.notchWidgetConfig.closedLeft2 != .none {
+                            NotchSlotHost(
+                                kind: model.notchWidgetConfig.closedLeft2,
+                                availableWidth: 30,
+                                liveSessionCount: model.liveSessionCount,
+                                spotlightTool: closedSpotlightSession?.tool,
+                                spotlightWorkspaceName: closedSpotlightSession?.jumpTarget?.workspaceName,
+                                spotlightWorkspaceKey: closedSpotlightSession?.jumpTarget?.workingDirectory
+                                    ?? closedSpotlightSession?.jumpTarget?.workspaceName,
+                                projectColorRegistry: model.projectColorRegistry,
+                                codeburnState: model.codeburnClient?.state ?? .notProbed
+                            )
+                        }
                     }
-                    .frame(width: sideWidth + 8 + (closedSpotlightSession?.phase.requiresAttention == true ? 18 : 0))
+                    .frame(width: sideWidth + 8
+                        + (closedSpotlightSession?.phase.requiresAttention == true ? 18 : 0)
+                        + (model.notchWidgetConfig.closedLeft2 != .none ? 30 : 0))
                 }
 
                 if !hasClosedPresence {
@@ -452,19 +468,37 @@ struct IslandPanelView: View {
                 if hasClosedPresence {
                     let attentionBalanceWidth: CGFloat = closedSpotlightSession?.phase.requiresAttention == true ? 18 : 0
                     let slotWidth = max(sideWidth, countBadgeWidth) + attentionBalanceWidth
-                    NotchSlotHost(
-                        kind: model.notchWidgetConfig.rightSlot,
-                        availableWidth: slotWidth,
-                        liveSessionCount: model.liveSessionCount,
-                        spotlightTool: closedSpotlightSession?.tool,
-                        spotlightWorkspaceName: closedSpotlightSession?.jumpTarget?.workspaceName,
-                        spotlightWorkspaceKey: closedSpotlightSession?.jumpTarget?.workingDirectory
-                            ?? closedSpotlightSession?.jumpTarget?.workspaceName,
-                        projectColorRegistry: model.projectColorRegistry,
-                        codeburnState: model.codeburnClient?.state ?? .notProbed
-                    )
-                    .matchedGeometryEffect(id: "right-indicator", in: notchNamespace, isSource: true)
-                    .frame(width: slotWidth)
+
+                    HStack(spacing: 4) {
+                        if model.notchWidgetConfig.closedRight2 != .none {
+                            NotchSlotHost(
+                                kind: model.notchWidgetConfig.closedRight2,
+                                availableWidth: 30,
+                                liveSessionCount: model.liveSessionCount,
+                                spotlightTool: closedSpotlightSession?.tool,
+                                spotlightWorkspaceName: closedSpotlightSession?.jumpTarget?.workspaceName,
+                                spotlightWorkspaceKey: closedSpotlightSession?.jumpTarget?.workingDirectory
+                                    ?? closedSpotlightSession?.jumpTarget?.workspaceName,
+                                projectColorRegistry: model.projectColorRegistry,
+                                codeburnState: model.codeburnClient?.state ?? .notProbed
+                            )
+                        }
+
+                        NotchSlotHost(
+                            kind: model.notchWidgetConfig.closedRight1,
+                            availableWidth: slotWidth,
+                            liveSessionCount: model.liveSessionCount,
+                            spotlightTool: closedSpotlightSession?.tool,
+                            spotlightWorkspaceName: closedSpotlightSession?.jumpTarget?.workspaceName,
+                            spotlightWorkspaceKey: closedSpotlightSession?.jumpTarget?.workingDirectory
+                                ?? closedSpotlightSession?.jumpTarget?.workspaceName,
+                            projectColorRegistry: model.projectColorRegistry,
+                            codeburnState: model.codeburnClient?.state ?? .notProbed
+                        )
+                        .matchedGeometryEffect(id: "right-indicator", in: notchNamespace, isSource: true)
+                        .frame(width: slotWidth)
+                    }
+                    .frame(width: slotWidth + (model.notchWidgetConfig.closedRight2 != .none ? 34 : 0))
                 }
             }
             .frame(height: closedNotchHeight)
@@ -499,16 +533,53 @@ struct IslandPanelView: View {
             HStack(spacing: 12) {
                 HStack(spacing: 8) {
                     openedUsageSummary
-                    if model.codeburnClient?.state.isOk == true {
-                        Text("|")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.3))
-                        DollarTodayPill(state: model.codeburnClient!.state)
+
+                    if model.notchWidgetConfig.expandedLeft2 != .none {
+                        NotchSlotHost(
+                            kind: model.notchWidgetConfig.expandedLeft2,
+                            availableWidth: 60,
+                            liveSessionCount: model.liveSessionCount,
+                            spotlightTool: closedSpotlightSession?.tool,
+                            spotlightWorkspaceName: closedSpotlightSession?.jumpTarget?.workspaceName,
+                            spotlightWorkspaceKey: closedSpotlightSession?.jumpTarget?.workingDirectory
+                                ?? closedSpotlightSession?.jumpTarget?.workspaceName,
+                            projectColorRegistry: model.projectColorRegistry,
+                            codeburnState: model.codeburnClient?.state ?? .notProbed
+                        )
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                openedHeaderButtons
+                HStack(spacing: 8) {
+                    if model.notchWidgetConfig.expandedRight1 != .none {
+                        NotchSlotHost(
+                            kind: model.notchWidgetConfig.expandedRight1,
+                            availableWidth: 60,
+                            liveSessionCount: model.liveSessionCount,
+                            spotlightTool: closedSpotlightSession?.tool,
+                            spotlightWorkspaceName: closedSpotlightSession?.jumpTarget?.workspaceName,
+                            spotlightWorkspaceKey: closedSpotlightSession?.jumpTarget?.workingDirectory
+                                ?? closedSpotlightSession?.jumpTarget?.workspaceName,
+                            projectColorRegistry: model.projectColorRegistry,
+                            codeburnState: model.codeburnClient?.state ?? .notProbed
+                        )
+                    }
+                    if model.notchWidgetConfig.expandedRight2 != .none {
+                        NotchSlotHost(
+                            kind: model.notchWidgetConfig.expandedRight2,
+                            availableWidth: 60,
+                            liveSessionCount: model.liveSessionCount,
+                            spotlightTool: closedSpotlightSession?.tool,
+                            spotlightWorkspaceName: closedSpotlightSession?.jumpTarget?.workspaceName,
+                            spotlightWorkspaceKey: closedSpotlightSession?.jumpTarget?.workingDirectory
+                                ?? closedSpotlightSession?.jumpTarget?.workspaceName,
+                            projectColorRegistry: model.projectColorRegistry,
+                            codeburnState: model.codeburnClient?.state ?? .notProbed
+                        )
+                    }
+
+                    openedHeaderButtons
+                }
             }
             .padding(.leading, Self.headerHorizontalPadding)
             .padding(.trailing, Self.headerHorizontalPadding)

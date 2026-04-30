@@ -388,9 +388,17 @@ final class AppModel {
     }
 
     private func updateCodeburnPolling() {
-        let needsCodeburn = notchWidgetConfig.rightSlot == .dollarSpentToday
+        let closedWantsDollar = notchWidgetConfig.closedLeft2 == .dollarSpentToday
+            || notchWidgetConfig.closedRight1 == .dollarSpentToday
+            || notchWidgetConfig.closedRight2 == .dollarSpentToday
             || notchWidgetConfig.centerSlotExternal == .dollarSpentToday
-            || headerNeedsCodeburn
+
+        let expandedWantsDollar = notchWidgetConfig.expandedLeft2 == .dollarSpentToday
+            || notchWidgetConfig.expandedRight1 == .dollarSpentToday
+            || notchWidgetConfig.expandedRight2 == .dollarSpentToday
+
+        let needsCodeburn = closedWantsDollar
+            || (expandedWantsDollar && headerNeedsCodeburn)
         if needsCodeburn {
             if codeburnClient == nil {
                 codeburnClient = CodeburnClient(runner: ProcessCodeburnRunner())
