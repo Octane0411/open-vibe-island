@@ -37,6 +37,7 @@ Agent
 |---|---|---|
 | `SessionStart` | Session starts or resumes (`source: "resume"` on resume) | `prompt`, `source` |
 | `PreToolUse` | Before a shell command executes | `tool_name`, `tool_input.command`, `turn_id`, `tool_use_id` |
+| `PermissionRequest` | Codex requests user approval before running a tool action | `tool_name`, `tool_input.command`, `tool_input.description`, `turn_id`, `tool_use_id` |
 | `PostToolUse` | After a shell command completes | `tool_name`, `tool_input`, `tool_response`, `turn_id` |
 | `UserPromptSubmit` | User submits a new prompt | `prompt` |
 | `Stop` | A turn completes | `last_assistant_message`, `stop_hook_active` |
@@ -59,20 +60,58 @@ Agent
 | `tool_name` | `toolName` | Tool name (e.g. `shell`) |
 | `tool_use_id` | `toolUseID` | Tool-use call ID |
 | `tool_input` | `toolInput` | Tool input (contains `command`) |
+| `tool_input.description` | `toolInput.description` | Human-readable approval summary for `PermissionRequest` |
 | `tool_response` | `toolResponse` | Tool output (JSON) |
 | `prompt` | `prompt` | User prompt text |
 | `last_assistant_message` | `lastAssistantMessage` | Last assistant message |
 | `stop_hook_active` | `stopHookActive` | Whether the stop hook is active |
 
-### Directive response (PreToolUse only)
+### Directive responses
 
-The app can block a command by writing this to stdout:
+#### PreToolUse (legacy block shape)
+
+OpenIsland can block a command by writing this to stdout:
 
 ```json
 {"decision": "block", "reason": "Blocked by Open Island"}
 ```
 
-All other events require no stdout response.
+#### PermissionRequest
+
+For `PermissionRequest`, OpenIsland writes a Codex decision payload to stdout.
+
+Allow:
+
+```json
+{
+  "continue": true,
+  "hookSpecificOutput": {
+    "hookEventName": "PermissionRequest",
+    "decision": {
+      "behavior": "allow"
+    }
+  }
+}
+```
+
+Deny:
+
+```json
+{
+  "continue": true,
+  "hookSpecificOutput": {
+    "hookEventName": "PermissionRequest",
+    "decision": {
+      "behavior": "deny",
+      "message": "Permission denied in Open Island."
+    }
+  }
+}
+```
+
+When multiple matching hooks return decisions, Codex treats `deny` as higher priority than `allow`.
+
+All other Codex events require no stdout response.
 
 ---
 
@@ -255,7 +294,8 @@ Setting `interrupt: true` terminates the current agent turn immediately.
 
 | Source | Event | Timeout |
 |---|---|---|
-| Codex | All events | Bridge default |
+| Codex | `PermissionRequest` | **3500 seconds** in `OpenIslandHooks` (managed hook entry uses **3600 seconds**) |
+| Codex | All other events | **45 seconds** |
 | Claude Code | `PermissionRequest` | **24 hours** (awaits human approval) |
 | Claude Code | All other events | **45 seconds** |
 | Gemini CLI | All events | Bridge default |
