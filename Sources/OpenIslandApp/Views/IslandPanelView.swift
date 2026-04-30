@@ -514,14 +514,58 @@ struct IslandPanelView: View {
                 let metrics = openedHeaderMetrics(for: geometry.size.width)
 
                 HStack(spacing: 0) {
-                    usageLaneView(providerGroups.left, alignment: .leading)
-                        .frame(width: metrics.leftUsageWidth, alignment: .leading)
+                    HStack(spacing: 8) {
+                        usageLaneView(providerGroups.left, alignment: .leading)
+
+                        if model.notchWidgetConfig.expandedLeft2 != .none {
+                            NotchSlotHost(
+                                kind: model.notchWidgetConfig.expandedLeft2,
+                                availableWidth: 60,
+                                liveSessionCount: model.liveSessionCount,
+                                spotlightTool: closedSpotlightSession?.tool,
+                                spotlightWorkspaceName: closedSpotlightSession?.jumpTarget?.workspaceName,
+                                spotlightWorkspaceKey: closedSpotlightSession?.jumpTarget?.workingDirectory
+                                    ?? closedSpotlightSession?.jumpTarget?.workspaceName,
+                                projectColorRegistry: model.projectColorRegistry,
+                                codeburnState: model.codeburnClient?.state ?? .notProbed
+                            )
+                        }
+                    }
+                    .frame(width: metrics.leftUsageWidth, alignment: .leading)
 
                     Color.clear
                         .frame(width: metrics.centerGapWidth)
 
                     HStack(spacing: Self.headerControlSpacing) {
                         usageLaneView(providerGroups.right, alignment: .trailing)
+
+                        if model.notchWidgetConfig.expandedRight1 != .none {
+                            NotchSlotHost(
+                                kind: model.notchWidgetConfig.expandedRight1,
+                                availableWidth: 60,
+                                liveSessionCount: model.liveSessionCount,
+                                spotlightTool: closedSpotlightSession?.tool,
+                                spotlightWorkspaceName: closedSpotlightSession?.jumpTarget?.workspaceName,
+                                spotlightWorkspaceKey: closedSpotlightSession?.jumpTarget?.workingDirectory
+                                    ?? closedSpotlightSession?.jumpTarget?.workspaceName,
+                                projectColorRegistry: model.projectColorRegistry,
+                                codeburnState: model.codeburnClient?.state ?? .notProbed
+                            )
+                        }
+                        if model.notchWidgetConfig.expandedRight2 != .none {
+                            NotchSlotHost(
+                                kind: model.notchWidgetConfig.expandedRight2,
+                                availableWidth: 60,
+                                liveSessionCount: model.liveSessionCount,
+                                spotlightTool: closedSpotlightSession?.tool,
+                                spotlightWorkspaceName: closedSpotlightSession?.jumpTarget?.workspaceName,
+                                spotlightWorkspaceKey: closedSpotlightSession?.jumpTarget?.workingDirectory
+                                    ?? closedSpotlightSession?.jumpTarget?.workspaceName,
+                                projectColorRegistry: model.projectColorRegistry,
+                                codeburnState: model.codeburnClient?.state ?? .notProbed
+                            )
+                        }
+
                         openedHeaderButtons
                     }
                     .frame(width: metrics.rightLaneWidth, alignment: .trailing)
