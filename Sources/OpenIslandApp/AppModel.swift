@@ -26,6 +26,7 @@ final class AppModel {
     private static let showCodexUsageDefaultsKey = "app.showCodexUsage"
     private static let completionReplyEnabledDefaultsKey = "feature.completionReply.enabled"
     private static let suppressFrontmostNotificationsDefaultsKey = "app.suppressFrontmostNotifications"
+    private static let notchWidgetConfigDefaultsKey = "notch.widgetConfig"
 
     static let defaultStatusColors: [SessionPhase: String] = [
         .running: "#6E9FFF",
@@ -344,7 +345,48 @@ final class AppModel {
         }
     }
     var customAvatarImage: NSImage? = nil
+    var notchWidgetConfig: NotchWidgetConfig = .default {
+        didSet {
+            guard notchWidgetConfig != oldValue else { return }
+            if let data = try? JSONEncoder().encode(notchWidgetConfig) {
+                UserDefaults.standard.set(data, forKey: Self.notchWidgetConfigDefaultsKey)
+            }
+            updateCodeburnPolling()
+        }
+    }
+    let projectColorRegistry: ProjectColorRegistry = {
+        let supportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first!.appendingPathComponent("OpenIsland", isDirectory: true)
+        return ProjectColorRegistry(storeURL: supportDir.appendingPathComponent("project-colors.json"))
+    }()
+    private(set) var codeburnClient: CodeburnClient? = nil
+    @ObservationIgnored
+    private var codeburnTimerTask: Task<Void, Never>? = nil
     private var _cachedStatusColors: [SessionPhase: Color] = [:]
+
+    private func updateCodeburnPolling() {
+        let needsCodeburn = notchWidgetConfig.rightSlot == .dollarSpentToday
+            || notchWidgetConfig.centerSlotExternal == .dollarSpentToday
+        if needsCodeburn {
+            if codeburnClient == nil {
+                codeburnClient = CodeburnClient(runner: ProcessCodeburnRunner())
+            }
+            startCodeburnTimerIfNeeded()
+        } else {
+            codeburnTimerTask?.cancel()
+            codeburnTimerTask = nil
+        }
+    }
+
+    private func startCodeburnTimerIfNeeded() {
+        guard codeburnTimerTask == nil, let client = codeburnClient else { return }
+        codeburnTimerTask = Task { @MainActor in
+            while !Task.isCancelled {
+                await client.refresh()
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+            }
+        }
+    }
 
     func statusColor(for phase: SessionPhase) -> Color {
         if let cached = _cachedStatusColors[phase] { return cached }
@@ -555,6 +597,11 @@ final class AppModel {
         if watchNotificationEnabled {
             startWatchRelay()
         }
+        if let data = UserDefaults.standard.data(forKey: Self.notchWidgetConfigDefaultsKey),
+           let decoded = try? JSONDecoder().decode(NotchWidgetConfig.self, from: data) {
+            notchWidgetConfig = decoded
+        }
+        updateCodeburnPolling()
 
         overlay.appModel = self
         overlay.restoreDisplayPreference()
