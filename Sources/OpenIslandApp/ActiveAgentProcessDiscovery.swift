@@ -3,7 +3,11 @@ import OpenIslandCore
 
 struct ActiveAgentProcessDiscovery {
     private static let processCommandTimeout: TimeInterval = 0.5
-    private static let lsofCommandTimeout: TimeInterval = 0.2
+    // Codex on some Nix-managed shells routinely takes just over 200ms for
+    // `lsof -p <pid>` even when the process is healthy. Keep the timeout
+    // comfortably above that so process discovery does not flap on normal
+    // interactive sessions.
+    private static let lsofCommandTimeout: TimeInterval = 0.35
 
     private final class OutputBox: @unchecked Sendable {
         var data = Data()
@@ -76,7 +80,17 @@ struct ActiveAgentProcessDiscovery {
                     continue
                 }
 
-                let claimKey = "codex:\(snapshot.sessionID ?? process.pid)"
+                let claimIdentity = snapshot.sessionID
+                    ?? snapshot.transcriptPath
+                    ?? {
+                        guard let terminalTTY = snapshot.terminalTTY,
+                              let workingDirectory = snapshot.workingDirectory else {
+                            return nil
+                        }
+                        return "\(terminalTTY)|\(workingDirectory)"
+                    }()
+                    ?? process.pid
+                let claimKey = "codex:\(claimIdentity)"
                 guard claimedKeys.insert(claimKey).inserted else {
                     continue
                 }
@@ -224,18 +238,20 @@ struct ActiveAgentProcessDiscovery {
         for process: RunningProcess,
         processesByPID: [String: RunningProcess]
     ) -> ProcessSnapshot? {
-        guard let lsofOutput = lsofOutput(pid: process.pid),
-              let transcriptPath = matchingPath(in: lsofOutput, containing: "/.codex/sessions/", suffix: ".jsonl"),
-              let sessionID = firstUUID(in: transcriptPath) else {
-            return nil
+        let lsofOutput = lsofOutput(pid: process.pid)
+        let workingDirectory = lsofOutput.flatMap(workingDirectory(from:))
+        let transcriptPath = lsofOutput.flatMap {
+            matchingPath(in: $0, containing: "/.codex/sessions/", suffix: ".jsonl")
         }
+        let sessionID = transcriptPath.flatMap(firstUUID(in:))
 
         var snapshot = ProcessSnapshot(
             tool: .codex,
             sessionID: sessionID,
-            workingDirectory: workingDirectory(from: lsofOutput),
+            workingDirectory: workingDirectory,
             terminalTTY: process.terminalTTY,
-            terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+            terminalApp: terminalApp(for: process, processesByPID: processesByPID),
+            transcriptPath: transcriptPath
         )
 
         // If terminalApp is nil and we have a TTY, try to resolve tmux info

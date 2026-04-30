@@ -49,6 +49,7 @@ struct ClaudeSessionRegistryTests {
         #expect(reloaded == records)
         #expect(reloaded.first?.session.claudeMetadata?.transcriptPath == "/tmp/claude.jsonl")
         #expect(reloaded.first?.session.jumpTarget?.terminalTTY == "/dev/ttys002")
+        #expect(reloaded.first?.session.lifecyclePolicy == .hookDrivenWithProcessFallback)
     }
 
     @Test
@@ -74,5 +75,62 @@ struct ClaudeSessionRegistryTests {
         #expect(record.session.attachmentState == .attached)
         #expect(record.restorableSession.attachmentState == .stale)
         #expect(record.restorableSession.jumpTarget?.terminalSessionID == "ghostty-claude")
+        #expect(record.restorableSession.lifecyclePolicy == .hookDrivenWithProcessFallback)
+    }
+
+    @Test
+    func legacyClaudeRecordWithoutOriginDecodesAsHookDriven() throws {
+        let legacyJSON = """
+        {
+          "sessionID": "claude-legacy-1",
+          "title": "Claude · legacy",
+          "attachmentState": "attached",
+          "summary": "Restored from a pre-origin registry.",
+          "phase": "running",
+          "updatedAt": 0
+        }
+        """.data(using: .utf8)!
+
+        let record = try JSONDecoder().decode(ClaudeTrackedSessionRecord.self, from: legacyJSON)
+
+        #expect(record.origin == nil)
+        #expect(record.lifecyclePolicy == .hookDrivenWithProcessFallback)
+        #expect(record.session.lifecyclePolicy == .hookDrivenWithProcessFallback)
+    }
+
+    @Test
+    func claudeTrackedSessionRecordRejectsEndedAndDemoSessionsForLiveRestore() {
+        let liveRecord = ClaudeTrackedSessionRecord(
+            sessionID: "claude-live-1",
+            title: "Claude · live",
+            origin: .live,
+            attachmentState: .attached,
+            summary: "Working",
+            phase: .running,
+            updatedAt: .now
+        )
+        let demoRecord = ClaudeTrackedSessionRecord(
+            sessionID: "claude-demo-1",
+            title: "Claude · demo",
+            origin: .demo,
+            attachmentState: .attached,
+            summary: "Working",
+            phase: .running,
+            updatedAt: .now
+        )
+        let endedRecord = ClaudeTrackedSessionRecord(
+            sessionID: "claude-ended-1",
+            title: "Claude · ended",
+            origin: .live,
+            attachmentState: .stale,
+            summary: "Finished",
+            phase: .completed,
+            updatedAt: .now,
+            isSessionEnded: true
+        )
+
+        #expect(liveRecord.shouldRestoreToLiveState)
+        #expect(!demoRecord.shouldRestoreToLiveState)
+        #expect(!endedRecord.shouldRestoreToLiveState)
     }
 }

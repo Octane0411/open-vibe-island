@@ -116,6 +116,138 @@ public enum SessionPhase: String, Codable, Sendable, CaseIterable {
     }
 }
 
+public enum SessionLifecyclePolicy: String, Codable, Sendable {
+    case processDriven
+    case hookDrivenWithProcessFallback
+    case appDriven
+}
+
+public enum SessionRuntimeMatchStrength: Int, Codable, Comparable, Sendable {
+    case toolFamily
+    case terminalTTY
+    case workingDirectory
+    case terminalTTYAndWorkingDirectory
+    case transcriptPath
+    case sessionID
+    case desktopApp
+
+    public static func < (lhs: SessionRuntimeMatchStrength, rhs: SessionRuntimeMatchStrength) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+public enum SessionEventPresenceSource: String, Codable, Sendable {
+    case bridge
+    case rolloutBootstrap
+    case rolloutLive
+}
+
+public struct SessionLivenessObservation: Equatable, Sendable {
+    public var observationCycle: Int
+    public var lastRuntimePositiveCycle: Int?
+    public var strongestRuntimeMatch: SessionRuntimeMatchStrength?
+    public var lastEventPositiveCycle: Int?
+    public var lastEventSource: SessionEventPresenceSource?
+
+    public init(
+        observationCycle: Int = 0,
+        lastRuntimePositiveCycle: Int? = nil,
+        strongestRuntimeMatch: SessionRuntimeMatchStrength? = nil,
+        lastEventPositiveCycle: Int? = nil,
+        lastEventSource: SessionEventPresenceSource? = nil
+    ) {
+        self.observationCycle = observationCycle
+        self.lastRuntimePositiveCycle = lastRuntimePositiveCycle
+        self.strongestRuntimeMatch = strongestRuntimeMatch
+        self.lastEventPositiveCycle = lastEventPositiveCycle
+        self.lastEventSource = lastEventSource
+    }
+
+    public var runtimeMissCount: Int {
+        missCount(since: lastRuntimePositiveCycle)
+    }
+
+    public var eventMissCount: Int {
+        missCount(since: lastEventPositiveCycle)
+    }
+
+    public var fallbackMissCount: Int {
+        [lastRuntimePositiveCycle.map { _ in runtimeMissCount }, lastEventPositiveCycle.map { _ in eventMissCount }]
+            .compactMap { $0 }
+            .min()
+            ?? observationCycle
+    }
+
+    public var hasRuntimePresence: Bool {
+        guard lastRuntimePositiveCycle != nil else {
+            return false
+        }
+        return runtimeMissCount < 2
+    }
+
+    public var hasEventPresence: Bool {
+        guard lastEventPositiveCycle != nil else {
+            return false
+        }
+        return eventMissCount < 2
+    }
+
+    public mutating func advanceRuntimeObservation(match: SessionRuntimeMatchStrength?) {
+        observationCycle += 1
+        guard let match else {
+            return
+        }
+
+        lastRuntimePositiveCycle = observationCycle
+        strongestRuntimeMatch = match
+    }
+
+    public mutating func recordEventPresence(_ source: SessionEventPresenceSource) {
+        lastEventPositiveCycle = observationCycle
+        lastEventSource = source
+    }
+
+    public mutating func seedRuntimePresence(_ match: SessionRuntimeMatchStrength) {
+        lastRuntimePositiveCycle = observationCycle
+        strongestRuntimeMatch = match
+    }
+
+    public mutating func clearRuntimePresence() {
+        lastRuntimePositiveCycle = nil
+        strongestRuntimeMatch = nil
+    }
+
+    private func missCount(since positiveCycle: Int?) -> Int {
+        guard let positiveCycle else {
+            return observationCycle
+        }
+
+        return max(0, observationCycle - positiveCycle)
+    }
+}
+
+public struct SessionTrackingIdentity: Equatable, Codable, Sendable {
+    public var sessionID: String
+    public var transcriptPath: String?
+    public var workingDirectory: String?
+    public var terminalTTY: String?
+    public var terminalSessionID: String?
+
+    public init(
+        sessionID: String,
+        transcriptPath: String? = nil,
+        workingDirectory: String? = nil,
+        terminalTTY: String? = nil,
+        terminalSessionID: String? = nil
+    ) {
+        self.sessionID = sessionID
+        self.transcriptPath = transcriptPath
+        self.workingDirectory = workingDirectory
+        self.terminalTTY = terminalTTY
+        self.terminalSessionID = terminalSessionID
+    }
+}
+
 public struct JumpTarget: Equatable, Codable, Sendable {
     public var terminalApp: String
     public var workspaceName: String
@@ -354,29 +486,17 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     /// Whether this session originates from a remote (SSH) connection.
     public var isRemote: Bool = false
 
-    /// Whether this session's lifecycle is driven by hook events rather than
-    /// process polling. When `true`, visibility is determined by hook signals
-    /// (`SessionStart` / `SessionEnd`) instead of `ps`/`lsof` process discovery.
-    public var isHookManaged: Bool = false
-
-    /// Whether this Codex session originates from the Codex desktop app
-    /// rather than the Codex CLI.  When `true`, liveness is determined by
-    /// whether Codex.app is running (`NSRunningApplication`), not by
-    /// matching individual CLI subprocess PIDs.
-    public var isCodexAppSession: Bool = false
+    /// The authoritative lifecycle law for this session. Persisted so restored
+    /// sessions retain the same liveness semantics as live ones.
+    public var lifecyclePolicy: SessionLifecyclePolicy = .processDriven
 
     /// Whether the agent session has ended (received `SessionEnd` hook).
     /// Only meaningful for hook-managed sessions.
     public var isSessionEnded: Bool = false
 
-    /// Whether the agent process is currently alive according to process discovery.
-    /// Used for non-hook-managed sessions (e.g. Codex, synthetic Claude sessions).
-    public var isProcessAlive: Bool = false
-
-    /// Number of consecutive reconciliation polls where the process was not found.
-    /// Reset to 0 when the process is found. When >= 2 (~6 seconds), the session
-    /// is considered gone. This prevents flicker from momentary `ps` gaps.
-    public var processNotSeenCount: Int = 0
+    /// Runtime and ingress evidence is ephemeral. It is intentionally not
+    /// persisted; restored sessions must earn freshness again via new evidence.
+    public var livenessObservation = SessionLivenessObservation()
 
     public init(
         id: String,
@@ -394,7 +514,10 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         claudeMetadata: ClaudeSessionMetadata? = nil,
         geminiMetadata: GeminiSessionMetadata? = nil,
         openCodeMetadata: OpenCodeSessionMetadata? = nil,
-        cursorMetadata: CursorSessionMetadata? = nil
+        cursorMetadata: CursorSessionMetadata? = nil,
+        isRemote: Bool = false,
+        lifecyclePolicy: SessionLifecyclePolicy = .processDriven,
+        isSessionEnded: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -412,6 +535,10 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         self.geminiMetadata = geminiMetadata
         self.openCodeMetadata = openCodeMetadata
         self.cursorMetadata = cursorMetadata
+        self.isRemote = isRemote
+        self.lifecyclePolicy = lifecyclePolicy
+        self.isSessionEnded = isSessionEnded
+        self.livenessObservation = SessionLivenessObservation()
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -431,6 +558,9 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         case geminiMetadata
         case openCodeMetadata
         case cursorMetadata
+        case isRemote
+        case lifecyclePolicy
+        case isSessionEnded
     }
 
     public init(from decoder: any Decoder) throws {
@@ -451,6 +581,15 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         geminiMetadata = try container.decodeIfPresent(GeminiSessionMetadata.self, forKey: .geminiMetadata)
         openCodeMetadata = try container.decodeIfPresent(OpenCodeSessionMetadata.self, forKey: .openCodeMetadata)
         cursorMetadata = try container.decodeIfPresent(CursorSessionMetadata.self, forKey: .cursorMetadata)
+        isRemote = try container.decodeIfPresent(Bool.self, forKey: .isRemote) ?? false
+        lifecyclePolicy = try container.decodeIfPresent(SessionLifecyclePolicy.self, forKey: .lifecyclePolicy)
+            ?? Self.inferredLifecyclePolicy(
+                tool: tool,
+                origin: origin,
+                jumpTarget: jumpTarget
+            )
+        isSessionEnded = try container.decodeIfPresent(Bool.self, forKey: .isSessionEnded) ?? false
+        livenessObservation = SessionLivenessObservation()
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -471,10 +610,29 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         try container.encodeIfPresent(geminiMetadata, forKey: .geminiMetadata)
         try container.encodeIfPresent(openCodeMetadata, forKey: .openCodeMetadata)
         try container.encodeIfPresent(cursorMetadata, forKey: .cursorMetadata)
+        try container.encode(isRemote, forKey: .isRemote)
+        try container.encode(lifecyclePolicy, forKey: .lifecyclePolicy)
+        try container.encode(isSessionEnded, forKey: .isSessionEnded)
     }
 }
 
 public extension AgentSession {
+    static func inferredLifecyclePolicy(
+        tool: AgentTool,
+        origin: SessionOrigin?,
+        jumpTarget: JumpTarget?
+    ) -> SessionLifecyclePolicy {
+        if tool == .codex && jumpTarget?.terminalApp == "Codex.app" {
+            return .appDriven
+        }
+
+        if origin == .live && tool.supportsHookLifecycleSignals {
+            return .hookDrivenWithProcessFallback
+        }
+
+        return .processDriven
+    }
+
     var isDemoSession: Bool {
         origin == .demo
     }
@@ -491,19 +649,85 @@ public extension AgentSession {
         attachmentState.isLive
     }
 
+    var hasEventPresence: Bool {
+        livenessObservation.hasEventPresence
+    }
+
+    var hasRuntimePresence: Bool {
+        livenessObservation.hasRuntimePresence
+    }
+
+    var hasFallbackPresence: Bool {
+        hasRuntimePresence || hasEventPresence
+    }
+
+    /// Policy-aware presence used by the core reducer and UI.
+    var hasPresenceEvidence: Bool {
+        switch lifecyclePolicy {
+        case .appDriven, .processDriven:
+            return hasRuntimePresence
+        case .hookDrivenWithProcessFallback:
+            return hasFallbackPresence
+        }
+    }
+
+    /// Policy-aware miss count. Process-driven sessions expire on runtime
+    /// misses; hook-managed sessions expire on the first missing source among
+    /// runtime or events.
+    var presenceMissCount: Int {
+        switch lifecyclePolicy {
+        case .appDriven, .processDriven:
+            return livenessObservation.runtimeMissCount
+        case .hookDrivenWithProcessFallback:
+            return livenessObservation.fallbackMissCount
+        }
+    }
+
+    func normalizedForPresentationComparison() -> Self {
+        var normalized = self
+        normalized.livenessObservation = SessionLivenessObservation(
+            observationCycle: 0,
+            lastRuntimePositiveCycle: hasRuntimePresence ? 0 : nil,
+            strongestRuntimeMatch: hasRuntimePresence ? livenessObservation.strongestRuntimeMatch : nil,
+            lastEventPositiveCycle: hasEventPresence ? 0 : nil,
+            lastEventSource: hasEventPresence ? livenessObservation.lastEventSource : nil
+        )
+        return normalized
+    }
+
+    func normalizedForPersistenceComparison() -> Self {
+        var normalized = self
+        normalized.livenessObservation = SessionLivenessObservation()
+        return normalized
+    }
+
+    var trackingIdentity: SessionTrackingIdentity {
+        SessionTrackingIdentity(
+            sessionID: id,
+            transcriptPath: trackingTranscriptPath,
+            workingDirectory: jumpTarget?.workingDirectory,
+            terminalTTY: jumpTarget?.terminalTTY,
+            terminalSessionID: jumpTarget?.terminalSessionID
+        )
+    }
+
     /// Visibility rule for the island UI.
     /// Hook-managed sessions (Claude Code via hooks) rely on hook lifecycle
     /// signals; non-hook sessions use process polling.
     var isVisibleInIsland: Bool {
         if isDemoSession { return true }
         if phase.requiresAttention { return true }
-        // Codex.app sessions stay visible while the desktop app is running.
-        // Checked before isHookManaged because a Codex.app session may also
-        // be hook-managed (when both hook and rediscovery converge on it).
-        if isCodexAppSession { return isProcessAlive }
-        if isHookManaged { return !isSessionEnded }
-        if isProcessAlive { return true }
-        return false
+        switch lifecyclePolicy {
+        case .appDriven:
+            return hasRuntimePresence
+        case .hookDrivenWithProcessFallback:
+            if attachmentState.isLive {
+                return !isSessionEnded
+            }
+            return hasFallbackPresence
+        case .processDriven:
+            return hasRuntimePresence
+        }
     }
 
     var currentToolName: String? {
@@ -702,5 +926,14 @@ private extension AgentSession {
         }
 
         return boundary
+    }
+}
+
+public extension AgentTool {
+    var supportsHookLifecycleSignals: Bool {
+        switch self {
+        case .codex, .claudeCode, .geminiCLI, .openCode, .qoder, .qwenCode, .factory, .codebuddy, .cursor, .kimiCLI:
+            true
+        }
     }
 }

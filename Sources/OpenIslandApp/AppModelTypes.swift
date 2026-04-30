@@ -15,9 +15,8 @@ enum NotchOpenReason: Equatable {
     case boot
 }
 
-enum TrackedEventIngress {
-    case bridge
-    case rollout
+enum SessionTrackingDefaults {
+    static let syntheticClaudeSessionPrefix = "claude-process:"
 }
 
 // MARK: - Island appearance

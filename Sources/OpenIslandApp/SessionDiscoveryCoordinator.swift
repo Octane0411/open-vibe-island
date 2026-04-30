@@ -22,7 +22,7 @@ final class SessionDiscoveryCoordinator {
     }
 
     @ObservationIgnored
-    var syntheticClaudeSessionPrefix = ""
+    var syntheticClaudeSessionPrefix = SessionTrackingDefaults.syntheticClaudeSessionPrefix
 
     @ObservationIgnored
     var onStatusMessage: ((String) -> Void)?
@@ -231,12 +231,26 @@ final class SessionDiscoveryCoordinator {
         merged.claudeMetadata = mergeClaudeMetadata(existing.claudeMetadata, discovered.claudeMetadata)
         merged.openCodeMetadata = mergeOpenCodeMetadata(existing.openCodeMetadata, discovered.openCodeMetadata)
         merged.cursorMetadata = mergeCursorMetadata(existing.cursorMetadata, discovered.cursorMetadata)
-        // Once a session is identified as a Codex.app session by any source
-        // (hook or rediscovery), preserve that flag so liveness uses the
-        // app-level check instead of subprocess polling.
-        merged.isCodexAppSession = existing.isCodexAppSession || discovered.isCodexAppSession
+        merged.isRemote = existing.isRemote || discovered.isRemote
+        merged.isSessionEnded = existing.isSessionEnded || discovered.isSessionEnded
+        merged.lifecyclePolicy = mergeLifecyclePolicy(existing.lifecyclePolicy, discovered.lifecyclePolicy)
 
         return merged
+    }
+
+    private func mergeLifecyclePolicy(
+        _ existing: SessionLifecyclePolicy,
+        _ discovered: SessionLifecyclePolicy
+    ) -> SessionLifecyclePolicy {
+        if existing == .appDriven || discovered == .appDriven {
+            return .appDriven
+        }
+
+        if existing == .hookDrivenWithProcessFallback || discovered == .hookDrivenWithProcessFallback {
+            return .hookDrivenWithProcessFallback
+        }
+
+        return .processDriven
     }
 
     private func mergeOpenCodeMetadata(
@@ -369,7 +383,7 @@ final class SessionDiscoveryCoordinator {
             // Codex.app sessions already get their lifecycle from hooks
             // (and eventually app-server). The rollout watcher would
             // duplicate completion notifications and is not needed.
-            if session.isCodexAppSession {
+            if session.lifecyclePolicy == .appDriven {
                 return nil
             }
 
@@ -418,8 +432,8 @@ final class SessionDiscoveryCoordinator {
 
         let newSessions = newRecords.map { record -> AgentSession in
             var session = record.session
-            session.isCodexAppSession = true
-            session.isProcessAlive = true
+            session.lifecyclePolicy = .appDriven
+            session.livenessObservation.seedRuntimePresence(.desktopApp)
             // Prefer the discovered record's cwd (sourced from the rollout
             // file's session_meta) over an empty fallback.
             let cwd = record.jumpTarget?.workingDirectory ?? ""

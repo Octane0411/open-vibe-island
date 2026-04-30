@@ -784,7 +784,7 @@ struct TerminalJumpTargetResolver {
     // MARK: - Helpers
 
     private func needsGhosttyProbe(_ session: AgentSession) -> Bool {
-        session.jumpTarget == nil && session.isProcessAlive
+        session.jumpTarget == nil && session.hasPresenceEvidence
     }
 
     private func normalizedTerminalName(for value: String?) -> String? {

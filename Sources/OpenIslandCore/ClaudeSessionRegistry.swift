@@ -10,6 +10,9 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
     public var updatedAt: Date
     public var jumpTarget: JumpTarget?
     public var claudeMetadata: ClaudeSessionMetadata?
+    public var isRemote: Bool
+    public var lifecyclePolicy: SessionLifecyclePolicy
+    public var isSessionEnded: Bool
 
     public init(
         sessionID: String,
@@ -20,7 +23,10 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
         phase: SessionPhase,
         updatedAt: Date,
         jumpTarget: JumpTarget? = nil,
-        claudeMetadata: ClaudeSessionMetadata? = nil
+        claudeMetadata: ClaudeSessionMetadata? = nil,
+        isRemote: Bool = false,
+        lifecyclePolicy: SessionLifecyclePolicy = .hookDrivenWithProcessFallback,
+        isSessionEnded: Bool = false
     ) {
         self.sessionID = sessionID
         self.title = title
@@ -31,6 +37,9 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
         self.updatedAt = updatedAt
         self.jumpTarget = jumpTarget
         self.claudeMetadata = claudeMetadata
+        self.isRemote = isRemote
+        self.lifecyclePolicy = lifecyclePolicy
+        self.isSessionEnded = isSessionEnded
     }
 
     public init(session: AgentSession) {
@@ -43,7 +52,10 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
             phase: session.phase,
             updatedAt: session.updatedAt,
             jumpTarget: session.jumpTarget,
-            claudeMetadata: session.claudeMetadata
+            claudeMetadata: session.claudeMetadata,
+            isRemote: session.isRemote,
+            lifecyclePolicy: session.lifecyclePolicy,
+            isSessionEnded: session.isSessionEnded
         )
     }
 
@@ -58,7 +70,10 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
             summary: summary,
             updatedAt: updatedAt,
             jumpTarget: jumpTarget,
-            claudeMetadata: claudeMetadata
+            claudeMetadata: claudeMetadata,
+            isRemote: isRemote,
+            lifecyclePolicy: lifecyclePolicy,
+            isSessionEnded: isSessionEnded
         )
     }
 
@@ -78,6 +93,9 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
         case updatedAt
         case jumpTarget
         case claudeMetadata
+        case isRemote
+        case lifecyclePolicy
+        case isSessionEnded
     }
 
     public init(from decoder: any Decoder) throws {
@@ -91,6 +109,19 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         jumpTarget = try container.decodeIfPresent(JumpTarget.self, forKey: .jumpTarget)
         claudeMetadata = try container.decodeIfPresent(ClaudeSessionMetadata.self, forKey: .claudeMetadata)
+        isRemote = try container.decodeIfPresent(Bool.self, forKey: .isRemote) ?? false
+        if let decodedLifecyclePolicy = try container.decodeIfPresent(SessionLifecyclePolicy.self, forKey: .lifecyclePolicy) {
+            lifecyclePolicy = decodedLifecyclePolicy
+        } else if origin == nil {
+            lifecyclePolicy = .hookDrivenWithProcessFallback
+        } else {
+            lifecyclePolicy = AgentSession.inferredLifecyclePolicy(
+                tool: .claudeCode,
+                origin: origin,
+                jumpTarget: jumpTarget
+            )
+        }
+        isSessionEnded = try container.decodeIfPresent(Bool.self, forKey: .isSessionEnded) ?? false
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -104,12 +135,15 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(jumpTarget, forKey: .jumpTarget)
         try container.encodeIfPresent(claudeMetadata, forKey: .claudeMetadata)
+        try container.encode(isRemote, forKey: .isRemote)
+        try container.encode(lifecyclePolicy, forKey: .lifecyclePolicy)
+        try container.encode(isSessionEnded, forKey: .isSessionEnded)
     }
 }
 
 public extension ClaudeTrackedSessionRecord {
     var shouldRestoreToLiveState: Bool {
-        origin != .demo
+        !isSessionEnded && origin != .demo
     }
 }
 

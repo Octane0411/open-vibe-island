@@ -369,6 +369,95 @@ public enum AgentEvent: Equatable, Codable, Sendable {
     }
 }
 
+public enum TrackedEventIngress: Equatable, Codable, Sendable {
+    case bridge
+    case rolloutBootstrap
+    case rolloutLive
+
+    public static var rollout: Self {
+        .rolloutLive
+    }
+
+    public var isBridge: Bool {
+        self == .bridge
+    }
+
+    public var isRollout: Bool {
+        self == .rolloutBootstrap || self == .rolloutLive
+    }
+
+    public var eventPresenceSource: SessionEventPresenceSource? {
+        switch self {
+        case .bridge:
+            .bridge
+        case .rolloutBootstrap:
+            .rolloutBootstrap
+        case .rolloutLive:
+            .rolloutLive
+        }
+    }
+}
+
+public extension AgentEvent {
+    var sessionID: String? {
+        switch self {
+        case let .sessionStarted(payload):
+            payload.sessionID
+        case let .activityUpdated(payload):
+            payload.sessionID
+        case let .permissionRequested(payload):
+            payload.sessionID
+        case let .questionAsked(payload):
+            payload.sessionID
+        case let .sessionCompleted(payload):
+            payload.sessionID
+        case let .jumpTargetUpdated(payload):
+            payload.sessionID
+        case let .sessionMetadataUpdated(payload):
+            payload.sessionID
+        case let .claudeSessionMetadataUpdated(payload):
+            payload.sessionID
+        case let .geminiSessionMetadataUpdated(payload):
+            payload.sessionID
+        case let .openCodeSessionMetadataUpdated(payload):
+            payload.sessionID
+        case let .cursorSessionMetadataUpdated(payload):
+            payload.sessionID
+        case let .actionableStateResolved(payload):
+            payload.sessionID
+        }
+    }
+
+    var timestamp: Date? {
+        switch self {
+        case let .sessionStarted(payload):
+            payload.timestamp
+        case let .activityUpdated(payload):
+            payload.timestamp
+        case let .permissionRequested(payload):
+            payload.timestamp
+        case let .questionAsked(payload):
+            payload.timestamp
+        case let .sessionCompleted(payload):
+            payload.timestamp
+        case let .jumpTargetUpdated(payload):
+            payload.timestamp
+        case let .sessionMetadataUpdated(payload):
+            payload.timestamp
+        case let .claudeSessionMetadataUpdated(payload):
+            payload.timestamp
+        case let .geminiSessionMetadataUpdated(payload):
+            payload.timestamp
+        case let .openCodeSessionMetadataUpdated(payload):
+            payload.timestamp
+        case let .cursorSessionMetadataUpdated(payload):
+            payload.timestamp
+        case let .actionableStateResolved(payload):
+            payload.timestamp
+        }
+    }
+}
+
 public struct ScheduledAgentEvent: Equatable, Sendable {
     public var delay: TimeInterval
     public var event: AgentEvent

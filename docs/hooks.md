@@ -22,7 +22,7 @@ Agent
 
 **Fail-open principle**: if the bridge is unavailable the hook process exits silently without writing to stdout, so the agent continues running unaffected.
 
-**Entry point**: [`Sources/OpenIslandHooks/main.swift`](../Sources/OpenIslandHooks/main.swift)
+**Entry point**: [`Sources/OpenIslandHooks/OpenIslandHooksCLI.swift`](../Sources/OpenIslandHooks/OpenIslandHooksCLI.swift)
 
 ---
 
@@ -35,11 +35,13 @@ Agent
 
 | `hook_event_name` | When it fires | Notable fields |
 |---|---|---|
-| `SessionStart` | Session starts or resumes (`source: "resume"` on resume) | `prompt`, `source` |
+| `SessionStart` | Session starts or resumes (`source: "resume"` on resume) | `source`, `session_id`, `transcript_path` |
 | `PreToolUse` | Before a shell command executes | `tool_name`, `tool_input.command`, `turn_id`, `tool_use_id` |
 | `PostToolUse` | After a shell command completes | `tool_name`, `tool_input`, `tool_response`, `turn_id` |
-| `UserPromptSubmit` | User submits a new prompt | `prompt` |
+| `UserPromptSubmit` | User submits a new prompt | `prompt`, `turn_id` |
 | `Stop` | A turn completes | `last_assistant_message`, `stop_hook_active` |
+
+Within Open Island, `session_id` and `transcript_path` are the durable Codex identity fields used to correlate hook events with rollout-backed session state. `OpenIslandHooks` may enrich `terminal_*` fields at runtime before forwarding the payload to the app.
 
 ### Common payload fields
 
@@ -47,14 +49,14 @@ Agent
 |---|---|---|
 | `cwd` | `cwd` | Working directory |
 | `hook_event_name` | `hookEventName` | Event type |
-| `session_id` | `sessionID` | Session UUID |
+| `session_id` | `sessionID` | Session UUID; used with `transcript_path` to correlate the rollout-backed session |
 | `model` | `model` | Model name |
 | `permission_mode` | `permissionMode` | `default` / `acceptEdits` / `plan` / `dontAsk` / `bypassPermissions` |
 | `transcript_path` | `transcriptPath` | JSONL transcript file path |
-| `terminal_app` | `terminalApp` | Terminal name (`Terminal`, `Ghostty`, `iTerm`, …) |
-| `terminal_session_id` | `terminalSessionID` | Terminal session identifier |
-| `terminal_tty` | `terminalTTY` | TTY device path |
-| `terminal_title` | `terminalTitle` | Tab / window title |
+| `terminal_app` | `terminalApp` | Runtime-enriched terminal name (`Terminal`, `Ghostty`, `iTerm`, …) |
+| `terminal_session_id` | `terminalSessionID` | Runtime-enriched terminal session identifier |
+| `terminal_tty` | `terminalTTY` | Runtime-enriched TTY device path |
+| `terminal_title` | `terminalTitle` | Runtime-enriched tab / window title |
 | `turn_id` | `turnID` | Current turn ID |
 | `tool_name` | `toolName` | Tool name (e.g. `shell`) |
 | `tool_use_id` | `toolUseID` | Tool-use call ID |
@@ -283,7 +285,7 @@ For iTerm, Terminal, and Ghostty the process additionally runs an AppleScript qu
 
 | File | Responsibility |
 |---|---|
-| [`Sources/OpenIslandHooks/main.swift`](../Sources/OpenIslandHooks/main.swift) | Hook CLI entry point — routes to Codex, Claude, or Gemini path |
+| [`Sources/OpenIslandHooks/OpenIslandHooksCLI.swift`](../Sources/OpenIslandHooks/OpenIslandHooksCLI.swift) | Hook CLI entry point — routes to Codex, Claude, or Gemini path |
 | [`Sources/OpenIslandCore/CodexHooks.swift`](../Sources/OpenIslandCore/CodexHooks.swift) | Codex payload model, output encoder, terminal detection |
 | [`Sources/OpenIslandCore/ClaudeHooks.swift`](../Sources/OpenIslandCore/ClaudeHooks.swift) | Claude Code payload model, directive types, output encoder |
 | [`Sources/OpenIslandCore/GeminiHooks.swift`](../Sources/OpenIslandCore/GeminiHooks.swift) | Gemini CLI payload model, terminal detection, metadata helpers |

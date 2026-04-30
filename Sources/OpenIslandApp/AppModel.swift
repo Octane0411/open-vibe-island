@@ -33,7 +33,6 @@ final class AppModel {
         .waitingForAnswer: "#FFD95A",
         .completed: "#42E86B",
     ]
-    private static let syntheticClaudeSessionPrefix = "claude-process:"
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
     private static let jumpOverlayDismissLeadTime: Duration = .milliseconds(20)
     static let hoverOpenDelay: TimeInterval = 0.15
@@ -575,7 +574,6 @@ final class AppModel {
             self?.lastActionMessage = message
         }
 
-        discovery.syntheticClaudeSessionPrefix = Self.syntheticClaudeSessionPrefix
         discovery.onStatusMessage = { [weak self] message in
             self?.lastActionMessage = message
         }
@@ -586,12 +584,12 @@ final class AppModel {
             self?.refreshOverlayPlacementIfVisible()
         }
 
-        discovery.codexRolloutWatcher.eventHandler = { [weak self] event in
+        discovery.codexRolloutWatcher.eventHandler = { [weak self] observed in
             Task { @MainActor [weak self] in
                 self?.applyTrackedEvent(
-                    event,
+                    observed.event,
                     updateLastActionMessage: false,
-                    ingress: .rollout
+                    ingress: observed.freshness == .bootstrap ? .rolloutBootstrap : .rolloutLive
                 )
             }
         }
@@ -606,7 +604,6 @@ final class AppModel {
             self?.state.session(id: id) != nil
         }
 
-        monitoring.syntheticClaudeSessionPrefix = Self.syntheticClaudeSessionPrefix
         monitoring.stateAccessor = { [weak self] in self?.state ?? SessionState() }
         monitoring.stateUpdater = { [weak self] in self?.state = $0 }
         monitoring.onSessionsReconciled = { [weak self] in
@@ -1205,6 +1202,8 @@ final class AppModel {
         updateLastActionMessage: Bool = true,
         ingress: TrackedEventIngress = .bridge
     ) {
+        let eventSessionID = event.sessionID
+
         // Snapshot whether this session was already completed before applying
         // the event. Used to suppress duplicate/stale completion notifications
         // (e.g. rollout watcher re-discovering an old completion on startup,
@@ -1218,19 +1217,15 @@ final class AppModel {
         // back to running. The bridge's sessionCompleted is authoritative; the
         // rollout watcher may have read the JSONL before task_complete was
         // flushed, producing a stale activityUpdated(phase: .running).
-        if ingress == .rollout,
+        if ingress.isRollout,
            case let .activityUpdated(payload) = event,
            payload.phase == .running,
            state.session(id: payload.sessionID)?.phase == .completed {
             return
         }
 
-        state.apply(event)
+        state.apply(event, ingress: ingress)
         reconcileIslandSurfaceAfterStateChange()
-        if ingress == .bridge {
-            monitoring.markSessionAttached(for: event)
-            monitoring.markSessionProcessAlive(for: event)
-        }
         synchronizeSelection()
         discovery.refreshCodexRolloutTracking()
         refreshOverlayPlacementIfVisible()
@@ -1241,22 +1236,6 @@ final class AppModel {
 
         // Push relevant events to the Watch/iPhone via the relay
         if let relay = watchRelay {
-            let eventSessionID: String? = {
-                switch event {
-                case let .sessionStarted(p): return p.sessionID
-                case let .activityUpdated(p): return p.sessionID
-                case let .permissionRequested(p): return p.sessionID
-                case let .questionAsked(p): return p.sessionID
-                case let .sessionCompleted(p): return p.sessionID
-                case let .jumpTargetUpdated(p): return p.sessionID
-                case let .sessionMetadataUpdated(p): return p.sessionID
-                case let .claudeSessionMetadataUpdated(p): return p.sessionID
-                case let .geminiSessionMetadataUpdated(p): return p.sessionID
-                case let .openCodeSessionMetadataUpdated(p): return p.sessionID
-                case let .cursorSessionMetadataUpdated(p): return p.sessionID
-                case let .actionableStateResolved(p): return p.sessionID
-                }
-            }()
             let session = eventSessionID.flatMap { state.session(id: $0) }
             relay.notifyEvent(event, session: session)
         }
@@ -1317,7 +1296,7 @@ final class AppModel {
             return false
         }
 
-        return (ingress == .bridge || !isResolvingInitialLiveSessions)
+        return (ingress.isBridge || !isResolvingInitialLiveSessions)
             && (notchStatus == .closed || notchOpenReason == .notification)
             && surface.matchesCurrentState(of: session)
     }
@@ -1440,7 +1419,7 @@ final class AppModel {
 
         let presence = session.islandPresence(at: now)
 
-        if session.isProcessAlive {
+        if session.hasPresenceEvidence {
             score += presence == .inactive ? 3_000 : 12_000
         } else if session.isDemoSession || session.phase.requiresAttention {
             score += 6_000

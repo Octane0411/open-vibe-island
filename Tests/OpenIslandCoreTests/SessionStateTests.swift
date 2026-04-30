@@ -153,6 +153,59 @@ struct SessionStateTests {
     }
 
     @Test
+    func comparisonProjectionsIgnoreObservationCyclesButPreservePresenceShape() {
+        var earlier = AgentSession(
+            id: "codex-1",
+            title: "Codex · repo",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .stale,
+            phase: .running,
+            summary: "Working",
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            lifecyclePolicy: .hookDrivenWithProcessFallback
+        )
+        earlier.livenessObservation = SessionLivenessObservation(
+            observationCycle: 3,
+            lastRuntimePositiveCycle: 2,
+            strongestRuntimeMatch: .terminalTTY,
+            lastEventPositiveCycle: 3,
+            lastEventSource: .bridge
+        )
+
+        var laterSamePresence = earlier
+        laterSamePresence.livenessObservation = SessionLivenessObservation(
+            observationCycle: 9,
+            lastRuntimePositiveCycle: 8,
+            strongestRuntimeMatch: .terminalTTY,
+            lastEventPositiveCycle: 9,
+            lastEventSource: .bridge
+        )
+
+        var differentPresence = earlier
+        differentPresence.livenessObservation = SessionLivenessObservation(
+            observationCycle: 9,
+            lastRuntimePositiveCycle: nil,
+            strongestRuntimeMatch: nil,
+            lastEventPositiveCycle: nil,
+            lastEventSource: nil
+        )
+
+        #expect(
+            SessionState(sessions: [earlier]).presentationComparableState
+                == SessionState(sessions: [laterSamePresence]).presentationComparableState
+        )
+        #expect(
+            SessionState(sessions: [earlier]).presentationComparableState
+                != SessionState(sessions: [differentPresence]).presentationComparableState
+        )
+        #expect(
+            SessionState(sessions: [earlier]).persistenceComparableState
+                == SessionState(sessions: [differentPresence]).persistenceComparableState
+        )
+    }
+
+    @Test
     func actionableStateResolvedClearsWaitingForApproval() {
         let startedAt = Date(timeIntervalSince1970: 5_000)
         var state = SessionState(
@@ -274,6 +327,79 @@ struct SessionStateTests {
         #expect(state.session(id: "live-session-1")?.origin == .live)
         #expect(state.session(id: "live-session-1")?.isDemoSession == false)
         #expect(state.session(id: "live-session-1")?.attachmentState == .attached)
+        #expect(state.session(id: "live-session-1")?.lifecyclePolicy == .hookDrivenWithProcessFallback)
+    }
+
+    @Test
+    func rolloutBootstrapSeedsRestoredHookManagedLivenessUntilRuntimeDiscoveryCatchesUp() {
+        let restoredAt = Date(timeIntervalSince1970: 1_000)
+        let bootstrapAt = restoredAt.addingTimeInterval(1)
+        let restored = AgentSession(
+            id: "restored-codex",
+            title: "Codex · open-island",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .stale,
+            phase: .running,
+            summary: "Recovered from cache",
+            updatedAt: restoredAt,
+            lifecyclePolicy: .hookDrivenWithProcessFallback
+        )
+        var state = SessionState(sessions: [restored])
+        #expect(state.liveSessionCount == 0)
+
+        state.apply(
+            .sessionMetadataUpdated(
+                SessionMetadataUpdated(
+                    sessionID: "restored-codex",
+                    codexMetadata: CodexSessionMetadata(
+                        transcriptPath: "/tmp/restored-codex.jsonl"
+                    ),
+                    timestamp: bootstrapAt
+                )
+            ),
+            ingress: .rolloutBootstrap
+        )
+
+        #expect(state.session(id: "restored-codex")?.hasPresenceEvidence == true)
+        #expect(state.session(id: "restored-codex")?.livenessObservation.lastEventSource == .rolloutBootstrap)
+        #expect(state.session(id: "restored-codex")?.presenceMissCount == 0)
+        #expect(state.liveSessionCount == 1)
+
+        _ = state.reconcileRuntimePresence(evidenceBySessionID: [:])
+
+        #expect(state.session(id: "restored-codex")?.isSessionEnded == false)
+        #expect(state.session(id: "restored-codex")?.hasPresenceEvidence == true)
+        #expect(state.session(id: "restored-codex")?.presenceMissCount == 1)
+        #expect(state.liveSessionCount == 1)
+    }
+
+    @Test
+    func hookManagedEventPresenceExpiresAfterTwoRuntimeMisses() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        var session = AgentSession(
+            id: "recovered-codex",
+            title: "Codex · open-island",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .stale,
+            phase: .running,
+            summary: "Recovered from cache",
+            updatedAt: now,
+            lifecyclePolicy: .hookDrivenWithProcessFallback
+        )
+        session.livenessObservation.recordEventPresence(.bridge)
+
+        var state = SessionState(sessions: [session])
+
+        _ = state.reconcileRuntimePresence(evidenceBySessionID: [:])
+        #expect(state.session(id: "recovered-codex")?.isSessionEnded == false)
+        #expect(state.session(id: "recovered-codex")?.hasPresenceEvidence == true)
+
+        _ = state.reconcileRuntimePresence(evidenceBySessionID: [:])
+        #expect(state.session(id: "recovered-codex")?.isSessionEnded == true)
+        #expect(state.session(id: "recovered-codex")?.phase == .completed)
+        #expect(state.liveSessionCount == 0)
     }
 
     @Test
@@ -324,7 +450,7 @@ struct SessionStateTests {
             summary: "Working",
             updatedAt: .now
         )
-        liveRunning.isProcessAlive = true
+        liveRunning.livenessObservation.seedRuntimePresence(.toolFamily)
 
         var liveAttention = AgentSession(
             id: "live-attention",
@@ -335,7 +461,7 @@ struct SessionStateTests {
             summary: "Needs approval",
             updatedAt: .now
         )
-        liveAttention.isProcessAlive = true
+        liveAttention.livenessObservation.seedRuntimePresence(.toolFamily)
 
         let state = SessionState(
             sessions: [
@@ -975,6 +1101,22 @@ struct SessionStateTests {
         let uninstalled = try manager.uninstall()
         #expect(!uninstalled.managedHooksPresent)
         #expect(!FileManager.default.fileExists(atPath: uninstalled.manifestURL.path))
+    }
+
+    @Test
+    func sessionTrackingIdentityRoundTripsThroughCodable() throws {
+        let identity = SessionTrackingIdentity(
+            sessionID: "session-1",
+            transcriptPath: "/tmp/session-1.jsonl",
+            workingDirectory: "/Users/example/project",
+            terminalTTY: "/dev/ttys001",
+            terminalSessionID: "terminal-session-1"
+        )
+
+        let data = try JSONEncoder().encode(identity)
+        let decoded = try JSONDecoder().decode(SessionTrackingIdentity.self, from: data)
+
+        #expect(decoded == identity)
     }
 
     @Test

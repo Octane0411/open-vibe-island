@@ -45,6 +45,9 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
     public var updatedAt: Date
     public var jumpTarget: JumpTarget?
     public var codexMetadata: CodexSessionMetadata?
+    public var isRemote: Bool
+    public var lifecyclePolicy: SessionLifecyclePolicy
+    public var isSessionEnded: Bool
 
     public init(
         sessionID: String,
@@ -55,7 +58,10 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
         phase: SessionPhase,
         updatedAt: Date,
         jumpTarget: JumpTarget? = nil,
-        codexMetadata: CodexSessionMetadata? = nil
+        codexMetadata: CodexSessionMetadata? = nil,
+        isRemote: Bool = false,
+        lifecyclePolicy: SessionLifecyclePolicy = .hookDrivenWithProcessFallback,
+        isSessionEnded: Bool = false
     ) {
         self.sessionID = sessionID
         self.title = title
@@ -66,6 +72,9 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
         self.updatedAt = updatedAt
         self.jumpTarget = jumpTarget
         self.codexMetadata = codexMetadata
+        self.isRemote = isRemote
+        self.lifecyclePolicy = lifecyclePolicy
+        self.isSessionEnded = isSessionEnded
     }
 
     public init(session: AgentSession) {
@@ -78,28 +87,51 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
             phase: session.phase,
             updatedAt: session.updatedAt,
             jumpTarget: session.jumpTarget,
-            codexMetadata: session.codexMetadata
+            codexMetadata: session.codexMetadata,
+            isRemote: session.isRemote,
+            lifecyclePolicy: session.lifecyclePolicy,
+            isSessionEnded: session.isSessionEnded
         )
     }
 
     public var session: AgentSession {
-        var session = AgentSession(
-            id: sessionID,
-            title: title,
-            tool: .codex,
-            origin: origin,
-            attachmentState: attachmentState,
-            phase: phase,
-            summary: summary,
-            updatedAt: updatedAt,
-            jumpTarget: jumpTarget,
-            codexMetadata: codexMetadata
-        )
-        // Re-derive the Codex.app flag from the persisted terminalApp so
-        // restarted sessions continue to use app-level liveness rather than
-        // falling back to CLI subprocess matching (which would kill them).
-        session.isCodexAppSession = jumpTarget?.terminalApp == "Codex.app"
-        return session
+        func makeSession(lifecyclePolicy restoredLifecyclePolicy: SessionLifecyclePolicy) -> AgentSession {
+            AgentSession(
+                id: sessionID,
+                title: title,
+                tool: .codex,
+                origin: origin,
+                attachmentState: attachmentState,
+                phase: phase,
+                summary: summary,
+                updatedAt: updatedAt,
+                jumpTarget: jumpTarget,
+                codexMetadata: codexMetadata,
+                isRemote: isRemote,
+                lifecyclePolicy: restoredLifecyclePolicy,
+                isSessionEnded: isSessionEnded
+            )
+        }
+
+        if jumpTarget?.terminalApp == "Codex.app" {
+            let restoredLifecyclePolicy: SessionLifecyclePolicy = .appDriven
+            var session = makeSession(lifecyclePolicy: restoredLifecyclePolicy)
+            session.livenessObservation.seedRuntimePresence(.desktopApp)
+            return session
+        }
+
+        let restoredLifecyclePolicy: SessionLifecyclePolicy
+        if lifecyclePolicy == .appDriven {
+            restoredLifecyclePolicy = AgentSession.inferredLifecyclePolicy(
+                tool: .codex,
+                origin: origin,
+                jumpTarget: jumpTarget
+            )
+        } else {
+            restoredLifecyclePolicy = lifecyclePolicy
+        }
+
+        return makeSession(lifecyclePolicy: restoredLifecyclePolicy)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -112,6 +144,9 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
         case updatedAt
         case jumpTarget
         case codexMetadata
+        case isRemote
+        case lifecyclePolicy
+        case isSessionEnded
     }
 
     public init(from decoder: any Decoder) throws {
@@ -125,6 +160,19 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         jumpTarget = try container.decodeIfPresent(JumpTarget.self, forKey: .jumpTarget)
         codexMetadata = try container.decodeIfPresent(CodexSessionMetadata.self, forKey: .codexMetadata)
+        isRemote = try container.decodeIfPresent(Bool.self, forKey: .isRemote) ?? false
+        if let decodedLifecyclePolicy = try container.decodeIfPresent(SessionLifecyclePolicy.self, forKey: .lifecyclePolicy) {
+            lifecyclePolicy = decodedLifecyclePolicy
+        } else if origin == nil {
+            lifecyclePolicy = .hookDrivenWithProcessFallback
+        } else {
+            lifecyclePolicy = AgentSession.inferredLifecyclePolicy(
+                tool: .codex,
+                origin: origin,
+                jumpTarget: jumpTarget
+            )
+        }
+        isSessionEnded = try container.decodeIfPresent(Bool.self, forKey: .isSessionEnded) ?? false
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -138,6 +186,9 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(jumpTarget, forKey: .jumpTarget)
         try container.encodeIfPresent(codexMetadata, forKey: .codexMetadata)
+        try container.encode(isRemote, forKey: .isRemote)
+        try container.encode(lifecyclePolicy, forKey: .lifecyclePolicy)
+        try container.encode(isSessionEnded, forKey: .isSessionEnded)
     }
 }
 
@@ -149,7 +200,9 @@ public extension CodexTrackedSessionRecord {
     }
 
     var shouldRestoreToLiveState: Bool {
-        origin != .demo && !LegacyMockSessionIDs.all.contains(sessionID)
+        !isSessionEnded
+            && origin != .demo
+            && !LegacyMockSessionIDs.all.contains(sessionID)
     }
 }
 
@@ -828,6 +881,21 @@ public enum CodexRolloutReducer {
     }
 }
 
+public enum CodexRolloutEventFreshness: String, Codable, Sendable {
+    case bootstrap
+    case live
+}
+
+public struct CodexRolloutObservedEvent: Codable, Sendable {
+    public var event: AgentEvent
+    public var freshness: CodexRolloutEventFreshness
+
+    public init(event: AgentEvent, freshness: CodexRolloutEventFreshness) {
+        self.event = event
+        self.freshness = freshness
+    }
+}
+
 public final class CodexRolloutWatcher: @unchecked Sendable {
     private struct Observation {
         var target: CodexRolloutWatchTarget
@@ -835,9 +903,11 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
         var pendingBuffer = Data()
         var snapshot = CodexRolloutSnapshot()
         var shouldTrimLeadingPartialLine = false
+        var hasDeliveredInitialEvents = false
+        var startedWithEmptyTranscript = false
     }
 
-    public var eventHandler: (@Sendable (AgentEvent) -> Void)?
+    public var eventHandler: (@Sendable (CodexRolloutObservedEvent) -> Void)?
 
     private let pollInterval: TimeInterval
     private let initialReadLimit: UInt64
@@ -920,13 +990,13 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
                 continue
             }
 
-            let events = refresh(observation: &observation)
+            let observedEvents = refresh(observation: &observation)
             observations[sessionID] = observation
-            events.forEach { eventHandler?($0) }
+            observedEvents.forEach { eventHandler?($0) }
         }
     }
 
-    private func refresh(observation: inout Observation) -> [AgentEvent] {
+    private func refresh(observation: inout Observation) -> [CodexRolloutObservedEvent] {
         let fileURL = URL(fileURLWithPath: observation.target.transcriptPath)
         guard FileManager.default.fileExists(atPath: fileURL.path),
               let fileHandle = try? FileHandle(forReadingFrom: fileURL) else {
@@ -942,6 +1012,8 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
             observation.offset = 0
             observation.pendingBuffer.removeAll(keepingCapacity: false)
             observation.snapshot = CodexRolloutSnapshot()
+            observation.hasDeliveredInitialEvents = false
+            observation.startedWithEmptyTranscript = fileSize == 0
         }
 
         do {
@@ -966,13 +1038,18 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
 
             let oldSnapshot = observation.snapshot
             lines.forEach { CodexRolloutReducer.apply(line: $0, to: &observation.snapshot) }
-
+            let freshness: CodexRolloutEventFreshness =
+                observation.hasDeliveredInitialEvents || observation.startedWithEmptyTranscript
+                    ? .live
+                    : .bootstrap
+            observation.hasDeliveredInitialEvents = true
+            observation.startedWithEmptyTranscript = false
             return CodexRolloutReducer.events(
                 from: oldSnapshot,
                 to: observation.snapshot,
                 sessionID: observation.target.sessionID,
                 transcriptPath: observation.target.transcriptPath
-            )
+            ).map { CodexRolloutObservedEvent(event: $0, freshness: freshness) }
         } catch {
             return []
         }
@@ -1000,7 +1077,7 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
         let fileURL = URL(fileURLWithPath: target.transcriptPath)
         guard FileManager.default.fileExists(atPath: fileURL.path),
               let fileHandle = try? FileHandle(forReadingFrom: fileURL) else {
-            return Observation(target: target)
+            return Observation(target: target, startedWithEmptyTranscript: true)
         }
 
         defer {
@@ -1009,7 +1086,7 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
 
         let fileSize = (try? fileHandle.seekToEnd()) ?? 0
         guard fileSize > initialReadLimit else {
-            return Observation(target: target)
+            return Observation(target: target, startedWithEmptyTranscript: fileSize == 0)
         }
 
         let bootstrapSnapshot = bootstrapPromptSnapshot(

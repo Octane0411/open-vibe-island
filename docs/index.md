@@ -32,10 +32,7 @@ This index is the repository map for humans and coding agents. Read these files 
 
 - [docs/notch-surface-model.md](./notch-surface-model.md) for the island surface routing model and debug harness intent
 - [docs/app-ghostty-codex-chain.md](./app-ghostty-codex-chain.md) for terminal environment findings across the current supported chain
-
-## Refactoring Plans
-
-- [docs/session-state-refactor.md](./session-state-refactor.md) for the session state management refactoring plan (process discovery as source of truth)
+- [docs/session-lifecycle-policy.md](./session-lifecycle-policy.md) for the current session liveness and visibility contract
 
 ## Watch / iOS
 

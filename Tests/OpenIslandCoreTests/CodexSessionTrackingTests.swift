@@ -48,6 +48,7 @@ struct CodexSessionTrackingTests {
         #expect(reloaded.first?.session.codexMetadata?.lastUserPrompt == "Check the rollout watcher state.")
         #expect(reloaded.first?.session.origin == .live)
         #expect(reloaded.first?.session.attachmentState == .attached)
+        #expect(reloaded.first?.session.lifecyclePolicy == .hookDrivenWithProcessFallback)
     }
 
     @Test
@@ -86,11 +87,22 @@ struct CodexSessionTrackingTests {
             phase: .waitingForApproval,
             updatedAt: .now
         )
+        let endedRecord = CodexTrackedSessionRecord(
+            sessionID: "codex-ended-1",
+            title: "Codex · ended",
+            origin: .live,
+            attachmentState: .stale,
+            summary: "Finished",
+            phase: .completed,
+            updatedAt: .now,
+            isSessionEnded: true
+        )
 
         #expect(liveRecord.shouldRestoreToLiveState)
         #expect(!demoRecord.shouldRestoreToLiveState)
         #expect(!legacyMockRecord.shouldRestoreToLiveState)
         #expect(!debugScenarioRecord.shouldRestoreToLiveState)
+        #expect(!endedRecord.shouldRestoreToLiveState)
     }
 
     @Test
@@ -106,7 +118,68 @@ struct CodexSessionTrackingTests {
         )
 
         #expect(record.session.attachmentState == .attached)
+        #expect(record.session.lifecyclePolicy == .hookDrivenWithProcessFallback)
         #expect(record.restorableSession.attachmentState == .stale)
+        #expect(record.restorableSession.lifecyclePolicy == .hookDrivenWithProcessFallback)
+    }
+
+    @Test
+    func codexSessionClampsStaleAppDrivenPolicyForNonCodexApp() {
+        let record = CodexTrackedSessionRecord(
+            sessionID: "codex-live-1",
+            title: "Codex · open-island",
+            origin: .live,
+            attachmentState: .attached,
+            summary: "Working",
+            phase: .running,
+            updatedAt: .now,
+            jumpTarget: JumpTarget(
+                terminalApp: "Ghostty",
+                workspaceName: "open-island",
+                paneTitle: "codex ~/Personal/open-island"
+            ),
+            lifecyclePolicy: .appDriven
+        )
+
+        let session = record.session
+
+        #expect(session.lifecyclePolicy == .hookDrivenWithProcessFallback)
+        #expect(session.livenessObservation.lastRuntimePositiveCycle == nil)
+        #expect(session.livenessObservation.strongestRuntimeMatch == nil)
+    }
+
+    @Test
+    func legacyCodexRecordWithoutOriginDecodesAsHookDriven() throws {
+        let legacyJSON = """
+        {
+          "sessionID": "codex-legacy-1",
+          "title": "Codex · legacy",
+          "attachmentState": "attached",
+          "summary": "Restored from a pre-origin registry.",
+          "phase": "running",
+          "updatedAt": 0,
+          "jumpTarget": {
+            "terminalApp": "Ghostty",
+            "workspaceName": "open-island",
+            "paneTitle": "codex ~/src/open-vibe-island"
+          },
+          "codexMetadata": {
+            "transcriptPath": "/tmp/codex-legacy.jsonl",
+            "lastAssistantMessage": "Restored legacy Codex session."
+          }
+        }
+        """.data(using: .utf8)!
+
+        let record = try JSONDecoder().decode(CodexTrackedSessionRecord.self, from: legacyJSON)
+        let session = record.session
+
+        #expect(record.origin == nil)
+        #expect(record.lifecyclePolicy == .hookDrivenWithProcessFallback)
+        #expect(session.lifecyclePolicy == .hookDrivenWithProcessFallback)
+        #expect(session.jumpTarget?.terminalApp == "Ghostty")
+        #expect(session.codexMetadata?.transcriptPath == "/tmp/codex-legacy.jsonl")
+        #expect(session.livenessObservation.lastRuntimePositiveCycle == nil)
+        #expect(session.livenessObservation.strongestRuntimeMatch == nil)
     }
 
     @Test
@@ -145,6 +218,7 @@ struct CodexSessionTrackingTests {
         #expect(records.count == 1)
         #expect(records.first?.attachmentState == .stale)
         #expect(records.first?.session.attachmentState == .stale)
+        #expect(records.first?.session.lifecyclePolicy == .hookDrivenWithProcessFallback)
     }
 
     @Test
@@ -360,11 +434,11 @@ struct CodexSessionTrackingTests {
             try? FileManager.default.removeItem(at: rootURL)
         }
 
-        let recorder = EventRecorder()
+        let recorder = ObservedEventRecorder()
         let watcher = CodexRolloutWatcher(pollInterval: 0.05)
-        watcher.eventHandler = { event in
+        watcher.eventHandler = { observed in
             Task {
-                await recorder.append(event)
+                await recorder.append(observed)
             }
         }
         watcher.sync(targets: [
@@ -425,11 +499,65 @@ struct CodexSessionTrackingTests {
         try await Task.sleep(for: .milliseconds(200))
         watcher.stop()
 
-        let events = await recorder.snapshot()
+        let events = await recorder.snapshotEvents()
         #expect(events.contains(where: { $0.trackedMetadataUpdate?.codexMetadata.lastUserPrompt == "Inspect the README." }))
         #expect(events.contains(where: { $0.trackedMetadataUpdate?.codexMetadata.currentTool == "exec_command" }))
         #expect(events.contains(where: { $0.trackedMetadataUpdate?.codexMetadata.currentCommandPreview == "git status -sb" }))
         #expect(events.contains(where: { $0.trackedSessionCompletion?.summary == "Finished the rollout tracking slice." }))
+    }
+
+    @Test
+    func codexRolloutWatcherLabelsFirstAppendToEmptyTranscriptAsLive() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-rollout-empty-live-\(UUID().uuidString)", isDirectory: true)
+        let rolloutURL = rootURL.appendingPathComponent("rollout.jsonl")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try Data().write(to: rolloutURL)
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        let recorder = ObservedEventRecorder()
+        let watcher = CodexRolloutWatcher(pollInterval: 0.05)
+        watcher.eventHandler = { observed in
+            Task {
+                await recorder.append(observed)
+            }
+        }
+        watcher.sync(targets: [
+            CodexRolloutWatchTarget(
+                sessionID: "codex-session-empty-live",
+                transcriptPath: rolloutURL.path
+            )
+        ])
+        defer {
+            watcher.stop()
+        }
+
+        try appendRolloutLine(
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": "First append after watch start is live.",
+                ]
+            ),
+            to: rolloutURL
+        )
+
+        let event = try await waitForObservedEvent(in: recorder) {
+            $0.freshness == .live
+                && $0.event.trackedActivityUpdate?.summary == "First append after watch start is live."
+        }
+        #expect(event.freshness == .live)
+
+        let observed = await recorder.snapshot()
+        #expect(!observed.contains(where: {
+            $0.freshness == .bootstrap
+                && $0.event.trackedActivityUpdate?.summary == "First append after watch start is live."
+        }))
     }
 
     @Test
@@ -531,15 +659,15 @@ struct CodexSessionTrackingTests {
 
         try lines.joined(separator: "\n").appending("\n").write(to: rolloutURL, atomically: true, encoding: .utf8)
 
-        let recorder = EventRecorder()
+        let recorder = ObservedEventRecorder()
         let watcher = CodexRolloutWatcher(
             pollInterval: 0.05,
             initialReadLimit: 512,
             initialPromptBootstrapLimit: 4_096
         )
-        watcher.eventHandler = { event in
+        watcher.eventHandler = { observed in
             Task {
-                await recorder.append(event)
+                await recorder.append(observed)
             }
         }
         watcher.sync(targets: [
@@ -552,7 +680,7 @@ struct CodexSessionTrackingTests {
         try await Task.sleep(for: .milliseconds(200))
         watcher.stop()
 
-        let events = await recorder.snapshot()
+        let events = await recorder.snapshotEvents()
         #expect(events.contains(where: {
             $0.trackedMetadataUpdate?.codexMetadata.initialUserPrompt == "读一下这篇论文 https://arxiv.org/html/2603.28052v1，然后对比一下 autoresearch 的实现。"
         }))
@@ -598,11 +726,11 @@ struct CodexSessionTrackingTests {
             .appending("\n")
             .write(to: rolloutURL, atomically: true, encoding: .utf8)
 
-        let recorder = EventRecorder()
+        let recorder = ObservedEventRecorder()
         let watcher = CodexRolloutWatcher(pollInterval: 0.05, initialReadLimit: 160)
-        watcher.eventHandler = { event in
+        watcher.eventHandler = { observed in
             Task {
-                await recorder.append(event)
+                await recorder.append(observed)
             }
         }
         watcher.sync(targets: [
@@ -615,9 +743,85 @@ struct CodexSessionTrackingTests {
         try await Task.sleep(for: .milliseconds(200))
         watcher.stop()
 
-        let events = await recorder.snapshot()
+        let events = await recorder.snapshotEvents()
         #expect(events.contains(where: { $0.trackedActivityUpdate?.summary == "Tail bootstrap kept the watcher responsive." }))
         #expect(!events.contains(where: { $0.trackedActivityUpdate?.summary == oldMessage }))
+    }
+
+    @Test
+    func codexRolloutWatcherLabelsBootstrapAndLiveEventsSeparately() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-rollout-freshness-\(UUID().uuidString)", isDirectory: true)
+        let rolloutURL = rootURL.appendingPathComponent("rollout.jsonl")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        let initialLines = [
+            sessionMetaLine(
+                sessionID: "codex-session-freshness",
+                timestamp: "2026-04-02T04:03:44.000Z",
+                cwd: "/Users/wangruobing/Personal/open-island"
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": "Bootstrap snapshot should stay metadata-only.",
+                ]
+            ),
+        ]
+        try initialLines.joined(separator: "\n").appending("\n").write(to: rolloutURL, atomically: true, encoding: .utf8)
+
+        let recorder = ObservedEventRecorder()
+        let watcher = CodexRolloutWatcher(pollInterval: 0.05)
+        watcher.eventHandler = { observed in
+            Task {
+                await recorder.append(observed)
+            }
+        }
+        watcher.sync(targets: [
+            CodexRolloutWatchTarget(
+                sessionID: "codex-session-freshness",
+                transcriptPath: rolloutURL.path
+            )
+        ])
+        defer {
+            watcher.stop()
+        }
+
+        _ = try await waitForObservedEvent(in: recorder) {
+            $0.freshness == .bootstrap
+                && $0.event.trackedActivityUpdate?.summary == "Bootstrap snapshot should stay metadata-only."
+        }
+        try appendRolloutLine(
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:46.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": "Live append should count as keepalive evidence.",
+                ]
+            ),
+            to: rolloutURL
+        )
+        _ = try await waitForObservedEvent(in: recorder) {
+            $0.freshness == .live
+                && $0.event.trackedActivityUpdate?.summary == "Live append should count as keepalive evidence."
+        }
+
+        let observed = await recorder.snapshot()
+        #expect(observed.contains(where: {
+            $0.freshness == .bootstrap
+                && $0.event.trackedActivityUpdate?.summary == "Bootstrap snapshot should stay metadata-only."
+        }))
+        #expect(observed.contains(where: {
+            $0.freshness == .live
+                && $0.event.trackedActivityUpdate?.summary == "Live append should count as keepalive evidence."
+        }))
     }
 
     @Test
@@ -710,16 +914,47 @@ struct CodexSessionTrackingTests {
     }
 }
 
-private actor EventRecorder {
-    private var events: [AgentEvent] = []
+private actor ObservedEventRecorder {
+    private var observedEvents: [CodexRolloutObservedEvent] = []
 
-    func append(_ event: AgentEvent) {
-        events.append(event)
+    func append(_ observed: CodexRolloutObservedEvent) {
+        observedEvents.append(observed)
     }
 
-    func snapshot() -> [AgentEvent] {
-        events
+    func snapshot() -> [CodexRolloutObservedEvent] {
+        observedEvents
     }
+
+    func snapshotEvents() -> [AgentEvent] {
+        observedEvents.map(\.event)
+    }
+}
+
+private func waitForObservedEvent(
+    in recorder: ObservedEventRecorder,
+    timeout: Duration = .seconds(1),
+    pollInterval: Duration = .milliseconds(10),
+    matching predicate: (CodexRolloutObservedEvent) -> Bool
+) async throws -> CodexRolloutObservedEvent {
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: timeout)
+
+    repeat {
+        let observed = await recorder.snapshot()
+        if let event = observed.first(where: predicate) {
+            return event
+        }
+
+        try await Task.sleep(for: pollInterval)
+    } while clock.now < deadline
+
+    let observed = await recorder.snapshot()
+    if let event = observed.first(where: predicate) {
+        return event
+    }
+
+    Issue.record("Expected matching Codex rollout observation within \(timeout); observed \(observed.count) events")
+    throw CancellationError()
 }
 
 private func appendRolloutLine(_ line: String, to fileURL: URL) throws {

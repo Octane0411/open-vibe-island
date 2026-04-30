@@ -10,6 +10,9 @@ public struct CursorTrackedSessionRecord: Equatable, Codable, Sendable {
     public var updatedAt: Date
     public var jumpTarget: JumpTarget?
     public var cursorMetadata: CursorSessionMetadata?
+    public var isRemote: Bool
+    public var lifecyclePolicy: SessionLifecyclePolicy
+    public var isSessionEnded: Bool
 
     public init(
         sessionID: String,
@@ -20,7 +23,10 @@ public struct CursorTrackedSessionRecord: Equatable, Codable, Sendable {
         phase: SessionPhase,
         updatedAt: Date,
         jumpTarget: JumpTarget? = nil,
-        cursorMetadata: CursorSessionMetadata? = nil
+        cursorMetadata: CursorSessionMetadata? = nil,
+        isRemote: Bool = false,
+        lifecyclePolicy: SessionLifecyclePolicy = .hookDrivenWithProcessFallback,
+        isSessionEnded: Bool = false
     ) {
         self.sessionID = sessionID
         self.title = title
@@ -31,6 +37,9 @@ public struct CursorTrackedSessionRecord: Equatable, Codable, Sendable {
         self.updatedAt = updatedAt
         self.jumpTarget = jumpTarget
         self.cursorMetadata = cursorMetadata
+        self.isRemote = isRemote
+        self.lifecyclePolicy = lifecyclePolicy
+        self.isSessionEnded = isSessionEnded
     }
 
     public init(session: AgentSession) {
@@ -43,7 +52,10 @@ public struct CursorTrackedSessionRecord: Equatable, Codable, Sendable {
             phase: session.phase,
             updatedAt: session.updatedAt,
             jumpTarget: session.jumpTarget,
-            cursorMetadata: session.cursorMetadata
+            cursorMetadata: session.cursorMetadata,
+            isRemote: session.isRemote,
+            lifecyclePolicy: session.lifecyclePolicy,
+            isSessionEnded: session.isSessionEnded
         )
     }
 
@@ -58,7 +70,10 @@ public struct CursorTrackedSessionRecord: Equatable, Codable, Sendable {
             summary: summary,
             updatedAt: updatedAt,
             jumpTarget: jumpTarget,
-            cursorMetadata: cursorMetadata
+            cursorMetadata: cursorMetadata,
+            isRemote: isRemote,
+            lifecyclePolicy: lifecyclePolicy,
+            isSessionEnded: isSessionEnded
         )
     }
 
@@ -67,11 +82,63 @@ public struct CursorTrackedSessionRecord: Equatable, Codable, Sendable {
         session.attachmentState = .stale
         return session
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionID
+        case title
+        case origin
+        case attachmentState
+        case summary
+        case phase
+        case updatedAt
+        case jumpTarget
+        case cursorMetadata
+        case isRemote
+        case lifecyclePolicy
+        case isSessionEnded
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sessionID = try container.decode(String.self, forKey: .sessionID)
+        title = try container.decode(String.self, forKey: .title)
+        origin = try container.decodeIfPresent(SessionOrigin.self, forKey: .origin)
+        attachmentState = try container.decodeIfPresent(SessionAttachmentState.self, forKey: .attachmentState) ?? .stale
+        summary = try container.decode(String.self, forKey: .summary)
+        phase = try container.decode(SessionPhase.self, forKey: .phase)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        jumpTarget = try container.decodeIfPresent(JumpTarget.self, forKey: .jumpTarget)
+        cursorMetadata = try container.decodeIfPresent(CursorSessionMetadata.self, forKey: .cursorMetadata)
+        isRemote = try container.decodeIfPresent(Bool.self, forKey: .isRemote) ?? false
+        lifecyclePolicy = try container.decodeIfPresent(SessionLifecyclePolicy.self, forKey: .lifecyclePolicy)
+            ?? AgentSession.inferredLifecyclePolicy(
+                tool: .cursor,
+                origin: origin,
+                jumpTarget: jumpTarget
+            )
+        isSessionEnded = try container.decodeIfPresent(Bool.self, forKey: .isSessionEnded) ?? false
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(sessionID, forKey: .sessionID)
+        try container.encode(title, forKey: .title)
+        try container.encodeIfPresent(origin, forKey: .origin)
+        try container.encode(attachmentState, forKey: .attachmentState)
+        try container.encode(summary, forKey: .summary)
+        try container.encode(phase, forKey: .phase)
+        try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encodeIfPresent(jumpTarget, forKey: .jumpTarget)
+        try container.encodeIfPresent(cursorMetadata, forKey: .cursorMetadata)
+        try container.encode(isRemote, forKey: .isRemote)
+        try container.encode(lifecyclePolicy, forKey: .lifecyclePolicy)
+        try container.encode(isSessionEnded, forKey: .isSessionEnded)
+    }
 }
 
 public extension CursorTrackedSessionRecord {
     var shouldRestoreToLiveState: Bool {
-        origin != .demo
+        !isSessionEnded && origin != .demo
     }
 }
 
