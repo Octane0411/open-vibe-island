@@ -1194,12 +1194,14 @@ private struct IslandSessionRow: View {
                         Spacer(minLength: 8)
 
                         HStack(spacing: 6) {
-                            compactBadge(session.tool.displayName, presence: presence)
+                            compactBadge(session.tool.displayName, presence: presence,
+                                         tint: BadgeColors.agent(session.tool).opacity(presence == .inactive ? 0.4 : 1.0))
                             if session.isRemote {
                                 compactBadge("SSH", presence: presence, icon: "network")
                             }
                             if let terminalBadge = session.spotlightTerminalBadge {
-                                compactBadge(terminalBadge, presence: presence)
+                                compactBadge(terminalBadge, presence: presence,
+                                             tint: BadgeColors.terminal(terminalBadge).opacity(presence == .inactive ? 0.4 : 1.0))
                             }
                             if presence != .inactive, let usage = contextUsage {
                                 ContextLeftBadge(usage: usage)
@@ -1633,7 +1635,8 @@ private struct IslandSessionRow: View {
     private func compactBadge(
         _ title: String,
         presence: IslandSessionPresence,
-        icon: String? = nil
+        icon: String? = nil,
+        tint: Color? = nil
     ) -> some View {
         HStack(spacing: 3) {
             if let icon {
@@ -1643,7 +1646,7 @@ private struct IslandSessionRow: View {
             Text(title)
                 .font(.system(size: 9, weight: .semibold))
         }
-        .foregroundStyle(badgeTextColor(for: presence))
+        .foregroundStyle(tint ?? badgeTextColor(for: presence))
         .padding(.horizontal, 7)
         .padding(.vertical, 3.5)
         .background(Color(red: 0.14, green: 0.14, blue: 0.15), in: Capsule())

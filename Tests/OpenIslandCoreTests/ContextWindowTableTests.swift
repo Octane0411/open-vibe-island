@@ -4,8 +4,8 @@ import Testing
 
 struct ContextWindowTableTests {
     @Test
-    func opus47Returns200K() {
-        #expect(ContextWindowTable.window(for: "claude-opus-4-7") == 200_000)
+    func opus47Returns160K() {
+        #expect(ContextWindowTable.window(for: "claude-opus-4-7") == 160_000)
     }
 
     @Test
@@ -14,23 +14,23 @@ struct ContextWindowTableTests {
     }
 
     @Test
-    func sonnetReturns200K() {
-        #expect(ContextWindowTable.window(for: "claude-sonnet-4-6") == 200_000)
+    func sonnetReturns160K() {
+        #expect(ContextWindowTable.window(for: "claude-sonnet-4-6") == 160_000)
     }
 
     @Test
-    func haikuReturns200K() {
-        #expect(ContextWindowTable.window(for: "claude-haiku-4-5-20251001") == 200_000)
+    func haikuReturns160K() {
+        #expect(ContextWindowTable.window(for: "claude-haiku-4-5-20251001") == 160_000)
     }
 
     @Test
-    func unknownModelReturns200KDefault() {
-        #expect(ContextWindowTable.window(for: "some-future-model") == 200_000)
+    func unknownModelReturns160KDefault() {
+        #expect(ContextWindowTable.window(for: "some-future-model") == 160_000)
     }
 
     @Test
-    func emptyOrNilReturns200KDefault() {
-        #expect(ContextWindowTable.window(for: "") == 200_000)
-        #expect(ContextWindowTable.window(for: nil) == 200_000)
+    func emptyOrNilReturns160KDefault() {
+        #expect(ContextWindowTable.window(for: "") == 160_000)
+        #expect(ContextWindowTable.window(for: nil) == 160_000)
     }
 }

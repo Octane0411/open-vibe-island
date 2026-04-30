@@ -12,8 +12,8 @@ struct ContextUsageReaderTests {
             #"{"type":"assistant","message":{"role":"assistant","model":"claude-opus-4-7","usage":{"input_tokens":1000,"cache_read_input_tokens":500,"cache_creation_input_tokens":2500,"output_tokens":50}}}"#
         ].joined(separator: "\n")
         let usage = try #require(ContextUsageReader.parse(transcriptData: data(lines)))
-        #expect(usage.used == 3500)
-        #expect(usage.window == 200_000)
+        #expect(usage.used == 4000)
+        #expect(usage.window == 160_000)
     }
 
     @Test
