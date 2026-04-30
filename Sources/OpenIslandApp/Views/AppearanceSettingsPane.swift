@@ -89,6 +89,39 @@ struct AppearanceSettingsPane: View {
                 }
             }
 
+            Section(lang.t("settings.notchWidgets.title")) {
+                Picker(lang.t("settings.notchWidgets.rightSlot"), selection: Binding(
+                    get: { model.notchWidgetConfig.rightSlot },
+                    set: { newValue in
+                        model.notchWidgetConfig = NotchWidgetConfig(
+                            rightSlot: newValue,
+                            centerSlotExternal: model.notchWidgetConfig.centerSlotExternal
+                        )
+                    }
+                )) {
+                    ForEach(NotchWidgetKind.allCases, id: \.self) { kind in
+                        Text(localizedKindName(kind)).tag(kind)
+                    }
+                }
+
+                Picker(lang.t("settings.notchWidgets.centerSlot"), selection: Binding(
+                    get: { model.notchWidgetConfig.centerSlotExternal },
+                    set: { newValue in
+                        model.notchWidgetConfig = NotchWidgetConfig(
+                            rightSlot: model.notchWidgetConfig.rightSlot,
+                            centerSlotExternal: newValue
+                        )
+                    }
+                )) {
+                    ForEach(NotchWidgetKind.allCases, id: \.self) { kind in
+                        Text(localizedKindName(kind)).tag(kind)
+                    }
+                }
+                Text(lang.t("settings.notchWidgets.centerSlotHint"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section {
                 Text(lang.t("settings.appearance.communityNote"))
                     .font(.caption)
@@ -312,6 +345,16 @@ struct AppearanceSettingsPane: View {
         case .steps:  lang.t("settings.appearance.pixelShape.steps")
         case .blocks: lang.t("settings.appearance.pixelShape.blocks")
         case .custom: lang.t("settings.appearance.pixelShape.custom")
+        }
+    }
+
+    private func localizedKindName(_ kind: NotchWidgetKind) -> String {
+        switch kind {
+        case .none:             return lang.t("settings.notchWidgets.kind.none")
+        case .sessionCount:     return lang.t("settings.notchWidgets.kind.sessionCount")
+        case .projectChip:      return lang.t("settings.notchWidgets.kind.projectChip")
+        case .agentToolIcon:    return lang.t("settings.notchWidgets.kind.agentToolIcon")
+        case .dollarSpentToday: return lang.t("settings.notchWidgets.kind.dollarSpentToday")
         }
     }
 }
