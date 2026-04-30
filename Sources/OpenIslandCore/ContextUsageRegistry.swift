@@ -56,12 +56,18 @@ public final class ContextUsageRegistry {
             eventMask: [.write, .extend, .delete, .rename],
             queue: .global(qos: .utility)
         )
-        source.setEventHandler { [weak self] in
-            Task { @MainActor [weak self] in
-                self?.scheduleRefresh(sessionID: sessionID, transcriptPath: transcriptPath)
+        let weakBox = WeakBox(value: self)
+        let capturedSessionID = sessionID
+        let capturedTranscriptPath = transcriptPath
+        source.setEventHandler { @Sendable in
+            Task { @MainActor in
+                weakBox.value?.scheduleRefresh(
+                    sessionID: capturedSessionID,
+                    transcriptPath: capturedTranscriptPath
+                )
             }
         }
-        source.setCancelHandler { close(fd) }
+        source.setCancelHandler { @Sendable in close(fd) }
         source.resume()
         watchers[sessionID] = source
     }
@@ -80,5 +86,9 @@ public final class ContextUsageRegistry {
                 self.cache[sessionID] = usage
             }
         }
+    }
+
+    private struct WeakBox: @unchecked Sendable {
+        weak var value: ContextUsageRegistry?
     }
 }
