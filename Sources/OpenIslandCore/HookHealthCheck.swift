@@ -130,6 +130,7 @@ public enum HookHealthCheck {
         // 2. Check config file
         let settingsPath = settingsURL.path
         var configMalformed = false
+        var configReadFailed = false
         if fileManager.fileExists(atPath: settingsPath) {
             if let data = try? Data(contentsOf: settingsURL) {
                 // Check JSON validity
@@ -155,18 +156,26 @@ public enum HookHealthCheck {
                         issues.append(.otherHooksDetected(names: otherNames.sorted()))
                     }
                 }
+            } else {
+                // File exists but couldn't be read (permissions / IO error).
+                // Don't trust subsequent re-reads of the file, and don't claim
+                // "not installed" when we genuinely don't know what's there.
+                configReadFailed = true
             }
         }
 
         // 3. Detect missing Open Island installation. The presence of the
         // .claude directory is a strong signal that the user runs Claude
         // Code; if our hooks aren't there we should surface it as an error
-        // rather than silently reporting "all healthy".
+        // rather than silently reporting "all healthy". Suppress when the
+        // config couldn't be read or parsed — those failures shouldn't
+        // masquerade as "not installed".
         let claudeDirExists = fileManager.fileExists(atPath: claudeDirectory.path)
-        let openIslandInstalled = !configMalformed
+        let configUntrusted = configMalformed || configReadFailed
+        let openIslandInstalled = !configUntrusted
             && fileManager.fileExists(atPath: settingsPath)
             && hasOpenIslandHooks(in: settingsURL, fileManager: fileManager)
-        if claudeDirExists && !openIslandInstalled && !configMalformed {
+        if claudeDirExists && !openIslandInstalled && !configUntrusted {
             issues.append(.notInstalled(configPath: settingsPath))
         }
 
@@ -215,6 +224,7 @@ public enum HookHealthCheck {
         // 2. Check config file
         let hooksPath = hooksURL.path
         var configMalformed = false
+        var configReadFailed = false
         if fileManager.fileExists(atPath: hooksPath) {
             if let data = try? Data(contentsOf: hooksURL) {
                 if (try? JSONSerialization.jsonObject(with: data)) == nil {
@@ -231,16 +241,19 @@ public enum HookHealthCheck {
                         issues.append(.otherHooksDetected(names: otherNames.sorted()))
                     }
                 }
+            } else {
+                configReadFailed = true
             }
         }
 
         // 3. Detect missing Open Island installation. See the analogous
         // block in checkClaude for the rationale.
         let codexDirExists = fileManager.fileExists(atPath: codexDirectory.path)
-        let openIslandInstalled = !configMalformed
+        let configUntrusted = configMalformed || configReadFailed
+        let openIslandInstalled = !configUntrusted
             && fileManager.fileExists(atPath: hooksPath)
             && hasOpenIslandHooks(in: hooksURL, fileManager: fileManager)
-        if codexDirExists && !openIslandInstalled && !configMalformed {
+        if codexDirExists && !openIslandInstalled && !configUntrusted {
             issues.append(.notInstalled(configPath: hooksPath))
         }
 

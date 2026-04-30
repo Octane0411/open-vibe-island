@@ -110,6 +110,41 @@ struct HookHealthCheckTests {
     }
 
     @Test
+    func claudeSkipsNotInstalledWhenSettingsFileUnreadable() throws {
+        // Regression for CodeRabbit's review on PR #426: a permissions / IO
+        // failure on settings.json should not silently degrade to
+        // ".notInstalled" — that would hide the real problem.
+        let env = try TempEnv()
+        defer { env.cleanup() }
+
+        try env.writeBinary("OpenIslandHooks", at: env.binaryURL)
+        try env.writeJSON(["hooks": [String: Any]()], at: env.claudeSettingsURL)
+
+        let fm = FileManager.default
+        try fm.setAttributes([.posixPermissions: 0o000], ofItemAtPath: env.claudeSettingsURL.path)
+        defer {
+            try? fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: env.claudeSettingsURL.path)
+        }
+
+        // Sanity: skip the test if running as root, where chmod 000 doesn't
+        // actually deny reads (CI / sandboxed environments are typically not root).
+        guard (try? Data(contentsOf: env.claudeSettingsURL)) == nil else {
+            return
+        }
+
+        let report = HookHealthCheck.checkClaude(
+            claudeDirectory: env.claudeDirURL,
+            hooksBinaryURL: env.binaryURL,
+            managedHooksBinaryURL: env.binaryURL
+        )
+
+        #expect(!report.errors.contains { issue in
+            if case .notInstalled = issue { return true }
+            return false
+        }, "Unreadable config should not be reported as 'not installed'")
+    }
+
+    @Test
     func claudeSkipsNotInstalledWhenConfigMalformed() throws {
         let env = try TempEnv()
         defer { env.cleanup() }
