@@ -20,6 +20,7 @@ struct ContextLeftBadge: View {
                 .padding(.vertical, 1)
                 .background(Color.white.opacity(0.04), in: Capsule())
                 .accessibilityLabel("\(Int(usage.percentLeft.rounded()))% context left")
+                .allowsHitTesting(false)
         } else {
             HStack(spacing: 4) {
                 ZStack(alignment: .leading) {
@@ -38,6 +39,7 @@ struct ContextLeftBadge: View {
             .padding(.vertical, 1)
             .background(Color.white.opacity(0.04), in: Capsule())
             .accessibilityLabel("\(Int(usage.percentLeft.rounded()))% context left")
+            .allowsHitTesting(false)
         }
     }
 

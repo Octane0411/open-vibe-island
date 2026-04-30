@@ -52,9 +52,12 @@ public enum ContextUsageReader {
                 continue
             }
             let input = (usage["input_tokens"] as? NSNumber)?.intValue ?? 0
-            let cacheRead = (usage["cache_read_input_tokens"] as? NSNumber)?.intValue ?? 0
             let cacheCreate = (usage["cache_creation_input_tokens"] as? NSNumber)?.intValue ?? 0
-            let used = input + cacheRead + cacheCreate
+            // Deliberately exclude cache_read_input_tokens: for active Claude Code
+            // sessions the read cache fills the 200K window every turn, which makes
+            // the percent-left meter useless. input + cache_creation tracks "new
+            // content added this turn", which drops back after auto-compact.
+            let used = input + cacheCreate
             let window = ContextWindowTable.window(for: message["model"] as? String)
             latest = ContextUsage(used: used, window: window)
         }

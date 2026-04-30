@@ -243,7 +243,7 @@ struct IslandPanelView: View {
                 lastCompletionTimestamp = Date()
             }
         }
-        .onChange(of: model.notchStatus, initial: true) { _, newValue in
+        .onChange(of: model.notchStatus) { _, newValue in
             model.setHeaderNeedsCodeburn(newValue == .opened)
         }
         .alert(model.lang.t("island.quit.confirmTitle"), isPresented: $showingQuitConfirmation) {
