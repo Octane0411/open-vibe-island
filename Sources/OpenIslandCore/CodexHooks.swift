@@ -3,6 +3,7 @@ import Foundation
 public enum CodexHookEventName: String, Codable, Sendable {
     case sessionStart = "SessionStart"
     case preToolUse = "PreToolUse"
+    case permissionRequest = "PermissionRequest"
     case postToolUse = "PostToolUse"
     case userPromptSubmit = "UserPromptSubmit"
     case stop = "Stop"
@@ -20,9 +21,11 @@ public enum CodexPermissionMode: String, Codable, Sendable {
 
 public struct CodexHookToolInput: Equatable, Codable, Sendable {
     public var command: String
+    public var description: String?
 
-    public init(command: String) {
+    public init(command: String, description: String? = nil) {
         self.command = command
+        self.description = description
     }
 }
 
@@ -191,16 +194,58 @@ public struct CodexHookPayload: Equatable, Codable, Sendable {
     }
 }
 
+public enum CodexPermissionRequestDecision: Equatable, Codable, Sendable {
+    case allow
+    case deny(message: String?)
+
+    private enum CodingKeys: String, CodingKey {
+        case behavior
+        case message
+    }
+
+    private enum Behavior: String, Codable {
+        case allow
+        case deny
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let behavior = try container.decode(Behavior.self, forKey: .behavior)
+
+        switch behavior {
+        case .allow:
+            self = .allow
+        case .deny:
+            self = .deny(message: try container.decodeIfPresent(String.self, forKey: .message))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+
+        switch self {
+        case .allow:
+            try container.encode(Behavior.allow, forKey: .behavior)
+        case let .deny(message):
+            try container.encode(Behavior.deny, forKey: .behavior)
+            try container.encodeIfPresent(message, forKey: .message)
+        }
+    }
+}
+
 public enum CodexHookDirective: Equatable, Codable, Sendable {
     case deny(reason: String)
+    case permissionRequest(CodexPermissionRequestDecision)
 
     private enum CodingKeys: String, CodingKey {
         case type
         case reason
+        case decision
     }
 
     private enum DirectiveType: String, Codable {
         case deny
+        case permissionRequest
     }
 
     public init(from decoder: any Decoder) throws {
@@ -210,6 +255,8 @@ public enum CodexHookDirective: Equatable, Codable, Sendable {
         switch type {
         case .deny:
             self = .deny(reason: try container.decode(String.self, forKey: .reason))
+        case .permissionRequest:
+            self = .permissionRequest(try container.decode(CodexPermissionRequestDecision.self, forKey: .decision))
         }
     }
 
@@ -220,6 +267,9 @@ public enum CodexHookDirective: Equatable, Codable, Sendable {
         case let .deny(reason):
             try container.encode(DirectiveType.deny, forKey: .type)
             try container.encode(reason, forKey: .reason)
+        case let .permissionRequest(decision):
+            try container.encode(DirectiveType.permissionRequest, forKey: .type)
+            try container.encode(decision, forKey: .decision)
         }
     }
 }
@@ -228,6 +278,21 @@ public enum CodexHookOutputEncoder {
     private struct LegacyBlockOutput: Codable {
         var decision = "block"
         var reason: String
+    }
+
+    private struct PermissionRequestOutput: Encodable {
+        struct HookSpecificOutput: Encodable {
+            let hookEventName: String = CodexHookEventName.permissionRequest.rawValue
+            let decision: CodexPermissionRequestDecision
+        }
+
+        var continue_ = true
+        var hookSpecificOutput: HookSpecificOutput
+
+        private enum CodingKeys: String, CodingKey {
+            case continue_ = "continue"
+            case hookSpecificOutput
+        }
     }
 
     public static func standardOutput(for response: BridgeResponse) throws -> Data? {
@@ -243,6 +308,12 @@ public enum CodexHookOutputEncoder {
             switch directive {
             case let .deny(reason):
                 data = try encoder.encode(LegacyBlockOutput(reason: reason))
+            case let .permissionRequest(decision):
+                data = try encoder.encode(
+                    PermissionRequestOutput(
+                        hookSpecificOutput: PermissionRequestOutput.HookSpecificOutput(decision: decision)
+                    )
+                )
             }
 
             var line = data
@@ -307,6 +378,8 @@ public extension CodexHookPayload {
             return "Started Codex session in \(workspaceName)."
         case .preToolUse:
             return "Codex is preparing a Bash command in \(workspaceName)."
+        case .permissionRequest:
+            return "Codex is waiting for permission approval in \(workspaceName)."
         case .postToolUse:
             return "Codex reported a Bash result in \(workspaceName)."
         case .userPromptSubmit:
