@@ -395,11 +395,30 @@ struct IslandPanelView: View {
                         .fill(Color.black)
                         .frame(width: closedNotchWidth - NotchShape.closedTopRadius + (isPopping ? 18 : 0))
                         .overlay(
-                            CentralActivityLabel(
-                                toolName: closedSpotlightSession?.currentToolName,
-                                preview: closedSpotlightSession?.currentCommandPreviewText,
-                                isVisible: isExternalDisplayPlacement && hasClosedPresence
-                            )
+                            ZStack {
+                                CentralActivityLabel(
+                                    toolName: closedSpotlightSession?.currentToolName,
+                                    preview: closedSpotlightSession?.currentCommandPreviewText,
+                                    isVisible: isExternalDisplayPlacement
+                                        && hasClosedPresence
+                                        && model.notchWidgetConfig.centerSlotExternal == .none
+                                )
+
+                                if isExternalDisplayPlacement && hasClosedPresence
+                                    && model.notchWidgetConfig.centerSlotExternal != .none {
+                                    NotchSlotHost(
+                                        kind: model.notchWidgetConfig.centerSlotExternal,
+                                        availableWidth: closedNotchWidth - NotchShape.closedTopRadius - 24,
+                                        liveSessionCount: model.liveSessionCount,
+                                        spotlightTool: closedSpotlightSession?.tool,
+                                        spotlightWorkspaceName: closedSpotlightSession?.jumpTarget?.workspaceName,
+                                        spotlightWorkspaceKey: closedSpotlightSession?.jumpTarget?.workingDirectory
+                                            ?? closedSpotlightSession?.jumpTarget?.workspaceName,
+                                        projectColorRegistry: model.projectColorRegistry,
+                                        codeburnState: model.codeburnClient?.state ?? .notProbed
+                                    )
+                                }
+                            }
                         )
                 }
 
