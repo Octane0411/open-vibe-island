@@ -128,8 +128,14 @@ fi
 # scripts/setup-dev-signing.sh for a one-time setup that creates this
 # identity locally with zero Apple Developer Program involvement.
 sign_identity="-"
-if security find-identity -p codesigning -v "$HOME/Library/Keychains/login.keychain-db" 2>/dev/null \
-       | grep -q '"Open Island Dev Local"'; then
+codesigning_identities="$(security find-identity -p codesigning -v "$HOME/Library/Keychains/login.keychain-db" 2>/dev/null)"
+# Prefer a real Apple-issued Apple Development cert when present — gives the
+# most stable runtime acceptance on macOS 13+ (some macOS 26 builds reject
+# self-signed code-signing certs at launch with SIGKILL/CODESIGNING). Fall
+# back to the local self-signed identity, then to ad-hoc.
+if apple_dev_identity="$(echo "$codesigning_identities" | sed -nE 's/.*"(Apple Development: [^"]+)".*/\1/p' | head -n 1)"; [ -n "$apple_dev_identity" ]; then
+    sign_identity="$apple_dev_identity"
+elif echo "$codesigning_identities" | grep -q '"Open Island Dev Local"'; then
     sign_identity="Open Island Dev Local"
 else
     echo
