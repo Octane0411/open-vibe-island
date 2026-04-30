@@ -61,3 +61,32 @@ public enum ContextUsageReader {
         return latest
     }
 }
+
+extension ContextUsageReader {
+    /// Maximum bytes to read from the tail of the transcript when looking
+    /// for the last assistant-with-usage line. 64KB covers ~hundreds of
+    /// turns; we extend to 256KB if no usage block is found.
+    static let primaryTailBytes = 64 * 1024
+    static let extendedTailBytes = 256 * 1024
+
+    /// Reads the tail of the transcript file and returns the most recent
+    /// context usage snapshot. Returns nil if the file is missing,
+    /// unreadable, or contains no assistant-with-usage line in the
+    /// extended tail window.
+    public static func read(transcriptPath: String) -> ContextUsage? {
+        if let usage = readTail(path: transcriptPath, bytes: primaryTailBytes) {
+            return usage
+        }
+        return readTail(path: transcriptPath, bytes: extendedTailBytes)
+    }
+
+    private static func readTail(path: String, bytes: Int) -> ContextUsage? {
+        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? handle.close() }
+        let size = (try? handle.seekToEnd()) ?? 0
+        let offset = size > UInt64(bytes) ? size - UInt64(bytes) : 0
+        try? handle.seek(toOffset: offset)
+        let data = (try? handle.readToEnd()) ?? Data()
+        return parse(transcriptData: data)
+    }
+}
