@@ -2030,7 +2030,7 @@ private struct AttentionIndicator: View {
 
 // MARK: - Closed count badge (right side of closed notch)
 
-private struct ClosedCountBadge: View {
+struct ClosedCountBadge: View {
     let liveCount: Int
     let tint: Color
 
