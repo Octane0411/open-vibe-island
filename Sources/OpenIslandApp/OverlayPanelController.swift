@@ -132,7 +132,13 @@ final class OverlayPanelController {
         panel.isMovable = false
         panel.hidesOnDeactivate = false
         panel.acceptsMouseMovedEvents = false
-        panel.collectionBehavior = [.fullScreenAuxiliary, .canJoinAllSpaces, .ignoresCycle]
+        // `.stationary` keeps the overlay pinned during the macOS Sonoma+
+        // "click wallpaper to reveal desktop" gesture (and Mission Control
+        // / Show Desktop). Without it the panel slides off-screen with the
+        // user's other windows — on built-in notch displays it disappears
+        // below the menu bar, and on external displays it falls out of the
+        // top bar entirely.
+        panel.collectionBehavior = [.fullScreenAuxiliary, .canJoinAllSpaces, .ignoresCycle, .stationary]
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.ignoresMouseEvents = true
