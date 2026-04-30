@@ -355,6 +355,16 @@ final class AppModel {
             updateCodeburnPolling()
         }
     }
+    private(set) var headerNeedsCodeburn: Bool = false {
+        didSet {
+            guard headerNeedsCodeburn != oldValue else { return }
+            updateCodeburnPolling()
+        }
+    }
+
+    func setHeaderNeedsCodeburn(_ needs: Bool) {
+        headerNeedsCodeburn = needs
+    }
     let projectColorRegistry: ProjectColorRegistry = {
         let supportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first!.appendingPathComponent("OpenIsland", isDirectory: true)
@@ -380,6 +390,7 @@ final class AppModel {
     private func updateCodeburnPolling() {
         let needsCodeburn = notchWidgetConfig.rightSlot == .dollarSpentToday
             || notchWidgetConfig.centerSlotExternal == .dollarSpentToday
+            || headerNeedsCodeburn
         if needsCodeburn {
             if codeburnClient == nil {
                 codeburnClient = CodeburnClient(runner: ProcessCodeburnRunner())
