@@ -1,8 +1,11 @@
 import Dispatch
 import Darwin
 import Foundation
+import os
 
 public final class BridgeServer: @unchecked Sendable {
+    private static let approvalFlashLogger = Logger(subsystem: "app.openisland", category: "ApprovalFlashDebug")
+
     private struct ClientConnection {
         let id: UUID
         let fileDescriptor: Int32
@@ -705,6 +708,7 @@ public final class BridgeServer: @unchecked Sendable {
                     clientID: clientID,
                     kind: .permission(payload)
                 )
+                Self.approvalFlashLogger.info("[FLASH] Claude permission registered for session \(payload.sessionID, privacy: .public) (clientID=\(clientID.uuidString, privacy: .public)) tool=\(payload.toolName ?? "?", privacy: .public)")
             }
 
         case .postToolUse:
@@ -2458,8 +2462,12 @@ public final class BridgeServer: @unchecked Sendable {
     private func scheduleDisconnectResolution(
         sessionID: String,
         summary: String,
+        originLabel: String,
+        clientID: UUID,
         hasOtherPendingInteraction: @escaping @Sendable () -> Bool
     ) {
+        Self.approvalFlashLogger.warning("[FLASH] \(originLabel, privacy: .public) hook disconnected — deferring actionableStateResolved for session \(sessionID, privacy: .public) (clientID=\(clientID.uuidString, privacy: .public)) by \(Self.hookDisconnectGracePeriod)s")
+
         // Supersede any earlier deferred resolution for this sessionID — we
         // only need the most recent disconnect to drive the eventual emit.
         pendingDisconnectResolutions.removeValue(forKey: sessionID)?.cancel()
@@ -2471,9 +2479,11 @@ public final class BridgeServer: @unchecked Sendable {
             // A fresh hook re-registered before the grace period elapsed —
             // skip the resolved emit so the approval card stays put.
             if hasOtherPendingInteraction() {
+                Self.approvalFlashLogger.info("[FLASH] grace cancelled — replacement hook owns session \(sessionID, privacy: .public)")
                 return
             }
 
+            Self.approvalFlashLogger.warning("[FLASH] grace expired — emitting actionableStateResolved for session \(sessionID, privacy: .public)")
             self.emit(
                 .actionableStateResolved(
                     ActionableStateResolved(
@@ -2494,7 +2504,11 @@ public final class BridgeServer: @unchecked Sendable {
     /// the same session) is cancelled before it can clobber the new state.
     /// Must be called on `queue`.
     private func cancelPendingDisconnectResolution(for sessionID: String) {
-        pendingDisconnectResolutions.removeValue(forKey: sessionID)?.cancel()
+        guard let workItem = pendingDisconnectResolutions.removeValue(forKey: sessionID) else {
+            return
+        }
+        Self.approvalFlashLogger.info("[FLASH] new pending interaction for session \(sessionID, privacy: .public) — cancelling deferred actionableStateResolved")
+        workItem.cancel()
     }
 
     private func hasSession(id: String) -> Bool {
@@ -2548,6 +2562,8 @@ public final class BridgeServer: @unchecked Sendable {
             scheduleDisconnectResolution(
                 sessionID: sessionID,
                 summary: "Hook process disconnected.",
+                originLabel: "Claude",
+                clientID: clientID,
                 hasOtherPendingInteraction: { [weak self] in
                     self?.pendingClaudeInteractions[sessionID] != nil
                 }
@@ -2564,6 +2580,8 @@ public final class BridgeServer: @unchecked Sendable {
             scheduleDisconnectResolution(
                 sessionID: sessionID,
                 summary: "Plugin process disconnected.",
+                originLabel: "OpenCode",
+                clientID: clientID,
                 hasOtherPendingInteraction: { [weak self] in
                     self?.pendingOpenCodeInteractions[sessionID] != nil
                 }
@@ -2580,6 +2598,8 @@ public final class BridgeServer: @unchecked Sendable {
             scheduleDisconnectResolution(
                 sessionID: sessionID,
                 summary: "Hook process disconnected.",
+                originLabel: "Cursor",
+                clientID: clientID,
                 hasOtherPendingInteraction: { [weak self] in
                     self?.pendingCursorInteractions[sessionID] != nil
                 }
