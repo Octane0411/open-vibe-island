@@ -96,6 +96,30 @@ final class OverlayPanelController {
         }
     }
 
+    /// Fully orders the panel out of the window list and stops mouse-event
+    /// monitors. Used to make the overlay disappear from fullscreen Spaces
+    /// (Mission Control, app fullscreen) when the user has opted in.
+    func forceHide() {
+        guard let panel else { return }
+        panel.orderOut(nil)
+        eventMonitors.stop()
+    }
+
+    /// Restores the panel after `forceHide()`. Re-positions it on the resolved
+    /// target screen and re-arms the event monitors. No-op if the panel is
+    /// already visible.
+    func forceShowIfNeeded(model: AppModel, preferredScreenID: String?) {
+        self.model = model
+        guard let panel else { return }
+        if !panel.isVisible {
+            positionPanel(panel, preferredScreenID: preferredScreenID, animated: false)
+            panel.orderFrontRegardless()
+            panel.ignoresMouseEvents = true
+            panel.acceptsMouseMovedEvents = false
+        }
+        startEventMonitoring()
+    }
+
     func reposition(preferredScreenID: String?) -> OverlayPlacementDiagnostics? {
         guard let panel else {
             return placementDiagnostics(preferredScreenID: preferredScreenID)
