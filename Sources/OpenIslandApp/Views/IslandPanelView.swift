@@ -293,6 +293,17 @@ struct IslandPanelView: View {
                     .fill(Color.black.opacity(hidesClosedSurfaceChrome ? 0 : 1))
                     .frame(width: surfaceWidth, height: surfaceHeight)
 
+                AmbientThemeOverlay(
+                    tintColor: spotlightProjectColor,
+                    opacity: AmbientTheme.effectiveOpacity(
+                        enabled: model.ambientThemeEnabled,
+                        sliderValue: model.ambientThemeOpacity
+                    )
+                )
+                .frame(width: surfaceWidth, height: surfaceHeight)
+                .clipShape(surfaceShape)
+                .opacity(hidesClosedSurfaceChrome ? 0 : 1)
+
                 VStack(spacing: 0) {
                     headerRow
                         .frame(height: closedNotchHeight)
@@ -359,6 +370,14 @@ struct IslandPanelView: View {
 
     private var closedNotchHeight: CGFloat {
         (targetOverlayScreen ?? NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }))?.islandClosedHeight ?? 24
+    }
+
+    private var spotlightProjectColor: ProjectColor? {
+        guard let key = closedSpotlightSession?.jumpTarget?.workingDirectory
+            ?? closedSpotlightSession?.jumpTarget?.workspaceName else {
+            return nil
+        }
+        return model.projectColorRegistry.color(for: key)
     }
 
     private var companionState: CompanionState {
