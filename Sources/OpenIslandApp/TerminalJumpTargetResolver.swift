@@ -136,6 +136,47 @@ struct TerminalJumpTargetResolver {
             }
         }
 
+        // Active-process CWD fallback: for sessions still showing Unknown
+        // terminal but a known workingDirectory, match against any live agent
+        // process whose workingDirectory matches. Picks up cmux/zellij/kaku
+        // sessions whose live process has the terminal info we need but whose
+        // sessionID didn't match the recovered transcript session.
+        for session in sessions {
+            guard jumpTargetUpdates[session.id] == nil,
+                  let jumpTarget = session.jumpTarget,
+                  jumpTarget.terminalApp.lowercased() == "unknown",
+                  let sessionCWD = nonEmptyValue(jumpTarget.workingDirectory) else {
+                continue
+            }
+            let normalizedSessionCWD = normalizedPathForMatching(sessionCWD)
+            guard let process = activeProcesses.first(where: {
+                guard let processCWD = $0.workingDirectory,
+                      normalizedPathForMatching(processCWD) == normalizedSessionCWD,
+                      let processTerminal = $0.terminalApp,
+                      processTerminal.lowercased() != "unknown" else {
+                    return false
+                }
+                return true
+            }) else {
+                continue
+            }
+
+            var corrected = jumpTarget
+            if let app = process.terminalApp, !app.isEmpty {
+                corrected.terminalApp = app
+            }
+            if let tty = process.terminalTTY, !tty.isEmpty {
+                corrected.terminalTTY = tty
+            }
+            if let target = process.tmuxTarget, !target.isEmpty {
+                corrected.tmuxTarget = target
+            }
+            if let socket = process.tmuxSocketPath, !socket.isEmpty {
+                corrected.tmuxSocketPath = socket
+            }
+            jumpTargetUpdates[session.id] = corrected
+        }
+
         return jumpTargetUpdates
     }
 
