@@ -26,6 +26,7 @@ final class AppModel {
     private static let showCodexUsageDefaultsKey = "app.showCodexUsage"
     private static let completionReplyEnabledDefaultsKey = "feature.completionReply.enabled"
     private static let suppressFrontmostNotificationsDefaultsKey = "app.suppressFrontmostNotifications"
+    private static let hideInFullscreenDefaultsKey = "app.hideInFullscreen"
 
     static let defaultStatusColors: [SessionPhase: String] = [
         .running: "#6E9FFF",
@@ -73,6 +74,12 @@ final class AppModel {
     let monitoring = ProcessMonitoringCoordinator()
     let codexAppServer = CodexAppServerCoordinator()
     let updateChecker = UpdateChecker()
+
+    private let fullscreenObserver = FullscreenSpaceObserver()
+
+    var hasAttentionRequiredSession: Bool {
+        surfacedSessions.contains { $0.phase.requiresAttention }
+    }
 
     var notchStatus: NotchStatus {
         get { overlay.notchStatus }
@@ -292,6 +299,17 @@ final class AppModel {
     }
     @ObservationIgnored
     private var isApplyingLaunchAtLogin = false
+
+    var hideInFullscreenEnabled: Bool = true {
+        didSet {
+            guard hasFinishedInit, hideInFullscreenEnabled != oldValue else { return }
+            UserDefaults.standard.set(hideInFullscreenEnabled, forKey: Self.hideInFullscreenDefaultsKey)
+            applyFullscreenVisibility()
+        }
+    }
+
+    private(set) var isOverlayScreenFullscreen: Bool = false
+
     var isSoundMuted = false {
         didSet {
             guard isSoundMuted != oldValue else {
@@ -528,12 +546,14 @@ final class AppModel {
             Self.hapticFeedbackEnabledDefaultsKey: false,
             Self.completionReplyEnabledDefaultsKey: false,
             Self.suppressFrontmostNotificationsDefaultsKey: true,
+            Self.hideInFullscreenDefaultsKey: true,
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
         showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
         hapticFeedbackEnabled = UserDefaults.standard.bool(forKey: Self.hapticFeedbackEnabledDefaultsKey)
         suppressFrontmostNotifications = UserDefaults.standard.bool(forKey: Self.suppressFrontmostNotificationsDefaultsKey)
+        hideInFullscreenEnabled = UserDefaults.standard.bool(forKey: Self.hideInFullscreenDefaultsKey)
         if UserDefaults.standard.object(forKey: Self.showCodexUsageDefaultsKey) != nil {
             showCodexUsage = UserDefaults.standard.bool(forKey: Self.showCodexUsageDefaultsKey)
         } else {
@@ -641,6 +661,10 @@ final class AppModel {
         }
 
         refreshOverlayDisplayConfiguration()
+        fullscreenObserver.onChange = { [weak self] fullscreenDisplays in
+            self?.handleFullscreenDisplaysChanged(fullscreenDisplays)
+        }
+        fullscreenObserver.start()
         hasFinishedInit = true
     }
 
@@ -939,6 +963,35 @@ final class AppModel {
 
     func select(sessionID: String) {
         selectedSessionID = sessionID
+    }
+
+    // MARK: - Fullscreen visibility
+
+    private func handleFullscreenDisplaysChanged(_ fullscreenDisplays: Set<CGDirectDisplayID>) {
+        let resolvedScreen = OverlayDisplayResolver.resolveTargetScreen(
+            preferredScreenID: overlay.preferredOverlayScreenIDForExternalUse
+        )
+        let islandDisplayID = resolvedScreen.flatMap { FullscreenSpaceObserver.displayID(for: $0) }
+        let newValue = islandDisplayID.map { fullscreenDisplays.contains($0) } ?? false
+        guard newValue != isOverlayScreenFullscreen else { return }
+        isOverlayScreenFullscreen = newValue
+        applyFullscreenVisibility()
+    }
+
+    func applyFullscreenVisibility() {
+        let suppress = Self.shouldSuppressOverlayForFullscreen(
+            hideInFullscreenEnabled: hideInFullscreenEnabled,
+            isOverlayScreenFullscreen: isOverlayScreenFullscreen,
+            hasAttentionRequiredSession: hasAttentionRequiredSession
+        )
+        if suppress {
+            overlay.overlayPanelController.forceHide()
+        } else {
+            overlay.overlayPanelController.forceShowIfNeeded(
+                model: self,
+                preferredScreenID: overlay.preferredOverlayScreenIDForExternalUse
+            )
+        }
     }
 
     // MARK: - Overlay forwarding
@@ -1246,6 +1299,7 @@ final class AppModel {
         synchronizeSelection()
         discovery.refreshCodexRolloutTracking()
         refreshOverlayPlacementIfVisible()
+        applyFullscreenVisibility()
         discovery.scheduleCodexSessionPersistence()
         discovery.scheduleClaudeSessionPersistence()
         discovery.scheduleOpenCodeSessionPersistence()

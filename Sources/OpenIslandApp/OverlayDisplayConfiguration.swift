@@ -153,6 +153,22 @@ enum OverlayDisplayResolver {
         placementMode(for: screen) == .notch ? "Built-in notch" : "Top-bar fallback"
     }
 
+    /// Public façade for the same screen-resolution logic
+    /// `OverlayPanelController` uses internally. Returns the screen the
+    /// island will be placed on, or nil if no screens are connected.
+    static func resolveTargetScreen(preferredScreenID: String?) -> NSScreen? {
+        let screens = NSScreen.screens
+        guard !screens.isEmpty else { return nil }
+        if let preferredScreenID,
+           let screen = screens.first(where: { screenID(for: $0) == preferredScreenID }) {
+            return screen
+        }
+        if let notchScreen = screens.first(where: { $0.safeAreaInsets.top > 0 }) {
+            return notchScreen
+        }
+        return NSScreen.main ?? screens[0]
+    }
+
     private static func screenID(for screen: NSScreen) -> String {
         let key = NSDeviceDescriptionKey("NSScreenNumber")
         if let number = screen.deviceDescription[key] as? NSNumber {

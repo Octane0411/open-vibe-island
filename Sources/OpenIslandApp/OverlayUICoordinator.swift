@@ -73,6 +73,11 @@ final class OverlayUICoordinator {
         ignoresPointerExitAccessor?() ?? false
     }
 
+    /// Public read-only mirror of `preferredOverlayScreenID` so `AppModel`
+    /// can pass it through to the panel controller without taking a
+    /// dependency on `OverlayUICoordinator` internals.
+    var preferredOverlayScreenIDForExternalUse: String? { preferredOverlayScreenID }
+
     private var preferredOverlayScreenID: String? {
         overlayDisplaySelectionID == OverlayDisplayOption.automaticID
             ? nil
