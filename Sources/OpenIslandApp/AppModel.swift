@@ -33,6 +33,18 @@ final class AppModel {
         .waitingForAnswer: "#FFD95A",
         .completed: "#42E86B",
     ]
+
+    /// Pure decision function exposed for unit tests.
+    static func shouldSuppressOverlayForFullscreen(
+        hideInFullscreenEnabled: Bool,
+        isOverlayScreenFullscreen: Bool,
+        hasAttentionRequiredSession: Bool
+    ) -> Bool {
+        hideInFullscreenEnabled
+            && isOverlayScreenFullscreen
+            && !hasAttentionRequiredSession
+    }
+
     private static let syntheticClaudeSessionPrefix = "claude-process:"
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
     private static let jumpOverlayDismissLeadTime: Duration = .milliseconds(20)
