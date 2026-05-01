@@ -1,14 +1,20 @@
 import Foundation
 
 public enum ContextWindowTable {
+    /// Auto-compact threshold for the 200K context variant.
     public static let defaultWindow: Int = 160_000
 
-    /// Returns the model's context window in tokens. Detects `[1m]` suffix
-    /// for the 1M-context variant (e.g. `claude-opus-4-7[1m]`). Falls back
-    /// to `defaultWindow` for unknown models or nil/empty input.
-    public static func window(for model: String?) -> Int {
-        guard let model, !model.isEmpty else { return defaultWindow }
-        if model.hasSuffix("[1m]") { return 1_000_000 }
+    /// Auto-compact threshold for the 1M context variant.
+    public static let oneMillionWindow: Int = 800_000
+
+    /// Returns the auto-compact threshold for the given model. Detects the
+    /// 1M variant in two ways:
+    ///   1. Explicit `[1m]` suffix on the model identifier
+    ///   2. `observedUsed > 200_000` — only possible on 1M (the 200K API
+    ///      would have rejected the request)
+    public static func window(for model: String?, observedUsed: Int = 0) -> Int {
+        if let model, model.hasSuffix("[1m]") { return oneMillionWindow }
+        if observedUsed > 200_000 { return oneMillionWindow }
         return defaultWindow
     }
 }
@@ -55,7 +61,10 @@ public enum ContextUsageReader {
             let cacheRead = (usage["cache_read_input_tokens"] as? NSNumber)?.intValue ?? 0
             let cacheCreate = (usage["cache_creation_input_tokens"] as? NSNumber)?.intValue ?? 0
             let used = input + cacheRead + cacheCreate
-            let window = ContextWindowTable.window(for: message["model"] as? String)
+            let window = ContextWindowTable.window(
+                for: message["model"] as? String,
+                observedUsed: used
+            )
             latest = ContextUsage(used: used, window: window)
         }
         return latest

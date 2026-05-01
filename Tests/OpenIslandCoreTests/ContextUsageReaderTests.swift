@@ -59,8 +59,8 @@ struct ContextUsageReaderTests {
         let line = #"{"type":"assistant","message":{"role":"assistant","model":"claude-opus-4-7[1m]","usage":{"input_tokens":300000,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"output_tokens":1}}}"#
         let usage = try #require(ContextUsageReader.parse(transcriptData: data(line)))
         #expect(usage.used == 300_000)
-        #expect(usage.window == 1_000_000)
-        #expect(abs(usage.percentLeft - 70.0) < 0.01)
+        #expect(usage.window == 800_000)
+        #expect(abs(usage.percentLeft - 62.5) < 0.01)
     }
 
     @Test

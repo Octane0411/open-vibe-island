@@ -10,7 +10,7 @@ struct ContextWindowTableTests {
 
     @Test
     func opus47With1mSuffixReturns1M() {
-        #expect(ContextWindowTable.window(for: "claude-opus-4-7[1m]") == 1_000_000)
+        #expect(ContextWindowTable.window(for: "claude-opus-4-7[1m]") == 800_000)
     }
 
     @Test
@@ -32,5 +32,25 @@ struct ContextWindowTableTests {
     func emptyOrNilReturns160KDefault() {
         #expect(ContextWindowTable.window(for: "") == 160_000)
         #expect(ContextWindowTable.window(for: nil) == 160_000)
+    }
+
+    @Test
+    func observedUsedAbove200KTriggers1M() {
+        #expect(ContextWindowTable.window(for: "claude-opus-4-7", observedUsed: 400_000) == 800_000)
+    }
+
+    @Test
+    func observedUsedAt200KStaysDefault() {
+        #expect(ContextWindowTable.window(for: "claude-opus-4-7", observedUsed: 200_000) == 160_000)
+    }
+
+    @Test
+    func observedUsedBelow200KStaysDefault() {
+        #expect(ContextWindowTable.window(for: "claude-opus-4-7", observedUsed: 150_000) == 160_000)
+    }
+
+    @Test
+    func suffix1MStaysAt800KEvenWithSmallObserved() {
+        #expect(ContextWindowTable.window(for: "claude-opus-4-7[1m]", observedUsed: 1000) == 800_000)
     }
 }
