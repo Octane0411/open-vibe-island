@@ -30,6 +30,7 @@ final class AppModel {
     private static let notchWidgetConfigDefaultsKey = "notch.widgetConfig"
     private static let ambientThemeEnabledDefaultsKey = "appearance.ambientTheme.enabled"
     private static let ambientThemeOpacityDefaultsKey = "appearance.ambientTheme.opacity"
+    private static let celebrationsEnabledDefaultsKey = "appearance.celebrations.enabled"
 
     static let defaultStatusColors: [SessionPhase: String] = [
         .running: "#6E9FFF",
@@ -384,6 +385,12 @@ final class AppModel {
             UserDefaults.standard.set(ambientThemeOpacity, forKey: Self.ambientThemeOpacityDefaultsKey)
         }
     }
+    var celebrationsEnabled: Bool = true {
+        didSet {
+            guard celebrationsEnabled != oldValue else { return }
+            UserDefaults.standard.set(celebrationsEnabled, forKey: Self.celebrationsEnabledDefaultsKey)
+        }
+    }
     private(set) var headerNeedsCodeburn: Bool = false {
         didSet {
             guard headerNeedsCodeburn != oldValue else { return }
@@ -621,6 +628,7 @@ final class AppModel {
             Self.suppressFrontmostNotificationsDefaultsKey: true,
             Self.ambientThemeEnabledDefaultsKey: true,
             Self.ambientThemeOpacityDefaultsKey: 0.12,
+            Self.celebrationsEnabledDefaultsKey: true,
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
@@ -667,6 +675,7 @@ final class AppModel {
         }
         ambientThemeEnabled = UserDefaults.standard.bool(forKey: Self.ambientThemeEnabledDefaultsKey)
         ambientThemeOpacity = UserDefaults.standard.double(forKey: Self.ambientThemeOpacityDefaultsKey)
+        celebrationsEnabled = UserDefaults.standard.bool(forKey: Self.celebrationsEnabledDefaultsKey)
         updateCodeburnPolling()
 
         overlay.appModel = self

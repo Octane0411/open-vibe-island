@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 @preconcurrency import MarkdownUI
 import OpenIslandCore
 
@@ -112,6 +113,7 @@ struct IslandPanelView: View {
     @State private var isHovering = false
     @State private var showingQuitConfirmation = false
     @State private var lastCompletionTimestamp: Date?
+    @State private var lastCelebrationTimestamp: Date?
 
     private var isOpened: Bool {
         model.notchStatus == .opened
@@ -243,6 +245,12 @@ struct IslandPanelView: View {
                 lastCompletionTimestamp = Date()
             }
         }
+        .onChange(of: companionState) { _, newState in
+            guard newState == .celebrating else { return }
+            guard model.celebrationsEnabled else { return }
+            guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+            lastCelebrationTimestamp = Date()
+        }
         .onChange(of: model.notchStatus) { _, newValue in
             model.setHeaderNeedsCodeburn(newValue == .opened)
         }
@@ -340,6 +348,19 @@ struct IslandPanelView: View {
                                 .stroke(Color.white.opacity(0.05), lineWidth: 1)
                         }
                         .opacity(showsIdleEdgeWhenCollapsed ? 1 : 0)
+                }
+
+                if let ts = lastCelebrationTimestamp,
+                   Date().timeIntervalSince(ts) < CelebrationParticles.duration {
+                    CelebrationParticles(
+                        tint: spotlightProjectColor,
+                        startedAt: ts,
+                        count: 12
+                    )
+                    .frame(width: surfaceWidth, height: surfaceHeight)
+                    .clipShape(surfaceShape)
+                    .allowsHitTesting(false)
+                    .id(ts)
                 }
             }
             .frame(width: surfaceWidth, height: surfaceHeight, alignment: .top)
