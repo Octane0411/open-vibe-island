@@ -1,8 +1,11 @@
 import Dispatch
 import Darwin
 import Foundation
+import os
 
 public final class BridgeServer: @unchecked Sendable {
+    private static let approvalFlashLogger = Logger(subsystem: "app.openisland", category: "ApprovalFlashDebug")
+
     private struct ClientConnection {
         let id: UUID
         let fileDescriptor: Int32
@@ -691,6 +694,7 @@ public final class BridgeServer: @unchecked Sendable {
                     clientID: clientID,
                     kind: .permission(payload)
                 )
+                Self.approvalFlashLogger.info("[FLASH] Claude permission registered for session \(payload.sessionID, privacy: .public) (clientID=\(clientID.uuidString, privacy: .public)) tool=\(payload.toolName ?? "?", privacy: .public)")
             }
 
         case .postToolUse:
@@ -2482,6 +2486,7 @@ public final class BridgeServer: @unchecked Sendable {
 
         for sessionID in pendingClaudeSessionIDs {
             pendingClaudeInteractions.removeValue(forKey: sessionID)
+            Self.approvalFlashLogger.warning("[FLASH] Claude hook disconnected — emitting actionableStateResolved for session \(sessionID, privacy: .public) (clientID=\(clientID.uuidString, privacy: .public))")
             emit(
                 .actionableStateResolved(
                     ActionableStateResolved(
@@ -2500,6 +2505,7 @@ public final class BridgeServer: @unchecked Sendable {
 
         for sessionID in pendingOpenCodeSessionIDs {
             pendingOpenCodeInteractions.removeValue(forKey: sessionID)
+            Self.approvalFlashLogger.warning("[FLASH] OpenCode plugin disconnected — emitting actionableStateResolved for session \(sessionID, privacy: .public)")
             emit(
                 .actionableStateResolved(
                     ActionableStateResolved(
@@ -2518,6 +2524,7 @@ public final class BridgeServer: @unchecked Sendable {
 
         for sessionID in pendingCursorSessionIDs {
             pendingCursorInteractions.removeValue(forKey: sessionID)
+            Self.approvalFlashLogger.warning("[FLASH] Cursor hook disconnected — emitting actionableStateResolved for session \(sessionID, privacy: .public)")
             emit(
                 .actionableStateResolved(
                     ActionableStateResolved(

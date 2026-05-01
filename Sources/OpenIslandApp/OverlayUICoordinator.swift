@@ -2,10 +2,13 @@ import AppKit
 import Foundation
 import Observation
 import OpenIslandCore
+import os
 
 @MainActor
 @Observable
 final class OverlayUICoordinator {
+
+    private static let approvalFlashLogger = Logger(subsystem: "app.openisland", category: "ApprovalFlashDebug")
 
     private static let notificationSurfaceAutoCollapseDelay: TimeInterval = 10
 
@@ -302,6 +305,7 @@ final class OverlayUICoordinator {
             return
         }
 
+        Self.approvalFlashLogger.info("[FLASH] presentNotificationSurface session=\(surface.sessionID ?? "nil", privacy: .public)")
         NotificationSoundService.playNotification(isMuted: isSoundMuted)
         notchOpen(reason: .notification, surface: surface)
     }
@@ -313,9 +317,13 @@ final class OverlayUICoordinator {
 
         let session = activeIslandCardSession
         guard islandSurface.matchesCurrentState(of: session) else {
+            let phaseDesc = session.map { String(describing: $0.phase) } ?? "no-session"
+            let hasPermission = session?.permissionRequest != nil
             if notchOpenReason == .notification {
+                Self.approvalFlashLogger.warning("[FLASH] reconcile → notchClose: surface session=\(self.islandSurface.sessionID ?? "nil", privacy: .public) phase=\(phaseDesc, privacy: .public) hasPermission=\(hasPermission)")
                 notchClose()
             } else {
+                Self.approvalFlashLogger.warning("[FLASH] reconcile → reset to sessionList (reason=\(String(describing: self.notchOpenReason), privacy: .public))")
                 islandSurface = .sessionList()
             }
             return
