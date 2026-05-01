@@ -245,6 +245,24 @@ struct IslandPanelView: View {
         } message: {
             Text(model.lang.t("island.quit.confirmMessage"))
         }
+        .onReceive(NotificationCenter.default.publisher(for: .sessionSelectionMoveUp)) { _ in
+            handleSelectionMove(.up)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .sessionSelectionMoveDown)) { _ in
+            handleSelectionMove(.down)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .sessionSelectionActivate)) { _ in
+            model.jumpToFocusedSession()
+        }
+    }
+
+    private func handleSelectionMove(_ direction: SessionListNavigationDirection) {
+        let ids = model.islandListSessions.map(\.id)
+        model.selectedSessionID = SessionListKeyboardNavigator.nextSelection(
+            currentID: model.selectedSessionID,
+            ids: ids,
+            direction: direction
+        )
     }
 
     @ViewBuilder

@@ -227,6 +227,10 @@ struct GeneralSettingsPane: View {
                     get: { model.expandOnlyOnHover },
                     set: { model.expandOnlyOnHover = $0 }
                 ))
+                Toggle("Arrow key session navigation", isOn: Binding(
+                    get: { model.keyboardNavEnabled },
+                    set: { model.keyboardNavEnabled = $0 }
+                ))
             }
 
         }

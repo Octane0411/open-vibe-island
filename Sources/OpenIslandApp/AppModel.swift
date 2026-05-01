@@ -10,6 +10,9 @@ extension Notification.Name {
     /// user to the right place without `SettingsView`'s `@State` having
     /// to leak into `AppModel`.
     static let openIslandSelectSetupTab = Notification.Name("openIslandSelectSetupTab")
+    static let sessionSelectionMoveUp = Notification.Name("openIslandSessionSelectionMoveUp")
+    static let sessionSelectionMoveDown = Notification.Name("openIslandSessionSelectionMoveDown")
+    static let sessionSelectionActivate = Notification.Name("openIslandSessionSelectionActivate")
 }
 
 @MainActor
@@ -27,6 +30,7 @@ final class AppModel {
     private static let completionReplyEnabledDefaultsKey = "feature.completionReply.enabled"
     private static let suppressFrontmostNotificationsDefaultsKey = "app.suppressFrontmostNotifications"
     private static let expandOnlyOnHoverDefaultsKey = "app.expandOnlyOnHover"
+    private static let keyboardNavEnabledDefaultsKey = "app.keyboardNavEnabled"
 
     static let defaultStatusColors: [SessionPhase: String] = [
         .running: "#6E9FFF",
@@ -265,6 +269,17 @@ final class AppModel {
             UserDefaults.standard.set(expandOnlyOnHover, forKey: Self.expandOnlyOnHoverDefaultsKey)
         }
     }
+    var keyboardNavEnabled: Bool = true {
+        didSet {
+            guard hasFinishedInit, keyboardNavEnabled != oldValue else { return }
+            UserDefaults.standard.set(keyboardNavEnabled, forKey: Self.keyboardNavEnabledDefaultsKey)
+            if keyboardNavEnabled {
+                setupKeyboardNavMonitor()
+            } else {
+                teardownKeyboardNavMonitor()
+            }
+        }
+    }
     var launchAtLoginEnabled: Bool = false {
         didSet {
             guard !isApplyingLaunchAtLogin, hasFinishedInit, launchAtLoginEnabled != oldValue else { return }
@@ -473,6 +488,9 @@ final class AppModel {
         watchRelay = nil
     }
 
+    @ObservationIgnored
+    private var keyboardNavMonitor: Any?
+
     var ignoresPointerExitDuringHarness = false
     var disablesOverlayEventMonitoringDuringHarness = false
 
@@ -530,6 +548,13 @@ final class AppModel {
         hapticFeedbackEnabled = UserDefaults.standard.bool(forKey: Self.hapticFeedbackEnabledDefaultsKey)
         suppressFrontmostNotifications = UserDefaults.standard.bool(forKey: Self.suppressFrontmostNotificationsDefaultsKey)
         expandOnlyOnHover = UserDefaults.standard.bool(forKey: Self.expandOnlyOnHoverDefaultsKey)
+        if UserDefaults.standard.object(forKey: Self.keyboardNavEnabledDefaultsKey) != nil {
+            keyboardNavEnabled = UserDefaults.standard.bool(forKey: Self.keyboardNavEnabledDefaultsKey)
+        } else {
+            keyboardNavEnabled = true
+        }
+
+        overlay.appModel = self
         if UserDefaults.standard.object(forKey: Self.showCodexUsageDefaultsKey) != nil {
             showCodexUsage = UserDefaults.standard.bool(forKey: Self.showCodexUsageDefaultsKey)
         } else {
@@ -829,6 +854,7 @@ final class AppModel {
         }
         refreshOverlayDisplayConfiguration()
         ensureOverlayPanel()
+        if keyboardNavEnabled { setupKeyboardNavMonitor() }
         if shouldPerformBootAnimation {
             performBootAnimation()
         }
@@ -935,6 +961,34 @@ final class AppModel {
 
     func select(sessionID: String) {
         selectedSessionID = sessionID
+    }
+
+    // MARK: - Keyboard navigation
+
+    func setupKeyboardNavMonitor() {
+        teardownKeyboardNavMonitor()
+        keyboardNavMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, self.keyboardNavEnabled, self.isOverlayVisible else { return event }
+            guard event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty else { return event }
+
+            switch event.keyCode {
+            case 126: // Up arrow
+                NotificationCenter.default.post(name: .sessionSelectionMoveUp, object: nil)
+                return nil
+            case 125: // Down arrow
+                NotificationCenter.default.post(name: .sessionSelectionMoveDown, object: nil)
+                return nil
+            case 36, 76: // Return, Enter
+                NotificationCenter.default.post(name: .sessionSelectionActivate, object: nil)
+                return nil
+            default:
+                return event
+            }
+        }
+    }
+
+    func teardownKeyboardNavMonitor() {
+        if let m = keyboardNavMonitor { NSEvent.removeMonitor(m); keyboardNavMonitor = nil }
     }
 
     // MARK: - Overlay forwarding
