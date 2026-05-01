@@ -18,6 +18,7 @@ struct ActiveAgentProcessDiscovery {
         var transcriptPath: String?
         var tmuxTarget: String?
         var tmuxSocketPath: String?
+        var terminalSessionID: String?
 
         init(
             tool: AgentTool,
@@ -27,7 +28,8 @@ struct ActiveAgentProcessDiscovery {
             terminalApp: String? = nil,
             transcriptPath: String? = nil,
             tmuxTarget: String? = nil,
-            tmuxSocketPath: String? = nil
+            tmuxSocketPath: String? = nil,
+            terminalSessionID: String? = nil
         ) {
             self.tool = tool
             self.sessionID = sessionID
@@ -37,6 +39,7 @@ struct ActiveAgentProcessDiscovery {
             self.transcriptPath = transcriptPath
             self.tmuxTarget = tmuxTarget
             self.tmuxSocketPath = tmuxSocketPath
+            self.terminalSessionID = terminalSessionID
         }
     }
 
@@ -158,6 +161,13 @@ struct ActiveAgentProcessDiscovery {
                     }
                 }
 
+                // For cmux sessions, read the surface ID from the agent process's env
+                // vars so the TerminalJumpService can focus the exact tab.
+                if snapshot.terminalApp?.lowercased() == "cmux",
+                   snapshot.terminalSessionID == nil {
+                    snapshot.terminalSessionID = resolveCmuxSurfaceID(pid: process.pid)
+                }
+
                 snapshots.append(snapshot)
                 continue
             }
@@ -270,6 +280,13 @@ struct ActiveAgentProcessDiscovery {
             }
         }
 
+        // For cmux sessions, read the surface ID from the agent process's env
+        // vars so the TerminalJumpService can focus the exact tab.
+        if snapshot.terminalApp?.lowercased() == "cmux",
+           snapshot.terminalSessionID == nil {
+            snapshot.terminalSessionID = resolveCmuxSurfaceID(pid: process.pid)
+        }
+
         return snapshot
     }
 
@@ -329,6 +346,13 @@ struct ActiveAgentProcessDiscovery {
                 snapshot.tmuxTarget = tmuxTarget
                 snapshot.tmuxSocketPath = socketPath
             }
+        }
+
+        // For cmux sessions, read the surface ID from the agent process's env
+        // vars so the TerminalJumpService can focus the exact tab.
+        if snapshot.terminalApp?.lowercased() == "cmux",
+           snapshot.terminalSessionID == nil {
+            snapshot.terminalSessionID = resolveCmuxSurfaceID(pid: process.pid)
         }
 
         return snapshot
@@ -763,6 +787,30 @@ struct ActiveAgentProcessDiscovery {
         }
 
         return output
+    }
+
+    // MARK: - cmux support
+
+    /// Reads `CMUX_SURFACE_ID` from the agent process's environment via
+    /// `ps eww -p <pid>`. cmux exports this UUID per surface (tab); the
+    /// jump path uses it to drive `surface.focus` over cmux's Unix socket.
+    private func resolveCmuxSurfaceID(pid: String) -> String? {
+        // `ps eww -p <pid>` dumps the process command line + env vars,
+        // space-separated. Find CMUX_SURFACE_ID=<value> and stop at the
+        // next whitespace.
+        guard let output = commandRunner("/bin/ps", ["eww", "-p", pid]),
+              !output.isEmpty else {
+            return nil
+        }
+
+        guard let range = output.range(of: "CMUX_SURFACE_ID=") else {
+            return nil
+        }
+
+        let afterEquals = output[range.upperBound...]
+        let value = afterEquals.prefix(while: { !$0.isWhitespace })
+        let trimmed = String(value).trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     // MARK: - Tmux support

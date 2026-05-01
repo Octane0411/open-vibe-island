@@ -174,6 +174,9 @@ struct TerminalJumpTargetResolver {
             if let socket = process.tmuxSocketPath, !socket.isEmpty {
                 corrected.tmuxSocketPath = socket
             }
+            if let sessionID = process.terminalSessionID, !sessionID.isEmpty {
+                corrected.terminalSessionID = sessionID
+            }
             jumpTargetUpdates[session.id] = corrected
         }
 
