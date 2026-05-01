@@ -28,6 +28,8 @@ final class AppModel {
     private static let completionReplyEnabledDefaultsKey = "feature.completionReply.enabled"
     private static let suppressFrontmostNotificationsDefaultsKey = "app.suppressFrontmostNotifications"
     private static let notchWidgetConfigDefaultsKey = "notch.widgetConfig"
+    private static let ambientThemeEnabledDefaultsKey = "appearance.ambientTheme.enabled"
+    private static let ambientThemeOpacityDefaultsKey = "appearance.ambientTheme.opacity"
 
     static let defaultStatusColors: [SessionPhase: String] = [
         .running: "#6E9FFF",
@@ -370,6 +372,18 @@ final class AppModel {
             updateCodeburnPolling()
         }
     }
+    var ambientThemeEnabled: Bool = true {
+        didSet {
+            guard ambientThemeEnabled != oldValue else { return }
+            UserDefaults.standard.set(ambientThemeEnabled, forKey: Self.ambientThemeEnabledDefaultsKey)
+        }
+    }
+    var ambientThemeOpacity: Double = 0.12 {
+        didSet {
+            guard ambientThemeOpacity != oldValue else { return }
+            UserDefaults.standard.set(ambientThemeOpacity, forKey: Self.ambientThemeOpacityDefaultsKey)
+        }
+    }
     private(set) var headerNeedsCodeburn: Bool = false {
         didSet {
             guard headerNeedsCodeburn != oldValue else { return }
@@ -605,6 +619,8 @@ final class AppModel {
             Self.hapticFeedbackEnabledDefaultsKey: false,
             Self.completionReplyEnabledDefaultsKey: false,
             Self.suppressFrontmostNotificationsDefaultsKey: true,
+            Self.ambientThemeEnabledDefaultsKey: true,
+            Self.ambientThemeOpacityDefaultsKey: 0.12,
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
@@ -649,6 +665,8 @@ final class AppModel {
            let decoded = try? JSONDecoder().decode(NotchWidgetConfig.self, from: data) {
             notchWidgetConfig = decoded
         }
+        ambientThemeEnabled = UserDefaults.standard.bool(forKey: Self.ambientThemeEnabledDefaultsKey)
+        ambientThemeOpacity = UserDefaults.standard.double(forKey: Self.ambientThemeOpacityDefaultsKey)
         updateCodeburnPolling()
 
         overlay.appModel = self
