@@ -22,3 +22,20 @@ public enum CompanionPet: String, CaseIterable, Codable, Sendable {
         }
     }
 }
+
+/// A single frame of a pixel pet: 2D grid of bool (true = filled, false = transparent).
+public typealias PixelPetGrid = [[Bool]]
+
+public enum PixelPetSprite {
+    /// Parses an ASCII pixel grid where '.' is transparent and any other
+    /// non-whitespace character is filled. Skips blank lines.
+    public static func parseGrid(_ ascii: String) -> PixelPetGrid {
+        ascii
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .map { line in
+                line.map { ch in
+                    ch != "." && !ch.isWhitespace
+                }
+            }
+    }
+}

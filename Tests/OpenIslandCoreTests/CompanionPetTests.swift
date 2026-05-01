@@ -36,4 +36,38 @@ struct CompanionPetTests {
             || pickA != CompanionPet.dailyPick(at: day1.addingTimeInterval(86_400 * 2))
             || pickA != pickB)
     }
+
+    @Test
+    func pixelGridParsesAsciiCorrectly() {
+        let grid = PixelPetSprite.parseGrid("""
+        .X.
+        XXX
+        .X.
+        """)
+        #expect(grid.count == 3)
+        #expect(grid[0] == [false, true, false])
+        #expect(grid[1] == [true, true, true])
+        #expect(grid[2] == [false, true, false])
+    }
+
+    @Test
+    func pixelGridSkipsBlankLines() {
+        let grid = PixelPetSprite.parseGrid("""
+
+        XX
+
+        """)
+        #expect(grid.count == 1)
+        #expect(grid[0] == [true, true])
+    }
+
+    @Test
+    func pixelGridUsesTrailingShorterRow() {
+        let grid = PixelPetSprite.parseGrid("""
+        XX
+        X
+        """)
+        #expect(grid[0].count == 2)
+        #expect(grid[1].count == 1)
+    }
 }
