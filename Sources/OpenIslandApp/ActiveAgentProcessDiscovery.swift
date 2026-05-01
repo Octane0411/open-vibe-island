@@ -136,13 +136,23 @@ struct ActiveAgentProcessDiscovery {
                     terminalApp: terminalApp(for: process, processesByPID: processesByPID)
                 )
 
-                if snapshot.terminalApp == nil, let agentTTY = process.terminalTTY {
+                // Resolve tmux pane info even when terminalApp is already known to be
+                // cmux. cmux runs on a tmux server with a custom socket, so tmux
+                // send-keys works through it — but TerminalTextSender.canReply needs
+                // tmuxTarget populated to enable the completion-reply UI.
+                let needsTmuxResolution = snapshot.terminalApp == nil
+                    || snapshot.terminalApp?.lowercased() == "cmux"
+                if needsTmuxResolution, let agentTTY = process.terminalTTY {
                     if let (tmuxTarget, hostTerminalApp, socketPath) = resolveTmuxInfo(
                         agentTTY: agentTTY,
                         processes: processesByPID.values.map { $0 },
                         processesByPID: processesByPID
                     ) {
-                        snapshot.terminalApp = hostTerminalApp
+                        // Only overwrite terminalApp when we didn't already know it.
+                        // For cmux, keep "cmux" as the display name.
+                        if snapshot.terminalApp == nil {
+                            snapshot.terminalApp = hostTerminalApp
+                        }
                         snapshot.tmuxTarget = tmuxTarget
                         snapshot.tmuxSocketPath = socketPath
                     }
@@ -238,14 +248,23 @@ struct ActiveAgentProcessDiscovery {
             terminalApp: terminalApp(for: process, processesByPID: processesByPID)
         )
 
-        // If terminalApp is nil and we have a TTY, try to resolve tmux info
-        if snapshot.terminalApp == nil, let agentTTY = process.terminalTTY {
+        // Resolve tmux pane info even when terminalApp is already known to be
+        // cmux. cmux runs on a tmux server with a custom socket, so tmux
+        // send-keys works through it — but TerminalTextSender.canReply needs
+        // tmuxTarget populated to enable the completion-reply UI.
+        let needsTmuxResolution = snapshot.terminalApp == nil
+            || snapshot.terminalApp?.lowercased() == "cmux"
+        if needsTmuxResolution, let agentTTY = process.terminalTTY {
             if let (tmuxTarget, hostTerminalApp, socketPath) = resolveTmuxInfo(
                 agentTTY: agentTTY,
                 processes: processesByPID.values.map { $0 },
                 processesByPID: processesByPID
             ) {
-                snapshot.terminalApp = hostTerminalApp
+                // Only overwrite terminalApp when we didn't already know it.
+                // For cmux, keep "cmux" as the display name.
+                if snapshot.terminalApp == nil {
+                    snapshot.terminalApp = hostTerminalApp
+                }
                 snapshot.tmuxTarget = tmuxTarget
                 snapshot.tmuxSocketPath = socketPath
             }
@@ -290,14 +309,23 @@ struct ActiveAgentProcessDiscovery {
             transcriptPath: transcriptPath
         )
 
-        // If terminalApp is nil and we have a TTY, try to resolve tmux info
-        if snapshot.terminalApp == nil, let agentTTY = process.terminalTTY {
+        // Resolve tmux pane info even when terminalApp is already known to be
+        // cmux. cmux runs on a tmux server with a custom socket, so tmux
+        // send-keys works through it — but TerminalTextSender.canReply needs
+        // tmuxTarget populated to enable the completion-reply UI.
+        let needsTmuxResolution = snapshot.terminalApp == nil
+            || snapshot.terminalApp?.lowercased() == "cmux"
+        if needsTmuxResolution, let agentTTY = process.terminalTTY {
             if let (tmuxTarget, hostTerminalApp, socketPath) = resolveTmuxInfo(
                 agentTTY: agentTTY,
                 processes: processesByPID.values.map { $0 },
                 processesByPID: processesByPID
             ) {
-                snapshot.terminalApp = hostTerminalApp
+                // Only overwrite terminalApp when we didn't already know it.
+                // For cmux, keep "cmux" as the display name.
+                if snapshot.terminalApp == nil {
+                    snapshot.terminalApp = hostTerminalApp
+                }
                 snapshot.tmuxTarget = tmuxTarget
                 snapshot.tmuxSocketPath = socketPath
             }
