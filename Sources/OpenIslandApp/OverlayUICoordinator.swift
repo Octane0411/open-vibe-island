@@ -98,6 +98,10 @@ final class OverlayUICoordinator {
     }
 
     func notchOpen(reason: NotchOpenReason, surface: IslandSurface = .sessionList()) {
+        if appModel?.expandOnlyOnHover == true, reason != .hover {
+            return
+        }
+
         transitionOverlay(
             to: .opened,
             reason: reason,

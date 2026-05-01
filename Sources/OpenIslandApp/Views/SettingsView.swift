@@ -223,6 +223,10 @@ struct GeneralSettingsPane: View {
                     get: { model.suppressFrontmostNotifications },
                     set: { model.suppressFrontmostNotifications = $0 }
                 ))
+                Toggle("Expand island only on hover", isOn: Binding(
+                    get: { model.expandOnlyOnHover },
+                    set: { model.expandOnlyOnHover = $0 }
+                ))
             }
 
         }
