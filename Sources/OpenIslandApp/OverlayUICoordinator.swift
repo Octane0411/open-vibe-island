@@ -303,6 +303,11 @@ final class OverlayUICoordinator {
         }
 
         NotificationSoundService.playNotification(isMuted: isSoundMuted)
+
+        guard appModel?.expandOnNotificationEnabled == true else {
+            return
+        }
+
         notchOpen(reason: .notification, surface: surface)
     }
 

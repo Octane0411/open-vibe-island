@@ -223,6 +223,10 @@ struct GeneralSettingsPane: View {
                     get: { model.suppressFrontmostNotifications },
                     set: { model.suppressFrontmostNotifications = $0 }
                 ))
+                Toggle("Expand island on notification", isOn: Binding(
+                    get: { model.expandOnNotificationEnabled },
+                    set: { model.expandOnNotificationEnabled = $0 }
+                ))
             }
 
         }

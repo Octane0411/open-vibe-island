@@ -30,6 +30,7 @@ final class AppModel {
     private static let showCodexUsageDefaultsKey = "app.showCodexUsage"
     private static let completionReplyEnabledDefaultsKey = "feature.completionReply.enabled"
     private static let suppressFrontmostNotificationsDefaultsKey = "app.suppressFrontmostNotifications"
+    private static let expandOnNotificationEnabledDefaultsKey = "app.expandOnNotification"
     private static let hotkeyModifiersDefaultsKey = "hotkey.modifiers"
     private static let hotkeyKeyCodeDefaultsKey = "hotkey.keyCode"
 
@@ -262,6 +263,12 @@ final class AppModel {
         didSet {
             guard hasFinishedInit, suppressFrontmostNotifications != oldValue else { return }
             UserDefaults.standard.set(suppressFrontmostNotifications, forKey: Self.suppressFrontmostNotificationsDefaultsKey)
+        }
+    }
+    var expandOnNotificationEnabled: Bool = true {
+        didSet {
+            guard hasFinishedInit, expandOnNotificationEnabled != oldValue else { return }
+            UserDefaults.standard.set(expandOnNotificationEnabled, forKey: Self.expandOnNotificationEnabledDefaultsKey)
         }
     }
     var launchAtLoginEnabled: Bool = false {
@@ -608,6 +615,9 @@ final class AppModel {
         showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
         hapticFeedbackEnabled = UserDefaults.standard.bool(forKey: Self.hapticFeedbackEnabledDefaultsKey)
         suppressFrontmostNotifications = UserDefaults.standard.bool(forKey: Self.suppressFrontmostNotificationsDefaultsKey)
+        if UserDefaults.standard.object(forKey: Self.expandOnNotificationEnabledDefaultsKey) != nil {
+            expandOnNotificationEnabled = UserDefaults.standard.bool(forKey: Self.expandOnNotificationEnabledDefaultsKey)
+        }
         if UserDefaults.standard.object(forKey: Self.showCodexUsageDefaultsKey) != nil {
             showCodexUsage = UserDefaults.standard.bool(forKey: Self.showCodexUsageDefaultsKey)
         } else {
