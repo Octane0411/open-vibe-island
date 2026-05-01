@@ -70,4 +70,15 @@ struct CompanionPetTests {
         #expect(grid[0].count == 2)
         #expect(grid[1].count == 1)
     }
+
+    @Test
+    func eachPetHasFramesForEveryState() {
+        for pet in CompanionPet.allCases {
+            for state in CompanionState.allCases {
+                let frames = PetSpriteData.frames(for: pet, state: state)
+                #expect(!frames.isEmpty, "\(pet)/\(state) has no frames")
+                #expect(frames.allSatisfy { !$0.isEmpty }, "\(pet)/\(state) has empty frame")
+            }
+        }
+    }
 }

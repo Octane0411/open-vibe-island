@@ -1,6 +1,6 @@
 import Foundation
 
-public enum CompanionState: String, Equatable, Sendable {
+public enum CompanionState: String, Equatable, Sendable, CaseIterable {
     case idle
     case working
     case waiting
