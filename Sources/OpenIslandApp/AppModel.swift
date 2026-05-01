@@ -22,6 +22,7 @@ final class AppModel {
     private static let islandClosedDisplayStyleDefaultsKey = "appearance.island.closedDisplayStyle"
     private static let islandHideIdleToEdgeDefaultsKey = "appearance.island.hideIdleToEdge"
     private static let islandPixelShapeStyleDefaultsKey = "appearance.island.pixelShapeStyle"
+    private static let companionPetDefaultsKey = "appearance.companionPet"
     private static let islandStatusColorsDefaultsKey = "appearance.island.statusColors"
     private static let showCodexUsageDefaultsKey = "app.showCodexUsage"
     private static let completionReplyEnabledDefaultsKey = "feature.completionReply.enabled"
@@ -337,6 +338,20 @@ final class AppModel {
             UserDefaults.standard.set(islandPixelShapeStyle.rawValue, forKey: Self.islandPixelShapeStyleDefaultsKey)
         }
     }
+    /// User's companion pet selection. Nil = use default SF-Symbol overlay.
+    /// Special string "daily" = pick deterministically per calendar day.
+    var companionPetSelection: String? = nil {
+        didSet {
+            guard companionPetSelection != oldValue else { return }
+            UserDefaults.standard.set(companionPetSelection, forKey: Self.companionPetDefaultsKey)
+        }
+    }
+    /// Resolves the selection string to a concrete CompanionPet, or nil for "default overlay".
+    var resolvedCompanionPet: CompanionPet? {
+        guard let raw = companionPetSelection else { return nil }
+        if raw == "daily" { return CompanionPet.dailyPick() }
+        return CompanionPet(rawValue: raw)
+    }
     var statusColorHexes: [SessionPhase: String] = AppModel.defaultStatusColors {
         didSet {
             guard statusColorHexes != oldValue else { return }
@@ -615,6 +630,7 @@ final class AppModel {
         islandPixelShapeStyle = IslandPixelShapeStyle(
             rawValue: UserDefaults.standard.string(forKey: Self.islandPixelShapeStyleDefaultsKey) ?? ""
         ) ?? .bars
+        companionPetSelection = UserDefaults.standard.string(forKey: Self.companionPetDefaultsKey)
         customAvatarImage = AvatarImageStore.currentImage()
         if let saved = UserDefaults.standard.dictionary(forKey: Self.islandStatusColorsDefaultsKey) as? [String: String] {
             var colors = Self.defaultStatusColors
