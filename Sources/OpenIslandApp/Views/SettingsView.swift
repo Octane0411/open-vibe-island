@@ -149,7 +149,7 @@ struct SettingsView: View {
             case .watch:
                 WatchSettingsPane(model: model)
             case .shortcuts:
-                PlaceholderSettingsPane(model: model, titleKey: "settings.tab.shortcuts", subtitleKey: "settings.shortcuts.comingSoon")
+                ShortcutsSettingsPane(model: model)
             case .lab:
                 PlaceholderSettingsPane(model: model, titleKey: "settings.tab.lab", subtitleKey: "settings.lab.comingSoon")
             case .about:
@@ -1037,6 +1037,90 @@ struct WatchSettingsPane: View {
         .onAppear {
             pairingCode = model.watchPairingCode
         }
+    }
+}
+
+// MARK: - Shortcuts
+
+struct ShortcutsSettingsPane: View {
+    var model: AppModel
+    @State private var draftHotkey: KeyCombo
+
+    init(model: AppModel) {
+        self.model = model
+        _draftHotkey = State(initialValue: KeyCombo(
+            keyCode: model.hotkeyKeyCode,
+            modifiers: model.hotkeyModifiers.isEmpty ? KeyCombo.defaultModifiers : model.hotkeyModifiers
+        ))
+    }
+
+    private var lang: LanguageManager { model.lang }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                HotkeySection(
+                    lang: lang,
+                    draftHotkey: $draftHotkey,
+                    onSave: {
+                        model.saveHotkey(modifiers: draftHotkey.modifiers, keyCode: draftHotkey.keyCode)
+                    }
+                )
+            }
+            .padding(20)
+        }
+        .navigationTitle(lang.t("settings.tab.shortcuts"))
+    }
+}
+
+private struct HotkeySection: View {
+    let lang: LanguageManager
+    @Binding var draftHotkey: KeyCombo
+    let onSave: () -> Void
+
+    private var hasChanged: Bool {
+        let savedMods = UserDefaults.standard.integer(forKey: "hotkey.modifiers")
+        let savedCode = UserDefaults.standard.integer(forKey: "hotkey.keyCode")
+        let savedModFlags = NSEvent.ModifierFlags(rawValue: UInt(savedMods))
+        let effectiveSavedMods = savedModFlags.isEmpty ? KeyCombo.defaultModifiers : savedModFlags
+        let effectiveSavedCode = savedCode == 0 ? Int(KeyCombo.defaultKeyCode) : savedCode
+        return draftHotkey.keyCode != UInt16(effectiveSavedCode)
+            || draftHotkey.modifiers.intersection(kRealModifiers) != effectiveSavedMods.intersection(kRealModifiers)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Toggle Island")
+                .font(.headline)
+
+            Text("Global shortcut to show or hide the island overlay from anywhere.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 12) {
+                HotkeyRecorderButton(recordedKey: $draftHotkey)
+                    .frame(maxWidth: 200)
+
+                if hasChanged {
+                    Button("Save") {
+                        onSave()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+            }
+
+            Text("Arrow keys navigate sessions when the island is open. Return jumps to the selected session.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.top, 4)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.primary.opacity(0.05))
+        )
     }
 }
 

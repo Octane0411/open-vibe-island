@@ -1,4 +1,4 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.1
 
 import PackageDescription
 
@@ -51,6 +51,9 @@ let package = Package(
             ],
             resources: [
                 .process("Resources"),
+            ],
+            linkerSettings: [
+                .linkedFramework("Carbon"),
             ]
         ),
         .testTarget(

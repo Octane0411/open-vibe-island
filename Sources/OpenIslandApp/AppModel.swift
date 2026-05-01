@@ -10,6 +10,10 @@ extension Notification.Name {
     /// user to the right place without `SettingsView`'s `@State` having
     /// to leak into `AppModel`.
     static let openIslandSelectSetupTab = Notification.Name("openIslandSelectSetupTab")
+    static let hotkeyUpdated = Notification.Name("openIslandHotkeyUpdated")
+    static let sessionSelectionMoveUp = Notification.Name("openIslandSessionSelectionMoveUp")
+    static let sessionSelectionMoveDown = Notification.Name("openIslandSessionSelectionMoveDown")
+    static let sessionSelectionActivate = Notification.Name("openIslandSessionSelectionActivate")
 }
 
 @MainActor
@@ -26,6 +30,8 @@ final class AppModel {
     private static let showCodexUsageDefaultsKey = "app.showCodexUsage"
     private static let completionReplyEnabledDefaultsKey = "feature.completionReply.enabled"
     private static let suppressFrontmostNotificationsDefaultsKey = "app.suppressFrontmostNotifications"
+    private static let hotkeyModifiersDefaultsKey = "hotkey.modifiers"
+    private static let hotkeyKeyCodeDefaultsKey = "hotkey.keyCode"
 
     static let defaultStatusColors: [SessionPhase: String] = [
         .running: "#6E9FFF",
@@ -466,6 +472,86 @@ final class AppModel {
         watchRelay = nil
     }
 
+    // MARK: - Hotkey
+
+    var hotkeyModifiers: NSEvent.ModifierFlags {
+        get {
+            let raw = UserDefaults.standard.integer(forKey: Self.hotkeyModifiersDefaultsKey)
+            return NSEvent.ModifierFlags(rawValue: UInt(raw))
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: Self.hotkeyModifiersDefaultsKey)
+        }
+    }
+
+    var hotkeyKeyCode: UInt16 {
+        get {
+            let raw = UserDefaults.standard.integer(forKey: Self.hotkeyKeyCodeDefaultsKey)
+            return raw == 0 ? KeyCombo.defaultKeyCode : UInt16(raw)
+        }
+        set {
+            UserDefaults.standard.set(Int(newValue), forKey: Self.hotkeyKeyCodeDefaultsKey)
+        }
+    }
+
+    @ObservationIgnored
+    private var globalHotKeyMonitor: GlobalHotKeyMonitor?
+
+    @ObservationIgnored
+    private var localKeyMonitor: Any?
+
+    func setupHotKey() {
+        globalHotKeyMonitor = nil
+
+        let mods = hotkeyModifiers.isEmpty ? KeyCombo.defaultModifiers : hotkeyModifiers
+        let code = hotkeyKeyCode
+
+        globalHotKeyMonitor = GlobalHotKeyMonitor(modifiers: mods, keyCode: code) { [weak self] in
+            self?.toggleOverlay()
+        }
+
+        if let old = localKeyMonitor { NSEvent.removeMonitor(old); localKeyMonitor = nil }
+        localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+
+            let eventMods = event.modifierFlags.intersection(kRealModifiers)
+            let savedMods = mods.intersection(kRealModifiers)
+            if event.keyCode == code && eventMods == savedMods {
+                self.toggleOverlay()
+                return nil
+            }
+
+            guard self.isOverlayVisible else { return event }
+            guard eventMods.isEmpty else { return event }
+
+            switch event.keyCode {
+            case 126: // Up arrow
+                NotificationCenter.default.post(name: .sessionSelectionMoveUp, object: nil)
+                return nil
+            case 125: // Down arrow
+                NotificationCenter.default.post(name: .sessionSelectionMoveDown, object: nil)
+                return nil
+            case 36, 76: // Return, Enter
+                NotificationCenter.default.post(name: .sessionSelectionActivate, object: nil)
+                self.hideOverlay()
+                return nil
+            default:
+                return event
+            }
+        }
+    }
+
+    func updateHotKey() {
+        setupHotKey()
+    }
+
+    func saveHotkey(modifiers: NSEvent.ModifierFlags, keyCode: UInt16) {
+        hotkeyModifiers = modifiers
+        hotkeyKeyCode = keyCode
+        updateHotKey()
+        NotificationCenter.default.post(name: .hotkeyUpdated, object: nil)
+    }
+
     var ignoresPointerExitDuringHarness = false
     var disablesOverlayEventMonitoringDuringHarness = false
 
@@ -821,6 +907,7 @@ final class AppModel {
         }
         refreshOverlayDisplayConfiguration()
         ensureOverlayPanel()
+        setupHotKey()
         if shouldPerformBootAnimation {
             performBootAnimation()
         }
