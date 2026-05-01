@@ -230,3 +230,28 @@
 "settings.projectColors.resetAll" = "Reset all to auto";
 "settings.projectColors.removeUnused" = "Remove unused";
 "settings.projectColors.empty" = "No projects seen yet.";
+
+/* Companion pet — added by feat/notch-personalization */
+/* TODO: translate */
+"settings.companion.title" = "Companion pet";
+"settings.companion.preview" = "Live preview";
+"settings.companion.pet.none" = "Default";
+"settings.companion.pet.daily" = "Daily";
+"settings.companion.pet.cat" = "Cat";
+"settings.companion.pet.ghost" = "Ghost";
+"settings.companion.pet.robot" = "Robot";
+
+/* Ambient theme — added by feat/notch-personalization */
+/* TODO: translate */
+"settings.ambient.title" = "Ambient theme";
+"settings.ambient.toggle" = "Tint island with project color";
+"settings.ambient.intensity" = "Intensity";
+"settings.ambient.subtle" = "Subtle";
+"settings.ambient.bold" = "Bold";
+"settings.ambient.help" = "Tints the inside of the island in the active session's project color, animated when you switch projects.";
+
+/* Celebrations — added by feat/notch-personalization */
+/* TODO: translate */
+"settings.celebrations.title" = "Celebrations";
+"settings.celebrations.toggle" = "Celebrate when sessions complete";
+"settings.celebrations.help" = "Spawns a brief burst of project-colored confetti when a session finishes a task.";
