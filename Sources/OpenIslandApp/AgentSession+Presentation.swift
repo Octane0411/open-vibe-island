@@ -148,6 +148,22 @@ extension AgentSession {
     }
 
     var spotlightHeadlineText: String {
+        // Prefer Claude Code's auto-generated session title when available so
+        // multiple sessions inside the same project can be told apart at a
+        // glance.  The workspace name is still appended after the title so the
+        // working directory remains visible.
+        if let title = spotlightClaudeTitleText {
+            var headline = title
+            let workspace = spotlightWorkspaceName.trimmedForSurface
+            if !workspace.isEmpty {
+                headline += " · \(workspace)"
+            }
+            if let branch = spotlightWorktreeBranch {
+                headline += " (\(branch))"
+            }
+            return headline
+        }
+
         var headline = spotlightWorkspaceName
 
         if let branch = spotlightWorktreeBranch {
@@ -159,6 +175,25 @@ extension AgentSession {
         }
 
         return "\(headline) · \(prompt)"
+    }
+
+    /// The Claude Code session title (`aiTitle`/legacy `summary`) extracted
+    /// from the transcript header, truncated to a single-line label.  Empty
+    /// when no title is available (e.g. non-Claude sessions, brand-new
+    /// transcripts before Claude assigns a title).
+    var spotlightClaudeTitleText: String? {
+        guard let raw = claudeMetadata?.aiTitle?.trimmedForSurface,
+              !raw.isEmpty else {
+            return nil
+        }
+
+        let maxLength = 60
+        guard raw.count > maxLength else {
+            return raw
+        }
+
+        let endIndex = raw.index(raw.startIndex, offsetBy: maxLength - 1)
+        return "\(raw[..<endIndex])…"
     }
 
     var spotlightHeadlinePromptText: String? {
