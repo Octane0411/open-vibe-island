@@ -15,11 +15,6 @@ enum NotchOpenReason: Equatable {
     case boot
 }
 
-enum TrackedEventIngress {
-    case bridge
-    case rollout
-}
-
 // MARK: - Island appearance
 
 enum IslandAppearanceMode: String, CaseIterable, Identifiable {

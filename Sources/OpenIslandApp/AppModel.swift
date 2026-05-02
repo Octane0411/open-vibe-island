@@ -586,18 +586,8 @@ final class AppModel {
             self?.refreshOverlayPlacementIfVisible()
         }
 
-        discovery.codexRolloutWatcher.eventHandler = { [weak self] event in
-            Task { @MainActor [weak self] in
-                self?.applyTrackedEvent(
-                    event,
-                    updateLastActionMessage: false,
-                    ingress: .rollout
-                )
-            }
-        }
-
         codexAppServer.onEvent = { [weak self] event in
-            self?.applyTrackedEvent(event, ingress: .bridge)
+            self?.applyTrackedEvent(event)
         }
         codexAppServer.onStatusMessage = { [weak self] message in
             self?.lastActionMessage = message
@@ -1211,37 +1201,20 @@ final class AppModel {
 
     func applyTrackedEvent(
         _ event: AgentEvent,
-        updateLastActionMessage: Bool = true,
-        ingress: TrackedEventIngress = .bridge
+        updateLastActionMessage: Bool = true
     ) {
         // Snapshot whether this session was already completed before applying
-        // the event. Used to suppress duplicate/stale completion notifications
-        // (e.g. rollout watcher re-discovering an old completion on startup,
-        // or producing a duplicate sessionCompleted that races with the bridge).
+        // the event. Used to suppress duplicate completion notifications.
         let wasAlreadyCompleted: Bool = {
             guard case let .sessionCompleted(payload) = event else { return false }
             return state.session(id: payload.sessionID)?.phase == .completed
         }()
 
-        // Guard: don't let rollout events downgrade a session from completed
-        // back to running. The bridge's sessionCompleted is authoritative; the
-        // rollout watcher may have read the JSONL before task_complete was
-        // flushed, producing a stale activityUpdated(phase: .running).
-        if ingress == .rollout,
-           case let .activityUpdated(payload) = event,
-           payload.phase == .running,
-           state.session(id: payload.sessionID)?.phase == .completed {
-            return
-        }
-
         state.apply(event)
         reconcileIslandSurfaceAfterStateChange()
-        if ingress == .bridge {
-            monitoring.markSessionAttached(for: event)
-            monitoring.markSessionProcessAlive(for: event)
-        }
+        monitoring.markSessionAttached(for: event)
+        monitoring.markSessionProcessAlive(for: event)
         synchronizeSelection()
-        discovery.refreshCodexRolloutTracking()
         refreshOverlayPlacementIfVisible()
         discovery.scheduleCodexSessionPersistence()
         discovery.scheduleClaudeSessionPersistence()
@@ -1277,19 +1250,17 @@ final class AppModel {
         if let surface = IslandSurface.notificationSurface(for: event) {
             scheduleNotificationSurfacePresentationIfNeeded(
                 surface,
-                wasAlreadyCompleted: wasAlreadyCompleted,
-                ingress: ingress
+                wasAlreadyCompleted: wasAlreadyCompleted
             )
         }
     }
 
     private func scheduleNotificationSurfacePresentationIfNeeded(
         _ surface: IslandSurface,
-        wasAlreadyCompleted: Bool,
-        ingress: TrackedEventIngress
+        wasAlreadyCompleted: Bool
     ) {
         guard !wasAlreadyCompleted,
-              notificationSurfaceIsEligibleForPresentation(surface, ingress: ingress),
+              notificationSurfaceIsEligibleForPresentation(surface),
               let sessionID = surface.sessionID,
               let session = state.session(id: sessionID) else {
             return
@@ -1309,7 +1280,7 @@ final class AppModel {
             let shouldSuppress = await self.isNotificationSessionAlreadyFrontmost(session)
             guard !Task.isCancelled,
                   !shouldSuppress,
-                  self.notificationSurfaceIsEligibleForPresentation(surface, ingress: ingress) else {
+                  self.notificationSurfaceIsEligibleForPresentation(surface) else {
                 return
             }
 
@@ -1318,16 +1289,14 @@ final class AppModel {
     }
 
     private func notificationSurfaceIsEligibleForPresentation(
-        _ surface: IslandSurface,
-        ingress: TrackedEventIngress
+        _ surface: IslandSurface
     ) -> Bool {
         guard let sessionID = surface.sessionID,
               let session = state.session(id: sessionID) else {
             return false
         }
 
-        return (ingress == .bridge || !isResolvingInitialLiveSessions)
-            && (notchStatus == .closed || notchOpenReason == .notification)
+        return (notchStatus == .closed || notchOpenReason == .notification)
             && surface.matchesCurrentState(of: session)
     }
 
