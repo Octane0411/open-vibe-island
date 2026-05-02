@@ -3,6 +3,7 @@ import Foundation
 public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
     public var sessionID: String
     public var title: String
+    public var displayName: String?
     public var origin: SessionOrigin?
     public var attachmentState: SessionAttachmentState
     public var summary: String
@@ -14,6 +15,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
     public init(
         sessionID: String,
         title: String,
+        displayName: String? = nil,
         origin: SessionOrigin? = nil,
         attachmentState: SessionAttachmentState = .stale,
         summary: String,
@@ -24,6 +26,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
     ) {
         self.sessionID = sessionID
         self.title = title
+        self.displayName = displayName
         self.origin = origin
         self.attachmentState = attachmentState
         self.summary = summary
@@ -37,6 +40,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
         self.init(
             sessionID: session.id,
             title: session.title,
+            displayName: session.displayName,
             origin: session.origin,
             attachmentState: session.attachmentState,
             summary: session.summary,
@@ -51,6 +55,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
         AgentSession(
             id: sessionID,
             title: title,
+            displayName: displayName,
             tool: .claudeCode,
             origin: origin,
             attachmentState: attachmentState,
@@ -71,6 +76,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case sessionID
         case title
+        case displayName
         case origin
         case attachmentState
         case summary
@@ -84,6 +90,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         sessionID = try container.decode(String.self, forKey: .sessionID)
         title = try container.decode(String.self, forKey: .title)
+        displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
         origin = try container.decodeIfPresent(SessionOrigin.self, forKey: .origin)
         attachmentState = try container.decodeIfPresent(SessionAttachmentState.self, forKey: .attachmentState) ?? .stale
         summary = try container.decode(String.self, forKey: .summary)
@@ -97,6 +104,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(sessionID, forKey: .sessionID)
         try container.encode(title, forKey: .title)
+        try container.encodeIfPresent(displayName, forKey: .displayName)
         try container.encodeIfPresent(origin, forKey: .origin)
         try container.encode(attachmentState, forKey: .attachmentState)
         try container.encode(summary, forKey: .summary)

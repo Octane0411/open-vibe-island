@@ -238,6 +238,22 @@ public struct ActionableStateResolved: Equatable, Codable, Sendable {
     }
 }
 
+public struct SessionRenamed: Equatable, Codable, Sendable {
+    public var sessionID: String
+    public var title: String
+    public var timestamp: Date
+
+    public init(
+        sessionID: String,
+        title: String,
+        timestamp: Date
+    ) {
+        self.sessionID = sessionID
+        self.title = title
+        self.timestamp = timestamp
+    }
+}
+
 public enum AgentEvent: Equatable, Codable, Sendable {
     case sessionStarted(SessionStarted)
     case activityUpdated(SessionActivityUpdated)
@@ -251,6 +267,7 @@ public enum AgentEvent: Equatable, Codable, Sendable {
     case openCodeSessionMetadataUpdated(OpenCodeSessionMetadataUpdated)
     case cursorSessionMetadataUpdated(CursorSessionMetadataUpdated)
     case actionableStateResolved(ActionableStateResolved)
+    case sessionRenamed(SessionRenamed)
 
     private enum CodingKeys: String, CodingKey {
         case type
@@ -266,6 +283,7 @@ public enum AgentEvent: Equatable, Codable, Sendable {
         case openCodeSessionMetadataUpdated
         case cursorSessionMetadataUpdated
         case actionableStateResolved
+        case sessionRenamed
     }
 
     private enum EventType: String, Codable {
@@ -281,6 +299,7 @@ public enum AgentEvent: Equatable, Codable, Sendable {
         case openCodeSessionMetadataUpdated
         case cursorSessionMetadataUpdated
         case actionableStateResolved
+        case sessionRenamed
     }
 
     public init(from decoder: any Decoder) throws {
@@ -322,6 +341,8 @@ public enum AgentEvent: Equatable, Codable, Sendable {
             self = .actionableStateResolved(
                 try container.decode(ActionableStateResolved.self, forKey: .actionableStateResolved)
             )
+        case .sessionRenamed:
+            self = .sessionRenamed(try container.decode(SessionRenamed.self, forKey: .sessionRenamed))
         }
     }
 
@@ -365,6 +386,9 @@ public enum AgentEvent: Equatable, Codable, Sendable {
         case let .actionableStateResolved(payload):
             try container.encode(EventType.actionableStateResolved, forKey: .type)
             try container.encode(payload, forKey: .actionableStateResolved)
+        case let .sessionRenamed(payload):
+            try container.encode(EventType.sessionRenamed, forKey: .type)
+            try container.encode(payload, forKey: .sessionRenamed)
         }
     }
 }

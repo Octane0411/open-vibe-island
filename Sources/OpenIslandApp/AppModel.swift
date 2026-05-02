@@ -836,6 +836,14 @@ final class AppModel {
 
         do {
             try bridgeServer.start()
+            // Apply rename events directly when BridgeServer detects them via
+            // its tail / polling paths. The socket broadcast can momentarily
+            // miss events if the observer connection has just dropped.
+            bridgeServer.onRenameDetected = { [weak self] event in
+                Task { @MainActor [weak self] in
+                    self?.applyTrackedEvent(event, updateLastActionMessage: false)
+                }
+            }
             connectBridgeObserver()
         } catch {
             isBridgeReady = false
@@ -1255,6 +1263,7 @@ final class AppModel {
                 case let .openCodeSessionMetadataUpdated(p): return p.sessionID
                 case let .cursorSessionMetadataUpdated(p): return p.sessionID
                 case let .actionableStateResolved(p): return p.sessionID
+                case let .sessionRenamed(p): return p.sessionID
                 }
             }()
             let session = eventSessionID.flatMap { state.session(id: $0) }
@@ -1528,6 +1537,8 @@ final class AppModel {
             return payload.cursorMetadata.lastAssistantMessage ?? "Cursor session metadata updated."
         case let .actionableStateResolved(payload):
             return "Actionable state resolved for session \(payload.sessionID)."
+        case let .sessionRenamed(payload):
+            return "Session renamed to \(payload.title)."
         }
     }
 
