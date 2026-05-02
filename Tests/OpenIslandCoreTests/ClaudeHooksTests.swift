@@ -208,12 +208,18 @@ struct ClaudeHooksTests {
 
     @Test
     func claudeDefaultJumpTargetUsesUnknownSentinelForUnrecognizedTerminal() {
+        // This test validates the env-only inference path. We inject a nil
+        // embedded-host resolver so the assertion doesn't fluctuate based
+        // on where the suite is being run from (e.g. VS Code's integrated
+        // terminal would otherwise have the process-tree fallback fill in
+        // "VS Code" and break the nil expectation).
         let payload = ClaudeHookPayload(
             cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
         ).withRuntimeContext(
             environment: ["TERM_PROGRAM": "rio"],
             currentTTYProvider: { nil },
-            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) },
+            embeddedHostResolver: { nil }
         )
 
         #expect(payload.terminalApp == nil)
