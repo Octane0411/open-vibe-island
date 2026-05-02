@@ -251,6 +251,18 @@ struct IslandPanelView: View {
             guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
             lastCelebrationTimestamp = Date()
         }
+        .task(id: lastCompletionTimestamp) {
+            await expireTimestamp(
+                $lastCompletionTimestamp,
+                window: CompanionState.celebratingWindow
+            )
+        }
+        .task(id: lastCelebrationTimestamp) {
+            await expireTimestamp(
+                $lastCelebrationTimestamp,
+                window: CelebrationParticles.duration
+            )
+        }
         .alert(model.lang.t("island.quit.confirmTitle"), isPresented: $showingQuitConfirmation) {
             Button(model.lang.t("island.quit.confirmAction"), role: .destructive) {
                 model.quitApplication()
@@ -399,16 +411,34 @@ struct IslandPanelView: View {
     }
 
     private var companionState: CompanionState {
-        let recently: Bool
-        if let ts = lastCompletionTimestamp {
-            recently = Date().timeIntervalSince(ts) < 8
-        } else {
-            recently = false
-        }
+        let recently = CompanionState.isWithinCelebratingWindow(
+            now: Date(),
+            lastCompletion: lastCompletionTimestamp
+        )
         return CompanionState.derive(
             spotlightPhase: closedSpotlightSession?.phase,
             recentlyCompleted: recently
         )
+    }
+
+    /// Sleeps until the time window from the bound timestamp elapses, then
+    /// nils it out. Driven by `.task(id:)` so each new timestamp cancels the
+    /// prior pending expiry. Without this, the celebration glyph and confetti
+    /// container would persist past their windows whenever no other observed
+    /// state changed in the meantime.
+    @MainActor
+    private func expireTimestamp(
+        _ binding: Binding<Date?>,
+        window: TimeInterval
+    ) async {
+        guard let ts = binding.wrappedValue else { return }
+        let elapsed = Date().timeIntervalSince(ts)
+        let remaining = max(0, window - elapsed)
+        if remaining > 0 {
+            try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+        }
+        guard !Task.isCancelled, binding.wrappedValue == ts else { return }
+        binding.wrappedValue = nil
     }
 
     // MARK: - Header row (shared between closed and opened)
