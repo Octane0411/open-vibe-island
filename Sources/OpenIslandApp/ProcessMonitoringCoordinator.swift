@@ -184,7 +184,11 @@ final class ProcessMonitoringCoordinator {
         }
 
         // Phase 4: remove sessions that are no longer visible.
-        _ = local.removeInvisibleSessions()
+        // Grace window keeps freshly-discovered sessions (e.g. transcript
+        // discovery just imported them with `phase=.completed`,
+        // `isProcessAlive=false`) for a few poll cycles so the matcher above
+        // has a chance to mark them alive on a subsequent reconcile (#424).
+        _ = local.removeInvisibleSessions(graceWindow: 10)
 
         // Single state assignment — triggers didSet exactly once.
         // Compare against the original snapshot to catch all mutations

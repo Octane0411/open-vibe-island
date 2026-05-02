@@ -438,10 +438,26 @@ public struct SessionState: Equatable, Sendable {
         upsert(session)
     }
 
-    public mutating func removeInvisibleSessions() -> Bool {
+    /// Removes sessions whose `isVisibleInIsland` is false.
+    ///
+    /// - Parameter graceWindow: when greater than 0, sessions whose
+    ///   `updatedAt` is within this many seconds of `now` are kept regardless
+    ///   of visibility. Lets a freshly-discovered session survive a poll
+    ///   cycle while `sessionIDsWithAliveProcesses` catches up — fixes #424
+    ///   where transcript-discovered sessions (created with `phase=.completed`,
+    ///   `isProcessAlive=false`) were deleted before `markProcessLiveness`
+    ///   could rescue them.
+    /// - Parameter now: clock injection point for unit tests.
+    public mutating func removeInvisibleSessions(
+        graceWindow: TimeInterval = 0,
+        now: Date = .now
+    ) -> Bool {
         let before = sessionsByID.count
+        let cutoff = now.addingTimeInterval(-graceWindow)
         sessionsByID = sessionsByID.filter { _, session in
-            session.isVisibleInIsland
+            if session.isVisibleInIsland { return true }
+            if graceWindow > 0 && session.updatedAt > cutoff { return true }
+            return false
         }
         return sessionsByID.count != before
     }
