@@ -10,10 +10,9 @@ final class FullscreenSpaceObserver {
     private var workspaceObserver: NSObjectProtocol?
     private var screenParamsObserver: NSObjectProtocol?
 
-    deinit {
-        // Tokens are released; nothing to invalidate beyond the notification center entries.
-        // Removal must happen on main; rely on `stop()` being called explicitly.
-    }
+    // No deinit cleanup: this observer is held for the app's lifetime by AppModel.
+    // The notification tokens capture `[weak self]` so no retain cycle exists; if a
+    // future caller needs early teardown, call `stop()` explicitly.
 
     func start() {
         guard workspaceObserver == nil else { return }
@@ -50,8 +49,6 @@ final class FullscreenSpaceObserver {
         }
     }
 
-    /// Forces a re-scan. Public so AppModel can trigger an evaluation right
-    /// after the panel is created (initial state).
     func recompute() {
         let value = currentFullscreenDisplays()
         guard value != lastValue else { return }
@@ -71,14 +68,13 @@ final class FullscreenSpaceObserver {
         // bar / dock / system overlays.
         let appWindows = raw.filter { ($0[kCGWindowLayer as String] as? Int) == 0 }
 
+        // CGWindowList bounds are in CG (top-left origin) coordinates;
+        // NSScreen.frame is bottom-left. Flip against the primary screen height.
+        let screens = NSScreen.screens
+        let primaryHeight = screens.first?.frame.height ?? 0
         var result: Set<CGDirectDisplayID> = []
-        for screen in NSScreen.screens {
+        for screen in screens {
             guard let displayID = Self.displayID(for: screen) else { continue }
-            // CGWindowList bounds are in CG (top-left origin) coordinates.
-            // NSScreen.frame is bottom-left; convert by flipping against the
-            // primary screen height.
-            let primary = NSScreen.screens.first
-            let primaryHeight = primary?.frame.height ?? screen.frame.height
             let cgScreenFrame = CGRect(
                 x: screen.frame.minX,
                 y: primaryHeight - screen.frame.maxY,

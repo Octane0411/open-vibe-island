@@ -96,22 +96,16 @@ final class OverlayPanelController {
         }
     }
 
-    /// Fully orders the panel out of the window list and stops mouse-event
-    /// monitors. Used to make the overlay disappear from fullscreen Spaces
-    /// (Mission Control, app fullscreen) when the user has opted in.
     func forceHide() {
         guard let panel else { return }
         panel.orderOut(nil)
         eventMonitors.stop()
     }
 
-    /// Restores the panel after `forceHide()`. Re-positions it on the resolved
-    /// target screen and re-arms the event monitors. No-op if the panel is
-    /// already visible.
     func forceShowIfNeeded(model: AppModel, preferredScreenID: String?) {
-        self.model = model
         guard let panel else { return }
         if !panel.isVisible {
+            self.model = model
             positionPanel(panel, preferredScreenID: preferredScreenID, animated: false)
             panel.orderFrontRegardless()
             panel.ignoresMouseEvents = true
@@ -136,7 +130,7 @@ final class OverlayPanelController {
     // MARK: - Panel creation
 
     private func makePanel(model: AppModel) -> NotchPanel {
-        let screen = resolveTargetScreen() ?? NSScreen.main
+        let screen = OverlayDisplayResolver.resolveTargetScreen(preferredScreenID: nil) ?? NSScreen.main
         let windowFrame = screen.map { panelFrame(for: model, on: $0) } ?? .zero
 
         let panel = NotchPanel(
@@ -165,7 +159,7 @@ final class OverlayPanelController {
         hostingView.notchController = self
         panel.contentView = hostingView
 
-        computeNotchRect(screen: resolveTargetScreen())
+        computeNotchRect(screen: OverlayDisplayResolver.resolveTargetScreen(preferredScreenID: nil))
         return panel
     }
 
@@ -177,7 +171,7 @@ final class OverlayPanelController {
         preferredScreenID: String?,
         animated: Bool
     ) -> OverlayPlacementDiagnostics? {
-        guard let screen = resolveTargetScreen(preferredScreenID: preferredScreenID) else {
+        guard let screen = OverlayDisplayResolver.resolveTargetScreen(preferredScreenID: preferredScreenID) else {
             return nil
         }
 
@@ -219,30 +213,6 @@ final class OverlayPanelController {
         let notchX = screenFrame.midX - notchSize.width / 2
         let notchY = screenFrame.maxY - notchSize.height
         notchRect = NSRect(x: notchX, y: notchY, width: notchSize.width, height: notchSize.height)
-    }
-
-    private func resolveTargetScreen(preferredScreenID: String? = nil) -> NSScreen? {
-        let screens = NSScreen.screens
-        guard !screens.isEmpty else { return nil }
-
-        if let preferredScreenID,
-           let screen = screens.first(where: { screenID(for: $0) == preferredScreenID }) {
-            return screen
-        }
-
-        if let notchScreen = screens.first(where: { $0.safeAreaInsets.top > 0 }) {
-            return notchScreen
-        }
-
-        return NSScreen.main ?? screens[0]
-    }
-
-    private func screenID(for screen: NSScreen) -> String {
-        let key = NSDeviceDescriptionKey("NSScreenNumber")
-        if let number = screen.deviceDescription[key] as? NSNumber {
-            return "display-\(number.uint32Value)"
-        }
-        return screen.localizedName
     }
 
     // MARK: - Mouse event monitoring
@@ -487,7 +457,7 @@ final class OverlayPanelController {
     }
 
     private func closedSurfaceRect(for model: AppModel) -> NSRect? {
-        guard let screen = resolveTargetScreen() else {
+        guard let screen = OverlayDisplayResolver.resolveTargetScreen(preferredScreenID: nil) else {
             return nil
         }
 

@@ -967,12 +967,19 @@ final class AppModel {
 
     // MARK: - Fullscreen visibility
 
+    @ObservationIgnored private var lastAppliedSuppression: Bool?
+
     private func handleFullscreenDisplaysChanged(_ fullscreenDisplays: Set<CGDirectDisplayID>) {
-        let resolvedScreen = OverlayDisplayResolver.resolveTargetScreen(
-            preferredScreenID: overlay.preferredOverlayScreenIDForExternalUse
-        )
-        let islandDisplayID = resolvedScreen.flatMap { FullscreenSpaceObserver.displayID(for: $0) }
-        let newValue = islandDisplayID.map { fullscreenDisplays.contains($0) } ?? false
+        let newValue: Bool
+        if fullscreenDisplays.isEmpty {
+            newValue = false
+        } else {
+            let resolvedScreen = OverlayDisplayResolver.resolveTargetScreen(
+                preferredScreenID: overlay.preferredOverlayScreenID
+            )
+            let islandDisplayID = resolvedScreen.flatMap { FullscreenSpaceObserver.displayID(for: $0) }
+            newValue = islandDisplayID.map { fullscreenDisplays.contains($0) } ?? false
+        }
         guard newValue != isOverlayScreenFullscreen else { return }
         isOverlayScreenFullscreen = newValue
         applyFullscreenVisibility()
@@ -984,12 +991,14 @@ final class AppModel {
             isOverlayScreenFullscreen: isOverlayScreenFullscreen,
             hasAttentionRequiredSession: hasAttentionRequiredSession
         )
+        guard suppress != lastAppliedSuppression else { return }
+        lastAppliedSuppression = suppress
         if suppress {
             overlay.overlayPanelController.forceHide()
         } else {
             overlay.overlayPanelController.forceShowIfNeeded(
                 model: self,
-                preferredScreenID: overlay.preferredOverlayScreenIDForExternalUse
+                preferredScreenID: overlay.preferredOverlayScreenID
             )
         }
     }
