@@ -50,11 +50,13 @@ struct CompanionStateOverlay: View {
     }
 
     private var accessibilityText: String {
+        let key: String
         switch state {
-        case .idle: "Idle"
-        case .working: "Working"
-        case .waiting: "Waiting for input"
-        case .celebrating: "Just finished"
+        case .idle:        key = "island.companion.state.idle"
+        case .working:     key = "island.companion.state.working"
+        case .waiting:     key = "island.companion.state.waiting"
+        case .celebrating: key = "island.companion.state.celebrating"
         }
+        return LanguageManager.shared.t(key)
     }
 }

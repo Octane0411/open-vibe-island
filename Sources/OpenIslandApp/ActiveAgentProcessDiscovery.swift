@@ -139,34 +139,11 @@ struct ActiveAgentProcessDiscovery {
                     terminalApp: terminalApp(for: process, processesByPID: processesByPID)
                 )
 
-                // Resolve tmux pane info even when terminalApp is already known to be
-                // cmux. cmux runs on a tmux server with a custom socket, so tmux
-                // send-keys works through it — but TerminalTextSender.canReply needs
-                // tmuxTarget populated to enable the completion-reply UI.
-                let needsTmuxResolution = snapshot.terminalApp == nil
-                    || snapshot.terminalApp?.lowercased() == "cmux"
-                if needsTmuxResolution, let agentTTY = process.terminalTTY {
-                    if let (tmuxTarget, hostTerminalApp, socketPath) = resolveTmuxInfo(
-                        agentTTY: agentTTY,
-                        processes: processesByPID.values.map { $0 },
-                        processesByPID: processesByPID
-                    ) {
-                        // Only overwrite terminalApp when we didn't already know it.
-                        // For cmux, keep "cmux" as the display name.
-                        if snapshot.terminalApp == nil {
-                            snapshot.terminalApp = hostTerminalApp
-                        }
-                        snapshot.tmuxTarget = tmuxTarget
-                        snapshot.tmuxSocketPath = socketPath
-                    }
-                }
-
-                // For cmux sessions, read the surface ID from the agent process's env
-                // vars so the TerminalJumpService can focus the exact tab.
-                if snapshot.terminalApp?.lowercased() == "cmux",
-                   snapshot.terminalSessionID == nil {
-                    snapshot.terminalSessionID = resolveCmuxSurfaceID(pid: process.pid)
-                }
+                resolveCmuxAndTmuxMetadata(
+                    snapshot: &snapshot,
+                    process: process,
+                    processesByPID: processesByPID
+                )
 
                 snapshots.append(snapshot)
                 continue
@@ -258,34 +235,11 @@ struct ActiveAgentProcessDiscovery {
             terminalApp: terminalApp(for: process, processesByPID: processesByPID)
         )
 
-        // Resolve tmux pane info even when terminalApp is already known to be
-        // cmux. cmux runs on a tmux server with a custom socket, so tmux
-        // send-keys works through it — but TerminalTextSender.canReply needs
-        // tmuxTarget populated to enable the completion-reply UI.
-        let needsTmuxResolution = snapshot.terminalApp == nil
-            || snapshot.terminalApp?.lowercased() == "cmux"
-        if needsTmuxResolution, let agentTTY = process.terminalTTY {
-            if let (tmuxTarget, hostTerminalApp, socketPath) = resolveTmuxInfo(
-                agentTTY: agentTTY,
-                processes: processesByPID.values.map { $0 },
-                processesByPID: processesByPID
-            ) {
-                // Only overwrite terminalApp when we didn't already know it.
-                // For cmux, keep "cmux" as the display name.
-                if snapshot.terminalApp == nil {
-                    snapshot.terminalApp = hostTerminalApp
-                }
-                snapshot.tmuxTarget = tmuxTarget
-                snapshot.tmuxSocketPath = socketPath
-            }
-        }
-
-        // For cmux sessions, read the surface ID from the agent process's env
-        // vars so the TerminalJumpService can focus the exact tab.
-        if snapshot.terminalApp?.lowercased() == "cmux",
-           snapshot.terminalSessionID == nil {
-            snapshot.terminalSessionID = resolveCmuxSurfaceID(pid: process.pid)
-        }
+        resolveCmuxAndTmuxMetadata(
+            snapshot: &snapshot,
+            process: process,
+            processesByPID: processesByPID
+        )
 
         return snapshot
     }
@@ -326,34 +280,11 @@ struct ActiveAgentProcessDiscovery {
             transcriptPath: transcriptPath
         )
 
-        // Resolve tmux pane info even when terminalApp is already known to be
-        // cmux. cmux runs on a tmux server with a custom socket, so tmux
-        // send-keys works through it — but TerminalTextSender.canReply needs
-        // tmuxTarget populated to enable the completion-reply UI.
-        let needsTmuxResolution = snapshot.terminalApp == nil
-            || snapshot.terminalApp?.lowercased() == "cmux"
-        if needsTmuxResolution, let agentTTY = process.terminalTTY {
-            if let (tmuxTarget, hostTerminalApp, socketPath) = resolveTmuxInfo(
-                agentTTY: agentTTY,
-                processes: processesByPID.values.map { $0 },
-                processesByPID: processesByPID
-            ) {
-                // Only overwrite terminalApp when we didn't already know it.
-                // For cmux, keep "cmux" as the display name.
-                if snapshot.terminalApp == nil {
-                    snapshot.terminalApp = hostTerminalApp
-                }
-                snapshot.tmuxTarget = tmuxTarget
-                snapshot.tmuxSocketPath = socketPath
-            }
-        }
-
-        // For cmux sessions, read the surface ID from the agent process's env
-        // vars so the TerminalJumpService can focus the exact tab.
-        if snapshot.terminalApp?.lowercased() == "cmux",
-           snapshot.terminalSessionID == nil {
-            snapshot.terminalSessionID = resolveCmuxSurfaceID(pid: process.pid)
-        }
+        resolveCmuxAndTmuxMetadata(
+            snapshot: &snapshot,
+            process: process,
+            processesByPID: processesByPID
+        )
 
         return snapshot
     }
@@ -790,6 +721,43 @@ struct ActiveAgentProcessDiscovery {
     }
 
     // MARK: - cmux support
+
+    /// Fills cmux surface ID, tmux pane metadata, and (when discovery couldn't)
+    /// the `terminalApp` label on a snapshot. CMUX_SURFACE_ID is read first
+    /// because its presence in the process env is authoritative evidence the
+    /// process is running inside a cmux tab — independent of how terminal-app
+    /// discovery labeled the host. Tmux resolution then runs unconditionally
+    /// for the cmux + Unknown-host cases, so completion-reply (tmuxTarget) and
+    /// precise jump (terminalSessionID) both come back populated.
+    private func resolveCmuxAndTmuxMetadata(
+        snapshot: inout ProcessSnapshot,
+        process: RunningProcess,
+        processesByPID: [String: RunningProcess]
+    ) {
+        if snapshot.terminalSessionID == nil,
+           let surfaceID = resolveCmuxSurfaceID(pid: process.pid) {
+            snapshot.terminalSessionID = surfaceID
+            if snapshot.terminalApp == nil {
+                snapshot.terminalApp = "cmux"
+            }
+        }
+
+        let needsTmuxResolution = snapshot.terminalApp == nil
+            || snapshot.terminalApp?.lowercased() == "cmux"
+        if needsTmuxResolution, let agentTTY = process.terminalTTY {
+            if let (tmuxTarget, hostTerminalApp, socketPath) = resolveTmuxInfo(
+                agentTTY: agentTTY,
+                processes: processesByPID.values.map { $0 },
+                processesByPID: processesByPID
+            ) {
+                if snapshot.terminalApp == nil {
+                    snapshot.terminalApp = hostTerminalApp
+                }
+                snapshot.tmuxTarget = tmuxTarget
+                snapshot.tmuxSocketPath = socketPath
+            }
+        }
+    }
 
     /// Reads `CMUX_SURFACE_ID` from the agent process's environment via
     /// `ps eww -p <pid>`. cmux exports this UUID per surface (tab); the

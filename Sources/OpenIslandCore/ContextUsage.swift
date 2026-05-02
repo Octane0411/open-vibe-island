@@ -28,7 +28,7 @@ public enum ContextWindowTable {
     }
 }
 
-public struct ContextUsage: Equatable, Sendable {
+public struct ContextUsage: Codable, Equatable, Sendable {
     public var used: Int
     public var window: Int
 

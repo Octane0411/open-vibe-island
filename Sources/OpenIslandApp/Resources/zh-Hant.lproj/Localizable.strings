@@ -215,8 +215,11 @@
 "settings.projectColors.removeUnused" = "Remove unused";
 "settings.projectColors.empty" = "No projects seen yet.";
 
-/* Companion pet — added by feat/notch-personalization */
-/* TODO: translate */
+/* Companion state overlay — accessibility labels */
+"island.companion.state.idle" = "閒置";
+"island.companion.state.working" = "工作中";
+"island.companion.state.waiting" = "等待輸入";
+"island.companion.state.celebrating" = "剛完成";
 
 /* Ambient theme — added by feat/notch-personalization */
 /* TODO: translate */
