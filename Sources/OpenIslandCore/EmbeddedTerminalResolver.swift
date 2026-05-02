@@ -17,7 +17,7 @@ import Darwin
 public enum EmbeddedTerminalResolver {
 
     /// A single embedded host the resolver can recognize.
-    public enum EmbeddedHost: Sendable, Equatable {
+    public enum EmbeddedHost: Sendable, Equatable, Codable {
         case vscodeFamily(bundleID: String, displayName: String)
         case jetbrains(bundleID: String, displayName: String)
         case obsidian
@@ -42,13 +42,19 @@ public enum EmbeddedTerminalResolver {
     }
 
     /// Identifies the embedded host found above the calling process.
-    public struct HostContext: Sendable, Equatable {
+    public struct HostContext: Sendable, Equatable, Codable {
         public let host: EmbeddedHost
-        /// PID of the host process (the IDE / editor itself).
+        /// PID of the first ancestor whose command matches a known host
+        /// `.app` bundle path. For helper-heavy hosts like VS Code this
+        /// can be a helper inside the bundle (e.g. `Code Helper (Plugin)`)
+        /// rather than the outer app's PID — the bundle path alone is
+        /// enough for current callers, which dispatch by bundle ID. A
+        /// future phase that needs the outer-app PID should walk further
+        /// up while the classification stays the same.
         public let hostPID: pid_t
-        /// PID of the direct child of the host. For most IDEs this is the
-        /// shell that owns the embedded terminal pane — useful later for
-        /// per-pane focus precision.
+        /// PID of the direct child of `hostPID`. For most IDEs this is
+        /// the shell that owns the embedded terminal pane — useful later
+        /// for per-pane focus precision.
         public let shellPID: pid_t
 
         public init(host: EmbeddedHost, hostPID: pid_t, shellPID: pid_t) {
