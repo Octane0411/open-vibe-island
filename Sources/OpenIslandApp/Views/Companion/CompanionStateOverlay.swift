@@ -1,4 +1,4 @@
-// Sources/OpenIslandApp/Views/NotchWidgets/CompanionStateOverlay.swift
+// Sources/OpenIslandApp/Views/Companion/CompanionStateOverlay.swift
 import SwiftUI
 import OpenIslandCore
 

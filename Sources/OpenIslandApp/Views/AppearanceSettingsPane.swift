@@ -89,70 +89,6 @@ struct AppearanceSettingsPane: View {
                 }
             }
 
-            Section(lang.t("settings.notchWidgets.title")) {
-                Text(lang.t("settings.notchWidgets.closed.title"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Picker(lang.t("settings.notchWidgets.leftSlot2"),
-                       selection: slotBinding(\.closedLeft2)) {
-                    ForEach(NotchWidgetKind.allCases, id: \.self) { kind in
-                        Text(localizedKindName(kind)).tag(kind)
-                    }
-                }
-
-                Picker(lang.t("settings.notchWidgets.rightSlot1"),
-                       selection: slotBinding(\.closedRight1)) {
-                    ForEach(NotchWidgetKind.allCases, id: \.self) { kind in
-                        Text(localizedKindName(kind)).tag(kind)
-                    }
-                }
-
-                Picker(lang.t("settings.notchWidgets.rightSlot2"),
-                       selection: slotBinding(\.closedRight2)) {
-                    ForEach(NotchWidgetKind.allCases, id: \.self) { kind in
-                        Text(localizedKindName(kind)).tag(kind)
-                    }
-                }
-
-                Picker(lang.t("settings.notchWidgets.centerSlot"),
-                       selection: slotBinding(\.centerSlotExternal)) {
-                    ForEach(NotchWidgetKind.allCases, id: \.self) { kind in
-                        Text(localizedKindName(kind)).tag(kind)
-                    }
-                }
-                Text(lang.t("settings.notchWidgets.centerSlotHint"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Divider()
-
-                Text(lang.t("settings.notchWidgets.expanded.title"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Picker(lang.t("settings.notchWidgets.leftSlot2"),
-                       selection: slotBinding(\.expandedLeft2)) {
-                    ForEach(NotchWidgetKind.allCases, id: \.self) { kind in
-                        Text(localizedKindName(kind)).tag(kind)
-                    }
-                }
-
-                Picker(lang.t("settings.notchWidgets.rightSlot1"),
-                       selection: slotBinding(\.expandedRight1)) {
-                    ForEach(NotchWidgetKind.allCases, id: \.self) { kind in
-                        Text(localizedKindName(kind)).tag(kind)
-                    }
-                }
-
-                Picker(lang.t("settings.notchWidgets.rightSlot2"),
-                       selection: slotBinding(\.expandedRight2)) {
-                    ForEach(NotchWidgetKind.allCases, id: \.self) { kind in
-                        Text(localizedKindName(kind)).tag(kind)
-                    }
-                }
-            }
-
             Section {
                 DisclosureGroup(lang.t("settings.projectColors.title")) {
                     let keys = model.projectColorRegistry.knownKeys().sorted()
@@ -473,29 +409,6 @@ struct AppearanceSettingsPane: View {
         case .steps:  lang.t("settings.appearance.pixelShape.steps")
         case .blocks: lang.t("settings.appearance.pixelShape.blocks")
         case .custom: lang.t("settings.appearance.pixelShape.custom")
-        }
-    }
-
-    private func slotBinding(
-        _ keyPath: WritableKeyPath<NotchWidgetConfig, NotchWidgetKind>
-    ) -> Binding<NotchWidgetKind> {
-        Binding(
-            get: { model.notchWidgetConfig[keyPath: keyPath] },
-            set: { newValue in
-                var config = model.notchWidgetConfig
-                config[keyPath: keyPath] = newValue
-                model.notchWidgetConfig = config
-            }
-        )
-    }
-
-    private func localizedKindName(_ kind: NotchWidgetKind) -> String {
-        switch kind {
-        case .none:             return lang.t("settings.notchWidgets.kind.none")
-        case .sessionCount:     return lang.t("settings.notchWidgets.kind.sessionCount")
-        case .projectChip:      return lang.t("settings.notchWidgets.kind.projectChip")
-        case .agentToolIcon:    return lang.t("settings.notchWidgets.kind.agentToolIcon")
-        case .dollarSpentToday: return lang.t("settings.notchWidgets.kind.dollarSpentToday")
         }
     }
 

@@ -27,7 +27,6 @@ final class AppModel {
     private static let showCodexUsageDefaultsKey = "app.showCodexUsage"
     private static let completionReplyEnabledDefaultsKey = "feature.completionReply.enabled"
     private static let suppressFrontmostNotificationsDefaultsKey = "app.suppressFrontmostNotifications"
-    private static let notchWidgetConfigDefaultsKey = "notch.widgetConfig"
     private static let ambientThemeEnabledDefaultsKey = "appearance.ambientTheme.enabled"
     private static let ambientThemeOpacityDefaultsKey = "appearance.ambientTheme.opacity"
     private static let celebrationsEnabledDefaultsKey = "appearance.celebrations.enabled"
@@ -364,15 +363,6 @@ final class AppModel {
         }
     }
     var customAvatarImage: NSImage? = nil
-    var notchWidgetConfig: NotchWidgetConfig = .default {
-        didSet {
-            guard notchWidgetConfig != oldValue else { return }
-            if let data = try? JSONEncoder().encode(notchWidgetConfig) {
-                UserDefaults.standard.set(data, forKey: Self.notchWidgetConfigDefaultsKey)
-            }
-            updateCodeburnPolling()
-        }
-    }
     var ambientThemeEnabled: Bool = true {
         didSet {
             guard ambientThemeEnabled != oldValue else { return }
@@ -424,18 +414,7 @@ final class AppModel {
     }
 
     private func updateCodeburnPolling() {
-        let closedWantsDollar = notchWidgetConfig.closedLeft2 == .dollarSpentToday
-            || notchWidgetConfig.closedRight1 == .dollarSpentToday
-            || notchWidgetConfig.closedRight2 == .dollarSpentToday
-            || notchWidgetConfig.centerSlotExternal == .dollarSpentToday
-
-        let expandedWantsDollar = notchWidgetConfig.expandedLeft2 == .dollarSpentToday
-            || notchWidgetConfig.expandedRight1 == .dollarSpentToday
-            || notchWidgetConfig.expandedRight2 == .dollarSpentToday
-
-        let needsCodeburn = closedWantsDollar
-            || (expandedWantsDollar && headerNeedsCodeburn)
-        if needsCodeburn {
+        if headerNeedsCodeburn {
             if codeburnClient == nil {
                 codeburnClient = CodeburnClient(runner: ProcessCodeburnRunner())
             }
@@ -668,10 +647,6 @@ final class AppModel {
         watchNotificationEnabled = UserDefaults.standard.bool(forKey: Self.watchNotificationEnabledKey)
         if watchNotificationEnabled {
             startWatchRelay()
-        }
-        if let data = UserDefaults.standard.data(forKey: Self.notchWidgetConfigDefaultsKey),
-           let decoded = try? JSONDecoder().decode(NotchWidgetConfig.self, from: data) {
-            notchWidgetConfig = decoded
         }
         ambientThemeEnabled = UserDefaults.standard.bool(forKey: Self.ambientThemeEnabledDefaultsKey)
         ambientThemeOpacity = UserDefaults.standard.double(forKey: Self.ambientThemeOpacityDefaultsKey)
