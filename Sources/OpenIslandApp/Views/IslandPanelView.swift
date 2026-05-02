@@ -432,13 +432,8 @@ struct IslandPanelView: View {
                                 )
                                 .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
 
-                                if let pet = model.resolvedCompanionPet {
-                                    AnimatedCompanionPet(pet: pet, state: companionState)
-                                        .offset(x: 2, y: 2)
-                                } else {
-                                    CompanionStateOverlay(state: companionState)
-                                        .offset(x: 2, y: 2)
-                                }
+                                CompanionStateOverlay(state: companionState)
+                                    .offset(x: 2, y: 2)
                             }
                         } else {
                             OpenIslandIcon(size: 14, isAnimating: hasClosedActivity, tint: scoutTint)

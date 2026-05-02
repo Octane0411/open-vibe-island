@@ -217,13 +217,6 @@
 
 /* Companion pet — added by feat/notch-personalization */
 /* TODO: translate */
-"settings.companion.title" = "Companion pet";
-"settings.companion.preview" = "Live preview";
-"settings.companion.pet.none" = "Default";
-"settings.companion.pet.daily" = "Daily";
-"settings.companion.pet.cat" = "Cat";
-"settings.companion.pet.ghost" = "Ghost";
-"settings.companion.pet.robot" = "Robot";
 
 /* Ambient theme — added by feat/notch-personalization */
 /* TODO: translate */

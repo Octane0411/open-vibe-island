@@ -115,36 +115,6 @@ struct AppearanceSettingsPane: View {
                 }
             }
 
-            Section(lang.t("settings.companion.title")) {
-                let petOptions: [(String, String)] = [
-                    ("__none__", lang.t("settings.companion.pet.none")),
-                    ("daily",    lang.t("settings.companion.pet.daily")),
-                ] + CompanionPet.allCases.map { ($0.rawValue, lang.t("settings.companion.pet.\($0.rawValue)")) }
-
-                Picker("", selection: Binding(
-                    get: { model.companionPetSelection ?? "__none__" },
-                    set: { newValue in
-                        model.companionPetSelection = (newValue == "__none__") ? nil : newValue
-                    }
-                )) {
-                    ForEach(petOptions, id: \.0) { value, label in
-                        Text(label).tag(value)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                if let pet = model.resolvedCompanionPet {
-                    VStack(spacing: 4) {
-                        Text(lang.t("settings.companion.preview"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        companionLivePreview(pet: pet)
-                            .frame(width: 64, height: 64)
-                            .background(Color.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
-                    }
-                }
-            }
-
             Section(lang.t("settings.ambient.title")) {
                 Toggle(lang.t("settings.ambient.toggle"), isOn: Binding(
                     get: { model.ambientThemeEnabled },
@@ -187,16 +157,6 @@ struct AppearanceSettingsPane: View {
         .navigationTitle(lang.t("settings.tab.appearance"))
     }
 
-    @ViewBuilder
-    private func companionLivePreview(pet: CompanionPet) -> some View {
-        TimelineView(.animation) { timeline in
-            let elapsed = timeline.date.timeIntervalSinceReferenceDate
-            let stateIndex = Int(elapsed / 2.0) % 4
-            let state: CompanionState = [.idle, .working, .waiting, .celebrating][stateIndex]
-            AnimatedCompanionPet(pet: pet, state: state)
-                .scaleEffect(3)
-        }
-    }
 
     // MARK: - Preview card
 
