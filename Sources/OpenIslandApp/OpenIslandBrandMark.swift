@@ -83,7 +83,7 @@ struct OpenIslandBrandMark: View {
         let image = NSImage(size: size, flipped: false) { _ in
             guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
             for pixel in pixels {
-                let alpha: CGFloat = pixel.role == "E" ? 0.7 : 1.0
+                let alpha: CGFloat = pixel.role == "E" ? 0.9 : 1.0
                 ctx.setFillColor(NSColor.black.withAlphaComponent(alpha).cgColor)
                 let rect = CGRect(
                     x: padding + CGFloat(pixel.x) * pixelSize,
