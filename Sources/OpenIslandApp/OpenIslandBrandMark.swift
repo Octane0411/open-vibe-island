@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct OpenIslandBrandMark: View {
@@ -68,5 +69,33 @@ struct OpenIslandBrandMark: View {
         case .template:
             return Color.primary.opacity(role == "E" ? 0.9 : 1.0)
         }
+    }
+
+    /// AppKit template image for the menu-bar status item. SwiftUI's
+    /// `MenuBarExtra` does not turn an arbitrary view into a real template
+    /// image, which is why the live SwiftUI mark renders as an inverted
+    /// black block when the menu bar item is highlighted (#428).
+    static let menuBarTemplateImage: NSImage = makeMenuBarTemplateImage()
+
+    static func makeMenuBarTemplateImage(pixelSize: CGFloat = 2, padding: CGFloat = 1) -> NSImage {
+        let dimension = CGFloat(8) * pixelSize + padding * 2
+        let size = NSSize(width: dimension, height: dimension)
+        let image = NSImage(size: size, flipped: false) { _ in
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+            for pixel in pixels {
+                let alpha: CGFloat = pixel.role == "E" ? 0.7 : 1.0
+                ctx.setFillColor(NSColor.black.withAlphaComponent(alpha).cgColor)
+                let rect = CGRect(
+                    x: padding + CGFloat(pixel.x) * pixelSize,
+                    y: padding + CGFloat(7 - pixel.y) * pixelSize,
+                    width: pixelSize,
+                    height: pixelSize
+                )
+                ctx.fill(rect)
+            }
+            return true
+        }
+        image.isTemplate = true
+        return image
     }
 }
