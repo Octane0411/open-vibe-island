@@ -1,5 +1,47 @@
 import Foundation
 
+public struct CodexTokenUsage: Equatable, Codable, Sendable {
+    public var inputTokens: Int?
+    public var cachedInputTokens: Int?
+    public var outputTokens: Int?
+    public var reasoningOutputTokens: Int?
+    public var totalTokens: Int?
+
+    public init(
+        inputTokens: Int? = nil,
+        cachedInputTokens: Int? = nil,
+        outputTokens: Int? = nil,
+        reasoningOutputTokens: Int? = nil,
+        totalTokens: Int? = nil
+    ) {
+        self.inputTokens = inputTokens
+        self.cachedInputTokens = cachedInputTokens
+        self.outputTokens = outputTokens
+        self.reasoningOutputTokens = reasoningOutputTokens
+        self.totalTokens = totalTokens
+    }
+
+    public var isEmpty: Bool {
+        inputTokens == nil
+            && cachedInputTokens == nil
+            && outputTokens == nil
+            && reasoningOutputTokens == nil
+            && totalTokens == nil
+    }
+}
+
+public struct CodexTokenRate: Equatable, Codable, Sendable {
+    public var deltaTokens: Int
+    public var sampleInterval: TimeInterval
+    public var tokensPerSecond: Double
+
+    public init(deltaTokens: Int, sampleInterval: TimeInterval, tokensPerSecond: Double) {
+        self.deltaTokens = deltaTokens
+        self.sampleInterval = sampleInterval
+        self.tokensPerSecond = tokensPerSecond
+    }
+}
+
 public struct CodexUsageWindow: Equatable, Codable, Sendable, Identifiable {
     public var key: String
     public var label: String
@@ -39,23 +81,35 @@ public struct CodexUsageSnapshot: Equatable, Codable, Sendable {
     public var planType: String?
     public var limitID: String?
     public var windows: [CodexUsageWindow]
+    public var totalTokenUsage: CodexTokenUsage?
+    public var lastTokenUsage: CodexTokenUsage?
+    public var modelContextWindow: Int?
+    public var recentTotalTokenRate: CodexTokenRate?
 
     public init(
         sourceFilePath: String,
         capturedAt: Date?,
         planType: String? = nil,
         limitID: String? = nil,
-        windows: [CodexUsageWindow]
+        windows: [CodexUsageWindow],
+        totalTokenUsage: CodexTokenUsage? = nil,
+        lastTokenUsage: CodexTokenUsage? = nil,
+        modelContextWindow: Int? = nil,
+        recentTotalTokenRate: CodexTokenRate? = nil
     ) {
         self.sourceFilePath = sourceFilePath
         self.capturedAt = capturedAt
         self.planType = planType
         self.limitID = limitID
         self.windows = windows
+        self.totalTokenUsage = totalTokenUsage
+        self.lastTokenUsage = lastTokenUsage
+        self.modelContextWindow = modelContextWindow
+        self.recentTotalTokenRate = recentTotalTokenRate
     }
 
     public var isEmpty: Bool {
-        windows.isEmpty
+        windows.isEmpty && totalTokenUsage == nil && lastTokenUsage == nil
     }
 }
 
@@ -126,6 +180,7 @@ public enum CodexUsageLoader {
         }
 
         var latestSnapshot: CodexUsageSnapshot?
+        var previousSnapshot: CodexUsageSnapshot?
         contents.enumerateLines { line, _ in
             guard let snapshot = snapshot(
                 from: line,
@@ -135,9 +190,18 @@ public enum CodexUsageLoader {
                 return
             }
 
+            previousSnapshot = latestSnapshot
             latestSnapshot = snapshot
         }
 
+        guard var latestSnapshot else {
+            return nil
+        }
+
+        latestSnapshot.recentTotalTokenRate = tokenRate(
+            current: latestSnapshot,
+            previous: previousSnapshot
+        )
         return latestSnapshot
     }
 
@@ -152,15 +216,19 @@ public enum CodexUsageLoader {
         }
 
         let payload = object["payload"] as? [String: Any] ?? [:]
-        guard payload["type"] as? String == "token_count",
-              let rateLimits = payload["rate_limits"] as? [String: Any] else {
+        guard payload["type"] as? String == "token_count" else {
             return nil
         }
 
+        let rateLimits = payload["rate_limits"] as? [String: Any] ?? [:]
+        let info = payload["info"] as? [String: Any] ?? [:]
         let windows = ["primary", "secondary"].compactMap { key in
             usageWindow(for: key, in: rateLimits)
         }
-        guard !windows.isEmpty else {
+        let totalTokenUsage = tokenUsage(for: "total_token_usage", in: info)
+        let lastTokenUsage = tokenUsage(for: "last_token_usage", in: info)
+        let modelContextWindow = integer(from: info["model_context_window"])
+        guard !windows.isEmpty || totalTokenUsage != nil || lastTokenUsage != nil else {
             return nil
         }
 
@@ -169,8 +237,27 @@ public enum CodexUsageLoader {
             capturedAt: timestamp(from: object["timestamp"]) ?? fallbackTimestamp,
             planType: string(from: rateLimits["plan_type"]),
             limitID: string(from: rateLimits["limit_id"]),
-            windows: windows
+            windows: windows,
+            totalTokenUsage: totalTokenUsage,
+            lastTokenUsage: lastTokenUsage,
+            modelContextWindow: modelContextWindow
         )
+    }
+
+    private static func tokenUsage(for key: String, in info: [String: Any]) -> CodexTokenUsage? {
+        guard let payload = info[key] as? [String: Any] else {
+            return nil
+        }
+
+        let usage = CodexTokenUsage(
+            inputTokens: integer(from: payload["input_tokens"]),
+            cachedInputTokens: integer(from: payload["cached_input_tokens"]),
+            outputTokens: integer(from: payload["output_tokens"]),
+            reasoningOutputTokens: integer(from: payload["reasoning_output_tokens"]),
+            totalTokens: integer(from: payload["total_tokens"])
+        )
+
+        return usage.isEmpty ? nil : usage
     }
 
     private static func usageWindow(for key: String, in rateLimits: [String: Any]) -> CodexUsageWindow? {
@@ -213,6 +300,36 @@ public enum CodexUsageLoader {
         }
 
         return "\(minutes)m"
+    }
+
+    private static func tokenRate(
+        current: CodexUsageSnapshot,
+        previous: CodexUsageSnapshot?
+    ) -> CodexTokenRate? {
+        guard let previous,
+              let currentTimestamp = current.capturedAt,
+              let previousTimestamp = previous.capturedAt,
+              currentTimestamp > previousTimestamp,
+              let currentTotalTokens = current.totalTokenUsage?.totalTokens,
+              let previousTotalTokens = previous.totalTokenUsage?.totalTokens else {
+            return nil
+        }
+
+        let deltaTokens = currentTotalTokens - previousTotalTokens
+        guard deltaTokens >= 0 else {
+            return nil
+        }
+
+        let sampleInterval = currentTimestamp.timeIntervalSince(previousTimestamp)
+        guard sampleInterval > 0 else {
+            return nil
+        }
+
+        return CodexTokenRate(
+            deltaTokens: deltaTokens,
+            sampleInterval: sampleInterval,
+            tokensPerSecond: Double(deltaTokens) / sampleInterval
+        )
     }
 
     private static func jsonObject(for line: String) -> [String: Any]? {
