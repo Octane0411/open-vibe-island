@@ -41,6 +41,14 @@ Agent
 | `UserPromptSubmit` | User submits a new prompt | `prompt` |
 | `Stop` | A turn completes | `last_assistant_message`, `stop_hook_active` |
 
+### Default managed installation
+
+The managed Codex hook installer (`CodexHookInstaller`) installs only `SessionStart`, `UserPromptSubmit`, and `Stop` by default. This is intentional: per-command Bash hooks add terminal log noise, so the default set keeps the workflow low-noise while still providing session lifecycle and usage visibility.
+
+The `CodexHookPayload` model and `BridgeServer` can parse richer events (`PreToolUse`, `PostToolUse`) when they are present in the hook payload, and will surface them in the UI if received. However, these richer events are **not** installed by the managed installer and must be configured manually if desired.
+
+> **Note on file-edit coverage**: Codex file edits may use internal apply-patch paths that do not emit `PreToolUse` events. File-edit approval should not be treated as guaranteed `PreToolUse` coverage; the current reliable coverage is command/shell-level events, depending on Codex hook configuration.
+
 ### Common payload fields
 
 | JSON key | Swift property | Description |
