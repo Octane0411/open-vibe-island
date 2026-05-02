@@ -35,17 +35,24 @@ struct ContextWindowTableTests {
     }
 
     @Test
-    func observedUsedAbove200KTriggers1M() {
+    func observedUsedAbove400KTriggers1M() {
         #expect(ContextWindowTable.window(for: "claude-opus-4-7", observedUsed: 400_000) == 800_000)
     }
 
     @Test
-    func observedUsedAt200KStaysDefault() {
-        #expect(ContextWindowTable.window(for: "claude-opus-4-7", observedUsed: 200_000) == 160_000)
+    func observedUsedAbove165KTriggers1M() {
+        // 200K-context sessions auto-compact around 160K, so a transcript
+        // exceeding the detection threshold without compaction must be 1M.
+        #expect(ContextWindowTable.window(for: "claude-opus-4-7", observedUsed: 180_000) == 800_000)
     }
 
     @Test
-    func observedUsedBelow200KStaysDefault() {
+    func observedUsedAt165KStaysDefault() {
+        #expect(ContextWindowTable.window(for: "claude-opus-4-7", observedUsed: 165_000) == 160_000)
+    }
+
+    @Test
+    func observedUsedBelow165KStaysDefault() {
         #expect(ContextWindowTable.window(for: "claude-opus-4-7", observedUsed: 150_000) == 160_000)
     }
 

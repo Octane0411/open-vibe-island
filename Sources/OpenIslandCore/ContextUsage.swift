@@ -7,14 +7,23 @@ public enum ContextWindowTable {
     /// Auto-compact threshold for the 1M context variant.
     public static let oneMillionWindow: Int = 800_000
 
+    /// Threshold above which prompt size is a near-certain signal of the 1M
+    /// context window. Claude Code's auto-compact for the 200K context variant
+    /// fires around 80% (~160K), so a transcript still climbing past ~165K
+    /// without compaction effectively cannot be a 200K session. Set slightly
+    /// above the compact threshold to avoid mis-classifying a 200K session
+    /// that's mid-compact.
+    static let oneMillionDetectionThreshold: Int = 165_000
+
     /// Returns the auto-compact threshold for the given model. Detects the
     /// 1M variant in two ways:
     ///   1. Explicit `[1m]` suffix on the model identifier
-    ///   2. `observedUsed > 200_000` — only possible on 1M (the 200K API
-    ///      would have rejected the request)
+    ///   2. `observedUsed > oneMillionDetectionThreshold` — Claude Code's
+    ///      JSONL doesn't tag 1M-context sessions, so we infer from prompt
+    ///      size: anything above the 200K auto-compact threshold must be 1M.
     public static func window(for model: String?, observedUsed: Int = 0) -> Int {
         if let model, model.hasSuffix("[1m]") { return oneMillionWindow }
-        if observedUsed > 200_000 { return oneMillionWindow }
+        if observedUsed > oneMillionDetectionThreshold { return oneMillionWindow }
         return defaultWindow
     }
 }
