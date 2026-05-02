@@ -381,25 +381,12 @@ final class AppModel {
             UserDefaults.standard.set(celebrationsEnabled, forKey: Self.celebrationsEnabledDefaultsKey)
         }
     }
-    private(set) var headerNeedsCodeburn: Bool = false {
-        didSet {
-            guard headerNeedsCodeburn != oldValue else { return }
-            updateCodeburnPolling()
-        }
-    }
-
-    func setHeaderNeedsCodeburn(_ needs: Bool) {
-        headerNeedsCodeburn = needs
-    }
     let projectColorRegistry: ProjectColorRegistry = {
         let supportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first!.appendingPathComponent("OpenIsland", isDirectory: true)
         return ProjectColorRegistry(storeURL: supportDir.appendingPathComponent("project-colors.json"))
     }()
     let contextUsageRegistry = ContextUsageRegistry()
-    private(set) var codeburnClient: CodeburnClient? = nil
-    @ObservationIgnored
-    private var codeburnTimerTask: Task<Void, Never>? = nil
     private var _cachedStatusColors: [SessionPhase: Color] = [:]
 
     private func refreshContextUsageRegistry() {
@@ -409,28 +396,6 @@ final class AppModel {
             guard let path = session.claudeMetadata?.transcriptPath else { continue }
             if contextUsageRegistry.usage(for: session.id) == nil {
                 contextUsageRegistry.recordUsage(sessionID: session.id, transcriptPath: path)
-            }
-        }
-    }
-
-    private func updateCodeburnPolling() {
-        if headerNeedsCodeburn {
-            if codeburnClient == nil {
-                codeburnClient = CodeburnClient(runner: ProcessCodeburnRunner())
-            }
-            startCodeburnTimerIfNeeded()
-        } else {
-            codeburnTimerTask?.cancel()
-            codeburnTimerTask = nil
-        }
-    }
-
-    private func startCodeburnTimerIfNeeded() {
-        guard codeburnTimerTask == nil, let client = codeburnClient else { return }
-        codeburnTimerTask = Task { @MainActor in
-            while !Task.isCancelled {
-                await client.refresh()
-                try? await Task.sleep(nanoseconds: 30_000_000_000)
             }
         }
     }
@@ -651,7 +616,6 @@ final class AppModel {
         ambientThemeEnabled = UserDefaults.standard.bool(forKey: Self.ambientThemeEnabledDefaultsKey)
         ambientThemeOpacity = UserDefaults.standard.double(forKey: Self.ambientThemeOpacityDefaultsKey)
         celebrationsEnabled = UserDefaults.standard.bool(forKey: Self.celebrationsEnabledDefaultsKey)
-        updateCodeburnPolling()
 
         overlay.appModel = self
         overlay.restoreDisplayPreference()

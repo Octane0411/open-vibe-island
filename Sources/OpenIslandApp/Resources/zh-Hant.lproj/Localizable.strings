@@ -206,21 +206,6 @@
 
 /* Notch widgets — added by feat/notch-personalization */
 /* TODO: translate */
-"settings.notchWidgets.title" = "Notch widgets";
-"settings.notchWidgets.rightSlot" = "Right slot";
-"settings.notchWidgets.centerSlot" = "Center slot";
-"settings.notchWidgets.centerSlotHint" = "External displays only";
-"settings.notchWidgets.kind.none" = "None";
-"settings.notchWidgets.kind.sessionCount" = "Session count";
-"settings.notchWidgets.kind.projectChip" = "Project chip";
-"settings.notchWidgets.kind.agentToolIcon" = "Agent tool icon";
-"settings.notchWidgets.kind.dollarSpentToday" = "$ spent today";
-"settings.notchWidgets.codeburnHint" = "Requires codeburn — click to install";
-"settings.notchWidgets.closed.title" = "Closed notch";
-"settings.notchWidgets.expanded.title" = "Expanded notch";
-"settings.notchWidgets.leftSlot2" = "Left slot 2";
-"settings.notchWidgets.rightSlot1" = "Right slot 1";
-"settings.notchWidgets.rightSlot2" = "Right slot 2";
 
 /* Project colors — added by feat/notch-personalization */
 /* TODO: translate */

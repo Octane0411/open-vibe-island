@@ -251,9 +251,6 @@ struct IslandPanelView: View {
             guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
             lastCelebrationTimestamp = Date()
         }
-        .onChange(of: model.notchStatus) { _, newValue in
-            model.setHeaderNeedsCodeburn(newValue == .opened)
-        }
         .alert(model.lang.t("island.quit.confirmTitle"), isPresented: $showingQuitConfirmation) {
             Button(model.lang.t("island.quit.confirmAction"), role: .destructive) {
                 model.quitApplication()
