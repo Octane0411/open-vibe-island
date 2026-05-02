@@ -223,6 +223,10 @@ struct GeneralSettingsPane: View {
                     get: { model.suppressFrontmostNotifications },
                     set: { model.suppressFrontmostNotifications = $0 }
                 ))
+                Toggle(lang.t("settings.general.hideOverlayInFullscreen"), isOn: Binding(
+                    get: { model.hideOverlayInFullscreen },
+                    set: { model.hideOverlayInFullscreen = $0 }
+                ))
             }
 
         }
