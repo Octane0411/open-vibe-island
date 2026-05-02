@@ -47,7 +47,9 @@ public enum ContextUsageReader {
         guard let text = String(data: transcriptData, encoding: .utf8) else {
             return nil
         }
-        var latest: ContextUsage?
+        var latestUsed: Int?
+        var latestModel: String?
+        var maxObservedUsed: Int = 0
         for rawLine in text.split(separator: "\n", omittingEmptySubsequences: true) {
             guard let lineData = rawLine.data(using: .utf8),
                   let object = try? JSONSerialization.jsonObject(with: lineData),
@@ -61,13 +63,16 @@ public enum ContextUsageReader {
             let cacheRead = (usage["cache_read_input_tokens"] as? NSNumber)?.intValue ?? 0
             let cacheCreate = (usage["cache_creation_input_tokens"] as? NSNumber)?.intValue ?? 0
             let used = input + cacheRead + cacheCreate
-            let window = ContextWindowTable.window(
-                for: message["model"] as? String,
-                observedUsed: used
-            )
-            latest = ContextUsage(used: used, window: window)
+            maxObservedUsed = max(maxObservedUsed, used)
+            latestUsed = used
+            latestModel = message["model"] as? String
         }
-        return latest
+        guard let used = latestUsed else { return nil }
+        let window = ContextWindowTable.window(
+            for: latestModel,
+            observedUsed: maxObservedUsed
+        )
+        return ContextUsage(used: used, window: window)
     }
 }
 

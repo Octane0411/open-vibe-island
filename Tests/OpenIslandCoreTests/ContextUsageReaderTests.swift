@@ -73,4 +73,19 @@ struct ContextUsageReaderTests {
         let usage = try #require(ContextUsageReader.parse(transcriptData: data(lines)))
         #expect(usage.used == 2000)
     }
+
+    @Test
+    func detects1mVariantWhenAnyEarlierTurnExceeded200K() throws {
+        // Session that has historically exceeded the 200K-only ceiling — locks
+        // window to 1M for all subsequent reads even when current used is low
+        // (e.g. after summarization or compaction).
+        let lines = [
+            #"{"type":"assistant","message":{"role":"assistant","model":"claude-opus-4-7","usage":{"input_tokens":300000,"output_tokens":50}}}"#,
+            #"{"type":"user","message":{"role":"user","content":"after compact"}}"#,
+            #"{"type":"assistant","message":{"role":"assistant","model":"claude-opus-4-7","usage":{"input_tokens":80000,"output_tokens":10}}}"#
+        ].joined(separator: "\n")
+        let usage = try #require(ContextUsageReader.parse(transcriptData: data(lines)))
+        #expect(usage.used == 80_000)
+        #expect(usage.window == 800_000)
+    }
 }
