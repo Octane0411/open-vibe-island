@@ -154,16 +154,7 @@ enum OverlayDisplayResolver {
     }
 
     static func resolveTargetScreen(preferredScreenID: String?) -> NSScreen? {
-        let screens = NSScreen.screens
-        guard !screens.isEmpty else { return nil }
-        if let preferredScreenID,
-           let screen = screens.first(where: { screenID(for: $0) == preferredScreenID }) {
-            return screen
-        }
-        if let notchScreen = screens.first(where: { $0.safeAreaInsets.top > 0 }) {
-            return notchScreen
-        }
-        return NSScreen.main ?? screens[0]
+        resolveScreen(preferredScreenID: preferredScreenID)?.screen
     }
 
     private static func screenID(for screen: NSScreen) -> String {

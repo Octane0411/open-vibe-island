@@ -857,6 +857,7 @@ final class AppModel {
         }
         refreshOverlayDisplayConfiguration()
         ensureOverlayPanel()
+        reevaluateOverlayScreenFullscreen()
         if shouldPerformBootAnimation {
             performBootAnimation()
         }
@@ -968,17 +969,27 @@ final class AppModel {
     // MARK: - Fullscreen visibility
 
     @ObservationIgnored private var lastAppliedSuppression: Bool?
+    @ObservationIgnored private var lastFullscreenDisplays: Set<CGDirectDisplayID> = []
 
     private func handleFullscreenDisplaysChanged(_ fullscreenDisplays: Set<CGDirectDisplayID>) {
+        lastFullscreenDisplays = fullscreenDisplays
+        reevaluateOverlayScreenFullscreen()
+    }
+
+    /// Re-runs the island-screen membership check against the cached
+    /// fullscreen-displays set. Call when something other than a Spaces
+    /// transition changes the relevant inputs — e.g. the panel is created,
+    /// or the user picks a different display in Settings.
+    func reevaluateOverlayScreenFullscreen() {
         let newValue: Bool
-        if fullscreenDisplays.isEmpty {
+        if lastFullscreenDisplays.isEmpty {
             newValue = false
         } else {
             let resolvedScreen = OverlayDisplayResolver.resolveTargetScreen(
                 preferredScreenID: overlay.preferredOverlayScreenID
             )
             let islandDisplayID = resolvedScreen.flatMap { FullscreenSpaceObserver.displayID(for: $0) }
-            newValue = islandDisplayID.map { fullscreenDisplays.contains($0) } ?? false
+            newValue = islandDisplayID.map { lastFullscreenDisplays.contains($0) } ?? false
         }
         guard newValue != isOverlayScreenFullscreen else { return }
         isOverlayScreenFullscreen = newValue

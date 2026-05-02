@@ -24,6 +24,7 @@ final class OverlayUICoordinator {
             }
             persistOverlayDisplayPreference()
             refreshOverlayPlacement()
+            appModel?.reevaluateOverlayScreenFullscreen()
         }
     }
 

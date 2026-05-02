@@ -98,6 +98,7 @@ final class OverlayPanelController {
 
     func forceHide() {
         guard let panel else { return }
+        cancelHoverOpenImmediately()
         panel.orderOut(nil)
         eventMonitors.stop()
     }
@@ -107,10 +108,9 @@ final class OverlayPanelController {
         if !panel.isVisible {
             self.model = model
             positionPanel(panel, preferredScreenID: preferredScreenID, animated: false)
-            panel.orderFrontRegardless()
-            panel.ignoresMouseEvents = true
-            panel.acceptsMouseMovedEvents = false
+            presentPanel(panel, activates: Self.shouldActivatePanel(for: model.notchOpenReason))
         }
+        setInteractive(model.notchStatus == .opened)
         startEventMonitoring()
     }
 
@@ -457,7 +457,9 @@ final class OverlayPanelController {
     }
 
     private func closedSurfaceRect(for model: AppModel) -> NSRect? {
-        guard let screen = OverlayDisplayResolver.resolveTargetScreen(preferredScreenID: nil) else {
+        guard let screen = OverlayDisplayResolver.resolveTargetScreen(
+            preferredScreenID: model.overlay.preferredOverlayScreenID
+        ) else {
             return nil
         }
 
