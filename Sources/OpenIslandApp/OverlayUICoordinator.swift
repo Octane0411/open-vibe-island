@@ -213,8 +213,14 @@ final class OverlayUICoordinator {
 
     func ensureOverlayPanel() {
         guard let appModel else { return }
-        overlayPanelController.ensurePanel(model: appModel, preferredScreenID: preferredOverlayScreenID)
+        // Evaluate fullscreen suppression BEFORE the panel is materialised so
+        // it never flashes visible on top of an existing fullscreen app.
+        // `startFullscreenMonitoringIfNeeded()` already refreshes immediately
+        // on first start; for subsequent calls (monitor already running) the
+        // explicit refresh below ensures suppression is up-to-date.
         startFullscreenMonitoringIfNeeded()
+        refreshFullscreenState()
+        overlayPanelController.ensurePanel(model: appModel, preferredScreenID: preferredOverlayScreenID)
     }
 
     // MARK: - Fullscreen monitoring
@@ -312,10 +318,12 @@ final class OverlayUICoordinator {
     }
 
     func refreshOverlayPlacement() {
+        // Refresh fullscreen suppression BEFORE moving the panel so it never
+        // flashes visible while a fullscreen app is on the target display.
+        refreshFullscreenState()
         overlayPlacementDiagnostics = overlayPanelController.reposition(
             preferredScreenID: preferredOverlayScreenID
         )
-        refreshFullscreenState()
     }
 
     func refreshOverlayPlacementIfVisible() {
