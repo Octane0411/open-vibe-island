@@ -19,7 +19,7 @@ struct ContextLeftBadge: View {
                 .padding(.horizontal, 4)
                 .padding(.vertical, 1)
                 .background(Color.white.opacity(0.04), in: Capsule())
-                .accessibilityLabel("\(Int(usage.percentLeft.rounded()))% context left")
+                .accessibilityLabel("\(Int(usage.percentUsed.rounded()))% context used")
                 .allowsHitTesting(false)
         } else {
             HStack(spacing: 4) {
@@ -31,14 +31,14 @@ struct ContextLeftBadge: View {
                         .fill(swiftUIColor(for: fillColor))
                         .frame(width: fillWidth, height: Self.barHeight)
                 }
-                Text("\(Int(usage.percentLeft.rounded()))%")
+                Text("\(Int(usage.percentUsed.rounded()))%")
                     .font(.system(size: 8, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.7))
             }
             .padding(.horizontal, 4)
             .padding(.vertical, 1)
             .background(Color.white.opacity(0.04), in: Capsule())
-            .accessibilityLabel("\(Int(usage.percentLeft.rounded()))% context left")
+            .accessibilityLabel("\(Int(usage.percentUsed.rounded()))% context used")
             .allowsHitTesting(false)
         }
     }
