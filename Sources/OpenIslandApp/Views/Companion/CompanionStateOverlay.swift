@@ -37,15 +37,31 @@ struct CompanionStateOverlay: View {
             .foregroundStyle(tint)
     }
 
+    // Animations follow a reset-before-animate pattern: snap the backing
+    // @State to its start value with a transactionless write, then kick off
+    // the repeating implicit animation on the next runloop tick. Without the
+    // reset, a second onAppear on this view (e.g. when state cycles
+    // working → idle → working) finds rotation/pulseScale already at the
+    // target value, gets no state delta, and the animation never restarts.
     private func animateRotation() {
-        withAnimation(.linear(duration: 2).repeatForever(autoreverses: false)) {
-            rotation = 360
+        var resetTransaction = Transaction()
+        resetTransaction.disablesAnimations = true
+        withTransaction(resetTransaction) { rotation = 0 }
+        DispatchQueue.main.async {
+            withAnimation(.linear(duration: 2).repeatForever(autoreverses: false)) {
+                rotation = 360
+            }
         }
     }
 
     private func animatePulse() {
-        withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-            pulseScale = 1.4
+        var resetTransaction = Transaction()
+        resetTransaction.disablesAnimations = true
+        withTransaction(resetTransaction) { pulseScale = 1 }
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                pulseScale = 1.4
+            }
         }
     }
 
