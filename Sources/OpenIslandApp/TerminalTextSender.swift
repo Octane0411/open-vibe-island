@@ -6,26 +6,39 @@ import OpenIslandCore
 /// Currently supported:
 /// - **tmux**: `tmux send-keys -l "text" Enter`
 /// - **Ghostty**: AppleScript `input text` (requires Automation permission)
+/// - **iTerm2**: AppleScript `write text`
+/// - **Terminal.app**: System Events keystroke (after activate)
 ///
 /// The static ``canReply(to:)`` method gates the UI — the reply input field
-/// is only shown when the session's terminal supports text injection.
+/// is only shown when the session's phase wants user input AND the host
+/// terminal supports text injection.
 struct TerminalTextSender {
+
+    static let supportedNonTmuxTerminalApps: Set<String> = [
+        "ghostty",
+        "iterm2",
+        "iterm",
+        "terminal",
+    ]
+
+    static let phasesAcceptingReply: Set<SessionPhase> = [
+        .completed,
+        .waitingForAnswer,
+        .waitingForApproval,
+    ]
 
     // MARK: - Capability check
 
     static func canReply(to session: AgentSession, enabled: Bool) -> Bool {
         guard enabled else { return false }
-        guard session.phase == .completed else { return false }
+        guard phasesAcceptingReply.contains(session.phase) else { return false }
         guard let target = session.jumpTarget else { return false }
 
         // tmux sessions: any terminal can receive send-keys.
         if target.tmuxTarget != nil { return true }
 
-        // Ghostty: native AppleScript input text (1.3.0+).
         let app = target.terminalApp.lowercased()
-        if app == "ghostty" { return true }
-
-        return false
+        return supportedNonTmuxTerminalApps.contains(app)
     }
 
     // MARK: - Send
@@ -42,12 +55,16 @@ struct TerminalTextSender {
             return sendViaTmux(text, tmuxTarget: tmuxTarget, socketPath: target.tmuxSocketPath)
         }
 
-        let app = target.terminalApp.lowercased()
-        if app == "ghostty" {
+        switch target.terminalApp.lowercased() {
+        case "ghostty":
             return sendViaGhostty(text, target: target)
+        case "iterm2", "iterm":
+            return sendViaITerm2(text, target: target)
+        case "terminal":
+            return sendViaTerminalApp(text, target: target)
+        default:
+            return false
         }
-
-        return false
     }
 
     // MARK: - tmux
@@ -66,6 +83,46 @@ struct TerminalTextSender {
 
         // Send Enter as a separate command.
         return runProcess(tmuxPath, arguments: baseArgs + ["send-keys", "-t", tmuxTarget, "Enter"])
+    }
+
+    // MARK: - iTerm2
+
+    private static func sendViaITerm2(_ text: String, target: JumpTarget) -> Bool {
+        let escapedText = escapeAppleScript(text)
+        let script = """
+        tell application "iTerm2"
+            if not (it is running) then return "error"
+            activate
+            tell current session of current window
+                write text "\(escapedText)"
+            end tell
+            return "ok"
+        end tell
+        """
+        return runAppleScript(script)
+    }
+
+    // MARK: - Terminal.app
+
+    private static func sendViaTerminalApp(_ text: String, target: JumpTarget) -> Bool {
+        // Terminal.app's native AppleScript only exposes `do script` (which
+        // runs the text as a command in a new tab if no target is given).
+        // Activate the app first, then drive a keystroke through System
+        // Events to inject the text into the front window's selected tab.
+        let escapedText = escapeAppleScript(text)
+        let script = """
+        tell application "Terminal"
+            if not (it is running) then return "error"
+            activate
+        end tell
+        delay 0.05
+        tell application "System Events"
+            keystroke "\(escapedText)"
+            key code 36
+        end tell
+        return "ok"
+        """
+        return runAppleScript(script)
     }
 
     // MARK: - Ghostty

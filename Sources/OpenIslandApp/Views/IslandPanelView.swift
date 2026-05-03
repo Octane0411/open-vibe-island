@@ -1468,16 +1468,49 @@ private struct IslandSessionRow: View {
                     .buttonStyle(IslandWideButtonStyle(kind: .danger))
                 }
             }
+
+            if onReply != nil {
+                replyFallbackInput
+            }
         }
     }
 
     // MARK: - Question action area
 
     private var questionActionBody: some View {
-        StructuredQuestionPromptView(
-            prompt: session.questionPrompt,
-            lang: lang,
-            onAnswer: { onAnswer?($0) }
+        VStack(alignment: .leading, spacing: 12) {
+            StructuredQuestionPromptView(
+                prompt: session.questionPrompt,
+                lang: lang,
+                onAnswer: { onAnswer?($0) }
+            )
+
+            if onReply != nil {
+                replyFallbackInput
+            }
+        }
+    }
+
+    /// Free-text reply input shown alongside structured approve / answer
+    /// flows for `.waitingForApproval` and `.waitingForAnswer`. The
+    /// structured flows cover the common path (Yes/No, AskUserQuestion
+    /// options); this input is the universal fallback for any other prompt
+    /// shape, since text injection through the host terminal types the
+    /// answer as if the user typed it directly.
+    private var replyFallbackInput: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Rectangle()
+                .fill(.white.opacity(0.04))
+                .frame(height: 1)
+            completionReplyInput
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.white.opacity(0.03))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(.white.opacity(0.06))
         )
     }
 
