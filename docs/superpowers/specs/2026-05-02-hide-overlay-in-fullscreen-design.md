@@ -94,7 +94,7 @@ static func shouldSuppressOverlayForFullscreen(
 
 Wiring:
 - Register default `true` for `hideInFullscreenDefaultsKey` alongside existing defaults.
-- On init: instantiate `FullscreenSpaceObserver`, set `onChange` callback that maps `Set<CGDirectDisplayID>` → `isOverlayScreenFullscreen`. The island's `displayID` is read from the same `NSScreen` `OverlayPanelController.resolveTargetScreen(preferredScreenID:)` returns (i.e. the resolved overlay screen at the moment of evaluation), via its `deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]` (already used by the controller for screen IDs). Then call `applyFullscreenVisibility()`.
+- On init: instantiate `FullscreenSpaceObserver`, set `onChange` callback that maps `Set<CGDirectDisplayID>` → `isOverlayScreenFullscreen`. The island's `displayID` is read from the same `NSScreen` `OverlayDisplayResolver.resolveTargetScreen(preferredScreenID:)` returns (i.e. the resolved overlay screen at the moment of evaluation), via its `deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]` (already used for screen IDs). Then call `applyFullscreenVisibility()`.
 - After AgentEvent application that may flip `hasAttentionRequiredSession`: invoke `applyFullscreenVisibility()` from a single existing post-mutation hook in `AppModel` (e.g. the place that already triggers UI side-effects after `state.apply(_:)`). Cheap and idempotent.
 
 ### `OverlayPanelController`

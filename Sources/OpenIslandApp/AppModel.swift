@@ -991,8 +991,13 @@ final class AppModel {
             let islandDisplayID = resolvedScreen.flatMap { FullscreenSpaceObserver.displayID(for: $0) }
             newValue = islandDisplayID.map { lastFullscreenDisplays.contains($0) } ?? false
         }
-        guard newValue != isOverlayScreenFullscreen else { return }
-        isOverlayScreenFullscreen = newValue
+        if newValue != isOverlayScreenFullscreen {
+            isOverlayScreenFullscreen = newValue
+        }
+        // Always reapply: the panel may have been created after the cached
+        // suppression decision was first computed, so the early-return path
+        // would otherwise leave the panel unsuppressed on launch when the
+        // island display starts in fullscreen.
         applyFullscreenVisibility()
     }
 
@@ -1002,6 +1007,10 @@ final class AppModel {
             isOverlayScreenFullscreen: isOverlayScreenFullscreen,
             hasAttentionRequiredSession: hasAttentionRequiredSession
         )
+        // Pre-panel calls (e.g. from FullscreenSpaceObserver.start during init)
+        // can't actually hide/show anything, and recording the dedupe value
+        // here would block the next call once the panel exists.
+        guard overlay.overlayPanelController.hasPanel else { return }
         guard suppress != lastAppliedSuppression else { return }
         lastAppliedSuppression = suppress
         if suppress {
@@ -1365,6 +1374,17 @@ final class AppModel {
         wasAlreadyCompleted: Bool,
         ingress: TrackedEventIngress
     ) {
+        // Don't reopen the overlay for non-attention events (e.g. completion
+        // toasts) when the island display is in fullscreen — applyFullscreenVisibility
+        // already forceHid the panel, and presenting a notification surface
+        // would orderFront it again.
+        let suppressForFullscreen = Self.shouldSuppressOverlayForFullscreen(
+            hideInFullscreenEnabled: hideInFullscreenEnabled,
+            isOverlayScreenFullscreen: isOverlayScreenFullscreen,
+            hasAttentionRequiredSession: hasAttentionRequiredSession
+        )
+        guard !suppressForFullscreen else { return }
+
         guard !wasAlreadyCompleted,
               notificationSurfaceIsEligibleForPresentation(surface, ingress: ingress),
               let sessionID = surface.sessionID,

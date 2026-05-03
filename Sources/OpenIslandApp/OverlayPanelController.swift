@@ -47,6 +47,10 @@ final class OverlayPanelController {
         panel?.isVisible == true
     }
 
+    var hasPanel: Bool {
+        panel != nil
+    }
+
     nonisolated static func shouldActivatePanel(for reason: NotchOpenReason?) -> Bool {
         reason == .click
     }
