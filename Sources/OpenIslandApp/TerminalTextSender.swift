@@ -91,10 +91,13 @@ struct TerminalTextSender {
 
     // MARK: - cmux
 
-    /// cmux native (no tmux backend): focus the target surface via cmux's
-    /// JSON-RPC Unix socket so the right tab is forward, activate the app,
-    /// then drive a System Events keystroke. Mirrors the Terminal.app path
-    /// but adds the per-tab focus step beforehand.
+    /// cmux native (no tmux backend): cmux's RPC exposes `surface.focus` and
+    /// `surface.list` but no text-write method, so we focus the target tab
+    /// via the socket then drive a System Events keystroke. Use `set
+    /// frontmost of process "cmux"` instead of plain `activate` because the
+    /// notch panel may still hold the key window after the user submits;
+    /// `set frontmost` forces window focus to cmux regardless of who held
+    /// it last.
     private static func sendViaCmux(_ text: String, target: JumpTarget) -> Bool {
         if let surfaceID = target.terminalSessionID, !surfaceID.isEmpty {
             _ = sendCmuxSurfaceFocus(surfaceID: surfaceID)
@@ -102,12 +105,10 @@ struct TerminalTextSender {
 
         let escapedText = escapeAppleScript(text)
         let script = """
-        tell application id "com.cmuxterm.app"
-            if not (it is running) then return "error"
-            activate
-        end tell
-        delay 0.15
         tell application "System Events"
+            if not (exists process "cmux") then return "error"
+            set frontmost of process "cmux" to true
+            delay 0.25
             keystroke "\(escapedText)"
             key code 36
         end tell
