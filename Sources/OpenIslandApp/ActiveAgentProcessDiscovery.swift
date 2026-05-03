@@ -18,6 +18,7 @@ struct ActiveAgentProcessDiscovery {
         var transcriptPath: String?
         var tmuxTarget: String?
         var tmuxSocketPath: String?
+        var terminalSessionID: String?
 
         init(
             tool: AgentTool,
@@ -27,7 +28,8 @@ struct ActiveAgentProcessDiscovery {
             terminalApp: String? = nil,
             transcriptPath: String? = nil,
             tmuxTarget: String? = nil,
-            tmuxSocketPath: String? = nil
+            tmuxSocketPath: String? = nil,
+            terminalSessionID: String? = nil
         ) {
             self.tool = tool
             self.sessionID = sessionID
@@ -37,6 +39,7 @@ struct ActiveAgentProcessDiscovery {
             self.transcriptPath = transcriptPath
             self.tmuxTarget = tmuxTarget
             self.tmuxSocketPath = tmuxSocketPath
+            self.terminalSessionID = terminalSessionID
         }
     }
 
@@ -136,17 +139,11 @@ struct ActiveAgentProcessDiscovery {
                     terminalApp: terminalApp(for: process, processesByPID: processesByPID)
                 )
 
-                if snapshot.terminalApp == nil, let agentTTY = process.terminalTTY {
-                    if let (tmuxTarget, hostTerminalApp, socketPath) = resolveTmuxInfo(
-                        agentTTY: agentTTY,
-                        processes: processesByPID.values.map { $0 },
-                        processesByPID: processesByPID
-                    ) {
-                        snapshot.terminalApp = hostTerminalApp
-                        snapshot.tmuxTarget = tmuxTarget
-                        snapshot.tmuxSocketPath = socketPath
-                    }
-                }
+                resolveCmuxAndTmuxMetadata(
+                    snapshot: &snapshot,
+                    process: process,
+                    processesByPID: processesByPID
+                )
 
                 snapshots.append(snapshot)
                 continue
@@ -238,18 +235,11 @@ struct ActiveAgentProcessDiscovery {
             terminalApp: terminalApp(for: process, processesByPID: processesByPID)
         )
 
-        // If terminalApp is nil and we have a TTY, try to resolve tmux info
-        if snapshot.terminalApp == nil, let agentTTY = process.terminalTTY {
-            if let (tmuxTarget, hostTerminalApp, socketPath) = resolveTmuxInfo(
-                agentTTY: agentTTY,
-                processes: processesByPID.values.map { $0 },
-                processesByPID: processesByPID
-            ) {
-                snapshot.terminalApp = hostTerminalApp
-                snapshot.tmuxTarget = tmuxTarget
-                snapshot.tmuxSocketPath = socketPath
-            }
-        }
+        resolveCmuxAndTmuxMetadata(
+            snapshot: &snapshot,
+            process: process,
+            processesByPID: processesByPID
+        )
 
         return snapshot
     }
@@ -290,18 +280,11 @@ struct ActiveAgentProcessDiscovery {
             transcriptPath: transcriptPath
         )
 
-        // If terminalApp is nil and we have a TTY, try to resolve tmux info
-        if snapshot.terminalApp == nil, let agentTTY = process.terminalTTY {
-            if let (tmuxTarget, hostTerminalApp, socketPath) = resolveTmuxInfo(
-                agentTTY: agentTTY,
-                processes: processesByPID.values.map { $0 },
-                processesByPID: processesByPID
-            ) {
-                snapshot.terminalApp = hostTerminalApp
-                snapshot.tmuxTarget = tmuxTarget
-                snapshot.tmuxSocketPath = socketPath
-            }
-        }
+        resolveCmuxAndTmuxMetadata(
+            snapshot: &snapshot,
+            process: process,
+            processesByPID: processesByPID
+        )
 
         return snapshot
     }
@@ -743,6 +726,67 @@ struct ActiveAgentProcessDiscovery {
         }
 
         return output
+    }
+
+    // MARK: - cmux support
+
+    /// Fills cmux surface ID, tmux pane metadata, and (when discovery couldn't)
+    /// the `terminalApp` label on a snapshot. CMUX_SURFACE_ID is read first
+    /// because its presence in the process env is authoritative evidence the
+    /// process is running inside a cmux tab — independent of how terminal-app
+    /// discovery labeled the host. Tmux resolution then runs unconditionally
+    /// for the cmux + Unknown-host cases, so completion-reply (tmuxTarget) and
+    /// precise jump (terminalSessionID) both come back populated.
+    private func resolveCmuxAndTmuxMetadata(
+        snapshot: inout ProcessSnapshot,
+        process: RunningProcess,
+        processesByPID: [String: RunningProcess]
+    ) {
+        if snapshot.terminalSessionID == nil,
+           let surfaceID = resolveCmuxSurfaceID(pid: process.pid) {
+            snapshot.terminalSessionID = surfaceID
+            if snapshot.terminalApp == nil {
+                snapshot.terminalApp = "cmux"
+            }
+        }
+
+        let needsTmuxResolution = snapshot.terminalApp == nil
+            || snapshot.terminalApp?.lowercased() == "cmux"
+        if needsTmuxResolution, let agentTTY = process.terminalTTY {
+            if let (tmuxTarget, hostTerminalApp, socketPath) = resolveTmuxInfo(
+                agentTTY: agentTTY,
+                processes: processesByPID.values.map { $0 },
+                processesByPID: processesByPID
+            ) {
+                if snapshot.terminalApp == nil {
+                    snapshot.terminalApp = hostTerminalApp
+                }
+                snapshot.tmuxTarget = tmuxTarget
+                snapshot.tmuxSocketPath = socketPath
+            }
+        }
+    }
+
+    /// Reads `CMUX_SURFACE_ID` from the agent process's environment via
+    /// `ps eww -p <pid>`. cmux exports this UUID per surface (tab); the
+    /// jump path uses it to drive `surface.focus` over cmux's Unix socket.
+    private func resolveCmuxSurfaceID(pid: String) -> String? {
+        // `ps eww -p <pid>` dumps the process command line + env vars,
+        // space-separated. Find CMUX_SURFACE_ID=<value> and stop at the
+        // next whitespace.
+        guard let output = commandRunner("/bin/ps", ["eww", "-p", pid]),
+              !output.isEmpty else {
+            return nil
+        }
+
+        guard let range = output.range(of: "CMUX_SURFACE_ID=") else {
+            return nil
+        }
+
+        let afterEquals = output[range.upperBound...]
+        let value = afterEquals.prefix(while: { !$0.isWhitespace })
+        let trimmed = String(value).trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     // MARK: - Tmux support

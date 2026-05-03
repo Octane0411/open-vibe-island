@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 @preconcurrency import MarkdownUI
 import OpenIslandCore
 
@@ -111,6 +112,8 @@ struct IslandPanelView: View {
     @Namespace private var notchNamespace
     @State private var isHovering = false
     @State private var showingQuitConfirmation = false
+    @State private var lastCompletionTimestamp: Date?
+    @State private var lastCelebrationTimestamp: Date?
 
     private var isOpened: Bool {
         model.notchStatus == .opened
@@ -237,6 +240,29 @@ struct IslandPanelView: View {
         }
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
+        .onChange(of: closedSpotlightSession?.phase) { _, newPhase in
+            if newPhase == .completed {
+                lastCompletionTimestamp = Date()
+            }
+        }
+        .onChange(of: companionState) { _, newState in
+            guard newState == .celebrating else { return }
+            guard model.celebrationsEnabled else { return }
+            guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+            lastCelebrationTimestamp = Date()
+        }
+        .task(id: lastCompletionTimestamp) {
+            await expireTimestamp(
+                $lastCompletionTimestamp,
+                window: CompanionState.celebratingWindow
+            )
+        }
+        .task(id: lastCelebrationTimestamp) {
+            await expireTimestamp(
+                $lastCelebrationTimestamp,
+                window: CelebrationParticles.duration
+            )
+        }
         .alert(model.lang.t("island.quit.confirmTitle"), isPresented: $showingQuitConfirmation) {
             Button(model.lang.t("island.quit.confirmAction"), role: .destructive) {
                 model.quitApplication()
@@ -284,6 +310,17 @@ struct IslandPanelView: View {
                     .fill(Color.black.opacity(hidesClosedSurfaceChrome ? 0 : 1))
                     .frame(width: surfaceWidth, height: surfaceHeight)
 
+                AmbientThemeOverlay(
+                    tintColor: spotlightProjectColor,
+                    opacity: AmbientTheme.effectiveOpacity(
+                        enabled: model.ambientThemeEnabled,
+                        sliderValue: model.ambientThemeOpacity
+                    )
+                )
+                .frame(width: surfaceWidth, height: surfaceHeight)
+                .clipShape(surfaceShape)
+                .opacity(hidesClosedSurfaceChrome ? 0 : 1)
+
                 VStack(spacing: 0) {
                     headerRow
                         .frame(height: closedNotchHeight)
@@ -321,6 +358,19 @@ struct IslandPanelView: View {
                         }
                         .opacity(showsIdleEdgeWhenCollapsed ? 1 : 0)
                 }
+
+                if let ts = lastCelebrationTimestamp,
+                   Date().timeIntervalSince(ts) < CelebrationParticles.duration {
+                    CelebrationParticles(
+                        tint: spotlightProjectColor,
+                        startedAt: ts,
+                        count: 12
+                    )
+                    .frame(width: surfaceWidth, height: surfaceHeight)
+                    .clipShape(surfaceShape)
+                    .allowsHitTesting(false)
+                    .id(ts)
+                }
             }
             .frame(width: surfaceWidth, height: surfaceHeight, alignment: .top)
         }
@@ -352,6 +402,45 @@ struct IslandPanelView: View {
         (targetOverlayScreen ?? NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }))?.islandClosedHeight ?? 24
     }
 
+    private var spotlightProjectColor: ProjectColor? {
+        guard let key = closedSpotlightSession?.jumpTarget?.workingDirectory
+            ?? closedSpotlightSession?.jumpTarget?.workspaceName else {
+            return nil
+        }
+        return model.projectColorRegistry.color(for: key)
+    }
+
+    private var companionState: CompanionState {
+        let recently = CompanionState.isWithinCelebratingWindow(
+            now: Date(),
+            lastCompletion: lastCompletionTimestamp
+        )
+        return CompanionState.derive(
+            spotlightPhase: closedSpotlightSession?.phase,
+            recentlyCompleted: recently
+        )
+    }
+
+    /// Sleeps until the time window from the bound timestamp elapses, then
+    /// nils it out. Driven by `.task(id:)` so each new timestamp cancels the
+    /// prior pending expiry. Without this, the celebration glyph and confetti
+    /// container would persist past their windows whenever no other observed
+    /// state changed in the meantime.
+    @MainActor
+    private func expireTimestamp(
+        _ binding: Binding<Date?>,
+        window: TimeInterval
+    ) async {
+        guard let ts = binding.wrappedValue else { return }
+        let elapsed = Date().timeIntervalSince(ts)
+        let remaining = max(0, window - elapsed)
+        if remaining > 0 {
+            try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+        }
+        guard !Task.isCancelled, binding.wrappedValue == ts else { return }
+        binding.wrappedValue = nil
+    }
+
     // MARK: - Header row (shared between closed and opened)
 
     @ViewBuilder
@@ -364,13 +453,18 @@ struct IslandPanelView: View {
                 if hasClosedPresence {
                     HStack(spacing: 4) {
                         if model.isCustomAppearance {
-                            IslandPixelGlyph(
-                                tint: scoutTint,
-                                style: model.islandPixelShapeStyle,
-                                isAnimating: hasClosedActivity,
-                                customAvatarImage: model.customAvatarImage
-                            )
-                            .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
+                            ZStack(alignment: .bottomTrailing) {
+                                IslandPixelGlyph(
+                                    tint: scoutTint,
+                                    style: model.islandPixelShapeStyle,
+                                    isAnimating: hasClosedActivity,
+                                    customAvatarImage: model.customAvatarImage
+                                )
+                                .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
+
+                                CompanionStateOverlay(state: companionState)
+                                    .offset(x: 2, y: 2)
+                            }
                         } else {
                             OpenIslandIcon(size: 14, isAnimating: hasClosedActivity, tint: scoutTint)
                                 .matchedGeometryEffect(id: "island-icon", in: notchNamespace, isSource: true)
@@ -383,7 +477,8 @@ struct IslandPanelView: View {
                             )
                         }
                     }
-                    .frame(width: sideWidth + 8 + (closedSpotlightSession?.phase.requiresAttention == true ? 18 : 0))
+                    .frame(width: sideWidth + 8
+                        + (closedSpotlightSession?.phase.requiresAttention == true ? 18 : 0))
                 }
 
                 if !hasClosedPresence {
@@ -405,12 +500,11 @@ struct IslandPanelView: View {
 
                 if hasClosedPresence {
                     let attentionBalanceWidth: CGFloat = closedSpotlightSession?.phase.requiresAttention == true ? 18 : 0
-                    ClosedCountBadge(
-                        liveCount: model.liveSessionCount,
-                        tint: closedSpotlightSession?.phase.requiresAttention == true ? .orange : scoutTint
-                    )
-                    .matchedGeometryEffect(id: "right-indicator", in: notchNamespace, isSource: true)
-                    .frame(width: max(sideWidth, countBadgeWidth) + attentionBalanceWidth)
+                    let slotWidth = max(sideWidth, countBadgeWidth) + attentionBalanceWidth
+
+                    ClosedCountBadge(liveCount: model.liveSessionCount, tint: .white.opacity(0.85))
+                        .matchedGeometryEffect(id: "right-indicator", in: notchNamespace, isSource: true)
+                        .frame(width: slotWidth)
                 }
             }
             .frame(height: closedNotchHeight)
@@ -426,14 +520,17 @@ struct IslandPanelView: View {
                 let metrics = openedHeaderMetrics(for: geometry.size.width)
 
                 HStack(spacing: 0) {
-                    usageLaneView(providerGroups.left, alignment: .leading)
-                        .frame(width: metrics.leftUsageWidth, alignment: .leading)
+                    HStack(spacing: 8) {
+                        usageLaneView(providerGroups.left, alignment: .leading)
+                    }
+                    .frame(width: metrics.leftUsageWidth, alignment: .leading)
 
                     Color.clear
                         .frame(width: metrics.centerGapWidth)
 
                     HStack(spacing: Self.headerControlSpacing) {
                         usageLaneView(providerGroups.right, alignment: .trailing)
+
                         openedHeaderButtons
                     }
                     .frame(width: metrics.rightLaneWidth, alignment: .trailing)
@@ -643,6 +740,7 @@ struct IslandPanelView: View {
                     onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
                     onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                         ? { model.replyToSession(session, text: $0) } : nil,
+                    contextUsage: model.contextUsageRegistry.usage(for: session.id),
                     onJump: { model.jumpToSession(session) }
                 )
 
@@ -672,6 +770,7 @@ struct IslandPanelView: View {
                         onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
                         onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                             ? { model.replyToSession(session, text: $0) } : nil,
+                        contextUsage: model.contextUsageRegistry.usage(for: session.id),
                         onJump: { model.jumpToSession(session) },
                         onDismiss: session.isRemote ? { model.dismissSession(session.id) } : nil
                     )
@@ -1100,6 +1199,7 @@ private struct IslandSessionRow: View {
     var onApprove: ((ApprovalAction) -> Void)?
     var onAnswer: ((QuestionPromptResponse) -> Void)?
     var onReply: ((String) -> Void)?
+    var contextUsage: ContextUsage? = nil
     let onJump: () -> Void
     var onDismiss: (() -> Void)?
 
@@ -1129,12 +1229,17 @@ private struct IslandSessionRow: View {
                         Spacer(minLength: 8)
 
                         HStack(spacing: 6) {
-                            compactBadge(session.tool.displayName, presence: presence)
+                            compactBadge(session.tool.displayName, presence: presence,
+                                         tint: BadgeColors.agent(session.tool).opacity(presence == .inactive ? 0.4 : 1.0))
                             if session.isRemote {
                                 compactBadge("SSH", presence: presence, icon: "network")
                             }
                             if let terminalBadge = session.spotlightTerminalBadge {
-                                compactBadge(terminalBadge, presence: presence)
+                                compactBadge(terminalBadge, presence: presence,
+                                             tint: BadgeColors.terminal(terminalBadge).opacity(presence == .inactive ? 0.4 : 1.0))
+                            }
+                            if presence != .inactive, let usage = contextUsage {
+                                ContextLeftBadge(usage: usage)
                             }
                             compactBadge(session.spotlightAgeBadge, presence: presence)
                             if let onDismiss {
@@ -1363,16 +1468,49 @@ private struct IslandSessionRow: View {
                     .buttonStyle(IslandWideButtonStyle(kind: .danger))
                 }
             }
+
+            if onReply != nil {
+                replyFallbackInput
+            }
         }
     }
 
     // MARK: - Question action area
 
     private var questionActionBody: some View {
-        StructuredQuestionPromptView(
-            prompt: session.questionPrompt,
-            lang: lang,
-            onAnswer: { onAnswer?($0) }
+        VStack(alignment: .leading, spacing: 12) {
+            StructuredQuestionPromptView(
+                prompt: session.questionPrompt,
+                lang: lang,
+                onAnswer: { onAnswer?($0) }
+            )
+
+            if onReply != nil {
+                replyFallbackInput
+            }
+        }
+    }
+
+    /// Free-text reply input shown alongside structured approve / answer
+    /// flows for `.waitingForApproval` and `.waitingForAnswer`. The
+    /// structured flows cover the common path (Yes/No, AskUserQuestion
+    /// options); this input is the universal fallback for any other prompt
+    /// shape, since text injection through the host terminal types the
+    /// answer as if the user typed it directly.
+    private var replyFallbackInput: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Rectangle()
+                .fill(.white.opacity(0.04))
+                .frame(height: 1)
+            completionReplyInput
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.white.opacity(0.03))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(.white.opacity(0.06))
         )
     }
 
@@ -1565,7 +1703,8 @@ private struct IslandSessionRow: View {
     private func compactBadge(
         _ title: String,
         presence: IslandSessionPresence,
-        icon: String? = nil
+        icon: String? = nil,
+        tint: Color? = nil
     ) -> some View {
         HStack(spacing: 3) {
             if let icon {
@@ -1575,7 +1714,7 @@ private struct IslandSessionRow: View {
             Text(title)
                 .font(.system(size: 9, weight: .semibold))
         }
-        .foregroundStyle(badgeTextColor(for: presence))
+        .foregroundStyle(tint ?? badgeTextColor(for: presence))
         .padding(.horizontal, 7)
         .padding(.vertical, 3.5)
         .background(Color(red: 0.14, green: 0.14, blue: 0.15), in: Capsule())
@@ -2030,7 +2169,7 @@ private struct AttentionIndicator: View {
 
 // MARK: - Closed count badge (right side of closed notch)
 
-private struct ClosedCountBadge: View {
+struct ClosedCountBadge: View {
     let liveCount: Int
     let tint: Color
 

@@ -33,6 +33,7 @@ struct TerminalJumpTargetResolver {
         var paneID: String
         var tty: String
         var title: String
+        var currentPath: String
     }
 
     private static let appleScriptTimeout: TimeInterval = 3
@@ -55,11 +56,16 @@ struct TerminalJumpTargetResolver {
             let name = normalizedTerminalName(for: $0.jumpTarget?.terminalApp)
             return name == "kaku" || name == "wezterm"
         }
-        // Tmux candidates: sessions that already have a tmuxTarget, OR sessions
-        // whose terminalTTY maps to a tmux pane (e.g. OpenCode sessions created
-        // by BridgeServer without tmux info). We discover the mapping below.
+        // Tmux candidates: existing tmuxTarget, OR have terminalTTY (e.g. OpenCode
+        // sessions without explicit tmux info), OR have terminalApp == "Unknown"
+        // and a workingDirectory (recovered transcript sessions whose live
+        // process wasn't found — try to match by cwd).
         let tmuxSessions = sessions.filter {
-            $0.jumpTarget?.tmuxTarget != nil || $0.jumpTarget?.terminalTTY != nil
+            let hasExistingHints = $0.jumpTarget?.tmuxTarget != nil
+                || $0.jumpTarget?.terminalTTY != nil
+            let isUnknownWithCwd = $0.jumpTarget?.terminalApp.lowercased() == "unknown"
+                && ($0.jumpTarget?.workingDirectory?.isEmpty == false)
+            return hasExistingHints || isUnknownWithCwd
         }
 
         var jumpTargetUpdates: [String: JumpTarget] = [:]
@@ -128,6 +134,50 @@ struct TerminalJumpTargetResolver {
                     }
                 }
             }
+        }
+
+        // Active-process CWD fallback: for sessions still showing Unknown
+        // terminal but a known workingDirectory, match against any live agent
+        // process whose workingDirectory matches. Picks up cmux/zellij/kaku
+        // sessions whose live process has the terminal info we need but whose
+        // sessionID didn't match the recovered transcript session.
+        for session in sessions {
+            guard jumpTargetUpdates[session.id] == nil,
+                  let jumpTarget = session.jumpTarget,
+                  jumpTarget.terminalApp.lowercased() == "unknown",
+                  let sessionCWD = nonEmptyValue(jumpTarget.workingDirectory) else {
+                continue
+            }
+            let normalizedSessionCWD = normalizedPathForMatching(sessionCWD)
+            guard let process = activeProcesses.first(where: {
+                guard let processCWD = $0.workingDirectory,
+                      normalizedPathForMatching(processCWD) == normalizedSessionCWD,
+                      let processTerminal = $0.terminalApp,
+                      processTerminal.lowercased() != "unknown" else {
+                    return false
+                }
+                return true
+            }) else {
+                continue
+            }
+
+            var corrected = jumpTarget
+            if let app = process.terminalApp, !app.isEmpty {
+                corrected.terminalApp = app
+            }
+            if let tty = process.terminalTTY, !tty.isEmpty {
+                corrected.terminalTTY = tty
+            }
+            if let target = process.tmuxTarget, !target.isEmpty {
+                corrected.tmuxTarget = target
+            }
+            if let socket = process.tmuxSocketPath, !socket.isEmpty {
+                corrected.tmuxSocketPath = socket
+            }
+            if let sessionID = process.terminalSessionID, !sessionID.isEmpty {
+                corrected.terminalSessionID = sessionID
+            }
+            jumpTargetUpdates[session.id] = corrected
         }
 
         return jumpTargetUpdates
@@ -262,6 +312,18 @@ struct TerminalJumpTargetResolver {
                     && nonEmptyValue($0.jumpTarget?.paneTitle).map { snapshot.title.contains($0) } == true
             }) {
                 assignments[session.id] = snapshot
+                continue
+            }
+
+            // CWD match — last fallback for sessions with no other hints.
+            // Match the pane's current path against the session's workingDirectory.
+            let snapshotCWD = normalizedPathForMatching(snapshot.currentPath)
+            if let snapshotCWD,
+               let session = sessions.first(where: {
+                   assignments[$0.id] == nil
+                       && normalizedPathForMatching($0.jumpTarget?.workingDirectory) == snapshotCWD
+               }) {
+                assignments[session.id] = snapshot
             }
         }
 
@@ -294,6 +356,15 @@ struct TerminalJumpTargetResolver {
             changed = true
         }
 
+        // If we just discovered this pane via CWD match for an Unknown
+        // session, default to cmux as the host terminal — that's the
+        // dominant tmux host for AI coding agents on macOS, and the
+        // jump path uses tmux send-keys regardless of the actual host.
+        if jumpTarget.terminalApp.lowercased() == "unknown" {
+            jumpTarget.terminalApp = "cmux"
+            changed = true
+        }
+
         return changed ? jumpTarget : nil
     }
 
@@ -314,7 +385,7 @@ struct TerminalJumpTargetResolver {
             tmuxPath: tmuxPath,
             arguments: [
                 "list-panes", "-a", "-F",
-                "#{session_name}:#{window_index}.#{pane_index}\(tmuxSep)#{pane_tty}\(tmuxSep)#{pane_title}",
+                "#{session_name}:#{window_index}.#{pane_index}\(tmuxSep)#{pane_tty}\(tmuxSep)#{pane_title}\(tmuxSep)#{pane_current_path}",
             ]
         ) else {
             return nil
@@ -325,14 +396,15 @@ struct TerminalJumpTargetResolver {
         return lines
             .compactMap { line in
                 let parts = line.components(separatedBy: tmuxSep)
-                guard parts.count == 3 else {
+                guard parts.count == 4 else {
                     return nil
                 }
 
                 return TmuxPaneSnapshot(
                     paneID: parts[0],  // e.g. "rust-projects:5.3"
                     tty: parts[1],
-                    title: parts[2]
+                    title: parts[2],
+                    currentPath: parts[3]
                 )
             }
     }

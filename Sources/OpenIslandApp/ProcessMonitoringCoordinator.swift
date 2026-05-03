@@ -586,6 +586,7 @@ final class ProcessMonitoringCoordinator {
                 workspaceName: workspaceName,
                 paneTitle: "Claude \(workspaceName)",
                 workingDirectory: workingDirectory,
+                terminalSessionID: process.terminalSessionID,
                 terminalTTY: process.terminalTTY,
                 tmuxTarget: process.tmuxTarget,
                 tmuxSocketPath: process.tmuxSocketPath

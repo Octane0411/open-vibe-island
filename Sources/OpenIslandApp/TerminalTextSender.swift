@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import OpenIslandCore
 
@@ -6,26 +7,40 @@ import OpenIslandCore
 /// Currently supported:
 /// - **tmux**: `tmux send-keys -l "text" Enter`
 /// - **Ghostty**: AppleScript `input text` (requires Automation permission)
+/// - **iTerm2**: AppleScript `write text`
+/// - **Terminal.app**: System Events keystroke (after activate)
 ///
 /// The static ``canReply(to:)`` method gates the UI — the reply input field
-/// is only shown when the session's terminal supports text injection.
+/// is only shown when the session's phase wants user input AND the host
+/// terminal supports text injection.
 struct TerminalTextSender {
+
+    static let supportedNonTmuxTerminalApps: Set<String> = [
+        "ghostty",
+        "iterm2",
+        "iterm",
+        "terminal",
+        "cmux",
+    ]
+
+    static let phasesAcceptingReply: Set<SessionPhase> = [
+        .completed,
+        .waitingForAnswer,
+        .waitingForApproval,
+    ]
 
     // MARK: - Capability check
 
     static func canReply(to session: AgentSession, enabled: Bool) -> Bool {
         guard enabled else { return false }
-        guard session.phase == .completed else { return false }
+        guard phasesAcceptingReply.contains(session.phase) else { return false }
         guard let target = session.jumpTarget else { return false }
 
         // tmux sessions: any terminal can receive send-keys.
         if target.tmuxTarget != nil { return true }
 
-        // Ghostty: native AppleScript input text (1.3.0+).
         let app = target.terminalApp.lowercased()
-        if app == "ghostty" { return true }
-
-        return false
+        return supportedNonTmuxTerminalApps.contains(app)
     }
 
     // MARK: - Send
@@ -42,12 +57,18 @@ struct TerminalTextSender {
             return sendViaTmux(text, tmuxTarget: tmuxTarget, socketPath: target.tmuxSocketPath)
         }
 
-        let app = target.terminalApp.lowercased()
-        if app == "ghostty" {
+        switch target.terminalApp.lowercased() {
+        case "ghostty":
             return sendViaGhostty(text, target: target)
+        case "iterm2", "iterm":
+            return sendViaITerm2(text, target: target)
+        case "terminal":
+            return sendViaTerminalApp(text, target: target)
+        case "cmux":
+            return sendViaCmux(text, target: target)
+        default:
+            return false
         }
-
-        return false
     }
 
     // MARK: - tmux
@@ -66,6 +87,112 @@ struct TerminalTextSender {
 
         // Send Enter as a separate command.
         return runProcess(tmuxPath, arguments: baseArgs + ["send-keys", "-t", tmuxTarget, "Enter"])
+    }
+
+    // MARK: - cmux
+
+    /// cmux native (no tmux backend): cmux's RPC exposes `surface.focus` and
+    /// `surface.list` but no text-write method, so we focus the target tab
+    /// via the socket then drive a System Events keystroke. Use `set
+    /// frontmost of process "cmux"` instead of plain `activate` because the
+    /// notch panel may still hold the key window after the user submits;
+    /// `set frontmost` forces window focus to cmux regardless of who held
+    /// it last.
+    private static func sendViaCmux(_ text: String, target: JumpTarget) -> Bool {
+        if let surfaceID = target.terminalSessionID, !surfaceID.isEmpty {
+            _ = sendCmuxSurfaceFocus(surfaceID: surfaceID)
+        }
+
+        let escapedText = escapeAppleScript(text)
+        let script = """
+        tell application "System Events"
+            if not (exists process "cmux") then return "error"
+            set frontmost of process "cmux" to true
+            delay 0.25
+            keystroke "\(escapedText)"
+            key code 36
+        end tell
+        return "ok"
+        """
+        return runAppleScript(script)
+    }
+
+    private static func sendCmuxSurfaceFocus(surfaceID: String) -> Bool {
+        let candidates = [
+            (try? String(contentsOfFile: "/tmp/cmux-last-socket-path", encoding: .utf8))?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            NSHomeDirectory() + "/Library/Application Support/cmux/cmux.sock",
+            "/tmp/cmux.sock",
+        ].compactMap { $0 }.filter { !$0.isEmpty && FileManager.default.fileExists(atPath: $0) }
+
+        guard let socketPath = candidates.first else { return false }
+
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        let pathBytes = socketPath.utf8CString
+        guard pathBytes.count <= MemoryLayout.size(ofValue: addr.sun_path) else { return false }
+        withUnsafeMutableBytes(of: &addr.sun_path) { sunPath in
+            for (i, byte) in pathBytes.enumerated() {
+                sunPath[i] = UInt8(bitPattern: byte)
+            }
+        }
+
+        let connectResult = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPtr in
+                Darwin.connect(fd, sockaddrPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        guard connectResult == 0 else { return false }
+
+        let request = #"{"jsonrpc":"2.0","method":"surface.focus","params":{"surface_id":"\#(surfaceID)"},"id":1}"# + "\n"
+        let sent = request.withCString { ptr in
+            Darwin.send(fd, ptr, strlen(ptr), 0)
+        }
+        return sent > 0
+    }
+
+    // MARK: - iTerm2
+
+    private static func sendViaITerm2(_ text: String, target: JumpTarget) -> Bool {
+        let escapedText = escapeAppleScript(text)
+        let script = """
+        tell application "iTerm2"
+            if not (it is running) then return "error"
+            activate
+            tell current session of current window
+                write text "\(escapedText)"
+            end tell
+            return "ok"
+        end tell
+        """
+        return runAppleScript(script)
+    }
+
+    // MARK: - Terminal.app
+
+    private static func sendViaTerminalApp(_ text: String, target: JumpTarget) -> Bool {
+        // Terminal.app's native AppleScript only exposes `do script` (which
+        // runs the text as a command in a new tab if no target is given).
+        // Activate the app first, then drive a keystroke through System
+        // Events to inject the text into the front window's selected tab.
+        let escapedText = escapeAppleScript(text)
+        let script = """
+        tell application "Terminal"
+            if not (it is running) then return "error"
+            activate
+        end tell
+        delay 0.05
+        tell application "System Events"
+            keystroke "\(escapedText)"
+            key code 36
+        end tell
+        return "ok"
+        """
+        return runAppleScript(script)
     }
 
     // MARK: - Ghostty
@@ -160,6 +287,16 @@ struct TerminalTextSender {
     }
 
     private static func runAppleScript(_ script: String) -> Bool {
+        // NSAppleScript + System Events keystroke targeting GUI must run on
+        // the main thread; reply submission is dispatched on a Task.detached
+        // so we'd otherwise be off-main and the script silently no-ops.
+        if Thread.isMainThread {
+            return executeAppleScript(script)
+        }
+        return DispatchQueue.main.sync { executeAppleScript(script) }
+    }
+
+    private static func executeAppleScript(_ script: String) -> Bool {
         var error: NSDictionary?
         guard let appleScript = NSAppleScript(source: script) else {
             NSLog("[OpenIsland] TerminalTextSender: AppleScript compilation failed")

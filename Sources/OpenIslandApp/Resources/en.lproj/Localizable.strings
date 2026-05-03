@@ -27,7 +27,7 @@
 "settings.general.hapticFeedback" = "Haptic feedback on hover";
 "settings.general.suppressFrontmostNotifications" = "Suppress notifications for focused sessions";
 "settings.general.showCodexUsage" = "Show Codex usage";
-"settings.general.completionReply" = "Reply from completion card";
+"settings.general.completionReply" = "Reply to sessions from the notch";
 "settings.general.cliHooks" = "CLI Hooks";
 "settings.general.activated" = "Activated";
 "settings.general.install" = "Install";
@@ -189,3 +189,31 @@
 /* Window Titles */
 "window.settings" = "Open Island Settings";
 "window.debug" = "Open Island Debug";
+
+/* Notch widgets — added by feat/notch-personalization */
+
+/* Project colors — added by feat/notch-personalization */
+"settings.projectColors.title" = "Project colors";
+"settings.projectColors.help" = "Auto-assigned. Click any swatch to pick a different color.";
+"settings.projectColors.resetAll" = "Reset all to auto";
+"settings.projectColors.removeUnused" = "Remove unused";
+"settings.projectColors.empty" = "No projects seen yet.";
+
+/* Companion state overlay — accessibility labels */
+"island.companion.state.idle" = "Idle";
+"island.companion.state.working" = "Working";
+"island.companion.state.waiting" = "Waiting for input";
+"island.companion.state.celebrating" = "Just finished";
+
+/* Ambient theme — added by feat/notch-personalization */
+"settings.ambient.title" = "Ambient theme";
+"settings.ambient.toggle" = "Tint island with project color";
+"settings.ambient.intensity" = "Intensity";
+"settings.ambient.subtle" = "Subtle";
+"settings.ambient.bold" = "Bold";
+"settings.ambient.help" = "Tints the inside of the island in the active session's project color, animated when you switch projects.";
+
+/* Celebrations — added by feat/notch-personalization */
+"settings.celebrations.title" = "Celebrations";
+"settings.celebrations.toggle" = "Celebrate when sessions complete";
+"settings.celebrations.help" = "Spawns a brief burst of project-colored confetti when a session finishes a task.";

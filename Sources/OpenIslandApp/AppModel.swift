@@ -26,6 +26,9 @@ final class AppModel {
     private static let showCodexUsageDefaultsKey = "app.showCodexUsage"
     private static let completionReplyEnabledDefaultsKey = "feature.completionReply.enabled"
     private static let suppressFrontmostNotificationsDefaultsKey = "app.suppressFrontmostNotifications"
+    private static let ambientThemeEnabledDefaultsKey = "appearance.ambientTheme.enabled"
+    private static let ambientThemeOpacityDefaultsKey = "appearance.ambientTheme.opacity"
+    private static let celebrationsEnabledDefaultsKey = "appearance.celebrations.enabled"
 
     static let defaultStatusColors: [SessionPhase: String] = [
         .running: "#6E9FFF",
@@ -51,6 +54,7 @@ final class AppModel {
         didSet {
             _cachedSessionBuckets = nil
             bridgeServer.updateStateSnapshot(state)
+            refreshContextUsageRegistry()
         }
     }
     @ObservationIgnored private var _cachedSessionBuckets: (primary: [AgentSession], overflow: [AgentSession])?
@@ -344,7 +348,42 @@ final class AppModel {
         }
     }
     var customAvatarImage: NSImage? = nil
+    var ambientThemeEnabled: Bool = true {
+        didSet {
+            guard ambientThemeEnabled != oldValue else { return }
+            UserDefaults.standard.set(ambientThemeEnabled, forKey: Self.ambientThemeEnabledDefaultsKey)
+        }
+    }
+    var ambientThemeOpacity: Double = 0.12 {
+        didSet {
+            guard ambientThemeOpacity != oldValue else { return }
+            UserDefaults.standard.set(ambientThemeOpacity, forKey: Self.ambientThemeOpacityDefaultsKey)
+        }
+    }
+    var celebrationsEnabled: Bool = true {
+        didSet {
+            guard celebrationsEnabled != oldValue else { return }
+            UserDefaults.standard.set(celebrationsEnabled, forKey: Self.celebrationsEnabledDefaultsKey)
+        }
+    }
+    let projectColorRegistry: ProjectColorRegistry = {
+        let supportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first!.appendingPathComponent("OpenIsland", isDirectory: true)
+        return ProjectColorRegistry(storeURL: supportDir.appendingPathComponent("project-colors.json"))
+    }()
+    let contextUsageRegistry = ContextUsageRegistry()
     private var _cachedStatusColors: [SessionPhase: Color] = [:]
+
+    private func refreshContextUsageRegistry() {
+        let activeIDs = Set(state.sessions.map(\.id))
+        contextUsageRegistry.prune(activeSessionIDs: activeIDs)
+        for session in state.sessions {
+            guard let path = session.claudeMetadata?.transcriptPath else { continue }
+            if contextUsageRegistry.usage(for: session.id) == nil {
+                contextUsageRegistry.recordUsage(sessionID: session.id, transcriptPath: path)
+            }
+        }
+    }
 
     func statusColor(for phase: SessionPhase) -> Color {
         if let cached = _cachedStatusColors[phase] { return cached }
@@ -516,6 +555,9 @@ final class AppModel {
             Self.hapticFeedbackEnabledDefaultsKey: false,
             Self.completionReplyEnabledDefaultsKey: false,
             Self.suppressFrontmostNotificationsDefaultsKey: true,
+            Self.ambientThemeEnabledDefaultsKey: true,
+            Self.ambientThemeOpacityDefaultsKey: 0.12,
+            Self.celebrationsEnabledDefaultsKey: true,
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
@@ -555,6 +597,9 @@ final class AppModel {
         if watchNotificationEnabled {
             startWatchRelay()
         }
+        ambientThemeEnabled = UserDefaults.standard.bool(forKey: Self.ambientThemeEnabledDefaultsKey)
+        ambientThemeOpacity = UserDefaults.standard.double(forKey: Self.ambientThemeOpacityDefaultsKey)
+        celebrationsEnabled = UserDefaults.standard.bool(forKey: Self.celebrationsEnabledDefaultsKey)
 
         overlay.appModel = self
         overlay.restoreDisplayPreference()
@@ -638,6 +683,12 @@ final class AppModel {
 
     var allSessions: [AgentSession] {
         state.sessions
+    }
+
+    var activeWorkspaceKeys: Set<String> {
+        Set(state.sessions.compactMap { session -> String? in
+            session.jumpTarget?.workingDirectory ?? session.jumpTarget?.workspaceName
+        })
     }
 
     /// Measured by SwiftUI GeometryReader in notification mode. Used by panel controller for sizing.

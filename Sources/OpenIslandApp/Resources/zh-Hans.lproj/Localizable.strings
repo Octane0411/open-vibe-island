@@ -27,7 +27,7 @@
 "settings.general.hapticFeedback" = "悬停时震动反馈";
 "settings.general.suppressFrontmostNotifications" = "前台会话不弹出通知";
 "settings.general.showCodexUsage" = "显示 Codex 用量";
-"settings.general.completionReply" = "在完成卡片中回复";
+"settings.general.completionReply" = "在通知岛中回复会话";
 "settings.general.cliHooks" = "CLI Hooks";
 "settings.general.activated" = "已激活";
 "settings.general.install" = "安装";
@@ -189,3 +189,35 @@
 /* Window Titles */
 "window.settings" = "Open Island 设置";
 "window.debug" = "Open Island 调试";
+
+/* Notch widgets — added by feat/notch-personalization */
+/* TODO: translate */
+
+/* Project colors — added by feat/notch-personalization */
+/* TODO: translate */
+"settings.projectColors.title" = "Project colors";
+"settings.projectColors.help" = "Auto-assigned. Click any swatch to pick a different color.";
+"settings.projectColors.resetAll" = "Reset all to auto";
+"settings.projectColors.removeUnused" = "Remove unused";
+"settings.projectColors.empty" = "No projects seen yet.";
+
+/* Companion state overlay — accessibility labels */
+"island.companion.state.idle" = "空闲";
+"island.companion.state.working" = "工作中";
+"island.companion.state.waiting" = "等待输入";
+"island.companion.state.celebrating" = "刚完成";
+
+/* Ambient theme — added by feat/notch-personalization */
+/* TODO: translate */
+"settings.ambient.title" = "Ambient theme";
+"settings.ambient.toggle" = "Tint island with project color";
+"settings.ambient.intensity" = "Intensity";
+"settings.ambient.subtle" = "Subtle";
+"settings.ambient.bold" = "Bold";
+"settings.ambient.help" = "Tints the inside of the island in the active session's project color, animated when you switch projects.";
+
+/* Celebrations — added by feat/notch-personalization */
+/* TODO: translate */
+"settings.celebrations.title" = "Celebrations";
+"settings.celebrations.toggle" = "Celebrate when sessions complete";
+"settings.celebrations.help" = "Spawns a brief burst of project-colored confetti when a session finishes a task.";
