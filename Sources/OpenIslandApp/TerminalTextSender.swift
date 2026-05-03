@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import OpenIslandCore
 
@@ -19,6 +20,7 @@ struct TerminalTextSender {
         "iterm2",
         "iterm",
         "terminal",
+        "cmux",
     ]
 
     static let phasesAcceptingReply: Set<SessionPhase> = [
@@ -62,6 +64,8 @@ struct TerminalTextSender {
             return sendViaITerm2(text, target: target)
         case "terminal":
             return sendViaTerminalApp(text, target: target)
+        case "cmux":
+            return sendViaCmux(text, target: target)
         default:
             return false
         }
@@ -83,6 +87,71 @@ struct TerminalTextSender {
 
         // Send Enter as a separate command.
         return runProcess(tmuxPath, arguments: baseArgs + ["send-keys", "-t", tmuxTarget, "Enter"])
+    }
+
+    // MARK: - cmux
+
+    /// cmux native (no tmux backend): focus the target surface via cmux's
+    /// JSON-RPC Unix socket so the right tab is forward, activate the app,
+    /// then drive a System Events keystroke. Mirrors the Terminal.app path
+    /// but adds the per-tab focus step beforehand.
+    private static func sendViaCmux(_ text: String, target: JumpTarget) -> Bool {
+        if let surfaceID = target.terminalSessionID, !surfaceID.isEmpty {
+            _ = sendCmuxSurfaceFocus(surfaceID: surfaceID)
+        }
+
+        let escapedText = escapeAppleScript(text)
+        let script = """
+        tell application id "com.cmuxterm.app"
+            if not (it is running) then return "error"
+            activate
+        end tell
+        delay 0.15
+        tell application "System Events"
+            keystroke "\(escapedText)"
+            key code 36
+        end tell
+        return "ok"
+        """
+        return runAppleScript(script)
+    }
+
+    private static func sendCmuxSurfaceFocus(surfaceID: String) -> Bool {
+        let candidates = [
+            (try? String(contentsOfFile: "/tmp/cmux-last-socket-path", encoding: .utf8))?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            NSHomeDirectory() + "/Library/Application Support/cmux/cmux.sock",
+            "/tmp/cmux.sock",
+        ].compactMap { $0 }.filter { !$0.isEmpty && FileManager.default.fileExists(atPath: $0) }
+
+        guard let socketPath = candidates.first else { return false }
+
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        let pathBytes = socketPath.utf8CString
+        guard pathBytes.count <= MemoryLayout.size(ofValue: addr.sun_path) else { return false }
+        withUnsafeMutableBytes(of: &addr.sun_path) { sunPath in
+            for (i, byte) in pathBytes.enumerated() {
+                sunPath[i] = UInt8(bitPattern: byte)
+            }
+        }
+
+        let connectResult = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPtr in
+                Darwin.connect(fd, sockaddrPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        guard connectResult == 0 else { return false }
+
+        let request = #"{"jsonrpc":"2.0","method":"surface.focus","params":{"surface_id":"\#(surfaceID)"},"id":1}"# + "\n"
+        let sent = request.withCString { ptr in
+            Darwin.send(fd, ptr, strlen(ptr), 0)
+        }
+        return sent > 0
     }
 
     // MARK: - iTerm2

@@ -89,6 +89,14 @@ struct TerminalTextSenderTests {
     }
 
     @Test
+    func cmuxIsSupportedNatively() {
+        // cmux without tmux backend — uses surface.focus via Unix socket
+        // followed by a System Events keystroke.
+        let session = makeSession(phase: .completed, terminalApp: "cmux")
+        #expect(TerminalTextSender.canReply(to: session, enabled: true))
+    }
+
+    @Test
     func unknownTerminalIsNotSupportedWithoutTmux() {
         for app in ["WezTerm", "Alacritty", "Hyper", ""] {
             let session = makeSession(phase: .completed, terminalApp: app)
