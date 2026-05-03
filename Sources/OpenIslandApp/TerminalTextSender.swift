@@ -287,6 +287,16 @@ struct TerminalTextSender {
     }
 
     private static func runAppleScript(_ script: String) -> Bool {
+        // NSAppleScript + System Events keystroke targeting GUI must run on
+        // the main thread; reply submission is dispatched on a Task.detached
+        // so we'd otherwise be off-main and the script silently no-ops.
+        if Thread.isMainThread {
+            return executeAppleScript(script)
+        }
+        return DispatchQueue.main.sync { executeAppleScript(script) }
+    }
+
+    private static func executeAppleScript(_ script: String) -> Bool {
         var error: NSDictionary?
         guard let appleScript = NSAppleScript(source: script) else {
             NSLog("[OpenIsland] TerminalTextSender: AppleScript compilation failed")
