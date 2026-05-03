@@ -1306,6 +1306,17 @@ final class AppModel {
             return
         }
 
+        // While the overlay is suppressed by another app's fullscreen, only
+        // attention-required surfaces (`waitingForApproval`/`waitingForAnswer`)
+        // are allowed to break through. Informational notifications such as
+        // `.sessionCompleted` would otherwise force the panel back on top of
+        // the user's fullscreen app.
+        if hideOverlayInFullscreen,
+           overlay.isAppFullscreenActive,
+           !session.phase.requiresAttention {
+            return
+        }
+
         guard suppressFrontmostNotifications else {
             presentNotificationSurface(surface)
             return
