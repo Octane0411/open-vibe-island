@@ -260,8 +260,23 @@ final class OverlayUICoordinator {
     }
 
     private func applyFullscreenSuppression() {
+        let wasSuppressed = overlayPanelController.isSuppressed
         let shouldSuppress = hideOverlayInFullscreen && isAppFullscreenActive
         overlayPanelController.setSuppressed(shouldSuppress)
+
+        // When suppression clears, `setSuppressed` only re-orders the panel
+        // front. If the panel was opened, re-run the full present path so
+        // positioning and interactivity reflect any display configuration
+        // changes that happened while we were hidden.
+        if wasSuppressed,
+           !shouldSuppress,
+           notchStatus == .opened,
+           let appModel {
+            overlayPlacementDiagnostics = overlayPanelController.show(
+                model: appModel,
+                preferredScreenID: preferredOverlayScreenID
+            )
+        }
     }
 
     private func resolveOverlayScreen() -> NSScreen? {
