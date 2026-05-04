@@ -153,6 +153,8 @@
 
 /* Island Panel - Question */
 "question.submit" = "Submit Answers";
+"question.next" = "Next";
+"question.back" = "Back";
 "question.answerNeeded" = "Answer needed";
 "question.otherPlaceholder" = "Type your answer…";
 

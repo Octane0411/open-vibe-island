@@ -153,6 +153,8 @@
 
 /* Island Panel - Question */
 "question.submit" = "提交答案";
+"question.next" = "下一步";
+"question.back" = "上一步";
 "question.answerNeeded" = "需要回答";
 "question.otherPlaceholder" = "输入你的回答…";
 
