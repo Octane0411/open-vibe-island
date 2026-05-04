@@ -42,20 +42,30 @@ function sendAndWaitResponse(json, timeoutMs = 300000) {
       let buf = "";
       sock.on("data", (chunk) => {
         buf += chunk.toString();
-        // BridgeServer sends hello first, then response after processing
         const lines = buf.split("\n").filter(Boolean);
-        if (lines.length >= 2) {
-          sock.destroy();
-          try { resolve(JSON.parse(lines[1])); } catch { resolve(null); }
+        for (const line of lines) {
+          try {
+            const parsed = JSON.parse(line);
+            if (parsed.type === "response") {
+              sock.destroy();
+              resolve(parsed);
+              return;
+            }
+          } catch {}
         }
       });
       sock.on("end", () => {
         const lines = buf.split("\n").filter(Boolean);
-        if (lines.length >= 2) {
-          try { resolve(JSON.parse(lines[1])); } catch { resolve(null); }
-        } else {
-          resolve(null);
+        for (const line of lines) {
+          try {
+            const parsed = JSON.parse(line);
+            if (parsed.type === "response") {
+              resolve(parsed);
+              return;
+            }
+          } catch {}
         }
+        resolve(null);
       });
       sock.on("error", () => resolve(null));
       sock.setTimeout(timeoutMs, () => { sock.destroy(); resolve(null); });
@@ -259,6 +269,15 @@ export default async ({ client, serverUrl }) => {
       return makePayload("QuestionAsked", p.sessionID, sessionCwd.get(p.sessionID), {
         question_id: p.id,
         question_text: (p.questions || []).map(q => q.question).join("; ") || "OpenCode has a question",
+        questions: (p.questions || []).map(q => ({
+          question: q.question || "",
+          header: q.header || "",
+          options: (q.options || []).map(o => ({
+            label: o.label || "",
+            description: o.description || "",
+          })),
+          multiple: q.multiple || false,
+        })),
         _opencode_request_id: p.id,
       });
     }
@@ -308,7 +327,15 @@ export default async ({ client, serverUrl }) => {
             if (!response) return;
             const directive = response?.response?.directive;
             if (!directive) return;
-            if (directive.type === "answer") {
+            if (directive.type === "structuredAnswer" && directive.answers) {
+              try {
+                await internalFetch(new Request(`http://localhost:${serverPort}/question/${requestId}/reply`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ answers: directive.answers }),
+                }));
+              } catch {}
+            } else if (directive.type === "answer") {
               try {
                 await internalFetch(new Request(`http://localhost:${serverPort}/question/${requestId}/reply`, {
                   method: "POST",

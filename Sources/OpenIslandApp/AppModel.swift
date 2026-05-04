@@ -1195,6 +1195,7 @@ final class AppModel {
         updateLastActionMessage: Bool = true,
         ingress: TrackedEventIngress = .bridge
     ) {
+
         // Snapshot whether this session was already completed before applying
         // the event. Used to suppress duplicate/stale completion notifications
         // (e.g. rollout watcher re-discovering an old completion on startup,
@@ -1277,9 +1278,13 @@ final class AppModel {
         }
 
         guard suppressFrontmostNotifications else {
+            notificationPresentationTask?.cancel()
+            notificationPresentationTask = nil
             presentNotificationSurface(surface)
             return
         }
+
+        let isActionable = session.phase == .waitingForApproval || session.phase == .waitingForAnswer
 
         notificationPresentationTask?.cancel()
         notificationPresentationTask = Task { @MainActor [weak self] in
@@ -1288,10 +1293,18 @@ final class AppModel {
             }
 
             let shouldSuppress = await self.isNotificationSessionAlreadyFrontmost(session)
-            guard !Task.isCancelled,
-                  !shouldSuppress,
-                  self.notificationSurfaceIsEligibleForPresentation(surface, ingress: ingress) else {
+            guard !Task.isCancelled, !shouldSuppress else {
                 return
+            }
+
+            // Actionable sessions (permission/question) skip the post-await
+            // re-eligibility check: the session phase can change from
+            // waitingForApproval/waitingForAnswer to running while the
+            // async frontmost probe runs, causing a false dismissal.
+            if !isActionable {
+                guard self.notificationSurfaceIsEligibleForPresentation(surface, ingress: ingress) else {
+                    return
+                }
             }
 
             self.presentNotificationSurface(surface)
