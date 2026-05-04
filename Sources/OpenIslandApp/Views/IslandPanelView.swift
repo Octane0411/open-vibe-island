@@ -507,6 +507,8 @@ struct IslandPanelView: View {
                 IslandSessionRow(
                     session: session,
                     referenceDate: context.date,
+                    stateIndicator: model.islandSessionStateIndicator,
+                    completedStaleThreshold: model.completedStaleThreshold.seconds,
                     isActionable: true,
                     useDrawingGroup: model.notchStatus == .opened,
                     isInteractive: model.notchStatus == .opened,
@@ -532,24 +534,51 @@ struct IslandPanelView: View {
                     .buttonStyle(.plain)
                 }
             } else {
-                ForEach(model.islandListSessions) { session in
-                    IslandSessionRow(
-                        session: session,
-                        referenceDate: context.date,
-                        isActionable: session.phase.requiresAttention || session.id == actionableSessionID,
-                        useDrawingGroup: model.notchStatus == .opened,
-                        isInteractive: model.notchStatus == .opened,
-                        lang: model.lang,
-                        onApprove: { model.approvePermission(for: session.id, action: $0) },
-                        onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
-                        onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
-                            ? { model.replyToSession(session, text: $0) } : nil,
-                        onJump: { model.jumpToSession(session) },
-                        onDismiss: session.isRemote ? { model.dismissSession(session.id) } : nil
-                    )
+                ForEach(model.islandSessionSections) { section in
+                    VStack(alignment: .leading, spacing: 6) {
+                        if model.islandSessionGroup != .none {
+                            sessionSectionHeader(section)
+                                .padding(.top, section.id == model.islandSessionSections.first?.id ? 0 : 6)
+                        }
+
+                        ForEach(section.sessions) { session in
+                            IslandSessionRow(
+                                session: session,
+                                referenceDate: context.date,
+                                stateIndicator: model.islandSessionStateIndicator,
+                                completedStaleThreshold: model.completedStaleThreshold.seconds,
+                                isActionable: session.phase.requiresAttention || session.id == actionableSessionID,
+                                useDrawingGroup: model.notchStatus == .opened,
+                                isInteractive: model.notchStatus == .opened,
+                                lang: model.lang,
+                                onApprove: { model.approvePermission(for: session.id, action: $0) },
+                                onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
+                                onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
+                                    ? { model.replyToSession(session, text: $0) } : nil,
+                                onJump: { model.jumpToSession(session) },
+                                onDismiss: session.isRemote ? { model.dismissSession(session.id) } : nil
+                            )
+                        }
+                    }
                 }
             }
         }
+    }
+
+    private func sessionSectionHeader(_ section: IslandSessionSection) -> some View {
+        HStack(spacing: 8) {
+            Text(section.title.uppercased())
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.42))
+            Text("\(section.sessions.count)")
+                .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.32))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(.white.opacity(0.055), in: Capsule())
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 4)
     }
 
     // MARK: - Helpers
@@ -949,6 +978,8 @@ private struct OpenedHeaderMetrics {
 private struct IslandSessionRow: View {
     let session: AgentSession
     let referenceDate: Date
+    var stateIndicator: IslandSessionStateIndicator = .animatedDot
+    var completedStaleThreshold: TimeInterval = AgentSession.staleCompletedDisplayThreshold
     var isActionable: Bool = false
     var useDrawingGroup: Bool = true
     var isInteractive: Bool = true
@@ -969,7 +1000,10 @@ private struct IslandSessionRow: View {
 
     private func rowBody(referenceDate: Date) -> some View {
         let rawPresence = session.islandPresence(at: referenceDate)
-        let isStaleCompleted = session.isStaleCompletedForIsland(at: referenceDate)
+        let isStaleCompleted = session.isStaleCompletedForIsland(
+            at: referenceDate,
+            threshold: completedStaleThreshold
+        )
         let defaultShowsDetail = !isStaleCompleted && (rawPresence != .inactive || isActionable)
         let showsDetail = detailOverride ?? defaultShowsDetail
         let presence = isStaleCompleted
@@ -977,7 +1011,7 @@ private struct IslandSessionRow: View {
             : ((showsDetail && rawPresence == .inactive) ? .active : rawPresence)
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 14) {
-                statusDot(for: presence)
+                statusIndicator(for: presence)
 
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .top, spacing: 12) {
@@ -1100,7 +1134,7 @@ private struct IslandSessionRow: View {
         }
         .background(
             RoundedRectangle(cornerRadius: isActionable ? 24 : 22, style: .continuous)
-                .fill(isHighlighted ? Color.white.opacity(isActionable ? 0.06 : 0.05) : Color.black)
+                .fill(rowFillColor(for: presence))
         )
         .overlay(
             RoundedRectangle(cornerRadius: isActionable ? 24 : 22, style: .continuous)
@@ -1389,11 +1423,66 @@ private struct IslandSessionRow: View {
         }
     }
 
-    private func statusDot(for presence: IslandSessionPresence) -> some View {
-        Circle()
-            .fill(statusTint(for: presence))
-            .frame(width: 9, height: 9)
-            .padding(.top, 6)
+    @ViewBuilder
+    private func statusIndicator(for presence: IslandSessionPresence) -> some View {
+        let tint = statusTint(for: presence)
+        switch stateIndicator {
+        case .animatedDot:
+            TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { context in
+                let pulse = presence == .running || isActionable
+                    ? (sin(context.date.timeIntervalSinceReferenceDate * 3.2) + 1) / 2
+                    : 0
+                Circle()
+                    .fill(tint)
+                    .frame(width: 9, height: 9)
+                    .scaleEffect(1 + (pulse * 0.18))
+                    .shadow(color: tint.opacity(presence == .inactive ? 0 : 0.36 + (pulse * 0.26)), radius: 4 + (pulse * 3))
+                    .padding(.top, 6)
+            }
+            .frame(width: 10, height: 24, alignment: .top)
+        case .bar:
+            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                .fill(tint)
+                .frame(width: 4, height: isActionable ? 34 : 28)
+                .padding(.top, 2)
+        case .glyph:
+            Image(systemName: statusGlyphName)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 14, height: 20)
+                .padding(.top, 1)
+        case .tint:
+            Circle()
+                .fill(tint.opacity(presence == .inactive ? 0.54 : 0.92))
+                .frame(width: 8, height: 8)
+                .padding(.top, 6)
+        }
+    }
+
+    private func rowFillColor(for presence: IslandSessionPresence) -> Color {
+        let base = isHighlighted ? Color.white.opacity(isActionable ? 0.06 : 0.05) : Color.black
+        guard stateIndicator == .tint else { return base }
+
+        let tintOpacity: Double
+        if isHighlighted {
+            tintOpacity = isActionable ? 0.16 : 0.11
+        } else {
+            tintOpacity = presence == .inactive ? 0.035 : 0.075
+        }
+        return statusTint(for: presence).opacity(tintOpacity)
+    }
+
+    private var statusGlyphName: String {
+        switch session.phase {
+        case .waitingForApproval:
+            "exclamationmark.triangle.fill"
+        case .waitingForAnswer:
+            "questionmark.circle.fill"
+        case .running:
+            "circle.dashed"
+        case .completed:
+            "checkmark.circle.fill"
+        }
     }
 
     /// Prompt line for manually expanded inactive rows (bypasses time-based filter).
