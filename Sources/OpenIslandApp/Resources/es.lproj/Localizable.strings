@@ -1,19 +1,21 @@
 /* Common */
 "app.name" = "Open Island";
 "app.name.oss" = "Open Island OSS";
-"app.description" = "macOS companion for AI coding agents";
+"app.description" = "Compañero macOS para agentes de código con IA";
 
 /* Settings - Tab Labels */
 "settings.tab.general" = "General";
-"settings.tab.display" = "Display";
-"settings.tab.sound" = "Sound";
-"settings.tab.shortcuts" = "Shortcuts";
+"settings.tab.display" = "Pantalla";
+"settings.tab.sound" = "Sonido";
+"settings.tab.shortcuts" = "Atajos";
 "settings.tab.lab" = "Lab";
-"settings.tab.about" = "About";
+"settings.tab.about" = "Acerca de";
+
 
 /* Settings - Section Headers */
-"settings.section.system" = "System";
-"settings.section.advanced" = "Advanced";
+"settings.section.system" = "Sistema";
+"settings.section.advanced" = "Avanzado";
+
 
 /* Settings - General */
 "settings.general.launchAtLogin" = "Launch at Login";
@@ -38,8 +40,8 @@
 "settings.general.uninstallConfirmMessage.codex" = "This will remove Open Island hooks from Codex. You can reinstall them at any time.";
 "settings.general.uninstallConfirmMessage.claudeUsage" = "This will remove the Claude usage bridge. You can reinstall it at any time.";
 "settings.general.cancel" = "Cancel";
-"settings.general.language" = "Language";
-"settings.general.languageSystem" = "System";
+"settings.general.language" = "Idioma";
+"settings.general.languageSystem" = "Sistema";
 "settings.general.languageEnglish" = "English";
 "settings.general.languageFrench" = "Français";
 "settings.general.languageSpanish" = "Español";
@@ -124,9 +126,8 @@
 /* Settings - Placeholder */
 "settings.shortcuts.comingSoon" = "Keyboard shortcuts coming soon.";
 "settings.lab.comingSoon" = "Experimental features coming soon.";
-"settings.lab.experiments" = "Experiments";
+"settings.lab.experiments" = "Experimentos";
 "settings.lab.closedQuotaToggle" = "Always show LLM quota in closed notch";
-"settings.lab.closedQuotaNeverHide" = "Never hide closed-notch quota";
 "settings.lab.closedQuotaWindowMode" = "Quota window";
 "settings.lab.closedQuotaWindowMode.all" = "All";
 "settings.lab.closedQuotaWindowMode.5h" = "5-hour only";
@@ -143,10 +144,11 @@
 /* Settings - About */
 "settings.about.version" = "Version %@";
 "settings.about.checkForUpdates" = "Check for Updates…";
-"settings.about.quitApp" = "Quit Open Island";
-"island.quit.confirmTitle" = "Quit Open Island?";
-"island.quit.confirmAction" = "Quit";
-"island.quit.confirmMessage" = "Are you sure you want to quit?";
+"settings.about.quitApp" = "Salir de Open Island";
+"island.quit.confirmTitle" = "¿Salir de Open Island?";
+"island.quit.confirmAction" = "Salir";
+"island.quit.confirmMessage" = "¿Seguro que quieres salir?";
+
 
 /* Settings - Update */
 "settings.update.available" = "v%@ Available — Update";

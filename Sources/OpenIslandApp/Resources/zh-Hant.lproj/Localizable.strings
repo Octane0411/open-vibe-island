@@ -41,6 +41,10 @@
 "settings.general.language" = "語言";
 "settings.general.languageSystem" = "跟隨系統";
 "settings.general.languageEnglish" = "English";
+"settings.general.languageFrench" = "Français";
+"settings.general.languageSpanish" = "Español";
+"settings.general.languageGerman" = "Deutsch";
+"settings.general.languageItalian" = "Italiano";
 "settings.general.languageChinese" = "简体中文";
 "settings.general.languageTraditionalChinese" = "繁體中文";
 
@@ -120,6 +124,20 @@
 /* Settings - Placeholder */
 "settings.shortcuts.comingSoon" = "快捷鍵設定即將推出。";
 "settings.lab.comingSoon" = "實驗性功能即將推出。";
+"settings.lab.experiments" = "實驗功能";
+"settings.lab.closedQuotaToggle" = "在收起 Notch 中持續顯示 LLM 配額";
+"settings.lab.closedQuotaWindowMode" = "配額視窗";
+"settings.lab.closedQuotaWindowMode.all" = "全部";
+"settings.lab.closedQuotaWindowMode.5h" = "僅 5 小時";
+"settings.lab.closedQuotaWindowMode.weekly" = "僅週配額";
+"settings.lab.closedQuotaWindowMode.closestZero" = "最接近 0% 已用";
+"settings.lab.closedQuotaValueMode" = "顯示數值";
+"settings.lab.closedQuotaValueMode.used" = "已用 %";
+"settings.lab.closedQuotaValueMode.remaining" = "剩餘 % (100→0)";
+"settings.lab.closedQuotaPlacement" = "配額位置";
+"settings.lab.closedQuotaPlacement.right" = "右側徽章";
+"settings.lab.closedQuotaPlacement.left" = "左側（靠近圖示）";
+"settings.lab.closedQuotaHelp" = "僅套用於收起 Notch 右側徽章。無用量資料時會自動退回工作階段數量。";
 
 /* Settings - About */
 "settings.about.version" = "版本 %@";

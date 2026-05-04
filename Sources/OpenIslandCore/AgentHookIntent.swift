@@ -24,6 +24,7 @@ public enum AgentIdentifier: String, Codable, Sendable, CaseIterable {
     case qwenCode
     case factory
     case codebuddy
+    case zai
     case openCode
     case gemini
     case kimi

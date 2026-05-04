@@ -18,6 +18,7 @@ final class HookInstallationCoordinator {
     var qwenCodeHookStatus: ClaudeHookInstallationStatus?
     var factoryHookStatus: ClaudeHookInstallationStatus?
     var codebuddyHookStatus: ClaudeHookInstallationStatus?
+    var zaiHookStatus: ClaudeHookInstallationStatus?
     var openCodePluginStatus: OpenCodePluginInstallationStatus?
     var cursorHookStatus: CursorHookInstallationStatus?
     var geminiHookStatus: GeminiHookInstallationStatus?
@@ -32,6 +33,7 @@ final class HookInstallationCoordinator {
     var isQwenCodeHookSetupBusy = false
     var isFactoryHookSetupBusy = false
     var isCodebuddyHookSetupBusy = false
+    var isZaiHookSetupBusy = false
     var isOpenCodeSetupBusy = false
     var isCursorHookSetupBusy = false
     var isGeminiHookSetupBusy = false
@@ -71,6 +73,12 @@ final class HookInstallationCoordinator {
     private let codebuddyHookInstallationManager = ClaudeHookInstallationManager(
         claudeDirectory: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codebuddy", isDirectory: true),
         hookSource: "codebuddy"
+    )
+    
+    @ObservationIgnored
+    private let zaiHookInstallationManager = ClaudeHookInstallationManager(
+        claudeDirectory: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".zai", isDirectory: true),
+        hookSource: "zai"
     )
 
     @ObservationIgnored
@@ -127,6 +135,10 @@ final class HookInstallationCoordinator {
 
     var codebuddyHooksInstalled: Bool {
         codebuddyHookStatus?.managedHooksPresent == true
+    }
+    
+    var zaiHooksInstalled: Bool {
+        zaiHookStatus?.managedHooksPresent == true
     }
 
     var openCodePluginInstalled: Bool {
@@ -589,6 +601,7 @@ final class HookInstallationCoordinator {
         refreshCCForkHookStatus(manager: qwenCodeHookInstallationManager, name: "Qwen Code") { [weak self] in self?.qwenCodeHookStatus = $0 }
         refreshCCForkHookStatus(manager: factoryHookInstallationManager, name: "Factory") { [weak self] in self?.factoryHookStatus = $0 }
         refreshCCForkHookStatus(manager: codebuddyHookInstallationManager, name: "CodeBuddy") { [weak self] in self?.codebuddyHookStatus = $0 }
+        refreshCCForkHookStatus(manager: zaiHookInstallationManager, name: "Z.ai GLM") { [weak self] in self?.zaiHookStatus = $0 }
     }
 
     private func refreshCCForkHookStatus(
@@ -660,6 +673,7 @@ final class HookInstallationCoordinator {
                     (self.qwenCodeHookInstallationManager, "Qwen Code", { [weak self] (s: ClaudeHookInstallationStatus) in self?.qwenCodeHookStatus = s }),
                     (self.factoryHookInstallationManager, "Factory", { [weak self] (s: ClaudeHookInstallationStatus) in self?.factoryHookStatus = s }),
                     (self.codebuddyHookInstallationManager, "CodeBuddy", { [weak self] (s: ClaudeHookInstallationStatus) in self?.codebuddyHookStatus = s }),
+                    (self.zaiHookInstallationManager, "Z.ai GLM", { [weak self] (s: ClaudeHookInstallationStatus) in self?.zaiHookStatus = s }),
                 ] {
                     do {
                         let status = try manager.status(hooksBinaryURL: self.hooksBinaryURL)
@@ -811,6 +825,7 @@ final class HookInstallationCoordinator {
         case .qwenCode: return !qwenCodeHooksInstalled
         case .factory: return !factoryHooksInstalled
         case .codebuddy: return !codebuddyHooksInstalled
+        case .zai: return !zaiHooksInstalled
         case .openCode: return !openCodePluginInstalled
         case .gemini: return !geminiHooksInstalled
         case .kimi: return !kimiHooksInstalled
@@ -835,6 +850,7 @@ final class HookInstallationCoordinator {
             case .qwenCode: return qwenCodeHooksInstalled
             case .factory: return factoryHooksInstalled
             case .codebuddy: return codebuddyHooksInstalled
+            case .zai: return zaiHooksInstalled
             case .openCode: return openCodePluginInstalled
             case .gemini: return geminiHooksInstalled
             case .kimi: return kimiHooksInstalled
@@ -909,6 +925,14 @@ final class HookInstallationCoordinator {
 
     func uninstallCodebuddyHooks() {
         updateCCForkHooks(manager: codebuddyHookInstallationManager, name: "CodeBuddy", agent: .codebuddy, isBusySetter: { [weak self] in self?.isCodebuddyHookSetupBusy = $0 }, statusSetter: { [weak self] in self?.codebuddyHookStatus = $0 }, install: false)
+    }
+    
+    func installZaiHooks() {
+        updateCCForkHooks(manager: zaiHookInstallationManager, name: "Z.ai GLM", agent: .zai, isBusySetter: { [weak self] in self?.isZaiHookSetupBusy = $0 }, statusSetter: { [weak self] in self?.zaiHookStatus = $0 }, install: true)
+    }
+
+    func uninstallZaiHooks() {
+        updateCCForkHooks(manager: zaiHookInstallationManager, name: "Z.ai GLM", agent: .zai, isBusySetter: { [weak self] in self?.isZaiHookSetupBusy = $0 }, statusSetter: { [weak self] in self?.zaiHookStatus = $0 }, install: false)
     }
 
     private func updateCCForkHooks(

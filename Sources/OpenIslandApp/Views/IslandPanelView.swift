@@ -140,7 +140,7 @@ struct IslandPanelView: View {
     }
 
     private var hasClosedPresence: Bool {
-        model.liveSessionCount > 0
+        model.liveSessionCount > 0 || (model.labsNeverHideClosedQuota && hasClosedUsage)
     }
 
     private var showsIdleEdgeWhenCollapsed: Bool {
@@ -171,6 +171,9 @@ struct IslandPanelView: View {
     }
 
     private var countBadgeWidth: CGFloat {
+        if hasClosedUsage, isClosedUsageRightPlacement {
+            return closedUsageBadgeWidth
+        }
         let digits = max(1, "\(model.liveSessionCount)".count)
         return CGFloat(26 + max(0, digits - 1) * 8)
     }
@@ -179,7 +182,7 @@ struct IslandPanelView: View {
         guard !showsIdleEdgeWhenCollapsed else { return 0 }
         guard hasClosedPresence else { return 0 }
         let hasPending = closedSpotlightSession?.phase.requiresAttention == true
-        let leftWidth = sideWidth + 8 + (hasPending ? 18 : 0)
+        let leftWidth = sideWidth + 8 + (hasPending ? 18 : 0) + leftUsageExtraWidth
         let rightWidth = max(sideWidth, countBadgeWidth) + (hasPending ? 18 : 0)
         return leftWidth + rightWidth + 16 + (hasPending ? 6 : 0)
     }
@@ -194,6 +197,72 @@ struct IslandPanelView: View {
 
     private var sideWidth: CGFloat {
         max(0, closedNotchHeight - 12) + 10
+    }
+
+    private var hasClosedUsage: Bool {
+        model.labsAlwaysShowLLMQuotaInClosedNotch && !closedUsageWindows.isEmpty
+    }
+    
+    private var isClosedUsageRightPlacement: Bool {
+        model.labsClosedQuotaPlacement == .rightBadge
+    }
+
+    private var isClosedUsageLeftPlacement: Bool {
+        model.labsClosedQuotaPlacement == .leftNearGlyph
+    }
+
+    private var closedUsageWindows: [UsageWindowPresentation] {
+        let windows = openedUsageProviders.flatMap(\.windows)
+        guard !windows.isEmpty else { return [] }
+
+        switch model.labsClosedQuotaWindowMode {
+        case .all:
+            return Array(windows.prefix(2))
+        case .fiveHourOnly:
+            if let match = windows.first(where: { window in
+                window.label.lowercased().contains("5h")
+            }) {
+                return [match]
+            }
+            return Array(windows.prefix(1))
+        case .weeklyOnly:
+            if let match = windows.first(where: { window in
+                let lower = window.label.lowercased()
+                return lower.contains("7d") || lower.contains("week")
+            }) {
+                return [match]
+            }
+            return Array(windows.suffix(1))
+        case .closestToZeroUsed:
+            guard let match = windows.min(by: { $0.usedPercentage < $1.usedPercentage }) else {
+                return []
+            }
+            return [match]
+        }
+    }
+
+    private var closedUsageBadgeWidth: CGFloat {
+        let charCount = closedUsageText.reduce(0) { partial, chunk in
+            partial + chunk.count + 1
+        }
+        return max(56, CGFloat(charCount * 7 + 18))
+    }
+    
+    private var leftUsageExtraWidth: CGFloat {
+        guard hasClosedUsage, isClosedUsageLeftPlacement else { return 0 }
+        return closedUsageBadgeWidth + 6
+    }
+
+    private var closedUsageText: [String] {
+        closedUsageWindows.map { window in
+            switch model.labsClosedQuotaValueMode {
+            case .usedPercent:
+                return "\(window.label) \(window.roundedUsedPercentage)%"
+            case .remainingPercent:
+                let remaining = max(0, 100 - window.roundedUsedPercentage)
+                return "\(window.label) \(remaining)% left"
+            }
+        }
     }
 
     private var targetOverlayScreen: NSScreen? {
@@ -382,8 +451,15 @@ struct IslandPanelView: View {
                                 color: phaseColor(closedSpotlightSession?.phase ?? .running)
                             )
                         }
+
+                        if hasClosedUsage, isClosedUsageLeftPlacement {
+                            ClosedUsageBadge(
+                                labels: closedUsageText,
+                                tint: closedSpotlightSession?.phase.requiresAttention == true ? .orange : scoutTint
+                            )
+                        }
                     }
-                    .frame(width: sideWidth + 8 + (closedSpotlightSession?.phase.requiresAttention == true ? 18 : 0))
+                    .frame(width: sideWidth + 8 + (closedSpotlightSession?.phase.requiresAttention == true ? 18 : 0) + leftUsageExtraWidth)
                 }
 
                 if !hasClosedPresence {
@@ -405,10 +481,19 @@ struct IslandPanelView: View {
 
                 if hasClosedPresence {
                     let attentionBalanceWidth: CGFloat = closedSpotlightSession?.phase.requiresAttention == true ? 18 : 0
-                    ClosedCountBadge(
-                        liveCount: model.liveSessionCount,
-                        tint: closedSpotlightSession?.phase.requiresAttention == true ? .orange : scoutTint
-                    )
+                    Group {
+                        if hasClosedUsage, isClosedUsageRightPlacement {
+                            ClosedUsageBadge(
+                                labels: closedUsageText,
+                                tint: closedSpotlightSession?.phase.requiresAttention == true ? .orange : scoutTint
+                            )
+                        } else {
+                            ClosedCountBadge(
+                                liveCount: model.liveSessionCount,
+                                tint: closedSpotlightSession?.phase.requiresAttention == true ? .orange : scoutTint
+                            )
+                        }
+                    }
                     .matchedGeometryEffect(id: "right-indicator", in: notchNamespace, isSource: true)
                     .frame(width: max(sideWidth, countBadgeWidth) + attentionBalanceWidth)
                 }
@@ -2040,6 +2125,21 @@ private struct ClosedCountBadge: View {
             .foregroundStyle(tint)
             .padding(.horizontal, 8)
             .padding(.vertical, 2)
+            .background(Color(red: 0.14, green: 0.14, blue: 0.15), in: Capsule())
+    }
+}
+
+private struct ClosedUsageBadge: View {
+    let labels: [String]
+    let tint: Color
+
+    var body: some View {
+        Text(labels.joined(separator: "  "))
+            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+            .foregroundStyle(tint)
+            .lineLimit(1)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
             .background(Color(red: 0.14, green: 0.14, blue: 0.15), in: Capsule())
     }
 }

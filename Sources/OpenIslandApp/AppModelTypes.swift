@@ -44,3 +44,26 @@ enum IslandPixelShapeStyle: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 }
+
+enum LabsClosedQuotaWindowMode: String, CaseIterable, Identifiable {
+    case all
+    case fiveHourOnly
+    case weeklyOnly
+    case closestToZeroUsed
+
+    var id: String { rawValue }
+}
+
+enum LabsClosedQuotaValueMode: String, CaseIterable, Identifiable {
+    case usedPercent
+    case remainingPercent
+
+    var id: String { rawValue }
+}
+
+enum LabsClosedQuotaPlacement: String, CaseIterable, Identifiable {
+    case rightBadge
+    case leftNearGlyph
+
+    var id: String { rawValue }
+}

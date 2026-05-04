@@ -389,6 +389,15 @@ final class ProcessMonitoringCoordinator {
             }
         }
 
+        // Z.ai GLM sessions: same strategy as Kimi until a stable process/session
+        // correlation is available from the CLI.
+        let hasZaiProcess = activeProcesses.contains { $0.tool == .zaiCLI }
+        if hasZaiProcess {
+            for session in sessions where session.tool == .zaiCLI && !session.isDemoSession {
+                aliveIDs.insert(session.id)
+            }
+        }
+
         // Cursor sessions: Cursor is an Electron IDE — we cannot match
         // individual session IDs from ps/lsof.  Keep Cursor sessions alive
         // while Cursor.app is running, but let completed sessions expire
@@ -1012,6 +1021,8 @@ final class ProcessMonitoringCoordinator {
             return "Factory \(session.id.prefix(8))"
         case .codebuddy:
             return "CodeBuddy \(session.id.prefix(8))"
+        case .zaiCLI:
+            return "Z.ai \(session.id.prefix(8))"
         case .cursor:
             return "Cursor \(session.id.prefix(8))"
         case .kimiCLI:

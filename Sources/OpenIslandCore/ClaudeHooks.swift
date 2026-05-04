@@ -880,6 +880,8 @@ public extension ClaudeHookPayload {
             return .factory
         case "codebuddy":
             return .codebuddy
+        case "zai", "z.ai", "glm":
+            return .zaiCLI
         case "kimi":
             return .kimiCLI
         default:

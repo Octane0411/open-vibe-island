@@ -185,6 +185,23 @@ struct ActiveAgentProcessDiscovery {
                 ))
                 continue
             }
+
+            if isZaiProcess(command: process.command) {
+                let claimKey = "zai:\(process.pid)"
+                guard claimedKeys.insert(claimKey).inserted else {
+                    continue
+                }
+
+                let lsofOutput = lsofOutput(pid: process.pid)
+                snapshots.append(ProcessSnapshot(
+                    tool: .zaiCLI,
+                    sessionID: nil,
+                    workingDirectory: lsofOutput.flatMap(workingDirectory(from:)),
+                    terminalTTY: process.terminalTTY,
+                    terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+                ))
+                continue
+            }
         }
 
         return snapshots
@@ -675,6 +692,22 @@ struct ActiveAgentProcessDiscovery {
         }
 
         return firstToken == "kimi" || firstToken.hasSuffix("/kimi")
+    }
+
+    /// Matches the `zai` CLI entry-point.
+    private func isZaiProcess(command: String) -> Bool {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return false
+        }
+
+        let firstToken = trimmed.split(whereSeparator: \.isWhitespace).first.map(String.init)?.lowercased() ?? ""
+        let binaryName = URL(fileURLWithPath: firstToken).lastPathComponent.lowercased()
+        guard binaryName == "zai" else {
+            return false
+        }
+
+        return firstToken == "zai" || firstToken.hasSuffix("/zai")
     }
 
     /// Returns `true` when the given `ps` command string belongs to a Claude Code process.

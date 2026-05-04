@@ -9,6 +9,7 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
     case qwenCode
     case factory
     case codebuddy
+    case zaiCLI
     case cursor
     case kimiCLI
 
@@ -30,6 +31,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "Factory"
         case .codebuddy:
             "CodeBuddy"
+        case .zaiCLI:
+            "Z.ai GLM"
         case .cursor:
             "Cursor"
         case .kimiCLI:
@@ -55,6 +58,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "FACTORY"
         case .codebuddy:
             "CODEBUDDY"
+        case .zaiCLI:
+            "ZAI"
         case .cursor:
             "CURSOR"
         case .kimiCLI:
@@ -64,7 +69,7 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
 
     public var isClaudeCodeFork: Bool {
         switch self {
-        case .claudeCode, .qoder, .qwenCode, .factory, .codebuddy, .kimiCLI:
+        case .claudeCode, .qoder, .qwenCode, .factory, .codebuddy, .zaiCLI, .kimiCLI:
             true
         default:
             false
@@ -480,7 +485,7 @@ public extension AgentSession {
     }
 
     var isTrackedLiveSession: Bool {
-        !isDemoSession && (tool == .codex || tool == .claudeCode || tool == .geminiCLI || tool == .openCode || tool == .qoder || tool == .qwenCode || tool == .factory || tool == .codebuddy || tool == .cursor || tool == .kimiCLI)
+        !isDemoSession && (tool == .codex || tool == .claudeCode || tool == .geminiCLI || tool == .openCode || tool == .qoder || tool == .qwenCode || tool == .factory || tool == .codebuddy || tool == .zaiCLI || tool == .cursor || tool == .kimiCLI)
     }
 
     var isTrackedLiveCodexSession: Bool {

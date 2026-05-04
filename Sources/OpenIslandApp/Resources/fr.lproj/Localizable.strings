@@ -1,52 +1,52 @@
 /* Common */
 "app.name" = "Open Island";
 "app.name.oss" = "Open Island OSS";
-"app.description" = "macOS companion for AI coding agents";
+"app.description" = "Compagnon macOS pour agents de code IA";
 
 /* Settings - Tab Labels */
-"settings.tab.general" = "General";
-"settings.tab.display" = "Display";
-"settings.tab.sound" = "Sound";
-"settings.tab.shortcuts" = "Shortcuts";
+"settings.tab.general" = "Général";
+"settings.tab.display" = "Affichage";
+"settings.tab.sound" = "Son";
+"settings.tab.shortcuts" = "Raccourcis";
 "settings.tab.lab" = "Lab";
-"settings.tab.about" = "About";
+"settings.tab.about" = "À propos";
 
 /* Settings - Section Headers */
-"settings.section.system" = "System";
-"settings.section.advanced" = "Advanced";
+"settings.section.system" = "Système";
+"settings.section.advanced" = "Avancé";
 
 /* Settings - General */
-"settings.general.launchAtLogin" = "Launch at Login";
-"settings.general.monitor" = "Monitor";
-"settings.general.automatic" = "Automatic";
-"settings.general.behavior" = "Behavior";
+"settings.general.launchAtLogin" = "Lancer à la connexion";
+"settings.general.monitor" = "Écran";
+"settings.general.automatic" = "Automatique";
+"settings.general.behavior" = "Comportement";
 "settings.general.hideFullscreen" = "Hide in fullscreen";
 "settings.general.autoHideNoSessions" = "Auto-hide without active sessions";
-"settings.general.autoCollapse" = "Auto-collapse on mouse exit";
-"settings.general.showDockIcon" = "Show icon in Dock";
-"settings.general.hapticFeedback" = "Haptic feedback on hover";
-"settings.general.suppressFrontmostNotifications" = "Suppress notifications for focused sessions";
-"settings.general.showCodexUsage" = "Show Codex usage";
-"settings.general.completionReply" = "Reply from completion card";
+"settings.general.autoCollapse" = "Réduire automatiquement à la sortie de la souris";
+"settings.general.showDockIcon" = "Afficher l’icône dans le Dock";
+"settings.general.hapticFeedback" = "Retour haptique au survol";
+"settings.general.suppressFrontmostNotifications" = "Masquer les notifications des sessions au premier plan";
+"settings.general.showCodexUsage" = "Afficher l’usage Codex";
+"settings.general.completionReply" = "Répondre depuis la carte de fin";
 "settings.general.cliHooks" = "CLI Hooks";
 "settings.general.activated" = "Activated";
-"settings.general.install" = "Install";
-"settings.general.uninstall" = "Uninstall";
+"settings.general.install" = "Installer";
+"settings.general.uninstall" = "Désinstaller";
 "settings.general.uninstallConfirmTitle" = "Uninstall Hooks?";
 "settings.general.uninstallConfirmAction" = "Uninstall";
 "settings.general.uninstallConfirmMessage.claude" = "This will remove Open Island hooks from Claude Code. You can reinstall them at any time.";
 "settings.general.uninstallConfirmMessage.codex" = "This will remove Open Island hooks from Codex. You can reinstall them at any time.";
 "settings.general.uninstallConfirmMessage.claudeUsage" = "This will remove the Claude usage bridge. You can reinstall it at any time.";
-"settings.general.cancel" = "Cancel";
-"settings.general.language" = "Language";
-"settings.general.languageSystem" = "System";
+"settings.general.cancel" = "Annuler";
+"settings.general.language" = "Langue";
+"settings.general.languageSystem" = "Système";
 "settings.general.languageEnglish" = "English";
 "settings.general.languageFrench" = "Français";
 "settings.general.languageSpanish" = "Español";
 "settings.general.languageGerman" = "Deutsch";
 "settings.general.languageItalian" = "Italiano";
-"settings.general.languageChinese" = "Chinese (Simplified)";
-"settings.general.languageTraditionalChinese" = "Chinese (Traditional)";
+"settings.general.languageChinese" = "Chinois (simplifié)";
+"settings.general.languageTraditionalChinese" = "Chinois (traditionnel)";
 
 /* Settings - Appearance */
 "settings.tab.appearance" = "Appearance";
@@ -124,29 +124,29 @@
 /* Settings - Placeholder */
 "settings.shortcuts.comingSoon" = "Keyboard shortcuts coming soon.";
 "settings.lab.comingSoon" = "Experimental features coming soon.";
-"settings.lab.experiments" = "Experiments";
-"settings.lab.closedQuotaToggle" = "Always show LLM quota in closed notch";
-"settings.lab.closedQuotaNeverHide" = "Never hide closed-notch quota";
-"settings.lab.closedQuotaWindowMode" = "Quota window";
-"settings.lab.closedQuotaWindowMode.all" = "All";
-"settings.lab.closedQuotaWindowMode.5h" = "5-hour only";
-"settings.lab.closedQuotaWindowMode.weekly" = "Weekly only";
-"settings.lab.closedQuotaWindowMode.closestZero" = "Closest to 0% used";
-"settings.lab.closedQuotaValueMode" = "Displayed value";
-"settings.lab.closedQuotaValueMode.used" = "Used %";
-"settings.lab.closedQuotaValueMode.remaining" = "Remaining % (100→0)";
-"settings.lab.closedQuotaPlacement" = "Quota position";
-"settings.lab.closedQuotaPlacement.right" = "Right badge";
-"settings.lab.closedQuotaPlacement.left" = "Left near glyph";
-"settings.lab.closedQuotaHelp" = "Applies to the closed notch badge. Falls back to session count when usage data is unavailable.";
+"settings.lab.experiments" = "Expériences";
+"settings.lab.closedQuotaToggle" = "Toujours afficher le quota LLM dans le notch fermé";
+"settings.lab.closedQuotaNeverHide" = "Ne jamais masquer le quota notch fermé";
+"settings.lab.closedQuotaWindowMode" = "Fenêtre de quota";
+"settings.lab.closedQuotaWindowMode.all" = "Toutes";
+"settings.lab.closedQuotaWindowMode.5h" = "5 heures uniquement";
+"settings.lab.closedQuotaWindowMode.weekly" = "Hebdo uniquement";
+"settings.lab.closedQuotaWindowMode.closestZero" = "Le plus proche de 0%% utilisé";
+"settings.lab.closedQuotaValueMode" = "Valeur affichée";
+"settings.lab.closedQuotaValueMode.used" = "%% utilisé";
+"settings.lab.closedQuotaValueMode.remaining" = "%% restant (100→0)";
+"settings.lab.closedQuotaPlacement" = "Position du quota";
+"settings.lab.closedQuotaPlacement.right" = "Badge à droite";
+"settings.lab.closedQuotaPlacement.left" = "À gauche, près du glyphe";
+"settings.lab.closedQuotaHelp" = "S’applique au badge du notch fermé. Retour au compteur de sessions si les données d’usage ne sont pas disponibles.";
 
 /* Settings - About */
 "settings.about.version" = "Version %@";
 "settings.about.checkForUpdates" = "Check for Updates…";
-"settings.about.quitApp" = "Quit Open Island";
-"island.quit.confirmTitle" = "Quit Open Island?";
-"island.quit.confirmAction" = "Quit";
-"island.quit.confirmMessage" = "Are you sure you want to quit?";
+"settings.about.quitApp" = "Quitter Open Island";
+"island.quit.confirmTitle" = "Quitter Open Island ?";
+"island.quit.confirmAction" = "Quitter";
+"island.quit.confirmMessage" = "Voulez-vous vraiment quitter ?";
 
 /* Settings - Update */
 "settings.update.available" = "v%@ Available — Update";

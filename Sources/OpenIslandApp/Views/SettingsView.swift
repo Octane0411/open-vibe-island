@@ -151,7 +151,7 @@ struct SettingsView: View {
             case .shortcuts:
                 PlaceholderSettingsPane(model: model, titleKey: "settings.tab.shortcuts", subtitleKey: "settings.shortcuts.comingSoon")
             case .lab:
-                PlaceholderSettingsPane(model: model, titleKey: "settings.tab.lab", subtitleKey: "settings.lab.comingSoon")
+                LabSettingsPane(model: model)
             case .about:
                 AboutSettingsPane(model: model)
             }
@@ -164,6 +164,62 @@ struct SettingsView: View {
                 .padding(.trailing, 16)
             }
         }
+    }
+}
+
+// MARK: - Lab
+
+struct LabSettingsPane: View {
+    var model: AppModel
+
+    private var lang: LanguageManager { model.lang }
+
+    var body: some View {
+        Form {
+            Section(lang.t("settings.lab.experiments")) {
+                Toggle(lang.t("settings.lab.closedQuotaToggle"), isOn: Binding(
+                    get: { model.labsAlwaysShowLLMQuotaInClosedNotch },
+                    set: { model.labsAlwaysShowLLMQuotaInClosedNotch = $0 }
+                ))
+                
+                Toggle(lang.t("settings.lab.closedQuotaNeverHide"), isOn: Binding(
+                    get: { model.labsNeverHideClosedQuota },
+                    set: { model.labsNeverHideClosedQuota = $0 }
+                ))
+
+                Picker(lang.t("settings.lab.closedQuotaWindowMode"), selection: Binding(
+                    get: { model.labsClosedQuotaWindowMode },
+                    set: { model.labsClosedQuotaWindowMode = $0 }
+                )) {
+                    Text(lang.t("settings.lab.closedQuotaWindowMode.all")).tag(LabsClosedQuotaWindowMode.all)
+                    Text(lang.t("settings.lab.closedQuotaWindowMode.5h")).tag(LabsClosedQuotaWindowMode.fiveHourOnly)
+                    Text(lang.t("settings.lab.closedQuotaWindowMode.weekly")).tag(LabsClosedQuotaWindowMode.weeklyOnly)
+                    Text(lang.t("settings.lab.closedQuotaWindowMode.closestZero")).tag(LabsClosedQuotaWindowMode.closestToZeroUsed)
+                }
+
+                Picker(lang.t("settings.lab.closedQuotaValueMode"), selection: Binding(
+                    get: { model.labsClosedQuotaValueMode },
+                    set: { model.labsClosedQuotaValueMode = $0 }
+                )) {
+                    Text(lang.t("settings.lab.closedQuotaValueMode.used")).tag(LabsClosedQuotaValueMode.usedPercent)
+                    Text(lang.t("settings.lab.closedQuotaValueMode.remaining")).tag(LabsClosedQuotaValueMode.remainingPercent)
+                }
+
+                Picker(lang.t("settings.lab.closedQuotaPlacement"), selection: Binding(
+                    get: { model.labsClosedQuotaPlacement },
+                    set: { model.labsClosedQuotaPlacement = $0 }
+                )) {
+                    Text(lang.t("settings.lab.closedQuotaPlacement.right")).tag(LabsClosedQuotaPlacement.rightBadge)
+                    Text(lang.t("settings.lab.closedQuotaPlacement.left")).tag(LabsClosedQuotaPlacement.leftNearGlyph)
+                }
+
+                Text(lang.t("settings.lab.closedQuotaHelp"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle(lang.t("settings.tab.lab"))
     }
 }
 
@@ -200,6 +256,10 @@ struct GeneralSettingsPane: View {
                 )) {
                     Text(lang.t("settings.general.languageSystem")).tag(LanguageManager.AppLanguage.system)
                     Text(lang.t("settings.general.languageEnglish")).tag(LanguageManager.AppLanguage.en)
+                    Text(lang.t("settings.general.languageFrench")).tag(LanguageManager.AppLanguage.fr)
+                    Text(lang.t("settings.general.languageSpanish")).tag(LanguageManager.AppLanguage.es)
+                    Text(lang.t("settings.general.languageGerman")).tag(LanguageManager.AppLanguage.de)
+                    Text(lang.t("settings.general.languageItalian")).tag(LanguageManager.AppLanguage.it)
                     Text(lang.t("settings.general.languageChinese")).tag(LanguageManager.AppLanguage.zhHans)
                     Text(lang.t("settings.general.languageTraditionalChinese")).tag(LanguageManager.AppLanguage.zhHant)
                 }
@@ -415,6 +475,7 @@ struct SetupSettingsPane: View {
     @State private var confirmingUninstallQwenCode = false
     @State private var confirmingUninstallFactory = false
     @State private var confirmingUninstallCodebuddy = false
+    @State private var confirmingUninstallZai = false
     @State private var confirmingUninstallCursor = false
     @State private var confirmingUninstallGemini = false
     @State private var confirmingUninstallKimi = false
@@ -550,6 +611,23 @@ struct SetupSettingsPane: View {
                 } message: {
                     Text("This will remove Open Island hooks from ~/.codebuddy/settings.json.")
                 }
+                
+                hookRow(
+                    name: "Z.ai GLM",
+                    installed: model.zaiHooksInstalled,
+                    busy: model.isZaiHookSetupBusy,
+                    configLocationURL: model.zaiHookStatus?.settingsURL,
+                    installAction: { model.installZaiHooks() },
+                    uninstallAction: { confirmingUninstallZai = true }
+                )
+                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallZai) {
+                    Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
+                        model.uninstallZaiHooks()
+                    }
+                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
+                } message: {
+                    Text("This will remove Open Island hooks from ~/.zai/settings.json.")
+                }
 
                 hookRow(
                     name: "Cursor",
@@ -676,6 +754,7 @@ struct SetupSettingsPane: View {
                     if !model.qwenCodeHooksInstalled { model.installQwenCodeHooks() }
                     if !model.factoryHooksInstalled { model.installFactoryHooks() }
                     if !model.codebuddyHooksInstalled { model.installCodebuddyHooks() }
+                    if !model.zaiHooksInstalled { model.installZaiHooks() }
                     if !model.cursorHooksInstalled { model.installCursorHooks() }
                     if !model.geminiHooksInstalled { model.installGeminiHooks() }
                     if !model.kimiHooksInstalled { model.installKimiHooks() }
@@ -739,7 +818,7 @@ struct SetupSettingsPane: View {
 
     private var allReady: Bool {
         model.claudeHooksInstalled && model.codexHooksInstalled && model.openCodePluginInstalled
-            && model.qoderHooksInstalled && model.qwenCodeHooksInstalled && model.factoryHooksInstalled && model.codebuddyHooksInstalled
+            && model.qoderHooksInstalled && model.qwenCodeHooksInstalled && model.factoryHooksInstalled && model.codebuddyHooksInstalled && model.zaiHooksInstalled
             && model.cursorHooksInstalled && model.geminiHooksInstalled && model.kimiHooksInstalled && model.claudeUsageInstalled
     }
 
