@@ -59,14 +59,17 @@ public enum CodexHookInstaller {
     public static let managedStatusMessage = "Managed by Open Island"
     public static let legacyManagedStatusMessage = "Managed by Vibe Island"
     public static let managedTimeout = 45
+    // Intentionally above OpenIslandHooksCLI.interactiveCodexHookTimeout (3500) so the CLI can
+    // fail open first instead of waiting for the full Codex-managed window.
+    public static let managedInteractiveTimeout = 3600
 
-    // Keep the managed Codex install aligned with the original app's low-noise footprint.
-    // The bridge still understands richer hook events, but we do not install them by default
-    // because per-command Bash hooks produce a large amount of terminal log spam.
-    private static let eventSpecs: [(name: String, matcher: String?)] = [
-        ("SessionStart", "startup|resume"),
-        ("UserPromptSubmit", nil),
-        ("Stop", nil),
+    // Keep the managed Codex install low-noise while still surfacing approval prompts.
+    // PermissionRequest hooks are interactive, so they get a long timeout.
+    private static let eventSpecs: [(name: String, matcher: String?, timeout: Int)] = [
+        ("SessionStart", "startup|resume", managedTimeout),
+        ("UserPromptSubmit", nil, managedTimeout),
+        ("PermissionRequest", nil, managedInteractiveTimeout),
+        ("Stop", nil, managedTimeout),
     ]
 
     public static func hookCommand(for binaryPath: String) -> String {
@@ -93,7 +96,11 @@ public enum CodexHookInstaller {
         for spec in eventSpecs {
             let existingGroups = hooksObject[spec.name] as? [Any] ?? []
             let cleanedGroups = sanitizeForInstall(groups: existingGroups, replacingCommand: hookCommand)
-            hooksObject[spec.name] = cleanedGroups + [managedGroup(matcher: spec.matcher, hookCommand: hookCommand)]
+            hooksObject[spec.name] = cleanedGroups + [managedGroup(
+                matcher: spec.matcher,
+                hookCommand: hookCommand,
+                timeout: spec.timeout
+            )]
         }
 
         rootObject["hooks"] = hooksObject
@@ -292,12 +299,12 @@ public enum CodexHookInstaller {
         }
     }
 
-    private static func managedGroup(matcher: String?, hookCommand: String) -> [String: Any] {
+    private static func managedGroup(matcher: String?, hookCommand: String, timeout: Int) -> [String: Any] {
         var group: [String: Any] = [
             "hooks": [[
                 "type": "command",
                 "command": hookCommand,
-                "timeout": managedTimeout,
+                "timeout": timeout,
             ]]
         ]
 

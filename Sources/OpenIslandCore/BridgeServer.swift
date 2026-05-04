@@ -13,6 +13,7 @@ public final class BridgeServer: @unchecked Sendable {
 
     private struct PendingApproval {
         let clientID: UUID
+        let hookEventName: CodexHookEventName
     }
 
     private struct PendingClaudeToolContext {
@@ -506,7 +507,39 @@ public final class BridgeServer: @unchecked Sendable {
             emit(approvalEvent)
 
             pendingApprovals[payload.sessionID] = PendingApproval(
-                clientID: clientID
+                clientID: clientID,
+                hookEventName: .preToolUse
+            )
+
+        case .permissionRequest:
+            ensureSessionExists(for: payload)
+            synchronizeJumpTarget(for: payload)
+            synchronizeCodexMetadata(for: payload)
+
+            let command = payload.commandPreview ?? "Bash command"
+            let summary = payload.toolInput?.description ?? "Codex wants to run a shell command."
+
+            emit(
+                .permissionRequested(
+                    PermissionRequested(
+                        sessionID: payload.sessionID,
+                        request: PermissionRequest(
+                            title: "Run Bash command",
+                            summary: summary,
+                            affectedPath: payload.commandText ?? command,
+                            primaryActionTitle: "Allow",
+                            secondaryActionTitle: "Deny",
+                            toolName: payload.toolName,
+                            toolUseID: payload.toolUseID
+                        ),
+                        timestamp: .now
+                    )
+                )
+            )
+
+            pendingApprovals[payload.sessionID] = PendingApproval(
+                clientID: clientID,
+                hookEventName: .permissionRequest
             )
 
         case .postToolUse:
@@ -1975,7 +2008,7 @@ public final class BridgeServer: @unchecked Sendable {
         switch hookEventName {
         case .userPromptSubmit, .postToolUse, .stop:
             return nil
-        case .sessionStart, .preToolUse:
+        case .sessionStart, .preToolUse, .permissionRequest:
             return existing
         }
     }
@@ -2247,7 +2280,7 @@ public final class BridgeServer: @unchecked Sendable {
         switch hookEventName {
         case .userPromptSubmit, .postToolUse, .stop:
             return nil
-        case .sessionStart, .preToolUse:
+        case .sessionStart, .preToolUse, .permissionRequest:
             return existing
         }
     }
@@ -2257,11 +2290,23 @@ public final class BridgeServer: @unchecked Sendable {
             return
         }
 
+        let denyReason = "Permission denied in Open Island."
         let response: BridgeResponse
-        if approved {
+        switch pendingApproval.hookEventName {
+        case .preToolUse:
+            // Legacy PreToolUse approvals continue by returning no directive.
+            response = approved
+                ? .acknowledged
+                : .codexHookDirective(.deny(reason: denyReason))
+        case .permissionRequest:
+            response = approved
+                ? .codexHookDirective(.permissionRequest(.allow))
+                : .codexHookDirective(.permissionRequest(.deny(message: denyReason)))
+        case .sessionStart, .userPromptSubmit, .postToolUse, .stop:
+            assertionFailure("Unexpected pending approval event: \(pendingApproval.hookEventName.rawValue)")
+            // This branch should be unreachable because only PreToolUse/PermissionRequest register approvals.
+            // Fail open with acknowledged so Codex never receives a mismatched directive payload.
             response = .acknowledged
-        } else {
-            response = .codexHookDirective(.deny(reason: "Permission denied in Open Island."))
         }
 
         send(.response(response), to: pendingApproval.clientID)
