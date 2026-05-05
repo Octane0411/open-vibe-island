@@ -24,6 +24,7 @@ final class OverlayUICoordinator {
             }
             persistOverlayDisplayPreference()
             refreshOverlayPlacement()
+            appModel?.reevaluateOverlayScreenFullscreen()
         }
     }
 
@@ -73,7 +74,7 @@ final class OverlayUICoordinator {
         ignoresPointerExitAccessor?() ?? false
     }
 
-    private var preferredOverlayScreenID: String? {
+    var preferredOverlayScreenID: String? {
         overlayDisplaySelectionID == OverlayDisplayOption.automaticID
             ? nil
             : overlayDisplaySelectionID

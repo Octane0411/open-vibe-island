@@ -26,6 +26,7 @@ final class AppModel {
     private static let showCodexUsageDefaultsKey = "app.showCodexUsage"
     private static let completionReplyEnabledDefaultsKey = "feature.completionReply.enabled"
     private static let suppressFrontmostNotificationsDefaultsKey = "app.suppressFrontmostNotifications"
+    private static let hideInFullscreenDefaultsKey = "app.hideInFullscreen"
 
     static let defaultStatusColors: [SessionPhase: String] = [
         .running: "#6E9FFF",
@@ -33,6 +34,18 @@ final class AppModel {
         .waitingForAnswer: "#FFD95A",
         .completed: "#42E86B",
     ]
+
+    /// Pure decision function exposed for unit tests.
+    nonisolated static func shouldSuppressOverlayForFullscreen(
+        hideInFullscreenEnabled: Bool,
+        isOverlayScreenFullscreen: Bool,
+        hasAttentionRequiredSession: Bool
+    ) -> Bool {
+        hideInFullscreenEnabled
+            && isOverlayScreenFullscreen
+            && !hasAttentionRequiredSession
+    }
+
     private static let syntheticClaudeSessionPrefix = "claude-process:"
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
     private static let jumpOverlayDismissLeadTime: Duration = .milliseconds(20)
@@ -61,6 +74,12 @@ final class AppModel {
     let monitoring = ProcessMonitoringCoordinator()
     let codexAppServer = CodexAppServerCoordinator()
     let updateChecker = UpdateChecker()
+
+    private let fullscreenObserver = FullscreenSpaceObserver()
+
+    var hasAttentionRequiredSession: Bool {
+        surfacedSessions.contains { $0.phase.requiresAttention }
+    }
 
     var notchStatus: NotchStatus {
         get { overlay.notchStatus }
@@ -280,6 +299,17 @@ final class AppModel {
     }
     @ObservationIgnored
     private var isApplyingLaunchAtLogin = false
+
+    var hideInFullscreenEnabled: Bool = true {
+        didSet {
+            guard hasFinishedInit, hideInFullscreenEnabled != oldValue else { return }
+            UserDefaults.standard.set(hideInFullscreenEnabled, forKey: Self.hideInFullscreenDefaultsKey)
+            applyFullscreenVisibility()
+        }
+    }
+
+    private(set) var isOverlayScreenFullscreen: Bool = false
+
     var isSoundMuted = false {
         didSet {
             guard isSoundMuted != oldValue else {
@@ -516,12 +546,14 @@ final class AppModel {
             Self.hapticFeedbackEnabledDefaultsKey: false,
             Self.completionReplyEnabledDefaultsKey: false,
             Self.suppressFrontmostNotificationsDefaultsKey: true,
+            Self.hideInFullscreenDefaultsKey: true,
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
         showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
         hapticFeedbackEnabled = UserDefaults.standard.bool(forKey: Self.hapticFeedbackEnabledDefaultsKey)
         suppressFrontmostNotifications = UserDefaults.standard.bool(forKey: Self.suppressFrontmostNotificationsDefaultsKey)
+        hideInFullscreenEnabled = UserDefaults.standard.bool(forKey: Self.hideInFullscreenDefaultsKey)
         if UserDefaults.standard.object(forKey: Self.showCodexUsageDefaultsKey) != nil {
             showCodexUsage = UserDefaults.standard.bool(forKey: Self.showCodexUsageDefaultsKey)
         } else {
@@ -629,6 +661,10 @@ final class AppModel {
         }
 
         refreshOverlayDisplayConfiguration()
+        fullscreenObserver.onChange = { [weak self] fullscreenDisplays in
+            self?.handleFullscreenDisplaysChanged(fullscreenDisplays)
+        }
+        fullscreenObserver.start()
         hasFinishedInit = true
     }
 
@@ -821,6 +857,7 @@ final class AppModel {
         }
         refreshOverlayDisplayConfiguration()
         ensureOverlayPanel()
+        reevaluateOverlayScreenFullscreen()
         if shouldPerformBootAnimation {
             performBootAnimation()
         }
@@ -927,6 +964,63 @@ final class AppModel {
 
     func select(sessionID: String) {
         selectedSessionID = sessionID
+    }
+
+    // MARK: - Fullscreen visibility
+
+    @ObservationIgnored private var lastAppliedSuppression: Bool?
+    @ObservationIgnored private var lastFullscreenDisplays: Set<CGDirectDisplayID> = []
+
+    private func handleFullscreenDisplaysChanged(_ fullscreenDisplays: Set<CGDirectDisplayID>) {
+        lastFullscreenDisplays = fullscreenDisplays
+        reevaluateOverlayScreenFullscreen()
+    }
+
+    /// Re-runs the island-screen membership check against the cached
+    /// fullscreen-displays set. Call when something other than a Spaces
+    /// transition changes the relevant inputs — e.g. the panel is created,
+    /// or the user picks a different display in Settings.
+    func reevaluateOverlayScreenFullscreen() {
+        let newValue: Bool
+        if lastFullscreenDisplays.isEmpty {
+            newValue = false
+        } else {
+            let resolvedScreen = OverlayDisplayResolver.resolveTargetScreen(
+                preferredScreenID: overlay.preferredOverlayScreenID
+            )
+            let islandDisplayID = resolvedScreen.flatMap { FullscreenSpaceObserver.displayID(for: $0) }
+            newValue = islandDisplayID.map { lastFullscreenDisplays.contains($0) } ?? false
+        }
+        if newValue != isOverlayScreenFullscreen {
+            isOverlayScreenFullscreen = newValue
+        }
+        // Always reapply: the panel may have been created after the cached
+        // suppression decision was first computed, so the early-return path
+        // would otherwise leave the panel unsuppressed on launch when the
+        // island display starts in fullscreen.
+        applyFullscreenVisibility()
+    }
+
+    func applyFullscreenVisibility() {
+        let suppress = Self.shouldSuppressOverlayForFullscreen(
+            hideInFullscreenEnabled: hideInFullscreenEnabled,
+            isOverlayScreenFullscreen: isOverlayScreenFullscreen,
+            hasAttentionRequiredSession: hasAttentionRequiredSession
+        )
+        // Pre-panel calls (e.g. from FullscreenSpaceObserver.start during init)
+        // can't actually hide/show anything, and recording the dedupe value
+        // here would block the next call once the panel exists.
+        guard overlay.overlayPanelController.hasPanel else { return }
+        guard suppress != lastAppliedSuppression else { return }
+        lastAppliedSuppression = suppress
+        if suppress {
+            overlay.overlayPanelController.forceHide()
+        } else {
+            overlay.overlayPanelController.forceShowIfNeeded(
+                model: self,
+                preferredScreenID: overlay.preferredOverlayScreenID
+            )
+        }
     }
 
     // MARK: - Overlay forwarding
@@ -1224,6 +1318,7 @@ final class AppModel {
         synchronizeSelection()
         discovery.refreshCodexRolloutTracking()
         refreshOverlayPlacementIfVisible()
+        applyFullscreenVisibility()
         discovery.scheduleCodexSessionPersistence()
         discovery.scheduleClaudeSessionPersistence()
         discovery.scheduleOpenCodeSessionPersistence()
@@ -1269,6 +1364,17 @@ final class AppModel {
         wasAlreadyCompleted: Bool,
         ingress: TrackedEventIngress
     ) {
+        // Don't reopen the overlay for non-attention events (e.g. completion
+        // toasts) when the island display is in fullscreen — applyFullscreenVisibility
+        // already forceHid the panel, and presenting a notification surface
+        // would orderFront it again.
+        let suppressForFullscreen = Self.shouldSuppressOverlayForFullscreen(
+            hideInFullscreenEnabled: hideInFullscreenEnabled,
+            isOverlayScreenFullscreen: isOverlayScreenFullscreen,
+            hasAttentionRequiredSession: hasAttentionRequiredSession
+        )
+        guard !suppressForFullscreen else { return }
+
         guard !wasAlreadyCompleted,
               notificationSurfaceIsEligibleForPresentation(surface, ingress: ingress),
               let sessionID = surface.sessionID,

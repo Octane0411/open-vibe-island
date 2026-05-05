@@ -27,6 +27,8 @@ This index is the repository map for humans and coding agents. Read these files 
 ## Superpowers Plans
 
 - [docs/superpowers/plans/2026-04-18-opencode-stability.md](./superpowers/plans/2026-04-18-opencode-stability.md) for the OpenCode stability implementation plan
+- [docs/superpowers/plans/2026-05-02-hide-overlay-in-fullscreen.md](./superpowers/plans/2026-05-02-hide-overlay-in-fullscreen.md) for the hide-overlay-in-fullscreen implementation plan
+- [docs/superpowers/specs/2026-05-02-hide-overlay-in-fullscreen-design.md](./superpowers/specs/2026-05-02-hide-overlay-in-fullscreen-design.md) for the hide-overlay-in-fullscreen design spec
 
 ## Runtime And Product Notes
 

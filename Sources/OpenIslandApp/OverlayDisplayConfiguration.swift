@@ -153,6 +153,10 @@ enum OverlayDisplayResolver {
         placementMode(for: screen) == .notch ? "Built-in notch" : "Top-bar fallback"
     }
 
+    static func resolveTargetScreen(preferredScreenID: String?) -> NSScreen? {
+        resolveScreen(preferredScreenID: preferredScreenID)?.screen
+    }
+
     private static func screenID(for screen: NSScreen) -> String {
         let key = NSDeviceDescriptionKey("NSScreenNumber")
         if let number = screen.deviceDescription[key] as? NSNumber {
