@@ -36,7 +36,7 @@ final class AppModel {
     ]
 
     /// Pure decision function exposed for unit tests.
-    static func shouldSuppressOverlayForFullscreen(
+    nonisolated static func shouldSuppressOverlayForFullscreen(
         hideInFullscreenEnabled: Bool,
         isOverlayScreenFullscreen: Bool,
         hasAttentionRequiredSession: Bool
