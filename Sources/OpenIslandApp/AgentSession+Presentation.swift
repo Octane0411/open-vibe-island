@@ -350,6 +350,18 @@ extension AgentSession {
 
 private extension String {
     var trimmedForSurface: String {
-        trimmingCharacters(in: .whitespacesAndNewlines)
+        strippingMarkdownForSurface.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var strippingMarkdownForSurface: String {
+        var s = self
+        s = s.replacingOccurrences(of: "```[^`]*```", with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: "`([^`]+)`", with: "$1", options: .regularExpression)
+        s = s.replacingOccurrences(of: "\\*{1,3}(.+?)\\*{1,3}", with: "$1", options: .regularExpression)
+        s = s.replacingOccurrences(of: "_{1,3}(.+?)_{1,3}", with: "$1", options: .regularExpression)
+        s = s.replacingOccurrences(of: "(?m)^#{1,6}\\s+", with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: "\\[([^\\]]+)\\]\\([^)]+\\)", with: "$1", options: .regularExpression)
+        s = s.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        return s
     }
 }
