@@ -40,22 +40,27 @@ function sendAndWaitResponse(json, timeoutMs = 300000) {
         sock.write(encodeEnvelope(json));
       });
       let buf = "";
+      function tryResolveResponse() {
+        const lines = buf.split("\n").filter(Boolean);
+        for (const line of lines) {
+          try {
+            const parsed = JSON.parse(line);
+            // Only resolve on actual response messages, skip hello and event messages
+            if (parsed.type === "response" || parsed.response?.directive) {
+              sock.destroy();
+              resolve(parsed);
+              return true;
+            }
+          } catch {}
+        }
+        return false;
+      }
       sock.on("data", (chunk) => {
         buf += chunk.toString();
-        // BridgeServer sends hello first, then response after processing
-        const lines = buf.split("\n").filter(Boolean);
-        if (lines.length >= 2) {
-          sock.destroy();
-          try { resolve(JSON.parse(lines[1])); } catch { resolve(null); }
-        }
+        tryResolveResponse();
       });
       sock.on("end", () => {
-        const lines = buf.split("\n").filter(Boolean);
-        if (lines.length >= 2) {
-          try { resolve(JSON.parse(lines[1])); } catch { resolve(null); }
-        } else {
-          resolve(null);
-        }
+        if (!tryResolveResponse()) resolve(null);
       });
       sock.on("error", () => resolve(null));
       sock.setTimeout(timeoutMs, () => { sock.destroy(); resolve(null); });
@@ -256,9 +261,20 @@ export default async ({ client, serverUrl }) => {
 
     // question.asked
     if (t === "question.asked" && p.id && p.sessionID) {
+      const questions = p.questions || [];
+      const questionItems = questions.map(q => ({
+        question: q.question || "",
+        header: q.header || "",
+        options: (q.options || []).map(o => ({
+          label: o.label || "",
+          description: o.description || "",
+        })),
+        multiple: q.multiple || false,
+      }));
       return makePayload("QuestionAsked", p.sessionID, sessionCwd.get(p.sessionID), {
         question_id: p.id,
-        question_text: (p.questions || []).map(q => q.question).join("; ") || "OpenCode has a question",
+        question_text: questions.map(q => q.question).join("; ") || "OpenCode has a question",
+        question_items: questionItems,
         _opencode_request_id: p.id,
       });
     }
