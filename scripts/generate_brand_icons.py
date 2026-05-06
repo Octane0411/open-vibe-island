@@ -2,23 +2,18 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import shutil
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-BRAND_ROOT = REPO_ROOT / "Assets" / "Brand"
-APP_ICONSET_DIR = BRAND_ROOT / "AppIcon.appiconset"
-ICONSET_DIR = BRAND_ROOT / "OpenIsland.iconset"
-INTERNAL_COLOR_DIR = BRAND_ROOT / "Internal" / "color"
-INTERNAL_TEMPLATE_DIR = BRAND_ROOT / "Internal" / "template"
-INTERNAL_BADGE_DIR = BRAND_ROOT / "Internal" / "badge"
-ICNS_PATH = BRAND_ROOT / "OpenIsland.icns"
-SVG_MASTER_PATH = BRAND_ROOT / "scout-app-icon-master.svg"
+SOURCE_BRAND_ROOT = REPO_ROOT / "Assets" / "Brand"
 
 SCOUT_PATTERN = [
     "..B..B..",
@@ -50,19 +45,77 @@ APP_ICON_SPECS = [
 MACOS_ICON_CONTENT_RATIO = 824 / 1024
 
 
-def main() -> None:
-    ensure_clean_dir(APP_ICONSET_DIR)
-    ensure_clean_dir(ICONSET_DIR)
-    ensure_clean_dir(INTERNAL_COLOR_DIR)
-    ensure_clean_dir(INTERNAL_TEMPLATE_DIR)
-    ensure_clean_dir(INTERNAL_BADGE_DIR)
-    BRAND_ROOT.mkdir(parents=True, exist_ok=True)
+@dataclass(frozen=True)
+class OutputLayout:
+    brand_root: Path
+    iconset_dir: Path
+    icns_path: Path
+    app_iconset_dir: Path | None = None
+    internal_color_dir: Path | None = None
+    internal_template_dir: Path | None = None
+    internal_badge_dir: Path | None = None
+    svg_master_path: Path | None = None
 
-    write_svg_master(SVG_MASTER_PATH)
-    write_app_icons()
-    write_internal_assets()
-    write_appiconset_contents_json(APP_ICONSET_DIR / "Contents.json")
-    build_icns()
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Generate Open Island brand icon assets.")
+    parser.add_argument(
+        "--output-root",
+        type=Path,
+        default=SOURCE_BRAND_ROOT,
+        help="Directory that receives generated assets. Defaults to Assets/Brand in the repository.",
+    )
+    parser.add_argument(
+        "--icns-only",
+        action="store_true",
+        help="Generate only the iconset and .icns bundle required for app packaging.",
+    )
+    return parser.parse_args()
+
+
+def build_output_layout(output_root: Path, icns_only: bool) -> OutputLayout:
+    if icns_only:
+        return OutputLayout(
+            brand_root=output_root,
+            iconset_dir=output_root / "OpenIsland.iconset",
+            icns_path=output_root / "OpenIsland.icns",
+        )
+
+    return OutputLayout(
+        brand_root=output_root,
+        app_iconset_dir=output_root / "AppIcon.appiconset",
+        iconset_dir=output_root / "OpenIsland.iconset",
+        internal_color_dir=output_root / "Internal" / "color",
+        internal_template_dir=output_root / "Internal" / "template",
+        internal_badge_dir=output_root / "Internal" / "badge",
+        icns_path=output_root / "OpenIsland.icns",
+        svg_master_path=output_root / "scout-app-icon-master.svg",
+    )
+
+
+def main() -> None:
+    args = parse_args()
+    layout = build_output_layout(args.output_root, args.icns_only)
+
+    ensure_clean_dir(layout.iconset_dir)
+    layout.brand_root.mkdir(parents=True, exist_ok=True)
+
+    if layout.app_iconset_dir is not None:
+        ensure_clean_dir(layout.app_iconset_dir)
+    if layout.internal_color_dir is not None:
+        ensure_clean_dir(layout.internal_color_dir)
+    if layout.internal_template_dir is not None:
+        ensure_clean_dir(layout.internal_template_dir)
+    if layout.internal_badge_dir is not None:
+        ensure_clean_dir(layout.internal_badge_dir)
+
+    if layout.svg_master_path is not None:
+        write_svg_master(layout.svg_master_path)
+    write_app_icons(layout)
+    if layout.app_iconset_dir is not None:
+        write_internal_assets(layout)
+        write_appiconset_contents_json(layout.app_iconset_dir / "Contents.json")
+    build_icns(layout)
 
 
 def ensure_clean_dir(path: Path) -> None:
@@ -288,8 +341,8 @@ def render_badge(size: int) -> Image.Image:
     return image
 
 
-def write_app_icons() -> None:
-    cat_icon_path = BRAND_ROOT / "app-icon-cat.png"
+def write_app_icons(layout: OutputLayout) -> None:
+    cat_icon_path = SOURCE_BRAND_ROOT / "app-icon-cat.png"
     if cat_icon_path.exists():
         src = Image.open(cat_icon_path).convert("RGBA")
         for filename, _, _, pixel_size in APP_ICON_SPECS:
@@ -298,24 +351,30 @@ def write_app_icons() -> None:
             offset = (pixel_size - content_size) // 2
             resized = src.resize((content_size, content_size), Image.Resampling.LANCZOS)
             canvas.alpha_composite(resized, (offset, offset))
-            canvas.save(APP_ICONSET_DIR / filename)
-            canvas.save(ICONSET_DIR / filename)
+            if layout.app_iconset_dir is not None:
+                canvas.save(layout.app_iconset_dir / filename)
+            canvas.save(layout.iconset_dir / filename)
     else:
         for filename, _, _, pixel_size in APP_ICON_SPECS:
             icon = render_app_icon(pixel_size)
-            icon.save(APP_ICONSET_DIR / filename)
-            icon.save(ICONSET_DIR / filename)
+            if layout.app_iconset_dir is not None:
+                icon.save(layout.app_iconset_dir / filename)
+            icon.save(layout.iconset_dir / filename)
 
 
-def write_internal_assets() -> None:
+def write_internal_assets(layout: OutputLayout) -> None:
+    assert layout.internal_color_dir is not None
+    assert layout.internal_template_dir is not None
+    assert layout.internal_badge_dir is not None
+
     for size in (14, 18, 32, 64):
-        render_color_mark(size).save(INTERNAL_COLOR_DIR / f"scout-mark-{size}.png")
+        render_color_mark(size).save(layout.internal_color_dir / f"scout-mark-{size}.png")
 
     for size in (18, 36):
-        render_template_mark(size).save(INTERNAL_TEMPLATE_DIR / f"scout-template-{size}.png")
+        render_template_mark(size).save(layout.internal_template_dir / f"scout-template-{size}.png")
 
     for size in (32, 64):
-        render_badge(size).save(INTERNAL_BADGE_DIR / f"scout-badge-{size}.png")
+        render_badge(size).save(layout.internal_badge_dir / f"scout-badge-{size}.png")
 
 
 def write_appiconset_contents_json(path: Path) -> None:
@@ -338,12 +397,12 @@ def write_appiconset_contents_json(path: Path) -> None:
     path.write_text(json.dumps(contents, indent=2) + "\n")
 
 
-def build_icns() -> None:
-    if ICNS_PATH.exists():
-        ICNS_PATH.unlink()
+def build_icns(layout: OutputLayout) -> None:
+    if layout.icns_path.exists():
+        layout.icns_path.unlink()
 
     subprocess.run(
-        ["iconutil", "-c", "icns", str(ICONSET_DIR), "-o", str(ICNS_PATH)],
+        ["iconutil", "-c", "icns", str(layout.iconset_dir), "-o", str(layout.icns_path)],
         check=True,
     )
 

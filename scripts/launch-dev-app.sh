@@ -12,10 +12,17 @@ done
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 brand_script="$repo_root/scripts/generate_brand_icons.py"
-brand_icon="$repo_root/Assets/Brand/OpenIsland.icns"
 bundle_dir="$HOME/Applications/Open Island Dev.app"
 plist_path="$bundle_dir/Contents/Info.plist"
 bundle_binary="$bundle_dir/Contents/MacOS/OpenIslandApp"
+brand_temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/open-island-brand.XXXXXX")"
+brand_icon="$brand_temp_dir/OpenIsland.icns"
+
+cleanup() {
+  rm -rf "$brand_temp_dir"
+}
+
+trap cleanup EXIT
 
 cd "$repo_root"
 
@@ -28,7 +35,7 @@ app_binary="$build_root/OpenIslandApp"
 hooks_binary="$build_root/OpenIslandHooks"
 setup_binary="$build_root/OpenIslandSetup"
 
-python3 "$brand_script"
+python3 "$brand_script" --output-root "$brand_temp_dir" --icns-only
 if [ "$skip_setup" = false ]; then
   "$setup_binary" install --hooks-binary "$hooks_binary"
 fi
