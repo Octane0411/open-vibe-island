@@ -11,6 +11,8 @@ struct OpenIslandBrandMark: View {
     var isAnimating: Bool = false
     var style: Style = .duotone
 
+    @State private var animationStartDate: Date = Date()
+
     private static let scoutPattern = [
         "..B..B..",
         "..BBBB..",
@@ -29,6 +31,27 @@ struct OpenIslandBrandMark: View {
     }
 
     var body: some View {
+        if isAnimating {
+            TimelineView(.animation(minimumInterval: 0.033)) { context in
+                markContent(intensity: pulseIntensity(at: context.date))
+                    .scaleEffect(pulseScale(at: context.date))
+                    .shadow(
+                        color: tint.opacity(glowOpacity(at: context.date)),
+                        radius: pulseGlowRadius(at: context.date),
+                        x: 0,
+                        y: 0
+                    )
+            }
+            .onAppear {
+                animationStartDate = Date()
+            }
+        } else {
+            markContent(intensity: 1.0)
+                .drawingGroup(opaque: false, colorMode: .extendedLinear)
+        }
+    }
+
+    private func markContent(intensity: Double) -> some View {
         GeometryReader { proxy in
             let cell = min(proxy.size.width / 8, proxy.size.height / 8)
             let markWidth = cell * 8
@@ -39,7 +62,7 @@ struct OpenIslandBrandMark: View {
             ZStack(alignment: .topLeading) {
                 ForEach(Array(Self.pixels.enumerated()), id: \.offset) { _, pixel in
                     Rectangle()
-                        .fill(fillColor(for: pixel.role))
+                        .fill(fillColor(for: pixel.role, intensity: intensity))
                         .frame(width: cell, height: cell)
                         .offset(
                             x: originX + CGFloat(pixel.x) * cell,
@@ -49,17 +72,42 @@ struct OpenIslandBrandMark: View {
             }
         }
         .frame(width: size, height: size)
-        .drawingGroup(opaque: false, colorMode: .extendedLinear)
     }
 
-    private func fillColor(for role: Character) -> Color {
+    /// Pulse cycle: 1.5 seconds. Wave goes -1 (low) → 0 → 1 (peak) → 0 → -1.
+    private func pulsePhase(at date: Date) -> Double {
+        let t = date.timeIntervalSince(animationStartDate)
+        return sin(t * Double.pi * 4 / 3)
+    }
+
+    private func pulseIntensity(at date: Date) -> Double {
+        let wave = pulsePhase(at: date)
+        return 0.45 + (wave + 1) / 2 * 0.75
+    }
+
+    private func pulseScale(at date: Date) -> CGFloat {
+        let wave = pulsePhase(at: date)
+        return CGFloat(0.82 + (wave + 1) / 2 * 0.18)
+    }
+
+    private func glowOpacity(at date: Date) -> Double {
+        let wave = pulsePhase(at: date)
+        return (wave + 1) / 2 * 0.55
+    }
+
+    private func pulseGlowRadius(at date: Date) -> CGFloat {
+        let wave = pulsePhase(at: date)
+        return CGFloat(2 + (wave + 1) / 2 * 5)
+    }
+
+    private func fillColor(for role: Character, intensity: Double) -> Color {
         switch style {
         case .duotone:
             switch role {
             case "B":
-                return tint.opacity(isAnimating ? 1.0 : 0.86)
+                return tint.opacity(min(1.0, 0.86 * intensity))
             case "H":
-                return tint.opacity(isAnimating ? 0.84 : 0.64)
+                return tint.opacity(min(0.92, 0.64 * intensity))
             case "E":
                 return Color.black.opacity(0.72)
             default:
