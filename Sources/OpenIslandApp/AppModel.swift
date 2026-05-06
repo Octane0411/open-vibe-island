@@ -729,7 +729,7 @@ final class AppModel {
             return [
                 IslandSessionSection(
                     id: "all",
-                    title: "Sessions",
+                    title: "island.section.sessions",
                     sessions: sessions
                 )
             ]
@@ -785,14 +785,14 @@ final class AppModel {
 
     private func stateGroupedSections(for sessions: [AgentSession]) -> [IslandSessionSection] {
         let definitions: [(id: String, title: String, include: (AgentSession) -> Bool)] = [
-            ("approval", "Needs approval", { $0.phase == .waitingForApproval }),
-            ("answer", "Needs answer", { $0.phase == .waitingForAnswer }),
-            ("running", "In progress", { $0.phase == .running }),
-            ("done", "Just done", { [completedStaleThreshold] session in
+            ("approval", "island.section.needsApproval", { $0.phase == .waitingForApproval }),
+            ("answer", "island.section.needsAnswer", { $0.phase == .waitingForAnswer }),
+            ("running", "island.section.inProgress", { $0.phase == .running }),
+            ("done", "island.section.justDone", { [completedStaleThreshold] session in
                 session.phase == .completed
                     && !session.isStaleCompletedForIsland(at: .now, threshold: completedStaleThreshold.seconds)
             }),
-            ("idle", "Idle", { [completedStaleThreshold] session in
+            ("idle", "island.section.idle", { [completedStaleThreshold] session in
                 session.phase == .completed
                     && session.isStaleCompletedForIsland(at: .now, threshold: completedStaleThreshold.seconds)
             }),

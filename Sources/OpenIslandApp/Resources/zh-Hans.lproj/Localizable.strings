@@ -55,26 +55,26 @@
 "settings.appearance.state.auto.on" = "自动 ✓";
 "settings.appearance.state.auto.off" = "自动";
 "settings.appearance.rightSlot.title" = "01 · 右槽";
-"settings.appearance.rightSlot.note" = "收起状态下 notch 右侧显示的内容。";
+"settings.appearance.rightSlot.note" = "收起状态下岛右侧显示的内容。";
 "settings.appearance.rightSlot.count" = "会话数";
-"settings.appearance.rightSlot.agents" = "Agents";
+"settings.appearance.rightSlot.agents" = "代理";
 "settings.appearance.rightSlot.none" = "不显示";
 "settings.appearance.centerLabel.title" = "02 · 中央标签";
 "settings.appearance.centerLabel.note" = "仅外接屏显示 — MacBook 的物理刘海会遮挡中央区域。";
-"settings.appearance.centerLabel.agentAction" = "Agent · 动作";
+"settings.appearance.centerLabel.agentAction" = "代理 · 动作";
 "settings.appearance.centerLabel.sessionName" = "会话名";
 "settings.appearance.centerLabel.off" = "关闭";
-"settings.appearance.notchPart.title" = "Notch";
+"settings.appearance.notchPart.title" = "刘海";
 "settings.appearance.sessionListPart.title" = "会话列表";
 "settings.appearance.sessionPreview" = "预览";
 "settings.appearance.profile.title" = "显示器配置";
 "settings.appearance.profile.note" = "选择正在配置的屏幕类型。Open Island 会在悬浮窗切换屏幕时自动应用对应配置。";
 "settings.appearance.profile.external.title" = "外接屏";
-"settings.appearance.profile.external.note" = "顶部栏 fallback，不使用 MacBook 刘海外圆角。";
+"settings.appearance.profile.external.note" = "没有 MacBook 刘海外圆角的顶部栏布局。";
 "settings.appearance.profile.macbook.title" = "MacBook 刘海屏";
-"settings.appearance.profile.macbook.note" = "内置刘海屏 surface，保留刘海感知几何。";
+"settings.appearance.profile.macbook.note" = "内置刘海屏布局，保留刘海感知几何。";
 "settings.appearance.usageDisplay.title" = "02 · 用量";
-"settings.appearance.usageDisplay.note" = "控制展开后的 Island 是否显示紧凑的 agent 用量。";
+"settings.appearance.usageDisplay.note" = "控制展开后的 Island 是否显示紧凑的代理用量。";
 "settings.appearance.usageDisplay.hidden" = "隐藏";
 "settings.appearance.usageDisplay.compact" = "紧凑";
 "settings.appearance.stateIndicator.title" = "03 · 会话状态";
@@ -87,7 +87,7 @@
 "settings.appearance.sessionGroup.note" = "展开会话列表里的可选分组。";
 "settings.appearance.sessionGroup.none" = "不分组";
 "settings.appearance.sessionGroup.state" = "状态";
-"settings.appearance.sessionGroup.agent" = "Agent";
+"settings.appearance.sessionGroup.agent" = "代理";
 "settings.appearance.sessionGroup.project" = "项目";
 "settings.appearance.sessionSort.title" = "05 · 会话排序";
 "settings.appearance.sessionSort.note" = "选择展开列表里的默认排序。";
@@ -100,6 +100,20 @@
 "settings.appearance.staleThreshold.tenMinutes" = "10 分钟";
 "settings.appearance.staleThreshold.twentyMinutes" = "20 分钟";
 "settings.appearance.staleThreshold.never" = "永不";
+"settings.appearance.preview.permissionNeeded" = "需要授权";
+"settings.appearance.preview.agentEditing" = "Claude · 正在编辑";
+"settings.appearance.preview.menuItems" = "文件  编辑  显示";
+"settings.appearance.preview.approveShellCommand" = "审批 Shell 命令";
+"settings.appearance.preview.promptImplementPlan" = "你：执行计划";
+"settings.appearance.preview.waitingForAnswer" = "等待回答";
+"settings.appearance.preview.promptChooseNotificationCopy" = "你：选择通知文案";
+"settings.appearance.preview.editingSessionListPreview" = "正在编辑会话列表预览";
+"settings.appearance.preview.promptTightenSettingsUI" = "你：收紧设置界面";
+"settings.appearance.preview.replyAvailable" = "可继续回复";
+"settings.appearance.preview.promptSummarizeDesignBundle" = "你：总结设计包";
+"settings.appearance.preview.completedEarlier" = "稍早已完成";
+"settings.appearance.preview.permissionBody" = "$ npm run build";
+"settings.appearance.preview.pickOrTypeAnswer" = "选择或输入回答";
 
 /* Settings - Display */
 "settings.display.monitor" = "显示器";
@@ -166,12 +180,32 @@
 "island.noTerminals" = "没有打开的终端会话";
 "island.startAgent" = "在终端中启动编码代理";
 "island.recentSessions" = "最近的会话将保留在这里，直到终端重新打开";
-"island.hint.installHooks" = "尚未安装任何 Agent hook，session 不会触发事件 · 点击配置";
+"island.hint.installHooks" = "尚未安装任何代理 hook，会话不会触发事件 · 点击配置";
 
 /* Island Panel - Session List */
+"island.sessionList.title" = "会话";
+"island.sessionOverview.total" = "总计";
+"island.sessionOverview.waiting" = "等待";
+"island.sessionOverview.waitingCompact" = "待";
+"island.sessionOverview.running" = "运行";
+"island.sessionOverview.runningCompact" = "跑";
+"island.sessionOverview.done" = "完成";
+"island.sessionOverview.idle" = "空闲";
+"island.section.sessions" = "会话";
+"island.section.needsApproval" = "需要审批";
+"island.section.needsAnswer" = "需要回答";
+"island.section.inProgress" = "进行中";
+"island.section.justDone" = "刚完成";
+"island.section.idle" = "空闲";
 "island.showAll" = "显示全部 %lld 个会话";
 "island.collapseList" = "收起列表";
 "island.usageWaiting" = "等待用量数据";
+
+/* Island Panel - Approval */
+"approval.toolPermissionRequested" = "请求工具权限";
+"approval.deny" = "拒绝";
+"approval.allowOnce" = "允许一次";
+"approval.alwaysAllow" = "始终允许（%@）";
 
 
 /* Island Panel - Subagents & Tasks */

@@ -149,7 +149,7 @@ struct AppearanceSettingsPane: View {
     private var previewSection: some View {
         sectionHeader(title: lang.t("settings.appearance.preview"), note: nil)
 
-        SettingsPreviewStage(contentTopPadding: 16, contentBottomPadding: 18) {
+        SettingsPreviewStage(lang: lang, contentTopPadding: 16, contentBottomPadding: 18) {
             VStack(spacing: 14) {
                 previewStage
                 previewControls
@@ -236,12 +236,13 @@ struct AppearanceSettingsPane: View {
     private var sessionListPreviewSection: some View {
         sectionHeader(title: lang.t("settings.appearance.sessionPreview"), note: nil)
 
-        SettingsPreviewStage(contentTopPadding: 0, contentBottomPadding: 28) {
+        SettingsPreviewStage(lang: lang, contentTopPadding: 0, contentBottomPadding: 28) {
             SessionListPanelPreview(
                 sections: previewSessionSections,
                 showsSections: editingPreferences.sessionGroup != .none,
                 indicator: editingPreferences.sessionStateIndicator,
-                profile: editingProfile
+                profile: editingProfile,
+                lang: lang
             )
             .padding(.horizontal, 18)
         }
@@ -656,8 +657,8 @@ struct AppearanceSettingsPane: View {
               editingPreferences.centerLabel != .off else { return nil }
         switch (previewMode, editingPreferences.centerLabel) {
         case (.idle, _):               return nil
-        case (.waiting, _):            return "Permission needed"
-        case (.running, .agentAction): return "Claude · editing"
+        case (.waiting, _):            return lang.t("settings.appearance.preview.permissionNeeded")
+        case (.running, .agentAction): return lang.t("settings.appearance.preview.agentEditing")
         case (.running, .sessionName): return "open-island"
         case (.running, .off):         return nil
         }
@@ -686,11 +687,11 @@ struct AppearanceSettingsPane: View {
             ]
         case .state:
             let groups: [(String, String, (AppearanceSessionPreviewItem) -> Bool)] = [
-                ("approval", "Needs approval", { $0.phase == .approval }),
-                ("answer", "Needs answer", { $0.phase == .answer }),
-                ("running", "In progress", { $0.phase == .running }),
-                ("done", "Just done", { $0.phase == .done }),
-                ("idle", "Idle", { $0.phase == .idle }),
+                ("approval", lang.t("island.section.needsApproval"), { $0.phase == .approval }),
+                ("answer", lang.t("island.section.needsAnswer"), { $0.phase == .answer }),
+                ("running", lang.t("island.section.inProgress"), { $0.phase == .running }),
+                ("done", lang.t("island.section.justDone"), { $0.phase == .done }),
+                ("idle", lang.t("island.section.idle"), { $0.phase == .idle }),
             ]
             return groups.compactMap { id, title, include in
                 let groupItems = items.filter(include)
@@ -733,13 +734,13 @@ struct AppearanceSettingsPane: View {
             .init(
                 id: "approval",
                 title: "Codex · open-island",
-                detail: "Approve shell command",
+                detail: lang.t("settings.appearance.preview.approveShellCommand"),
                 agent: "Codex",
                 agentShort: "codex",
                 agentColor: Color(hex: AgentTool.codex.brandColorHex) ?? Color(red: 0.55, green: 0.72, blue: 1.0),
                 project: "open-island",
                 branch: "v8-design",
-                prompt: "You: implement the plan",
+                prompt: lang.t("settings.appearance.preview.promptImplementPlan"),
                 terminal: "Ghostty",
                 age: "now",
                 phase: .approval,
@@ -749,13 +750,13 @@ struct AppearanceSettingsPane: View {
             .init(
                 id: "answer",
                 title: "Claude · open-island",
-                detail: "Waiting for answer",
+                detail: lang.t("settings.appearance.preview.waitingForAnswer"),
                 agent: "Claude",
                 agentShort: "claude",
                 agentColor: Color(hex: AgentTool.claudeCode.brandColorHex) ?? Color(red: 0.9, green: 0.55, blue: 0.34),
                 project: "open-island",
                 branch: "main",
-                prompt: "You: choose notification copy",
+                prompt: lang.t("settings.appearance.preview.promptChooseNotificationCopy"),
                 terminal: "Ghostty",
                 age: "1m",
                 phase: .answer,
@@ -765,13 +766,13 @@ struct AppearanceSettingsPane: View {
             .init(
                 id: "running",
                 title: "Cursor · website",
-                detail: "Editing session list preview",
+                detail: lang.t("settings.appearance.preview.editingSessionListPreview"),
                 agent: "Cursor",
                 agentShort: "cursor",
                 agentColor: Color(hex: AgentTool.cursor.brandColorHex) ?? Color(red: 0.62, green: 0.66, blue: 1.0),
                 project: "website",
                 branch: "main",
-                prompt: "You: tighten the settings UI",
+                prompt: lang.t("settings.appearance.preview.promptTightenSettingsUI"),
                 terminal: "Cursor",
                 age: "2m",
                 phase: .running,
@@ -781,13 +782,13 @@ struct AppearanceSettingsPane: View {
             .init(
                 id: "done",
                 title: "Gemini · docs",
-                detail: "Reply available",
+                detail: lang.t("settings.appearance.preview.replyAvailable"),
                 agent: "Gemini",
                 agentShort: "gemini",
                 agentColor: Color(hex: AgentTool.geminiCLI.brandColorHex) ?? Color(red: 0.45, green: 0.78, blue: 1.0),
                 project: "docs",
                 branch: "main",
-                prompt: "You: summarize the design bundle",
+                prompt: lang.t("settings.appearance.preview.promptSummarizeDesignBundle"),
                 terminal: "WezTerm",
                 age: title(for: editingPreferences.completedStaleThreshold),
                 phase: .done,
@@ -797,7 +798,7 @@ struct AppearanceSettingsPane: View {
             .init(
                 id: "idle",
                 title: "Codex · open-island",
-                detail: "Completed earlier",
+                detail: lang.t("settings.appearance.preview.completedEarlier"),
                 agent: "Codex",
                 agentShort: "codex",
                 agentColor: Color(hex: AgentTool.codex.brandColorHex) ?? Color(red: 0.55, green: 0.72, blue: 1.0),
@@ -805,7 +806,7 @@ struct AppearanceSettingsPane: View {
                 branch: nil,
                 prompt: nil,
                 terminal: "Ghostty",
-                age: "idle",
+                age: lang.t("island.sessionOverview.idle"),
                 phase: .idle,
                 attentionRank: 4,
                 updatedRank: 4
@@ -848,15 +849,18 @@ private struct AppearanceSessionPreviewItem: Identifiable {
 }
 
 private struct SettingsPreviewStage<Content: View>: View {
+    let lang: LanguageManager
     var contentTopPadding: CGFloat = 20
     var contentBottomPadding: CGFloat = 24
     let content: Content
 
     init(
+        lang: LanguageManager,
         contentTopPadding: CGFloat = 20,
         contentBottomPadding: CGFloat = 24,
         @ViewBuilder content: () -> Content
     ) {
+        self.lang = lang
         self.contentTopPadding = contentTopPadding
         self.contentBottomPadding = contentBottomPadding
         self.content = content()
@@ -864,7 +868,7 @@ private struct SettingsPreviewStage<Content: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SettingsPreviewMenuBar()
+            SettingsPreviewMenuBar(lang: lang)
 
             content
                 .padding(.top, contentTopPadding)
@@ -881,11 +885,13 @@ private struct SettingsPreviewStage<Content: View>: View {
 }
 
 private struct SettingsPreviewMenuBar: View {
+    let lang: LanguageManager
+
     var body: some View {
         HStack(spacing: 12) {
             Text("Open Island")
                 .fontWeight(.semibold)
-            Text("File  Edit  View")
+            Text(lang.t("settings.appearance.preview.menuItems"))
             Spacer(minLength: 0)
             Text("14:22")
         }
@@ -928,6 +934,7 @@ private struct SessionListPanelPreview: View {
     let showsSections: Bool
     let indicator: IslandSessionStateIndicator
     let profile: IslandAppearanceDisplayProfile
+    let lang: LanguageManager
 
     private var items: [AppearanceSessionPreviewItem] {
         sections.flatMap(\.items)
@@ -992,7 +999,7 @@ private struct SessionListPanelPreview: View {
             UnifiedBars(mode: .waiting, size: 22)
                 .frame(width: 24, height: 24)
 
-            Text("SESSIONS")
+            Text(lang.t("island.sessionList.title").uppercased())
                 .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
                 .tracking(1.4)
                 .foregroundStyle(V6Palette.paper.opacity(0.55))
@@ -1028,7 +1035,7 @@ private struct SessionListPanelPreview: View {
         HStack(spacing: compact ? 7 : 9) {
             previewSessionOverviewMetric(
                 count: items.count,
-                title: "total",
+                title: lang.t("island.sessionOverview.total"),
                 compactTitle: "",
                 tint: nil,
                 compact: compact
@@ -1036,8 +1043,8 @@ private struct SessionListPanelPreview: View {
             if waitingCount > 0 {
                 previewSessionOverviewMetric(
                     count: waitingCount,
-                    title: "waiting",
-                    compactTitle: "wait",
+                    title: lang.t("island.sessionOverview.waiting"),
+                    compactTitle: lang.t("island.sessionOverview.waitingCompact"),
                     tint: IslandDesignPalette.Status.waitingAggregate,
                     compact: compact
                 )
@@ -1045,8 +1052,8 @@ private struct SessionListPanelPreview: View {
             if runningCount > 0 {
                 previewSessionOverviewMetric(
                     count: runningCount,
-                    title: "running",
-                    compactTitle: "run",
+                    title: lang.t("island.sessionOverview.running"),
+                    compactTitle: lang.t("island.sessionOverview.runningCompact"),
                     tint: IslandDesignPalette.Status.running,
                     compact: compact
                 )
@@ -1054,8 +1061,8 @@ private struct SessionListPanelPreview: View {
             if doneCount > 0 {
                 previewSessionOverviewMetric(
                     count: doneCount,
-                    title: "done",
-                    compactTitle: "done",
+                    title: lang.t("island.sessionOverview.done"),
+                    compactTitle: lang.t("island.sessionOverview.done"),
                     tint: IslandDesignPalette.Status.completed,
                     compact: compact
                 )
@@ -1063,8 +1070,8 @@ private struct SessionListPanelPreview: View {
             if idleCount > 0 {
                 previewSessionOverviewMetric(
                     count: idleCount,
-                    title: "idle",
-                    compactTitle: "idle",
+                    title: lang.t("island.sessionOverview.idle"),
+                    compactTitle: lang.t("island.sessionOverview.idle"),
                     tint: IslandDesignPalette.Status.idle,
                     compact: compact
                 )
@@ -1109,7 +1116,8 @@ private struct SessionListPanelPreview: View {
                     SessionListLivePreviewRow(
                         item: item,
                         indicator: indicator,
-                        sideInset: sideInset
+                        sideInset: sideInset,
+                        lang: lang
                     )
                 }
             }
@@ -1161,6 +1169,7 @@ private struct SessionListLivePreviewRow: View {
     let item: AppearanceSessionPreviewItem
     let indicator: IslandSessionStateIndicator
     let sideInset: CGFloat
+    let lang: LanguageManager
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1266,17 +1275,17 @@ private struct SessionListLivePreviewRow: View {
         VStack(alignment: .leading, spacing: 7) {
             switch item.phase {
             case .approval:
-                Text("Tool permission requested")
+                Text(lang.t("approval.toolPermissionRequested"))
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(V6Palette.paper.opacity(0.86))
-                Text("<agent prompt body>")
+                Text(lang.t("settings.appearance.preview.permissionBody"))
                     .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
                     .foregroundStyle(V6Palette.paper.opacity(0.78))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             case .answer:
-                Text("Pick or type an answer")
+                Text(lang.t("settings.appearance.preview.pickOrTypeAnswer"))
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(V6Palette.paper.opacity(0.82))
             case .running:
@@ -1284,7 +1293,7 @@ private struct SessionListLivePreviewRow: View {
                     .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
                     .foregroundStyle(V6Palette.paper.opacity(0.78))
             case .done:
-                Text("Reply available")
+                Text(lang.t("settings.appearance.preview.replyAvailable"))
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(V6Palette.paper.opacity(0.82))
             case .idle:

@@ -100,6 +100,20 @@
 "settings.appearance.staleThreshold.tenMinutes" = "10 min";
 "settings.appearance.staleThreshold.twentyMinutes" = "20 min";
 "settings.appearance.staleThreshold.never" = "Never";
+"settings.appearance.preview.permissionNeeded" = "Permission needed";
+"settings.appearance.preview.agentEditing" = "Claude · editing";
+"settings.appearance.preview.menuItems" = "File  Edit  View";
+"settings.appearance.preview.approveShellCommand" = "Approve shell command";
+"settings.appearance.preview.promptImplementPlan" = "You: implement the plan";
+"settings.appearance.preview.waitingForAnswer" = "Waiting for answer";
+"settings.appearance.preview.promptChooseNotificationCopy" = "You: choose notification copy";
+"settings.appearance.preview.editingSessionListPreview" = "Editing session list preview";
+"settings.appearance.preview.promptTightenSettingsUI" = "You: tighten the settings UI";
+"settings.appearance.preview.replyAvailable" = "Reply available";
+"settings.appearance.preview.promptSummarizeDesignBundle" = "You: summarize the design bundle";
+"settings.appearance.preview.completedEarlier" = "Completed earlier";
+"settings.appearance.preview.permissionBody" = "$ npm run build";
+"settings.appearance.preview.pickOrTypeAnswer" = "Pick or type an answer";
 
 /* Settings - Display */
 "settings.display.monitor" = "Monitor";
@@ -169,9 +183,29 @@
 "island.hint.installHooks" = "No agent hooks installed — sessions won't surface events. Tap to set up.";
 
 /* Island Panel - Session List */
+"island.sessionList.title" = "Sessions";
+"island.sessionOverview.total" = "total";
+"island.sessionOverview.waiting" = "waiting";
+"island.sessionOverview.waitingCompact" = "wait";
+"island.sessionOverview.running" = "running";
+"island.sessionOverview.runningCompact" = "run";
+"island.sessionOverview.done" = "done";
+"island.sessionOverview.idle" = "idle";
+"island.section.sessions" = "Sessions";
+"island.section.needsApproval" = "Needs approval";
+"island.section.needsAnswer" = "Needs answer";
+"island.section.inProgress" = "In progress";
+"island.section.justDone" = "Just done";
+"island.section.idle" = "Idle";
 "island.showAll" = "Show all %lld sessions";
 "island.collapseList" = "Collapse list";
 "island.usageWaiting" = "Usage waiting";
+
+/* Island Panel - Approval */
+"approval.toolPermissionRequested" = "Tool permission requested";
+"approval.deny" = "No";
+"approval.allowOnce" = "Yes";
+"approval.alwaysAllow" = "Always Allow (%@)";
 
 
 /* Island Panel - Subagents & Tasks */

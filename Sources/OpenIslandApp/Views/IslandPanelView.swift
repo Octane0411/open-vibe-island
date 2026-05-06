@@ -101,6 +101,7 @@ struct IslandPanelView: View {
     private static let minimumRightUsageLaneWidth: CGFloat = 58
 
     var model: AppModel
+    private var lang: LanguageManager { model.lang }
 
     @State private var isHovering = false
     @State private var showingQuitConfirmation = false
@@ -634,7 +635,7 @@ struct IslandPanelView: View {
         let overview = sessionOverviewItems(referenceDate: referenceDate)
 
         return HStack(spacing: 8) {
-            Text("SESSIONS")
+            Text(lang.t("island.sessionList.title").uppercased())
                 .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
                 .tracking(1.4)
                 .foregroundStyle(V6Palette.paper.opacity(0.55))
@@ -682,11 +683,11 @@ struct IslandPanelView: View {
         }.count
 
         return [
-            SessionOverviewItem(id: "total", title: "total", compactTitle: "", count: sessions.count, tint: nil),
-            SessionOverviewItem(id: "waiting", title: "waiting", compactTitle: "wait", count: waiting, tint: IslandDesignPalette.Status.waitingAggregate),
-            SessionOverviewItem(id: "running", title: "running", compactTitle: "run", count: running, tint: IslandDesignPalette.Status.running),
-            SessionOverviewItem(id: "done", title: "done", compactTitle: "done", count: done, tint: IslandDesignPalette.Status.completed),
-            SessionOverviewItem(id: "idle", title: "idle", compactTitle: "idle", count: idle, tint: IslandDesignPalette.Status.idle),
+            SessionOverviewItem(id: "total", title: lang.t("island.sessionOverview.total"), compactTitle: "", count: sessions.count, tint: nil),
+            SessionOverviewItem(id: "waiting", title: lang.t("island.sessionOverview.waiting"), compactTitle: lang.t("island.sessionOverview.waitingCompact"), count: waiting, tint: IslandDesignPalette.Status.waitingAggregate),
+            SessionOverviewItem(id: "running", title: lang.t("island.sessionOverview.running"), compactTitle: lang.t("island.sessionOverview.runningCompact"), count: running, tint: IslandDesignPalette.Status.running),
+            SessionOverviewItem(id: "done", title: lang.t("island.sessionOverview.done"), compactTitle: lang.t("island.sessionOverview.done"), count: done, tint: IslandDesignPalette.Status.completed),
+            SessionOverviewItem(id: "idle", title: lang.t("island.sessionOverview.idle"), compactTitle: lang.t("island.sessionOverview.idle"), count: idle, tint: IslandDesignPalette.Status.idle),
         ].filter { $0.id == "total" || $0.count > 0 }
     }
 
@@ -737,7 +738,7 @@ struct IslandPanelView: View {
             Circle()
                 .fill(sectionTint(for: section))
                 .frame(width: 7, height: 7)
-            Text(section.title.uppercased())
+            Text(sessionSectionTitle(for: section).uppercased())
                 .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
                 .tracking(0.4)
                 .foregroundStyle(sectionLabelColor(for: section))
@@ -762,6 +763,13 @@ struct IslandPanelView: View {
         guard let first = section.sessions.first else { return IslandDesignPalette.Status.idle }
         if section.id == "state-idle" { return IslandDesignPalette.Status.idle }
         return IslandDesignPalette.Status.tint(for: first.phase)
+    }
+
+    private func sessionSectionTitle(for section: IslandSessionSection) -> String {
+        if section.title.hasPrefix("island.") {
+            return lang.t(section.title)
+        }
+        return section.title
     }
 
     private func sectionLabelColor(for section: IslandSessionSection) -> Color {
@@ -1575,7 +1583,7 @@ private struct IslandSessionRow: View {
 
     private var approvalActionBody: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Tool permission requested")
+            Text(lang.t("approval.toolPermissionRequested"))
                 .font(.system(size: 12.5, weight: .semibold))
                 .foregroundStyle(V6Palette.paper.opacity(0.86))
 
@@ -1603,12 +1611,12 @@ private struct IslandSessionRow: View {
             )
 
             HStack(spacing: 8) {
-                Button(session.permissionRequest?.secondaryActionTitle ?? "Deny") { onApprove?(.deny) }
+                Button(session.permissionRequest?.secondaryActionTitle ?? lang.t("approval.deny")) { onApprove?(.deny) }
                     .buttonStyle(IslandActionButtonStyle(kind: .secondary, expands: true))
-                Button(session.permissionRequest?.primaryActionTitle ?? "Allow") { onApprove?(.allowOnce) }
+                Button(session.permissionRequest?.primaryActionTitle ?? lang.t("approval.allowOnce")) { onApprove?(.allowOnce) }
                     .buttonStyle(IslandActionButtonStyle(kind: .warning, expands: true))
                 if let toolName = session.permissionRequest?.toolName {
-                    Button("Always Allow (\(toolName))") {
+                    Button(lang.t("approval.alwaysAllow", toolName)) {
                         let rule = ClaudePermissionRuleValue(toolName: toolName)
                         let update = ClaudePermissionUpdate.addRules(
                             destination: .session,
