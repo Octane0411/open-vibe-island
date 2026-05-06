@@ -58,6 +58,8 @@
 "settings.appearance.style.detailed" = "詳細";
 "settings.appearance.hideIdleToEdge" = "閒置時隱藏至黑邊";
 "settings.appearance.hideIdleToEdge.help" = "當島處於收起狀態且沒有活躍通知卡片時，只保留一條細黑邊。滑鼠懸停或點擊仍可展開。";
+"settings.appearance.disablePixelAnimation" = "停用像素動畫";
+"settings.appearance.disablePixelAnimation.help" = "停止收合狀態下像素圖形的持續動畫。可降低 CPU 與電池消耗，尤其在工作階段進行時。";
 "settings.appearance.pixelShape" = "像素圖形";
 "settings.appearance.pixelShape.bars" = "貓咪";
 "settings.appearance.pixelShape.steps" = "階梯";
