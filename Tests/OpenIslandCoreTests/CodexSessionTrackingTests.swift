@@ -222,6 +222,51 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutReducerMarksReasoningAsThinking() {
+        let snapshot = CodexRolloutReducer.snapshot(for: [
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:44.500Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": "Inspect the current status label.",
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:44.894Z",
+                type: "response_item",
+                payload: [
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "arguments": "{\"cmd\":\"git status -sb\"}",
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "exec_command_end",
+                    "call_id": "call-1",
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.200Z",
+                type: "response_item",
+                payload: [
+                    "type": "reasoning",
+                    "summary": [],
+                ]
+            ),
+        ])
+
+        #expect(snapshot.phase == .running)
+        #expect(snapshot.summary == "Thinking.")
+        #expect(snapshot.currentTool == nil)
+        #expect(snapshot.currentCommandPreview == nil)
+        #expect(snapshot.isCompleted == false)
+    }
+
+    @Test
     func codexRolloutReducerMarksTurnAbortedAsInterruptedCompletion() {
         let initialSnapshot = CodexRolloutReducer.snapshot(for: [
             rolloutLine(

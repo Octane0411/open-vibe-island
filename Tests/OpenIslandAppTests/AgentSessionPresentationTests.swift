@@ -129,6 +129,48 @@ struct AgentSessionPresentationTests {
     }
 
     @Test
+    func runningCodexSessionWithoutToolShowsThinkingActivity() {
+        let session = AgentSession(
+            id: "session-1",
+            title: "Codex · worktree",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Thinking.",
+            updatedAt: Date(timeIntervalSince1970: 10_000),
+            codexMetadata: CodexSessionMetadata(
+                initialUserPrompt: "Start by fixing the island hover behavior.",
+                lastUserPrompt: "Now make the overlay height fit the content."
+            )
+        )
+
+        #expect(session.spotlightPromptLineText == "You: Now make the overlay height fit the content.")
+        #expect(session.spotlightActivityLineText == "Thinking")
+    }
+
+    @Test
+    func writeStdinStillShowsInputActivity() {
+        let session = AgentSession(
+            id: "session-1",
+            title: "Codex · worktree",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Running input.",
+            updatedAt: Date(timeIntervalSince1970: 10_000),
+            codexMetadata: CodexSessionMetadata(
+                lastUserPrompt: "Continue the command.",
+                currentTool: "write_stdin",
+                currentCommandPreview: "y"
+            )
+        )
+
+        #expect(session.spotlightActivityLineText == "Input y")
+    }
+
+    @Test
     func detachedSessionHeadlineShowsInitialPrompt() {
         let session = AgentSession(
             id: "session-1",
