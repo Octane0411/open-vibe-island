@@ -19,6 +19,7 @@ final class AppModel {
     private static let showDockIconDefaultsKey = "app.showDockIcon"
     private static let hapticFeedbackEnabledDefaultsKey = "app.hapticFeedbackEnabled"
     private static let islandAppearanceModeDefaultsKey = "appearance.island.mode"
+    private static let islandThemePreferenceDefaultsKey = "appearance.island.themePreference"
     private static let islandClosedDisplayStyleDefaultsKey = "appearance.island.closedDisplayStyle"
     private static let islandHideIdleToEdgeDefaultsKey = "appearance.island.hideIdleToEdge"
     private static let islandPixelShapeStyleDefaultsKey = "appearance.island.pixelShapeStyle"
@@ -315,6 +316,21 @@ final class AppModel {
 
     var isCustomAppearance: Bool { islandAppearanceMode == .custom }
 
+    var islandThemePreference: IslandThemePreference = .dark {
+        didSet {
+            guard islandThemePreference != oldValue else { return }
+            UserDefaults.standard.set(
+                islandThemePreference.rawValue,
+                forKey: Self.islandThemePreferenceDefaultsKey
+            )
+        }
+    }
+
+    var prefersLightIslandTheme: Bool {
+        get { islandThemePreference == .light }
+        set { islandThemePreference = newValue ? .light : .dark }
+    }
+
     var islandClosedDisplayStyle: IslandClosedDisplayStyle = .detailed {
         didSet {
             guard islandClosedDisplayStyle != oldValue else { return }
@@ -534,6 +550,9 @@ final class AppModel {
         islandAppearanceMode = IslandAppearanceMode(
             rawValue: UserDefaults.standard.string(forKey: Self.islandAppearanceModeDefaultsKey) ?? ""
         ) ?? .default
+        islandThemePreference = IslandThemePreference(
+            rawValue: UserDefaults.standard.string(forKey: Self.islandThemePreferenceDefaultsKey) ?? ""
+        ) ?? .dark
         islandClosedDisplayStyle = IslandClosedDisplayStyle(
             rawValue: UserDefaults.standard.string(forKey: Self.islandClosedDisplayStyleDefaultsKey) ?? ""
         ) ?? .detailed

@@ -53,6 +53,9 @@
 "settings.appearance.preview" = "预览";
 "settings.appearance.preview.sessions" = "个会话";
 "settings.appearance.style" = "样式";
+"settings.appearance.theme" = "界面主题";
+"settings.appearance.theme.dark" = "暗色";
+"settings.appearance.theme.light" = "亮色";
 "settings.appearance.closedStyle" = "收起样式";
 "settings.appearance.style.minimal" = "简洁";
 "settings.appearance.style.detailed" = "详细";

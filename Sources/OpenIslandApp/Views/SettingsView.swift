@@ -102,7 +102,7 @@ struct SettingsView: View {
             detailView
         }
         .frame(minWidth: 680, idealWidth: 780, minHeight: 480, idealHeight: 560)
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(model.prefersLightIslandTheme ? .light : .dark)
         .onReceive(NotificationCenter.default.publisher(for: .openIslandSelectSetupTab)) { _ in
             selectedTab = .setup
         }
@@ -316,8 +316,12 @@ struct SoundSettingsPane: View {
 struct AboutSettingsPane: View {
     var model: AppModel
 
+    @Environment(\.colorScheme) private var colorScheme
     private var lang: LanguageManager { model.lang }
-    private let primaryInk = Color.white.opacity(0.94)
+
+    private var primaryInk: Color {
+        (colorScheme == .light ? Color.black : Color.white).opacity(0.94)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
