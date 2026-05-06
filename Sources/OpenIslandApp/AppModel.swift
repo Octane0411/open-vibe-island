@@ -26,6 +26,7 @@ final class AppModel {
     private static let showCodexUsageDefaultsKey = "app.showCodexUsage"
     private static let completionReplyEnabledDefaultsKey = "feature.completionReply.enabled"
     private static let suppressFrontmostNotificationsDefaultsKey = "app.suppressFrontmostNotifications"
+    private static let hideOverlayInFullscreenDefaultsKey = "app.hideOverlayInFullscreen"
 
     static let defaultStatusColors: [SessionPhase: String] = [
         .running: "#6E9FFF",
@@ -256,6 +257,13 @@ final class AppModel {
         didSet {
             guard hasFinishedInit, suppressFrontmostNotifications != oldValue else { return }
             UserDefaults.standard.set(suppressFrontmostNotifications, forKey: Self.suppressFrontmostNotificationsDefaultsKey)
+        }
+    }
+    var hideOverlayInFullscreen: Bool = true {
+        didSet {
+            guard hasFinishedInit, hideOverlayInFullscreen != oldValue else { return }
+            UserDefaults.standard.set(hideOverlayInFullscreen, forKey: Self.hideOverlayInFullscreenDefaultsKey)
+            overlay.hideOverlayInFullscreen = hideOverlayInFullscreen
         }
     }
     var launchAtLoginEnabled: Bool = false {
@@ -516,12 +524,14 @@ final class AppModel {
             Self.hapticFeedbackEnabledDefaultsKey: false,
             Self.completionReplyEnabledDefaultsKey: false,
             Self.suppressFrontmostNotificationsDefaultsKey: true,
+            Self.hideOverlayInFullscreenDefaultsKey: true,
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
         showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
         hapticFeedbackEnabled = UserDefaults.standard.bool(forKey: Self.hapticFeedbackEnabledDefaultsKey)
         suppressFrontmostNotifications = UserDefaults.standard.bool(forKey: Self.suppressFrontmostNotificationsDefaultsKey)
+        hideOverlayInFullscreen = UserDefaults.standard.bool(forKey: Self.hideOverlayInFullscreenDefaultsKey)
         if UserDefaults.standard.object(forKey: Self.showCodexUsageDefaultsKey) != nil {
             showCodexUsage = UserDefaults.standard.bool(forKey: Self.showCodexUsageDefaultsKey)
         } else {
@@ -557,6 +567,7 @@ final class AppModel {
         }
 
         overlay.appModel = self
+        overlay.hideOverlayInFullscreen = hideOverlayInFullscreen
         overlay.restoreDisplayPreference()
         overlay.onStatusMessage = { [weak self] message in
             self?.lastActionMessage = message
@@ -1273,6 +1284,17 @@ final class AppModel {
               notificationSurfaceIsEligibleForPresentation(surface, ingress: ingress),
               let sessionID = surface.sessionID,
               let session = state.session(id: sessionID) else {
+            return
+        }
+
+        // While the overlay is suppressed by another app's fullscreen, only
+        // attention-required surfaces (`waitingForApproval`/`waitingForAnswer`)
+        // are allowed to break through. Informational notifications such as
+        // `.sessionCompleted` would otherwise force the panel back on top of
+        // the user's fullscreen app.
+        if hideOverlayInFullscreen,
+           overlay.isAppFullscreenActive,
+           !session.phase.requiresAttention {
             return
         }
 

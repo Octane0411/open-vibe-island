@@ -42,9 +42,30 @@ final class OverlayPanelController {
     private var hoverCancelGrace: DispatchWorkItem?
     weak var model: AppModel?
     private(set) var notchRect: NSRect = .zero
+    private(set) var isSuppressed = false
 
     var isVisible: Bool {
         panel?.isVisible == true
+    }
+
+    /// CGWindowID of the underlying panel, used by FullscreenWindowMonitor
+    /// to exclude the overlay's own window from fullscreen detection.
+    var panelWindowID: CGWindowID? {
+        guard let number = panel?.windowNumber, number > 0 else { return nil }
+        return CGWindowID(number)
+    }
+
+    /// Order the panel out of the screen list without losing its content.
+    /// Used to hide the overlay when an app enters native fullscreen.
+    func setSuppressed(_ suppressed: Bool) {
+        guard isSuppressed != suppressed else { return }
+        isSuppressed = suppressed
+        guard let panel else { return }
+        if suppressed {
+            panel.orderOut(nil)
+        } else {
+            panel.orderFrontRegardless()
+        }
     }
 
     nonisolated static func shouldActivatePanel(for reason: NotchOpenReason?) -> Bool {
@@ -60,7 +81,9 @@ final class OverlayPanelController {
         let panel = self.panel ?? makePanel(model: model)
         self.panel = panel
         positionPanel(panel, preferredScreenID: preferredScreenID, animated: false)
-        panel.orderFrontRegardless()
+        if !isSuppressed {
+            panel.orderFrontRegardless()
+        }
         panel.ignoresMouseEvents = true
         panel.acceptsMouseMovedEvents = false
         startEventMonitoring()
@@ -71,9 +94,11 @@ final class OverlayPanelController {
         let panel = self.panel ?? makePanel(model: model)
         self.panel = panel
         let diagnostics = positionPanel(panel, preferredScreenID: preferredScreenID, animated: true)
-        presentPanel(panel, activates: Self.shouldActivatePanel(for: model.notchOpenReason))
-        panel.ignoresMouseEvents = false
-        panel.acceptsMouseMovedEvents = true
+        if !isSuppressed {
+            presentPanel(panel, activates: Self.shouldActivatePanel(for: model.notchOpenReason))
+            panel.ignoresMouseEvents = false
+            panel.acceptsMouseMovedEvents = true
+        }
         startEventMonitoring()
         return diagnostics
     }
@@ -91,7 +116,7 @@ final class OverlayPanelController {
         panel.ignoresMouseEvents = !interactive
         panel.acceptsMouseMovedEvents = interactive
 
-        if interactive {
+        if interactive && !isSuppressed {
             presentPanel(panel, activates: Self.shouldActivatePanel(for: model?.notchOpenReason))
         }
     }

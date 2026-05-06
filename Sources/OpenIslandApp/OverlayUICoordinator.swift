@@ -57,6 +57,22 @@ final class OverlayUICoordinator {
     @ObservationIgnored
     private var autoCollapseSurfaceHasBeenEntered = false
 
+    @ObservationIgnored
+    private let fullscreenMonitor = FullscreenWindowMonitor()
+
+    /// Whether a foreign app is currently in native fullscreen on the
+    /// overlay's target display. Recomputed from system notifications.
+    private(set) var isAppFullscreenActive = false
+
+    /// Whether the user wants the overlay to hide while another app is
+    /// fullscreen. Driven by a setting on `AppModel`.
+    var hideOverlayInFullscreen: Bool = true {
+        didSet {
+            guard hideOverlayInFullscreen != oldValue else { return }
+            applyFullscreenSuppression()
+        }
+    }
+
     /// Kept for API compatibility; always false now that the window never
     /// resizes and close transitions are pure SwiftUI.
     var isCloseTransitionPending: Bool { false }
@@ -197,7 +213,91 @@ final class OverlayUICoordinator {
 
     func ensureOverlayPanel() {
         guard let appModel else { return }
+        // Evaluate fullscreen suppression BEFORE the panel is materialised so
+        // it never flashes visible on top of an existing fullscreen app.
+        // `startFullscreenMonitoringIfNeeded()` already refreshes immediately
+        // on first start; for subsequent calls (monitor already running) the
+        // explicit refresh below ensures suppression is up-to-date.
+        startFullscreenMonitoringIfNeeded()
+        refreshFullscreenState()
         overlayPanelController.ensurePanel(model: appModel, preferredScreenID: preferredOverlayScreenID)
+    }
+
+    // MARK: - Fullscreen monitoring
+
+    private func startFullscreenMonitoringIfNeeded() {
+        fullscreenMonitor.onChange = { [weak self] in
+            self?.refreshFullscreenState()
+        }
+        fullscreenMonitor.start()
+        // Evaluate immediately so initial state matches reality.
+        refreshFullscreenState()
+    }
+
+    private func refreshFullscreenState() {
+        guard let screen = resolveOverlayScreen() else {
+            updateFullscreenActive(false)
+            return
+        }
+        var excluded: Set<CGWindowID> = []
+        if let id = overlayPanelController.panelWindowID {
+            excluded.insert(id)
+        }
+        let active = fullscreenMonitor.isFullscreenActive(
+            on: screen,
+            excludingWindowIDs: excluded
+        )
+        updateFullscreenActive(active)
+    }
+
+    private func updateFullscreenActive(_ active: Bool) {
+        guard isAppFullscreenActive != active else {
+            applyFullscreenSuppression()
+            return
+        }
+        isAppFullscreenActive = active
+        applyFullscreenSuppression()
+    }
+
+    private func applyFullscreenSuppression() {
+        let wasSuppressed = overlayPanelController.isSuppressed
+        let shouldSuppress = hideOverlayInFullscreen && isAppFullscreenActive
+        overlayPanelController.setSuppressed(shouldSuppress)
+
+        // When suppression clears, `setSuppressed` only re-orders the panel
+        // front. If the panel was opened, re-run the full present path so
+        // positioning and interactivity reflect any display configuration
+        // changes that happened while we were hidden.
+        if wasSuppressed,
+           !shouldSuppress,
+           notchStatus == .opened,
+           let appModel {
+            overlayPlacementDiagnostics = overlayPanelController.show(
+                model: appModel,
+                preferredScreenID: preferredOverlayScreenID
+            )
+        }
+    }
+
+    private func resolveOverlayScreen() -> NSScreen? {
+        let screens = NSScreen.screens
+        guard !screens.isEmpty else { return nil }
+        if let id = preferredOverlayScreenID,
+           let screen = screens.first(where: { Self.screenID(for: $0) == id }) {
+            return screen
+        }
+        if let notchScreen = screens.first(where: { $0.safeAreaInsets.top > 0 }) {
+            return notchScreen
+        }
+        return NSScreen.main ?? screens[0]
+    }
+
+    private static func screenID(for screen: NSScreen) -> String {
+        let key = NSDeviceDescriptionKey("NSScreenNumber")
+        if let number = screen.deviceDescription[key] as? NSNumber {
+            return "display-\(number.uint32Value)"
+        }
+        return screen.localizedName
     }
 
     // Legacy compatibility
@@ -233,6 +333,9 @@ final class OverlayUICoordinator {
     }
 
     func refreshOverlayPlacement() {
+        // Refresh fullscreen suppression BEFORE moving the panel so it never
+        // flashes visible while a fullscreen app is on the target display.
+        refreshFullscreenState()
         overlayPlacementDiagnostics = overlayPanelController.reposition(
             preferredScreenID: preferredOverlayScreenID
         )
