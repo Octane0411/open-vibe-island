@@ -1,4 +1,7 @@
 import Foundation
+import os
+
+private let approvalFlashStateLogger = Logger(subsystem: "app.openisland", category: "ApprovalFlashDebug")
 
 public struct SessionState: Equatable, Sendable {
     public private(set) var sessionsByID: [String: AgentSession]
@@ -99,6 +102,9 @@ public struct SessionState: Equatable, Sendable {
             let preservesActionableState = keepsPendingApproval || keepsPendingQuestion
 
             if !preservesActionableState {
+                if session.permissionRequest != nil && payload.phase != .waitingForApproval {
+                    approvalFlashStateLogger.warning("[FLASH] activityUpdated clearing permissionRequest for session \(payload.sessionID, privacy: .public) — newPhase=\(String(describing: payload.phase), privacy: .public)")
+                }
                 session.phase = payload.phase
                 session.summary = payload.summary
                 if payload.phase != .waitingForApproval {
@@ -215,6 +221,7 @@ public struct SessionState: Equatable, Sendable {
                 return
             }
 
+            approvalFlashStateLogger.warning("[FLASH] actionableStateResolved clearing permission/question for session \(payload.sessionID, privacy: .public) — wasPhase=\(String(describing: session.phase), privacy: .public) summary=\(payload.summary, privacy: .public)")
             session.phase = .running
             session.summary = payload.summary
             session.permissionRequest = nil

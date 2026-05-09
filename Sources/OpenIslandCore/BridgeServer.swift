@@ -1,8 +1,11 @@
 import Dispatch
 import Darwin
 import Foundation
+import os
 
 public final class BridgeServer: @unchecked Sendable {
+    private static let approvalFlashLogger = Logger(subsystem: "app.openisland", category: "ApprovalFlashDebug")
+
     private struct ClientConnection {
         let id: UUID
         let fileDescriptor: Int32
@@ -63,6 +66,16 @@ public final class BridgeServer: @unchecked Sendable {
     private var pendingClaudeInteractions: [String: PendingClaudeInteraction] = [:]
     private var pendingOpenCodeInteractions: [String: PendingOpenCodeInteraction] = [:]
     private var pendingCursorInteractions: [String: PendingCursorInteraction] = [:]
+    /// Pending grace-window work items that defer the actionableStateResolved
+    /// emit when a hook client disconnects. Keyed by sessionID. If a fresh
+    /// hook re-registers a pending interaction for the same sessionID before
+    /// the timer fires, the deferred emit is skipped — this prevents the
+    /// approval card from flickering when an agent quickly respawns its hook
+    /// (Claude Code, in particular, can tear down + relaunch the hook
+    /// subprocess between retries or when the agent cancels and re-issues
+    /// a tool call).
+    private var pendingDisconnectResolutions: [String: DispatchWorkItem] = [:]
+    private static let hookDisconnectGracePeriod: TimeInterval = 0.5
     /// Caches Agent tool description from preToolUse for use by the next subagentStart.
     private var pendingAgentDescriptions: [String: String] = [:]
     /// Maps toolUseID → temporary task ID for TaskCreate, so postToolUse can update with real ID.
@@ -177,6 +190,8 @@ public final class BridgeServer: @unchecked Sendable {
         pendingClaudeToolContexts.removeAll()
         pendingOpenCodeInteractions.removeAll()
         pendingCursorInteractions.removeAll()
+        pendingDisconnectResolutions.values.forEach { $0.cancel() }
+        pendingDisconnectResolutions.removeAll()
 
         let activeConnections = Array(clients.values)
         activeConnections.forEach { $0.readSource.cancel() }
@@ -661,6 +676,7 @@ public final class BridgeServer: @unchecked Sendable {
                     )
                 )
 
+                cancelPendingDisconnectResolution(for: payload.sessionID)
                 pendingClaudeInteractions[payload.sessionID] = PendingClaudeInteraction(
                     clientID: clientID,
                     kind: .question(payload, prompt)
@@ -687,10 +703,12 @@ public final class BridgeServer: @unchecked Sendable {
                     )
                 )
 
+                cancelPendingDisconnectResolution(for: payload.sessionID)
                 pendingClaudeInteractions[payload.sessionID] = PendingClaudeInteraction(
                     clientID: clientID,
                     kind: .permission(payload)
                 )
+                Self.approvalFlashLogger.info("[FLASH] Claude permission registered for session \(payload.sessionID, privacy: .public) (clientID=\(clientID.uuidString, privacy: .public)) tool=\(payload.toolName ?? "?", privacy: .public)")
             }
 
         case .postToolUse:
@@ -1036,6 +1054,7 @@ public final class BridgeServer: @unchecked Sendable {
                 )
             )
 
+            cancelPendingDisconnectResolution(for: payload.sessionID)
             pendingOpenCodeInteractions[payload.sessionID] = PendingOpenCodeInteraction(
                 clientID: clientID,
                 kind: .permission(payload)
@@ -1056,6 +1075,7 @@ public final class BridgeServer: @unchecked Sendable {
                 )
             )
 
+            cancelPendingDisconnectResolution(for: payload.sessionID)
             pendingOpenCodeInteractions[payload.sessionID] = PendingOpenCodeInteraction(
                 clientID: clientID,
                 kind: .question(payload)
@@ -2430,6 +2450,63 @@ public final class BridgeServer: @unchecked Sendable {
         broadcast([.event(event)])
     }
 
+    /// Defers `actionableStateResolved` for a hook disconnect so a quickly
+    /// respawned hook (same sessionID, new clientID) can take over without
+    /// the approval card flickering closed. If no replacement registers
+    /// within `hookDisconnectGracePeriod`, the resolved event is emitted.
+    /// Must be called on `queue`.
+    private func scheduleDisconnectResolution(
+        sessionID: String,
+        summary: String,
+        originLabel: String,
+        clientID: UUID,
+        hasOtherPendingInteraction: @escaping @Sendable () -> Bool
+    ) {
+        Self.approvalFlashLogger.warning("[FLASH] \(originLabel, privacy: .public) hook disconnected — deferring actionableStateResolved for session \(sessionID, privacy: .public) (clientID=\(clientID.uuidString, privacy: .public)) by \(Self.hookDisconnectGracePeriod)s")
+
+        // Supersede any earlier deferred resolution for this sessionID — we
+        // only need the most recent disconnect to drive the eventual emit.
+        pendingDisconnectResolutions.removeValue(forKey: sessionID)?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingDisconnectResolutions.removeValue(forKey: sessionID)
+
+            // A fresh hook re-registered before the grace period elapsed —
+            // skip the resolved emit so the approval card stays put.
+            if hasOtherPendingInteraction() {
+                Self.approvalFlashLogger.info("[FLASH] grace cancelled — replacement hook owns session \(sessionID, privacy: .public)")
+                return
+            }
+
+            Self.approvalFlashLogger.warning("[FLASH] grace expired — emitting actionableStateResolved for session \(sessionID, privacy: .public)")
+            self.emit(
+                .actionableStateResolved(
+                    ActionableStateResolved(
+                        sessionID: sessionID,
+                        summary: summary,
+                        timestamp: .now
+                    )
+                )
+            )
+        }
+
+        pendingDisconnectResolutions[sessionID] = workItem
+        queue.asyncAfter(deadline: .now() + Self.hookDisconnectGracePeriod, execute: workItem)
+    }
+
+    /// Called whenever a fresh pending hook interaction is registered for
+    /// `sessionID` so any in-flight grace timer (from a prior hook crash on
+    /// the same session) is cancelled before it can clobber the new state.
+    /// Must be called on `queue`.
+    private func cancelPendingDisconnectResolution(for sessionID: String) {
+        guard let workItem = pendingDisconnectResolutions.removeValue(forKey: sessionID) else {
+            return
+        }
+        Self.approvalFlashLogger.info("[FLASH] new pending interaction for session \(sessionID, privacy: .public) — cancelling deferred actionableStateResolved")
+        workItem.cancel()
+    }
+
     private func hasSession(id: String) -> Bool {
         localState.session(id: id) != nil || localState.session(id: id) != nil
     }
@@ -2478,14 +2555,14 @@ public final class BridgeServer: @unchecked Sendable {
 
         for sessionID in pendingClaudeSessionIDs {
             pendingClaudeInteractions.removeValue(forKey: sessionID)
-            emit(
-                .actionableStateResolved(
-                    ActionableStateResolved(
-                        sessionID: sessionID,
-                        summary: "Hook process disconnected.",
-                        timestamp: .now
-                    )
-                )
+            scheduleDisconnectResolution(
+                sessionID: sessionID,
+                summary: "Hook process disconnected.",
+                originLabel: "Claude",
+                clientID: clientID,
+                hasOtherPendingInteraction: { [weak self] in
+                    self?.pendingClaudeInteractions[sessionID] != nil
+                }
             )
         }
 
@@ -2496,14 +2573,14 @@ public final class BridgeServer: @unchecked Sendable {
 
         for sessionID in pendingOpenCodeSessionIDs {
             pendingOpenCodeInteractions.removeValue(forKey: sessionID)
-            emit(
-                .actionableStateResolved(
-                    ActionableStateResolved(
-                        sessionID: sessionID,
-                        summary: "Plugin process disconnected.",
-                        timestamp: .now
-                    )
-                )
+            scheduleDisconnectResolution(
+                sessionID: sessionID,
+                summary: "Plugin process disconnected.",
+                originLabel: "OpenCode",
+                clientID: clientID,
+                hasOtherPendingInteraction: { [weak self] in
+                    self?.pendingOpenCodeInteractions[sessionID] != nil
+                }
             )
         }
 
@@ -2514,14 +2591,14 @@ public final class BridgeServer: @unchecked Sendable {
 
         for sessionID in pendingCursorSessionIDs {
             pendingCursorInteractions.removeValue(forKey: sessionID)
-            emit(
-                .actionableStateResolved(
-                    ActionableStateResolved(
-                        sessionID: sessionID,
-                        summary: "Hook process disconnected.",
-                        timestamp: .now
-                    )
-                )
+            scheduleDisconnectResolution(
+                sessionID: sessionID,
+                summary: "Hook process disconnected.",
+                originLabel: "Cursor",
+                clientID: clientID,
+                hasOtherPendingInteraction: { [weak self] in
+                    self?.pendingCursorInteractions[sessionID] != nil
+                }
             )
         }
 
