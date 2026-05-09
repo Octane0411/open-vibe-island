@@ -98,6 +98,8 @@ public struct CodexHookPayload: Equatable, Codable, Sendable {
     public var prompt: String?
     public var stopHookActive: Bool?
     public var lastAssistantMessage: String?
+    /// Set to `true` by remote hook shims to indicate an SSH-backed Codex session.
+    public var remote: Bool?
 
     private enum CodingKeys: String, CodingKey {
         case cwd
@@ -120,6 +122,7 @@ public struct CodexHookPayload: Equatable, Codable, Sendable {
         case prompt
         case stopHookActive = "stop_hook_active"
         case lastAssistantMessage = "last_assistant_message"
+        case remote
     }
 
     public init(
@@ -142,7 +145,8 @@ public struct CodexHookPayload: Equatable, Codable, Sendable {
         toolResponse: CodexHookJSONValue? = nil,
         prompt: String? = nil,
         stopHookActive: Bool? = nil,
-        lastAssistantMessage: String? = nil
+        lastAssistantMessage: String? = nil,
+        remote: Bool? = nil
     ) {
         self.cwd = cwd
         self.hookEventName = hookEventName
@@ -164,6 +168,7 @@ public struct CodexHookPayload: Equatable, Codable, Sendable {
         self.prompt = prompt
         self.stopHookActive = stopHookActive
         self.lastAssistantMessage = lastAssistantMessage
+        self.remote = remote
     }
 
     public init(from decoder: any Decoder) throws {
@@ -188,6 +193,7 @@ public struct CodexHookPayload: Equatable, Codable, Sendable {
         prompt = try container.decodeIfPresent(String.self, forKey: .prompt)
         stopHookActive = try container.decodeIfPresent(Bool.self, forKey: .stopHookActive)
         lastAssistantMessage = try container.decodeIfPresent(String.self, forKey: .lastAssistantMessage)
+        remote = try container.decodeIfPresent(Bool.self, forKey: .remote)
     }
 }
 
