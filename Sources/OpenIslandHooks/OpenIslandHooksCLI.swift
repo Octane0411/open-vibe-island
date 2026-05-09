@@ -4,6 +4,7 @@ import OpenIslandCore
 @main
 struct OpenIslandHooksCLI {
     private static let interactiveClaudeHookTimeout: TimeInterval = 24 * 60 * 60
+    private static let interactiveCodexHookTimeout: TimeInterval = 55 * 60
 
     private enum HookSource: String {
         case codex
@@ -52,8 +53,12 @@ struct OpenIslandHooksCLI {
                     .decode(CodexHookPayload.self, from: input)
                     .withRuntimeContext(environment: ProcessInfo.processInfo.environment)
 
-                guard let response = try? client.send(.processCodexHook(payload)) else {
-                    logStderr("bridge unavailable for codex hook")
+                let timeout = payload.hookEventName == .permissionRequest
+                    ? interactiveCodexHookTimeout
+                    : 45
+
+                guard let response = try? client.send(.processCodexHook(payload), timeout: timeout) else {
+                    logStderr("bridge unavailable for codex hook (\(payload.hookEventName.rawValue))")
                     return
                 }
 
