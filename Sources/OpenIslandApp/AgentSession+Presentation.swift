@@ -208,7 +208,7 @@ extension AgentSession {
             if let activity = spotlightRunningActivityText {
                 return activity
             }
-            return spotlightPromptLineText == nil ? "Running" : "Input"
+            return spotlightPromptLineText == nil ? "Running" : "Thinking"
         case .waitingForApproval:
             return permissionRequest?.summary.trimmedForSurface ?? "Approval needed"
         case .waitingForAnswer:

@@ -604,14 +604,14 @@ public enum CodexRolloutReducer {
             if !snapshot.isCompleted {
                 snapshot.phase = .running
             }
-            snapshot.summary = "Command finished."
+            snapshot.summary = "Thinking."
         case "patch_apply_end":
             snapshot.currentTool = nil
             snapshot.currentCommandPreview = nil
             if !snapshot.isCompleted {
                 snapshot.phase = .running
             }
-            snapshot.summary = "Patch applied."
+            snapshot.summary = "Thinking."
         default:
             break
         }
@@ -627,6 +627,11 @@ public enum CodexRolloutReducer {
         to snapshot: inout CodexRolloutSnapshot
     ) {
         let itemType = payload["type"] as? String
+        if itemType == "reasoning" {
+            applyReasoning(timestamp: timestamp, to: &snapshot)
+            return
+        }
+
         if itemType == "message" {
             guard let role = payload["role"] as? String else {
                 return
@@ -717,6 +722,23 @@ public enum CodexRolloutReducer {
             snapshot.currentCommandPreview = nil
             snapshot.phase = .running
             snapshot.isInterrupted = false
+        }
+
+        if let timestamp {
+            snapshot.updatedAt = timestamp
+        }
+    }
+
+    private static func applyReasoning(
+        timestamp: Date?,
+        to snapshot: inout CodexRolloutSnapshot
+    ) {
+        if !snapshot.isCompleted {
+            snapshot.currentTool = nil
+            snapshot.currentCommandPreview = nil
+            snapshot.phase = .running
+            snapshot.isInterrupted = false
+            snapshot.summary = "Thinking."
         }
 
         if let timestamp {
