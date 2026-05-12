@@ -421,9 +421,9 @@ final class SessionDiscoveryCoordinator {
 
         let discovery = codexRolloutDiscovery
         Task.detached(priority: .utility) { [weak self] in
-            let discovered = discovery.discoverRecentSessions().filter {
-                activeSessionIDs.contains($0.sessionID)
-            }
+            let discovered = discovery.discoverRecentSessions(
+                matchingSessionIDs: activeSessionIDs
+            )
             guard !discovered.isEmpty else { return }
             await MainActor.run { [weak self] in
                 self?.applyCodexCLIRediscovery(discovered)

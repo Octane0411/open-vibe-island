@@ -1013,6 +1013,71 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutDiscoveryCanFilterToActiveSessionIDs() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-filter-\(UUID().uuidString)", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/04/02", isDirectory: true)
+        let matchingRolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-matching.jsonl")
+        let unrelatedRolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-unrelated.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let matchingLines = [
+            sessionMetaLine(
+                sessionID: "active-codex-session",
+                timestamp: "2026-04-02T04:03:44.000Z",
+                cwd: "/Users/wangruobing/Personal/open-island"
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": "Matched active session.",
+                ]
+            ),
+        ]
+        let unrelatedLines = [
+            sessionMetaLine(
+                sessionID: "inactive-codex-session",
+                timestamp: "2026-04-02T04:03:44.000Z",
+                cwd: "/Users/wangruobing/Personal/other"
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": "Should not be discovered.",
+                ]
+            ),
+        ]
+
+        try matchingLines.joined(separator: "\n").appending("\n").write(to: matchingRolloutURL, atomically: true, encoding: .utf8)
+        try unrelatedLines.joined(separator: "\n").appending("\n").write(to: unrelatedRolloutURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: matchingRolloutURL.path)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: unrelatedRolloutURL.path)
+
+        let discovery = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10
+        )
+
+        let records = discovery.discoverRecentSessions(
+            matchingSessionIDs: ["active-codex-session"],
+            now: now
+        )
+
+        #expect(records.count == 1)
+        #expect(records.first?.sessionID == "active-codex-session")
+        #expect(records.first?.summary == "Matched active session.")
+    }
+
+    @Test
     func codexRolloutDiscoveryStreamsRolloutsLargerThanReadChunk() throws {
         // Pins streaming behavior across read-chunk boundaries. The
         // discovery path used to slurp the whole rollout via

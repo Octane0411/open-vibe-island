@@ -267,6 +267,21 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
     }
 
     public func discoverRecentSessions(now: Date = .now) -> [CodexTrackedSessionRecord] {
+        discoverRecentSessions(now: now, matchingSessionIDs: nil)
+    }
+
+    public func discoverRecentSessions(
+        matchingSessionIDs sessionIDs: Set<String>,
+        now: Date = .now
+    ) -> [CodexTrackedSessionRecord] {
+        guard !sessionIDs.isEmpty else { return [] }
+        return discoverRecentSessions(now: now, matchingSessionIDs: sessionIDs)
+    }
+
+    private func discoverRecentSessions(
+        now: Date,
+        matchingSessionIDs sessionIDs: Set<String>?
+    ) -> [CodexTrackedSessionRecord] {
         guard fileManager.fileExists(atPath: rootURL.path),
               let enumerator = fileManager.enumerator(
                 at: rootURL,
@@ -312,7 +327,11 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
 
         var recordsByID: [String: CodexTrackedSessionRecord] = [:]
         for candidate in recentCandidates {
-            guard let record = discoverRecord(fileURL: candidate.fileURL, modifiedAt: candidate.modifiedAt) else {
+            guard let record = discoverRecord(
+                fileURL: candidate.fileURL,
+                modifiedAt: candidate.modifiedAt,
+                matchingSessionIDs: sessionIDs
+            ) else {
                 continue
             }
 
@@ -332,7 +351,11 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         }
     }
 
-    private func discoverRecord(fileURL: URL, modifiedAt: Date) -> CodexTrackedSessionRecord? {
+    private func discoverRecord(
+        fileURL: URL,
+        modifiedAt: Date,
+        matchingSessionIDs sessionIDs: Set<String>? = nil
+    ) -> CodexTrackedSessionRecord? {
         // Stream the rollout line by line instead of slurping the whole
         // file. Long-lived Codex sessions accumulate JSONL files of tens
         // of MB; combined with the 10s rediscover throttle that meant a
@@ -356,6 +379,11 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
                 CodexRolloutReducer.apply(line: line, to: &snapshot)
                 if sessionMeta == nil {
                     sessionMeta = parseSessionMeta(fromLine: line)
+                    if let sessionIDs,
+                       let sessionMeta,
+                       !sessionIDs.contains(sessionMeta.sessionID) {
+                        return nil
+                    }
                 }
             }
         }
@@ -367,6 +395,11 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
                 CodexRolloutReducer.apply(line: trailing, to: &snapshot)
                 if sessionMeta == nil {
                     sessionMeta = parseSessionMeta(fromLine: trailing)
+                    if let sessionIDs,
+                       let sessionMeta,
+                       !sessionIDs.contains(sessionMeta.sessionID) {
+                        return nil
+                    }
                 }
             }
         }
