@@ -3,6 +3,7 @@ import Foundation
 public enum CodexHookEventName: String, Codable, Sendable {
     case sessionStart = "SessionStart"
     case preToolUse = "PreToolUse"
+    case permissionRequest = "PermissionRequest"
     case postToolUse = "PostToolUse"
     case userPromptSubmit = "UserPromptSubmit"
     case stop = "Stop"
@@ -14,16 +15,6 @@ public enum CodexPermissionMode: String, Codable, Sendable {
     case plan
     case dontAsk
     case bypassPermissions
-}
-
-
-
-public struct CodexHookToolInput: Equatable, Codable, Sendable {
-    public var command: String
-
-    public init(command: String) {
-        self.command = command
-    }
 }
 
 public enum CodexHookJSONValue: Equatable, Codable, Sendable {
@@ -71,6 +62,58 @@ public enum CodexHookJSONValue: Equatable, Codable, Sendable {
         case .null:
             try container.encodeNil()
         }
+    }
+}
+
+public struct CodexHookToolInput: Equatable, Codable, Sendable {
+    public var command: String?
+    public var description: String?
+    public var rawValue: CodexHookJSONValue?
+
+    private enum CodingKeys: String, CodingKey {
+        case command
+        case description
+    }
+
+    public init(command: String? = nil, description: String? = nil) {
+        self.command = command
+        self.description = description
+        rawValue = nil
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let rawValue = try CodexHookJSONValue(from: decoder)
+        self.rawValue = rawValue
+
+        guard case let .object(object) = rawValue else {
+            command = nil
+            description = nil
+            return
+        }
+
+        command = object["command"]?.stringScalar
+        description = object["description"]?.stringScalar
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        if let rawValue {
+            try rawValue.encode(to: encoder)
+            return
+        }
+
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(command, forKey: .command)
+        try container.encodeIfPresent(description, forKey: .description)
+    }
+}
+
+private extension CodexHookJSONValue {
+    var stringScalar: String? {
+        if case let .string(value) = self {
+            return value
+        }
+
+        return nil
     }
 }
 
@@ -191,16 +234,58 @@ public struct CodexHookPayload: Equatable, Codable, Sendable {
     }
 }
 
+public enum CodexPermissionRequestDecision: Equatable, Codable, Sendable {
+    case allow
+    case deny(message: String? = nil)
+
+    private enum CodingKeys: String, CodingKey {
+        case behavior
+        case message
+    }
+
+    private enum Behavior: String, Codable {
+        case allow
+        case deny
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let behavior = try container.decode(Behavior.self, forKey: .behavior)
+
+        switch behavior {
+        case .allow:
+            self = .allow
+        case .deny:
+            self = .deny(message: try container.decodeIfPresent(String.self, forKey: .message))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+
+        switch self {
+        case .allow:
+            try container.encode(Behavior.allow, forKey: .behavior)
+        case let .deny(message):
+            try container.encode(Behavior.deny, forKey: .behavior)
+            try container.encodeIfPresent(message, forKey: .message)
+        }
+    }
+}
+
 public enum CodexHookDirective: Equatable, Codable, Sendable {
     case deny(reason: String)
+    case permissionRequest(CodexPermissionRequestDecision)
 
     private enum CodingKeys: String, CodingKey {
         case type
         case reason
+        case decision
     }
 
     private enum DirectiveType: String, Codable {
         case deny
+        case permissionRequest
     }
 
     public init(from decoder: any Decoder) throws {
@@ -210,6 +295,8 @@ public enum CodexHookDirective: Equatable, Codable, Sendable {
         switch type {
         case .deny:
             self = .deny(reason: try container.decode(String.self, forKey: .reason))
+        case .permissionRequest:
+            self = .permissionRequest(try container.decode(CodexPermissionRequestDecision.self, forKey: .decision))
         }
     }
 
@@ -220,6 +307,9 @@ public enum CodexHookDirective: Equatable, Codable, Sendable {
         case let .deny(reason):
             try container.encode(DirectiveType.deny, forKey: .type)
             try container.encode(reason, forKey: .reason)
+        case let .permissionRequest(decision):
+            try container.encode(DirectiveType.permissionRequest, forKey: .type)
+            try container.encode(decision, forKey: .decision)
         }
     }
 }
@@ -228,6 +318,21 @@ public enum CodexHookOutputEncoder {
     private struct LegacyBlockOutput: Codable {
         var decision = "block"
         var reason: String
+    }
+
+    private struct PermissionRequestOutput: Codable {
+        var continueProcessing = true
+        var hookSpecificOutput: HookSpecificOutput
+
+        private enum CodingKeys: String, CodingKey {
+            case continueProcessing = "continue"
+            case hookSpecificOutput
+        }
+
+        struct HookSpecificOutput: Codable {
+            var hookEventName = CodexHookEventName.permissionRequest
+            var decision: CodexPermissionRequestDecision
+        }
     }
 
     public static func standardOutput(for response: BridgeResponse) throws -> Data? {
@@ -243,6 +348,12 @@ public enum CodexHookOutputEncoder {
             switch directive {
             case let .deny(reason):
                 data = try encoder.encode(LegacyBlockOutput(reason: reason))
+            case let .permissionRequest(decision):
+                data = try encoder.encode(
+                    PermissionRequestOutput(
+                        hookSpecificOutput: PermissionRequestOutput.HookSpecificOutput(decision: decision)
+                    )
+                )
             }
 
             var line = data
@@ -307,6 +418,8 @@ public extension CodexHookPayload {
             return "Started Codex session in \(workspaceName)."
         case .preToolUse:
             return "Codex is preparing a Bash command in \(workspaceName)."
+        case .permissionRequest:
+            return "Codex is waiting for permission approval in \(workspaceName)."
         case .postToolUse:
             return "Codex reported a Bash result in \(workspaceName)."
         case .userPromptSubmit:
@@ -324,6 +437,42 @@ public extension CodexHookPayload {
         clipped(commandText)
     }
 
+    var permissionRequestTitle: String {
+        guard let toolName, !toolName.isEmpty else {
+            return "Approve Codex action"
+        }
+
+        if isBashToolName(toolName) {
+            return "Run Bash command"
+        }
+
+        if toolName == "apply_patch" {
+            return "Apply code patch"
+        }
+
+        return "Approve \(toolName)"
+    }
+
+    var permissionRequestSummary: String {
+        if let description = clipped(toolInput?.description), !description.isEmpty {
+            return description
+        }
+
+        if let commandPreview {
+            return "Codex wants to run: \(commandPreview)"
+        }
+
+        if let toolName, !toolName.isEmpty {
+            return "Codex wants to use \(toolName)."
+        }
+
+        return "Codex is requesting permission."
+    }
+
+    var permissionRequestAffectedPath: String {
+        commandText ?? toolInput?.description ?? toolName ?? "Permission request"
+    }
+
     var promptPreview: String? {
         clipped(prompt)
     }
@@ -338,6 +487,11 @@ public extension CodexHookPayload {
         }
 
         return clipped(stringValue(for: toolResponse))
+    }
+
+    private func isBashToolName(_ toolName: String) -> Bool {
+        let normalized = toolName.lowercased()
+        return normalized == "bash" || normalized == "shell"
     }
 
     private func clipped(_ value: String?, limit: Int = 110) -> String? {

@@ -73,16 +73,18 @@ public enum CodexHookInstaller {
     public static let managedStatusMessage = "Managed by Open Island"
     public static let legacyManagedStatusMessage = "Managed by Vibe Island"
     public static let managedTimeout = 45
+    public static let managedInteractiveTimeout = 60 * 60
     private static let currentFeatureKey = CodexHooksFeatureFlagKey.current.rawValue
     private static let legacyFeatureKey = CodexHooksFeatureFlagKey.legacy.rawValue
 
     // Keep the managed Codex install aligned with the original app's low-noise footprint.
     // The bridge still understands richer hook events, but we do not install them by default
     // because per-command Bash hooks produce a large amount of terminal log spam.
-    private static let eventSpecs: [(name: String, matcher: String?)] = [
-        ("SessionStart", "startup|resume"),
-        ("UserPromptSubmit", nil),
-        ("Stop", nil),
+    private static let eventSpecs: [(name: String, matcher: String?, timeout: Int)] = [
+        ("SessionStart", "startup|resume", managedTimeout),
+        ("UserPromptSubmit", nil, managedTimeout),
+        ("PermissionRequest", nil, managedInteractiveTimeout),
+        ("Stop", nil, managedTimeout),
     ]
 
     public static func hookCommand(for binaryPath: String) -> String {
@@ -109,7 +111,9 @@ public enum CodexHookInstaller {
         for spec in eventSpecs {
             let existingGroups = hooksObject[spec.name] as? [Any] ?? []
             let cleanedGroups = sanitizeForInstall(groups: existingGroups, replacingCommand: hookCommand)
-            hooksObject[spec.name] = cleanedGroups + [managedGroup(matcher: spec.matcher, hookCommand: hookCommand)]
+            hooksObject[spec.name] = cleanedGroups + [
+                managedGroup(matcher: spec.matcher, hookCommand: hookCommand, timeout: spec.timeout)
+            ]
         }
 
         rootObject["hooks"] = hooksObject
@@ -357,12 +361,12 @@ public enum CodexHookInstaller {
         }
     }
 
-    private static func managedGroup(matcher: String?, hookCommand: String) -> [String: Any] {
+    private static func managedGroup(matcher: String?, hookCommand: String, timeout: Int) -> [String: Any] {
         var group: [String: Any] = [
             "hooks": [[
                 "type": "command",
                 "command": hookCommand,
-                "timeout": managedTimeout,
+                "timeout": timeout,
             ]]
         ]
 
