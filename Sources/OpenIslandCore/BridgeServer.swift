@@ -1970,7 +1970,8 @@ public final class BridgeServer: @unchecked Sendable {
                 existing: existing?.currentCommandPreview,
                 update: update.currentCommandPreview,
                 hookEventName: hookEventName
-            )
+            ),
+            activeSubagents: update.activeSubagents.isEmpty ? existing?.activeSubagents ?? [] : update.activeSubagents
         )
     }
 

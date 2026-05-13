@@ -349,6 +349,72 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutReducerTracksSpawnedSubagents() {
+        var snapshot = CodexRolloutSnapshot()
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-02T04:03:44.500Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": "Use a subagent for research.",
+                ]
+            ),
+            to: &snapshot
+        )
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "response_item",
+                payload: [
+                    "type": "function_call",
+                    "name": "spawn_agent",
+                    "call_id": "call-spawn",
+                    "arguments": """
+                    {"agent_type":"explorer","message":"Inspect Codex rollout subagent events."}
+                    """,
+                ]
+            ),
+            to: &snapshot
+        )
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-02T04:03:45.050Z",
+                type: "response_item",
+                payload: [
+                    "type": "function_call_output",
+                    "call_id": "call-spawn",
+                    "output": #"{"agent_id":"subagent-123","nickname":"Ada"}"#,
+                ]
+            ),
+            to: &snapshot
+        )
+
+        #expect(snapshot.currentTool == nil)
+        #expect(snapshot.summary == "Thinking.")
+        #expect(snapshot.activeSubagents.count == 1)
+        #expect(snapshot.activeSubagents.first?.agentID == "subagent-123")
+        #expect(snapshot.activeSubagents.first?.agentType == "explorer")
+        #expect(snapshot.activeSubagents.first?.nickname == "Ada")
+        #expect(snapshot.activeSubagents.first?.taskDescription == "Inspect Codex rollout subagent events.")
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-02T04:03:50.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "task_complete",
+                    "last_agent_message": "Done.",
+                ]
+            ),
+            to: &snapshot
+        )
+
+        #expect(snapshot.activeSubagents.isEmpty)
+    }
+
+    @Test
     func codexRolloutReducerAlignsCodexEventMessageStatuses() {
         var snapshot = CodexRolloutSnapshot()
 
@@ -1140,6 +1206,66 @@ struct CodexSessionTrackingTests {
         #expect(records.first?.sessionID == "codex-session-trailing")
         #expect(records.first?.codexMetadata?.lastAssistantMessage == "Final line without newline.")
     }
+
+    @Test
+    func codexRolloutDiscoveryFindsSubagentByParentThread() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-subagent-\(UUID().uuidString)", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/04/02", isDirectory: true)
+        let subagentID = "019e0db2-f3a5-7fe0-bea8-e63bd356c226"
+        let parentID = "019e0d74-732d-7013-a059-6a526e8393ba"
+        let rolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-2026-04-02T04-03-44-\(subagentID).jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let lines = [
+            subagentSessionMetaLine(
+                sessionID: subagentID,
+                parentSessionID: parentID,
+                timestamp: "2026-04-02T04:03:44.000Z",
+                cwd: "/Users/wangruobing/Personal/open-island",
+                nickname: "Ada",
+                role: "explorer"
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "response_item",
+                payload: [
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "call_id": "call-command",
+                    "arguments": #"{"cmd":"rg CodexSubagentInfo Sources"}"#,
+                ]
+            ),
+        ]
+
+        try lines.joined(separator: "\n").appending("\n").write(to: rolloutURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: rolloutURL.path)
+
+        let discovery = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10
+        )
+
+        let subagent = discovery.discoverSubagent(
+            sessionID: subagentID,
+            parentSessionID: parentID,
+            now: now
+        )
+
+        #expect(subagent?.agentID == subagentID)
+        #expect(subagent?.agentType == "explorer")
+        #expect(subagent?.nickname == "Ada")
+        #expect(subagent?.currentTool == "exec_command")
+        #expect(subagent?.currentCommandPreview == "rg CodexSubagentInfo Sources")
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        #expect(subagent?.startedAt == formatter.date(from: "2026-04-02T04:03:44.000Z"))
+    }
 }
 
 private actor EventRecorder {
@@ -1196,6 +1322,39 @@ private func sessionMetaLine(
             "cwd": cwd,
             "originator": "codex-tui",
             "source": "cli",
+        ]
+    )
+}
+
+private func subagentSessionMetaLine(
+    sessionID: String,
+    parentSessionID: String,
+    timestamp: String,
+    cwd: String,
+    nickname: String,
+    role: String
+) -> String {
+    rolloutLine(
+        timestamp: timestamp,
+        type: "session_meta",
+        payload: [
+            "id": sessionID,
+            "timestamp": timestamp,
+            "cwd": cwd,
+            "originator": "codex-tui",
+            "thread_source": "subagent",
+            "agent_nickname": nickname,
+            "agent_role": role,
+            "source": [
+                "subagent": [
+                    "thread_spawn": [
+                        "parent_thread_id": parentSessionID,
+                        "depth": 1,
+                        "agent_nickname": nickname,
+                        "agent_role": role,
+                    ],
+                ],
+            ],
         ]
     )
 }

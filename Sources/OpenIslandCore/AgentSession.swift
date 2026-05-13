@@ -535,7 +535,11 @@ public extension AgentSession {
     }
 
     var currentToolName: String? {
-        codexMetadata?.currentTool ?? claudeMetadata?.currentTool ?? openCodeMetadata?.currentTool ?? cursorMetadata?.currentTool
+        codexMetadata?.currentTool
+            ?? (codexMetadata?.activeSubagents.isEmpty == false ? "spawn_agent" : nil)
+            ?? claudeMetadata?.currentTool
+            ?? openCodeMetadata?.currentTool
+            ?? cursorMetadata?.currentTool
     }
 
     var lastAssistantMessageText: String? {
