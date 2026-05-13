@@ -892,10 +892,18 @@ public final class BridgeServer: @unchecked Sendable {
         case .subagentStop:
             ensureClaudeSessionExists(for: payload)
             synchronizeClaudeJumpTarget(for: payload)
-            synchronizeClaudeMetadata(for: payload)
+            let sessionWasAlreadyCompleted = localState.session(id: payload.sessionID)?.phase == .completed
+            if !sessionWasAlreadyCompleted {
+                synchronizeClaudeMetadata(for: payload)
+            }
 
             if let agentID = payload.agentID {
                 removeSubagent(agentID: agentID, fromSession: payload.sessionID)
+            }
+
+            if sessionWasAlreadyCompleted {
+                send(.response(.acknowledged), to: clientID)
+                return
             }
 
             let summary = payload.lastAssistantMessage ?? payload.assistantMessagePreview
@@ -2014,8 +2022,12 @@ public final class BridgeServer: @unchecked Sendable {
             model: update.model ?? existing?.model,
             startupSource: update.startupSource ?? existing?.startupSource,
             permissionMode: update.permissionMode ?? existing?.permissionMode,
-            agentID: update.agentID ?? existing?.agentID,
-            agentType: update.agentType ?? existing?.agentType,
+            agentID: hookEventName.isSubagentLifecycle
+                ? existing?.agentID
+                : update.agentID ?? existing?.agentID,
+            agentType: hookEventName.isSubagentLifecycle
+                ? existing?.agentType
+                : update.agentType ?? existing?.agentType,
             worktreeBranch: update.worktreeBranch ?? existing?.worktreeBranch,
             activeSubagents: existing?.activeSubagents ?? [],
             activeTasks: existing?.activeTasks ?? []
@@ -2046,7 +2058,11 @@ public final class BridgeServer: @unchecked Sendable {
             return
         }
 
+        let previousCount = metadata.activeSubagents.count
         metadata.activeSubagents.removeAll { $0.agentID == agentID }
+        guard metadata.activeSubagents.count != previousCount else {
+            return
+        }
 
         emit(
             .claudeSessionMetadataUpdated(
@@ -2581,5 +2597,11 @@ public final class BridgeServer: @unchecked Sendable {
         }
 
         client.readSource.cancel()
+    }
+}
+
+private extension ClaudeHookEventName {
+    var isSubagentLifecycle: Bool {
+        self == .subagentStart || self == .subagentStop
     }
 }
