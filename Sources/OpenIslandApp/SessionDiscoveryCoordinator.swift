@@ -366,13 +366,9 @@ final class SessionDiscoveryCoordinator {
                   !transcriptPath.isEmpty else {
                 return nil
             }
-            // Codex.app sessions already get their lifecycle from hooks
-            // (and eventually app-server). The rollout watcher would
-            // duplicate completion notifications and is not needed.
-            if session.isCodexAppSession {
-                return nil
-            }
-
+            // Codex Desktop reliably records user-initiated stops as
+            // `turn_aborted` in the rollout even when the app-server does not
+            // emit a usable completion signal, so track app sessions too.
             return CodexRolloutWatchTarget(
                 sessionID: session.id,
                 transcriptPath: transcriptPath
