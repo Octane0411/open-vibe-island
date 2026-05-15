@@ -198,6 +198,13 @@ final class OverlayPanelController {
         notchRect = NSRect(x: notchX, y: notchY, width: notchSize.width, height: notchSize.height)
     }
 
+    /// Picks the screen to anchor the overlay to.
+    ///
+    /// Priority: persisted manual preference (matched via the stable
+    /// `OverlayDisplayResolver.screenID` so a hotplug-reassigned
+    /// `CGDirectDisplayID` can't silently re-target the wrong monitor) →
+    /// first notched screen → `NSScreen.main` → first available screen.
+    /// Returns `nil` only when no displays are connected.
     private func resolveTargetScreen(preferredScreenID: String? = nil) -> NSScreen? {
         let screens = NSScreen.screens
         guard !screens.isEmpty else { return nil }
