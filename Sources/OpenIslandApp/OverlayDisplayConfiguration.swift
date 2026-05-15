@@ -177,9 +177,16 @@ enum OverlayDisplayResolver {
         return fallbackScreenID(for: screen)
     }
 
+    /// Disambiguates identical displays (e.g. two AirPlay receivers with the
+    /// same model name and resolution) by appending the arrangement origin.
+    /// The origin is not stable across display rearrangement, but a mismatched
+    /// preference will self-heal through the existing
+    /// `validSelectionIDs.contains` check in `refreshOverlayDisplayConfiguration()`.
     private static func fallbackScreenID(for screen: NSScreen) -> String {
-        let width = Int(screen.frame.width)
-        let height = Int(screen.frame.height)
-        return "fallback-\(screen.localizedName)-\(width)x\(height)"
+        let width = Int(screen.frame.width.rounded())
+        let height = Int(screen.frame.height.rounded())
+        let originX = Int(screen.frame.origin.x.rounded())
+        let originY = Int(screen.frame.origin.y.rounded())
+        return "fallback-\(screen.localizedName)-\(width)x\(height)@\(originX),\(originY)"
     }
 }
