@@ -116,6 +116,12 @@ final class OverlayUICoordinator {
         }
     }
 
+    isolated deinit {
+        if let observer = screenParametersObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
     // MARK: - Overlay transitions
 
     func toggleOverlay() {
