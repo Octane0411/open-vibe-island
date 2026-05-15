@@ -49,6 +49,9 @@ final class OverlayUICoordinator {
     let overlayPanelController = OverlayPanelController()
 
     @ObservationIgnored
+    private var screenParametersObserver: NSObjectProtocol?
+
+    @ObservationIgnored
     private var overlayTransitionGeneration: UInt64 = 0
 
     @ObservationIgnored
@@ -92,6 +95,25 @@ final class OverlayUICoordinator {
         overlayDisplaySelectionID = UserDefaults.standard.string(
             forKey: "overlay.display.preference"
         ) ?? OverlayDisplayOption.automaticID
+    }
+
+    /// Re-syncs the cached display options and the target panel placement
+    /// whenever macOS reports a screen configuration change (hotplug,
+    /// arrangement change, sleep/wake). Without this, the picker list keeps
+    /// stale entries after disconnect, and a saved preference whose
+    /// `CGDirectDisplayID` gets reused for a different physical display can
+    /// silently route the island to the wrong screen.
+    func startObservingDisplayChanges() {
+        guard screenParametersObserver == nil else { return }
+        screenParametersObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.refreshOverlayDisplayConfiguration()
+            }
+        }
     }
 
     // MARK: - Overlay transitions
