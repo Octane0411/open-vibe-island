@@ -2739,7 +2739,7 @@ private extension String {
         s = s.replacingOccurrences(of: "(?<![\\w])_{1,3}(.+?)_{1,3}(?![\\w])", with: "$1", options: .regularExpression)
         s = s.replacingOccurrences(of: "(?m)^#{1,6}\\s+", with: "", options: .regularExpression)
         s = s.replacingOccurrences(of: "\\[([^\\]]+)\\]\\([^)]+\\)", with: "$1", options: .regularExpression)
-        s = s.replacingOccurrences(of: "^[\\-*>+]\\s+", with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: "(?m)^[\\-*>+]\\s+", with: "", options: .regularExpression)
         return s
     }
 }
