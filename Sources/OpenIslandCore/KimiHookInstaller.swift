@@ -57,7 +57,9 @@ public enum KimiHookInstaller {
         hookCommand: String
     ) -> KimiHookFileMutation {
         let original = existingContents ?? ""
-        let cleaned = stripManagedBlocks(from: original, managedCommand: hookCommand)
+        let cleaned = stripEmptyTopLevelHooksArray(
+            from: stripManagedBlocks(from: original, managedCommand: hookCommand)
+        )
 
         var output = cleaned
         if !output.isEmpty, !output.hasSuffix("\n") {
@@ -144,6 +146,44 @@ public enum KimiHookInstaller {
         }
 
         return result.joined(separator: "\n")
+    }
+
+    /// Kimi may seed config.toml with a top-level `hooks = []` placeholder.
+    /// Managed hooks use TOML array-of-tables syntax (`[[hooks]]`), so the
+    /// empty placeholder must be removed before appending managed blocks.
+    private static func stripEmptyTopLevelHooksArray(from contents: String) -> String {
+        let lines = contents.components(separatedBy: "\n")
+        var result: [String] = []
+        var hasEnteredTable = false
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            if !hasEnteredTable, isEmptyHooksArrayAssignment(trimmed) {
+                continue
+            }
+
+            if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") {
+                hasEnteredTable = true
+            }
+
+            result.append(line)
+        }
+
+        return result.joined(separator: "\n")
+    }
+
+    private static func isEmptyHooksArrayAssignment(_ trimmedLine: String) -> Bool {
+        guard trimmedLine.hasPrefix("hooks") else { return false }
+        guard let equalsIndex = trimmedLine.firstIndex(of: "=") else { return false }
+
+        let key = trimmedLine[..<equalsIndex].trimmingCharacters(in: .whitespaces)
+        guard key == "hooks" else { return false }
+
+        let rhs = trimmedLine[trimmedLine.index(after: equalsIndex)...]
+        let value = rhs.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0]
+            .trimmingCharacters(in: .whitespaces)
+        return value == "[]"
     }
 
     private static func isHooksHeader(_ line: String) -> Bool {
