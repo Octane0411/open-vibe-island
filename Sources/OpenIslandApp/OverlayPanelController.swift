@@ -30,8 +30,6 @@ final class OverlayPanelController {
 
     private var panel: NotchPanel?
     private var eventMonitors = NotchEventMonitors()
-    private var hoverTimer: DispatchWorkItem?
-    private var hoverCancelGrace: DispatchWorkItem?
     weak var model: AppModel?
     private(set) var notchRect: NSRect = .zero
 
@@ -246,12 +244,6 @@ final class OverlayPanelController {
             model.notePointerExitedClosedArea()
         }
 
-        if model.notchStatus == .closed && inClosedSurfaceArea {
-            scheduleHoverOpen()
-        } else if model.notchStatus == .closed && !inClosedSurfaceArea {
-            cancelHoverOpen()
-        }
-
         let shouldTrackNotificationPointer = model.notchStatus == .opened
             && model.notchOpenReason == .notification
             && model.showsNotificationCard
@@ -271,7 +263,6 @@ final class OverlayPanelController {
         let inClosedSurfaceArea = isPointInClosedSurfaceArea(screenLocation)
 
         if model.notchStatus == .closed && inClosedSurfaceArea {
-            cancelHoverOpenImmediately()
             model.notchOpen(reason: .click)
         } else if model.notchStatus == .opened {
             if !isPointInExpandedArea(screenLocation) {
@@ -279,71 +270,6 @@ final class OverlayPanelController {
                 repostMouseDown(at: screenLocation)
             }
         }
-    }
-
-    /// Grace period before a hover-open timer is cancelled.  Prevents
-    /// mouse jitter at the notch edge from resetting the delay.
-    private static let hoverCancelGracePeriod: TimeInterval = 0.1
-
-    private func scheduleHoverOpen() {
-        // Mouse re-entered during grace period — just revoke the cancel.
-        hoverCancelGrace?.cancel()
-        hoverCancelGrace = nil
-
-        guard model != nil else { return }
-
-        guard hoverTimer == nil else { return }
-
-        let item = DispatchWorkItem { [weak self] in
-            guard let self, let model = self.model else { return }
-            self.performHoverOpen(model)
-            self.hoverTimer = nil
-        }
-
-        hoverTimer = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + AppModel.hoverOpenDelay, execute: item)
-    }
-
-    private func performHoverOpen(_ model: AppModel) {
-        guard model.notchStatus == .closed else { return }
-
-        if model.hapticFeedbackEnabled {
-            NSHapticFeedbackManager.defaultPerformer.perform(
-                NSHapticFeedbackManager.FeedbackPattern.alignment,
-                performanceTime: .now
-            )
-        }
-
-        model.notchOpen(reason: .hover)
-    }
-
-    private func cancelHoverOpen() {
-        guard hoverTimer != nil else { return }
-
-        // Don't cancel immediately — allow a short grace period so that
-        // mouse jitter at the notch edge doesn't restart the timer.
-        guard hoverCancelGrace == nil else { return }
-
-        let grace = DispatchWorkItem { [weak self] in
-            self?.hoverTimer?.cancel()
-            self?.hoverTimer = nil
-            self?.hoverCancelGrace = nil
-        }
-
-        hoverCancelGrace = grace
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + Self.hoverCancelGracePeriod,
-            execute: grace
-        )
-    }
-
-    /// Cancel without grace period — used for click-to-open where the
-    /// hover timer must not fire after the click already opened the panel.
-    private func cancelHoverOpenImmediately() {
-        hoverCancelGrace?.cancel()
-        hoverCancelGrace = nil
-        hoverTimer?.cancel()
-        hoverTimer = nil
     }
 
     // MARK: - Hit testing geometry
