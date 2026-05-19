@@ -240,6 +240,12 @@ final class OverlayPanelController {
 
         let inClosedSurfaceArea = isPointInClosedSurfaceArea(screenLocation)
 
+        if inClosedSurfaceArea {
+            model.notePointerInsideClosedArea()
+        } else {
+            model.notePointerExitedClosedArea()
+        }
+
         if model.notchStatus == .closed && inClosedSurfaceArea {
             scheduleHoverOpen()
         } else if model.notchStatus == .closed && !inClosedSurfaceArea {

@@ -23,7 +23,7 @@
 "settings.general.hideFullscreen" = "Hide in fullscreen";
 "settings.general.autoHideNoSessions" = "Auto-hide without active sessions";
 "settings.general.autoCollapse" = "Auto-collapse on mouse exit";
-"settings.general.showDockIcon" = "Show icon in Dock";
+"settings.general.hideDockIcon" = "Hide icon in Dock";
 "settings.general.hapticFeedback" = "Haptic feedback on hover";
 "settings.general.suppressFrontmostNotifications" = "Suppress notifications for focused sessions";
 "settings.general.showCodexUsage" = "Show Codex usage";
@@ -113,6 +113,9 @@
 "settings.appearance.preview.completedEarlier" = "Completed earlier";
 "settings.appearance.preview.permissionBody" = "$ npm run build";
 "settings.appearance.preview.pickOrTypeAnswer" = "Pick or type an answer";
+"settings.appearance.autoHide.title" = "Auto-hide when inactive";
+"settings.appearance.autoHide.note" = "Hide the island when there are no active agents or music playing. Hover the top of the screen to peek.";
+"settings.appearance.autoHide.enabled" = "Enable Auto-hide";
 
 /* Settings - Display */
 "settings.display.monitor" = "Monitor";

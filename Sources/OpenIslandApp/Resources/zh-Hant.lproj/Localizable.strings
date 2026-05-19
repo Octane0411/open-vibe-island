@@ -23,7 +23,7 @@
 "settings.general.hideFullscreen" = "全螢幕時隱藏";
 "settings.general.autoHideNoSessions" = "無活躍工作階段時自動隱藏";
 "settings.general.autoCollapse" = "滑鼠離開時自動收起";
-"settings.general.showDockIcon" = "在 Dock 中顯示圖示";
+"settings.general.hideDockIcon" = "在 Dock 中隱藏圖示";
 "settings.general.hapticFeedback" = "懸停時震動回饋";
 "settings.general.suppressFrontmostNotifications" = "前台工作階段不彈出通知";
 "settings.general.showCodexUsage" = "顯示 Codex 用量";
@@ -112,7 +112,10 @@
 "settings.appearance.preview.promptSummarizeDesignBundle" = "你：總結設計包";
 "settings.appearance.preview.completedEarlier" = "稍早已完成";
 "settings.appearance.preview.permissionBody" = "$ npm run build";
-"settings.appearance.preview.pickOrTypeAnswer" = "選擇或輸入回答";
+"settings.appearance.preview.pickOrTypeAnswer" = "選擇或輸入答案";
+"settings.appearance.autoHide.title" = "不活躍時自動隱藏";
+"settings.appearance.autoHide.note" = "當沒有活躍代理或音樂播放時隱藏島嶼。將滑鼠懸停在螢幕頂部以查看。";
+"settings.appearance.autoHide.enabled" = "啟用自動隱藏";
 
 /* Settings - Display */
 "settings.display.monitor" = "顯示器";

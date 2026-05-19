@@ -429,6 +429,7 @@ final class AppModel {
         let defaults = UserDefaults.standard
         defaults.set(preferences.rightSlot.rawValue, forKey: Self.appearanceDefaultsKey(profile, "rightSlot"))
         defaults.set(preferences.centerLabel.rawValue, forKey: Self.appearanceDefaultsKey(profile, "centerLabel"))
+        defaults.set(preferences.autoHideWhenInactive, forKey: Self.appearanceDefaultsKey(profile, "autoHideWhenInactive"))
         defaults.set(preferences.usageDisplay.rawValue, forKey: Self.appearanceDefaultsKey(profile, "usageDisplay"))
         defaults.set(preferences.sessionStateIndicator.rawValue, forKey: Self.appearanceDefaultsKey(profile, "stateIndicator"))
         defaults.set(preferences.sessionGroup.rawValue, forKey: Self.appearanceDefaultsKey(profile, "sessionGroup"))
@@ -557,6 +558,7 @@ final class AppModel {
                     ?? defaults.string(forKey: islandCenterLabelDefaultsKey)
                     ?? ""
             ) ?? .agentAction,
+            autoHideWhenInactive: defaults.bool(forKey: appearanceDefaultsKey(profile, "autoHideWhenInactive")),
             usageDisplay: IslandUsageDisplay(
                 rawValue: defaults.string(forKey: appearanceDefaultsKey(profile, "usageDisplay"))
                     ?? ""
@@ -723,6 +725,38 @@ final class AppModel {
         }
         refreshOverlayDisplayConfiguration()
         hasFinishedInit = true
+    }
+
+    var isMouseInsideClosedArea: Bool = false {
+        didSet {
+            if isMouseInsideClosedArea != oldValue {
+                // Trigger re-render for peek behavior
+            }
+        }
+    }
+
+    var isIslandInactive: Bool {
+        let noActiveAgents = surfacedSessions.isEmpty || surfacedSessions.allSatisfy { 
+            $0.phase != .running && !$0.phase.requiresAttention 
+        }
+        let noMusic = !playerManager.isPlaying && musicNotificationTrack == nil
+        return noActiveAgents && noMusic
+    }
+
+    var shouldAutoHideIsland: Bool {
+        appearancePreferences(for: activeAppearanceProfile).autoHideWhenInactive && isIslandInactive
+    }
+
+    var isPeeking: Bool {
+        shouldAutoHideIsland && isMouseInsideClosedArea
+    }
+
+    func notePointerInsideClosedArea() {
+        isMouseInsideClosedArea = true
+    }
+
+    func notePointerExitedClosedArea() {
+        isMouseInsideClosedArea = false
     }
 
     var sessions: [AgentSession] {

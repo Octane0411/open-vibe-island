@@ -23,7 +23,7 @@
 "settings.general.hideFullscreen" = "全屏时隐藏";
 "settings.general.autoHideNoSessions" = "无活跃会话时自动隐藏";
 "settings.general.autoCollapse" = "鼠标离开时自动收起";
-"settings.general.showDockIcon" = "在 Dock 中显示图标";
+"settings.general.hideDockIcon" = "在 Dock 中隐藏图标";
 "settings.general.hapticFeedback" = "悬停时震动反馈";
 "settings.general.suppressFrontmostNotifications" = "前台会话不弹出通知";
 "settings.general.showCodexUsage" = "显示 Codex 用量";
@@ -112,7 +112,10 @@
 "settings.appearance.preview.promptSummarizeDesignBundle" = "你：总结设计包";
 "settings.appearance.preview.completedEarlier" = "稍早已完成";
 "settings.appearance.preview.permissionBody" = "$ npm run build";
-"settings.appearance.preview.pickOrTypeAnswer" = "选择或输入回答";
+"settings.appearance.preview.pickOrTypeAnswer" = "选择或输入答案";
+"settings.appearance.autoHide.title" = "不活跃时自动隐藏";
+"settings.appearance.autoHide.note" = "当没有活跃代理或音乐播放时隐藏岛屿。将鼠标悬停在屏幕顶部以查看。";
+"settings.appearance.autoHide.enabled" = "启用自动隐藏";
 
 /* Settings - Display */
 "settings.display.monitor" = "显示器";

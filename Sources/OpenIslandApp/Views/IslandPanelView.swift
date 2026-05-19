@@ -232,13 +232,14 @@ struct IslandPanelView: View {
                 }
 
                 v6ClosedSurface()
-                    .opacity(usesOpenedVisualState ? 0 : 1)
+                    .opacity(usesOpenedVisualState ? 0 : (model.shouldAutoHideIsland ? (model.isPeeking ? 1 : 0) : 1))
                     .animation(
                         usesOpenedVisualState
                             ? .easeOut(duration: 0.05)
                             : .easeIn(duration: 0.1).delay(0.08),
                         value: usesOpenedVisualState
                     )
+                    .animation(.easeInOut(duration: 0.2), value: model.isPeeking)
                     .allowsHitTesting(!usesOpenedVisualState)
             }
             .frame(maxWidth: .infinity, alignment: .top)

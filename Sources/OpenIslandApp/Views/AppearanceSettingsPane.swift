@@ -126,6 +126,29 @@ struct AppearanceSettingsPane: View {
             previewSection
             rightSlotSection
             centerLabelSection
+
+            if editingProfile == .topBar {
+                autoHideSection
+            }
+        }
+    }
+
+    private var autoHideSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader(
+                title: lang.t("settings.appearance.autoHide.title"),
+                note: lang.t("settings.appearance.autoHide.note")
+            )
+
+            Toggle(lang.t("settings.appearance.autoHide.enabled"), isOn: Binding(
+                get: { editingPreferences.autoHideWhenInactive },
+                set: { value in
+                    var prefs = editingPreferences
+                    prefs.autoHideWhenInactive = value
+                    model.updateAppearancePreferences(for: editingProfile) { $0.autoHideWhenInactive = value }
+                }
+            ))
+            .toggleStyle(.switch)
         }
     }
 
