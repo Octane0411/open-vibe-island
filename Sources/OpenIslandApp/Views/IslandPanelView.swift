@@ -524,14 +524,6 @@ struct IslandPanelView: View {
             tabButton(label: "Agents", systemImage: "terminal", tab: .agents)
             tabButton(label: "Music", systemImage: "music.note", tab: .music)
             
-            if !model.playerManager.track.isEmpty() {
-                Image(systemName: model.playerManager.isPlaying ? "play.fill" : "pause.fill")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(model.playerManager.track.avgAlbumColor)
-                    .frame(width: 20, height: 20)
-                    .padding(.leading, 4)
-            }
-            
             Spacer()
         }
     }
