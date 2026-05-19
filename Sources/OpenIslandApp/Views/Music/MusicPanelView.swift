@@ -4,32 +4,37 @@ struct MusicPanelView: View {
     @Bindable var playerManager: MusicPlayerManager
 
     var body: some View {
-        VStack(spacing: 12) {
-            HStack(alignment: .top, spacing: 14) {
-                MusicAlbumArtView(playerManager: playerManager, imageSize: 110)
+        if playerManager.isMusicEnabled {
+            musicControls
+        } else {
+            musicDisabledPlaceholder
+        }
+    }
 
-                VStack(alignment: .leading, spacing: 8) {
+    private var musicControls: some View {
+        HStack(spacing: 20) {
+            MusicAlbumArtView(playerManager: playerManager, imageSize: 180)
+
+            VStack(spacing: 16) {
+                HStack(alignment: .firstTextBaseline) {
                     PlayerTrackDetailsView(playerManager: playerManager)
-
-                    Spacer(minLength: 0)
-
-                    MusicPlaybackButtonsView(playerManager: playerManager, buttonSize: 18, spacing: 10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    
+                    ReactiveMusicSymbolView(color: playerManager.track.avgAlbumColor)
+                        .frame(width: 20, height: 20)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+
+                MusicPlaybackButtonsView(playerManager: playerManager, buttonSize: 22, spacing: 20)
+
+                VStack(spacing: 12) {
+                    MusicPlaybackPositionView(playerManager: playerManager)
+                }
+                .padding(.horizontal, 8)
             }
             .frame(maxWidth: .infinity)
-
-            MusicPlaybackPositionView(playerManager: playerManager)
-
-            MusicVolumeControlView(playerManager: playerManager)
-
-            if playerManager.isSpotifyAvailable {
-                appPickerRow
-            }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.top, 16)
+        .padding(.bottom, 16)
         .onAppear {
             playerManager.startTimer()
             playerManager.getVolume()
@@ -39,55 +44,42 @@ struct MusicPanelView: View {
         }
     }
 
-    private var appPickerRow: some View {
-        HStack(spacing: 6) {
+    private var musicDisabledPlaceholder: some View {
+        VStack(spacing: 10) {
             Spacer()
-
-            Button {
-                playerManager.switchToAppleMusic()
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "music.note")
-                        .font(.system(size: 10))
-                    Text("Apple Music")
-                        .font(.system(size: 10))
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(
-                    isAppleMusic
-                        ? Color.white.opacity(0.18)
-                        : Color.clear,
-                    in: Capsule()
-                )
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.white.opacity(isAppleMusic ? 0.9 : 0.45))
-
-            Button {
-                playerManager.switchToSpotify()
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "dot.radiowaves.left.and.right")
-                        .font(.system(size: 10))
-                    Text("Spotify")
-                        .font(.system(size: 10))
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(
-                    !isAppleMusic
-                        ? Color.white.opacity(0.18)
-                        : Color.clear,
-                    in: Capsule()
-                )
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.white.opacity(!isAppleMusic ? 0.9 : 0.45))
+            Image(systemName: "music.note.list")
+                .font(.system(size: 28, weight: .light))
+                .foregroundStyle(.white.opacity(0.25))
+            Text("No music player selected")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.white.opacity(0.4))
+            Text("Choose Apple Music or Spotify in Settings → Music")
+                .font(.system(size: 11))
+                .foregroundStyle(.white.opacity(0.25))
+                .multilineTextAlignment(.center)
+            Spacer()
         }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 16)
     }
 
-    private var isAppleMusic: Bool {
-        (UserDefaults.standard.string(forKey: MusicPlayerManager.connectedAppKey) ?? "appleMusic") == "appleMusic"
+    struct ReactiveMusicSymbolView: View {
+        let color: Color
+        @State private var animate = false
+
+        var body: some View {
+            ZStack {
+                Image(systemName: "music.note")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(color)
+                    .scaleEffect(animate ? 1.15 : 0.9)
+                    .opacity(animate ? 1.0 : 0.7)
+            }
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                    animate = true
+                }
+            }
+        }
     }
 }

@@ -10,16 +10,13 @@ final class OverlayPanelController {
     private static let preferredNotificationPanelWidth: CGFloat = 620
     private static let openedContentWidthPadding: CGFloat = 0
     private static let openedContentBottomPadding: CGFloat = 0
-    /// Must match `IslandPanelView.maxSessionListHeight` — the AutoHeightScrollView cap.
-    private static let maxSessionListHeight: CGFloat = 560
-    private static let maxVisibleSessionRows: Int = 6
     private static let openedRowSpacing: CGFloat = 0
     // Content padding top + scroll padding + v8 list header/footer + bottom inset.
     // Rows are now full-width scan rows, so the old inter-card spacing is gone.
-    private static let openedContentVerticalInsets: CGFloat = 84
+    private static let openedContentVerticalInsets: CGFloat = 92
     private static let notificationMeasuredContentPadding: CGFloat = 8
     private static let notificationEstimatedVerticalInsets: CGFloat = 36
-    private static let openedEmptyStateHeight: CGFloat = 108
+    private static let openedEmptyStateHeight: CGFloat = 200
     private static let questionCardBaseHeight: CGFloat = 110
     private static let questionCardMaxHeight: CGFloat = 420
     // Completion card chrome breakdown (everything except the scrollable text):
@@ -505,10 +502,14 @@ final class OverlayPanelController {
     }
 
     private func openedContentHeight(for model: AppModel) -> CGFloat {
+        if model.islandActiveTab == .music {
+            // Estimated height for music content:
+            // 180 (image) + 32 (vertical padding) + 28 (tab bar).
+            return 180 + 32 + 28
+        }
+
         let now = Date.now
-        let visibleSessions = openedVisibleSessions(
-            sessions: model.islandListSessions
-        )
+        let visibleSessions = model.islandListSessions
 
         if visibleSessions.isEmpty {
             return Self.openedEmptyStateHeight
@@ -535,6 +536,12 @@ final class OverlayPanelController {
             return 300
         }
 
+        if model.islandActiveTab == .agents, model.measuredAgentsContentHeight > 0 {
+            // Agents tab uses measured height + tab bar height + notch header height
+            let tabBarHeight: CGFloat = 36 // Estimated tab bar height
+            return model.measuredAgentsContentHeight + tabBarHeight + 12
+        }
+
         let rowHeights = visibleSessions.map { session -> CGFloat in
             if session.id == actionableID {
                 return session.estimatedIslandRowHeight(at: now)
@@ -546,9 +553,8 @@ final class OverlayPanelController {
         let rowsHeight = rowHeights.reduce(CGFloat.zero, +)
         let spacingHeight = CGFloat(max(0, rowHeights.count - 1)) * Self.openedRowSpacing
         let listHeight = rowsHeight + spacingHeight
-        // Cap to match AutoHeightScrollView's maxHeight in IslandPanelView.
-        let cappedListHeight = min(listHeight, Self.maxSessionListHeight)
-        return cappedListHeight + Self.openedContentVerticalInsets
+        
+        return listHeight + Self.openedContentVerticalInsets
     }
 
     /// Additional height for the actionable session's inline action area.
@@ -656,10 +662,6 @@ final class OverlayPanelController {
         // Use a smaller minimum to avoid blank space when content is short
         let minHeight: CGFloat = Self.completionCardChromeHeight + 20
         return min(Self.completionCardMaxHeight, max(minHeight, estimatedHeight))
-    }
-
-    private func openedVisibleSessions(sessions: [AgentSession]) -> [AgentSession] {
-        Array(sessions.prefix(Self.maxVisibleSessionRows))
     }
 
     // MARK: - Event reposting
