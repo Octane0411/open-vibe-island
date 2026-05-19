@@ -637,17 +637,15 @@ final class AppModel {
 
         playerManager.onPlaybackStateChange = { [weak self] isPlaying in
             guard let self, self.isOverlayVisible == false else { return }
-            // Trigger the "pop up" (notification pill) when pausing.
-            if !isPlaying {
-                let trackSnapshot = self.playerManager.track
-                guard !trackSnapshot.isEmpty() else { return }
-                
-                self.musicNotificationTrack = trackSnapshot
-                Task { @MainActor in
-                    try? await Task.sleep(for: .seconds(2))
-                    if self.musicNotificationTrack == trackSnapshot {
-                        self.musicNotificationTrack = nil
-                    }
+            // Trigger the "pop up" (notification pill) when playing/resuming or pausing.
+            let trackSnapshot = self.playerManager.track
+            guard !trackSnapshot.isEmpty() else { return }
+            
+            self.musicNotificationTrack = trackSnapshot
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                if self.musicNotificationTrack == trackSnapshot {
+                    self.musicNotificationTrack = nil
                 }
             }
         }
