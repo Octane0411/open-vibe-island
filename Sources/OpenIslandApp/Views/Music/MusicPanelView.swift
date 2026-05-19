@@ -19,7 +19,9 @@ struct MusicPanelView: View {
                 HStack(alignment: .firstTextBaseline) {
                     PlayerTrackDetailsView(playerManager: playerManager)
                     
-                    ReactiveMusicSymbolView(color: playerManager.track.avgAlbumColor)
+                    Image(systemName: playerManager.isPlaying ? "play.fill" : "pause.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(playerManager.track.avgAlbumColor)
                         .frame(width: 20, height: 20)
                 }
 
@@ -61,25 +63,5 @@ struct MusicPanelView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 16)
-    }
-
-    struct ReactiveMusicSymbolView: View {
-        let color: Color
-        @State private var animate = false
-
-        var body: some View {
-            ZStack {
-                Image(systemName: "music.note")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(color)
-                    .scaleEffect(animate ? 1.15 : 0.9)
-                    .opacity(animate ? 1.0 : 0.7)
-            }
-            .onAppear {
-                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                    animate = true
-                }
-            }
-        }
     }
 }

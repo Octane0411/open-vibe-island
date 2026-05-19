@@ -341,7 +341,9 @@ struct IslandPanelView: View {
             }
             .padding(.horizontal, 12)
             
-            ReactiveMusicSymbol(color: track.avgAlbumColor)
+            Image(systemName: model.playerManager.isPlaying ? "play.fill" : "pause.fill")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(track.avgAlbumColor)
                 .frame(width: 24, height: 24)
         }
         .padding(.horizontal, 16) // Room for fillets (8 * 2)
@@ -367,26 +369,6 @@ struct IslandPanelView: View {
             insertion: .move(edge: .top).combined(with: .opacity).animation(.spring(response: 0.45, dampingFraction: 0.8)),
             removal: .opacity.animation(.easeOut(duration: 0.2))
         ))
-    }
-
-    private struct ReactiveMusicSymbol: View {
-        let color: Color
-        @State private var animate = false
-
-        var body: some View {
-            ZStack {
-                Image(systemName: "music.note")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(color)
-                    .scaleEffect(animate ? 1.15 : 0.9)
-                    .opacity(animate ? 1.0 : 0.7)
-            }
-            .onAppear {
-                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                    animate = true
-                }
-            }
-        }
     }
 
     // MARK: - Opened surface
@@ -542,8 +524,10 @@ struct IslandPanelView: View {
             tabButton(label: "Agents", systemImage: "terminal", tab: .agents)
             tabButton(label: "Music", systemImage: "music.note", tab: .music)
             
-            if model.playerManager.isPlaying {
-                ReactiveMusicSymbol(color: model.playerManager.track.avgAlbumColor)
+            if !model.playerManager.track.isEmpty() {
+                Image(systemName: model.playerManager.isPlaying ? "play.fill" : "pause.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(model.playerManager.track.avgAlbumColor)
                     .frame(width: 20, height: 20)
                     .padding(.leading, 4)
             }
