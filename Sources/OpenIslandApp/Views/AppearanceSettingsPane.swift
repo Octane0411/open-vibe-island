@@ -266,7 +266,7 @@ struct AppearanceSettingsPane: View {
             let order = Self.autoCycleOrder
             let current = order.firstIndex(of: previewMode) ?? 0
             let next = order[(current + 1) % order.count]
-            withAnimation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.45)) {
+            withAnimation(.smooth(duration: 0.45, extraBounce: 0.1)) {
                 previewMode = next
             }
         }

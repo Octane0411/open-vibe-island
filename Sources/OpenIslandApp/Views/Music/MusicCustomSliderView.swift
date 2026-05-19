@@ -51,7 +51,7 @@ struct MusicCustomSliderView: View {
         }
         .frame(height: sliderHeight)
         .onHover { hovering in
-            withAnimation(.timingCurve(0.16, 1, 0.3, 1, duration: 0.7)) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                 sliderHeight += hovering ? 3 : -3
             }
         }

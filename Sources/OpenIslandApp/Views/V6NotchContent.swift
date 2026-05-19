@@ -275,7 +275,7 @@ struct V6ClosedPill: View {
         }
         .frame(width: width, height: height)
         .animation(
-            .timingCurve(0.4, 0, 0.2, 1, duration: 0.45),
+            .smooth(duration: 0.4, extraBounce: 0.1),
             value: AnyHashable([
                 AnyHashable(label ?? ""),
                 AnyHashable(rightSlot.map(RightSlotKey.init) ?? .none),

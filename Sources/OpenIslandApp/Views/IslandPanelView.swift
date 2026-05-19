@@ -73,9 +73,9 @@ extension AgentSession {
 
 // MARK: - Animations
 
-private let openAnimation  = Animation.spring(response: 0.42, dampingFraction: 0.74)
-private let closeAnimation = Animation.spring(response: 0.42, dampingFraction: 0.74)
-private let popAnimation   = Animation.spring(response: 0.3,  dampingFraction: 0.5)
+private let openAnimation  = Animation.spring(response: 0.48, dampingFraction: 0.82)
+private let closeAnimation = Animation.spring(response: 0.40, dampingFraction: 0.90)
+private let popAnimation   = Animation.spring(response: 0.35, dampingFraction: 0.65)
 private let openedSurfaceUnmountDelay: TimeInterval = 0.42
 
 private struct ConditionalDrawingGroup: ViewModifier {
@@ -511,7 +511,7 @@ struct IslandPanelView: View {
                     .frame(maxWidth: .infinity)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: model.islandActiveTab)
+        .animation(.smooth(duration: 0.35, extraBounce: 0.1), value: model.islandActiveTab)
     }
 
     private var islandTabBar: some View {
@@ -525,7 +525,7 @@ struct IslandPanelView: View {
 
     private func tabButton(label: String, systemImage: String, tab: IslandTab) -> some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.2)) { model.islandActiveTab = tab }
+            withAnimation(.smooth(duration: 0.35, extraBounce: 0.1)) { model.islandActiveTab = tab }
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: systemImage)

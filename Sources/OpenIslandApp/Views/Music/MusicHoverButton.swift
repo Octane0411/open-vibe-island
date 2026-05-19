@@ -28,7 +28,7 @@ struct MusicHoverButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering in
-            withAnimation(.smooth(duration: 0.2)) { isHovering = hovering }
+            withAnimation(.smooth(duration: 0.3)) { isHovering = hovering }
         }
     }
 }
