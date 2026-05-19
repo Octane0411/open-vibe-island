@@ -62,6 +62,13 @@ final class AppModel {
     @ObservationIgnored private var _agentsGridObservedSequence: [String: Int] = [:]
     @ObservationIgnored private var _agentsGridNextTicket: Int = 0
     var selectedSessionID: String?
+    var islandActiveTab: IslandTab = .agents {
+        didSet {
+            if islandActiveTab != oldValue {
+                refreshOverlayPlacementIfVisible()
+            }
+        }
+    }
     let hooks = HookInstallationCoordinator()
     let overlay = OverlayUICoordinator()
     let discovery = SessionDiscoveryCoordinator()
@@ -91,6 +98,7 @@ final class AppModel {
     var claudeStatusLineStatus: ClaudeStatusLineInstallationStatus? { hooks.claudeStatusLineStatus }
     var claudeUsageSnapshot: ClaudeUsageSnapshot? { hooks.claudeUsageSnapshot }
     var codexUsageSnapshot: CodexUsageSnapshot? { hooks.codexUsageSnapshot }
+    var geminiUsageSnapshot: GeminiUsageSnapshot? { hooks.geminiUsageSnapshot }
     var hooksBinaryURL: URL? { hooks.hooksBinaryURL }
     var codexHooksInstalled: Bool { hooks.codexHooksInstalled }
     var claudeHooksInstalled: Bool { hooks.claudeHooksInstalled }
@@ -616,6 +624,17 @@ final class AppModel {
             startWatchRelay()
         }
 
+        playerManager.onTrackChange = { [weak self] track in
+            guard let self, self.isOverlayVisible == false else { return }
+            self.musicNotificationTrack = track
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                if self.musicNotificationTrack == track {
+                    self.musicNotificationTrack = nil
+                }
+            }
+        }
+
         overlay.appModel = self
         overlay.restoreDisplayPreference()
         overlay.onStatusMessage = { [weak self] message in
@@ -710,6 +729,20 @@ final class AppModel {
             }
         }
     }
+
+    /// Measured by SwiftUI GeometryReader in Agents tab.
+    var measuredAgentsContentHeight: CGFloat = 0 {
+        didSet {
+            let delta = abs(measuredAgentsContentHeight - oldValue)
+            if delta >= 2, measuredAgentsContentHeight > 0 {
+                overlay.refreshOverlayPlacementIfVisible()
+            }
+        }
+    }
+
+    var completionFlashSessionID: String?
+
+    var musicNotificationTrack: PlayerTrack?
 
     var surfacedSessions: [AgentSession] {
         sessionBuckets.primary
@@ -830,7 +863,23 @@ final class AppModel {
         let sessions = surfacedSessions
         if sessions.contains(where: { $0.phase.requiresAttention }) { return .waiting }
         if sessions.contains(where: { $0.phase == .running })       { return .running }
+        
+        if playerManager.isPlaying {
+            return .music(isPlaying: true)
+        }
+        
+        if !playerManager.track.isEmpty() {
+            return .music(isPlaying: false)
+        }
+        
         return .idle
+    }
+
+    var islandClosedTint: Color? {
+        if case .music = islandClosedMode {
+            return playerManager.track.avgAlbumColor
+        }
+        return nil
     }
 
     /// The spotlight session powering the center label (if any). Attention
@@ -845,23 +894,28 @@ final class AppModel {
     /// Text to show in the closed island's center label. Respects the
     /// `islandCenterLabel` user preference.
     func islandClosedLabel() -> String? {
-        guard islandCenterLabel != .off,
-              let session = islandClosedSpotlight else { return nil }
-
-        switch islandCenterLabel {
-        case .off:
-            return nil
-        case .sessionName:
-            let workspace = session.jumpTarget?.workspaceName ?? ""
-            if !workspace.isEmpty { return workspace }
-            return session.title.isEmpty ? session.tool.displayName : session.title
-        case .agentAction:
-            let action = session.displayCurrentToolName
-            if let action, !action.isEmpty {
-                return "\(session.tool.displayName) · \(action)"
+        guard islandCenterLabel != .off else { return nil }
+        
+        if let session = islandClosedSpotlight {
+            switch islandCenterLabel {
+            case .off:
+                return nil
+            case .sessionName:
+                let workspace = session.jumpTarget?.workspaceName ?? ""
+                if !workspace.isEmpty { return workspace }
+                return session.title.isEmpty ? session.tool.displayName : session.title
+            case .agentAction:
+                let action = session.displayCurrentToolName
+                if let action, !action.isEmpty {
+                    return "\(session.tool.displayName) · \(action)"
+                }
+                return session.tool.displayName
             }
-            return session.tool.displayName
+        } else if !playerManager.track.isEmpty() {
+            return playerManager.track.title
         }
+
+        return nil
     }
 
     /// Right-slot payload derived from the user's `islandRightSlot`
@@ -1075,7 +1129,9 @@ final class AppModel {
             hooks.refreshOpenCodePluginStatus()
             hooks.refreshCursorHookStatus()
             hooks.refreshClaudeUsageState()
+            hooks.refreshGeminiUsageState()
             hooks.startClaudeUsageMonitoringIfNeeded()
+            hooks.startGeminiUsageMonitoringIfNeeded()
             if showCodexUsage {
                 hooks.refreshCodexUsageState()
                 hooks.startCodexUsageMonitoringIfNeeded()
@@ -1483,6 +1539,22 @@ final class AppModel {
 
         state.apply(event)
         reconcileIslandSurfaceAfterStateChange()
+        
+        if case let .sessionCompleted(payload) = event, !wasAlreadyCompleted {
+            completionFlashSessionID = payload.sessionID
+            if notchStatus == .closed {
+                notchOpen(reason: .notification, surface: .sessionList(actionableSessionID: payload.sessionID))
+            }
+            
+            // Clear the flash after a delay
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                if completionFlashSessionID == payload.sessionID {
+                    completionFlashSessionID = nil
+                }
+            }
+        }
+
         if ingress == .bridge {
             monitoring.markSessionAttached(for: event)
             monitoring.markSessionProcessAlive(for: event)

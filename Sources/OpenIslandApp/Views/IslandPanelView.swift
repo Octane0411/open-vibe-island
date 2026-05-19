@@ -73,10 +73,10 @@ extension AgentSession {
 
 // MARK: - Animations
 
-private let openAnimation  = Animation.spring(response: 0.36, dampingFraction: 0.66)
-private let closeAnimation = Animation.spring(response: 0.26, dampingFraction: 0.92)
+private let openAnimation  = Animation.spring(response: 0.42, dampingFraction: 0.74)
+private let closeAnimation = Animation.spring(response: 0.42, dampingFraction: 0.74)
 private let popAnimation   = Animation.spring(response: 0.3,  dampingFraction: 0.5)
-private let openedSurfaceUnmountDelay: TimeInterval = 0.36
+private let openedSurfaceUnmountDelay: TimeInterval = 0.42
 
 private struct ConditionalDrawingGroup: ViewModifier {
     let enabled: Bool
@@ -106,12 +106,10 @@ struct IslandPanelView: View {
 
     @State private var isHovering = false
     @State private var showingQuitConfirmation = false
+    @State private var musicNotificationWidth: CGFloat = 0
     @State private var keepsOpenedSurfaceMounted = false
     @State private var openedSurfaceMountGeneration: UInt64 = 0
-    @State private var activeTab: IslandTab = .agents
     @State private var morphProgress: CGFloat = 0
-
-    private enum IslandTab { case agents, music }
 
     private var isOpened: Bool {
         model.notchStatus == .opened
@@ -246,19 +244,19 @@ struct IslandPanelView: View {
             .frame(maxWidth: .infinity, alignment: .top)
             .clipShape(GrowingNotchShape(
                 progress: morphProgress,
-                compactW: closedNotchWidth,
+                compactW: (model.musicNotificationTrack != nil && musicNotificationWidth > 0) ? musicNotificationWidth : closedNotchWidth,
                 compactH: closedNotchHeight,
                 expandedW: openedWidth,
                 expandedH: openedHeight
             ))
         }
         .scaleEffect(usesOpenedVisualState ? 1 : (isHovering ? IslandChromeMetrics.closedHoverScale : 1), anchor: .top)
-        .animation(.spring(response: 0.38, dampingFraction: 0.8), value: isHovering)
+        .animation(.easeInOut(duration: 0.3), value: isHovering)
         .padding(.horizontal, panelShadowHorizontalInset)
         .padding(.bottom, panelShadowBottomInset)
         .contentShape(Rectangle())
         .onHover { hovering in
-            withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {
+            withAnimation(.easeInOut(duration: 0.3)) {
                 isHovering = hovering
             }
         }
@@ -301,19 +299,95 @@ struct IslandPanelView: View {
     /// TimelineView internally for bar animation.
     @ViewBuilder
     private func v6ClosedSurface() -> some View {
-        let layout: V6ClosedLayout = isExternalDisplayPlacement ? .external : .macbook
-        let physicalNotchWidth: CGFloat = targetOverlayScreen?.notchSize.width ?? 180
-        V6ClosedPill(
-            mode: model.islandClosedMode,
-            label: layout == .external ? model.islandClosedLabel() : nil,
-            rightSlot: model.islandClosedRightSlotContent(),
-            layout: layout,
-            height: closedNotchHeight,
-            physicalNotchWidth: layout == .macbook ? physicalNotchWidth : 0,
-            minWidth: 70
+        if model.musicNotificationTrack != nil {
+            musicNotificationPill(track: model.playerManager.track)
+        } else {
+            let layout: V6ClosedLayout = isExternalDisplayPlacement ? .external : .macbook
+            let physicalNotchWidth: CGFloat = targetOverlayScreen?.notchSize.width ?? 180
+            V6ClosedPill(
+                mode: model.islandClosedMode,
+                label: layout == .external ? model.islandClosedLabel() : nil,
+                rightSlot: model.islandClosedRightSlotContent(),
+                layout: layout,
+                height: closedNotchHeight,
+                tint: model.islandClosedTint,
+                physicalNotchWidth: layout == .macbook ? physicalNotchWidth : 0,
+                minWidth: 70
+            )
+            .scaleEffect(isPopping ? 1.04 : 1, anchor: .top)
+            .animation(popAnimation, value: isPopping)
+        }
+    }
+
+    private func musicNotificationPill(track: PlayerTrack) -> some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 10) {
+                track.albumArt
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 22, height: 22)
+                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(track.title.uppercased())
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(V6Palette.paper)
+                        .lineLimit(1)
+
+                    Text(track.artist)
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(V6Palette.paper.opacity(0.5))
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 12)
+            
+            ReactiveMusicSymbol(color: track.avgAlbumColor)
+                .frame(width: 24, height: 24)
+        }
+        .padding(.horizontal, 16) // Room for fillets (8 * 2)
+        .frame(height: closedNotchHeight)
+        .fixedSize(horizontal: true, vertical: true)
+        .background(V6Palette.ink, in: V6ClosedPillShape())
+        .background(
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear {
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
+                            musicNotificationWidth = geo.size.width
+                        }
+                    }
+                    .onChange(of: geo.size.width) { _, newWidth in
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
+                            musicNotificationWidth = newWidth
+                        }
+                    }
+            }
         )
-        .scaleEffect(isPopping ? 1.04 : 1, anchor: .top)
-        .animation(popAnimation, value: isPopping)
+        .transition(.asymmetric(
+            insertion: .move(edge: .top).combined(with: .opacity).animation(.spring(response: 0.45, dampingFraction: 0.8)),
+            removal: .opacity.animation(.easeOut(duration: 0.2))
+        ))
+    }
+
+    private struct ReactiveMusicSymbol: View {
+        let color: Color
+        @State private var animate = false
+
+        var body: some View {
+            ZStack {
+                Image(systemName: "music.note")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(color)
+                    .scaleEffect(animate ? 1.15 : 0.9)
+                    .opacity(animate ? 1.0 : 0.7)
+            }
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                    animate = true
+                }
+            }
+        }
     }
 
     // MARK: - Opened surface
@@ -445,34 +519,43 @@ struct IslandPanelView: View {
     }
 
     private var openedContent: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             islandTabBar
                 .padding(.horizontal, 16)
-                .padding(.top, 6)
-                .padding(.bottom, 4)
+                .padding(.top, 2)
+                .padding(.bottom, 2)
 
-            switch activeTab {
+            switch model.islandActiveTab {
             case .agents:
                 agentsContent
+                    .frame(maxWidth: .infinity)
             case .music:
                 MusicPanelView(playerManager: model.playerManager)
                     .transition(.opacity)
+                    .frame(maxWidth: .infinity)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: activeTab)
+        .animation(.easeInOut(duration: 0.2), value: model.islandActiveTab)
     }
 
     private var islandTabBar: some View {
         HStack(spacing: 4) {
             tabButton(label: "Agents", systemImage: "terminal", tab: .agents)
             tabButton(label: "Music", systemImage: "music.note", tab: .music)
+            
+            if model.playerManager.isPlaying {
+                ReactiveMusicSymbol(color: model.playerManager.track.avgAlbumColor)
+                    .frame(width: 20, height: 20)
+                    .padding(.leading, 4)
+            }
+            
             Spacer()
         }
     }
 
     private func tabButton(label: String, systemImage: String, tab: IslandTab) -> some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.2)) { activeTab = tab }
+            withAnimation(.easeInOut(duration: 0.2)) { model.islandActiveTab = tab }
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: systemImage)
@@ -480,11 +563,11 @@ struct IslandPanelView: View {
                 Text(label)
                     .font(.system(size: 11, weight: .medium))
             }
-            .foregroundStyle(activeTab == tab ? .white : .white.opacity(0.4))
+            .foregroundStyle(model.islandActiveTab == tab ? .white : .white.opacity(0.4))
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(
-                activeTab == tab ? Color.white.opacity(0.12) : Color.clear,
+                model.islandActiveTab == tab ? Color.white.opacity(0.12) : Color.clear,
                 in: Capsule()
             )
         }
@@ -630,22 +713,40 @@ struct IslandPanelView: View {
                         }
                     }
             } else {
-                VStack(spacing: 0) {
-                    sessionPanelHeader(referenceDate: referenceDate)
+               VStack(spacing: 0) {
+                   sessionPanelHeader(referenceDate: referenceDate)
 
-                    ScrollView(.vertical) {
-                        sessionRowsContent(referenceDate: referenceDate)
-                    }
-                    .scrollIndicators(.hidden)
-                    .scrollBounceBehavior(.basedOnSize)
+                   VStack(spacing: 0) {
+                       sessionRowsContent(referenceDate: referenceDate)
+                   }
 
-                    sessionPanelFooter
-                }
-                .padding(.vertical, 2)
+                   sessionPanelFooter
+               }
+               .padding(.vertical, 2)
+               .fixedSize(horizontal: false, vertical: true)
+               .background(
+                   GeometryReader { geo in
+                       Color.clear.preference(
+                           key: AgentsContentHeightKey.self,
+                           value: geo.size.height
+                       )
+                   }
+               )
+               .onPreferenceChange(AgentsContentHeightKey.self) { height in
+                   if height > 0 {
+                       model.measuredAgentsContentHeight = height
+                   }
+               }
             }
-        }
-    }
+            }
+            }
 
+            private struct AgentsContentHeightKey: PreferenceKey {
+            static let defaultValue: CGFloat = 0
+            static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+            value = max(value, nextValue())
+            }
+            }
     @ViewBuilder
     private func sessionListContent(referenceDate: Date) -> some View {
         VStack(spacing: 0) {
@@ -664,8 +765,8 @@ struct IslandPanelView: View {
                     isInteractive: model.notchStatus == .opened,
                     presentation: .notification,
                     sideInset: sessionListSideInset,
-                    lang: model.lang,
-                    onApprove: { model.approvePermission(for: session.id, action: $0) },
+                    isFlashing: model.completionFlashSessionID == session.id,
+                    lang: model.lang,                    onApprove: { model.approvePermission(for: session.id, action: $0) },
                     onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
                     onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                         ? { model.replyToSession(session, text: $0) } : nil,
@@ -705,8 +806,8 @@ struct IslandPanelView: View {
                                 useDrawingGroup: model.notchStatus == .opened,
                                 isInteractive: model.notchStatus == .opened,
                                 sideInset: sessionListSideInset,
-                                lang: model.lang,
-                                onApprove: { model.approvePermission(for: session.id, action: $0) },
+                                isFlashing: model.completionFlashSessionID == session.id,
+                                lang: model.lang,                                onApprove: { model.approvePermission(for: session.id, action: $0) },
                                 onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
                                 onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                                     ? { model.replyToSession(session, text: $0) } : nil,
@@ -755,8 +856,8 @@ struct IslandPanelView: View {
                         useDrawingGroup: model.notchStatus == .opened,
                         isInteractive: model.notchStatus == .opened,
                         sideInset: sessionListSideInset,
-                        lang: model.lang,
-                        onApprove: { model.approvePermission(for: session.id, action: $0) },
+                        isFlashing: model.completionFlashSessionID == session.id,
+                        lang: model.lang,                        onApprove: { model.approvePermission(for: session.id, action: $0) },
                         onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
                         onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                             ? { model.replyToSession(session, text: $0) } : nil,
@@ -997,6 +1098,28 @@ struct IslandPanelView: View {
                     UsageProviderPresentation(
                         id: "codex",
                         title: "Codex",
+                        windows: windows
+                    )
+                )
+            }
+        }
+
+        if let snapshot = model.geminiUsageSnapshot,
+           snapshot.isEmpty == false {
+            let windows = snapshot.windows.map { window in
+                UsageWindowPresentation(
+                    id: "gemini-\(window.label)",
+                    label: window.label,
+                    usedPercentage: window.usedPercentage,
+                    resetsAt: window.resetsAt
+                )
+            }
+
+            if windows.isEmpty == false {
+                providers.append(
+                    UsageProviderPresentation(
+                        id: "gemini",
+                        title: "Gemini",
                         windows: windows
                     )
                 )
@@ -1275,6 +1398,7 @@ private struct IslandSessionRow: View {
     var isInteractive: Bool = true
     var presentation: IslandSessionRowPresentation = .list
     var sideInset: CGFloat = 16
+    var isFlashing: Bool = false
     var lang: LanguageManager = .shared
     var onApprove: ((ApprovalAction) -> Void)?
     var onAnswer: ((QuestionPromptResponse) -> Void)?
@@ -1316,6 +1440,12 @@ private struct IslandSessionRow: View {
             }
         }
         .background(rowFillColor(for: presence))
+        .overlay {
+            if isFlashing {
+                (Color(hex: session.tool.brandColorHex) ?? .blue)
+                    .opacity(0.18)
+            }
+        }
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(.white.opacity(0.045))
@@ -1783,7 +1913,7 @@ private struct IslandSessionRow: View {
     private var completionActionBody: some View {
         VStack(alignment: .leading, spacing: 0) {
             if !completionMessageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                AutoHeightScrollView(maxHeight: 160) {
+                AutoHeightScrollView(maxHeight: 2000) {
                     Markdown(completionMessageText)
                         .markdownTheme(.completionCard)
                         .frame(maxWidth: .infinity, alignment: .topLeading)
