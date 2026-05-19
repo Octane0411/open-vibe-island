@@ -739,8 +739,10 @@ final class AppModel {
         let noActiveAgents = surfacedSessions.isEmpty || surfacedSessions.allSatisfy { 
             $0.phase != .running && !$0.phase.requiresAttention 
         }
-        let noMusic = !playerManager.isPlaying && musicNotificationTrack == nil
-        return noActiveAgents && noMusic
+        // Hide even if music is playing, as long as the temporary notification pill 
+        // (triggered by track change or play/pause) is not currently showing.
+        let noActiveMusicEvent = musicNotificationTrack == nil
+        return noActiveAgents && noActiveMusicEvent
     }
 
     var shouldAutoHideIsland: Bool {
