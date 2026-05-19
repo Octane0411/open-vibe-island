@@ -6,7 +6,7 @@
 
 ---
 
-🚀 Key Features
+### 🚀 Key Features
 
 * **Integrated Music Controls:** Enjoy your favorite music services seamlessly. Control playback, view tracks, and manage your audio from Spotify or Apple Music without leaving your active window.
 * **Live Claude Instance Tracking:** Keep tabs on your active `claude-code` sessions, terminal-native AI agents, and permission prompts in real-time right from your notch.
@@ -14,7 +14,7 @@
 
 ---
 
-🤝 Acknowledgments & Credits
+### 🤝 Acknowledgments & Credits
 
 This project stands on the shoulders of incredible open-source utilities. Huge credits to the original developers:
 
