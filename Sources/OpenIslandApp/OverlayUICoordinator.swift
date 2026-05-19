@@ -262,6 +262,10 @@ final class OverlayUICoordinator {
             return false
         }
 
+        if appModel?.shouldAutoHideIsland == true {
+            return true
+        }
+
         if notchOpenReason == .hover && !islandSurface.isNotificationCard {
             return true
         }
