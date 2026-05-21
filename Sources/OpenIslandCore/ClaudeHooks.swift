@@ -988,6 +988,13 @@ public extension ClaudeHookPayload {
             payload.warpPaneUUID = warpPaneResolver(payload.cwd)
         }
 
+        // For Kitty, use KITTY_WINDOW_ID as the terminal session identifier.
+        if payload.terminalApp == "Kitty" {
+            if payload.terminalSessionID == nil {
+                payload.terminalSessionID = environment["KITTY_WINDOW_ID"]
+            }
+        }
+
         // For cmux, use CMUX_SURFACE_ID as the terminal session identifier.
         if payload.terminalApp == "cmux" {
             if payload.terminalSessionID == nil {
@@ -1051,7 +1058,7 @@ public extension ClaudeHookPayload {
     }
 
     private static let noLocatorTerminalApps: Set<String> = [
-        "cmux", "kaku", "wezterm", "zellij",
+        "cmux", "kaku", "kitty", "wezterm", "zellij",
         "vs code", "vs code insiders", "cursor", "windsurf", "trae",
         "intellij idea", "webstorm", "pycharm", "goland", "clion",
         "rubymine", "phpstorm", "rider", "rustrover",
@@ -1190,6 +1197,8 @@ public extension ClaudeHookPayload {
                 return "Warp"
             case let value where value.contains("ghostty"):
                 return "Ghostty"
+            case "kitty":
+                return "Kitty"
             case "kaku":
                 return "Kaku"
             case "wezterm":
@@ -1226,6 +1235,9 @@ public extension ClaudeHookPayload {
         }
         if environment["GHOSTTY_RESOURCES_DIR"] != nil {
             return "Ghostty"
+        }
+        if environment["KITTY_WINDOW_ID"] != nil {
+            return "Kitty"
         }
 
         // JetBrains IDEs set TERMINAL_EMULATOR=JetBrains-JediTerm.
