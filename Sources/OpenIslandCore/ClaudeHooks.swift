@@ -898,16 +898,18 @@ public extension ClaudeHookPayload {
     }
 
     var permissionRequestTitle: String {
+        let base: String
         switch toolName {
         case "ExitPlanMode":
-            return "Exit plan mode"
+            base = "Exit plan mode"
         case "AskUserQuestion":
-            return "Answer Claude's questions"
+            base = "Answer Claude's questions"
         case let toolName?:
-            return "Allow \(toolName)"
+            base = "Allow \(toolName)"
         case nil:
-            return "Allow Claude tool"
+            base = "Allow Claude tool"
         }
+        return agentID != nil ? "\(base) (subagent)" : base
     }
 
     var permissionRequestSummary: String {
