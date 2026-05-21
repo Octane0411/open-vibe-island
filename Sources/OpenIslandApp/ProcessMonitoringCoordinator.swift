@@ -834,6 +834,13 @@ final class ProcessMonitoringCoordinator {
         if let terminalSessionID = jumpTarget.terminalSessionID?
             .trimmingCharacters(in: .whitespacesAndNewlines),
            !terminalSessionID.isEmpty {
+            // When inside tmux, multiple sessions may share the same
+            // terminalSessionID (e.g. KITTY_WINDOW_ID is per-OS-window,
+            // not per-pane). Prefer TTY for uniqueness in that case.
+            if jumpTarget.tmuxTarget != nil,
+               let terminalTTY = normalizedTTYForMatching(jumpTarget.terminalTTY) {
+                return "\(terminalApp.lowercased()):tty:\(terminalTTY.lowercased())"
+            }
             return "\(terminalApp.lowercased()):session:\(terminalSessionID.lowercased())"
         }
 

@@ -560,9 +560,12 @@ public final class BridgeServer: @unchecked Sendable {
         // Subagent processes fire their own hooks with agentID set.
         // The parent session already receives SubagentStart/SubagentStop events,
         // so we suppress subagent hooks to avoid creating duplicate sessions.
+        // permissionRequest must pass through — it's interactive and the subagent
+        // is blocked until the user responds.
         if payload.agentID != nil,
            payload.hookEventName != .subagentStart,
-           payload.hookEventName != .subagentStop {
+           payload.hookEventName != .subagentStop,
+           payload.hookEventName != .permissionRequest {
             send(.response(.acknowledged), to: clientID)
             return
         }

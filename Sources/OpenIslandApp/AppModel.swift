@@ -3,6 +3,7 @@ import Foundation
 import Observation
 import OpenIslandCore
 import SwiftUI
+import os
 
 extension Notification.Name {
     /// Posted by `AppModel.showOnboarding()` to ask `SettingsView` to
@@ -15,6 +16,7 @@ extension Notification.Name {
 @MainActor
 @Observable
 final class AppModel {
+    private static let ntfyLogger = Logger(subsystem: "app.openisland", category: "NtfyFlow")
     private static let soundMutedDefaultsKey = "overlay.sound.muted"
     private static let showDockIconDefaultsKey = "app.showDockIcon"
     private static let hapticFeedbackEnabledDefaultsKey = "app.hapticFeedbackEnabled"
@@ -497,6 +499,139 @@ final class AppModel {
         watchRelay = nil
     }
 
+    // MARK: - Ntfy Remote Notification (Away Detection)
+
+    private static let ntfyEnabledKey = "ntfy.enabled"
+    private static let ntfyAlwaysNotifyKey = "ntfy.alwaysNotify"
+
+    var ntfyEnabled: Bool = false {
+        didSet {
+            guard hasFinishedInit, ntfyEnabled != oldValue else { return }
+            UserDefaults.standard.set(ntfyEnabled, forKey: Self.ntfyEnabledKey)
+            if ntfyEnabled {
+                startNtfyMonitoring()
+            } else {
+                stopNtfyMonitoring()
+            }
+        }
+    }
+
+    var ntfyAlwaysNotify: Bool = false {
+        didSet {
+            guard hasFinishedInit, ntfyAlwaysNotify != oldValue else { return }
+            UserDefaults.standard.set(ntfyAlwaysNotify, forKey: Self.ntfyAlwaysNotifyKey)
+        }
+    }
+
+    @ObservationIgnored
+    private let idleMonitor = IdleActivityMonitor()
+    @ObservationIgnored
+    private let ntfyNotifier = NtfyRemoteNotifier()
+
+    var currentIdleSeconds: TimeInterval { idleMonitor.idleSeconds }
+    var isUserAway: Bool { idleMonitor.isUserAway }
+
+    private func startNtfyMonitoring() {
+        idleMonitor.start()
+        ntfyNotifier.onPermissionResponse = { [weak self] sessionID, approved in
+            Self.ntfyLogger.info("onPermissionResponse callback fired: sessionID=\(sessionID), approved=\(approved)")
+            self?.approvePermission(for: sessionID, approved: approved)
+        }
+        ntfyNotifier.onQuestionResponse = { [weak self] sessionID, answer in
+            Self.ntfyLogger.info("onQuestionResponse callback fired: sessionID=\(sessionID), answer=\(answer)")
+            self?.answerQuestion(
+                for: sessionID,
+                answer: QuestionPromptResponse(answer: answer)
+            )
+        }
+    }
+
+    // MARK: - Debug Session Logger
+
+    @ObservationIgnored
+    private var debugLogTimer: Timer?
+
+    func startDebugSessionLogger() {
+        debugLogTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.logSessionState()
+            }
+        }
+    }
+
+    private func logSessionState() {
+        let sessions = surfacedSessions
+        var lines: [String] = ["[SessionDebug] \(sessions.count) visible sessions:"]
+        for s in sessions {
+            let terminal = s.jumpTarget?.terminalApp ?? "nil"
+            let hookManaged = s.isHookManaged
+            let ended = s.isSessionEnded
+            let alive = s.isProcessAlive
+            let tty = s.jumpTarget?.terminalTTY ?? "nil"
+            let tmux = s.jumpTarget?.tmuxTarget ?? "nil"
+            let source = sessionDiscoverySource(s)
+            lines.append("  [\(s.id)] \(s.spotlightHeadlineText) | phase=\(s.phase) source=\(source) terminal=\(terminal) hookManaged=\(hookManaged) ended=\(ended) alive=\(alive) tty=\(tty) tmux=\(tmux)")
+        }
+        lines.append("[IdleDebug] ntfyEnabled=\(ntfyEnabled) isUserAway=\(idleMonitor.isUserAway) idleSeconds=\(Int(idleMonitor.idleSeconds))")
+        let output = lines.joined(separator: "\n")
+        try? output.write(toFile: "/tmp/open-island-debug.log", atomically: true, encoding: .utf8)
+    }
+
+    private func sessionDiscoverySource(_ session: AgentSession) -> String {
+        if session.isHookManaged {
+            return "hook"
+        }
+        if session.id.hasPrefix(Self.syntheticClaudeSessionPrefix) {
+            return "process-synthetic"
+        }
+        if session.origin == .live {
+            return "registry-restored"
+        }
+        if session.claudeMetadata?.transcriptPath != nil {
+            return "transcript"
+        }
+        return "unknown"
+    }
+
+    private func stopNtfyMonitoring() {
+        idleMonitor.stop()
+        ntfyNotifier.cancel()
+    }
+
+    private func sendNtfyIfAway(for event: AgentEvent) {
+        guard ntfyEnabled else {
+            Self.ntfyLogger.debug("sendNtfyIfAway: ntfy disabled")
+            return
+        }
+        guard ntfyAlwaysNotify || idleMonitor.isUserAway else {
+            Self.ntfyLogger.debug("sendNtfyIfAway: user not away (alwaysNotify=\(self.ntfyAlwaysNotify))")
+            return
+        }
+        guard ntfyNotifier.config.isConfigured else {
+            Self.ntfyLogger.warning("sendNtfyIfAway: ntfy not configured (server=\(self.ntfyNotifier.config.server), topic=\(self.ntfyNotifier.config.topic))")
+            return
+        }
+
+        switch event {
+        case let .permissionRequested(payload):
+            guard let session = state.session(id: payload.sessionID) else {
+                Self.ntfyLogger.warning("sendNtfyIfAway: session not found for permissionRequested, sessionID=\(payload.sessionID)")
+                return
+            }
+            Self.ntfyLogger.info("sendNtfyIfAway: dispatching permission notification for sessionID=\(payload.sessionID)")
+            ntfyNotifier.sendPermissionNotification(sessionID: payload.sessionID, session: session)
+        case let .questionAsked(payload):
+            guard let session = state.session(id: payload.sessionID) else {
+                Self.ntfyLogger.warning("sendNtfyIfAway: session not found for questionAsked, sessionID=\(payload.sessionID)")
+                return
+            }
+            Self.ntfyLogger.info("sendNtfyIfAway: dispatching question notification for sessionID=\(payload.sessionID)")
+            ntfyNotifier.sendQuestionNotification(sessionID: payload.sessionID, session: session)
+        default:
+            break
+        }
+    }
+
     var ignoresPointerExitDuringHarness = false
     var disablesOverlayEventMonitoringDuringHarness = false
 
@@ -615,6 +750,12 @@ final class AppModel {
         if watchNotificationEnabled {
             startWatchRelay()
         }
+        ntfyEnabled = UserDefaults.standard.bool(forKey: Self.ntfyEnabledKey)
+        ntfyAlwaysNotify = UserDefaults.standard.bool(forKey: Self.ntfyAlwaysNotifyKey)
+        if ntfyEnabled {
+            startNtfyMonitoring()
+        }
+        startDebugSessionLogger()
 
         overlay.appModel = self
         overlay.restoreDisplayPreference()
@@ -1344,7 +1485,9 @@ final class AppModel {
     }
 
     func approvePermission(for sessionID: String, approved: Bool) {
+        Self.ntfyLogger.info("approvePermission: sessionID=\(sessionID), approved=\(approved)")
         guard let session = state.session(id: sessionID) else {
+            Self.ntfyLogger.error("approvePermission: session not found for sessionID=\(sessionID)")
             return
         }
 
@@ -1354,6 +1497,7 @@ final class AppModel {
         synchronizeSelection()
         refreshOverlayPlacementIfVisible()
 
+        Self.ntfyLogger.info("approvePermission: sending bridge command resolvePermission for \(session.title)")
         send(
             .resolvePermission(sessionID: session.id, resolution: resolution),
             userMessage: approved
@@ -1444,7 +1588,9 @@ final class AppModel {
 
             do {
                 try await self.bridgeClient.send(command)
+                Self.ntfyLogger.info("send: bridge command sent successfully — \(userMessage)")
             } catch {
+                Self.ntfyLogger.error("send: bridge command failed — \(error.localizedDescription)")
                 self.lastActionMessage = "Failed to send bridge command: \(error.localizedDescription)"
             }
         }
@@ -1518,6 +1664,8 @@ final class AppModel {
             let session = eventSessionID.flatMap { state.session(id: $0) }
             relay.notifyEvent(event, session: session)
         }
+
+        sendNtfyIfAway(for: event)
 
         if updateLastActionMessage {
             lastActionMessage = describe(event)
