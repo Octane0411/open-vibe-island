@@ -46,22 +46,12 @@ command cp "$setup_binary" "$bundle_dir/Contents/Helpers/OpenIslandSetup"
 command cp "$brand_icon" "$bundle_dir/Contents/Resources/OpenIsland.icns"
 chmod +x "$bundle_binary" "$bundle_dir/Contents/Helpers/OpenIslandHooks" "$bundle_dir/Contents/Helpers/OpenIslandSetup"
 
-# Add rpath so the binary can find Sparkle.framework in Contents/Frameworks/.
-install_name_tool -add_rpath @loader_path/../Frameworks "$bundle_binary" 2>/dev/null || true
-
 # Copy SPM resource bundle to .app root — SPM's generated Bundle.module accessor
 # searches Bundle.main.bundleURL (the .app root), NOT Contents/Resources/.
 resource_bundle="$build_root/OpenIsland_OpenIslandApp.bundle"
 if [ -d "$resource_bundle" ]; then
     rm -rf "$bundle_dir/OpenIsland_OpenIslandApp.bundle"
     command cp -R "$resource_bundle" "$bundle_dir/"
-fi
-
-# Copy Sparkle.framework for auto-update support.
-sparkle_framework="$repo_root/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
-if [ -d "$sparkle_framework" ]; then
-    rm -rf "$bundle_dir/Contents/Frameworks/Sparkle.framework"
-    command cp -R "$sparkle_framework" "$bundle_dir/Contents/Frameworks/"
 fi
 
 cat > "$plist_path" <<EOF
@@ -95,10 +85,6 @@ cat > "$plist_path" <<EOF
     <true/>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
-    <key>SUFeedURL</key>
-    <string>https://raw.githubusercontent.com/Octane0411/open-vibe-island/main/appcast.xml</string>
-    <key>SUPublicEDKey</key>
-    <string>3IF8txq9RRNanzE2FNhyGRcwhslTucCcJHpTkpxcgBQ=</string>
 </dict>
 </plist>
 EOF

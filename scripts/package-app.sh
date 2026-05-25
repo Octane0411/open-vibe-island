@@ -44,20 +44,12 @@ python3 "$brand_script"
 python3 "$dmg_bg_script"
 
 rm -rf "$bundle_dir" "$zip_path" "$dmg_path"
-mkdir -p "$bundle_dir/Contents/MacOS" "$bundle_dir/Contents/Helpers" "$bundle_dir/Contents/Resources" "$bundle_dir/Contents/Frameworks"
+mkdir -p "$bundle_dir/Contents/MacOS" "$bundle_dir/Contents/Helpers" "$bundle_dir/Contents/Resources"
 
 cp "$app_binary" "$bundle_dir/Contents/MacOS/OpenIslandApp"
 cp "$hooks_binary" "$bundle_dir/Contents/Helpers/OpenIslandHooks"
 cp "$setup_binary" "$bundle_dir/Contents/Helpers/OpenIslandSetup"
 cp "$brand_icon" "$bundle_dir/Contents/Resources/OpenIsland.icns"
-
-# Copy Sparkle.framework for auto-update support.
-sparkle_framework="$repo_root/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
-if [[ -d "$sparkle_framework" ]]; then
-    cp -R "$sparkle_framework" "$bundle_dir/Contents/Frameworks/"
-else
-    echo "WARNING: Sparkle.framework not found at $sparkle_framework — run 'swift package resolve' first." >&2
-fi
 
 # Copy SPM resource bundle into Contents/Resources/ so the .app root stays
 # clean for code signing (no unsealed contents). Our custom
@@ -73,9 +65,6 @@ chmod +x \
     "$bundle_dir/Contents/MacOS/OpenIslandApp" \
     "$bundle_dir/Contents/Helpers/OpenIslandHooks" \
     "$bundle_dir/Contents/Helpers/OpenIslandSetup"
-
-# Add rpath so the binary can find Sparkle.framework in Contents/Frameworks/.
-install_name_tool -add_rpath @loader_path/../Frameworks "$bundle_dir/Contents/MacOS/OpenIslandApp" 2>/dev/null || true
 
 cat > "$bundle_dir/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -110,10 +99,6 @@ cat > "$bundle_dir/Contents/Info.plist" <<EOF
     <true/>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
-    <key>SUFeedURL</key>
-    <string>https://raw.githubusercontent.com/Octane0411/open-vibe-island/main/appcast.xml</string>
-    <key>SUPublicEDKey</key>
-    <string>${OPEN_ISLAND_EDDSA_PUBLIC_KEY:-3IF8txq9RRNanzE2FNhyGRcwhslTucCcJHpTkpxcgBQ=}</string>
 </dict>
 </plist>
 EOF
@@ -170,22 +155,7 @@ else
     echo "WARNING: smoke test skipped — binary not found at $smoke_binary" >&2
 fi
 
-sparkle_fw="$bundle_dir/Contents/Frameworks/Sparkle.framework"
-
 if [[ -n "$signing_identity" ]]; then
-    # Sign nested code objects inside-out: Sparkle internals → helpers → app.
-
-    if [[ -d "$sparkle_fw" ]]; then
-        for xpc in "$sparkle_fw"/Versions/B/XPCServices/*.xpc; do
-            [[ -d "$xpc" ]] && codesign --force --options runtime --timestamp --sign "$signing_identity" "$xpc"
-        done
-        [[ -f "$sparkle_fw/Versions/B/Autoupdate" ]] && \
-            codesign --force --options runtime --timestamp --sign "$signing_identity" "$sparkle_fw/Versions/B/Autoupdate"
-        [[ -d "$sparkle_fw/Versions/B/Updater.app" ]] && \
-            codesign --force --options runtime --timestamp --sign "$signing_identity" "$sparkle_fw/Versions/B/Updater.app"
-        codesign --force --options runtime --timestamp --sign "$signing_identity" "$sparkle_fw"
-    fi
-
     codesign --force --options runtime --timestamp --sign "$signing_identity" \
         "$bundle_dir/Contents/Helpers/OpenIslandHooks"
     codesign --force --options runtime --timestamp --sign "$signing_identity" \
@@ -201,13 +171,6 @@ if [[ -n "$signing_identity" ]]; then
 
     codesign --verify --deep --strict --verbose=2 "$bundle_dir"
 else
-    # Ad-hoc sign so macOS accepts the embedded Sparkle.framework.
-    if [[ -d "$sparkle_fw" ]]; then
-        for xpc in "$sparkle_fw"/Versions/B/XPCServices/*.xpc; do
-            [[ -d "$xpc" ]] && codesign --force --sign - "$xpc" 2>/dev/null || true
-        done
-        codesign --force --sign - "$sparkle_fw" 2>/dev/null || true
-    fi
     codesign --force --sign - "$bundle_dir/Contents/Helpers/OpenIslandHooks" 2>/dev/null || true
     codesign --force --sign - "$bundle_dir/Contents/Helpers/OpenIslandSetup" 2>/dev/null || true
     codesign --force --sign - "$bundle_dir" 2>/dev/null || true

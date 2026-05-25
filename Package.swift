@@ -26,13 +26,14 @@ let package = Package(
             targets: ["OpenIslandApp"]
         ),
     ],
-    dependencies: [
-        .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.1"),
-        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.0"),
-    ],
+    dependencies: [],
     targets: [
         .target(
-            name: "OpenIslandCore"
+            name: "OpenIslandCore",
+            exclude: [
+                "WatchHTTPEndpoint.swift",
+                "WatchNotificationRelay.swift",
+            ]
         ),
         .executableTarget(
             name: "OpenIslandHooks",
@@ -46,8 +47,10 @@ let package = Package(
             name: "OpenIslandApp",
             dependencies: [
                 "OpenIslandCore",
-                .product(name: "MarkdownUI", package: "swift-markdown-ui"),
-                .product(name: "Sparkle", package: "Sparkle"),
+            ],
+            exclude: [
+                "UpdateChecker.swift",
+                "Resources/open-island-opencode.js",
             ],
             resources: [
                 .process("Resources"),
@@ -55,7 +58,10 @@ let package = Package(
         ),
         .testTarget(
             name: "OpenIslandCoreTests",
-            dependencies: ["OpenIslandCore"]
+            dependencies: ["OpenIslandCore"],
+            exclude: [
+                "WatchNotificationRelayTests.swift",
+            ]
         ),
         .testTarget(
             name: "OpenIslandAppTests",

@@ -156,13 +156,6 @@ struct SettingsView: View {
                 AboutSettingsPane(model: model)
             }
 
-            if model.updateChecker.hasUpdate, let version = model.updateChecker.latestVersion {
-                UpdateBanner(version: version, lang: lang) {
-                    model.updateChecker.checkForUpdates()
-                }
-                .padding(.top, 8)
-                .padding(.trailing, 16)
-            }
         }
     }
 }
@@ -344,20 +337,6 @@ struct AboutSettingsPane: View {
             Divider()
 
             Form {
-                Section {
-                    aboutActionRow(
-                        title: lang.t("settings.about.checkForUpdates"),
-                        systemImage: "arrow.triangle.2.circlepath",
-                        tint: primaryInk,
-                        action: {
-                            model.updateChecker.checkForUpdates()
-                        }
-                    )
-                    .disabled(!model.updateChecker.canCheckForUpdates)
-                    .opacity(model.updateChecker.canCheckForUpdates ? 1 : 0.55)
-                    .accessibilityIdentifier("settings.about.checkForUpdates")
-                }
-
                 Section {
                     aboutActionRow(
                         title: lang.t("settings.about.quitApp"),
@@ -966,77 +945,18 @@ struct SetupSettingsPane: View {
 struct WatchSettingsPane: View {
     var model: AppModel
 
-    @State private var pairingCode: String = "----"
-
     var body: some View {
         Form {
-            Section {
-                Toggle("Watch Notifications", isOn: Binding(
-                    get: { model.watchNotificationEnabled },
-                    set: { model.watchNotificationEnabled = $0 }
-                ))
-
-                if model.watchNotificationEnabled {
-                    Text("When enabled, the macOS app broadcasts a Bonjour service that your iPhone can discover on the same WiFi network.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            } header: {
-                Text("General")
-            }
-
-            if model.watchNotificationEnabled {
-                Section("Pairing") {
-                    HStack {
-                        Text("Pairing Code")
-                        Spacer()
-                        Text(pairingCode)
-                            .font(.system(size: 24, weight: .bold, design: .monospaced))
-                            .foregroundStyle(.blue)
-                    }
-
-                    Text("Enter this code on your iPhone app to pair. Code expires after 2 minutes.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    Button("Refresh Code") {
-                        model.watchRelay?.endpoint.regeneratePairingCode()
-                        pairingCode = model.watchPairingCode
-                    }
-                }
-
-                Section("Paired Devices") {
-                    if model.watchConnectedDevices > 0 {
-                        HStack {
-                            Label("iPhone", systemImage: "iphone")
-                            Spacer()
-                            HStack(spacing: 4) {
-                                Circle()
-                                    .fill(.green)
-                                    .frame(width: 7, height: 7)
-                                Text("Connected")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    } else {
-                        HStack {
-                            Label("No devices paired", systemImage: "iphone.slash")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    Button("Revoke All Pairings", role: .destructive) {
-                        model.watchRelay?.endpoint.revokeAllTokens()
-                    }
-                }
+            Section("Work-Safe Build") {
+                Label("Watch and iPhone notifications are disabled.", systemImage: "network.slash")
+                    .foregroundStyle(.secondary)
+                Text("This fork does not start a Bonjour service, does not expose a local HTTP endpoint on your LAN, and keeps agent events on this Mac.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
         .navigationTitle("Watch")
-        .onAppear {
-            pairingCode = model.watchPairingCode
-        }
     }
 }
 
