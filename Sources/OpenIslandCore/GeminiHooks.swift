@@ -365,6 +365,14 @@ public extension GeminiHookPayload {
         case .some("kaku"):
             return "Kaku"
         case .some("vscode"):
+            // Cursor also sets TERM_PROGRAM=vscode; check Cursor-specific
+            // env vars to avoid misidentifying it as VS Code.
+            if environment["CURSOR_TRACE_ID"] != nil
+                || environment["GIT_ASKPASS"]?.lowercased().contains("/cursor.app/") == true
+                || environment["VSCODE_GIT_ASKPASS_NODE"]?.lowercased().contains("/cursor.app/") == true
+            {
+                return "Cursor"
+            }
             return "VS Code"
         case .some("vscode-insiders"):
             return "VS Code Insiders"

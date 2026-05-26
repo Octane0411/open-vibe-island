@@ -144,6 +144,7 @@ struct ActiveAgentProcessDiscoveryTests {
     /// stock VS Code (#415). Verify each fork is recognized correctly.
     @Test(arguments: [
         ("/Applications/Cursor.app/Contents/Frameworks/Code Helper.app/Contents/MacOS/Code Helper", "Cursor"),
+        ("Cursor Helper: terminal pty-host", "Cursor"),
         ("/Applications/Windsurf.app/Contents/Frameworks/Code Helper.app/Contents/MacOS/Code Helper", "Windsurf"),
         ("/Applications/Trae.app/Contents/Frameworks/Code Helper.app/Contents/MacOS/Code Helper", "Trae"),
         ("/Applications/Qoder.app/Contents/Frameworks/Code Helper.app/Contents/MacOS/Code Helper", "Qoder"),
