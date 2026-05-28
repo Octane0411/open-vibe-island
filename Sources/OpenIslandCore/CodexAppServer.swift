@@ -50,7 +50,11 @@ public enum CodexThreadSource: String, Codable, Sendable {
     case unknown
 
     public init(from decoder: Decoder) throws {
-        let value = try decoder.singleValueContainer().decode(String.self)
+        let container = try decoder.singleValueContainer()
+        guard let value = try? container.decode(String.self) else {
+            self = .unknown
+            return
+        }
         self = CodexThreadSource(rawValue: value) ?? .unknown
     }
 }
@@ -182,19 +186,50 @@ public final class CodexAppServerClient: @unchecked Sendable {
     /// List currently loaded threads from the app-server.
     public func listLoadedThreads() async throws -> [CodexThread] {
         struct Params: Encodable {}
-        struct Result: Decodable { let threads: [CodexThread] }
+        struct Result: Decodable {
+            let threads: [CodexThread]?
+            let data: [String]?
+        }
         let data = try await sendRequest(method: "thread/loaded/list", params: Params())
         let result = try JSONDecoder().decode(Result.self, from: data)
-        return result.threads
+        if let threads = result.threads {
+            return threads
+        }
+
+        var threads: [CodexThread] = []
+        for threadID in result.data ?? [] {
+            if let thread = try? await readThread(threadID: threadID) {
+                threads.append(thread)
+            }
+        }
+        return threads
     }
 
     /// List all threads (including not-loaded) from the app-server.
     public func listThreads(limit: Int? = nil) async throws -> [CodexThread] {
         struct Params: Encodable { let limit: Int? }
-        struct Result: Decodable { let threads: [CodexThread] }
+        struct Result: Decodable {
+            let threads: [CodexThread]?
+            let data: [CodexThread]?
+        }
         let data = try await sendRequest(method: "thread/list", params: Params(limit: limit))
         let result = try JSONDecoder().decode(Result.self, from: data)
-        return result.threads
+        return result.threads ?? result.data ?? []
+    }
+
+    /// Read a single thread by id from the app-server.
+    public func readThread(threadID: String) async throws -> CodexThread {
+        struct Params: Encodable {
+            let threadId: String
+            let includeTurns: Bool
+        }
+        struct Result: Decodable { let thread: CodexThread }
+        let data = try await sendRequest(
+            method: "thread/read",
+            params: Params(threadId: threadID, includeTurns: false)
+        )
+        let result = try JSONDecoder().decode(Result.self, from: data)
+        return result.thread
     }
 
     // MARK: - JSON-RPC transport

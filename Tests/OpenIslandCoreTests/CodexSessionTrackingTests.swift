@@ -1093,6 +1093,56 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutDiscoveryMarksCodexDesktopSessionsWithAppJumpTarget() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-codex-app-\(UUID().uuidString)", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/05/28", isDirectory: true)
+        let rolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-codex-app.jsonl")
+        let now = Date(timeIntervalSince1970: 1_779_940_000)
+
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let cwd = "/Users/pojue/Documents/Codex/2026-05-28/hatch-pet-users-pojue-codex-skills"
+        let lines = [
+            sessionMetaLine(
+                sessionID: "019e6cb5-46dc-7e11-ad95-e1df0de7cdb7",
+                timestamp: "2026-05-28T03:51:20.275Z",
+                cwd: cwd,
+                originator: "Codex Desktop",
+                source: "vscode"
+            ),
+            rolloutLine(
+                timestamp: "2026-05-28T03:51:22.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "turn_complete",
+                    "last_agent_message": "Turn completed.",
+                ]
+            ),
+        ]
+        try lines.joined(separator: "\n").appending("\n").write(to: rolloutURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: rolloutURL.path)
+
+        let discovery = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10
+        )
+
+        let records = discovery.discoverRecentSessions(now: now)
+        let record = records.first
+        let session = record?.session
+
+        #expect(records.count == 1)
+        #expect(record?.jumpTarget?.terminalApp == "Codex.app")
+        #expect(record?.jumpTarget?.workingDirectory == cwd)
+        #expect(record?.jumpTarget?.codexThreadID == "019e6cb5-46dc-7e11-ad95-e1df0de7cdb7")
+        #expect(session?.isCodexAppSession == true)
+    }
+
+    @Test
     func codexRolloutDiscoveryHandlesTrailingLineWithoutNewline() throws {
         // A rollout written by Codex while the process is mid-flush
         // can land on disk without a trailing newline. The streamed
@@ -1185,7 +1235,9 @@ private func rolloutLine(
 private func sessionMetaLine(
     sessionID: String,
     timestamp: String,
-    cwd: String
+    cwd: String,
+    originator: String = "codex-tui",
+    source: String = "cli"
 ) -> String {
     rolloutLine(
         timestamp: timestamp,
@@ -1194,8 +1246,8 @@ private func sessionMetaLine(
             "id": sessionID,
             "timestamp": timestamp,
             "cwd": cwd,
-            "originator": "codex-tui",
-            "source": "cli",
+            "originator": originator,
+            "source": source,
         ]
     )
 }
