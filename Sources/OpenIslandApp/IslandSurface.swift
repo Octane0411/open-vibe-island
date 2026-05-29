@@ -39,7 +39,7 @@ enum IslandSurface: Equatable {
         }
 
         guard let session else {
-            return false
+            return true
         }
 
         switch session.phase {
@@ -50,7 +50,7 @@ enum IslandSurface: Equatable {
         case .completed:
             return true
         case .running:
-            return false
+            return session.permissionRequest != nil || session.questionPrompt != nil
         }
     }
 }
