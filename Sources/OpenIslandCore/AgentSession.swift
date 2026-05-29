@@ -529,19 +529,21 @@ public extension AgentSession {
         if permissionRequest != nil || questionPrompt != nil {
             return true
         }
-        // Hook-managed sessions: stay visible if still running or has recent activity
+        // Hook-managed sessions: stay visible unless explicitly ended via sessionEnd hook
         if isHookManaged {
-            // Even if isSessionEnded is true, keep visible if phase is running
-            if phase == .running { return true }
+            // Only hide when explicitly ended via sessionEnd hook
             return !isSessionEnded
         }
-        // Keep running sessions visible if process is alive
+        // Running sessions stay visible regardless of process detection
         if phase == .running {
-            return isProcessAlive
+            return true
         }
         // Codex.app sessions stay visible while the desktop app is running.
         if isCodexAppSession { return isProcessAlive }
-        // Non-hook-managed sessions rely on process polling
+        // Non-hook-managed sessions rely on process polling for completed state
+        if phase == .completed {
+            return isProcessAlive
+        }
         if isProcessAlive { return true }
         return false
     }

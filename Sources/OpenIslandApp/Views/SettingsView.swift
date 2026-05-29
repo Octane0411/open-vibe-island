@@ -252,6 +252,24 @@ struct DisplaySettingsPane: View {
                 }
             }
 
+            Section(lang.t("settings.display.notificationDelay")) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text(lang.t("settings.display.notificationDelay.label"))
+                        Spacer()
+                        Text("\(Int(model.notificationAutoCollapseDelay))s")
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(value: Binding(
+                        get: { model.notificationAutoCollapseDelay },
+                        set: { model.notificationAutoCollapseDelay = $0 }
+                    ), in: 5...30, step: 1)
+                    Text(lang.t("settings.display.notificationDelay.note"))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             if let diag = model.overlayPlacementDiagnostics {
                 Section(lang.t("settings.display.diagnostics")) {
                     LabeledContent(lang.t("settings.display.currentScreen"), value: diag.targetScreenName)
@@ -284,30 +302,65 @@ struct SoundSettingsPane: View {
                 ))
             }
 
-            Section(lang.t("settings.sound.selectSound")) {
-                List(availableSounds, id: \.self) { name in
-                    Button {
-                        model.selectedSoundName = name
-                        NotificationSoundService.play(name)
-                    } label: {
-                        HStack {
-                            Text(name)
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            if name == model.selectedSoundName {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(.blue)
-                                    .fontWeight(.semibold)
-                            }
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
+            Section(lang.t("settings.sound.completion")) {
+                soundPicker(
+                    title: lang.t("settings.sound.completion.label"),
+                    eventType: .completion,
+                    selectedSound: model.completionSoundName
+                ) { sound in
+                    model.completionSoundName = sound
+                }
+            }
+
+            Section(lang.t("settings.sound.permission")) {
+                soundPicker(
+                    title: lang.t("settings.sound.permission.label"),
+                    eventType: .permission,
+                    selectedSound: model.permissionSoundName
+                ) { sound in
+                    model.permissionSoundName = sound
+                }
+            }
+
+            Section(lang.t("settings.sound.question")) {
+                soundPicker(
+                    title: lang.t("settings.sound.question.label"),
+                    eventType: .question,
+                    selectedSound: model.questionSoundName
+                ) { sound in
+                    model.questionSoundName = sound
                 }
             }
         }
         .formStyle(.grouped)
         .navigationTitle(lang.t("settings.tab.sound"))
+    }
+
+    private func soundPicker(
+        title: String,
+        eventType: NotificationEventType,
+        selectedSound: String,
+        onSelect: @escaping (String) -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(title)
+                Spacer()
+                Picker("", selection: Binding(
+                    get: { selectedSound },
+                    set: { sound in
+                        onSelect(sound)
+                        NotificationSoundService.play(sound)
+                    }
+                )) {
+                    ForEach(availableSounds, id: \.self) { sound in
+                        Text(sound).tag(sound)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 120)
+            }
+        }
     }
 }
 

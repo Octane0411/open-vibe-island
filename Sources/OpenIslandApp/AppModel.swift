@@ -28,6 +28,7 @@ final class AppModel {
     private static let legacyIslandSessionSortDefaultsKey = "appearance.island.v8.sessionSort"
     private static let legacyCompletedStaleThresholdDefaultsKey = "appearance.island.v8.completedStaleThreshold"
     private static let appearanceProfileSettingsDefaultsKey = "appearance.island.v8.settingsProfile"
+    private static let notificationAutoCollapseDelayDefaultsKey = "app.notification.autoCollapseDelay"
 
     private static let syntheticClaudeSessionPrefix = "claude-process:"
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
@@ -265,6 +266,13 @@ final class AppModel {
             UserDefaults.standard.set(suppressFrontmostNotifications, forKey: Self.suppressFrontmostNotificationsDefaultsKey)
         }
     }
+    var notificationAutoCollapseDelay: Double = 10 {
+        didSet {
+            guard hasFinishedInit, notificationAutoCollapseDelay != oldValue else { return }
+            UserDefaults.standard.set(notificationAutoCollapseDelay, forKey: Self.notificationAutoCollapseDelayDefaultsKey)
+            overlay.notificationAutoCollapseDelay = notificationAutoCollapseDelay
+        }
+    }
     var launchAtLoginEnabled: Bool = false {
         didSet {
             guard !isApplyingLaunchAtLogin, hasFinishedInit, launchAtLoginEnabled != oldValue else { return }
@@ -305,6 +313,28 @@ final class AppModel {
             NotificationSoundService.selectedSoundName = selectedSoundName
         }
     }
+    
+    var completionSoundName: String = NotificationSoundService.defaultSoundName {
+        didSet {
+            guard completionSoundName != oldValue else { return }
+            NotificationSoundService.setSoundName(completionSoundName, for: .completion)
+        }
+    }
+    
+    var permissionSoundName: String = NotificationSoundService.defaultSoundName {
+        didSet {
+            guard permissionSoundName != oldValue else { return }
+            NotificationSoundService.setSoundName(permissionSoundName, for: .permission)
+        }
+    }
+    
+    var questionSoundName: String = NotificationSoundService.defaultSoundName {
+        didSet {
+            guard questionSoundName != oldValue else { return }
+            NotificationSoundService.setSoundName(questionSoundName, for: .question)
+        }
+    }
+    
     var overlayDisplaySelectionID: String {
         get { overlay.overlayDisplaySelectionID }
         set { overlay.overlayDisplaySelectionID = newValue }
@@ -594,9 +624,16 @@ final class AppModel {
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
+        completionSoundName = NotificationSoundService.soundName(for: .completion)
+        permissionSoundName = NotificationSoundService.soundName(for: .permission)
+        questionSoundName = NotificationSoundService.soundName(for: .question)
         showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
         hapticFeedbackEnabled = UserDefaults.standard.bool(forKey: Self.hapticFeedbackEnabledDefaultsKey)
         suppressFrontmostNotifications = UserDefaults.standard.bool(forKey: Self.suppressFrontmostNotificationsDefaultsKey)
+        notificationAutoCollapseDelay = UserDefaults.standard.double(forKey: Self.notificationAutoCollapseDelayDefaultsKey)
+        if notificationAutoCollapseDelay <= 0 {
+            notificationAutoCollapseDelay = 10  // 默认值
+        }
         if UserDefaults.standard.object(forKey: Self.showCodexUsageDefaultsKey) != nil {
             showCodexUsage = UserDefaults.standard.bool(forKey: Self.showCodexUsageDefaultsKey)
         } else {
@@ -1223,6 +1260,10 @@ final class AppModel {
     var showsNotificationCard: Bool { overlay.showsNotificationCard }
     var shouldDeferTimedNotificationAutoCollapse: Bool { overlay.shouldDeferTimedNotificationAutoCollapse }
     var hasPendingNotificationAutoCollapse: Bool { overlay.hasPendingNotificationAutoCollapse }
+    
+    var hasSessionsRequiringAttention: Bool {
+        state.sessions.contains(where: { $0.phase.requiresAttention })
+    }
 
     func loadDebugSnapshot(
         _ snapshot: IslandDebugSnapshot,

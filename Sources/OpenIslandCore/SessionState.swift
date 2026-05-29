@@ -113,28 +113,64 @@ public struct SessionState: Equatable, Sendable {
             upsert(session)
 
         case let .permissionRequested(payload):
-            guard var session = sessionsByID[payload.sessionID] else {
-                return
+            if var session = sessionsByID[payload.sessionID] {
+                // 会话已存在，更新状态
+                session.phase = .waitingForApproval
+                session.summary = payload.request.summary
+                session.permissionRequest = payload.request
+                session.questionPrompt = nil
+                session.updatedAt = payload.timestamp
+                upsert(session)
+            } else {
+                // 会话不存在，创建临时会话来保存权限请求
+                var session = AgentSession(
+                    id: payload.sessionID,
+                    title: payload.request.summary,
+                    tool: .claudeCode,  // 默认使用 Claude Code
+                    origin: .live,
+                    attachmentState: .attached,
+                    phase: .waitingForApproval,
+                    summary: payload.request.summary,
+                    updatedAt: payload.timestamp,
+                    permissionRequest: payload.request,
+                    questionPrompt: nil
+                )
+                session.isHookManaged = true
+                session.isSessionEnded = false
+                session.isProcessAlive = true
+                session.processNotSeenCount = 0
+                upsert(session)
             }
-
-            session.phase = .waitingForApproval
-            session.summary = payload.request.summary
-            session.permissionRequest = payload.request
-            session.questionPrompt = nil
-            session.updatedAt = payload.timestamp
-            upsert(session)
 
         case let .questionAsked(payload):
-            guard var session = sessionsByID[payload.sessionID] else {
-                return
+            if var session = sessionsByID[payload.sessionID] {
+                // 会话已存在，更新状态
+                session.phase = .waitingForAnswer
+                session.summary = payload.prompt.title
+                session.questionPrompt = payload.prompt
+                session.permissionRequest = nil
+                session.updatedAt = payload.timestamp
+                upsert(session)
+            } else {
+                // 会话不存在，创建临时会话来保存问答请求
+                var session = AgentSession(
+                    id: payload.sessionID,
+                    title: payload.prompt.title,
+                    tool: .claudeCode,  // 默认使用 Claude Code
+                    origin: .live,
+                    attachmentState: .attached,
+                    phase: .waitingForAnswer,
+                    summary: payload.prompt.title,
+                    updatedAt: payload.timestamp,
+                    permissionRequest: nil,
+                    questionPrompt: payload.prompt
+                )
+                session.isHookManaged = true
+                session.isSessionEnded = false
+                session.isProcessAlive = true
+                session.processNotSeenCount = 0
+                upsert(session)
             }
-
-            session.phase = .waitingForAnswer
-            session.summary = payload.prompt.title
-            session.questionPrompt = payload.prompt
-            session.permissionRequest = nil
-            session.updatedAt = payload.timestamp
-            upsert(session)
 
         case let .sessionCompleted(payload):
             guard var session = sessionsByID[payload.sessionID] else {

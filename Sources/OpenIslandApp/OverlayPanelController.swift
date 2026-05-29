@@ -272,8 +272,11 @@ final class OverlayPanelController {
             model.notchOpen(reason: .click)
         } else if model.notchStatus == .opened {
             if !isPointInExpandedArea(screenLocation) {
-                model.notchClose()
-                repostMouseDown(at: screenLocation)
+                // Don't close if there are sessions requiring attention (e.g., permission requests, questions)
+                if !model.hasSessionsRequiringAttention {
+                    model.notchClose()
+                    repostMouseDown(at: screenLocation)
+                }
             }
         }
     }

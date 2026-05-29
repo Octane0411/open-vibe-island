@@ -7,7 +7,7 @@ import OpenIslandCore
 @Observable
 final class OverlayUICoordinator {
 
-    private static let notificationSurfaceAutoCollapseDelay: TimeInterval = 10
+    var notificationAutoCollapseDelay: TimeInterval = 10
 
     var notchStatus: NotchStatus = .closed
     var notchOpenReason: NotchOpenReason?
@@ -328,7 +328,11 @@ final class OverlayUICoordinator {
         }
 
         appModel?.measuredNotificationContentHeight = 0
-        NotificationSoundService.playNotification(isMuted: isSoundMuted)
+        if let eventType = surface.eventType {
+            NotificationSoundService.playNotification(eventType, isMuted: isSoundMuted)
+        } else {
+            NotificationSoundService.playNotification(.completion, isMuted: isSoundMuted)
+        }
         notchOpen(reason: .notification, surface: surface)
     }
 
@@ -400,7 +404,8 @@ final class OverlayUICoordinator {
 
         notificationAutoCollapseTask = Task { @MainActor [weak self] in
             do {
-                try await Task.sleep(for: .seconds(Self.notificationSurfaceAutoCollapseDelay))
+                guard let self else { return }
+                try await Task.sleep(for: .seconds(self.notificationAutoCollapseDelay))
             } catch {
                 // Task was cancelled (e.g. a new event reset the timer).
                 // Do NOT proceed — the replacement task owns the new timer.
