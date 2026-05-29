@@ -352,7 +352,7 @@ final class OverlayUICoordinator {
         let session = activeIslandCardSession
         guard islandSurface.matchesCurrentState(of: session) else {
             if notchOpenReason == .notification {
-                notchClose()
+                islandSurface = .sessionList(actionableSessionID: islandSurface.sessionID)
             } else {
                 islandSurface = .sessionList()
             }
