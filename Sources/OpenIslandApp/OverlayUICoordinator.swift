@@ -353,6 +353,9 @@ final class OverlayUICoordinator {
         guard islandSurface.matchesCurrentState(of: session) else {
             if notchOpenReason == .notification {
                 islandSurface = .sessionList(actionableSessionID: islandSurface.sessionID)
+                notchOpenReason = .click
+                notificationAutoCollapseTask?.cancel()
+                notificationAutoCollapseTask = nil
             } else {
                 islandSurface = .sessionList()
             }
