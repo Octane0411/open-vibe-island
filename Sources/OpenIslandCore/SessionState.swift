@@ -394,7 +394,9 @@ public struct SessionState: Equatable, Sendable {
                     session.processNotSeenCount = 0
                 } else {
                     session.processNotSeenCount += 1
-                    if session.processNotSeenCount >= 2 {
+                    // Don't mark hook-managed sessions as ended due to process detection failure
+                    // Hook-managed sessions rely on hook lifecycle signals, not process polling
+                    if session.processNotSeenCount >= 2 && !session.isHookManaged {
                         session.isSessionEnded = true
                         session.phase = .completed
                         changed.insert(id)

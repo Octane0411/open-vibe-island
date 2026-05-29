@@ -525,11 +525,15 @@ public extension AgentSession {
     var isVisibleInIsland: Bool {
         if isDemoSession { return true }
         if phase.requiresAttention { return true }
-        // Hook-managed sessions stay visible unless explicitly ended
-        if isHookManaged { return !isSessionEnded }
         // Keep sessions visible if they have pending requests or questions
         if permissionRequest != nil || questionPrompt != nil {
             return true
+        }
+        // Hook-managed sessions: stay visible if still running or has recent activity
+        if isHookManaged {
+            // Even if isSessionEnded is true, keep visible if phase is running
+            if phase == .running { return true }
+            return !isSessionEnded
         }
         // Keep running sessions visible if process is alive
         if phase == .running {
