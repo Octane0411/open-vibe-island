@@ -1,0 +1,301 @@
+/* ============================================================
+   Open Island — landing site global styles
+   Pixel-retro, dark base + CRT amber accent.
+   ============================================================ */
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  /* Surfaces */
+  --bg: #0b0b0d;
+  --bg-2: #101013;
+  --bg-elevated: #161619;
+  --bg-card: #1a1a1e;
+
+  /* Text — cream, echoing the Open Island app mark */
+  --text: #f2ebdd;
+  --text-2: rgba(242, 235, 221, 0.66);
+  --text-3: rgba(242, 235, 221, 0.4);
+
+  /* Primary accent — CRT amber gold */
+  --accent: #ffb000;
+  --accent-dim: rgba(255, 176, 0, 0.15);
+  --accent-glow: rgba(255, 176, 0, 0.3);
+
+  /* Semantic / island state colors (match the in-app island) */
+  --blue: #5797ff; /* monitoring   */
+  --orange: #ff9b28; /* needs review / question */
+  --green: #2ae86b; /* approved / done */
+  --red: #ff5555; /* deny / danger  */
+
+  --border: rgba(242, 235, 221, 0.1);
+  --border-2: rgba(242, 235, 221, 0.18);
+
+  /* Type */
+  --pixel: 'Press Start 2P', 'PingFang SC', 'Microsoft YaHei', monospace;
+  --mono: 'JetBrains Mono', 'SF Mono', 'Menlo', 'PingFang SC', 'Microsoft YaHei', monospace;
+
+  --radius: 16px;
+  --radius-sm: 10px;
+
+  --maxw: 980px;
+}
+
+html {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 16px;
+  line-height: 1.8;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  overflow-x: hidden;
+  background: var(--bg);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+/* ---- Type helpers ---- */
+.pixel {
+  font-family: var(--pixel);
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+}
+.mono {
+  font-family: var(--mono);
+}
+
+/* ---- Layout ---- */
+.container {
+  width: 100%;
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.section {
+  padding: 96px 0;
+  position: relative;
+}
+
+.eyebrow {
+  font-family: var(--pixel);
+  font-size: 11px;
+  color: var(--accent);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 18px;
+}
+
+.section-title {
+  font-family: var(--pixel);
+  font-size: 22px;
+  line-height: 1.6;
+  color: var(--text);
+  margin-bottom: 14px;
+}
+
+.section-sub {
+  color: var(--text-2);
+  font-size: 15px;
+  max-width: 620px;
+}
+
+/* ---- Pixel grid background ---- */
+.pixel-grid {
+  background-image: linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+/* ---- CRT scanlines ---- */
+.scanlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.025) 0px,
+    rgba(255, 255, 255, 0.025) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  mix-blend-mode: overlay;
+  opacity: 0.5;
+}
+
+/* ---- Buttons ---- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--pixel);
+  font-size: 12px;
+  line-height: 1;
+  padding: 14px 20px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  transition: transform 0.12s ease, box-shadow 0.2s ease, background 0.2s ease,
+    border-color 0.2s ease, color 0.2s ease;
+  white-space: nowrap;
+}
+.btn:active {
+  transform: translateY(1px);
+}
+.btn-accent {
+  background: var(--accent);
+  color: #1a1206;
+  box-shadow: 0 0 0 0 var(--accent-glow);
+}
+.btn-accent:hover {
+  box-shadow: 0 6px 24px var(--accent-glow);
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--border-2);
+}
+.btn-ghost:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ---- Chips / badges / cards ---- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--pixel);
+  font-size: 10px;
+  color: var(--text-2);
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: var(--bg-elevated);
+}
+.badge-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+}
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px;
+  transition: border-color 0.2s ease, transform 0.2s ease, background 0.2s ease;
+}
+.card:hover {
+  border-color: var(--border-2);
+  transform: translateY(-2px);
+}
+
+/* ---- Inline code / command ---- */
+.code {
+  font-family: var(--mono);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  color: var(--text);
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+.code .prompt {
+  color: var(--accent);
+}
+
+/* ---- Bilingual visibility (EN default; flip via html[data-lang]) ---- */
+[lang='zh'] {
+  /* Chinese has no pixel glyphs — force the mono/CJK stack even inside pixel ctx */
+  font-family: var(--mono);
+  letter-spacing: 0;
+}
+html:not([data-lang='zh']) [lang='zh'] {
+  display: none;
+}
+html[data-lang='zh'] [lang='en'] {
+  display: none;
+}
+
+/* ---- Accessibility ---- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 768px) {
+  html {
+    font-size: 14px;
+  }
+  .section {
+    padding: 64px 0;
+  }
+  .container {
+    padding: 0 16px;
+  }
+  .section-title {
+    font-size: 17px;
+  }
+}
+
+/* ---- Reduced motion: kill non-essential animation globally ---- */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

@@ -1,0 +1,238 @@
+---
+import T from './T.astro';
+
+const REPO = 'https://github.com/Octane0411/open-vibe-island';
+const DOWNLOAD = 'https://github.com/Octane0411/open-vibe-island/releases/latest';
+const RELEASES = 'https://github.com/Octane0411/open-vibe-island/releases';
+const CONTRIB = REPO + '/blob/main/CONTRIBUTING.md';
+const LICENSE = REPO + '/blob/main/LICENSE';
+const README = REPO + '/blob/main/README.md';
+const PRIVACY = REPO + '/blob/main/PRIVACY_POLICY.md';
+const DISCORD = 'https://discord.gg/bPF2HpbCFb';
+const WECHAT = 'https://raw.githubusercontent.com/Octane0411/open-vibe-island/main/docs/images/wechat-group.jpg';
+const BREW = 'brew install --cask octane0411/tap/openisland';
+const YEAR = 2026;
+---
+
+<section class="cta-final section">
+  <div class="container cta-inner">
+    <h2 class="cta-title">
+      <span lang="en">Put your agents <span class="hl">in the notch</span></span>
+      <span lang="zh">把你的 Agent <span class="hl">放进刘海</span></span>
+    </h2>
+    <p class="cta-sub">
+      <T en="Free, open source, native macOS. macOS 14+." zh="免费、开源、原生 macOS。需 macOS 14+。" />
+    </p>
+    <div class="cta-actions">
+      <a class="btn btn-accent" href={DOWNLOAD} target="_blank" rel="noopener">
+        <T en="Download .dmg" zh="下载 .dmg" />
+      </a>
+      <button class="brew-cmd" type="button" data-copy={BREW} aria-label="Copy Homebrew install command">
+        <span class="prompt">$</span>
+        <code>{BREW}</code>
+        <span class="copy-state">
+          <span class="copy-idle"><T en="copy" zh="复制" /></span>
+          <span class="copy-ok"><T en="copied!" zh="已复制!" /></span>
+        </span>
+      </button>
+    </div>
+    <a class="cta-allver" href={RELEASES} target="_blank" rel="noopener">
+      <T en="All versions →" zh="全部版本 →" />
+    </a>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="container foot-grid">
+    <div class="foot-brand">
+      <span class="foot-mark">
+        <svg viewBox="0 0 256 256" width="28" height="28" aria-hidden="true">
+          <rect x="0" y="0" width="256" height="256" rx="56" fill="#F2EBDD"></rect>
+          <path d="M44 84 H212 V128 Q212 172 168 172 H88 Q44 172 44 128 Z" fill="#0B0B0D"></path>
+          <rect x="78" y="121" width="72" height="13" rx="6.5" fill="#F2EBDD"></rect>
+          <circle cx="178" cy="127.5" r="9.5" fill="#F2EBDD"></circle>
+        </svg>
+        <span class="pixel">Open Island</span>
+      </span>
+      <p class="foot-tagline">
+        <T en="By developers, for developers. Built entirely by AI." zh="由开发者打造，给开发者用。全部由 AI 生成。" />
+      </p>
+    </div>
+
+    <nav class="foot-cols" aria-label="Footer">
+      <div class="foot-col">
+        <h3 class="foot-h pixel"><T en="Product" zh="产品" /></h3>
+        <a href="#features"><T en="Features" zh="功能" /></a>
+        <a href="#support"><T en="Agents & terminals" zh="Agent 与终端" /></a>
+        <a href="#faq"><T en="FAQ" zh="常见问题" /></a>
+      </div>
+      <div class="foot-col">
+        <h3 class="foot-h pixel"><T en="Project" zh="项目" /></h3>
+        <a href={REPO} target="_blank" rel="noopener">GitHub</a>
+        <a href={RELEASES} target="_blank" rel="noopener"><T en="Releases" zh="版本发布" /></a>
+        <a href={CONTRIB} target="_blank" rel="noopener"><T en="Contributing" zh="参与贡献" /></a>
+        <a href={LICENSE} target="_blank" rel="noopener">GPL v3</a>
+      </div>
+      <div class="foot-col">
+        <h3 class="foot-h pixel"><T en="Resources" zh="资源" /></h3>
+        <a href={README} target="_blank" rel="noopener"><T en="Docs" zh="文档" /></a>
+        <a href={PRIVACY} target="_blank" rel="noopener"><T en="Privacy" zh="隐私政策" /></a>
+        <a href={DISCORD} target="_blank" rel="noopener">Discord</a>
+        <a href={WECHAT} target="_blank" rel="noopener"><T en="WeChat group" zh="微信群" /></a>
+      </div>
+    </nav>
+  </div>
+
+  <div class="container foot-bottom">
+    <span>© {YEAR} Open Island contributors · GPL v3</span>
+    <span class="foot-os"><T en="macOS 14+ · Apple Silicon & Intel" zh="macOS 14+ · 支持 Apple 芯片与 Intel" /></span>
+  </div>
+</footer>
+
+<style>
+  .cta-final {
+    text-align: center;
+    border-top: 1px solid var(--border);
+    background: radial-gradient(80% 120% at 50% 0%, rgba(255, 176, 0, 0.08), transparent 60%);
+  }
+  .cta-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .cta-title {
+    font-family: var(--pixel);
+    font-size: 26px;
+    line-height: 1.5;
+    margin-bottom: 14px;
+  }
+  .cta-title .hl {
+    color: var(--accent);
+  }
+  .cta-sub {
+    color: var(--text-2);
+    margin-bottom: 28px;
+    font-size: 15px;
+  }
+  .cta-actions {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .brew-cmd {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    font-family: var(--mono);
+    font-size: 13px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    color: var(--text);
+  }
+  .brew-cmd .prompt {
+    color: var(--accent);
+  }
+  .copy-state {
+    font-family: var(--pixel);
+    font-size: 9px;
+    color: var(--text-3);
+    border-left: 1px solid var(--border);
+    padding-left: 12px;
+  }
+  .copy-ok {
+    display: none;
+    color: var(--green);
+  }
+  .brew-cmd.copied .copy-idle {
+    display: none;
+  }
+  .brew-cmd.copied .copy-ok {
+    display: inline;
+  }
+  .cta-allver {
+    font-family: var(--pixel);
+    font-size: 10px;
+    color: var(--text-3);
+  }
+  .cta-allver:hover {
+    color: var(--accent);
+  }
+
+  .footer {
+    border-top: 1px solid var(--border);
+    background: var(--bg-2);
+    padding: 56px 0 28px;
+  }
+  .foot-grid {
+    display: grid;
+    grid-template-columns: 1.4fr 2fr;
+    gap: 40px;
+  }
+  .foot-mark {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    color: var(--text);
+  }
+  .foot-tagline {
+    margin-top: 14px;
+    font-size: 13px;
+    color: var(--text-3);
+    max-width: 320px;
+    line-height: 1.7;
+  }
+  .foot-cols {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+  }
+  .foot-col {
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+  }
+  .foot-h {
+    font-size: 10px;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+  .foot-col a {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text-2);
+  }
+  .foot-col a:hover {
+    color: var(--accent);
+  }
+  .foot-bottom {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 44px;
+    padding-top: 22px;
+    border-top: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-3);
+  }
+
+  @media (max-width: 768px) {
+    .cta-title {
+      font-size: 18px;
+    }
+    .foot-grid {
+      grid-template-columns: 1fr;
+      gap: 32px;
+    }
+    .brew-cmd {
+      font-size: 11px;
+    }
+  }
+</style>

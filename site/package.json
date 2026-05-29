@@ -1,0 +1,16 @@
+{
+  "name": "open-island-site",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Landing site for Open Island — the notch companion for AI coding agents.",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "astro": "^5.0.0"
+  }
+}

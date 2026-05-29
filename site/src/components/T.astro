@@ -1,0 +1,11 @@
+---
+// Bilingual text. Renders both languages; CSS in global.css shows the one
+// matching html[data-lang] (English by default). Use for plain strings;
+// for rich/inline-marked content, write the two <span lang> blocks by hand.
+interface Props {
+  en: string;
+  zh: string;
+}
+const { en, zh } = Astro.props;
+---
+<span lang="en">{en}</span><span lang="zh">{zh}</span>

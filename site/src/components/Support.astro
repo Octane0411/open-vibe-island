@@ -1,0 +1,158 @@
+---
+import T from './T.astro';
+
+const agents = [
+  'Claude Code',
+  'Codex',
+  'OpenCode',
+  'Gemini CLI',
+  'Kimi CLI',
+  'Qoder',
+  'Qwen Code',
+  'Factory',
+  'CodeBuddy',
+];
+
+// planned items render dimmed with a "soon" tag
+const terminals = [
+  { name: 'Terminal.app' },
+  { name: 'Ghostty' },
+  { name: 'iTerm2' },
+  { name: 'WezTerm' },
+  { name: 'cmux' },
+  { name: 'Kaku' },
+  { name: 'tmux' },
+  { name: 'Warp', planned: true },
+];
+---
+
+<section class="section pixel-grid-soft" id="support">
+  <div class="container">
+    <div class="sup-head">
+      <p class="eyebrow"><T en="Works with your stack" zh="兼容你的工具链" /></p>
+      <h2 class="section-title">
+        <T en="9 coding agents · 8 terminals" zh="9 个编码 Agent · 8 个终端" />
+      </h2>
+      <p class="section-sub">
+        <T
+          en="One unified notch panel for all of them. The support matrix in the README is the source of truth."
+          zh="所有这些，统一汇入一个刘海面板。README 中的支持矩阵为准。"
+        />
+      </p>
+    </div>
+
+    <div class="sup-block">
+      <h3 class="sup-label pixel"><T en="Coding agents" zh="编码 Agent" /></h3>
+      <div class="chips">
+        {
+          agents.map((a) => (
+            <span class="chip">
+              <span class="chip-dot green" />
+              {a}
+            </span>
+          ))
+        }
+      </div>
+    </div>
+
+    <div class="sup-block">
+      <h3 class="sup-label pixel"><T en="Terminals" zh="终端" /></h3>
+      <div class="chips">
+        {
+          terminals.map((t) => (
+            <span class={'chip' + (t.planned ? ' planned' : '')}>
+              <span class={'chip-dot ' + (t.planned ? 'dim' : 'green')} />
+              {t.name}
+              {t.planned && (
+                <span class="chip-tag">
+                  <T en="soon" zh="规划中" />
+                </span>
+              )}
+            </span>
+          ))
+        }
+      </div>
+      <p class="sup-note">
+        <T
+          en="Precision jump — including tmux and split panes — works with iTerm2, Ghostty, Terminal.app, WezTerm, cmux, Kaku and IDE terminals."
+          zh="精准跳回（含 tmux 与分屏）支持 iTerm2、Ghostty、Terminal.app、WezTerm、cmux、Kaku 及 IDE 终端。"
+        />
+      </p>
+    </div>
+  </div>
+</section>
+
+<style>
+  .pixel-grid-soft {
+    background: var(--bg-2);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .sup-head {
+    text-align: center;
+    margin-bottom: 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .sup-block {
+    margin-bottom: 30px;
+  }
+  .sup-label {
+    font-size: 11px;
+    color: var(--accent);
+    margin-bottom: 16px;
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 9px 16px;
+    transition: border-color 0.2s ease, transform 0.2s ease;
+  }
+  .chip:hover {
+    border-color: var(--border-2);
+    transform: translateY(-2px);
+  }
+  .chip.planned {
+    color: var(--text-3);
+    border-style: dashed;
+  }
+  .chip-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+  }
+  .chip-dot.green {
+    background: var(--green);
+    box-shadow: 0 0 7px rgba(42, 232, 107, 0.6);
+  }
+  .chip-dot.dim {
+    background: var(--text-3);
+  }
+  .chip-tag {
+    font-family: var(--pixel);
+    font-size: 8px;
+    color: var(--text-3);
+    border: 1px solid var(--border-2);
+    border-radius: 5px;
+    padding: 2px 5px;
+  }
+  .sup-note {
+    margin-top: 16px;
+    font-size: 13px;
+    color: var(--text-3);
+    max-width: 640px;
+  }
+</style>

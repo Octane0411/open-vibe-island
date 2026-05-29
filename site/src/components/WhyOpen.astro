@@ -1,0 +1,136 @@
+---
+import T from './T.astro';
+
+const REPO = 'https://github.com/Octane0411/open-vibe-island';
+const LICENSE = 'https://github.com/Octane0411/open-vibe-island/blob/main/LICENSE';
+const CONTRIB = 'https://github.com/Octane0411/open-vibe-island/blob/main/CONTRIBUTING.md';
+
+const pillars = [
+  {
+    en: { t: 'Open source', d: 'Every line is public under GPL v3 — audit it, fork it, ship it.' },
+    zh: { t: '开源', d: '全部代码以 GPL v3 公开——可审计、可 fork、可自行构建。' },
+  },
+  {
+    en: { t: 'Built entirely by AI', d: 'All contributions are AI-produced. The repo is the proof.' },
+    zh: { t: '全部由 AI 生成', d: '所有贡献均由 AI 产出，仓库本身就是证明。' },
+  },
+  {
+    en: { t: 'No telemetry', d: 'No analytics SDKs, no accounts, no phoning home. Ever.' },
+    zh: { t: '零遥测', d: '没有分析 SDK、没有账号、绝不回传数据。' },
+  },
+  {
+    en: { t: 'Fail-open by design', d: "If the app or bridge is down, your agents keep running unchanged." },
+    zh: { t: '默认 fail-open', d: 'App 或桥接不可用时，Agent 照常运行、毫无影响。' },
+  },
+];
+---
+
+<section class="section why">
+  <div class="container">
+    <div class="why-grid">
+      <div class="why-intro">
+        <p class="eyebrow"><T en="Why Open Island" zh="为什么是 Open Island" /></p>
+        <h2 class="section-title">
+          <span lang="en">A control surface you can actually <span class="hl">trust</span></span>
+          <span lang="zh">一个你真正<span class="hl">信得过</span>的控制面</span>
+        </h2>
+        <p class="section-sub">
+          <T
+            en="Closed, paid menu-bar apps ask you to hand your machine to a black box. Open Island is the opposite: transparent, local, and free."
+            zh="闭源付费的菜单栏应用，要你把机器交给一个黑盒。Open Island 恰恰相反：透明、本地、免费。"
+          />
+        </p>
+        <div class="why-links">
+          <a class="btn btn-ghost" href={REPO} target="_blank" rel="noopener">
+            <T en="Read the source" zh="阅读源码" />
+          </a>
+          <a class="why-link" href={CONTRIB} target="_blank" rel="noopener"
+            ><T en="Contributing" zh="参与贡献" /> →</a
+          >
+          <a class="why-link" href={LICENSE} target="_blank" rel="noopener">GPL v3 →</a>
+        </div>
+      </div>
+
+      <ul class="pillars">
+        {
+          pillars.map((p) => (
+            <li class="pillar">
+              <span class="pillar-mark">✦</span>
+              <div>
+                <h3 class="pillar-t pixel">
+                  <T en={p.en.t} zh={p.zh.t} />
+                </h3>
+                <p class="pillar-d">
+                  <T en={p.en.d} zh={p.zh.d} />
+                </p>
+              </div>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </div>
+</section>
+
+<style>
+  .why-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+    align-items: start;
+  }
+  .why-intro .hl {
+    color: var(--accent);
+  }
+  .why-links {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    margin-top: 26px;
+    flex-wrap: wrap;
+  }
+  .why-link {
+    font-family: var(--pixel);
+    font-size: 10px;
+    color: var(--text-2);
+  }
+  .why-link:hover {
+    color: var(--accent);
+  }
+  .pillars {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .pillar {
+    display: flex;
+    gap: 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+  }
+  .pillar-mark {
+    color: var(--accent);
+    font-size: 16px;
+    line-height: 1.6;
+  }
+  .pillar-t {
+    font-size: 12px;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+  .pillar-d {
+    font-size: 13.5px;
+    color: var(--text-2);
+    line-height: 1.7;
+  }
+
+  @media (max-width: 820px) {
+    .why-grid {
+      grid-template-columns: 1fr;
+      gap: 32px;
+    }
+  }
+</style>

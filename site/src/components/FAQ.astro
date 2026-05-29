@@ -1,0 +1,204 @@
+---
+import T from './T.astro';
+
+const faqs = [
+  {
+    en: {
+      q: 'Which coding agents are supported?',
+      a: 'Claude Code, Codex, OpenCode, Gemini CLI, Kimi CLI, plus the Claude Code forks Qoder, Qwen Code, Factory, and CodeBuddy. All sessions land in one unified notch panel.',
+    },
+    zh: {
+      q: '支持哪些编码 Agent？',
+      a: 'Claude Code、Codex、OpenCode、Gemini CLI、Kimi CLI，以及 Claude Code 的衍生版 Qoder、Qwen Code、Factory、CodeBuddy。所有会话汇入同一个刘海面板。',
+    },
+  },
+  {
+    en: {
+      q: 'Which terminals work, and where does jump-back apply?',
+      a: 'Terminal.app, Ghostty, iTerm2, WezTerm, cmux, Kaku, and tmux are fully supported; Warp is planned. Precision jump — including tmux sessions and split panes — works with iTerm2, Ghostty, Terminal.app, WezTerm, cmux, Kaku, and IDE terminals.',
+    },
+    zh: {
+      q: '支持哪些终端？精准跳回的范围？',
+      a: 'Terminal.app、Ghostty、iTerm2、WezTerm、cmux、Kaku、tmux 全面支持，Warp 规划中。精准跳回（含 tmux 会话与分屏）支持 iTerm2、Ghostty、Terminal.app、WezTerm、cmux、Kaku 及 IDE 终端。',
+    },
+  },
+  {
+    en: {
+      q: 'Can I approve permissions without switching to the terminal?',
+      a: 'Yes. When an agent requests permission, the notch expands with Allow and Deny. Approve or reject in place, without leaving your editor.',
+    },
+    zh: {
+      q: '能不切到终端就批准权限吗？',
+      a: '可以。Agent 请求权限时，刘海会展开出「允许 / 拒绝」，原地批准或拒绝，无需离开编辑器。',
+    },
+  },
+  {
+    en: {
+      q: 'Does my data leave my machine?',
+      a: 'No. All communication between Open Island and your CLI tools happens locally over a Unix socket. There is no server and no account.',
+    },
+    zh: {
+      q: '我的数据会离开本机吗？',
+      a: '不会。Open Island 与各 CLI 之间全部走本地 Unix socket 通信，没有服务器，也没有账号。',
+    },
+  },
+  {
+    en: {
+      q: 'How does zero-config setup work?',
+      a: 'Open Island installs the hooks each agent needs from its Settings window — no API keys, no cloud accounts, no manual file editing. And hooks fail open: if the app is down, your agents run unchanged.',
+    },
+    zh: {
+      q: '零配置是怎么做到的？',
+      a: 'Open Island 在设置面板里为各 Agent 安装所需的 hook——无需 API key、云账号或手动改文件。且 hook 默认 fail-open：App 不在时 Agent 照常运行。',
+    },
+  },
+  {
+    en: {
+      q: 'Is it heavy on resources?',
+      a: 'No. It is a native Swift app (SwiftUI + AppKit), not Electron. It uses very little memory and near-zero CPU when idle.',
+    },
+    zh: {
+      q: '占资源多吗？',
+      a: '不多。它是原生 Swift 应用（SwiftUI + AppKit），不是 Electron，内存占用很小，空闲时 CPU 近乎为零。',
+    },
+  },
+  {
+    en: {
+      q: 'Does it work on external monitors and Macs without a notch?',
+      a: 'Yes. On notch Macs the panel sits in the notch; on external displays or older Macs it appears as a compact floating bar at the top center.',
+    },
+    zh: {
+      q: '外接显示器、没有刘海的 Mac 能用吗？',
+      a: '能。有刘海的 Mac 面板落在刘海区；外接显示器或老机型上则显示为顶部居中的紧凑浮条。',
+    },
+  },
+  {
+    en: {
+      q: 'Is it free?',
+      a: 'Yes — completely free and open source under GPL v3. Install from GitHub Releases or via Homebrew.',
+    },
+    zh: {
+      q: '免费吗？',
+      a: '免费——完全开源，采用 GPL v3。可从 GitHub Releases 或 Homebrew 安装。',
+    },
+  },
+  {
+    en: {
+      q: 'Why a notch island for coding agents?',
+      a: 'It keeps you in flow. Instead of switching windows or scanning terminals, approvals, questions, and progress appear right where your eyes already are.',
+    },
+    zh: {
+      q: '为什么用刘海灵动岛来管 Agent？',
+      a: '为了保持心流。审批、提问、进度都出现在你视线本来所在的地方，不必切窗口、不必逐个翻终端。',
+    },
+  },
+];
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: faqs.map((f) => ({
+    '@type': 'Question',
+    name: f.en.q,
+    acceptedAnswer: { '@type': 'Answer', text: f.en.a },
+  })),
+};
+---
+
+<section class="section faq" id="faq">
+  <div class="container faq-wrap">
+    <div class="faq-head">
+      <p class="eyebrow"><T en="FAQ" zh="常见问题" /></p>
+      <h2 class="section-title">
+        <T en="Questions, answered" zh="常见问题解答" />
+      </h2>
+    </div>
+
+    <div class="faq-list">
+      {
+        faqs.map((f, i) => (
+          <details class="faq-item" open={i === 0}>
+            <summary>
+              <span class="q-text">
+                <T en={f.en.q} zh={f.zh.q} />
+              </span>
+              <span class="q-mark" aria-hidden="true">+</span>
+            </summary>
+            <p class="a-text">
+              <T en={f.en.a} zh={f.zh.a} />
+            </p>
+          </details>
+        ))
+      }
+    </div>
+  </div>
+
+  <script type="application/ld+json" is:inline set:html={JSON.stringify(jsonLd)} />
+</section>
+
+<style>
+  .faq-wrap {
+    max-width: 760px;
+  }
+  .faq-head {
+    text-align: center;
+    margin-bottom: 36px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .faq-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .faq-item {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 4px 20px;
+  }
+  .faq-item[open] {
+    border-color: var(--border-2);
+  }
+  summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    cursor: pointer;
+    list-style: none;
+    padding: 16px 0;
+  }
+  summary::-webkit-details-marker {
+    display: none;
+  }
+  .q-text {
+    font-family: var(--pixel);
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text);
+  }
+  .q-mark {
+    font-family: var(--mono);
+    font-size: 20px;
+    color: var(--accent);
+    flex: none;
+    transition: transform 0.2s ease;
+  }
+  .faq-item[open] .q-mark {
+    transform: rotate(45deg);
+  }
+  .a-text {
+    font-size: 14px;
+    color: var(--text-2);
+    line-height: 1.8;
+    padding: 0 0 18px;
+  }
+
+  @media (max-width: 768px) {
+    .q-text {
+      font-size: 11px;
+    }
+  }
+</style>

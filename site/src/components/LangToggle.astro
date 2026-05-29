@@ -1,0 +1,25 @@
+---
+// Language toggle. Click handling + persistence is wired globally in
+// BaseLayout. The label is set there too (shows the language you'd switch to).
+---
+<button type="button" class="lang-toggle" data-lang-toggle aria-label="Switch language / 切换语言">
+  <span data-lang-label>中</span>
+</button>
+
+<style>
+  .lang-toggle {
+    font-family: var(--pixel);
+    font-size: 11px;
+    color: var(--text-2);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-2);
+    border-radius: var(--radius-sm);
+    padding: 9px 12px;
+    line-height: 1;
+    transition: color 0.2s ease, border-color 0.2s ease;
+  }
+  .lang-toggle:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+</style>

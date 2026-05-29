@@ -1,0 +1,143 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = 'Open Island — the notch companion for your AI coding agents',
+  description = 'Open-source, local-first macOS app that lives in your notch. Monitor Claude Code, Codex, Gemini CLI, Kimi and more — approve actions, answer questions, and jump back to the right terminal without leaving your editor.',
+} = Astro.props;
+
+const base = import.meta.env.BASE_URL;
+const asset = (p: string) => (base.endsWith('/') ? base.slice(0, -1) : base) + p;
+const canonical = Astro.site ? new URL(Astro.url.pathname, Astro.site).href : undefined;
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'Open Island',
+  alternateName: 'The notch companion for AI coding agents',
+  applicationCategory: 'DeveloperApplication',
+  operatingSystem: 'macOS 14+',
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+  license: 'https://www.gnu.org/licenses/gpl-3.0.html',
+  description,
+  url: canonical ?? 'https://openisland.app',
+  downloadUrl: 'https://github.com/Octane0411/open-vibe-island/releases',
+  author: { '@type': 'Organization', name: 'Open Island contributors' },
+  featureList: [
+    'Monitor AI coding agent sessions from the macOS notch',
+    'Approve file edits, commands, and deletions before they run',
+    'Answer agent questions from a popup without switching windows',
+    'Jump to the right terminal session — including tmux panes — with one click',
+    'Local-first: no server, no accounts, no analytics',
+    'Native Swift app — not Electron',
+  ],
+};
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {canonical && <link rel="canonical" href={canonical} />}
+
+    <link rel="icon" type="image/svg+xml" href={asset('/favicon.svg')} />
+    <meta name="theme-color" content="#0b0b0d" />
+
+    <!-- Open Graph / Twitter -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    {canonical && <meta property="og:url" content={canonical} />}
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+
+    <!-- Fonts: pixel display + mono body (open-licensed) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Press+Start+2P&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Set language before first paint to avoid a flash of the wrong language. -->
+    <script is:inline>
+      (function () {
+        try {
+          var stored = localStorage.getItem('oi-lang');
+          var lang;
+          if (stored === 'en' || stored === 'zh') {
+            lang = stored;
+          } else {
+            lang =
+              (navigator.language || 'en').toLowerCase().indexOf('zh') === 0 ? 'zh' : 'en';
+          }
+          document.documentElement.dataset.lang = lang;
+          document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+        } catch (e) {
+          document.documentElement.dataset.lang = 'en';
+        }
+      })();
+    </script>
+
+    <script type="application/ld+json" is:inline set:html={JSON.stringify(jsonLd)} />
+  </head>
+  <body>
+    <slot />
+
+    <!-- Wire up language toggles + persistence. -->
+    <script is:inline>
+      (function () {
+        function apply(lang) {
+          document.documentElement.dataset.lang = lang;
+          document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+          try {
+            localStorage.setItem('oi-lang', lang);
+          } catch (e) {}
+          document.querySelectorAll('[data-lang-label]').forEach(function (el) {
+            // show the language you'd switch TO
+            el.textContent = lang === 'zh' ? 'EN' : '中';
+          });
+        }
+        var current = document.documentElement.dataset.lang === 'zh' ? 'zh' : 'en';
+        apply(current);
+        document.querySelectorAll('[data-lang-toggle]').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            current = current === 'zh' ? 'en' : 'zh';
+            apply(current);
+          });
+        });
+      })();
+    </script>
+
+    <!-- Copy-to-clipboard for [data-copy] buttons (brew command, etc.). -->
+    <script is:inline>
+      (function () {
+        document.querySelectorAll('[data-copy]').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var text = btn.getAttribute('data-copy') || '';
+            var done = function () {
+              btn.classList.add('copied');
+              setTimeout(function () {
+                btn.classList.remove('copied');
+              }, 1400);
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(text).then(done).catch(done);
+            } else {
+              done();
+            }
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>

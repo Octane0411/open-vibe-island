@@ -24,5 +24,11 @@ output/
 # Logs and temp files
 *.log
 *.tmp
+*.profraw
 .worktrees/
 .air/
+
+# Landing site (Astro) build artifacts
+site/node_modules/
+site/dist/
+site/.astro/

@@ -1,0 +1,806 @@
+---
+import T from './T.astro';
+---
+
+<section class="demo section" id="demo">
+  <div class="container demo-head">
+    <p class="eyebrow"><T en="Live demo" zh="实时演示" /></p>
+    <h2 class="section-title">
+      <T en="It all happens in the notch" zh="一切都发生在刘海里" />
+    </h2>
+    <p class="section-sub">
+      <T
+        en="No window switching. Sessions, approvals, questions, and a one-click jump back to the right terminal — right where your eyes already are."
+        zh="无需切换窗口。会话、审批、提问，以及一键跳回正确的终端——就在你视线本来所在的地方。"
+      />
+    </p>
+  </div>
+
+  <div class="mockup" id="mockup">
+    <div class="screen" id="demo-screen">
+      <!-- fake macOS top bar + physical notch -->
+      <div class="menubar">
+        <span class="mb-left"></span>
+        <span class="mb-right">
+          <span class="mb-dot"></span><span class="mb-dot"></span><span class="mb-dot"></span>
+        </span>
+      </div>
+
+      <!-- self-driving fake cursor -->
+      <div class="cursor" id="cursor" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22">
+          <path
+            d="M5 2l14 8.5-6.2 1.3 3.4 6.6-2.6 1.3-3.4-6.6L5 18.5z"
+            fill="#fff"
+            stroke="#0b0b0d"
+            stroke-width="1.2"
+            stroke-linejoin="round"></path>
+        </svg>
+      </div>
+
+      <!-- the morphing island -->
+      <div class="island" id="island">
+        <!-- compact / idle -->
+        <div class="layer active" data-layer="compact">
+          <div class="compact-row">
+            <canvas class="mascot" id="m-compact" width="12" height="9"></canvas>
+            <span class="compact-count"><span class="dotpulse"></span>3</span>
+          </div>
+        </div>
+
+        <!-- sessions list -->
+        <div class="layer" data-layer="sessions">
+          <div class="panel-head">
+            <span class="ph-title"><T en="Sessions" zh="会话" /></span>
+            <span class="ph-meta">3 <T en="active" zh="活跃" /></span>
+          </div>
+          <ul class="sess-list">
+            <li>
+              <span class="sdot blue"></span>
+              <span class="sname">Claude Code</span>
+              <span class="srepo">open-island</span>
+              <span class="sstate blue"><T en="running" zh="运行中" /></span>
+            </li>
+            <li>
+              <span class="sdot orange"></span>
+              <span class="sname">Codex</span>
+              <span class="srepo">api-server</span>
+              <span class="sstate orange"><T en="waiting" zh="待响应" /></span>
+            </li>
+            <li>
+              <span class="sdot green"></span>
+              <span class="sname">Gemini CLI</span>
+              <span class="srepo">web</span>
+              <span class="sstate green"><T en="done" zh="完成" /></span>
+            </li>
+          </ul>
+        </div>
+
+        <!-- permission approval -->
+        <div class="layer" data-layer="approval">
+          <div class="panel-head">
+            <canvas class="mascot sm" id="m-appr" width="12" height="9"></canvas>
+            <span class="ph-title">Claude Code</span>
+            <span class="badge-mini orange"><T en="permission" zh="权限请求" /></span>
+          </div>
+          <p class="appr-q">
+            <T en="Run this command?" zh="运行此命令？" />
+          </p>
+          <div class="appr-cmd"><span class="prompt">$</span> rm -rf build/</div>
+          <div class="appr-actions">
+            <button class="ibtn deny" type="button"><T en="Deny" zh="拒绝" /></button>
+            <button class="ibtn allow" type="button" id="btn-approve">
+              <T en="Allow" zh="允许" />
+            </button>
+          </div>
+        </div>
+
+        <!-- approved confirmation -->
+        <div class="layer" data-layer="approved">
+          <div class="confirm green">
+            <span class="check">✓</span><T en="Allowed" zh="已允许" />
+          </div>
+        </div>
+
+        <!-- question -->
+        <div class="layer" data-layer="question">
+          <div class="panel-head">
+            <canvas class="mascot sm" id="m-ask" width="12" height="9"></canvas>
+            <span class="ph-title">Codex</span>
+            <span class="badge-mini blue"><T en="question" zh="提问" /></span>
+          </div>
+          <p class="appr-q">
+            <T en="Which package manager?" zh="用哪个包管理器？" />
+          </p>
+          <div class="opts">
+            <button class="opt" type="button" id="q-opt-0">pnpm</button>
+            <button class="opt" type="button">npm</button>
+            <button class="opt" type="button">bun</button>
+          </div>
+        </div>
+
+        <!-- answered confirmation -->
+        <div class="layer" data-layer="answered">
+          <div class="confirm blue">
+            <span class="check">✓</span><T en="Answered" zh="已回答" />
+          </div>
+        </div>
+
+        <!-- precision jump-back (the differentiator) -->
+        <div class="layer" data-layer="jump">
+          <div class="panel-head">
+            <span class="ph-title"><T en="Jump back" zh="跳回" /></span>
+          </div>
+          <div class="jump-target">
+            <span class="term-glyph">›_</span>
+            <span class="jt-text">
+              <span class="jt-app">iTerm2</span>
+              <span class="jt-pane">tmux · win 2 · pane 1</span>
+            </span>
+            <span class="jt-arrow">→</span>
+          </div>
+        </div>
+
+        <!-- done -->
+        <div class="layer" data-layer="done">
+          <div class="confirm green">
+            <canvas class="mascot sm" id="m-done" width="12" height="9"></canvas>
+            <T en="Back in flow" zh="回到心流" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="demo-label pixel">
+      <span class="dl-prefix">▸</span>
+      <span id="demo-label"><span lang="en" id="dl-en">idle</span><span lang="zh" id="dl-zh">空闲</span></span>
+    </p>
+  </div>
+</section>
+
+<style>
+  .demo-head {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 40px;
+  }
+  .demo-head .section-sub {
+    margin: 0 auto;
+  }
+
+  .mockup {
+    width: 100%;
+    max-width: 760px;
+    margin: 0 auto;
+  }
+
+  .screen {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    border-radius: 18px;
+    border: 1px solid var(--border-2);
+    background:
+      radial-gradient(120% 90% at 50% -10%, rgba(255, 176, 0, 0.08), transparent 55%),
+      radial-gradient(80% 80% at 80% 110%, rgba(87, 151, 255, 0.07), transparent 60%),
+      linear-gradient(180deg, #131316, #0c0c0e);
+    overflow: hidden;
+    box-shadow: 0 40px 100px rgba(0, 0, 0, 0.5);
+  }
+
+  .menubar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    background: rgba(255, 255, 255, 0.03);
+    border-bottom: 1px solid var(--border);
+  }
+  .mb-right {
+    display: inline-flex;
+    gap: 7px;
+  }
+  .mb-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-3);
+  }
+
+  /* the morphing island, anchored to the top-center notch */
+  .island {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 200px;
+    height: 30px;
+    background: #050506;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-top: none;
+    border-radius: 0 0 18px 18px;
+    overflow: hidden;
+    z-index: 5;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+    transition:
+      width 0.5s cubic-bezier(0.5, 1.3, 0.4, 1),
+      height 0.5s cubic-bezier(0.5, 1.3, 0.4, 1),
+      border-radius 0.4s ease;
+  }
+
+  .layer {
+    display: none;
+    position: absolute;
+    inset: 0;
+    padding: 14px 16px;
+  }
+  .layer.active {
+    display: block;
+    animation: layerIn 0.32s ease both;
+    animation-delay: 0.12s;
+  }
+  @keyframes layerIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* compact */
+  [data-layer='compact'] {
+    padding: 0;
+  }
+  .compact-row {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+  .compact-count {
+    font-family: var(--pixel);
+    font-size: 10px;
+    color: var(--text);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .dotpulse {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--blue);
+    box-shadow: 0 0 8px var(--blue);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  .mascot {
+    width: 26px;
+    height: 19.5px;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+  .mascot.sm {
+    width: 20px;
+    height: 15px;
+  }
+
+  /* panel header shared */
+  .panel-head {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin-bottom: 12px;
+  }
+  .ph-title {
+    font-family: var(--pixel);
+    font-size: 11px;
+    color: var(--text);
+  }
+  .ph-meta {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-3);
+  }
+  .badge-mini {
+    margin-left: auto;
+    font-family: var(--pixel);
+    font-size: 8px;
+    padding: 4px 7px;
+    border-radius: 6px;
+    text-transform: uppercase;
+  }
+  .badge-mini.orange {
+    color: var(--orange);
+    background: rgba(255, 155, 40, 0.14);
+  }
+  .badge-mini.blue {
+    color: var(--blue);
+    background: rgba(87, 151, 255, 0.14);
+  }
+
+  /* sessions */
+  .sess-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+  .sess-list li {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-2);
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 8px 10px;
+  }
+  .sdot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex: none;
+  }
+  .sname {
+    color: var(--text);
+  }
+  .srepo {
+    color: var(--text-3);
+  }
+  .sstate {
+    margin-left: auto;
+    font-size: 11px;
+  }
+  .sdot.blue,
+  .sstate.blue {
+    color: var(--blue);
+  }
+  .sdot.blue {
+    background: var(--blue);
+    box-shadow: 0 0 8px var(--blue);
+  }
+  .sdot.orange,
+  .sstate.orange {
+    color: var(--orange);
+  }
+  .sdot.orange {
+    background: var(--orange);
+    box-shadow: 0 0 8px var(--orange);
+  }
+  .sdot.green,
+  .sstate.green {
+    color: var(--green);
+  }
+  .sdot.green {
+    background: var(--green);
+  }
+
+  /* approval + question */
+  .appr-q {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text);
+    margin-bottom: 10px;
+  }
+  .appr-cmd {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--border-2);
+    border-radius: 8px;
+    padding: 9px 11px;
+    margin-bottom: 14px;
+  }
+  .appr-cmd .prompt {
+    color: var(--orange);
+  }
+  .appr-actions {
+    display: flex;
+    gap: 10px;
+  }
+  .ibtn {
+    flex: 1;
+    font-family: var(--pixel);
+    font-size: 10px;
+    padding: 11px;
+    border-radius: 9px;
+    border: 1px solid var(--border-2);
+    background: transparent;
+    color: var(--text-2);
+    transition: filter 0.2s ease, transform 0.2s ease, background 0.2s ease;
+  }
+  .ibtn.allow {
+    background: var(--green);
+    color: #06210f;
+    border-color: transparent;
+  }
+  .ibtn.deny:hover {
+    border-color: var(--red);
+    color: var(--red);
+  }
+
+  .opts {
+    display: flex;
+    gap: 8px;
+  }
+  .opt {
+    flex: 1;
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 10px;
+    border-radius: 9px;
+    border: 1px solid var(--border-2);
+    background: rgba(255, 255, 255, 0.02);
+    color: var(--text);
+    transition: filter 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+  }
+  #q-opt-0 {
+    border-color: rgba(87, 151, 255, 0.5);
+  }
+
+  /* confirmations */
+  .confirm {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    font-family: var(--pixel);
+    font-size: 11px;
+  }
+  .confirm.green {
+    color: var(--green);
+  }
+  .confirm.blue {
+    color: var(--blue);
+  }
+  .confirm .check {
+    font-size: 13px;
+  }
+
+  /* jump */
+  .jump-target {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-2);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .term-glyph {
+    font-family: var(--mono);
+    font-weight: 700;
+    color: var(--green);
+    background: var(--bg);
+    border-radius: 7px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+  }
+  .jt-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.4;
+  }
+  .jt-app {
+    font-family: var(--pixel);
+    font-size: 10px;
+    color: var(--text);
+  }
+  .jt-pane {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-3);
+  }
+  .jt-arrow {
+    margin-left: auto;
+    color: var(--accent);
+    font-size: 18px;
+    animation: nudge 1s ease-in-out infinite;
+  }
+  @keyframes nudge {
+    50% {
+      transform: translateX(4px);
+    }
+  }
+
+  /* fake cursor */
+  .cursor {
+    position: absolute;
+    left: 50%;
+    top: 60%;
+    z-index: 20;
+    pointer-events: none;
+    filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5));
+    transition:
+      left 0.7s cubic-bezier(0.4, 0, 0.2, 1),
+      top 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+    will-change: left, top;
+  }
+  .cursor.clicking {
+    transform: scale(0.82);
+  }
+
+  .demo-label {
+    text-align: center;
+    margin-top: 22px;
+    font-size: 11px;
+    color: var(--text-3);
+  }
+  .dl-prefix {
+    color: var(--accent);
+    margin-right: 8px;
+  }
+
+  @media (max-width: 768px) {
+    .ph-title,
+    .appr-q {
+      font-size: 11px;
+    }
+    .sess-list li {
+      font-size: 11px;
+    }
+    .srepo {
+      display: none;
+    }
+  }
+
+  /* Reduced motion: park on the sessions panel, hide the roving cursor. */
+  @media (prefers-reduced-motion: reduce) {
+    .cursor,
+    .dotpulse,
+    .jt-arrow {
+      animation: none;
+    }
+  }
+</style>
+
+<script is:inline>
+  (function () {
+    var screen = document.getElementById('demo-screen');
+    var island = document.getElementById('island');
+    var cursor = document.getElementById('cursor');
+    var mockup = document.getElementById('mockup');
+    var dlEn = document.getElementById('dl-en');
+    var dlZh = document.getElementById('dl-zh');
+    if (!screen || !island || !mockup) return;
+
+    /* ---- Scout mascot: a tiny pixel sprite, body tinted by state ----
+       B = body (state color), F = cream face features, '.' = transparent */
+    var SPRITE = [
+      '...BBBBBB...',
+      '.BBBBBBBBBB.',
+      'BBBBBBBBBBBB',
+      'BBBBBBBBBBBB',
+      'BBFFFFFBBFFB',
+      'BBBBBBBBBBBB',
+      'BBBBBBBBBBBB',
+      '.BBBBBBBBBB.',
+      '...BBBBBB...',
+    ];
+    var CREAM = '#f2ebdd';
+    function drawMascot(id, body) {
+      var c = document.getElementById(id);
+      if (!c) return;
+      var ctx = c.getContext('2d');
+      ctx.clearRect(0, 0, c.width, c.height);
+      for (var y = 0; y < SPRITE.length; y++) {
+        for (var x = 0; x < SPRITE[y].length; x++) {
+          var ch = SPRITE[y][x];
+          if (ch === '.') continue;
+          ctx.fillStyle = ch === 'F' ? CREAM : body;
+          ctx.fillRect(x, y, 1, 1);
+        }
+      }
+    }
+    var BLUE = '#5797ff',
+      GREEN = '#2ae86b',
+      ORANGE = '#ff9b28';
+    function paintMascots() {
+      drawMascot('m-compact', BLUE);
+      drawMascot('m-appr', ORANGE);
+      drawMascot('m-ask', BLUE);
+      drawMascot('m-done', GREEN);
+    }
+    paintMascots();
+
+    /* ---- island geometry per state ---- */
+    var SIZES = {
+      compact: { w: 200, h: 30, r: '0 0 18px 18px' },
+      sessions: { w: 440, h: 196, r: '0 0 22px 22px' },
+      approval: { w: 430, h: 214, r: '0 0 22px 22px' },
+      approved: { w: 188, h: 46, r: '0 0 16px 16px' },
+      question: { w: 430, h: 188, r: '0 0 22px 22px' },
+      answered: { w: 188, h: 46, r: '0 0 16px 16px' },
+      jump: { w: 410, h: 124, r: '0 0 22px 22px' },
+      done: { w: 220, h: 50, r: '0 0 16px 16px' },
+    };
+    var LABELS = {
+      compact: { en: 'idle', zh: '空闲' },
+      sessions: { en: 'sessions', zh: '会话列表' },
+      approval: { en: 'permission request', zh: '权限请求' },
+      approved: { en: 'allowed', zh: '已允许' },
+      question: { en: 'question', zh: '提问' },
+      answered: { en: 'answered', zh: '已回答' },
+      jump: { en: 'jump back', zh: '精准跳回' },
+      done: { en: 'done', zh: '完成' },
+    };
+
+    function setState(name) {
+      var layers = island.querySelectorAll('.layer');
+      for (var i = 0; i < layers.length; i++) layers[i].classList.remove('active');
+      var target = island.querySelector('[data-layer="' + name + '"]');
+      if (target) target.classList.add('active');
+      var s = SIZES[name];
+      island.style.width = s.w + 'px';
+      island.style.height = s.h + 'px';
+      island.style.borderRadius = s.r;
+      if (LABELS[name]) {
+        if (dlEn) dlEn.textContent = LABELS[name].en;
+        if (dlZh) dlZh.textContent = LABELS[name].zh;
+      }
+    }
+
+    /* ---- fake cursor ---- */
+    function moveTo(x, y, ms) {
+      cursor.style.transitionDuration = (ms || 700) + 'ms, ' + (ms || 700) + 'ms';
+      cursor.style.left = x + 'px';
+      cursor.style.top = y + 'px';
+    }
+    function moveToEl(id, ms) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      var r = el.getBoundingClientRect();
+      var sr = screen.getBoundingClientRect();
+      moveTo(r.left + r.width / 2 - sr.left, r.top + r.height / 2 - sr.top, ms);
+    }
+    function clickPulse() {
+      cursor.classList.add('clicking');
+      setTimeout(function () {
+        cursor.classList.remove('clicking');
+      }, 260);
+    }
+    function pressBtn(id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.style.transform = 'scale(0.94)';
+      el.style.filter = 'brightness(1.25)';
+      setTimeout(function () {
+        el.style.transform = '';
+        el.style.filter = '';
+      }, 320);
+    }
+    function showCursor(v) {
+      cursor.style.opacity = v ? '1' : '0';
+    }
+
+    /* ---- storyboard queue ---- */
+    var queue = [];
+    function step(fn, delay) {
+      queue.push({ fn: fn, delay: delay });
+    }
+    function build() {
+      step(function () {
+        setState('compact');
+        showCursor(false);
+        moveTo(screen.clientWidth * 0.5, screen.clientHeight * 0.62, 0);
+      }, 1500);
+      step(function () {
+        setState('sessions');
+      }, 2400);
+      step(function () {
+        setState('approval');
+        showCursor(true);
+      }, 1900);
+      step(function () {
+        moveToEl('btn-approve', 750);
+      }, 950);
+      step(function () {
+        clickPulse();
+        pressBtn('btn-approve');
+      }, 700);
+      step(function () {
+        setState('approved');
+        showCursor(false);
+      }, 1200);
+      step(function () {
+        setState('compact');
+      }, 1300);
+      step(function () {
+        setState('question');
+        showCursor(true);
+      }, 1900);
+      step(function () {
+        moveToEl('q-opt-0', 750);
+      }, 950);
+      step(function () {
+        clickPulse();
+        pressBtn('q-opt-0');
+      }, 700);
+      step(function () {
+        setState('answered');
+        showCursor(false);
+      }, 1200);
+      step(function () {
+        setState('compact');
+      }, 1300);
+      step(function () {
+        setState('jump');
+      }, 2000);
+      step(function () {
+        setState('done');
+      }, 1600);
+      step(function () {
+        setState('compact');
+      }, 1800);
+    }
+
+    /* ---- runner with viewport + visibility gating ---- */
+    var timer = null;
+    var onScreen = false;
+    var visible = true;
+    function tick() {
+      if (!onScreen || !visible) return;
+      if (queue.length === 0) build();
+      var s = queue.shift();
+      if (s) {
+        s.fn();
+        timer = setTimeout(tick, s.delay);
+      }
+    }
+    function play() {
+      if (!timer && onScreen && visible) timer = setTimeout(tick, 400);
+    }
+    function pause() {
+      clearTimeout(timer);
+      timer = null;
+    }
+
+    var reduce =
+      window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) {
+      // Static: show the sessions panel, no roving cursor, no loop.
+      setState('sessions');
+      showCursor(false);
+      return;
+    }
+
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(
+        function (entries) {
+          onScreen = entries[0].isIntersecting;
+          if (onScreen) play();
+          else pause();
+        },
+        { threshold: 0.1 }
+      ).observe(mockup);
+    } else {
+      onScreen = true;
+      play();
+    }
+    document.addEventListener('visibilitychange', function () {
+      visible = !document.hidden;
+      if (visible) play();
+      else pause();
+    });
+  })();
+</script>

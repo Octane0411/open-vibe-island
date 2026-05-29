@@ -1,0 +1,138 @@
+---
+import T from './T.astro';
+
+// icon: minimal stroke SVG inner markup (24x24, stroke=currentColor)
+const features = [
+  {
+    icon: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4h6v3a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z"/>',
+    en: { t: 'Lives in the notch', d: 'Sits in the notch on notch Macs; falls back to a compact top-center bar on external or older displays.' },
+    zh: { t: '驻留在刘海', d: '有刘海的 Mac 落在刘海区；外接或老机型自动回退为顶部居中的紧凑条。' },
+  },
+  {
+    icon: '<path d="M12 3l7 3v5c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/>',
+    en: { t: 'Approve inline', d: 'Allow or deny commands, file edits, and deletions right from the notch — before they run.' },
+    zh: { t: '原地审批', d: '在命令、改文件、删除执行之前，直接在刘海里允许或拒绝。' },
+  },
+  {
+    icon: '<path d="M4 5h16v10H8l-4 4z"/><path d="M8 9h8M8 12h5"/>',
+    en: { t: 'Answer questions', d: "Reply to an agent's question from a popup, without switching windows." },
+    zh: { t: '回答提问', d: '在弹窗里回答 Agent 的提问，无需切换窗口。' },
+  },
+  {
+    icon: '<path d="M4 9h11a4 4 0 0 1 0 8H9"/><path d="M8 5L4 9l4 4"/>',
+    en: { t: 'Precision jump-back', d: 'One click returns focus to the exact terminal session — including tmux windows and split panes.' },
+    zh: { t: '精准跳回', d: '一键把焦点带回正确的终端会话——精确到 tmux 窗口与分屏。' },
+  },
+  {
+    icon: '<rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
+    en: { t: 'Local-first', d: 'No server, no accounts, no analytics. Everything is local IPC over a Unix socket.' },
+    zh: { t: '本地优先', d: '无服务器、无账号、无埋点。一切都走本地 Unix socket 通信。' },
+  },
+  {
+    icon: '<path d="M13 3L4 14h7l-1 7 9-11h-7z"/>',
+    en: { t: 'Native Swift', d: 'SwiftUI + AppKit, not Electron. Near-zero CPU when idle, tiny memory footprint.' },
+    zh: { t: '原生 Swift', d: 'SwiftUI + AppKit，不是 Electron。空闲近零 CPU，内存占用极小。' },
+  },
+  {
+    icon: '<path d="M4 12a8 8 0 0 1 14-5l2 2"/><path d="M20 5v4h-4"/><path d="M20 12a8 8 0 0 1-14 5l-2-2"/><path d="M4 19v-4h4"/>',
+    en: { t: 'Auto-update', d: 'Sparkle-based automatic updates via a signed appcast — always current.' },
+    zh: { t: '自动更新', d: '基于 Sparkle 的 appcast 自动更新，始终保持最新。' },
+  },
+  {
+    icon: '<path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10 19a2 2 0 0 0 4 0"/>',
+    en: { t: 'Notifications & sounds', d: 'Permission and session events with configurable system sounds — or mute them.' },
+    zh: { t: '通知与声音', d: '权限与会话事件提醒，可配系统提示音，也可一键静音。' },
+  },
+  {
+    icon: '<rect x="7" y="6" width="10" height="12" rx="3"/><path d="M9 6l1-3h4l1 3M9 18l1 3h4l1-3"/>',
+    en: { t: 'Watch & iOS companion', d: 'Push agent events to your Apple Watch and iPhone to stay in the loop anywhere.' },
+    zh: { t: 'Watch / iOS 伴侣', d: '把 Agent 事件推送到 Apple Watch 与 iPhone，离座也不漏掉。' },
+  },
+  {
+    icon: '<path d="M12 3v6"/><path d="M6.5 7a7 7 0 1 0 11 0"/>',
+    en: { t: 'Zero-config & fail-open', d: 'Auto-installs hooks for each agent; if the app is down, your agents run unchanged.' },
+    zh: { t: '零配置 · fail-open', d: '自动为各 Agent 安装 hook；App 不在时，Agent 照常运行、毫无影响。' },
+  },
+];
+---
+
+<section class="section" id="features">
+  <div class="container">
+    <div class="feat-head">
+      <p class="eyebrow"><T en="Features" zh="功能" /></p>
+      <h2 class="section-title">
+        <T en="Everything you need, nothing you don't" zh="该有的都有，多余的都没有" />
+      </h2>
+    </div>
+
+    <div class="feat-grid">
+      {
+        features.map((f) => (
+          <article class="card feat">
+            <span class="feat-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" set:html={f.icon} />
+            </span>
+            <h3 class="feat-title pixel">
+              <T en={f.en.t} zh={f.zh.t} />
+            </h3>
+            <p class="feat-desc">
+              <T en={f.en.d} zh={f.zh.d} />
+            </p>
+          </article>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .feat-head {
+    text-align: center;
+    margin-bottom: 44px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .feat-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  .feat {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .feat-icon {
+    width: 42px;
+    height: 42px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    color: var(--accent);
+    background: var(--accent-dim);
+    border: 1px solid rgba(255, 176, 0, 0.25);
+  }
+  .feat-title {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text);
+  }
+  .feat-desc {
+    font-size: 13.5px;
+    color: var(--text-2);
+    line-height: 1.7;
+  }
+
+  @media (max-width: 860px) {
+    .feat-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (max-width: 540px) {
+    .feat-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
