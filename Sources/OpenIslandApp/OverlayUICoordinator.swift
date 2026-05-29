@@ -356,6 +356,7 @@ final class OverlayUICoordinator {
                 notchOpenReason = .click
                 notificationAutoCollapseTask?.cancel()
                 notificationAutoCollapseTask = nil
+                refreshOverlayPlacementIfVisible()
             } else {
                 islandSurface = .sessionList()
             }
