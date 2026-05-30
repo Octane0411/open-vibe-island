@@ -17,6 +17,7 @@ extension Notification.Name {
 final class AppModel {
     private static let soundMutedDefaultsKey = "overlay.sound.muted"
     private static let showDockIconDefaultsKey = "app.showDockIcon"
+    private static let menuBarStatusItemDefaultsKey = "app.menuBarStatusItem"
     private static let hapticFeedbackEnabledDefaultsKey = "app.hapticFeedbackEnabled"
     private static let islandRightSlotDefaultsKey = "appearance.island.v6.rightSlot"
     private static let islandCenterLabelDefaultsKey = "appearance.island.v6.centerLabel"
@@ -49,6 +50,7 @@ final class AppModel {
             _cachedSessionBuckets = nil
             pruneAgentsGridObservationTicketsIfNeeded()
             bridgeServer.updateStateSnapshot(state)
+            statusItemController?.refreshStatus()
         }
     }
     @ObservationIgnored private var _cachedSessionBuckets: (primary: [AgentSession], overflow: [AgentSession])?
@@ -240,6 +242,17 @@ final class AppModel {
             }
         }
     }
+    /// Prototype: show a standard menu bar icon and drop the overlay down
+    /// underneath it instead of floating at the notch / top-bar center.
+    var menuBarStatusItemEnabled: Bool = false {
+        didSet {
+            guard hasFinishedInit, menuBarStatusItemEnabled != oldValue else { return }
+            UserDefaults.standard.set(menuBarStatusItemEnabled, forKey: Self.menuBarStatusItemDefaultsKey)
+            applyMenuBarStatusItemState()
+        }
+    }
+    @ObservationIgnored
+    private var statusItemController: StatusItemController?
     var hapticFeedbackEnabled: Bool = false {
         didSet {
             guard hasFinishedInit, hapticFeedbackEnabled != oldValue else { return }
@@ -595,6 +608,7 @@ final class AppModel {
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
         showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
+        menuBarStatusItemEnabled = UserDefaults.standard.bool(forKey: Self.menuBarStatusItemDefaultsKey)
         hapticFeedbackEnabled = UserDefaults.standard.bool(forKey: Self.hapticFeedbackEnabledDefaultsKey)
         suppressFrontmostNotifications = UserDefaults.standard.bool(forKey: Self.suppressFrontmostNotificationsDefaultsKey)
         if UserDefaults.standard.object(forKey: Self.showCodexUsageDefaultsKey) != nil {
@@ -706,6 +720,18 @@ final class AppModel {
         didSet {
             let delta = abs(measuredNotificationContentHeight - oldValue)
             if delta >= 2, measuredNotificationContentHeight > 0 {
+                overlay.refreshOverlayPlacementIfVisible()
+            }
+        }
+    }
+
+    /// Measured natural height of the opened content in menu bar mode, so the
+    /// dropped-down panel hugs its real content instead of an over-estimate.
+    /// Same 2pt tolerance as above to avoid layout-measurement loops.
+    var measuredMenuBarContentHeight: CGFloat = 0 {
+        didSet {
+            let delta = abs(measuredMenuBarContentHeight - oldValue)
+            if delta >= 2, measuredMenuBarContentHeight > 0 {
                 overlay.refreshOverlayPlacementIfVisible()
             }
         }
@@ -862,6 +888,63 @@ final class AppModel {
             }
             return session.tool.displayName
         }
+    }
+
+    /// Aggregate session state powering the menu bar status dot's color.
+    var menuBarStatusLevel: MenuBarStatusLevel {
+        guard !surfacedSessions.isEmpty else { return .none }
+        switch islandClosedMode {
+        case .waiting: return .waiting
+        case .running: return .running
+        case .idle: return .idle
+        }
+    }
+
+    /// Per-state counts for the menu bar breakdown — mirrors the opened
+    /// panel's session overview (`sessionOverviewItems`) so the two agree.
+    var menuBarStateCounts: MenuBarStateCounts {
+        let sessions = islandListSessions
+        let now = Date.now
+        let threshold = completedStaleThreshold.seconds
+
+        func isIdle(_ s: AgentSession) -> Bool {
+            s.phase == .completed
+                && (s.isStaleCompletedForIsland(at: now, threshold: threshold)
+                    || s.islandPresence(at: now) == .inactive)
+        }
+
+        return MenuBarStateCounts(
+            total: sessions.count,
+            waiting: sessions.filter(\.phase.requiresAttention).count,
+            running: sessions.filter { $0.phase == .running }.count,
+            done: sessions.filter { $0.phase == .completed && !isIdle($0) }.count,
+            idle: sessions.filter(isIdle).count
+        )
+    }
+
+    /// Compact status string shown directly in the menu bar (menu bar mode),
+    /// so the current session state previews without opening the panel.
+    /// Empty when there are no surfaced sessions (icon shows alone).
+    var menuBarStatusSummary: String {
+        let sessions = surfacedSessions
+        guard !sessions.isEmpty else { return "" }
+
+        let count = sessions.count
+        guard let spotlight = islandClosedSpotlight else {
+            return "×\(count)"
+        }
+
+        let name: String
+        if let action = spotlight.displayCurrentToolName, !action.isEmpty {
+            name = action
+        } else if !spotlight.title.isEmpty {
+            name = spotlight.title
+        } else {
+            name = spotlight.tool.displayName
+        }
+
+        let trimmed = name.count > 16 ? String(name.prefix(15)) + "…" : name
+        return count > 1 ? "\(trimmed) ×\(count)" : trimmed
     }
 
     /// Right-slot payload derived from the user's `islandRightSlot`
@@ -1087,6 +1170,7 @@ final class AppModel {
         }
         refreshOverlayDisplayConfiguration()
         ensureOverlayPanel()
+        applyMenuBarStatusItemState()
         if shouldPerformBootAnimation {
             performBootAnimation()
         }
@@ -1193,6 +1277,37 @@ final class AppModel {
 
     func select(sessionID: String) {
         selectedSessionID = sessionID
+    }
+
+    // MARK: - Menu bar status item (prototype)
+
+    func applyMenuBarStatusItemState() {
+        let panelController = overlay.overlayPanelController
+        panelController.menuBarMode = menuBarStatusItemEnabled
+
+        if menuBarStatusItemEnabled {
+            if statusItemController == nil {
+                let controller = StatusItemController(model: self)
+                controller.install()
+                statusItemController = controller
+                panelController.menuBarAnchorProvider = { [weak self] in
+                    self?.statusItemController?.anchorScreenX
+                }
+                panelController.menuBarButtonFrameProvider = { [weak self] in
+                    self?.statusItemController?.buttonScreenFrame
+                }
+            }
+            // Collapse any visible overlay so only the icon represents the
+            // closed state, then hide the floating pill.
+            overlay.notchClose()
+        } else {
+            statusItemController?.remove()
+            statusItemController = nil
+            panelController.menuBarAnchorProvider = nil
+            panelController.menuBarButtonFrameProvider = nil
+        }
+
+        panelController.applyMenuBarModeVisibility()
     }
 
     // MARK: - Overlay forwarding
