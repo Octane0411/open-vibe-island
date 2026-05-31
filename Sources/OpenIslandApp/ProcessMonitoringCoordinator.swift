@@ -9,7 +9,7 @@ typealias ActiveProcessSnapshot = ActiveAgentProcessDiscovery.ProcessSnapshot
 /// cadences trade a little detection latency (for agents started without a
 /// hook) for fewer `ps` scans and CPU wakeups — a battery-life lever the user
 /// controls from Settings.
-enum ProcessDiscoveryCadence: String, CaseIterable, Identifiable, Sendable {
+enum ProcessDiscoveryCadence: String, CaseIterable, Identifiable, Codable, Sendable {
     case standard
     case relaxed
     case batterySaver
