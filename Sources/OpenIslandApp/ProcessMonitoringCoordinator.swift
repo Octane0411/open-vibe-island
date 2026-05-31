@@ -68,8 +68,26 @@ final class ProcessMonitoringCoordinator {
                 let probe = self.terminalSessionAttachmentProbe
                 let resolver = self.terminalJumpTargetResolver
                 let liveSessions = self.state.sessions.filter(\.isTrackedLiveSession)
-                let (snapshots, ghosttyAvail, terminalAvail, jumpTargets) = await Task.detached(priority: .utility) {
+                // The terminal snapshot probes spawn `osascript` subprocesses and
+                // send Apple Events to Terminal/Ghostty. `reconcileSessionAttachments`
+                // only consumes their results when there are tracked live sessions
+                // (everything past its empty-sessions early return), so when idle
+                // these spawns are pure waste fired every cycle. Skip them — and the
+                // jump-target resolution — until there's a live session to resolve.
+                // A session synthesized from process discovery this cycle simply
+                // gets its attachment resolved on the next one.
+                let hasLiveSessions = !liveSessions.isEmpty
+                let (snapshots, ghosttyAvail, terminalAvail, jumpTargets):
+                    (
+                        [ActiveProcessSnapshot],
+                        TerminalSessionAttachmentProbe.SnapshotAvailability<TerminalSessionAttachmentProbe.GhosttyTerminalSnapshot>?,
+                        TerminalSessionAttachmentProbe.SnapshotAvailability<TerminalSessionAttachmentProbe.TerminalTabSnapshot>?,
+                        [String: JumpTarget]
+                    ) = await Task.detached(priority: .utility) {
                     let s = discovery.discover()
+                    guard hasLiveSessions else {
+                        return (s, nil, nil, [:])
+                    }
                     let g = probe.ghosttySnapshotAvailability()
                     let t = probe.terminalSnapshotAvailability()
                     let j = resolver.resolveJumpTargets(for: liveSessions, activeProcesses: s)

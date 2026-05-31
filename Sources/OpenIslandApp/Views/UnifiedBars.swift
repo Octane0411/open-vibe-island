@@ -29,7 +29,14 @@ struct UnifiedBars: View {
     ]
 
     var body: some View {
-        TimelineView(.animation) { timeline in
+        // Cap the redraw cadence per mode instead of riding the display's
+        // native refresh rate. This glyph lives in the notch and is visible
+        // 24/7 — on a 120 Hz ProMotion display an uncapped `.animation`
+        // schedule redraws the Canvas up to 120×/sec forever, even in the
+        // resting `.idle` state, which dominates energy use. The animations
+        // here are slow (0.9–2.8 s periods), so a modest frame cap is
+        // visually indistinguishable while cutting wakeups several-fold.
+        TimelineView(.animation(minimumInterval: frameInterval)) { timeline in
             Canvas { context, canvasSize in
                 withScaledContext(context, canvasSize) { ctx in
                     drawBars(context: ctx, time: timeline.date.timeIntervalSinceReferenceDate)
@@ -37,6 +44,16 @@ struct UnifiedBars: View {
             }
         }
         .frame(width: size, height: size)
+    }
+
+    /// Minimum interval between Canvas redraws, chosen per mode so each
+    /// animation stays smooth at the lowest cadence its period allows.
+    private var frameInterval: Double {
+        switch mode {
+        case .idle:    return 1.0 / 12.0   // 2.8 s breath — 12 fps is ample
+        case .running: return 1.0 / 30.0   // 0.9 s wave — fastest motion
+        case .waiting: return 1.0 / 15.0   // 1.8 s cross-pulse
+        }
     }
 
     // MARK: - Drawing
