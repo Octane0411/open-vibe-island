@@ -99,17 +99,19 @@ final class StatusItemController {
     func refreshStatus() {
         guard let button = statusItem?.button else { return }
 
-        let level = model?.menuBarStatusLevel ?? .none
-        button.image = Self.makeStatusDot(color: level.dotColor)
-
         let counts = model?.menuBarStateCounts ?? MenuBarStateCounts(total: 0, waiting: 0, running: 0, done: 0, idle: 0)
         if counts.total == 0 {
+            // No sessions: show a single neutral dot as the clickable icon.
+            let level = model?.menuBarStatusLevel ?? .none
+            button.image = Self.makeStatusDot(color: level.dotColor)
             button.attributedTitle = NSAttributedString(string: "")
             button.imagePosition = .imageOnly
         } else {
+            // The per-state chips already carry their own colored dots, so the
+            // aggregate status dot would just be a redundant leading dot.
+            button.image = nil
             button.attributedTitle = Self.makeBreakdownTitle(counts)
-            button.imagePosition = .imageLeading
-            button.imageHugsTitle = true
+            button.imagePosition = .noImage
         }
         let summary = model?.menuBarStatusSummary ?? ""
         button.toolTip = summary.isEmpty ? "Open Island" : "Open Island — \(summary)"
@@ -124,22 +126,20 @@ final class StatusItemController {
     private static let doneColor = NSColor(srgbRed: 111 / 255, green: 185 / 255, blue: 130 / 255, alpha: 1)
     private static let idleColor = NSColor.tertiaryLabelColor
 
-    /// "3   ●1 ●1 ●1" — total in label color, then a colored dot + count for
-    /// each non-zero state (waiting, running, done, idle), ordered by urgency.
+    /// "●1 ●1 ●1" — a colored dot + count for each non-zero state (waiting,
+    /// running, done, idle), ordered by urgency. The aggregate total is omitted:
+    /// it's redundant with the leading status dot and the per-state breakdown.
     private static func makeBreakdownTitle(_ counts: MenuBarStateCounts) -> NSAttributedString {
         let textFont = NSFont.systemFont(ofSize: 12, weight: .medium)
         let dotFont = NSFont.systemFont(ofSize: 8, weight: .black)
 
         let title = NSMutableAttributedString()
-        title.append(NSAttributedString(
-            string: " \(counts.total)",
-            attributes: [.font: textFont, .foregroundColor: breakdownTextColor]
-        ))
 
         func appendChip(_ count: Int, _ color: NSColor) {
             guard count > 0 else { return }
+            // No leading pad on the first chip (no icon precedes it); gap between.
             title.append(NSAttributedString(
-                string: "   ",
+                string: title.length == 0 ? "" : "   ",
                 attributes: [.font: textFont]
             ))
             title.append(NSAttributedString(
