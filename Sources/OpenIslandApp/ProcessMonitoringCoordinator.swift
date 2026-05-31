@@ -5,10 +5,35 @@ import OpenIslandCore
 
 typealias ActiveProcessSnapshot = ActiveAgentProcessDiscovery.ProcessSnapshot
 
+/// How often the session-attachment monitor scans running processes. Slower
+/// cadences trade a little detection latency (for agents started without a
+/// hook) for fewer `ps` scans and CPU wakeups — a battery-life lever the user
+/// controls from Settings.
+enum ProcessDiscoveryCadence: String, CaseIterable, Identifiable, Sendable {
+    case standard
+    case relaxed
+    case batterySaver
+
+    var id: String { rawValue }
+
+    var interval: Duration {
+        switch self {
+        case .standard:     return .seconds(2)
+        case .relaxed:      return .seconds(5)
+        case .batterySaver: return .seconds(10)
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class ProcessMonitoringCoordinator {
     var isResolvingInitialLiveSessions = false
+
+    /// Interval between process scans, driven by the user's cadence preference.
+    /// Read fresh each loop iteration so changes take effect on the next cycle.
+    @ObservationIgnored
+    var pollInterval: Duration = ProcessDiscoveryCadence.standard.interval
 
     @ObservationIgnored
     var syntheticClaudeSessionPrefix = ""
@@ -99,7 +124,7 @@ final class ProcessMonitoringCoordinator {
                     terminalAvailability: terminalAvail,
                     preResolvedJumpTargets: jumpTargets
                 )
-                try? await Task.sleep(for: .seconds(2))
+                try? await Task.sleep(for: self.pollInterval)
             }
         }
     }
