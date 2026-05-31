@@ -17,6 +17,10 @@ struct UnifiedBars: View {
     var size: CGFloat = 24
     /// Ink color for bars / tick. Defaults to the v6 paper ink.
     var tint: Color = Color(red: 0xf1 / 255.0, green: 0xea / 255.0, blue: 0xd9 / 255.0)
+    /// When false, the resting `.idle` glyph is drawn statically instead of
+    /// breathing — a user-facing battery option. `.running` / `.waiting` always
+    /// animate, since they signal live activity worth showing.
+    var idleAnimated: Bool = true
 
     private static let box: CGFloat = 24
     private static let barWidth: CGFloat = 2.5
@@ -29,14 +33,54 @@ struct UnifiedBars: View {
     ]
 
     var body: some View {
-        TimelineView(.animation) { timeline in
-            Canvas { context, canvasSize in
-                withScaledContext(context, canvasSize) { ctx in
-                    drawBars(context: ctx, time: timeline.date.timeIntervalSinceReferenceDate)
+        Group {
+            if isAnimated {
+                // Cap the redraw cadence per mode instead of riding the
+                // display's native refresh rate. This glyph lives in the notch
+                // and is visible 24/7 — on a 120 Hz ProMotion display an
+                // uncapped `.animation` schedule redraws the Canvas up to
+                // 120×/sec forever, even in the resting `.idle` state, which
+                // dominates energy use. The animations here are slow (0.9–2.8 s
+                // periods), so a modest frame cap is visually indistinguishable
+                // while cutting wakeups several-fold.
+                TimelineView(.animation(minimumInterval: frameInterval)) { timeline in
+                    barsCanvas(time: timeline.date.timeIntervalSinceReferenceDate)
                 }
+            } else {
+                // Static resting frame — zero continuous redraws. `staticTime`
+                // is chosen so the idle breath sits at its full-opacity rest.
+                barsCanvas(time: Self.staticIdleTime)
             }
         }
         .frame(width: size, height: size)
+    }
+
+    private func barsCanvas(time: TimeInterval) -> some View {
+        Canvas { context, canvasSize in
+            withScaledContext(context, canvasSize) { ctx in
+                drawBars(context: ctx, time: time)
+            }
+        }
+    }
+
+    /// Whether this glyph should drive a live animation. `.running` / `.waiting`
+    /// always do; `.idle` only when the user hasn't opted into a static glyph.
+    private var isAnimated: Bool {
+        mode != .idle || idleAnimated
+    }
+
+    /// Time offset whose idle breath evaluates to full opacity (sin peak at
+    /// period/4 of the 2.8 s cycle), giving a clean resting glyph when static.
+    private static let staticIdleTime: TimeInterval = 0.7
+
+    /// Minimum interval between Canvas redraws, chosen per mode so each
+    /// animation stays smooth at the lowest cadence its period allows.
+    private var frameInterval: Double {
+        switch mode {
+        case .idle:    return 1.0 / 12.0   // 2.8 s breath — 12 fps is ample
+        case .running: return 1.0 / 30.0   // 0.9 s wave — fastest motion
+        case .waiting: return 1.0 / 15.0   // 1.8 s cross-pulse
+        }
     }
 
     // MARK: - Drawing
