@@ -52,7 +52,10 @@ struct OpenIslandHooksCLI {
                     .decode(CodexHookPayload.self, from: input)
                     .withRuntimeContext(environment: ProcessInfo.processInfo.environment)
 
-                guard let response = try? client.send(.processCodexHook(payload)) else {
+                guard let response = try? client.send(
+                    .processCodexHook(payload),
+                    timeout: payload.bridgeResponseTimeout
+                ) else {
                     logStderr("bridge unavailable for codex hook")
                     return
                 }
