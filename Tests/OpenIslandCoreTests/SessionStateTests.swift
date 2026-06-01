@@ -568,6 +568,101 @@ struct SessionStateTests {
     }
 
     @Test
+    func codexPermissionRequestWaitsForApprovalAndSurfacesToolInput() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
+
+        let data = """
+        {
+          "cwd": "/tmp/worktree",
+          "hook_event_name": "PermissionRequest",
+          "model": "gpt-5-codex",
+          "permission_mode": "default",
+          "session_id": "codex-permission-1",
+          "turn_id": "turn-1",
+          "tool_name": "mcp__filesystem__write_file",
+          "tool_input": {
+            "path": "/tmp/worktree/Sources/App.swift",
+            "reason": "write change"
+          }
+        }
+        """.data(using: .utf8)!
+        let payload = try JSONDecoder().decode(CodexHookPayload.self, from: data)
+
+        async let responseTask = sendOnGCDThread(.processCodexHook(payload), socketURL: socketURL)
+
+        var iterator = stream.makeAsyncIterator()
+        let startedEvent = try await nextEvent(from: &iterator)
+        let permissionEvent = try await nextEvent(from: &iterator)
+
+        #expect(startedEvent.isSessionStarted)
+        if case let .permissionRequested(payload) = permissionEvent {
+            #expect(payload.request.title == "Allow mcp__filesystem__write_file")
+            #expect(payload.request.summary == "Codex needs permission to continue.")
+            #expect(payload.request.affectedPath == "{path: /tmp/worktree/Sources/App.swift, reason: write change}")
+            #expect(payload.request.toolName == "mcp__filesystem__write_file")
+        } else {
+            Issue.record("Expected a Codex permission request event")
+        }
+
+        try await observer.send(.resolvePermission(sessionID: "codex-permission-1", resolution: .allowOnce()))
+
+        let activityEvent = try await nextEvent(from: &iterator)
+        let response = try await responseTask
+
+        #expect(activityEvent.activityUpdate?.summary == "Permission approved. Codex continued the command.")
+        #expect(response == .codexHookDirective(.permissionRequest(.allow)))
+    }
+
+    @Test
+    func codexPermissionRequestReturnsDenyDirectiveAfterDenial() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
+
+        let payload = CodexHookPayload(
+            cwd: "/tmp/worktree",
+            hookEventName: .permissionRequest,
+            model: "gpt-5-codex",
+            permissionMode: .default,
+            sessionID: "codex-permission-deny",
+            transcriptPath: nil,
+            turnID: "turn-1",
+            toolName: "Bash",
+            toolUseID: "tool-use-1",
+            toolInput: CodexHookToolInput(command: "sudo make install")
+        )
+
+        async let responseTask = sendOnGCDThread(.processCodexHook(payload), socketURL: socketURL)
+
+        var iterator = stream.makeAsyncIterator()
+        _ = try await nextEvent(from: &iterator)
+        let permissionEvent = try await nextEvent(from: &iterator)
+        #expect(permissionEvent.isPermissionRequested)
+
+        try await observer.send(.resolvePermission(sessionID: "codex-permission-deny", resolution: .deny()))
+
+        let completedEvent = try await nextEvent(from: &iterator)
+        let response = try await responseTask
+
+        #expect(completedEvent.sessionCompleted?.summary == "Permission denied in Open Island.")
+        #expect(response == .codexHookDirective(.permissionRequest(.deny(message: "Permission denied in Open Island."))))
+    }
+
+    @Test
     func codexHookUpdatesJumpTargetWhenLaterHooksLearnMoreAboutTheTerminal() async throws {
         let socketURL = BridgeSocketLocation.uniqueTestURL()
         let server = BridgeServer(socketURL: socketURL)
@@ -759,7 +854,14 @@ struct SessionStateTests {
         #expect(managedStopHook?["statusMessage"] == nil)
 
         let sessionStartGroups = hooks?["SessionStart"] as? [[String: Any]]
+        let permissionGroups = hooks?["PermissionRequest"] as? [[String: Any]]
+        let permissionHook = permissionGroups?
+            .compactMap { $0["hooks"] as? [[String: Any]] }
+            .flatMap { $0 }
+            .first(where: { $0["command"] as? String == "'/tmp/OpenIslandHooks'" })
         #expect(sessionStartGroups?.contains(where: { $0["matcher"] as? String == "startup|resume" }) == true)
+        #expect(hooks?["PermissionRequest"] != nil)
+        #expect(permissionHook?["timeout"] as? Int == 86_400)
         #expect(hooks?["PreToolUse"] == nil)
         #expect(hooks?["PostToolUse"] == nil)
     }

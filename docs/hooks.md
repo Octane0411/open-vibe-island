@@ -46,20 +46,21 @@ This is meant for per-process launches. Do not set it globally unless you want O
 | `SessionStart` | Session starts or resumes (`source: "resume"` on resume) | `prompt`, `source` |
 | `PreToolUse` | Before a shell command executes | `tool_name`, `tool_input.command`, `turn_id`, `tool_use_id` |
 | `PostToolUse` | After a shell command completes | `tool_name`, `tool_input`, `tool_response`, `turn_id` |
+| `PermissionRequest` | Codex requests user approval | `tool_name`, `tool_input`, `turn_id`, `tool_use_id` |
 | `UserPromptSubmit` | User submits a new prompt | `prompt` |
 | `Stop` | A turn completes | `last_assistant_message`, `stop_hook_active` |
 
 ### Default managed installation
 
-The managed Codex hook installer (`CodexHookInstaller`) installs only `SessionStart`, `UserPromptSubmit`, and `Stop` by default. This is intentional: per-command Bash hooks add terminal log noise, so the default set keeps the workflow low-noise while still providing session lifecycle and usage visibility.
+The managed Codex hook installer (`CodexHookInstaller`) installs `SessionStart`, `UserPromptSubmit`, `PermissionRequest`, and `Stop` by default. This keeps per-command Bash hooks out of the default set while still surfacing Codex approval prompts in the island. `PermissionRequest` uses a 24-hour hook timeout so the app can wait for a human approval decision.
 
 The installer chooses the Codex hook feature flag that the local Codex CLI advertises. Newer Codex builds use `[features].hooks = true`; older builds use the legacy `[features].codex_hooks = true`. Status checks recognize both keys, and managed installs migrate between them when the local Codex version changes.
 
 After hooks are installed or changed, Codex may require a manual trust review before running them. Open `/hooks` inside Codex CLI and approve the expected Open Island hook entries. This approval gate belongs to Codex and is not bypassed by Open Island.
 
-The `CodexHookPayload` model and `BridgeServer` can parse richer events (`PreToolUse`, `PostToolUse`) when they are present in the hook payload, and will surface them in the UI if received. However, these richer events are **not** installed by the managed installer and must be configured manually if desired.
+The `CodexHookPayload` model and `BridgeServer` can parse richer events (`PreToolUse`, `PostToolUse`) when they are present in the hook payload, and will surface them in the UI if received. However, these richer per-command events are **not** installed by the managed installer and must be configured manually if desired.
 
-> **Note on file-edit coverage**: Codex file edits may use internal apply-patch paths that do not emit `PreToolUse` events. File-edit approval should not be treated as guaranteed `PreToolUse` coverage; the current reliable coverage is command/shell-level events, depending on Codex hook configuration.
+> **Note on file-edit coverage**: Codex file edits may use internal apply-patch paths that do not emit `PreToolUse` events. File-edit approval should be handled through `PermissionRequest`, not treated as guaranteed `PreToolUse` coverage.
 
 ### Common payload fields
 
@@ -78,21 +79,48 @@ The `CodexHookPayload` model and `BridgeServer` can parse richer events (`PreToo
 | `turn_id` | `turnID` | Current turn ID |
 | `tool_name` | `toolName` | Tool name (e.g. `shell`) |
 | `tool_use_id` | `toolUseID` | Tool-use call ID |
-| `tool_input` | `toolInput` | Tool input (contains `command`) |
+| `tool_input` | `toolInput` | Tool input (may contain `command` for shell tools or arbitrary JSON for other tools) |
 | `tool_response` | `toolResponse` | Tool output (JSON) |
 | `prompt` | `prompt` | User prompt text |
 | `last_assistant_message` | `lastAssistantMessage` | Last assistant message |
 | `stop_hook_active` | `stopHookActive` | Whether the stop hook is active |
 
-### Directive response (PreToolUse only)
+### Directive response
 
-The app can block a command by writing this to stdout:
+The app can block a `PreToolUse` command by writing this legacy block shape to stdout:
 
 ```json
 {"decision": "block", "reason": "Blocked by Open Island"}
 ```
 
-All other events require no stdout response.
+For `PermissionRequest`, the app approves the request with this hook-specific shape:
+
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PermissionRequest",
+    "decision": {
+      "behavior": "allow"
+    }
+  }
+}
+```
+
+It denies the request with:
+
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PermissionRequest",
+    "decision": {
+      "behavior": "deny",
+      "message": "Permission denied in Open Island."
+    }
+  }
+}
+```
+
+All other Codex events require no stdout response.
 
 ---
 
@@ -275,7 +303,8 @@ Setting `interrupt: true` terminates the current agent turn immediately.
 
 | Source | Event | Timeout |
 |---|---|---|
-| Codex | All events | Bridge default |
+| Codex | `PermissionRequest` | **24 hours** (awaits human approval) |
+| Codex | All other managed events | **45 seconds** |
 | Claude Code | `PermissionRequest` | **24 hours** (awaits human approval) |
 | Claude Code | All other events | **45 seconds** |
 | Gemini CLI | All events | Bridge default |
