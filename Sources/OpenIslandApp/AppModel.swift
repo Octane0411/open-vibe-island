@@ -901,6 +901,14 @@ final class AppModel {
         }
     }
 
+    /// Brand color of the spotlight session for the closed island's glyph.
+    func islandClosedBrandColor() -> Color {
+        guard let session = islandClosedSpotlight else {
+            return V6Palette.paper
+        }
+        return Color(hex: session.tool.brandColorHex) ?? V6Palette.paper
+    }
+
     /// Right-slot payload derived from the user's `islandRightSlot`
     /// preference and current live state. Returns nil when the preference
     /// is `.none` or there's nothing meaningful to show.

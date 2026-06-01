@@ -279,6 +279,7 @@ struct IslandPanelView: View {
             rightSlot: model.islandClosedRightSlotContent(),
             layout: layout,
             height: closedNotchHeight,
+            brandColor: model.islandClosedBrandColor(),
             physicalNotchWidth: layout == .macbook ? physicalNotchWidth : 0,
             minWidth: 70
         )
