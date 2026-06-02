@@ -401,6 +401,11 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     /// is considered gone. This prevents flicker from momentary `ps` gaps.
     public var processNotSeenCount: Int = 0
 
+    /// Whether this session has been dismissed from island display by user.
+    /// When `true`, the session will not be shown in the island panel,
+    /// but can reappear if the user interacts with the agent again.
+    public var isDismissedFromIsland: Bool = false
+
     public init(
         id: String,
         title: String,
@@ -520,32 +525,29 @@ public extension AgentSession {
     }
 
     /// Visibility rule for the island UI.
-    /// Hook-managed sessions (Claude Code via hooks) rely on hook lifecycle
-    /// signals; non-hook sessions use process polling.
+    /// Hook-managed sessions rely on hook lifecycle signals; non-hook sessions
+    /// use process polling.
+    ///
+    /// Dismissed sessions stay hidden until new content clears the flag.
+    /// Sessions not caught by any explicit check (e.g. completed, ended) are
+    /// hidden after one day of inactivity as a final fallback.
     var isVisibleInIsland: Bool {
+        if isDismissedFromIsland {
+            return false
+        }
         if isDemoSession { return true }
         if phase.requiresAttention { return true }
-        // Keep sessions visible if they have pending requests or questions
-        if permissionRequest != nil || questionPrompt != nil {
-            return true
-        }
-        // Hook-managed sessions: stay visible unless explicitly ended via sessionEnd hook
-        if isHookManaged {
-            // Only hide when explicitly ended via sessionEnd hook
-            return !isSessionEnded
-        }
-        // Running sessions stay visible regardless of process detection
-        if phase == .running {
-            return true
-        }
-        // Codex.app sessions stay visible while the desktop app is running.
+
         if isCodexAppSession { return isProcessAlive }
-        // Non-hook-managed sessions rely on process polling for completed state
-        if phase == .completed {
-            return isProcessAlive
+
+        if isHookManaged {
+            if !isSessionEnded { return true }
+        } else if isProcessAlive {
+            return true
         }
-        if isProcessAlive { return true }
-        return false
+
+        let oneDayAgo = Date.now.addingTimeInterval(-86400)
+        return updatedAt > oneDayAgo
     }
 
     var currentToolName: String? {

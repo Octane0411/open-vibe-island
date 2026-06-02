@@ -65,7 +65,9 @@ enum IslandSurface: Equatable {
         case .completed:
             return true
         case .running:
-            return session.permissionRequest != nil || session.questionPrompt != nil
+            // Keep running sessions visible - they should stay in the island
+            // whether they have permission requests/questions or not
+            return true
         }
     }
 }

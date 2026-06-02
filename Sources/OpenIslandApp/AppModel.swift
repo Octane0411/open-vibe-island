@@ -29,6 +29,8 @@ final class AppModel {
     private static let legacyCompletedStaleThresholdDefaultsKey = "appearance.island.v8.completedStaleThreshold"
     private static let appearanceProfileSettingsDefaultsKey = "appearance.island.v8.settingsProfile"
     private static let notificationAutoCollapseDelayDefaultsKey = "app.notification.autoCollapseDelay"
+    private static let clickOutsideCloseDelayEnabledDefaultsKey = "app.notification.clickOutsideCloseDelayEnabled"
+    private static let clickOutsideCloseDelayDefaultsKey = "app.notification.clickOutsideCloseDelay"
 
     private static let syntheticClaudeSessionPrefix = "claude-process:"
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
@@ -271,6 +273,20 @@ final class AppModel {
             guard hasFinishedInit, notificationAutoCollapseDelay != oldValue else { return }
             UserDefaults.standard.set(notificationAutoCollapseDelay, forKey: Self.notificationAutoCollapseDelayDefaultsKey)
             overlay.notificationAutoCollapseDelay = notificationAutoCollapseDelay
+        }
+    }
+    var clickOutsideCloseDelayEnabled: Bool = false {
+        didSet {
+            guard hasFinishedInit, clickOutsideCloseDelayEnabled != oldValue else { return }
+            UserDefaults.standard.set(clickOutsideCloseDelayEnabled, forKey: Self.clickOutsideCloseDelayEnabledDefaultsKey)
+            overlay.clickOutsideCloseDelayEnabled = clickOutsideCloseDelayEnabled
+        }
+    }
+    var clickOutsideCloseDelay: Double = 3 {
+        didSet {
+            guard hasFinishedInit, clickOutsideCloseDelay != oldValue else { return }
+            UserDefaults.standard.set(clickOutsideCloseDelay, forKey: Self.clickOutsideCloseDelayDefaultsKey)
+            overlay.clickOutsideCloseDelay = clickOutsideCloseDelay
         }
     }
     var launchAtLoginEnabled: Bool = false {
@@ -632,7 +648,12 @@ final class AppModel {
         suppressFrontmostNotifications = UserDefaults.standard.bool(forKey: Self.suppressFrontmostNotificationsDefaultsKey)
         notificationAutoCollapseDelay = UserDefaults.standard.double(forKey: Self.notificationAutoCollapseDelayDefaultsKey)
         if notificationAutoCollapseDelay <= 0 {
-            notificationAutoCollapseDelay = 10  // 默认值
+            notificationAutoCollapseDelay = 10
+        }
+        clickOutsideCloseDelayEnabled = UserDefaults.standard.bool(forKey: Self.clickOutsideCloseDelayEnabledDefaultsKey)
+        clickOutsideCloseDelay = UserDefaults.standard.double(forKey: Self.clickOutsideCloseDelayDefaultsKey)
+        if clickOutsideCloseDelay <= 0 {
+            clickOutsideCloseDelay = 3
         }
         if UserDefaults.standard.object(forKey: Self.showCodexUsageDefaultsKey) != nil {
             showCodexUsage = UserDefaults.standard.bool(forKey: Self.showCodexUsageDefaultsKey)
@@ -1444,6 +1465,14 @@ final class AppModel {
 
     func dismissSession(_ sessionID: String) {
         state.dismissSession(id: sessionID)
+        dismissNotificationSurfaceIfPresent(for: sessionID)
+        synchronizeSelection()
+    }
+
+    /// Remove a session from island display without affecting the actual agent session.
+    /// The session can reappear if the user interacts with the agent again.
+    func removeFromIsland(_ sessionID: String) {
+        state.removeFromIsland(id: sessionID)
         dismissNotificationSurfaceIfPresent(for: sessionID)
         synchronizeSelection()
     }

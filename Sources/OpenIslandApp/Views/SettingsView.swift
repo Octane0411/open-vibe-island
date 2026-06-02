@@ -270,6 +270,31 @@ struct DisplaySettingsPane: View {
                 }
             }
 
+            Section(lang.t("settings.display.clickOutsideClose")) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle(lang.t("settings.display.clickOutsideClose.enabled"), isOn: Binding(
+                        get: { model.clickOutsideCloseDelayEnabled },
+                        set: { model.clickOutsideCloseDelayEnabled = $0 }
+                    ))
+
+                    if model.clickOutsideCloseDelayEnabled {
+                        HStack {
+                            Text(lang.t("settings.display.clickOutsideClose.delay"))
+                            Spacer()
+                            Text("\(Int(model.clickOutsideCloseDelay))s")
+                                .foregroundStyle(.secondary)
+                        }
+                        Slider(value: Binding(
+                            get: { model.clickOutsideCloseDelay },
+                            set: { model.clickOutsideCloseDelay = $0 }
+                        ), in: 1...max(1, model.notificationAutoCollapseDelay - 1), step: 1)
+                        Text(lang.t("settings.display.clickOutsideClose.note"))
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
             if let diag = model.overlayPlacementDiagnostics {
                 Section(lang.t("settings.display.diagnostics")) {
                     LabeledContent(lang.t("settings.display.currentScreen"), value: diag.targetScreenName)

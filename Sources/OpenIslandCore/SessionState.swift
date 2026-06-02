@@ -83,6 +83,7 @@ public struct SessionState: Equatable, Sendable {
             session.isSessionEnded = false
             session.isProcessAlive = true
             session.processNotSeenCount = 0
+            session.isDismissedFromIsland = false
             upsert(session)
 
         case let .activityUpdated(payload):
@@ -110,6 +111,7 @@ public struct SessionState: Equatable, Sendable {
             }
 
             session.updatedAt = payload.timestamp
+            session.isDismissedFromIsland = false
             upsert(session)
 
         case let .permissionRequested(payload):
@@ -119,9 +121,10 @@ public struct SessionState: Equatable, Sendable {
                 session.permissionRequest = payload.request
                 session.questionPrompt = nil
                 session.updatedAt = payload.timestamp
+                session.isDismissedFromIsland = false
                 upsert(session)
             } else {
-                let session = AgentSession(
+                var session = AgentSession(
                     id: payload.sessionID,
                     title: payload.request.summary,
                     tool: .claudeCode,
@@ -141,9 +144,10 @@ public struct SessionState: Equatable, Sendable {
                 session.questionPrompt = payload.prompt
                 session.permissionRequest = nil
                 session.updatedAt = payload.timestamp
+                session.isDismissedFromIsland = false
                 upsert(session)
             } else {
-                let session = AgentSession(
+                var session = AgentSession(
                     id: payload.sessionID,
                     title: payload.prompt.title,
                     tool: .claudeCode,
@@ -166,6 +170,7 @@ public struct SessionState: Equatable, Sendable {
             session.permissionRequest = nil
             session.questionPrompt = nil
             session.updatedAt = payload.timestamp
+            session.isDismissedFromIsland = false
             if payload.isSessionEnd == true {
                 session.isSessionEnded = true
             }
@@ -400,12 +405,25 @@ public struct SessionState: Equatable, Sendable {
                     continue
                 }
 
-                // When a Codex session reached .completed via hooks (.stop)
-                // and Codex.app is still running, don't kill it through
-                // process polling — the CLI subprocess exits after each turn
-                // but the desktop app session is still valid.  The session
-                // stays visible as "Completed" and fades via island presence.
-                if session.tool == .codex && session.phase == .completed && isCodexAppRunning {
+                // Completed sessions stay visible for 1 hour regardless of process state.
+                // They should not be affected by process detection.
+                if session.phase == .completed {
+                    upsert(session)
+                    continue
+                }
+
+                // Don't mark hook-managed sessions as ended due to process detection failure
+                // when they're waiting for user attention (permission request or question).
+                // These sessions may not have a corresponding process yet, especially when
+                // created temporarily for permission requests.
+                if session.phase == .waitingForApproval || session.phase == .waitingForAnswer {
+                    upsert(session)
+                    continue
+                }
+
+                // Don't mark running sessions as ended due to process detection failure.
+                // The process may not be detected immediately when AI starts answering.
+                if session.phase == .running {
                     upsert(session)
                     continue
                 }
@@ -417,6 +435,7 @@ public struct SessionState: Equatable, Sendable {
                     if session.processNotSeenCount >= 2 {
                         session.isSessionEnded = true
                         session.phase = .completed
+                        session.updatedAt = .now
                         changed.insert(id)
                     }
                 }
@@ -446,9 +465,6 @@ public struct SessionState: Equatable, Sendable {
         return changed
     }
 
-    /// Remove sessions that are no longer visible in the island.
-    /// Returns `true` if any sessions were removed.
-    @discardableResult
     /// Manually mark a session as completed and ended.
     /// Intended for remote sessions whose SSH tunnel dropped without a
     /// SessionEnd hook.
@@ -460,6 +476,18 @@ public struct SessionState: Equatable, Sendable {
         upsert(session)
     }
 
+    /// Remove a session from island display without affecting the actual agent session.
+    /// The session can reappear if the user interacts with the agent again.
+    public mutating func removeFromIsland(id: String) {
+        guard var session = sessionsByID[id] else { return }
+        session.isDismissedFromIsland = true
+        session.updatedAt = .now
+        upsert(session)
+    }
+
+    /// Remove sessions that are no longer visible in the island.
+    /// Returns `true` if any sessions were removed.
+    @discardableResult
     public mutating func removeInvisibleSessions() -> Bool {
         let before = sessionsByID.count
         sessionsByID = sessionsByID.filter { _, session in

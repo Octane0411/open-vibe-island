@@ -8,6 +8,8 @@ import OpenIslandCore
 final class OverlayUICoordinator {
 
     var notificationAutoCollapseDelay: TimeInterval = 10
+    var clickOutsideCloseDelayEnabled: Bool = false
+    var clickOutsideCloseDelay: TimeInterval = 3
 
     var notchStatus: NotchStatus = .closed
     var notchOpenReason: NotchOpenReason?
@@ -57,6 +59,15 @@ final class OverlayUICoordinator {
     var hasPendingNotificationAutoCollapse: Bool {
         notificationAutoCollapseTask != nil
     }
+
+    @ObservationIgnored
+    private var notificationAutoCollapseStartedAt: Date?
+
+    @ObservationIgnored
+    private var notificationAutoCollapseRemainingDelay: TimeInterval?
+
+    @ObservationIgnored
+    private var clickOutsideCloseTask: Task<Void, Never>?
 
     @ObservationIgnored
     private var autoCollapseSurfaceHasBeenEntered = false
@@ -133,6 +144,10 @@ final class OverlayUICoordinator {
             beforeTransition: { [weak self] in
                 self?.notificationAutoCollapseTask?.cancel()
                 self?.notificationAutoCollapseTask = nil
+                self?.notificationAutoCollapseStartedAt = nil
+                self?.notificationAutoCollapseRemainingDelay = nil
+                self?.clickOutsideCloseTask?.cancel()
+                self?.clickOutsideCloseTask = nil
             },
             afterStateChange: { [weak self] in
                 self?.autoCollapseSurfaceHasBeenEntered = false
@@ -140,6 +155,53 @@ final class OverlayUICoordinator {
                 self?.appModel?.measuredNotificationContentHeight = 0
             }
         )
+    }
+
+    func handleClickOutsideNotification(screenPoint: NSPoint) {
+        guard notchStatus == .opened,
+              notchOpenReason == .notification,
+              islandSurface.isNotificationCard else {
+            notchClose()
+            overlayPanelController.repostMouseDown(at: screenPoint)
+            return
+        }
+
+        guard clickOutsideCloseDelayEnabled else {
+            if !(appModel?.hasSessionsRequiringAttention ?? false) {
+                notchClose()
+                overlayPanelController.repostMouseDown(at: screenPoint)
+            }
+            return
+        }
+
+        // Has sessions requiring attention — never close regardless of setting.
+        guard !(appModel?.hasSessionsRequiringAttention ?? false) else {
+            return
+        }
+
+        clickOutsideCloseTask?.cancel()
+        clickOutsideCloseTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let delay = self.clickOutsideCloseDelay
+            do {
+                try await Task.sleep(for: .seconds(delay))
+            } catch {
+                return
+            }
+
+            guard notchStatus == .opened,
+                  notchOpenReason == .notification,
+                  islandSurface.isNotificationCard else {
+                return
+            }
+
+            guard !self.shouldDeferTimedNotificationAutoCollapse else {
+                return
+            }
+
+            self.notchClose()
+            self.overlayPanelController.repostMouseDown(at: screenPoint)
+        }
     }
 
     /// Coordinates overlay transitions.
@@ -291,10 +353,18 @@ final class OverlayUICoordinator {
         isPointerInsideIslandSurface = true
         autoCollapseSurfaceHasBeenEntered = true
 
-        if notchOpenReason == .notification {
-            notificationAutoCollapseTask?.cancel()
-            notificationAutoCollapseTask = nil
+        guard notchOpenReason == .notification else { return }
+
+        // Calculate remaining delay before cancelling the timer,
+        // so the mouse-exit handler can resume from where it left off.
+        if let startedAt = notificationAutoCollapseStartedAt {
+            let elapsed = Date().timeIntervalSince(startedAt)
+            let remaining = notificationAutoCollapseDelay - elapsed
+            notificationAutoCollapseRemainingDelay = max(0, remaining)
         }
+        notificationAutoCollapseTask?.cancel()
+        notificationAutoCollapseTask = nil
+        notificationAutoCollapseStartedAt = nil
     }
 
     func handlePointerExitedIslandSurface() {
@@ -313,7 +383,14 @@ final class OverlayUICoordinator {
             return
         }
 
-        notchClose()
+        // For notification surfaces, restart the auto-collapse timer instead of closing immediately.
+        // This ensures users have time to see session completion notifications even if they move
+        // their mouse outside the island area.
+        if notchOpenReason == .notification && islandSurface.isNotificationCard {
+            updateNotificationAutoCollapse()
+        } else {
+            notchClose()
+        }
     }
 
     // MARK: - Notification surfaces
@@ -390,6 +467,7 @@ final class OverlayUICoordinator {
     private func updateNotificationAutoCollapse() {
         notificationAutoCollapseTask?.cancel()
         notificationAutoCollapseTask = nil
+        notificationAutoCollapseStartedAt = nil
 
         guard notchStatus == .opened,
               notchOpenReason == .notification,
@@ -402,13 +480,16 @@ final class OverlayUICoordinator {
             return
         }
 
+        let delay = notificationAutoCollapseRemainingDelay ?? notificationAutoCollapseDelay
+        notificationAutoCollapseRemainingDelay = nil
+        let startedAt = Date()
+        notificationAutoCollapseStartedAt = startedAt
+
         notificationAutoCollapseTask = Task { @MainActor [weak self] in
             do {
                 guard let self else { return }
-                try await Task.sleep(for: .seconds(self.notificationAutoCollapseDelay))
+                try await Task.sleep(for: .seconds(delay))
             } catch {
-                // Task was cancelled (e.g. a new event reset the timer).
-                // Do NOT proceed — the replacement task owns the new timer.
                 return
             }
 
@@ -447,6 +528,10 @@ final class OverlayUICoordinator {
     func applyOverlayState(from snapshot: IslandDebugSnapshot, presentOverlay: Bool, autoCollapseNotificationCards: Bool) {
         notificationAutoCollapseTask?.cancel()
         notificationAutoCollapseTask = nil
+        notificationAutoCollapseStartedAt = nil
+        notificationAutoCollapseRemainingDelay = nil
+        clickOutsideCloseTask?.cancel()
+        clickOutsideCloseTask = nil
         autoCollapseSurfaceHasBeenEntered = false
         isPointerInsideIslandSurface = false
 

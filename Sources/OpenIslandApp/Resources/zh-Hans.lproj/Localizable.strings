@@ -123,6 +123,10 @@
 "settings.display.notificationDelay" = "通知自动折叠";
 "settings.display.notificationDelay.label" = "自动折叠延迟";
 "settings.display.notificationDelay.note" = "通知卡片自动折叠前的时间（5-30秒）";
+"settings.display.clickOutsideClose" = "点击外部关闭";
+"settings.display.clickOutsideClose.enabled" = "延迟关闭";
+"settings.display.clickOutsideClose.delay" = "点击外部关闭延迟";
+"settings.display.clickOutsideClose.note" = "建议设置小于自动折叠延迟时间，避免自动折叠先于点击关闭触发";
 
 /* Settings - Sound */
 "settings.sound.notifications" = "通知音效";
