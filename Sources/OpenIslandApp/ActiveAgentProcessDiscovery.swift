@@ -423,7 +423,10 @@ struct ActiveAgentProcessDiscovery {
         // VS Code family — check forks BEFORE plain VS Code so fork apps that
         // retain the upstream "Code Helper" naming inside their Electron
         // framework aren't misidentified as VS Code (#415).
-        if lowered.contains("/cursor.app/") {
+        // Cursor helper processes (terminal pty-host, extension-host, etc.)
+        // only carry the display name "Cursor Helper: …" — the full app bundle
+        // path is not included in the ps command column, so match the prefix.
+        if lowered.contains("/cursor.app/") || lowered.hasPrefix("cursor helper") {
             return "Cursor"
         }
         if lowered.contains("/windsurf.app/") {
