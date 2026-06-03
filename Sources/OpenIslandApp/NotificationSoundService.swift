@@ -1,11 +1,20 @@
 import AppKit
 
+/// Different types of notification events that can have distinct sounds.
+public enum NotificationEventType: String, CaseIterable, Identifiable {
+    case completion = "completion"
+    case permission = "permission"
+    case question = "question"
+
+    public var id: String { rawValue }
+}
+
 /// Manages notification sound playback using macOS system sounds.
 @MainActor
 struct NotificationSoundService {
     private static let soundsDirectory = "/System/Library/Sounds"
-    private static let defaultsKey = "notification.sound.name"
     static let defaultSoundName = "Bottle"
+    private static let selectedSoundNameDefaultsKey = "notification.sound.name"
 
     /// Returns the list of available system sound names (without file extension).
     static func availableSounds() -> [String] {
@@ -22,11 +31,26 @@ struct NotificationSoundService {
     /// The currently selected sound name, persisted in UserDefaults.
     static var selectedSoundName: String {
         get {
-            UserDefaults.standard.string(forKey: defaultsKey) ?? defaultSoundName
+            UserDefaults.standard.string(forKey: selectedSoundNameDefaultsKey) ?? defaultSoundName
         }
         set {
-            UserDefaults.standard.set(newValue, forKey: defaultsKey)
+            UserDefaults.standard.set(newValue, forKey: selectedSoundNameDefaultsKey)
         }
+    }
+
+    /// Gets the UserDefaults key for a specific event type.
+    private static func defaultsKey(for eventType: NotificationEventType) -> String {
+        "notification.sound.\(eventType.rawValue)"
+    }
+
+    /// Gets the sound name for a specific event type.
+    static func soundName(for eventType: NotificationEventType) -> String {
+        UserDefaults.standard.string(forKey: defaultsKey(for: eventType)) ?? defaultSoundName
+    }
+
+    /// Sets the sound name for a specific event type.
+    static func setSoundName(_ name: String, for eventType: NotificationEventType) {
+        UserDefaults.standard.set(name, forKey: defaultsKey(for: eventType))
     }
 
     /// Plays a system sound by name.
@@ -38,9 +62,9 @@ struct NotificationSoundService {
         sound.play()
     }
 
-    /// Plays the user-selected notification sound, respecting the mute setting.
-    static func playNotification(isMuted: Bool) {
+    /// Plays the notification sound for a specific event type, respecting the mute setting.
+    static func playNotification(_ eventType: NotificationEventType, isMuted: Bool) {
         guard !isMuted else { return }
-        play(selectedSoundName)
+        play(soundName(for: eventType))
     }
 }

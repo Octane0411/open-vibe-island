@@ -28,6 +28,9 @@ final class AppModel {
     private static let legacyIslandSessionSortDefaultsKey = "appearance.island.v8.sessionSort"
     private static let legacyCompletedStaleThresholdDefaultsKey = "appearance.island.v8.completedStaleThreshold"
     private static let appearanceProfileSettingsDefaultsKey = "appearance.island.v8.settingsProfile"
+    private static let notificationAutoCollapseDelayDefaultsKey = "app.notification.autoCollapseDelay"
+    private static let clickOutsideCloseDelayEnabledDefaultsKey = "app.notification.clickOutsideCloseDelayEnabled"
+    private static let clickOutsideCloseDelayDefaultsKey = "app.notification.clickOutsideCloseDelay"
 
     private static let syntheticClaudeSessionPrefix = "claude-process:"
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
@@ -265,6 +268,27 @@ final class AppModel {
             UserDefaults.standard.set(suppressFrontmostNotifications, forKey: Self.suppressFrontmostNotificationsDefaultsKey)
         }
     }
+    var notificationAutoCollapseDelay: Double = 10 {
+        didSet {
+            guard hasFinishedInit, notificationAutoCollapseDelay != oldValue else { return }
+            UserDefaults.standard.set(notificationAutoCollapseDelay, forKey: Self.notificationAutoCollapseDelayDefaultsKey)
+            overlay.notificationAutoCollapseDelay = notificationAutoCollapseDelay
+        }
+    }
+    var clickOutsideCloseDelayEnabled: Bool = false {
+        didSet {
+            guard hasFinishedInit, clickOutsideCloseDelayEnabled != oldValue else { return }
+            UserDefaults.standard.set(clickOutsideCloseDelayEnabled, forKey: Self.clickOutsideCloseDelayEnabledDefaultsKey)
+            overlay.clickOutsideCloseDelayEnabled = clickOutsideCloseDelayEnabled
+        }
+    }
+    var clickOutsideCloseDelay: Double = 3 {
+        didSet {
+            guard hasFinishedInit, clickOutsideCloseDelay != oldValue else { return }
+            UserDefaults.standard.set(clickOutsideCloseDelay, forKey: Self.clickOutsideCloseDelayDefaultsKey)
+            overlay.clickOutsideCloseDelay = clickOutsideCloseDelay
+        }
+    }
     var launchAtLoginEnabled: Bool = false {
         didSet {
             guard !isApplyingLaunchAtLogin, hasFinishedInit, launchAtLoginEnabled != oldValue else { return }
@@ -305,6 +329,28 @@ final class AppModel {
             NotificationSoundService.selectedSoundName = selectedSoundName
         }
     }
+    
+    var completionSoundName: String = NotificationSoundService.defaultSoundName {
+        didSet {
+            guard completionSoundName != oldValue else { return }
+            NotificationSoundService.setSoundName(completionSoundName, for: .completion)
+        }
+    }
+    
+    var permissionSoundName: String = NotificationSoundService.defaultSoundName {
+        didSet {
+            guard permissionSoundName != oldValue else { return }
+            NotificationSoundService.setSoundName(permissionSoundName, for: .permission)
+        }
+    }
+    
+    var questionSoundName: String = NotificationSoundService.defaultSoundName {
+        didSet {
+            guard questionSoundName != oldValue else { return }
+            NotificationSoundService.setSoundName(questionSoundName, for: .question)
+        }
+    }
+    
     var overlayDisplaySelectionID: String {
         get { overlay.overlayDisplaySelectionID }
         set { overlay.overlayDisplaySelectionID = newValue }
@@ -594,9 +640,21 @@ final class AppModel {
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
+        completionSoundName = NotificationSoundService.soundName(for: .completion)
+        permissionSoundName = NotificationSoundService.soundName(for: .permission)
+        questionSoundName = NotificationSoundService.soundName(for: .question)
         showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
         hapticFeedbackEnabled = UserDefaults.standard.bool(forKey: Self.hapticFeedbackEnabledDefaultsKey)
         suppressFrontmostNotifications = UserDefaults.standard.bool(forKey: Self.suppressFrontmostNotificationsDefaultsKey)
+        notificationAutoCollapseDelay = UserDefaults.standard.double(forKey: Self.notificationAutoCollapseDelayDefaultsKey)
+        if notificationAutoCollapseDelay <= 0 {
+            notificationAutoCollapseDelay = 10
+        }
+        clickOutsideCloseDelayEnabled = UserDefaults.standard.bool(forKey: Self.clickOutsideCloseDelayEnabledDefaultsKey)
+        clickOutsideCloseDelay = UserDefaults.standard.double(forKey: Self.clickOutsideCloseDelayDefaultsKey)
+        if clickOutsideCloseDelay <= 0 {
+            clickOutsideCloseDelay = 3
+        }
         if UserDefaults.standard.object(forKey: Self.showCodexUsageDefaultsKey) != nil {
             showCodexUsage = UserDefaults.standard.bool(forKey: Self.showCodexUsageDefaultsKey)
         } else {
@@ -862,6 +920,14 @@ final class AppModel {
             }
             return session.tool.displayName
         }
+    }
+
+    /// Brand color of the spotlight session for the closed island's glyph.
+    func islandClosedBrandColor() -> Color {
+        guard let session = islandClosedSpotlight else {
+            return V6Palette.paper
+        }
+        return Color(hex: session.tool.brandColorHex) ?? V6Palette.paper
     }
 
     /// Right-slot payload derived from the user's `islandRightSlot`
@@ -1223,6 +1289,10 @@ final class AppModel {
     var showsNotificationCard: Bool { overlay.showsNotificationCard }
     var shouldDeferTimedNotificationAutoCollapse: Bool { overlay.shouldDeferTimedNotificationAutoCollapse }
     var hasPendingNotificationAutoCollapse: Bool { overlay.hasPendingNotificationAutoCollapse }
+    
+    var hasSessionsRequiringAttention: Bool {
+        state.sessions.contains(where: { $0.phase.requiresAttention })
+    }
 
     func loadDebugSnapshot(
         _ snapshot: IslandDebugSnapshot,
@@ -1395,6 +1465,14 @@ final class AppModel {
 
     func dismissSession(_ sessionID: String) {
         state.dismissSession(id: sessionID)
+        dismissNotificationSurfaceIfPresent(for: sessionID)
+        synchronizeSelection()
+    }
+
+    /// Remove a session from island display without affecting the actual agent session.
+    /// The session can reappear if the user interacts with the agent again.
+    func removeFromIsland(_ sessionID: String) {
+        state.removeFromIsland(id: sessionID)
         dismissNotificationSurfaceIfPresent(for: sessionID)
         synchronizeSelection()
     }

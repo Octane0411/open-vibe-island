@@ -120,11 +120,23 @@
 "settings.display.diagnostics" = "Diagnostics";
 "settings.display.currentScreen" = "Current Screen";
 "settings.display.layoutMode" = "Layout Mode";
+"settings.display.notificationDelay" = "Notification Auto-Collapse";
+"settings.display.notificationDelay.label" = "Auto-collapse delay";
+"settings.display.notificationDelay.note" = "Time before notification cards automatically collapse (5-30 seconds)";
+"settings.display.clickOutsideClose" = "Click-Outside Close";
+"settings.display.clickOutsideClose.enabled" = "Delayed close";
+"settings.display.clickOutsideClose.delay" = "Click-outside close delay";
+"settings.display.clickOutsideClose.note" = "Recommended to set shorter than auto-collapse delay to prevent auto-collapse from triggering before the click-close delay.";
 
 /* Settings - Sound */
 "settings.sound.notifications" = "Notification Sounds";
 "settings.sound.mute" = "Mute";
-"settings.sound.selectSound" = "Select Sound";
+"settings.sound.completion" = "Completion";
+"settings.sound.completion.label" = "Completion sound";
+"settings.sound.permission" = "Permission Request";
+"settings.sound.permission.label" = "Permission sound";
+"settings.sound.question" = "Question";
+"settings.sound.question.label" = "Question sound";
 
 /* Settings - Setup */
 "settings.tab.setup" = "Setup";

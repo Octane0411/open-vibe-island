@@ -401,6 +401,11 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     /// is considered gone. This prevents flicker from momentary `ps` gaps.
     public var processNotSeenCount: Int = 0
 
+    /// Whether this session has been dismissed from island display by user.
+    /// When `true`, the session will not be shown in the island panel,
+    /// but can reappear if the user interacts with the agent again.
+    public var isDismissedFromIsland: Bool = false
+
     public init(
         id: String,
         title: String,
@@ -520,18 +525,29 @@ public extension AgentSession {
     }
 
     /// Visibility rule for the island UI.
-    /// Hook-managed sessions (Claude Code via hooks) rely on hook lifecycle
-    /// signals; non-hook sessions use process polling.
+    /// Hook-managed sessions rely on hook lifecycle signals; non-hook sessions
+    /// use process polling.
+    ///
+    /// Dismissed sessions stay hidden until new content clears the flag.
+    /// Sessions not caught by any explicit check (e.g. completed, ended) are
+    /// hidden after one day of inactivity as a final fallback.
     var isVisibleInIsland: Bool {
+        if isDismissedFromIsland {
+            return false
+        }
         if isDemoSession { return true }
         if phase.requiresAttention { return true }
-        // Codex.app sessions stay visible while the desktop app is running.
-        // Checked before isHookManaged because a Codex.app session may also
-        // be hook-managed (when both hook and rediscovery converge on it).
+
         if isCodexAppSession { return isProcessAlive }
-        if isHookManaged { return !isSessionEnded }
-        if isProcessAlive { return true }
-        return false
+
+        if isHookManaged {
+            if !isSessionEnded { return true }
+        } else if isProcessAlive {
+            return true
+        }
+
+        let oneDayAgo = Date.now.addingTimeInterval(-86400)
+        return updatedAt > oneDayAgo
     }
 
     var currentToolName: String? {
