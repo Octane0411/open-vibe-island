@@ -585,16 +585,9 @@ struct ClaudeHooksTests {
             )
         )
 
-        let events = await collector.snapshot(
-            waitingUntil: { events in
-                events.contains { event in
-                    if case let .sessionCompleted(payload) = event {
-                        return payload.sessionID == sessionID && payload.summary == "OK"
-                    }
-                    return false
-                }
-            },
-            timeout: .seconds(1)
+        let events = await waitForCompletedSessionEvent(
+            sessionID: sessionID,
+            collector: collector
         )
         var state = SessionState()
         for event in events {
@@ -729,17 +722,30 @@ private actor AgentEventCollector {
         events.append(event)
     }
 
-    func snapshot(
-        waitingUntil predicate: ([AgentEvent]) -> Bool = { _ in true },
-        timeout: Duration = .zero
-    ) async -> [AgentEvent] {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: timeout)
-        while !predicate(events), clock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(10))
-        }
+    func snapshot() -> [AgentEvent] {
         events
     }
+}
+
+private func waitForCompletedSessionEvent(
+    sessionID: String,
+    collector: AgentEventCollector
+) async -> [AgentEvent] {
+    for _ in 0..<100 {
+        let events = await collector.snapshot()
+        if events.contains(where: { event in
+            if case let .sessionCompleted(payload) = event {
+                return payload.sessionID == sessionID && payload.summary == "OK"
+            }
+            return false
+        }) {
+            return events
+        }
+
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+
+    return await collector.snapshot()
 }
 
 private func nextEvent(
