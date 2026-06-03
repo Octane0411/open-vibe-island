@@ -225,6 +225,28 @@ struct GeneralSettingsPane: View {
                 ))
             }
 
+            Section {
+                Toggle(lang.t("settings.general.idleGlyphAnimation"), isOn: Binding(
+                    get: { model.idleGlyphAnimationEnabled },
+                    set: { model.idleGlyphAnimationEnabled = $0 }
+                ))
+
+                Picker(lang.t("settings.general.processDiscoveryCadence"), selection: Binding(
+                    get: { model.processDiscoveryCadence },
+                    set: { model.processDiscoveryCadence = $0 }
+                )) {
+                    Text(lang.t("settings.general.cadence.standard")).tag(ProcessDiscoveryCadence.standard)
+                    Text(lang.t("settings.general.cadence.relaxed")).tag(ProcessDiscoveryCadence.relaxed)
+                    Text(lang.t("settings.general.cadence.batterySaver")).tag(ProcessDiscoveryCadence.batterySaver)
+                }
+            } header: {
+                Text(lang.t("settings.section.energy"))
+            } footer: {
+                Text(lang.t("settings.general.energy.footer"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
         }
         .formStyle(.grouped)
         .navigationTitle(lang.t("settings.tab.general"))
