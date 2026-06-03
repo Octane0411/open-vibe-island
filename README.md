@@ -116,10 +116,10 @@ Grab the latest DMG from [GitHub Releases](https://github.com/Octane0411/open-vi
 ### Option 2: Homebrew
 
 ```bash
-brew install --cask octane0411/tap/openisland
+brew install --cask open-island
 ```
 
-Upgrade later with `brew upgrade --cask openisland`.
+Upgrade later with `brew upgrade --cask open-island`.
 
 ### Option 3: Build from source
 

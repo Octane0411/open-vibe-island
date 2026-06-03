@@ -116,10 +116,10 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 ### 方式二：Homebrew
 
 ```bash
-brew install --cask octane0411/tap/openisland
+brew install --cask open-island
 ```
 
-后续升级用 `brew upgrade --cask openisland`。
+后续升级用 `brew upgrade --cask open-island`。
 
 ### 方式三：从源码构建
 
