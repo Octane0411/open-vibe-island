@@ -222,6 +222,9 @@ struct V6ClosedPill: View {
     /// width that fits just the glyph.
     var minWidth: CGFloat = 70
 
+    /// Forwarded to the glyph: when false the idle pill stops breathing.
+    var idleAnimated: Bool = true
+
     var body: some View {
         switch layout {
         case .external: externalBody
@@ -255,7 +258,7 @@ struct V6ClosedPill: View {
                 .fill(V6Palette.ink)
 
             HStack(spacing: 0) {
-                UnifiedBars(mode: mode, size: 24)
+                UnifiedBars(mode: mode, size: 24, idleAnimated: idleAnimated)
                     .frame(width: glyphW, height: 24)
 
                 if let label {
@@ -295,7 +298,7 @@ struct V6ClosedPill: View {
                 .fill(V6Palette.ink)
 
             HStack(spacing: 0) {
-                UnifiedBars(mode: mode, size: 24)
+                UnifiedBars(mode: mode, size: 24, idleAnimated: idleAnimated)
                     .frame(width: 24, height: 24)
 
                 Spacer(minLength: 0)
