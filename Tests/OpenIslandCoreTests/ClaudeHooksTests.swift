@@ -526,6 +526,96 @@ struct ClaudeHooksTests {
     }
 
     @Test
+    func claudeSubagentStopAfterStopDoesNotReopenCompletedSession() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+
+        let collector = AgentEventCollector()
+        let collectionTask = Task {
+            do {
+                for try await event in stream {
+                    await collector.append(event)
+                }
+            } catch {}
+        }
+        defer { collectionTask.cancel() }
+
+        try await observer.send(.registerClient(role: .observer))
+
+        let sessionID = "claude-subagent-stop-after-stop"
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processClaudeHook(
+                ClaudeHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .userPromptSubmit,
+                    sessionID: sessionID,
+                    transcriptPath: "/tmp/claude-subagent-stop-after-stop.jsonl",
+                    prompt: "Reply with exactly OK."
+                )
+            )
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processClaudeHook(
+                ClaudeHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .stop,
+                    sessionID: sessionID,
+                    transcriptPath: "/tmp/claude-subagent-stop-after-stop.jsonl",
+                    lastAssistantMessage: "OK"
+                )
+            )
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processClaudeHook(
+                ClaudeHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .subagentStop,
+                    sessionID: sessionID,
+                    transcriptPath: "/tmp/claude-subagent-stop-after-stop.jsonl",
+                    agentID: "statusline-agent",
+                    agentType: "",
+                    lastAssistantMessage: "(silence)"
+                )
+            )
+        )
+
+        let events = await collector.snapshot(
+            waitingUntil: { events in
+                events.contains { event in
+                    if case let .sessionCompleted(payload) = event {
+                        return payload.sessionID == sessionID && payload.summary == "OK"
+                    }
+                    return false
+                }
+            },
+            timeout: .seconds(1)
+        )
+        var state = SessionState()
+        for event in events {
+            state.apply(event)
+        }
+
+        let session = try #require(state.session(id: sessionID))
+        #expect(session.phase == .completed)
+        #expect(session.summary == "OK")
+        #expect(session.claudeMetadata?.agentID == nil)
+        #expect(!events.contains { event in
+            if case let .activityUpdated(payload) = event {
+                return payload.sessionID == sessionID
+                    && payload.phase == .running
+                    && payload.summary == "(silence)"
+            }
+            return false
+        })
+    }
+
+    @Test
     func questionPromptAlwaysAppendsOtherFreeformOption() throws {
         let payload = ClaudeHookPayload(
             cwd: "/tmp",
@@ -630,6 +720,26 @@ struct ClaudeHooksTests {
 private enum ClaudeHooksTestError: Error {
     case streamEnded
     case noMatchingEvent
+}
+
+private actor AgentEventCollector {
+    private var events: [AgentEvent] = []
+
+    func append(_ event: AgentEvent) {
+        events.append(event)
+    }
+
+    func snapshot(
+        waitingUntil predicate: ([AgentEvent]) -> Bool = { _ in true },
+        timeout: Duration = .zero
+    ) async -> [AgentEvent] {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while !predicate(events), clock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        events
+    }
 }
 
 private func nextEvent(
