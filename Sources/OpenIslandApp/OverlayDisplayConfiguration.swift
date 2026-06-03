@@ -153,12 +153,40 @@ enum OverlayDisplayResolver {
         placementMode(for: screen) == .notch ? "Built-in notch" : "Top-bar fallback"
     }
 
-    private static func screenID(for screen: NSScreen) -> String {
+    /// Returns a string that identifies the physical display backing `screen`
+    /// stably across reconnects.
+    ///
+    /// Uses `CGDisplayCreateUUIDFromDisplayID` so the value survives the
+    /// `CGDirectDisplayID` churn that happens on hotplug / sleep / arrangement
+    /// changes — without this, a reassigned `CGDirectDisplayID` could silently
+    /// route the overlay to a different physical monitor than the one the user
+    /// picked. Falls back to a `localizedName + frame` composite when macOS
+    /// can't issue a UUID (some AirPlay / virtual displays).
+    static func screenID(for screen: NSScreen) -> String {
         let key = NSDeviceDescriptionKey("NSScreenNumber")
-        if let number = screen.deviceDescription[key] as? NSNumber {
-            return "display-\(number.uint32Value)"
+        guard let number = screen.deviceDescription[key] as? NSNumber else {
+            return fallbackScreenID(for: screen)
         }
 
-        return screen.localizedName
+        let displayID = number.uint32Value
+        if let uuid = CGDisplayCreateUUIDFromDisplayID(displayID)?.takeRetainedValue(),
+           let cfString = CFUUIDCreateString(nil, uuid) {
+            return cfString as String
+        }
+
+        return fallbackScreenID(for: screen)
+    }
+
+    /// Disambiguates identical displays (e.g. two AirPlay receivers with the
+    /// same model name and resolution) by appending the arrangement origin.
+    /// The origin is not stable across display rearrangement, but a mismatched
+    /// preference will self-heal through the existing
+    /// `validSelectionIDs.contains` check in `refreshOverlayDisplayConfiguration()`.
+    private static func fallbackScreenID(for screen: NSScreen) -> String {
+        let width = Int(screen.frame.width.rounded())
+        let height = Int(screen.frame.height.rounded())
+        let originX = Int(screen.frame.origin.x.rounded())
+        let originY = Int(screen.frame.origin.y.rounded())
+        return "fallback-\(screen.localizedName)-\(width)x\(height)@\(originX),\(originY)"
     }
 }
