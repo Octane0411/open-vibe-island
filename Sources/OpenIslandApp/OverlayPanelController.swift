@@ -198,12 +198,19 @@ final class OverlayPanelController {
         notchRect = NSRect(x: notchX, y: notchY, width: notchSize.width, height: notchSize.height)
     }
 
+    /// Picks the screen to anchor the overlay to.
+    ///
+    /// Priority: persisted manual preference (matched via the stable
+    /// `OverlayDisplayResolver.screenID` so a hotplug-reassigned
+    /// `CGDirectDisplayID` can't silently re-target the wrong monitor) →
+    /// first notched screen → `NSScreen.main` → first available screen.
+    /// Returns `nil` only when no displays are connected.
     private func resolveTargetScreen(preferredScreenID: String? = nil) -> NSScreen? {
         let screens = NSScreen.screens
         guard !screens.isEmpty else { return nil }
 
         if let preferredScreenID,
-           let screen = screens.first(where: { screenID(for: $0) == preferredScreenID }) {
+           let screen = screens.first(where: { OverlayDisplayResolver.screenID(for: $0) == preferredScreenID }) {
             return screen
         }
 
@@ -212,14 +219,6 @@ final class OverlayPanelController {
         }
 
         return NSScreen.main ?? screens[0]
-    }
-
-    private func screenID(for screen: NSScreen) -> String {
-        let key = NSDeviceDescriptionKey("NSScreenNumber")
-        if let number = screen.deviceDescription[key] as? NSNumber {
-            return "display-\(number.uint32Value)"
-        }
-        return screen.localizedName
     }
 
     // MARK: - Mouse event monitoring
