@@ -38,10 +38,24 @@ function sendToSocket(command: unknown, timeoutMs = 3000): Promise<unknown | nul
       };
       sock.on("data", (chunk) => {
         buffer += chunk.toString();
-        const lines = buffer.split("\n").filter(Boolean);
-        // BridgeServer sends hello first, then the command response.
-        if (lines.length < 2) return;
-        try { finish(JSON.parse(lines[1])); } catch { finish(null); }
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const message = JSON.parse(line);
+            // BridgeServer may send hello and live events before the command response.
+            // Approval requests intentionally emit permissionRequested and only return
+            // a response after the user chooses Allow/Deny, so ignore non-responses.
+            if (message?.type === "response") {
+              finish(message);
+              return;
+            }
+          } catch {
+            finish(null);
+            return;
+          }
+        }
       });
       sock.on("end", () => finish(null));
       sock.on("error", () => finish(null));
