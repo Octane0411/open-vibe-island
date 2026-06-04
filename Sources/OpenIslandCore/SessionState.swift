@@ -360,7 +360,7 @@ public struct SessionState: Equatable, Sendable {
             // the rollout watcher / app-server notifications.
             if session.isCodexAppSession {
                 let wasAlive = session.isProcessAlive
-                session.isProcessAlive = aliveSessionIDs.contains(id)
+                session.isProcessAlive = isCodexAppRunning
                 if session.isProcessAlive != wasAlive {
                     changed.insert(id)
                 }
