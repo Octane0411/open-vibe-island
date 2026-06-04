@@ -384,6 +384,16 @@ public struct SessionState: Equatable, Sendable {
                     continue
                 }
 
+                // Pi is extension/heartbeat-managed and has no app-side
+                // process/session ID that process polling can match. Do not
+                // let the generic hook fallback mark it ended between
+                // heartbeats; SessionEnd still closes it when Pi shuts down.
+                if session.tool == .pi {
+                    session.processNotSeenCount = 0
+                    upsert(session)
+                    continue
+                }
+
                 // When a Codex session reached .completed via hooks (.stop)
                 // and Codex.app is still running, don't kill it through
                 // process polling — the CLI subprocess exits after each turn
