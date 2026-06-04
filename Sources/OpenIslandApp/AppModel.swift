@@ -1363,6 +1363,13 @@ final class AppModel {
             // the `CommandGroup(.appSettings)` button that opens the window.
             NSApp.sendAction(NSSelectorFromString("showSettingsWindow:"), to: nil, from: nil)
         }
+        bringSettingsWindowToFront()
+        DispatchQueue.main.async { [weak self] in
+            self?.bringSettingsWindowToFront()
+        }
+    }
+
+    func bringSettingsWindowToFront() {
         if let window = NSApp.windows.first(where: { $0.title == "Open Island Settings" }) {
             window.orderFrontRegardless()
             window.makeKey()

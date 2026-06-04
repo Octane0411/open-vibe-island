@@ -103,7 +103,10 @@ struct OpenIslandApp: App {
             CommandGroup(replacing: .appSettings) {
                 Button("Settings…") {
                     openWindow(id: "settings")
-                    appDelegate.model.showSettings()
+                    appDelegate.model.bringSettingsWindowToFront()
+                    DispatchQueue.main.async {
+                        appDelegate.model.bringSettingsWindowToFront()
+                    }
                 }
                 .keyboardShortcut(",", modifiers: .command)
             }
