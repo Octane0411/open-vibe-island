@@ -1015,6 +1015,8 @@ final class ProcessMonitoringCoordinator {
             return "Cursor \(session.id.prefix(8))"
         case .kimiCLI:
             return "Kimi \(session.id.prefix(8))"
+        case .pi:
+            return "Pi \(session.id.prefix(8))"
         }
     }
 }
