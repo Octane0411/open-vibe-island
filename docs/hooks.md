@@ -327,6 +327,7 @@ Pi has no native Open Island hook or approval system. Open Island support is imp
 | Pi extension event | Open Island event | Behavior |
 |---|---|---|
 | `session_start` | `SessionStart` | Creates or restores a Pi session row |
+| timer while Pi is alive | `Heartbeat` | Recreates the row after Open Island restarts without guessing from process lists |
 | `input` | `UserPromptSubmit` | Marks the session running with prompt preview |
 | `agent_start` | `AgentStart` | Marks the session running |
 | `tool_call` | `PreToolUse` | For `bash`, `edit`, and `write`, blocks until Open Island returns allow/deny |

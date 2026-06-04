@@ -3,6 +3,7 @@ import Foundation
 public enum PiHookEventName: String, Codable, Sendable {
     case sessionStart = "SessionStart"
     case sessionEnd = "SessionEnd"
+    case heartbeat = "Heartbeat"
     case userPromptSubmit = "UserPromptSubmit"
     case agentStart = "AgentStart"
     case preToolUse = "PreToolUse"

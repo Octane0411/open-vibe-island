@@ -1367,6 +1367,11 @@ public final class BridgeServer: @unchecked Sendable {
             )
             send(.response(.acknowledged), to: clientID)
 
+        case .heartbeat:
+            ensurePiSessionExists(for: payload)
+            synchronizePiJumpTarget(for: payload)
+            send(.response(.acknowledged), to: clientID)
+
         case .userPromptSubmit:
             clearStalePiInteractionIfNeeded(for: payload.sessionID)
             ensurePiSessionExists(for: payload)
@@ -1474,7 +1479,7 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func ensurePiSessionExists(for payload: PiHookPayload) {
-        guard !hasSession(id: payload.sessionID) else {
+        if let existing = localState.session(id: payload.sessionID), !existing.isSessionEnded {
             return
         }
 

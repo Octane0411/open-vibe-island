@@ -104,6 +104,9 @@ function compact(value: unknown, limit = 4000): string | undefined {
 }
 
 export default function (pi: any) {
+  let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+  let heartbeatContext: any | undefined;
+
   function sessionID(ctx: any): string {
     return `pi-${ctx.sessionManager?.getSessionId?.() || ctx.sessionManager?.getSessionFile?.() || "ephemeral"}`;
   }
@@ -130,8 +133,17 @@ export default function (pi: any) {
     };
   }
 
+  function sendHeartbeat() {
+    if (!heartbeatContext) return;
+    fireAndForget(command(heartbeatContext, "Heartbeat"));
+  }
+
   pi.on("session_start", async (_event: any, ctx: any) => {
+    heartbeatContext = ctx;
     fireAndForget(command(ctx, "SessionStart"));
+    if (!heartbeatTimer) {
+      heartbeatTimer = setInterval(sendHeartbeat, 10_000);
+    }
   });
 
   pi.on("input", async (event: any, ctx: any) => {
@@ -179,6 +191,11 @@ export default function (pi: any) {
   });
 
   pi.on("session_shutdown", async (_event: any, ctx: any) => {
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = undefined;
+    }
+    heartbeatContext = undefined;
     fireAndForget(command(ctx, "SessionEnd"));
   });
 }
