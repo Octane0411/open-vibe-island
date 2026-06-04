@@ -12,10 +12,18 @@ extension Notification.Name {
     static let openIslandSelectSetupTab = Notification.Name("openIslandSelectSetupTab")
 }
 
+enum NotificationLevel: String, CaseIterable, Identifiable {
+    case all
+    case mainAgentOnly
+
+    var id: String { rawValue }
+}
+
 @MainActor
 @Observable
 final class AppModel {
     private static let soundMutedDefaultsKey = "overlay.sound.muted"
+    private static let notificationLevelDefaultsKey = "app.notificationLevel"
     private static let showDockIconDefaultsKey = "app.showDockIcon"
     private static let hapticFeedbackEnabledDefaultsKey = "app.hapticFeedbackEnabled"
     private static let islandRightSlotDefaultsKey = "appearance.island.v6.rightSlot"
@@ -287,6 +295,12 @@ final class AppModel {
     }
     @ObservationIgnored
     private var isApplyingLaunchAtLogin = false
+    var notificationLevel: NotificationLevel = .mainAgentOnly {
+        didSet {
+            guard hasFinishedInit, notificationLevel != oldValue else { return }
+            UserDefaults.standard.set(notificationLevel.rawValue, forKey: Self.notificationLevelDefaultsKey)
+        }
+    }
     var isSoundMuted = false {
         didSet {
             guard isSoundMuted != oldValue else {
@@ -591,12 +605,16 @@ final class AppModel {
             Self.hapticFeedbackEnabledDefaultsKey: false,
             Self.completionReplyEnabledDefaultsKey: false,
             Self.suppressFrontmostNotificationsDefaultsKey: true,
+            Self.notificationLevelDefaultsKey: NotificationLevel.mainAgentOnly.rawValue,
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
         showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
         hapticFeedbackEnabled = UserDefaults.standard.bool(forKey: Self.hapticFeedbackEnabledDefaultsKey)
         suppressFrontmostNotifications = UserDefaults.standard.bool(forKey: Self.suppressFrontmostNotificationsDefaultsKey)
+        notificationLevel = NotificationLevel(
+            rawValue: UserDefaults.standard.string(forKey: Self.notificationLevelDefaultsKey) ?? ""
+        ) ?? .mainAgentOnly
         if UserDefaults.standard.object(forKey: Self.showCodexUsageDefaultsKey) != nil {
             showCodexUsage = UserDefaults.standard.bool(forKey: Self.showCodexUsageDefaultsKey)
         } else {
@@ -1524,11 +1542,21 @@ final class AppModel {
         }
 
         if let surface = IslandSurface.notificationSurface(for: event) {
-            scheduleNotificationSurfacePresentationIfNeeded(
-                surface,
-                wasAlreadyCompleted: wasAlreadyCompleted,
-                ingress: ingress
-            )
+            let isSubagentEvent: Bool = {
+                switch event {
+                case let .activityUpdated(payload): return payload.isSubagentCompletion
+                case let .sessionCompleted(payload): return payload.isSubagentCompletion == true
+                default: return false
+                }
+            }()
+
+            if !isSubagentEvent || notificationLevel == .all {
+                scheduleNotificationSurfacePresentationIfNeeded(
+                    surface,
+                    wasAlreadyCompleted: wasAlreadyCompleted,
+                    ingress: ingress
+                )
+            }
         }
     }
 
