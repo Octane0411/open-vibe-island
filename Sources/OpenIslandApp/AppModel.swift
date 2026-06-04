@@ -137,6 +137,11 @@ final class AppModel {
     var kimiHookStatus: KimiHookInstallationStatus? { hooks.kimiHookStatus }
     var kimiHookStatusTitle: String { hooks.kimiHookStatusTitle }
     var kimiHookStatusSummary: String { hooks.kimiHookStatusSummary }
+    var piExtensionInstalled: Bool { hooks.piExtensionInstalled }
+    var isPiExtensionSetupBusy: Bool { hooks.isPiExtensionSetupBusy }
+    var piExtensionStatus: PiExtensionInstallationStatus? { hooks.piExtensionStatus }
+    var piExtensionStatusTitle: String { hooks.piExtensionStatusTitle }
+    var piExtensionStatusSummary: String { hooks.piExtensionStatusSummary }
     var codexHookStatusTitle: String { hooks.codexHookStatusTitle }
     var codexHookStatusSummary: String { hooks.codexHookStatusSummary }
 
@@ -163,6 +168,7 @@ final class AppModel {
             || hooks.openCodePluginInstalled
             || hooks.geminiHooksInstalled
             || hooks.kimiHooksInstalled
+            || hooks.piExtensionInstalled
     }
     func refreshCodexHookStatus() { hooks.refreshCodexHookStatus() }
     func refreshClaudeHookStatus() { hooks.refreshClaudeHookStatus() }
@@ -193,6 +199,9 @@ final class AppModel {
     func refreshKimiHookStatus() { hooks.refreshKimiHookStatus() }
     func installKimiHooks() { hooks.installKimiHooks() }
     func uninstallKimiHooks() { hooks.uninstallKimiHooks() }
+    func refreshPiExtensionStatus() { hooks.refreshPiExtensionStatus() }
+    func installPiExtension() { hooks.installPiExtension() }
+    func uninstallPiExtension() { hooks.uninstallPiExtension() }
     func installClaudeUsageBridge() { hooks.installClaudeUsageBridge() }
     func uninstallClaudeUsageBridge() { hooks.uninstallClaudeUsageBridge() }
     func updateClaudeConfigDirectory(to newDirectory: URL?) { hooks.updateClaudeConfigDirectory(to: newDirectory) }
@@ -1634,6 +1643,7 @@ final class AppModel {
                 if self.hooks.shouldAutoInstall(.cursor) { self.installCursorHooks() }
                 if self.hooks.shouldAutoInstall(.gemini) { self.installGeminiHooks() }
                 if self.hooks.shouldAutoInstall(.kimi) { self.installKimiHooks() }
+                if self.hooks.shouldAutoInstall(.pi) { self.installPiExtension() }
                 if self.hooks.shouldAutoInstall(.claudeUsageBridge) { self.installClaudeUsageBridge() }
 
                 // Run health checks after install to detect stale paths, conflicts, etc.

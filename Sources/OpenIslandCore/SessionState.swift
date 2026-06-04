@@ -243,6 +243,8 @@ public struct SessionState: Equatable, Sendable {
                 session.summary = "Permission approved. \(session.tool.displayName) continued the tool."
             case .openCode:
                 session.summary = "Permission approved. OpenCode continued the tool."
+            case .pi:
+                session.summary = "Permission approved. Pi continued the tool."
             default:
                 session.summary = "Permission approved. Agent resumed work."
             }
@@ -252,6 +254,8 @@ public struct SessionState: Equatable, Sendable {
             case .claudeCode, .geminiCLI, .qoder, .qwenCode, .factory, .codebuddy, .kimiCLI:
                 session.summary = "Permission denied in Open Island."
             case .openCode:
+                session.summary = "Permission denied in Open Island."
+            case .pi:
                 session.summary = "Permission denied in Open Island."
             default:
                 session.summary = "Permission denied. Review the session in the terminal."
