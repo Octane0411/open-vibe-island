@@ -112,6 +112,28 @@ public struct SessionState: Equatable, Sendable {
             session.updatedAt = payload.timestamp
             upsert(session)
 
+        case let .sessionRefreshed(payload):
+            guard var session = sessionsByID[payload.sessionID] else {
+                return
+            }
+
+            session.title = payload.title
+            session.jumpTarget = payload.jumpTarget ?? session.jumpTarget
+            session.codexMetadata = payload.codexMetadata?.isEmpty == true ? nil : payload.codexMetadata
+            session.updatedAt = payload.timestamp
+            session.isSessionEnded = false
+            session.isProcessAlive = true
+            session.processNotSeenCount = 0
+            Self.refreshCodexAppClassification(for: &session)
+
+            let preservesActionableState = session.phase == .waitingForApproval || session.phase == .waitingForAnswer
+            if !preservesActionableState {
+                session.phase = payload.phase
+                session.summary = payload.summary
+            }
+
+            upsert(session)
+
         case let .permissionRequested(payload):
             guard var session = sessionsByID[payload.sessionID] else {
                 return

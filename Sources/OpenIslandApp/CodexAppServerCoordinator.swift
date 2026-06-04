@@ -100,16 +100,21 @@ final class CodexAppServerCoordinator {
                 threads = try await client.listThreads(limit: 20)
             }
             var created = 0
+            var refreshed = 0
             for thread in threads where !thread.ephemeral {
-                // Skip threads already tracked — re-emitting sessionStarted
-                // rebuilds the AgentSession and would wipe richer state
-                // already accumulated from hooks or rediscovery.
-                if isSessionTracked?(thread.id) == true { continue }
-                emitSessionStarted(from: thread)
-                created += 1
+                if isSessionTracked?(thread.id) == true {
+                    emitSessionRefreshed(from: thread)
+                    refreshed += 1
+                } else {
+                    emitSessionStarted(from: thread)
+                    created += 1
+                }
             }
             if created > 0 {
                 onStatusMessage?("Synced \(created) new Codex thread(s) from app-server.")
+            }
+            if refreshed > 0 {
+                onStatusMessage?("Refreshed \(refreshed) tracked Codex thread(s) from app-server.")
             }
         } catch {
             onStatusMessage?("Failed to list loaded Codex threads: \(error.localizedDescription)")
@@ -186,12 +191,8 @@ final class CodexAppServerCoordinator {
                 )
             ))
 
-        case .threadNameUpdated:
-            // Title updates don't have a dedicated AgentEvent and we can't
-            // safely overwrite phase/summary here (would clobber running or
-            // waiting-for-approval state).  Skip for now — the title is
-            // populated at sessionStarted time which is usually enough.
-            break
+        case .threadNameUpdated(let threadId, _):
+            refreshTrackedThread(threadID: threadId)
 
         case .turnStarted(let threadId, _):
             onEvent?(.activityUpdated(
@@ -232,6 +233,62 @@ final class CodexAppServerCoordinator {
     // MARK: - Helpers
 
     private func emitSessionStarted(from thread: CodexThread) {
+        let payload = threadPayload(from: thread)
+
+        onEvent?(.sessionStarted(
+            SessionStarted(
+                sessionID: thread.id,
+                title: payload.title,
+                tool: .codex,
+                origin: .live,
+                initialPhase: payload.phase,
+                summary: payload.summary,
+                timestamp: .now,
+                jumpTarget: payload.jumpTarget,
+                codexMetadata: CodexSessionMetadata(
+                    transcriptPath: thread.path,
+                    initialUserPrompt: thread.preview.isEmpty ? nil : thread.preview
+                )
+            )
+        ))
+    }
+
+    private func emitSessionRefreshed(from thread: CodexThread) {
+        let payload = threadPayload(from: thread)
+        onEvent?(.sessionRefreshed(
+            SessionRefreshed(
+                sessionID: thread.id,
+                title: payload.title,
+                summary: payload.summary,
+                phase: payload.phase,
+                timestamp: .now,
+                jumpTarget: payload.jumpTarget,
+                codexMetadata: CodexSessionMetadata(
+                    transcriptPath: thread.path,
+                    initialUserPrompt: thread.preview.isEmpty ? nil : thread.preview
+                )
+            )
+        ))
+    }
+
+    private func refreshTrackedThread(threadID: String) {
+        guard let client else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            guard self.isSessionTracked?(threadID) == true else { return }
+            guard let thread = try? await client.readThread(threadID: threadID) else { return }
+            await MainActor.run {
+                self.emitSessionRefreshed(from: thread)
+            }
+        }
+    }
+
+    private func threadPayload(from thread: CodexThread) -> (
+        title: String,
+        summary: String,
+        phase: SessionPhase,
+        jumpTarget: JumpTarget
+    ) {
         let workspaceName = URL(fileURLWithPath: thread.cwd).lastPathComponent
         let title = thread.name ?? workspaceName
         let summary = thread.preview.isEmpty ? "Codex session." : String(thread.preview.prefix(120))
@@ -243,27 +300,14 @@ final class CodexAppServerCoordinator {
         case .notLoaded, .systemError: phase = .completed
         }
 
-        onEvent?(.sessionStarted(
-            SessionStarted(
-                sessionID: thread.id,
-                title: title,
-                tool: .codex,
-                origin: .live,
-                initialPhase: phase,
-                summary: summary,
-                timestamp: .now,
-                jumpTarget: JumpTarget(
-                    terminalApp: "Codex.app",
-                    workspaceName: workspaceName,
-                    paneTitle: title,
-                    workingDirectory: thread.cwd,
-                    codexThreadID: thread.id
-                ),
-                codexMetadata: CodexSessionMetadata(
-                    transcriptPath: thread.path,
-                    initialUserPrompt: thread.preview.isEmpty ? nil : thread.preview
-                )
-            )
-        ))
+        let jumpTarget = JumpTarget(
+            terminalApp: "Codex.app",
+            workspaceName: workspaceName,
+            paneTitle: title,
+            workingDirectory: thread.cwd,
+            codexThreadID: thread.id
+        )
+
+        return (title, summary, phase, jumpTarget)
     }
 }
