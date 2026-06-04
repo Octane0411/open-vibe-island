@@ -398,6 +398,13 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             summary: summary,
             phase: snapshot.phase,
             updatedAt: updatedAt,
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: sessionMeta.workspaceName,
+                paneTitle: sessionMeta.sessionTitle,
+                workingDirectory: sessionMeta.cwd,
+                codexThreadID: sessionMeta.sessionID
+            ),
             codexMetadata: metadata
         )
     }
