@@ -16,14 +16,15 @@ brand_icon="$repo_root/Assets/Brand/OpenIsland.icns"
 bundle_dir="$HOME/Applications/Open Island Dev.app"
 plist_path="$bundle_dir/Contents/Info.plist"
 bundle_binary="$bundle_dir/Contents/MacOS/OpenIslandApp"
+build_configuration="${OPEN_ISLAND_BUILD_CONFIGURATION:-release}"
 
 cd "$repo_root"
 
-swift build -c debug --product OpenIslandApp
-swift build -c debug --product OpenIslandHooks
-swift build -c debug --product OpenIslandSetup
+swift build -c "$build_configuration" --product OpenIslandApp
+swift build -c "$build_configuration" --product OpenIslandHooks
+swift build -c "$build_configuration" --product OpenIslandSetup
 
-build_root="$(swift build -c debug --show-bin-path)"
+build_root="$(swift build -c "$build_configuration" --show-bin-path)"
 app_binary="$build_root/OpenIslandApp"
 hooks_binary="$build_root/OpenIslandHooks"
 setup_binary="$build_root/OpenIslandSetup"
@@ -107,7 +108,7 @@ EOF
 # causes "unsealed contents" codesign failure. Move it into
 # Contents/Resources/ so signing succeeds. On the developer machine
 # Bundle.module falls back to the hardcoded .build/ path, so
-# localization still works. (Release builds use package-app.sh which
+# localization still works. (Packaged builds use package-app.sh which
 # has its own resource bundle handling.)
 resource_bundle_name="OpenIsland_OpenIslandApp.bundle"
 root_bundle="$bundle_dir/$resource_bundle_name"

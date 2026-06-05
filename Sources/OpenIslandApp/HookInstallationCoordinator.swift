@@ -8,8 +8,12 @@ final class HookInstallationCoordinator {
     @ObservationIgnored
     let intentStore: AgentIntentStore
 
+    @ObservationIgnored
+    var shouldSkipCodexUsageJSONLFallback: (() -> Bool)?
+
     init(intentStore: AgentIntentStore = AgentIntentStore()) {
         self.intentStore = intentStore
+        self.codexUsageSnapshot = try? CodexUsageLoader.loadCached()
     }
 
     var codexHookStatus: CodexHookInstallationStatus?
@@ -776,14 +780,29 @@ final class HookInstallationCoordinator {
             guard let self else { return }
 
             do {
+                if self.shouldSkipCodexUsageJSONLFallback?() == true {
+                    return
+                }
+
                 let snapshot = try await Task.detached(priority: .utility) {
                     try CodexUsageLoader.load()
                 }.value
-                self.codexUsageSnapshot = snapshot
+                if let snapshot {
+                    if self.codexUsageSnapshot?.sourceFilePath.hasPrefix("codex-app-server") == true {
+                        return
+                    }
+                    self.codexUsageSnapshot = snapshot
+                    try? CodexUsageLoader.saveCached(snapshot)
+                }
             } catch {
                 self.onStatusMessage?("Failed to read Codex usage state: \(error.localizedDescription)")
             }
         }
+    }
+
+    func updateCodexUsageSnapshotFromAppServer(_ snapshot: CodexUsageSnapshot) {
+        codexUsageSnapshot = snapshot
+        try? CodexUsageLoader.saveCached(snapshot)
     }
 
     // MARK: - Intent-aware helpers
