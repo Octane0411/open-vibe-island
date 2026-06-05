@@ -252,7 +252,7 @@ struct V6ClosedPill: View {
 
         return ZStack {
             V6ClosedPillShape()
-                .fill(V6Palette.ink)
+                .fill(Color.black)
 
             HStack(spacing: 0) {
                 UnifiedBars(mode: mode, size: 24)
@@ -292,7 +292,7 @@ struct V6ClosedPill: View {
 
         return ZStack {
             V6ClosedPillShape()
-                .fill(V6Palette.ink)
+                .fill(Color.black)
 
             HStack(spacing: 0) {
                 UnifiedBars(mode: mode, size: 24)
