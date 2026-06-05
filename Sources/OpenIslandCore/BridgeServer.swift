@@ -16,6 +16,12 @@ public final class BridgeServer: @unchecked Sendable {
         let hookEventName: CodexHookEventName
     }
 
+    private struct PendingCodexQuestion {
+        let clientID: UUID
+        let payload: CodexHookPayload
+        let prompt: QuestionPrompt
+    }
+
     private struct PendingClaudeToolContext {
         let sessionID: String
         let toolUseID: String?
@@ -66,6 +72,7 @@ public final class BridgeServer: @unchecked Sendable {
     private var listeners: [Listener] = []
     private var clients: [UUID: ClientConnection] = [:]
     private var pendingApprovals: [String: PendingApproval] = [:]
+    private var pendingCodexQuestions: [String: PendingCodexQuestion] = [:]
     private var pendingClaudeToolContexts: [String: PendingClaudeToolContext] = [:]
     private var pendingClaudeInteractions: [String: PendingClaudeInteraction] = [:]
     private var pendingOpenCodeInteractions: [String: PendingOpenCodeInteraction] = [:]
@@ -180,6 +187,7 @@ public final class BridgeServer: @unchecked Sendable {
 
     private func stopLocked() {
         pendingApprovals.removeAll()
+        pendingCodexQuestions.removeAll()
         pendingClaudeInteractions.removeAll()
         pendingClaudeToolContexts.removeAll()
         pendingAgentDescriptions.removeAll()
@@ -427,6 +435,12 @@ public final class BridgeServer: @unchecked Sendable {
             send(.response(.acknowledged), to: clientID)
 
         case let .answerQuestion(sessionID, response):
+            if pendingCodexQuestions[sessionID] != nil {
+                resolvePendingCodexQuestion(sessionID: sessionID, response: response)
+                send(.response(.acknowledged), to: clientID)
+                return
+            }
+
             if pendingClaudeInteractions[sessionID] != nil {
                 resolvePendingClaudeQuestion(sessionID: sessionID, response: response)
                 send(.response(.acknowledged), to: clientID)
@@ -521,33 +535,41 @@ public final class BridgeServer: @unchecked Sendable {
             synchronizeJumpTarget(for: payload)
             synchronizeCodexMetadata(for: payload)
 
-            let command = payload.commandPreview ?? "Bash command"
-
-            let approvalEvent = AgentEvent.permissionRequested(
-                PermissionRequested(
-                    sessionID: payload.sessionID,
-                    request: PermissionRequest(
-                        title: "Run Bash command",
-                        summary: "Codex wants to run a shell command.",
-                        affectedPath: payload.commandText ?? command,
-                        primaryActionTitle: "Allow",
-                        secondaryActionTitle: "Deny"
-                    ),
-                    timestamp: .now
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: payload.toolActivitySummary,
+                        phase: .running,
+                        timestamp: .now
+                    )
                 )
             )
-
-            emit(approvalEvent)
-
-            pendingApprovals[payload.sessionID] = PendingApproval(
-                clientID: clientID,
-                hookEventName: .preToolUse
-            )
+            send(.response(.acknowledged), to: clientID)
 
         case .permissionRequest:
             ensureSessionExists(for: payload)
             synchronizeJumpTarget(for: payload)
             synchronizeCodexMetadata(for: payload)
+
+            if payload.toolName == "AskUserQuestion",
+               let prompt = codexQuestionPrompt(from: payload) {
+                emit(
+                    .questionAsked(
+                        QuestionAsked(
+                            sessionID: payload.sessionID,
+                            prompt: prompt,
+                            timestamp: .now
+                        )
+                    )
+                )
+                pendingCodexQuestions[payload.sessionID] = PendingCodexQuestion(
+                    clientID: clientID,
+                    payload: payload,
+                    prompt: prompt
+                )
+                return
+            }
 
             emit(
                 .permissionRequested(
@@ -1874,7 +1896,7 @@ public final class BridgeServer: @unchecked Sendable {
             update: payload.defaultCodexMetadata,
             hookEventName: payload.hookEventName
         )
-        guard !mergedMetadata.isEmpty else {
+        guard existingSession.codexMetadata != nil || !mergedMetadata.isEmpty else {
             return
         }
 
@@ -2033,7 +2055,8 @@ public final class BridgeServer: @unchecked Sendable {
                 existing: existing?.currentCommandPreview,
                 update: update.currentCommandPreview,
                 hookEventName: hookEventName
-            )
+            ),
+            isSubagentSession: existing?.isSubagentSession == true || update.isSubagentSession
         )
     }
 
@@ -2042,16 +2065,18 @@ public final class BridgeServer: @unchecked Sendable {
         update: String?,
         hookEventName: CodexHookEventName
     ) -> String? {
-        if let update {
-            return update
-        }
-
         switch hookEventName {
         case .userPromptSubmit, .postToolUse, .stop:
             return nil
         case .sessionStart, .preToolUse, .permissionRequest:
-            return existing
+            break
         }
+
+        if let update {
+            return update
+        }
+
+        return existing
     }
 
     private func mergedClaudeMetadata(
@@ -2362,16 +2387,18 @@ public final class BridgeServer: @unchecked Sendable {
         update: String?,
         hookEventName: CodexHookEventName
     ) -> String? {
-        if let update {
-            return update
-        }
-
         switch hookEventName {
         case .userPromptSubmit, .postToolUse, .stop:
             return nil
         case .sessionStart, .preToolUse, .permissionRequest:
-            return existing
+            break
         }
+
+        if let update {
+            return update
+        }
+
+        return existing
     }
 
     private func resolvePendingApproval(sessionID: String, resolution: PermissionResolution) {
@@ -2386,7 +2413,7 @@ public final class BridgeServer: @unchecked Sendable {
         case let (.preToolUse, .deny(message, _)):
             response = .codexHookDirective(.deny(reason: message ?? "Permission denied in Open Island."))
         case (.permissionRequest, .allowOnce):
-            response = .codexHookDirective(.permissionRequest(.allow))
+            response = .codexHookDirective(.permissionRequest(.allow()))
         case let (.permissionRequest, .deny(message, _)):
             response = .codexHookDirective(
                 .permissionRequest(.deny(message: message ?? "Permission denied in Open Island."))
@@ -2397,6 +2424,40 @@ public final class BridgeServer: @unchecked Sendable {
         }
 
         send(.response(response), to: pendingApproval.clientID)
+    }
+
+    private func resolvePendingCodexQuestion(
+        sessionID: String,
+        response: QuestionPromptResponse
+    ) {
+        guard let pendingQuestion = pendingCodexQuestions.removeValue(forKey: sessionID) else {
+            return
+        }
+
+        let updatedInput = mergedCodexQuestionInput(
+            payload: pendingQuestion.payload,
+            prompt: pendingQuestion.prompt,
+            response: response
+        )
+        let summary = response.displaySummary.isEmpty
+            ? "Answered Codex's questions."
+            : "Answered: \(response.displaySummary)"
+
+        emit(
+            .activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: sessionID,
+                    summary: summary,
+                    phase: .running,
+                    timestamp: .now
+                )
+            )
+        )
+
+        send(
+            .response(.codexHookDirective(.permissionRequest(.allow(updatedInput: updatedInput)))),
+            to: pendingQuestion.clientID
+        )
     }
 
     private func resolvePendingClaudeInteraction(
@@ -2510,6 +2571,112 @@ public final class BridgeServer: @unchecked Sendable {
 
     private func claudeToolUseID(for payload: ClaudeHookPayload) -> String? {
         payload.toolUseID ?? pendingClaudeToolContexts[payload.permissionCorrelationKey]?.toolUseID
+    }
+
+    private func codexQuestionPrompt(from payload: CodexHookPayload) -> QuestionPrompt? {
+        guard case let .object(root)? = payload.toolInput?.rawValue else {
+            return nil
+        }
+
+        let questions: [QuestionPromptItem]
+        if case let .array(questionValues)? = root["questions"] {
+            questions = questionValues.compactMap { value in
+                guard case let .object(questionObject) = value else {
+                    return nil
+                }
+
+                let id = codexString(questionObject["id"])
+                    ?? codexString(questionObject["key"])
+                    ?? codexString(questionObject["name"])
+                    ?? UUID().uuidString
+                let question = codexString(questionObject["question"])
+                    ?? codexString(questionObject["prompt"])
+                    ?? codexString(questionObject["label"])
+                    ?? id
+                let options = codexQuestionOptions(from: questionObject["options"])
+
+                return QuestionPromptItem(
+                    question: question,
+                    header: id,
+                    options: options
+                )
+            }
+        } else if let question = codexString(root["question"]) ?? codexString(root["prompt"]) {
+            let id = codexString(root["id"]) ?? "answer"
+            questions = [
+                QuestionPromptItem(
+                    question: question,
+                    header: id,
+                    options: codexQuestionOptions(from: root["options"])
+                ),
+            ]
+        } else {
+            questions = []
+        }
+
+        guard !questions.isEmpty else {
+            return nil
+        }
+
+        return QuestionPrompt(
+            title: "Codex is asking a question.",
+            questions: questions
+        )
+    }
+
+    private func mergedCodexQuestionInput(
+        payload: CodexHookPayload,
+        prompt: QuestionPrompt,
+        response: QuestionPromptResponse
+    ) -> CodexHookJSONValue {
+        var answers = response.answers
+        if answers.isEmpty,
+           let rawAnswer = response.rawAnswer,
+           !rawAnswer.isEmpty,
+           let fallbackQuestionID = prompt.questions.first?.header {
+            answers[fallbackQuestionID] = rawAnswer
+        }
+
+        guard case let .object(existingObject)? = payload.toolInput?.rawValue else {
+            return .object([
+                "answers": .object(answers.mapValues { .string($0) }),
+            ])
+        }
+
+        var updatedObject = existingObject
+        updatedObject["answers"] = .object(answers.mapValues { .string($0) })
+        return .object(updatedObject)
+    }
+
+    private func codexQuestionOptions(from value: CodexHookJSONValue?) -> [QuestionOption] {
+        guard case let .array(values)? = value else {
+            return []
+        }
+
+        return values.compactMap { value in
+            switch value {
+            case let .string(label):
+                return QuestionOption(label: label)
+            case let .object(object):
+                guard let label = codexString(object["label"]) ?? codexString(object["value"]) else {
+                    return nil
+                }
+                return QuestionOption(
+                    label: label,
+                    description: codexString(object["description"]) ?? ""
+                )
+            default:
+                return nil
+            }
+        }
+    }
+
+    private func codexString(_ value: CodexHookJSONValue?) -> String? {
+        guard case let .string(string)? = value,
+              !string.isEmpty else {
+            return nil
+        }
+        return string
     }
 
     private func mergedClaudeQuestionInput(

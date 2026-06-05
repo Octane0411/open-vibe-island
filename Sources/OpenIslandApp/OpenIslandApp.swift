@@ -7,6 +7,7 @@ final class OpenIslandAppDelegate: NSObject, NSApplicationDelegate {
     private let harnessLaunchConfiguration = HarnessLaunchConfiguration()
     private let launchedAt = Date()
     private lazy var harnessRuntimeMonitor = HarnessRuntimeMonitor(launchedAt: launchedAt)
+    private var settingsWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         ProcessInfo.processInfo.disableAutomaticTermination(
@@ -15,6 +16,9 @@ final class OpenIslandAppDelegate: NSObject, NSApplicationDelegate {
         ProcessInfo.processInfo.disableSuddenTermination()
         NSApp.setActivationPolicy(model.showDockIcon ? .regular : .accessory)
         harnessRuntimeMonitor.recordMilestone("applicationDidFinishLaunching")
+        model.openSettingsWindow = { [weak self] in
+            self?.showSettingsWindow()
+        }
 
         DispatchQueue.main.async { [self] in
             harnessRuntimeMonitor.recordMilestone("bootstrapStarted")
@@ -85,6 +89,27 @@ final class OpenIslandAppDelegate: NSObject, NSApplicationDelegate {
         model.showSettings()
         return false
     }
+
+    private func showSettingsWindow() {
+        let window: NSWindow
+        if let existingWindow = settingsWindow {
+            window = existingWindow
+        } else {
+            window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 900, height: 720),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                backing: .buffered,
+                defer: false
+            )
+            window.title = "Open Island Settings"
+            window.isReleasedWhenClosed = false
+            window.contentView = NSHostingView(rootView: SettingsView(model: model))
+            window.center()
+            settingsWindow = window
+        }
+
+        window.makeKeyAndOrderFront(nil)
+    }
 }
 
 @main
@@ -92,37 +117,17 @@ struct OpenIslandApp: App {
     @NSApplicationDelegateAdaptor(OpenIslandAppDelegate.self)
     private var appDelegate
 
-    @Environment(\.openWindow) private var openWindow
-
     var body: some Scene {
-        Window("Open Island Settings", id: "settings") {
-            SettingsWindowContent(model: appDelegate.model)
+        Settings {
+            EmptyView()
         }
-        .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .appSettings) {
                 Button("Settings…") {
-                    openWindow(id: "settings")
                     appDelegate.model.showSettings()
                 }
                 .keyboardShortcut(",", modifiers: .command)
             }
         }
-    }
-}
-
-/// Refreshes the `openWindow` registration each time the settings
-/// window opens, keeping the closure current after window recreation.
-private struct SettingsWindowContent: View {
-    var model: AppModel
-    @Environment(\.openWindow) private var openWindow
-
-    var body: some View {
-        SettingsView(model: model)
-            .onAppear {
-                model.openSettingsWindow = { [openWindow] in
-                    openWindow(id: "settings")
-                }
-            }
     }
 }
