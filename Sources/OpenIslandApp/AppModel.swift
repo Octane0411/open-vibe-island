@@ -137,6 +137,11 @@ final class AppModel {
     var kimiHookStatus: KimiHookInstallationStatus? { hooks.kimiHookStatus }
     var kimiHookStatusTitle: String { hooks.kimiHookStatusTitle }
     var kimiHookStatusSummary: String { hooks.kimiHookStatusSummary }
+    var piExtensionInstalled: Bool { hooks.piExtensionInstalled }
+    var isPiExtensionSetupBusy: Bool { hooks.isPiExtensionSetupBusy }
+    var piExtensionStatus: PiExtensionInstallationStatus? { hooks.piExtensionStatus }
+    var piExtensionStatusTitle: String { hooks.piExtensionStatusTitle }
+    var piExtensionStatusSummary: String { hooks.piExtensionStatusSummary }
     var codexHookStatusTitle: String { hooks.codexHookStatusTitle }
     var codexHookStatusSummary: String { hooks.codexHookStatusSummary }
 
@@ -163,6 +168,7 @@ final class AppModel {
             || hooks.openCodePluginInstalled
             || hooks.geminiHooksInstalled
             || hooks.kimiHooksInstalled
+            || hooks.piExtensionInstalled
     }
     func refreshCodexHookStatus() { hooks.refreshCodexHookStatus() }
     func refreshClaudeHookStatus() { hooks.refreshClaudeHookStatus() }
@@ -193,6 +199,9 @@ final class AppModel {
     func refreshKimiHookStatus() { hooks.refreshKimiHookStatus() }
     func installKimiHooks() { hooks.installKimiHooks() }
     func uninstallKimiHooks() { hooks.uninstallKimiHooks() }
+    func refreshPiExtensionStatus() { hooks.refreshPiExtensionStatus() }
+    func installPiExtension() { hooks.installPiExtension() }
+    func uninstallPiExtension() { hooks.uninstallPiExtension() }
     func installClaudeUsageBridge() { hooks.installClaudeUsageBridge() }
     func uninstallClaudeUsageBridge() { hooks.uninstallClaudeUsageBridge() }
     func updateClaudeConfigDirectory(to newDirectory: URL?) { hooks.updateClaudeConfigDirectory(to: newDirectory) }
@@ -1606,24 +1615,25 @@ final class AppModel {
         hooks.updateHooksBinaryIfNeeded()
 
         // Auto-install missing hooks and usage bridge, then run health checks.
-        if payload.hooksBinaryURL != nil {
-            Task { @MainActor [weak self] in
-                guard let self else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
 
-                // Wait for all status reads to complete before checking install state.
-                await self.hooks.refreshAllHookStatusAndWait()
+            // Wait for all status reads to complete before checking install state.
+            await self.hooks.refreshAllHookStatusAndWait()
 
-                // Reconcile persisted intent with what is actually on disk. For
-                // legacy users this records existing hooks as `.installed` and
-                // marks first-launch as complete so onboarding does not appear
-                // on upgrade. Must run after status reads and before any
-                // install decision.
-                self.hooks.migrateIntentStoreIfNeeded()
+            // Reconcile persisted intent with what is actually on disk. For
+            // legacy users this records existing hooks as `.installed` and
+            // marks first-launch as complete so onboarding does not appear
+            // on upgrade. Must run after status reads and before any
+            // install decision.
+            self.hooks.migrateIntentStoreIfNeeded()
 
-                // Install only hooks the user has not explicitly opted out of.
-                // `shouldAutoInstall` skips `.uninstalled` agents and agents
-                // whose hooks are already present — it is the single checkpoint
-                // that fixes #324.
+            // Install only hooks the user has not explicitly opted out of.
+            // `shouldAutoInstall` skips `.uninstalled` agents and agents
+            // whose hooks are already present — it is the single checkpoint
+            // that fixes #324. Pi is extension-based and does not depend on the
+            // OpenIslandHooks binary, so check it outside the binary-gated block.
+            if payload.hooksBinaryURL != nil {
                 if self.hooks.shouldAutoInstall(.claudeCode) { self.installClaudeHooks() }
                 if self.hooks.shouldAutoInstall(.codex) { self.installCodexHooks() }
                 if self.hooks.shouldAutoInstall(.qoder) { self.installQoderHooks() }
@@ -1635,8 +1645,12 @@ final class AppModel {
                 if self.hooks.shouldAutoInstall(.gemini) { self.installGeminiHooks() }
                 if self.hooks.shouldAutoInstall(.kimi) { self.installKimiHooks() }
                 if self.hooks.shouldAutoInstall(.claudeUsageBridge) { self.installClaudeUsageBridge() }
+            }
+            if self.hooks.shouldAutoInstall(.pi) { self.installPiExtension() }
 
-                // Run health checks after install to detect stale paths, conflicts, etc.
+            // Run health checks after hook-binary installs to detect stale
+            // paths, conflicts, etc. Pi extension status is handled separately.
+            if payload.hooksBinaryURL != nil {
                 try? await Task.sleep(for: .milliseconds(500))
                 await self.hooks.repairHooksIfNeeded()
             }

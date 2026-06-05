@@ -50,7 +50,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 
 ## Supported Agents & Terminals
 
-**10 agents**: Claude Code, Codex, Cursor, Gemini CLI, Kimi CLI, OpenCode, Qoder, Qwen Code, Factory, CodeBuddy
+**11 agents**: Claude Code, Codex, Cursor, Gemini CLI, Kimi CLI, OpenCode, Pi, Qoder, Qwen Code, Factory, CodeBuddy
 
 **15+ terminals & IDEs**: Terminal.app, Ghostty, iTerm2, WezTerm, Zellij, tmux, cmux, Kaku, VS Code, Cursor, Windsurf, Trae, JetBrains IDEs (IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover)
 
@@ -72,6 +72,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 | **Cursor** | Supported | Hook integration via `~/.cursor/hooks.json`, session tracking, workspace jump-back |
 | **Gemini CLI** | Supported | Hook integration via `~/.gemini/settings.json`, session tracking, fire-and-forget events |
 | **Kimi CLI** | Supported | Hook integration via `~/.kimi/config.toml` `[[hooks]]`, session tracking, permission flow (reuses Claude payload) |
+| **Pi** | Supported | Pi Extension API bridge, session tracking, tool approval for mutating built-in tools |
 
 ### Terminals & IDEs
 
@@ -276,6 +277,7 @@ Developers who already live in the terminal and want a better way to work with c
   swift run OpenIslandSetup statusKimi     # report whether managed hooks are present
   swift run OpenIslandSetup uninstallKimi  # remove managed entries, preserve user-authored [[hooks]]
   ```
+- **Pi** — Extension-based integration via Pi's official TypeScript Extension API. Open Island ships `open-island-pi.ts`; install it as `~/.pi/agent/extensions/open-island.ts` and run `/reload` in Pi. The extension sends session lifecycle events directly to the Open Island socket and turns mutating built-in tools (`bash`, `edit`, `write`) into Open Island approval cards. Open Island does not patch Pi internals.
 
 ### Terminal Support
 

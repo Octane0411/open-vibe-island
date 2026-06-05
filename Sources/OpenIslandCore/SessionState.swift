@@ -243,6 +243,8 @@ public struct SessionState: Equatable, Sendable {
                 session.summary = "Permission approved. \(session.tool.displayName) continued the tool."
             case .openCode:
                 session.summary = "Permission approved. OpenCode continued the tool."
+            case .pi:
+                session.summary = "Permission approved. Pi continued the tool."
             default:
                 session.summary = "Permission approved. Agent resumed work."
             }
@@ -252,6 +254,8 @@ public struct SessionState: Equatable, Sendable {
             case .claudeCode, .geminiCLI, .qoder, .qwenCode, .factory, .codebuddy, .kimiCLI:
                 session.summary = "Permission denied in Open Island."
             case .openCode:
+                session.summary = "Permission denied in Open Island."
+            case .pi:
                 session.summary = "Permission denied in Open Island."
             default:
                 session.summary = "Permission denied. Review the session in the terminal."
@@ -377,6 +381,16 @@ public struct SessionState: Equatable, Sendable {
             // cleaned up.
             if session.isHookManaged {
                 if session.isSessionEnded {
+                    continue
+                }
+
+                // Pi is extension/heartbeat-managed and has no app-side
+                // process/session ID that process polling can match. Do not
+                // let the generic hook fallback mark it ended between
+                // heartbeats; SessionEnd still closes it when Pi shuts down.
+                if session.tool == .pi {
+                    session.processNotSeenCount = 0
+                    upsert(session)
                     continue
                 }
 

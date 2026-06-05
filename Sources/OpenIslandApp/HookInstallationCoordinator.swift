@@ -22,6 +22,7 @@ final class HookInstallationCoordinator {
     var cursorHookStatus: CursorHookInstallationStatus?
     var geminiHookStatus: GeminiHookInstallationStatus?
     var kimiHookStatus: KimiHookInstallationStatus?
+    var piExtensionStatus: PiExtensionInstallationStatus?
     var claudeStatusLineStatus: ClaudeStatusLineInstallationStatus?
     var claudeUsageSnapshot: ClaudeUsageSnapshot?
     var codexUsageSnapshot: CodexUsageSnapshot?
@@ -36,6 +37,7 @@ final class HookInstallationCoordinator {
     var isCursorHookSetupBusy = false
     var isGeminiHookSetupBusy = false
     var isKimiHookSetupBusy = false
+    var isPiExtensionSetupBusy = false
     var isClaudeUsageSetupBusy = false
 
     @ObservationIgnored
@@ -84,6 +86,9 @@ final class HookInstallationCoordinator {
 
     @ObservationIgnored
     private let kimiHookInstallationManager = KimiHookInstallationManager()
+
+    @ObservationIgnored
+    private let piExtensionInstallationManager = PiExtensionInstallationManager()
 
     /// Computed so it always reflects the latest `ClaudeConfigDirectory` setting.
     private var claudeStatusLineInstallationManager: ClaudeStatusLineInstallationManager {
@@ -143,6 +148,10 @@ final class HookInstallationCoordinator {
 
     var kimiHooksInstalled: Bool {
         kimiHookStatus?.managedHooksPresent == true
+    }
+
+    var piExtensionInstalled: Bool {
+        piExtensionStatus?.isInstalled == true
     }
 
     var claudeUsageInstalled: Bool {
@@ -376,6 +385,26 @@ final class HookInstallationCoordinator {
         }
 
         return "no managed Kimi hooks"
+    }
+
+    var piExtensionStatusTitle: String {
+        if piExtensionInstalled {
+            return "Pi extension installed"
+        }
+
+        return "Pi extension not installed"
+    }
+
+    var piExtensionStatusSummary: String {
+        guard piExtensionStatus != nil else {
+            return "Reading ~/.pi/agent/extensions/open-island.ts."
+        }
+
+        if piExtensionInstalled {
+            return "extension present · run /reload in Pi after changes"
+        }
+
+        return "no managed Pi extension"
     }
 
     var codexHookStatusTitle: String {
@@ -689,6 +718,16 @@ final class HookInstallationCoordinator {
                     self.onStatusMessage?("Failed to read Kimi hook status: \(error.localizedDescription)")
                 }
             }
+
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    let status = try self.piExtensionInstallationManager.status()
+                    self.piExtensionStatus = status
+                } catch {
+                    self.onStatusMessage?("Failed to read Pi extension status: \(error.localizedDescription)")
+                }
+            }
         }
     }
 
@@ -740,6 +779,19 @@ final class HookInstallationCoordinator {
                 self.kimiHookStatus = status
             } catch {
                 self.onStatusMessage?("Failed to read Kimi hook status: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func refreshPiExtensionStatus() {
+        Task { [weak self] in
+            guard let self else { return }
+
+            do {
+                let status = try self.piExtensionInstallationManager.status()
+                self.piExtensionStatus = status
+            } catch {
+                self.onStatusMessage?("Failed to read Pi extension status: \(error.localizedDescription)")
             }
         }
     }
@@ -814,6 +866,7 @@ final class HookInstallationCoordinator {
         case .openCode: return !openCodePluginInstalled
         case .gemini: return !geminiHooksInstalled
         case .kimi: return !kimiHooksInstalled
+        case .pi: return !piExtensionInstalled
         case .claudeUsageBridge: return !claudeUsageInstalled
         }
     }
@@ -838,6 +891,7 @@ final class HookInstallationCoordinator {
             case .openCode: return openCodePluginInstalled
             case .gemini: return geminiHooksInstalled
             case .kimi: return kimiHooksInstalled
+            case .pi: return piExtensionInstalled
             case .claudeUsageBridge: return claudeUsageInstalled
             }
         }
@@ -1046,6 +1100,55 @@ final class HookInstallationCoordinator {
     func uninstallKimiHooks() {
         updateKimiHooks(userMessage: "Removing Kimi hooks.", intent: .uninstalled) { manager in
             try manager.uninstall()
+        }
+    }
+
+    func installPiExtension() {
+        guard let extensionData = loadBundledPiExtension() else {
+            onStatusMessage?("Could not find the bundled Pi extension resource.")
+            return
+        }
+
+        isPiExtensionSetupBusy = true
+        onStatusMessage?("Installing Pi extension.")
+
+        Task { [weak self] in
+            guard let self else { return }
+
+            defer { self.isPiExtensionSetupBusy = false }
+
+            do {
+                let status = try self.piExtensionInstallationManager.install(extensionSourceData: extensionData)
+                self.piExtensionStatus = status
+                self.intentStore.setIntent(.installed, for: .pi)
+                if status.isInstalled {
+                    self.onStatusMessage?("Pi extension is installed. Run /reload in Pi to activate.")
+                } else {
+                    self.onStatusMessage?("Pi extension installation incomplete.")
+                }
+            } catch {
+                self.onStatusMessage?("Pi extension install failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func uninstallPiExtension() {
+        isPiExtensionSetupBusy = true
+        onStatusMessage?("Removing Pi extension.")
+
+        Task { [weak self] in
+            guard let self else { return }
+
+            defer { self.isPiExtensionSetupBusy = false }
+
+            do {
+                let status = try self.piExtensionInstallationManager.uninstall()
+                self.piExtensionStatus = status
+                self.intentStore.setIntent(.uninstalled, for: .pi)
+                self.onStatusMessage?("Pi extension removed. Run /reload in Pi to deactivate.")
+            } catch {
+                self.onStatusMessage?("Pi extension removal failed: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -1302,6 +1405,18 @@ final class HookInstallationCoordinator {
 
         // Fallback: Bundle.main for Xcode builds
         if let url = Bundle.main.url(forResource: "open-island-opencode", withExtension: "js") {
+            return try? Data(contentsOf: url)
+        }
+
+        return nil
+    }
+
+    private func loadBundledPiExtension() -> Data? {
+        if let url = Bundle.appResources.url(forResource: "open-island-pi", withExtension: "ts") {
+            return try? Data(contentsOf: url)
+        }
+
+        if let url = Bundle.main.url(forResource: "open-island-pi", withExtension: "ts") {
             return try? Data(contentsOf: url)
         }
 
