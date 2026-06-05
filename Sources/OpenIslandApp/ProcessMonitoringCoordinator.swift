@@ -990,6 +990,10 @@ final class ProcessMonitoringCoordinator {
             return .claudeCode
         }
 
+        if normalized.hasPrefix("pi ") {
+            return .pi
+        }
+
         return nil
     }
 

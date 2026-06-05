@@ -2894,6 +2894,24 @@ public final class BridgeServer: @unchecked Sendable {
             )
         }
 
+        let pendingPiSessionIDs = pendingPiInteractions.compactMap { entry -> String? in
+            let (sessionID, pendingInteraction) = entry
+            return pendingInteraction.clientID == clientID ? sessionID : nil
+        }
+
+        for sessionID in pendingPiSessionIDs {
+            pendingPiInteractions.removeValue(forKey: sessionID)
+            emit(
+                .actionableStateResolved(
+                    ActionableStateResolved(
+                        sessionID: sessionID,
+                        summary: "Pi extension disconnected.",
+                        timestamp: .now
+                    )
+                )
+            )
+        }
+
         let pendingCursorSessionIDs = pendingCursorInteractions.compactMap { entry -> String? in
             let (sessionID, pendingInteraction) = entry
             return pendingInteraction.clientID == clientID ? sessionID : nil

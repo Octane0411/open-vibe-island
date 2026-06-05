@@ -1,6 +1,6 @@
 import Foundation
 
-public struct PiExtensionInstallationStatus: Equatable, Sendable {
+public struct PiExtensionInstallationStatus: Equatable, Codable, Sendable {
     public var piConfigDirectory: URL
     public var extensionsDirectory: URL
     public var extensionFileURL: URL

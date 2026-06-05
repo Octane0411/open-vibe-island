@@ -349,16 +349,16 @@ The extension talks directly to `OPEN_ISLAND_SOCKET_PATH` when set, otherwise to
 
 ### Directive response
 
-For blocking `PreToolUse` events, BridgeServer returns a Pi directive:
+For blocking `PreToolUse` events, BridgeServer returns a normal bridge response envelope. The Pi extension reads `response.response.type === "piHookDirective"` and then applies `response.response.directive`:
 
 ```json
-{"type":"piHookDirective","directive":{"type":"allow"}}
+{"type":"response","response":{"type":"piHookDirective","directive":{"type":"allow"}}}
 ```
 
 or:
 
 ```json
-{"type":"piHookDirective","directive":{"type":"deny","reason":"Denied by Open Island"}}
+{"type":"response","response":{"type":"piHookDirective","directive":{"type":"deny","reason":"Denied by Open Island"}}}
 ```
 
 The extension maps a deny directive to Pi's blocking extension return value:
@@ -378,6 +378,8 @@ return { block: true, reason: "Denied by Open Island" }
 | Claude Code | `PermissionRequest` | **24 hours** (awaits human approval) |
 | Claude Code | All other events | **45 seconds** |
 | Gemini CLI | All events | Bridge default |
+| Pi Extension | `PreToolUse` for blocking approval tools | **24 hours** (awaits human approval) |
+| Pi Extension | All other events | Bridge default |
 
 ---
 

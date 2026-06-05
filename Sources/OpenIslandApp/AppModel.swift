@@ -1615,24 +1615,25 @@ final class AppModel {
         hooks.updateHooksBinaryIfNeeded()
 
         // Auto-install missing hooks and usage bridge, then run health checks.
-        if payload.hooksBinaryURL != nil {
-            Task { @MainActor [weak self] in
-                guard let self else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
 
-                // Wait for all status reads to complete before checking install state.
-                await self.hooks.refreshAllHookStatusAndWait()
+            // Wait for all status reads to complete before checking install state.
+            await self.hooks.refreshAllHookStatusAndWait()
 
-                // Reconcile persisted intent with what is actually on disk. For
-                // legacy users this records existing hooks as `.installed` and
-                // marks first-launch as complete so onboarding does not appear
-                // on upgrade. Must run after status reads and before any
-                // install decision.
-                self.hooks.migrateIntentStoreIfNeeded()
+            // Reconcile persisted intent with what is actually on disk. For
+            // legacy users this records existing hooks as `.installed` and
+            // marks first-launch as complete so onboarding does not appear
+            // on upgrade. Must run after status reads and before any
+            // install decision.
+            self.hooks.migrateIntentStoreIfNeeded()
 
-                // Install only hooks the user has not explicitly opted out of.
-                // `shouldAutoInstall` skips `.uninstalled` agents and agents
-                // whose hooks are already present — it is the single checkpoint
-                // that fixes #324.
+            // Install only hooks the user has not explicitly opted out of.
+            // `shouldAutoInstall` skips `.uninstalled` agents and agents
+            // whose hooks are already present — it is the single checkpoint
+            // that fixes #324. Pi is extension-based and does not depend on the
+            // OpenIslandHooks binary, so check it outside the binary-gated block.
+            if payload.hooksBinaryURL != nil {
                 if self.hooks.shouldAutoInstall(.claudeCode) { self.installClaudeHooks() }
                 if self.hooks.shouldAutoInstall(.codex) { self.installCodexHooks() }
                 if self.hooks.shouldAutoInstall(.qoder) { self.installQoderHooks() }
@@ -1643,10 +1644,13 @@ final class AppModel {
                 if self.hooks.shouldAutoInstall(.cursor) { self.installCursorHooks() }
                 if self.hooks.shouldAutoInstall(.gemini) { self.installGeminiHooks() }
                 if self.hooks.shouldAutoInstall(.kimi) { self.installKimiHooks() }
-                if self.hooks.shouldAutoInstall(.pi) { self.installPiExtension() }
                 if self.hooks.shouldAutoInstall(.claudeUsageBridge) { self.installClaudeUsageBridge() }
+            }
+            if self.hooks.shouldAutoInstall(.pi) { self.installPiExtension() }
 
-                // Run health checks after install to detect stale paths, conflicts, etc.
+            // Run health checks after hook-binary installs to detect stale
+            // paths, conflicts, etc. Pi extension status is handled separately.
+            if payload.hooksBinaryURL != nil {
                 try? await Task.sleep(for: .milliseconds(500))
                 await self.hooks.repairHooksIfNeeded()
             }
