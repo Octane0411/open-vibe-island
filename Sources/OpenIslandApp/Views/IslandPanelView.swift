@@ -12,7 +12,24 @@ private struct NotificationContentHeightKey: PreferenceKey {
 private struct ContentHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
+        value = nextValue()
+    }
+}
+
+enum AutoHeightScrollViewSizing {
+    static func effectiveContentHeight(measured: CGFloat, estimate: CGFloat) -> CGFloat {
+        measured > 0 ? measured : estimate
+    }
+
+    static func isScrollable(contentHeight: CGFloat, maxHeight: CGFloat) -> Bool {
+        contentHeight > maxHeight
+    }
+
+    static func contentHeightAfterEstimateChange(current: CGFloat, estimate: CGFloat) -> CGFloat {
+        guard estimate > 0, estimate < current else {
+            return current
+        }
+        return estimate
     }
 }
 
@@ -20,30 +37,72 @@ private struct ContentHeightKey: PreferenceKey {
 /// When content exceeds maxHeight, wraps in ScrollView at fixed maxHeight.
 private struct AutoHeightScrollView<Content: View>: View {
     let maxHeight: CGFloat
+    var estimatedContentHeight: CGFloat = 0
+    var onContentHeightChange: ((CGFloat) -> Void)? = nil
     @ViewBuilder let content: () -> Content
     @State private var contentHeight: CGFloat = 0
 
-    private var isScrollable: Bool { contentHeight > maxHeight }
+    private var effectiveContentHeight: CGFloat {
+        AutoHeightScrollViewSizing.effectiveContentHeight(
+            measured: contentHeight,
+            estimate: estimatedContentHeight
+        )
+    }
+
+    private var isScrollable: Bool {
+        AutoHeightScrollViewSizing.isScrollable(
+            contentHeight: effectiveContentHeight,
+            maxHeight: maxHeight
+        )
+    }
 
     var body: some View {
-        // Always use ScrollView so the content gets unconstrained vertical
-        // space for measurement.  Without this, a tight parent window can
-        // cap the GeometryReader measurement, making long content appear
-        // truncated instead of scrollable.
-        ScrollView(.vertical) {
-            content()
-                .background(
-                    GeometryReader { geo in
-                        Color.clear.preference(key: ContentHeightKey.self, value: geo.size.height)
-                    }
-                )
-                .onPreferenceChange(ContentHeightKey.self) { height in
-                    if height > 0 { contentHeight = height }
+        Group {
+            if isScrollable {
+                ScrollView(.vertical) {
+                    measuredContent
                 }
+                .scrollBounceBehavior(.basedOnSize)
+                .scrollIndicators(.automatic)
+                .frame(height: maxHeight)
+            } else {
+                measuredContent
+                    .frame(height: effectiveContentHeight > 0 ? effectiveContentHeight : nil)
+            }
         }
-        .scrollBounceBehavior(.basedOnSize)
-        .scrollIndicators(isScrollable ? .automatic : .hidden)
-        .frame(height: contentHeight > 0 ? min(contentHeight, maxHeight) : nil)
+        .onChange(of: estimatedContentHeight) { _, estimate in
+            let nextHeight = AutoHeightScrollViewSizing.contentHeightAfterEstimateChange(
+                current: contentHeight,
+                estimate: estimate
+            )
+            guard nextHeight != contentHeight else { return }
+            contentHeight = nextHeight
+            onContentHeightChange?(nextHeight)
+        }
+    }
+
+    private var measuredContent: some View {
+        measuredContentBody
+            .background(
+                GeometryReader { geo in
+                    Color.clear.preference(key: ContentHeightKey.self, value: geo.size.height)
+                }
+            )
+            .onPreferenceChange(ContentHeightKey.self) { height in
+                if height > 0 {
+                    contentHeight = height
+                    onContentHeightChange?(height)
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var measuredContentBody: some View {
+        measuredRows
+    }
+
+    private var measuredRows: some View {
+        content()
     }
 }
 
@@ -51,14 +110,29 @@ private struct AutoHeightScrollView<Content: View>: View {
 
 extension AgentSession {
     /// Estimated row height matching `IslandSessionRow` layout for viewport sizing.
-    func estimatedIslandRowHeight(at date: Date) -> CGFloat {
+    func estimatedIslandRowHeight(at date: Date, detailOverride: Bool? = nil) -> CGFloat {
         let presence = islandPresence(at: date)
+        let showsDetail = phase == .running ? true : (detailOverride ?? phase.requiresAttention)
+        if !showsDetail {
+            // The right-side time/archive accessory is 28pt tall. With the
+            // compact row's 7pt vertical padding, the real minimum row height
+            // is 42pt; using the old text-only estimate clips the last row on
+            // first open before SwiftUI has reported measured content height.
+            return phase != .running && !phase.requiresAttention ? 42 : 50
+        }
+        if phase != .running && !phase.requiresAttention && detailOverride != true {
+            return 34
+        }
         // v8 list rows are full-width scan rows, not rounded cards.
         // Base: vertical padding (22) + headline (~17) + divider rounding.
         var height: CGFloat = 40
-        guard presence != .inactive else { return height }
-        if spotlightPromptLineText != nil { height += 17 }
-        if spotlightActivityLineText != nil { height += 20 }
+        guard presence != .inactive || detailOverride == true else { return height }
+        if spotlightPromptLineText != nil || (detailOverride == true && spotlightPromptText != nil) {
+            height += 17
+        }
+        if spotlightActivityLineText != nil || (detailOverride == true && manualExpandedActivityEstimateText != nil) {
+            height += 20
+        }
         if let subagents = claudeMetadata?.activeSubagents, !subagents.isEmpty {
             height += 18
             height += CGFloat(subagents.count) * 18  // each subagent row (spacing 4 + text 14)
@@ -67,16 +141,46 @@ extension AgentSession {
             height += 17
             height += CGFloat(tasks.count) * 16  // each task row (spacing 3 + text 13)
         }
+        if phase.requiresAttention {
+            height += 118
+        } else if phase == .running, runningEmbeddedDetailEstimateText != nil {
+            // Running rows render the current command / Thinking state in an
+            // embedded monospaced box. Without this reserve the outer panel can
+            // stop below the 580pt cap before ScrollView gets a chance to scroll.
+            height += 58
+        }
         return height
+    }
+
+    private var manualExpandedActivityEstimateText: String? {
+        let trimmed = lastAssistantMessageText?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let trimmed, !trimmed.isEmpty {
+            return trimmed
+        }
+        return jumpTarget != nil ? "Ready" : "Completed"
+    }
+
+    private var runningEmbeddedDetailEstimateText: String? {
+        if let preview = currentCommandPreviewText?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !preview.isEmpty {
+            return preview
+        }
+        if let activity = spotlightActivityLineText?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !activity.isEmpty {
+            return activity
+        }
+        let trimmed = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 
 // MARK: - Animations
 
-private let openAnimation = Animation.spring(response: 0.42, dampingFraction: 0.8, blendDuration: 0)
-private let closeAnimation = Animation.smooth(duration: 0.3)
 private let popAnimation = Animation.spring(response: 0.3, dampingFraction: 0.5)
 private let openedSurfaceUnmountDelay: TimeInterval = 0.36
+private let openedContentFadeInDelay: TimeInterval = 0.16
+private let openedContentFadeDuration: TimeInterval = 0.18
+private let openedContentFadeOutDuration: TimeInterval = 0.10
 
 private struct ConditionalDrawingGroup: ViewModifier {
     let enabled: Bool
@@ -104,9 +208,10 @@ struct IslandPanelView: View {
     var model: AppModel
     private var lang: LanguageManager { model.lang }
 
-    @State private var isHovering = false
     @State private var showingQuitConfirmation = false
     @State private var keepsOpenedSurfaceMounted = false
+    @State private var rendersClosedSurface = true
+    @State private var showsOpenedContent = false
     @State private var openedSurfaceMountGeneration: UInt64 = 0
 
     private var isOpened: Bool {
@@ -121,17 +226,16 @@ struct IslandPanelView: View {
         usesOpenedVisualState || keepsOpenedSurfaceMounted
     }
 
-    private var isPopping: Bool {
-        model.notchStatus == .popping
+    private var shouldRenderClosedSurface: Bool {
+        rendersClosedSurface && !shouldRenderOpenedSurface
     }
 
-    /// Single animation selection based on the current notch status.
-    private var notchTransitionAnimation: Animation {
-        switch model.notchStatus {
-        case .opened:  return openAnimation
-        case .closed:  return closeAnimation
-        case .popping: return popAnimation
-        }
+    private var openedContentOpacity: Double {
+        usesOpenedVisualState && showsOpenedContent ? 1 : 0
+    }
+
+    private var isPopping: Bool {
+        model.notchStatus == .popping
     }
 
     private var targetOverlayScreen: NSScreen? {
@@ -197,7 +301,8 @@ struct IslandPanelView: View {
 
     @ViewBuilder
     private func notchContent(availableSize: CGSize) -> some View {
-        // Window is always at opened size — use opened insets unconditionally.
+        // The AppKit panel animates between closed and opened frames; opened
+        // shadow insets keep both states aligned to the same top anchor.
         let panelShadowHorizontalInset = IslandChromeMetrics.openedShadowHorizontalInset
         let panelShadowBottomInset = IslandChromeMetrics.openedShadowBottomInset
         let layoutWidth = max(0, availableSize.width - (panelShadowHorizontalInset * 2))
@@ -211,27 +316,24 @@ struct IslandPanelView: View {
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
                 if shouldRenderOpenedSurface {
-                    openedSurface(width: openedWidth, height: openedHeight)
-                        .opacity(usesOpenedVisualState ? 1 : 0)
-                        .allowsHitTesting(usesOpenedVisualState)
+                    openedSurface(
+                        width: openedWidth,
+                        height: openedHeight,
+                        contentOpacity: openedContentOpacity
+                    )
+                    .allowsHitTesting(usesOpenedVisualState && showsOpenedContent)
                 }
 
-                v6ClosedSurface()
-                    .opacity(usesOpenedVisualState ? 0 : 1)
-                    .allowsHitTesting(!usesOpenedVisualState)
+                if shouldRenderClosedSurface {
+                    v6ClosedSurface()
+                        .allowsHitTesting(true)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .top)
         }
-        .scaleEffect(usesOpenedVisualState ? 1 : (isHovering ? IslandChromeMetrics.closedHoverScale : 1), anchor: .top)
         .padding(.horizontal, panelShadowHorizontalInset)
         .padding(.bottom, panelShadowBottomInset)
-        .animation(notchTransitionAnimation, value: model.notchStatus)
         .contentShape(Rectangle())
-        .onHover { hovering in
-            withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {
-                isHovering = hovering
-            }
-        }
         .onTapGesture {
             if model.notchStatus != .opened {
                 model.notchOpen(reason: .click)
@@ -246,18 +348,43 @@ struct IslandPanelView: View {
         switch status {
         case .opened:
             keepsOpenedSurfaceMounted = true
-        case .closed, .popping:
-            guard !immediate else {
-                keepsOpenedSurfaceMounted = false
+            rendersClosedSurface = false
+
+            if immediate {
+                showsOpenedContent = true
                 return
             }
 
+            showsOpenedContent = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + openedContentFadeInDelay) {
+                guard openedSurfaceMountGeneration == generation,
+                      model.notchStatus == .opened else {
+                    return
+                }
+
+                withAnimation(.easeInOut(duration: openedContentFadeDuration)) {
+                    showsOpenedContent = true
+                }
+            }
+        case .closed, .popping:
+            withAnimation(.easeOut(duration: openedContentFadeOutDuration)) {
+                showsOpenedContent = false
+            }
+
+            guard !immediate else {
+                keepsOpenedSurfaceMounted = false
+                rendersClosedSurface = true
+                return
+            }
+
+            rendersClosedSurface = false
             DispatchQueue.main.asyncAfter(deadline: .now() + openedSurfaceUnmountDelay) {
                 guard openedSurfaceMountGeneration == generation,
                       model.notchStatus != .opened else {
                     return
                 }
                 keepsOpenedSurfaceMounted = false
+                rendersClosedSurface = true
             }
         }
     }
@@ -289,7 +416,11 @@ struct IslandPanelView: View {
     // MARK: - Opened surface
 
     @ViewBuilder
-    private func openedSurface(width openedWidth: CGFloat, height openedHeight: CGFloat) -> some View {
+    private func openedSurface(
+        width openedWidth: CGFloat,
+        height openedHeight: CGFloat,
+        contentOpacity: Double
+    ) -> some View {
         let horizontalInset = 0.0
         let bottomInset = 0.0
         let surfaceWidth = openedWidth + (horizontalInset * 2)
@@ -300,7 +431,7 @@ struct IslandPanelView: View {
 
         ZStack(alignment: .top) {
             surfaceShape
-                .fill(V6Palette.ink)
+                .fill(Color.black)
                 .frame(width: surfaceWidth, height: surfaceHeight)
 
             VStack(spacing: 0) {
@@ -315,6 +446,8 @@ struct IslandPanelView: View {
             .frame(width: openedWidth, height: openedHeight, alignment: .top)
             .padding(.horizontal, horizontalInset)
             .padding(.bottom, bottomInset)
+            .opacity(contentOpacity)
+            .animation(.easeInOut(duration: openedContentFadeDuration), value: contentOpacity)
             .clipShape(surfaceShape)
             .overlay {
                 surfaceShape
@@ -517,10 +650,33 @@ struct IslandPanelView: View {
         model.notchOpenReason == .notification && actionableSessionID != nil
     }
 
-    private static let maxSessionListHeight: CGFloat = 560
+    private static let maxOpenedPanelFrameHeight: CGFloat = 580
+    private static let sessionPanelHeaderHeight: CGFloat = 36
+    private static let sessionPanelVerticalPadding: CGFloat = 4
+    private static let sessionPanelFooterHeight: CGFloat = 8
+    private static let sessionPanelChromeHeight: CGFloat =
+        sessionPanelHeaderHeight + sessionPanelVerticalPadding + sessionPanelFooterHeight
 
     private var sessionListSideInset: CGFloat {
         usesNotchAwareOpenedHeader ? 46 : 16
+    }
+
+    private var maxSessionListHeight: CGFloat {
+        let screenHeight = targetOverlayScreen?.visibleFrame.height
+            ?? NSScreen.main?.visibleFrame.height
+            ?? 900
+        let frameHeight = min(Self.maxOpenedPanelFrameHeight, screenHeight)
+        return max(
+            180,
+            floor(
+                frameHeight
+                    - IslandChromeMetrics.openedShadowBottomInset
+                    - closedNotchHeight
+                    - Self.sessionPanelHeaderHeight
+                    - Self.sessionPanelVerticalPadding
+                    - Self.sessionPanelFooterHeight
+            )
+        )
     }
 
     private var sessionList: some View {
@@ -553,13 +709,18 @@ struct IslandPanelView: View {
                     }
             } else {
                 VStack(spacing: 0) {
-                    sessionPanelHeader(referenceDate: referenceDate)
+                    sessionPanelHeader
 
-                    ScrollView(.vertical) {
+                    AutoHeightScrollView(
+                        maxHeight: maxSessionListHeight,
+                        estimatedContentHeight: estimatedSessionRowsHeight(referenceDate: referenceDate),
+                        onContentHeightChange: { rowsHeight in
+                            model.measuredSessionListContentHeight =
+                                min(rowsHeight, maxSessionListHeight) + Self.sessionPanelChromeHeight
+                        }
+                    ) {
                         sessionRowsContent(referenceDate: referenceDate)
                     }
-                    .scrollIndicators(.hidden)
-                    .scrollBounceBehavior(.basedOnSize)
 
                     sessionPanelFooter
                 }
@@ -568,11 +729,22 @@ struct IslandPanelView: View {
         }
     }
 
+    private func estimatedSessionRowsHeight(referenceDate: Date) -> CGFloat {
+        model.islandSessionSections.reduce(CGFloat.zero) { total, section in
+            total + section.sessions.reduce(CGFloat.zero) { rowTotal, session in
+                rowTotal + session.estimatedIslandRowHeight(
+                    at: referenceDate,
+                    detailOverride: model.islandSessionDetailOverride(for: session.id)
+                )
+            }
+        }
+    }
+
     @ViewBuilder
     private func sessionListContent(referenceDate: Date) -> some View {
         VStack(spacing: 0) {
             if !isNotificationMode {
-                sessionPanelHeader(referenceDate: referenceDate)
+                sessionPanelHeader
             }
 
             if isNotificationMode, let session = model.activeIslandCardSession {
@@ -587,6 +759,8 @@ struct IslandPanelView: View {
                     presentation: .notification,
                     sideInset: sessionListSideInset,
                     lang: model.lang,
+                    detailOverride: model.islandSessionDetailOverride(for: session.id),
+                    onDetailOverrideChange: { model.setIslandSessionDetailOverride(session.id, $0) },
                     onApprove: { model.approvePermission(for: session.id, action: $0) },
                     onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
                     onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
@@ -595,12 +769,13 @@ struct IslandPanelView: View {
                 )
                 .id(notificationCardIdentity(for: session))
 
-                if model.allSessions.count > 1 {
+                let visibleSessionCount = model.islandListSessions.count
+                if visibleSessionCount > 1 {
                     Button {
                         let isCompletion = session.phase == .completed
                         model.expandNotificationToSessionList(clearExpansion: isCompletion)
                     } label: {
-                        Text(model.lang.t("island.showAll", model.allSessions.count))
+                        Text(model.lang.t("island.showAll", visibleSessionCount))
                             .font(.system(size: 10.5, weight: .medium))
                             .foregroundStyle(.white.opacity(0.36))
                             .frame(maxWidth: .infinity, alignment: .center)
@@ -628,13 +803,16 @@ struct IslandPanelView: View {
                                 isInteractive: model.notchStatus == .opened,
                                 sideInset: sessionListSideInset,
                                 lang: model.lang,
+                                detailOverride: model.islandSessionDetailOverride(for: session.id),
+                                onDetailOverrideChange: { model.setIslandSessionDetailOverride(session.id, $0) },
                                 onApprove: { model.approvePermission(for: session.id, action: $0) },
                                 onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
                                 onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                                     ? { model.replyToSession(session, text: $0) } : nil,
                                 onJump: { model.jumpToSession(session) },
-                                onDismiss: session.isRemote ? { model.dismissSession(session.id) } : nil
+                                onDismiss: { model.dismissSession(session.id) }
                             )
+                            .id(session.id)
                         }
                     }
                 }
@@ -678,37 +856,33 @@ struct IslandPanelView: View {
                         isInteractive: model.notchStatus == .opened,
                         sideInset: sessionListSideInset,
                         lang: model.lang,
+                        detailOverride: model.islandSessionDetailOverride(for: session.id),
+                        onDetailOverrideChange: { model.setIslandSessionDetailOverride(session.id, $0) },
                         onApprove: { model.approvePermission(for: session.id, action: $0) },
                         onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
                         onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                             ? { model.replyToSession(session, text: $0) } : nil,
                         onJump: { model.jumpToSession(session) },
-                        onDismiss: session.isRemote ? { model.dismissSession(session.id) } : nil
+                        onDismiss: { model.dismissSession(session.id) }
                     )
+                    .id(session.id)
                 }
             }
         }
     }
 
-    private func sessionPanelHeader(referenceDate: Date) -> some View {
-        let overview = sessionOverviewItems(referenceDate: referenceDate)
-
+    private var sessionPanelHeader: some View {
         return HStack(spacing: 8) {
             Text(lang.t("island.sessionList.title").uppercased())
                 .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
                 .tracking(1.4)
                 .foregroundStyle(V6Palette.paper.opacity(0.55))
 
-            ViewThatFits(in: .horizontal) {
-                sessionOverviewView(overview, compact: false)
-                sessionOverviewView(overview, compact: true)
-            }
-
             Spacer(minLength: 0)
         }
         .padding(.leading, sessionListSideInset)
         .padding(.trailing, sessionListSideInset)
-        .frame(height: 36)
+        .frame(height: Self.sessionPanelHeaderHeight)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(.white.opacity(0.055))
@@ -718,78 +892,12 @@ struct IslandPanelView: View {
 
     private var sessionPanelFooter: some View {
         Color.clear
-            .frame(height: 10)
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(.white.opacity(0.055))
-                .frame(height: 1)
-        }
-    }
-
-    private func sessionOverviewItems(referenceDate: Date) -> [SessionOverviewItem] {
-        let sessions = model.islandListSessions
-        guard !sessions.isEmpty else { return [] }
-
-        let threshold = model.completedStaleThreshold.seconds
-        let waiting = sessions.filter(\.phase.requiresAttention).count
-        let running = sessions.filter { $0.phase == .running }.count
-        let done = sessions.filter {
-            $0.phase == .completed
-                && !isIdleSessionOverviewItem($0, referenceDate: referenceDate, threshold: threshold)
-        }.count
-        let idle = sessions.filter {
-            isIdleSessionOverviewItem($0, referenceDate: referenceDate, threshold: threshold)
-        }.count
-
-        return [
-            SessionOverviewItem(id: "total", title: lang.t("island.sessionOverview.total"), compactTitle: "", count: sessions.count, tint: nil),
-            SessionOverviewItem(id: "waiting", title: lang.t("island.sessionOverview.waiting"), compactTitle: lang.t("island.sessionOverview.waitingCompact"), count: waiting, tint: IslandDesignPalette.Status.waitingAggregate),
-            SessionOverviewItem(id: "running", title: lang.t("island.sessionOverview.running"), compactTitle: lang.t("island.sessionOverview.runningCompact"), count: running, tint: IslandDesignPalette.Status.running),
-            SessionOverviewItem(id: "done", title: lang.t("island.sessionOverview.done"), compactTitle: lang.t("island.sessionOverview.done"), count: done, tint: IslandDesignPalette.Status.completed),
-            SessionOverviewItem(id: "idle", title: lang.t("island.sessionOverview.idle"), compactTitle: lang.t("island.sessionOverview.idle"), count: idle, tint: IslandDesignPalette.Status.idle),
-        ].filter { $0.id == "total" || $0.count > 0 }
-    }
-
-    private func isIdleSessionOverviewItem(
-        _ session: AgentSession,
-        referenceDate: Date,
-        threshold: TimeInterval
-    ) -> Bool {
-        guard session.phase == .completed else { return false }
-        return session.isStaleCompletedForIsland(at: referenceDate, threshold: threshold)
-            || session.islandPresence(at: referenceDate) == .inactive
-    }
-
-    private func sessionOverviewView(_ items: [SessionOverviewItem], compact: Bool) -> some View {
-        HStack(spacing: compact ? 7 : 9) {
-            ForEach(items) { item in
-                sessionOverviewMetric(item, compact: compact)
+            .frame(height: Self.sessionPanelFooterHeight)
+            .overlay(alignment: .top) {
+                Rectangle()
+                    .fill(.white.opacity(0.055))
+                    .frame(height: 1)
             }
-        }
-        .lineLimit(1)
-        .fixedSize(horizontal: true, vertical: false)
-    }
-
-    private func sessionOverviewMetric(_ item: SessionOverviewItem, compact: Bool) -> some View {
-        HStack(spacing: 4) {
-            if let tint = item.tint {
-                Circle()
-                    .fill(tint)
-                    .frame(width: 5.5, height: 5.5)
-            }
-
-            Text(sessionOverviewMetricTitle(item, compact: compact))
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                .foregroundStyle(item.tint == nil ? V6Palette.paper.opacity(0.34) : V6Palette.paper.opacity(0.48))
-        }
-    }
-
-    private func sessionOverviewMetricTitle(_ item: SessionOverviewItem, compact: Bool) -> String {
-        if item.id == "total" {
-            return compact ? "\(item.count)" : "\(item.count) \(item.title)"
-        }
-
-        return "\(item.count) \(compact ? item.compactTitle : item.title)"
     }
 
     private func sessionSectionHeader(_ section: IslandSessionSection) -> some View {
@@ -1045,15 +1153,19 @@ struct IslandPanelView: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.74))
 
-            Text(provider.peakWindowLabel)
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.42))
+            ForEach(provider.windows) { window in
+                HStack(spacing: 3) {
+                    Text(window.label)
+                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.42))
 
-            Text("\(provider.peakUsagePercentage)%")
-                .font(.system(size: 11.5, weight: .bold, design: .monospaced))
-                .foregroundStyle(usageColor(for: provider.peakUsedPercentage))
+                    Text("\(window.roundedUsedPercentage)%")
+                        .font(.system(size: 11.5, weight: .bold, design: .monospaced))
+                        .foregroundStyle(usageColor(for: window.usedPercentage))
+                }
+            }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 9)
         .padding(.vertical, 4)
         .background(.white.opacity(0.055), in: Capsule())
         .overlay(
@@ -1124,24 +1236,6 @@ private struct UsageProviderPresentation: Identifiable {
     let title: String
     let windows: [UsageWindowPresentation]
 
-    var peakWindow: UsageWindowPresentation? {
-        windows.max { lhs, rhs in
-            lhs.usedPercentage < rhs.usedPercentage
-        }
-    }
-
-    var peakWindowLabel: String {
-        peakWindow?.label ?? ""
-    }
-
-    var peakUsedPercentage: Double {
-        peakWindow?.usedPercentage ?? 0
-    }
-
-    var peakUsagePercentage: Int {
-        peakWindow?.roundedUsedPercentage ?? 0
-    }
-
     var shortTitle: String {
         switch id {
         case "claude":
@@ -1172,19 +1266,32 @@ private struct OpenedHeaderMetrics {
     let rightLaneWidth: CGFloat
 }
 
-private struct SessionOverviewItem: Identifiable {
-    let id: String
-    let title: String
-    let compactTitle: String
-    let count: Int
-    let tint: Color?
-}
-
 // MARK: - Session row (opened state)
 
 private enum IslandSessionRowPresentation {
     case list
     case notification
+}
+
+enum IslandSessionRowPrimaryTapAction: Equatable {
+    case ignore
+    case expandDetail
+    case jump
+}
+
+enum IslandSessionRowInteraction {
+    static func primaryTapAction(
+        isInteractive: Bool,
+        usesCompactIdleRow: Bool,
+        showsDetail: Bool,
+        canToggleDetail: Bool
+    ) -> IslandSessionRowPrimaryTapAction {
+        guard isInteractive else { return .ignore }
+        if canToggleDetail, usesCompactIdleRow && !showsDetail {
+            return .expandDetail
+        }
+        return .jump
+    }
 }
 
 private struct IslandSessionRow: View {
@@ -1198,6 +1305,8 @@ private struct IslandSessionRow: View {
     var presentation: IslandSessionRowPresentation = .list
     var sideInset: CGFloat = 16
     var lang: LanguageManager = .shared
+    var detailOverride: Bool? = nil
+    var onDetailOverrideChange: ((Bool?) -> Void)? = nil
     var onApprove: ((ApprovalAction) -> Void)?
     var onAnswer: ((QuestionPromptResponse) -> Void)?
     var onReply: ((String) -> Void)?
@@ -1205,7 +1314,6 @@ private struct IslandSessionRow: View {
     var onDismiss: (() -> Void)?
 
     @State private var isHighlighted = false
-    @State private var detailOverride: Bool?
     @State private var replyText: String = ""
 
     var body: some View {
@@ -1218,8 +1326,9 @@ private struct IslandSessionRow: View {
             at: referenceDate,
             threshold: completedStaleThreshold
         )
-        let defaultShowsDetail = !isStaleCompleted && (rawPresence != .inactive || isActionable)
-        let showsDetail = detailOverride ?? defaultShowsDetail
+        let canToggleDetail = allowsManualDetailToggle(isStaleCompleted: isStaleCompleted)
+        let defaultShowsDetail = !usesCompactIdleRow && !isStaleCompleted && (rawPresence != .inactive || isActionable)
+        let showsDetail = canToggleDetail ? (detailOverride ?? defaultShowsDetail) : defaultShowsDetail
         let presence = isStaleCompleted
             ? .inactive
             : ((showsDetail && rawPresence == .inactive) ? .active : rawPresence)
@@ -1263,16 +1372,16 @@ private struct IslandSessionRow: View {
         }
         .onChange(of: isInteractive) { _, interactive in
             if !interactive {
-                detailOverride = nil
+                onDetailOverrideChange?(nil)
             }
         }
     }
 
     private func rowSummary(presence: IslandSessionPresence, showsDetail: Bool) -> some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: usesCompactIdleRow ? 8 : 10) {
             if showsLeadingStatusIndicator {
                 statusIndicator(for: presence)
-                    .frame(width: 20, alignment: .top)
+                    .frame(width: usesCompactIdleRow ? 14 : 20, alignment: .top)
             }
 
             VStack(alignment: .leading, spacing: 3) {
@@ -1302,20 +1411,32 @@ private struct IslandSessionRow: View {
                 if let terminalBadge = session.spotlightTerminalBadge {
                     sideBadge(terminalBadge)
                 }
-                Text(session.spotlightAgeBadge)
-                    .font(.system(size: 10.5, weight: .medium, design: .monospaced))
-                    .foregroundStyle(summaryAgeColor(for: presence))
-                    .frame(minWidth: 30, alignment: .trailing)
-                detailToggleButton(isOpen: showsDetail)
-                if let onDismiss {
-                    DismissButton(action: onDismiss)
+                ageOrArchiveAccessory(presence: presence)
+                if !usesCompactIdleRow, allowsManualDetailToggle(isStaleCompleted: false) {
+                    detailToggleButton(isOpen: showsDetail)
                 }
             }
         }
         .padding(.leading, rowLeadingInset)
         .padding(.trailing, sideInset)
-        .padding(.top, 11)
-        .padding(.bottom, showsDetail ? 8 : 11)
+        .padding(.top, usesCompactIdleRow ? 7 : 11)
+        .padding(.bottom, usesCompactIdleRow ? 7 : (showsDetail ? 8 : 11))
+    }
+
+    private func ageOrArchiveAccessory(presence: IslandSessionPresence) -> some View {
+        ZStack(alignment: .trailing) {
+            Text(session.spotlightAgeBadge)
+                .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                .foregroundStyle(summaryAgeColor(for: presence))
+                .opacity(onDismiss != nil && isHighlighted ? 0 : 1)
+
+            if let onDismiss {
+                ArchiveButton(action: onDismiss)
+                    .opacity(isHighlighted ? 1 : 0)
+                    .allowsHitTesting(isHighlighted)
+            }
+        }
+        .frame(width: 30, height: 28, alignment: .trailing)
     }
 
     @ViewBuilder
@@ -1523,8 +1644,15 @@ private struct IslandSessionRow: View {
         presentation == .list && stateIndicator == .bar
     }
 
+    private var usesCompactIdleRow: Bool {
+        presentation == .list
+            && !isActionable
+            && session.phase != .running
+            && !session.phase.requiresAttention
+    }
+
     private var summaryTitleFont: Font {
-        .system(size: presentation == .notification ? 13.2 : (isActionable ? 13.8 : 13.2), weight: .semibold)
+        .system(size: presentation == .notification ? 13.2 : (isActionable ? 13.8 : (usesCompactIdleRow ? 12.8 : 13.2)), weight: .semibold)
     }
 
     private func summaryPromptColor(for presence: IslandSessionPresence) -> Color {
@@ -1813,7 +1941,7 @@ private struct IslandSessionRow: View {
         case "exec_command", "Bash": return "Bash"
         case "AskUserQuestion": return "Question"
         case "ExitPlanMode": return "Plan"
-        case "apply_patch": return "Patch"
+        case "apply_patch": return "Editing"
         case "write_stdin": return "Input"
         case let value?: return AgentSession.currentToolDisplayName(for: value)
         case nil: return "Command"
@@ -1890,9 +2018,9 @@ private struct IslandSessionRow: View {
                     .frame(width: 9, height: 9)
                     .scaleEffect(1 + (pulse * 0.18))
                     .shadow(color: tint.opacity(presence == .inactive ? 0 : 0.36 + (pulse * 0.26)), radius: 4 + (pulse * 3))
-                    .padding(.top, 6)
+                    .padding(.top, usesCompactIdleRow ? 4 : 6)
             }
-            .frame(width: 10, height: 24, alignment: .top)
+            .frame(width: 10, height: usesCompactIdleRow ? 18 : 24, alignment: .top)
         case .bar:
             RoundedRectangle(cornerRadius: 2.5, style: .continuous)
                 .fill(tint)
@@ -1964,15 +2092,37 @@ private struct IslandSessionRow: View {
     }
 
     private func handlePrimaryTap() {
-        guard isInteractive else { return }
-        onJump()
+        let rawPresence = session.islandPresence(at: referenceDate)
+        let isStaleCompleted = session.isStaleCompletedForIsland(
+            at: referenceDate,
+            threshold: completedStaleThreshold
+        )
+        let canToggleDetail = allowsManualDetailToggle(isStaleCompleted: isStaleCompleted)
+        let defaultShowsDetail = !usesCompactIdleRow && !isStaleCompleted && (rawPresence != .inactive || isActionable)
+        let showsDetail = canToggleDetail ? (detailOverride ?? defaultShowsDetail) : defaultShowsDetail
+
+        switch IslandSessionRowInteraction.primaryTapAction(
+            isInteractive: isInteractive,
+            usesCompactIdleRow: usesCompactIdleRow,
+            showsDetail: showsDetail,
+            canToggleDetail: canToggleDetail
+        ) {
+        case .ignore:
+            return
+        case .expandDetail:
+            withAnimation(.easeInOut(duration: 0.3)) {
+                onDetailOverrideChange?(true)
+            }
+        case .jump:
+            onJump()
+        }
     }
 
     private func detailToggleButton(isOpen: Bool) -> some View {
         Button {
-            guard isInteractive else { return }
-            withAnimation(.easeInOut(duration: 0.2)) {
-                detailOverride = !isOpen
+            guard isInteractive, allowsManualDetailToggle() else { return }
+            withAnimation(.easeInOut(duration: 0.3)) {
+                onDetailOverrideChange?(!isOpen)
             }
         } label: {
             Image(systemName: "chevron.down")
@@ -1988,6 +2138,10 @@ private struct IslandSessionRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(isOpen ? "Collapse session detail" : "Expand session detail")
+    }
+
+    private func allowsManualDetailToggle(isStaleCompleted: Bool = false) -> Bool {
+        session.phase != .running && !isStaleCompleted
     }
 
     private func detailToggleFillOpacity(isOpen: Bool) -> Double {
@@ -2718,17 +2872,23 @@ extension MarkdownUI.Theme {
         }
 }
 
-private struct DismissButton: View {
+private struct ArchiveButton: View {
     let action: () -> Void
     @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "xmark.circle.fill")
-                .font(.system(size: 12))
-                .foregroundStyle(.white.opacity(isHovered ? 0.8 : 0.4))
+            Image(systemName: "archivebox")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white.opacity(isHovered ? 0.88 : 0.72))
+                .frame(width: 30, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(.white.opacity(isHovered ? 0.12 : 0.08))
+                )
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+        .accessibilityLabel("Archive session")
     }
 }
