@@ -1,7 +1,7 @@
 import AppKit
 
 /// Per-state session counts for the menu bar breakdown.
-struct MenuBarStateCounts {
+struct MenuBarStateCounts: Sendable, Codable {
     var total: Int
     var waiting: Int
     var running: Int
@@ -10,7 +10,7 @@ struct MenuBarStateCounts {
 }
 
 /// Aggregate session state shown as a colored dot in the menu bar.
-enum MenuBarStatusLevel {
+enum MenuBarStatusLevel: Sendable, Codable {
     case none      // no surfaced sessions
     case idle      // sessions present, none running or needing attention
     case running   // at least one running
@@ -120,11 +120,6 @@ final class StatusItemController {
     // MARK: - Breakdown title
 
     private static let breakdownTextColor = NSColor.labelColor
-    // Chip colors match IslandDesignPalette.Status (and the panel overview).
-    private static let waitingColor = NSColor(srgbRed: 231 / 255, green: 167 / 255, blue: 98 / 255, alpha: 1)
-    private static let runningColor = NSColor(srgbRed: 110 / 255, green: 167 / 255, blue: 255 / 255, alpha: 1)
-    private static let doneColor = NSColor(srgbRed: 111 / 255, green: 185 / 255, blue: 130 / 255, alpha: 1)
-    private static let idleColor = NSColor.tertiaryLabelColor
 
     /// "●1 ●1 ●1" — a colored dot + count for each non-zero state (waiting,
     /// running, done, idle), ordered by urgency. The aggregate total is omitted:
@@ -152,10 +147,10 @@ final class StatusItemController {
             ))
         }
 
-        appendChip(counts.waiting, waitingColor)
-        appendChip(counts.running, runningColor)
-        appendChip(counts.done, doneColor)
-        appendChip(counts.idle, idleColor)
+        appendChip(counts.waiting, MenuBarStatusLevel.waiting.dotColor)
+        appendChip(counts.running, MenuBarStatusLevel.running.dotColor)
+        appendChip(counts.done, MenuBarStatusLevel.idle.dotColor)
+        appendChip(counts.idle, MenuBarStatusLevel.none.dotColor)
 
         return title
     }
@@ -167,11 +162,11 @@ final class StatusItemController {
     private static func makeStatusDot(color: NSColor) -> NSImage {
         let diameter: CGFloat = 9
         let size = NSSize(width: diameter, height: diameter)
-        let image = NSImage(size: size)
-        image.lockFocus()
-        color.setFill()
-        NSBezierPath(ovalIn: NSRect(origin: .zero, size: size)).fill()
-        image.unlockFocus()
+        let image = NSImage(size: size, flipped: false) { rect in
+            color.setFill()
+            NSBezierPath(ovalIn: rect).fill()
+            return true
+        }
         image.isTemplate = false
         return image
     }

@@ -104,6 +104,8 @@ struct OpenIslandApp: App {
                 Button("Settings…") {
                     openWindow(id: "settings")
                     appDelegate.model.bringSettingsWindowToFront()
+                    // Re-apply on the next run-loop after `openWindow` creates
+                    // or reorders the SwiftUI settings window.
                     DispatchQueue.main.async {
                         appDelegate.model.bringSettingsWindowToFront()
                     }

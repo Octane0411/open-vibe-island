@@ -604,6 +604,7 @@ final class AppModel {
             Self.hapticFeedbackEnabledDefaultsKey: false,
             Self.completionReplyEnabledDefaultsKey: false,
             Self.suppressFrontmostNotificationsDefaultsKey: true,
+            Self.menuBarStatusItemDefaultsKey: false,
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
@@ -943,7 +944,10 @@ final class AppModel {
             name = spotlight.tool.displayName
         }
 
-        let trimmed = name.count > 16 ? String(name.prefix(15)) + "…" : name
+        let maxMenuBarSummaryCharacters = 16
+        let trimmed = name.count > maxMenuBarSummaryCharacters
+            ? String(name.prefix(maxMenuBarSummaryCharacters)) + "…"
+            : name
         return count > 1 ? "\(trimmed) ×\(count)" : trimmed
     }
 
@@ -1364,6 +1368,8 @@ final class AppModel {
             NSApp.sendAction(NSSelectorFromString("showSettingsWindow:"), to: nil, from: nil)
         }
         bringSettingsWindowToFront()
+        // Re-apply on the next run-loop after SwiftUI/AppKit finishes creating
+        // or reordering the settings window; otherwise focus can be stolen back.
         DispatchQueue.main.async { [weak self] in
             self?.bringSettingsWindowToFront()
         }
