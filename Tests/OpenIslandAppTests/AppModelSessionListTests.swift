@@ -414,7 +414,7 @@ struct AppModelSessionListTests {
     }
 
     @Test
-    func runningSessionRowHeightEstimateIgnoresExplicitCollapse() {
+    func runningSessionRowHeightEstimateRespectsExplicitCollapse() {
         let now = Date(timeIntervalSince1970: 2_000)
         var session = listSession(id: "running-session", phase: .running, updatedAt: now)
         session.codexMetadata = CodexSessionMetadata(
@@ -428,7 +428,8 @@ struct AppModelSessionListTests {
         let expandedHeight = session.estimatedIslandRowHeight(at: now, detailOverride: nil)
         let collapsedHeight = session.estimatedIslandRowHeight(at: now, detailOverride: false)
 
-        #expect(expandedHeight == collapsedHeight)
+        #expect(collapsedHeight < expandedHeight)
+        #expect(collapsedHeight == 50)
         #expect(expandedHeight >= 100)
     }
 

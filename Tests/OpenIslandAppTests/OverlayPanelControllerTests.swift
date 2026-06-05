@@ -113,6 +113,21 @@ struct OverlayPanelControllerTests {
         ) == 580)
     }
 
+    @Test
+    func openedSessionListContentHeightDoesNotKeepStaleLargerMeasurement() {
+        #expect(OverlayPanelController.openedSessionListContentHeight(
+            estimatedContentHeight: 340,
+            measuredContentHeight: 520,
+            maxContentHeight: 524
+        ) == 340)
+
+        #expect(OverlayPanelController.openedSessionListContentHeight(
+            estimatedContentHeight: 520,
+            measuredContentHeight: 340,
+            maxContentHeight: 524
+        ) == 340)
+    }
+
     // MARK: - islandClosedHeight
 
     @Test

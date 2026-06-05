@@ -112,7 +112,7 @@ extension AgentSession {
     /// Estimated row height matching `IslandSessionRow` layout for viewport sizing.
     func estimatedIslandRowHeight(at date: Date, detailOverride: Bool? = nil) -> CGFloat {
         let presence = islandPresence(at: date)
-        let showsDetail = phase == .running ? true : (detailOverride ?? phase.requiresAttention)
+        let showsDetail = detailOverride ?? (phase == .running || phase.requiresAttention)
         if !showsDetail {
             // The right-side time/archive accessory is 28pt tall. With the
             // compact row's 7pt vertical padding, the real minimum row height
@@ -2141,7 +2141,7 @@ private struct IslandSessionRow: View {
     }
 
     private func allowsManualDetailToggle(isStaleCompleted: Bool = false) -> Bool {
-        session.phase != .running && !isStaleCompleted
+        !isStaleCompleted
     }
 
     private func detailToggleFillOpacity(isOpen: Bool) -> Double {
