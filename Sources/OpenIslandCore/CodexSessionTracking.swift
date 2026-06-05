@@ -229,6 +229,7 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         var sessionID: String
         var cwd: String
         var timestamp: Date?
+        var isCodexDesktopApp: Bool
 
         var workspaceName: String {
             let workspace = URL(fileURLWithPath: cwd).lastPathComponent
@@ -389,6 +390,13 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             currentTool: snapshot.currentTool,
             currentCommandPreview: snapshot.currentCommandPreview
         )
+        let jumpTarget = sessionMeta.isCodexDesktopApp ? JumpTarget(
+            terminalApp: "Codex.app",
+            workspaceName: sessionMeta.workspaceName,
+            paneTitle: sessionMeta.sessionTitle,
+            workingDirectory: sessionMeta.cwd,
+            codexThreadID: sessionMeta.sessionID
+        ) : nil
 
         return CodexTrackedSessionRecord(
             sessionID: sessionMeta.sessionID,
@@ -398,6 +406,7 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             summary: summary,
             phase: snapshot.phase,
             updatedAt: updatedAt,
+            jumpTarget: jumpTarget,
             codexMetadata: metadata
         )
     }
@@ -423,7 +432,8 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             cwd: cwd,
             timestamp: codexRolloutParseTimestamp(
                 (payload["timestamp"] as? String) ?? (object["timestamp"] as? String)
-            )
+            ),
+            isCodexDesktopApp: (payload["originator"] as? String) == "Codex Desktop"
         )
     }
 
