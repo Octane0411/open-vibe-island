@@ -68,6 +68,34 @@ public struct SessionActivityUpdated: Equatable, Codable, Sendable {
     }
 }
 
+public struct SessionRefreshed: Equatable, Codable, Sendable {
+    public var sessionID: String
+    public var title: String
+    public var summary: String
+    public var phase: SessionPhase
+    public var timestamp: Date
+    public var jumpTarget: JumpTarget?
+    public var codexMetadata: CodexSessionMetadata?
+
+    public init(
+        sessionID: String,
+        title: String,
+        summary: String,
+        phase: SessionPhase,
+        timestamp: Date,
+        jumpTarget: JumpTarget? = nil,
+        codexMetadata: CodexSessionMetadata? = nil
+    ) {
+        self.sessionID = sessionID
+        self.title = title
+        self.summary = summary
+        self.phase = phase
+        self.timestamp = timestamp
+        self.jumpTarget = jumpTarget
+        self.codexMetadata = codexMetadata
+    }
+}
+
 public struct PermissionRequested: Equatable, Codable, Sendable {
     public var sessionID: String
     public var request: PermissionRequest
@@ -241,6 +269,7 @@ public struct ActionableStateResolved: Equatable, Codable, Sendable {
 public enum AgentEvent: Equatable, Codable, Sendable {
     case sessionStarted(SessionStarted)
     case activityUpdated(SessionActivityUpdated)
+    case sessionRefreshed(SessionRefreshed)
     case permissionRequested(PermissionRequested)
     case questionAsked(QuestionAsked)
     case sessionCompleted(SessionCompleted)
@@ -256,6 +285,7 @@ public enum AgentEvent: Equatable, Codable, Sendable {
         case type
         case sessionStarted
         case activityUpdated
+        case sessionRefreshed
         case permissionRequested
         case questionAsked
         case sessionCompleted
@@ -271,6 +301,7 @@ public enum AgentEvent: Equatable, Codable, Sendable {
     private enum EventType: String, Codable {
         case sessionStarted
         case activityUpdated
+        case sessionRefreshed
         case permissionRequested
         case questionAsked
         case sessionCompleted
@@ -292,6 +323,8 @@ public enum AgentEvent: Equatable, Codable, Sendable {
             self = .sessionStarted(try container.decode(SessionStarted.self, forKey: .sessionStarted))
         case .activityUpdated:
             self = .activityUpdated(try container.decode(SessionActivityUpdated.self, forKey: .activityUpdated))
+        case .sessionRefreshed:
+            self = .sessionRefreshed(try container.decode(SessionRefreshed.self, forKey: .sessionRefreshed))
         case .permissionRequested:
             self = .permissionRequested(try container.decode(PermissionRequested.self, forKey: .permissionRequested))
         case .questionAsked:
@@ -335,6 +368,9 @@ public enum AgentEvent: Equatable, Codable, Sendable {
         case let .activityUpdated(payload):
             try container.encode(EventType.activityUpdated, forKey: .type)
             try container.encode(payload, forKey: .activityUpdated)
+        case let .sessionRefreshed(payload):
+            try container.encode(EventType.sessionRefreshed, forKey: .type)
+            try container.encode(payload, forKey: .sessionRefreshed)
         case let .permissionRequested(payload):
             try container.encode(EventType.permissionRequested, forKey: .type)
             try container.encode(payload, forKey: .permissionRequested)

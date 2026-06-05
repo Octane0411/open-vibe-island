@@ -111,7 +111,10 @@ extension AgentSession {
     }
 
     var spotlightTerminalBadge: String? {
-        jumpTarget?.terminalApp
+        if isCodexDesktopSession {
+            return nil
+        }
+        return jumpTarget?.terminalApp
     }
 
     var spotlightWorkspaceName: String {
@@ -182,9 +185,12 @@ extension AgentSession {
     }
 
     var spotlightHeadlinePromptText: String? {
+        if let codexDesktopTitle = codexDesktopHeadlineTitle {
+            return codexDesktopTitle
+        }
         // Headline shows the initial prompt (session topic), not the latest.
         // The latest prompt is shown separately in the "You:" line.
-        initialPromptText ?? latestPromptText
+        return initialPromptText ?? latestPromptText
     }
 
     var spotlightPromptText: String? {
@@ -435,8 +441,30 @@ extension AgentSession {
         return prompt
     }
 
+    private var codexDesktopHeadlineTitle: String? {
+        guard isCodexDesktopSession else {
+            return nil
+        }
+
+        let trimmedTitle = title.trimmedForSurface
+        guard !trimmedTitle.isEmpty else {
+            return nil
+        }
+
+        let workspace = jumpTarget?.workspaceName.trimmedForSurface ?? ""
+        guard trimmedTitle.localizedCaseInsensitiveCompare(workspace) != .orderedSame else {
+            return nil
+        }
+
+        return trimmedTitle
+    }
+
     private var prefersLivePromptHeadline: Bool {
         isProcessAlive || phase == .running || phase.requiresAttention
+    }
+
+    private var isCodexDesktopSession: Bool {
+        isCodexAppSession || jumpTarget?.terminalApp == "Codex.app"
     }
 }
 
