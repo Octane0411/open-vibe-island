@@ -5,6 +5,46 @@ import Testing
 
 struct SessionStateTests {
     @Test
+    func completedCodexCLISessionEndsEvenWhenCodexAppIsRunning() {
+        let startedAt = Date(timeIntervalSince1970: 7_000)
+        var state = SessionState()
+
+        state.apply(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: "codex-vscode-review",
+                    title: "Codex · jobfeed",
+                    tool: .codex,
+                    origin: .live,
+                    summary: "Reviewing code",
+                    timestamp: startedAt,
+                    jumpTarget: JumpTarget(
+                        terminalApp: "VS Code",
+                        workspaceName: "jobfeed",
+                        paneTitle: "Codex 019e9716",
+                        workingDirectory: "/Users/example/jobfeed"
+                    )
+                )
+            )
+        )
+        state.apply(
+            .sessionCompleted(
+                SessionCompleted(
+                    sessionID: "codex-vscode-review",
+                    summary: "no issues found",
+                    timestamp: startedAt.addingTimeInterval(10)
+                )
+            )
+        )
+
+        _ = state.markProcessLiveness(aliveSessionIDs: [], isCodexAppRunning: true)
+        _ = state.markProcessLiveness(aliveSessionIDs: [], isCodexAppRunning: true)
+
+        #expect(state.session(id: "codex-vscode-review")?.isSessionEnded == true)
+        #expect(state.visibleCount == 0)
+    }
+
+    @Test
     func appliesPermissionAndQuestionEventsToExistingSessions() {
         let startedAt = Date(timeIntervalSince1970: 1_000)
         var state = SessionState()
