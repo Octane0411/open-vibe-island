@@ -623,14 +623,29 @@ final class OverlayPanelController {
             screen: screen
         )
 
-        if model.measuredSessionListContentHeight > 0 {
-            return min(
-                model.measuredSessionListContentHeight,
-                Self.maxOpenedSessionListContentHeight(on: screen)
-            )
+        return Self.openedSessionListContentHeight(
+            estimatedContentHeight: estimatedContentHeight,
+            measuredContentHeight: model.measuredSessionListContentHeight,
+            maxContentHeight: Self.maxOpenedSessionListContentHeight(on: screen)
+        )
+    }
+
+    nonisolated static func openedSessionListContentHeight(
+        estimatedContentHeight: CGFloat,
+        measuredContentHeight: CGFloat,
+        maxContentHeight: CGFloat
+    ) -> CGFloat {
+        let cappedEstimate = min(estimatedContentHeight, maxContentHeight)
+        guard measuredContentHeight > 0 else {
+            return cappedEstimate
         }
 
-        return estimatedContentHeight
+        let cappedMeasured = min(measuredContentHeight, maxContentHeight)
+        guard cappedEstimate > 0 else {
+            return cappedMeasured
+        }
+
+        return min(cappedMeasured, cappedEstimate)
     }
 
     private func estimatedSessionListContentHeight(
