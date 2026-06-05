@@ -333,4 +333,33 @@ struct AgentSessionPresentationTests {
         #expect(session.spotlightSecondaryText == "Running Search")
         #expect(session.displayCurrentToolName == "Search")
     }
+
+    @Test
+    func codexDesktopSessionUsesThreadTitleForHeadlineAndHidesTerminalBadge() {
+        let session = AgentSession(
+            id: "codex-app-session",
+            title: "Open Island issue check",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Thinking.",
+            updatedAt: Date(timeIntervalSince1970: 10_000),
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "lijie10",
+                paneTitle: "Open Island issue check",
+                workingDirectory: "/Users/lijie10",
+                codexThreadID: "codex-app-session"
+            ),
+            codexMetadata: CodexSessionMetadata(
+                initialUserPrompt: "https://vibeisland.app/zh/ 看看这个 app",
+                lastUserPrompt: "看看有没有现成 issue"
+            )
+        )
+
+        #expect(session.spotlightHeadlineText == "lijie10 · Open Island issue check")
+        #expect(session.spotlightPromptLineText == "You: 看看有没有现成 issue")
+        #expect(session.spotlightTerminalBadge == nil)
+    }
 }

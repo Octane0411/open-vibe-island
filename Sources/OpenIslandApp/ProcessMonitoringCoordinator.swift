@@ -29,6 +29,11 @@ final class ProcessMonitoringCoordinator {
     @ObservationIgnored
     var onCodexAppRunningChanged: ((_ isRunning: Bool) -> Void)?
 
+    /// Fires on each monitoring pass while Codex.app is running so fallback
+    /// rediscovery can keep recent desktop threads hydrated.
+    @ObservationIgnored
+    var onCodexAppRunningObserved: (() -> Void)?
+
     @ObservationIgnored
     let activeAgentProcessDiscovery = ActiveAgentProcessDiscovery()
 
@@ -125,6 +130,9 @@ final class ProcessMonitoringCoordinator {
         if isCodexAppRunning != wasCodexAppRunning {
             wasCodexAppRunning = isCodexAppRunning
             onCodexAppRunningChanged?(isCodexAppRunning)
+        }
+        if isCodexAppRunning {
+            onCodexAppRunningObserved?()
         }
         let sessions = local.sessions.filter(\.isTrackedLiveSession)
         guard !sessions.isEmpty else {
@@ -232,6 +240,8 @@ final class ProcessMonitoringCoordinator {
         case let .sessionStarted(payload):
             payload.sessionID
         case let .activityUpdated(payload):
+            payload.sessionID
+        case let .sessionRefreshed(payload):
             payload.sessionID
         case let .permissionRequested(payload):
             payload.sessionID

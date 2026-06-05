@@ -1357,6 +1357,69 @@ struct SessionStateTests {
         let legacyUpdated = ISO8601DateFormatter().date(from: "2026-01-01T00:00:00Z")
         #expect(legacy.session.firstSeenAt == legacyUpdated)
     }
+
+    @Test
+    func sessionRefreshedUpdatesCodexDesktopTitleAndPreservesApprovalState() {
+        let t0 = Date(timeIntervalSince1970: 10_000)
+        var state = SessionState()
+        state.apply(.sessionStarted(SessionStarted(
+            sessionID: "codex-app-1",
+            title: "Initial",
+            tool: .codex,
+            origin: .live,
+            initialPhase: .running,
+            summary: "Working",
+            timestamp: t0,
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "lijie10",
+                paneTitle: "Initial",
+                workingDirectory: "/Users/lijie10",
+                codexThreadID: "codex-app-1"
+            ),
+            codexMetadata: CodexSessionMetadata(
+                initialUserPrompt: "first prompt"
+            )
+        )))
+
+        state.apply(.permissionRequested(PermissionRequested(
+            sessionID: "codex-app-1",
+            request: PermissionRequest(
+                title: "Approval Required",
+                summary: "Codex is waiting for approval.",
+                affectedPath: ""
+            ),
+            timestamp: t0.addingTimeInterval(10)
+        )))
+
+        state.apply(.sessionRefreshed(SessionRefreshed(
+            sessionID: "codex-app-1",
+            title: "Open Island issue check",
+            summary: "Updated preview",
+            phase: .running,
+            timestamp: t0.addingTimeInterval(20),
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "lijie10",
+                paneTitle: "Open Island issue check",
+                workingDirectory: "/Users/lijie10",
+                codexThreadID: "codex-app-1"
+            ),
+            codexMetadata: CodexSessionMetadata(
+                transcriptPath: "/tmp/rollout.jsonl",
+                initialUserPrompt: "first prompt"
+            )
+        )))
+
+        let session = state.session(id: "codex-app-1")
+        #expect(session?.title == "Open Island issue check")
+        #expect(session?.jumpTarget?.paneTitle == "Open Island issue check")
+        #expect(session?.phase == .waitingForApproval)
+        #expect(session?.permissionRequest?.summary == "Codex is waiting for approval.")
+        #expect(session?.isProcessAlive == true)
+        #expect(session?.isCodexAppSession == true)
+        #expect(session?.codexMetadata?.transcriptPath == "/tmp/rollout.jsonl")
+    }
 }
 
 private enum SessionStateTestError: Error {
