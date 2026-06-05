@@ -4,7 +4,11 @@ public struct SessionState: Equatable, Sendable {
     public private(set) var sessionsByID: [String: AgentSession]
 
     public init(sessions: [AgentSession] = []) {
-        self.sessionsByID = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
+        self.sessionsByID = Dictionary(uniqueKeysWithValues: sessions.map { session in
+            var normalized = session
+            Self.refreshCodexAppClassification(for: &normalized)
+            return (normalized.id, normalized)
+        })
     }
 
     public var sessions: [AgentSession] {
@@ -120,11 +124,17 @@ public struct SessionState: Equatable, Sendable {
             session.title = payload.title
             session.jumpTarget = payload.jumpTarget ?? session.jumpTarget
             session.codexMetadata = payload.codexMetadata?.isEmpty == true ? nil : payload.codexMetadata
-            session.updatedAt = payload.timestamp
+            Self.refreshCodexAppClassification(for: &session)
+            if !Self.shouldPreserveCodexAppActivityTimestamp(
+                current: session,
+                incomingPhase: payload.phase,
+                incomingTimestamp: payload.timestamp
+            ) {
+                session.updatedAt = payload.timestamp
+            }
             session.isSessionEnded = false
             session.isProcessAlive = true
             session.processNotSeenCount = 0
-            Self.refreshCodexAppClassification(for: &session)
 
             let preservesActionableState = session.phase == .waitingForApproval || session.phase == .waitingForAnswer
             if !preservesActionableState {
@@ -351,6 +361,25 @@ public struct SessionState: Equatable, Sendable {
         }
     }
 
+    static func shouldPreserveCodexAppActivityTimestamp(
+        current session: AgentSession,
+        incomingPhase: SessionPhase,
+        incomingTimestamp: Date
+    ) -> Bool {
+        guard session.isCodexAppSession,
+              incomingPhase == .completed,
+              session.phase == .completed,
+              incomingTimestamp > session.updatedAt else {
+            return false
+        }
+
+        // Codex.app startup refresh can enumerate historical idle threads
+        // and report them through the app-server as freshly observed. Keep
+        // the last real rollout activity timestamp so the island age badge
+        // does not show every historical thread as "<1m".
+        return true
+    }
+
     /// Mark a single session as alive (e.g. when a hook event is received).
     /// Does not affect other sessions' processNotSeenCount.
     public mutating func markSingleSessionAlive(sessionID: String) {
@@ -382,7 +411,7 @@ public struct SessionState: Equatable, Sendable {
             // the rollout watcher / app-server notifications.
             if session.isCodexAppSession {
                 let wasAlive = session.isProcessAlive
-                session.isProcessAlive = aliveSessionIDs.contains(id)
+                session.isProcessAlive = isCodexAppRunning
                 if session.isProcessAlive != wasAlive {
                     changed.insert(id)
                 }

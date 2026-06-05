@@ -358,8 +358,57 @@ struct AgentSessionPresentationTests {
             )
         )
 
-        #expect(session.spotlightHeadlineText == "lijie10 · Open Island issue check")
+        #expect(session.spotlightHeadlineText == "lijie10：Open Island issue check")
         #expect(session.spotlightPromptLineText == "You: 看看有没有现成 issue")
         #expect(session.spotlightTerminalBadge == nil)
+    }
+
+    @Test
+    func codexDesktopHeadlineStripsCodexPrefixFromThreadTitle() {
+        let session = AgentSession(
+            id: "codex-app-session",
+            title: "Codex · hera",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Thinking.",
+            updatedAt: Date(timeIntervalSince1970: 10_000),
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "hera",
+                paneTitle: "Codex · hera",
+                workingDirectory: "/Users/lijie10/Desktop/code/hera",
+                codexThreadID: "codex-app-session"
+            )
+        )
+
+        #expect(session.spotlightHeadlineText == "hera")
+    }
+
+    @Test
+    func codexDesktopHeadlineUsesPromptWhenThreadTitleIsWorkspaceFallback() {
+        let session = AgentSession(
+            id: "codex-app-session",
+            title: "Codex · hera",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Thinking.",
+            updatedAt: Date(timeIntervalSince1970: 10_000),
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "hera",
+                paneTitle: "Codex · hera",
+                workingDirectory: "/Users/lijie10/Desktop/code/hera",
+                codexThreadID: "codex-app-session"
+            ),
+            codexMetadata: CodexSessionMetadata(
+                initialUserPrompt: "web 模拟器画面现在还是截图预览"
+            )
+        )
+
+        #expect(session.spotlightHeadlineText == "hera：web 模拟器画面现在还是截图预览")
     }
 }

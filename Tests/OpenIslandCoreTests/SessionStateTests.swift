@@ -483,7 +483,7 @@ struct SessionStateTests {
     }
 
     @Test
-    func codexPreToolUseWaitsForApprovalAndReturnsDenyDirective() async throws {
+    func codexPreToolUseMarksToolRunningWithoutRequestingApproval() async throws {
         let socketURL = BridgeSocketLocation.uniqueTestURL()
         let server = BridgeServer(socketURL: socketURL)
         try server.start()
@@ -504,27 +504,25 @@ struct SessionStateTests {
             turnID: "turn-1",
             toolName: "Bash",
             toolUseID: "tool-use-1",
-            toolInput: CodexHookToolInput(command: "rm -rf build")
+            toolInput: CodexHookToolInput(command: "swift test --filter AppModelSessionListTests")
         )
 
-        async let responseTask = sendOnGCDThread(.processCodexHook(payload), socketURL: socketURL)
+        let responseTask = Task {
+            try BridgeCommandClient(socketURL: socketURL).send(.processCodexHook(payload))
+        }
 
         var iterator = stream.makeAsyncIterator()
         let startedEvent = try await nextEvent(from: &iterator)
-        let permissionEvent = try await nextEvent(from: &iterator)
+        let activityEvent = try await nextEvent(from: &iterator)
 
         #expect(startedEvent.isSessionStarted)
-        #expect(permissionEvent.isPermissionRequested)
+        #expect(startedEvent.sessionStarted?.codexMetadata?.currentTool == "Bash")
+        #expect(startedEvent.sessionStarted?.codexMetadata?.currentCommandPreview == "swift test --filter AppModelSessionListTests")
+        #expect(activityEvent.activityUpdate?.phase == .running)
+        #expect(activityEvent.activityUpdate?.summary == "Bash swift test --filter AppModelSessionListTests")
 
-        try await observer.send(
-            .resolvePermission(
-                sessionID: "codex-session-1",
-                resolution: .deny(message: "Use the project cleanup script instead.")
-            )
-        )
-
-        let response = try await responseTask
-        #expect(response == .codexHookDirective(.deny(reason: "Use the project cleanup script instead.")))
+        let response = try await responseTask.value
+        #expect(response == .acknowledged)
     }
 
     @Test
@@ -574,7 +572,75 @@ struct SessionStateTests {
         let response = try await responseTask
 
         #expect(activityEvent.activityUpdate?.summary == "Permission approved. Codex continued the tool.")
-        #expect(response == .codexHookDirective(.permissionRequest(.allow)))
+        #expect(response == .codexHookDirective(.permissionRequest(.allow())))
+    }
+
+    @Test
+    func codexAskUserQuestionReturnsUpdatedAnswers() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
+
+        let data = """
+        {
+          "cwd": "/tmp/worktree",
+          "hook_event_name": "PermissionRequest",
+          "model": "gpt-5-codex",
+          "permission_mode": "default",
+          "session_id": "codex-question",
+          "tool_name": "AskUserQuestion",
+          "tool_input": {
+            "questions": [
+              {
+                "id": "q1",
+                "question": "Proceed?"
+              }
+            ]
+          },
+          "turn_id": "turn-1"
+        }
+        """.data(using: .utf8)!
+        let payload = try JSONDecoder().decode(CodexHookPayload.self, from: data)
+
+        async let responseTask = sendOnGCDThread(.processCodexHook(payload), socketURL: socketURL)
+
+        var iterator = stream.makeAsyncIterator()
+        let startedEvent = try await nextEvent(from: &iterator)
+        let questionEvent = try await nextEvent(from: &iterator)
+
+        #expect(startedEvent.isSessionStarted)
+        guard case let .questionAsked(question) = questionEvent else {
+            Issue.record("Expected Codex AskUserQuestion event")
+            return
+        }
+        #expect(question.prompt.questions.first?.header == "q1")
+        #expect(question.prompt.questions.first?.question == "Proceed?")
+
+        try await observer.send(
+            .answerQuestion(
+                sessionID: "codex-question",
+                response: QuestionPromptResponse(answers: ["q1": "yes"])
+            )
+        )
+
+        let activityEvent = try await nextEvent(from: &iterator)
+        let response = try await responseTask
+
+        #expect(activityEvent.activityUpdate?.summary == "Answered: q1: yes")
+        guard case let .some(.codexHookDirective(.permissionRequest(.allow(updatedInput)))) = response,
+              case let .object(root)? = updatedInput,
+              case let .object(answers)? = root["answers"],
+              case let .string(answer)? = answers["q1"] else {
+            Issue.record("Expected Codex AskUserQuestion answers to round-trip through updatedInput")
+            return
+        }
+        #expect(answer == "yes")
     }
 
     @Test
@@ -642,7 +708,7 @@ struct SessionStateTests {
     }
 
     @Test
-    func codexPreToolUseStillRequiresResolutionWhenHookArrivesInDontAskMode() async throws {
+    func codexPreToolUseInDontAskModeStillOnlyMarksToolRunning() async throws {
         let socketURL = BridgeSocketLocation.uniqueTestURL()
         let server = BridgeServer(socketURL: socketURL)
         try server.start()
@@ -668,22 +734,73 @@ struct SessionStateTests {
             toolInput: CodexHookToolInput(command: "ls")
         )
 
-        async let responseTask = sendOnGCDThread(.processCodexHook(payload), socketURL: socketURL)
+        let responseTask = Task {
+            try BridgeCommandClient(socketURL: socketURL).send(.processCodexHook(payload))
+        }
 
         var iterator = stream.makeAsyncIterator()
         let startedEvent = try await nextEvent(from: &iterator)
-        let permissionEvent = try await nextEvent(from: &iterator)
+        let activityEvent = try await nextEvent(from: &iterator)
 
         #expect(startedEvent.isSessionStarted)
-        #expect(permissionEvent.isPermissionRequested)
-
-        try await observer.send(.resolvePermission(sessionID: "codex-session-no-ask", resolution: .allowOnce()))
-
-        let activityEvent = try await nextEvent(from: &iterator)
-        let response = try await responseTask
-
-        #expect(activityEvent.activityUpdate?.summary == "Permission approved. Codex continued the command.")
+        #expect(activityEvent.activityUpdate?.summary == "Bash ls")
+        #expect(activityEvent.activityUpdate?.phase == .running)
+        let response = try await responseTask.value
         #expect(response == .acknowledged)
+    }
+
+    @Test
+    func codexPostToolUseClearsCurrentToolMetadata() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
+
+        let preToolPayload = CodexHookPayload(
+            cwd: "/tmp/worktree",
+            hookEventName: .preToolUse,
+            model: "gpt-5-codex",
+            permissionMode: .default,
+            sessionID: "codex-post-clear",
+            transcriptPath: nil,
+            turnID: "turn-1",
+            toolName: "Bash",
+            toolUseID: "tool-use-1",
+            toolInput: CodexHookToolInput(command: "git status -sb")
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(.processCodexHook(preToolPayload))
+
+        var iterator = stream.makeAsyncIterator()
+        let startedEvent = try await nextEvent(from: &iterator)
+        _ = try await nextEvent(from: &iterator)
+        #expect(startedEvent.sessionStarted?.codexMetadata?.currentTool == "Bash")
+        #expect(startedEvent.sessionStarted?.codexMetadata?.currentCommandPreview == "git status -sb")
+
+        let postToolPayload = CodexHookPayload(
+            cwd: "/tmp/worktree",
+            hookEventName: .postToolUse,
+            model: "gpt-5-codex",
+            permissionMode: .default,
+            sessionID: "codex-post-clear",
+            transcriptPath: nil,
+            turnID: "turn-1",
+            toolName: "Bash",
+            toolUseID: "tool-use-1",
+            toolInput: CodexHookToolInput(command: "git status -sb")
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(.processCodexHook(postToolPayload))
+
+        let metadataEvent = try await nextEvent(from: &iterator)
+        let activityEvent = try await nextEvent(from: &iterator)
+
+        #expect(metadataEvent.trackedMetadataUpdate?.codexMetadata.currentTool == nil)
+        #expect(metadataEvent.trackedMetadataUpdate?.codexMetadata.currentCommandPreview == nil)
+        #expect(activityEvent.activityUpdate?.summary == "Bash finished: git status -sb")
     }
 
     @Test
@@ -879,14 +996,19 @@ struct SessionStateTests {
 
         let sessionStartGroups = hooks?["SessionStart"] as? [[String: Any]]
         let permissionGroups = hooks?["PermissionRequest"] as? [[String: Any]]
+        let postToolGroups = hooks?["PostToolUse"] as? [[String: Any]]
         let managedPermissionHook = permissionGroups?
+            .compactMap { $0["hooks"] as? [[String: Any]] }
+            .flatMap { $0 }
+            .first(where: { $0["command"] as? String == "'/tmp/OpenIslandHooks'" })
+        let managedPostToolHook = postToolGroups?
             .compactMap { $0["hooks"] as? [[String: Any]] }
             .flatMap { $0 }
             .first(where: { $0["command"] as? String == "'/tmp/OpenIslandHooks'" })
         #expect(sessionStartGroups?.contains(where: { $0["matcher"] as? String == "startup|resume" }) == true)
         #expect(managedPermissionHook?["timeout"] as? Int == CodexHookInstaller.managedInteractiveTimeout)
+        #expect(managedPostToolHook?["timeout"] as? Int == CodexHookInstaller.managedTimeout)
         #expect(hooks?["PreToolUse"] == nil)
-        #expect(hooks?["PostToolUse"] == nil)
     }
 
     @Test
@@ -955,10 +1077,15 @@ struct SessionStateTests {
             .compactMap { $0["hooks"] as? [[String: Any]] }
             .flatMap { $0 }
             .compactMap { $0["command"] as? String } ?? []
+        let postToolGroups = hooks?["PostToolUse"] as? [[String: Any]]
+        let postToolCommands = postToolGroups?
+            .compactMap { $0["hooks"] as? [[String: Any]] }
+            .flatMap { $0 }
+            .compactMap { $0["command"] as? String } ?? []
 
         #expect(preToolCommands == ["/usr/bin/printf"])
         #expect(permissionCommands == ["'/tmp/new-release/OpenIslandHooks'"])
-        #expect(hooks?["PostToolUse"] == nil)
+        #expect(postToolCommands == ["'/tmp/new-release/OpenIslandHooks'"])
         #expect(stopCommands.contains("/usr/bin/true"))
         #expect(stopCommands.contains("'/tmp/new-release/OpenIslandHooks'"))
         #expect(!stopCommands.contains("'/Users/test/.open-island/bin/open-island-bridge' --source codex"))
@@ -1420,6 +1547,81 @@ struct SessionStateTests {
         #expect(session?.isCodexAppSession == true)
         #expect(session?.codexMetadata?.transcriptPath == "/tmp/rollout.jsonl")
     }
+
+    @Test
+    func completedCodexDesktopRefreshDoesNotMakeHistoricalThreadLookNew() {
+        let historicalActivity = Date(timeIntervalSince1970: 10_000)
+        let appServerRefresh = historicalActivity.addingTimeInterval(1_800)
+        var state = SessionState(sessions: [
+            AgentSession(
+                id: "codex-app-history",
+                title: "Old title",
+                tool: .codex,
+                origin: .live,
+                attachmentState: .stale,
+                phase: .completed,
+                summary: "Done",
+                updatedAt: historicalActivity,
+                jumpTarget: JumpTarget(
+                    terminalApp: "Codex.app",
+                    workspaceName: "hera",
+                    paneTitle: "Old title",
+                    workingDirectory: "/Users/lijie10/Desktop/code/hera",
+                    codexThreadID: "codex-app-history"
+                )
+            ),
+        ])
+
+        state.apply(.sessionRefreshed(SessionRefreshed(
+            sessionID: "codex-app-history",
+            title: "Summarized title",
+            summary: "Idle.",
+            phase: .completed,
+            timestamp: appServerRefresh,
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "hera",
+                paneTitle: "Summarized title",
+                workingDirectory: "/Users/lijie10/Desktop/code/hera",
+                codexThreadID: "codex-app-history"
+            )
+        )))
+
+        let session = state.session(id: "codex-app-history")
+        #expect(session?.title == "Summarized title")
+        #expect(session?.updatedAt == historicalActivity)
+        #expect(session?.phase == .completed)
+        #expect(session?.isProcessAlive == true)
+    }
+
+    @Test
+    func codexDesktopLivenessUsesAppRunningStateInsteadOfCliProcessID() {
+        var state = SessionState(sessions: [
+            AgentSession(
+                id: "codex-app-1",
+                title: "Open Island issue check",
+                tool: .codex,
+                origin: .live,
+                attachmentState: .stale,
+                phase: .running,
+                summary: "Thinking",
+                updatedAt: Date(timeIntervalSince1970: 1_000),
+                jumpTarget: JumpTarget(
+                    terminalApp: "Codex.app",
+                    workspaceName: "lijie10",
+                    paneTitle: "Open Island issue check",
+                    workingDirectory: "/Users/lijie10",
+                    codexThreadID: "codex-app-1"
+                )
+            ),
+        ])
+
+        #expect(state.session(id: "codex-app-1")?.isCodexAppSession == true)
+
+        state.markProcessLiveness(aliveSessionIDs: [], isCodexAppRunning: true)
+
+        #expect(state.session(id: "codex-app-1")?.isProcessAlive == true)
+    }
 }
 
 private enum SessionStateTestError: Error {
@@ -1437,6 +1639,14 @@ private func nextEvent(
 }
 
 private extension AgentEvent {
+    var sessionStarted: SessionStarted? {
+        if case let .sessionStarted(payload) = self {
+            payload
+        } else {
+            nil
+        }
+    }
+
     var isSessionStarted: Bool {
         if case .sessionStarted = self {
             true

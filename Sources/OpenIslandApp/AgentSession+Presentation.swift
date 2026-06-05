@@ -26,6 +26,9 @@ extension AgentSession {
     /// Note: `claudeMetadata.agentID` is NOT a reliable signal here because
     /// SubagentStart hooks set `agent_id` on the *parent* session's metadata.
     var isSubagentSession: Bool {
+        if codexMetadata?.isSubagentSession == true {
+            return true
+        }
         if let path = claudeMetadata?.transcriptPath, path.contains("/subagents/") {
             return true
         }
@@ -179,6 +182,10 @@ extension AgentSession {
 
         guard let prompt = spotlightHeadlinePromptText else {
             return headline
+        }
+
+        if isCodexDesktopSession {
+            return "\(headline)：\(prompt)"
         }
 
         return "\(headline) · \(prompt)"
@@ -387,7 +394,7 @@ extension AgentSession {
         case "ExitPlanMode":
             return "Plan"
         case "apply_patch":
-            return "Patch"
+            return "Editing"
         case "write_stdin":
             return "Input"
         case "web_search", "tool_search":
@@ -454,6 +461,16 @@ extension AgentSession {
         let workspace = jumpTarget?.workspaceName.trimmedForSurface ?? ""
         guard trimmedTitle.localizedCaseInsensitiveCompare(workspace) != .orderedSame else {
             return nil
+        }
+
+        let codexPrefix = "Codex · "
+        if trimmedTitle.range(of: codexPrefix, options: [.caseInsensitive, .anchored]) != nil {
+            let strippedTitle = String(trimmedTitle.dropFirst(codexPrefix.count)).trimmedForSurface
+            guard !strippedTitle.isEmpty,
+                  strippedTitle.localizedCaseInsensitiveCompare(workspace) != .orderedSame else {
+                return nil
+            }
+            return strippedTitle
         }
 
         return trimmedTitle
