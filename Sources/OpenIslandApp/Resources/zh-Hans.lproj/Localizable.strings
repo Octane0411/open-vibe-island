@@ -24,6 +24,8 @@
 "settings.general.autoHideNoSessions" = "无活跃会话时自动隐藏";
 "settings.general.autoCollapse" = "鼠标离开时自动收起";
 "settings.general.showDockIcon" = "在 Dock 中显示图标";
+"settings.general.menuBarIcon" = "在菜单栏显示图标（面板从图标下方展开）";
+"settings.menuBarMode.notApplicable" = "菜单栏模式下不适用。";
 "settings.general.hapticFeedback" = "悬停时震动反馈";
 "settings.general.suppressFrontmostNotifications" = "前台会话不弹出通知";
 "settings.general.showCodexUsage" = "显示 Codex 用量";

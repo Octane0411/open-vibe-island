@@ -29,8 +29,15 @@ struct AppearanceSettingsPane: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 32) {
+                if model.menuBarStatusItemEnabled {
+                    MenuBarNotApplicableNote(lang: lang)
+                }
                 displayProfilePart
+                    .disabled(model.menuBarStatusItemEnabled)
+                    .opacity(model.menuBarStatusItemEnabled ? 0.45 : 1)
                 notchPersonalizationPart
+                    .disabled(model.menuBarStatusItemEnabled)
+                    .opacity(model.menuBarStatusItemEnabled ? 0.45 : 1)
                 sessionListPersonalizationPart
             }
             .padding(24)

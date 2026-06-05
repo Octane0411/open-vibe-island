@@ -24,6 +24,8 @@
 "settings.general.autoHideNoSessions" = "無活躍工作階段時自動隱藏";
 "settings.general.autoCollapse" = "滑鼠離開時自動收起";
 "settings.general.showDockIcon" = "在 Dock 中顯示圖示";
+"settings.general.menuBarIcon" = "在選單列顯示圖示（面板從圖示下方展開）";
+"settings.menuBarMode.notApplicable" = "選單列模式下不適用。";
 "settings.general.hapticFeedback" = "懸停時震動回饋";
 "settings.general.suppressFrontmostNotifications" = "前台工作階段不彈出通知";
 "settings.general.showCodexUsage" = "顯示 Codex 用量";
