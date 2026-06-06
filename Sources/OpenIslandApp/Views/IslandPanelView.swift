@@ -1,6 +1,48 @@
 import SwiftUI
 @preconcurrency import MarkdownUI
 import OpenIslandCore
+import AppKit
+import OSLog
+
+let islandLayoutLogger = Logger(subsystem: "app.openisland", category: "IslandLayout")
+
+enum IslandLayoutDebug {
+    static var isEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "debug.islandLayout")
+    }
+
+    static func log(_ message: String) {
+        guard isEnabled else { return }
+        islandLayoutLogger.notice("\(message, privacy: .public)")
+
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let line = "\(timestamp) \(message)\n"
+        guard let data = line.data(using: .utf8),
+              let directory = FileManager.default.urls(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask
+              ).first?.appendingPathComponent("OpenIsland", isDirectory: true) else {
+            return
+        }
+
+        do {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+            let fileURL = directory.appendingPathComponent("layout-debug.log")
+            if !FileManager.default.fileExists(atPath: fileURL.path) {
+                FileManager.default.createFile(atPath: fileURL.path, contents: nil)
+            }
+            let handle = try FileHandle(forWritingTo: fileURL)
+            try handle.seekToEnd()
+            try handle.write(contentsOf: data)
+            try handle.close()
+        } catch {
+            islandLayoutLogger.debug("Failed to write layout debug log: \(String(describing: error), privacy: .public)")
+        }
+    }
+}
 
 private struct NotificationContentHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
@@ -9,20 +51,34 @@ private struct NotificationContentHeightKey: PreferenceKey {
     }
 }
 
-private struct ContentHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+private struct ContentSize: Equatable {
+    var width: CGFloat = 0
+    var height: CGFloat = 0
+}
+
+private struct ContentSizeKey: PreferenceKey {
+    static let defaultValue = ContentSize()
+    static func reduce(value: inout ContentSize, nextValue: () -> ContentSize) {
+        let next = nextValue()
+        if next.width * next.height >= value.width * value.height {
+            value = next
+        }
     }
 }
 
 enum AutoHeightScrollViewSizing {
     static func effectiveContentHeight(measured: CGFloat, estimate: CGFloat) -> CGFloat {
-        measured > 0 ? measured : estimate
+        guard measured > 0 else { return estimate }
+        guard estimate > 0 else { return measured }
+        return min(measured, estimate)
     }
 
     static func isScrollable(contentHeight: CGFloat, maxHeight: CGFloat) -> Bool {
         contentHeight > maxHeight
+    }
+
+    static func usesScrollableContainer(measured: CGFloat, estimate: CGFloat, maxHeight: CGFloat) -> Bool {
+        effectiveContentHeight(measured: measured, estimate: estimate) > maxHeight
     }
 
     static func contentHeightAfterEstimateChange(current: CGFloat, estimate: CGFloat) -> CGFloat {
@@ -33,11 +89,33 @@ enum AutoHeightScrollViewSizing {
     }
 }
 
+enum CompletionMessageSizing {
+    static let notificationMaxHeight: CGFloat = 340
+    static let listMaxHeight: CGFloat = 160
+
+    static func estimatedContentHeight(text: String, width: CGFloat) -> CGFloat {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return 0 }
+
+        let availableWidth = max(80, width - 28)
+        let font = NSFont.systemFont(ofSize: 13.5, weight: .medium)
+        let textSize = (trimmed as NSString).boundingRect(
+            with: NSSize(width: availableWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font]
+        )
+
+        return ceil(textSize.height) + 18
+    }
+}
+
 /// Auto-height container: renders content directly (auto-sizing).
 /// When content exceeds maxHeight, wraps in ScrollView at fixed maxHeight.
 private struct AutoHeightScrollView<Content: View>: View {
     let maxHeight: CGFloat
     var estimatedContentHeight: CGFloat = 0
+    var resetID: AnyHashable = 0
+    var minimumMeasuredWidth: CGFloat = 0
     var onContentHeightChange: ((CGFloat) -> Void)? = nil
     @ViewBuilder let content: () -> Content
     @State private var contentHeight: CGFloat = 0
@@ -50,8 +128,9 @@ private struct AutoHeightScrollView<Content: View>: View {
     }
 
     private var isScrollable: Bool {
-        AutoHeightScrollViewSizing.isScrollable(
-            contentHeight: effectiveContentHeight,
+        AutoHeightScrollViewSizing.usesScrollableContainer(
+            measured: contentHeight,
+            estimate: estimatedContentHeight,
             maxHeight: maxHeight
         )
     }
@@ -59,41 +138,56 @@ private struct AutoHeightScrollView<Content: View>: View {
     var body: some View {
         Group {
             if isScrollable {
-                ScrollView(.vertical) {
-                    measuredContent
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical) {
+                        Color.clear
+                            .frame(height: 0)
+                            .id("top")
+                        measuredContent
+                    }
+                    .defaultScrollAnchor(.top)
+                    .scrollBounceBehavior(.basedOnSize)
+                    .scrollIndicators(.automatic)
+                    .frame(height: maxHeight)
+                    .id(resetID)
+                    .onChange(of: resetID) { _, _ in
+                        IslandLayoutDebug.log(
+                            "AutoHeightScrollView reset scrollToTop measured=\(contentHeight.rounded()) estimate=\(estimatedContentHeight.rounded()) max=\(maxHeight.rounded())"
+                        )
+                        proxy.scrollTo("top", anchor: .top)
+                    }
                 }
-                .scrollBounceBehavior(.basedOnSize)
-                .scrollIndicators(.automatic)
-                .frame(height: maxHeight)
             } else {
                 measuredContent
-                    .frame(height: effectiveContentHeight > 0 ? effectiveContentHeight : nil)
             }
         }
-        .onChange(of: estimatedContentHeight) { _, estimate in
-            let nextHeight = AutoHeightScrollViewSizing.contentHeightAfterEstimateChange(
-                current: contentHeight,
-                estimate: estimate
+        .onPreferenceChange(ContentSizeKey.self) { size in
+            IslandLayoutDebug.log(
+                "AutoHeightScrollView preference width=\(size.width.rounded()) height=\(size.height.rounded()) estimate=\(estimatedContentHeight.rounded()) effective=\(effectiveContentHeight.rounded()) max=\(maxHeight.rounded()) scrollable=\(isScrollable)"
             )
-            guard nextHeight != contentHeight else { return }
-            contentHeight = nextHeight
-            onContentHeightChange?(nextHeight)
+            guard size.height > 0 else { return }
+            guard size.width >= minimumMeasuredWidth else {
+                IslandLayoutDebug.log(
+                    "AutoHeightScrollView ignore narrow measure width=\(size.width.rounded()) min=\(minimumMeasuredWidth.rounded()) height=\(size.height.rounded())"
+                )
+                return
+            }
+            contentHeight = size.height
+            onContentHeightChange?(size.height)
         }
     }
 
     private var measuredContent: some View {
         measuredContentBody
+            .fixedSize(horizontal: false, vertical: true)
             .background(
                 GeometryReader { geo in
-                    Color.clear.preference(key: ContentHeightKey.self, value: geo.size.height)
+                    Color.clear.preference(
+                        key: ContentSizeKey.self,
+                        value: ContentSize(width: geo.size.width, height: geo.size.height)
+                    )
                 }
             )
-            .onPreferenceChange(ContentHeightKey.self) { height in
-                if height > 0 {
-                    contentHeight = height
-                    onContentHeightChange?(height)
-                }
-            }
     }
 
     @ViewBuilder
@@ -102,7 +196,9 @@ private struct AutoHeightScrollView<Content: View>: View {
     }
 
     private var measuredRows: some View {
-        content()
+        VStack(spacing: 0) {
+            content()
+        }
     }
 }
 
@@ -130,7 +226,9 @@ extension AgentSession {
         if spotlightPromptLineText != nil || (detailOverride == true && spotlightPromptText != nil) {
             height += 17
         }
-        if spotlightActivityLineText != nil || (detailOverride == true && manualExpandedActivityEstimateText != nil) {
+        let hasRunningEmbeddedDetail = phase == .running && runningEmbeddedDetailEstimateText != nil
+        if !hasRunningEmbeddedDetail,
+           spotlightActivityLineText != nil || (detailOverride == true && manualExpandedActivityEstimateText != nil) {
             height += 20
         }
         if let subagents = claudeMetadata?.activeSubagents, !subagents.isEmpty {
@@ -143,11 +241,10 @@ extension AgentSession {
         }
         if phase.requiresAttention {
             height += 118
-        } else if phase == .running, runningEmbeddedDetailEstimateText != nil {
-            // Running rows render the current command / Thinking state in an
-            // embedded monospaced box. Without this reserve the outer panel can
-            // stop below the 580pt cap before ScrollView gets a chance to scroll.
-            height += 58
+        } else if hasRunningEmbeddedDetail {
+            // Running event details are a single-line card so live output
+            // changes do not resize rows or pull the scroll position.
+            height += 40
         }
         return height
     }
@@ -165,22 +262,87 @@ extension AgentSession {
            !preview.isEmpty {
             return preview
         }
+        if let currentTool = displayCurrentToolName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !currentTool.isEmpty {
+            return currentTool
+        }
+        if let assistantMessage = lastAssistantMessageText?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !assistantMessage.isEmpty,
+           !Self.isPlaceholderRunningDetailText(assistantMessage) {
+            return assistantMessage
+        }
         if let activity = spotlightActivityLineText?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !activity.isEmpty {
+           !activity.isEmpty,
+           !Self.isPlaceholderRunningDetailText(activity) {
             return activity
         }
-        let trimmed = summary.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+        return nil
+    }
+
+    private static func isPlaceholderRunningDetailText(_ text: String) -> Bool {
+        switch text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "thinking", "thinking.", "running", "running.", "processing", "processing.":
+            return true
+        default:
+            return false
+        }
     }
 }
 
 // MARK: - Animations
 
 private let popAnimation = Animation.spring(response: 0.3, dampingFraction: 0.5)
-private let openedSurfaceUnmountDelay: TimeInterval = 0.36
-private let openedContentFadeInDelay: TimeInterval = 0.16
 private let openedContentFadeDuration: TimeInterval = 0.18
 private let openedContentFadeOutDuration: TimeInterval = 0.10
+let closedSurfaceContentRevealDelay: TimeInterval = IslandAnimationPolicy.panelFrameBaseCloseDuration * 0.72
+let closedSurfaceContentFadeDuration: TimeInterval = 0.18
+
+func openedContentFadeInDelay(for speed: IslandAnimationSpeed = .normal) -> TimeInterval {
+    IslandAnimationPolicy.openedContentRevealDelay(speed: speed)
+}
+
+func openedSurfaceUnmountDelay(for speed: IslandAnimationSpeed = .normal) -> TimeInterval {
+    IslandAnimationPolicy.panelFrameDuration(isClosing: true, speed: speed) + 0.04
+}
+
+struct IslandSurfaceLayering {
+    let notchStatus: NotchStatus
+    let keepsOpenedSurfaceMounted: Bool
+    let rendersClosedSurface: Bool
+    var showsOpenedContent = true
+
+    var shouldRenderOpenedSurface: Bool {
+        notchStatus == .opened || keepsOpenedSurfaceMounted
+    }
+
+    var shouldRenderOpenedContent: Bool {
+        notchStatus == .opened && showsOpenedContent
+    }
+
+    var shouldRenderClosedSurface: Bool {
+        guard rendersClosedSurface else { return false }
+        return !shouldRenderOpenedSurface
+    }
+
+    var rendersClosedContentInOpenedSurface: Bool {
+        notchStatus != .opened && shouldRenderOpenedSurface
+    }
+
+    var closedSurfaceZIndex: Double {
+        shouldRenderClosedSurface ? 0 : -1
+    }
+
+    var openedSurfaceZIndex: Double {
+        shouldRenderOpenedSurface ? 1 : 0
+    }
+
+    func openedSurfaceTopProfile(usesNotchAwareHeader: Bool) -> OpenedIslandSurfaceShape.TopProfile {
+        guard notchStatus == .opened else {
+            return .topBar
+        }
+        return usesNotchAwareHeader ? .notch : .topBar
+    }
+}
 
 private struct ConditionalDrawingGroup: ViewModifier {
     let enabled: Bool
@@ -211,6 +373,7 @@ struct IslandPanelView: View {
     @State private var showingQuitConfirmation = false
     @State private var keepsOpenedSurfaceMounted = false
     @State private var rendersClosedSurface = true
+    @State private var showsClosedSurfaceContent = true
     @State private var showsOpenedContent = false
     @State private var openedSurfaceMountGeneration: UInt64 = 0
 
@@ -222,12 +385,21 @@ struct IslandPanelView: View {
         isOpened
     }
 
+    private var surfaceLayering: IslandSurfaceLayering {
+        IslandSurfaceLayering(
+            notchStatus: model.notchStatus,
+            keepsOpenedSurfaceMounted: keepsOpenedSurfaceMounted,
+            rendersClosedSurface: rendersClosedSurface,
+            showsOpenedContent: showsOpenedContent
+        )
+    }
+
     private var shouldRenderOpenedSurface: Bool {
-        usesOpenedVisualState || keepsOpenedSurfaceMounted
+        surfaceLayering.shouldRenderOpenedSurface
     }
 
     private var shouldRenderClosedSurface: Bool {
-        rendersClosedSurface && !shouldRenderOpenedSurface
+        surfaceLayering.shouldRenderClosedSurface
     }
 
     private var openedContentOpacity: Double {
@@ -319,14 +491,17 @@ struct IslandPanelView: View {
                     openedSurface(
                         width: openedWidth,
                         height: openedHeight,
-                        contentOpacity: openedContentOpacity
+                        contentOpacity: openedContentOpacity,
+                        rendersOpenedContent: surfaceLayering.shouldRenderOpenedContent
                     )
                     .allowsHitTesting(usesOpenedVisualState && showsOpenedContent)
+                    .zIndex(surfaceLayering.openedSurfaceZIndex)
                 }
 
                 if shouldRenderClosedSurface {
-                    v6ClosedSurface()
+                    v6ClosedSurface(availableWidth: layoutWidth)
                         .allowsHitTesting(true)
+                        .zIndex(surfaceLayering.closedSurfaceZIndex)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .top)
@@ -349,6 +524,7 @@ struct IslandPanelView: View {
         case .opened:
             keepsOpenedSurfaceMounted = true
             rendersClosedSurface = false
+            showsClosedSurfaceContent = false
 
             if immediate {
                 showsOpenedContent = true
@@ -356,7 +532,7 @@ struct IslandPanelView: View {
             }
 
             showsOpenedContent = false
-            DispatchQueue.main.asyncAfter(deadline: .now() + openedContentFadeInDelay) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + openedContentFadeInDelay(for: model.islandAnimationSpeed)) {
                 guard openedSurfaceMountGeneration == generation,
                       model.notchStatus == .opened else {
                     return
@@ -374,17 +550,20 @@ struct IslandPanelView: View {
             guard !immediate else {
                 keepsOpenedSurfaceMounted = false
                 rendersClosedSurface = true
+                showsClosedSurfaceContent = true
                 return
             }
 
-            rendersClosedSurface = false
-            DispatchQueue.main.asyncAfter(deadline: .now() + openedSurfaceUnmountDelay) {
+            showsClosedSurfaceContent = true
+            rendersClosedSurface = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + openedSurfaceUnmountDelay(for: model.islandAnimationSpeed)) {
                 guard openedSurfaceMountGeneration == generation,
                       model.notchStatus != .opened else {
                     return
                 }
                 keepsOpenedSurfaceMounted = false
                 rendersClosedSurface = true
+                showsClosedSurfaceContent = true
             }
         }
     }
@@ -397,7 +576,7 @@ struct IslandPanelView: View {
     /// preferences re-renders this automatically; UnifiedBars runs its own
     /// TimelineView internally for bar animation.
     @ViewBuilder
-    private func v6ClosedSurface() -> some View {
+    private func v6ClosedSurface(availableWidth: CGFloat) -> some View {
         let layout: V6ClosedLayout = isExternalDisplayPlacement ? .external : .macbook
         let physicalNotchWidth: CGFloat = targetOverlayScreen?.notchSize.width ?? 180
         V6ClosedPill(
@@ -406,6 +585,9 @@ struct IslandPanelView: View {
             rightSlot: model.islandClosedRightSlotContent(),
             layout: layout,
             height: closedNotchHeight,
+            contentOpacity: showsClosedSurfaceContent ? 1 : 0,
+            drawsBackground: true,
+            outerWidthOverride: availableWidth,
             physicalNotchWidth: layout == .macbook ? physicalNotchWidth : 0,
             minWidth: 70
         )
@@ -419,42 +601,80 @@ struct IslandPanelView: View {
     private func openedSurface(
         width openedWidth: CGFloat,
         height openedHeight: CGFloat,
-        contentOpacity: Double
+        contentOpacity: Double,
+        rendersOpenedContent: Bool
     ) -> some View {
         let horizontalInset = 0.0
         let bottomInset = 0.0
         let surfaceWidth = openedWidth + (horizontalInset * 2)
         let surfaceHeight = openedHeight + bottomInset
         let surfaceShape = OpenedIslandSurfaceShape(
-            topProfile: usesNotchAwareOpenedHeader ? .notch : .topBar
+            topProfile: surfaceLayering.openedSurfaceTopProfile(
+                usesNotchAwareHeader: usesNotchAwareOpenedHeader
+            )
         )
+        let closedContentOpacity = surfaceLayering.rendersClosedContentInOpenedSurface
+            ? (showsClosedSurfaceContent ? 1.0 : 0.0)
+            : 0.0
 
         ZStack(alignment: .top) {
             surfaceShape
                 .fill(Color.black)
                 .frame(width: surfaceWidth, height: surfaceHeight)
 
-            VStack(spacing: 0) {
-                openedHeaderContent
-                    .frame(height: closedNotchHeight)
+            if rendersOpenedContent {
+                VStack(spacing: 0) {
+                    openedHeaderContent
+                        .frame(height: closedNotchHeight)
 
-                openedContent
-                    .frame(width: openedWidth)
-                    .frame(maxHeight: max(0, openedHeight - closedNotchHeight), alignment: .top)
-                    .clipped()
+                    openedContent
+                        .frame(width: openedWidth)
+                        .frame(maxHeight: max(0, openedHeight - closedNotchHeight), alignment: .top)
+                        .clipped()
+                }
+                .frame(width: openedWidth, height: openedHeight, alignment: .top)
+                .padding(.horizontal, horizontalInset)
+                .padding(.bottom, bottomInset)
+                .opacity(contentOpacity)
+                .animation(.easeInOut(duration: openedContentFadeDuration), value: contentOpacity)
+                .clipShape(surfaceShape)
+                .overlay {
+                    surfaceShape
+                        .stroke(Color.white.opacity(0.07), lineWidth: 1)
+                }
             }
-            .frame(width: openedWidth, height: openedHeight, alignment: .top)
-            .padding(.horizontal, horizontalInset)
-            .padding(.bottom, bottomInset)
-            .opacity(contentOpacity)
-            .animation(.easeInOut(duration: openedContentFadeDuration), value: contentOpacity)
-            .clipShape(surfaceShape)
-            .overlay {
+
+            if !rendersOpenedContent {
                 surfaceShape
                     .stroke(Color.white.opacity(0.07), lineWidth: 1)
             }
+
+            if closedContentOpacity > 0 {
+                morphingClosedSurfaceContent(availableWidth: openedWidth)
+                    .opacity(closedContentOpacity)
+                    .frame(width: openedWidth, height: closedNotchHeight, alignment: .top)
+                    .animation(.easeInOut(duration: closedSurfaceContentFadeDuration), value: closedContentOpacity)
+            }
         }
         .frame(width: surfaceWidth, height: surfaceHeight, alignment: .top)
+    }
+
+    @ViewBuilder
+    private func morphingClosedSurfaceContent(availableWidth: CGFloat) -> some View {
+        let layout: V6ClosedLayout = isExternalDisplayPlacement ? .external : .macbook
+        let physicalNotchWidth: CGFloat = targetOverlayScreen?.notchSize.width ?? 180
+        V6ClosedPill(
+            mode: model.islandClosedMode,
+            label: layout == .external ? model.islandClosedLabel() : nil,
+            rightSlot: model.islandClosedRightSlotContent(),
+            layout: layout,
+            height: closedNotchHeight,
+            contentOpacity: 1,
+            drawsBackground: false,
+            outerWidthOverride: availableWidth,
+            physicalNotchWidth: layout == .macbook ? physicalNotchWidth : 0,
+            minWidth: 70
+        )
     }
 
     // MARK: - Closed state
@@ -714,9 +934,20 @@ struct IslandPanelView: View {
                     AutoHeightScrollView(
                         maxHeight: maxSessionListHeight,
                         estimatedContentHeight: estimatedSessionRowsHeight(referenceDate: referenceDate),
+                        resetID: sessionListResetID(referenceDate: referenceDate),
+                        minimumMeasuredWidth: 560,
                         onContentHeightChange: { rowsHeight in
-                            model.measuredSessionListContentHeight =
-                                min(rowsHeight, maxSessionListHeight) + Self.sessionPanelChromeHeight
+                            guard model.notchStatus == .opened, !isNotificationMode else {
+                                IslandLayoutDebug.log(
+                                    "sessionList ignore rowsHeight=\(rowsHeight.rounded()) status=\(model.notchStatus) notificationMode=\(isNotificationMode)"
+                                )
+                                return
+                            }
+                            let storedHeight = min(rowsHeight, maxSessionListHeight) + Self.sessionPanelChromeHeight
+                            IslandLayoutDebug.log(
+                                "sessionList rowsHeight=\(rowsHeight.rounded()) storedPanelContentHeight=\(storedHeight.rounded()) maxRows=\(maxSessionListHeight.rounded()) estimateRows=\(estimatedSessionRowsHeight(referenceDate: referenceDate).rounded()) sessions=\(model.islandListSessions.count)"
+                            )
+                            model.measuredSessionListContentHeight = storedHeight
                         }
                     ) {
                         sessionRowsContent(referenceDate: referenceDate)
@@ -738,6 +969,10 @@ struct IslandPanelView: View {
                 )
             }
         }
+    }
+
+    private func sessionListResetID(referenceDate: Date) -> AnyHashable {
+        IslandSessionListIdentity.resetID(for: model.islandSessionSections)
     }
 
     @ViewBuilder
@@ -769,22 +1004,6 @@ struct IslandPanelView: View {
                 )
                 .id(notificationCardIdentity(for: session))
 
-                let visibleSessionCount = model.islandListSessions.count
-                if visibleSessionCount > 1 {
-                    Button {
-                        let isCompletion = session.phase == .completed
-                        model.expandNotificationToSessionList(clearExpansion: isCompletion)
-                    } label: {
-                        Text(model.lang.t("island.showAll", visibleSessionCount))
-                            .font(.system(size: 10.5, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.36))
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.horizontal, sessionListSideInset)
-                            .padding(.top, 6)
-                            .padding(.bottom, 2)
-                    }
-                    .buttonStyle(.plain)
-                }
             } else {
                 ForEach(model.islandSessionSections) { section in
                     VStack(alignment: .leading, spacing: 0) {
@@ -1446,7 +1665,8 @@ private struct IslandSessionRow: View {
             Text(activityLine)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(activityColor(for: presence).opacity(0.94))
-                .lineLimit(2)
+                .lineLimit(1)
+                .truncationMode(.tail)
                 .padding(.leading, detailLeadingInset)
                 .padding(.trailing, sideInset)
                 .padding(.bottom, 10)
@@ -1751,10 +1971,10 @@ private struct IslandSessionRow: View {
                 Text(runningDetailText)
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.82))
-                    .lineLimit(3)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
+                    .frame(height: 34)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -1837,7 +2057,10 @@ private struct IslandSessionRow: View {
     private var completionActionBody: some View {
         VStack(alignment: .leading, spacing: 0) {
             if !completionMessageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                AutoHeightScrollView(maxHeight: 160) {
+                AutoHeightScrollView(
+                    maxHeight: completionMessageMaxHeight,
+                    estimatedContentHeight: completionMessageEstimatedHeight
+                ) {
                     Markdown(completionMessageText)
                         .markdownTheme(.completionCard)
                         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -1868,6 +2091,19 @@ private struct IslandSessionRow: View {
 
     private var completionDoneOpacity: Double {
         presentation == .notification ? 0.82 : 0.96
+    }
+
+    private var completionMessageMaxHeight: CGFloat {
+        presentation == .notification
+            ? CompletionMessageSizing.notificationMaxHeight
+            : CompletionMessageSizing.listMaxHeight
+    }
+
+    private var completionMessageEstimatedHeight: CGFloat {
+        CompletionMessageSizing.estimatedContentHeight(
+            text: completionMessageText,
+            width: presentation == .notification ? 524 : 500
+        )
     }
 
     private var completionDividerOpacity: Double {
@@ -1962,13 +2198,33 @@ private struct IslandSessionRow: View {
             return "$ \(preview)"
         }
 
+        if let currentTool = session.displayCurrentToolName?.trimmedForNotificationCard,
+           !currentTool.isEmpty {
+            return currentTool
+        }
+
+        if let assistantMessage = session.lastAssistantMessageText?.trimmedForNotificationCard,
+           !assistantMessage.isEmpty,
+           !Self.isPlaceholderRunningDetailText(assistantMessage) {
+            return assistantMessage
+        }
+
         if let activity = session.spotlightActivityLineText?.trimmedForNotificationCard,
-           !activity.isEmpty {
+           !activity.isEmpty,
+           !Self.isPlaceholderRunningDetailText(activity) {
             return activity
         }
 
-        let summary = session.summary.trimmedForNotificationCard
-        return summary.isEmpty ? nil : summary
+        return nil
+    }
+
+    private static func isPlaceholderRunningDetailText(_ text: String) -> Bool {
+        switch text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "thinking", "thinking.", "running", "running.", "processing", "processing.":
+            return true
+        default:
+            return false
+        }
     }
 
     private func subagentElapsed(since start: Date, at now: Date) -> String {
@@ -2110,9 +2366,7 @@ private struct IslandSessionRow: View {
         case .ignore:
             return
         case .expandDetail:
-            withAnimation(.easeInOut(duration: 0.3)) {
-                onDetailOverrideChange?(true)
-            }
+            onDetailOverrideChange?(true)
         case .jump:
             onJump()
         }
@@ -2121,9 +2375,7 @@ private struct IslandSessionRow: View {
     private func detailToggleButton(isOpen: Bool) -> some View {
         Button {
             guard isInteractive, allowsManualDetailToggle() else { return }
-            withAnimation(.easeInOut(duration: 0.3)) {
-                onDetailOverrideChange?(!isOpen)
-            }
+            onDetailOverrideChange?(!isOpen)
         } label: {
             Image(systemName: "chevron.down")
                 .font(.system(size: 10, weight: .bold))
@@ -2890,5 +3142,15 @@ private struct ArchiveButton: View {
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
         .accessibilityLabel("Archive session")
+    }
+}
+
+enum IslandSessionListIdentity {
+    static func resetID(for sections: [IslandSessionSection]) -> AnyHashable {
+        let raw = sections
+            .flatMap(\.sessions)
+            .map(\.id)
+            .joined(separator: "|")
+        return AnyHashable(raw)
     }
 }

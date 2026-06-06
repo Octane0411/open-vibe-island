@@ -34,6 +34,7 @@ final class AppModel {
     private static let jumpOverlayDismissLeadTime: Duration = .milliseconds(20)
     private static let agentsGridObservedSequenceLimit = 512
     private static let coldStartMonitoringDelay: Duration = .seconds(5)
+    private static let closedIslandSnapshotTTL: TimeInterval = 12
 
     struct AcceptanceStep: Identifiable {
         let id: String
@@ -47,11 +48,15 @@ final class AppModel {
     var state = SessionState() {
         didSet {
             _cachedSessionBuckets = nil
+            updateClosedIslandSnapshotIfAvailable()
             pruneAgentsGridObservationTicketsIfNeeded()
             bridgeServer.updateStateSnapshot(state)
         }
     }
     @ObservationIgnored private var _cachedSessionBuckets: (primary: [AgentSession], overflow: [AgentSession])?
+    @ObservationIgnored private var _lastClosedIslandSurfacedSessions: [AgentSession] = []
+    @ObservationIgnored private var _lastClosedIslandListSessions: [AgentSession] = []
+    @ObservationIgnored private var _lastClosedIslandSnapshotAt: Date?
 
     /// Monotonic ticket assigned the first time a session ID shows up in the
     /// closed-island's right-slot surfaced set. Drives the grid's display
@@ -396,6 +401,11 @@ final class AppModel {
         set { updateAppearancePreferences(for: activeAppearanceProfile) { $0.completedStaleThreshold = newValue } }
     }
 
+    var islandAnimationSpeed: IslandAnimationSpeed {
+        get { appearancePreferences(for: activeAppearanceProfile).animationSpeed }
+        set { updateAppearancePreferences(for: activeAppearanceProfile) { $0.animationSpeed = newValue } }
+    }
+
     @ObservationIgnored
     var openSettingsWindow: (() -> Void)?
 
@@ -451,6 +461,7 @@ final class AppModel {
         defaults.set(preferences.sessionListFixedCount.rawValue, forKey: Self.appearanceDefaultsKey(profile, "sessionListFixedCount"))
         defaults.set(preferences.sessionListActivityWindowMinutes, forKey: Self.appearanceDefaultsKey(profile, "sessionListActivityWindow"))
         defaults.set(preferences.completedStaleThreshold.rawValue, forKey: Self.appearanceDefaultsKey(profile, "completedStaleThreshold"))
+        defaults.set(preferences.animationSpeed.rawValue, forKey: Self.appearanceDefaultsKey(profile, "animationSpeed"))
     }
 
     // MARK: - Watch Notification
@@ -651,7 +662,11 @@ final class AppModel {
                 rawValue: defaults.string(forKey: appearanceDefaultsKey(profile, "completedStaleThreshold"))
                     ?? defaults.string(forKey: legacyCompletedStaleThresholdDefaultsKey)
                     ?? ""
-            ) ?? .fiveMinutes
+            ) ?? .fiveMinutes,
+            animationSpeed: IslandAnimationSpeed(
+                rawValue: defaults.string(forKey: appearanceDefaultsKey(profile, "animationSpeed"))
+                    ?? ""
+            ) ?? .normal
         )
     }
 
@@ -803,6 +818,9 @@ final class AppModel {
     var measuredNotificationContentHeight: CGFloat = 0 {
         didSet {
             let delta = abs(measuredNotificationContentHeight - oldValue)
+            IslandLayoutDebug.log(
+                "model measuredNotification old=\(oldValue.rounded()) new=\(measuredNotificationContentHeight.rounded()) delta=\(delta.rounded())"
+            )
             if delta >= 2, measuredNotificationContentHeight > 0 {
                 overlay.refreshOverlayPlacementIfVisible()
             }
@@ -815,6 +833,9 @@ final class AppModel {
     var measuredSessionListContentHeight: CGFloat = 0 {
         didSet {
             let delta = abs(measuredSessionListContentHeight - oldValue)
+            IslandLayoutDebug.log(
+                "model measuredSessionList old=\(oldValue.rounded()) new=\(measuredSessionListContentHeight.rounded()) delta=\(delta.rounded())"
+            )
             if delta >= 2, measuredSessionListContentHeight > 0 {
                 overlay.refreshOverlayPlacementIfVisible()
             }
@@ -837,7 +858,9 @@ final class AppModel {
         }
         guard updated != islandSessionDetailOverrides else { return }
         islandSessionDetailOverrides = updated
-        measuredSessionListContentHeight = 0
+        if notchStatus == .closed {
+            measuredSessionListContentHeight = 0
+        }
         refreshOverlayPlacementIfVisible()
     }
 
@@ -885,17 +908,11 @@ final class AppModel {
     }
 
     private var islandSessionCandidates: [AgentSession] {
-        let primary = sortIslandSessions(surfacedSessions)
+        let primary = surfacedSessions
         let primaryIDs = Set(primary.map(\.id))
         let fallback = recentSessions
             .filter { !primaryIDs.contains($0.id) }
-            .sorted { lhs, rhs in
-                if lhs.islandActivityDate == rhs.islandActivityDate {
-                    return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
-                }
-                return lhs.islandActivityDate > rhs.islandActivityDate
-            }
-        return primary + fallback
+        return sortIslandSessions(primary + fallback)
     }
 
     var recentSessionCount: Int {
@@ -917,7 +934,18 @@ final class AppModel {
     private func sortIslandSessions(_ sessions: [AgentSession]) -> [AgentSession] {
         switch islandSessionSort {
         case .attention:
-            return sessions
+            let now = Date.now
+            return sessions.sorted { lhs, rhs in
+                let lhsRank = islandListAttentionRank(for: lhs, now: now)
+                let rhsRank = islandListAttentionRank(for: rhs, now: now)
+                if lhsRank == rhsRank {
+                    if lhs.islandActivityDate == rhs.islandActivityDate {
+                        return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+                    }
+                    return lhs.islandActivityDate > rhs.islandActivityDate
+                }
+                return lhsRank > rhsRank
+            }
         case .lastUpdate:
             return sessions.sorted { lhs, rhs in
                 if lhs.islandActivityDate == rhs.islandActivityDate {
@@ -926,6 +954,14 @@ final class AppModel {
                 return lhs.islandActivityDate > rhs.islandActivityDate
             }
         }
+    }
+
+    private func islandListAttentionRank(for session: AgentSession, now: Date) -> Int {
+        if session.phase.requiresAttention { return 4 }
+        if session.phase == .running { return 3 }
+        if session.islandPresence(at: now) == .active { return 2 }
+        if !session.isStaleCompletedForIsland(at: now, threshold: completedStaleThreshold.seconds) { return 1 }
+        return 0
     }
 
     private func limitedIslandSessions(from sessions: [AgentSession]) -> [AgentSession] {
@@ -995,7 +1031,7 @@ final class AppModel {
     /// running; everything else is idle. Completed sessions are absorbed
     /// directly into idle so the pill never stops on a tick glyph.
     var islandClosedMode: UnifiedBars.Mode {
-        let sessions = surfacedSessions
+        let sessions = closedIslandSurfacedSessionsForPresentation()
         if sessions.contains(where: { $0.phase.requiresAttention }) { return .waiting }
         if sessions.contains(where: { $0.phase == .running })       { return .running }
         return .idle
@@ -1014,7 +1050,7 @@ final class AppModel {
     /// `islandCenterLabel` user preference.
     func islandClosedLabel() -> String? {
         guard islandCenterLabel != .off,
-              let session = islandClosedSpotlight else { return nil }
+              let session = islandClosedSpotlightForPresentation() else { return nil }
 
         switch islandCenterLabel {
         case .off:
@@ -1036,7 +1072,7 @@ final class AppModel {
     /// preference and current live state. Returns nil when the preference
     /// is `.none` or there's nothing meaningful to show.
     func islandClosedRightSlotContent() -> IslandRightSlotContent? {
-        let sessions = islandListSessions
+        let sessions = closedIslandListSessionsForPresentation()
         switch islandRightSlot {
         case .none:
             return nil
@@ -1068,6 +1104,43 @@ final class AppModel {
             }
             return cells.isEmpty ? nil : .agents(cells)
         }
+    }
+
+    private func updateClosedIslandSnapshotIfAvailable() {
+        let surfaced = surfacedSessions
+        let list = islandListSessions
+        guard !surfaced.isEmpty || !list.isEmpty else {
+            return
+        }
+        _lastClosedIslandSurfacedSessions = surfaced
+        _lastClosedIslandListSessions = list
+        _lastClosedIslandSnapshotAt = Date.now
+    }
+
+    private func closedIslandSurfacedSessionsForPresentation() -> [AgentSession] {
+        let current = surfacedSessions
+        guard current.isEmpty else { return current }
+        return isClosedIslandSnapshotFresh() ? _lastClosedIslandSurfacedSessions : []
+    }
+
+    private func closedIslandListSessionsForPresentation() -> [AgentSession] {
+        let current = islandListSessions
+        guard current.isEmpty else { return current }
+        return isClosedIslandSnapshotFresh() ? _lastClosedIslandListSessions : []
+    }
+
+    private func islandClosedSpotlightForPresentation() -> AgentSession? {
+        let sessions = closedIslandSurfacedSessionsForPresentation()
+        return sessions.first(where: { $0.phase.requiresAttention })
+            ?? sessions.first(where: { $0.phase == .running })
+            ?? sessions.first
+    }
+
+    private func isClosedIslandSnapshotFresh() -> Bool {
+        guard let snapshotAt = _lastClosedIslandSnapshotAt else {
+            return false
+        }
+        return Date.now.timeIntervalSince(snapshotAt) <= Self.closedIslandSnapshotTTL
     }
 
     private func stampAgentsGridObservationTickets(for sessions: [AgentSession]) {
@@ -1583,7 +1656,9 @@ final class AppModel {
 
     func dismissSession(_ sessionID: String) {
         archivedIslandSessionIDs.insert(sessionID)
-        measuredSessionListContentHeight = 0
+        if notchStatus == .closed {
+            measuredSessionListContentHeight = 0
+        }
         state.dismissSession(id: sessionID)
         dismissNotificationSurfaceIfPresent(for: sessionID)
         synchronizeSelection()

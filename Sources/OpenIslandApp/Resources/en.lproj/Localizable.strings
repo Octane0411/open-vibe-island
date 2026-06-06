@@ -64,6 +64,11 @@
 "settings.appearance.centerLabel.agentAction" = "Agent · action";
 "settings.appearance.centerLabel.sessionName" = "Session name";
 "settings.appearance.centerLabel.off" = "Off";
+"settings.appearance.animationSpeed.title" = "03 · Hover animation";
+"settings.appearance.animationSpeed.note" = "Controls how fast the island opens and collapses on hover.";
+"settings.appearance.animationSpeed.fast" = "Fast";
+"settings.appearance.animationSpeed.normal" = "Balanced";
+"settings.appearance.animationSpeed.slow" = "Slow";
 "settings.appearance.notchPart.title" = "Notch";
 "settings.appearance.sessionListPart.title" = "Session list";
 "settings.appearance.sessionPreview" = "Preview";

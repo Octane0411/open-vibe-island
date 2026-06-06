@@ -64,6 +64,26 @@ struct IslandAppearancePreferences: Equatable, Sendable {
     var sessionListFixedCount: IslandSessionListFixedCount = .three
     var sessionListActivityWindowMinutes: Int = 60
     var completedStaleThreshold: IslandCompletedStaleThreshold = .fiveMinutes
+    var animationSpeed: IslandAnimationSpeed = .normal
+}
+
+enum IslandAnimationSpeed: String, CaseIterable, Identifiable, Sendable {
+    case fast
+    case normal
+    case slow
+
+    var id: String { rawValue }
+
+    var durationMultiplier: TimeInterval {
+        switch self {
+        case .fast:
+            return 0.82
+        case .normal:
+            return 1.0
+        case .slow:
+            return 1.25
+        }
+    }
 }
 
 enum IslandUsageDisplay: String, CaseIterable, Identifiable, Sendable {

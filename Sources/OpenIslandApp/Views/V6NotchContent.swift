@@ -48,7 +48,7 @@ struct V6RightSlotView: View {
     /// padded beyond the raw text measurement so the pill always reserves
     /// enough room for the `.fixedSize()` content to render on one line,
     /// without HStack compression forcing a wrap.
-    static func intrinsicWidth(of content: IslandRightSlotContent) -> CGFloat {
+    nonisolated static func intrinsicWidth(of content: IslandRightSlotContent) -> CGFloat {
         switch content {
         case .count(let n):
             let digits = Double(max(1, String(n).count))
@@ -71,7 +71,7 @@ struct V6RightSlotView: View {
     // For n >= 10 the AppModel caps the list at 7 sessions + 1 overflow cell,
     // which lays out as [4,4] — so balancedRows(8) is what actually renders
     // for all high-count cases in production.
-    static func balancedRows(_ n: Int) -> [Int] {
+    nonisolated static func balancedRows(_ n: Int) -> [Int] {
         switch n {
         case ..<1: return []
         case 1: return [1]
@@ -89,7 +89,7 @@ struct V6RightSlotView: View {
 
     /// Cell size shrinks when the matrix has 3 rows so total height still
     /// fits inside the pill's internal vertical budget (~20pt).
-    static func cellGeometry(rowCount: Int) -> (cell: CGFloat, gap: CGFloat, radius: CGFloat) {
+    nonisolated static func cellGeometry(rowCount: Int) -> (cell: CGFloat, gap: CGFloat, radius: CGFloat) {
         if rowCount >= 3 { return (cell: 6, gap: 1.5, radius: 1.0) }
         return (cell: 8, gap: 2, radius: 1.5)
     }
@@ -198,7 +198,7 @@ struct V6CenterLabelView: View {
             .foregroundStyle(V6Palette.paper)
     }
 
-    static func intrinsicWidth(of text: String) -> CGFloat {
+    nonisolated static func intrinsicWidth(of text: String) -> CGFloat {
         CGFloat(Double(text.count) * 7.3 + 10)
     }
 }
@@ -214,6 +214,9 @@ struct V6ClosedPill: View {
     var rightSlot: IslandRightSlotContent?
     var layout: V6ClosedLayout
     var height: CGFloat = 32
+    var contentOpacity: Double = 1
+    var drawsBackground: Bool = true
+    var outerWidthOverride: CGFloat?
 
     /// MacBook mode only — width of the physical notch cutout to wrap.
     var physicalNotchWidth: CGFloat = 0
@@ -242,17 +245,21 @@ struct V6ClosedPill: View {
 
     private var externalBody: some View {
         let glyphW: CGFloat = 24
-        let labelW = label.map { V6CenterLabelView.intrinsicWidth(of: $0) } ?? 0
-        let rightW = rightSlot.map { V6RightSlotView.intrinsicWidth(of: $0) } ?? 0
-
-        let labelBlock = (label == nil ? 0 : 6 + labelW)
-        let rightBlock = (rightSlot == nil ? 0 : Self.innerGap + rightW)
-        let intrinsic = pad * 2 + glyphW + labelBlock + rightBlock
-        let width = max(minWidth, intrinsic)
+        let width = V6ClosedPillGeometry.outerWidth(
+            layout: layout,
+            height: height,
+            label: label,
+            rightSlot: rightSlot,
+            physicalNotchWidth: physicalNotchWidth,
+            minWidth: minWidth,
+            outerWidthOverride: outerWidthOverride
+        )
 
         return ZStack {
-            V6ClosedPillShape()
-                .fill(Color.black)
+            if drawsBackground {
+                V6ClosedPillShape()
+                    .fill(Color.black)
+            }
 
             HStack(spacing: 0) {
                 UnifiedBars(mode: mode, size: 24)
@@ -271,6 +278,7 @@ struct V6ClosedPill: View {
                         .transition(.opacity.combined(with: .move(edge: .trailing)))
                 }
             }
+            .opacity(contentOpacity)
             .padding(.horizontal, pad)
         }
         .frame(width: width, height: height)
@@ -287,12 +295,21 @@ struct V6ClosedPill: View {
     // MARK: MacBook (outer width locked)
 
     private var macbookBody: some View {
-        let halfReserve: CGFloat = 44
-        let outer = halfReserve + physicalNotchWidth + halfReserve
+        let outer = V6ClosedPillGeometry.outerWidth(
+            layout: layout,
+            height: height,
+            label: label,
+            rightSlot: rightSlot,
+            physicalNotchWidth: physicalNotchWidth,
+            minWidth: minWidth,
+            outerWidthOverride: outerWidthOverride
+        )
 
         return ZStack {
-            V6ClosedPillShape()
-                .fill(Color.black)
+            if drawsBackground {
+                V6ClosedPillShape()
+                    .fill(Color.black)
+            }
 
             HStack(spacing: 0) {
                 UnifiedBars(mode: mode, size: 24)
@@ -304,6 +321,7 @@ struct V6ClosedPill: View {
                     V6RightSlotView(content: rightSlot)
                 }
             }
+            .opacity(contentOpacity)
             .padding(.horizontal, pad)
         }
         .frame(width: outer, height: height)
@@ -313,6 +331,35 @@ struct V6ClosedPill: View {
 enum V6ClosedLayout: Equatable {
     case external
     case macbook
+}
+
+enum V6ClosedPillGeometry {
+    static func outerWidth(
+        layout: V6ClosedLayout,
+        height: CGFloat,
+        label: String?,
+        rightSlot: IslandRightSlotContent?,
+        physicalNotchWidth: CGFloat,
+        minWidth: CGFloat,
+        outerWidthOverride: CGFloat?
+    ) -> CGFloat {
+        if let outerWidthOverride {
+            return max(0, outerWidthOverride)
+        }
+
+        switch layout {
+        case .macbook:
+            return 44 + physicalNotchWidth + 44
+        case .external:
+            let pad = height / 2
+            let glyphW: CGFloat = 24
+            let labelW = label.map { V6CenterLabelView.intrinsicWidth(of: $0) } ?? 0
+            let rightW = rightSlot.map { V6RightSlotView.intrinsicWidth(of: $0) } ?? 0
+            let labelBlock = label == nil ? 0 : 6 + labelW
+            let rightBlock = rightSlot == nil ? 0 : 6 + rightW
+            return max(minWidth, pad * 2 + glyphW + labelBlock + rightBlock)
+        }
+    }
 }
 
 private enum RightSlotKey: Hashable {

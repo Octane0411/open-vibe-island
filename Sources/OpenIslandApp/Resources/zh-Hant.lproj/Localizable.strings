@@ -64,6 +64,11 @@
 "settings.appearance.centerLabel.agentAction" = "代理 · 動作";
 "settings.appearance.centerLabel.sessionName" = "會話名";
 "settings.appearance.centerLabel.off" = "關閉";
+"settings.appearance.animationSpeed.title" = "03 · 懸停動畫";
+"settings.appearance.animationSpeed.note" = "控制 hover 展開和收起的速度。";
+"settings.appearance.animationSpeed.fast" = "快速";
+"settings.appearance.animationSpeed.normal" = "均衡";
+"settings.appearance.animationSpeed.slow" = "慢速";
 "settings.appearance.notchPart.title" = "凹槽";
 "settings.appearance.sessionListPart.title" = "會話列表";
 "settings.appearance.sessionPreview" = "預覽";

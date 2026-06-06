@@ -64,6 +64,11 @@
 "settings.appearance.centerLabel.agentAction" = "代理 · 动作";
 "settings.appearance.centerLabel.sessionName" = "会话名";
 "settings.appearance.centerLabel.off" = "关闭";
+"settings.appearance.animationSpeed.title" = "03 · 悬停动画";
+"settings.appearance.animationSpeed.note" = "控制 hover 展开和收起的速度。";
+"settings.appearance.animationSpeed.fast" = "快速";
+"settings.appearance.animationSpeed.normal" = "均衡";
+"settings.appearance.animationSpeed.slow" = "慢速";
 "settings.appearance.notchPart.title" = "刘海";
 "settings.appearance.sessionListPart.title" = "会话列表";
 "settings.appearance.sessionPreview" = "预览";

@@ -170,7 +170,9 @@ final class OverlayUICoordinator {
         // measurements from a previous notification don't mis-size the new one.
         if surface != islandSurface {
             appModel?.measuredNotificationContentHeight = 0
-            appModel?.measuredSessionListContentHeight = 0
+            if status == .closed {
+                appModel?.measuredSessionListContentHeight = 0
+            }
         }
 
         islandSurface = surface

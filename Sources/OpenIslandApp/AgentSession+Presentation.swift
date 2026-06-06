@@ -266,7 +266,7 @@ extension AgentSession {
             if let activity = spotlightRunningActivityText {
                 return activity
             }
-            return spotlightPromptLineText == nil ? "Running" : "Thinking"
+            return nil
         case .waitingForApproval:
             return permissionRequest?.summary.trimmedForSurface ?? "Approval needed"
         case .waitingForAnswer:
@@ -362,7 +362,12 @@ extension AgentSession {
     private var spotlightRunningActivityText: String? {
         guard let currentTool = currentToolName?.trimmedForSurface,
               !currentTool.isEmpty else {
-            return nil
+            guard let assistantMessage = lastAssistantMessageText?.trimmedForSurface,
+                  !assistantMessage.isEmpty,
+                  !Self.isPlaceholderRunningActivityText(assistantMessage) else {
+                return nil
+            }
+            return assistantMessage
         }
 
         let label = Self.currentToolDisplayName(for: currentTool)
@@ -372,6 +377,15 @@ extension AgentSession {
         }
 
         return "\(label) \(preview)"
+    }
+
+    private static func isPlaceholderRunningActivityText(_ text: String) -> Bool {
+        switch text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "thinking", "thinking.", "running", "running.", "processing", "processing.":
+            return true
+        default:
+            return false
+        }
     }
 
     var displayCurrentToolName: String? {

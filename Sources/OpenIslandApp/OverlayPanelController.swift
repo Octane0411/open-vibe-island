@@ -5,15 +5,34 @@ import SwiftUI
 import OpenIslandCore
 
 enum IslandAnimationPolicy {
-    static let panelFrameDuration: TimeInterval = 0.80
-    static let panelFrameCloseDuration: TimeInterval = 1.10
+    enum FrameAnimationDriver {
+        case nativePanelAnimator
+    }
+
+    static let frameAnimationDriver: FrameAnimationDriver = .nativePanelAnimator
+    static let panelFrameBaseDuration: TimeInterval = 0.55
+    static let panelFrameBaseCloseDuration: TimeInterval = 0.75
     static let panelFrameTimingControlPoints: (Float, Float, Float, Float) = (0.2, 0.8, 0.2, 1.0)
     static let hoverOpenDelay: TimeInterval = 0.20
     static let hoverCooldownDuration: TimeInterval = 0.18
     static let hoverSurfaceAutoCollapseDelay: TimeInterval = 0.18
+    static let openingHeightLeadDuration: TimeInterval = 0.14
+    static let openedContentMinimumRevealDelay: TimeInterval = 0.16
+    static let openedContentRevealProgress: Double = 0.58
 
-    static func panelFrameDuration(isClosing: Bool) -> TimeInterval {
-        isClosing ? panelFrameCloseDuration : panelFrameDuration
+    static func panelFrameDuration(
+        isClosing: Bool,
+        speed: IslandAnimationSpeed = .normal
+    ) -> TimeInterval {
+        let baseDuration = isClosing ? panelFrameBaseCloseDuration : panelFrameBaseDuration
+        return baseDuration * speed.durationMultiplier
+    }
+
+    static func openedContentRevealDelay(speed: IslandAnimationSpeed = .normal) -> TimeInterval {
+        max(
+            openedContentMinimumRevealDelay,
+            panelFrameDuration(isClosing: false, speed: speed) * openedContentRevealProgress
+        )
     }
 
     static func canScheduleHoverOpen(now: Date = .now, cooldownUntil: Date) -> Bool {
@@ -175,7 +194,7 @@ final class OverlayPanelController {
 
         let hostingView = NotchHostingView(rootView: IslandPanelView(model: model))
         hostingView.notchController = self
-        panel.contentView = hostingView
+        panel.contentView = NotchContentContainerView(hostingView: hostingView)
 
         computeNotchRect(screen: resolveTargetScreen())
         return panel
@@ -195,16 +214,21 @@ final class OverlayPanelController {
 
         let windowFrame = panelFrame(for: model, on: screen)
 
+        IslandLayoutDebug.log(
+            "panel position animated=\(animated) visible=\(panel.isVisible) status=\(String(describing: model?.notchStatus)) reason=\(String(describing: model?.notchOpenReason)) surface=\(String(describing: model?.islandSurface)) oldFrame=\(Self.describe(panel.frame)) targetFrame=\(Self.describe(windowFrame)) measuredList=\((model?.measuredSessionListContentHeight ?? 0).rounded()) measuredNotification=\((model?.measuredNotificationContentHeight ?? 0).rounded())"
+        )
+
         if panel.frame != windowFrame {
             if animated, panel.isVisible {
-                NSAnimationContext.runAnimationGroup { context in
-                    let isClosing = windowFrame.height < panel.frame.height
-                        || windowFrame.width < panel.frame.width
-                    context.duration = IslandAnimationPolicy.panelFrameDuration(isClosing: isClosing)
-                    context.timingFunction = IslandAnimationPolicy.panelFrameTimingFunction
-                    panel.animator().setFrame(windowFrame, display: true)
+                let isClosing = windowFrame.height < panel.frame.height
+                    || windowFrame.width < panel.frame.width
+                if isClosing {
+                    animateFrame(panel: panel, to: windowFrame, kind: .closing)
+                } else {
+                    animateFrame(panel: panel, to: windowFrame, kind: .opening)
                 }
             } else {
+                cancelFrameAnimation()
                 panel.setFrame(windowFrame, display: true)
             }
         }
@@ -214,6 +238,80 @@ final class OverlayPanelController {
             preferredScreenID: preferredScreenID,
             panelSize: panel.frame.size
         )
+    }
+
+    nonisolated private static func describe(_ rect: NSRect) -> String {
+        "x=\(rect.origin.x.rounded()) y=\(rect.origin.y.rounded()) w=\(rect.size.width.rounded()) h=\(rect.size.height.rounded())"
+    }
+
+    private enum FrameAnimationKind {
+        case opening
+        case closing
+    }
+
+    private func animateFrame(panel: NSPanel, to targetFrame: NSRect, kind: FrameAnimationKind) {
+        let duration = IslandAnimationPolicy.panelFrameDuration(
+            isClosing: kind == .closing,
+            speed: model?.islandAnimationSpeed ?? .normal
+        )
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            context.timingFunction = IslandAnimationPolicy.panelFrameTimingFunction
+            panel.animator().setFrame(targetFrame, display: true)
+        }
+    }
+
+    private func cancelFrameAnimation() {
+    }
+
+    nonisolated static func interpolatedOpeningFrame(
+        from startFrame: CGRect,
+        to targetFrame: CGRect,
+        progress rawProgress: Double
+    ) -> CGRect {
+        let progress = min(1, max(0, rawProgress))
+        let widthProgress = smoothStep(progress)
+        let heightLeadRatio = max(
+            0.01,
+            IslandAnimationPolicy.openingHeightLeadDuration / IslandAnimationPolicy.panelFrameBaseDuration
+        )
+        let heightProgress = min(1, progress / heightLeadRatio)
+
+        let width = startFrame.width + (targetFrame.width - startFrame.width) * widthProgress
+        let height = startFrame.height + (targetFrame.height - startFrame.height) * heightProgress
+        let midX = startFrame.midX + (targetFrame.midX - startFrame.midX) * widthProgress
+        let topY = startFrame.maxY + (targetFrame.maxY - startFrame.maxY) * heightProgress
+
+        return CGRect(
+            x: midX - (width / 2),
+            y: topY - height,
+            width: width,
+            height: height
+        )
+    }
+
+    nonisolated static func interpolatedClosingFrame(
+        from startFrame: CGRect,
+        to targetFrame: CGRect,
+        progress rawProgress: Double
+    ) -> CGRect {
+        let progress = smoothStep(rawProgress)
+        let width = startFrame.width + (targetFrame.width - startFrame.width) * progress
+        let height = startFrame.height + (targetFrame.height - startFrame.height) * progress
+        let midX = startFrame.midX + (targetFrame.midX - startFrame.midX) * progress
+        let topY = startFrame.maxY + (targetFrame.maxY - startFrame.maxY) * progress
+
+        return CGRect(
+            x: midX - (width / 2),
+            y: topY - height,
+            width: width,
+            height: height
+        )
+    }
+
+    nonisolated private static func smoothStep(_ progress: Double) -> CGFloat {
+        let t = min(1, max(0, progress))
+        return CGFloat(t * t * (3 - 2 * t))
     }
 
     private func presentPanel(_ panel: NSPanel, activates: Bool) {
@@ -603,16 +701,12 @@ final class OverlayPanelController {
                 estimatedHeight = 300
             }
 
-            // Measured notification heights can be too small on the first
-            // clipped layout pass. Keep the estimate as a lower bound so
-            // completion text is not cut in half.
-            if model.measuredNotificationContentHeight > 0 {
-                return max(
-                    model.measuredNotificationContentHeight + Self.notificationMeasuredContentPadding,
-                    estimatedHeight
-                )
-            }
-            return estimatedHeight
+            return Self.openedNotificationContentHeight(
+                estimatedContentHeight: estimatedHeight,
+                measuredContentHeight: model.measuredNotificationContentHeight,
+                measuredContentPadding: Self.notificationMeasuredContentPadding,
+                maxContentHeight: Self.maxOpenedSessionListContentHeight(on: screen)
+            )
         }
 
         let estimatedContentHeight = estimatedSessionListContentHeight(
@@ -646,6 +740,19 @@ final class OverlayPanelController {
         }
 
         return min(cappedMeasured, cappedEstimate)
+    }
+
+    nonisolated static func openedNotificationContentHeight(
+        estimatedContentHeight: CGFloat,
+        measuredContentHeight: CGFloat,
+        measuredContentPadding: CGFloat,
+        maxContentHeight: CGFloat
+    ) -> CGFloat {
+        guard measuredContentHeight > 0 else {
+            return min(estimatedContentHeight, maxContentHeight)
+        }
+
+        return min(measuredContentHeight + measuredContentPadding, maxContentHeight)
     }
 
     private func estimatedSessionListContentHeight(
@@ -855,6 +962,26 @@ private final class NotchPanel: NSPanel {
 
 // MARK: - NotchHostingView
 
+final class NotchContentContainerView: NSView {
+    init<Content: View>(hostingView: NotchHostingView<Content>) {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        hostingView.frame = bounds
+        hostingView.autoresizingMask = [.width, .height]
+        addSubview(hostingView)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var isOpaque: Bool {
+        false
+    }
+}
+
 final class NotchHostingView<Content: View>: NSHostingView<Content> {
     weak var notchController: OverlayPanelController?
 
@@ -877,6 +1004,7 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
 
     required init(rootView: Content) {
         super.init(rootView: rootView)
+        configureWindowSizing()
         configureTransparency()
     }
 
@@ -907,7 +1035,14 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        configureWindowSizing()
         configureTransparency()
+    }
+
+    private func configureWindowSizing() {
+        sizingOptions = []
+        translatesAutoresizingMaskIntoConstraints = true
+        autoresizingMask = [.width, .height]
     }
 
     private func configureTransparency() {

@@ -267,7 +267,7 @@ struct AgentSessionPresentationTests {
     }
 
     @Test
-    func runningCodexSessionWithoutToolShowsThinkingBesidePrompt() {
+    func runningCodexSessionWithoutToolDoesNotInventThinkingActivity() {
         let session = AgentSession(
             id: "session-1",
             title: "Codex · worktree",
@@ -283,7 +283,28 @@ struct AgentSessionPresentationTests {
         )
 
         #expect(session.spotlightPromptLineText == "You: Align the Codex statuses.")
-        #expect(session.spotlightActivityLineText == "Thinking")
+        #expect(session.spotlightActivityLineText == nil)
+        #expect(session.displayCurrentToolName == nil)
+    }
+
+    @Test
+    func runningCodexSessionWithoutToolShowsLatestAssistantOutput() {
+        let session = AgentSession(
+            id: "session-1",
+            title: "Codex · worktree",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Thinking.",
+            updatedAt: Date(timeIntervalSince1970: 10_000),
+            codexMetadata: CodexSessionMetadata(
+                lastUserPrompt: "Align the Codex statuses.",
+                lastAssistantMessage: "正在读取 Codex 事件日志。"
+            )
+        )
+
+        #expect(session.spotlightActivityLineText == "正在读取 Codex 事件日志。")
         #expect(session.displayCurrentToolName == nil)
     }
 

@@ -15,6 +15,7 @@ struct AppModelSessionListTests {
             "appearance.island.v8.sessionListFixedCount",
             "appearance.island.v8.sessionListActivityWindow",
             "appearance.island.v8.completedStaleThreshold",
+            "appearance.island.v8.animationSpeed",
             "appearance.island.v8.notch.rightSlot",
             "appearance.island.v8.notch.centerLabel",
             "appearance.island.v8.notch.stateIndicator",
@@ -24,6 +25,7 @@ struct AppModelSessionListTests {
             "appearance.island.v8.notch.sessionListFixedCount",
             "appearance.island.v8.notch.sessionListActivityWindow",
             "appearance.island.v8.notch.completedStaleThreshold",
+            "appearance.island.v8.notch.animationSpeed",
             "appearance.island.v8.topBar.rightSlot",
             "appearance.island.v8.topBar.centerLabel",
             "appearance.island.v8.topBar.stateIndicator",
@@ -33,6 +35,7 @@ struct AppModelSessionListTests {
             "appearance.island.v8.topBar.sessionListFixedCount",
             "appearance.island.v8.topBar.sessionListActivityWindow",
             "appearance.island.v8.topBar.completedStaleThreshold",
+            "appearance.island.v8.topBar.animationSpeed",
             "app.suppressFrontmostNotifications",
             "feature.completionReply.enabled",
             "overlay.sound.muted",
@@ -414,6 +417,40 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func recentWaitingFallbackSortsAheadOfOlderPrimaryIdleSessions() {
+        let now = Date()
+        let model = AppModel()
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+
+        var olderPrimary1 = listSession(
+            id: "older-primary-1",
+            phase: .completed,
+            updatedAt: now.addingTimeInterval(-50 * 60)
+        )
+        var olderPrimary2 = listSession(
+            id: "older-primary-2",
+            phase: .completed,
+            updatedAt: now.addingTimeInterval(-55 * 60)
+        )
+        let recentFallback = listSession(
+            id: "recent-fallback",
+            phase: .completed,
+            updatedAt: now.addingTimeInterval(-60)
+        )
+        olderPrimary1.isProcessAlive = true
+        olderPrimary2.isProcessAlive = true
+
+        model.state = SessionState(sessions: [olderPrimary1, olderPrimary2, recentFallback])
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+
+        #expect(model.islandListSessions.map(\.id) == [
+            "recent-fallback",
+            "older-primary-1",
+            "older-primary-2",
+        ])
+    }
+
+    @Test
     func runningSessionRowHeightEstimateRespectsExplicitCollapse() {
         let now = Date(timeIntervalSince1970: 2_000)
         var session = listSession(id: "running-session", phase: .running, updatedAt: now)
@@ -430,7 +467,32 @@ struct AppModelSessionListTests {
 
         #expect(collapsedHeight < expandedHeight)
         #expect(collapsedHeight == 50)
-        #expect(expandedHeight >= 100)
+        #expect(expandedHeight == 97)
+    }
+
+    @Test
+    func runningSessionRowHeightEstimateDoesNotGrowWithLongEventText() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        var shortEvent = listSession(id: "short-running-session", phase: .running, updatedAt: now)
+        shortEvent.codexMetadata = CodexSessionMetadata(
+            initialUserPrompt: "Keep the row stable",
+            lastUserPrompt: "Keep the row stable",
+            lastAssistantMessage: "Done"
+        )
+
+        var longEvent = listSession(id: "long-running-session", phase: .running, updatedAt: now)
+        longEvent.codexMetadata = CodexSessionMetadata(
+            initialUserPrompt: "Keep the row stable",
+            lastUserPrompt: "Keep the row stable",
+            lastAssistantMessage: """
+            这是一段很长的事件输出，里面包含多行内容。
+            如果按真实文本高度估算，列表行会不断变高。
+            这里应该只显示一行并保持固定高度。
+            """
+        )
+
+        #expect(shortEvent.estimatedIslandRowHeight(at: now) == 97)
+        #expect(longEvent.estimatedIslandRowHeight(at: now) == shortEvent.estimatedIslandRowHeight(at: now))
     }
 
     @Test
@@ -466,6 +528,27 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func sessionListResetIdentityIgnoresPhaseAndDetailChanges() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let running = listSession(id: "session-1", phase: .running, updatedAt: now)
+        let completed = listSession(id: "session-1", phase: .completed, updatedAt: now)
+        let other = listSession(id: "session-2", phase: .running, updatedAt: now)
+
+        let runningSections = [
+            IslandSessionSection(id: "all", title: "Sessions", sessions: [running]),
+        ]
+        let completedSections = [
+            IslandSessionSection(id: "all", title: "Sessions", sessions: [completed]),
+        ]
+        let extraSections = [
+            IslandSessionSection(id: "all", title: "Sessions", sessions: [running, other]),
+        ]
+
+        #expect(IslandSessionListIdentity.resetID(for: runningSections) == IslandSessionListIdentity.resetID(for: completedSections))
+        #expect(IslandSessionListIdentity.resetID(for: runningSections) != IslandSessionListIdentity.resetID(for: extraSections))
+    }
+
+    @Test
     func autoHeightSizingShrinksWhenEstimatedContentGetsSmaller() {
         #expect(AutoHeightScrollViewSizing.effectiveContentHeight(
             measured: 0,
@@ -477,23 +560,48 @@ struct AppModelSessionListTests {
             estimate: 420
         ) == 260)
 
+        #expect(AutoHeightScrollViewSizing.effectiveContentHeight(
+            measured: 620,
+            estimate: 320
+        ) == 320)
+
         #expect(!AutoHeightScrollViewSizing.isScrollable(contentHeight: 260, maxHeight: 420))
         #expect(AutoHeightScrollViewSizing.isScrollable(contentHeight: 421, maxHeight: 420))
 
-        #expect(AutoHeightScrollViewSizing.contentHeightAfterEstimateChange(
-            current: 476,
-            estimate: 280
-        ) == 280)
+        #expect(!AutoHeightScrollViewSizing.usesScrollableContainer(
+            measured: 620,
+            estimate: 320,
+            maxHeight: 420
+        ))
 
-        #expect(AutoHeightScrollViewSizing.contentHeightAfterEstimateChange(
-            current: 240,
-            estimate: 320
-        ) == 240)
+        #expect(!AutoHeightScrollViewSizing.usesScrollableContainer(
+            measured: 320,
+            estimate: 620,
+            maxHeight: 420
+        ))
 
-        #expect(AutoHeightScrollViewSizing.contentHeightAfterEstimateChange(
-            current: 240,
+        #expect(AutoHeightScrollViewSizing.effectiveContentHeight(
+            measured: 0,
             estimate: 0
-        ) == 240)
+        ) == 0)
+    }
+
+    @Test
+    func longCompletionMessageUsesScrollableContainerFromFirstLayoutPass() {
+        let longMessage = Array(repeating: "这是一段较长的完成消息，需要在通知卡片里滚动，而不是被面板底部裁掉。", count: 24)
+            .joined(separator: "\n")
+
+        let estimatedHeight = CompletionMessageSizing.estimatedContentHeight(
+            text: longMessage,
+            width: 524
+        )
+
+        #expect(estimatedHeight > CompletionMessageSizing.notificationMaxHeight)
+        #expect(AutoHeightScrollViewSizing.usesScrollableContainer(
+            measured: 0,
+            estimate: estimatedHeight,
+            maxHeight: CompletionMessageSizing.notificationMaxHeight
+        ))
     }
 
     @Test
@@ -537,6 +645,34 @@ struct AppModelSessionListTests {
             return
         }
         #expect(count == 6)
+    }
+
+    @Test
+    func closedIslandKeepsLastNonEmptySnapshotAcrossTransientEmptyRefresh() {
+        let now = Date()
+        let model = AppModel()
+        model.islandRightSlot = .count
+
+        model.state = SessionState(sessions: [
+            makeVisibleSession(id: "running-1", updatedAt: now),
+            makeVisibleSession(id: "running-2", updatedAt: now.addingTimeInterval(-60)),
+        ])
+
+        #expect(model.islandClosedMode == .running)
+        guard case let .count(initialCount)? = model.islandClosedRightSlotContent() else {
+            Issue.record("Expected initial count right-slot content")
+            return
+        }
+        #expect(initialCount == 2)
+
+        model.state = SessionState(sessions: [])
+
+        #expect(model.islandClosedMode == .running)
+        guard case let .count(snapshotCount)? = model.islandClosedRightSlotContent() else {
+            Issue.record("Expected cached count right-slot content")
+            return
+        }
+        #expect(snapshotCount == 2)
     }
 
     @Test
@@ -653,6 +789,7 @@ struct AppModelSessionListTests {
             $0.sessionStateIndicator = .bar
             $0.sessionListActivityWindowMinutes = 120
             $0.completedStaleThreshold = .twoMinutes
+            $0.animationSpeed = .fast
         }
         model.updateAppearancePreferences(for: .topBar) {
             $0.usageDisplay = .compact
@@ -660,6 +797,7 @@ struct AppModelSessionListTests {
             $0.sessionStateIndicator = .tint
             $0.sessionListActivityWindowMinutes = 30
             $0.completedStaleThreshold = .never
+            $0.animationSpeed = .slow
         }
 
         model.overlayPlacementDiagnostics = placementDiagnostics(mode: .notch)
@@ -668,6 +806,7 @@ struct AppModelSessionListTests {
         #expect(model.islandSessionStateIndicator == .bar)
         #expect(model.islandSessionListActivityWindowMinutes == 120)
         #expect(model.completedStaleThreshold == .twoMinutes)
+        #expect(model.islandAnimationSpeed == .fast)
 
         model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
         #expect(model.islandUsageDisplay == .compact)
@@ -675,6 +814,7 @@ struct AppModelSessionListTests {
         #expect(model.islandSessionStateIndicator == .tint)
         #expect(model.islandSessionListActivityWindowMinutes == 30)
         #expect(model.completedStaleThreshold == .never)
+        #expect(model.islandAnimationSpeed == .slow)
 
         let reloaded = AppModel()
         reloaded.overlayPlacementDiagnostics = placementDiagnostics(mode: .notch)
@@ -682,12 +822,14 @@ struct AppModelSessionListTests {
         #expect(reloaded.islandSessionGroup == .state)
         #expect(reloaded.islandSessionStateIndicator == .bar)
         #expect(reloaded.islandSessionListActivityWindowMinutes == 120)
+        #expect(reloaded.islandAnimationSpeed == .fast)
         reloaded.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
         #expect(reloaded.islandUsageDisplay == .compact)
         #expect(reloaded.islandSessionGroup == .project)
         #expect(reloaded.islandSessionStateIndicator == .tint)
         #expect(reloaded.islandSessionListActivityWindowMinutes == 30)
         #expect(reloaded.completedStaleThreshold == .never)
+        #expect(reloaded.islandAnimationSpeed == .slow)
     }
 
     @Test

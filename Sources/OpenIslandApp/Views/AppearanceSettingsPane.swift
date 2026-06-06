@@ -126,6 +126,7 @@ struct AppearanceSettingsPane: View {
             previewSection
             rightSlotSection
             centerLabelSection
+            animationSpeedSection
         }
     }
 
@@ -367,6 +368,31 @@ struct AppearanceSettingsPane: View {
             )
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - 03 · Hover animation
+
+    @ViewBuilder
+    private var animationSpeedSection: some View {
+        sectionHeader(
+            title: lang.t("settings.appearance.animationSpeed.title"),
+            note: lang.t("settings.appearance.animationSpeed.note")
+        )
+
+        HStack(spacing: 12) {
+            ForEach(IslandAnimationSpeed.allCases) { option in
+                optionCard(
+                    selected: editingPreferences.animationSpeed == option,
+                    title: title(for: option)
+                ) {
+                    model.updateAppearancePreferences(for: editingProfile) { $0.animationSpeed = option }
+                } icon: {
+                    Text(animationSpeedIconText(for: option))
+                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(V6Palette.paper.opacity(0.9))
+                }
+            }
+        }
     }
 
     // MARK: - 02 · Usage
@@ -744,6 +770,22 @@ struct AppearanceSettingsPane: View {
         case .tenMinutes:    lang.t("settings.appearance.staleThreshold.tenMinutes")
         case .twentyMinutes: lang.t("settings.appearance.staleThreshold.twentyMinutes")
         case .never:         lang.t("settings.appearance.staleThreshold.never")
+        }
+    }
+
+    private func title(for option: IslandAnimationSpeed) -> String {
+        switch option {
+        case .fast:   lang.t("settings.appearance.animationSpeed.fast")
+        case .normal: lang.t("settings.appearance.animationSpeed.normal")
+        case .slow:   lang.t("settings.appearance.animationSpeed.slow")
+        }
+    }
+
+    private func animationSpeedIconText(for option: IslandAnimationSpeed) -> String {
+        switch option {
+        case .fast:   "0.45s"
+        case .normal: "0.55s"
+        case .slow:   "0.69s"
         }
     }
 
