@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import OpenIslandCore
 
@@ -329,6 +330,505 @@ struct V6ClosedPill: View {
 enum V6ClosedLayout: Equatable {
     case external
     case macbook
+}
+
+// MARK: - Music track notification (closed)
+
+struct MusicNotificationClipMetrics: Equatable {
+    var width: CGFloat = 0
+    var leftWingWidth: CGFloat = 0
+}
+
+enum MusicNotificationClipMetricsKey: PreferenceKey {
+    static let defaultValue = MusicNotificationClipMetrics()
+    static func reduce(value: inout MusicNotificationClipMetrics, nextValue: () -> MusicNotificationClipMetrics) {
+        let next = nextValue()
+        if next.width > 0 {
+            value = next
+        }
+    }
+}
+
+// MARK: - Music notification marquee text
+
+private struct MusicNotificationMarqueeText: View {
+    let text: String
+    let font: Font
+    let nsFont: NSFont
+    let foregroundStyle: Color
+    let lineHeight: CGFloat
+    let maxWidth: CGFloat
+
+    private var intrinsicWidth: CGFloat {
+        guard !text.isEmpty else { return 0 }
+        return ceil((text as NSString).size(withAttributes: [.font: nsFont]).width)
+    }
+
+    private var shouldScroll: Bool {
+        maxWidth > 0 && intrinsicWidth > maxWidth + 1
+    }
+
+    var body: some View {
+        Group {
+            if shouldScroll {
+                scrollingLabel
+            } else {
+                label
+                    .frame(maxWidth: max(maxWidth, 0), alignment: .leading)
+            }
+        }
+        .frame(width: max(maxWidth, 0), height: lineHeight, alignment: .leading)
+        .clipped()
+    }
+
+    private var scrollingLabel: some View {
+        TimelineView(.animation) { timeline in
+            let gap: CGFloat = 20
+            let overflow = intrinsicWidth - maxWidth
+            let travel = overflow + gap
+            let speed: CGFloat = 30
+            let pause: Double = 1.1
+            let scrollDuration = max(0.8, Double(travel / speed))
+            let cycle = (pause + scrollDuration) * 2
+            let t = timeline.date.timeIntervalSinceReferenceDate
+                .truncatingRemainder(dividingBy: cycle)
+            let offset: CGFloat = {
+                if t < pause { return 0 }
+                if t < pause + scrollDuration {
+                    let progress = (t - pause) / scrollDuration
+                    return -CGFloat(progress) * travel
+                }
+                if t < pause + scrollDuration + pause {
+                    return -travel
+                }
+                let progress = (t - pause - scrollDuration - pause) / scrollDuration
+                return -travel + CGFloat(progress) * travel
+            }()
+
+            HStack(spacing: gap) {
+                label
+                label
+            }
+            .offset(x: offset)
+        }
+    }
+
+    private var label: some View {
+        Text(text)
+            .font(font)
+            .foregroundStyle(foregroundStyle)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+    }
+}
+
+enum MusicTrackNotificationMetrics {
+    static let albumArtWidth: CGFloat = V6ClosedMusicSurfaceMetrics.albumArtSize
+    static let minimumTextWidth: CGFloat = 48
+    static let maximumTextWidth: CGFloat = 300
+    static let measurementFudge: CGFloat = 14
+
+    static func estimatedOuterWidth(
+        for layout: V6ClosedLayout,
+        track: PlayerTrack,
+        physicalNotchWidth: CGFloat,
+        panelContentWidth: CGFloat = .greatestFiniteMagnitude
+    ) -> CGFloat {
+        switch layout {
+        case .external:
+            return min(estimatedExternalWidth(track: track), panelContentWidth)
+        case .macbook:
+            let leftWing = IslandChromeMetrics.notchedMusicNotificationLeftWingReserve(
+                title: track.title,
+                artist: track.artist,
+                panelContentWidth: panelContentWidth,
+                physicalNotchWidth: physicalNotchWidth
+            )
+            let rightWing = IslandChromeMetrics.notchedMusicNotificationRightWingReserve()
+            return leftWing + physicalNotchWidth + rightWing
+        }
+    }
+
+    static func estimatedTextBlockWidth(title: String, artist: String) -> CGFloat {
+        let natural = max(intrinsicTitleWidth(title), intrinsicArtistWidth(artist))
+        return min(max(natural, minimumTextWidth), maximumTextWidth)
+    }
+
+    static func estimatedExternalWidth(track: PlayerTrack) -> CGFloat {
+        let artWidth: CGFloat = albumArtWidth
+        let contentGap: CGFloat = 8
+        let playWidth: CGFloat = 18
+        let textWidth = estimatedTextBlockWidth(title: track.title, artist: track.artist)
+        return IslandChromeMetrics.notchedMusicLeadingPadding
+            + artWidth
+            + contentGap
+            + textWidth
+            + contentGap
+            + playWidth
+            + IslandChromeMetrics.notchedMusicTrailingPadding
+    }
+
+    static func intrinsicTitleWidth(_ text: String) -> CGFloat {
+        guard !text.isEmpty else { return 0 }
+        let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .bold)
+        return ceil((text as NSString).size(withAttributes: [.font: font]).width) + measurementFudge
+    }
+
+    static func intrinsicArtistWidth(_ text: String) -> CGFloat {
+        guard !text.isEmpty else { return 0 }
+        let font = NSFont.monospacedSystemFont(ofSize: 10, weight: .medium)
+        return ceil((text as NSString).size(withAttributes: [.font: font]).width) + measurementFudge
+    }
+}
+
+enum V6ClosedMusicSurfacePhase: Equatable {
+    case notification
+    case compact
+}
+
+enum V6ClosedMusicSurfaceMetrics {
+    static let albumArtSize: CGFloat = 22
+    static let albumArtCornerRadius: CGFloat = 5
+    static let morphAnimation = Animation.easeInOut(duration: 0.58)
+}
+
+private struct MusicClosedAlbumArtThumbnail: View {
+    let nsImage: NSImage
+    let size: CGFloat
+    let cornerRadius: CGFloat
+
+    private var hasLoadedArt: Bool {
+        nsImage.size.width > 0 && nsImage.size.height > 0
+    }
+
+    var body: some View {
+        Group {
+            if hasLoadedArt {
+                Image(nsImage: nsImage)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                Image(systemName: "music.note")
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundStyle(V6Palette.paper.opacity(0.35))
+                    .padding(4)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        )
+        .id(nsImage.tiffRepresentation?.hashValue ?? 0)
+    }
+}
+
+/// Unified closed music surface. Morphs between the transient track notification
+/// (title/artist) and the persistent compact view (album art + waveform).
+struct V6ClosedMusicSurface: View {
+    let track: PlayerTrack
+    let albumArtNSImage: NSImage
+    let isPlaying: Bool
+    let phase: V6ClosedMusicSurfacePhase
+    var layout: V6ClosedLayout
+    var height: CGFloat
+    var physicalNotchWidth: CGFloat = 0
+    var panelContentWidth: CGFloat = .greatestFiniteMagnitude
+
+    private var isNotification: Bool { phase == .notification }
+
+    var body: some View {
+        Group {
+            switch layout {
+            case .external: externalBody
+            case .macbook:  macbookBody
+            }
+        }
+        .animation(V6ClosedMusicSurfaceMetrics.morphAnimation, value: phase)
+    }
+
+    // MARK: MacBook
+
+    private var macbookBody: some View {
+        let textWidth = IslandChromeMetrics.notchedMusicNotificationLeftTextWidth(
+            title: track.title,
+            artist: track.artist,
+            panelContentWidth: panelContentWidth,
+            physicalNotchWidth: physicalNotchWidth
+        )
+        let notificationLeftWing = IslandChromeMetrics.notchedMusicNotificationLeftWingReserve(
+            title: track.title,
+            artist: track.artist,
+            panelContentWidth: panelContentWidth,
+            physicalNotchWidth: physicalNotchWidth
+        )
+        let compactLeftWing = IslandChromeMetrics.notchedCompactMusicLeftWingReserve()
+        let compactRightWing = IslandChromeMetrics.notchedCompactMusicRightWingReserve()
+        let notificationRightWing = IslandChromeMetrics.notchedMusicNotificationRightWingReserve()
+        let leftWing = isNotification ? notificationLeftWing : compactLeftWing
+        let rightWing = isNotification ? notificationRightWing : compactRightWing
+        let outer = leftWing + physicalNotchWidth + rightWing
+
+        return ZStack(alignment: .topLeading) {
+            V6ClosedPillShape(topFilletRadius: 0)
+                .fill(V6Palette.ink)
+
+            HStack(spacing: 0) {
+                macbookLeftWing(
+                    leftWing: leftWing,
+                    textWidth: textWidth
+                )
+
+                Color.clear
+                    .frame(width: physicalNotchWidth)
+
+                macbookRightWing(width: rightWing)
+            }
+            .frame(width: outer, height: height, alignment: .leading)
+        }
+        .frame(width: outer, height: height, alignment: .topLeading)
+        .background(macbookClipReporter(
+            width: outer,
+            leftWing: leftWing
+        ))
+    }
+
+    private var musicLeadingInset: some View {
+        Color.clear
+            .frame(width: IslandChromeMetrics.notchedMusicLeadingPadding)
+    }
+
+    private var musicTrailingInset: some View {
+        Color.clear
+            .frame(width: IslandChromeMetrics.notchedMusicTrailingPadding)
+    }
+
+    private func macbookLeftWing(leftWing: CGFloat, textWidth: CGFloat) -> some View {
+        HStack(spacing: 0) {
+            musicLeadingInset
+
+            if isNotification {
+                HStack(spacing: IslandChromeMetrics.notchedClosedContentGap) {
+                    sharedAlbumArt
+                        .layoutPriority(1)
+
+                    notificationTextBlock(maxWidth: textWidth)
+                        .opacity(1)
+                        .frame(width: textWidth, alignment: .leading)
+                        .clipped()
+
+                    Spacer(minLength: 0)
+                }
+            } else {
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    sharedAlbumArt
+                        .layoutPriority(1)
+                }
+            }
+        }
+        .frame(width: leftWing, height: height, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func macbookRightWing(width: CGFloat) -> some View {
+        ZStack(alignment: .leading) {
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                playStateIcon
+                musicTrailingInset
+            }
+            .frame(width: width, height: height, alignment: .leading)
+            .opacity(isNotification ? 1 : 0)
+
+            HStack(spacing: 0) {
+                MusicWaveformView(isPlaying: isPlaying, color: track.avgAlbumColor)
+                Spacer(minLength: 0)
+                musicTrailingInset
+            }
+            .frame(width: width, height: height, alignment: .leading)
+            .opacity(isNotification ? 0 : 1)
+        }
+        .frame(width: width, height: height, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func macbookClipReporter(width: CGFloat, leftWing: CGFloat) -> some View {
+        if isNotification {
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: MusicNotificationClipMetricsKey.self,
+                    value: MusicNotificationClipMetrics(
+                        width: geo.size.width,
+                        leftWingWidth: leftWing
+                    )
+                )
+            }
+        }
+    }
+
+    // MARK: External
+
+    private var externalRenderedTextWidth: CGFloat {
+        let chrome: CGFloat =
+            IslandChromeMetrics.notchedMusicLeadingPadding
+            + V6ClosedMusicSurfaceMetrics.albumArtSize
+            + IslandChromeMetrics.notchedClosedContentGap
+            + IslandChromeMetrics.notchedMusicTrailingPadding
+            + 18
+        let available = panelContentWidth - chrome
+        let maxText = min(
+            MusicTrackNotificationMetrics.maximumTextWidth,
+            max(MusicTrackNotificationMetrics.minimumTextWidth, available)
+        )
+        return min(
+            maxText,
+            MusicTrackNotificationMetrics.estimatedTextBlockWidth(
+                title: track.title,
+                artist: track.artist
+            )
+        )
+    }
+
+    private var externalBody: some View {
+        HStack(spacing: 8) {
+            musicLeadingInset
+
+            sharedAlbumArt
+                .layoutPriority(1)
+
+            notificationTextBlock(maxWidth: externalRenderedTextWidth)
+                .opacity(isNotification ? 1 : 0)
+                .frame(width: isNotification ? externalRenderedTextWidth : 0, alignment: .leading)
+                .clipped()
+                .allowsHitTesting(isNotification)
+
+            Spacer(minLength: isNotification ? 0 : 8)
+
+            ZStack {
+                playStateIcon
+                    .opacity(isNotification ? 1 : 0)
+                MusicWaveformView(isPlaying: isPlaying, color: track.avgAlbumColor)
+                    .opacity(isNotification ? 0 : 1)
+            }
+
+            musicTrailingInset
+        }
+        .frame(height: height)
+        .fixedSize(horizontal: true, vertical: true)
+        .background(V6Palette.ink, in: V6ClosedPillShape(topFilletRadius: 0))
+        .background(externalClipReporter)
+    }
+
+    @ViewBuilder
+    private var externalClipReporter: some View {
+        if isNotification {
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: MusicNotificationClipMetricsKey.self,
+                    value: MusicNotificationClipMetrics(
+                        width: geo.size.width,
+                        leftWingWidth: 0
+                    )
+                )
+            }
+        }
+    }
+
+    // MARK: Shared chrome
+
+    private var sharedAlbumArt: some View {
+        MusicClosedAlbumArtThumbnail(
+            nsImage: albumArtNSImage,
+            size: V6ClosedMusicSurfaceMetrics.albumArtSize,
+            cornerRadius: V6ClosedMusicSurfaceMetrics.albumArtCornerRadius
+        )
+    }
+
+    private func notificationTextBlock(maxWidth: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            MusicNotificationMarqueeText(
+                text: track.title,
+                font: .system(size: 11, weight: .semibold, design: .monospaced),
+                nsFont: NSFont.monospacedSystemFont(ofSize: 11, weight: .bold),
+                foregroundStyle: V6Palette.paper,
+                lineHeight: 14,
+                maxWidth: maxWidth
+            )
+            MusicNotificationMarqueeText(
+                text: track.artist,
+                font: .system(size: 10, weight: .medium, design: .monospaced),
+                nsFont: NSFont.monospacedSystemFont(ofSize: 10, weight: .medium),
+                foregroundStyle: V6Palette.paper.opacity(0.55),
+                lineHeight: 12,
+                maxWidth: maxWidth
+            )
+        }
+        .frame(width: maxWidth, alignment: .leading)
+    }
+
+    private var playStateIcon: some View {
+        Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(track.avgAlbumColor)
+            .frame(width: 18, height: 18)
+    }
+}
+
+struct MusicWaveformView: View {
+    let isPlaying: Bool
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(0..<4, id: \.self) { index in
+                MusicWaveformBar(index: index, isPlaying: isPlaying, color: color)
+            }
+        }
+        .frame(width: 20, height: 14)
+    }
+}
+
+private struct MusicWaveformBar: View {
+    let index: Int
+    let isPlaying: Bool
+    let color: Color
+
+    @State private var scale: CGFloat = 0.3
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 1)
+            .fill(color)
+            .frame(width: 2.2)
+            .scaleEffect(y: scale, anchor: .center)
+            .onAppear {
+                startAnimation()
+            }
+            .onChange(of: isPlaying) { _, _ in
+                startAnimation()
+            }
+    }
+
+    private func startAnimation() {
+        if isPlaying {
+            let durations: [Double] = [1.05, 0.82, 0.82, 1.05]
+            let delays: [Double] = [0.16, 0, 0, 0.16]
+            let duration = durations[index % durations.count]
+            let delay = delays[index % delays.count]
+            withAnimation(
+                .linear(duration: duration)
+                    .delay(delay)
+                    .repeatForever(autoreverses: true)
+            ) {
+                scale = 1.0
+            }
+        } else {
+            withAnimation(.easeOut(duration: 0.2)) {
+                scale = 0.3
+            }
+        }
+    }
 }
 
 private enum RightSlotKey: Hashable {

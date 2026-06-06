@@ -48,8 +48,9 @@ class MusicSpotifyManager: MusicPlayerProtocol {
                 DispatchQueue.main.async { completion(nil) }
                 return
             }
+            let fetched = MusicFetchedAlbumArt(image: Image(nsImage: image), nsImage: image)
             DispatchQueue.main.async {
-                completion(MusicFetchedAlbumArt(image: Image(nsImage: image), nsImage: image))
+                completion(fetched)
             }
         }.resume()
     }

@@ -172,6 +172,7 @@ final class OverlayUICoordinator {
                 self?.autoCollapseSurfaceHasBeenEntered = false
                 self?.isPointerInsideIslandSurface = false
                 self?.appModel?.measuredNotificationContentHeight = 0
+                self?.appModel?.reconcileCompactMusicView()
             }
         )
     }
@@ -228,7 +229,7 @@ final class OverlayUICoordinator {
     }
 
     func presentMusicTrackNotification(track: PlayerTrack) {
-        guard notchStatus == .closed,
+        guard notchStatus != .opened,
               let appModel,
               appModel.playerManager.isMusicEnabled,
               !track.isEmpty() else {
@@ -236,10 +237,39 @@ final class OverlayUICoordinator {
         }
 
         musicTrackNotificationTask?.cancel()
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-            appModel.musicNotificationTrack = track
+        ensureOverlayPanel()
+
+        let trackChanged = appModel.musicNotificationTrack?.matchesMetadata(track) != true
+        var presentedTrack = track
+        let liveTrack = appModel.playerManager.track
+        if liveTrack.matchesMetadata(track), liveTrack.nsAlbumArt.size.width > 0 {
+            presentedTrack.albumArt = liveTrack.albumArt
+            presentedTrack.nsAlbumArt = liveTrack.nsAlbumArt
+            presentedTrack.avgAlbumColor = liveTrack.avgAlbumColor
         }
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            appModel.musicNotificationTrack = presentedTrack
+        }
+        if notchStatus == .closed, trackChanged {
+            notchPop()
+        }
+
         scheduleMusicTrackNotificationDismiss(for: track)
+    }
+
+    func reconcileCompactMusicView() {
+        guard let appModel else { return }
+
+        if appModel.shouldShowCompactMusicView || appModel.musicNotificationTrack != nil {
+            ensureOverlayPanel()
+        }
+    }
+
+    private func dismissMusicTrackNotification() {
+        musicTrackNotificationTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.58)) {
+            appModel?.musicNotificationTrack = nil
+        }
     }
 
     private func scheduleMusicTrackNotificationDismiss(for track: PlayerTrack) {
@@ -251,14 +281,12 @@ final class OverlayUICoordinator {
             }
 
             guard let self,
-                  self.notchStatus == .closed,
+                  self.notchStatus != .opened,
                   self.appModel?.musicNotificationTrack == track else {
                 return
             }
 
-            withAnimation(.easeOut(duration: 0.2)) {
-                self.appModel?.musicNotificationTrack = nil
-            }
+            self.dismissMusicTrackNotification()
         }
     }
 

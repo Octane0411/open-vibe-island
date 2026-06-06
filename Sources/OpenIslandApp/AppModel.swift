@@ -646,11 +646,14 @@ final class AppModel {
             self.presentMusicTrackNotification(track: track)
         }
 
+        playerManager.onAlbumArtUpdated = { [weak self] track in
+            guard let self else { return }
+            self.refreshMusicNotificationAlbumArtIfNeeded(from: track)
+        }
+
         playerManager.onPlaybackStateChange = { [weak self] _ in
-            guard let self, self.notchStatus == .closed else { return }
-            let trackSnapshot = self.playerManager.track
-            guard !trackSnapshot.isEmpty() else { return }
-            self.presentMusicTrackNotification(track: trackSnapshot)
+            guard let self else { return }
+            self.reconcileCompactMusicView()
         }
 
         overlay.appModel = self
@@ -681,6 +684,7 @@ final class AppModel {
         discovery.onStateChanged = { [weak self] in
             self?.synchronizeSelection()
             self?.refreshOverlayPlacementIfVisible()
+            self?.reconcileCompactMusicView()
         }
 
         discovery.codexRolloutWatcher.eventHandler = { [weak self] event in
@@ -709,6 +713,7 @@ final class AppModel {
         monitoring.onSessionsReconciled = { [weak self] in
             self?.synchronizeSelection()
             self?.refreshOverlayPlacementIfVisible()
+            self?.reconcileCompactMusicView()
         }
         monitoring.onPersistenceNeeded = { [weak self] in
             self?.discovery.scheduleCodexSessionPersistence()
@@ -726,6 +731,7 @@ final class AppModel {
         }
         refreshOverlayDisplayConfiguration()
         hasFinishedInit = true
+        reconcileCompactMusicView()
     }
 
     var isMouseInsideClosedArea: Bool = false {
@@ -736,14 +742,27 @@ final class AppModel {
         }
     }
 
-    var isIslandInactive: Bool {
-        let noActiveAgents = surfacedSessions.isEmpty || surfacedSessions.allSatisfy { 
-            $0.phase != .running && !$0.phase.requiresAttention 
+    /// Sessions are present but none are running or waiting on the user.
+    var agentsAreIdle: Bool {
+        surfacedSessions.isEmpty || surfacedSessions.allSatisfy {
+            $0.phase != .running && !$0.phase.requiresAttention
         }
-        // Hide even if music is playing, as long as the temporary notification pill 
-        // (triggered by track change or play/pause) is not currently showing.
-        let noActiveMusicEvent = musicNotificationTrack == nil
-        return noActiveAgents && noActiveMusicEvent
+    }
+
+    var isMusicPlaybackActive: Bool {
+        playerManager.isMusicEnabled
+            && playerManager.isRunning
+            && playerManager.isPlaying
+            && !playerManager.track.isEmpty()
+    }
+
+    /// Closed-notch music pill while agents are idle and music is playing.
+    var shouldShowCompactMusicView: Bool {
+        notchStatus != .opened && agentsAreIdle && isMusicPlaybackActive
+    }
+
+    var isIslandInactive: Bool {
+        agentsAreIdle && !shouldShowCompactMusicView
     }
 
     var shouldAutoHideIsland: Bool {
@@ -1292,6 +1311,25 @@ final class AppModel {
     func notchPop() { overlay.notchPop() }
     func presentMusicTrackNotification(track: PlayerTrack) {
         overlay.presentMusicTrackNotification(track: track)
+    }
+
+    func reconcileCompactMusicView() {
+        guard hasFinishedInit else { return }
+        overlay.reconcileCompactMusicView()
+    }
+
+    func refreshMusicNotificationAlbumArtIfNeeded(from track: PlayerTrack) {
+        guard let notificationTrack = musicNotificationTrack,
+              notificationTrack.matchesMetadata(track) else {
+            return
+        }
+        var updated = notificationTrack
+        updated.albumArt = track.albumArt
+        updated.nsAlbumArt = track.nsAlbumArt
+        updated.avgAlbumColor = track.avgAlbumColor
+        withAnimation(V6ClosedMusicSurfaceMetrics.morphAnimation) {
+            musicNotificationTrack = updated
+        }
     }
     func performBootAnimation() { overlay.performBootAnimation() }
     func ensureOverlayPanel() { overlay.ensureOverlayPanel() }

@@ -29,12 +29,27 @@ class MusicAppleMusicManager: MusicPlayerProtocol {
     }
 
     func getAlbumArt(completion: @escaping @Sendable (MusicFetchedAlbumArt?) -> Void) {
-        guard let art = app.currentTrack?.artworks?()[0] as? MusicArtwork else {
+        guard let currentTrack = app.currentTrack else {
+            completion(nil)
+            return
+        }
+        let expectedTitle = currentTrack.name ?? ""
+        let expectedArtist = currentTrack.artist ?? ""
+        let expectedAlbum = currentTrack.album ?? ""
+
+        guard let art = currentTrack.artworks?()[0] as? MusicArtwork else {
             completion(nil)
             return
         }
         // ScriptingBridge can return NSAppleEventDescriptor typed as NSImage when art isn't ready
         guard let rawData = art.data, rawData.isKind(of: NSImage.self), !rawData.musicIsEmpty() else {
+            completion(nil)
+            return
+        }
+        guard let liveTrack = app.currentTrack,
+              liveTrack.name == expectedTitle,
+              liveTrack.artist == expectedArtist,
+              liveTrack.album == expectedAlbum else {
             completion(nil)
             return
         }

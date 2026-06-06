@@ -20,4 +20,14 @@ struct PlayerTrack: Equatable {
     func isEmpty() -> Bool {
         title == "" && artist == "" && album == ""
     }
+
+    func matchesMetadata(_ other: PlayerTrack) -> Bool {
+        title == other.title && artist == other.artist && album == other.album
+    }
+
+    mutating func clearAlbumArt() {
+        albumArt = Image(systemName: "music.note")
+        nsAlbumArt = NSImage()
+        avgAlbumColor = .gray
+    }
 }

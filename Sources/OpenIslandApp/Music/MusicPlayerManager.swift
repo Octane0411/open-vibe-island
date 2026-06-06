@@ -50,10 +50,12 @@ final class MusicPlayerManager {
 
     var onTrackChange: ((PlayerTrack) -> Void)?
     var onPlaybackStateChange: ((Bool) -> Void)?
+    var onAlbumArtUpdated: ((PlayerTrack) -> Void)?
 
     @ObservationIgnored private var cancellables = Set<AnyCancellable>()
     @ObservationIgnored private var timerCancellable: AnyCancellable?
     @ObservationIgnored private var userDefaultsObserver: (any NSObjectProtocol)?
+    @ObservationIgnored private var albumArtFetchGeneration: UInt64 = 0
 
     init() {
         playerAppProvider = MusicPlayerAppProvider(notificationSubject: notificationSubject)
@@ -156,27 +158,34 @@ final class MusicPlayerManager {
     func getNewSongInfo() {
         let polled = musicApp.getTrackInfo()
         var updatedPolled = polled
-        updatedPolled.albumArt = track.albumArt
-        updatedPolled.nsAlbumArt = track.nsAlbumArt
-        updatedPolled.avgAlbumColor = track.avgAlbumColor
-        
+        updatedPolled.clearAlbumArt()
+
         withAnimation(MusicConstants.mainAnimation) {
             getCurrentSeekerPosition()
             track = updatedPolled
         }
-        fetchAlbumArt()
+        fetchAlbumArt(for: updatedPolled)
         updateFormattedDuration()
     }
 
-    func fetchAlbumArt(retryCount: Int = 5) {
+    func fetchAlbumArt(for expectedTrack: PlayerTrack? = nil, retryCount: Int = 5) {
+        albumArtFetchGeneration &+= 1
+        let generation = albumArtFetchGeneration
+        let expected = expectedTrack ?? track
+
         musicApp.getAlbumArt { result in
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                guard generation == self.albumArtFetchGeneration else { return }
+                guard self.track.matchesMetadata(expected) else { return }
+
                 if let result {
                     self.updateAlbumArt(newAlbumArt: result)
                 } else if retryCount > 0 {
                     try? await Task.sleep(for: .milliseconds(250))
-                    self.fetchAlbumArt(retryCount: retryCount - 1)
+                    guard generation == self.albumArtFetchGeneration else { return }
+                    guard self.track.matchesMetadata(expected) else { return }
+                    self.fetchAlbumArt(for: expected, retryCount: retryCount - 1)
                 }
             }
         }
@@ -188,6 +197,7 @@ final class MusicPlayerManager {
             track.nsAlbumArt = newAlbumArt.nsImage
             track.albumArt = newAlbumArt.image
         }
+        onAlbumArtUpdated?(track)
     }
 
     // MARK: - Controls
@@ -271,16 +281,14 @@ final class MusicPlayerManager {
               polled.album != track.album || polled.duration != track.duration else { return }
         
         var updatedPolled = polled
-        updatedPolled.albumArt = track.albumArt
-        updatedPolled.nsAlbumArt = track.nsAlbumArt
-        updatedPolled.avgAlbumColor = track.avgAlbumColor
-        
+        updatedPolled.clearAlbumArt()
+
         withAnimation(MusicConstants.mainAnimation) {
             track = updatedPolled
         }
         onTrackChange?(updatedPolled)
         updateFormattedDuration()
-        fetchAlbumArt()
+        fetchAlbumArt(for: updatedPolled)
     }
 
     // MARK: - Volume

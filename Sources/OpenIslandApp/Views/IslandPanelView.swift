@@ -110,6 +110,8 @@ struct IslandPanelView: View {
     @State private var isHovering = false
     @State private var showingQuitConfirmation = false
     @State private var closedPillWidth: CGFloat = 0
+    @State private var panelContentWidth: CGFloat = 484
+    @State private var measuredMusicClipMetrics = MusicNotificationClipMetrics()
     @State private var keepsOpenedSurfaceMounted = false
     @State private var openedSurfaceMountGeneration: UInt64 = 0
     @State private var morphProgress: CGFloat = 0
@@ -150,6 +152,124 @@ struct IslandPanelView: View {
 
     private var isShowingMusicNotification: Bool {
         model.musicNotificationTrack != nil
+    }
+
+    private var isShowingCompactMusicView: Bool {
+        model.shouldShowCompactMusicView && !isShowingMusicNotification
+    }
+
+    private var isShowingClosedMusicSurface: Bool {
+        isShowingMusicNotification || isShowingCompactMusicView
+    }
+
+    private var closedMusicSurfacePhase: V6ClosedMusicSurfacePhase {
+        isShowingMusicNotification ? .notification : .compact
+    }
+
+    private var macbookPhysicalNotchWidth: CGFloat {
+        targetOverlayScreen?.notchSize.width ?? closedNotchWidth
+    }
+
+    private var musicNotificationRightWingWidth: CGFloat {
+        IslandChromeMetrics.notchedMusicNotificationRightWingReserve()
+    }
+
+    /// Closed music surfaces draw their own pill; parent `GrowingNotchShape` uses
+    /// agent wing metrics and misaligns / crops them if applied.
+    private var usesClosedMusicSurfaceClip: Bool {
+        isShowingClosedMusicSurface && !usesOpenedVisualState
+    }
+
+    private var activeMusicClipMetrics: MusicNotificationClipMetrics {
+        if measuredMusicClipMetrics.width > 0 {
+            return measuredMusicClipMetrics
+        }
+        guard let track = model.musicNotificationTrack else { return .init() }
+        let leftWing = IslandChromeMetrics.notchedMusicNotificationLeftWingReserve(
+            title: track.title,
+            artist: track.artist,
+            panelContentWidth: panelContentWidth,
+            physicalNotchWidth: macbookPhysicalNotchWidth
+        )
+        let outer = MusicTrackNotificationMetrics.estimatedOuterWidth(
+            for: isExternalDisplayPlacement ? .external : .macbook,
+            track: track,
+            physicalNotchWidth: macbookPhysicalNotchWidth,
+            panelContentWidth: panelContentWidth
+        )
+        return MusicNotificationClipMetrics(width: outer, leftWingWidth: leftWing)
+    }
+
+    private var musicNotificationLeftWingWidth: CGFloat {
+        activeMusicClipMetrics.leftWingWidth
+    }
+
+    private var compactClipLeftWingWidth: CGFloat {
+        guard !isExternalDisplayPlacement else { return 0 }
+        if isShowingCompactMusicView {
+            return IslandChromeMetrics.notchedCompactMusicLeftWingReserve()
+        }
+        let rightSlotWidth = model.islandClosedRightSlotContent()
+            .map { V6RightSlotView.intrinsicWidth(of: $0) } ?? 0
+        return IslandChromeMetrics.notchedClosedWingReserve(rightSlotWidth: rightSlotWidth)
+    }
+
+    private var compactClipRightWingWidth: CGFloat {
+        guard !isExternalDisplayPlacement else { return 0 }
+        if isShowingCompactMusicView {
+            return IslandChromeMetrics.notchedCompactMusicRightWingReserve()
+        }
+        let rightSlotWidth = model.islandClosedRightSlotContent()
+            .map { V6RightSlotView.intrinsicWidth(of: $0) } ?? 0
+        return IslandChromeMetrics.notchedClosedWingReserve(rightSlotWidth: rightSlotWidth)
+    }
+
+    private var macbookNotchAlignmentOffsetX: CGFloat {
+        guard !isExternalDisplayPlacement else { return 0 }
+        if isShowingMusicNotification {
+            return -(musicNotificationLeftWingWidth - musicNotificationRightWingWidth) / 2
+        }
+        if isShowingCompactMusicView {
+            let leftWing = IslandChromeMetrics.notchedCompactMusicLeftWingReserve()
+            let rightWing = IslandChromeMetrics.notchedCompactMusicRightWingReserve()
+            return -(leftWing - rightWing) / 2
+        }
+        return -(compactClipLeftWingWidth - compactClipRightWingWidth) / 2
+    }
+
+    private var standardClosedPillClipWidth: CGFloat {
+        if isExternalDisplayPlacement {
+            return 360
+        }
+        let rightSlotWidth = model.islandClosedRightSlotContent()
+            .map { V6RightSlotView.intrinsicWidth(of: $0) } ?? 0
+        let wingReserve = IslandChromeMetrics.notchedClosedWingReserve(rightSlotWidth: rightSlotWidth)
+        return wingReserve * 2 + macbookPhysicalNotchWidth
+    }
+
+    private var closedSurfaceClipWidth: CGFloat {
+        if isShowingMusicNotification {
+            if closedPillWidth > 0 { return closedPillWidth }
+            if activeMusicClipMetrics.width > 0 { return activeMusicClipMetrics.width }
+            return standardClosedPillClipWidth
+        }
+        if isShowingCompactMusicView {
+            if closedPillWidth > 0 { return closedPillWidth }
+            return IslandChromeMetrics.notchedCompactMusicOuterWidth(
+                physicalNotchWidth: macbookPhysicalNotchWidth
+            )
+        }
+        if closedPillWidth > 0 { return closedPillWidth }
+        return standardClosedPillClipWidth
+    }
+
+    private var closedSurfaceVerticalOffset: CGFloat {
+        guard !usesOpenedVisualState else { return 0 }
+        if isShowingMusicNotification || isShowingCompactMusicView { return 0 }
+        if model.shouldAutoHideIsland && !model.isPeeking {
+            return -closedNotchHeight
+        }
+        return 0
     }
 
     private var usesNotchAwareOpenedHeader: Bool {
@@ -213,6 +333,16 @@ struct IslandPanelView: View {
                 withAnimation(closeAnimation) { morphProgress = 0 }
             }
         }
+        .onChange(of: model.musicNotificationTrack) { _, track in
+            guard let track else {
+                measuredMusicClipMetrics = .init()
+                withAnimation(.easeInOut(duration: 0.58)) {
+                    closedPillWidth = standardClosedPillClipWidth
+                }
+                return
+            }
+            seedClosedPillWidthForMusicNotification(track: track)
+        }
     }
 
     @ViewBuilder
@@ -222,6 +352,7 @@ struct IslandPanelView: View {
         let panelShadowBottomInset = IslandChromeMetrics.openedShadowBottomInset
         let layoutWidth = max(0, availableSize.width - (panelShadowHorizontalInset * 2))
         let layoutHeight = max(0, availableSize.height - panelShadowBottomInset)
+        let resolvedPanelContentWidth = layoutWidth > 0 ? layoutWidth : panelContentWidth
 
         let outerHorizontalPadding: CGFloat = 0
         let outerBottomPadding: CGFloat = 0
@@ -242,8 +373,12 @@ struct IslandPanelView: View {
                         .allowsHitTesting(usesOpenedVisualState)
                 }
 
-                v6ClosedSurface()
-                    .offset(y: usesOpenedVisualState ? 0 : (model.shouldAutoHideIsland ? (model.isPeeking ? 0 : -closedNotchHeight) : 0))
+                v6ClosedSurface(panelContentWidth: resolvedPanelContentWidth)
+                    .offset(
+                        x: usesOpenedVisualState ? 0 : macbookNotchAlignmentOffsetX,
+                        y: closedSurfaceVerticalOffset
+                    )
+                    .animation(.spring(response: 0.35, dampingFraction: 0.85), value: macbookNotchAlignmentOffsetX)
                     .opacity(usesOpenedVisualState ? 0 : 1)
                     .animation(
                         usesOpenedVisualState
@@ -253,16 +388,23 @@ struct IslandPanelView: View {
                     )
                     .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.isPeeking)
                     .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.shouldAutoHideIsland)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.85), value: isShowingMusicNotification)
+                    .animation(.easeInOut(duration: 0.58), value: closedMusicSurfacePhase)
                     .allowsHitTesting(!usesOpenedVisualState)
             }
             .frame(maxWidth: .infinity, alignment: .top)
-            .clipShape(GrowingNotchShape(
-                progress: morphProgress,
-                compactW: (closedPillWidth > 0) ? closedPillWidth : closedNotchWidth,
+            .modifier(NotchSurfaceClipModifier(
+                usesMusicNotificationClip: usesClosedMusicSurfaceClip,
+                musicClipMetrics: activeMusicClipMetrics,
+                musicNotchGapWidth: isExternalDisplayPlacement ? 0 : macbookPhysicalNotchWidth,
+                morphProgress: morphProgress,
+                compactW: closedSurfaceClipWidth,
                 compactH: closedNotchHeight,
                 expandedW: openedWidth,
                 expandedH: openedHeight,
-                compactR: closedNotchHeight / 2
+                compactR: closedNotchHeight / 2,
+                compactLeftWingWidth: compactClipLeftWingWidth,
+                compactNotchGapWidth: isExternalDisplayPlacement ? 0 : macbookPhysicalNotchWidth
             ))
         }
         .scaleEffect(usesOpenedVisualState ? 1 : (isHovering ? IslandChromeMetrics.closedHoverScale : 1), anchor: .top)
@@ -278,6 +420,11 @@ struct IslandPanelView: View {
         .onTapGesture {
             if model.notchStatus != .opened {
                 model.notchOpen(reason: .click)
+            }
+        }
+        .onChange(of: layoutWidth) { _, newWidth in
+            if newWidth > 0 {
+                panelContentWidth = newWidth
             }
         }
     }
@@ -313,13 +460,27 @@ struct IslandPanelView: View {
     /// preferences re-renders this automatically; UnifiedBars runs its own
     /// TimelineView internally for bar animation.
     @ViewBuilder
-    private func v6ClosedSurface() -> some View {
+    private func v6ClosedSurface(panelContentWidth: CGFloat) -> some View {
         Group {
-            if isShowingMusicNotification, let track = model.musicNotificationTrack {
-                musicTrackNotificationPill(track: track)
+            if isShowingClosedMusicSurface {
+                let layout: V6ClosedLayout = isExternalDisplayPlacement ? .external : .macbook
+                let surfaceTrack = isShowingMusicNotification
+                    ? musicNotificationDisplayTrack(model.musicNotificationTrack ?? model.playerManager.track)
+                    : model.playerManager.track
+                V6ClosedMusicSurface(
+                    track: surfaceTrack,
+                    albumArtNSImage: model.playerManager.track.nsAlbumArt,
+                    isPlaying: model.playerManager.isPlaying,
+                    phase: closedMusicSurfacePhase,
+                    layout: layout,
+                    height: closedNotchHeight,
+                    physicalNotchWidth: layout == .macbook ? macbookPhysicalNotchWidth : 0,
+                    panelContentWidth: panelContentWidth
+                )
+                .id("closed-music-surface-\(surfaceTrack.title)|\(surfaceTrack.artist)|\(model.playerManager.track.nsAlbumArt.tiffRepresentation?.hashValue ?? 0)")
+                .background(closedSurfaceWidthReader)
             } else {
                 let layout: V6ClosedLayout = isExternalDisplayPlacement ? .external : .macbook
-                let physicalNotchWidth: CGFloat = targetOverlayScreen?.notchSize.width ?? 180
                 V6ClosedPill(
                     mode: model.islandClosedMode,
                     character: model.islandCharacter,
@@ -327,73 +488,64 @@ struct IslandPanelView: View {
                     rightSlot: model.islandClosedRightSlotContent(),
                     layout: layout,
                     height: closedNotchHeight,
-                    physicalNotchWidth: layout == .macbook ? physicalNotchWidth : 0,
+                    physicalNotchWidth: layout == .macbook ? macbookPhysicalNotchWidth : 0,
                     minWidth: 70
                 )
                 .scaleEffect(isPopping ? 1.04 : 1, anchor: .top)
                 .animation(popAnimation, value: isPopping)
+                .background(closedSurfaceWidthReader)
             }
         }
-        .background(
-            GeometryReader { geo in
-                Color.clear
-                    .onAppear {
-                        let w = geo.size.width
-                        if w > 0 {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                                closedPillWidth = w
-                            }
-                        }
-                    }
-                    .onChange(of: geo.size.width) { _, newWidth in
-                        if newWidth > 0 {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                                closedPillWidth = newWidth
-                            }
-                        }
-                    }
-            }
-        )
+        .onPreferenceChange(MusicNotificationClipMetricsKey.self) { metrics in
+            guard isShowingMusicNotification, metrics.width > 0 else { return }
+            measuredMusicClipMetrics = metrics
+            updateClosedPillWidth(metrics.width, fromMusicNotification: true)
+        }
     }
 
-    @ViewBuilder
-    private func musicTrackNotificationPill(track: PlayerTrack) -> some View {
-        HStack(spacing: 8) {
-            track.albumArt
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-                .frame(width: 20, height: 20)
-                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(track.title)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(V6Palette.paper)
-                    .lineLimit(1)
-
-                Text(track.artist)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(V6Palette.paper.opacity(0.55))
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: 168, alignment: .leading)
-
-            Image(systemName: model.playerManager.isPlaying ? "play.fill" : "pause.fill")
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(track.avgAlbumColor)
-                .frame(width: 18, height: 18)
+    private var closedSurfaceWidthReader: some View {
+        GeometryReader { geo in
+            Color.clear
+                .onAppear {
+                    updateClosedPillWidth(geo.size.width)
+                }
+                .onChange(of: geo.size.width) { _, newWidth in
+                    updateClosedPillWidth(newWidth)
+                }
         }
-        .padding(.horizontal, 12)
-        .frame(height: closedNotchHeight)
-        .fixedSize(horizontal: true, vertical: true)
-        .background(V6Palette.ink, in: V6ClosedPillShape(topFilletRadius: 0))
-        .scaleEffect(isPopping ? 1.03 : 1, anchor: .top)
-        .animation(popAnimation, value: isPopping)
-        .transition(.asymmetric(
-            insertion: .move(edge: .top).combined(with: .opacity).animation(.spring(response: 0.35, dampingFraction: 0.85)),
-            removal: .move(edge: .top).combined(with: .opacity).animation(.easeOut(duration: 0.2))
-        ))
-        .frame(maxWidth: .infinity)
+    }
+
+    private func musicNotificationDisplayTrack(_ notificationTrack: PlayerTrack) -> PlayerTrack {
+        let liveTrack = model.playerManager.track
+        guard liveTrack.matchesMetadata(notificationTrack) else { return notificationTrack }
+        var merged = notificationTrack
+        merged.albumArt = liveTrack.albumArt
+        merged.nsAlbumArt = liveTrack.nsAlbumArt
+        merged.avgAlbumColor = liveTrack.avgAlbumColor
+        return merged
+    }
+
+    private func seedClosedPillWidthForMusicNotification(track: PlayerTrack) {
+        let layout: V6ClosedLayout = isExternalDisplayPlacement ? .external : .macbook
+        let estimatedWidth = MusicTrackNotificationMetrics.estimatedOuterWidth(
+            for: layout,
+            track: track,
+            physicalNotchWidth: macbookPhysicalNotchWidth,
+            panelContentWidth: panelContentWidth
+        )
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            closedPillWidth = estimatedWidth
+        }
+    }
+
+    private func updateClosedPillWidth(_ width: CGFloat, fromMusicNotification: Bool = false) {
+        guard width > 0 else { return }
+        if isShowingMusicNotification && !fromMusicNotification {
+            return
+        }
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            closedPillWidth = width
+        }
     }
 
     // MARK: - Opened surface
@@ -2944,57 +3096,3 @@ private struct DismissButton: View {
     }
 }
 
-private struct MusicWaveformView: View {
-    let isPlaying: Bool
-    let color: Color
-    
-    var body: some View {
-        HStack(spacing: 2) {
-            ForEach(0..<4) { index in
-                WaveBar(index: index, isPlaying: isPlaying, color: color)
-            }
-        }
-        .frame(width: 20, height: 14)
-    }
-}
-
-private struct WaveBar: View {
-    let index: Int
-    let isPlaying: Bool
-    let color: Color
-    
-    @State private var scale: CGFloat = 0.3
-    
-    var body: some View {
-        RoundedRectangle(cornerRadius: 1)
-            .fill(color)
-            .frame(width: 2.2)
-            .scaleEffect(y: scale, anchor: .center)
-            .onAppear {
-                startAnimation()
-            }
-            .onChange(of: isPlaying) { _, _ in
-                startAnimation()
-            }
-    }
-    
-    private func startAnimation() {
-        if isPlaying {
-            let durations: [Double] = [1.05, 0.82, 0.82, 1.05]
-            let delays: [Double] = [0.16, 0, 0, 0.16]
-            let duration = durations[index % durations.count]
-            let delay = delays[index % delays.count]
-            withAnimation(
-                .linear(duration: duration)
-                    .delay(delay)
-                    .repeatForever(autoreverses: true)
-            ) {
-                scale = 1.0
-            }
-        } else {
-            withAnimation(.easeOut(duration: 0.2)) {
-                scale = 0.3
-            }
-        }
-    }
-}
