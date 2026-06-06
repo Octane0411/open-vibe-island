@@ -12,6 +12,14 @@ import Sparkle
 final class UpdateChecker: NSObject {
     static let releasesURL = URL(string: "https://github.com/Octane0411/open-vibe-island/releases")!
 
+    nonisolated static func shouldSkipAutomaticUpdates(bundleIdentifier: String? = Bundle.main.bundleIdentifier) -> Bool {
+        guard let bundleIdentifier else {
+            return false
+        }
+        return bundleIdentifier == "app.openisland.dev"
+            || bundleIdentifier.hasPrefix("app.openisland.dev.")
+    }
+
     private(set) var canCheckForUpdates = false
     private(set) var hasUpdate = false
     private(set) var latestVersion: String?
@@ -34,6 +42,11 @@ final class UpdateChecker: NSObject {
     /// Start Sparkle's automatic update checking schedule.
     /// Call once after app launch.
     func startIfNeeded() {
+        guard !Self.shouldSkipAutomaticUpdates() else {
+            print("[UpdateChecker] skipped for dev bundle")
+            return
+        }
+
         #if DEBUG
         // Dev builds run from a local branch that often carries fixes not yet in
         // the upstream appcast. Letting Sparkle prompt the user to "update" to
