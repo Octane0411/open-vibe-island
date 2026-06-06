@@ -380,15 +380,10 @@ public struct SessionState: Equatable, Sendable {
                     continue
                 }
 
-                // When a Codex session reached .completed via hooks (.stop)
-                // and Codex.app is still running, don't kill it through
-                // process polling — the CLI subprocess exits after each turn
-                // but the desktop app session is still valid.  The session
-                // stays visible as "Completed" and fades via island presence.
-                if session.tool == .codex && session.phase == .completed && isCodexAppRunning {
-                    upsert(session)
-                    continue
-                }
+                // Codex.app sessions are handled by the app-level liveness branch
+                // above.  Other Codex hook sessions, such as VS Code / Claude
+                // plugin sessions, must still age out when their CLI process is
+                // gone even if Codex.app itself is running.
 
                 if aliveSessionIDs.contains(id) {
                     session.processNotSeenCount = 0
