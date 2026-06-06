@@ -9,6 +9,7 @@ final class OverlayUICoordinator {
 
     private static let notificationSurfaceAutoCollapseDelay: TimeInterval = 10
     private static let musicTrackPeekDuration: TimeInterval = 2.5
+    private static let musicTrackPeekCloseAnimationDuration: TimeInterval = 0.42
 
     var notchStatus: NotchStatus = .closed
     var notchOpenReason: NotchOpenReason?
@@ -177,7 +178,7 @@ final class OverlayUICoordinator {
                 self?.isPointerInsideIslandSurface = false
                 self?.appModel?.measuredNotificationContentHeight = 0
                 if wasMusicPeek {
-                    self?.restoreMusicPeekTabIfNeeded()
+                    self?.scheduleMusicPeekTabRestore()
                 }
             }
         )
@@ -281,12 +282,22 @@ final class OverlayUICoordinator {
         musicPeekTask = nil
     }
 
-    private func restoreMusicPeekTabIfNeeded() {
-        cancelMusicTrackPeekScheduling()
-        if let previous = musicPeekPreviousTab {
-            appModel?.islandActiveTab = previous
-        }
+    private func scheduleMusicPeekTabRestore() {
+        let previousTab = musicPeekPreviousTab
         musicPeekPreviousTab = nil
+
+        guard let previousTab else { return }
+
+        Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(Self.musicTrackPeekCloseAnimationDuration))
+            } catch {
+                return
+            }
+
+            guard let self, self.notchStatus == .closed else { return }
+            self.appModel?.islandActiveTab = previousTab
+        }
     }
 
     func performBootAnimation() {

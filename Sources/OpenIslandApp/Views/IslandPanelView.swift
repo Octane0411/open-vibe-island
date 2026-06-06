@@ -236,7 +236,7 @@ struct IslandPanelView: View {
                         .animation(
                             usesOpenedVisualState
                                 ? .easeIn(duration: 0.14).delay(0.13)
-                                : .easeOut(duration: 0.05),
+                                : .easeOut(duration: 0.14).delay(0.13),
                             value: usesOpenedVisualState
                         )
                         .allowsHitTesting(usesOpenedVisualState)
