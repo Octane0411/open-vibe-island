@@ -1,4 +1,5 @@
 # NotchTune
+<img width="1024" height="1024" alt="app-icon-v6" src="https://github.com/user-attachments/assets/593c9462-70fb-44d1-9967-e8ad9aeef3b1" />
 
 Why switch contexts when your notch can keep the flow together?
 
