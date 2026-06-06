@@ -39,13 +39,13 @@ Clone the repo and run the app locally:
 ```bash
 git clone https://github.com/dw2lam/NotchTune.git
 cd NotchTune
-swift run OpenIslandApp
+zsh scripts/launch-dev-app.sh
 ```
 
 To build the hook helper used by agent integrations:
 
 ```bash
-swift build -c release --product OpenIslandHooks
+swift build -c release
 ```
 
 Or open the package in Xcode:
@@ -56,19 +56,17 @@ open Package.swift
 
 ## Development
 
-This repository is a Swift package with four main products:
+This repository is a Swift package with native app, core bridge, hook helper, and setup targets.
 
-- `OpenIslandApp`: the native SwiftUI/AppKit app
-- `OpenIslandCore`: models, bridge transport, hook installers, and session state
-- `OpenIslandHooks`: the CLI called by agent hooks
-- `OpenIslandSetup`: setup utilities for managed hook installation
+The helper scripts are the recommended way to exercise app-bundle behavior locally because they refresh the generated assets, helper binaries, and local dev bundle.
 
 Useful commands:
 
 ```bash
 swift build
 swift test
-swift run OpenIslandApp
+zsh scripts/launch-dev-app.sh
+zsh scripts/package-app.sh
 ```
 
 ## Credits
@@ -76,7 +74,7 @@ swift run OpenIslandApp
 NotchTune builds on work from:
 
 - [Tuneful](https://github.com/martinfekete10/Tuneful), originally developed by [Martin Fekete](https://github.com/martinfekete10), for native macOS playback controls and interface ideas.
-- [Open Island](https://github.com/Octane0411/open-vibe-island), originally developed by [Octane0411](https://github.com/Octane0411), for dynamic notch integration and terminal-native AI tracking foundations.
+- [Octane0411](https://github.com/Octane0411), for the dynamic notch integration and terminal-native AI tracking foundations that helped shape NotchTune.
 
 ## What's Next
 
