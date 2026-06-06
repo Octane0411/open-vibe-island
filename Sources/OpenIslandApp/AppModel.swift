@@ -641,24 +641,16 @@ final class AppModel {
             startWatchRelay()
         }
 
-        playerManager.onTrackChange = { [weak self] _ in
+        playerManager.onTrackChange = { [weak self] track in
             guard let self else { return }
-            self.presentMusicTrackPeek()
+            self.presentMusicTrackNotification(track: track)
         }
 
-        playerManager.onPlaybackStateChange = { [weak self] isPlaying in
-            guard let self, self.isOverlayVisible == false else { return }
-            // Trigger the "pop up" (notification pill) when playing/resuming or pausing.
+        playerManager.onPlaybackStateChange = { [weak self] _ in
+            guard let self, self.notchStatus == .closed else { return }
             let trackSnapshot = self.playerManager.track
             guard !trackSnapshot.isEmpty() else { return }
-            
-            self.musicNotificationTrack = trackSnapshot
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(2))
-                if self.musicNotificationTrack == trackSnapshot {
-                    self.musicNotificationTrack = nil
-                }
-            }
+            self.presentMusicTrackNotification(track: trackSnapshot)
         }
 
         overlay.appModel = self
@@ -1298,7 +1290,9 @@ final class AppModel {
     func notchOpen(reason: NotchOpenReason, surface: IslandSurface = .sessionList()) { overlay.notchOpen(reason: reason, surface: surface) }
     func notchClose() { overlay.notchClose() }
     func notchPop() { overlay.notchPop() }
-    func presentMusicTrackPeek() { overlay.presentMusicTrackPeek() }
+    func presentMusicTrackNotification(track: PlayerTrack) {
+        overlay.presentMusicTrackNotification(track: track)
+    }
     func performBootAnimation() { overlay.performBootAnimation() }
     func ensureOverlayPanel() { overlay.ensureOverlayPanel() }
     func showOverlay() { overlay.showOverlay() }

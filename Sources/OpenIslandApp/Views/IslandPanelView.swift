@@ -148,8 +148,8 @@ struct IslandPanelView: View {
         return NSScreen.main ?? NSScreen.screens.first
     }
 
-    private var isShowingMusic: Bool {
-        model.musicNotificationTrack != nil || (model.islandActiveTab == .music && model.playerManager.isRunning && !model.playerManager.track.isEmpty())
+    private var isShowingMusicNotification: Bool {
+        model.musicNotificationTrack != nil
     }
 
     private var usesNotchAwareOpenedHeader: Bool {
@@ -315,8 +315,8 @@ struct IslandPanelView: View {
     @ViewBuilder
     private func v6ClosedSurface() -> some View {
         Group {
-            if isShowingMusic {
-                musicNotificationPill(track: model.playerManager.track)
+            if isShowingMusicNotification, let track = model.musicNotificationTrack {
+                musicTrackNotificationPill(track: track)
             } else {
                 let layout: V6ClosedLayout = isExternalDisplayPlacement ? .external : .macbook
                 let physicalNotchWidth: CGFloat = targetOverlayScreen?.notchSize.width ?? 180
@@ -357,80 +357,43 @@ struct IslandPanelView: View {
     }
 
     @ViewBuilder
-    private func musicNotificationPill(track: PlayerTrack) -> some View {
-        if isExternalDisplayPlacement {
-            HStack(spacing: 0) {
-                HStack(spacing: 10) {
-                    track.albumArt
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 22, height: 22)
-                        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+    private func musicTrackNotificationPill(track: PlayerTrack) -> some View {
+        HStack(spacing: 8) {
+            track.albumArt
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 20, height: 20)
+                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
 
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(track.title.uppercased())
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                            .foregroundStyle(V6Palette.paper)
-                            .lineLimit(1)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(track.title)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(V6Palette.paper)
+                    .lineLimit(1)
 
-                        Text(track.artist)
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundStyle(V6Palette.paper.opacity(0.5))
-                            .lineLimit(1)
-                    }
-                }
-                .padding(.horizontal, 12)
-                
-                Image(systemName: model.playerManager.isPlaying ? "play.fill" : "pause.fill")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(track.avgAlbumColor)
-                    .frame(width: 24, height: 24)
+                Text(track.artist)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(V6Palette.paper.opacity(0.55))
+                    .lineLimit(1)
             }
-            .padding(.horizontal, 16) // Room for fillets (8 * 2)
-            .frame(height: closedNotchHeight)
-            .fixedSize(horizontal: true, vertical: true)
-            .background(V6Palette.ink, in: V6ClosedPillShape(topFilletRadius: 0))
-            .transition(.asymmetric(
-                insertion: .move(edge: .top).combined(with: .opacity).animation(.spring(response: 0.35, dampingFraction: 0.85)),
-                removal: .opacity.animation(.easeOut(duration: 0.2))
-            ))
-        } else {
-            let physicalNotchWidth = targetOverlayScreen?.notchSize.width ?? 180
-            let halfReserve: CGFloat = 44
-            let totalWidth = halfReserve + physicalNotchWidth + halfReserve
+            .frame(maxWidth: 168, alignment: .leading)
 
-            HStack(spacing: 0) {
-                // Left wing: Album cover
-                HStack {
-                    Spacer()
-                    track.albumArt
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 22, height: 22)
-                        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-                    Spacer()
-                }
-                .frame(width: halfReserve)
-
-                // Middle: Spacer covering physical notch
-                Color.clear
-                    .frame(width: physicalNotchWidth)
-
-                // Right wing: Waveform visualizer
-                HStack {
-                    Spacer()
-                    MusicWaveformView(isPlaying: model.playerManager.isPlaying, color: track.avgAlbumColor)
-                    Spacer()
-                }
-                .frame(width: halfReserve)
-            }
-            .frame(width: totalWidth, height: closedNotchHeight)
-            .background(V6Palette.ink, in: V6ClosedPillShape(topFilletRadius: 0))
-            .transition(.asymmetric(
-                insertion: .move(edge: .top).combined(with: .opacity).animation(.spring(response: 0.35, dampingFraction: 0.85)),
-                removal: .opacity.animation(.easeOut(duration: 0.2))
-            ))
+            Image(systemName: model.playerManager.isPlaying ? "play.fill" : "pause.fill")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(track.avgAlbumColor)
+                .frame(width: 18, height: 18)
         }
+        .padding(.horizontal, 12)
+        .frame(height: closedNotchHeight)
+        .fixedSize(horizontal: true, vertical: true)
+        .background(V6Palette.ink, in: V6ClosedPillShape(topFilletRadius: 0))
+        .scaleEffect(isPopping ? 1.03 : 1, anchor: .top)
+        .animation(popAnimation, value: isPopping)
+        .transition(.asymmetric(
+            insertion: .move(edge: .top).combined(with: .opacity).animation(.spring(response: 0.35, dampingFraction: 0.85)),
+            removal: .move(edge: .top).combined(with: .opacity).animation(.easeOut(duration: 0.2))
+        ))
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Opened surface
