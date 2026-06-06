@@ -267,7 +267,7 @@ struct AgentSessionPresentationTests {
     }
 
     @Test
-    func runningCodexSessionWithoutToolShowsThinkingBesidePrompt() {
+    func runningCodexSessionWithoutToolDoesNotInventThinkingActivity() {
         let session = AgentSession(
             id: "session-1",
             title: "Codex · worktree",
@@ -283,7 +283,28 @@ struct AgentSessionPresentationTests {
         )
 
         #expect(session.spotlightPromptLineText == "You: Align the Codex statuses.")
-        #expect(session.spotlightActivityLineText == "Thinking")
+        #expect(session.spotlightActivityLineText == nil)
+        #expect(session.displayCurrentToolName == nil)
+    }
+
+    @Test
+    func runningCodexSessionWithoutToolShowsLatestAssistantOutput() {
+        let session = AgentSession(
+            id: "session-1",
+            title: "Codex · worktree",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Thinking.",
+            updatedAt: Date(timeIntervalSince1970: 10_000),
+            codexMetadata: CodexSessionMetadata(
+                lastUserPrompt: "Align the Codex statuses.",
+                lastAssistantMessage: "正在读取 Codex 事件日志。"
+            )
+        )
+
+        #expect(session.spotlightActivityLineText == "正在读取 Codex 事件日志。")
         #expect(session.displayCurrentToolName == nil)
     }
 
@@ -332,5 +353,83 @@ struct AgentSessionPresentationTests {
         #expect(session.spotlightStatusLabel == "Live · Search")
         #expect(session.spotlightSecondaryText == "Running Search")
         #expect(session.displayCurrentToolName == "Search")
+    }
+
+    @Test
+    func codexDesktopSessionUsesThreadTitleForHeadlineAndHidesTerminalBadge() {
+        let session = AgentSession(
+            id: "codex-app-session",
+            title: "Open Island issue check",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Thinking.",
+            updatedAt: Date(timeIntervalSince1970: 10_000),
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "lijie10",
+                paneTitle: "Open Island issue check",
+                workingDirectory: "/Users/lijie10",
+                codexThreadID: "codex-app-session"
+            ),
+            codexMetadata: CodexSessionMetadata(
+                initialUserPrompt: "https://vibeisland.app/zh/ 看看这个 app",
+                lastUserPrompt: "看看有没有现成 issue"
+            )
+        )
+
+        #expect(session.spotlightHeadlineText == "lijie10：Open Island issue check")
+        #expect(session.spotlightPromptLineText == "You: 看看有没有现成 issue")
+        #expect(session.spotlightTerminalBadge == nil)
+    }
+
+    @Test
+    func codexDesktopHeadlineStripsCodexPrefixFromThreadTitle() {
+        let session = AgentSession(
+            id: "codex-app-session",
+            title: "Codex · hera",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Thinking.",
+            updatedAt: Date(timeIntervalSince1970: 10_000),
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "hera",
+                paneTitle: "Codex · hera",
+                workingDirectory: "/Users/lijie10/Desktop/code/hera",
+                codexThreadID: "codex-app-session"
+            )
+        )
+
+        #expect(session.spotlightHeadlineText == "hera")
+    }
+
+    @Test
+    func codexDesktopHeadlineUsesPromptWhenThreadTitleIsWorkspaceFallback() {
+        let session = AgentSession(
+            id: "codex-app-session",
+            title: "Codex · hera",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Thinking.",
+            updatedAt: Date(timeIntervalSince1970: 10_000),
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "hera",
+                paneTitle: "Codex · hera",
+                workingDirectory: "/Users/lijie10/Desktop/code/hera",
+                codexThreadID: "codex-app-session"
+            ),
+            codexMetadata: CodexSessionMetadata(
+                initialUserPrompt: "web 模拟器画面现在还是截图预览"
+            )
+        )
+
+        #expect(session.spotlightHeadlineText == "hera：web 模拟器画面现在还是截图预览")
     }
 }

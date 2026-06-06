@@ -1,25 +1,74 @@
 import AppKit
 import Combine
+import QuartzCore
 import SwiftUI
 import OpenIslandCore
 
+enum IslandAnimationPolicy {
+    enum FrameAnimationDriver {
+        case nativePanelAnimator
+    }
+
+    static let frameAnimationDriver: FrameAnimationDriver = .nativePanelAnimator
+    static let panelFrameBaseDuration: TimeInterval = 0.55
+    static let panelFrameBaseCloseDuration: TimeInterval = 0.75
+    static let panelFrameTimingControlPoints: (Float, Float, Float, Float) = (0.2, 0.8, 0.2, 1.0)
+    static let hoverOpenDelay: TimeInterval = 0.20
+    static let hoverCooldownDuration: TimeInterval = 0.18
+    static let hoverSurfaceAutoCollapseDelay: TimeInterval = 0.18
+    static let openingHeightLeadDuration: TimeInterval = 0.14
+    static let openedContentMinimumRevealDelay: TimeInterval = 0.16
+    static let openedContentRevealProgress: Double = 0.58
+
+    static func panelFrameDuration(
+        isClosing: Bool,
+        speed: IslandAnimationSpeed = .normal
+    ) -> TimeInterval {
+        let baseDuration = isClosing ? panelFrameBaseCloseDuration : panelFrameBaseDuration
+        return baseDuration * speed.durationMultiplier
+    }
+
+    static func openedContentRevealDelay(speed: IslandAnimationSpeed = .normal) -> TimeInterval {
+        max(
+            openedContentMinimumRevealDelay,
+            panelFrameDuration(isClosing: false, speed: speed) * openedContentRevealProgress
+        )
+    }
+
+    static func canScheduleHoverOpen(now: Date = .now, cooldownUntil: Date) -> Bool {
+        now >= cooldownUntil
+    }
+
+    static var panelFrameTimingFunction: CAMediaTimingFunction {
+        CAMediaTimingFunction(
+            controlPoints: panelFrameTimingControlPoints.0,
+            panelFrameTimingControlPoints.1,
+            panelFrameTimingControlPoints.2,
+            panelFrameTimingControlPoints.3
+        )
+    }
+}
+
 @MainActor
 final class OverlayPanelController {
-    private static let preferredNotchOpenedPanelWidth: CGFloat = 540
-    private static let preferredTopBarOpenedPanelWidth: CGFloat = 520
+    nonisolated private static let maxOpenedPanelFrameWidth: CGFloat = 680
+    nonisolated private static let maxOpenedPanelFrameHeight: CGFloat = 580
+    nonisolated private static let preferredNotchOpenedPanelWidth: CGFloat = maxOpenedPanelFrameWidth - (IslandChromeMetrics.openedShadowHorizontalInset * 2)
+    nonisolated private static let preferredTopBarOpenedPanelWidth: CGFloat = maxOpenedPanelFrameWidth - (IslandChromeMetrics.openedShadowHorizontalInset * 2)
     private static let preferredNotificationPanelWidth: CGFloat = 620
     private static let openedContentWidthPadding: CGFloat = 0
-    private static let openedContentBottomPadding: CGFloat = 0
-    /// Must match `IslandPanelView.maxSessionListHeight` — the AutoHeightScrollView cap.
-    private static let maxSessionListHeight: CGFloat = 560
-    private static let maxVisibleSessionRows: Int = 6
+    nonisolated private static let openedContentBottomPadding: CGFloat = 0
     private static let openedRowSpacing: CGFloat = 0
-    // Content padding top + scroll padding + v8 list header/footer + bottom inset.
-    // Rows are now full-width scan rows, so the old inter-card spacing is gone.
-    private static let openedContentVerticalInsets: CGFloat = 84
+    nonisolated private static let openedSessionListHeaderHeight: CGFloat = 36
+    nonisolated private static let openedSessionListVerticalPadding: CGFloat = 4
+    nonisolated private static let openedSessionListFooterHeight: CGFloat = 8
+    nonisolated private static let openedSessionListChromeHeight: CGFloat =
+        openedSessionListHeaderHeight
+        + openedSessionListVerticalPadding
+        + openedSessionListFooterHeight
     private static let notificationMeasuredContentPadding: CGFloat = 8
     private static let notificationEstimatedVerticalInsets: CGFloat = 36
-    private static let openedEmptyStateHeight: CGFloat = 108
+    nonisolated private static let openedEmptyStateHeight: CGFloat = 108
     private static let questionCardBaseHeight: CGFloat = 110
     private static let questionCardMaxHeight: CGFloat = 420
     // Completion card chrome breakdown (everything except the scrollable text):
@@ -31,10 +80,15 @@ final class OverlayPanelController {
     private static let completionCardMinHeight: CGFloat = 210
     private static let completionCardMaxHeight: CGFloat = 400
 
+    nonisolated static var maximumOpenedPanelFrameSize: CGSize {
+        CGSize(width: maxOpenedPanelFrameWidth, height: maxOpenedPanelFrameHeight)
+    }
+
     private var panel: NotchPanel?
     private var eventMonitors = NotchEventMonitors()
     private var hoverTimer: DispatchWorkItem?
     private var hoverCancelGrace: DispatchWorkItem?
+    private var hoverCooldownUntil = Date.distantPast
     weak var model: AppModel?
     private(set) var notchRect: NSRect = .zero
 
@@ -140,7 +194,7 @@ final class OverlayPanelController {
 
         let hostingView = NotchHostingView(rootView: IslandPanelView(model: model))
         hostingView.notchController = self
-        panel.contentView = hostingView
+        panel.contentView = NotchContentContainerView(hostingView: hostingView)
 
         computeNotchRect(screen: resolveTargetScreen())
         return panel
@@ -160,14 +214,23 @@ final class OverlayPanelController {
 
         let windowFrame = panelFrame(for: model, on: screen)
 
-        // Always set the panel frame instantly — no AppKit animation.
-        // All visual transitions (shape, size, opacity, corner radius) are
-        // driven by SwiftUI's .animation() modifier on the content view.
-        // Mixing NSAnimationContext with SwiftUI spring animations caused
-        // visible jank because the two systems have different timing curves,
-        // durations, and start times (AppKit was deferred by one runloop).
+        IslandLayoutDebug.log(
+            "panel position animated=\(animated) visible=\(panel.isVisible) status=\(String(describing: model?.notchStatus)) reason=\(String(describing: model?.notchOpenReason)) surface=\(String(describing: model?.islandSurface)) oldFrame=\(Self.describe(panel.frame)) targetFrame=\(Self.describe(windowFrame)) measuredList=\((model?.measuredSessionListContentHeight ?? 0).rounded()) measuredNotification=\((model?.measuredNotificationContentHeight ?? 0).rounded())"
+        )
+
         if panel.frame != windowFrame {
-            panel.setFrame(windowFrame, display: true)
+            if animated, panel.isVisible {
+                let isClosing = windowFrame.height < panel.frame.height
+                    || windowFrame.width < panel.frame.width
+                if isClosing {
+                    animateFrame(panel: panel, to: windowFrame, kind: .closing)
+                } else {
+                    animateFrame(panel: panel, to: windowFrame, kind: .opening)
+                }
+            } else {
+                cancelFrameAnimation()
+                panel.setFrame(windowFrame, display: true)
+            }
         }
         computeNotchRect(screen: screen)
 
@@ -175,6 +238,80 @@ final class OverlayPanelController {
             preferredScreenID: preferredScreenID,
             panelSize: panel.frame.size
         )
+    }
+
+    nonisolated private static func describe(_ rect: NSRect) -> String {
+        "x=\(rect.origin.x.rounded()) y=\(rect.origin.y.rounded()) w=\(rect.size.width.rounded()) h=\(rect.size.height.rounded())"
+    }
+
+    private enum FrameAnimationKind {
+        case opening
+        case closing
+    }
+
+    private func animateFrame(panel: NSPanel, to targetFrame: NSRect, kind: FrameAnimationKind) {
+        let duration = IslandAnimationPolicy.panelFrameDuration(
+            isClosing: kind == .closing,
+            speed: model?.islandAnimationSpeed ?? .normal
+        )
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            context.timingFunction = IslandAnimationPolicy.panelFrameTimingFunction
+            panel.animator().setFrame(targetFrame, display: true)
+        }
+    }
+
+    private func cancelFrameAnimation() {
+    }
+
+    nonisolated static func interpolatedOpeningFrame(
+        from startFrame: CGRect,
+        to targetFrame: CGRect,
+        progress rawProgress: Double
+    ) -> CGRect {
+        let progress = min(1, max(0, rawProgress))
+        let widthProgress = smoothStep(progress)
+        let heightLeadRatio = max(
+            0.01,
+            IslandAnimationPolicy.openingHeightLeadDuration / IslandAnimationPolicy.panelFrameBaseDuration
+        )
+        let heightProgress = min(1, progress / heightLeadRatio)
+
+        let width = startFrame.width + (targetFrame.width - startFrame.width) * widthProgress
+        let height = startFrame.height + (targetFrame.height - startFrame.height) * heightProgress
+        let midX = startFrame.midX + (targetFrame.midX - startFrame.midX) * widthProgress
+        let topY = startFrame.maxY + (targetFrame.maxY - startFrame.maxY) * heightProgress
+
+        return CGRect(
+            x: midX - (width / 2),
+            y: topY - height,
+            width: width,
+            height: height
+        )
+    }
+
+    nonisolated static func interpolatedClosingFrame(
+        from startFrame: CGRect,
+        to targetFrame: CGRect,
+        progress rawProgress: Double
+    ) -> CGRect {
+        let progress = smoothStep(rawProgress)
+        let width = startFrame.width + (targetFrame.width - startFrame.width) * progress
+        let height = startFrame.height + (targetFrame.height - startFrame.height) * progress
+        let midX = startFrame.midX + (targetFrame.midX - startFrame.midX) * progress
+        let topY = startFrame.maxY + (targetFrame.maxY - startFrame.maxY) * progress
+
+        return CGRect(
+            x: midX - (width / 2),
+            y: topY - height,
+            width: width,
+            height: height
+        )
+    }
+
+    nonisolated private static func smoothStep(_ progress: Double) -> CGFloat {
+        let t = min(1, max(0, progress))
+        return CGFloat(t * t * (3 - 2 * t))
     }
 
     private func presentPanel(_ panel: NSPanel, activates: Bool) {
@@ -288,6 +425,9 @@ final class OverlayPanelController {
         hoverCancelGrace = nil
 
         guard model != nil else { return }
+        guard IslandAnimationPolicy.canScheduleHoverOpen(cooldownUntil: hoverCooldownUntil) else {
+            return
+        }
 
         guard hoverTimer == nil else { return }
 
@@ -298,7 +438,7 @@ final class OverlayPanelController {
         }
 
         hoverTimer = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + AppModel.hoverOpenDelay, execute: item)
+        DispatchQueue.main.asyncAfter(deadline: .now() + IslandAnimationPolicy.hoverOpenDelay, execute: item)
     }
 
     private func performHoverOpen(_ model: AppModel) {
@@ -341,6 +481,11 @@ final class OverlayPanelController {
         hoverCancelGrace = nil
         hoverTimer?.cancel()
         hoverTimer = nil
+    }
+
+    func beginHoverCooldown() {
+        cancelHoverOpenImmediately()
+        hoverCooldownUntil = Date().addingTimeInterval(IslandAnimationPolicy.hoverCooldownDuration)
     }
 
     // MARK: - Hit testing geometry
@@ -461,24 +606,24 @@ final class OverlayPanelController {
         )
     }
 
-    /// Always returns the maximum (opened) panel size so the window never
-    /// needs to resize.  All visual transitions are driven purely by SwiftUI
-    /// inside this fixed-size window.
     private func panelSize(for model: AppModel?, on screen: NSScreen) -> CGSize {
         let insets = panelShadowInsets
 
         guard let model else {
-            return CGSize(
-                width: openedPanelWidth(for: screen) + Self.openedContentWidthPadding + (insets.horizontal * 2),
-                height: screen.notchSize.height + Self.openedEmptyStateHeight + Self.openedContentBottomPadding + insets.bottom
-            )
+            return closedPanelSize(on: screen, insets: insets, notchStatus: .closed)
+        }
+
+        guard model.notchStatus == .opened else {
+            return closedPanelSize(on: screen, insets: insets, notchStatus: model.notchStatus)
         }
 
         let panelWidth = openedPanelWidth(for: screen)
-        let contentHeight = openedContentHeight(for: model)
-        // Use at least the empty-state height so the window doesn't shrink
-        // when sessions come and go while opened.
-        let height = screen.notchSize.height + max(contentHeight, Self.openedEmptyStateHeight) + Self.openedContentBottomPadding + insets.bottom
+        let contentHeight = openedContentHeight(for: model, on: screen)
+        let height = Self.openedPanelFrameHeight(
+            contentHeight: contentHeight,
+            closedNotchHeight: screen.notchSize.height,
+            visibleFrameHeight: screen.visibleFrame.height
+        )
 
         return CGSize(
             width: panelWidth + Self.openedContentWidthPadding + (insets.horizontal * 2),
@@ -486,7 +631,35 @@ final class OverlayPanelController {
         )
     }
 
-    /// Constant insets — always opened size since the window never shrinks.
+    private func closedPanelSize(
+        on screen: NSScreen,
+        insets: (horizontal: CGFloat, bottom: CGFloat),
+        notchStatus: NotchStatus
+    ) -> CGSize {
+        CGSize(
+            width: Self.closedPanelWidth(
+                notchWidth: screen.notchSize.width,
+                isNotchedDisplay: screen.safeAreaInsets.top > 0,
+                notchStatus: notchStatus
+            ) + (insets.horizontal * 2),
+            height: screen.notchSize.height + insets.bottom
+        )
+    }
+
+    nonisolated static func openedPanelFrameHeight(
+        contentHeight: CGFloat,
+        closedNotchHeight: CGFloat,
+        visibleFrameHeight: CGFloat
+    ) -> CGFloat {
+        let uncappedHeight = closedNotchHeight
+            + max(contentHeight, Self.openedEmptyStateHeight)
+            + Self.openedContentBottomPadding
+            + IslandChromeMetrics.openedShadowBottomInset
+        return min(uncappedHeight, Self.maxOpenedPanelFrameHeight, visibleFrameHeight)
+    }
+
+    /// Constant insets keep the closed and opened panel aligned while the
+    /// outer window frame animates between sizes.
     private var panelShadowInsets: (horizontal: CGFloat, bottom: CGFloat) {
         (
             horizontal: IslandChromeMetrics.openedShadowHorizontalInset,
@@ -504,7 +677,7 @@ final class OverlayPanelController {
         )
     }
 
-    private func openedContentHeight(for model: AppModel) -> CGFloat {
+    private func openedContentHeight(for model: AppModel, on screen: NSScreen) -> CGFloat {
         let now = Date.now
         let visibleSessions = openedVisibleSessions(
             sessions: model.islandListSessions
@@ -518,37 +691,129 @@ final class OverlayPanelController {
         let isNotificationMode = model.notchOpenReason == .notification && actionableID != nil
 
         if isNotificationMode {
-            // Use SwiftUI-measured height when available (accurate after first render).
-            if model.measuredNotificationContentHeight > 0 {
-                return model.measuredNotificationContentHeight + Self.notificationMeasuredContentPadding
-            }
-            // First render: estimate from the actionable session's content so the
-            // initial window is close to the final size. This avoids a large blank
-            // panel flash (the previous 500pt fallback) and reduces the chance of
-            // a measurement→reposition cycle.
+            let estimatedHeight: CGFloat
             if let actionableID,
                let session = model.state.session(id: actionableID) {
                 let rowHeight = session.estimatedIslandRowHeight(at: now)
                 let bodyHeight = actionableBodyHeight(for: session, model: model)
-                return rowHeight + bodyHeight + Self.notificationEstimatedVerticalInsets
+                estimatedHeight = rowHeight + bodyHeight + Self.notificationEstimatedVerticalInsets
+            } else {
+                estimatedHeight = 300
             }
-            return 300
+
+            return Self.openedNotificationContentHeight(
+                estimatedContentHeight: estimatedHeight,
+                measuredContentHeight: model.measuredNotificationContentHeight,
+                measuredContentPadding: Self.notificationMeasuredContentPadding,
+                maxContentHeight: Self.maxOpenedSessionListContentHeight(on: screen)
+            )
         }
 
+        let estimatedContentHeight = estimatedSessionListContentHeight(
+            visibleSessions: visibleSessions,
+            actionableID: actionableID,
+            model: model,
+            now: now,
+            screen: screen
+        )
+
+        return Self.openedSessionListContentHeight(
+            estimatedContentHeight: estimatedContentHeight,
+            measuredContentHeight: model.measuredSessionListContentHeight,
+            maxContentHeight: Self.maxOpenedSessionListContentHeight(on: screen)
+        )
+    }
+
+    nonisolated static func openedSessionListContentHeight(
+        estimatedContentHeight: CGFloat,
+        measuredContentHeight: CGFloat,
+        maxContentHeight: CGFloat
+    ) -> CGFloat {
+        let cappedEstimate = min(estimatedContentHeight, maxContentHeight)
+        guard measuredContentHeight > 0 else {
+            return cappedEstimate
+        }
+
+        let cappedMeasured = min(measuredContentHeight, maxContentHeight)
+        guard cappedEstimate > 0 else {
+            return cappedMeasured
+        }
+
+        return min(cappedMeasured, cappedEstimate)
+    }
+
+    nonisolated static func openedNotificationContentHeight(
+        estimatedContentHeight: CGFloat,
+        measuredContentHeight: CGFloat,
+        measuredContentPadding: CGFloat,
+        maxContentHeight: CGFloat
+    ) -> CGFloat {
+        guard measuredContentHeight > 0 else {
+            return min(estimatedContentHeight, maxContentHeight)
+        }
+
+        return min(measuredContentHeight + measuredContentPadding, maxContentHeight)
+    }
+
+    private func estimatedSessionListContentHeight(
+        visibleSessions: [AgentSession],
+        actionableID: String?,
+        model: AppModel,
+        now: Date,
+        screen: NSScreen
+    ) -> CGFloat {
         let rowHeights = visibleSessions.map { session -> CGFloat in
+            let detailOverride = model.islandSessionDetailOverride(for: session.id)
             if session.id == actionableID {
-                return session.estimatedIslandRowHeight(at: now)
+                return session.estimatedIslandRowHeight(at: now, detailOverride: detailOverride)
                     + actionableBodyHeight(for: session, model: model)
             }
-            return session.estimatedIslandRowHeight(at: now)
+            return session.estimatedIslandRowHeight(at: now, detailOverride: detailOverride)
         }
 
         let rowsHeight = rowHeights.reduce(CGFloat.zero, +)
         let spacingHeight = CGFloat(max(0, rowHeights.count - 1)) * Self.openedRowSpacing
         let listHeight = rowsHeight + spacingHeight
         // Cap to match AutoHeightScrollView's maxHeight in IslandPanelView.
-        let cappedListHeight = min(listHeight, Self.maxSessionListHeight)
-        return cappedListHeight + Self.openedContentVerticalInsets
+        let cappedListHeight = min(listHeight, Self.maxSessionListHeight(on: screen))
+        return cappedListHeight + Self.openedSessionListChromeHeight
+    }
+
+    nonisolated static func maxSessionListHeight(
+        openedPanelFrameHeight: CGFloat,
+        closedNotchHeight: CGFloat
+    ) -> CGFloat {
+        max(
+            180,
+            floor(
+                openedPanelFrameHeight
+                    - IslandChromeMetrics.openedShadowBottomInset
+                    - closedNotchHeight
+                    - openedSessionListChromeHeight
+                    - openedContentBottomPadding
+            )
+        )
+    }
+
+    private static func maxOpenedSessionListContentHeight(on screen: NSScreen) -> CGFloat {
+        let frameHeight = min(Self.maxOpenedPanelFrameHeight, screen.visibleFrame.height)
+        return max(
+            Self.openedEmptyStateHeight,
+            floor(
+                frameHeight
+                    - IslandChromeMetrics.openedShadowBottomInset
+                    - screen.notchSize.height
+                    - openedContentBottomPadding
+            )
+        )
+    }
+
+    private static func maxSessionListHeight(on screen: NSScreen) -> CGFloat {
+        let frameHeight = min(Self.maxOpenedPanelFrameHeight, screen.visibleFrame.height)
+        return Self.maxSessionListHeight(
+            openedPanelFrameHeight: frameHeight,
+            closedNotchHeight: screen.notchSize.height
+        )
     }
 
     /// Additional height for the actionable session's inline action area.
@@ -659,7 +924,7 @@ final class OverlayPanelController {
     }
 
     private func openedVisibleSessions(sessions: [AgentSession]) -> [AgentSession] {
-        Array(sessions.prefix(Self.maxVisibleSessionRows))
+        sessions
     }
 
     // MARK: - Event reposting
@@ -697,6 +962,26 @@ private final class NotchPanel: NSPanel {
 
 // MARK: - NotchHostingView
 
+final class NotchContentContainerView: NSView {
+    init<Content: View>(hostingView: NotchHostingView<Content>) {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        hostingView.frame = bounds
+        hostingView.autoresizingMask = [.width, .height]
+        addSubview(hostingView)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var isOpaque: Bool {
+        false
+    }
+}
+
 final class NotchHostingView<Content: View>: NSHostingView<Content> {
     weak var notchController: OverlayPanelController?
 
@@ -719,6 +1004,7 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
 
     required init(rootView: Content) {
         super.init(rootView: rootView)
+        configureWindowSizing()
         configureTransparency()
     }
 
@@ -749,7 +1035,14 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        configureWindowSizing()
         configureTransparency()
+    }
+
+    private func configureWindowSizing() {
+        sizingOptions = []
+        translatesAutoresizingMaskIntoConstraints = true
+        autoresizingMask = [.width, .height]
     }
 
     private func configureTransparency() {

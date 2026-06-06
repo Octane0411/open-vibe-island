@@ -126,6 +126,7 @@ struct AppearanceSettingsPane: View {
             previewSection
             rightSlotSection
             centerLabelSection
+            animationSpeedSection
         }
     }
 
@@ -139,6 +140,7 @@ struct AppearanceSettingsPane: View {
             stateIndicatorSection
             sessionGroupSection
             sessionSortSection
+            sessionListLimitSection
             staleThresholdSection
         }
     }
@@ -368,6 +370,31 @@ struct AppearanceSettingsPane: View {
         .buttonStyle(.plain)
     }
 
+    // MARK: - 03 · Hover animation
+
+    @ViewBuilder
+    private var animationSpeedSection: some View {
+        sectionHeader(
+            title: lang.t("settings.appearance.animationSpeed.title"),
+            note: lang.t("settings.appearance.animationSpeed.note")
+        )
+
+        HStack(spacing: 12) {
+            ForEach(IslandAnimationSpeed.allCases) { option in
+                optionCard(
+                    selected: editingPreferences.animationSpeed == option,
+                    title: title(for: option)
+                ) {
+                    model.updateAppearancePreferences(for: editingProfile) { $0.animationSpeed = option }
+                } icon: {
+                    Text(animationSpeedIconText(for: option))
+                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(V6Palette.paper.opacity(0.9))
+                }
+            }
+        }
+    }
+
     // MARK: - 02 · Usage
 
     @ViewBuilder
@@ -465,7 +492,120 @@ struct AppearanceSettingsPane: View {
         }
     }
 
-    // MARK: - 06 · Done timeout
+    // MARK: - 06 · Session list size
+
+    @ViewBuilder
+    private var sessionListLimitSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader(
+                title: lang.t("settings.appearance.sessionListLimit.title"),
+                note: lang.t("settings.appearance.sessionListLimit.note")
+            )
+
+            HStack(spacing: 12) {
+                ForEach(IslandSessionListLimitMode.allCases) { option in
+                    optionCard(
+                        selected: editingPreferences.sessionListLimitMode == option,
+                        title: title(for: option)
+                    ) {
+                        model.updateAppearancePreferences(for: editingProfile) { $0.sessionListLimitMode = option }
+                    } icon: {
+                        Text(option == .activeWindow ? activityWindowIconText : "#")
+                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(V6Palette.paper.opacity(0.9))
+                    }
+                }
+            }
+
+            if editingPreferences.sessionListLimitMode == .activeWindow {
+                customActivityWindowControl
+            } else {
+                HStack(spacing: 12) {
+                    ForEach(IslandSessionListFixedCount.allCases) { option in
+                        optionCard(
+                            selected: editingPreferences.sessionListFixedCount == option,
+                            title: title(for: option)
+                        ) {
+                            model.updateAppearancePreferences(for: editingProfile) { $0.sessionListFixedCount = option }
+                        } icon: {
+                            Text("\(option.count)")
+                                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(V6Palette.paper.opacity(0.9))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var activityWindowIconText: String {
+        let minutes = editingPreferences.sessionListActivityWindowMinutes
+        if minutes >= 24 * 60, minutes % (24 * 60) == 0 {
+            return "\(minutes / (24 * 60))d+"
+        }
+        if minutes >= 60, minutes % 60 == 0 {
+            return "\(minutes / 60)h+"
+        }
+        return "\(minutes)m+"
+    }
+
+    private var customActivityWindowControl: some View {
+        let minutes = Binding<Int>(
+            get: { editingPreferences.sessionListActivityWindowMinutes },
+            set: { value in
+                model.updateAppearancePreferences(for: editingProfile) {
+                    $0.sessionListActivityWindowMinutes = min(24 * 60, max(1, value))
+                }
+            }
+        )
+
+        return HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(lang.t("settings.appearance.sessionListLimit.customMinutes"))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(V6Palette.paper.opacity(0.56))
+
+                HStack(spacing: 8) {
+                    TextField("", value: minutes, format: .number)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 16, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(V6Palette.paper)
+                        .frame(width: 72)
+                        .multilineTextAlignment(.trailing)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color.white.opacity(0.055))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                        )
+
+                    Text(lang.t("settings.appearance.sessionListLimit.minutesUnit"))
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(V6Palette.paper.opacity(0.62))
+                }
+            }
+
+            Stepper("", value: minutes, in: 1...(24 * 60), step: 5)
+                .labelsHidden()
+
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white.opacity(0.035))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    // MARK: - 07 · Done timeout
 
     @ViewBuilder
     private var staleThresholdSection: some View {
@@ -612,6 +752,17 @@ struct AppearanceSettingsPane: View {
         }
     }
 
+    private func title(for option: IslandSessionListLimitMode) -> String {
+        switch option {
+        case .activeWindow: lang.t("settings.appearance.sessionListLimit.activeWindow")
+        case .fixedCount: lang.t("settings.appearance.sessionListLimit.fixedCount")
+        }
+    }
+
+    private func title(for option: IslandSessionListFixedCount) -> String {
+        "\(option.count)"
+    }
+
     private func title(for option: IslandCompletedStaleThreshold) -> String {
         switch option {
         case .twoMinutes:    lang.t("settings.appearance.staleThreshold.twoMinutes")
@@ -619,6 +770,22 @@ struct AppearanceSettingsPane: View {
         case .tenMinutes:    lang.t("settings.appearance.staleThreshold.tenMinutes")
         case .twentyMinutes: lang.t("settings.appearance.staleThreshold.twentyMinutes")
         case .never:         lang.t("settings.appearance.staleThreshold.never")
+        }
+    }
+
+    private func title(for option: IslandAnimationSpeed) -> String {
+        switch option {
+        case .fast:   lang.t("settings.appearance.animationSpeed.fast")
+        case .normal: lang.t("settings.appearance.animationSpeed.normal")
+        case .slow:   lang.t("settings.appearance.animationSpeed.slow")
+        }
+    }
+
+    private func animationSpeedIconText(for option: IslandAnimationSpeed) -> String {
+        switch option {
+        case .fast:   "0.45s"
+        case .normal: "0.55s"
+        case .slow:   "0.69s"
         }
     }
 

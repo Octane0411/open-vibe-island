@@ -148,6 +148,288 @@ struct CodexUsageTests {
     }
 
     @Test
+    func codexUsageLoaderPrefersNewestTokenCountTimestampOverFileModificationDate() throws {
+        let rootURL = temporaryRootURL(named: "codex-usage-event-time")
+        let olderSnapshotURL = rootURL
+            .appendingPathComponent("2026/04/02", isDirectory: true)
+            .appendingPathComponent("rollout-old-token-new-mtime.jsonl")
+        let newerSnapshotURL = rootURL
+            .appendingPathComponent("2026/04/03", isDirectory: true)
+            .appendingPathComponent("rollout-new-token-old-mtime.jsonl")
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        try writeRollout(
+            [
+                rolloutLine(
+                    timestamp: "2026-04-03T01:00:00.000Z",
+                    type: "event_msg",
+                    payload: [
+                        "type": "token_count",
+                        "rate_limits": [
+                            "limit_id": "codex_bengalfox",
+                            "primary": [
+                                "used_percent": 0.0,
+                                "window_minutes": 300,
+                            ],
+                        ],
+                    ]
+                ),
+            ],
+            to: olderSnapshotURL
+        )
+        try writeRollout(
+            [
+                rolloutLine(
+                    timestamp: "2026-04-03T02:00:00.000Z",
+                    type: "event_msg",
+                    payload: [
+                        "type": "token_count",
+                        "rate_limits": [
+                            "limit_id": "codex",
+                            "primary": [
+                                "used_percent": 40.0,
+                                "window_minutes": 300,
+                            ],
+                            "secondary": [
+                                "used_percent": 8.0,
+                                "window_minutes": 10_080,
+                            ],
+                        ],
+                    ]
+                ),
+            ],
+            to: newerSnapshotURL
+        )
+
+        try setModificationDate(Date(timeIntervalSince1970: 3_000), for: olderSnapshotURL)
+        try setModificationDate(Date(timeIntervalSince1970: 2_000), for: newerSnapshotURL)
+
+        let snapshot = try CodexUsageLoader.load(fromRootURL: rootURL)
+
+        #expect(resolvedPath(snapshot?.sourceFilePath) == newerSnapshotURL.resolvingSymlinksInPath().path)
+        #expect(snapshot?.limitID == "codex")
+        #expect(snapshot?.windows.map(\.roundedUsedPercentage) == [40, 8])
+    }
+
+    @Test
+    func codexUsageLoaderIgnoresAllZeroPlaceholderRateLimits() throws {
+        let rootURL = temporaryRootURL(named: "codex-usage-zero-placeholder")
+        let realSnapshotURL = rootURL
+            .appendingPathComponent("2026/04/03", isDirectory: true)
+            .appendingPathComponent("rollout-real-rate-limits.jsonl")
+        let placeholderSnapshotURL = rootURL
+            .appendingPathComponent("2026/04/03", isDirectory: true)
+            .appendingPathComponent("rollout-placeholder-rate-limits.jsonl")
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        try writeRollout(
+            [
+                rolloutLine(
+                    timestamp: "2026-04-03T02:00:00.000Z",
+                    type: "event_msg",
+                    payload: [
+                        "type": "token_count",
+                        "rate_limits": [
+                            "limit_id": "codex",
+                            "plan_type": "pro",
+                            "primary": [
+                                "used_percent": 47.0,
+                                "window_minutes": 300,
+                            ],
+                            "secondary": [
+                                "used_percent": 9.0,
+                                "window_minutes": 10_080,
+                            ],
+                        ],
+                    ]
+                ),
+            ],
+            to: realSnapshotURL
+        )
+        try writeRollout(
+            [
+                rolloutLine(
+                    timestamp: "2026-04-03T02:01:00.000Z",
+                    type: "event_msg",
+                    payload: [
+                        "type": "token_count",
+                        "rate_limits": [
+                            "limit_id": "codex",
+                            "plan_type": "pro",
+                            "primary": [
+                                "used_percent": 0.0,
+                                "window_minutes": 300,
+                            ],
+                            "secondary": [
+                                "used_percent": 0.0,
+                                "window_minutes": 10_080,
+                            ],
+                        ],
+                    ]
+                ),
+            ],
+            to: placeholderSnapshotURL
+        )
+
+        let snapshot = try CodexUsageLoader.load(fromRootURL: rootURL)
+
+        #expect(resolvedPath(snapshot?.sourceFilePath) == realSnapshotURL.resolvingSymlinksInPath().path)
+        #expect(snapshot?.windows.map(\.roundedUsedPercentage) == [47, 9])
+    }
+
+    @Test
+    func codexUsageLoaderIgnoresModelSpecificAllZeroPlaceholderWithResets() throws {
+        let rootURL = temporaryRootURL(named: "codex-usage-model-zero-placeholder")
+        let realSnapshotURL = rootURL
+            .appendingPathComponent("2026/04/03", isDirectory: true)
+            .appendingPathComponent("rollout-real-rate-limits.jsonl")
+        let placeholderSnapshotURL = rootURL
+            .appendingPathComponent("2026/04/03", isDirectory: true)
+            .appendingPathComponent("rollout-placeholder-rate-limits.jsonl")
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        try writeRollout(
+            [
+                rolloutLine(
+                    timestamp: "2026-04-03T02:00:00.000Z",
+                    type: "event_msg",
+                    payload: [
+                        "type": "token_count",
+                        "rate_limits": [
+                            "limit_id": "codex",
+                            "plan_type": "pro",
+                            "primary": [
+                                "used_percent": 47.0,
+                                "window_minutes": 300,
+                                "resets_at": 1_780_571_047,
+                            ],
+                            "secondary": [
+                                "used_percent": 9.0,
+                                "window_minutes": 10_080,
+                                "resets_at": 1_781_139_840,
+                            ],
+                        ],
+                    ]
+                ),
+            ],
+            to: realSnapshotURL
+        )
+        try writeRollout(
+            [
+                rolloutLine(
+                    timestamp: "2026-04-03T02:01:00.000Z",
+                    type: "event_msg",
+                    payload: [
+                        "type": "token_count",
+                        "rate_limits": [
+                            "limit_id": "codex_bengalfox",
+                            "primary": [
+                                "used_percent": 0.0,
+                                "window_minutes": 300,
+                                "resets_at": 1_780_588_623,
+                            ],
+                            "secondary": [
+                                "used_percent": 0.0,
+                                "window_minutes": 10_080,
+                                "resets_at": 1_781_175_423,
+                            ],
+                        ],
+                    ]
+                ),
+            ],
+            to: placeholderSnapshotURL
+        )
+
+        let snapshot = try CodexUsageLoader.load(fromRootURL: rootURL)
+
+        #expect(resolvedPath(snapshot?.sourceFilePath) == realSnapshotURL.resolvingSymlinksInPath().path)
+        #expect(snapshot?.limitID == "codex")
+        #expect(snapshot?.windows.map(\.roundedUsedPercentage) == [47, 9])
+    }
+
+    @Test
+    func codexUsageLoaderIgnoresCachedAllZeroPlaceholder() throws {
+        let rootURL = temporaryRootURL(named: "codex-usage-placeholder-cache")
+        let cacheURL = rootURL.appendingPathComponent("codex-usage-cache.json")
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        let snapshot = CodexUsageSnapshot(
+            sourceFilePath: "/tmp/rollout-placeholder.jsonl",
+            capturedAt: isoDate("2026-04-03T02:00:00.000Z"),
+            planType: nil,
+            limitID: "codex_bengalfox",
+            windows: [
+                CodexUsageWindow(
+                    key: "primary",
+                    label: "5h",
+                    usedPercentage: 0,
+                    leftPercentage: 100,
+                    windowMinutes: 300,
+                    resetsAt: isoDate("2026-04-03T07:00:00.000Z")
+                ),
+                CodexUsageWindow(
+                    key: "secondary",
+                    label: "7d",
+                    usedPercentage: 0,
+                    leftPercentage: 100,
+                    windowMinutes: 10_080,
+                    resetsAt: isoDate("2026-04-10T02:00:00.000Z")
+                ),
+            ]
+        )
+
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        let data = try JSONEncoder().encode(snapshot)
+        try data.write(to: cacheURL)
+
+        let restored = try CodexUsageLoader.loadCached(from: cacheURL)
+
+        #expect(restored == nil)
+    }
+
+    @Test
+    func codexUsageLoaderRoundTripsCachedSnapshot() throws {
+        let rootURL = temporaryRootURL(named: "codex-usage-cache")
+        let cacheURL = rootURL.appendingPathComponent("codex-usage-cache.json")
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        let snapshot = CodexUsageSnapshot(
+            sourceFilePath: "/tmp/rollout.jsonl",
+            capturedAt: isoDate("2026-04-03T02:00:00.000Z"),
+            planType: "pro",
+            limitID: "codex",
+            windows: [
+                CodexUsageWindow(
+                    key: "primary",
+                    label: "5h",
+                    usedPercentage: 40,
+                    leftPercentage: 60,
+                    windowMinutes: 300,
+                    resetsAt: nil
+                ),
+            ]
+        )
+
+        try CodexUsageLoader.saveCached(snapshot, to: cacheURL)
+        let restored = try CodexUsageLoader.loadCached(from: cacheURL)
+
+        #expect(restored == snapshot)
+    }
+
+    @Test
     func codexUsageLoaderFormatsNonStandardWindowLengths() throws {
         let rootURL = temporaryRootURL(named: "codex-usage-labels")
         let rolloutURL = rootURL
