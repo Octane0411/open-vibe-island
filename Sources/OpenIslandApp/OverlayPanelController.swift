@@ -47,13 +47,27 @@ final class OverlayPanelController {
         OverlayDisplayResolver.availableDisplayOptions()
     }
 
+    private func applyOverlayCollectionBehavior(to panel: NSPanel) {
+        // Omit `.fullScreenAuxiliary` so the overlay stays on desktop spaces and
+        // does not float above native fullscreen apps.
+        panel.collectionBehavior = [.canJoinAllSpaces, .ignoresCycle, .stationary]
+    }
+
     @discardableResult
     func ensurePanel(model: AppModel, preferredScreenID: String?) -> OverlayPlacementDiagnostics? {
         self.model = model
         let panel = self.panel ?? makePanel(model: model)
         self.panel = panel
+        applyOverlayCollectionBehavior(to: panel)
         let diagnostics = positionPanel(panel, preferredScreenID: preferredScreenID, animated: false)
-        panel.orderFrontRegardless()
+
+        if model.isOverlayDisplayFullscreen {
+            setPanelHiddenForFullscreen(true)
+        } else {
+            setPanelHiddenForFullscreen(false)
+            panel.orderFrontRegardless()
+        }
+
         panel.ignoresMouseEvents = true
         panel.acceptsMouseMovedEvents = false
         startEventMonitoring()
@@ -64,8 +78,16 @@ final class OverlayPanelController {
         self.model = model
         let panel = self.panel ?? makePanel(model: model)
         self.panel = panel
+        applyOverlayCollectionBehavior(to: panel)
         let diagnostics = positionPanel(panel, preferredScreenID: preferredScreenID, animated: true)
-        presentPanel(panel, activates: Self.shouldActivatePanel(for: model.notchOpenReason))
+
+        if model.isOverlayDisplayFullscreen {
+            setPanelHiddenForFullscreen(true)
+        } else {
+            setPanelHiddenForFullscreen(false)
+            presentPanel(panel, activates: Self.shouldActivatePanel(for: model.notchOpenReason))
+        }
+
         panel.ignoresMouseEvents = false
         panel.acceptsMouseMovedEvents = true
         startEventMonitoring()
@@ -77,6 +99,24 @@ final class OverlayPanelController {
         panel?.acceptsMouseMovedEvents = false
     }
 
+    func orderOutPanel() {
+        setPanelHiddenForFullscreen(true)
+    }
+
+    func setPanelHiddenForFullscreen(_ hidden: Bool) {
+        guard let panel else { return }
+
+        if hidden {
+            panel.alphaValue = 0
+            panel.ignoresMouseEvents = true
+            panel.acceptsMouseMovedEvents = false
+            panel.orderOut(nil)
+            stopEventMonitoring()
+        } else {
+            panel.alphaValue = 1
+        }
+    }
+
     func setInteractive(_ interactive: Bool) {
         guard let panel else {
             return
@@ -86,6 +126,8 @@ final class OverlayPanelController {
         panel.acceptsMouseMovedEvents = interactive
 
         if interactive {
+            guard model?.isOverlayDisplayFullscreen != true else { return }
+            setPanelHiddenForFullscreen(false)
             presentPanel(panel, activates: Self.shouldActivatePanel(for: model?.notchOpenReason))
         }
     }
@@ -132,7 +174,7 @@ final class OverlayPanelController {
         // user's other windows — on built-in notch displays it disappears
         // below the menu bar, and on external displays it falls out of the
         // top bar entirely.
-        panel.collectionBehavior = [.fullScreenAuxiliary, .canJoinAllSpaces, .ignoresCycle, .stationary]
+        applyOverlayCollectionBehavior(to: panel)
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.ignoresMouseEvents = true
@@ -233,8 +275,13 @@ final class OverlayPanelController {
         }
     }
 
+    private func stopEventMonitoring() {
+        eventMonitors.stop()
+    }
+
     private func handleMouseMoved(_ screenLocation: NSPoint) {
         guard let model else { return }
+        guard !model.isOverlayDisplayFullscreen else { return }
 
         let inClosedSurfaceArea = isPointInClosedSurfaceArea(screenLocation)
 
@@ -247,7 +294,7 @@ final class OverlayPanelController {
         if model.notchStatus == .closed && inClosedSurfaceArea {
             // Only auto-expand on hover if the island is NOT in its auto-hidden "inactive" state.
             // When auto-hidden (peeking), the user must click to expand.
-            if !model.shouldAutoHideIsland {
+            if !model.shouldCollapseClosedNotch {
                 scheduleHoverOpen()
             } else {
                 cancelHoverOpen()
@@ -271,6 +318,7 @@ final class OverlayPanelController {
 
     private func handleMouseDown(_ screenLocation: NSPoint) {
         guard let model else { return }
+        guard !model.isOverlayDisplayFullscreen else { return }
 
         let inClosedSurfaceArea = isPointInClosedSurfaceArea(screenLocation)
 

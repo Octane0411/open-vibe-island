@@ -25,7 +25,7 @@ final class OverlayUICoordinator {
                 return
             }
             persistOverlayDisplayPreference()
-            refreshOverlayPlacement()
+            refreshOverlayPlacementIfVisible()
         }
     }
 
@@ -61,6 +61,12 @@ final class OverlayUICoordinator {
 
     @ObservationIgnored
     private var screenParametersChangeTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var fullscreenRefreshTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var fullscreenPollTask: Task<Void, Never>?
 
     var hasPendingNotificationAutoCollapse: Bool {
         notificationAutoCollapseTask != nil
@@ -103,10 +109,23 @@ final class OverlayUICoordinator {
             name: NSApplication.didChangeScreenParametersNotification,
             object: nil
         )
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(handleWorkspaceDisplayChanged),
+            name: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil
+        )
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(handleWorkspaceDisplayChanged),
+            name: NSWorkspace.didActivateApplicationNotification,
+            object: nil
+        )
     }
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
 
     @objc private func handleScreenParametersChanged() {
@@ -118,6 +137,23 @@ final class OverlayUICoordinator {
                 try? await Task.sleep(for: .milliseconds(delayMs))
                 guard !Task.isCancelled else { return }
                 self.refreshOverlayDisplayConfiguration()
+                self.refreshFullscreenState()
+            }
+        }
+    }
+
+    @objc private func handleWorkspaceDisplayChanged() {
+        refreshFullscreenState()
+        scheduleDeferredFullscreenRefresh()
+    }
+
+    private func scheduleDeferredFullscreenRefresh() {
+        fullscreenRefreshTask?.cancel()
+        fullscreenRefreshTask = Task { @MainActor in
+            for delayMs in [150, 500, 1_200] {
+                try? await Task.sleep(for: .milliseconds(delayMs))
+                guard !Task.isCancelled else { return }
+                refreshFullscreenState()
             }
         }
     }
@@ -126,6 +162,17 @@ final class OverlayUICoordinator {
         overlayDisplaySelectionID = UserDefaults.standard.string(
             forKey: "overlay.display.preference"
         ) ?? OverlayDisplayOption.automaticID
+    }
+
+    func startFullscreenPolling() {
+        fullscreenPollTask?.cancel()
+        fullscreenPollTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(400))
+                guard !Task.isCancelled else { return }
+                self?.refreshFullscreenState()
+            }
+        }
     }
 
     // MARK: - Overlay transitions
@@ -208,10 +255,15 @@ final class OverlayUICoordinator {
         overlayPanelController.setInteractive(interactive)
 
         if status == .opened, let appModel {
-            overlayPlacementDiagnostics = overlayPanelController.show(
-                model: appModel,
-                preferredScreenID: preferredOverlayScreenID
-            )
+            refreshFullscreenState()
+            if appModel.isOverlayDisplayFullscreen {
+                overlayPanelController.orderOutPanel()
+            } else {
+                overlayPlacementDiagnostics = overlayPanelController.show(
+                    model: appModel,
+                    preferredScreenID: preferredOverlayScreenID
+                )
+            }
         }
 
         afterStateChange?()
@@ -302,8 +354,50 @@ final class OverlayUICoordinator {
     }
 
     func ensureOverlayPanel() {
+        refreshFullscreenState()
+        reconcileOverlayVisibility()
+    }
+
+    func refreshFullscreenState() {
         guard let appModel else { return }
-        overlayPlacementDiagnostics = overlayPanelController.ensurePanel(model: appModel, preferredScreenID: preferredOverlayScreenID)
+        let fullscreen = FullscreenDisplayDetection.isOverlayScreenInFullscreen(
+            preferredScreenID: preferredOverlayScreenID
+        )
+        let changed = appModel.isOverlayDisplayFullscreen != fullscreen
+        appModel.isOverlayDisplayFullscreen = fullscreen
+        if changed {
+            reconcileOverlayVisibility()
+        }
+    }
+
+    private func reconcileOverlayVisibility() {
+        guard let appModel else { return }
+
+        if appModel.isOverlayDisplayFullscreen {
+            suppressNotchForFullscreen()
+            return
+        }
+
+        overlayPlacementDiagnostics = overlayPanelController.ensurePanel(
+            model: appModel,
+            preferredScreenID: preferredOverlayScreenID
+        )
+    }
+
+    private func suppressNotchForFullscreen() {
+        overlayPanelController.setPanelHiddenForFullscreen(true)
+        musicTrackNotificationTask?.cancel()
+        notificationAutoCollapseTask?.cancel()
+        notificationAutoCollapseTask = nil
+
+        guard notchStatus != .closed else { return }
+
+        notchStatus = .closed
+        notchOpenReason = nil
+        islandSurface = .sessionList()
+        overlayPanelController.setInteractive(false)
+        appModel?.measuredNotificationContentHeight = 0
+        appModel?.reconcileCompactMusicView()
     }
 
     // Legacy compatibility
@@ -335,7 +429,7 @@ final class OverlayUICoordinator {
             return
         }
 
-        refreshOverlayPlacement()
+        refreshOverlayPlacementIfVisible()
     }
 
     func refreshOverlayPlacement() {
@@ -345,6 +439,8 @@ final class OverlayUICoordinator {
     }
 
     func refreshOverlayPlacementIfVisible() {
+        refreshFullscreenState()
+        guard let appModel, !appModel.isOverlayDisplayFullscreen else { return }
         refreshOverlayPlacement()
     }
 

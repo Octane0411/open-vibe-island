@@ -149,7 +149,9 @@ flowchart TD
 
 **MacBook layout:** all closed surfaces use asymmetric “wings” — content in left/right ears, clear center gap over the physical notch. **External display:** single centered capsule; agent pill can show a center label.
 
-**Auto-hide:** when `autoHideWhenInactive` is enabled and `isIslandInactive` is true, the closed pill slides up off-screen unless the pointer is in the closed hit area (`isPeeking`). Compact music keeps NotchTune visible (`isIslandInactive` is false while music plays).
+**Auto-hide / empty collapse:** `shouldHideClosedNotch` slides the closed pill off-screen when agents are idle, music is not playing (paused counts as not playing), and no music notification is showing — always on, no setting required. The `autoHideWhenInactive` preference adds the same collapse for other inactive agent-only states via `shouldCollapseClosedNotch`. Hovering the notch hit area peeks the pill back (`isPeeking`). Compact music keeps NotchTune visible (`isIslandInactive` is false while music plays).
+
+**Fullscreen hide:** The overlay panel omits `.fullScreenAuxiliary` so macOS keeps it off exclusive fullscreen spaces. `FullscreenDisplayDetection` treats the target display's managed space type from `CGSCopyManagedDisplaySpaces` (types `1`/`4`) as authoritative — maximized windows at full display height do not count. AX `AXFullScreen` is fallback only when CGS is unavailable. Refreshes on space changes, app activation, screen parameter updates, and a 400ms poll.
 
 ### Agent view (closed pill)
 
