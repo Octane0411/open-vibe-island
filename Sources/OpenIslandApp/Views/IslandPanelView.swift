@@ -265,8 +265,9 @@ struct IslandPanelView: View {
 
     private var closedSurfaceVerticalOffset: CGFloat {
         guard !usesOpenedVisualState else { return 0 }
+        if model.isOverlayDisplayFullscreen { return -closedNotchHeight }
         if isShowingMusicNotification || isShowingCompactMusicView { return 0 }
-        if model.shouldAutoHideIsland && !model.isPeeking {
+        if model.shouldCollapseClosedNotch && !model.isPeeking {
             return -closedNotchHeight
         }
         return 0
@@ -307,6 +308,8 @@ struct IslandPanelView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .ignoresSafeArea()
+        .opacity(model.isOverlayDisplayFullscreen ? 0 : 1)
+        .allowsHitTesting(!model.isOverlayDisplayFullscreen)
         .preferredColorScheme(.dark)
         .alert(model.lang.t("island.quit.confirmTitle"), isPresented: $showingQuitConfirmation) {
             Button(model.lang.t("island.quit.confirmAction"), role: .destructive) {
@@ -387,7 +390,7 @@ struct IslandPanelView: View {
                         value: usesOpenedVisualState
                     )
                     .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.isPeeking)
-                    .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.shouldAutoHideIsland)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.shouldCollapseClosedNotch)
                     .animation(.spring(response: 0.35, dampingFraction: 0.85), value: isShowingMusicNotification)
                     .animation(.easeInOut(duration: 0.58), value: closedMusicSurfacePhase)
                     .allowsHitTesting(!usesOpenedVisualState)

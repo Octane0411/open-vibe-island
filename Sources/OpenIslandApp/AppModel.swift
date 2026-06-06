@@ -657,6 +657,7 @@ final class AppModel {
         }
 
         overlay.appModel = self
+        overlay.startFullscreenPolling()
         overlay.restoreDisplayPreference()
         overlay.onStatusMessage = { [weak self] message in
             self?.lastActionMessage = message
@@ -732,6 +733,7 @@ final class AppModel {
         refreshOverlayDisplayConfiguration()
         hasFinishedInit = true
         reconcileCompactMusicView()
+        overlay.refreshFullscreenState()
     }
 
     var isMouseInsideClosedArea: Bool = false {
@@ -765,13 +767,31 @@ final class AppModel {
         agentsAreIdle && !shouldShowCompactMusicView
     }
 
+    /// Collapse the closed notch when nothing needs the surface: no running or
+    /// attention sessions, no active music playback (paused is fine), and no
+    /// transient track notification. Peek-on-hover still reveals the pill.
+    var shouldHideClosedNotch: Bool {
+        notchStatus != .opened
+            && musicNotificationTrack == nil
+            && !isMusicPlaybackActive
+            && agentsAreIdle
+    }
+
     var shouldAutoHideIsland: Bool {
         appearancePreferences(for: activeAppearanceProfile).autoHideWhenInactive && isIslandInactive
     }
 
-    var isPeeking: Bool {
-        shouldAutoHideIsland && isMouseInsideClosedArea
+    /// True when the closed pill should slide off-screen (empty state or user pref).
+    var shouldCollapseClosedNotch: Bool {
+        isOverlayDisplayFullscreen || shouldHideClosedNotch || shouldAutoHideIsland
     }
+
+    var isPeeking: Bool {
+        shouldCollapseClosedNotch && isMouseInsideClosedArea
+    }
+
+    /// True when the overlay's target display is in a native fullscreen space.
+    var isOverlayDisplayFullscreen: Bool = false
 
     func notePointerInsideClosedArea() {
         isMouseInsideClosedArea = true
