@@ -9,9 +9,9 @@ enum IslandChromeMetrics {
     static let notchedClosedMinimumWingReserve: CGFloat = 44
     static let notchedClosedHorizontalPadding: CGFloat = 14
     /// Outer leading inset before album art on closed music surfaces.
-    static let notchedMusicLeadingPadding: CGFloat = 10
+    static let notchedMusicLeadingPadding: CGFloat = 8
     /// Trailing outer inset after play icon / waveform on closed music surfaces.
-    static let notchedMusicTrailingPadding: CGFloat = 8
+    static let notchedMusicTrailingPadding: CGFloat = 6
     static let notchedClosedContentGap: CGFloat = 8
 
     /// Total outer width of a compact music pill on a notched MacBook.
