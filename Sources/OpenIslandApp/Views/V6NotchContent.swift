@@ -699,12 +699,12 @@ struct V6ClosedMusicSurface: View {
                 .layoutPriority(1)
 
             notificationTextBlock(maxWidth: externalRenderedTextWidth)
-                .opacity(isNotification ? 1 : 0)
-                .frame(width: isNotification ? externalRenderedTextWidth : 0, alignment: .leading)
+                .opacity(1)
+                .frame(width: externalRenderedTextWidth, alignment: .leading)
                 .clipped()
-                .allowsHitTesting(isNotification)
+                .allowsHitTesting(true)
 
-            Spacer(minLength: isNotification ? 0 : 8)
+            Spacer(minLength: 0)
 
             ZStack {
                 playStateIcon

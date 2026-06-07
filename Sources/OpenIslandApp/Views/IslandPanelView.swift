@@ -255,6 +255,12 @@ struct IslandPanelView: View {
         }
         if isShowingCompactMusicView {
             if closedPillWidth > 0 { return closedPillWidth }
+            if isExternalDisplayPlacement {
+                return min(
+                    MusicTrackNotificationMetrics.estimatedExternalWidth(track: model.playerManager.track),
+                    panelContentWidth
+                )
+            }
             return IslandChromeMetrics.notchedCompactMusicOuterWidth(
                 physicalNotchWidth: macbookPhysicalNotchWidth
             )
