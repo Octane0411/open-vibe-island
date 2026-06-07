@@ -69,6 +69,7 @@ enum IslandCharacter: String, CaseIterable, Identifiable, Sendable {
     case dino
     case cat
     case dog
+    case pikachu
 
     var id: String { rawValue }
 }

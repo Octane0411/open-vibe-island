@@ -636,6 +636,7 @@ struct AppearanceSettingsPane: View {
         case .dino: return "Dino"
         case .cat:  return "Cat"
         case .dog:  return "Dog"
+        case .pikachu: return "Pikachu"
         }
     }
 

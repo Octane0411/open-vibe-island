@@ -83,20 +83,75 @@ struct UnifiedBars: View {
         let startX = (Self.box - totalSize) / 2
         let startY = (Self.box - totalSize) / 2 - bounce
 
-        for r in 0..<9 {
-            for c in 0..<9 {
-                if frame[r][c] == 1 {
-                    let rect = CGRect(
-                        x: startX + CGFloat(c) * (pixelSize + gap),
-                        y: startY + CGFloat(r) * (pixelSize + gap),
-                        width: pixelSize,
-                        height: pixelSize
-                    )
-                    let path = Path(
-                        roundedRect: rect,
-                        cornerSize: CGSize(width: 0.3, height: 0.3)
-                    )
-                    context.fill(path, with: .color(tint.opacity(opacity)))
+        if character == .pikachu && mode == .running {
+            let loopDuration: TimeInterval = 0.8
+            let progress = time.truncatingRemainder(dividingBy: loopDuration) / loopDuration
+            let colOffset = progress * 12.0
+
+            // Draw Pikachu Body (runningFrame has no tail)
+            for r in 0..<9 {
+                for c in 0..<9 {
+                    if runningFrame[r][c] == 1 {
+                        let rect = CGRect(
+                            x: startX + CGFloat(c) * (pixelSize + gap),
+                            y: startY + CGFloat(r) * (pixelSize + gap),
+                            width: pixelSize,
+                            height: pixelSize
+                        )
+                        let path = Path(
+                            roundedRect: rect,
+                            cornerSize: CGSize(width: 0.3, height: 0.3)
+                        )
+                        context.fill(path, with: .color(tint.opacity(opacity)))
+                    }
+                }
+            }
+
+            // Draw Tail shooting off
+            let tailFrame: [[Int]] = [
+                [0, 0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0, 0],
+                [1, 0, 0, 0, 0, 0, 0, 0, 0],
+                [1, 1, 0, 0, 0, 0, 0, 0, 0],
+                [0, 1, 1, 0, 0, 0, 0, 0, 0],
+                [0, 0, 1, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0, 0]
+            ]
+            for r in 0..<9 {
+                for c in 0..<9 {
+                    if tailFrame[r][c] == 1 {
+                        let rect = CGRect(
+                            x: startX + (CGFloat(c) + colOffset) * (pixelSize + gap),
+                            y: startY + CGFloat(r) * (pixelSize + gap),
+                            width: pixelSize,
+                            height: pixelSize
+                        )
+                        let path = Path(
+                            roundedRect: rect,
+                            cornerSize: CGSize(width: 0.3, height: 0.3)
+                        )
+                        context.fill(path, with: .color(tint.opacity(opacity)))
+                    }
+                }
+            }
+        } else {
+            for r in 0..<9 {
+                for c in 0..<9 {
+                    if frame[r][c] == 1 {
+                        let rect = CGRect(
+                            x: startX + CGFloat(c) * (pixelSize + gap),
+                            y: startY + CGFloat(r) * (pixelSize + gap),
+                            width: pixelSize,
+                            height: pixelSize
+                        )
+                        let path = Path(
+                            roundedRect: rect,
+                            cornerSize: CGSize(width: 0.3, height: 0.3)
+                        )
+                        context.fill(path, with: .color(tint.opacity(opacity)))
+                    }
                 }
             }
         }
@@ -111,6 +166,7 @@ private extension IslandCharacter {
         case .dino: "Dino"
         case .cat: "Cat"
         case .dog: "Dog"
+        case .pikachu: "Pikachu"
         }
     }
 
@@ -151,6 +207,18 @@ private extension IslandCharacter {
             [0, 0, 1, 0, 0, 0, 1, 0, 0],
             [0, 0, 0, 0, 0, 0, 0, 0, 0],
             [0, 0, 0, 0, 0, 0, 0, 0, 0],
+            ]
+        case .pikachu:
+            [
+            [0, 0, 0, 1, 0, 0, 1, 0, 0],
+            [0, 0, 0, 1, 0, 0, 1, 0, 0],
+            [0, 0, 0, 1, 1, 1, 1, 1, 0],
+            [0, 0, 0, 1, 0, 1, 0, 1, 0],
+            [1, 0, 0, 1, 1, 1, 1, 1, 0],
+            [1, 1, 0, 1, 1, 1, 1, 0, 0],
+            [0, 1, 1, 1, 1, 1, 1, 0, 0],
+            [0, 0, 1, 1, 1, 1, 1, 0, 0],
+            [0, 0, 0, 1, 0, 1, 0, 0, 0]
             ]
         }
     }
@@ -193,6 +261,18 @@ private extension IslandCharacter {
             [0, 0, 0, 0, 0, 0, 0, 0, 0],
             [0, 0, 0, 0, 0, 0, 0, 0, 0],
             ]
+        case .pikachu:
+            [
+            [0, 0, 0, 1, 0, 0, 1, 0, 0],
+            [0, 0, 0, 1, 0, 0, 1, 0, 0],
+            [0, 0, 0, 1, 1, 1, 1, 1, 0],
+            [0, 0, 0, 1, 0, 1, 0, 1, 0],
+            [0, 0, 0, 1, 1, 1, 1, 1, 0],
+            [0, 0, 0, 1, 1, 1, 1, 0, 0],
+            [0, 0, 0, 1, 1, 1, 1, 0, 0],
+            [0, 0, 0, 1, 1, 1, 1, 0, 0],
+            [0, 0, 0, 1, 0, 1, 0, 0, 0]
+            ]
         }
     }
 
@@ -201,6 +281,7 @@ private extension IslandCharacter {
         case .dino: (1, 5)
         case .cat: (2, 6)
         case .dog: (2, 6)
+        case .pikachu: (3, 4)
         }
     }
 
@@ -212,6 +293,8 @@ private extension IslandCharacter {
             0
         case .dog:
             abs(sin(time * .pi * 5.0)) * 0.6
+        case .pikachu:
+            abs(sin(time * .pi * 5.0)) * 1.0
         }
     }
 }
