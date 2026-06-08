@@ -572,6 +572,13 @@ struct IslandPanelView: View {
 
     private static let maxSessionListHeight: CGFloat = 560
 
+    /// Above this row count, the list stops giving each row its own
+    /// `.drawingGroup()`. Per-row Metal offscreen rasterization is fine for a
+    /// handful of rows but becomes a main-thread throughput cliff on a long
+    /// list — the cause of the "white screen / freeze when many sessions"
+    /// hang. Short lists keep it for smoother animation.
+    private static let maxDrawingGroupRowCount = 8
+
     private var sessionList: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             if isNotificationMode {
@@ -636,7 +643,8 @@ struct IslandPanelView: View {
                         session: session,
                         referenceDate: context.date,
                         isActionable: session.phase.requiresAttention || session.id == actionableSessionID,
-                        useDrawingGroup: model.notchStatus == .opened,
+                        useDrawingGroup: model.notchStatus == .opened
+                            && model.islandListSessions.count <= Self.maxDrawingGroupRowCount,
                         isInteractive: model.notchStatus == .opened,
                         lang: model.lang,
                         onApprove: { model.approvePermission(for: session.id, action: $0) },
