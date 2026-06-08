@@ -39,10 +39,23 @@ final class AppModel {
     var state = SessionState() {
         didSet {
             _cachedSessionBuckets = nil
+            if !acknowledgedEndedSessionIDs.isEmpty {
+                // Drop acknowledgements for sessions that are gone or have
+                // restarted (no longer ended), so a session's next completion
+                // re-surfaces as unseen.
+                let stillEnded = Set(state.sessions.filter(\.isSessionEnded).map(\.id))
+                acknowledgedEndedSessionIDs.formIntersection(stillEnded)
+            }
             bridgeServer.updateStateSnapshot(state)
         }
     }
     @ObservationIgnored private var _cachedSessionBuckets: (primary: [AgentSession], overflow: [AgentSession])?
+    /// Hook-managed sessions that have ended and that the user has already seen
+    /// in an island they actively opened. Keeps a completed Claude Code task in
+    /// the pending badge after it finishes — until the user opens the island and
+    /// sees it — instead of vanishing when its notification card collapses.
+    /// See `shouldSurfaceInIsland(_:)`.
+    @ObservationIgnored private var acknowledgedEndedSessionIDs: Set<String> = []
     var selectedSessionID: String?
     let hooks = HookInstallationCoordinator()
     let overlay = OverlayUICoordinator()
@@ -483,6 +496,7 @@ final class AppModel {
         monitoring.syntheticClaudeSessionPrefix = Self.syntheticClaudeSessionPrefix
         monitoring.stateAccessor = { [weak self] in self?.state ?? SessionState() }
         monitoring.stateUpdater = { [weak self] in self?.state = $0 }
+        monitoring.acknowledgedEndedSessionIDsAccessor = { [weak self] in self?.acknowledgedEndedSessionIDs ?? [] }
         monitoring.onSessionsReconciled = { [weak self] in
             self?.synchronizeSelection()
             self?.refreshOverlayPlacementIfVisible()
@@ -1191,7 +1205,7 @@ final class AppModel {
         var primary: [AgentSession] = []
         var claimedLiveAttachmentKeys: Set<String> = []
 
-        for session in rankedSessions where session.isVisibleInIsland {
+        for session in rankedSessions where shouldSurfaceInIsland(session) {
             guard !session.isSubagentSession else { continue }
 
             if let liveAttachmentKey = monitoring.liveAttachmentKey(for: session) {
@@ -1206,6 +1220,37 @@ final class AppModel {
         let primaryIDs = Set(primary.map(\.id))
         let overflow = rankedSessions.filter { !primaryIDs.contains($0.id) && !$0.isSubagentSession }
         return (primary, overflow)
+    }
+
+    /// Like `AgentSession.isVisibleInIsland`, but also keeps a completed
+    /// hook-managed (e.g. Claude Code) session surfaced after it ends until the
+    /// user has opened the island and seen it. Stops a finished CC task from
+    /// disappearing from the pending badge the moment its notification card
+    /// auto-collapses.
+    private func shouldSurfaceInIsland(_ session: AgentSession) -> Bool {
+        session.isVisibleInIsland || isUnseenEndedHookSession(session)
+    }
+
+    private func isUnseenEndedHookSession(_ session: AgentSession) -> Bool {
+        session.isHookManaged
+            && session.isSessionEnded
+            && !acknowledgedEndedSessionIDs.contains(session.id)
+    }
+
+    /// Marks every currently-surfaced ended hook session as seen. Called when the
+    /// user closes an island they actively opened (hover/click), so a completed
+    /// task's badge clears only after they've had a chance to look — not when a
+    /// passive notification card auto-collapses.
+    func markSurfacedEndedSessionsSeen() {
+        let endedIDs = surfacedSessions
+            .filter { $0.isHookManaged && $0.isSessionEnded }
+            .map(\.id)
+        guard !endedIDs.isEmpty else { return }
+        let before = acknowledgedEndedSessionIDs.count
+        acknowledgedEndedSessionIDs.formUnion(endedIDs)
+        if acknowledgedEndedSessionIDs.count != before {
+            _cachedSessionBuckets = nil
+        }
     }
 
     private func displayPriority(for session: AgentSession, now: Date) -> Int {

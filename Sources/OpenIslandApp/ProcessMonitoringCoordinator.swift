@@ -20,6 +20,11 @@ final class ProcessMonitoringCoordinator {
     @ObservationIgnored
     var stateUpdater: ((SessionState) -> Void)?
 
+    /// Returns the IDs of ended hook sessions the user has already seen, so the
+    /// reconciliation purge keeps unseen completed tasks alive in the island.
+    @ObservationIgnored
+    var acknowledgedEndedSessionIDsAccessor: (() -> Set<String>)?
+
     @ObservationIgnored
     var onSessionsReconciled: (() -> Void)?
 
@@ -162,8 +167,11 @@ final class ProcessMonitoringCoordinator {
             _ = local.reconcileJumpTargets(resolverJumpTargets)
         }
 
-        // Phase 4: remove sessions that are no longer visible.
-        _ = local.removeInvisibleSessions()
+        // Phase 4: remove sessions that are no longer visible (but keep ended
+        // hook sessions the user hasn't seen yet).
+        _ = local.removeInvisibleSessions(
+            acknowledgedEndedSessionIDs: acknowledgedEndedSessionIDsAccessor?() ?? []
+        )
 
         // Single state assignment — triggers didSet exactly once.
         // Compare against the original snapshot to catch all mutations

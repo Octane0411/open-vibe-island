@@ -125,6 +125,12 @@ final class OverlayUICoordinator {
             beforeTransition: { [weak self] in
                 self?.notificationAutoCollapseTask?.cancel()
                 self?.notificationAutoCollapseTask = nil
+                // Only an island the user actively opened (hover/click) counts as
+                // "seen" — passive notification cards must not clear the pending
+                // badge when they auto-collapse.
+                if let self, self.notchOpenReason == .click || self.notchOpenReason == .hover {
+                    self.appModel?.markSurfacedEndedSessionsSeen()
+                }
             },
             afterStateChange: { [weak self] in
                 self?.autoCollapseSurfaceHasBeenEntered = false

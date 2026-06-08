@@ -721,4 +721,68 @@ struct AppModelSessionListTests {
         let claudeSessions = model.state.sessions.filter { $0.tool == .claudeCode }
         #expect(claudeSessions.count == 2)
     }
+
+    /// A finished Claude Code task must stay in the pending badge after its
+    /// notification collapses — until the user actively opens the island and
+    /// sees it — then clear.
+    @Test
+    func completedHookSessionStaysSurfacedUntilSeen() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+
+        var ended = AgentSession(
+            id: "cc-ended",
+            title: "Claude · open-island",
+            tool: .claudeCode,
+            origin: .live,
+            attachmentState: .stale,
+            phase: .completed,
+            summary: "Done",
+            updatedAt: now
+        )
+        ended.isHookManaged = true
+        ended.isSessionEnded = true
+
+        model.state = SessionState(sessions: [ended])
+
+        // Unseen finished task is retained in the badge.
+        #expect(model.liveSessionCount == 1)
+
+        // User actively opens the island (click) and then closes it → seen.
+        model.notchOpen(reason: .click)
+        model.notchClose()
+
+        // Once seen, it clears.
+        #expect(model.liveSessionCount == 0)
+    }
+
+    /// A passive notification card auto-collapsing must NOT count as "seen", so
+    /// the finished task survives in the badge for the user to find later.
+    @Test
+    func completedHookSessionPersistsWhenOnlyNotificationCardCollapses() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+
+        var ended = AgentSession(
+            id: "cc-ended",
+            title: "Claude · open-island",
+            tool: .claudeCode,
+            origin: .live,
+            attachmentState: .stale,
+            phase: .completed,
+            summary: "Done",
+            updatedAt: now
+        )
+        ended.isHookManaged = true
+        ended.isSessionEnded = true
+
+        model.state = SessionState(sessions: [ended])
+        #expect(model.liveSessionCount == 1)
+
+        // Notification popup opening and auto-collapsing does not acknowledge it.
+        model.notchOpen(reason: .notification)
+        model.notchClose()
+
+        #expect(model.liveSessionCount == 1)
+    }
 }
