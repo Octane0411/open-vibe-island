@@ -50,7 +50,7 @@ struct OpenIslandHooksCLI {
                 }
 
                 if let output = try CodexHookOutputEncoder.standardOutput(for: response) {
-                    FileHandle.standardOutput.write(output)
+                    try? FileHandle.standardOutput.write(contentsOf: output)
                 }
             case .claude, .qoder, .qwen, .factory, .droid, .codebuddy:
                 var payload = try decoder
@@ -68,7 +68,7 @@ struct OpenIslandHooksCLI {
                 }
 
                 if let output = try ClaudeHookOutputEncoder.standardOutput(for: response) {
-                    FileHandle.standardOutput.write(output)
+                    try? FileHandle.standardOutput.write(contentsOf: output)
                 }
             case .cursor:
                 let payload = try decoder.decode(CursorHookPayload.self, from: input)
@@ -84,8 +84,8 @@ struct OpenIslandHooksCLI {
                 if case let .cursorHookDirective(directive) = response {
                     let encoder = JSONEncoder()
                     let output = try encoder.encode(directive)
-                    FileHandle.standardOutput.write(output)
-                    FileHandle.standardOutput.write(Data("\n".utf8))
+                    try? FileHandle.standardOutput.write(contentsOf: output)
+                    try? FileHandle.standardOutput.write(contentsOf: Data("\n".utf8))
                 }
             }
         } catch {
@@ -96,7 +96,7 @@ struct OpenIslandHooksCLI {
 
     private static func logStderr(_ message: String) {
         guard let data = "[OpenIslandHooks] \(message)\n".data(using: .utf8) else { return }
-        FileHandle.standardError.write(data)
+        try? FileHandle.standardError.write(contentsOf: data)
     }
 
     private static func hookSource(arguments: [String]) -> HookSource {
