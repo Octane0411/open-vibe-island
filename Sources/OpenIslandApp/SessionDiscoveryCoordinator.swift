@@ -322,7 +322,8 @@ final class SessionDiscoveryCoordinator {
             lastUserPrompt: discovered.lastUserPrompt ?? existing.lastUserPrompt,
             lastAssistantMessage: discovered.lastAssistantMessage ?? existing.lastAssistantMessage,
             currentTool: discovered.currentTool ?? existing.currentTool,
-            currentCommandPreview: discovered.currentCommandPreview ?? existing.currentCommandPreview
+            currentCommandPreview: discovered.currentCommandPreview ?? existing.currentCommandPreview,
+            activeSubagents: discovered.activeSubagents.isEmpty ? existing.activeSubagents : discovered.activeSubagents
         )
         return merged.isEmpty ? nil : merged
     }
@@ -380,6 +381,76 @@ final class SessionDiscoveryCoordinator {
         }
 
         codexRolloutWatcher.sync(targets: targets)
+    }
+
+    func enrichCodexSubagent(parentSessionID: String, subagent: CodexSubagentInfo) {
+        let discovery = codexRolloutDiscovery
+        Task.detached(priority: .utility) { [weak self] in
+            let discovered = discovery.discoverSubagent(
+                sessionID: subagent.agentID,
+                parentSessionID: parentSessionID
+            )
+            guard let enriched = discovered.map({
+                Self.mergeCodexSubagent(existing: subagent, update: $0)
+            }) else {
+                return
+            }
+
+            await MainActor.run { [weak self] in
+                self?.applyCodexSubagent(enriched, parentSessionID: parentSessionID)
+            }
+        }
+    }
+
+    private func applyCodexSubagent(_ subagent: CodexSubagentInfo, parentSessionID: String) {
+        guard let parent = state.session(id: parentSessionID) else {
+            return
+        }
+
+        var metadata = parent.codexMetadata ?? CodexSessionMetadata()
+        metadata.activeSubagents = Self.upserting(subagent, into: metadata.activeSubagents)
+
+        var updated = state
+        updated.apply(
+            .sessionMetadataUpdated(
+                SessionMetadataUpdated(
+                    sessionID: parentSessionID,
+                    codexMetadata: metadata,
+                    timestamp: .now
+                )
+            )
+        )
+        state = updated
+        scheduleCodexSessionPersistence()
+    }
+
+    private nonisolated static func upserting(
+        _ subagent: CodexSubagentInfo,
+        into subagents: [CodexSubagentInfo]
+    ) -> [CodexSubagentInfo] {
+        var subagents = subagents
+        if let index = subagents.firstIndex(where: { $0.agentID == subagent.agentID }) {
+            subagents[index] = mergeCodexSubagent(existing: subagents[index], update: subagent)
+        } else {
+            subagents.append(subagent)
+        }
+        return subagents
+    }
+
+    private nonisolated static func mergeCodexSubagent(
+        existing: CodexSubagentInfo,
+        update: CodexSubagentInfo
+    ) -> CodexSubagentInfo {
+        CodexSubagentInfo(
+            agentID: existing.agentID,
+            agentType: update.agentType ?? existing.agentType,
+            nickname: update.nickname ?? existing.nickname,
+            taskDescription: update.taskDescription ?? existing.taskDescription,
+            currentTool: update.currentTool ?? existing.currentTool,
+            currentCommandPreview: update.currentCommandPreview ?? existing.currentCommandPreview,
+            summary: update.summary ?? existing.summary,
+            startedAt: existing.startedAt ?? update.startedAt
+        )
     }
 
     // MARK: - Codex.app periodic re-discovery

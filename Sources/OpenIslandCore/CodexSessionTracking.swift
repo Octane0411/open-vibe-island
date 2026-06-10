@@ -1,6 +1,37 @@
 import Dispatch
 import Foundation
 
+public struct CodexSubagentInfo: Equatable, Codable, Sendable {
+    public var agentID: String
+    public var agentType: String?
+    public var nickname: String?
+    public var taskDescription: String?
+    public var currentTool: String?
+    public var currentCommandPreview: String?
+    public var summary: String?
+    public var startedAt: Date?
+
+    public init(
+        agentID: String,
+        agentType: String? = nil,
+        nickname: String? = nil,
+        taskDescription: String? = nil,
+        currentTool: String? = nil,
+        currentCommandPreview: String? = nil,
+        summary: String? = nil,
+        startedAt: Date? = nil
+    ) {
+        self.agentID = agentID
+        self.agentType = agentType
+        self.nickname = nickname
+        self.taskDescription = taskDescription
+        self.currentTool = currentTool
+        self.currentCommandPreview = currentCommandPreview
+        self.summary = summary
+        self.startedAt = startedAt
+    }
+}
+
 public struct CodexSessionMetadata: Equatable, Codable, Sendable {
     public var transcriptPath: String?
     public var initialUserPrompt: String?
@@ -8,6 +39,7 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
     public var lastAssistantMessage: String?
     public var currentTool: String?
     public var currentCommandPreview: String?
+    public var activeSubagents: [CodexSubagentInfo]
 
     public init(
         transcriptPath: String? = nil,
@@ -15,7 +47,8 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
         lastUserPrompt: String? = nil,
         lastAssistantMessage: String? = nil,
         currentTool: String? = nil,
-        currentCommandPreview: String? = nil
+        currentCommandPreview: String? = nil,
+        activeSubagents: [CodexSubagentInfo] = []
     ) {
         self.transcriptPath = transcriptPath
         self.initialUserPrompt = initialUserPrompt
@@ -23,6 +56,7 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
         self.lastAssistantMessage = lastAssistantMessage
         self.currentTool = currentTool
         self.currentCommandPreview = currentCommandPreview
+        self.activeSubagents = activeSubagents
     }
 
     public var isEmpty: Bool {
@@ -32,6 +66,41 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
             && lastAssistantMessage == nil
             && currentTool == nil
             && currentCommandPreview == nil
+            && activeSubagents.isEmpty
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case transcriptPath
+        case initialUserPrompt
+        case lastUserPrompt
+        case lastAssistantMessage
+        case currentTool
+        case currentCommandPreview
+        case activeSubagents
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        transcriptPath = try container.decodeIfPresent(String.self, forKey: .transcriptPath)
+        initialUserPrompt = try container.decodeIfPresent(String.self, forKey: .initialUserPrompt)
+        lastUserPrompt = try container.decodeIfPresent(String.self, forKey: .lastUserPrompt)
+        lastAssistantMessage = try container.decodeIfPresent(String.self, forKey: .lastAssistantMessage)
+        currentTool = try container.decodeIfPresent(String.self, forKey: .currentTool)
+        currentCommandPreview = try container.decodeIfPresent(String.self, forKey: .currentCommandPreview)
+        activeSubagents = try container.decodeIfPresent([CodexSubagentInfo].self, forKey: .activeSubagents) ?? []
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(transcriptPath, forKey: .transcriptPath)
+        try container.encodeIfPresent(initialUserPrompt, forKey: .initialUserPrompt)
+        try container.encodeIfPresent(lastUserPrompt, forKey: .lastUserPrompt)
+        try container.encodeIfPresent(lastAssistantMessage, forKey: .lastAssistantMessage)
+        try container.encodeIfPresent(currentTool, forKey: .currentTool)
+        try container.encodeIfPresent(currentCommandPreview, forKey: .currentCommandPreview)
+        if !activeSubagents.isEmpty {
+            try container.encode(activeSubagents, forKey: .activeSubagents)
+        }
     }
 }
 
@@ -229,6 +298,10 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         var sessionID: String
         var cwd: String
         var timestamp: Date?
+        var threadSource: String?
+        var parentThreadID: String?
+        var agentNickname: String?
+        var agentRole: String?
 
         var workspaceName: String {
             let workspace = URL(fileURLWithPath: cwd).lastPathComponent
@@ -253,6 +326,11 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
     private let fileManager: FileManager
     private let maxAge: TimeInterval
     private let maxFiles: Int
+
+    private struct ParsedRollout {
+        var sessionMeta: SessionMeta
+        var snapshot: CodexRolloutSnapshot
+    }
 
     public init(
         rootURL: URL = CodexRolloutDiscovery.defaultRootURL,
@@ -335,10 +413,73 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         }
     }
 
+    public func discoverSubagent(
+        sessionID: String,
+        parentSessionID: String,
+        now: Date = .now
+    ) -> CodexSubagentInfo? {
+        guard let candidate = candidate(forSessionID: sessionID, now: now),
+              let parsed = parseRollout(fileURL: candidate.fileURL) else {
+            return nil
+        }
+
+        let meta = parsed.sessionMeta
+        guard meta.sessionID == sessionID,
+              meta.threadSource == "subagent",
+              meta.parentThreadID == parentSessionID else {
+            return nil
+        }
+
+        let summary = parsed.snapshot.isCompleted
+            ? parsed.snapshot.summary ?? parsed.snapshot.lastAssistantMessage
+            : nil
+
+        return CodexSubagentInfo(
+            agentID: sessionID,
+            agentType: meta.agentRole,
+            nickname: meta.agentNickname,
+            currentTool: parsed.snapshot.currentTool,
+            currentCommandPreview: parsed.snapshot.currentCommandPreview,
+            summary: summary,
+            startedAt: meta.timestamp
+        )
+    }
+
     private func discoverRecord(
         fileURL: URL,
         modifiedAt: Date
     ) -> CodexTrackedSessionRecord? {
+        guard let parsed = parseRollout(fileURL: fileURL) else { return nil }
+
+        let sessionMeta = parsed.sessionMeta
+        let snapshot = parsed.snapshot
+        let summary = snapshot.summary ?? sessionMeta.defaultSummary
+        let updatedAt = snapshot.updatedAt ?? sessionMeta.timestamp ?? modifiedAt
+        let metadata = CodexSessionMetadata(
+            transcriptPath: fileURL.path,
+            initialUserPrompt: snapshot.initialUserPrompt,
+            lastUserPrompt: snapshot.lastUserPrompt,
+            lastAssistantMessage: snapshot.lastAssistantMessage,
+            currentTool: snapshot.currentTool,
+            currentCommandPreview: snapshot.currentCommandPreview,
+            activeSubagents: snapshot.activeSubagents
+        )
+
+        return CodexTrackedSessionRecord(
+            sessionID: sessionMeta.sessionID,
+            title: sessionMeta.sessionTitle,
+            origin: .live,
+            attachmentState: .stale,
+            summary: summary,
+            phase: snapshot.phase,
+            updatedAt: updatedAt,
+            codexMetadata: metadata
+        )
+    }
+
+    private static let streamingChunkSize = 64 * 1_024
+
+    private func parseRollout(fileURL: URL) -> ParsedRollout? {
         // Stream the rollout line by line instead of slurping the whole
         // file. Long-lived Codex sessions accumulate JSONL files of tens
         // of MB; combined with the 10s rediscover throttle that meant a
@@ -378,31 +519,45 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         }
 
         guard let sessionMeta else { return nil }
-
-        let summary = snapshot.summary ?? sessionMeta.defaultSummary
-        let updatedAt = snapshot.updatedAt ?? sessionMeta.timestamp ?? modifiedAt
-        let metadata = CodexSessionMetadata(
-            transcriptPath: fileURL.path,
-            initialUserPrompt: snapshot.initialUserPrompt,
-            lastUserPrompt: snapshot.lastUserPrompt,
-            lastAssistantMessage: snapshot.lastAssistantMessage,
-            currentTool: snapshot.currentTool,
-            currentCommandPreview: snapshot.currentCommandPreview
-        )
-
-        return CodexTrackedSessionRecord(
-            sessionID: sessionMeta.sessionID,
-            title: sessionMeta.sessionTitle,
-            origin: .live,
-            attachmentState: .stale,
-            summary: summary,
-            phase: snapshot.phase,
-            updatedAt: updatedAt,
-            codexMetadata: metadata
-        )
+        return ParsedRollout(sessionMeta: sessionMeta, snapshot: snapshot)
     }
 
-    private static let streamingChunkSize = 64 * 1_024
+    private func candidate(forSessionID sessionID: String, now: Date) -> Candidate? {
+        guard fileManager.fileExists(atPath: rootURL.path),
+              let enumerator = fileManager.enumerator(
+                at: rootURL,
+                includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+                options: [.skipsHiddenFiles]
+              ) else {
+            return nil
+        }
+
+        let cutoff = now.addingTimeInterval(-maxAge)
+        var bestCandidate: Candidate?
+        for case let fileURL as URL in enumerator {
+            guard fileURL.lastPathComponent.hasPrefix("rollout-"),
+                  fileURL.lastPathComponent.contains(sessionID),
+                  fileURL.pathExtension == "jsonl",
+                  let resourceValues = try? fileURL.resourceValues(
+                    forKeys: [.contentModificationDateKey, .isRegularFileKey]
+                  ),
+                  resourceValues.isRegularFile == true else {
+                continue
+            }
+
+            let modifiedAt = resourceValues.contentModificationDate ?? .distantPast
+            guard modifiedAt >= cutoff else {
+                continue
+            }
+
+            let candidate = Candidate(fileURL: fileURL, modifiedAt: modifiedAt)
+            if bestCandidate.map({ $0.modifiedAt < modifiedAt }) ?? true {
+                bestCandidate = candidate
+            }
+        }
+
+        return bestCandidate
+    }
 
     private func parseSessionMeta(fromLine line: String) -> SessionMeta? {
         guard let object = codexRolloutJSONObject(for: line),
@@ -418,12 +573,21 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             return nil
         }
 
+        let subagentSource = (payload["source"] as? [String: Any])?["subagent"] as? [String: Any]
+        let threadSpawn = subagentSource?["thread_spawn"] as? [String: Any]
+
         return SessionMeta(
             sessionID: sessionID,
             cwd: cwd,
             timestamp: codexRolloutParseTimestamp(
                 (payload["timestamp"] as? String) ?? (object["timestamp"] as? String)
-            )
+            ),
+            threadSource: payload["thread_source"] as? String,
+            parentThreadID: threadSpawn?["parent_thread_id"] as? String,
+            agentNickname: (payload["agent_nickname"] as? String)
+                ?? (threadSpawn?["agent_nickname"] as? String),
+            agentRole: (payload["agent_role"] as? String)
+                ?? (threadSpawn?["agent_role"] as? String)
         )
     }
 
@@ -451,6 +615,16 @@ public struct CodexRolloutWatchTarget: Equatable, Sendable {
 }
 
 public struct CodexRolloutSnapshot: Equatable, Sendable {
+    public struct PendingSubagentSpawn: Equatable, Sendable {
+        public var agentType: String?
+        public var taskDescription: String?
+
+        public init(agentType: String? = nil, taskDescription: String? = nil) {
+            self.agentType = agentType
+            self.taskDescription = taskDescription
+        }
+    }
+
     public var summary: String?
     public var phase: SessionPhase
     public var updatedAt: Date?
@@ -459,6 +633,8 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
     public var lastAssistantMessage: String?
     public var currentTool: String?
     public var currentCommandPreview: String?
+    public var activeSubagents: [CodexSubagentInfo]
+    public var pendingSubagentSpawns: [String: PendingSubagentSpawn]
     public var isCompleted: Bool
     public var isInterrupted: Bool
 
@@ -471,6 +647,8 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
         lastAssistantMessage: String? = nil,
         currentTool: String? = nil,
         currentCommandPreview: String? = nil,
+        activeSubagents: [CodexSubagentInfo] = [],
+        pendingSubagentSpawns: [String: PendingSubagentSpawn] = [:],
         isCompleted: Bool = false,
         isInterrupted: Bool = false
     ) {
@@ -482,6 +660,8 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
         self.lastAssistantMessage = lastAssistantMessage
         self.currentTool = currentTool
         self.currentCommandPreview = currentCommandPreview
+        self.activeSubagents = activeSubagents
+        self.pendingSubagentSpawns = pendingSubagentSpawns
         self.isCompleted = isCompleted
         self.isInterrupted = isInterrupted
     }
@@ -492,7 +672,8 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
             lastUserPrompt: lastUserPrompt,
             lastAssistantMessage: lastAssistantMessage,
             currentTool: currentTool,
-            currentCommandPreview: currentCommandPreview
+            currentCommandPreview: currentCommandPreview,
+            activeSubagents: activeSubagents
         )
     }
 }
@@ -537,7 +718,8 @@ public enum CodexRolloutReducer {
                 lastUserPrompt: $0.lastUserPrompt,
                 lastAssistantMessage: $0.lastAssistantMessage,
                 currentTool: $0.currentTool,
-                currentCommandPreview: $0.currentCommandPreview
+                currentCommandPreview: $0.currentCommandPreview,
+                activeSubagents: $0.activeSubagents
             )
         }
         let newMetadata = CodexSessionMetadata(
@@ -546,7 +728,8 @@ public enum CodexRolloutReducer {
             lastUserPrompt: newSnapshot.lastUserPrompt,
             lastAssistantMessage: newSnapshot.lastAssistantMessage,
             currentTool: newSnapshot.currentTool,
-            currentCommandPreview: newSnapshot.currentCommandPreview
+            currentCommandPreview: newSnapshot.currentCommandPreview,
+            activeSubagents: newSnapshot.activeSubagents
         )
 
         if oldMetadata != newMetadata {
@@ -624,6 +807,8 @@ public enum CodexRolloutReducer {
         case "task_complete", "turn_complete":
             snapshot.currentTool = nil
             snapshot.currentCommandPreview = nil
+            snapshot.activeSubagents.removeAll()
+            snapshot.pendingSubagentSpawns.removeAll()
             snapshot.phase = .completed
             snapshot.isCompleted = true
             snapshot.isInterrupted = false
@@ -637,6 +822,8 @@ public enum CodexRolloutReducer {
         case "turn_aborted":
             snapshot.currentTool = nil
             snapshot.currentCommandPreview = nil
+            snapshot.activeSubagents.removeAll()
+            snapshot.pendingSubagentSpawns.removeAll()
             snapshot.phase = .completed
             snapshot.isCompleted = true
             snapshot.isInterrupted = true
@@ -766,6 +953,9 @@ public enum CodexRolloutReducer {
                 return
             }
 
+            if toolName == "spawn_agent" {
+                rememberSubagentSpawnRequest(payload, in: &snapshot)
+            }
             applyToolActivity(
                 toolName,
                 preview: commandPreview(for: toolName, payload: payload),
@@ -797,7 +987,9 @@ public enum CodexRolloutReducer {
             )
         case "compaction", "compaction_summary", "context_compaction":
             applyToolActivity("context_compaction", preview: nil, to: &snapshot)
-        case "function_call_output", "custom_tool_call_output", "tool_search_output":
+        case "function_call_output":
+            applyFunctionCallOutput(payload, timestamp: timestamp, to: &snapshot)
+        case "custom_tool_call_output", "tool_search_output":
             applyThinking(to: &snapshot)
         default:
             return
@@ -876,6 +1068,8 @@ public enum CodexRolloutReducer {
         snapshot.lastUserPrompt = message
         snapshot.currentTool = nil
         snapshot.currentCommandPreview = nil
+        snapshot.activeSubagents.removeAll()
+        snapshot.pendingSubagentSpawns.removeAll()
         snapshot.phase = .running
         snapshot.isCompleted = false
         snapshot.isInterrupted = false
@@ -914,6 +1108,8 @@ public enum CodexRolloutReducer {
         switch toolName {
         case "exec_command":
             "command"
+        case "spawn_agent":
+            "subagent"
         case "apply_patch":
             "patch"
         case "write_stdin":
@@ -952,6 +1148,96 @@ public enum CodexRolloutReducer {
         default:
             return nil
         }
+    }
+
+    private static func rememberSubagentSpawnRequest(
+        _ payload: [String: Any],
+        in snapshot: inout CodexRolloutSnapshot
+    ) {
+        guard let callID = payload["call_id"] as? String,
+              !callID.isEmpty else {
+            return
+        }
+
+        let arguments = decodedArguments(from: payload) ?? [:]
+        snapshot.pendingSubagentSpawns[callID] = CodexRolloutSnapshot.PendingSubagentSpawn(
+            agentType: clipped(arguments["agent_type"] as? String),
+            taskDescription: clipped(arguments["message"] as? String, limit: 160)
+        )
+    }
+
+    private static func applyFunctionCallOutput(
+        _ payload: [String: Any],
+        timestamp: Date?,
+        to snapshot: inout CodexRolloutSnapshot
+    ) {
+        defer { applyThinking(to: &snapshot) }
+
+        guard let callID = payload["call_id"] as? String,
+              let pendingSpawn = snapshot.pendingSubagentSpawns.removeValue(forKey: callID),
+              let spawned = spawnedSubagent(from: payload, pendingSpawn: pendingSpawn, timestamp: timestamp) else {
+            return
+        }
+
+        upsert(spawned, in: &snapshot.activeSubagents)
+    }
+
+    private static func spawnedSubagent(
+        from payload: [String: Any],
+        pendingSpawn: CodexRolloutSnapshot.PendingSubagentSpawn,
+        timestamp: Date?
+    ) -> CodexSubagentInfo? {
+        guard let outputObject = decodedOutputObject(from: payload),
+              let agentID = outputObject["agent_id"] as? String,
+              !agentID.isEmpty else {
+            return nil
+        }
+
+        return CodexSubagentInfo(
+            agentID: agentID,
+            agentType: pendingSpawn.agentType,
+            nickname: clipped(outputObject["nickname"] as? String),
+            taskDescription: pendingSpawn.taskDescription,
+            startedAt: timestamp
+        )
+    }
+
+    private static func decodedOutputObject(from payload: [String: Any]) -> [String: Any]? {
+        if let object = payload["output"] as? [String: Any] {
+            return object
+        }
+
+        guard let output = payload["output"] as? String,
+              let data = output.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+
+        return object
+    }
+
+    private static func upsert(_ subagent: CodexSubagentInfo, in subagents: inout [CodexSubagentInfo]) {
+        if let index = subagents.firstIndex(where: { $0.agentID == subagent.agentID }) {
+            subagents[index] = mergedSubagent(existing: subagents[index], update: subagent)
+        } else {
+            subagents.append(subagent)
+        }
+    }
+
+    private static func mergedSubagent(
+        existing: CodexSubagentInfo,
+        update: CodexSubagentInfo
+    ) -> CodexSubagentInfo {
+        CodexSubagentInfo(
+            agentID: existing.agentID,
+            agentType: update.agentType ?? existing.agentType,
+            nickname: update.nickname ?? existing.nickname,
+            taskDescription: update.taskDescription ?? existing.taskDescription,
+            currentTool: update.currentTool ?? existing.currentTool,
+            currentCommandPreview: update.currentCommandPreview ?? existing.currentCommandPreview,
+            summary: update.summary ?? existing.summary,
+            startedAt: existing.startedAt ?? update.startedAt
+        )
     }
 
     private static func decodedArguments(from payload: [String: Any]) -> [String: Any]? {
@@ -1193,6 +1479,7 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
     }
 
     public var eventHandler: (@Sendable (AgentEvent) -> Void)?
+    public var subagentSpawnHandler: (@Sendable (_ parentSessionID: String, _ subagent: CodexSubagentInfo) -> Void)?
 
     private let pollInterval: TimeInterval
     private let initialReadLimit: UInt64
@@ -1275,17 +1562,25 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
                 continue
             }
 
-            let events = refresh(observation: &observation)
+            let result = refresh(observation: &observation)
             observations[sessionID] = observation
-            events.forEach { eventHandler?($0) }
+            result.events.forEach { eventHandler?($0) }
+            result.spawnedSubagents.forEach {
+                subagentSpawnHandler?(observation.target.sessionID, $0)
+            }
         }
     }
 
-    private func refresh(observation: inout Observation) -> [AgentEvent] {
+    private struct RefreshResult {
+        var events: [AgentEvent]
+        var spawnedSubagents: [CodexSubagentInfo]
+    }
+
+    private func refresh(observation: inout Observation) -> RefreshResult {
         let fileURL = URL(fileURLWithPath: observation.target.transcriptPath)
         guard FileManager.default.fileExists(atPath: fileURL.path),
               let fileHandle = try? FileHandle(forReadingFrom: fileURL) else {
-            return []
+            return RefreshResult(events: [], spawnedSubagents: [])
         }
 
         defer {
@@ -1303,7 +1598,7 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
             try fileHandle.seek(toOffset: observation.offset)
             let data = try fileHandle.readToEnd() ?? Data()
             guard !data.isEmpty else {
-                return []
+                return RefreshResult(events: [], spawnedSubagents: [])
             }
 
             observation.offset += UInt64(data.count)
@@ -1316,20 +1611,27 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
 
             let lines = completeLines(from: &observation.pendingBuffer)
             guard !lines.isEmpty else {
-                return []
+                return RefreshResult(events: [], spawnedSubagents: [])
             }
 
             let oldSnapshot = observation.snapshot
             lines.forEach { CodexRolloutReducer.apply(line: $0, to: &observation.snapshot) }
+            let oldSubagentIDs = Set(oldSnapshot.activeSubagents.map(\.agentID))
+            let spawnedSubagents = observation.snapshot.activeSubagents.filter {
+                !oldSubagentIDs.contains($0.agentID)
+            }
 
-            return CodexRolloutReducer.events(
-                from: oldSnapshot,
-                to: observation.snapshot,
-                sessionID: observation.target.sessionID,
-                transcriptPath: observation.target.transcriptPath
+            return RefreshResult(
+                events: CodexRolloutReducer.events(
+                    from: oldSnapshot,
+                    to: observation.snapshot,
+                    sessionID: observation.target.sessionID,
+                    transcriptPath: observation.target.transcriptPath
+                ),
+                spawnedSubagents: spawnedSubagents
             )
         } catch {
-            return []
+            return RefreshResult(events: [], spawnedSubagents: [])
         }
     }
 
