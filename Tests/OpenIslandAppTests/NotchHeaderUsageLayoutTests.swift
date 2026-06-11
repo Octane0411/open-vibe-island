@@ -21,4 +21,15 @@ struct NotchHeaderUsageLayoutTests {
 
         #expect(distribution == NotchHeaderUsageDistribution(leftCount: 1, rightCount: 1))
     }
+
+    @Test
+    func unavailableRightLaneUsesWindowlessLeftUsageStyleForMultipleProviders() {
+        let style = NotchHeaderUsageLayout.leftSummaryStyle(
+            providerCount: 2,
+            rightUsageWidth: 0
+        )
+
+        #expect(style == .notchCompact)
+        #expect(style.showsPeakWindowLabel == false)
+    }
 }

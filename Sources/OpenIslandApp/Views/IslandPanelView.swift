@@ -344,9 +344,17 @@ struct IslandPanelView: View {
                     providers,
                     rightUsageWidth: metrics.rightUsageWidth
                 )
+                let leftUsageStyle = NotchHeaderUsageLayout.leftSummaryStyle(
+                    providerCount: providerGroups.left.count,
+                    rightUsageWidth: metrics.rightUsageWidth
+                )
 
                 HStack(spacing: 0) {
-                    usageLaneView(providerGroups.left, alignment: .leading)
+                    usageLaneView(
+                        providerGroups.left,
+                        alignment: .leading,
+                        preferredStyle: leftUsageStyle
+                    )
                         .frame(width: metrics.leftUsageWidth, alignment: .leading)
 
                     Color.clear
@@ -852,10 +860,7 @@ struct IslandPanelView: View {
         let providers = openedUsageProviders
 
         if providers.isEmpty == false {
-            ViewThatFits(in: .horizontal) {
-                compactUsageSummaryView(providers, usesShortTitles: false)
-                compactUsageSummaryView(providers, usesShortTitles: true)
-            }
+            fittingUsageSummaryView(providers, preferredStyle: .full)
         } else {
             Color.clear
         }
@@ -947,16 +952,14 @@ struct IslandPanelView: View {
     @ViewBuilder
     private func usageLaneView(
         _ providers: [UsageProviderPresentation],
-        alignment: Alignment
+        alignment: Alignment,
+        preferredStyle: NotchHeaderUsageSummaryStyle = .full
     ) -> some View {
         if providers.isEmpty {
             Color.clear
                 .frame(maxWidth: .infinity)
         } else {
-            ViewThatFits(in: .horizontal) {
-                compactUsageSummaryView(providers, usesShortTitles: false)
-                compactUsageSummaryView(providers, usesShortTitles: true)
-            }
+            fittingUsageSummaryView(providers, preferredStyle: preferredStyle)
             .frame(maxWidth: .infinity, alignment: alignment)
         }
     }
@@ -1014,13 +1017,35 @@ struct IslandPanelView: View {
         )
     }
 
+    @ViewBuilder
+    private func fittingUsageSummaryView(
+        _ providers: [UsageProviderPresentation],
+        preferredStyle: NotchHeaderUsageSummaryStyle
+    ) -> some View {
+        switch preferredStyle {
+        case .full:
+            ViewThatFits(in: .horizontal) {
+                compactUsageSummaryView(providers, style: .full)
+                compactUsageSummaryView(providers, style: .short)
+                compactUsageSummaryView(providers, style: .notchCompact)
+            }
+        case .short:
+            ViewThatFits(in: .horizontal) {
+                compactUsageSummaryView(providers, style: .short)
+                compactUsageSummaryView(providers, style: .notchCompact)
+            }
+        case .notchCompact:
+            compactUsageSummaryView(providers, style: .notchCompact)
+        }
+    }
+
     private func compactUsageSummaryView(
         _ providers: [UsageProviderPresentation],
-        usesShortTitles: Bool
+        style: NotchHeaderUsageSummaryStyle
     ) -> some View {
-        HStack(spacing: 7) {
+        HStack(spacing: style.providerSpacing) {
             ForEach(providers) { provider in
-                compactUsageChip(provider, usesShortTitle: usesShortTitles)
+                compactUsageChip(provider, style: style)
             }
         }
         .lineLimit(1)
@@ -1036,21 +1061,26 @@ struct IslandPanelView: View {
         return screen.localizedName
     }
 
-    private func compactUsageChip(_ provider: UsageProviderPresentation, usesShortTitle: Bool) -> some View {
-        HStack(spacing: 5) {
-            Text(usesShortTitle ? provider.shortTitle : provider.title)
+    private func compactUsageChip(
+        _ provider: UsageProviderPresentation,
+        style: NotchHeaderUsageSummaryStyle
+    ) -> some View {
+        HStack(spacing: style.elementSpacing) {
+            Text(style.usesShortTitle ? provider.shortTitle : provider.title)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.74))
 
-            Text(provider.peakWindowLabel)
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.42))
+            if style.showsPeakWindowLabel {
+                Text(provider.peakWindowLabel)
+                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.42))
+            }
 
             Text("\(provider.peakUsagePercentage)%")
                 .font(.system(size: 11.5, weight: .bold, design: .monospaced))
                 .foregroundStyle(usageColor(for: provider.peakUsedPercentage))
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, style.horizontalPadding)
         .padding(.vertical, 4)
         .background(.white.opacity(0.055), in: Capsule())
         .overlay(
@@ -1167,6 +1197,52 @@ struct NotchHeaderUsageDistribution: Equatable {
     let rightCount: Int
 }
 
+enum NotchHeaderUsageSummaryStyle: Equatable {
+    case full
+    case short
+    case notchCompact
+
+    var usesShortTitle: Bool {
+        switch self {
+        case .full:
+            false
+        case .short, .notchCompact:
+            true
+        }
+    }
+
+    var showsPeakWindowLabel: Bool {
+        self != .notchCompact
+    }
+
+    var providerSpacing: CGFloat {
+        switch self {
+        case .notchCompact:
+            6
+        case .full, .short:
+            7
+        }
+    }
+
+    var elementSpacing: CGFloat {
+        switch self {
+        case .notchCompact:
+            4
+        case .full, .short:
+            5
+        }
+    }
+
+    var horizontalPadding: CGFloat {
+        switch self {
+        case .notchCompact:
+            7
+        case .full, .short:
+            8
+        }
+    }
+}
+
 enum NotchHeaderUsageLayout {
     static func distribution(providerCount: Int, rightUsageWidth: CGFloat) -> NotchHeaderUsageDistribution {
         if rightUsageWidth <= 0 {
@@ -1187,6 +1263,17 @@ enum NotchHeaderUsageLayout {
                 rightCount: providerCount - splitIndex
             )
         }
+    }
+
+    static func leftSummaryStyle(
+        providerCount: Int,
+        rightUsageWidth: CGFloat
+    ) -> NotchHeaderUsageSummaryStyle {
+        guard providerCount > 1, rightUsageWidth <= 0 else {
+            return .full
+        }
+
+        return .notchCompact
     }
 }
 
