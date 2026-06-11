@@ -339,8 +339,11 @@ struct IslandPanelView: View {
         if usesNotchAwareOpenedHeader {
             GeometryReader { geometry in
                 let providers = openedUsageProviders
-                let providerGroups = splitUsageProviders(providers)
                 let metrics = openedHeaderMetrics(for: geometry.size.width)
+                let providerGroups = splitUsageProviders(
+                    providers,
+                    rightUsageWidth: metrics.rightUsageWidth
+                )
 
                 HStack(spacing: 0) {
                     usageLaneView(providerGroups.left, alignment: .leading)
@@ -929,22 +932,16 @@ struct IslandPanelView: View {
     }
 
     private func splitUsageProviders(
-        _ providers: [UsageProviderPresentation]
+        _ providers: [UsageProviderPresentation],
+        rightUsageWidth: CGFloat
     ) -> (left: [UsageProviderPresentation], right: [UsageProviderPresentation]) {
-        switch providers.count {
-        case 0:
-            return ([], [])
-        case 1:
-            return ([providers[0]], [])
-        case 2:
-            return ([providers[0]], [providers[1]])
-        default:
-            let splitIndex = Int(ceil(Double(providers.count) / 2.0))
-            return (
-                Array(providers.prefix(splitIndex)),
-                Array(providers.dropFirst(splitIndex))
-            )
-        }
+        let distribution = NotchHeaderUsageLayout.distribution(
+            providerCount: providers.count,
+            rightUsageWidth: rightUsageWidth
+        )
+        let left = Array(providers.prefix(distribution.leftCount))
+        let right = Array(providers.dropFirst(distribution.leftCount).prefix(distribution.rightCount))
+        return (left, right)
     }
 
     @ViewBuilder
@@ -1162,6 +1159,34 @@ private struct UsageWindowPresentation: Identifiable {
 
     var roundedUsedPercentage: Int {
         Int(usedPercentage.rounded())
+    }
+}
+
+struct NotchHeaderUsageDistribution: Equatable {
+    let leftCount: Int
+    let rightCount: Int
+}
+
+enum NotchHeaderUsageLayout {
+    static func distribution(providerCount: Int, rightUsageWidth: CGFloat) -> NotchHeaderUsageDistribution {
+        if rightUsageWidth <= 0 {
+            return NotchHeaderUsageDistribution(leftCount: max(0, providerCount), rightCount: 0)
+        }
+
+        switch providerCount {
+        case ...0:
+            return NotchHeaderUsageDistribution(leftCount: 0, rightCount: 0)
+        case 1:
+            return NotchHeaderUsageDistribution(leftCount: 1, rightCount: 0)
+        case 2:
+            return NotchHeaderUsageDistribution(leftCount: 1, rightCount: 1)
+        default:
+            let splitIndex = Int(ceil(Double(providerCount) / 2.0))
+            return NotchHeaderUsageDistribution(
+                leftCount: splitIndex,
+                rightCount: providerCount - splitIndex
+            )
+        }
     }
 }
 
