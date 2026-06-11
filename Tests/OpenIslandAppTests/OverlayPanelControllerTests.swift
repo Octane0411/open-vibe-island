@@ -48,13 +48,13 @@ struct OverlayPanelControllerTests {
     @Test
     func notchedDisplayClosedWidthKeepsPhysicalCameraNotchCovered() {
         // Compact MacBook layout: keep the physical camera notch covered,
-        // but halve the old 88pt side reserve.
+        // but use only 80% of the old 88pt side reserve.
         let width = OverlayPanelController.closedPanelWidth(
             notchWidth: 224,
             isNotchedDisplay: true,
             notchStatus: .closed
         )
-        #expect(width == CGFloat(224 + 44))
+        #expect(width == CGFloat(224 + (88 * 0.8)))
     }
 
     @Test
@@ -77,7 +77,7 @@ struct OverlayPanelControllerTests {
             isNotchedDisplay: true,
             notchStatus: .popping
         )
-        #expect(width == CGFloat(224 + 44 + 18))
+        #expect(width == CGFloat(224 + (88 * 0.8) + 18))
     }
 
     @Test
