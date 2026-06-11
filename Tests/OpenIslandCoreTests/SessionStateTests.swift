@@ -1102,6 +1102,7 @@ struct SessionStateTests {
         """))
     }
 
+    /// Verifies Codex hook feature detection across current, legacy, and invalid CLI output.
     @Test
     func codexHookInstallerDetectsPreferredFeatureFlagFromCodexOutput() {
         let currentFeatures = """
@@ -1117,6 +1118,8 @@ struct SessionStateTests {
         #expect(CodexHookInstaller.preferredCodexHooksFeatureKey(fromFeatureList: legacyFeatures) == .legacy)
         #expect(CodexHookInstaller.preferredCodexHooksFeatureKey(fromVersionOutput: "codex-cli 0.130.0") == .current)
         #expect(CodexHookInstaller.preferredCodexHooksFeatureKey(fromVersionOutput: "codex-cli 0.129.0") == .legacy)
+        #expect(CodexHookInstaller.preferredCodexHooksFeatureKey(fromFeatureList: "shell_tool stable true") == nil)
+        #expect(CodexHookInstaller.preferredCodexHooksFeatureKey(fromVersionOutput: "not a version") == nil)
     }
 
     @Test
