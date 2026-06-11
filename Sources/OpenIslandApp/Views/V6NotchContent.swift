@@ -287,8 +287,7 @@ struct V6ClosedPill: View {
     // MARK: MacBook (outer width locked)
 
     private var macbookBody: some View {
-        let halfReserve: CGFloat = 44
-        let outer = halfReserve + physicalNotchWidth + halfReserve
+        let outer = IslandChromeMetrics.closedNotchedWidth(physicalNotchWidth: physicalNotchWidth)
 
         return ZStack {
             V6ClosedPillShape()
