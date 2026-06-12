@@ -38,7 +38,7 @@ CLI coding agents are powerful, but they pull attention away from the editor and
 |---|---|---|
 | **Terminal.app** | Full Support | Jump-back with TTY targeting |
 | **Ghostty** | Full Support | Jump-back with ID matching |
-| **Alacritty** | Full Support | Jump-back via app activation; tmux pane targeting when inside tmux |
+| **Alacritty** | Partial Support | App activation; full pane targeting when running inside tmux |
 | **cmux** | Full Support | Jump-back via Unix socket API |
 | **Kaku** | Full Support | Jump-back via CLI pane targeting |
 | **WezTerm** | Full Support | Jump-back via CLI pane targeting |
