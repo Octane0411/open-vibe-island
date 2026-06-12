@@ -396,6 +396,10 @@ struct ActiveAgentProcessDiscovery {
             return "Ghostty"
         }
 
+        if lowered.contains("/alacritty.app/contents/macos/alacritty") || lowered.hasSuffix("/alacritty") {
+            return "Alacritty"
+        }
+
         if lowered.contains("/terminal.app/contents/macos/terminal") {
             return "Terminal"
         }

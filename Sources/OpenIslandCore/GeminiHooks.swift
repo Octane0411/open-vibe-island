@@ -257,7 +257,7 @@ public extension GeminiHookPayload {
     }
 
     private static let noLocatorTerminalApps: Set<String> = [
-        "cmux", "kaku", "wezterm", "zellij",
+        "alacritty", "cmux", "kaku", "wezterm", "zellij",
         "vs code", "vs code insiders", "cursor", "windsurf", "trae",
         "intellij idea", "webstorm", "pycharm", "goland", "clion",
         "rubymine", "phpstorm", "rider", "rustrover"
@@ -330,50 +330,58 @@ public extension GeminiHookPayload {
     }
 
     private func inferTerminalApp(from environment: [String: String]) -> String? {
-        if environment["ITERM_SESSION_ID"] != nil || environment["LC_TERMINAL"] == "iTerm2" {
-            return "iTerm"
-        }
-
+        // Multiplexers expose their own pane context and should win over
+        // outer host terminal hints.
         if environment["CMUX_WORKSPACE_ID"] != nil || environment["CMUX_SOCKET_PATH"] != nil {
             return "cmux"
         }
-
         if environment["ZELLIJ"] != nil {
             return "Zellij"
         }
 
-        if environment["GHOSTTY_RESOURCES_DIR"] != nil {
-            return "Ghostty"
+        // Prefer TERM_PROGRAM over app-specific env vars; the latter can
+        // leak through macOS GUI environment inheritance.
+        if let termProgram = environment["TERM_PROGRAM"]?.lowercased(), !termProgram.isEmpty {
+            switch termProgram {
+            case "apple_terminal":
+                return "Terminal"
+            case "iterm.app", "iterm2":
+                return "iTerm"
+            case let value where value.contains("ghostty"):
+                return "Ghostty"
+            case let value where value.contains("alacritty"):
+                return "Alacritty"
+            case let value where value.contains("warp"):
+                return "Warp"
+            case let value where value.contains("wezterm"):
+                return "WezTerm"
+            case "kaku":
+                return "Kaku"
+            case "vscode":
+                return "VS Code"
+            case "vscode-insiders":
+                return "VS Code Insiders"
+            case "windsurf":
+                return "Windsurf"
+            case "trae":
+                return "Trae"
+            default:
+                break
+            }
         }
 
+        if environment["ITERM_SESSION_ID"] != nil || environment["LC_TERMINAL"] == "iTerm2" {
+            return "iTerm"
+        }
         if environment["WARP_IS_LOCAL_SHELL_SESSION"] != nil {
             return "Warp"
         }
-
-        let termProgram = environment["TERM_PROGRAM"]?.lowercased()
-        switch termProgram {
-        case .some("apple_terminal"):
-            return "Terminal"
-        case .some("iterm.app"), .some("iterm2"):
-            return "iTerm"
-        case let value? where value.contains("ghostty"):
+        if environment["GHOSTTY_RESOURCES_DIR"] != nil {
             return "Ghostty"
-        case let value? where value.contains("warp"):
-            return "Warp"
-        case let value? where value.contains("wezterm"):
-            return "WezTerm"
-        case .some("kaku"):
-            return "Kaku"
-        case .some("vscode"):
-            return "VS Code"
-        case .some("vscode-insiders"):
-            return "VS Code Insiders"
-        case .some("windsurf"):
-            return "Windsurf"
-        case .some("trae"):
-            return "Trae"
-        default:
-            break
+        }
+        if environment["ALACRITTY_WINDOW_ID"] != nil
+            || environment["TERM"]?.lowercased().contains("alacritty") == true {
+            return "Alacritty"
         }
 
         if let terminalEmulator = environment["TERMINAL_EMULATOR"]?.lowercased(),

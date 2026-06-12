@@ -312,6 +312,35 @@ final class TerminalJumpServiceTests: XCTestCase {
         XCTAssertEqual(openedArguments.values, [["-b", "dev.warp.Warp-Stable"]])
     }
 
+    func testAlacrittyJumpActivatesRunningApp() throws {
+        let openedArguments = OpenedArgumentsBox()
+        let service = TerminalJumpService(
+            applicationResolver: { bundleIdentifier in
+                bundleIdentifier == "org.alacritty" ? URL(fileURLWithPath: "/Applications/Alacritty.app") : nil
+            },
+            appRunningChecker: { bundleIdentifier in
+                bundleIdentifier == "org.alacritty"
+            },
+            openAction: { arguments in
+                openedArguments.values.append(arguments)
+            },
+            appleScriptRunner: { _ in "" }
+        )
+
+        let result = try service.jump(
+            to: JumpTarget(
+                terminalApp: "Alacritty",
+                workspaceName: "open-island",
+                paneTitle: "Codex open-island",
+                workingDirectory: "/Users/test/open-island",
+                terminalTTY: "/dev/ttys001"
+            )
+        )
+
+        XCTAssertEqual(result, "Activated Alacritty. Exact pane targeting could not find the live terminal.")
+        XCTAssertEqual(openedArguments.values, [["-b", "org.alacritty"]])
+    }
+
     func testUnknownTerminalAppFallsBackToFinderInsteadOfFirstInstalledTerminal() throws {
         let openedArguments = OpenedArgumentsBox()
         // Pretend iTerm is installed. Without the "unknown" guard in

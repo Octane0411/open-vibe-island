@@ -52,7 +52,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 
 **10 agents**: Claude Code, Codex, Cursor, Gemini CLI, Kimi CLI, OpenCode, Qoder, Qwen Code, Factory, CodeBuddy
 
-**15+ terminals & IDEs**: Terminal.app, Ghostty, iTerm2, WezTerm, Zellij, tmux, cmux, Kaku, VS Code, Cursor, Windsurf, Trae, JetBrains IDEs (IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover)
+**15+ terminals & IDEs**: Terminal.app, Ghostty, Alacritty, iTerm2, WezTerm, Zellij, tmux, cmux, Kaku, VS Code, Cursor, Windsurf, Trae, JetBrains IDEs (IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover)
 
 <details>
 <summary>Full compatibility table</summary>
@@ -79,6 +79,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 |---|---|---|
 | **Terminal.app** | Full | Jump-back with TTY targeting |
 | **Ghostty** | Full | Jump-back with ID matching |
+| **Alacritty** | Full | Jump-back via app activation; tmux pane targeting when inside tmux |
 | **cmux** | Full | Jump-back via Unix socket API |
 | **Kaku** | Full | Jump-back via CLI pane targeting |
 | **WezTerm** | Full | Jump-back via CLI pane targeting |
@@ -279,7 +280,7 @@ Developers who already live in the terminal and want a better way to work with c
 
 ### Terminal Support
 
-- **Terminal.app**, **Ghostty**, **cmux**, **Kaku**, **WezTerm**, **iTerm2**, and **Zellij** — Full jump-back support with session attachment matching (cmux via Unix socket API, Kaku/WezTerm/Zellij via CLI pane targeting, iTerm2 via AppleScript session/TTY probe)
+- **Terminal.app**, **Ghostty**, **Alacritty**, **cmux**, **Kaku**, **WezTerm**, **iTerm2**, and **Zellij** — Full jump-back support with session attachment matching (Alacritty via app activation, with tmux pane targeting when inside tmux; cmux via Unix socket API; Kaku/WezTerm/Zellij via CLI pane targeting; iTerm2 via AppleScript session/TTY probe)
 - **VS Code**, **VS Code Insiders**, **Cursor**, **Windsurf**, **Trae** — Workspace-level jump via respective CLI (`code -r`, `cursor -r`, etc.)
 - **JetBrains IDEs** (IntelliJ IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover) — Workspace-level jump via IDE CLI launcher
 - **Warp** — Precision tab jump via SQLite pane lookup, pid-based sibling-tab disambiguation, and AX menu click

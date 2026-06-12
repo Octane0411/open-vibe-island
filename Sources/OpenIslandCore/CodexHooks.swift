@@ -638,7 +638,7 @@ public extension CodexHookPayload {
     }
 
     private static let noLocatorTerminalApps: Set<String> = [
-        "cmux", "codex.app", "kaku", "wezterm", "zellij",
+        "alacritty", "cmux", "codex.app", "kaku", "wezterm", "zellij",
         "vs code", "vs code insiders", "cursor", "windsurf", "trae",
         "intellij idea", "webstorm", "pycharm", "goland", "clion",
         "rubymine", "phpstorm", "rider", "rustrover",
@@ -706,6 +706,8 @@ public extension CodexHookPayload {
                 return "Warp"
             case let value where value.contains("ghostty"):
                 return "Ghostty"
+            case let value where value.contains("alacritty"):
+                return "Alacritty"
             case let value where value.contains("wezterm"):
                 return "WezTerm"
             case "kaku":
@@ -735,6 +737,10 @@ public extension CodexHookPayload {
         }
         if environment["GHOSTTY_RESOURCES_DIR"] != nil {
             return "Ghostty"
+        }
+        if environment["ALACRITTY_WINDOW_ID"] != nil
+            || environment["TERM"]?.lowercased().contains("alacritty") == true {
+            return "Alacritty"
         }
 
         // JetBrains IDEs set TERMINAL_EMULATOR=JetBrains-JediTerm.
