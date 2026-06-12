@@ -67,6 +67,65 @@ struct CodexHooksTests {
     }
 
     @Test
+    func codexWithRuntimeContextRecognizesAlacritty() {
+        var locatorCalls = 0
+        let payload = CodexHookPayload(
+            cwd: "/Users/u/demo",
+            hookEventName: .sessionStart,
+            model: "gpt-5-codex",
+            permissionMode: .default,
+            sessionID: "s1",
+            transcriptPath: nil
+        ).withRuntimeContext(
+            environment: [
+                "ALACRITTY_WINDOW_ID": "12345",
+                "TERM": "alacritty",
+            ],
+            currentTTYProvider: { "/dev/ttys007" },
+            terminalLocatorProvider: { _ in
+                locatorCalls += 1
+                return (sessionID: "wrong", tty: nil, title: "wrong")
+            },
+            warpPaneResolver: { _ in "SHOULD-NOT-BE-USED" }
+        )
+
+        #expect(payload.terminalApp == "Alacritty")
+        #expect(payload.terminalTTY == "/dev/ttys007")
+        #expect(payload.warpPaneUUID == nil)
+        #expect(payload.defaultJumpTarget.terminalApp == "Alacritty")
+        #expect(locatorCalls == 0)
+    }
+
+    @Test
+    func codexInferTerminalAppPrefersTermProgramOverLeakedAlacrittyEnvVars() {
+        var locatorCalls = 0
+        let payload = CodexHookPayload(
+            cwd: "/Users/u/demo",
+            hookEventName: .sessionStart,
+            model: "gpt-5-codex",
+            permissionMode: .default,
+            sessionID: "s1",
+            transcriptPath: nil
+        ).withRuntimeContext(
+            environment: [
+                "TERM_PROGRAM": "WezTerm",
+                "ALACRITTY_WINDOW_ID": "12345",
+                "TERM": "alacritty",
+            ],
+            currentTTYProvider: { "/dev/ttys007" },
+            terminalLocatorProvider: { _ in
+                locatorCalls += 1
+                return (sessionID: "wrong", tty: nil, title: "wrong")
+            },
+            warpPaneResolver: { _ in "SHOULD-NOT-BE-USED" }
+        )
+
+        #expect(payload.terminalApp == "WezTerm")
+        #expect(payload.defaultJumpTarget.terminalApp == "WezTerm")
+        #expect(locatorCalls == 0)
+    }
+
+    @Test
     func codexWithRuntimeContextDetectsCodexDesktopApp() {
         let payload = CodexHookPayload(
             cwd: "/Users/u/project",

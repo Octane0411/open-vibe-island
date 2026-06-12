@@ -79,8 +79,8 @@ try {
 } catch {}
 
 const ENV_KEYS = [
-  "TERM_PROGRAM", "ITERM_SESSION_ID", "TERM_SESSION_ID",
-  "TMUX", "TMUX_PANE", "KITTY_WINDOW_ID",
+  "TERM", "TERM_PROGRAM", "ITERM_SESSION_ID", "TERM_SESSION_ID",
+  "TMUX", "TMUX_PANE", "KITTY_WINDOW_ID", "ALACRITTY_WINDOW_ID",
   "CMUX_WORKSPACE_ID", "CMUX_SURFACE_ID", "CMUX_SOCKET_PATH",
   "ZELLIJ", "ZELLIJ_PANE_ID", "ZELLIJ_SESSION_NAME",
 ];
@@ -94,10 +94,8 @@ function collectEnv() {
 function terminalFields() {
   const env = process.env;
   const result = {};
-  if (env.ITERM_SESSION_ID) {
-    result.terminal_app = "iTerm";
-    result.terminal_session_id = env.ITERM_SESSION_ID;
-  } else if (env.CMUX_WORKSPACE_ID || env.CMUX_SOCKET_PATH) {
+  const termProgram = (env.TERM_PROGRAM || "").toLowerCase();
+  if (env.CMUX_WORKSPACE_ID || env.CMUX_SOCKET_PATH) {
     result.terminal_app = "cmux";
     if (env.CMUX_SURFACE_ID) result.terminal_session_id = env.CMUX_SURFACE_ID;
   } else if (env.ZELLIJ != null) {
@@ -105,12 +103,25 @@ function terminalFields() {
     const paneID = env.ZELLIJ_PANE_ID || "";
     const sessionName = env.ZELLIJ_SESSION_NAME || "";
     if (paneID) result.terminal_session_id = `${paneID}:${sessionName}`;
-  } else if (env.GHOSTTY_RESOURCES_DIR || (env.TERM_PROGRAM || "").toLowerCase().includes("ghostty")) {
-    result.terminal_app = "Ghostty";
   } else if (env.TERM_PROGRAM === "Apple_Terminal") {
     result.terminal_app = "Terminal";
-  } else if (env.TERM_PROGRAM) {
+  } else if (termProgram === "iterm.app" || termProgram === "iterm2") {
+    result.terminal_app = "iTerm";
+  } else if (termProgram.includes("ghostty")) {
+    result.terminal_app = "Ghostty";
+  } else if (termProgram.includes("alacritty")) {
+    result.terminal_app = "Alacritty";
+  } else if (termProgram.includes("wezterm")) {
+    result.terminal_app = "WezTerm";
+  } else if (termProgram) {
     result.terminal_app = env.TERM_PROGRAM;
+  } else if (env.ITERM_SESSION_ID) {
+    result.terminal_app = "iTerm";
+    result.terminal_session_id = env.ITERM_SESSION_ID;
+  } else if (env.GHOSTTY_RESOURCES_DIR) {
+    result.terminal_app = "Ghostty";
+  } else if (env.ALACRITTY_WINDOW_ID || (env.TERM || "").toLowerCase().includes("alacritty")) {
+    result.terminal_app = "Alacritty";
   }
   if (detectedTty) result.terminal_tty = detectedTty;
   return result;

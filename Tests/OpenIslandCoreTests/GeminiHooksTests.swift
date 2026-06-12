@@ -228,6 +228,58 @@ struct GeminiHooksTests {
     }
 
     @Test
+    func geminiWithRuntimeContextRecognizesAlacritty() {
+        let base = GeminiHookPayload(
+            cwd: "/tmp/worktree",
+            hookEventName: .sessionStart,
+            sessionID: "gemini-alacritty"
+        )
+
+        var locatorCalls = 0
+        let payload = base.withRuntimeContext(
+            environment: [
+                "ALACRITTY_WINDOW_ID": "12345",
+                "TERM": "alacritty",
+            ],
+            currentTTYProvider: { "/dev/ttys008" },
+            terminalLocatorProvider: { _ in
+                locatorCalls += 1
+                return (sessionID: "unexpected", tty: "/dev/ttys999", title: "wrong")
+            }
+        )
+
+        #expect(payload.terminalApp == "Alacritty")
+        #expect(payload.terminalTTY == "/dev/ttys008")
+        #expect(payload.defaultJumpTarget.terminalApp == "Alacritty")
+        #expect(locatorCalls == 0)
+    }
+
+    @Test
+    func geminiInferTerminalAppPrefersTermProgramOverLeakedAlacrittyEnvVars() {
+        let base = GeminiHookPayload(
+            cwd: "/tmp/worktree",
+            hookEventName: .sessionStart,
+            sessionID: "gemini-wezterm"
+        )
+
+        let payload = base.withRuntimeContext(
+            environment: [
+                "TERM_PROGRAM": "WezTerm",
+                "ALACRITTY_WINDOW_ID": "12345",
+                "TERM": "alacritty",
+            ],
+            currentTTYProvider: { "/dev/ttys008" },
+            terminalLocatorProvider: { _ in
+                Issue.record("WezTerm should not use the focused terminal locator")
+                return (sessionID: nil, tty: nil, title: nil)
+            }
+        )
+
+        #expect(payload.terminalApp == "WezTerm")
+        #expect(payload.defaultJumpTarget.terminalApp == "WezTerm")
+    }
+
+    @Test
     func geminiCompletionMessageUsesLastBodySegmentAndDropsRepeatedTail() {
         let response = """
         I'll review the integration guide and summarize the migration plan.
