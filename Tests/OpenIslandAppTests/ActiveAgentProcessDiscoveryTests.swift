@@ -96,6 +96,41 @@ struct ActiveAgentProcessDiscoveryTests {
     }
 
     @Test
+    func discoversTTYLessClaudeCodeNativeBinaryWhenSessionIDAndWorkingDirectoryAreAvailable() {
+        let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
+            if executablePath == "/bin/ps" {
+                return """
+                  101 1 ?? /Applications/Visual Studio Code.app/Contents/MacOS/Code
+                  102 101 ?? /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Plugin).app/Contents/MacOS/Code Helper (Plugin) --type=utility --utility-sub-type=node.mojom.NodeService
+                  103 102 ?? /Users/test/.vscode/extensions/anthropic.claude-code-2.1.173-darwin-arm64/resources/native-binary/claude --resume 9df061a9-6836-4ccb-b83b-aea3196eca43 --permission-mode acceptEdits
+                """
+            }
+
+            guard executablePath == "/usr/sbin/lsof",
+                  arguments.dropFirst(2).first == "103" else {
+                return nil
+            }
+
+            return """
+            fcwd
+            n/tmp/open-island
+            """
+        }
+
+        let snapshots = discovery.discover()
+
+        #expect(snapshots == [
+            .init(
+                tool: .claudeCode,
+                sessionID: "9df061a9-6836-4ccb-b83b-aea3196eca43",
+                workingDirectory: "/tmp/open-island",
+                terminalTTY: nil,
+                terminalApp: "VS Code"
+            ),
+        ])
+    }
+
+    @Test
     func codexDiscoveryUsesNewestOpenRolloutWhenProcessKeepsOldDescriptors() {
         let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
             if executablePath == "/bin/ps" {

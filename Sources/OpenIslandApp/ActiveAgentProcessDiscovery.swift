@@ -67,7 +67,11 @@ struct ActiveAgentProcessDiscovery {
         var claimedKeys: Set<String> = []
 
         for process in processes {
-            guard process.terminalTTY != nil else {
+            let isTTYLessClaudeCode = process.terminalTTY == nil
+                && isClaudeProcess(command: process.command)
+                && claudeSessionID(from: process.command) != nil
+
+            guard process.terminalTTY != nil || isTTYLessClaudeCode else {
                 continue
             }
 
