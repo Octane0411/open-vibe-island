@@ -34,17 +34,7 @@ CLI coding agents are powerful, but they pull attention away from the editor and
 
 ## Supported Terminals
 
-| Terminal | Status | Notes |
-|---|---|---|
-| **Terminal.app** | Full Support | Jump-back with TTY targeting |
-| **Ghostty** | Full Support | Jump-back with ID matching |
-| **Alacritty** | Partial Support | App activation; full pane targeting when running inside tmux |
-| **cmux** | Full Support | Jump-back via Unix socket API |
-| **Kaku** | Full Support | Jump-back via CLI pane targeting |
-| **WezTerm** | Full Support | Jump-back via CLI pane targeting |
-| **iTerm2** | Full Support | Jump-back with session ID / TTY matching |
-| **tmux** (multiplexer) | Full Support | Jump-back with session/window/pane targeting |
-| **Warp** | Planned | Fallback detection only |
+Open Island supports terminal-native jump-back with graceful fallback when exact pane targeting is unavailable. Keep the current terminal and IDE support matrix in [README.md](../README.md#terminals--ides).
 
 ## Features
 

@@ -383,6 +383,7 @@ struct ActiveAgentProcessDiscovery {
 
     private func recognizedTerminalApp(for command: String) -> String? {
         let lowered = command.lowercased()
+        let executable = executableToken(for: command)
 
         if lowered.contains("/codex.app/contents/macos/") {
             return "Codex.app"
@@ -396,7 +397,9 @@ struct ActiveAgentProcessDiscovery {
             return "Ghostty"
         }
 
-        if lowered.contains("/alacritty.app/contents/macos/alacritty") || lowered.hasSuffix("/alacritty") {
+        if lowered.contains("/alacritty.app/contents/macos/alacritty")
+            || executable == "alacritty"
+            || executable.hasSuffix("/alacritty") {
             return "Alacritty"
         }
 
@@ -479,6 +482,25 @@ struct ActiveAgentProcessDiscovery {
         }
 
         return nil
+    }
+
+    private func executableToken(for command: String) -> String {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return ""
+        }
+
+        if let quote = trimmed.first, quote == "\"" || quote == "'" {
+            let unquoted = trimmed.dropFirst()
+            if let endIndex = unquoted.firstIndex(of: quote) {
+                return String(unquoted[..<endIndex]).lowercased()
+            }
+        }
+
+        guard let token = trimmed.split(maxSplits: 1, whereSeparator: \.isWhitespace).first else {
+            return ""
+        }
+        return String(token).lowercased()
     }
 
     private func lsofOutput(pid: String) -> String? {

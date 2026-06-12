@@ -144,7 +144,7 @@ struct ActiveAgentProcessDiscoveryTests {
                 return """
                   202 401 ttys001 /opt/homebrew/bin/codex
                   401 900 ttys001 -/opt/homebrew/bin/fish
-                  900 1 ?? /Applications/Alacritty.app/Contents/MacOS/alacritty
+                  900 1 ?? /opt/homebrew/bin/alacritty --config-file /tmp/alacritty.toml
                 """
             }
 
