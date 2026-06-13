@@ -346,6 +346,14 @@ extension AgentSession {
             && referenceDate.timeIntervalSince(islandActivityDate) >= threshold
     }
 
+    func isHiddenIdleIslandSession(
+        at referenceDate: Date,
+        threshold: TimeInterval = Self.staleCompletedDisplayThreshold
+    ) -> Bool {
+        phase == .completed
+            && isStaleCompletedForIsland(at: referenceDate, threshold: threshold)
+    }
+
     private var spotlightRunningActivityText: String? {
         guard let currentTool = currentToolName?.trimmedForSurface,
               !currentTool.isEmpty else {

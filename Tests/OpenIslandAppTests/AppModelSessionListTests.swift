@@ -212,7 +212,7 @@ struct AppModelSessionListTests {
     }
 
     @Test
-    func freshCompletedSessionsSortAheadOfV8StaleCompletedSessions() {
+    func islandListHidesStaleCompletedSessions() {
         let now = Date()
         let model = AppModel()
 
@@ -256,11 +256,12 @@ struct AppModelSessionListTests {
 
         model.state = SessionState(sessions: [staleCompleted, freshCompleted])
 
-        #expect(model.islandListSessions.map(\.id) == ["fresh-completed", "stale-completed"])
+        #expect(model.islandListSessions.map(\.id) == ["fresh-completed"])
+        #expect(model.recentSessions.map(\.id).contains("stale-completed"))
     }
 
     @Test
-    func islandSessionSectionsGroupStaleCompletedIntoIdle() {
+    func islandSessionSectionsHideStaleCompletedSessions() {
         let now = Date()
         let model = AppModel()
         model.islandSessionGroup = .state
@@ -281,8 +282,9 @@ struct AppModelSessionListTests {
 
         model.state = SessionState(sessions: [stale, done, approval])
 
-        #expect(model.islandSessionSections.map(\.id) == ["state-approval", "state-done", "state-idle"])
-        #expect(model.islandSessionSections.map(\.sessions.first?.id) == ["approval", "done", "stale"])
+        #expect(model.islandSessionSections.map(\.id) == ["state-approval", "state-done"])
+        #expect(model.islandSessionSections.map(\.sessions.first?.id) == ["approval", "done"])
+        #expect(model.recentSessions.map(\.id).contains("stale"))
     }
 
     @Test
@@ -472,6 +474,46 @@ struct AppModelSessionListTests {
 
         #expect(model.liveSessionCount == 1)
         #expect(model.state.session(id: "live-session")?.attachmentState == .attached)
+    }
+
+    @Test
+    func bridgeRunningActivityPresentsPersistentNotificationSurface() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        model.notchStatus = .closed
+        model.notchOpenReason = nil
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "remote-codex",
+                    title: "Codex · wins",
+                    tool: .codex,
+                    origin: .live,
+                    attachmentState: .attached,
+                    phase: .completed,
+                    summary: "Ready",
+                    updatedAt: now
+                ),
+            ]
+        )
+
+        model.applyTrackedEvent(
+            .activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: "remote-codex",
+                    summary: "Running: pwd",
+                    phase: .running,
+                    timestamp: now.addingTimeInterval(1)
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .bridge
+        )
+
+        #expect(model.notchStatus == .opened)
+        #expect(model.notchOpenReason == .notification)
+        #expect(model.islandSurface == .sessionList(actionableSessionID: "remote-codex"))
+        #expect(!model.hasPendingNotificationAutoCollapse)
     }
 
     @Test
