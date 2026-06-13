@@ -205,6 +205,16 @@ def encode_codex_stdout(response):
         output = {"decision": "block", "reason": directive.get("reason", "")}
         return json.dumps(output, sort_keys=True) + "\n"
 
+    if dtype == "permissionRequest":
+        output = {
+            "continue": True,
+            "hookSpecificOutput": {
+                "hookEventName": "PermissionRequest",
+                "decision": directive.get("decision", {}),
+            },
+        }
+        return json.dumps(output, sort_keys=True) + "\n"
+
     return None
 
 
@@ -269,7 +279,7 @@ def main():
             encoder = encode_opencode_stdout
         else:
             command = {"type": "processCodexHook", "codexHook": payload}
-            timeout = 45
+            timeout = 3600 if payload.get("hook_event_name") == "PermissionRequest" else 45
             encoder = encode_codex_stdout
 
         envelope = json.dumps({"type": "command", "command": command})

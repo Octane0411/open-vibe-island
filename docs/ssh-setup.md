@@ -1,6 +1,6 @@
-# SSH Remote Claude Code Setup
+# SSH Remote Agent Setup
 
-Connect Open Island to Claude Code running on a remote server over SSH.
+Connect Open Island to Claude Code or Codex CLI running on a remote server over SSH.
 
 ## How it works
 
@@ -14,7 +14,8 @@ macOS (local)                         Remote server
                                    │  hooks.py          │
                                    │        ▲           │
                                    │        │           │
-                                   │  Claude Code       │
+                                   │  Claude Code /     │
+                                   │  Codex CLI         │
                                    └────────────────────┘
 ```
 
@@ -25,11 +26,11 @@ SSH's `RemoteForward` tunnels the Unix socket from your Mac to the remote server
 - Open Island running on your Mac
 - SSH access to the remote server
 - Python 3.6+ on the remote server
-- Claude Code installed on the remote server
+- Claude Code or Codex CLI installed on the remote server
 
 ## Quick setup
 
-Run the automated setup script:
+For Claude Code, run:
 
 ```bash
 ./scripts/remote-setup.sh user@myserver
@@ -40,6 +41,20 @@ This will:
 2. Configure Claude Code hooks in `~/.claude/settings.json` on the remote
 3. Print the SSH config snippet you need
 
+For Codex CLI, run:
+
+```bash
+./scripts/remote-setup-codex.sh user@myserver
+```
+
+This will:
+1. Copy `open-island-hooks.py` to the remote server (`~/.local/bin/`)
+2. Configure Codex hooks in `~/.codex/hooks.json` on the remote
+3. Enable `[features].hooks = true` in `~/.codex/config.toml`
+4. Print the SSH config snippet you need
+
+After installing Codex hooks, open `/hooks` inside Codex CLI on the remote and approve the Open Island hook entries if Codex asks for trust review.
+
 ## Manual setup
 
 ### 1. Deploy the hook script
@@ -49,7 +64,7 @@ scp scripts/open-island-hooks.py user@myserver:~/.local/bin/
 ssh user@myserver chmod +x ~/.local/bin/open-island-hooks.py
 ```
 
-### 2. Configure Claude Code hooks on the remote
+### 2a. Configure Claude Code hooks on the remote
 
 Edit `~/.claude/settings.json` on the remote server:
 
@@ -70,6 +85,93 @@ Edit `~/.claude/settings.json` on the remote server:
 }
 ```
 
+### 2b. Configure Codex CLI hooks on the remote
+
+Edit `~/.codex/hooks.json` on the remote server:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "OPEN_ISLAND_SOCKET_PATH=/tmp/open-island-1000.sock python3 ~/.local/bin/open-island-hooks.py --source codex",
+            "timeout": 45
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "OPEN_ISLAND_SOCKET_PATH=/tmp/open-island-1000.sock python3 ~/.local/bin/open-island-hooks.py --source codex",
+            "timeout": 45
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "OPEN_ISLAND_SOCKET_PATH=/tmp/open-island-1000.sock python3 ~/.local/bin/open-island-hooks.py --source codex",
+            "timeout": 3600
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "OPEN_ISLAND_SOCKET_PATH=/tmp/open-island-1000.sock python3 ~/.local/bin/open-island-hooks.py --source codex",
+            "timeout": 45
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "OPEN_ISLAND_SOCKET_PATH=/tmp/open-island-1000.sock python3 ~/.local/bin/open-island-hooks.py --source codex",
+            "timeout": 45
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "OPEN_ISLAND_SOCKET_PATH=/tmp/open-island-1000.sock python3 ~/.local/bin/open-island-hooks.py --source codex",
+            "timeout": 45
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Replace `1000` with the remote user's UID (`ssh user@myserver id -u`) and make sure `[features].hooks = true` is present in `~/.codex/config.toml`:
+
+```toml
+[features]
+hooks = true
+```
+
+Codex may require a manual trust review before running new hooks. Open `/hooks` inside Codex CLI and approve the Open Island entries.
+
 ### 3. Configure SSH socket forwarding
 
 Add to your local `~/.ssh/config`:
@@ -78,22 +180,22 @@ Add to your local `~/.ssh/config`:
 Host myserver
     HostName myserver.example.com
     User youruser
-    RemoteForward /tmp/open-island-501.sock /tmp/open-island-501.sock
+    RemoteForward /tmp/open-island-1000.sock /tmp/open-island-501.sock
 ```
 
-Replace `501` with your local UID (`id -u`).
+Replace `501` with your local UID (`id -u`) and `1000` with your remote UID (`ssh myserver id -u`).
 
 Or connect directly with:
 
 ```bash
-ssh -R /tmp/open-island-$(id -u).sock:/tmp/open-island-$(id -u).sock user@myserver
+ssh -R /tmp/open-island-<remote-uid>.sock:/tmp/open-island-<local-uid>.sock user@myserver
 ```
 
 ### 4. Verify
 
 1. Make sure Open Island is running on your Mac
 2. SSH to the remote with socket forwarding enabled
-3. Run Claude Code on the remote — sessions should appear in the Open Island overlay
+3. Run Claude Code or Codex CLI on the remote — sessions should appear in the Open Island overlay
 
 ## Important: sshd configuration
 
