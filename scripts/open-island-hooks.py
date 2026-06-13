@@ -125,7 +125,12 @@ def enrich_payload(payload, env):
 # Bridge socket communication
 # ---------------------------------------------------------------------------
 
-def send_command(envelope_json, timeout):
+def env_flag(env, name):
+    """Return whether an environment flag is enabled."""
+    return (env.get(name) or "").lower() in ("1", "true", "yes", "on")
+
+
+def send_command(envelope_json, timeout, wait_response=True):
     """Connect to bridge socket, send JSON line, return parsed response."""
     path = socket_path()
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -133,6 +138,8 @@ def send_command(envelope_json, timeout):
     try:
         sock.connect(path)
         sock.sendall(envelope_json.encode("utf-8") + b"\n")
+        if not wait_response:
+            return None
 
         buf = b""
         while True:
@@ -272,6 +279,9 @@ def main():
 
         # Mark as remote so the UI can distinguish SSH sessions.
         payload["remote"] = True
+        notify_only = env_flag(env, "OPEN_ISLAND_NOTIFY_ONLY")
+        if notify_only:
+            payload["open_island_notify_only"] = True
 
         # Build bridge envelope
         if source == "claude":
@@ -289,7 +299,10 @@ def main():
 
         envelope = json.dumps({"type": "command", "command": command})
 
-        response = send_command(envelope, timeout)
+        if notify_only:
+            timeout = int(env.get("OPEN_ISLAND_NOTIFY_TIMEOUT", "2"))
+
+        response = send_command(envelope, timeout, wait_response=not notify_only)
         if response is None:
             return
 

@@ -212,7 +212,7 @@ struct AppModelSessionListTests {
     }
 
     @Test
-    func freshCompletedSessionsSortAheadOfV8StaleCompletedSessions() {
+    func islandListHidesStaleCompletedSessions() {
         let now = Date()
         let model = AppModel()
 
@@ -256,11 +256,12 @@ struct AppModelSessionListTests {
 
         model.state = SessionState(sessions: [staleCompleted, freshCompleted])
 
-        #expect(model.islandListSessions.map(\.id) == ["fresh-completed", "stale-completed"])
+        #expect(model.islandListSessions.map(\.id) == ["fresh-completed"])
+        #expect(model.recentSessions.map(\.id).contains("stale-completed"))
     }
 
     @Test
-    func islandSessionSectionsGroupStaleCompletedIntoIdle() {
+    func islandSessionSectionsHideStaleCompletedSessions() {
         let now = Date()
         let model = AppModel()
         model.islandSessionGroup = .state
@@ -281,8 +282,9 @@ struct AppModelSessionListTests {
 
         model.state = SessionState(sessions: [stale, done, approval])
 
-        #expect(model.islandSessionSections.map(\.id) == ["state-approval", "state-done", "state-idle"])
-        #expect(model.islandSessionSections.map(\.sessions.first?.id) == ["approval", "done", "stale"])
+        #expect(model.islandSessionSections.map(\.id) == ["state-approval", "state-done"])
+        #expect(model.islandSessionSections.map(\.sessions.first?.id) == ["approval", "done"])
+        #expect(model.recentSessions.map(\.id).contains("stale"))
     }
 
     @Test

@@ -52,12 +52,20 @@ hook_cmd = (
     f"OPEN_ISLAND_SOCKET_PATH={socket_path} "
     "python3 ~/.local/bin/open-island-hooks.py --source codex"
 )
+notify_hook_cmd = (
+    f"OPEN_ISLAND_SOCKET_PATH={socket_path} "
+    "OPEN_ISLAND_NOTIFY_ONLY=1 "
+    "OPEN_ISLAND_NOTIFY_TIMEOUT=2 "
+    "python3 ~/.local/bin/open-island-hooks.py --source codex"
+)
 
 event_specs = {
-    "SessionStart": {"matcher": "startup|resume", "timeout": 45},
-    "UserPromptSubmit": {"matcher": None, "timeout": 45},
-    "PermissionRequest": {"matcher": None, "timeout": 3600},
-    "Stop": {"matcher": None, "timeout": 45},
+    "SessionStart": {"matcher": "startup|resume", "timeout": 45, "command": hook_cmd},
+    "UserPromptSubmit": {"matcher": None, "timeout": 45, "command": hook_cmd},
+    "PermissionRequest": {"matcher": None, "timeout": 3600, "command": hook_cmd},
+    "PreToolUse": {"matcher": None, "timeout": 5, "command": notify_hook_cmd},
+    "PostToolUse": {"matcher": None, "timeout": 5, "command": notify_hook_cmd},
+    "Stop": {"matcher": None, "timeout": 45, "command": hook_cmd},
 }
 
 hooks_path = Path.home() / ".codex" / "hooks.json"
@@ -78,7 +86,7 @@ def group_for(spec):
     group = {
         "hooks": [{
             "type": "command",
-            "command": hook_cmd,
+            "command": spec["command"],
             "timeout": spec["timeout"],
         }]
     }
@@ -103,7 +111,9 @@ for event, spec in event_specs.items():
     cleaned_groups = [
         group
         for group in existing_groups
-        if isinstance(group, dict) and not group_contains_command(group, hook_cmd)
+        if isinstance(group, dict)
+        and not group_contains_command(group, hook_cmd)
+        and not group_contains_command(group, notify_hook_cmd)
     ]
     cleaned_groups.append(group_for(spec))
     hooks[event] = cleaned_groups

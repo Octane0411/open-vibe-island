@@ -126,6 +126,28 @@ Edit `~/.codex/hooks.json` on the remote server:
         ]
       }
     ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "OPEN_ISLAND_SOCKET_PATH=/tmp/open-island-1000.sock OPEN_ISLAND_NOTIFY_ONLY=1 OPEN_ISLAND_NOTIFY_TIMEOUT=2 python3 ~/.local/bin/open-island-hooks.py --source codex",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "OPEN_ISLAND_SOCKET_PATH=/tmp/open-island-1000.sock OPEN_ISLAND_NOTIFY_ONLY=1 OPEN_ISLAND_NOTIFY_TIMEOUT=2 python3 ~/.local/bin/open-island-hooks.py --source codex",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

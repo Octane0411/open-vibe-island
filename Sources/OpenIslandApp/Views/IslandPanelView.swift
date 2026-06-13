@@ -1207,6 +1207,7 @@ private struct IslandSessionRow: View {
     @State private var isHighlighted = false
     @State private var detailOverride: Bool?
     @State private var replyText: String = ""
+    @State private var isShowingFullReply = false
 
     var body: some View {
         rowBody(referenceDate: referenceDate)
@@ -1322,13 +1323,33 @@ private struct IslandSessionRow: View {
     private func rowAuxiliaryDetails(presence: IslandSessionPresence) -> some View {
         if !shouldShowEmbeddedDetailBody,
            let activityLine = session.spotlightActivityLineText ?? expandedActivityLineText {
-            Text(activityLine)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(activityColor(for: presence).opacity(0.94))
-                .lineLimit(2)
-                .padding(.leading, detailLeadingInset)
-                .padding(.trailing, sideInset)
-                .padding(.bottom, 10)
+            Button {
+                guard isInteractive, fullReplyMessageText != nil else { return }
+                isShowingFullReply = true
+            } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(activityLine)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(activityColor(for: presence).opacity(0.94))
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+
+                    if fullReplyMessageText != nil {
+                        Image(systemName: "doc.text.magnifyingglass")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.42))
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .disabled(fullReplyMessageText == nil)
+            .popover(isPresented: $isShowingFullReply, arrowEdge: .top) {
+                fullReplyPopover
+            }
+            .padding(.leading, detailLeadingInset)
+            .padding(.trailing, sideInset)
+            .padding(.bottom, 10)
         }
 
         if let subagents = session.claudeMetadata?.activeSubagents,
@@ -1802,6 +1823,51 @@ private struct IslandSessionRow: View {
         }
         let summary = session.summary.trimmedForNotificationCard
         return summary == SessionPhase.completed.displayName ? "" : summary
+    }
+
+    private var fullReplyMessageText: String? {
+        if let text = session.completionAssistantMessageText?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !text.isEmpty {
+            return text
+        }
+
+        let summary = session.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !summary.isEmpty, summary != SessionPhase.completed.displayName else { return nil }
+        return summary
+    }
+
+    private var fullReplyPopover: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Text(session.tool.displayName)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.56))
+                Spacer(minLength: 0)
+                Button {
+                    isShowingFullReply = false
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.45))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+
+            Divider().overlay(.white.opacity(0.08))
+
+            ScrollView(.vertical) {
+                Markdown(fullReplyMessageText ?? "")
+                    .markdownTheme(.completionCard)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(14)
+            }
+            .frame(width: 420, height: 320)
+        }
+        .background(V6Palette.ink)
+        .preferredColorScheme(.dark)
     }
 
     private var commandLabel: String {
