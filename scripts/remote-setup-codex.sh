@@ -57,8 +57,6 @@ event_specs = {
     "SessionStart": {"matcher": "startup|resume", "timeout": 45},
     "UserPromptSubmit": {"matcher": None, "timeout": 45},
     "PermissionRequest": {"matcher": None, "timeout": 3600},
-    "PreToolUse": {"matcher": None, "timeout": 45},
-    "PostToolUse": {"matcher": None, "timeout": 45},
     "Stop": {"matcher": None, "timeout": 45},
 }
 
