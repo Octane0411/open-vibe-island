@@ -22,6 +22,7 @@ import sys
 # ---------------------------------------------------------------------------
 
 def socket_path():
+    """Return the Unix socket path used to reach the local Open Island bridge."""
     path = os.environ.get("OPEN_ISLAND_SOCKET_PATH") or \
            os.environ.get("VIBE_ISLAND_SOCKET_PATH")
     if path:
@@ -33,6 +34,7 @@ def socket_path():
 # ---------------------------------------------------------------------------
 
 def infer_terminal_app(env):
+    """Infer the terminal app from environment variables available on the remote."""
     if env.get("ITERM_SESSION_ID") or env.get("LC_TERMINAL") == "iTerm2":
         return "iTerm"
     if env.get("CMUX_WORKSPACE_ID") or env.get("CMUX_SOCKET_PATH"):
@@ -54,6 +56,7 @@ def infer_terminal_app(env):
 
 
 def current_tty():
+    """Best-effort TTY detection for Linux and macOS remote hook processes."""
     # Try /proc (Linux) first — no subprocess needed.
     try:
         tty = os.ttyname(0)
@@ -244,6 +247,7 @@ def encode_opencode_stdout(response):
 # ---------------------------------------------------------------------------
 
 def parse_source(args):
+    """Parse the hook source from command-line arguments."""
     i = 0
     while i < len(args):
         if args[i] == "--source" and i + 1 < len(args):
@@ -253,6 +257,7 @@ def parse_source(args):
 
 
 def main():
+    """Read a hook payload from stdin, forward it to the bridge, and emit a directive."""
     try:
         raw = sys.stdin.buffer.read()
         if not raw:

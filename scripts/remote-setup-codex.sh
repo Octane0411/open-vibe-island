@@ -76,6 +76,7 @@ if not isinstance(hooks, dict):
 
 
 def group_for(spec):
+    """Build one Codex hook matcher group for the managed Open Island command."""
     group = {
         "hooks": [{
             "type": "command",
@@ -89,6 +90,7 @@ def group_for(spec):
 
 
 def group_contains_command(group, command):
+    """Return whether a Codex hook group already contains the given command."""
     nested = group.get("hooks")
     if not isinstance(nested, list):
         return False
