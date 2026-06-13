@@ -477,6 +477,46 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func bridgeRunningActivityPresentsPersistentNotificationSurface() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        model.notchStatus = .closed
+        model.notchOpenReason = nil
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "remote-codex",
+                    title: "Codex · wins",
+                    tool: .codex,
+                    origin: .live,
+                    attachmentState: .attached,
+                    phase: .completed,
+                    summary: "Ready",
+                    updatedAt: now
+                ),
+            ]
+        )
+
+        model.applyTrackedEvent(
+            .activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: "remote-codex",
+                    summary: "Running: pwd",
+                    phase: .running,
+                    timestamp: now.addingTimeInterval(1)
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .bridge
+        )
+
+        #expect(model.notchStatus == .opened)
+        #expect(model.notchOpenReason == .notification)
+        #expect(model.islandSurface == .sessionList(actionableSessionID: "remote-codex"))
+        #expect(!model.hasPendingNotificationAutoCollapse)
+    }
+
+    @Test
     func rolloutCompletionDoesNotPresentNotificationDuringColdStart() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()

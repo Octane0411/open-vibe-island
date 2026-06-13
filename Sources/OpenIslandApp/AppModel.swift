@@ -1527,7 +1527,8 @@ final class AppModel {
             scheduleNotificationSurfacePresentationIfNeeded(
                 surface,
                 wasAlreadyCompleted: wasAlreadyCompleted,
-                ingress: ingress
+                ingress: ingress,
+                bypassFrontmostSuppression: event.isRunningActivityUpdate
             )
         }
     }
@@ -1535,7 +1536,8 @@ final class AppModel {
     private func scheduleNotificationSurfacePresentationIfNeeded(
         _ surface: IslandSurface,
         wasAlreadyCompleted: Bool,
-        ingress: TrackedEventIngress
+        ingress: TrackedEventIngress,
+        bypassFrontmostSuppression: Bool = false
     ) {
         guard !wasAlreadyCompleted,
               notificationSurfaceIsEligibleForPresentation(surface, ingress: ingress),
@@ -1544,7 +1546,7 @@ final class AppModel {
             return
         }
 
-        guard suppressFrontmostNotifications else {
+        guard suppressFrontmostNotifications, !bypassFrontmostSuppression else {
             presentNotificationSurface(surface)
             return
         }
@@ -1799,6 +1801,15 @@ final class AppModel {
         NSApplication.shared.terminate(nil)
     }
 
+}
+
+private extension AgentEvent {
+    var isRunningActivityUpdate: Bool {
+        guard case let .activityUpdated(payload) = self else {
+            return false
+        }
+        return payload.phase == .running
+    }
 }
 
 // MARK: - Hex color helpers
