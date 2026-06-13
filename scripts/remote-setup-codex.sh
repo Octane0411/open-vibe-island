@@ -27,7 +27,11 @@ fi
 
 REMOTE="$1"
 LOCAL_UID="$(id -u)"
-REMOTE_UID="$(ssh "$REMOTE" "id -u")"
+REMOTE_UID="$(ssh "$REMOTE" "id -u" | tr -d '\r' | awk 'NR==1{print $1}')"
+if ! [[ "$REMOTE_UID" =~ ^[0-9]+$ ]]; then
+    echo "Failed to resolve numeric remote UID from '$REMOTE' (got: '$REMOTE_UID')." >&2
+    exit 1
+fi
 LOCAL_SOCKET_NAME="open-island-${LOCAL_UID}.sock"
 REMOTE_SOCKET_NAME="open-island-${REMOTE_UID}.sock"
 
@@ -145,10 +149,12 @@ for line in lines:
     if in_features and stripped.startswith("codex_hooks"):
         continue
 
-    if in_features and stripped.startswith("hooks"):
-        out.append("hooks = true")
-        has_hooks = True
-        continue
+    if in_features:
+        key = stripped.split("=", 1)[0].strip() if "=" in stripped else ""
+        if key == "hooks":
+            out.append("hooks = true")
+            has_hooks = True
+            continue
 
     out.append(line)
 
