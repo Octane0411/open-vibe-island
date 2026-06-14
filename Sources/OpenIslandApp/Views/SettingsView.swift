@@ -456,6 +456,16 @@ struct SetupSettingsPane: View {
                     installAction: { model.installCodexHooks() },
                     uninstallAction: { confirmingUninstallCodex = true }
                 )
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle(lang.t("setup.codexBrokerPermissionRequests"), isOn: Binding(
+                        get: { model.brokerCodexPermissionRequests },
+                        set: { model.brokerCodexPermissionRequests = $0 }
+                    ))
+                    Text(lang.t("setup.codexBrokerPermissionRequestsDesc"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.leading, 28)
                 .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallCodex) {
                     Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
                         model.uninstallCodexHooks()
