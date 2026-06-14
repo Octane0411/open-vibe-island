@@ -77,14 +77,24 @@ public enum CodexHookInstaller {
     private static let currentFeatureKey = CodexHooksFeatureFlagKey.current.rawValue
     private static let legacyFeatureKey = CodexHooksFeatureFlagKey.legacy.rawValue
 
-    // Keep the managed Codex install aligned with the original app's low-noise footprint.
-    // The bridge still understands richer hook events, but we do not install them by default
-    // because per-command Bash hooks produce a large amount of terminal log spam.
-    private static let eventSpecs: [(name: String, matcher: String?, timeout: Int)] = [
+    // Keep the managed Codex install low-noise. The bridge still understands
+    // richer hook events, but the default installer avoids hooks that change
+    // Codex's native approval flow.
+    private static let defaultEventSpecs: [(name: String, matcher: String?, timeout: Int)] = [
         ("SessionStart", "startup|resume", managedTimeout),
         ("UserPromptSubmit", nil, managedTimeout),
-        ("PermissionRequest", nil, managedInteractiveTimeout),
         ("Stop", nil, managedTimeout),
+    ]
+    private static let permissionRequestEventSpec = (
+        name: "PermissionRequest",
+        matcher: Optional<String>.none,
+        timeout: managedInteractiveTimeout
+    )
+    private static let managedEventNamesForRemoval = [
+        "SessionStart",
+        "UserPromptSubmit",
+        "PermissionRequest",
+        "Stop",
     ]
 
     public static func hookCommand(for binaryPath: String) -> String {
@@ -93,7 +103,8 @@ public enum CodexHookInstaller {
 
     public static func installHooksJSON(
         existingData: Data?,
-        hookCommand: String
+        hookCommand: String,
+        includePermissionRequest: Bool = false
     ) throws -> CodexHookFileMutation {
         var rootObject = try loadRootObject(from: existingData)
         let existingHooksObject = rootObject["hooks"] as? [String: Any] ?? [:]
@@ -108,7 +119,7 @@ public enum CodexHookInstaller {
             }
         }
 
-        for spec in eventSpecs {
+        for spec in eventSpecs(includePermissionRequest: includePermissionRequest) {
             let existingGroups = hooksObject[spec.name] as? [Any] ?? []
             let cleanedGroups = sanitizeForInstall(groups: existingGroups, replacingCommand: hookCommand)
             hooksObject[spec.name] = cleanedGroups + [
@@ -134,8 +145,8 @@ public enum CodexHookInstaller {
         var hooksObject = rootObject["hooks"] as? [String: Any] ?? [:]
         var mutated = false
 
-        for spec in eventSpecs {
-            let existingGroups = hooksObject[spec.name] as? [Any] ?? []
+        for eventName in managedEventNamesForRemoval {
+            let existingGroups = hooksObject[eventName] as? [Any] ?? []
             let cleanedGroups = sanitize(groups: existingGroups, managedCommand: managedCommand)
 
             if cleanedGroups.count != existingGroups.count || containsManagedHook(in: existingGroups, managedCommand: managedCommand) {
@@ -143,9 +154,9 @@ public enum CodexHookInstaller {
             }
 
             if cleanedGroups.isEmpty {
-                hooksObject.removeValue(forKey: spec.name)
+                hooksObject.removeValue(forKey: eventName)
             } else {
-                hooksObject[spec.name] = cleanedGroups
+                hooksObject[eventName] = cleanedGroups
             }
         }
 
@@ -277,6 +288,12 @@ public enum CodexHookInstaller {
         }
 
         return .legacy
+    }
+
+    private static func eventSpecs(includePermissionRequest: Bool) -> [(name: String, matcher: String?, timeout: Int)] {
+        includePermissionRequest
+            ? defaultEventSpecs + [permissionRequestEventSpec]
+            : defaultEventSpecs
     }
 
     private static func loadRootObject(from data: Data?) throws -> [String: Any] {

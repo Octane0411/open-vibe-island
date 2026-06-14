@@ -21,6 +21,7 @@ final class AppModel {
     private static let islandRightSlotDefaultsKey = "appearance.island.v6.rightSlot"
     private static let islandCenterLabelDefaultsKey = "appearance.island.v6.centerLabel"
     private static let showCodexUsageDefaultsKey = "app.showCodexUsage"
+    private static let brokerCodexPermissionRequestsDefaultsKey = "codex.hooks.brokerPermissionRequests"
     private static let completionReplyEnabledDefaultsKey = "feature.completionReply.enabled"
     private static let suppressFrontmostNotificationsDefaultsKey = "app.suppressFrontmostNotifications"
     private static let legacyIslandSessionStateIndicatorDefaultsKey = "appearance.island.v8.stateIndicator"
@@ -250,6 +251,19 @@ final class AppModel {
         didSet {
             guard hasFinishedInit, showCodexUsage != oldValue else { return }
             UserDefaults.standard.set(showCodexUsage, forKey: Self.showCodexUsageDefaultsKey)
+        }
+    }
+    var brokerCodexPermissionRequests: Bool = false {
+        didSet {
+            hooks.brokerCodexPermissionRequests = brokerCodexPermissionRequests
+            guard hasFinishedInit, brokerCodexPermissionRequests != oldValue else { return }
+            UserDefaults.standard.set(
+                brokerCodexPermissionRequests,
+                forKey: Self.brokerCodexPermissionRequestsDefaultsKey
+            )
+            if codexHooksInstalled {
+                installCodexHooks()
+            }
         }
     }
     var completionReplyEnabled: Bool = false {
@@ -604,6 +618,9 @@ final class AppModel {
                 atPath: CodexRolloutDiscovery.defaultRootURL.path
             )
         }
+        brokerCodexPermissionRequests = UserDefaults.standard.bool(
+            forKey: Self.brokerCodexPermissionRequestsDefaultsKey
+        )
         completionReplyEnabled = UserDefaults.standard.bool(forKey: Self.completionReplyEnabledDefaultsKey)
         launchAtLoginEnabled = LaunchAtLoginService.shared.isEnabled
         appearanceSettingsProfile = IslandAppearanceDisplayProfile(
