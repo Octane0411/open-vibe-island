@@ -11,6 +11,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case sound
     case appearance
     case watch
+    case ntfy
     case shortcuts
     case lab
     case about
@@ -25,6 +26,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .display:    lang.t("settings.tab.display")
         case .sound:      lang.t("settings.tab.sound")
         case .watch:      "Watch"
+        case .ntfy:       "Ntfy"
         case .shortcuts:  lang.t("settings.tab.shortcuts")
         case .lab:        lang.t("settings.tab.lab")
         case .about:      lang.t("settings.tab.about")
@@ -39,6 +41,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .display:    "textformat.size"
         case .sound:      "speaker.wave.2.fill"
         case .watch:      "applewatch"
+        case .ntfy:       "bell.badge.fill"
         case .shortcuts:  "keyboard.fill"
         case .lab:        "flask.fill"
         case .about:      "info.circle.fill"
@@ -53,6 +56,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .display:    .blue
         case .sound:      .green
         case .watch:      .cyan
+        case .ntfy:       .orange
         case .shortcuts:  .gray
         case .lab:        .pink
         case .about:      .blue
@@ -61,7 +65,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
     var section: SettingsSection {
         switch self {
-        case .general, .setup, .display, .sound, .appearance, .watch: .system
+        case .general, .setup, .display, .sound, .appearance, .watch, .ntfy: .system
         case .shortcuts, .lab:                                        .advanced
         case .about:                                                  .app
         }
@@ -148,6 +152,8 @@ struct SettingsView: View {
                 SoundSettingsPane(model: model)
             case .watch:
                 WatchSettingsPane(model: model)
+            case .ntfy:
+                NtfySettingsPane(model: model)
             case .shortcuts:
                 PlaceholderSettingsPane(model: model, titleKey: "settings.tab.shortcuts", subtitleKey: "settings.shortcuts.comingSoon")
             case .lab:
@@ -1037,6 +1043,120 @@ struct WatchSettingsPane: View {
         .onAppear {
             pairingCode = model.watchPairingCode
         }
+    }
+}
+
+// MARK: - Ntfy
+
+struct NtfySettingsPane: View {
+    var model: AppModel
+
+    @State private var server: String = UserDefaults.standard.string(forKey: "ntfy.server") ?? "https://ntfy.sh"
+    @State private var topic: String = UserDefaults.standard.string(forKey: "ntfy.topic") ?? ""
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Enable ntfy notifications when away", isOn: Binding(
+                    get: { model.ntfyEnabled },
+                    set: { model.ntfyEnabled = $0 }
+                ))
+
+                if model.ntfyEnabled {
+                    Text("When you're away from the computer for 60+ seconds, permission requests and questions will be sent to your phone via ntfy.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Toggle("Always notify (skip idle check)", isOn: Binding(
+                        get: { model.ntfyAlwaysNotify },
+                        set: { model.ntfyAlwaysNotify = $0 }
+                    ))
+
+                    Text("Send notifications immediately regardless of idle state. Useful for testing.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("General")
+            }
+
+            Section("Configuration") {
+                TextField("Server", text: $server)
+                    .onSubmit { saveConfig() }
+                    .onChange(of: server) { _, _ in saveConfig() }
+
+                TextField("Topic", text: $topic)
+                    .onSubmit { saveConfig() }
+                    .onChange(of: topic) { _, _ in saveConfig() }
+
+                Text("Subscribe to this topic in the ntfy app on your phone to receive notifications.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if model.ntfyEnabled {
+                Section("Status") {
+                    TimelineView(.periodic(from: .now, by: 1)) { _ in
+                        let seconds = Int(model.currentIdleSeconds)
+                        let away = model.isUserAway
+                        HStack {
+                            Text("State")
+                            Spacer()
+                            Text(away ? "Away" : "Active")
+                                .foregroundStyle(away ? .orange : .green)
+                        }
+                        HStack {
+                            Text("Idle Duration")
+                            Spacer()
+                            Text(formattedIdleDuration(seconds))
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+            Section("Test") {
+                Button("Send Test Notification") {
+                    sendTestNotification()
+                }
+                .disabled(server.isEmpty || topic.isEmpty)
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("Ntfy")
+    }
+
+    private func saveConfig() {
+        UserDefaults.standard.set(server, forKey: "ntfy.server")
+        UserDefaults.standard.set(topic, forKey: "ntfy.topic")
+    }
+
+    private func formattedIdleDuration(_ totalSeconds: Int) -> String {
+        let m = totalSeconds / 60
+        let s = totalSeconds % 60
+        if m > 0 {
+            return "\(m)m \(s)s"
+        }
+        return "\(s)s"
+    }
+
+    private func sendTestNotification() {
+        let body: [String: Any] = [
+            "topic": topic,
+            "title": "Open Island: Test",
+            "message": "If you see this, ntfy is configured correctly!",
+        ]
+
+        guard let url = URL(string: server),
+              let jsonData = try? JSONSerialization.data(withJSONObject: body) else { return }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+
+        URLSession.shared.dataTask(with: request).resume()
     }
 }
 
