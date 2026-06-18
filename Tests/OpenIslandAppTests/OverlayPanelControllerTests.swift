@@ -92,6 +92,42 @@ struct OverlayPanelControllerTests {
         #expect(!OverlayPanelController.shouldActivatePanel(for: nil))
     }
 
+    @Test
+    func openedPanelCapsToVibeIslandSizedFrame() {
+        #expect(OverlayPanelController.maximumOpenedPanelFrameSize == CGSize(width: 680, height: 580))
+        #expect(OverlayPanelController.maxSessionListHeight(openedPanelFrameHeight: 580, closedNotchHeight: 34) == 476)
+    }
+
+    @Test
+    func openedPanelFrameHeightFollowsMeasuredContentUntilVibeIslandCap() {
+        #expect(OverlayPanelController.openedPanelFrameHeight(
+            contentHeight: 300,
+            closedNotchHeight: 34,
+            visibleFrameHeight: 900
+        ) == 356)
+
+        #expect(OverlayPanelController.openedPanelFrameHeight(
+            contentHeight: 524,
+            closedNotchHeight: 34,
+            visibleFrameHeight: 900
+        ) == 580)
+    }
+
+    @Test
+    func openedSessionListContentHeightDoesNotKeepStaleLargerMeasurement() {
+        #expect(OverlayPanelController.openedSessionListContentHeight(
+            estimatedContentHeight: 340,
+            measuredContentHeight: 520,
+            maxContentHeight: 524
+        ) == 340)
+
+        #expect(OverlayPanelController.openedSessionListContentHeight(
+            estimatedContentHeight: 520,
+            measuredContentHeight: 340,
+            maxContentHeight: 524
+        ) == 340)
+    }
+
     // MARK: - islandClosedHeight
 
     @Test
