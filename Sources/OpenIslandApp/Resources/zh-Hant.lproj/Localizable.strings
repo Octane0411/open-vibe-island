@@ -120,6 +120,10 @@
 "settings.display.diagnostics" = "診斷";
 "settings.display.currentScreen" = "目前螢幕";
 "settings.display.layoutMode" = "版面模式";
+"settings.display.clickOutsideClose" = "點擊外部關閉";
+"settings.display.clickOutsideClose.enabled" = "延遲關閉";
+"settings.display.clickOutsideClose.delay" = "點擊外部關閉延遲";
+"settings.display.clickOutsideClose.note" = "建議設置小於自動折疊延遲時間，避免自動折疊先於點擊關閉觸發";
 
 /* Settings - Sound */
 "settings.sound.notifications" = "通知音效";

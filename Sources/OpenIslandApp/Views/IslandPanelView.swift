@@ -279,6 +279,7 @@ struct IslandPanelView: View {
             rightSlot: model.islandClosedRightSlotContent(),
             layout: layout,
             height: closedNotchHeight,
+            brandColor: model.islandClosedBrandColor(),
             physicalNotchWidth: layout == .macbook ? physicalNotchWidth : 0,
             minWidth: 70
         )
@@ -591,7 +592,8 @@ struct IslandPanelView: View {
                     onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
                     onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                         ? { model.replyToSession(session, text: $0) } : nil,
-                    onJump: { model.jumpToSession(session) }
+                    onJump: { model.jumpToSession(session) },
+                    onRemoveFromIsland: { model.removeFromIsland(session.id) }
                 )
                 .id(notificationCardIdentity(for: session))
 
@@ -633,7 +635,8 @@ struct IslandPanelView: View {
                                 onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                                     ? { model.replyToSession(session, text: $0) } : nil,
                                 onJump: { model.jumpToSession(session) },
-                                onDismiss: session.isRemote ? { model.dismissSession(session.id) } : nil
+                                onDismiss: session.isRemote ? { model.dismissSession(session.id) } : nil,
+                                onRemoveFromIsland: { model.removeFromIsland(session.id) }
                             )
                         }
                     }
@@ -683,7 +686,8 @@ struct IslandPanelView: View {
                         onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                             ? { model.replyToSession(session, text: $0) } : nil,
                         onJump: { model.jumpToSession(session) },
-                        onDismiss: session.isRemote ? { model.dismissSession(session.id) } : nil
+                        onDismiss: session.isRemote ? { model.dismissSession(session.id) } : nil,
+                        onRemoveFromIsland: { model.removeFromIsland(session.id) }
                     )
                 }
             }
@@ -1203,6 +1207,7 @@ private struct IslandSessionRow: View {
     var onReply: ((String) -> Void)?
     let onJump: () -> Void
     var onDismiss: (() -> Void)?
+    var onRemoveFromIsland: (() -> Void)?
 
     @State private var isHighlighted = false
     @State private var detailOverride: Bool?
@@ -1294,7 +1299,7 @@ private struct IslandSessionRow: View {
 
             Spacer(minLength: 10)
 
-            HStack(spacing: 6) {
+            HStack(spacing: 4) {
                 agentBadge
                 if session.isRemote {
                     sideBadge("SSH")
@@ -1310,6 +1315,7 @@ private struct IslandSessionRow: View {
                 if let onDismiss {
                     DismissButton(action: onDismiss)
                 }
+                removeFromIslandButton()
             }
         }
         .padding(.leading, rowLeadingInset)
@@ -1972,9 +1978,9 @@ private struct IslandSessionRow: View {
             }
         } label: {
             Image(systemName: "chevron.down")
-                .font(.system(size: 10, weight: .bold))
+                .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(isOpen || isHighlighted ? .white.opacity(0.68) : .white.opacity(0.42))
-                .frame(width: 28, height: 28)
+                .frame(width: 22, height: 22)
                 .background(
                     Circle()
                         .fill(.white.opacity(detailToggleFillOpacity(isOpen: isOpen)))
@@ -1984,6 +1990,25 @@ private struct IslandSessionRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(isOpen ? "Collapse session detail" : "Expand session detail")
+    }
+
+    private func removeFromIslandButton() -> some View {
+        Button {
+            guard isInteractive else { return }
+            onRemoveFromIsland?()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.42))
+                .frame(width: 22, height: 22)
+                .background(
+                    Circle()
+                        .fill(.white.opacity(isHighlighted ? 0.055 : 0.02))
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Remove session from island")
     }
 
     private func detailToggleFillOpacity(isOpen: Bool) -> Double {

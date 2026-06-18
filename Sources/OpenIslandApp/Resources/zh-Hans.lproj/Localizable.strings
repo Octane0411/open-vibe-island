@@ -120,11 +120,23 @@
 "settings.display.diagnostics" = "诊断";
 "settings.display.currentScreen" = "当前屏幕";
 "settings.display.layoutMode" = "布局模式";
+"settings.display.notificationDelay" = "通知自动折叠";
+"settings.display.notificationDelay.label" = "自动折叠延迟";
+"settings.display.notificationDelay.note" = "通知卡片自动折叠前的时间（5-30秒）";
+"settings.display.clickOutsideClose" = "点击外部关闭";
+"settings.display.clickOutsideClose.enabled" = "延迟关闭";
+"settings.display.clickOutsideClose.delay" = "点击外部关闭延迟";
+"settings.display.clickOutsideClose.note" = "建议设置小于自动折叠延迟时间，避免自动折叠先于点击关闭触发";
 
 /* Settings - Sound */
 "settings.sound.notifications" = "通知音效";
 "settings.sound.mute" = "静音";
-"settings.sound.selectSound" = "选择音效";
+"settings.sound.completion" = "完成";
+"settings.sound.completion.label" = "完成音效";
+"settings.sound.permission" = "权限请求";
+"settings.sound.permission.label" = "权限音效";
+"settings.sound.question" = "问答";
+"settings.sound.question.label" = "问答音效";
 
 /* Settings - Setup */
 "settings.tab.setup" = "安装引导";

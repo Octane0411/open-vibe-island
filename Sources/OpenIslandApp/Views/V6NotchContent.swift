@@ -214,6 +214,7 @@ struct V6ClosedPill: View {
     var rightSlot: IslandRightSlotContent?
     var layout: V6ClosedLayout
     var height: CGFloat = 32
+    var brandColor: Color = V6Palette.paper
 
     /// MacBook mode only — width of the physical notch cutout to wrap.
     var physicalNotchWidth: CGFloat = 0
@@ -221,6 +222,9 @@ struct V6ClosedPill: View {
     /// External mode only — minimum pill width (locked). Defaults to the
     /// width that fits just the glyph.
     var minWidth: CGFloat = 70
+    
+    /// Extra width added when running (to distinguish from idle/completed)
+    private static let runningWidthIncrement: CGFloat = 20
 
     var body: some View {
         switch layout {
@@ -247,7 +251,8 @@ struct V6ClosedPill: View {
 
         let labelBlock = (label == nil ? 0 : 6 + labelW)
         let rightBlock = (rightSlot == nil ? 0 : Self.innerGap + rightW)
-        let intrinsic = pad * 2 + glyphW + labelBlock + rightBlock
+        let runningIncrement = mode == .running ? Self.runningWidthIncrement : 0
+        let intrinsic = pad * 2 + glyphW + labelBlock + rightBlock + runningIncrement
         let width = max(minWidth, intrinsic)
 
         return ZStack {
@@ -255,7 +260,7 @@ struct V6ClosedPill: View {
                 .fill(V6Palette.ink)
 
             HStack(spacing: 0) {
-                UnifiedBars(mode: mode, size: 24)
+                UnifiedBars(mode: mode, size: 24, tint: brandColor)
                     .frame(width: glyphW, height: 24)
 
                 if let label {
@@ -280,6 +285,7 @@ struct V6ClosedPill: View {
                 AnyHashable(label ?? ""),
                 AnyHashable(rightSlot.map(RightSlotKey.init) ?? .none),
                 AnyHashable(mode),
+                AnyHashable(brandColor),
             ])
         )
     }
@@ -288,14 +294,15 @@ struct V6ClosedPill: View {
 
     private var macbookBody: some View {
         let halfReserve: CGFloat = 44
-        let outer = halfReserve + physicalNotchWidth + halfReserve
+        let runningIncrement = mode == .running ? Self.runningWidthIncrement : 0
+        let outer = halfReserve + physicalNotchWidth + halfReserve + runningIncrement
 
         return ZStack {
             V6ClosedPillShape()
                 .fill(V6Palette.ink)
 
             HStack(spacing: 0) {
-                UnifiedBars(mode: mode, size: 24)
+                UnifiedBars(mode: mode, size: 24, tint: brandColor)
                     .frame(width: 24, height: 24)
 
                 Spacer(minLength: 0)

@@ -16,7 +16,7 @@ struct UnifiedBars: View {
     var mode: Mode
     var size: CGFloat = 24
     /// Ink color for bars / tick. Defaults to the v6 paper ink.
-    var tint: Color = Color(red: 0xf1 / 255.0, green: 0xea / 255.0, blue: 0xd9 / 255.0)
+    var tint: Color = V6Palette.paper
 
     private static let box: CGFloat = 24
     private static let barWidth: CGFloat = 2.5
@@ -57,20 +57,36 @@ struct UnifiedBars: View {
     }
 
     private func drawBars(context: GraphicsContext, time: TimeInterval) {
-        for column in Self.columns {
-            let (height, y, opacity) = barGeometry(for: column, time: time)
-            guard opacity > 0, height > 0 else { continue }
-            let rect = CGRect(
-                x: column.x,
-                y: y,
-                width: Self.barWidth,
-                height: height
+        switch mode {
+        case .idle:
+            // Idle: draw a single circle with default color
+            let circleSize: CGFloat = 6
+            let circleRect = CGRect(
+                x: Self.center - circleSize / 2,
+                y: Self.center - circleSize / 2,
+                width: circleSize,
+                height: circleSize
             )
-            let path = Path(
-                roundedRect: rect,
-                cornerSize: CGSize(width: Self.barWidth / 2, height: Self.barWidth / 2)
-            )
-            context.fill(path, with: .color(tint.opacity(opacity)))
+            let circlePath = Path(ellipseIn: circleRect)
+            let breath = 0.7 + 0.3 * abs(sin(time * 2 * .pi / 2.8))
+            context.fill(circlePath, with: .color(V6Palette.paper.opacity(breath)))
+        case .running, .waiting:
+            // Running/Waiting: draw the bars with brand color
+            for column in Self.columns {
+                let (height, y, opacity) = barGeometry(for: column, time: time)
+                guard opacity > 0, height > 0 else { continue }
+                let rect = CGRect(
+                    x: column.x,
+                    y: y,
+                    width: Self.barWidth,
+                    height: height
+                )
+                let path = Path(
+                    roundedRect: rect,
+                    cornerSize: CGSize(width: Self.barWidth / 2, height: Self.barWidth / 2)
+                )
+                context.fill(path, with: .color(tint.opacity(opacity)))
+            }
         }
     }
 
@@ -80,12 +96,8 @@ struct UnifiedBars: View {
     ) -> (height: CGFloat, y: CGFloat, opacity: Double) {
         switch mode {
         case .idle:
-            let h = column.idleH
-            let isMiddle = column.x == Self.columns[1].x
-            let breath = isMiddle
-                ? 0.7 + 0.3 * abs(sin(time * 2 * .pi / 2.8))
-                : 1.0
-            return (h, Self.center - h / 2, breath)
+            // Idle case is handled separately in drawBars
+            return (0, 0, 0)
         case .running:
             let cycle = column.waveCycle
             let period: TimeInterval = 0.9

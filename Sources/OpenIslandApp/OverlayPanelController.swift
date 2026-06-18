@@ -272,8 +272,7 @@ final class OverlayPanelController {
             model.notchOpen(reason: .click)
         } else if model.notchStatus == .opened {
             if !isPointInExpandedArea(screenLocation) {
-                model.notchClose()
-                repostMouseDown(at: screenLocation)
+                model.overlay.handleClickOutsideNotification(screenPoint: screenLocation)
             }
         }
     }
@@ -664,7 +663,7 @@ final class OverlayPanelController {
 
     // MARK: - Event reposting
 
-    private func repostMouseDown(at screenPoint: NSPoint) {
+    func repostMouseDown(at screenPoint: NSPoint) {
         let flippedY = NSScreen.main.map { $0.frame.height - screenPoint.y } ?? screenPoint.y
 
         guard let event = CGEvent(
