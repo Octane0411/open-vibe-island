@@ -317,6 +317,59 @@ struct ClaudeHooksTests {
     }
 
     @Test
+    func claudeInferTerminalAppDetectsCursorViaGitAskpassWhenTermProgramIsVSCode() {
+        // Cursor's terminal sets TERM_PROGRAM=vscode (same as VS Code).
+        // CURSOR_TRACE_ID is only present in newer Cursor builds; older
+        // builds are identified by GIT_ASKPASS pointing inside Cursor.app.
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: [
+                "TERM_PROGRAM": "vscode",
+                "GIT_ASKPASS": "/Applications/Cursor.app/Contents/Resources/app/extensions/git/dist/askpass.sh",
+            ],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+        )
+
+        #expect(payload.terminalApp == "Cursor")
+    }
+
+    @Test
+    func claudeInferTerminalAppDetectsCursorViaAskpassNodeWhenTermProgramIsVSCode() {
+        // VSCODE_GIT_ASKPASS_NODE is another reliable Cursor indicator.
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: [
+                "TERM_PROGRAM": "vscode",
+                "VSCODE_GIT_ASKPASS_NODE": "/Applications/Cursor.app/Contents/Frameworks/Cursor Helper (Plugin).app/Contents/MacOS/Cursor Helper (Plugin)",
+            ],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+        )
+
+        #expect(payload.terminalApp == "Cursor")
+    }
+
+    @Test
+    func claudeInferTerminalAppDetectsCursorViaCursorTraceId() {
+        // Newer Cursor builds set CURSOR_TRACE_ID.
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: [
+                "TERM_PROGRAM": "vscode",
+                "CURSOR_TRACE_ID": "abc123",
+            ],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+        )
+
+        #expect(payload.terminalApp == "Cursor")
+    }
+
+    @Test
     func claudePermissionRequestReturnsAllowDirectiveAfterApproval() async throws {
         let socketURL = BridgeSocketLocation.uniqueTestURL()
         let server = BridgeServer(socketURL: socketURL)

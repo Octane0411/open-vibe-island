@@ -711,6 +711,14 @@ public extension CodexHookPayload {
             case "kaku":
                 return "Kaku"
             case "vscode":
+                // Cursor also sets TERM_PROGRAM=vscode; check Cursor-specific
+                // env vars to avoid misidentifying it as VS Code.
+                if environment["CURSOR_TRACE_ID"] != nil
+                    || environment["GIT_ASKPASS"]?.lowercased().contains("/cursor.app/") == true
+                    || environment["VSCODE_GIT_ASKPASS_NODE"]?.lowercased().contains("/cursor.app/") == true
+                {
+                    return "Cursor"
+                }
                 return "VS Code"
             case "vscode-insiders":
                 return "VS Code Insiders"
