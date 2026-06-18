@@ -931,6 +931,8 @@ final class ProcessMonitoringCoordinator {
         // Standalone terminals
         case "ghostty":
             return "Ghostty"
+        case "alacritty":
+            return "Alacritty"
         case "terminal", "apple_terminal":
             return "Terminal"
         case "iterm", "iterm2", "iterm.app":

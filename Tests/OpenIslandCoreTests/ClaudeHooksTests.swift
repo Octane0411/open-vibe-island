@@ -277,6 +277,29 @@ struct ClaudeHooksTests {
     }
 
     @Test
+    func claudeInferTerminalAppRecognizesAlacritty() {
+        var locatorCalls = 0
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: [
+                "ALACRITTY_WINDOW_ID": "12345",
+                "TERM": "alacritty",
+            ],
+            currentTTYProvider: { "/dev/ttys009" },
+            terminalLocatorProvider: { _ in
+                locatorCalls += 1
+                return (sessionID: "unexpected", tty: "/dev/ttys999", title: "wrong")
+            }
+        )
+
+        #expect(payload.terminalApp == "Alacritty")
+        #expect(payload.terminalTTY == "/dev/ttys009")
+        #expect(payload.defaultJumpTarget.terminalApp == "Alacritty")
+        #expect(locatorCalls == 0)
+    }
+
+    @Test
     func claudeInferTerminalAppPrefersWarpOverLeakedGhosttyEnvVars() {
         // Regression: launching Warp from a Ghostty tab leaks
         // GHOSTTY_RESOURCES_DIR (and friends) into every Warp shell via

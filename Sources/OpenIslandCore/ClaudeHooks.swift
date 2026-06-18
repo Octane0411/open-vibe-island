@@ -1051,7 +1051,7 @@ public extension ClaudeHookPayload {
     }
 
     private static let noLocatorTerminalApps: Set<String> = [
-        "cmux", "kaku", "wezterm", "zellij",
+        "alacritty", "cmux", "kaku", "wezterm", "zellij",
         "vs code", "vs code insiders", "cursor", "windsurf", "trae",
         "intellij idea", "webstorm", "pycharm", "goland", "clion",
         "rubymine", "phpstorm", "rider", "rustrover",
@@ -1190,6 +1190,8 @@ public extension ClaudeHookPayload {
                 return "Warp"
             case let value where value.contains("ghostty"):
                 return "Ghostty"
+            case let value where value.contains("alacritty"):
+                return "Alacritty"
             case "kaku":
                 return "Kaku"
             case "wezterm":
@@ -1226,6 +1228,10 @@ public extension ClaudeHookPayload {
         }
         if environment["GHOSTTY_RESOURCES_DIR"] != nil {
             return "Ghostty"
+        }
+        if environment["ALACRITTY_WINDOW_ID"] != nil
+            || environment["TERM"]?.lowercased().contains("alacritty") == true {
+            return "Alacritty"
         }
 
         // JetBrains IDEs set TERMINAL_EMULATOR=JetBrains-JediTerm.

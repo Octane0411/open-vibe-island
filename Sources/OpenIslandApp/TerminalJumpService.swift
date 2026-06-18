@@ -59,6 +59,11 @@ struct TerminalJumpService {
             aliases: ["ghostty"]
         ),
         TerminalAppDescriptor(
+            displayName: "Alacritty",
+            bundleIdentifier: "org.alacritty",
+            aliases: ["alacritty"]
+        ),
+        TerminalAppDescriptor(
             displayName: "Terminal",
             bundleIdentifier: "com.apple.Terminal",
             aliases: ["terminal", "apple_terminal"]

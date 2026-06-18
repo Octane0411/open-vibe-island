@@ -137,6 +137,96 @@ struct ActiveAgentProcessDiscoveryTests {
         ])
     }
 
+    @Test
+    func recognizesAlacrittyAsHostTerminalForCodex() {
+        let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
+            if executablePath == "/bin/ps" {
+                return """
+                  202 401 ttys001 /opt/homebrew/bin/codex
+                  401 900 ttys001 -/opt/homebrew/bin/fish
+                  900 1 ?? /opt/homebrew/bin/alacritty --config-file /tmp/alacritty.toml
+                """
+            }
+
+            guard executablePath == "/usr/sbin/lsof",
+                  let pid = arguments.dropFirst(2).first,
+                  pid == "202" else {
+                return nil
+            }
+
+            return """
+            fcwd
+            n/tmp/open-island
+            n/Users/test/.codex/sessions/2026/05/10/rollout-2026-05-10T01-20-29-019e0dc1-3f8b-7eb0-ae8d-04a5911e95b9.jsonl
+            """
+        }
+
+        let snapshots = discovery.discover()
+
+        #expect(snapshots == [
+            .init(
+                tool: .codex,
+                sessionID: "019e0dc1-3f8b-7eb0-ae8d-04a5911e95b9",
+                workingDirectory: "/tmp/open-island",
+                terminalTTY: "/dev/ttys001",
+                terminalApp: "Alacritty"
+            ),
+        ])
+    }
+
+    @Test
+    func resolvesTmuxPaneAndAlacrittyHostForCodexInsideTmux() {
+        let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
+            if executablePath == "/bin/ps" {
+                return """
+                  202 502 ttys010 /opt/homebrew/bin/codex
+                  502 600 ttys010 -/opt/homebrew/bin/fish
+                  600 1 ?? tmux-server
+                  701 401 ttys001 tmux attach-session
+                  401 900 ttys001 -/opt/homebrew/bin/fish
+                  900 1 ?? /Applications/Alacritty.app/Contents/MacOS/alacritty
+                """
+            }
+
+            if executablePath == "/usr/bin/which", arguments == ["tmux"] {
+                return "/opt/homebrew/bin/tmux"
+            }
+
+            if executablePath.hasSuffix("/tmux"), arguments.contains("list-panes") {
+                return "/dev/ttys010\twork:2.0"
+            }
+
+            if executablePath.hasSuffix("/tmux"), arguments.contains("list-clients") {
+                return "/dev/ttys001"
+            }
+
+            guard executablePath == "/usr/sbin/lsof",
+                  let pid = arguments.dropFirst(2).first,
+                  pid == "202" else {
+                return nil
+            }
+
+            return """
+            fcwd
+            n/tmp/open-island
+            n/Users/test/.codex/sessions/2026/05/10/rollout-2026-05-10T01-20-29-019e0dc1-3f8b-7eb0-ae8d-04a5911e95b9.jsonl
+            """
+        }
+
+        let snapshots = discovery.discover()
+
+        #expect(snapshots == [
+            .init(
+                tool: .codex,
+                sessionID: "019e0dc1-3f8b-7eb0-ae8d-04a5911e95b9",
+                workingDirectory: "/tmp/open-island",
+                terminalTTY: "/dev/ttys010",
+                terminalApp: "Alacritty",
+                tmuxTarget: "work:2.0"
+            ),
+        ])
+    }
+
     /// VS Code forks (Cursor, Windsurf, Trae, Qoder) bundle Electron's "Code
     /// Helper" inside their .app bundles. Their helper paths therefore contain
     /// both "/<fork>.app/" and "/code helper", and Open Island used to match
