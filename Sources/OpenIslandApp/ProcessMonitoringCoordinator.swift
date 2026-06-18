@@ -29,6 +29,11 @@ final class ProcessMonitoringCoordinator {
     @ObservationIgnored
     var onCodexAppRunningChanged: ((_ isRunning: Bool) -> Void)?
 
+    /// Fires on each monitoring pass while Codex.app is running so fallback
+    /// rediscovery can keep recent desktop threads hydrated.
+    @ObservationIgnored
+    var onCodexAppRunningObserved: (() -> Void)?
+
     @ObservationIgnored
     let activeAgentProcessDiscovery = ActiveAgentProcessDiscovery()
 
@@ -45,6 +50,8 @@ final class ProcessMonitoringCoordinator {
     private var wasCodexAppRunning = false
 
     private static let cursorStalenessTimeout: TimeInterval = 600  // 10 minutes
+    private static let codexRunningCacheTTL: TimeInterval = 1
+    private static var codexRunningCache: (checkedAt: Date, isRunning: Bool)?
 
     private var state: SessionState {
         get { stateAccessor?() ?? SessionState() }
@@ -53,7 +60,7 @@ final class ProcessMonitoringCoordinator {
 
     // MARK: - Monitoring lifecycle
 
-    func startMonitoringIfNeeded() {
+    func startMonitoringIfNeeded(initialDelay: Duration = .zero) {
         guard sessionAttachmentMonitorTask == nil else {
             return
         }
@@ -63,6 +70,10 @@ final class ProcessMonitoringCoordinator {
                 return
             }
 
+            if initialDelay > .zero {
+                try? await Task.sleep(for: initialDelay)
+            }
+
             while !Task.isCancelled {
                 let discovery = self.activeAgentProcessDiscovery
                 let probe = self.terminalSessionAttachmentProbe
@@ -70,8 +81,14 @@ final class ProcessMonitoringCoordinator {
                 let liveSessions = self.state.sessions.filter(\.isTrackedLiveSession)
                 let (snapshots, ghosttyAvail, terminalAvail, jumpTargets) = await Task.detached(priority: .utility) {
                     let s = discovery.discover()
-                    let g = probe.ghosttySnapshotAvailability()
-                    let t = probe.terminalSnapshotAvailability()
+                    let g: TerminalSessionAttachmentProbe.SnapshotAvailability<TerminalSessionAttachmentProbe.GhosttyTerminalSnapshot> =
+                        Self.needsGhosttySnapshots(for: liveSessions)
+                            ? probe.ghosttySnapshotAvailability()
+                            : .available([], appIsRunning: false)
+                    let t: TerminalSessionAttachmentProbe.SnapshotAvailability<TerminalSessionAttachmentProbe.TerminalTabSnapshot> =
+                        Self.needsAppleTerminalSnapshots(for: liveSessions)
+                            ? probe.terminalSnapshotAvailability()
+                            : .available([], appIsRunning: false)
                     let j = resolver.resolveJumpTargets(for: liveSessions, activeProcesses: s)
                     return (s, g, t, j)
                 }.value
@@ -81,8 +98,39 @@ final class ProcessMonitoringCoordinator {
                     terminalAvailability: terminalAvail,
                     preResolvedJumpTargets: jumpTargets
                 )
+                MemoryPressureRelief.releaseEmptyMallocPages()
                 try? await Task.sleep(for: .seconds(2))
             }
+        }
+    }
+
+    nonisolated private static func needsGhosttySnapshots(for sessions: [AgentSession]) -> Bool {
+        sessions.contains { session in
+            guard !session.isCodexAppSession else {
+                return false
+            }
+            let terminalApp = session.jumpTarget?.terminalApp
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased() ?? ""
+            return terminalApp.isEmpty
+                || terminalApp == "unknown"
+                || terminalApp.contains("ghostty")
+        }
+    }
+
+    nonisolated private static func needsAppleTerminalSnapshots(for sessions: [AgentSession]) -> Bool {
+        sessions.contains { session in
+            guard !session.isCodexAppSession else {
+                return false
+            }
+            let terminalApp = session.jumpTarget?.terminalApp
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased() ?? ""
+            return terminalApp.isEmpty
+                || terminalApp == "unknown"
+                || terminalApp == "terminal"
+                || terminalApp == "apple_terminal"
+                || terminalApp.contains("terminal.app")
         }
     }
 
@@ -126,6 +174,9 @@ final class ProcessMonitoringCoordinator {
             wasCodexAppRunning = isCodexAppRunning
             onCodexAppRunningChanged?(isCodexAppRunning)
         }
+        if isCodexAppRunning {
+            onCodexAppRunningObserved?()
+        }
         let sessions = local.sessions.filter(\.isTrackedLiveSession)
         guard !sessions.isEmpty else {
             // Flush local changes only if something actually changed.
@@ -164,7 +215,10 @@ final class ProcessMonitoringCoordinator {
         _ = local.reconcileJumpTargets(jumpTargetUpdates)
 
         // Phase 1: populate isProcessAlive in parallel with existing system.
-        let aliveIDs = sessionIDsWithAliveProcesses(activeProcesses: activeProcesses)
+        let aliveIDs = sessionIDsWithAliveProcesses(
+            activeProcesses: activeProcesses,
+            isCodexAppRunning: isCodexAppRunning
+        )
         _ = local.markProcessLiveness(
             aliveSessionIDs: aliveIDs,
             isCodexAppRunning: isCodexAppRunning
@@ -233,6 +287,8 @@ final class ProcessMonitoringCoordinator {
             payload.sessionID
         case let .activityUpdated(payload):
             payload.sessionID
+        case let .sessionRefreshed(payload):
+            payload.sessionID
         case let .permissionRequested(payload):
             payload.sessionID
         case let .questionAsked(payload):
@@ -263,7 +319,8 @@ final class ProcessMonitoringCoordinator {
     /// heuristics (e.g. bundle-ID liveness for Cursor, PID matching for
     /// Codex/Claude/Gemini).
     func sessionIDsWithAliveProcesses(
-        activeProcesses: [ActiveProcessSnapshot]
+        activeProcesses: [ActiveProcessSnapshot],
+        isCodexAppRunning: Bool? = nil
     ) -> Set<String> {
         var aliveIDs: Set<String> = []
         let sessions = state.sessions
@@ -275,7 +332,7 @@ final class ProcessMonitoringCoordinator {
                 .compactMap(\.sessionID)
         )
         // Codex.app sessions: keep alive while the desktop app is running.
-        let isCodexAppRunning = Self.isCodexDesktopAppRunning()
+        let isCodexAppRunning = isCodexAppRunning ?? Self.isCodexDesktopAppRunning()
         for session in sessions where session.tool == .codex && !session.isDemoSession {
             if session.isCodexAppSession {
                 if isCodexAppRunning { aliveIDs.insert(session.id) }
@@ -856,17 +913,24 @@ final class ProcessMonitoringCoordinator {
 
     // MARK: - Utilities
 
-    /// Check whether Codex.app is currently running.  Uses
-    /// `NSWorkspace.shared.runningApplications` directly because
-    /// `NSRunningApplication.runningApplications(withBundleIdentifier:)`
-    /// has been observed to intermittently return an empty array even
-    /// when the app is running (likely a brief indexing window after
-    /// app launch / conversation switch), which would cause Open Island
-    /// to incorrectly kill visible Codex sessions.
+    /// Check whether Codex.app is currently running. Prefer LaunchServices'
+    /// bundle-id lookup so startup monitoring does not enumerate every running
+    /// app and synchronously resolve each bundle id. Keep the full Workspace
+    /// scan as a short-cached fallback because the bundle-id lookup has been
+    /// observed to briefly return empty during Codex launch / thread switches.
     static func isCodexDesktopAppRunning() -> Bool {
-        NSWorkspace.shared.runningApplications.contains { app in
-            app.bundleIdentifier == "com.openai.codex"
+        let now = Date.now
+        if let cached = codexRunningCache,
+           now.timeIntervalSince(cached.checkedAt) < codexRunningCacheTTL {
+            return cached.isRunning
         }
+
+        let isRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: "com.openai.codex").isEmpty
+            || NSWorkspace.shared.runningApplications.contains { app in
+                app.bundleIdentifier == "com.openai.codex"
+            }
+        codexRunningCache = (now, isRunning)
+        return isRunning
     }
 
     private func processIdentityKey(_ process: ActiveProcessSnapshot) -> String {

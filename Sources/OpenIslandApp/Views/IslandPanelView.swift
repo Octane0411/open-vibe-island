@@ -1444,6 +1444,10 @@ private struct IslandSessionRow: View {
     }
 
     private var notificationWorkspaceHeadlineText: String {
+        if session.isCodexAppSession {
+            return session.spotlightHeadlineText.trimmedForNotificationCard
+        }
+
         let workspace = session.spotlightWorkspaceName.trimmedForNotificationCard
         let title = workspace.isEmpty ? session.tool.displayName : workspace
         guard let branch = session.spotlightWorktreeBranch?.trimmedForNotificationCard,
