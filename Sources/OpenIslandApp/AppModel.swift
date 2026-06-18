@@ -655,6 +655,14 @@ final class AppModel {
                 )
             }
         }
+        discovery.codexRolloutWatcher.subagentSpawnHandler = { [weak self] parentSessionID, subagent in
+            Task { @MainActor [weak self] in
+                self?.discovery.enrichCodexSubagent(
+                    parentSessionID: parentSessionID,
+                    subagent: subagent
+                )
+            }
+        }
 
         codexAppServer.onEvent = { [weak self] event in
             self?.applyTrackedEvent(event, ingress: .bridge)

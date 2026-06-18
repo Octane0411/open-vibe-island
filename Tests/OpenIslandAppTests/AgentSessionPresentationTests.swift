@@ -288,6 +288,35 @@ struct AgentSessionPresentationTests {
     }
 
     @Test
+    func runningCodexSessionShowsActiveSubagentAsCurrentAction() {
+        let session = AgentSession(
+            id: "session-1",
+            title: "Codex · worktree",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Thinking.",
+            updatedAt: Date(timeIntervalSince1970: 10_000),
+            codexMetadata: CodexSessionMetadata(
+                lastUserPrompt: "Use a subagent for research.",
+                activeSubagents: [
+                    CodexSubagentInfo(
+                        agentID: "subagent-1",
+                        agentType: "explorer",
+                        nickname: "Ada"
+                    )
+                ]
+            )
+        )
+
+        #expect(session.spotlightActivityLineText == "Subagent")
+        #expect(session.spotlightStatusLabel == "Live · Subagent")
+        #expect(session.displayCurrentToolName == "Subagent")
+        #expect(session.spotlightSubagentLabel == "Subagents (1)")
+    }
+
+    @Test
     func runningCodexSessionKeepsWriteStdinAsInput() {
         let session = AgentSession(
             id: "session-1",

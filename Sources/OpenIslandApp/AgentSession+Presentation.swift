@@ -161,10 +161,12 @@ extension AgentSession {
     }
 
     var spotlightSubagentLabel: String? {
-        guard let subagents = claudeMetadata?.activeSubagents, !subagents.isEmpty else {
+        let count = (claudeMetadata?.activeSubagents.count ?? 0)
+            + (codexMetadata?.activeSubagents.count ?? 0)
+        guard count > 0 else {
             return nil
         }
-        return "Subagents (\(subagents.count))"
+        return "Subagents (\(count))"
     }
 
     var spotlightHeadlineText: String {
