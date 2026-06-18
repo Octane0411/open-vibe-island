@@ -48,6 +48,53 @@ struct KimiHooksTests {
     }
 
     @Test
+    func installRemovesEmptyTopLevelHooksArrayPlaceholder() {
+        let userToml = """
+        default_model = "kimi-code/kimi-for-coding"
+        default_thinking = true
+        hooks = [] # Kimi may seed this placeholder
+
+        [models."kimi-code/kimi-for-coding"]
+        provider = "managed:kimi-code"
+
+        [[hooks]]
+        event = "PostToolUse"
+        command = "user-hook"
+
+        """
+        let command = KimiHookInstaller.hookCommand(for: "/opt/open-island/OpenIslandHooks")
+        let mutation = KimiHookInstaller.installConfigTOML(
+            existingContents: userToml,
+            hookCommand: command
+        )
+
+        let contents = try! #require(mutation.contents)
+        #expect(contents.contains("hooks = []") == false)
+        #expect(contents.contains("[models.\"kimi-code/kimi-for-coding\"]"))
+        #expect(contents.contains("command = \"user-hook\""))
+        #expect(contents.contains("event = \"SessionStart\""))
+    }
+
+    @Test
+    func installKeepsNonTopLevelHooksArrayAssignments() {
+        let userToml = """
+        [harness]
+        hooks = []
+        embedded = true
+
+        """
+        let command = KimiHookInstaller.hookCommand(for: "/opt/open-island/OpenIslandHooks")
+        let mutation = KimiHookInstaller.installConfigTOML(
+            existingContents: userToml,
+            hookCommand: command
+        )
+
+        let contents = try! #require(mutation.contents)
+        #expect(contents.contains("[harness]\nhooks = []\nembedded = true"))
+        #expect(contents.contains("event = \"SessionStart\""))
+    }
+
+    @Test
     func reinstallIsIdempotent() {
         let command = KimiHookInstaller.hookCommand(for: "/opt/open-island/OpenIslandHooks")
         let firstInstall = KimiHookInstaller.installConfigTOML(
