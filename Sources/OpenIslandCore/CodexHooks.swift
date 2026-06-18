@@ -365,6 +365,8 @@ public enum CodexHookOutputEncoder {
             return nil
         case .cursorHookDirective:
             return nil
+        case .piHookDirective:
+            return nil
         }
     }
 }

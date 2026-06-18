@@ -990,6 +990,10 @@ final class ProcessMonitoringCoordinator {
             return .claudeCode
         }
 
+        if normalized.hasPrefix("pi ") {
+            return .pi
+        }
+
         return nil
     }
 
@@ -1015,6 +1019,8 @@ final class ProcessMonitoringCoordinator {
             return "Cursor \(session.id.prefix(8))"
         case .kimiCLI:
             return "Kimi \(session.id.prefix(8))"
+        case .pi:
+            return "Pi \(session.id.prefix(8))"
         }
     }
 }

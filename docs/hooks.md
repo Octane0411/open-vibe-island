@@ -1,6 +1,6 @@
 # Hook System
 
-OpenIsland receives hook events from AI agents (Codex / Claude Code / Gemini CLI) via the `OpenIslandHooks` CLI. The CLI forwards payloads to the app over a Unix socket and, when necessary, writes a directive back to stdout so the agent can act on it (e.g. block a tool call).
+OpenIsland receives hook events from AI agents (Codex / Claude Code / Gemini CLI) via the `OpenIslandHooks` CLI, and from Pi via the official Pi Extension API. The hook CLI or extension forwards payloads to the app over a Unix socket and, when necessary, writes a directive back so the agent can act on it (e.g. block a tool call).
 
 ## Architecture
 
@@ -9,6 +9,14 @@ Agent (Codex / Claude Code / Gemini CLI)
   │  stdin: JSON payload
   ▼
 OpenIslandHooks CLI  (--source codex | --source claude | --source gemini)
+  │  Unix socket
+  ▼
+BridgeServer → AppModel → UI
+
+Pi
+  │  TypeScript Extension API events
+  ▼
+open-island-pi.ts extension
   │  Unix socket
   ▼
 BridgeServer → AppModel → UI
@@ -307,6 +315,60 @@ Setting `interrupt: true` terminates the current agent turn immediately.
 
 ---
 
+## Pi Extension
+
+**Payload type**: `PiHookPayload`  
+**Source**: [`Sources/OpenIslandCore/PiHooks.swift`](../Sources/OpenIslandCore/PiHooks.swift) and [`Sources/OpenIslandApp/Resources/open-island-pi.ts`](../Sources/OpenIslandApp/Resources/open-island-pi.ts)
+
+Pi has no native Open Island hook or approval system. Open Island support is implemented through Pi's official TypeScript Extension API and does not patch Pi internals.
+
+### Events
+
+| Pi extension event | Open Island event | Behavior |
+|---|---|---|
+| `session_start` | `SessionStart` | Creates or restores a Pi session row |
+| timer while Pi is alive | `Heartbeat` | Recreates the row after Open Island restarts without guessing from process lists |
+| `input` | `UserPromptSubmit` | Marks the session running with prompt preview |
+| `agent_start` | `AgentStart` | Marks the session running |
+| `tool_call` | `PreToolUse` | For `bash`, `edit`, and `write`, blocks until Open Island returns allow/deny |
+| `tool_result` | `PostToolUse` | Updates activity after tool completion |
+| `agent_end` | `Stop` | Marks the turn completed |
+| `session_shutdown` | `SessionEnd` | Marks the Pi session ended |
+
+### Install
+
+Copy the bundled extension to Pi's global extension directory and reload Pi:
+
+```bash
+mkdir -p ~/.pi/agent/extensions
+cp Sources/OpenIslandApp/Resources/open-island-pi.ts ~/.pi/agent/extensions/open-island.ts
+# inside Pi: /reload
+```
+
+The extension talks directly to `OPEN_ISLAND_SOCKET_PATH` when set, otherwise to Open Island's stable per-user socket at `~/Library/Application Support/OpenIsland/bridge.sock`.
+
+### Directive response
+
+For blocking `PreToolUse` events, BridgeServer returns a normal bridge response envelope. The Pi extension reads `response.response.type === "piHookDirective"` and then applies `response.response.directive`:
+
+```json
+{"type":"response","response":{"type":"piHookDirective","directive":{"type":"allow"}}}
+```
+
+or:
+
+```json
+{"type":"response","response":{"type":"piHookDirective","directive":{"type":"deny","reason":"Denied by Open Island"}}}
+```
+
+The extension maps a deny directive to Pi's blocking extension return value:
+
+```ts
+return { block: true, reason: "Denied by Open Island" }
+```
+
+---
+
 ## Timeout Policy
 
 | Source | Event | Timeout |
@@ -316,6 +378,8 @@ Setting `interrupt: true` terminates the current agent turn immediately.
 | Claude Code | `PermissionRequest` | **24 hours** (awaits human approval) |
 | Claude Code | All other events | **45 seconds** |
 | Gemini CLI | All events | Bridge default |
+| Pi Extension | `PreToolUse` for blocking approval tools | **24 hours** (awaits human approval) |
+| Pi Extension | All other events | Bridge default |
 
 ---
 

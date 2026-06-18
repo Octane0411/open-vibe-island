@@ -48,6 +48,11 @@ public final class BridgeServer: @unchecked Sendable {
         let kind: Kind
     }
 
+    private struct PendingPiInteraction {
+        let clientID: UUID
+        let payload: PiHookPayload
+    }
+
     private struct Listener {
         let fileDescriptor: Int32
         let acceptSource: DispatchSourceRead
@@ -70,6 +75,7 @@ public final class BridgeServer: @unchecked Sendable {
     private var pendingClaudeInteractions: [String: PendingClaudeInteraction] = [:]
     private var pendingOpenCodeInteractions: [String: PendingOpenCodeInteraction] = [:]
     private var pendingCursorInteractions: [String: PendingCursorInteraction] = [:]
+    private var pendingPiInteractions: [String: PendingPiInteraction] = [:]
     /// Caches Agent tool description from preToolUse for use by the next subagentStart.
     private var pendingAgentDescriptions: [String: String] = [:]
     /// Maps toolUseID → temporary task ID for TaskCreate, so postToolUse can update with real ID.
@@ -186,6 +192,7 @@ public final class BridgeServer: @unchecked Sendable {
         pendingTaskCreations.removeAll()
         pendingOpenCodeInteractions.removeAll()
         pendingCursorInteractions.removeAll()
+        pendingPiInteractions.removeAll()
 
         let activeConnections = Array(clients.values)
         activeConnections.forEach { $0.readSource.cancel() }
@@ -340,6 +347,45 @@ public final class BridgeServer: @unchecked Sendable {
                 return
             }
 
+            if let interaction = pendingPiInteractions.removeValue(forKey: sessionID) {
+                let directive: PiHookDirective
+                let summary: String
+                let phase: SessionPhase
+                switch resolution {
+                case .allowOnce:
+                    directive = .allow
+                    summary = "Permission approved. Pi continued the tool."
+                    phase = .running
+                case let .deny(message, _):
+                    directive = .deny(reason: message)
+                    summary = message ?? "Permission denied in Open Island."
+                    phase = .completed
+                }
+
+                emit(
+                    phase == .completed
+                        ? .sessionCompleted(
+                            SessionCompleted(
+                                sessionID: sessionID,
+                                summary: summary,
+                                timestamp: .now
+                            )
+                        )
+                        : .activityUpdated(
+                            SessionActivityUpdated(
+                                sessionID: sessionID,
+                                summary: summary,
+                                phase: phase,
+                                timestamp: .now
+                            )
+                        )
+                )
+
+                send(.response(.piHookDirective(directive)), to: interaction.clientID)
+                send(.response(.acknowledged), to: clientID)
+                return
+            }
+
             if let interaction = pendingCursorInteractions.removeValue(forKey: sessionID) {
                 let directive: CursorHookDirective
                 let summary: String
@@ -468,6 +514,9 @@ public final class BridgeServer: @unchecked Sendable {
 
         case let .processGeminiHook(payload):
             handleGeminiHook(payload, from: clientID)
+
+        case let .processPiHook(payload):
+            handlePiHook(payload, from: clientID)
         }
     }
 
@@ -1296,6 +1345,199 @@ public final class BridgeServer: @unchecked Sendable {
             )
             send(.response(.acknowledged), to: clientID)
         }
+    }
+
+    private func handlePiHook(_ payload: PiHookPayload, from clientID: UUID) {
+        switch payload.hookEventName {
+        case .sessionStart:
+            clearStalePiInteractionIfNeeded(for: payload.sessionID)
+            emit(
+                .sessionStarted(
+                    SessionStarted(
+                        sessionID: payload.sessionID,
+                        title: payload.sessionTitle,
+                        tool: .pi,
+                        origin: .live,
+                        initialPhase: .completed,
+                        summary: payload.implicitStartSummary,
+                        timestamp: .now,
+                        jumpTarget: payload.defaultJumpTarget
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .heartbeat:
+            ensurePiSessionExists(for: payload)
+            synchronizePiJumpTarget(for: payload)
+            send(.response(.acknowledged), to: clientID)
+
+        case .userPromptSubmit:
+            clearStalePiInteractionIfNeeded(for: payload.sessionID)
+            ensurePiSessionExists(for: payload)
+            synchronizePiJumpTarget(for: payload)
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: payload.promptPreview.map { "Prompt: \($0)" } ?? payload.implicitStartSummary,
+                        phase: .running,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .agentStart:
+            clearStalePiInteractionIfNeeded(for: payload.sessionID)
+            ensurePiSessionExists(for: payload)
+            synchronizePiJumpTarget(for: payload)
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: "Pi is working…",
+                        phase: .running,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .preToolUse:
+            clearStalePiInteractionIfNeeded(for: payload.sessionID)
+            ensurePiSessionExists(for: payload)
+            synchronizePiJumpTarget(for: payload)
+            emit(
+                .permissionRequested(
+                    PermissionRequested(
+                        sessionID: payload.sessionID,
+                        request: PermissionRequest(
+                            title: payload.toolName.map { "Allow Pi \($0)" } ?? "Allow Pi tool",
+                            summary: payload.toolActivitySummary,
+                            affectedPath: payload.toolInputPreview ?? payload.cwd,
+                            primaryActionTitle: "Allow",
+                            secondaryActionTitle: "Deny",
+                            toolName: payload.toolName,
+                            toolUseID: payload.toolUseID
+                        ),
+                        timestamp: .now
+                    )
+                )
+            )
+            pendingPiInteractions[payload.sessionID] = PendingPiInteraction(clientID: clientID, payload: payload)
+
+        case .postToolUse:
+            clearStalePiInteractionIfNeeded(for: payload.sessionID)
+            ensurePiSessionExists(for: payload)
+            synchronizePiJumpTarget(for: payload)
+            let summary = payload.toolName.map { "\($0) finished." } ?? "Pi tool finished."
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: summary,
+                        phase: .running,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .stop:
+            clearStalePiInteractionIfNeeded(for: payload.sessionID)
+            ensurePiSessionExists(for: payload)
+            synchronizePiJumpTarget(for: payload)
+            emit(
+                .sessionCompleted(
+                    SessionCompleted(
+                        sessionID: payload.sessionID,
+                        summary: payload.assistantMessagePreview ?? "Pi completed the turn.",
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .sessionEnd:
+            clearStalePiInteractionIfNeeded(for: payload.sessionID)
+            ensurePiSessionExists(for: payload)
+            synchronizePiJumpTarget(for: payload)
+            emit(
+                .sessionCompleted(
+                    SessionCompleted(
+                        sessionID: payload.sessionID,
+                        summary: "Pi session ended.",
+                        timestamp: .now,
+                        isInterrupt: true,
+                        isSessionEnd: true
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+        }
+    }
+
+    private func ensurePiSessionExists(for payload: PiHookPayload) {
+        if let existing = localState.session(id: payload.sessionID), !existing.isSessionEnded {
+            return
+        }
+
+        emit(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: payload.sessionID,
+                    title: payload.sessionTitle,
+                    tool: .pi,
+                    origin: .live,
+                    initialPhase: .completed,
+                    summary: payload.implicitStartSummary,
+                    timestamp: .now,
+                    jumpTarget: payload.defaultJumpTarget
+                )
+            )
+        )
+    }
+
+    private func synchronizePiJumpTarget(for payload: PiHookPayload) {
+        guard let existingSession = localState.session(id: payload.sessionID) else {
+            return
+        }
+
+        let jumpTarget = Self.mergeJumpTargetPreservingExistingResolvedFields(
+            incoming: payload.defaultJumpTarget,
+            existing: existingSession.jumpTarget
+        )
+
+        guard existingSession.jumpTarget != jumpTarget else {
+            return
+        }
+
+        emit(
+            .jumpTargetUpdated(
+                JumpTargetUpdated(
+                    sessionID: payload.sessionID,
+                    jumpTarget: jumpTarget,
+                    timestamp: .now
+                )
+            )
+        )
+    }
+
+    private func clearStalePiInteractionIfNeeded(for sessionID: String) {
+        guard pendingPiInteractions.removeValue(forKey: sessionID) != nil else {
+            return
+        }
+
+        emit(
+            .actionableStateResolved(
+                ActionableStateResolved(
+                    sessionID: sessionID,
+                    summary: "Approval was handled outside Open Island.",
+                    timestamp: .now
+                )
+            )
+        )
     }
 
     private func handleGeminiHook(_ payload: GeminiHookPayload, from clientID: UUID) {
@@ -2646,6 +2888,24 @@ public final class BridgeServer: @unchecked Sendable {
                     ActionableStateResolved(
                         sessionID: sessionID,
                         summary: "Plugin process disconnected.",
+                        timestamp: .now
+                    )
+                )
+            )
+        }
+
+        let pendingPiSessionIDs = pendingPiInteractions.compactMap { entry -> String? in
+            let (sessionID, pendingInteraction) = entry
+            return pendingInteraction.clientID == clientID ? sessionID : nil
+        }
+
+        for sessionID in pendingPiSessionIDs {
+            pendingPiInteractions.removeValue(forKey: sessionID)
+            emit(
+                .actionableStateResolved(
+                    ActionableStateResolved(
+                        sessionID: sessionID,
+                        summary: "Pi extension disconnected.",
                         timestamp: .now
                     )
                 )
