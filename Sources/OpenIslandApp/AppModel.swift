@@ -687,6 +687,9 @@ final class AppModel {
                 self.codexAppServer.disconnect()
             }
         }
+        monitoring.onCodexAppRunningObserved = { [weak self] in
+            self?.discovery.rediscoverCodexAppSessionsIfNeeded()
+        }
         refreshOverlayDisplayConfiguration()
         hasFinishedInit = true
     }
@@ -1503,6 +1506,7 @@ final class AppModel {
                 switch event {
                 case let .sessionStarted(p): return p.sessionID
                 case let .activityUpdated(p): return p.sessionID
+                case let .sessionRefreshed(p): return p.sessionID
                 case let .permissionRequested(p): return p.sessionID
                 case let .questionAsked(p): return p.sessionID
                 case let .sessionCompleted(p): return p.sessionID
@@ -1755,6 +1759,8 @@ final class AppModel {
             return "Session started: \(payload.title)"
         case let .activityUpdated(payload):
             return payload.summary
+        case let .sessionRefreshed(payload):
+            return "Session refreshed: \(payload.title)"
         case let .permissionRequested(payload):
             return payload.request.summary
         case let .questionAsked(payload):
