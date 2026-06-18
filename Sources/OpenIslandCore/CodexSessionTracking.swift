@@ -8,6 +8,7 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
     public var lastAssistantMessage: String?
     public var currentTool: String?
     public var currentCommandPreview: String?
+    public var isSubagentSession: Bool
 
     public init(
         transcriptPath: String? = nil,
@@ -15,7 +16,8 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
         lastUserPrompt: String? = nil,
         lastAssistantMessage: String? = nil,
         currentTool: String? = nil,
-        currentCommandPreview: String? = nil
+        currentCommandPreview: String? = nil,
+        isSubagentSession: Bool = false
     ) {
         self.transcriptPath = transcriptPath
         self.initialUserPrompt = initialUserPrompt
@@ -23,6 +25,7 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
         self.lastAssistantMessage = lastAssistantMessage
         self.currentTool = currentTool
         self.currentCommandPreview = currentCommandPreview
+        self.isSubagentSession = isSubagentSession
     }
 
     public var isEmpty: Bool {
@@ -32,6 +35,41 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
             && lastAssistantMessage == nil
             && currentTool == nil
             && currentCommandPreview == nil
+            && !isSubagentSession
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case transcriptPath
+        case initialUserPrompt
+        case lastUserPrompt
+        case lastAssistantMessage
+        case currentTool
+        case currentCommandPreview
+        case isSubagentSession
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        transcriptPath = try container.decodeIfPresent(String.self, forKey: .transcriptPath)
+        initialUserPrompt = try container.decodeIfPresent(String.self, forKey: .initialUserPrompt)
+        lastUserPrompt = try container.decodeIfPresent(String.self, forKey: .lastUserPrompt)
+        lastAssistantMessage = try container.decodeIfPresent(String.self, forKey: .lastAssistantMessage)
+        currentTool = try container.decodeIfPresent(String.self, forKey: .currentTool)
+        currentCommandPreview = try container.decodeIfPresent(String.self, forKey: .currentCommandPreview)
+        isSubagentSession = try container.decodeIfPresent(Bool.self, forKey: .isSubagentSession) ?? false
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(transcriptPath, forKey: .transcriptPath)
+        try container.encodeIfPresent(initialUserPrompt, forKey: .initialUserPrompt)
+        try container.encodeIfPresent(lastUserPrompt, forKey: .lastUserPrompt)
+        try container.encodeIfPresent(lastAssistantMessage, forKey: .lastAssistantMessage)
+        try container.encodeIfPresent(currentTool, forKey: .currentTool)
+        try container.encodeIfPresent(currentCommandPreview, forKey: .currentCommandPreview)
+        if isSubagentSession {
+            try container.encode(isSubagentSession, forKey: .isSubagentSession)
+        }
     }
 }
 
@@ -229,6 +267,8 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         var sessionID: String
         var cwd: String
         var timestamp: Date?
+        var isCodexDesktopApp: Bool
+        var isSubagentSession: Bool
 
         var workspaceName: String {
             let workspace = URL(fileURLWithPath: cwd).lastPathComponent
@@ -253,17 +293,26 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
     private let fileManager: FileManager
     private let maxAge: TimeInterval
     private let maxFiles: Int
+    private let maxFullScanBytes: UInt64
+    private let largeFileHeadBytes: UInt64
+    private let largeFileTailBytes: UInt64
 
     public init(
         rootURL: URL = CodexRolloutDiscovery.defaultRootURL,
         fileManager: FileManager = .default,
         maxAge: TimeInterval = 86_400,
-        maxFiles: Int = 40
+        maxFiles: Int = 20,
+        maxFullScanBytes: UInt64 = 1 * 1_024 * 1_024,
+        largeFileHeadBytes: UInt64 = 256 * 1_024,
+        largeFileTailBytes: UInt64 = 512 * 1_024
     ) {
         self.rootURL = rootURL
         self.fileManager = fileManager
         self.maxAge = maxAge
         self.maxFiles = maxFiles
+        self.maxFullScanBytes = maxFullScanBytes
+        self.largeFileHeadBytes = largeFileHeadBytes
+        self.largeFileTailBytes = largeFileTailBytes
     }
 
     public func discoverRecentSessions(now: Date = .now) -> [CodexTrackedSessionRecord] {
@@ -310,11 +359,15 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             }
             .prefix(maxFiles)
 
+        let threadNamesByID = Self.loadSessionIndexThreadNames(
+            indexURL: rootURL.deletingLastPathComponent().appendingPathComponent("session_index.jsonl")
+        )
         var recordsByID: [String: CodexTrackedSessionRecord] = [:]
         for candidate in recentCandidates {
             guard let record = discoverRecord(
                 fileURL: candidate.fileURL,
-                modifiedAt: candidate.modifiedAt
+                modifiedAt: candidate.modifiedAt,
+                threadNamesByID: threadNamesByID
             ) else {
                 continue
             }
@@ -337,8 +390,19 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
 
     private func discoverRecord(
         fileURL: URL,
-        modifiedAt: Date
+        modifiedAt: Date,
+        threadNamesByID: [String: String]
     ) -> CodexTrackedSessionRecord? {
+        let fileSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(UInt64.init) ?? 0
+        if fileSize > maxFullScanBytes {
+            return discoverLargeRecord(
+                fileURL: fileURL,
+                modifiedAt: modifiedAt,
+                fileSize: fileSize,
+                threadNamesByID: threadNamesByID
+            )
+        }
+
         // Stream the rollout line by line instead of slurping the whole
         // file. Long-lived Codex sessions accumulate JSONL files of tens
         // of MB; combined with the 10s rediscover throttle that meant a
@@ -358,7 +422,7 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         while let chunk = try? fileHandle.read(upToCount: Self.streamingChunkSize),
               !chunk.isEmpty {
             buffer.append(chunk)
-            for line in extractCompleteLines(from: &buffer) {
+            Self.consumeCompleteLines(from: &buffer) { line in
                 CodexRolloutReducer.apply(line: line, to: &snapshot)
                 if sessionMeta == nil {
                     sessionMeta = parseSessionMeta(fromLine: line)
@@ -379,6 +443,7 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
 
         guard let sessionMeta else { return nil }
 
+        let title = threadNamesByID[sessionMeta.sessionID] ?? sessionMeta.sessionTitle
         let summary = snapshot.summary ?? sessionMeta.defaultSummary
         let updatedAt = snapshot.updatedAt ?? sessionMeta.timestamp ?? modifiedAt
         let metadata = CodexSessionMetadata(
@@ -387,22 +452,179 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             lastUserPrompt: snapshot.lastUserPrompt,
             lastAssistantMessage: snapshot.lastAssistantMessage,
             currentTool: snapshot.currentTool,
-            currentCommandPreview: snapshot.currentCommandPreview
+            currentCommandPreview: snapshot.currentCommandPreview,
+            isSubagentSession: sessionMeta.isSubagentSession
         )
+        let jumpTarget = sessionMeta.isCodexDesktopApp ? JumpTarget(
+            terminalApp: "Codex.app",
+            workspaceName: sessionMeta.workspaceName,
+            paneTitle: title,
+            workingDirectory: sessionMeta.cwd,
+            codexThreadID: sessionMeta.sessionID
+        ) : nil
 
         return CodexTrackedSessionRecord(
             sessionID: sessionMeta.sessionID,
-            title: sessionMeta.sessionTitle,
+            title: title,
             origin: .live,
             attachmentState: .stale,
             summary: summary,
             phase: snapshot.phase,
             updatedAt: updatedAt,
+            jumpTarget: jumpTarget,
             codexMetadata: metadata
         )
     }
 
+    private func discoverLargeRecord(
+        fileURL: URL,
+        modifiedAt: Date,
+        fileSize: UInt64,
+        threadNamesByID: [String: String]
+    ) -> CodexTrackedSessionRecord? {
+        guard let fileHandle = try? FileHandle(forReadingFrom: fileURL) else {
+            return nil
+        }
+        defer { try? fileHandle.close() }
+
+        let sessionMeta = parseSessionMetaFromHead(fileHandle: fileHandle)
+        let snapshot = parseSnapshotFromTail(
+            fileHandle: fileHandle,
+            fileSize: fileSize
+        )
+
+        guard let sessionMeta else { return nil }
+
+        let title = threadNamesByID[sessionMeta.sessionID] ?? sessionMeta.sessionTitle
+        let summary = snapshot.summary ?? sessionMeta.defaultSummary
+        let updatedAt = snapshot.updatedAt ?? sessionMeta.timestamp ?? modifiedAt
+        let metadata = CodexSessionMetadata(
+            transcriptPath: fileURL.path,
+            initialUserPrompt: snapshot.initialUserPrompt,
+            lastUserPrompt: snapshot.lastUserPrompt,
+            lastAssistantMessage: snapshot.lastAssistantMessage,
+            currentTool: snapshot.currentTool,
+            currentCommandPreview: snapshot.currentCommandPreview,
+            isSubagentSession: sessionMeta.isSubagentSession
+        )
+        let jumpTarget = sessionMeta.isCodexDesktopApp ? JumpTarget(
+            terminalApp: "Codex.app",
+            workspaceName: sessionMeta.workspaceName,
+            paneTitle: title,
+            workingDirectory: sessionMeta.cwd,
+            codexThreadID: sessionMeta.sessionID
+        ) : nil
+
+        return CodexTrackedSessionRecord(
+            sessionID: sessionMeta.sessionID,
+            title: title,
+            origin: .live,
+            attachmentState: .stale,
+            summary: summary,
+            phase: snapshot.phase,
+            updatedAt: updatedAt,
+            jumpTarget: jumpTarget,
+            codexMetadata: metadata
+        )
+    }
+
+    private func parseSessionMetaFromHead(fileHandle: FileHandle) -> SessionMeta? {
+        try? fileHandle.seek(toOffset: 0)
+
+        var remaining = largeFileHeadBytes
+        var buffer = Data()
+        while remaining > 0 {
+            let count = Int(min(UInt64(Self.streamingChunkSize), remaining))
+            guard let chunk = try? fileHandle.read(upToCount: count),
+                  !chunk.isEmpty else {
+                break
+            }
+            remaining -= UInt64(chunk.count)
+            buffer.append(chunk)
+            var found: SessionMeta?
+            Self.consumeCompleteLines(from: &buffer) { line in
+                if found == nil {
+                    found = parseSessionMeta(fromLine: line)
+                }
+            }
+            if let found {
+                return found
+            }
+        }
+
+        if !buffer.isEmpty {
+            return parseSessionMeta(fromLine: String(decoding: buffer, as: UTF8.self))
+        }
+        return nil
+    }
+
+    private func parseSnapshotFromTail(
+        fileHandle: FileHandle,
+        fileSize: UInt64
+    ) -> CodexRolloutSnapshot {
+        let tailBytes = min(largeFileTailBytes, fileSize)
+        let startOffset = fileSize - tailBytes
+        try? fileHandle.seek(toOffset: startOffset)
+
+        var snapshot = CodexRolloutSnapshot()
+        var buffer = (try? fileHandle.readToEnd()) ?? Data()
+        if startOffset > 0 {
+            trimLeadingPartialLine(from: &buffer)
+        }
+
+        Self.consumeCompleteLines(from: &buffer) { line in
+            CodexRolloutReducer.apply(line: line, to: &snapshot)
+        }
+        if !buffer.isEmpty {
+            let trailing = String(decoding: buffer, as: UTF8.self)
+            if !trailing.isEmpty {
+                CodexRolloutReducer.apply(line: trailing, to: &snapshot)
+            }
+        }
+
+        return snapshot
+    }
+
     private static let streamingChunkSize = 64 * 1_024
+
+    static func loadSessionIndexThreadNames(indexURL: URL) -> [String: String] {
+        guard let fileHandle = try? FileHandle(forReadingFrom: indexURL) else {
+            return [:]
+        }
+        defer { try? fileHandle.close() }
+
+        var namesByID: [String: String] = [:]
+        var buffer = Data()
+        while let chunk = try? fileHandle.read(upToCount: streamingChunkSize),
+              !chunk.isEmpty {
+            buffer.append(chunk)
+            for line in Self.extractCompleteLines(from: &buffer) {
+                parseSessionIndexLine(line).map { namesByID[$0.id] = $0.threadName }
+            }
+        }
+
+        if !buffer.isEmpty {
+            let trailing = String(decoding: buffer, as: UTF8.self)
+            parseSessionIndexLine(trailing).map { namesByID[$0.id] = $0.threadName }
+        }
+
+        return namesByID
+    }
+
+    private static func parseSessionIndexLine(_ line: String) -> (id: String, threadName: String)? {
+        guard let object = codexRolloutJSONObject(for: line),
+              let id = object["id"] as? String,
+              let threadName = object["thread_name"] as? String else {
+            return nil
+        }
+
+        let trimmed = threadName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty, !trimmed.isEmpty else {
+            return nil
+        }
+
+        return (id, trimmed)
+    }
 
     private func parseSessionMeta(fromLine line: String) -> SessionMeta? {
         guard let object = codexRolloutJSONObject(for: line),
@@ -423,20 +645,61 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             cwd: cwd,
             timestamp: codexRolloutParseTimestamp(
                 (payload["timestamp"] as? String) ?? (object["timestamp"] as? String)
-            )
+            ),
+            isCodexDesktopApp: (payload["originator"] as? String) == "Codex Desktop",
+            isSubagentSession: (payload["thread_source"] as? String) == "subagent"
         )
     }
 
-    private func extractCompleteLines(from buffer: inout Data) -> [String] {
+    private static func extractCompleteLines(from buffer: inout Data) -> [String] {
         let newline = UInt8(ascii: "\n")
         var lines: [String] = []
-        while let newlineIndex = buffer.firstIndex(of: newline) {
-            let lineData = buffer.prefix(upTo: newlineIndex)
-            buffer.removeSubrange(...newlineIndex)
-            guard !lineData.isEmpty else { continue }
-            lines.append(String(decoding: lineData, as: UTF8.self))
+        var lineStart = buffer.startIndex
+        var consumedEnd: Data.Index?
+
+        while let newlineIndex = buffer[lineStart...].firstIndex(of: newline) {
+            if newlineIndex > lineStart {
+                let lineData = buffer[lineStart..<newlineIndex]
+                lines.append(String(decoding: lineData, as: UTF8.self))
+            }
+            lineStart = buffer.index(after: newlineIndex)
+            consumedEnd = lineStart
         }
+
+        if let consumedEnd {
+            buffer.removeSubrange(buffer.startIndex..<consumedEnd)
+        }
+
         return lines
+    }
+
+    private static func consumeCompleteLines(from buffer: inout Data, _ consume: (String) -> Void) {
+        let newline = UInt8(ascii: "\n")
+        var lineStart = buffer.startIndex
+        var consumedEnd: Data.Index?
+
+        while let newlineIndex = buffer[lineStart...].firstIndex(of: newline) {
+            if newlineIndex > lineStart {
+                let lineData = buffer[lineStart..<newlineIndex]
+                consume(String(decoding: lineData, as: UTF8.self))
+            }
+            lineStart = buffer.index(after: newlineIndex)
+            consumedEnd = lineStart
+        }
+
+        if let consumedEnd {
+            buffer.removeSubrange(buffer.startIndex..<consumedEnd)
+        }
+    }
+
+    private func trimLeadingPartialLine(from buffer: inout Data) {
+        let newline = UInt8(ascii: "\n")
+        guard let newlineIndex = buffer.firstIndex(of: newline) else {
+            buffer.removeAll(keepingCapacity: false)
+            return
+        }
+
+        buffer.removeSubrange(...newlineIndex)
     }
 }
 
@@ -459,6 +722,7 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
     public var lastAssistantMessage: String?
     public var currentTool: String?
     public var currentCommandPreview: String?
+    public var hasActiveTool: Bool
     public var isCompleted: Bool
     public var isInterrupted: Bool
 
@@ -471,6 +735,7 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
         lastAssistantMessage: String? = nil,
         currentTool: String? = nil,
         currentCommandPreview: String? = nil,
+        hasActiveTool: Bool = false,
         isCompleted: Bool = false,
         isInterrupted: Bool = false
     ) {
@@ -482,6 +747,7 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
         self.lastAssistantMessage = lastAssistantMessage
         self.currentTool = currentTool
         self.currentCommandPreview = currentCommandPreview
+        self.hasActiveTool = hasActiveTool
         self.isCompleted = isCompleted
         self.isInterrupted = isInterrupted
     }
@@ -624,6 +890,7 @@ public enum CodexRolloutReducer {
         case "task_complete", "turn_complete":
             snapshot.currentTool = nil
             snapshot.currentCommandPreview = nil
+            snapshot.hasActiveTool = false
             snapshot.phase = .completed
             snapshot.isCompleted = true
             snapshot.isInterrupted = false
@@ -637,90 +904,110 @@ public enum CodexRolloutReducer {
         case "turn_aborted":
             snapshot.currentTool = nil
             snapshot.currentCommandPreview = nil
+            snapshot.hasActiveTool = false
             snapshot.phase = .completed
             snapshot.isCompleted = true
             snapshot.isInterrupted = true
             snapshot.summary = "Codex turn was interrupted."
         case "agent_reasoning", "agent_reasoning_raw_content", "agent_reasoning_section_break":
-            applyThinking(to: &snapshot)
+            applyThinking(timestamp: timestamp, to: &snapshot)
         case "exec_command_begin":
             applyToolActivity(
                 "exec_command",
                 preview: commandPreview(fromCommandValue: payload["command"]),
+                timestamp: timestamp,
                 to: &snapshot
             )
         case "terminal_interaction":
             applyToolActivity(
                 "write_stdin",
                 preview: clipped(payload["stdin"] as? String),
+                timestamp: timestamp,
                 to: &snapshot
             )
         case "exec_command_end":
-            applyThinking(to: &snapshot)
+            settleToolActivity(timestamp: timestamp, to: &snapshot)
         case "patch_apply_begin", "patch_apply_updated":
             applyToolActivity(
                 "apply_patch",
                 preview: changesPreview(from: payload),
+                timestamp: timestamp,
                 to: &snapshot
             )
         case "patch_apply_end":
-            applyThinking(to: &snapshot)
+            if payload["success"] as? Bool == true {
+                settleToolActivity(
+                    "apply_patch",
+                    preview: changesPreview(from: payload) ?? snapshot.currentCommandPreview,
+                    timestamp: timestamp,
+                    to: &snapshot
+                )
+            } else {
+                applyThinking(timestamp: timestamp, to: &snapshot)
+            }
         case "mcp_tool_call_begin":
             if let toolName = mcpToolName(from: payload) {
                 applyToolActivity(
                     toolName,
                     preview: mcpToolPreview(from: payload),
+                    timestamp: timestamp,
                     to: &snapshot
                 )
             }
         case "mcp_tool_call_end", "dynamic_tool_call_response":
-            applyThinking(to: &snapshot)
+            settleToolActivity(timestamp: timestamp, to: &snapshot)
         case "dynamic_tool_call_request":
             if let toolName = clipped(payload["tool"] as? String) {
                 applyToolActivity(
                     toolName,
                     preview: jsonPreview(from: payload["arguments"]),
+                    timestamp: timestamp,
                     to: &snapshot
                 )
             }
         case "web_search_begin":
-            applyToolActivity("web_search", preview: nil, to: &snapshot)
+            applyToolActivity("web_search", preview: nil, timestamp: timestamp, to: &snapshot)
         case "web_search_end":
             applyToolActivity(
                 "web_search",
                 preview: webSearchPreview(from: payload),
+                timestamp: timestamp,
                 to: &snapshot
             )
         case "image_generation_begin":
-            applyToolActivity("image_generation", preview: nil, to: &snapshot)
+            applyToolActivity("image_generation", preview: nil, timestamp: timestamp, to: &snapshot)
         case "image_generation_end":
             applyToolActivity(
                 "image_generation",
                 preview: clipped(payload["revised_prompt"] as? String),
+                timestamp: timestamp,
                 to: &snapshot
             )
         case "view_image_tool_call":
             applyToolActivity(
                 "view_image",
                 preview: clipped(payload["path"] as? String),
+                timestamp: timestamp,
                 to: &snapshot
             )
         case "plan_update":
-            applyToolActivity("update_plan", preview: nil, to: &snapshot)
+            applyToolActivity("update_plan", preview: nil, timestamp: timestamp, to: &snapshot)
         case "request_user_input", "elicitation_request":
             applyQuestionRequest(
                 summary: clipped(payload["prompt"] as? String)
                     ?? clipped(payload["message"] as? String),
+                timestamp: timestamp,
                 to: &snapshot
             )
         case "exec_approval_request", "apply_patch_approval_request", "request_permissions":
             applyApprovalRequest(
                 summary: clipped(payload["reason"] as? String)
                     ?? clipped(payload["message"] as? String),
+                timestamp: timestamp,
                 to: &snapshot
             )
         case "context_compacted":
-            applyThinking(to: &snapshot)
+            applyThinking(timestamp: timestamp, to: &snapshot)
         default:
             break
         }
@@ -760,7 +1047,7 @@ public enum CodexRolloutReducer {
 
             return
         case "reasoning":
-            applyThinking(to: &snapshot)
+            applyThinking(timestamp: timestamp, to: &snapshot)
         case "function_call", "custom_tool_call":
             guard let toolName = payload["name"] as? String, !toolName.isEmpty else {
                 return
@@ -769,36 +1056,41 @@ public enum CodexRolloutReducer {
             applyToolActivity(
                 toolName,
                 preview: commandPreview(for: toolName, payload: payload),
+                timestamp: timestamp,
                 to: &snapshot
             )
         case "local_shell_call":
             applyToolActivity(
                 "exec_command",
                 preview: localShellCommandPreview(from: payload),
+                timestamp: timestamp,
                 to: &snapshot
             )
         case "tool_search_call":
             applyToolActivity(
                 "tool_search",
                 preview: toolSearchPreview(from: payload),
+                timestamp: timestamp,
                 to: &snapshot
             )
         case "web_search_call":
             applyToolActivity(
                 "web_search",
                 preview: webSearchPreview(from: payload),
+                timestamp: timestamp,
                 to: &snapshot
             )
         case "image_generation_call":
             applyToolActivity(
                 "image_generation",
                 preview: clipped(payload["revised_prompt"] as? String),
+                timestamp: timestamp,
                 to: &snapshot
             )
         case "compaction", "compaction_summary", "context_compaction":
-            applyToolActivity("context_compaction", preview: nil, to: &snapshot)
+            applyToolActivity("context_compaction", preview: nil, timestamp: timestamp, to: &snapshot)
         case "function_call_output", "custom_tool_call_output", "tool_search_output":
-            applyThinking(to: &snapshot)
+            settleToolActivity(timestamp: timestamp, to: &snapshot)
         default:
             return
         }
@@ -811,60 +1103,125 @@ public enum CodexRolloutReducer {
     private static func applyToolActivity(
         _ toolName: String,
         preview: String?,
+        timestamp: Date?,
         to snapshot: inout CodexRolloutSnapshot
     ) {
         // After task_complete, trailing tool lifecycle records can still be
         // flushed into the JSONL. They may refresh updatedAt, but must not
         // reopen the completed turn or replace the final assistant summary.
-        guard !snapshot.isCompleted else {
+        guard !snapshot.isCompleted || shouldReopenCompletedSnapshot(snapshot, timestamp: timestamp) else {
             return
         }
 
         snapshot.currentTool = toolName
         snapshot.currentCommandPreview = preview
+        snapshot.hasActiveTool = true
         snapshot.phase = .running
         snapshot.isCompleted = false
         snapshot.isInterrupted = false
         snapshot.summary = "Running \(displayName(for: toolName))."
     }
 
-    private static func applyThinking(to snapshot: inout CodexRolloutSnapshot) {
-        guard !snapshot.isCompleted else {
+    private static func settleToolActivity(
+        _ toolName: String? = nil,
+        preview: String? = nil,
+        timestamp: Date?,
+        to snapshot: inout CodexRolloutSnapshot
+    ) {
+        guard !snapshot.isCompleted || shouldReopenCompletedSnapshot(snapshot, timestamp: timestamp) else {
+            return
+        }
+
+        if let toolName {
+            snapshot.currentTool = toolName
+        }
+        if let preview {
+            snapshot.currentCommandPreview = preview
+        }
+        snapshot.hasActiveTool = false
+        snapshot.phase = .running
+        snapshot.isCompleted = false
+        snapshot.isInterrupted = false
+        if let currentTool = snapshot.currentTool {
+            snapshot.summary = "Running \(displayName(for: currentTool))."
+        } else {
+            snapshot.summary = snapshot.summary ?? "Codex is processing."
+        }
+
+        if let timestamp {
+            snapshot.updatedAt = timestamp
+        }
+    }
+
+    private static func applyThinking(timestamp: Date?, to snapshot: inout CodexRolloutSnapshot) {
+        guard !snapshot.isCompleted || shouldReopenCompletedSnapshot(snapshot, timestamp: timestamp) else {
+            return
+        }
+        guard !snapshot.hasActiveTool else {
+            if let timestamp {
+                snapshot.updatedAt = timestamp
+            }
+            return
+        }
+        guard snapshot.currentTool == nil, snapshot.currentCommandPreview == nil else {
+            if let timestamp {
+                snapshot.updatedAt = timestamp
+            }
             return
         }
 
         snapshot.currentTool = nil
         snapshot.currentCommandPreview = nil
+        snapshot.hasActiveTool = false
         snapshot.phase = .running
         snapshot.isCompleted = false
         snapshot.isInterrupted = false
         snapshot.summary = "Thinking."
     }
 
-    private static func applyApprovalRequest(summary: String?, to snapshot: inout CodexRolloutSnapshot) {
-        guard !snapshot.isCompleted else {
+    private static func applyApprovalRequest(summary: String?, timestamp: Date?, to snapshot: inout CodexRolloutSnapshot) {
+        guard !snapshot.isCompleted || shouldReopenCompletedSnapshot(snapshot, timestamp: timestamp) else {
             return
         }
 
         snapshot.currentTool = nil
         snapshot.currentCommandPreview = nil
+        snapshot.hasActiveTool = false
         snapshot.phase = .waitingForApproval
         snapshot.isCompleted = false
         snapshot.isInterrupted = false
         snapshot.summary = summary ?? "Approval needed."
     }
 
-    private static func applyQuestionRequest(summary: String?, to snapshot: inout CodexRolloutSnapshot) {
-        guard !snapshot.isCompleted else {
+    private static func applyQuestionRequest(summary: String?, timestamp: Date?, to snapshot: inout CodexRolloutSnapshot) {
+        guard !snapshot.isCompleted || shouldReopenCompletedSnapshot(snapshot, timestamp: timestamp) else {
             return
         }
 
         snapshot.currentTool = nil
         snapshot.currentCommandPreview = nil
+        snapshot.hasActiveTool = false
         snapshot.phase = .waitingForAnswer
         snapshot.isCompleted = false
         snapshot.isInterrupted = false
         snapshot.summary = summary ?? "Answer needed."
+    }
+
+    private static func shouldReopenCompletedSnapshot(
+        _ snapshot: CodexRolloutSnapshot,
+        timestamp: Date?
+    ) -> Bool {
+        guard snapshot.isCompleted,
+              let timestamp,
+              let completedAt = snapshot.updatedAt else {
+            return false
+        }
+
+        // Codex.app can append a new turn to the same rollout without a clean
+        // `user_message` event visible to the reducer. Reopen only when the
+        // activity is clearly later than the completion event; near-tail
+        // records remain treated as completion flush noise.
+        return timestamp.timeIntervalSince(completedAt) > 10
     }
 
     private static func applyUserMessage(
@@ -876,6 +1233,7 @@ public enum CodexRolloutReducer {
         snapshot.lastUserPrompt = message
         snapshot.currentTool = nil
         snapshot.currentCommandPreview = nil
+        snapshot.hasActiveTool = false
         snapshot.phase = .running
         snapshot.isCompleted = false
         snapshot.isInterrupted = false
@@ -901,6 +1259,7 @@ public enum CodexRolloutReducer {
         if !snapshot.isCompleted {
             snapshot.currentTool = nil
             snapshot.currentCommandPreview = nil
+            snapshot.hasActiveTool = false
             snapshot.phase = .running
             snapshot.isInterrupted = false
         }
@@ -1475,13 +1834,15 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
 }
 
 private func codexRolloutJSONObject(for line: String) -> [String: Any]? {
-    guard let data = line.data(using: .utf8),
-          let object = try? JSONSerialization.jsonObject(with: data),
-          let dictionary = object as? [String: Any] else {
-        return nil
-    }
+    autoreleasepool {
+        guard let data = line.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data),
+              let dictionary = object as? [String: Any] else {
+            return nil
+        }
 
-    return dictionary
+        return dictionary
+    }
 }
 
 private func codexRolloutParseTimestamp(_ string: String?) -> Date? {

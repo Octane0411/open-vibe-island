@@ -33,7 +33,7 @@ final class AppModel {
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
     private static let jumpOverlayDismissLeadTime: Duration = .milliseconds(20)
     private static let agentsGridObservedSequenceLimit = 512
-    static let hoverOpenDelay: TimeInterval = 0.15
+    private static let coldStartMonitoringDelay: Duration = .seconds(5)
 
     struct AcceptanceStep: Identifiable {
         let id: String
@@ -372,6 +372,25 @@ final class AppModel {
         set { updateAppearancePreferences(for: activeAppearanceProfile) { $0.sessionSort = newValue } }
     }
 
+    var islandSessionListLimitMode: IslandSessionListLimitMode {
+        get { appearancePreferences(for: activeAppearanceProfile).sessionListLimitMode }
+        set { updateAppearancePreferences(for: activeAppearanceProfile) { $0.sessionListLimitMode = newValue } }
+    }
+
+    var islandSessionListFixedCount: IslandSessionListFixedCount {
+        get { appearancePreferences(for: activeAppearanceProfile).sessionListFixedCount }
+        set { updateAppearancePreferences(for: activeAppearanceProfile) { $0.sessionListFixedCount = newValue } }
+    }
+
+    var islandSessionListActivityWindowMinutes: Int {
+        get { appearancePreferences(for: activeAppearanceProfile).sessionListActivityWindowMinutes }
+        set {
+            updateAppearancePreferences(for: activeAppearanceProfile) {
+                $0.sessionListActivityWindowMinutes = Self.normalizedActivityWindowMinutes(newValue)
+            }
+        }
+    }
+
     var completedStaleThreshold: IslandCompletedStaleThreshold {
         get { appearancePreferences(for: activeAppearanceProfile).completedStaleThreshold }
         set { updateAppearancePreferences(for: activeAppearanceProfile) { $0.completedStaleThreshold = newValue } }
@@ -408,6 +427,9 @@ final class AppModel {
     ) {
         if oldValue.sessionGroup != newValue.sessionGroup ||
             oldValue.sessionSort != newValue.sessionSort ||
+            oldValue.sessionListLimitMode != newValue.sessionListLimitMode ||
+            oldValue.sessionListFixedCount != newValue.sessionListFixedCount ||
+            oldValue.sessionListActivityWindowMinutes != newValue.sessionListActivityWindowMinutes ||
             oldValue.completedStaleThreshold != newValue.completedStaleThreshold {
             _cachedSessionBuckets = nil
         }
@@ -425,6 +447,9 @@ final class AppModel {
         defaults.set(preferences.sessionStateIndicator.rawValue, forKey: Self.appearanceDefaultsKey(profile, "stateIndicator"))
         defaults.set(preferences.sessionGroup.rawValue, forKey: Self.appearanceDefaultsKey(profile, "sessionGroup"))
         defaults.set(preferences.sessionSort.rawValue, forKey: Self.appearanceDefaultsKey(profile, "sessionSort"))
+        defaults.set(preferences.sessionListLimitMode.rawValue, forKey: Self.appearanceDefaultsKey(profile, "sessionListLimitMode"))
+        defaults.set(preferences.sessionListFixedCount.rawValue, forKey: Self.appearanceDefaultsKey(profile, "sessionListFixedCount"))
+        defaults.set(preferences.sessionListActivityWindowMinutes, forKey: Self.appearanceDefaultsKey(profile, "sessionListActivityWindow"))
         defaults.set(preferences.completedStaleThreshold.rawValue, forKey: Self.appearanceDefaultsKey(profile, "completedStaleThreshold"))
     }
 
@@ -536,6 +561,49 @@ final class AppModel {
         "appearance.island.v8.\(profile.rawValue).\(name)"
     }
 
+    private static func normalizedActivityWindowMinutes(_ minutes: Int) -> Int {
+        min(24 * 60, max(1, minutes))
+    }
+
+    private static func activityWindowMinutes(from value: Any?) -> Int {
+        switch value {
+        case let number as NSNumber:
+            return normalizedActivityWindowMinutes(number.intValue)
+        case let string as String:
+            if let minutes = Int(string) {
+                return normalizedActivityWindowMinutes(minutes)
+            }
+            if let legacyWindow = IslandSessionActivityWindow(rawValue: string) {
+                return normalizedActivityWindowMinutes(Int(legacyWindow.seconds / 60))
+            }
+            return 60
+        default:
+            return 60
+        }
+    }
+
+    private static func appearanceObject(
+        _ defaults: UserDefaults,
+        for profile: IslandAppearanceDisplayProfile,
+        name: String
+    ) -> Any? {
+        let key = appearanceDefaultsKey(profile, name)
+        if defaults.object(forKey: key) != nil {
+            return defaults.object(forKey: key)
+        }
+
+        // Early dev builds exposed the settings UI on the topBar profile by
+        // default even when the actual overlay was running as notch. For
+        // session-list controls, inherit that value until the notch profile
+        // has an explicit override, so user-entered custom windows take
+        // effect immediately on the current island.
+        guard profile == .notch,
+              name.hasPrefix("sessionList") else {
+            return nil
+        }
+        return defaults.object(forKey: appearanceDefaultsKey(.topBar, name))
+    }
+
     private static func loadAppearancePreferences(for profile: IslandAppearanceDisplayProfile) -> IslandAppearancePreferences {
         let defaults = UserDefaults.standard
         return IslandAppearancePreferences(
@@ -568,6 +636,17 @@ final class AppModel {
                     ?? defaults.string(forKey: legacyIslandSessionSortDefaultsKey)
                     ?? ""
             ) ?? .attention,
+            sessionListLimitMode: IslandSessionListLimitMode(
+                rawValue: appearanceObject(defaults, for: profile, name: "sessionListLimitMode") as? String
+                    ?? ""
+            ) ?? .activeWindow,
+            sessionListFixedCount: IslandSessionListFixedCount(
+                rawValue: appearanceObject(defaults, for: profile, name: "sessionListFixedCount") as? String
+                    ?? ""
+            ) ?? .three,
+            sessionListActivityWindowMinutes: Self.activityWindowMinutes(
+                from: appearanceObject(defaults, for: profile, name: "sessionListActivityWindow")
+            ),
             completedStaleThreshold: IslandCompletedStaleThreshold(
                 rawValue: defaults.string(forKey: appearanceDefaultsKey(profile, "completedStaleThreshold"))
                     ?? defaults.string(forKey: legacyCompletedStaleThresholdDefaultsKey)
@@ -662,8 +741,21 @@ final class AppModel {
         codexAppServer.onStatusMessage = { [weak self] message in
             self?.lastActionMessage = message
         }
+        codexAppServer.onUsageSnapshot = { [weak self] snapshot in
+            self?.hooks.updateCodexUsageSnapshotFromAppServer(snapshot)
+        }
         codexAppServer.isSessionTracked = { [weak self] id in
             self?.state.session(id: id) != nil
+        }
+        codexAppServer.codexMetadataForSession = { [weak self] id in
+            self?.state.session(id: id)?.codexMetadata
+        }
+        hooks.shouldSkipCodexUsageJSONLFallback = { [weak self] in
+            guard let self else { return false }
+            return self.codexAppServer.isConnected
+                || self.codexAppServer.isConnecting
+                || ProcessMonitoringCoordinator.isCodexDesktopAppRunning()
+                || self.hooks.codexUsageSnapshot?.sourceFilePath.hasPrefix("codex-app-server") == true
         }
 
         monitoring.syntheticClaudeSessionPrefix = Self.syntheticClaudeSessionPrefix
@@ -686,6 +778,12 @@ final class AppModel {
             } else {
                 self.codexAppServer.disconnect()
             }
+        }
+        monitoring.onCodexAppRunningObserved = { [weak self] in
+            guard let self,
+                  !self.codexAppServer.isConnected,
+                  !self.codexAppServer.isConnecting else { return }
+            self.discovery.rediscoverCodexAppSessionsIfNeeded()
         }
         refreshOverlayDisplayConfiguration()
         hasFinishedInit = true
@@ -711,6 +809,38 @@ final class AppModel {
         }
     }
 
+    /// Measured height of the expanded session-list container, including header/footer chrome.
+    /// The AppKit panel uses this after SwiftUI lays out so the outer border follows every
+    /// row type's real bottom edge instead of staying at a stale estimated height.
+    var measuredSessionListContentHeight: CGFloat = 0 {
+        didSet {
+            let delta = abs(measuredSessionListContentHeight - oldValue)
+            if delta >= 2, measuredSessionListContentHeight > 0 {
+                overlay.refreshOverlayPlacementIfVisible()
+            }
+        }
+    }
+
+    private var islandSessionDetailOverrides: [String: Bool] = [:]
+    private var archivedIslandSessionIDs: Set<String> = []
+
+    func islandSessionDetailOverride(for sessionID: String) -> Bool? {
+        islandSessionDetailOverrides[sessionID]
+    }
+
+    func setIslandSessionDetailOverride(_ sessionID: String, _ value: Bool?) {
+        var updated = islandSessionDetailOverrides
+        if let value {
+            updated[sessionID] = value
+        } else {
+            updated.removeValue(forKey: sessionID)
+        }
+        guard updated != islandSessionDetailOverrides else { return }
+        islandSessionDetailOverrides = updated
+        measuredSessionListContentHeight = 0
+        refreshOverlayPlacementIfVisible()
+    }
+
     var surfacedSessions: [AgentSession] {
         sessionBuckets.primary
     }
@@ -724,7 +854,7 @@ final class AppModel {
     }
 
     var islandSessionSections: [IslandSessionSection] {
-        let sessions = sortIslandSessions(surfacedSessions)
+        let sessions = limitedIslandSessions(from: islandSessionCandidates)
         switch islandSessionGroup {
         case .none:
             return [
@@ -754,6 +884,20 @@ final class AppModel {
         }
     }
 
+    private var islandSessionCandidates: [AgentSession] {
+        let primary = sortIslandSessions(surfacedSessions)
+        let primaryIDs = Set(primary.map(\.id))
+        let fallback = recentSessions
+            .filter { !primaryIDs.contains($0.id) }
+            .sorted { lhs, rhs in
+                if lhs.islandActivityDate == rhs.islandActivityDate {
+                    return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+                }
+                return lhs.islandActivityDate > rhs.islandActivityDate
+            }
+        return primary + fallback
+    }
+
     var recentSessionCount: Int {
         recentSessions.count
     }
@@ -781,6 +925,30 @@ final class AppModel {
                 }
                 return lhs.islandActivityDate > rhs.islandActivityDate
             }
+        }
+    }
+
+    private func limitedIslandSessions(from sessions: [AgentSession]) -> [AgentSession] {
+        guard !sessions.isEmpty else {
+            return []
+        }
+
+        switch islandSessionListLimitMode {
+        case .fixedCount:
+            return Array(sessions.prefix(islandSessionListFixedCount.count))
+        case .activeWindow:
+            let now = Date.now
+            let recent = sessions.filter {
+                now.timeIntervalSince($0.islandActivityDate) <= TimeInterval(islandSessionListActivityWindowMinutes * 60)
+            }
+            let minimumVisible = min(3, sessions.count)
+            if recent.count >= minimumVisible {
+                return recent
+            }
+
+            let fallbackIDs = Set(recent.map(\.id))
+            let fallback = sessions.filter { !fallbackIDs.contains($0.id) }
+            return recent + Array(fallback.prefix(max(0, minimumVisible - recent.count)))
         }
     }
 
@@ -868,7 +1036,7 @@ final class AppModel {
     /// preference and current live state. Returns nil when the preference
     /// is `.none` or there's nothing meaningful to show.
     func islandClosedRightSlotContent() -> IslandRightSlotContent? {
-        let sessions = surfacedSessions
+        let sessions = islandListSessions
         switch islandRightSlot {
         case .none:
             return nil
@@ -1059,6 +1227,7 @@ final class AppModel {
 
         if loadRuntimeState {
             isResolvingInitialLiveSessions = true
+            _ = discovery.restorePersistedSessionsImmediately()
 
             Task.detached(priority: .userInitiated) { [weak self] in
                 guard let self else { return }
@@ -1079,6 +1248,9 @@ final class AppModel {
             if showCodexUsage {
                 hooks.refreshCodexUsageState()
                 hooks.startCodexUsageMonitoringIfNeeded()
+            }
+            if ProcessMonitoringCoordinator.isCodexDesktopAppRunning() {
+                codexAppServer.ensureConnected()
             }
             updateChecker.startIfNeeded()
 
@@ -1273,8 +1445,16 @@ final class AppModel {
             return
         }
 
+        let resolution = permissionResolution(for: approved)
+        if codexAppServer.resolvePermission(sessionID: session.id, resolution: resolution) {
+            state.resolvePermission(sessionID: session.id, resolution: resolution)
+            synchronizeSelection()
+            refreshOverlayPlacementIfVisible()
+            return
+        }
+
         send(
-            .resolvePermission(sessionID: session.id, resolution: permissionResolution(for: approved)),
+            .resolvePermission(sessionID: session.id, resolution: resolution),
             userMessage: approved
                 ? "Approving permission for \(session.title)."
                 : "Denying permission for \(session.title)."
@@ -1354,6 +1534,10 @@ final class AppModel {
         synchronizeSelection()
         refreshOverlayPlacementIfVisible()
 
+        if codexAppServer.resolvePermission(sessionID: session.id, resolution: resolution) {
+            return
+        }
+
         send(
             .resolvePermission(sessionID: session.id, resolution: resolution),
             userMessage: approved
@@ -1387,6 +1571,10 @@ final class AppModel {
         synchronizeSelection()
         refreshOverlayPlacementIfVisible()
 
+        if codexAppServer.resolvePermission(sessionID: session.id, resolution: resolution) {
+            return
+        }
+
         send(
             .resolvePermission(sessionID: session.id, resolution: resolution),
             userMessage: message
@@ -1394,9 +1582,12 @@ final class AppModel {
     }
 
     func dismissSession(_ sessionID: String) {
+        archivedIslandSessionIDs.insert(sessionID)
+        measuredSessionListContentHeight = 0
         state.dismissSession(id: sessionID)
         dismissNotificationSurfaceIfPresent(for: sessionID)
         synchronizeSelection()
+        refreshOverlayPlacementIfVisible()
     }
 
     func answerQuestion(for sessionID: String, answer: QuestionPromptResponse) {
@@ -1463,6 +1654,15 @@ final class AppModel {
         updateLastActionMessage: Bool = true,
         ingress: TrackedEventIngress = .bridge
     ) {
+        if Self.isLegacyDebugPermissionEvent(event) {
+            if case let .permissionRequested(payload) = event {
+                state.dismissSession(id: payload.sessionID)
+                dismissNotificationSurfaceIfPresent(for: payload.sessionID)
+                reconcileIslandSurfaceAfterStateChange()
+            }
+            return
+        }
+
         // Snapshot whether this session was already completed before applying
         // the event. Used to suppress duplicate/stale completion notifications
         // (e.g. rollout watcher re-discovering an old completion on startup,
@@ -1483,6 +1683,11 @@ final class AppModel {
             return
         }
 
+        if let sessionID = Self.sessionID(for: event),
+           Self.shouldUnarchiveIslandSession(for: event) {
+            archivedIslandSessionIDs.remove(sessionID)
+        }
+
         state.apply(event)
         reconcileIslandSurfaceAfterStateChange()
         if ingress == .bridge {
@@ -1499,22 +1704,7 @@ final class AppModel {
 
         // Push relevant events to the Watch/iPhone via the relay
         if let relay = watchRelay {
-            let eventSessionID: String? = {
-                switch event {
-                case let .sessionStarted(p): return p.sessionID
-                case let .activityUpdated(p): return p.sessionID
-                case let .permissionRequested(p): return p.sessionID
-                case let .questionAsked(p): return p.sessionID
-                case let .sessionCompleted(p): return p.sessionID
-                case let .jumpTargetUpdated(p): return p.sessionID
-                case let .sessionMetadataUpdated(p): return p.sessionID
-                case let .claudeSessionMetadataUpdated(p): return p.sessionID
-                case let .geminiSessionMetadataUpdated(p): return p.sessionID
-                case let .openCodeSessionMetadataUpdated(p): return p.sessionID
-                case let .cursorSessionMetadataUpdated(p): return p.sessionID
-                case let .actionableStateResolved(p): return p.sessionID
-                }
-            }()
+            let eventSessionID = Self.sessionID(for: event)
             let session = eventSessionID.flatMap { state.session(id: $0) }
             relay.notifyEvent(event, session: session)
         }
@@ -1600,6 +1790,9 @@ final class AppModel {
     /// Applies startup discovery results on the main thread after background I/O completes.
     private func applyStartupDiscoveryPayload(_ payload: SessionDiscoveryCoordinator.StartupDiscoveryPayload) {
         discovery.applyStartupDiscoveryPayload(payload)
+        if ProcessMonitoringCoordinator.isCodexDesktopAppRunning() {
+            markRestoredCodexAppSessionsAlive()
+        }
 
         // Apply hooks binary URL and update the installed copy if the app ships a newer version.
         hooks.hooksBinaryURL = payload.hooksBinaryURL
@@ -1642,9 +1835,21 @@ final class AppModel {
             }
         }
 
-        // Reconcile attachments and start monitoring (requires sessions to be loaded).
-        monitoring.reconcileSessionAttachments()
-        monitoring.startMonitoringIfNeeded()
+        // Heavy process / terminal probing is not needed for the first paint.
+        // Codex.app sessions are restored through cached snapshots + app-server;
+        // terminal attachment reconciliation can run after launch settles.
+        monitoring.startMonitoringIfNeeded(initialDelay: Self.coldStartMonitoringDelay)
+    }
+
+    private func markRestoredCodexAppSessionsAlive() {
+        let codexAppSessionIDs = state.sessions
+            .filter { $0.isCodexAppSession }
+            .map(\.id)
+        guard !codexAppSessionIDs.isEmpty else { return }
+
+        for sessionID in codexAppSessionIDs {
+            state.markSingleSessionAlive(sessionID: sessionID)
+        }
     }
 
 
@@ -1678,7 +1883,9 @@ final class AppModel {
         var claimedLiveAttachmentKeys: Set<String> = []
 
         for session in rankedSessions where session.isVisibleInIsland {
+            guard !archivedIslandSessionIDs.contains(session.id) else { continue }
             guard !session.isSubagentSession else { continue }
+            guard !Self.isLegacyDebugPermissionSession(session) else { continue }
 
             if let liveAttachmentKey = monitoring.liveAttachmentKey(for: session) {
                 guard claimedLiveAttachmentKeys.insert(liveAttachmentKey).inserted else {
@@ -1690,8 +1897,58 @@ final class AppModel {
         }
 
         let primaryIDs = Set(primary.map(\.id))
-        let overflow = rankedSessions.filter { !primaryIDs.contains($0.id) && !$0.isSubagentSession }
+        let overflow = rankedSessions.filter {
+            !primaryIDs.contains($0.id)
+                && !archivedIslandSessionIDs.contains($0.id)
+                && !$0.isSubagentSession
+                && !Self.isLegacyDebugPermissionSession($0)
+        }
         return (primary, overflow)
+    }
+
+    private static func sessionID(for event: AgentEvent) -> String? {
+        switch event {
+        case let .sessionStarted(p): return p.sessionID
+        case let .activityUpdated(p): return p.sessionID
+        case let .sessionRefreshed(p): return p.sessionID
+        case let .permissionRequested(p): return p.sessionID
+        case let .questionAsked(p): return p.sessionID
+        case let .sessionCompleted(p): return p.sessionID
+        case let .jumpTargetUpdated(p): return p.sessionID
+        case let .sessionMetadataUpdated(p): return p.sessionID
+        case let .claudeSessionMetadataUpdated(p): return p.sessionID
+        case let .geminiSessionMetadataUpdated(p): return p.sessionID
+        case let .openCodeSessionMetadataUpdated(p): return p.sessionID
+        case let .cursorSessionMetadataUpdated(p): return p.sessionID
+        case let .actionableStateResolved(p): return p.sessionID
+        }
+    }
+
+    private static func shouldUnarchiveIslandSession(for event: AgentEvent) -> Bool {
+        switch event {
+        case .sessionStarted, .permissionRequested, .questionAsked, .actionableStateResolved:
+            return true
+        case let .activityUpdated(payload):
+            return payload.phase == .running || payload.phase.requiresAttention
+        default:
+            return false
+        }
+    }
+
+    private static func isLegacyDebugPermissionEvent(_ event: AgentEvent) -> Bool {
+        guard case let .permissionRequested(payload) = event else {
+            return false
+        }
+
+        return payload.sessionID == "incoming-session"
+            || payload.request.summary == "incoming.swift"
+            || payload.request.affectedPath == "/tmp/incoming.swift"
+    }
+
+    private static func isLegacyDebugPermissionSession(_ session: AgentSession) -> Bool {
+        session.id == "incoming-session"
+            || session.permissionRequest?.summary == "incoming.swift"
+            || session.permissionRequest?.affectedPath == "/tmp/incoming.swift"
     }
 
     private func displayPriority(for session: AgentSession, now: Date) -> Int {
@@ -1755,6 +2012,8 @@ final class AppModel {
             return "Session started: \(payload.title)"
         case let .activityUpdated(payload):
             return payload.summary
+        case let .sessionRefreshed(payload):
+            return "Session refreshed: \(payload.title)"
         case let .permissionRequested(payload):
             return payload.request.summary
         case let .questionAsked(payload):

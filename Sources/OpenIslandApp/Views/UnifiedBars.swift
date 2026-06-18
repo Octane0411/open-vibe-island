@@ -29,49 +29,34 @@ struct UnifiedBars: View {
     ]
 
     var body: some View {
-        TimelineView(.animation) { timeline in
-            Canvas { context, canvasSize in
-                withScaledContext(context, canvasSize) { ctx in
-                    drawBars(context: ctx, time: timeline.date.timeIntervalSinceReferenceDate)
+        Group {
+            if mode == .idle {
+                bars(time: 0)
+            } else {
+                TimelineView(.periodic(from: .now, by: 1.0 / 15.0)) { timeline in
+                    bars(time: timeline.date.timeIntervalSinceReferenceDate)
                 }
             }
         }
         .frame(width: size, height: size)
     }
 
-    // MARK: - Drawing
-
-    private func withScaledContext(
-        _ context: GraphicsContext,
-        _ canvasSize: CGSize,
-        body: (GraphicsContext) -> Void
-    ) {
-        var ctx = context
-        let side = min(canvasSize.width, canvasSize.height)
-        let scale = side / Self.box
-        let dx = (canvasSize.width - side) / 2
-        let dy = (canvasSize.height - side) / 2
-        ctx.translateBy(x: dx, y: dy)
-        ctx.scaleBy(x: scale, y: scale)
-        body(ctx)
-    }
-
-    private func drawBars(context: GraphicsContext, time: TimeInterval) {
-        for column in Self.columns {
-            let (height, y, opacity) = barGeometry(for: column, time: time)
-            guard opacity > 0, height > 0 else { continue }
-            let rect = CGRect(
-                x: column.x,
-                y: y,
-                width: Self.barWidth,
-                height: height
-            )
-            let path = Path(
-                roundedRect: rect,
-                cornerSize: CGSize(width: Self.barWidth / 2, height: Self.barWidth / 2)
-            )
-            context.fill(path, with: .color(tint.opacity(opacity)))
+    @ViewBuilder
+    private func bars(time: TimeInterval) -> some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(Self.columns.indices, id: \.self) { index in
+                let column = Self.columns[index]
+                let geometry = barGeometry(for: column, time: time)
+                if geometry.opacity > 0, geometry.height > 0 {
+                    RoundedRectangle(cornerRadius: Self.barWidth / 2, style: .continuous)
+                        .fill(tint.opacity(geometry.opacity))
+                        .frame(width: Self.barWidth, height: geometry.height)
+                        .offset(x: column.x, y: geometry.y)
+                }
+            }
         }
+        .frame(width: Self.box, height: Self.box, alignment: .topLeading)
+        .scaleEffect(size / Self.box)
     }
 
     private func barGeometry(

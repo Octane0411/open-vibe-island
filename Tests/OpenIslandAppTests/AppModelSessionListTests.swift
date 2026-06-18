@@ -11,18 +11,27 @@ struct AppModelSessionListTests {
             "appearance.island.v8.stateIndicator",
             "appearance.island.v8.sessionGroup",
             "appearance.island.v8.sessionSort",
+            "appearance.island.v8.sessionListLimitMode",
+            "appearance.island.v8.sessionListFixedCount",
+            "appearance.island.v8.sessionListActivityWindow",
             "appearance.island.v8.completedStaleThreshold",
             "appearance.island.v8.notch.rightSlot",
             "appearance.island.v8.notch.centerLabel",
             "appearance.island.v8.notch.stateIndicator",
             "appearance.island.v8.notch.sessionGroup",
             "appearance.island.v8.notch.sessionSort",
+            "appearance.island.v8.notch.sessionListLimitMode",
+            "appearance.island.v8.notch.sessionListFixedCount",
+            "appearance.island.v8.notch.sessionListActivityWindow",
             "appearance.island.v8.notch.completedStaleThreshold",
             "appearance.island.v8.topBar.rightSlot",
             "appearance.island.v8.topBar.centerLabel",
             "appearance.island.v8.topBar.stateIndicator",
             "appearance.island.v8.topBar.sessionGroup",
             "appearance.island.v8.topBar.sessionSort",
+            "appearance.island.v8.topBar.sessionListLimitMode",
+            "appearance.island.v8.topBar.sessionListFixedCount",
+            "appearance.island.v8.topBar.sessionListActivityWindow",
             "appearance.island.v8.topBar.completedStaleThreshold",
             "app.suppressFrontmostNotifications",
             "feature.completionReply.enabled",
@@ -87,7 +96,45 @@ struct AppModelSessionListTests {
 
         #expect(model.surfacedSessions.map(\.id) == ["live-session"])
         #expect(model.recentSessions.map(\.id) == ["recent-session"])
-        #expect(model.islandListSessions.map(\.id) == ["live-session"])
+        #expect(model.islandListSessions.map(\.id) == ["live-session", "recent-session"])
+    }
+
+    @Test
+    func dismissSessionArchivesCodexAppSessionFromIslandList() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        var session = codexAppSession(id: "codex-app-visible", updatedAt: now)
+        session.isProcessAlive = true
+        model.state = SessionState(sessions: [session])
+
+        #expect(model.islandListSessions.map(\.id) == ["codex-app-visible"])
+
+        model.dismissSession("codex-app-visible")
+
+        #expect(model.islandListSessions.isEmpty)
+    }
+
+    @Test
+    func activityEventRestoresArchivedCodexAppSession() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        var session = codexAppSession(id: "codex-app-visible", updatedAt: now)
+        session.isProcessAlive = true
+        model.state = SessionState(sessions: [session])
+
+        model.dismissSession("codex-app-visible")
+        model.applyTrackedEvent(
+            .activityUpdated(SessionActivityUpdated(
+                sessionID: "codex-app-visible",
+                summary: "Bash swift test",
+                phase: .running,
+                timestamp: now.addingTimeInterval(10)
+            )),
+            updateLastActionMessage: false,
+            ingress: .bridge
+        )
+
+        #expect(model.islandListSessions.map(\.id) == ["codex-app-visible"])
     }
 
     @Test
@@ -260,9 +307,283 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func defaultSessionListShowsActiveWithinOneHourAndFallsBackToThreeRecent() {
+        let now = Date()
+        let model = AppModel()
+
+        let sessions = [
+            makeVisibleSession(id: "recent-1", updatedAt: now.addingTimeInterval(-5 * 60)),
+            makeVisibleSession(id: "recent-2", updatedAt: now.addingTimeInterval(-40 * 60)),
+            makeVisibleSession(id: "old-1", updatedAt: now.addingTimeInterval(-2 * 60 * 60)),
+            makeVisibleSession(id: "old-2", updatedAt: now.addingTimeInterval(-3 * 60 * 60)),
+        ]
+
+        model.state = SessionState(sessions: sessions)
+
+        #expect(model.islandListSessions.map(\.id) == ["recent-1", "recent-2", "old-1"])
+    }
+
+    @Test
+    func defaultSessionListFallsBackToOverflowWhenOnlyTwoSessionsAreSurfaced() {
+        let now = Date()
+        let model = AppModel()
+
+        let surfacedSessions = [
+            makeVisibleSession(id: "live-1", updatedAt: now.addingTimeInterval(-60)),
+            makeVisibleSession(id: "live-2", updatedAt: now.addingTimeInterval(-120)),
+        ]
+        let overflowSession = listSession(
+            id: "overflow-1",
+            phase: .completed,
+            updatedAt: now.addingTimeInterval(-2 * 60 * 60)
+        )
+
+        model.state = SessionState(sessions: surfacedSessions + [overflowSession])
+
+        #expect(model.surfacedSessions.map(\.id) == ["live-1", "live-2"])
+        #expect(model.islandListSessions.map(\.id) == ["live-1", "live-2", "overflow-1"])
+    }
+
+    @Test
+    func activeWindowModeShowsAllSessionsWithinWindowWhenMoreThanThreeAreRecent() {
+        let now = Date()
+        let model = AppModel()
+
+        let sessions = [
+            makeVisibleSession(id: "recent-1", updatedAt: now.addingTimeInterval(-5 * 60)),
+            makeVisibleSession(id: "recent-2", updatedAt: now.addingTimeInterval(-15 * 60)),
+            makeVisibleSession(id: "recent-3", updatedAt: now.addingTimeInterval(-25 * 60)),
+            makeVisibleSession(id: "recent-4", updatedAt: now.addingTimeInterval(-35 * 60)),
+            makeVisibleSession(id: "old-1", updatedAt: now.addingTimeInterval(-2 * 60 * 60)),
+        ]
+
+        model.state = SessionState(sessions: sessions)
+
+        #expect(model.islandListSessions.map(\.id) == ["recent-1", "recent-2", "recent-3", "recent-4"])
+    }
+
+    @Test
+    func activeWindowModeUsesCustomMinuteWindow() {
+        let now = Date()
+        let model = AppModel()
+        model.islandSessionListLimitMode = .activeWindow
+        model.islandSessionListActivityWindowMinutes = 120
+
+        let sessions = [
+            makeVisibleSession(id: "recent-1", updatedAt: now.addingTimeInterval(-5 * 60)),
+            makeVisibleSession(id: "recent-2", updatedAt: now.addingTimeInterval(-90 * 60)),
+            makeVisibleSession(id: "old-1", updatedAt: now.addingTimeInterval(-3 * 60 * 60)),
+            makeVisibleSession(id: "old-2", updatedAt: now.addingTimeInterval(-4 * 60 * 60)),
+        ]
+
+        model.state = SessionState(sessions: sessions)
+
+        #expect(model.islandListSessions.map(\.id) == ["recent-1", "recent-2", "old-1"])
+    }
+
+    @Test
+    func notchProfileFallsBackToTopBarCustomActivityWindowWhenUnset() {
+        let defaults = UserDefaults.standard
+        let notchKey = "appearance.island.v8.notch.sessionListActivityWindow"
+        let topBarKey = "appearance.island.v8.topBar.sessionListActivityWindow"
+        let settingsProfileKey = "appearance.island.v8.settingsProfile"
+        let oldNotch = defaults.object(forKey: notchKey)
+        let oldTopBar = defaults.object(forKey: topBarKey)
+        let oldSettingsProfile = defaults.object(forKey: settingsProfileKey)
+        defer {
+            restoreDefault(oldNotch, forKey: notchKey)
+            restoreDefault(oldTopBar, forKey: topBarKey)
+            restoreDefault(oldSettingsProfile, forKey: settingsProfileKey)
+        }
+
+        defaults.removeObject(forKey: notchKey)
+        defaults.set(120, forKey: topBarKey)
+        defaults.set("topBar", forKey: settingsProfileKey)
+
+        let now = Date()
+        let model = AppModel()
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .notch)
+        model.state = SessionState(sessions: [
+            makeVisibleSession(id: "recent-1", updatedAt: now.addingTimeInterval(-5 * 60)),
+            makeVisibleSession(id: "recent-2", updatedAt: now.addingTimeInterval(-90 * 60)),
+            makeVisibleSession(id: "old-1", updatedAt: now.addingTimeInterval(-3 * 60 * 60)),
+        ])
+
+        #expect(model.islandSessionListActivityWindowMinutes == 120)
+        #expect(model.islandListSessions.map(\.id) == ["recent-1", "recent-2", "old-1"])
+    }
+
+    @Test
+    func runningSessionRowHeightEstimateRespectsExplicitCollapse() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        var session = listSession(id: "running-session", phase: .running, updatedAt: now)
+        session.codexMetadata = CodexSessionMetadata(
+            initialUserPrompt: "Make the island resize with collapsed rows",
+            lastUserPrompt: "Make the island resize with collapsed rows",
+            lastAssistantMessage: "Thinking",
+            currentTool: "Bash",
+            currentCommandPreview: "swift test --filter OverlayPanelControllerTests"
+        )
+
+        let expandedHeight = session.estimatedIslandRowHeight(at: now, detailOverride: nil)
+        let collapsedHeight = session.estimatedIslandRowHeight(at: now, detailOverride: false)
+
+        #expect(collapsedHeight < expandedHeight)
+        #expect(collapsedHeight == 50)
+        #expect(expandedHeight >= 100)
+    }
+
+    @Test
+    func inactiveSessionRowHeightEstimateRespectsExplicitExpansion() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        var session = listSession(
+            id: "completed-session",
+            phase: .completed,
+            updatedAt: now.addingTimeInterval(-4 * 60 * 60)
+        )
+        session.codexMetadata = CodexSessionMetadata(
+            initialUserPrompt: "Inspect compact row expansion",
+            lastUserPrompt: "Inspect compact row expansion",
+            lastAssistantMessage: "Ready"
+        )
+
+        let compactHeight = session.estimatedIslandRowHeight(at: now, detailOverride: nil)
+        let expandedHeight = session.estimatedIslandRowHeight(at: now, detailOverride: true)
+
+        #expect(compactHeight == 42)
+        #expect(expandedHeight > compactHeight)
+    }
+
+    @Test
+    func changingSessionDetailOverrideInvalidatesMeasuredListHeight() {
+        let model = AppModel()
+        model.measuredSessionListContentHeight = 420
+
+        model.setIslandSessionDetailOverride("session-1", false)
+
+        #expect(model.measuredSessionListContentHeight == 0)
+        #expect(model.islandSessionDetailOverride(for: "session-1") == false)
+    }
+
+    @Test
+    func autoHeightSizingShrinksWhenEstimatedContentGetsSmaller() {
+        #expect(AutoHeightScrollViewSizing.effectiveContentHeight(
+            measured: 0,
+            estimate: 320
+        ) == 320)
+
+        #expect(AutoHeightScrollViewSizing.effectiveContentHeight(
+            measured: 260,
+            estimate: 420
+        ) == 260)
+
+        #expect(!AutoHeightScrollViewSizing.isScrollable(contentHeight: 260, maxHeight: 420))
+        #expect(AutoHeightScrollViewSizing.isScrollable(contentHeight: 421, maxHeight: 420))
+
+        #expect(AutoHeightScrollViewSizing.contentHeightAfterEstimateChange(
+            current: 476,
+            estimate: 280
+        ) == 280)
+
+        #expect(AutoHeightScrollViewSizing.contentHeightAfterEstimateChange(
+            current: 240,
+            estimate: 320
+        ) == 240)
+
+        #expect(AutoHeightScrollViewSizing.contentHeightAfterEstimateChange(
+            current: 240,
+            estimate: 0
+        ) == 240)
+    }
+
+    @Test
+    func legacyActivityWindowRawValueMigratesToCustomMinutes() {
+        UserDefaults.standard.set(
+            "oneHour",
+            forKey: "appearance.island.v8.topBar.sessionListActivityWindow"
+        )
+
+        let model = AppModel()
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+
+        #expect(model.islandSessionListActivityWindowMinutes == 60)
+    }
+
+    @Test
+    func closedCountMatchesExpandedSessionListAfterActivityWindowLimit() {
+        let now = Date()
+        let model = AppModel()
+        model.islandRightSlot = .count
+
+        let recent = (1...6).map { index in
+            makeVisibleSession(
+                id: "recent-\(index)",
+                updatedAt: now.addingTimeInterval(TimeInterval(-index * 60))
+            )
+        }
+        let old = (1...14).map { index in
+            makeVisibleSession(
+                id: "old-\(index)",
+                updatedAt: now.addingTimeInterval(TimeInterval(-(index + 1) * 60 * 60))
+            )
+        }
+
+        model.state = SessionState(sessions: recent + old)
+
+        #expect(model.surfacedSessions.count == 20)
+        #expect(model.islandListSessions.count == 6)
+        guard case let .count(count)? = model.islandClosedRightSlotContent() else {
+            Issue.record("Expected count right-slot content")
+            return
+        }
+        #expect(count == 6)
+    }
+
+    @Test
+    func codexSubagentSessionsAreHiddenFromSessionList() {
+        let now = Date()
+        let model = AppModel()
+        let userSession = makeVisibleSession(id: "user-session", updatedAt: now)
+        var subagentSession = makeVisibleSession(id: "codex-subagent", updatedAt: now.addingTimeInterval(-30))
+        subagentSession.codexMetadata = CodexSessionMetadata(
+            transcriptPath: "/tmp/rollout-subagent.jsonl",
+            isSubagentSession: true
+        )
+
+        model.state = SessionState(sessions: [userSession, subagentSession])
+
+        #expect(model.surfacedSessions.map(\.id) == ["user-session"])
+        #expect(model.islandListSessions.map(\.id) == ["user-session"])
+    }
+
+    @Test
+    func fixedCountModeUsesConfiguredRowCount() {
+        let now = Date()
+        let model = AppModel()
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+        model.updateAppearancePreferences(for: .topBar) {
+            $0.sessionListLimitMode = .fixedCount
+            $0.sessionListFixedCount = .five
+        }
+
+        let sessions = (1...6).map { index in
+            makeVisibleSession(
+                id: "session-\(index)",
+                updatedAt: now.addingTimeInterval(TimeInterval(-index * 60))
+            )
+        }
+
+        model.state = SessionState(sessions: sessions)
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+
+        #expect(model.islandListSessions.map(\.id) == ["session-1", "session-2", "session-3", "session-4", "session-5"])
+    }
+
+    @Test
     func islandSessionSectionsGroupStaleCompletedIntoIdle() {
         let now = Date()
         let model = AppModel()
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
         model.islandSessionGroup = .state
         model.completedStaleThreshold = .fiveMinutes
 
@@ -280,6 +601,7 @@ struct AppModelSessionListTests {
         stale.isProcessAlive = true
 
         model.state = SessionState(sessions: [stale, done, approval])
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
 
         #expect(model.islandSessionSections.map(\.id) == ["state-approval", "state-done", "state-idle"])
         #expect(model.islandSessionSections.map(\.sessions.first?.id) == ["approval", "done", "stale"])
@@ -289,12 +611,16 @@ struct AppModelSessionListTests {
     func islandSessionSectionsKeepCompletedInDoneWhenStaleThresholdIsNever() {
         let now = Date()
         let model = AppModel()
-        model.islandSessionGroup = .state
-        model.completedStaleThreshold = .never
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+        model.updateAppearancePreferences(for: .topBar) {
+            $0.sessionGroup = .state
+            $0.completedStaleThreshold = .never
+        }
 
         var oldDone = listSession(id: "old-done", phase: .completed, updatedAt: now.addingTimeInterval(-86_400))
         oldDone.isProcessAlive = true
         model.state = SessionState(sessions: [oldDone])
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
 
         #expect(model.islandSessionSections.map(\.id) == ["state-done"])
         #expect(model.islandSessionSections.first?.sessions.first?.id == "old-done")
@@ -304,6 +630,7 @@ struct AppModelSessionListTests {
     func islandSessionListCanSortByLastUpdate() {
         let now = Date()
         let model = AppModel()
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
         model.islandSessionSort = .lastUpdate
 
         var olderRunning = listSession(id: "older-running", phase: .running, updatedAt: now.addingTimeInterval(-120))
@@ -312,6 +639,7 @@ struct AppModelSessionListTests {
         newerCompleted.isProcessAlive = true
 
         model.state = SessionState(sessions: [olderRunning, newerCompleted])
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
 
         #expect(model.islandListSessions.map(\.id) == ["newer-completed", "older-running"])
     }
@@ -323,12 +651,14 @@ struct AppModelSessionListTests {
             $0.usageDisplay = .hidden
             $0.sessionGroup = .state
             $0.sessionStateIndicator = .bar
+            $0.sessionListActivityWindowMinutes = 120
             $0.completedStaleThreshold = .twoMinutes
         }
         model.updateAppearancePreferences(for: .topBar) {
             $0.usageDisplay = .compact
             $0.sessionGroup = .project
             $0.sessionStateIndicator = .tint
+            $0.sessionListActivityWindowMinutes = 30
             $0.completedStaleThreshold = .never
         }
 
@@ -336,12 +666,14 @@ struct AppModelSessionListTests {
         #expect(model.islandUsageDisplay == .hidden)
         #expect(model.islandSessionGroup == .state)
         #expect(model.islandSessionStateIndicator == .bar)
+        #expect(model.islandSessionListActivityWindowMinutes == 120)
         #expect(model.completedStaleThreshold == .twoMinutes)
 
         model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
         #expect(model.islandUsageDisplay == .compact)
         #expect(model.islandSessionGroup == .project)
         #expect(model.islandSessionStateIndicator == .tint)
+        #expect(model.islandSessionListActivityWindowMinutes == 30)
         #expect(model.completedStaleThreshold == .never)
 
         let reloaded = AppModel()
@@ -349,10 +681,12 @@ struct AppModelSessionListTests {
         #expect(reloaded.islandUsageDisplay == .hidden)
         #expect(reloaded.islandSessionGroup == .state)
         #expect(reloaded.islandSessionStateIndicator == .bar)
+        #expect(reloaded.islandSessionListActivityWindowMinutes == 120)
         reloaded.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
         #expect(reloaded.islandUsageDisplay == .compact)
         #expect(reloaded.islandSessionGroup == .project)
         #expect(reloaded.islandSessionStateIndicator == .tint)
+        #expect(reloaded.islandSessionListActivityWindowMinutes == 30)
         #expect(reloaded.completedStaleThreshold == .never)
     }
 
@@ -617,7 +951,7 @@ struct AppModelSessionListTests {
     }
 
     @Test
-    func hoverOpenedSessionListAutoCollapsesOnPointerExit() {
+    func hoverOpenedSessionListAutoCollapsesOnPointerExitAfterDelay() async throws {
         let model = AppModel()
         model.notchStatus = .opened
         model.notchOpenReason = .hover
@@ -627,9 +961,29 @@ struct AppModelSessionListTests {
 
         model.handlePointerExitedIslandSurface()
 
+        #expect(model.notchStatus == .opened)
+
+        try await Task.sleep(for: .milliseconds(260))
+
         #expect(model.notchStatus == .closed)
         #expect(model.notchOpenReason == nil)
         #expect(model.islandSurface == .sessionList())
+    }
+
+    @Test
+    func hoverOpenedSessionListCancelsDelayedCollapseWhenPointerReenters() async throws {
+        let model = AppModel()
+        model.notchStatus = .opened
+        model.notchOpenReason = .hover
+        model.islandSurface = .sessionList()
+
+        model.handlePointerExitedIslandSurface()
+        model.notePointerInsideIslandSurface()
+
+        try await Task.sleep(for: .milliseconds(260))
+
+        #expect(model.notchStatus == .opened)
+        #expect(model.notchOpenReason == .hover)
     }
 
     @Test
@@ -829,6 +1183,258 @@ struct AppModelSessionListTests {
         #expect(merged.first?.claudeMetadata?.transcriptPath == "/tmp/claude.jsonl")
         #expect(merged.first?.claudeMetadata?.lastUserPrompt == "Check the Claude session registry.")
         #expect(merged.first?.phase == .running)
+    }
+
+    @Test
+    func mergeDiscoveredCodexAppSessionDoesNotReplaceAppServerTitleWithWorkspaceFallback() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "codex-thread",
+                    title: "合并 hera-web 到 release",
+                    tool: .codex,
+                    origin: .live,
+                    attachmentState: .attached,
+                    phase: .completed,
+                    summary: "Turn completed.",
+                    updatedAt: now.addingTimeInterval(-60),
+                    jumpTarget: JumpTarget(
+                        terminalApp: "Codex.app",
+                        workspaceName: "hera",
+                        paneTitle: "合并 hera-web 到 release",
+                        workingDirectory: "/Users/lijie10/Desktop/code/hera",
+                        codexThreadID: "codex-thread"
+                    ),
+                    codexMetadata: CodexSessionMetadata(
+                        transcriptPath: "/tmp/codex.jsonl",
+                        initialUserPrompt: "heraweb现在也需要merge到release分支"
+                    )
+                ),
+            ]
+        )
+
+        let merged = model.discovery.mergeDiscoveredSessions([
+            AgentSession(
+                id: "codex-thread",
+                title: "Codex · hera",
+                tool: .codex,
+                origin: .live,
+                attachmentState: .stale,
+                phase: .running,
+                summary: "Thinking.",
+                updatedAt: now,
+                jumpTarget: JumpTarget(
+                    terminalApp: "Codex.app",
+                    workspaceName: "hera",
+                    paneTitle: "Codex · hera",
+                    workingDirectory: "/Users/lijie10/Desktop/code/hera",
+                    codexThreadID: "codex-thread"
+                ),
+                codexMetadata: CodexSessionMetadata(
+                    transcriptPath: "/tmp/codex.jsonl",
+                    lastUserPrompt: "hera-chat的分支是heradesign"
+                )
+            ),
+        ])
+
+        #expect(merged.count == 1)
+        #expect(merged.first?.title == "合并 hera-web 到 release")
+        #expect(merged.first?.phase == .running)
+        #expect(merged.first?.summary == "Thinking.")
+        #expect(merged.first?.codexMetadata?.initialUserPrompt == "heraweb现在也需要merge到release分支")
+        #expect(merged.first?.codexMetadata?.lastUserPrompt == "hera-chat的分支是heradesign")
+    }
+
+    @Test
+    func codexAppRediscoveryRefreshesExistingRunningThread() throws {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "codex-thread",
+                    title: "web 模拟器画面",
+                    tool: .codex,
+                    origin: .live,
+                    attachmentState: .attached,
+                    phase: .completed,
+                    summary: "Thinking.",
+                    updatedAt: now.addingTimeInterval(-120),
+                    jumpTarget: JumpTarget(
+                        terminalApp: "Codex.app",
+                        workspaceName: "hera",
+                        paneTitle: "web 模拟器画面",
+                        workingDirectory: "/Users/lijie10/Desktop/code/hera",
+                        codexThreadID: "codex-thread"
+                    ),
+                    codexMetadata: CodexSessionMetadata(
+                        transcriptPath: "/tmp/codex.jsonl",
+                        lastUserPrompt: "old prompt"
+                    )
+                ),
+            ]
+        )
+
+        model.discovery.applyCodexAppRediscovery([
+            CodexTrackedSessionRecord(
+                sessionID: "codex-thread",
+                title: "web 模拟器画面",
+                origin: .live,
+                attachmentState: .stale,
+                summary: "Thinking.",
+                phase: .running,
+                updatedAt: now,
+                jumpTarget: JumpTarget(
+                    terminalApp: "Codex.app",
+                    workspaceName: "hera",
+                    paneTitle: "web 模拟器画面",
+                    workingDirectory: "/Users/lijie10/Desktop/code/hera",
+                    codexThreadID: "codex-thread"
+                ),
+                codexMetadata: CodexSessionMetadata(
+                    transcriptPath: "/tmp/codex.jsonl",
+                    lastUserPrompt: "new prompt"
+                )
+            ),
+        ])
+
+        let session = try #require(model.state.session(id: "codex-thread"))
+        #expect(session.phase == .running)
+        #expect(session.updatedAt == now)
+        #expect(session.isProcessAlive)
+        #expect(session.codexMetadata?.lastUserPrompt == "new prompt")
+    }
+
+    @Test
+    func olderRunningCodexRolloutDoesNotPromoteCachedCompletedSession() throws {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "codex-thread",
+                    title: "web 模拟器画面",
+                    tool: .codex,
+                    origin: .live,
+                    attachmentState: .attached,
+                    phase: .completed,
+                    summary: "Thinking.",
+                    updatedAt: now,
+                    jumpTarget: JumpTarget(
+                        terminalApp: "Codex.app",
+                        workspaceName: "hera",
+                        paneTitle: "web 模拟器画面",
+                        workingDirectory: "/Users/lijie10/Desktop/code/hera",
+                        codexThreadID: "codex-thread"
+                    ),
+                    codexMetadata: CodexSessionMetadata(transcriptPath: "/tmp/codex.jsonl")
+                ),
+            ]
+        )
+
+        var discovered = AgentSession(
+            id: "codex-thread",
+            title: "web 模拟器画面",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .stale,
+            phase: .running,
+            summary: "Thinking.",
+            updatedAt: now.addingTimeInterval(-30),
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "hera",
+                paneTitle: "web 模拟器画面",
+                workingDirectory: "/Users/lijie10/Desktop/code/hera",
+                codexThreadID: "codex-thread"
+            ),
+            codexMetadata: CodexSessionMetadata(transcriptPath: "/tmp/codex.jsonl")
+        )
+        discovered.isCodexAppSession = true
+        discovered.isProcessAlive = true
+
+        let merged = model.discovery.mergeDiscoveredSessions([discovered])
+        let session = try #require(merged.first(where: { $0.id == "codex-thread" }))
+        #expect(session.phase == .completed)
+        #expect(session.summary == "Thinking.")
+        #expect(session.isProcessAlive)
+    }
+
+    @Test
+    func startupCodexRolloutDiscoveryMarksDiscoveredAppThreadsAlive() throws {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+
+        model.discovery.applyStartupDiscoveryPayload(
+            SessionDiscoveryCoordinator.StartupDiscoveryPayload(
+                codexRecords: [],
+                codexRecordsNeedPrune: false,
+                claudeRecords: [],
+                claudeRecordsNeedPrune: false,
+                openCodeRecords: [],
+                openCodeRecordsNeedPrune: false,
+                cursorRecords: [],
+                cursorRecordsNeedPrune: false,
+                discoveredCodexRecords: [
+                    CodexTrackedSessionRecord(
+                        sessionID: "codex-thread",
+                        title: "web 模拟器画面",
+                        origin: .live,
+                        attachmentState: .stale,
+                        summary: "Thinking.",
+                        phase: .running,
+                        updatedAt: now,
+                        jumpTarget: JumpTarget(
+                            terminalApp: "Codex.app",
+                            workspaceName: "hera",
+                            paneTitle: "web 模拟器画面",
+                            workingDirectory: "/Users/lijie10/Desktop/code/hera",
+                            codexThreadID: "codex-thread"
+                        ),
+                        codexMetadata: CodexSessionMetadata(transcriptPath: "/tmp/codex.jsonl")
+                    ),
+                ],
+                discoveredClaudeSessions: [],
+                hooksBinaryURL: nil
+            )
+        )
+
+        let session = try #require(model.state.session(id: "codex-thread"))
+        #expect(session.phase == .running)
+        #expect(session.isProcessAlive)
+        #expect(session.isCodexAppSession)
+    }
+
+    @Test
+    func codexRediscoveryEnrichesWorkspaceFallbackWithAppServerTitle() {
+        let records = [
+            CodexTrackedSessionRecord(
+                sessionID: "codex-thread",
+                title: "Codex · hera",
+                origin: .live,
+                attachmentState: .stale,
+                summary: "Thinking.",
+                phase: .running,
+                updatedAt: Date(timeIntervalSince1970: 2_000),
+                jumpTarget: JumpTarget(
+                    terminalApp: "Codex.app",
+                    workspaceName: "hera",
+                    paneTitle: "Codex · hera",
+                    workingDirectory: "/Users/lijie10/Desktop/code/hera",
+                    codexThreadID: "codex-thread"
+                )
+            ),
+        ]
+
+        let enriched = SessionDiscoveryCoordinator.enrichCodexRecords(
+            records,
+            titleBySessionID: ["codex-thread": "合并 hera-web 到 release"]
+        )
+
+        #expect(enriched.first?.title == "合并 hera-web 到 release")
+        #expect(enriched.first?.jumpTarget?.paneTitle == "合并 hera-web 到 release")
     }
 
     @Test
@@ -1093,8 +1699,8 @@ struct AppModelSessionListTests {
         currentSession.isProcessAlive = true
 
         var incomingSession = AgentSession(
-            id: "incoming-session",
-            title: "Codex · incoming",
+            id: "other-session",
+            title: "Codex · other",
             tool: .codex,
             attachmentState: .attached,
             phase: .running,
@@ -1114,6 +1720,44 @@ struct AppModelSessionListTests {
 
         model.applyTrackedEvent(
             .permissionRequested(PermissionRequested(
+                sessionID: "other-session",
+                request: PermissionRequest(
+                    title: "Edit",
+                    summary: "other.swift",
+                    affectedPath: "/tmp/other.swift"
+                ),
+                timestamp: .now
+            )),
+            updateLastActionMessage: false,
+            ingress: .bridge
+        )
+
+        #expect(model.state.session(id: "other-session")?.phase == .waitingForApproval)
+        #expect(model.notchStatus == .opened)
+        #expect(model.notchOpenReason == .notification)
+        #expect(model.islandSurface == currentSurface)
+        #expect(model.activeIslandCardSession?.id == "current-session")
+        #expect(model.measuredNotificationContentHeight == 280)
+    }
+
+    @Test
+    @MainActor
+    func legacyIncomingSwiftPermissionRequestIsIgnored() {
+        let model = AppModel()
+        var incomingSession = AgentSession(
+            id: "incoming-session",
+            title: "Codex · incoming",
+            tool: .codex,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Working",
+            updatedAt: .now
+        )
+        incomingSession.isProcessAlive = true
+        model.state = SessionState(sessions: [incomingSession])
+
+        model.applyTrackedEvent(
+            .permissionRequested(PermissionRequested(
                 sessionID: "incoming-session",
                 request: PermissionRequest(
                     title: "Edit",
@@ -1126,12 +1770,9 @@ struct AppModelSessionListTests {
             ingress: .bridge
         )
 
-        #expect(model.state.session(id: "incoming-session")?.phase == .waitingForApproval)
-        #expect(model.notchStatus == .opened)
-        #expect(model.notchOpenReason == .notification)
-        #expect(model.islandSurface == currentSurface)
-        #expect(model.activeIslandCardSession?.id == "current-session")
-        #expect(model.measuredNotificationContentHeight == 280)
+        #expect(model.state.session(id: "incoming-session")?.phase == .completed)
+        #expect(model.state.session(id: "incoming-session")?.permissionRequest == nil)
+        #expect(!model.islandListSessions.contains { $0.id == "incoming-session" })
     }
 
     @Test
@@ -1236,6 +1877,32 @@ struct AppModelSessionListTests {
         )
     }
 
+    private func makeVisibleSession(id: String, updatedAt: Date) -> AgentSession {
+        var session = listSession(id: id, phase: .running, updatedAt: updatedAt)
+        session.isProcessAlive = true
+        return session
+    }
+
+    private func codexAppSession(id: String, updatedAt: Date) -> AgentSession {
+        AgentSession(
+            id: id,
+            title: "Codex · \(id)",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .completed,
+            summary: "Ready",
+            updatedAt: updatedAt,
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "open-island",
+                paneTitle: id,
+                workingDirectory: "/tmp/open-island",
+                codexThreadID: id
+            )
+        )
+    }
+
     private func placementDiagnostics(mode: OverlayPlacementMode) -> OverlayPlacementDiagnostics {
         OverlayPlacementDiagnostics(
             targetScreenID: mode == .notch ? "display-notch" : "display-topbar",
@@ -1247,5 +1914,13 @@ struct AppModelSessionListTests {
             safeAreaInsets: NSEdgeInsets(top: mode == .notch ? 37 : 0, left: 0, bottom: 0, right: 0),
             overlayFrame: NSRect(x: 400, y: 820, width: 700, height: 160)
         )
+    }
+
+    private func restoreDefault(_ value: Any?, forKey key: String) {
+        if let value {
+            UserDefaults.standard.set(value, forKey: key)
+        } else {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
     }
 }

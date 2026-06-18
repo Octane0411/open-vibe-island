@@ -77,13 +77,14 @@ public enum CodexHookInstaller {
     private static let currentFeatureKey = CodexHooksFeatureFlagKey.current.rawValue
     private static let legacyFeatureKey = CodexHooksFeatureFlagKey.legacy.rawValue
 
-    // Keep the managed Codex install aligned with the original app's low-noise footprint.
-    // The bridge still understands richer hook events, but we do not install them by default
-    // because per-command Bash hooks produce a large amount of terminal log spam.
+    // Keep the managed Codex install aligned with Vibe Island's low-noise footprint:
+    // turn/session events plus PostToolUse for tool completion. PreToolUse stays out
+    // by default because per-command start hooks produce noisy terminal log spam.
     private static let eventSpecs: [(name: String, matcher: String?, timeout: Int)] = [
         ("SessionStart", "startup|resume", managedTimeout),
         ("UserPromptSubmit", nil, managedTimeout),
         ("PermissionRequest", nil, managedInteractiveTimeout),
+        ("PostToolUse", nil, managedTimeout),
         ("Stop", nil, managedTimeout),
     ]
 
