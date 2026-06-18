@@ -136,7 +136,7 @@ struct IslandPanelView: View {
 
     private var targetOverlayScreen: NSScreen? {
         if let targetScreenID = model.overlayPlacementDiagnostics?.targetScreenID,
-           let screen = NSScreen.screens.first(where: { screenID(for: $0) == targetScreenID }) {
+           let screen = NSScreen.screens.first(where: { OverlayDisplayResolver.screenID(for: $0) == targetScreenID }) {
             return screen
         }
 
@@ -1028,15 +1028,6 @@ struct IslandPanelView: View {
         }
         .lineLimit(1)
         .fixedSize(horizontal: true, vertical: false)
-    }
-
-    private func screenID(for screen: NSScreen) -> String {
-        let key = NSDeviceDescriptionKey("NSScreenNumber")
-        if let number = screen.deviceDescription[key] as? NSNumber {
-            return "display-\(number.uint32Value)"
-        }
-
-        return screen.localizedName
     }
 
     private func compactUsageChip(_ provider: UsageProviderPresentation, usesShortTitle: Bool) -> some View {
