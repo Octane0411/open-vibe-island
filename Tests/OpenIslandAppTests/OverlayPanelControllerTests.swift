@@ -1,8 +1,30 @@
 import AppKit
+import SwiftUI
 import Testing
 @testable import OpenIslandApp
 
 struct OverlayPanelControllerTests {
+    @Test @MainActor
+    func notchHostingViewDoesNotDriveWindowContentSizeConstraints() {
+        let hostingView = NotchHostingView(rootView: Color.clear)
+
+        #expect(hostingView.sizingOptions.isEmpty)
+        #expect(hostingView.translatesAutoresizingMaskIntoConstraints)
+    }
+
+    @Test @MainActor
+    func notchHostingViewIsWrappedBeforeBecomingWindowContentView() {
+        let hostingView = NotchHostingView(rootView: Color.clear)
+        let container = NotchContentContainerView(hostingView: hostingView)
+
+        #expect(container !== hostingView)
+        #expect(container.subviews.count == 1)
+        #expect(container.subviews.first === hostingView)
+        #expect(hostingView.translatesAutoresizingMaskIntoConstraints)
+        #expect(hostingView.autoresizingMask.contains(.width))
+        #expect(hostingView.autoresizingMask.contains(.height))
+    }
+
     @Test
     func closedSurfaceRectCentersOnNotch() {
         let notchRect = NSRect(x: 200, y: 900, width: 200, height: 38)
@@ -90,6 +112,66 @@ struct OverlayPanelControllerTests {
         #expect(!OverlayPanelController.shouldActivatePanel(for: .notification))
         #expect(!OverlayPanelController.shouldActivatePanel(for: .boot))
         #expect(!OverlayPanelController.shouldActivatePanel(for: nil))
+    }
+
+    @Test
+    func openedPanelCapsToVibeIslandSizedFrame() {
+        #expect(OverlayPanelController.maximumOpenedPanelFrameSize == CGSize(width: 680, height: 580))
+        #expect(OverlayPanelController.maxSessionListHeight(openedPanelFrameHeight: 580, closedNotchHeight: 34) == 476)
+    }
+
+    @Test
+    func openedPanelFrameHeightFollowsMeasuredContentUntilVibeIslandCap() {
+        #expect(OverlayPanelController.openedPanelFrameHeight(
+            contentHeight: 300,
+            closedNotchHeight: 34,
+            visibleFrameHeight: 900
+        ) == 356)
+
+        #expect(OverlayPanelController.openedPanelFrameHeight(
+            contentHeight: 524,
+            closedNotchHeight: 34,
+            visibleFrameHeight: 900
+        ) == 580)
+    }
+
+    @Test
+    func openedSessionListContentHeightDoesNotKeepStaleLargerMeasurement() {
+        #expect(OverlayPanelController.openedSessionListContentHeight(
+            estimatedContentHeight: 340,
+            measuredContentHeight: 520,
+            maxContentHeight: 524
+        ) == 340)
+
+        #expect(OverlayPanelController.openedSessionListContentHeight(
+            estimatedContentHeight: 520,
+            measuredContentHeight: 340,
+            maxContentHeight: 524
+        ) == 340)
+    }
+
+    @Test
+    func openedNotificationContentHeightUsesMeasuredNaturalHeightWhenAvailable() {
+        #expect(OverlayPanelController.openedNotificationContentHeight(
+            estimatedContentHeight: 360,
+            measuredContentHeight: 220,
+            measuredContentPadding: 8,
+            maxContentHeight: 524
+        ) == 228)
+
+        #expect(OverlayPanelController.openedNotificationContentHeight(
+            estimatedContentHeight: 360,
+            measuredContentHeight: 0,
+            measuredContentPadding: 8,
+            maxContentHeight: 524
+        ) == 360)
+
+        #expect(OverlayPanelController.openedNotificationContentHeight(
+            estimatedContentHeight: 360,
+            measuredContentHeight: 700,
+            measuredContentPadding: 8,
+            maxContentHeight: 524
+        ) == 524)
     }
 
     // MARK: - islandClosedHeight

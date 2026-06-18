@@ -60,7 +60,30 @@ struct IslandAppearancePreferences: Equatable, Sendable {
     var sessionStateIndicator: IslandSessionStateIndicator = .animatedDot
     var sessionGroup: IslandSessionGroup = .none
     var sessionSort: IslandSessionSort = .attention
+    var sessionListLimitMode: IslandSessionListLimitMode = .activeWindow
+    var sessionListFixedCount: IslandSessionListFixedCount = .three
+    var sessionListActivityWindowMinutes: Int = 60
     var completedStaleThreshold: IslandCompletedStaleThreshold = .fiveMinutes
+    var animationSpeed: IslandAnimationSpeed = .normal
+}
+
+enum IslandAnimationSpeed: String, CaseIterable, Identifiable, Sendable {
+    case fast
+    case normal
+    case slow
+
+    var id: String { rawValue }
+
+    var durationMultiplier: TimeInterval {
+        switch self {
+        case .fast:
+            return 0.82
+        case .normal:
+            return 1.0
+        case .slow:
+            return 1.25
+        }
+    }
 }
 
 enum IslandUsageDisplay: String, CaseIterable, Identifiable, Sendable {
@@ -93,6 +116,58 @@ enum IslandSessionSort: String, CaseIterable, Identifiable, Sendable {
     case lastUpdate
 
     var id: String { rawValue }
+}
+
+enum IslandSessionListLimitMode: String, CaseIterable, Identifiable, Sendable {
+    case activeWindow
+    case fixedCount
+
+    var id: String { rawValue }
+}
+
+enum IslandSessionListFixedCount: String, CaseIterable, Identifiable, Sendable {
+    case three
+    case five
+    case eight
+    case twelve
+
+    var id: String { rawValue }
+
+    var count: Int {
+        switch self {
+        case .three: return 3
+        case .five: return 5
+        case .eight: return 8
+        case .twelve: return 12
+        }
+    }
+}
+
+enum IslandSessionActivityWindow: String, CaseIterable, Identifiable, Sendable {
+    case fifteenMinutes
+    case oneHour
+    case sixHours
+    case oneDay
+
+    var id: String { rawValue }
+
+    var seconds: TimeInterval {
+        switch self {
+        case .fifteenMinutes: return 15 * 60
+        case .oneHour: return 60 * 60
+        case .sixHours: return 6 * 60 * 60
+        case .oneDay: return 24 * 60 * 60
+        }
+    }
+}
+
+extension IslandSessionActivityWindow {
+    init?(minutesRawValue: String?) {
+        guard let minutesRawValue, !minutesRawValue.isEmpty else {
+            return nil
+        }
+        self.init(rawValue: minutesRawValue)
+    }
 }
 
 enum IslandCompletedStaleThreshold: String, CaseIterable, Identifiable, Sendable {

@@ -235,11 +235,12 @@ public struct CodexHookPayload: Equatable, Codable, Sendable {
 }
 
 public enum CodexPermissionRequestDecision: Equatable, Codable, Sendable {
-    case allow
+    case allow(updatedInput: CodexHookJSONValue? = nil)
     case deny(message: String? = nil)
 
     private enum CodingKeys: String, CodingKey {
         case behavior
+        case updatedInput
         case message
     }
 
@@ -254,7 +255,7 @@ public enum CodexPermissionRequestDecision: Equatable, Codable, Sendable {
 
         switch behavior {
         case .allow:
-            self = .allow
+            self = .allow(updatedInput: try container.decodeIfPresent(CodexHookJSONValue.self, forKey: .updatedInput))
         case .deny:
             self = .deny(message: try container.decodeIfPresent(String.self, forKey: .message))
         }
@@ -264,8 +265,9 @@ public enum CodexPermissionRequestDecision: Equatable, Codable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
 
         switch self {
-        case .allow:
+        case let .allow(updatedInput):
             try container.encode(Behavior.allow, forKey: .behavior)
+            try container.encodeIfPresent(updatedInput, forKey: .updatedInput)
         case let .deny(message):
             try container.encode(Behavior.deny, forKey: .behavior)
             try container.encodeIfPresent(message, forKey: .message)
@@ -473,6 +475,25 @@ public extension CodexHookPayload {
         commandText ?? toolInput?.description ?? toolName ?? "Permission request"
     }
 
+    var toolActivitySummary: String {
+        if let toolName, !toolName.isEmpty {
+            let label = codexToolDisplayName(for: toolName)
+            if let commandPreview, !commandPreview.isEmpty {
+                return "\(label) \(commandPreview)"
+            }
+            if let description = clipped(toolInput?.description), !description.isEmpty {
+                return "\(label) \(description)"
+            }
+            return label
+        }
+
+        if let commandPreview, !commandPreview.isEmpty {
+            return "Bash \(commandPreview)"
+        }
+
+        return implicitStartSummary
+    }
+
     var promptPreview: String? {
         clipped(prompt)
     }
@@ -492,6 +513,27 @@ public extension CodexHookPayload {
     private func isBashToolName(_ toolName: String) -> Bool {
         let normalized = toolName.lowercased()
         return normalized == "bash" || normalized == "shell"
+    }
+
+    private func codexToolDisplayName(for toolName: String) -> String {
+        switch toolName {
+        case "exec_command", "Bash", "shell":
+            return "Bash"
+        case "apply_patch":
+            return "Patch"
+        case "write_stdin":
+            return "Input"
+        case "web_search", "tool_search":
+            return "Search"
+        case "image_generation", "view_image":
+            return "Image"
+        case "update_plan":
+            return "Plan"
+        case "request_user_input", "AskUserQuestion":
+            return "Question"
+        default:
+            return toolName
+        }
     }
 
     private func clipped(_ value: String?, limit: Int = 110) -> String? {

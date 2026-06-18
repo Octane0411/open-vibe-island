@@ -54,6 +54,9 @@ final class OverlayUICoordinator {
     @ObservationIgnored
     private var notificationAutoCollapseTask: Task<Void, Never>?
 
+    @ObservationIgnored
+    private var hoverAutoCollapseTask: Task<Void, Never>?
+
     var hasPendingNotificationAutoCollapse: Bool {
         notificationAutoCollapseTask != nil
     }
@@ -64,8 +67,8 @@ final class OverlayUICoordinator {
     @ObservationIgnored
     private var isPointerInsideIslandSurface = false
 
-    /// Kept for API compatibility; always false now that the window never
-    /// resizes and close transitions are pure SwiftUI.
+    /// Kept for API compatibility; frame transitions are now handled by
+    /// `OverlayPanelController`, so there is no separate pending close state.
     var isCloseTransitionPending: Bool { false }
 
     private var activeIslandCardSession: AgentSession? {
@@ -133,21 +136,23 @@ final class OverlayUICoordinator {
             beforeTransition: { [weak self] in
                 self?.notificationAutoCollapseTask?.cancel()
                 self?.notificationAutoCollapseTask = nil
+                self?.hoverAutoCollapseTask?.cancel()
+                self?.hoverAutoCollapseTask = nil
             },
             afterStateChange: { [weak self] in
                 self?.autoCollapseSurfaceHasBeenEntered = false
                 self?.isPointerInsideIslandSurface = false
                 self?.appModel?.measuredNotificationContentHeight = 0
+                self?.appModel?.measuredSessionListContentHeight = 0
             }
         )
     }
 
     /// Coordinates overlay transitions.
     ///
-    /// The window stays at a fixed (opened) size at all times.  All visual
-    /// transitions — shape morphing, content fade, corner radius — are
-    /// driven purely by SwiftUI `.animation()` modifiers reacting to
-    /// `notchStatus` changes.  No AppKit animation, no window resize.
+    /// The AppKit panel animates between closed and opened frames so the
+    /// island grows from the notch. SwiftUI only handles the content inside
+    /// the resized window.
     private func transitionOverlay(
         to status: NotchStatus,
         reason: NotchOpenReason?,
@@ -165,6 +170,9 @@ final class OverlayUICoordinator {
         // measurements from a previous notification don't mis-size the new one.
         if surface != islandSurface {
             appModel?.measuredNotificationContentHeight = 0
+            if status == .closed {
+                appModel?.measuredSessionListContentHeight = 0
+            }
         }
 
         islandSurface = surface
@@ -177,6 +185,9 @@ final class OverlayUICoordinator {
                 model: appModel,
                 preferredScreenID: preferredOverlayScreenID
             )
+        } else if status == .closed {
+            overlayPanelController.beginHoverCooldown()
+            refreshOverlayPlacement()
         }
 
         afterStateChange?()
@@ -288,6 +299,8 @@ final class OverlayUICoordinator {
             return
         }
 
+        hoverAutoCollapseTask?.cancel()
+        hoverAutoCollapseTask = nil
         isPointerInsideIslandSurface = true
         autoCollapseSurfaceHasBeenEntered = true
 
@@ -313,7 +326,33 @@ final class OverlayUICoordinator {
             return
         }
 
-        notchClose()
+        if notchOpenReason == .hover {
+            hoverAutoCollapseTask?.cancel()
+            hoverAutoCollapseTask = Task { @MainActor [weak self] in
+                do {
+                    try await Task.sleep(for: .seconds(IslandAnimationPolicy.hoverSurfaceAutoCollapseDelay))
+                } catch {
+                    return
+                }
+
+                guard let self else {
+                    return
+                }
+                defer {
+                    self.hoverAutoCollapseTask = nil
+                }
+
+                guard self.notchOpenReason == .hover,
+                      self.shouldAutoCollapseOnMouseLeave,
+                      !self.isPointerInsideIslandSurface else {
+                    return
+                }
+
+                self.notchClose()
+            }
+        } else {
+            notchClose()
+        }
     }
 
     // MARK: - Notification surfaces

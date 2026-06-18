@@ -117,7 +117,7 @@ struct CodexHooksTests {
     @Test
     func codexHookOutputEncoderEncodesPermissionRequestAllowDecision() throws {
         let output = try CodexHookOutputEncoder.standardOutput(
-            for: .codexHookDirective(.permissionRequest(.allow))
+            for: .codexHookDirective(.permissionRequest(.allow()))
         )
 
         let payload = try #require(output)

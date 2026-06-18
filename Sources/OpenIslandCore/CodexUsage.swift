@@ -57,10 +57,28 @@ public struct CodexUsageSnapshot: Equatable, Codable, Sendable {
     public var isEmpty: Bool {
         windows.isEmpty
     }
+
+    public var isAllZeroPlaceholder: Bool {
+        CodexUsageLoader.isAllZeroPlaceholder(
+            windows,
+            planType: planType,
+            limitID: limitID
+        )
+    }
 }
 
 public enum CodexUsageLoader {
     public static let defaultRootURL = CodexRolloutDiscovery.defaultRootURL
+    public static let defaultCacheURL: URL = {
+        let applicationSupportURL = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
+        return applicationSupportURL
+            .appendingPathComponent("OpenIsland", isDirectory: true)
+            .appendingPathComponent("codex-usage-cache.json")
+    }()
+    private static let tailReadLimit = 2 * 1024 * 1024
 
     private struct Candidate {
         var fileURL: URL
@@ -108,23 +126,76 @@ public enum CodexUsageLoader {
             return lhs.modifiedAt > rhs.modifiedAt
         }
 
-        for candidate in sortedCandidates {
-            if let snapshot = loadLatestSnapshot(
-                from: candidate.fileURL,
-                modifiedAt: candidate.modifiedAt
-            ) {
-                return snapshot
+        return sortedCandidates
+            .compactMap { candidate in
+                loadLatestSnapshot(
+                    from: candidate.fileURL,
+                    modifiedAt: candidate.modifiedAt
+                )
             }
-        }
-
-        return nil
+            .max { lhs, rhs in
+                let lhsDate = lhs.capturedAt ?? .distantPast
+                let rhsDate = rhs.capturedAt ?? .distantPast
+                if lhsDate == rhsDate {
+                    return lhs.sourceFilePath.localizedStandardCompare(rhs.sourceFilePath) == .orderedAscending
+                }
+                return lhsDate < rhsDate
+            }
     }
 
-    private static func loadLatestSnapshot(from fileURL: URL, modifiedAt: Date) -> CodexUsageSnapshot? {
-        guard let contents = try? String(contentsOf: fileURL, encoding: .utf8) else {
+    public static func loadCached(
+        from cacheURL: URL = defaultCacheURL
+    ) throws -> CodexUsageSnapshot? {
+        guard FileManager.default.fileExists(atPath: cacheURL.path) else {
             return nil
         }
 
+        let data = try Data(contentsOf: cacheURL)
+        let snapshot = try JSONDecoder().decode(CodexUsageSnapshot.self, from: data)
+        return snapshot.isAllZeroPlaceholder ? nil : snapshot
+    }
+
+    public static func saveCached(
+        _ snapshot: CodexUsageSnapshot,
+        to cacheURL: URL = defaultCacheURL
+    ) throws {
+        guard !snapshot.isAllZeroPlaceholder else {
+            return
+        }
+
+        let directoryURL = cacheURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        let data = try JSONEncoder().encode(snapshot)
+        try data.write(to: cacheURL, options: .atomic)
+    }
+
+    private static func loadLatestSnapshot(from fileURL: URL, modifiedAt: Date) -> CodexUsageSnapshot? {
+        if let snapshot = loadLatestSnapshotFromTail(from: fileURL, modifiedAt: modifiedAt) {
+            return snapshot
+        }
+
+        guard let contents = try? String(contentsOf: fileURL, encoding: .utf8) else { return nil }
+        return latestSnapshot(from: contents, fileURL: fileURL, modifiedAt: modifiedAt)
+    }
+
+    private static func loadLatestSnapshotFromTail(from fileURL: URL, modifiedAt: Date) -> CodexUsageSnapshot? {
+        guard let handle = try? FileHandle(forReadingFrom: fileURL) else { return nil }
+        defer { try? handle.close() }
+
+        let size = (try? handle.seekToEnd()) ?? 0
+        let offset = size > UInt64(tailReadLimit) ? size - UInt64(tailReadLimit) : 0
+        try? handle.seek(toOffset: offset)
+        guard let data = try? handle.readToEnd(), !data.isEmpty else { return nil }
+
+        var contents = String(decoding: data, as: UTF8.self)
+        if offset > 0, let firstNewline = contents.firstIndex(of: "\n") {
+            contents = String(contents[contents.index(after: firstNewline)...])
+        }
+
+        return latestSnapshot(from: contents, fileURL: fileURL, modifiedAt: modifiedAt)
+    }
+
+    private static func latestSnapshot(from contents: String, fileURL: URL, modifiedAt: Date) -> CodexUsageSnapshot? {
         var latestSnapshot: CodexUsageSnapshot?
         contents.enumerateLines { line, _ in
             guard let snapshot = snapshot(
@@ -160,17 +231,52 @@ public enum CodexUsageLoader {
         let windows = ["primary", "secondary"].compactMap { key in
             usageWindow(for: key, in: rateLimits)
         }
-        guard !windows.isEmpty else {
+        let planType = string(from: rateLimits["plan_type"])
+        let limitID = string(from: rateLimits["limit_id"])
+        guard !windows.isEmpty,
+              !isAllZeroPlaceholder(windows, planType: planType, limitID: limitID) else {
             return nil
         }
 
         return CodexUsageSnapshot(
             sourceFilePath: filePath,
             capturedAt: timestamp(from: object["timestamp"]) ?? fallbackTimestamp,
-            planType: string(from: rateLimits["plan_type"]),
-            limitID: string(from: rateLimits["limit_id"]),
+            planType: planType,
+            limitID: limitID,
             windows: windows
         )
+    }
+
+    public static func isAllZeroPlaceholder(
+        _ windows: [CodexUsageWindow],
+        planType: String?,
+        limitID: String?
+    ) -> Bool {
+        guard windows.count >= 2 else {
+            return false
+        }
+
+        let allZero = windows.allSatisfy { window in
+            window.usedPercentage == 0
+                && window.leftPercentage >= 99.5
+        }
+        guard allZero else {
+            return false
+        }
+
+        if windows.allSatisfy({ $0.resetsAt == nil }) {
+            return true
+        }
+
+        let normalizedPlanType = planType?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let normalizedLimitID = limitID?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        return normalizedPlanType?.isEmpty ?? true
+            || normalizedLimitID.map { $0 != "codex" } ?? true
     }
 
     private static func usageWindow(for key: String, in rateLimits: [String: Any]) -> CodexUsageWindow? {
@@ -190,7 +296,7 @@ public enum CodexUsageLoader {
         )
     }
 
-    private static func windowLabel(forMinutes minutes: Int) -> String {
+    public static func windowLabel(forMinutes minutes: Int) -> String {
         let days = minutes / 1_440
         let remainingMinutesAfterDays = minutes % 1_440
         let hours = remainingMinutesAfterDays / 60

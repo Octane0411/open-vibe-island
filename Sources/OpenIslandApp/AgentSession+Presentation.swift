@@ -26,6 +26,9 @@ extension AgentSession {
     /// Note: `claudeMetadata.agentID` is NOT a reliable signal here because
     /// SubagentStart hooks set `agent_id` on the *parent* session's metadata.
     var isSubagentSession: Bool {
+        if codexMetadata?.isSubagentSession == true {
+            return true
+        }
         if let path = claudeMetadata?.transcriptPath, path.contains("/subagents/") {
             return true
         }
@@ -111,7 +114,10 @@ extension AgentSession {
     }
 
     var spotlightTerminalBadge: String? {
-        jumpTarget?.terminalApp
+        if isCodexDesktopSession {
+            return nil
+        }
+        return jumpTarget?.terminalApp
     }
 
     var spotlightWorkspaceName: String {
@@ -178,13 +184,20 @@ extension AgentSession {
             return headline
         }
 
+        if isCodexDesktopSession {
+            return "\(headline)：\(prompt)"
+        }
+
         return "\(headline) · \(prompt)"
     }
 
     var spotlightHeadlinePromptText: String? {
+        if let codexDesktopTitle = codexDesktopHeadlineTitle {
+            return codexDesktopTitle
+        }
         // Headline shows the initial prompt (session topic), not the latest.
         // The latest prompt is shown separately in the "You:" line.
-        initialPromptText ?? latestPromptText
+        return initialPromptText ?? latestPromptText
     }
 
     var spotlightPromptText: String? {
@@ -253,7 +266,7 @@ extension AgentSession {
             if let activity = spotlightRunningActivityText {
                 return activity
             }
-            return spotlightPromptLineText == nil ? "Running" : "Thinking"
+            return nil
         case .waitingForApproval:
             return permissionRequest?.summary.trimmedForSurface ?? "Approval needed"
         case .waitingForAnswer:
@@ -349,7 +362,12 @@ extension AgentSession {
     private var spotlightRunningActivityText: String? {
         guard let currentTool = currentToolName?.trimmedForSurface,
               !currentTool.isEmpty else {
-            return nil
+            guard let assistantMessage = lastAssistantMessageText?.trimmedForSurface,
+                  !assistantMessage.isEmpty,
+                  !Self.isPlaceholderRunningActivityText(assistantMessage) else {
+                return nil
+            }
+            return assistantMessage
         }
 
         let label = Self.currentToolDisplayName(for: currentTool)
@@ -359,6 +377,15 @@ extension AgentSession {
         }
 
         return "\(label) \(preview)"
+    }
+
+    private static func isPlaceholderRunningActivityText(_ text: String) -> Bool {
+        switch text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "thinking", "thinking.", "running", "running.", "processing", "processing.":
+            return true
+        default:
+            return false
+        }
     }
 
     var displayCurrentToolName: String? {
@@ -381,7 +408,7 @@ extension AgentSession {
         case "ExitPlanMode":
             return "Plan"
         case "apply_patch":
-            return "Patch"
+            return "Editing"
         case "write_stdin":
             return "Input"
         case "web_search", "tool_search":
@@ -435,8 +462,40 @@ extension AgentSession {
         return prompt
     }
 
+    private var codexDesktopHeadlineTitle: String? {
+        guard isCodexDesktopSession else {
+            return nil
+        }
+
+        let trimmedTitle = title.trimmedForSurface
+        guard !trimmedTitle.isEmpty else {
+            return nil
+        }
+
+        let workspace = jumpTarget?.workspaceName.trimmedForSurface ?? ""
+        guard trimmedTitle.localizedCaseInsensitiveCompare(workspace) != .orderedSame else {
+            return nil
+        }
+
+        let codexPrefix = "Codex · "
+        if trimmedTitle.range(of: codexPrefix, options: [.caseInsensitive, .anchored]) != nil {
+            let strippedTitle = String(trimmedTitle.dropFirst(codexPrefix.count)).trimmedForSurface
+            guard !strippedTitle.isEmpty,
+                  strippedTitle.localizedCaseInsensitiveCompare(workspace) != .orderedSame else {
+                return nil
+            }
+            return strippedTitle
+        }
+
+        return trimmedTitle
+    }
+
     private var prefersLivePromptHeadline: Bool {
         isProcessAlive || phase == .running || phase.requiresAttention
+    }
+
+    private var isCodexDesktopSession: Bool {
+        isCodexAppSession || jumpTarget?.terminalApp == "Codex.app"
     }
 }
 
