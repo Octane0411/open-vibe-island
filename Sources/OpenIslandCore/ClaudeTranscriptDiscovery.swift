@@ -87,6 +87,7 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
         var model: String?
         var currentTool: String?
         var currentToolInputPreview: String?
+        var aiTitle: String?
         var pendingToolUses: [String: (name: String, preview: String?)] = [:]
 
         let processLine: (String) -> Void = { line in
@@ -152,10 +153,18 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
                         currentToolInputPreview = lastToolUse.preview
                     }
                 }
+            } else if topLevelType == "ai-title",
+                      let title = object["aiTitle"] as? String,
+                      let normalized = normalizedText(title) {
+                aiTitle = normalized
             } else if topLevelType == "summary",
                       let summary = object["summary"] as? String,
-                      !summary.isEmpty {
-                lastAssistantMessage = summary
+                      let normalized = normalizedText(summary) {
+                // Legacy transcript format used `{"type":"summary",...}` for the
+                // session title.  Treat it the same as `ai-title`.
+                if aiTitle == nil {
+                    aiTitle = normalized
+                }
             }
         }
 
@@ -188,7 +197,8 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
             lastAssistantMessage: lastAssistantMessage,
             currentTool: currentTool,
             currentToolInputPreview: currentToolInputPreview,
-            model: model
+            model: model,
+            aiTitle: aiTitle
         )
         let summary = lastAssistantMessage
             ?? lastUserPrompt
