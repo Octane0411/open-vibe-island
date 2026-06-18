@@ -285,9 +285,9 @@ struct CodexSessionTrackingTests {
             to: &snapshot
         )
 
-        #expect(snapshot.currentTool == nil)
-        #expect(snapshot.currentCommandPreview == nil)
-        #expect(snapshot.summary == "Thinking.")
+        #expect(snapshot.currentTool == "web_search")
+        #expect(snapshot.currentCommandPreview == "Codex rollout ResponseItem")
+        #expect(snapshot.summary == "Running web search.")
 
         CodexRolloutReducer.apply(
             line: rolloutLine(
@@ -384,9 +384,9 @@ struct CodexSessionTrackingTests {
             to: &snapshot
         )
 
-        #expect(snapshot.currentTool == nil)
-        #expect(snapshot.currentCommandPreview == nil)
-        #expect(snapshot.summary == "Thinking.")
+        #expect(snapshot.currentTool == "exec_command")
+        #expect(snapshot.currentCommandPreview == "git status -sb")
+        #expect(snapshot.summary == "Running command.")
 
         CodexRolloutReducer.apply(
             line: rolloutLine(
@@ -438,8 +438,9 @@ struct CodexSessionTrackingTests {
             to: &snapshot
         )
 
-        #expect(snapshot.currentTool == nil)
-        #expect(snapshot.summary == "Thinking.")
+        #expect(snapshot.currentTool == "apply_patch")
+        #expect(snapshot.currentCommandPreview == "CodexSessionTracking.swift")
+        #expect(snapshot.summary == "Running patch.")
 
         CodexRolloutReducer.apply(
             line: rolloutLine(
@@ -461,6 +462,95 @@ struct CodexSessionTrackingTests {
         #expect(snapshot.currentTool == "web_search")
         #expect(snapshot.currentCommandPreview == "'ResponseItem' in https://github.com/openai/codex")
         #expect(snapshot.summary == "Running web search.")
+    }
+
+    @Test
+    func codexRolloutReducerKeepsPatchActivityVisibleAfterPatchApplyEnd() {
+        var snapshot = CodexRolloutSnapshot()
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-02T04:03:47.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "patch_apply_begin",
+                    "changes": [
+                        "hera-web/src/components/vibe/VibeNativePreview.tsx": [:],
+                    ],
+                ]
+            ),
+            to: &snapshot
+        )
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-02T04:03:48.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "patch_apply_end",
+                    "success": true,
+                    "changes": [
+                        "hera-web/src/components/vibe/VibeNativePreview.tsx": [
+                            "type": "update",
+                        ],
+                    ],
+                    "status": "completed",
+                ]
+            ),
+            to: &snapshot
+        )
+
+        #expect(snapshot.currentTool == "apply_patch")
+        #expect(snapshot.currentCommandPreview == "VibeNativePreview.tsx")
+        #expect(snapshot.summary == "Running patch.")
+    }
+
+    @Test
+    func codexRolloutReducerDoesNotReplaceSettledToolWithTrailingThinking() {
+        var snapshot = CodexRolloutSnapshot()
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-02T04:03:49.000Z",
+                type: "response_item",
+                payload: [
+                    "type": "local_shell_call",
+                    "status": "in_progress",
+                    "action": [
+                        "type": "exec",
+                        "command": ["zsh", "-lc", "swift test --filter CodexSessionTrackingTests"],
+                    ],
+                ]
+            ),
+            to: &snapshot
+        )
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-02T04:03:50.000Z",
+                type: "response_item",
+                payload: [
+                    "type": "function_call_output",
+                    "call_id": "call-1",
+                    "output": "done",
+                ]
+            ),
+            to: &snapshot
+        )
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-02T04:03:51.000Z",
+                type: "response_item",
+                payload: [
+                    "type": "reasoning",
+                    "summary": [],
+                ]
+            ),
+            to: &snapshot
+        )
+
+        #expect(snapshot.currentTool == "exec_command")
+        #expect(snapshot.currentCommandPreview == "swift test --filter CodexSessionTrackingTests")
+        #expect(snapshot.summary == "Running command.")
+        #expect(snapshot.updatedAt == Date(timeIntervalSince1970: 1_775_102_631))
     }
 
     @Test
@@ -522,6 +612,36 @@ struct CodexSessionTrackingTests {
         #expect(snapshot.currentCommandPreview == nil)
         #expect(snapshot.summary == "Final answer stays visible.")
         #expect(snapshot.updatedAt == Date(timeIntervalSince1970: 1_775_102_628))
+    }
+
+    @Test
+    func codexRolloutReducerReopensCompletionForLaterSameRolloutActivity() {
+        let snapshot = CodexRolloutReducer.snapshot(for: [
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "task_complete",
+                    "last_agent_message": "Previous turn completed.",
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:04:00.000Z",
+                type: "response_item",
+                payload: [
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "arguments": [
+                        "cmd": "git status",
+                    ],
+                ]
+            ),
+        ])
+
+        #expect(snapshot.phase == .running)
+        #expect(!snapshot.isCompleted)
+        #expect(snapshot.currentTool == "exec_command")
+        #expect(snapshot.summary == "Running command.")
     }
 
     @Test
@@ -1093,6 +1213,237 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutDiscoveryBoundsLargeRolloutParsingToHeadAndTail() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-bounded-\(UUID().uuidString)", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/06/04", isDirectory: true)
+        let rolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-huge.jsonl")
+        let now = Date(timeIntervalSince1970: 1_780_000_000)
+
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        FileManager.default.createFile(atPath: rolloutURL.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: rolloutURL)
+
+        try writeLine(sessionMetaLine(
+            sessionID: "codex-session-huge",
+            timestamp: "2026-06-04T12:00:00.000Z",
+            cwd: "/Users/lijie10/Desktop/code/hera",
+            originator: "Codex Desktop"
+        ), to: handle)
+
+        // Middle content is deliberately larger than maxFullScanBytes and
+        // contains misleading old activity. The bounded path must not need
+        // to parse it to recover the current UI snapshot.
+        let middleLine = rolloutLine(
+            timestamp: "2026-06-04T12:01:00.000Z",
+            type: "event_msg",
+            payload: [
+                "type": "agent_message",
+                "message": String(repeating: "old middle payload ", count: 16),
+            ]
+        ).appending("\n")
+        for _ in 0..<220 {
+            try handle.write(contentsOf: Data(middleLine.utf8))
+        }
+
+        try writeLine(rolloutLine(
+            timestamp: "2026-06-04T12:10:00.000Z",
+            type: "event_msg",
+            payload: [
+                "type": "user_message",
+                "message": "Inspect the bounded rollout.",
+            ]
+        ), to: handle)
+        try writeLine(rolloutLine(
+            timestamp: "2026-06-04T12:10:03.000Z",
+            type: "event_msg",
+            payload: [
+                "type": "agent_message",
+                "message": "Recovered from the bounded rollout tail.",
+            ]
+        ), to: handle)
+        try handle.close()
+
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: rolloutURL.path)
+        let fileSize = (try FileManager.default.attributesOfItem(atPath: rolloutURL.path)[.size] as? NSNumber)?.uint64Value ?? 0
+        #expect(fileSize > 12 * 1_024)
+
+        let discovery = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10,
+            maxFullScanBytes: 12 * 1_024,
+            largeFileHeadBytes: 2 * 1_024,
+            largeFileTailBytes: 4 * 1_024
+        )
+
+        let records = discovery.discoverRecentSessions(now: now)
+
+        #expect(records.count == 1)
+        #expect(records.first?.sessionID == "codex-session-huge")
+        #expect(records.first?.title == "Codex · hera")
+        #expect(records.first?.summary == "Recovered from the bounded rollout tail.")
+        #expect(records.first?.codexMetadata?.lastUserPrompt == "Inspect the bounded rollout.")
+        #expect(records.first?.codexMetadata?.lastAssistantMessage == "Recovered from the bounded rollout tail.")
+        #expect(records.first?.jumpTarget?.terminalApp == "Codex.app")
+    }
+
+    @Test
+    func codexRolloutDiscoveryMarksCodexDesktopSessionsWithAppJumpTarget() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-codex-app-\(UUID().uuidString)", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/05/28", isDirectory: true)
+        let rolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-codex-app.jsonl")
+        let now = Date(timeIntervalSince1970: 1_779_941_000)
+
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let cwd = "/Users/pojue/Documents/Codex/2026-05-28/hatch-pet-users-pojue-codex-skills"
+        let lines = [
+            sessionMetaLine(
+                sessionID: "019e6cb5-46dc-7e11-ad95-e1df0de7cdb7",
+                timestamp: "2026-05-28T03:51:20.275Z",
+                cwd: cwd,
+                originator: "Codex Desktop",
+                source: "vscode"
+            ),
+            rolloutLine(
+                timestamp: "2026-05-28T03:51:22.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "turn_complete",
+                    "last_agent_message": "Turn completed.",
+                ]
+            ),
+        ]
+        try lines.joined(separator: "\n").appending("\n").write(to: rolloutURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: rolloutURL.path)
+
+        let discovery = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10
+        )
+
+        let records = discovery.discoverRecentSessions(now: now)
+        let record = records.first
+        let session = record?.session
+
+        #expect(records.count == 1)
+        #expect(record?.jumpTarget?.terminalApp == "Codex.app")
+        #expect(record?.jumpTarget?.workingDirectory == cwd)
+        #expect(record?.jumpTarget?.codexThreadID == "019e6cb5-46dc-7e11-ad95-e1df0de7cdb7")
+        #expect(record?.updatedAt == ISO8601DateFormatter().date(from: "2026-05-28T03:51:22Z"))
+        #expect(session?.isCodexAppSession == true)
+    }
+
+    @Test
+    func codexRolloutDiscoveryMarksSubagentSessionsFromThreadSource() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-codex-subagent-\(UUID().uuidString)", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/06/04", isDirectory: true)
+        let rolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-codex-subagent.jsonl")
+        let now = Date(timeIntervalSince1970: 1_780_562_400)
+
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let lines = [
+            sessionMetaLine(
+                sessionID: "019e91c9-5f68-7310-ad42-4c460c4516cd",
+                timestamp: "2026-06-04T08:39:14.100Z",
+                cwd: "/Users/lijie10/Desktop/code/hera",
+                originator: "Codex Desktop",
+                source: "vscode",
+                threadSource: "subagent"
+            ),
+            rolloutLine(
+                timestamp: "2026-06-04T08:39:20.875Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": "排查 PreviewRuntime 权限门",
+                ]
+            ),
+        ]
+        try lines.joined(separator: "\n").appending("\n").write(to: rolloutURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: rolloutURL.path)
+
+        let discovery = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10
+        )
+
+        let record = try #require(discovery.discoverRecentSessions(now: now).first)
+
+        #expect(record.codexMetadata?.isSubagentSession == true)
+    }
+
+    @Test
+    func codexRolloutDiscoveryUsesSessionIndexThreadNameForCodexDesktopTitle() throws {
+        let baseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-codex-index-\(UUID().uuidString)", isDirectory: true)
+        let rootURL = baseURL.appendingPathComponent("sessions", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/06/04", isDirectory: true)
+        let rolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-codex-app.jsonl")
+        let indexURL = baseURL.appendingPathComponent("session_index.jsonl")
+        let now = Date(timeIntervalSince1970: 1_779_941_000)
+
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: baseURL) }
+
+        let lines = [
+            sessionMetaLine(
+                sessionID: "019e91b6-4eb3-7531-8fbc-318e21ffc8a2",
+                timestamp: "2026-06-04T08:18:24.000Z",
+                cwd: "/Users/lijie10/Desktop/code/hera",
+                originator: "Codex Desktop",
+                source: "vscode"
+            ),
+            rolloutLine(
+                timestamp: "2026-06-04T08:18:25.000Z",
+                type: "response_item",
+                payload: [
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        [
+                            "type": "input_text",
+                            "text": "heraweb现在也需要merge到release分支",
+                        ],
+                    ],
+                ]
+            ),
+        ]
+        try lines.joined(separator: "\n").appending("\n").write(to: rolloutURL, atomically: true, encoding: .utf8)
+        try """
+        {"id":"019e91b6-4eb3-7531-8fbc-318e21ffc8a2","thread_name":"合并 hera-web 到 release","updated_at":"2026-06-04T08:20:03.376839Z"}
+
+        """.write(to: indexURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: rolloutURL.path)
+
+        let discovery = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10
+        )
+
+        let record = try #require(discovery.discoverRecentSessions(now: now).first)
+
+        #expect(record.title == "合并 hera-web 到 release")
+        #expect(record.jumpTarget?.paneTitle == "合并 hera-web 到 release")
+        #expect(record.codexMetadata?.initialUserPrompt == "heraweb现在也需要merge到release分支")
+    }
+
+    @Test
     func codexRolloutDiscoveryHandlesTrailingLineWithoutNewline() throws {
         // A rollout written by Codex while the process is mid-flush
         // can land on disk without a trailing newline. The streamed
@@ -1168,6 +1519,10 @@ private func appendRolloutLine(_ line: String, to fileURL: URL) throws {
     try handle.write(contentsOf: data)
 }
 
+private func writeLine(_ line: String, to handle: FileHandle) throws {
+    try handle.write(contentsOf: Data("\(line)\n".utf8))
+}
+
 private func rolloutLine(
     timestamp: String,
     type: String,
@@ -1185,18 +1540,26 @@ private func rolloutLine(
 private func sessionMetaLine(
     sessionID: String,
     timestamp: String,
-    cwd: String
+    cwd: String,
+    originator: String = "codex-tui",
+    source: String = "cli",
+    threadSource: String? = nil
 ) -> String {
-    rolloutLine(
+    var payload: [String: Any] = [
+        "id": sessionID,
+        "timestamp": timestamp,
+        "cwd": cwd,
+        "originator": originator,
+        "source": source,
+    ]
+    if let threadSource {
+        payload["thread_source"] = threadSource
+    }
+
+    return rolloutLine(
         timestamp: timestamp,
         type: "session_meta",
-        payload: [
-            "id": sessionID,
-            "timestamp": timestamp,
-            "cwd": cwd,
-            "originator": "codex-tui",
-            "source": "cli",
-        ]
+        payload: payload
     )
 }
 
