@@ -37,6 +37,7 @@ final class OverlayPanelController {
     private var hoverCancelGrace: DispatchWorkItem?
     weak var model: AppModel?
     private(set) var notchRect: NSRect = .zero
+    private var hideFullscreen = false
 
     var isVisible: Bool {
         panel?.isVisible == true
@@ -44,6 +45,14 @@ final class OverlayPanelController {
 
     nonisolated static func shouldActivatePanel(for reason: NotchOpenReason?) -> Bool {
         reason == .click
+    }
+
+    nonisolated static func collectionBehavior(hideFullscreen: Bool) -> NSWindow.CollectionBehavior {
+        var behavior: NSWindow.CollectionBehavior = [.canJoinAllSpaces, .ignoresCycle, .stationary]
+        if !hideFullscreen {
+            behavior.insert(.fullScreenAuxiliary)
+        }
+        return behavior
     }
 
     func availableDisplayOptions() -> [OverlayDisplayOption] {
@@ -91,6 +100,15 @@ final class OverlayPanelController {
         }
     }
 
+    func setHideFullscreen(_ hideFullscreen: Bool) {
+        guard self.hideFullscreen != hideFullscreen else {
+            return
+        }
+
+        self.hideFullscreen = hideFullscreen
+        panel?.collectionBehavior = Self.collectionBehavior(hideFullscreen: hideFullscreen)
+    }
+
     func reposition(preferredScreenID: String?) -> OverlayPlacementDiagnostics? {
         guard let panel else {
             return placementDiagnostics(preferredScreenID: preferredScreenID)
@@ -133,7 +151,7 @@ final class OverlayPanelController {
         // user's other windows — on built-in notch displays it disappears
         // below the menu bar, and on external displays it falls out of the
         // top bar entirely.
-        panel.collectionBehavior = [.fullScreenAuxiliary, .canJoinAllSpaces, .ignoresCycle, .stationary]
+        panel.collectionBehavior = Self.collectionBehavior(hideFullscreen: hideFullscreen)
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.ignoresMouseEvents = true

@@ -92,6 +92,26 @@ struct OverlayPanelControllerTests {
         #expect(!OverlayPanelController.shouldActivatePanel(for: nil))
     }
 
+    @Test
+    func collectionBehaviorIncludesFullscreenAuxiliaryByDefault() {
+        let behavior = OverlayPanelController.collectionBehavior(hideFullscreen: false)
+
+        #expect(behavior.contains(.fullScreenAuxiliary))
+        #expect(behavior.contains(.canJoinAllSpaces))
+        #expect(behavior.contains(.ignoresCycle))
+        #expect(behavior.contains(.stationary))
+    }
+
+    @Test
+    func collectionBehaviorExcludesFullscreenAuxiliaryWhenFullscreenHidingIsEnabled() {
+        let behavior = OverlayPanelController.collectionBehavior(hideFullscreen: true)
+
+        #expect(!behavior.contains(.fullScreenAuxiliary))
+        #expect(behavior.contains(.canJoinAllSpaces))
+        #expect(behavior.contains(.ignoresCycle))
+        #expect(behavior.contains(.stationary))
+    }
+
     // MARK: - islandClosedHeight
 
     @Test
