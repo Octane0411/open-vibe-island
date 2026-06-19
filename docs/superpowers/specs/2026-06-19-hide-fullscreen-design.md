@@ -32,7 +32,7 @@ When the option is on, Open Island keeps its normal non-fullscreen top-of-screen
 
 `OverlayUICoordinator` forwards the preference to `OverlayPanelController`, keeping panel-specific AppKit behavior out of SwiftUI view code.
 
-`OverlayPanelController` centralizes collection behavior construction. It keeps `.canJoinAllSpaces`, `.ignoresCycle`, and `.stationary` in both modes, and includes `.fullScreenAuxiliary` only when `hideFullscreen` is false.
+`OverlayPanelController` centralizes collection behavior construction. It keeps `.ignoresCycle` and `.stationary` in both modes. When `hideFullscreen` is false, it also includes `.canJoinAllSpaces` and `.fullScreenAuxiliary` so the existing all-Spaces behavior remains unchanged. When `hideFullscreen` is true, it omits both fullscreen/all-Spaces flags so the panel does not follow fullscreen application Spaces.
 
 ## Data Flow
 
@@ -53,8 +53,8 @@ The feature does not change notification filtering. Existing `suppressFrontmostN
 
 Add focused tests for:
 
-- The collection behavior helper includes `.fullScreenAuxiliary` when `hideFullscreen` is false.
-- The helper excludes `.fullScreenAuxiliary` when `hideFullscreen` is true.
+- The collection behavior helper includes `.canJoinAllSpaces` and `.fullScreenAuxiliary` when `hideFullscreen` is false.
+- The helper excludes `.canJoinAllSpaces` and `.fullScreenAuxiliary` when `hideFullscreen` is true.
 - `AppModel` default initialization keeps `hideFullscreen` false.
 
 Manual verification should launch the dev app, enable the setting, enter a fullscreen browser window, and confirm the island no longer appears there while still appearing on the normal desktop Space.

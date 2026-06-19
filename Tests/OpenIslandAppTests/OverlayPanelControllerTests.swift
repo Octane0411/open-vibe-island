@@ -107,7 +107,7 @@ struct OverlayPanelControllerTests {
         let behavior = OverlayPanelController.collectionBehavior(hideFullscreen: true)
 
         #expect(!behavior.contains(.fullScreenAuxiliary))
-        #expect(behavior.contains(.canJoinAllSpaces))
+        #expect(!behavior.contains(.canJoinAllSpaces))
         #expect(behavior.contains(.ignoresCycle))
         #expect(behavior.contains(.stationary))
     }

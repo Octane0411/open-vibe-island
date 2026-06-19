@@ -4,7 +4,7 @@
 
 **Goal:** Add a default-off setting that lets users hide Open Island in fullscreen application Spaces.
 
-**Architecture:** `AppModel` owns and persists the new Boolean preference. `SettingsView` exposes it in General > Behavior. `OverlayUICoordinator` forwards preference changes to `OverlayPanelController`, which centralizes `NSWindow.CollectionBehavior` construction and omits `.fullScreenAuxiliary` only when the option is enabled.
+**Architecture:** `AppModel` owns and persists the new Boolean preference. `SettingsView` exposes it in General > Behavior. `OverlayUICoordinator` forwards preference changes to `OverlayPanelController`, which centralizes `NSWindow.CollectionBehavior` construction and omits `.canJoinAllSpaces` plus `.fullScreenAuxiliary` when the option is enabled.
 
 **Tech Stack:** Swift 6.2 package, SwiftUI, AppKit `NSPanel`, Swift Testing.
 
@@ -49,7 +49,7 @@ Add these tests near the existing activation tests in `OverlayPanelControllerTes
         let behavior = OverlayPanelController.collectionBehavior(hideFullscreen: true)
 
         #expect(!behavior.contains(.fullScreenAuxiliary))
-        #expect(behavior.contains(.canJoinAllSpaces))
+        #expect(!behavior.contains(.canJoinAllSpaces))
         #expect(behavior.contains(.ignoresCycle))
         #expect(behavior.contains(.stationary))
     }
@@ -79,10 +79,13 @@ Add this helper near `shouldActivatePanel`:
 
 ```swift
     nonisolated static func collectionBehavior(hideFullscreen: Bool) -> NSWindow.CollectionBehavior {
-        var behavior: NSWindow.CollectionBehavior = [.canJoinAllSpaces, .ignoresCycle, .stationary]
-        if !hideFullscreen {
-            behavior.insert(.fullScreenAuxiliary)
+        var behavior: NSWindow.CollectionBehavior = [.ignoresCycle, .stationary]
+        if hideFullscreen {
+            return behavior
         }
+
+        behavior.insert(.canJoinAllSpaces)
+        behavior.insert(.fullScreenAuxiliary)
         return behavior
     }
 ```

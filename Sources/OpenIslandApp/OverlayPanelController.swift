@@ -48,10 +48,13 @@ final class OverlayPanelController {
     }
 
     nonisolated static func collectionBehavior(hideFullscreen: Bool) -> NSWindow.CollectionBehavior {
-        var behavior: NSWindow.CollectionBehavior = [.canJoinAllSpaces, .ignoresCycle, .stationary]
-        if !hideFullscreen {
-            behavior.insert(.fullScreenAuxiliary)
+        var behavior: NSWindow.CollectionBehavior = [.ignoresCycle, .stationary]
+        if hideFullscreen {
+            return behavior
         }
+
+        behavior.insert(.canJoinAllSpaces)
+        behavior.insert(.fullScreenAuxiliary)
         return behavior
     }
 
