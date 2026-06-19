@@ -47,6 +47,7 @@ final class OverlayPanelController {
         reason == .click
     }
 
+    /// Returns the overlay panel's Space/fullscreen behavior for the user's fullscreen preference.
     nonisolated static func collectionBehavior(hideFullscreen: Bool) -> NSWindow.CollectionBehavior {
         var behavior: NSWindow.CollectionBehavior = [.ignoresCycle, .stationary]
         if hideFullscreen {
@@ -103,6 +104,7 @@ final class OverlayPanelController {
         }
     }
 
+    /// Applies the fullscreen visibility preference to the current panel and future panels.
     func setHideFullscreen(_ hideFullscreen: Bool) {
         guard self.hideFullscreen != hideFullscreen else {
             return

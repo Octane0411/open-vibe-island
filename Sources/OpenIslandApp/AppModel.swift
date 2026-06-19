@@ -266,6 +266,7 @@ final class AppModel {
             UserDefaults.standard.set(suppressFrontmostNotifications, forKey: Self.suppressFrontmostNotificationsDefaultsKey)
         }
     }
+    /// User preference that keeps the overlay out of fullscreen application Spaces.
     var hideFullscreen: Bool = false {
         didSet {
             guard hasFinishedInit, hideFullscreen != oldValue else { return }

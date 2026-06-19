@@ -31,6 +31,7 @@ struct AppModelSessionListTests {
         ].forEach(UserDefaults.standard.removeObject(forKey:))
     }
 
+    /// Verifies existing and new installs keep fullscreen visibility enabled by default.
     @Test
     func hideFullscreenDefaultsToFalse() {
         UserDefaults.standard.removeObject(forKey: "app.hideFullscreen")
