@@ -24,10 +24,20 @@ struct AppModelSessionListTests {
             "appearance.island.v8.topBar.sessionGroup",
             "appearance.island.v8.topBar.sessionSort",
             "appearance.island.v8.topBar.completedStaleThreshold",
+            "app.hideFullscreen",
             "app.suppressFrontmostNotifications",
             "feature.completionReply.enabled",
             "overlay.sound.muted",
         ].forEach(UserDefaults.standard.removeObject(forKey:))
+    }
+
+    @Test
+    func hideFullscreenDefaultsToFalse() {
+        UserDefaults.standard.removeObject(forKey: "app.hideFullscreen")
+
+        let model = AppModel()
+
+        #expect(model.hideFullscreen == false)
     }
 
     @Test
