@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NotchTune — Your notch, finally doing something</title>
+<meta name="description" content="A native macOS companion that turns your notch into a live control surface for music and your terminal AI agents. Liquid glass, local-first, open source." />
+<meta property="og:title" content="NotchTune — music + AI agents in your notch" />
+<meta property="og:description" content="Playback controls, agent monitoring, approvals, and session jump-back. Native, local-first, beautifully liquid glass." />
+<meta property="og:image" content="assets/icon.png" />
+<link rel="icon" type="image/png" href="assets/icon.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<!-- ambient backdrop -->
+<div class="ambient" aria-hidden="true">
+  <div class="blob blob-a"></div>
+  <div class="blob blob-b"></div>
+  <div class="blob blob-c"></div>
+  <div class="grain"></div>
+</div>
+
+<!-- nav -->
+<header class="nav glass" id="nav">
+  <a class="brand" href="#top">
+    <img src="assets/icon.png" alt="" class="brand-icon" />
+    <span>NotchTune</span>
+  </a>
+  <nav class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#glass-lab">Customize</a>
+    <a href="#compare">Compare</a>
+    <a href="#download">Download</a>
+  </nav>
+  <a class="btn btn-ghost btn-sm" href="https://github.com/dw2lam/NotchTune" target="_blank" rel="noopener">
+    <svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+    GitHub
+  </a>
+</header>
+
+<main id="top">
+
+<!-- hero -->
+<section class="hero">
+  <div class="hero-copy reveal">
+    <div class="eyebrow"><span class="dot-live"></span> v<span data-latest-version>0.1.2</span> · Free &amp; open source</div>
+    <h1>Your notch,<br/>finally doing something.</h1>
+    <p class="lede">NotchTune turns your Mac's notch into a live control surface for your music <em>and</em> your terminal AI agents — playback, approvals, questions, and one-tap jump-back to the right session. Native. Local-first. Liquid glass.</p>
+    <div class="hero-actions">
+      <a class="btn btn-primary" data-download-latest href="https://github.com/dw2lam/NotchTune/releases/latest" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 1a1 1 0 0 1 1 1v7.59l2.3-2.3a1 1 0 0 1 1.4 1.42l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 1.4-1.42L7 9.59V2a1 1 0 0 1 1-1Z"/><path d="M3 13a1 1 0 0 1 1 1h8a1 1 0 1 1 0 2H3a1 1 0 0 1-1-1v-1a1 1 0 0 1 1 0Z"/></svg>
+        <span data-download-label>Download for macOS</span>
+      </a>
+      <a class="btn btn-ghost" href="https://github.com/dw2lam/NotchTune" target="_blank" rel="noopener">View source</a>
+    </div>
+    <div class="hero-meta">macOS 14+ · Apple Silicon &amp; Intel · No account, no telemetry</div>
+  </div>
+
+  <div class="hero-stage reveal">
+    <div class="scene scene-hero">
+      <!-- expanded island: agents (real app layout) -->
+      <div class="island island-expanded glass-deep" data-tilt>
+        <div class="isl-top">
+          <div class="isl-usage"><span class="uchip"><b>Claude</b><em>5h</em><i class="u-ok">41%</i></span><span class="uchip"><b>Codex</b><em>7d</em><i class="u-warn">76%</i></span></div>
+          <div class="isl-notch"></div>
+          <div class="isl-tools">
+            <button class="iconbtn" aria-label="Settings"><svg viewBox="0 0 24 24"><path d="M19.14 12.94a7.6 7.6 0 000-1.88l2.03-1.58a.5.5 0 00.12-.64l-1.92-3.32a.5.5 0 00-.61-.22l-2.39.96a7 7 0 00-1.62-.94l-.36-2.54a.5.5 0 00-.5-.42h-3.84a.5.5 0 00-.5.42l-.36 2.54a7 7 0 00-1.62.94l-2.39-.96a.5.5 0 00-.61.22L2.71 8.84a.5.5 0 00.12.64l2.03 1.58a7.6 7.6 0 000 1.88l-2.03 1.58a.5.5 0 00-.12.64l1.92 3.32a.5.5 0 00.61.22l2.39-.96a7 7 0 001.62.94l.36 2.54a.5.5 0 00.5.42h3.84a.5.5 0 00.5-.42l.36-2.54a7 7 0 001.62-.94l2.39.96a.5.5 0 00.61-.22l1.92-3.32a.5.5 0 00-.12-.64zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z"/></svg></button>
+            <button class="iconbtn" aria-label="Quit"><svg viewBox="0 0 24 24"><path d="M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42A6.92 6.92 0 0119 12a7 7 0 11-14 0 6.92 6.92 0 012.59-5.41L6.17 5.17A9 9 0 1021 12a8.94 8.94 0 00-3.17-6.83z"/></svg></button>
+          </div>
+        </div>
+        <div class="tabbar">
+          <button class="tab is-on"><svg viewBox="0 0 24 24"><path d="M4 7l4 4-4 4 1.4 1.4L11 11 5.4 5.6 4 7zM12 15h6v2h-6z"/></svg>Agents</button>
+          <button class="tab"><svg viewBox="0 0 24 24"><path d="M12 3v10.55A4 4 0 1014 17V7h4V3h-6z"/></svg>Music</button>
+        </div>
+        <ul class="rows">
+          <li class="row">
+            <span class="rdot on"></span>
+            <div class="rmain">
+              <div class="rtitle"><b>notchtune</b> · wiring antigravity hooks</div>
+              <div class="rprev"><span class="who">You:</span> the notch should react when agy is actually working…</div>
+              <div class="rstate">running</div>
+            </div>
+            <div class="rmeta"><div class="rbadges"><span class="rb">Claude Code</span><span class="rb">Ghostty</span></div><span class="rtime">‹1m</span></div>
+          </li>
+          <li class="row">
+            <span class="rdot wait"></span>
+            <div class="rmain">
+              <div class="rtitle"><b>island-demo</b> · run the release script?</div>
+              <div class="rstate">waiting for approval</div>
+            </div>
+            <div class="rmeta"><div class="rbadges"><span class="rb">Codex</span><span class="rb">iTerm2</span></div><span class="rtime">12s</span></div>
+          </li>
+          <li class="row">
+            <span class="rdot done"></span>
+            <div class="rmain">
+              <div class="rtitle"><b>site</b> · built the liquid-glass hero</div>
+            </div>
+            <div class="rmeta"><div class="rbadges"><span class="rb">Claude Code</span><span class="rb">tmux</span></div><span class="rtime">3m</span></div>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- trust strip -->
+<section class="strip reveal">
+  <span>Works with</span>
+  <div class="strip-items">
+    <span class="pill">Claude Code</span>
+    <span class="pill">Codex</span>
+    <span class="pill">Gemini CLI</span>
+    <span class="pill">Kimi CLI</span>
+    <span class="pill">OpenCode</span>
+    <span class="pill">Factory</span>
+    <span class="pill">Qwen</span>
+    <span class="pill pill-mute">Spotify</span>
+    <span class="pill pill-mute">Apple Music</span>
+  </div>
+</section>
+
+<!-- dynamic switching -->
+<section id="switch" class="section switch">
+  <div class="section-head reveal">
+    <h2>It switches itself.</h2>
+    <p>Music when you're listening. Agents when they're working. A prompt the moment one needs you. The island morphs to whatever matters now — you never go looking.</p>
+  </div>
+
+  <div class="switch-wrap reveal">
+    <div class="scene scene-switch">
+      <div class="island-deck" data-island-demo>
+        <!-- music -->
+        <div class="island island-expanded glass-deep deck-state" data-state="music">
+          <div class="isl-top">
+            <div class="isl-usage"><span class="uchip"><b>Claude</b><em>5h</em><i class="u-ok">41%</i></span></div>
+            <div class="isl-notch"></div>
+            <div class="isl-tools">
+              <button class="iconbtn" aria-label="Settings"><svg viewBox="0 0 24 24"><path d="M19.14 12.94a7.6 7.6 0 000-1.88l2.03-1.58a.5.5 0 00.12-.64l-1.92-3.32a.5.5 0 00-.61-.22l-2.39.96a7 7 0 00-1.62-.94l-.36-2.54a.5.5 0 00-.5-.42h-3.84a.5.5 0 00-.5.42l-.36 2.54a7 7 0 00-1.62.94l-2.39-.96a.5.5 0 00-.61.22L2.71 8.84a.5.5 0 00.12.64l2.03 1.58a7.6 7.6 0 000 1.88l-2.03 1.58a.5.5 0 00-.12.64l1.92 3.32a.5.5 0 00.61.22l2.39-.96a7 7 0 001.62.94l.36 2.54a.5.5 0 00.5.42h3.84a.5.5 0 00.5-.42l.36-2.54a7 7 0 001.62-.94l2.39.96a.5.5 0 00.61-.22l1.92-3.32a.5.5 0 00-.12-.64zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z"/></svg></button>
+              <button class="iconbtn" aria-label="Quit"><svg viewBox="0 0 24 24"><path d="M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42A6.92 6.92 0 0119 12a7 7 0 11-14 0 6.92 6.92 0 012.59-5.41L6.17 5.17A9 9 0 1021 12a8.94 8.94 0 00-3.17-6.83z"/></svg></button>
+            </div>
+          </div>
+          <div class="tabbar">
+            <button class="tab"><svg viewBox="0 0 24 24"><path d="M4 7l4 4-4 4 1.4 1.4L11 11 5.4 5.6 4 7zM12 15h6v2h-6z"/></svg>Agents</button>
+            <button class="tab is-on"><svg viewBox="0 0 24 24"><path d="M12 3v10.55A4 4 0 1014 17V7h4V3h-6z"/></svg>Music</button>
+          </div>
+          <div class="music">
+            <div class="art" style="--c1:#7b5cff;--c2:#ff5c8a"></div>
+            <div class="m-col">
+              <div class="m-head">
+                <div class="m-title">Midnight Compiler</div>
+                <div class="m-artist">The Daemons</div>
+              </div>
+              <div class="m-ctrls">
+                <button class="m-ic m-side" aria-label="Shuffle"><svg viewBox="0 0 24 24"><path d="M10.59 9.17 5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg></button>
+                <button class="m-ic" aria-label="Previous"><svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg></button>
+                <button class="m-ic m-big" aria-label="Pause"><svg viewBox="0 0 24 24"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg></button>
+                <button class="m-ic" aria-label="Next"><svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6zM16 6v12h2V6z"/></svg></button>
+                <button class="m-ic m-side" aria-label="Repeat"><svg viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg></button>
+              </div>
+              <div class="m-seek">
+                <div class="m-rail"><i style="width:46%"></i></div>
+                <div class="m-times"><span>1:42</span><span>3:38</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- agents -->
+        <div class="island island-expanded glass-deep deck-state" data-state="agents">
+          <div class="isl-top">
+            <div class="isl-usage"><span class="uchip"><b>Claude</b><em>5h</em><i class="u-ok">41%</i></span></div>
+            <div class="isl-notch"></div>
+            <div class="isl-tools">
+              <button class="iconbtn" aria-label="Settings"><svg viewBox="0 0 24 24"><path d="M19.14 12.94a7.6 7.6 0 000-1.88l2.03-1.58a.5.5 0 00.12-.64l-1.92-3.32a.5.5 0 00-.61-.22l-2.39.96a7 7 0 00-1.62-.94l-.36-2.54a.5.5 0 00-.5-.42h-3.84a.5.5 0 00-.5.42l-.36 2.54a7 7 0 00-1.62.94l-2.39-.96a.5.5 0 00-.61.22L2.71 8.84a.5.5 0 00.12.64l2.03 1.58a7.6 7.6 0 000 1.88l-2.03 1.58a.5.5 0 00-.12.64l1.92 3.32a.5.5 0 00.61.22l2.39-.96a7 7 0 001.62.94l.36 2.54a.5.5 0 00.5.42h3.84a.5.5 0 00.5-.42l.36-2.54a7 7 0 001.62-.94l2.39.96a.5.5 0 00.61-.22l1.92-3.32a.5.5 0 00-.12-.64zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z"/></svg></button>
+              <button class="iconbtn" aria-label="Quit"><svg viewBox="0 0 24 24"><path d="M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42A6.92 6.92 0 0119 12a7 7 0 11-14 0 6.92 6.92 0 012.59-5.41L6.17 5.17A9 9 0 1021 12a8.94 8.94 0 00-3.17-6.83z"/></svg></button>
+            </div>
+          </div>
+          <div class="tabbar">
+            <button class="tab is-on"><svg viewBox="0 0 24 24"><path d="M4 7l4 4-4 4 1.4 1.4L11 11 5.4 5.6 4 7zM12 15h6v2h-6z"/></svg>Agents</button>
+            <button class="tab"><svg viewBox="0 0 24 24"><path d="M12 3v10.55A4 4 0 1014 17V7h4V3h-6z"/></svg>Music</button>
+          </div>
+          <ul class="rows">
+            <li class="row">
+              <span class="rdot on"></span>
+              <div class="rmain"><div class="rtitle"><b>api</b> · running the test suite</div><div class="rstate">running</div></div>
+              <div class="rmeta"><div class="rbadges"><span class="rb">Claude Code</span><span class="rb">Ghostty</span></div><span class="rtime">‹1m</span></div>
+            </li>
+            <li class="row">
+              <span class="rdot on"></span>
+              <div class="rmain"><div class="rtitle"><b>web</b> · 2 subagents working</div><div class="rstate">running</div></div>
+              <div class="rmeta"><div class="rbadges"><span class="rb">Gemini</span><span class="rb">WezTerm</span></div><span class="rtime">5s</span></div>
+            </li>
+          </ul>
+        </div>
+        <!-- approve -->
+        <div class="island island-expanded glass-deep island-notify deck-state" data-state="approve">
+          <div class="isl-top">
+            <div class="isl-usage"><span class="uchip"><b>Claude</b><em>5h</em><i class="u-ok">41%</i></span></div>
+            <div class="isl-notch"></div>
+            <div class="isl-tools">
+              <button class="iconbtn" aria-label="Settings"><svg viewBox="0 0 24 24"><path d="M19.14 12.94a7.6 7.6 0 000-1.88l2.03-1.58a.5.5 0 00.12-.64l-1.92-3.32a.5.5 0 00-.61-.22l-2.39.96a7 7 0 00-1.62-.94l-.36-2.54a.5.5 0 00-.5-.42h-3.84a.5.5 0 00-.5.42l-.36 2.54a7 7 0 00-1.62.94l-2.39-.96a.5.5 0 00-.61.22L2.71 8.84a.5.5 0 00.12.64l2.03 1.58a7.6 7.6 0 000 1.88l-2.03 1.58a.5.5 0 00-.12.64l1.92 3.32a.5.5 0 00.61.22l2.39-.96a7 7 0 001.62.94l.36 2.54a.5.5 0 00.5.42h3.84a.5.5 0 00.5-.42l.36-2.54a7 7 0 001.62-.94l2.39.96a.5.5 0 00.61-.22l1.92-3.32a.5.5 0 00-.12-.64zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z"/></svg></button>
+              <button class="iconbtn" aria-label="Quit"><svg viewBox="0 0 24 24"><path d="M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42A6.92 6.92 0 0119 12a7 7 0 11-14 0 6.92 6.92 0 012.59-5.41L6.17 5.17A9 9 0 1021 12a8.94 8.94 0 00-3.17-6.83z"/></svg></button>
+            </div>
+          </div>
+          <div class="notify">
+            <div class="n-head"><span class="s-dot waiting"></span> <b>api</b> · Claude Code wants to run</div>
+            <code class="n-code">git push origin main</code>
+            <div class="n-actions"><button class="btn btn-deny">Deny</button><button class="btn btn-allow">Allow</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="switch-legend">
+      <span class="dl-pill" data-demo-label="music"><span class="dl-ico">♫</span> Now playing</span>
+      <span class="dl-pill" data-demo-label="agents"><span class="dl-ico dl-run"></span> Agents working</span>
+      <span class="dl-pill" data-demo-label="approve"><span class="dl-ico dl-wait"></span> Needs you</span>
+    </div>
+  </div>
+</section>
+
+<!-- features -->
+<section id="features" class="section">
+  <div class="section-head reveal">
+    <h2>One island. Every moment that matters.</h2>
+    <p>NotchTune switches itself between music and agents, so the notch always shows the thing you need right now.</p>
+  </div>
+
+  <!-- Music -->
+  <div class="feature reveal">
+    <div class="feature-text">
+      <span class="kicker">Music</span>
+      <h3>Full playback, right in the glass.</h3>
+      <p>Control Spotify or Apple Music without leaving your work — artwork, scrubbable progress, shuffle, repeat, love, and volume, all inside a liquid-glass panel that lives where your eyes already are.</p>
+    </div>
+    <div class="feature-stage">
+      <div class="scene scene-music">
+        <div class="island island-expanded glass-deep" data-tilt>
+          <div class="isl-top">
+            <div class="isl-usage"><span class="uchip"><b>Claude</b><em>5h</em><i class="u-ok">41%</i></span></div>
+            <div class="isl-notch"></div>
+            <div class="isl-tools">
+              <button class="iconbtn" aria-label="Settings"><svg viewBox="0 0 24 24"><path d="M19.14 12.94a7.6 7.6 0 000-1.88l2.03-1.58a.5.5 0 00.12-.64l-1.92-3.32a.5.5 0 00-.61-.22l-2.39.96a7 7 0 00-1.62-.94l-.36-2.54a.5.5 0 00-.5-.42h-3.84a.5.5 0 00-.5.42l-.36 2.54a7 7 0 00-1.62.94l-2.39-.96a.5.5 0 00-.61.22L2.71 8.84a.5.5 0 00.12.64l2.03 1.58a7.6 7.6 0 000 1.88l-2.03 1.58a.5.5 0 00-.12.64l1.92 3.32a.5.5 0 00.61.22l2.39-.96a7 7 0 001.62.94l.36 2.54a.5.5 0 00.5.42h3.84a.5.5 0 00.5-.42l.36-2.54a7 7 0 001.62-.94l2.39.96a.5.5 0 00.61-.22l1.92-3.32a.5.5 0 00-.12-.64zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z"/></svg></button>
+              <button class="iconbtn" aria-label="Quit"><svg viewBox="0 0 24 24"><path d="M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42A6.92 6.92 0 0119 12a7 7 0 11-14 0 6.92 6.92 0 012.59-5.41L6.17 5.17A9 9 0 1021 12a8.94 8.94 0 00-3.17-6.83z"/></svg></button>
+            </div>
+          </div>
+          <div class="tabbar">
+            <button class="tab"><svg viewBox="0 0 24 24"><path d="M4 7l4 4-4 4 1.4 1.4L11 11 5.4 5.6 4 7zM12 15h6v2h-6z"/></svg>Agents</button>
+            <button class="tab is-on"><svg viewBox="0 0 24 24"><path d="M12 3v10.55A4 4 0 1014 17V7h4V3h-6z"/></svg>Music</button>
+          </div>
+          <div class="music">
+            <div class="art" style="--c1:#7b5cff;--c2:#ff5c8a"></div>
+            <div class="m-col">
+              <div class="m-head">
+                <div class="m-title">Midnight Compiler</div>
+                <div class="m-artist">The Daemons</div>
+              </div>
+              <div class="m-ctrls">
+                <button class="m-ic m-side" aria-label="Shuffle"><svg viewBox="0 0 24 24"><path d="M10.59 9.17 5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg></button>
+                <button class="m-ic" aria-label="Previous"><svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg></button>
+                <button class="m-ic m-big" aria-label="Pause"><svg viewBox="0 0 24 24"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg></button>
+                <button class="m-ic" aria-label="Next"><svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6zM16 6v12h2V6z"/></svg></button>
+                <button class="m-ic m-side" aria-label="Repeat"><svg viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg></button>
+              </div>
+              <div class="m-seek">
+                <div class="m-rail"><i style="width:46%"></i></div>
+                <div class="m-times"><span>1:42</span><span>3:38</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Agents -->
+  <div class="feature feature-rev reveal">
+    <div class="feature-text">
+      <span class="kicker">Agents</span>
+      <h3>Every state, at a glance.</h3>
+      <p>Watch your terminal-native coding agents live. The status dot tells you exactly where each one is — before you've even switched windows.</p>
+      <div class="states-legend">
+        <span><span class="s-dot running"></span> Working</span>
+        <span><span class="s-dot waiting"></span> Waiting on you</span>
+        <span><span class="s-dot done"></span> Done</span>
+      </div>
+    </div>
+    <div class="feature-stage">
+      <div class="scene scene-agents">
+        <div class="island island-expanded glass-deep" data-tilt>
+          <div class="isl-top">
+            <div class="isl-usage"><span class="uchip"><b>Claude</b><em>5h</em><i class="u-warn">78%</i></span><span class="uchip"><b>Codex</b><em>7d</em><i class="u-ok">62%</i></span></div>
+            <div class="isl-notch"></div>
+            <div class="isl-tools">
+              <button class="iconbtn" aria-label="Settings"><svg viewBox="0 0 24 24"><path d="M19.14 12.94a7.6 7.6 0 000-1.88l2.03-1.58a.5.5 0 00.12-.64l-1.92-3.32a.5.5 0 00-.61-.22l-2.39.96a7 7 0 00-1.62-.94l-.36-2.54a.5.5 0 00-.5-.42h-3.84a.5.5 0 00-.5.42l-.36 2.54a7 7 0 00-1.62.94l-2.39-.96a.5.5 0 00-.61.22L2.71 8.84a.5.5 0 00.12.64l2.03 1.58a7.6 7.6 0 000 1.88l-2.03 1.58a.5.5 0 00-.12.64l1.92 3.32a.5.5 0 00.61.22l2.39-.96a7 7 0 001.62.94l.36 2.54a.5.5 0 00.5.42h3.84a.5.5 0 00.5-.42l.36-2.54a7 7 0 001.62-.94l2.39.96a.5.5 0 00.61-.22l1.92-3.32a.5.5 0 00-.12-.64zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z"/></svg></button>
+              <button class="iconbtn" aria-label="Quit"><svg viewBox="0 0 24 24"><path d="M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42A6.92 6.92 0 0119 12a7 7 0 11-14 0 6.92 6.92 0 012.59-5.41L6.17 5.17A9 9 0 1021 12a8.94 8.94 0 00-3.17-6.83z"/></svg></button>
+            </div>
+          </div>
+          <div class="tabbar">
+            <button class="tab is-on"><svg viewBox="0 0 24 24"><path d="M4 7l4 4-4 4 1.4 1.4L11 11 5.4 5.6 4 7zM12 15h6v2h-6z"/></svg>Agents</button>
+            <button class="tab"><svg viewBox="0 0 24 24"><path d="M12 3v10.55A4 4 0 1014 17V7h4V3h-6z"/></svg>Music</button>
+          </div>
+          <ul class="rows">
+            <li class="row">
+              <span class="rdot on"></span>
+              <div class="rmain">
+                <div class="rtitle"><b>api</b> · refactoring the bridge transport</div>
+                <div class="rprev"><span class="who">You:</span> make BridgeServer dispatch on a background queue…</div>
+                <div class="rstate">running</div>
+              </div>
+              <div class="rmeta"><div class="rbadges"><span class="rb">Claude Code</span><span class="rb">Ghostty</span></div><span class="rtime">‹1m</span></div>
+            </li>
+            <li class="row rchild">
+              <span class="rdot on"></span>
+              <div class="rmain"><div class="rtitle">↳ subagent · searching the codebase</div></div>
+              <div class="rmeta"><span class="rtime">3s</span></div>
+            </li>
+            <li class="row">
+              <span class="rdot wait"></span>
+              <div class="rmain">
+                <div class="rtitle"><b>web</b> · ready to deploy to staging?</div>
+                <div class="rstate">waiting for you</div>
+              </div>
+              <div class="rmeta"><div class="rbadges"><span class="rb">Gemini</span><span class="rb">WezTerm</span></div><span class="rtime">18s</span></div>
+            </li>
+            <li class="row">
+              <span class="rdot done"></span>
+              <div class="rmain"><div class="rtitle"><b>infra</b> · deployed to staging ✓</div></div>
+              <div class="rmeta"><div class="rbadges"><span class="rb">Codex</span><span class="rb">tmux</span></div><span class="rtime">2m</span></div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Approvals -->
+  <div class="feature reveal">
+    <div class="feature-text">
+      <span class="kicker">Approvals &amp; questions</span>
+      <h3>Say yes without breaking flow.</h3>
+      <p>When an agent needs permission or has a question, the island grows into a notification panel right under the notch. Approve, deny, or answer in place — then it round-trips straight back to the process that asked.</p>
+    </div>
+    <div class="feature-stage">
+      <div class="scene scene-approve">
+        <div class="island island-expanded glass-deep island-notify" data-tilt>
+          <div class="isl-top">
+            <div class="isl-usage"><span class="uchip"><b>Claude</b><em>5h</em><i class="u-ok">41%</i></span></div>
+            <div class="isl-notch"></div>
+            <div class="isl-tools">
+              <button class="iconbtn" aria-label="Settings"><svg viewBox="0 0 24 24"><path d="M19.14 12.94a7.6 7.6 0 000-1.88l2.03-1.58a.5.5 0 00.12-.64l-1.92-3.32a.5.5 0 00-.61-.22l-2.39.96a7 7 0 00-1.62-.94l-.36-2.54a.5.5 0 00-.5-.42h-3.84a.5.5 0 00-.5.42l-.36 2.54a7 7 0 00-1.62.94l-2.39-.96a.5.5 0 00-.61.22L2.71 8.84a.5.5 0 00.12.64l2.03 1.58a7.6 7.6 0 000 1.88l-2.03 1.58a.5.5 0 00-.12.64l1.92 3.32a.5.5 0 00.61.22l2.39-.96a7 7 0 001.62.94l.36 2.54a.5.5 0 00.5.42h3.84a.5.5 0 00.5-.42l.36-2.54a7 7 0 001.62-.94l2.39.96a.5.5 0 00.61-.22l1.92-3.32a.5.5 0 00-.12-.64zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z"/></svg></button>
+              <button class="iconbtn" aria-label="Quit"><svg viewBox="0 0 24 24"><path d="M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42A6.92 6.92 0 0119 12a7 7 0 11-14 0 6.92 6.92 0 012.59-5.41L6.17 5.17A9 9 0 1021 12a8.94 8.94 0 00-3.17-6.83z"/></svg></button>
+            </div>
+          </div>
+          <div class="notify">
+            <div class="n-head"><span class="s-dot waiting"></span> <b>api</b> · Claude Code wants to run</div>
+            <code class="n-code">rm -rf ./build &amp;&amp; swift build -c release</code>
+            <div class="n-actions">
+              <button class="btn btn-deny">Deny</button>
+              <button class="btn btn-allow">Allow</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- secondary grid -->
+  <div class="grid3 reveal">
+    <article class="card glass">
+      <div class="card-ico">🔔</div>
+      <h4>Quiet by default</h4>
+      <p>Configurable system sounds for permission and completion events — or mute it entirely. English and 简体中文 built in.</p>
+    </article>
+    <article class="card glass">
+      <div class="card-ico">↩︎</div>
+      <h4>Jump back to the right window</h4>
+      <p>One click returns focus to the exact terminal — Ghostty, iTerm2, WezTerm, tmux, Terminal.app, cmux, and more.</p>
+    </article>
+    <article class="card glass">
+      <div class="card-ico">🖥️</div>
+      <h4>Notch or no notch</h4>
+      <p>A real notch surface on MacBooks, and a clean top-center bar on external and non-notch displays. Same glass, anywhere.</p>
+    </article>
+  </div>
+</section>
+
+<!-- characters -->
+<section id="characters" class="section">
+  <div class="section-head reveal">
+    <h2>Pick your island buddy.</h2>
+    <p>A tiny pixel companion bounces out of the notch while it idles — and jumps when a session needs you. Choose the one that fits your setup.</p>
+  </div>
+  <div class="char-stage reveal">
+    <article class="char-card glass" style="--g1:#2b7bff;--g2:#1f8f6a">
+      <div class="char-art"><div class="char-notch"></div><div class="sprite" data-char="dino" role="img" aria-label="Dino pixel sprite"></div></div>
+      <h4>Dino</h4>
+      <p>The original. Sprints across your notch, tail high.</p>
+    </article>
+    <article class="char-card glass" style="--g1:#6b5cff;--g2:#241046">
+      <div class="char-art"><div class="char-notch"></div><div class="sprite" data-char="ghost" role="img" aria-label="Ghost pixel sprite"></div></div>
+      <h4>Ghost</h4>
+      <p>Cool and quiet — drifts gently while things are calm.</p>
+    </article>
+    <article class="char-card glass" style="--g1:#ff6b6b;--g2:#a2240f">
+      <div class="char-art"><div class="char-notch"></div><div class="sprite" data-char="crab" role="img" aria-label="Crab pixel sprite"></div></div>
+      <h4>Crab</h4>
+      <p>Sidesteps along the island, claws clacking.</p>
+    </article>
+    <article class="char-card glass" style="--g1:#ffc24b;--g2:#c8760a">
+      <div class="char-art"><div class="char-notch"></div><div class="sprite" data-char="duck" role="img" aria-label="Duck pixel sprite"></div></div>
+      <h4>Duck</h4>
+      <p>Paddles past; flaps a wing when an agent moves.</p>
+    </article>
+    <article class="char-card glass" style="--g1:#ff8c54;--g2:#7a2f0a">
+      <div class="char-art"><div class="char-notch"></div><div class="sprite" data-char="claude" role="img" aria-label="Claude pixel sprite"></div></div>
+      <h4>Claude</h4>
+      <p>A little friend for the Claude Code crowd.</p>
+    </article>
+  </div>
+</section>
+
+<!-- liquid glass lab -->
+<section id="glass-lab" class="section">
+  <div class="section-head reveal">
+    <h2>Tune the glass.</h2>
+    <p>NotchTune's liquid glass is yours to shape. Drag the controls — the island reacts live, right here on the page.</p>
+  </div>
+
+  <div class="lab reveal">
+    <div class="lab-stage">
+      <div class="lab-wall">
+        <span class="lab-wall-tag">live preview</span>
+        <div class="island island-expanded lab-island" id="labIsland">
+          <div class="music">
+            <div class="art" style="--c1:#7b5cff;--c2:#ff5c8a"></div>
+            <div class="m-col">
+              <div class="m-head">
+                <div class="m-title">Midnight Compiler</div>
+                <div class="m-artist">The Daemons</div>
+              </div>
+              <div class="m-ctrls">
+                <button class="m-ic m-side" aria-label="Shuffle"><svg viewBox="0 0 24 24"><path d="M10.59 9.17 5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg></button>
+                <button class="m-ic" aria-label="Previous"><svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg></button>
+                <button class="m-ic m-big" aria-label="Pause"><svg viewBox="0 0 24 24"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg></button>
+                <button class="m-ic" aria-label="Next"><svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6zM16 6v12h2V6z"/></svg></button>
+                <button class="m-ic m-side" aria-label="Repeat"><svg viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg></button>
+              </div>
+              <div class="m-seek">
+                <div class="m-rail"><i style="width:46%"></i></div>
+                <div class="m-times"><span>1:42</span><span>3:38</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="lab-controls glass" id="labControls">
+      <div class="lab-title">Settings → Appearance → Liquid Glass</div>
+
+      <label class="lab-switch lab-enable"><input type="checkbox" id="ctl-enable" checked><span class="sw"></span> Enable Liquid Glass</label>
+      <p class="lab-note">Render the island with Apple's Liquid Glass material instead of solid black.</p>
+
+      <div class="lab-group">
+        <div class="lab-label">Material</div>
+        <div class="lab-chips">
+          <button type="button" class="mono-chip is-on" data-mat="clear">Clear</button>
+          <button type="button" class="mono-chip" data-mat="frosted">Frosted</button>
+        </div>
+        <p class="lab-note" data-mat-note>Transparent, light-bending glass — the most “liquid” look.</p>
+      </div>
+
+      <div class="lab-group">
+        <div class="lab-label">Tint color</div>
+        <div class="lab-swatches">
+          <button type="button" class="swatch is-on" data-tint="0,0,0" style="--s:#34343a" aria-label="Ink (none)"></button>
+          <button type="button" class="swatch" data-tint="94,139,255" style="--s:#5e8bff" aria-label="Blue"></button>
+          <button type="button" class="swatch" data-tint="123,92,255" style="--s:#7b5cff" aria-label="Violet"></button>
+          <button type="button" class="swatch" data-tint="255,92,138" style="--s:#ff5c8a" aria-label="Pink"></button>
+          <button type="button" class="swatch" data-tint="52,210,123" style="--s:#34d27b" aria-label="Green"></button>
+          <button type="button" class="swatch" data-tint="255,180,59" style="--s:#ffb43b" aria-label="Amber"></button>
+        </div>
+      </div>
+
+      <div class="lab-group">
+        <div class="lab-field-head"><span class="lab-label">Tint strength</span><b data-val="strength">22%</b></div>
+        <input type="range" id="ctl-strength" min="0" max="100" value="22">
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- compare -->
+<section id="compare" class="section">
+  <div class="section-head reveal">
+    <h2>Most notch apps pick a lane. We didn't.</h2>
+    <p>Music-only widgets, AI-only monitors, plain utilities with flat gray boxes — they each leave something on the table.</p>
+  </div>
+
+  <div class="compare glass reveal">
+    <table>
+      <thead>
+        <tr>
+          <th class="feat-col">Feature</th>
+          <th class="us"><img src="assets/icon.png" alt="" /> NotchTune</th>
+          <th>Music-only<br/><span>notch widgets</span></th>
+          <th>AI-only<br/><span>agent monitors</span></th>
+          <th>Plain notch<br/><span>utilities</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Music playback &amp; artwork</td><td class="us"><span class="yes">✓</span></td><td><span class="yes">✓</span></td><td><span class="no">✕</span></td><td><span class="no">✕</span></td></tr>
+        <tr><td>Live AI agent monitoring</td><td class="us"><span class="yes">✓</span></td><td><span class="no">✕</span></td><td><span class="yes">✓</span></td><td><span class="no">✕</span></td></tr>
+        <tr><td>Approvals &amp; questions in the notch</td><td class="us"><span class="yes">✓</span></td><td><span class="no">✕</span></td><td><span class="part">partial</span></td><td><span class="no">✕</span></td></tr>
+        <tr><td>Liquid glass interface</td><td class="us"><span class="yes">✓</span></td><td><span class="no">✕</span></td><td><span class="no">✕</span></td><td><span class="no">✕</span></td></tr>
+        <tr><td>Characters &amp; personalization</td><td class="us"><span class="yes">✓</span></td><td><span class="no">✕</span></td><td><span class="no">✕</span></td><td><span class="part">themes</span></td></tr>
+        <tr><td>Local-first · no telemetry</td><td class="us"><span class="yes">✓</span></td><td><span class="part">varies</span></td><td><span class="part">varies</span></td><td><span class="yes">✓</span></td></tr>
+        <tr><td>Open source · free</td><td class="us"><span class="yes">✓</span></td><td><span class="no">$$</span></td><td><span class="no">$$</span></td><td><span class="part">some</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="compare-note reveal">Music and agents in one surface, every state covered, wrapped in glass — and it doesn't cost you anything.</p>
+</section>
+
+<!-- download -->
+<section id="download" class="section download">
+  <div class="dl-card glass-deep reveal">
+    <img src="assets/icon.png" alt="" class="dl-icon" />
+    <h2>Get NotchTune</h2>
+    <p class="dl-sub">Download the latest <code>.dmg</code>, drag it into Applications, and your notch starts earning its keep.</p>
+    <a class="btn btn-primary btn-lg" data-download-latest href="https://github.com/dw2lam/NotchTune/releases/latest" target="_blank" rel="noopener">
+      <svg viewBox="0 0 16 16" width="17" height="17" fill="currentColor" aria-hidden="true"><path d="M8 1a1 1 0 0 1 1 1v7.59l2.3-2.3a1 1 0 0 1 1.4 1.42l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 1.4-1.42L7 9.59V2a1 1 0 0 1 1-1Z"/><path d="M3 13a1 1 0 0 1 1 1h8a1 1 0 1 1 0 2H3a1 1 0 0 1-1-1v-1a1 1 0 0 1 1 0Z"/></svg>
+      <span data-download-label>Download for macOS</span>
+    </a>
+    <div class="dl-meta">
+      <span data-release-meta>Latest release · v0.1.2</span>
+      <span class="sep">·</span>
+      <a href="https://github.com/dw2lam/NotchTune/releases" target="_blank" rel="noopener">All releases</a>
+    </div>
+    <p class="dl-note">Unsigned for now: if macOS blocks the first launch, right-click <b>NotchTune.app → Open</b>. macOS 14+.</p>
+  </div>
+</section>
+
+</main>
+
+<!-- footer / credits -->
+<footer class="footer">
+  <div class="footer-inner reveal">
+    <div class="f-brand">
+      <img src="assets/icon.png" alt="" />
+      <div>
+        <div class="f-name">NotchTune</div>
+        <div class="f-tag">Music + AI agents, in your notch.</div>
+      </div>
+    </div>
+    <div class="credits">
+      <h5>Standing on good shoulders</h5>
+      <p>NotchTune is built on the work of people who got here first:</p>
+      <ul>
+        <li><a href="https://github.com/martinfekete10/Tuneful" target="_blank" rel="noopener">Tuneful</a> by <a href="https://github.com/martinfekete10" target="_blank" rel="noopener">Martin Fekete</a> — native macOS playback controls &amp; interface ideas.</li>
+        <li><a href="https://github.com/Octane0411" target="_blank" rel="noopener">Octane0411</a> — the dynamic-notch integration &amp; terminal-native AI tracking foundations behind Open Island.</li>
+      </ul>
+    </div>
+    <div class="f-links">
+      <a href="https://github.com/dw2lam/NotchTune" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/dw2lam/NotchTune/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="https://github.com/dw2lam/NotchTune/blob/main/PRIVACY_POLICY.md" target="_blank" rel="noopener">Privacy</a>
+    </div>
+  </div>
+  <div class="footer-base">Local-first &amp; open source · macOS 14+ · © 2026 NotchTune contributors</div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
