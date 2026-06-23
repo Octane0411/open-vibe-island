@@ -389,10 +389,15 @@ final class SessionDiscoveryCoordinator {
 
     private func reconcileStalledCodexAppSessionsIfNeeded() {
         let now = Date.now
-        guard now.timeIntervalSince(lastCodexAppReconcileDate) >= 5 else { return }
+        guard now.timeIntervalSince(lastCodexAppReconcileDate) >= 15 else { return }
         lastCodexAppReconcileDate = now
 
-        for event in CodexAppSessionReconciler.stalledRunningEvents(for: state.sessions, now: now) {
+        let archivedSessionIDs = CodexArchivedSessionIndex.archivedSessionIDs()
+        for event in CodexAppSessionReconciler.reconciliationEvents(
+            for: state.sessions,
+            archivedSessionIDs: archivedSessionIDs,
+            now: now
+        ) {
             onAgentEvent?(event)
         }
     }

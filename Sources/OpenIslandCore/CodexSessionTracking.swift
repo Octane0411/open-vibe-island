@@ -219,7 +219,50 @@ public final class CodexSessionStore: @unchecked Sendable {
     }
 }
 
+public enum CodexArchivedSessionIndex: Sendable {
+    public static var defaultDirectoryURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/archived_sessions", isDirectory: true)
+    }
+
+    /// Session IDs whose rollout files Codex moved into `archived_sessions/`.
+    public static func archivedSessionIDs(
+        fileManager: FileManager = .default,
+        directoryURL: URL = defaultDirectoryURL
+    ) -> Set<String> {
+        guard let names = try? fileManager.contentsOfDirectory(atPath: directoryURL.path) else {
+            return []
+        }
+
+        var ids = Set<String>()
+        for name in names where name.hasPrefix("rollout-") && name.hasSuffix(".jsonl") {
+            guard let sessionID = sessionID(fromArchivedRolloutFilename: name) else {
+                continue
+            }
+            ids.insert(sessionID)
+        }
+        return ids
+    }
+
+    static func sessionID(fromArchivedRolloutFilename filename: String) -> String? {
+        guard let range = filename.range(of: #"019[0-9a-f-]{30,}\.jsonl$"#, options: .regularExpression) else {
+            return nil
+        }
+        let match = String(filename[range])
+        return match.replacingOccurrences(of: ".jsonl", with: "")
+    }
+}
+
 public enum CodexAppSessionReconciler {
+    public static func reconciliationEvents(
+        for sessions: [AgentSession],
+        archivedSessionIDs: Set<String>,
+        fileManager: FileManager = .default,
+        now: Date = .now
+    ) -> [AgentEvent] {
+        sessions.compactMap { event(for: $0, archivedSessionIDs: archivedSessionIDs, fileManager: fileManager, now: now) }
+    }
+
     /// Emits completion updates for Codex.app sessions stuck in `.running`
     /// when their rollout transcript is missing — a common outcome when Codex
     /// blocks on quota before writing `turn_complete`.
@@ -228,28 +271,65 @@ public enum CodexAppSessionReconciler {
         fileManager: FileManager = .default,
         now: Date = .now
     ) -> [AgentEvent] {
-        sessions.compactMap { session -> AgentEvent? in
-            guard session.tool == .codex,
-                  session.phase == .running,
-                  session.isCodexAppSession || session.jumpTarget?.terminalApp == "Codex.app" else {
-                return nil
-            }
+        reconciliationEvents(
+            for: sessions,
+            archivedSessionIDs: [],
+            fileManager: fileManager,
+            now: now
+        )
+    }
 
-            let transcriptPath = session.codexMetadata?.transcriptPath?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            guard !transcriptPath.isEmpty,
-                  fileManager.fileExists(atPath: transcriptPath) else {
-                return .activityUpdated(
-                    SessionActivityUpdated(
-                        sessionID: session.id,
-                        summary: "Turn stalled.",
-                        phase: .completed,
-                        timestamp: now
-                    )
-                )
-            }
-
+    private static func event(
+        for session: AgentSession,
+        archivedSessionIDs: Set<String>,
+        fileManager: FileManager,
+        now: Date
+    ) -> AgentEvent? {
+        guard session.tool == .codex,
+              !session.isSessionEnded,
+              session.isCodexAppSession || session.jumpTarget?.terminalApp == "Codex.app" else {
             return nil
         }
+
+        if archivedSessionIDs.contains(session.id)
+            || isArchivedTranscriptPath(session.codexMetadata?.transcriptPath) {
+            return .sessionCompleted(
+                SessionCompleted(
+                    sessionID: session.id,
+                    summary: "Codex thread archived.",
+                    timestamp: now,
+                    isSessionEnd: true
+                )
+            )
+        }
+
+        guard session.phase == .running else {
+            return nil
+        }
+
+        let transcriptPath = session.codexMetadata?.transcriptPath?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !transcriptPath.isEmpty,
+              fileManager.fileExists(atPath: transcriptPath) else {
+            return .activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: session.id,
+                    summary: "Turn stalled.",
+                    phase: .completed,
+                    timestamp: now
+                )
+            )
+        }
+
+        return nil
+    }
+
+    private static func isArchivedTranscriptPath(_ transcriptPath: String?) -> Bool {
+        guard let transcriptPath = transcriptPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !transcriptPath.isEmpty else {
+            return false
+        }
+
+        return transcriptPath.contains("/.codex/archived_sessions/")
     }
 }
 

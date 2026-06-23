@@ -45,6 +45,7 @@ final class ProcessMonitoringCoordinator {
     private var wasCodexAppRunning = false
 
     private static let cursorStalenessTimeout: TimeInterval = 600  // 10 minutes
+    private static let codexAppStalenessTimeout: TimeInterval = 600  // 10 minutes
 
     private var state: SessionState {
         get { stateAccessor?() ?? SessionState() }
@@ -278,7 +279,14 @@ final class ProcessMonitoringCoordinator {
         let isCodexAppRunning = Self.isCodexDesktopAppRunning()
         for session in sessions where session.tool == .codex && !session.isDemoSession {
             if session.isCodexAppSession {
-                if isCodexAppRunning { aliveIDs.insert(session.id) }
+                if session.isSessionEnded {
+                    continue
+                }
+                let isStale = session.phase == .completed
+                    && session.updatedAt.addingTimeInterval(Self.codexAppStalenessTimeout) < Date.now
+                if isCodexAppRunning, !isStale {
+                    aliveIDs.insert(session.id)
+                }
             } else if codexProcessIDs.contains(session.id) {
                 aliveIDs.insert(session.id)
             }

@@ -623,6 +623,44 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexArchivedSessionIndexParsesRolloutFilenames() {
+        let sessionID = CodexArchivedSessionIndex.sessionID(
+            fromArchivedRolloutFilename: "rollout-2026-06-23T14-37-26-019ef332-b281-7292-874f-4cf8787fb4b8.jsonl"
+        )
+        #expect(sessionID == "019ef332-b281-7292-874f-4cf8787fb4b8")
+    }
+
+    @Test
+    func codexAppSessionReconcilerEndsArchivedSessions() {
+        let events = CodexAppSessionReconciler.reconciliationEvents(
+            for: [
+                AgentSession(
+                    id: "019ef332-b281-7292-874f-4cf8787fb4b8",
+                    title: "Codex · hacking-activity",
+                    tool: .codex,
+                    origin: .live,
+                    attachmentState: .attached,
+                    phase: .completed,
+                    summary: "Turn stalled.",
+                    updatedAt: .now,
+                    jumpTarget: JumpTarget(
+                        terminalApp: "Codex.app",
+                        workspaceName: "hacking-activity",
+                        paneTitle: "Codex",
+                        workingDirectory: "/Users/admin/GoCode/hacking-activity",
+                        codexThreadID: "019ef332-b281-7292-874f-4cf8787fb4b8"
+                    )
+                ),
+            ],
+            archivedSessionIDs: ["019ef332-b281-7292-874f-4cf8787fb4b8"]
+        )
+
+        #expect(events.count == 1)
+        #expect(events.first?.trackedSessionCompletion?.isSessionEnd == true)
+        #expect(events.first?.trackedSessionCompletion?.summary == "Codex thread archived.")
+    }
+
+    @Test
     func codexRolloutReducerMarksPrimaryRateLimitWhileAwaitingAgentResponse() {
         let initialSnapshot = CodexRolloutReducer.snapshot(for: [
             rolloutLine(
