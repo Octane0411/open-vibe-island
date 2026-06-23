@@ -169,7 +169,19 @@ final class CodexAppServerCoordinator {
                         timestamp: .now
                     )
                 ))
-            case .notLoaded, .systemError:
+            case .systemError:
+                // Quota limits and other hard failures can leave the thread in
+                // systemError without a turn/completed notification. Mark the
+                // turn as finished so the island does not stay stuck running.
+                onEvent?(.activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: threadId,
+                        summary: "Turn failed.",
+                        phase: .completed,
+                        timestamp: .now
+                    )
+                ))
+            case .notLoaded:
                 break
             }
 

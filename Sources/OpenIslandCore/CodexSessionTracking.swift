@@ -894,11 +894,17 @@ public enum CodexRolloutReducer {
         snapshot.lastAssistantMessage = message
         snapshot.summary = message
 
-        // After task_complete, the JSONL may still contain trailing
-        // response_item entries (the final assistant message). These should
-        // update content but NOT reset the completion state — only a new
-        // user prompt (applyUserMessage) starts a fresh turn.
-        if !snapshot.isCompleted {
+        if !snapshot.isCompleted, isTerminalFailureMessage(message) {
+            snapshot.currentTool = nil
+            snapshot.currentCommandPreview = nil
+            snapshot.phase = .completed
+            snapshot.isCompleted = true
+            snapshot.isInterrupted = false
+        } else if !snapshot.isCompleted {
+            // After task_complete, the JSONL may still contain trailing
+            // response_item entries (the final assistant message). These should
+            // update content but NOT reset the completion state — only a new
+            // user prompt (applyUserMessage) starts a fresh turn.
             snapshot.currentTool = nil
             snapshot.currentCommandPreview = nil
             snapshot.phase = .running
@@ -908,6 +914,29 @@ public enum CodexRolloutReducer {
         if let timestamp {
             snapshot.updatedAt = timestamp
         }
+    }
+
+    /// Detects assistant messages that terminate the current turn without a
+    /// trailing `turn_complete`, such as Codex quota-limit errors.
+    static func isTerminalFailureMessage(_ message: String) -> Bool {
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return false
+        }
+
+        if trimmed.contains("你已达到使用上限") || trimmed.contains("使用上限") {
+            return true
+        }
+
+        let normalized = trimmed.lowercased()
+        let englishPatterns = [
+            "usage limit",
+            "rate limit",
+            "quota exceeded",
+            "you've reached your",
+            "you have reached your",
+        ]
+        return englishPatterns.contains { normalized.contains($0) }
     }
 
     private static func displayName(for toolName: String) -> String {

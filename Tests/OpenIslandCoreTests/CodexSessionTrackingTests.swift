@@ -570,6 +570,59 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutReducerMarksUsageLimitMessageAsCompleted() {
+        let initialSnapshot = CodexRolloutReducer.snapshot(for: [
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:44.500Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_reasoning",
+                ]
+            ),
+        ])
+        let quotaSnapshot = CodexRolloutReducer.snapshot(for: [
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:44.500Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_reasoning",
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": "你已达到使用上限。升级套餐或充值额度以继续，或在 15:25 后重试。",
+                ]
+            ),
+        ])
+        let events = CodexRolloutReducer.events(
+            from: initialSnapshot,
+            to: quotaSnapshot,
+            sessionID: "codex-session-quota",
+            transcriptPath: "/tmp/rollout.jsonl"
+        )
+
+        #expect(quotaSnapshot.phase == .completed)
+        #expect(quotaSnapshot.isCompleted)
+        #expect(!quotaSnapshot.isInterrupted)
+        #expect(events.contains(where: {
+            $0.trackedSessionCompletion?.summary.contains("你已达到使用上限") == true
+        }))
+    }
+
+    @Test
+    func codexRolloutReducerDetectsEnglishUsageLimitMessages() {
+        #expect(CodexRolloutReducer.isTerminalFailureMessage(
+            "You've reached your usage limit. Try again later."
+        ))
+        #expect(!CodexRolloutReducer.isTerminalFailureMessage(
+            "I'll inspect the Grafana panel next."
+        ))
+    }
+
+    @Test
     func codexRolloutReducerPreservesInitialPromptAcrossLaterPrompts() {
         let snapshot = CodexRolloutReducer.snapshot(for: [
             rolloutLine(
