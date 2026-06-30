@@ -464,6 +464,16 @@ struct SetupSettingsPane: View {
                 } message: {
                     Text(lang.t("settings.general.uninstallConfirmMessage.codex"))
                 }
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle(lang.t("setup.codexBrokerPermissionRequests"), isOn: Binding(
+                        get: { model.brokerCodexPermissionRequests },
+                        set: { model.brokerCodexPermissionRequests = $0 }
+                    ))
+                    Text(lang.t("setup.codexBrokerPermissionRequestsDesc"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.leading, 28)
 
                 hookRow(
                     name: "OpenCode",
