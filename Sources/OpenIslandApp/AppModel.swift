@@ -18,6 +18,7 @@ final class AppModel {
     private static let soundMutedDefaultsKey = "overlay.sound.muted"
     private static let showDockIconDefaultsKey = "app.showDockIcon"
     private static let hapticFeedbackEnabledDefaultsKey = "app.hapticFeedbackEnabled"
+    private static let hideFullscreenDefaultsKey = "app.hideFullscreen"
     private static let islandRightSlotDefaultsKey = "appearance.island.v6.rightSlot"
     private static let islandCenterLabelDefaultsKey = "appearance.island.v6.centerLabel"
     private static let showCodexUsageDefaultsKey = "app.showCodexUsage"
@@ -263,6 +264,14 @@ final class AppModel {
         didSet {
             guard hasFinishedInit, suppressFrontmostNotifications != oldValue else { return }
             UserDefaults.standard.set(suppressFrontmostNotifications, forKey: Self.suppressFrontmostNotificationsDefaultsKey)
+        }
+    }
+    /// User preference that keeps the overlay out of fullscreen application Spaces.
+    var hideFullscreen: Bool = false {
+        didSet {
+            guard hasFinishedInit, hideFullscreen != oldValue else { return }
+            UserDefaults.standard.set(hideFullscreen, forKey: Self.hideFullscreenDefaultsKey)
+            overlay.setHideFullscreen(hideFullscreen)
         }
     }
     var launchAtLoginEnabled: Bool = false {
@@ -593,6 +602,7 @@ final class AppModel {
         UserDefaults.standard.register(defaults: [
             Self.showDockIconDefaultsKey: true,
             Self.hapticFeedbackEnabledDefaultsKey: false,
+            Self.hideFullscreenDefaultsKey: false,
             Self.completionReplyEnabledDefaultsKey: false,
             Self.suppressFrontmostNotificationsDefaultsKey: true,
         ])
@@ -601,6 +611,7 @@ final class AppModel {
         showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
         hapticFeedbackEnabled = UserDefaults.standard.bool(forKey: Self.hapticFeedbackEnabledDefaultsKey)
         suppressFrontmostNotifications = UserDefaults.standard.bool(forKey: Self.suppressFrontmostNotificationsDefaultsKey)
+        hideFullscreen = UserDefaults.standard.bool(forKey: Self.hideFullscreenDefaultsKey)
         if UserDefaults.standard.object(forKey: Self.showCodexUsageDefaultsKey) != nil {
             showCodexUsage = UserDefaults.standard.bool(forKey: Self.showCodexUsageDefaultsKey)
         } else {
@@ -621,6 +632,7 @@ final class AppModel {
         }
 
         overlay.appModel = self
+        overlay.setHideFullscreen(hideFullscreen)
         overlay.restoreDisplayPreference()
         overlay.onStatusMessage = { [weak self] message in
             self?.lastActionMessage = message

@@ -209,6 +209,11 @@ final class OverlayUICoordinator {
         overlayPanelController.ensurePanel(model: appModel, preferredScreenID: preferredOverlayScreenID)
     }
 
+    /// Forwards fullscreen visibility preference changes to the panel controller.
+    func setHideFullscreen(_ hideFullscreen: Bool) {
+        overlayPanelController.setHideFullscreen(hideFullscreen)
+    }
+
     // Legacy compatibility
     func showOverlay() { notchOpen(reason: .click, surface: .sessionList()) }
     func hideOverlay() { notchClose() }

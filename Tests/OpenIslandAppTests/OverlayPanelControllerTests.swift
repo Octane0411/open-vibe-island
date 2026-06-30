@@ -92,6 +92,28 @@ struct OverlayPanelControllerTests {
         #expect(!OverlayPanelController.shouldActivatePanel(for: nil))
     }
 
+    /// Verifies the default behavior keeps the overlay in fullscreen-capable all-Spaces mode.
+    @Test
+    func collectionBehaviorIncludesFullscreenAuxiliaryByDefault() {
+        let behavior = OverlayPanelController.collectionBehavior(hideFullscreen: false)
+
+        #expect(behavior.contains(.fullScreenAuxiliary))
+        #expect(behavior.contains(.canJoinAllSpaces))
+        #expect(behavior.contains(.ignoresCycle))
+        #expect(behavior.contains(.stationary))
+    }
+
+    /// Verifies fullscreen hiding removes the flags that make the overlay follow fullscreen Spaces.
+    @Test
+    func collectionBehaviorExcludesFullscreenAuxiliaryWhenFullscreenHidingIsEnabled() {
+        let behavior = OverlayPanelController.collectionBehavior(hideFullscreen: true)
+
+        #expect(!behavior.contains(.fullScreenAuxiliary))
+        #expect(!behavior.contains(.canJoinAllSpaces))
+        #expect(behavior.contains(.ignoresCycle))
+        #expect(behavior.contains(.stationary))
+    }
+
     // MARK: - islandClosedHeight
 
     @Test
