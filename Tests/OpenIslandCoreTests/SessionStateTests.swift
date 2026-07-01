@@ -699,7 +699,12 @@ struct SessionStateTests {
 
         let sessionStartGroups = hooks?["SessionStart"] as? [[String: Any]]
         #expect(sessionStartGroups?.contains(where: { $0["matcher"] as? String == "startup|resume" }) == true)
-        #expect(hooks?["PreToolUse"] == nil)
+        let preToolGroups = hooks?["PreToolUse"] as? [[String: Any]]
+        let preToolCommands = preToolGroups?
+            .compactMap { $0["hooks"] as? [[String: Any]] }
+            .flatMap { $0 }
+            .compactMap { $0["command"] as? String } ?? []
+        #expect(preToolCommands.contains("'/tmp/OpenIslandHooks'"))
         #expect(hooks?["PostToolUse"] == nil)
     }
 
@@ -765,7 +770,7 @@ struct SessionStateTests {
             .flatMap { $0 }
             .compactMap { $0["command"] as? String } ?? []
 
-        #expect(preToolCommands == ["/usr/bin/printf"])
+        #expect(preToolCommands == ["/usr/bin/printf", "'/tmp/new-release/OpenIslandHooks'"])
         #expect(hooks?["PostToolUse"] == nil)
         #expect(stopCommands.contains("/usr/bin/true"))
         #expect(stopCommands.contains("'/tmp/new-release/OpenIslandHooks'"))
