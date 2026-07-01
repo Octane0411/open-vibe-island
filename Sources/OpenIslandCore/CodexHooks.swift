@@ -14,6 +14,15 @@ public enum CodexPermissionMode: String, Codable, Sendable {
     case plan
     case dontAsk
     case bypassPermissions
+
+    public var requiresOpenIslandApproval: Bool {
+        switch self {
+        case .default, .acceptEdits, .plan:
+            true
+        case .dontAsk, .bypassPermissions:
+            false
+        }
+    }
 }
 
 
