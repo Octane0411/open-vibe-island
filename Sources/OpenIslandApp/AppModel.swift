@@ -1502,6 +1502,7 @@ final class AppModel {
         if ingress == .bridge {
             monitoring.markSessionAttached(for: event)
             monitoring.markSessionProcessAlive(for: event)
+            monitoring.scheduleReconcileSoon()
         }
         synchronizeSelection()
         discovery.refreshCodexRolloutTracking()

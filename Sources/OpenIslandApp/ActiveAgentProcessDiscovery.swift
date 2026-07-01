@@ -9,6 +9,38 @@ struct ActiveAgentProcessDiscovery {
         var data = Data()
     }
 
+    private final class LSOFCacheBox: @unchecked Sendable {
+        private struct Entry {
+            var output: String
+            var expiresAt: Date
+        }
+
+        private let lock = NSLock()
+        private var entries: [String: Entry] = [:]
+
+        func output(for pid: String, now: Date) -> String? {
+            lock.lock()
+            defer { lock.unlock() }
+
+            guard let entry = entries[pid] else {
+                return nil
+            }
+
+            guard entry.expiresAt > now else {
+                entries.removeValue(forKey: pid)
+                return nil
+            }
+
+            return entry.output
+        }
+
+        func store(_ output: String, for pid: String, expiresAt: Date) {
+            lock.lock()
+            entries[pid] = Entry(output: output, expiresAt: expiresAt)
+            lock.unlock()
+        }
+    }
+
     struct ProcessSnapshot: Equatable, Sendable {
         var tool: AgentTool
         var sessionID: String?
@@ -48,11 +80,22 @@ struct ActiveAgentProcessDiscovery {
     }
 
     typealias CommandRunner = @Sendable (_ executablePath: String, _ arguments: [String]) -> String?
+    typealias DateProvider = @Sendable () -> Date
 
     private let commandRunner: CommandRunner
+    private let dateProvider: DateProvider
+    private let lsofCache: LSOFCacheBox
+    private let lsofCacheTTL: TimeInterval
 
-    init(commandRunner: @escaping CommandRunner = Self.commandOutput) {
+    init(
+        commandRunner: @escaping CommandRunner = Self.commandOutput,
+        dateProvider: @escaping DateProvider = { Date() },
+        lsofCacheTTL: TimeInterval = 10
+    ) {
         self.commandRunner = commandRunner
+        self.dateProvider = dateProvider
+        self.lsofCache = LSOFCacheBox()
+        self.lsofCacheTTL = lsofCacheTTL
     }
 
     func discover() -> [ProcessSnapshot] {
@@ -558,7 +601,17 @@ struct ActiveAgentProcessDiscovery {
     }
 
     private func lsofOutput(pid: String) -> String? {
-        commandRunner("/usr/sbin/lsof", ["-a", "-p", pid, "-Fn"])
+        let now = dateProvider()
+        if let cached = lsofCache.output(for: pid, now: now) {
+            return cached
+        }
+
+        guard let output = commandRunner("/usr/sbin/lsof", ["-a", "-p", pid, "-Fn"]) else {
+            return nil
+        }
+
+        lsofCache.store(output, for: pid, expiresAt: now.addingTimeInterval(lsofCacheTTL))
+        return output
     }
 
     private func workingDirectory(from lsofOutput: String) -> String? {
