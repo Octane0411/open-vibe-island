@@ -22,6 +22,10 @@ final class UpdateChecker: NSObject {
     @ObservationIgnored
     private var cancellable: AnyCancellable?
 
+    private var isSparkleEnabled: Bool {
+        Bundle.main.bundleIdentifier != "app.openisland.dev"
+    }
+
     override init() {
         super.init()
         updaterController = SPUStandardUpdaterController(
@@ -34,9 +38,13 @@ final class UpdateChecker: NSObject {
     /// Start Sparkle's automatic update checking schedule.
     /// Call once after app launch.
     func startIfNeeded() {
-        // Disabled for dev builds — Sparkle signature mismatch causes errors.
-        print("[UpdateChecker] Skipping Sparkle updater for dev build.")
-        return
+        guard isSparkleEnabled else {
+            print("[UpdateChecker] Skipping Sparkle updater for dev bundle.")
+            canCheckForUpdates = false
+            hasUpdate = false
+            latestVersion = nil
+            return
+        }
 
         let updater = updaterController.updater
         updater.automaticallyChecksForUpdates = true
@@ -58,6 +66,11 @@ final class UpdateChecker: NSObject {
 
     /// Manually trigger an update check (from Settings UI).
     func checkForUpdates() {
+        guard isSparkleEnabled else {
+            print("[UpdateChecker] Ignoring update check for dev bundle.")
+            return
+        }
+
         updaterController.checkForUpdates(nil)
     }
 }

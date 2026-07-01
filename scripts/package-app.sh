@@ -23,6 +23,18 @@ brand_script="$repo_root/scripts/generate_brand_icons.py"
 dmg_bg_script="$repo_root/scripts/generate_dmg_background.py"
 entitlements_path="$repo_root/config/packaging/OpenIslandApp.entitlements"
 
+verify_zip_signature() {
+    local zip_file="$1"
+    local expected_app_name
+    local verify_zip_dir
+
+    expected_app_name="$(basename "$bundle_dir")"
+    verify_zip_dir="$(mktemp -d)"
+    ditto -x -k "$zip_file" "$verify_zip_dir"
+    codesign --verify --deep --strict --verbose=2 "$verify_zip_dir/$expected_app_name"
+    rm -rf "$verify_zip_dir"
+}
+
 cd "$repo_root"
 
 arch_flags=()
@@ -54,7 +66,7 @@ cp "$brand_icon" "$bundle_dir/Contents/Resources/OpenIsland.icns"
 # Copy Sparkle.framework for auto-update support.
 sparkle_framework="$repo_root/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
 if [[ -d "$sparkle_framework" ]]; then
-    cp -R "$sparkle_framework" "$bundle_dir/Contents/Frameworks/"
+    ditto "$sparkle_framework" "$bundle_dir/Contents/Frameworks/Sparkle.framework"
 else
     echo "WARNING: Sparkle.framework not found at $sparkle_framework — run 'swift package resolve' first." >&2
 fi
@@ -64,7 +76,7 @@ fi
 # resource_bundle_accessor.swift searches Bundle.main.resourceURL first.
 spm_resource_bundle="$build_bin_dir/OpenIsland_OpenIslandApp.bundle"
 if [[ -d "$spm_resource_bundle" ]]; then
-    cp -R "$spm_resource_bundle" "$bundle_dir/Contents/Resources/"
+    ditto "$spm_resource_bundle" "$bundle_dir/Contents/Resources/OpenIsland_OpenIslandApp.bundle"
 else
     echo "WARNING: SPM resource bundle not found at $spm_resource_bundle — app may crash on launch." >&2
 fi
@@ -146,8 +158,8 @@ echo "Bundle structure verified."
 # directory. Running from /tmp ensures the app works without that crutch.
 smoke_dir="$(mktemp -d)/smoke-test"
 mkdir -p "$smoke_dir"
-cp -R "$bundle_dir" "$smoke_dir/"
 smoke_app="$smoke_dir/$(basename "$bundle_dir")"
+ditto "$bundle_dir" "$smoke_app"
 smoke_binary="$smoke_app/Contents/MacOS/OpenIslandApp"
 if [[ -x "$smoke_binary" ]]; then
     # Launch and give it a few seconds — if it crashes, the pid disappears.
@@ -213,7 +225,10 @@ else
     codesign --force --sign - "$bundle_dir" 2>/dev/null || true
 fi
 
+codesign --verify --deep --strict --verbose=2 "$bundle_dir"
+
 ditto -c -k --keepParent "$bundle_dir" "$zip_path"
+verify_zip_signature "$zip_path"
 
 # --- Notarize app bundle (before DMG so the stapled bundle goes into the DMG) ---
 if [[ -n "$signing_identity" && -n "$notary_profile" ]]; then
@@ -221,6 +236,7 @@ if [[ -n "$signing_identity" && -n "$notary_profile" ]]; then
     xcrun stapler staple -v "$bundle_dir"
     rm -f "$zip_path"
     ditto -c -k --keepParent "$bundle_dir" "$zip_path"
+    verify_zip_signature "$zip_path"
 fi
 
 # --- Styled DMG creation ---
