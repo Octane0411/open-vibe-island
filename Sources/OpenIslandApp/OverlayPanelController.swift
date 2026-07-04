@@ -396,7 +396,7 @@ final class OverlayPanelController {
             return Self.closedSurfaceRect(
                 bounds: bounds,
                 closedWidth: closedPanelWidth(for: model, on: screen),
-                closedHeight: screen.islandClosedHeight
+                closedHeight: screen.closedSurfaceHitHeight
             )
         }
 
@@ -473,7 +473,7 @@ final class OverlayPanelController {
         return Self.closedSurfaceRect(
             notchRect: notchRect,
             closedWidth: closedWidth,
-            closedHeight: screen.islandClosedHeight
+            closedHeight: screen.closedSurfaceHitHeight
         )
     }
 
@@ -914,18 +914,41 @@ extension NSScreen {
         )
     }
 
+    var closedSurfaceHitHeight: CGFloat {
+        NSScreen.computeClosedSurfaceHitHeight(
+            safeAreaInsetsTop: safeAreaInsets.top,
+            topStatusBarHeight: topStatusBarHeight
+        )
+    }
+
     /// Pure helper so the height selection logic can be unit-tested without real screen hardware.
     ///
-    /// On notch screens, start from `safeAreaInsetsTop` and trim the closed island
-    /// slightly so the bottom edge is less likely to be hit accidentally.
+    /// On notch screens, use `safeAreaInsetsTop` directly so the visible island
+    /// keeps matching the physical notch.
     /// On non-notch screens (`safeAreaInsetsTop == 0`), use `topStatusBarHeight` directly.
     static func computeIslandClosedHeight(
         safeAreaInsetsTop: CGFloat,
         topStatusBarHeight: CGFloat
     ) -> CGFloat {
         if safeAreaInsetsTop > 0 {
-            return IslandChromeMetrics.closedNotchedHeight(physicalNotchHeight: safeAreaInsetsTop)
+            return safeAreaInsetsTop
         }
         return topStatusBarHeight
+    }
+
+    /// Pure helper for hover/click hit testing. This is intentionally smaller
+    /// than the visible MacBook notch surface to reduce accidental opens.
+    static func computeClosedSurfaceHitHeight(
+        safeAreaInsetsTop: CGFloat,
+        topStatusBarHeight: CGFloat
+    ) -> CGFloat {
+        let visibleHeight = computeIslandClosedHeight(
+            safeAreaInsetsTop: safeAreaInsetsTop,
+            topStatusBarHeight: topStatusBarHeight
+        )
+        if safeAreaInsetsTop > 0 {
+            return IslandChromeMetrics.closedNotchedHitHeight(physicalNotchHeight: visibleHeight)
+        }
+        return visibleHeight
     }
 }

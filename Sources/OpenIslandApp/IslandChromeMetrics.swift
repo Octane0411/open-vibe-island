@@ -8,14 +8,14 @@ enum IslandChromeMetrics {
     static let closedHoverScale: CGFloat = 1.028
     static let closedNotchedHorizontalReserve: CGFloat = 88
     static let closedNotchedReserveScale: CGFloat = 0.8
-    static let closedNotchedHeightReduction: CGFloat = 4
-    static let closedNotchedMinimumHeight: CGFloat = 28
+    static let closedNotchedHitHeightReduction: CGFloat = 4
+    static let closedNotchedMinimumHitHeight: CGFloat = 28
 
     static func closedNotchedWidth(physicalNotchWidth: CGFloat) -> CGFloat {
         physicalNotchWidth + (closedNotchedHorizontalReserve * closedNotchedReserveScale)
     }
 
-    static func closedNotchedHeight(physicalNotchHeight: CGFloat) -> CGFloat {
-        max(closedNotchedMinimumHeight, physicalNotchHeight - closedNotchedHeightReduction)
+    static func closedNotchedHitHeight(physicalNotchHeight: CGFloat) -> CGFloat {
+        max(closedNotchedMinimumHitHeight, physicalNotchHeight - closedNotchedHitHeightReduction)
     }
 }

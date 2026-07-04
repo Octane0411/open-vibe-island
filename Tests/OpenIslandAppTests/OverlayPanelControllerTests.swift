@@ -117,22 +117,36 @@ struct OverlayPanelControllerTests {
     // MARK: - islandClosedHeight
 
     @Test
-    func islandClosedHeightTrimsNotchScreenHeightWhenSmallerThanMenuBar() {
+    func islandClosedHeightKeepsPhysicalNotchHeightWhenSmallerThanMenuBar() {
         // Simulates MacBook Air M2: physical notch ≈ 34 pt, menu bar reserved ≈ 37 pt.
         let height = NSScreen.computeIslandClosedHeight(safeAreaInsetsTop: 34, topStatusBarHeight: 37)
-        #expect(height == 30)
+        #expect(height == 34)
     }
 
     @Test
-    func islandClosedHeightTrimsNotchScreenHeightEvenWhenMenuBarIsShorter() {
+    func islandClosedHeightKeepsPhysicalNotchHeightEvenWhenMenuBarIsShorter() {
         let height = NSScreen.computeIslandClosedHeight(safeAreaInsetsTop: 37, topStatusBarHeight: 34)
-        #expect(height == 33)
+        #expect(height == 37)
     }
 
     @Test
     func islandClosedHeightFallsBackToMenuBarHeightOnNonNotchScreen() {
         // Non-notch screen: safeAreaInsets.top == 0, fall back to topStatusBarHeight.
         let height = NSScreen.computeIslandClosedHeight(safeAreaInsetsTop: 0, topStatusBarHeight: 24)
+        #expect(height == 24)
+    }
+
+    // MARK: - closedSurfaceHitHeight
+
+    @Test
+    func closedSurfaceHitHeightTrimsNotchScreenHitAreaOnly() {
+        let height = NSScreen.computeClosedSurfaceHitHeight(safeAreaInsetsTop: 34, topStatusBarHeight: 37)
+        #expect(height == 30)
+    }
+
+    @Test
+    func closedSurfaceHitHeightKeepsExternalDisplayHitAreaUnchanged() {
+        let height = NSScreen.computeClosedSurfaceHitHeight(safeAreaInsetsTop: 0, topStatusBarHeight: 24)
         #expect(height == 24)
     }
 }
