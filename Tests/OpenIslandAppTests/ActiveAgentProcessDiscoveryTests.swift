@@ -172,6 +172,84 @@ struct ActiveAgentProcessDiscoveryTests {
         ])
     }
 
+    @Test
+    func discoverCursorAgentProcessFromOpenChatStore() {
+        let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
+            if executablePath == "/bin/ps" {
+                return """
+                  302 401 ttys003 /Users/test/.local/bin/cursor-agent --use-system-ca /Users/test/.local/share/cursor-agent/versions/2026.06.26/index.js
+                  401 500 ttys003 -/opt/homebrew/bin/fish
+                  500 900 ttys003 /usr/bin/login -flp test /bin/bash --noprofile --norc -c exec -l /opt/homebrew/bin/fish
+                  900 1 ?? /Applications/Ghostty.app/Contents/MacOS/ghostty
+                """
+            }
+
+            guard executablePath == "/usr/sbin/lsof",
+                  let pid = arguments.dropFirst(2).first else {
+                return nil
+            }
+
+            guard pid == "302" else {
+                Issue.record("unexpected lsof lookup for pid \(pid)")
+                return nil
+            }
+
+            return """
+            fcwd
+            n/tmp/simple-agent-lab
+            n/Users/test/.cursor/chats/cf595f65441221b71014fd6f7b9999b2/6f7b9f8a-2bd0-48b4-a497-9801dd191d03/store.db-shm
+            """
+        }
+
+        let snapshots = discovery.discover()
+
+        #expect(snapshots == [
+            .init(
+                tool: .cursor,
+                sessionID: "6f7b9f8a-2bd0-48b4-a497-9801dd191d03",
+                workingDirectory: "/tmp/simple-agent-lab",
+                terminalTTY: "/dev/ttys003",
+                terminalApp: "Ghostty"
+            ),
+        ])
+    }
+
+    @Test
+    func discoverCursorAgentDeduplicatesProcessesForSameConversation() {
+        let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
+            if executablePath == "/bin/ps" {
+                return """
+                  302 401 ttys003 /Users/test/.local/bin/cursor-agent --use-system-ca /Users/test/.local/share/cursor-agent/versions/2026.06.26/index.js
+                  303 402 ttys004 /Users/test/.local/bin/cursor-agent --use-system-ca /Users/test/.local/share/cursor-agent/versions/2026.06.26/index.js
+                  401 900 ttys003 -/opt/homebrew/bin/fish
+                  402 900 ttys004 -/opt/homebrew/bin/fish
+                  900 1 ?? /Applications/Ghostty.app/Contents/MacOS/ghostty
+                """
+            }
+
+            guard executablePath == "/usr/sbin/lsof",
+                  let pid = arguments.dropFirst(2).first else {
+                return nil
+            }
+
+            guard pid == "302" || pid == "303" else {
+                Issue.record("unexpected lsof lookup for pid \(pid)")
+                return nil
+            }
+
+            return """
+            fcwd
+            n/tmp/simple-agent-lab
+            n/Users/test/.cursor/chats/cf595f65441221b71014fd6f7b9999b2/6f7b9f8a-2bd0-48b4-a497-9801dd191d03/store.db
+            """
+        }
+
+        let snapshots = discovery.discover()
+
+        #expect(snapshots.count == 1)
+        #expect(snapshots.first?.sessionID == "6f7b9f8a-2bd0-48b4-a497-9801dd191d03")
+    }
+
     /// VS Code forks (Cursor, Windsurf, Trae, Qoder) bundle Electron's "Code
     /// Helper" inside their .app bundles. Their helper paths therefore contain
     /// both "/<fork>.app/" and "/code helper", and Open Island used to match

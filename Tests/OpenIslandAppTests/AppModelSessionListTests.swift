@@ -164,6 +164,57 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func islandListKeepsDistinctCodexAppThreadsInTheSameWorkspace() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+
+        var firstThread = AgentSession(
+            id: "codex-app-thread-1",
+            title: "Codex · open-island",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .completed,
+            summary: "First Codex.app thread",
+            updatedAt: now,
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "open-island",
+                paneTitle: "Codex · open-island",
+                workingDirectory: "/tmp/open-island",
+                codexThreadID: "codex-app-thread-1"
+            )
+        )
+        firstThread.isCodexAppSession = true
+        firstThread.isProcessAlive = true
+
+        var secondThread = AgentSession(
+            id: "codex-app-thread-2",
+            title: "Codex · open-island",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .completed,
+            summary: "Second Codex.app thread",
+            updatedAt: now.addingTimeInterval(-30),
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "open-island",
+                paneTitle: "Codex · open-island",
+                workingDirectory: "/tmp/open-island",
+                codexThreadID: "codex-app-thread-2"
+            )
+        )
+        secondThread.isCodexAppSession = true
+        secondThread.isProcessAlive = true
+
+        model.state = SessionState(sessions: [firstThread, secondThread])
+
+        #expect(model.surfacedSessions.map(\.id) == ["codex-app-thread-1", "codex-app-thread-2"])
+        #expect(model.liveSessionCount == 2)
+    }
+
+    @Test
     func sessionBootstrapPlaceholderAppearsWhileStartupResolutionIsPending() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
@@ -964,6 +1015,104 @@ struct AppModelSessionListTests {
         )
 
         #expect(merged.map(\.id) == [existing.id])
+    }
+
+    @Test
+    func mergedWithSyntheticCursorSessionsAddsCursorAgentWhenNoTrackedSessionExists() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+
+        let merged = model.monitoring.mergedWithSyntheticCursorSessions(
+            existingSessions: [],
+            activeProcesses: [
+                .init(
+                    tool: .cursor,
+                    sessionID: "6f7b9f8a-2bd0-48b4-a497-9801dd191d03",
+                    workingDirectory: "/tmp/simple-agent-lab",
+                    terminalTTY: "/dev/ttys003",
+                    terminalApp: "Ghostty"
+                ),
+            ],
+            now: now
+        )
+
+        #expect(merged.count == 1)
+        #expect(merged.first?.id == "6f7b9f8a-2bd0-48b4-a497-9801dd191d03")
+        #expect(merged.first?.tool == .cursor)
+        #expect(merged.first?.attachmentState == .attached)
+        #expect(merged.first?.jumpTarget?.terminalApp == "Ghostty")
+        #expect(merged.first?.jumpTarget?.terminalTTY == "/dev/ttys003")
+        #expect(merged.first?.cursorMetadata?.conversationId == "6f7b9f8a-2bd0-48b4-a497-9801dd191d03")
+    }
+
+    @Test
+    func mergedWithSyntheticCursorSessionsSkipsSyntheticWhenHookSessionMatchesConversation() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        let existing = AgentSession(
+            id: "6f7b9f8a-2bd0-48b4-a497-9801dd191d03",
+            title: "Cursor · simple-agent-lab",
+            tool: .cursor,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Running",
+            updatedAt: now,
+            jumpTarget: JumpTarget(
+                terminalApp: "Cursor",
+                workspaceName: "simple-agent-lab",
+                paneTitle: "Cursor 6f7b9f8a",
+                workingDirectory: "/tmp/simple-agent-lab"
+            ),
+            cursorMetadata: CursorSessionMetadata(
+                conversationId: "6f7b9f8a-2bd0-48b4-a497-9801dd191d03"
+            )
+        )
+
+        let merged = model.monitoring.mergedWithSyntheticCursorSessions(
+            existingSessions: [existing],
+            activeProcesses: [
+                .init(
+                    tool: .cursor,
+                    sessionID: "6f7b9f8a-2bd0-48b4-a497-9801dd191d03",
+                    workingDirectory: "/tmp/simple-agent-lab",
+                    terminalTTY: "/dev/ttys003",
+                    terminalApp: "Ghostty"
+                ),
+            ],
+            now: now
+        )
+
+        #expect(merged.map(\.id) == [existing.id])
+    }
+
+    @Test
+    func mergedWithSyntheticCursorSessionsDeduplicatesRepeatedConversationProcesses() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+
+        let merged = model.monitoring.mergedWithSyntheticCursorSessions(
+            existingSessions: [],
+            activeProcesses: [
+                .init(
+                    tool: .cursor,
+                    sessionID: "6f7b9f8a-2bd0-48b4-a497-9801dd191d03",
+                    workingDirectory: "/tmp/simple-agent-lab",
+                    terminalTTY: "/dev/ttys003",
+                    terminalApp: "Ghostty"
+                ),
+                .init(
+                    tool: .cursor,
+                    sessionID: "6f7b9f8a-2bd0-48b4-a497-9801dd191d03",
+                    workingDirectory: "/tmp/simple-agent-lab",
+                    terminalTTY: "/dev/ttys004",
+                    terminalApp: "Ghostty"
+                ),
+            ],
+            now: now
+        )
+
+        #expect(merged.map(\.id) == ["6f7b9f8a-2bd0-48b4-a497-9801dd191d03"])
     }
 
 

@@ -525,10 +525,16 @@ public extension AgentSession {
     var isVisibleInIsland: Bool {
         if isDemoSession { return true }
         if phase.requiresAttention { return true }
-        // Codex.app sessions stay visible while the desktop app is running.
+        // Codex.app sessions stay visible while the desktop app is running,
+        // except when the thread was archived/ended or the row has gone stale.
         // Checked before isHookManaged because a Codex.app session may also
         // be hook-managed (when both hook and rediscovery converge on it).
-        if isCodexAppSession { return isProcessAlive }
+        if isCodexAppSession {
+            if isSessionEnded {
+                return false
+            }
+            return isProcessAlive
+        }
         if isHookManaged { return !isSessionEnded }
         if isProcessAlive { return true }
         return false

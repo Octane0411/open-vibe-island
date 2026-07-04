@@ -469,6 +469,10 @@ final class OverlayUICoordinator {
                     preferredScreenID: self.preferredOverlayScreenID
                 )
             case .closed, .popping:
+                self.overlayPanelController.ensurePanel(
+                    model: appModel,
+                    preferredScreenID: self.preferredOverlayScreenID
+                )
                 self.refreshOverlayPlacement()
             }
             self.harnessRuntimeMonitor?.recordMilestone("overlayPresented", message: snapshot.title)

@@ -1152,6 +1152,12 @@ public extension ClaudeHookPayload {
         }
     }
 
+    /// Best-effort detection of the terminal app — or desktop host — a Claude
+    /// hook fired from, used to build the session's jump target. Returns `nil`
+    /// when no host can be determined (the caller falls back to an "Unknown"
+    /// sentinel). Multiplexers and the Claude desktop app are checked before
+    /// `TERM_PROGRAM` because those signals are authoritative and don't leak
+    /// across apps via macOS GUI environment inheritance.
     private func inferTerminalApp(from environment: [String: String]) -> String? {
         // Multiplexers run inside a host terminal but expose their own pane
         // context. Detect them first so the captured jumpTarget points at
@@ -1161,6 +1167,25 @@ public extension ClaudeHookPayload {
         }
         if environment["ZELLIJ"] != nil {
             return "Zellij"
+        }
+
+        // Claude desktop app — Claude Code launched by Claude.app (its "local
+        // agent mode") runs as a TTY-less subprocess, so process discovery
+        // never sees it and the hook-managed liveness fallback would evict the
+        // session after a couple of polls. Tag it as "Claude.app" so liveness
+        // follows the desktop app (NSRunningApplication) instead of a
+        // non-existent terminal process.
+        //
+        // CLAUDE_CODE_ENTRYPOINT is set by Claude Code itself ("claude-desktop"
+        // vs "cli"), so it is authoritative; __CFBundleIdentifier is a
+        // corroborating fallback. Checked BEFORE TERM_PROGRAM because launching
+        // Claude.app from a terminal leaks the parent shell's TERM_PROGRAM into
+        // the subprocess env, which would otherwise misclassify the session as
+        // the launching terminal (same leak rationale as the TERM_PROGRAM
+        // comment below).
+        if environment["CLAUDE_CODE_ENTRYPOINT"] == "claude-desktop"
+            || environment["__CFBundleIdentifier"]?.lowercased() == "com.anthropic.claudefordesktop" {
+            return "Claude.app"
         }
 
         // TERM_PROGRAM is the only authoritative terminal signal. Each

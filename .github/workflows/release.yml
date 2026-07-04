@@ -27,9 +27,11 @@ jobs:
           pip3 install --break-system-packages Pillow
 
       - name: Import signing certificate
+        id: signing
         env:
           CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
           CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          SKIP_NOTARIZE: ${{ vars.SKIP_NOTARIZE }}
         run: |
           # Decode the p12 certificate from base64
           CERT_FILE="$(mktemp).p12"
@@ -56,12 +58,23 @@ jobs:
           # Add the keychain to the search list
           security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
 
-          # Store notarytool credentials in the keychain
-          xcrun notarytool store-credentials "open-island-notary" \
-            --apple-id "${{ secrets.APPLE_ID }}" \
-            --team-id "${{ secrets.APPLE_TEAM_ID }}" \
-            --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" \
-            --keychain "$KEYCHAIN_PATH"
+          # Store notarytool credentials in the keychain when possible. Apple
+          # can reject credential validation while legal agreements are pending
+          # or expired; keep the release moving as a signed, non-notarized build
+          # in that case and let the later notarization step skip itself.
+          if [[ "${SKIP_NOTARIZE:-}" == "true" ]]; then
+            echo "Skipping notarytool credential setup because SKIP_NOTARIZE is true."
+            echo "notary_ready=false" >> "$GITHUB_OUTPUT"
+          elif xcrun notarytool store-credentials "open-island-notary" \
+              --apple-id "${{ secrets.APPLE_ID }}" \
+              --team-id "${{ secrets.APPLE_TEAM_ID }}" \
+              --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" \
+              --keychain "$KEYCHAIN_PATH"; then
+            echo "notary_ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Notary credential validation failed; continuing with a signed, non-notarized release."
+            echo "notary_ready=false" >> "$GITHUB_OUTPUT"
+          fi
 
           # Clean up
           rm -f "$CERT_FILE"
@@ -114,7 +127,7 @@ jobs:
           echo "Bundle structure OK"
 
       - name: Notarize (best-effort)
-        if: vars.SKIP_NOTARIZE != 'true'
+        if: vars.SKIP_NOTARIZE != 'true' && steps.signing.outputs.notary_ready == 'true'
         id: notarize
         continue-on-error: true
         env:

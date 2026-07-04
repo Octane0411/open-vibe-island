@@ -523,7 +523,11 @@ final class AppModel {
 
 
     @ObservationIgnored
-    var harnessRuntimeMonitor: HarnessRuntimeMonitor?
+    var harnessRuntimeMonitor: HarnessRuntimeMonitor? {
+        didSet {
+            overlay.harnessRuntimeMonitor = harnessRuntimeMonitor
+        }
+    }
 
 
     @ObservationIgnored
@@ -645,6 +649,13 @@ final class AppModel {
             self?.synchronizeSelection()
             self?.refreshOverlayPlacementIfVisible()
         }
+        discovery.onAgentEvent = { [weak self] event in
+            self?.applyTrackedEvent(
+                event,
+                updateLastActionMessage: false,
+                ingress: .rollout
+            )
+        }
 
         discovery.codexRolloutWatcher.eventHandler = { [weak self] event in
             Task { @MainActor [weak self] in
@@ -686,6 +697,9 @@ final class AppModel {
             } else {
                 self.codexAppServer.disconnect()
             }
+        }
+        monitoring.onCodexAppMaintenanceTick = { [weak self] in
+            self?.discovery.maintainCodexAppSessionsIfNeeded()
         }
         refreshOverlayDisplayConfiguration()
         hasFinishedInit = true

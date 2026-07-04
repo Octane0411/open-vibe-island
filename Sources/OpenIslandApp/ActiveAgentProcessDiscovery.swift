@@ -103,6 +103,32 @@ struct ActiveAgentProcessDiscovery {
                 continue
             }
 
+            if isCursorAgentProcess(command: process.command) {
+                guard let snapshot = cursorSnapshot(for: process, processesByPID: processesByPID) else {
+                    continue
+                }
+
+                let claimKey: String
+                if let sessionID = snapshot.sessionID {
+                    claimKey = "cursor:\(sessionID)"
+                } else {
+                    claimKey = [
+                        "cursor",
+                        snapshot.terminalTTY,
+                        snapshot.workingDirectory,
+                        process.pid,
+                    ]
+                    .compactMap { $0 }
+                    .joined(separator: ":")
+                }
+                guard claimedKeys.insert(claimKey).inserted else {
+                    continue
+                }
+
+                snapshots.append(snapshot)
+                continue
+            }
+
             if isOpenCodeProcess(command: process.command) {
                 let lsofOutput = lsofOutput(pid: process.pid)
                 let cwd = lsofOutput.flatMap(workingDirectory(from:))
@@ -258,6 +284,41 @@ struct ActiveAgentProcessDiscovery {
         return snapshot
     }
 
+    private func cursorSnapshot(
+        for process: RunningProcess,
+        processesByPID: [String: RunningProcess]
+    ) -> ProcessSnapshot? {
+        let lsofOutput = lsofOutput(pid: process.pid)
+        let workingDirectory = lsofOutput.flatMap(workingDirectory(from:))
+        let sessionID = lsofOutput.flatMap(cursorConversationID(in:))
+
+        guard workingDirectory != nil || sessionID != nil else {
+            return nil
+        }
+
+        var snapshot = ProcessSnapshot(
+            tool: .cursor,
+            sessionID: sessionID,
+            workingDirectory: workingDirectory,
+            terminalTTY: process.terminalTTY,
+            terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+        )
+
+        if snapshot.terminalApp == nil, let agentTTY = process.terminalTTY {
+            if let (tmuxTarget, hostTerminalApp, socketPath) = resolveTmuxInfo(
+                agentTTY: agentTTY,
+                processes: processesByPID.values.map { $0 },
+                processesByPID: processesByPID
+            ) {
+                snapshot.terminalApp = hostTerminalApp
+                snapshot.tmuxTarget = tmuxTarget
+                snapshot.tmuxSocketPath = socketPath
+            }
+        }
+
+        return snapshot
+    }
+
     private func bestCodexTranscriptPath(in lsofOutput: String) -> String? {
         let paths = allMatchingPaths(in: lsofOutput, containing: "/.codex/sessions/", suffix: ".jsonl")
         guard !paths.isEmpty else {
@@ -361,6 +422,25 @@ struct ActiveAgentProcessDiscovery {
         }
 
         return results
+    }
+
+    private func cursorConversationID(in lsofOutput: String) -> String? {
+        for line in lsofOutput.split(whereSeparator: \.isNewline) {
+            guard line.first == "n" else {
+                continue
+            }
+
+            let value = String(line.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard value.contains("/.cursor/chats/"),
+                  value.contains("/store.db"),
+                  let conversationID = firstUUID(in: value) else {
+                continue
+            }
+
+            return conversationID
+        }
+
+        return nil
     }
 
     private func terminalApp(
@@ -579,6 +659,16 @@ struct ActiveAgentProcessDiscovery {
         return firstToken == "codex"
             || firstToken.hasSuffix("/codex")
             || lowered.contains("/codex/codex")
+    }
+
+    private func isCursorAgentProcess(command: String) -> Bool {
+        let lowered = command.lowercased()
+        guard let firstToken = lowered.split(separator: " ").first.map(String.init) else {
+            return false
+        }
+
+        return firstToken == "cursor-agent"
+            || firstToken.hasSuffix("/cursor-agent")
     }
 
     private func isOpenCodeProcess(command: String) -> Bool {

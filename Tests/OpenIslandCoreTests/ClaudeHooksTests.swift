@@ -316,6 +316,62 @@ struct ClaudeHooksTests {
         #expect(payload.defaultJumpTarget.terminalApp == "Unknown")
     }
 
+    /// Verifies a Claude Desktop session is tagged `Claude.app` via the
+    /// authoritative `CLAUDE_CODE_ENTRYPOINT=claude-desktop` signal. The
+    /// desktop subprocess is TTY-less and invisible to process discovery, so
+    /// this tag is what lets liveness follow the desktop app instead of a
+    /// non-existent terminal process.
+    @Test
+    func claudeInferTerminalAppRecognizesClaudeDesktopViaEntrypoint() {
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: ["CLAUDE_CODE_ENTRYPOINT": "claude-desktop"],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+        )
+
+        #expect(payload.terminalApp == "Claude.app")
+        #expect(payload.defaultJumpTarget.terminalApp == "Claude.app")
+    }
+
+    /// Verifies the `__CFBundleIdentifier=com.anthropic.claudefordesktop`
+    /// fallback also tags the session `Claude.app` — the hook binary inherits
+    /// that bundle id when launched as a subprocess of Claude.app.
+    @Test
+    func claudeInferTerminalAppRecognizesClaudeDesktopViaBundleIdentifier() {
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: ["__CFBundleIdentifier": "com.anthropic.claudefordesktop"],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+        )
+
+        #expect(payload.terminalApp == "Claude.app")
+    }
+
+    /// Verifies the desktop entrypoint signal wins over a leaked
+    /// `TERM_PROGRAM`. Launching Claude.app from a terminal (e.g.
+    /// `open -a Claude` from Ghostty) leaks the parent shell's `TERM_PROGRAM`
+    /// into the subprocess env; the session must still classify as
+    /// `Claude.app`, not the launching terminal.
+    @Test
+    func claudeInferTerminalAppPrefersClaudeDesktopOverLeakedTermProgram() {
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: [
+                "CLAUDE_CODE_ENTRYPOINT": "claude-desktop",
+                "TERM_PROGRAM": "ghostty",
+            ],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+        )
+
+        #expect(payload.terminalApp == "Claude.app")
+    }
+
     @Test
     func claudePermissionRequestReturnsAllowDirectiveAfterApproval() async throws {
         let socketURL = BridgeSocketLocation.uniqueTestURL()

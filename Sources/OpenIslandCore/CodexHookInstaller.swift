@@ -265,6 +265,7 @@ public enum CodexHookInstaller {
             || featureValue(for: legacyFeatureKey, lines: lines) == true
     }
 
+    /// Detects the Codex hook feature flag supported by the installed CLI.
     public static func preferredCodexHooksFeatureKey() -> CodexHooksFeatureFlagKey {
         if let featureKey = commandOutput(arguments: ["features", "list"])
             .flatMap(preferredCodexHooksFeatureKey(fromFeatureList:)) {
@@ -276,7 +277,7 @@ public enum CodexHookInstaller {
             return featureKey
         }
 
-        return .legacy
+        return .current
     }
 
     private static func loadRootObject(from data: Data?) throws -> [String: Any] {
@@ -485,6 +486,7 @@ public enum CodexHookInstaller {
         return (key: parts[0], value: parts[1])
     }
 
+    /// Parses `codex features list` output to find the supported hook feature flag.
     static func preferredCodexHooksFeatureKey(fromFeatureList output: String) -> CodexHooksFeatureFlagKey? {
         let featureNames = Set(output.split(whereSeparator: \.isNewline).compactMap { line -> String? in
             line.split(whereSeparator: \.isWhitespace).first.map(String.init)
@@ -499,6 +501,7 @@ public enum CodexHookInstaller {
         return nil
     }
 
+    /// Infers the hook feature flag from `codex --version` when feature listing is unavailable.
     static func preferredCodexHooksFeatureKey(fromVersionOutput output: String) -> CodexHooksFeatureFlagKey? {
         guard let versionToken = output.split(whereSeparator: \.isWhitespace).first(where: { token in
             token.first?.isNumber == true
@@ -529,12 +532,17 @@ public enum CodexHookInstaller {
         return nil
     }
 
+    /// Returns Codex CLI locations to probe, including app-bundled and shell-installed builds.
     private static func codexCommandCandidates() -> [(executableURL: URL, prefixArguments: [String])] {
         var candidates: [(executableURL: URL, prefixArguments: [String])] = [
             (URL(fileURLWithPath: "/usr/bin/env"), ["codex"]),
         ]
 
-        for path in ["/opt/homebrew/bin/codex", "/usr/local/bin/codex"] {
+        for path in [
+            "/Applications/Codex.app/Contents/Resources/codex",
+            "/opt/homebrew/bin/codex",
+            "/usr/local/bin/codex",
+        ] {
             if FileManager.default.isExecutableFile(atPath: path) {
                 candidates.append((URL(fileURLWithPath: path), []))
             }
