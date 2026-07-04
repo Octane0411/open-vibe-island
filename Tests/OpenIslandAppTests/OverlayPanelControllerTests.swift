@@ -10,14 +10,15 @@ struct OverlayPanelControllerTests {
 
         let rect = OverlayPanelController.closedSurfaceRect(
             notchRect: notchRect,
-            closedWidth: closedWidth
+            closedWidth: closedWidth,
+            closedHeight: 34
         )
 
         // Centered on notch midX (300), width 320
         #expect(rect.minX == 140)
-        #expect(rect.minY == 900)
+        #expect(rect.minY == 904)
         #expect(rect.width == 320)
-        #expect(rect.height == 38)
+        #expect(rect.height == 34)
     }
 
     @Test
@@ -27,13 +28,33 @@ struct OverlayPanelControllerTests {
 
         let rect = OverlayPanelController.closedSurfaceRect(
             notchRect: notchRect,
-            closedWidth: closedWidth
+            closedWidth: closedWidth,
+            closedHeight: 30
         )
 
         #expect(rect.contains(NSPoint(x: rect.minX + 2, y: rect.midY)))
         #expect(rect.contains(NSPoint(x: rect.maxX - 2, y: rect.midY)))
         #expect(!rect.contains(NSPoint(x: rect.minX - 1, y: rect.midY)))
         #expect(!rect.contains(NSPoint(x: rect.maxX + 1, y: rect.midY)))
+        #expect(rect.maxY == notchRect.maxY)
+        #expect(!rect.contains(NSPoint(x: rect.midX, y: rect.minY - 1)))
+    }
+
+    @Test
+    func closedSurfaceRectInPanelBoundsStaysTopAnchored() {
+        let bounds = NSRect(x: 0, y: 0, width: 700, height: 160)
+
+        let rect = OverlayPanelController.closedSurfaceRect(
+            bounds: bounds,
+            closedWidth: 320,
+            closedHeight: 30
+        )
+
+        #expect(rect.minX == 190)
+        #expect(rect.minY == 130)
+        #expect(rect.width == 320)
+        #expect(rect.height == 30)
+        #expect(rect.maxY == bounds.maxY)
     }
 
     @Test
@@ -96,19 +117,16 @@ struct OverlayPanelControllerTests {
     // MARK: - islandClosedHeight
 
     @Test
-    func islandClosedHeightClampsToNotchHeightWhenSmallerThanMenuBar() {
+    func islandClosedHeightTrimsNotchScreenHeightWhenSmallerThanMenuBar() {
         // Simulates MacBook Air M2: physical notch ≈ 34 pt, menu bar reserved ≈ 37 pt.
-        // Must return 34 (the smaller value) so the island sits flush with the notch.
         let height = NSScreen.computeIslandClosedHeight(safeAreaInsetsTop: 34, topStatusBarHeight: 37)
-        #expect(height == 34)
+        #expect(height == 30)
     }
 
     @Test
-    func islandClosedHeightUsesNotchHeightEvenWhenMenuBarIsShorter() {
-        // When menu bar reserved < notch (e.g. auto-hide menu bar), the island must
-        // still match the physical notch height to avoid a visible gap.
+    func islandClosedHeightTrimsNotchScreenHeightEvenWhenMenuBarIsShorter() {
         let height = NSScreen.computeIslandClosedHeight(safeAreaInsetsTop: 37, topStatusBarHeight: 34)
-        #expect(height == 37)
+        #expect(height == 33)
     }
 
     @Test

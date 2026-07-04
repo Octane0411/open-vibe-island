@@ -391,6 +391,15 @@ final class OverlayPanelController {
     }
 
     func contentRect(for model: AppModel, in bounds: NSRect) -> NSRect? {
+        if model.notchStatus != .opened {
+            guard let screen = resolveTargetScreen() else { return nil }
+            return Self.closedSurfaceRect(
+                bounds: bounds,
+                closedWidth: closedPanelWidth(for: model, on: screen),
+                closedHeight: screen.islandClosedHeight
+            )
+        }
+
         let insets = panelShadowInsets
         return NSRect(
             x: bounds.minX + insets.horizontal,
@@ -402,14 +411,30 @@ final class OverlayPanelController {
 
     nonisolated static func closedSurfaceRect(
         notchRect: NSRect,
-        closedWidth: CGFloat
+        closedWidth: CGFloat,
+        closedHeight: CGFloat
     ) -> NSRect {
         let cx = notchRect.midX
+        let height = min(max(0, closedHeight), notchRect.height)
         return NSRect(
             x: cx - closedWidth / 2,
-            y: notchRect.minY,
+            y: notchRect.maxY - height,
             width: closedWidth,
-            height: notchRect.height
+            height: height
+        )
+    }
+
+    nonisolated static func closedSurfaceRect(
+        bounds: NSRect,
+        closedWidth: CGFloat,
+        closedHeight: CGFloat
+    ) -> NSRect {
+        let height = min(max(0, closedHeight), bounds.height)
+        return NSRect(
+            x: bounds.midX - closedWidth / 2,
+            y: bounds.maxY - height,
+            width: closedWidth,
+            height: height
         )
     }
 
@@ -447,7 +472,8 @@ final class OverlayPanelController {
         let closedWidth = closedPanelWidth(for: model, on: screen)
         return Self.closedSurfaceRect(
             notchRect: notchRect,
-            closedWidth: closedWidth
+            closedWidth: closedWidth,
+            closedHeight: screen.islandClosedHeight
         )
     }
 
@@ -890,19 +916,15 @@ extension NSScreen {
 
     /// Pure helper so the height selection logic can be unit-tested without real screen hardware.
     ///
-    /// On notch screens, use `safeAreaInsetsTop` directly — the island must match the
-    /// physical notch height exactly so it sits flush with the notch bottom edge.
-    /// Previously this used `min(safeAreaInsetsTop, topStatusBarHeight)`, but when the
-    /// menu bar reserved area is smaller than the notch (e.g. auto-hide menu bar, or
-    /// certain display configurations), the island ended up shorter than the physical
-    /// notch, leaving a visible gap.
+    /// On notch screens, start from `safeAreaInsetsTop` and trim the closed island
+    /// slightly so the bottom edge is less likely to be hit accidentally.
     /// On non-notch screens (`safeAreaInsetsTop == 0`), use `topStatusBarHeight` directly.
     static func computeIslandClosedHeight(
         safeAreaInsetsTop: CGFloat,
         topStatusBarHeight: CGFloat
     ) -> CGFloat {
         if safeAreaInsetsTop > 0 {
-            return safeAreaInsetsTop
+            return IslandChromeMetrics.closedNotchedHeight(physicalNotchHeight: safeAreaInsetsTop)
         }
         return topStatusBarHeight
     }
