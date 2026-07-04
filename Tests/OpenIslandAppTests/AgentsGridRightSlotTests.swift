@@ -11,7 +11,7 @@ struct AgentsGridRightSlotTests {
     @Test
     func bulkFirstObservationOrdersByHistoricalFirstSeenAt() {
         let model = AppModel()
-        model.islandRightSlot = .agents
+        configureAgentsSlot(model)
 
         let now = Date(timeIntervalSince1970: 100_000)
         let sessionA = makeSession(id: "A", firstSeenAt: now,                       updatedAt: now.addingTimeInterval(60))
@@ -46,7 +46,7 @@ struct AgentsGridRightSlotTests {
     @Test
     func newlyObservedSessionAlwaysLandsAtTheEndRegardlessOfHistoricalTime() {
         let model = AppModel()
-        model.islandRightSlot = .agents
+        configureAgentsSlot(model)
 
         let now = Date(timeIntervalSince1970: 200_000)
         let sessionA = makeSession(id: "A", firstSeenAt: now,                       updatedAt: now)
@@ -79,7 +79,7 @@ struct AgentsGridRightSlotTests {
     @Test
     func returningSessionKeepsItsOriginalSlot() {
         let model = AppModel()
-        model.islandRightSlot = .agents
+        configureAgentsSlot(model)
 
         let now = Date(timeIntervalSince1970: 300_000)
         let sessionA = makeSession(id: "A", firstSeenAt: now,                       updatedAt: now)
@@ -110,7 +110,7 @@ struct AgentsGridRightSlotTests {
     @Test
     func moreThanNineSessionsFoldIntoOverflow() {
         let model = AppModel()
-        model.islandRightSlot = .agents
+        configureAgentsSlot(model)
         let now = Date(timeIntervalSince1970: 200_000)
 
         var sessions: [AgentSession] = []
@@ -141,7 +141,7 @@ struct AgentsGridRightSlotTests {
     @Test
     func cellStateReflectsSessionPhase() {
         let model = AppModel()
-        model.islandRightSlot = .agents
+        configureAgentsSlot(model, completedStaleThreshold: .never)
         let now = Date(timeIntervalSince1970: 300_000)
 
         let running  = makeSession(id: "r", firstSeenAt: now,                         updatedAt: now, phase: .running)
@@ -223,5 +223,17 @@ struct AgentsGridRightSlotTests {
         session.isProcessAlive = true
         session.isHookManaged = true
         return session
+    }
+
+    private func configureAgentsSlot(
+        _ model: AppModel,
+        completedStaleThreshold: IslandCompletedStaleThreshold = .fiveMinutes
+    ) {
+        for profile in IslandAppearanceDisplayProfile.allCases {
+            model.updateAppearancePreferences(for: profile) {
+                $0.rightSlot = .agents
+                $0.completedStaleThreshold = completedStaleThreshold
+            }
+        }
     }
 }
