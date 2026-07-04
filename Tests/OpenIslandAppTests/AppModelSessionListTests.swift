@@ -94,6 +94,7 @@ struct AppModelSessionListTests {
     func islandListDeduplicatesSessionsSharingTheSameLiveGhosttyTerminal() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
+        updateAllAppearanceProfiles(model) { $0.completedStaleThreshold = .never }
 
         var runningLive = AgentSession(
             id: "running-live",
@@ -167,6 +168,7 @@ struct AppModelSessionListTests {
     func islandListKeepsDistinctCodexAppThreadsInTheSameWorkspace() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
+        updateAllAppearanceProfiles(model) { $0.completedStaleThreshold = .never }
 
         var firstThread = AgentSession(
             id: "codex-app-thread-1",
@@ -263,9 +265,10 @@ struct AppModelSessionListTests {
     }
 
     @Test
-    func freshCompletedSessionsSortAheadOfV8StaleCompletedSessions() {
+    func freshCompletedSessionsStayVisibleWhenStaleCompletedFallsToRecent() {
         let now = Date()
         let model = AppModel()
+        updateAllAppearanceProfiles(model) { $0.completedStaleThreshold = .fiveMinutes }
 
         var staleCompleted = AgentSession(
             id: "stale-completed",
@@ -307,15 +310,45 @@ struct AppModelSessionListTests {
 
         model.state = SessionState(sessions: [staleCompleted, freshCompleted])
 
-        #expect(model.islandListSessions.map(\.id) == ["fresh-completed", "stale-completed"])
+        #expect(model.islandListSessions.map(\.id) == ["fresh-completed"])
+        #expect(model.recentSessions.map(\.id).contains("stale-completed"))
+    }
+
+    @Test
+    func staleCompletedSessionsWithLiveProcessesStayOutOfPrimaryIslandList() {
+        let now = Date()
+        let model = AppModel()
+        updateAllAppearanceProfiles(model) { $0.completedStaleThreshold = .fiveMinutes }
+
+        var staleCompleted = listSession(
+            id: "stale-completed",
+            phase: .completed,
+            updatedAt: now.addingTimeInterval(-360)
+        )
+        staleCompleted.isProcessAlive = true
+
+        var freshCompleted = listSession(
+            id: "fresh-completed",
+            phase: .completed,
+            updatedAt: now.addingTimeInterval(-60)
+        )
+        freshCompleted.isProcessAlive = true
+
+        model.state = SessionState(sessions: [staleCompleted, freshCompleted])
+
+        #expect(model.islandListSessions.map(\.id) == ["fresh-completed"])
+        #expect(model.recentSessions.map(\.id).contains("stale-completed"))
+        #expect(model.liveSessionCount == 1)
     }
 
     @Test
     func islandSessionSectionsGroupStaleCompletedIntoIdle() {
         let now = Date()
         let model = AppModel()
-        model.islandSessionGroup = .state
-        model.completedStaleThreshold = .fiveMinutes
+        updateAllAppearanceProfiles(model) {
+            $0.sessionGroup = .state
+            $0.completedStaleThreshold = .fiveMinutes
+        }
 
         var approval = listSession(id: "approval", phase: .waitingForApproval, updatedAt: now)
         approval.permissionRequest = PermissionRequest(
@@ -332,16 +365,19 @@ struct AppModelSessionListTests {
 
         model.state = SessionState(sessions: [stale, done, approval])
 
-        #expect(model.islandSessionSections.map(\.id) == ["state-approval", "state-done", "state-idle"])
-        #expect(model.islandSessionSections.map(\.sessions.first?.id) == ["approval", "done", "stale"])
+        #expect(model.islandSessionSections.map(\.id) == ["state-approval", "state-done"])
+        #expect(model.islandSessionSections.map(\.sessions.first?.id) == ["approval", "done"])
+        #expect(model.recentSessions.map(\.id).contains("stale"))
     }
 
     @Test
     func islandSessionSectionsKeepCompletedInDoneWhenStaleThresholdIsNever() {
         let now = Date()
         let model = AppModel()
-        model.islandSessionGroup = .state
-        model.completedStaleThreshold = .never
+        updateAllAppearanceProfiles(model) {
+            $0.sessionGroup = .state
+            $0.completedStaleThreshold = .never
+        }
 
         var oldDone = listSession(id: "old-done", phase: .completed, updatedAt: now.addingTimeInterval(-86_400))
         oldDone.isProcessAlive = true
@@ -355,7 +391,7 @@ struct AppModelSessionListTests {
     func islandSessionListCanSortByLastUpdate() {
         let now = Date()
         let model = AppModel()
-        model.islandSessionSort = .lastUpdate
+        updateAllAppearanceProfiles(model) { $0.sessionSort = .lastUpdate }
 
         var olderRunning = listSession(id: "older-running", phase: .running, updatedAt: now.addingTimeInterval(-120))
         var newerCompleted = listSession(id: "newer-completed", phase: .completed, updatedAt: now.addingTimeInterval(-10))
@@ -1396,5 +1432,14 @@ struct AppModelSessionListTests {
             safeAreaInsets: NSEdgeInsets(top: mode == .notch ? 37 : 0, left: 0, bottom: 0, right: 0),
             overlayFrame: NSRect(x: 400, y: 820, width: 700, height: 160)
         )
+    }
+
+    private func updateAllAppearanceProfiles(
+        _ model: AppModel,
+        _ update: (inout IslandAppearancePreferences) -> Void
+    ) {
+        for profile in IslandAppearanceDisplayProfile.allCases {
+            model.updateAppearancePreferences(for: profile, update)
+        }
     }
 }
