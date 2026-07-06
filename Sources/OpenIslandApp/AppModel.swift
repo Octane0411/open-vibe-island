@@ -781,7 +781,7 @@ final class AppModel {
     }
 
     var liveRunningCount: Int {
-        surfacedSessions.filter { $0.phase == .running }.count
+        surfacedSessions.filter { $0.phase == .running || $0.hasActiveClaudeProgress }.count
     }
 
     private func sortIslandSessions(_ sessions: [AgentSession]) -> [AgentSession] {
@@ -802,13 +802,15 @@ final class AppModel {
         let definitions: [(id: String, title: String, include: (AgentSession) -> Bool)] = [
             ("approval", "island.section.needsApproval", { $0.phase == .waitingForApproval }),
             ("answer", "island.section.needsAnswer", { $0.phase == .waitingForAnswer }),
-            ("running", "island.section.inProgress", { $0.phase == .running }),
+            ("running", "island.section.inProgress", { $0.phase == .running || $0.hasActiveClaudeProgress }),
             ("done", "island.section.justDone", { [completedStaleThreshold] session in
                 session.phase == .completed
+                    && !session.hasActiveClaudeProgress
                     && !session.isStaleCompletedForIsland(at: .now, threshold: completedStaleThreshold.seconds)
             }),
             ("idle", "island.section.idle", { [completedStaleThreshold] session in
                 session.phase == .completed
+                    && !session.hasActiveClaudeProgress
                     && session.isStaleCompletedForIsland(at: .now, threshold: completedStaleThreshold.seconds)
             }),
         ]
@@ -843,7 +845,7 @@ final class AppModel {
     var islandClosedMode: UnifiedBars.Mode {
         let sessions = surfacedSessions
         if sessions.contains(where: { $0.phase.requiresAttention }) { return .waiting }
-        if sessions.contains(where: { $0.phase == .running })       { return .running }
+        if sessions.contains(where: { $0.phase == .running || $0.hasActiveClaudeProgress }) { return .running }
         return .idle
     }
 
@@ -852,7 +854,7 @@ final class AppModel {
     /// first.
     var islandClosedSpotlight: AgentSession? {
         surfacedSessions.first(where: { $0.phase.requiresAttention })
-            ?? surfacedSessions.first(where: { $0.phase == .running })
+            ?? surfacedSessions.first(where: { $0.phase == .running || $0.hasActiveClaudeProgress })
             ?? surfacedSessions.first
     }
 
@@ -952,7 +954,7 @@ final class AppModel {
         let state: AgentGridCellState
         if session.phase.requiresAttention {
             state = .waiting
-        } else if session.phase == .running {
+        } else if session.phase == .running || session.hasActiveClaudeProgress {
             state = .running
         } else {
             state = .idle
@@ -1711,6 +1713,10 @@ final class AppModel {
     private func shouldSurfaceInPrimaryList(_ session: AgentSession, now: Date) -> Bool {
         guard session.isVisibleInIsland else {
             return false
+        }
+
+        if session.hasActiveClaudeProgress {
+            return true
         }
 
         return !session.isStaleCompletedForIsland(

@@ -175,6 +175,41 @@ struct AgentsGridRightSlotTests {
         #expect(s2 == .idle)
     }
 
+    @Test
+    func completedClaudeSessionWithActiveSubagentRendersAsRunningCell() {
+        let model = AppModel()
+        configureAgentsSlot(model, completedStaleThreshold: .never)
+        let now = Date(timeIntervalSince1970: 300_000)
+
+        var parent = makeSession(
+            id: "parent",
+            firstSeenAt: now,
+            updatedAt: now.addingTimeInterval(-3_600),
+            phase: .completed
+        )
+        parent.claudeMetadata = ClaudeSessionMetadata(
+            activeSubagents: [
+                ClaudeSubagentInfo(
+                    agentID: "agent-1",
+                    agentType: "general-purpose",
+                    taskDescription: "Review progress rendering",
+                    startedAt: now.addingTimeInterval(-120)
+                ),
+            ]
+        )
+
+        model.state = SessionState(sessions: [parent])
+
+        guard case let .agents(cells)? = model.islandClosedRightSlotContent(),
+              case let .session(_, state)? = cells.first
+        else {
+            Issue.record("Expected a single agents cell")
+            return
+        }
+
+        #expect(state == .running)
+    }
+
     // MARK: - helpers
 
     private static func cellFor(_ session: AgentSession) -> AgentGridCell {
@@ -182,7 +217,7 @@ struct AgentsGridRightSlotTests {
         let state: AgentGridCellState
         if session.phase.requiresAttention {
             state = .waiting
-        } else if session.phase == .running {
+        } else if session.phase == .running || session.hasActiveClaudeProgress {
             state = .running
         } else {
             state = .idle

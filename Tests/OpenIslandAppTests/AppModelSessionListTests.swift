@@ -371,6 +371,57 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func completedClaudeSessionWithActiveSubagentStaysInProgressInPrimaryList() {
+        let now = Date()
+        let model = AppModel()
+        updateAllAppearanceProfiles(model) {
+            $0.sessionGroup = .state
+            $0.completedStaleThreshold = .fiveMinutes
+        }
+
+        var parent = AgentSession(
+            id: "claude-parent",
+            title: "Claude · open-island",
+            tool: .claudeCode,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .completed,
+            summary: "Ready",
+            updatedAt: now.addingTimeInterval(-3_600),
+            jumpTarget: JumpTarget(
+                terminalApp: "VS Code",
+                workspaceName: "open-island",
+                paneTitle: "claude ~/open-island",
+                workingDirectory: "/tmp/open-island",
+                terminalSessionID: "vscode-claude"
+            ),
+            claudeMetadata: ClaudeSessionMetadata(
+                activeSubagents: [
+                    ClaudeSubagentInfo(
+                        agentID: "agent-1",
+                        agentType: "general-purpose",
+                        taskDescription: "Review progress rendering",
+                        startedAt: now.addingTimeInterval(-120)
+                    ),
+                ],
+                activeTasks: [
+                    ClaudeTaskInfo(id: "task-1", title: "Review progress rendering", status: .inProgress),
+                ]
+            )
+        )
+        parent.isProcessAlive = true
+
+        model.state = SessionState(sessions: [parent])
+
+        #expect(model.surfacedSessions.map(\.id) == ["claude-parent"])
+        #expect(model.recentSessions.map(\.id).isEmpty)
+        #expect(model.liveRunningCount == 1)
+        #expect(model.islandClosedMode == .running)
+        #expect(model.islandSessionSections.map(\.id) == ["state-running"])
+        #expect(model.islandSessionSections.first?.sessions.first?.id == "claude-parent")
+    }
+
+    @Test
     func islandSessionSectionsKeepCompletedInDoneWhenStaleThresholdIsNever() {
         let now = Date()
         let model = AppModel()

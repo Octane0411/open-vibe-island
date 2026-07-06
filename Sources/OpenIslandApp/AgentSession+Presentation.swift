@@ -33,7 +33,11 @@ extension AgentSession {
     }
 
     var islandActivityDate: Date {
-        updatedAt
+        let activeSubagentDates = claudeMetadata?.activeSubagents.compactMap { subagent -> Date? in
+            guard Self.isClaudeSubagentActive(subagent) else { return nil }
+            return subagent.startedAt
+        } ?? []
+        return activeSubagentDates.reduce(updatedAt) { max($0, $1) }
     }
 
     var spotlightPrimaryText: String {
@@ -167,6 +171,18 @@ extension AgentSession {
         return "Subagents (\(subagents.count))"
     }
 
+    var hasActiveClaudeProgress: Bool {
+        guard let metadata = claudeMetadata else {
+            return false
+        }
+
+        if metadata.activeSubagents.contains(where: Self.isClaudeSubagentActive) {
+            return true
+        }
+
+        return metadata.activeTasks.contains { $0.status != .completed }
+    }
+
     var spotlightHeadlineText: String {
         var headline = spotlightWorkspaceName
 
@@ -248,6 +264,17 @@ extension AgentSession {
             return prompt
         }
 
+        if hasActiveClaudeProgress {
+            if let subagentLabel = spotlightSubagentLabel {
+                return subagentLabel
+            }
+
+            if let taskCount = claudeMetadata?.activeTasks.count,
+               taskCount > 0 {
+                return "Tasks (\(taskCount))"
+            }
+        }
+
         switch phase {
         case .running:
             if let activity = spotlightRunningActivityText {
@@ -291,6 +318,10 @@ extension AgentSession {
     }
 
     func spotlightShowsDetailLines(at referenceDate: Date) -> Bool {
+        if hasActiveClaudeProgress {
+            return true
+        }
+
         if phase == .running || phase.requiresAttention {
             return true
         }
@@ -321,6 +352,10 @@ extension AgentSession {
     }
 
     func islandPresence(at referenceDate: Date) -> IslandSessionPresence {
+        if hasActiveClaudeProgress {
+            return .running
+        }
+
         if phase == .running {
             return .running
         }
@@ -343,6 +378,7 @@ extension AgentSession {
         threshold: TimeInterval = Self.staleCompletedDisplayThreshold
     ) -> Bool {
         phase == .completed
+            && !hasActiveClaudeProgress
             && referenceDate.timeIntervalSince(islandActivityDate) >= threshold
     }
 
@@ -415,6 +451,10 @@ extension AgentSession {
             }
         let label = pieces.joined(separator: " ")
         return label.isEmpty ? toolName : label
+    }
+
+    private static func isClaudeSubagentActive(_ subagent: ClaudeSubagentInfo) -> Bool {
+        subagent.summary?.trimmedForSurface.isEmpty != false
     }
 
     private var initialPromptText: String? {

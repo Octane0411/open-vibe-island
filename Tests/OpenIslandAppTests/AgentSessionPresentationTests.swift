@@ -59,6 +59,46 @@ struct AgentSessionPresentationTests {
     }
 
     @Test
+    func completedClaudeSessionWithActiveSubagentStaysRunningForPresentation() {
+        let referenceDate = Date(timeIntervalSince1970: 10_000)
+        let session = AgentSession(
+            id: "claude-parent",
+            title: "Claude · open-island",
+            tool: .claudeCode,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .completed,
+            summary: "Ready",
+            updatedAt: referenceDate.addingTimeInterval(-3_600),
+            jumpTarget: JumpTarget(
+                terminalApp: "VS Code",
+                workspaceName: "open-island",
+                paneTitle: "claude ~/open-island",
+                workingDirectory: "/tmp/open-island",
+                terminalSessionID: "vscode-claude"
+            ),
+            claudeMetadata: ClaudeSessionMetadata(
+                initialUserPrompt: "Fix the island row progress.",
+                activeSubagents: [
+                    ClaudeSubagentInfo(
+                        agentID: "agent-1",
+                        agentType: "general-purpose",
+                        taskDescription: "Review progress rendering",
+                        startedAt: referenceDate.addingTimeInterval(-120)
+                    ),
+                ],
+                activeTasks: [
+                    ClaudeTaskInfo(id: "task-1", title: "Review progress rendering", status: .inProgress),
+                ]
+            )
+        )
+
+        #expect(session.islandPresence(at: referenceDate) == .running)
+        #expect(session.spotlightShowsDetailLines(at: referenceDate))
+        #expect(session.spotlightActivityLineText == "Subagents (1)")
+    }
+
+    @Test
     func detachedCompletedSessionCanStillCollapseToInactive() {
         let referenceDate = Date(timeIntervalSince1970: 10_000)
         let session = AgentSession(
