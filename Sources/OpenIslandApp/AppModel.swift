@@ -33,6 +33,13 @@ final class AppModel {
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
     private static let jumpOverlayDismissLeadTime: Duration = .milliseconds(20)
     private static let agentsGridObservedSequenceLimit = 512
+    private static let sessionBucketPriorityAgeBoundaries: [TimeInterval] = [
+        120,
+        900,
+        AgentSession.islandActivityThreshold,
+        3_600,
+        21_600,
+    ]
     static let hoverOpenDelay: TimeInterval = 0.15
 
     struct AcceptanceStep: Identifiable {
@@ -42,16 +49,42 @@ final class AppModel {
         let isComplete: Bool
     }
 
+    private struct CachedSessionBuckets {
+        let primary: [AgentSession]
+        let overflow: [AgentSession]
+        let expiresAt: Date?
+        let completedStaleThreshold: IslandCompletedStaleThreshold
+
+        func isValid(
+            at referenceDate: Date,
+            completedStaleThreshold: IslandCompletedStaleThreshold
+        ) -> Bool {
+            guard self.completedStaleThreshold == completedStaleThreshold else {
+                return false
+            }
+
+            if let expiresAt, referenceDate >= expiresAt {
+                return false
+            }
+
+            return true
+        }
+    }
+
     let lang = LanguageManager.shared
 
     var state = SessionState() {
         didSet {
-            _cachedSessionBuckets = nil
+            invalidateSessionBuckets()
             pruneAgentsGridObservationTicketsIfNeeded()
             bridgeServer.updateStateSnapshot(state)
         }
     }
-    @ObservationIgnored private var _cachedSessionBuckets: (primary: [AgentSession], overflow: [AgentSession])?
+    @ObservationIgnored private var _cachedSessionBuckets: CachedSessionBuckets?
+    @ObservationIgnored private var sessionBucketExpiryTask: Task<Void, Never>?
+    @ObservationIgnored var sessionBucketDateProvider: @MainActor () -> Date = { Date.now }
+    /// Observation token for time-only bucket changes, such as a completed row crossing the stale threshold.
+    private var sessionBucketRefreshGeneration = 0
 
     /// Monotonic ticket assigned the first time a session ID shows up in the
     /// closed-island's right-slot surfaced set. Drives the grid's display
@@ -409,7 +442,7 @@ final class AppModel {
         if oldValue.sessionGroup != newValue.sessionGroup ||
             oldValue.sessionSort != newValue.sessionSort ||
             oldValue.completedStaleThreshold != newValue.completedStaleThreshold {
-            _cachedSessionBuckets = nil
+            invalidateSessionBuckets()
         }
         refreshOverlayPlacementIfVisible()
     }
@@ -738,6 +771,7 @@ final class AppModel {
     }
 
     var islandSessionSections: [IslandSessionSection] {
+        let referenceDate = sessionBucketDateProvider()
         let sessions = sortIslandSessions(surfacedSessions)
         switch islandSessionGroup {
         case .none:
@@ -749,7 +783,7 @@ final class AppModel {
                 )
             ]
         case .state:
-            return stateGroupedSections(for: sessions)
+            return stateGroupedSections(for: sessions, referenceDate: referenceDate)
         case .agent:
             return AgentTool.allCases.compactMap { tool in
                 let list = sessions.filter { $0.tool == tool }
@@ -798,18 +832,21 @@ final class AppModel {
         }
     }
 
-    private func stateGroupedSections(for sessions: [AgentSession]) -> [IslandSessionSection] {
+    private func stateGroupedSections(
+        for sessions: [AgentSession],
+        referenceDate: Date
+    ) -> [IslandSessionSection] {
         let definitions: [(id: String, title: String, include: (AgentSession) -> Bool)] = [
             ("approval", "island.section.needsApproval", { $0.phase == .waitingForApproval }),
             ("answer", "island.section.needsAnswer", { $0.phase == .waitingForAnswer }),
             ("running", "island.section.inProgress", { $0.phase == .running }),
             ("done", "island.section.justDone", { [completedStaleThreshold] session in
                 session.phase == .completed
-                    && !session.isStaleCompletedForIsland(at: .now, threshold: completedStaleThreshold.seconds)
+                    && !session.isStaleCompletedForIsland(at: referenceDate, threshold: completedStaleThreshold.seconds)
             }),
             ("idle", "island.section.idle", { [completedStaleThreshold] session in
                 session.phase == .completed
-                    && session.isStaleCompletedForIsland(at: .now, threshold: completedStaleThreshold.seconds)
+                    && session.isStaleCompletedForIsland(at: referenceDate, threshold: completedStaleThreshold.seconds)
             }),
         ]
 
@@ -1663,19 +1700,84 @@ final class AppModel {
 
 
     private var sessionBuckets: (primary: [AgentSession], overflow: [AgentSession]) {
-        if let cached = _cachedSessionBuckets {
-            return cached
+        _ = sessionBucketRefreshGeneration
+        let now = sessionBucketDateProvider()
+        let selectedCompletedStaleThreshold = completedStaleThreshold
+        let staleCompletedThreshold = selectedCompletedStaleThreshold.seconds
+
+        if let cached = _cachedSessionBuckets,
+           cached.isValid(at: now, completedStaleThreshold: selectedCompletedStaleThreshold) {
+            return (cached.primary, cached.overflow)
         }
-        let result = computeSessionBuckets()
-        _cachedSessionBuckets = result
+
+        let result = computeSessionBuckets(
+            now: now,
+            staleCompletedThreshold: staleCompletedThreshold
+        )
+        let expiresAt = nextSessionBucketsCacheExpiry(
+            after: now,
+            staleCompletedThreshold: staleCompletedThreshold
+        )
+        _cachedSessionBuckets = CachedSessionBuckets(
+            primary: result.primary,
+            overflow: result.overflow,
+            expiresAt: expiresAt,
+            completedStaleThreshold: selectedCompletedStaleThreshold
+        )
+        scheduleSessionBucketCacheExpiry(at: expiresAt)
         return result
     }
 
-    private func computeSessionBuckets() -> (primary: [AgentSession], overflow: [AgentSession]) {
-        let now = Date.now
+    private func invalidateSessionBuckets() {
+        _cachedSessionBuckets = nil
+        sessionBucketExpiryTask?.cancel()
+        sessionBucketExpiryTask = nil
+    }
+
+    private func scheduleSessionBucketCacheExpiry(at expiresAt: Date?) {
+        sessionBucketExpiryTask?.cancel()
+        sessionBucketExpiryTask = nil
+
+        guard let expiresAt else {
+            return
+        }
+
+        let delaySeconds = expiresAt.timeIntervalSince(sessionBucketDateProvider())
+        guard delaySeconds.isFinite else {
+            return
+        }
+        let delayMilliseconds = max(0, Int((delaySeconds * 1_000).rounded(.up)))
+
+        sessionBucketExpiryTask = Task { @MainActor [weak self] in
+            if delayMilliseconds > 0 {
+                try? await Task.sleep(for: .milliseconds(delayMilliseconds))
+            }
+
+            guard !Task.isCancelled else {
+                return
+            }
+
+            self?._cachedSessionBuckets = nil
+            self?.sessionBucketExpiryTask = nil
+            self?.sessionBucketRefreshGeneration += 1
+        }
+    }
+
+    private func computeSessionBuckets(
+        now: Date,
+        staleCompletedThreshold: TimeInterval
+    ) -> (primary: [AgentSession], overflow: [AgentSession]) {
         let rankedSessions = state.sessions.sorted { lhs, rhs in
-            let lhsScore = displayPriority(for: lhs, now: now)
-            let rhsScore = displayPriority(for: rhs, now: now)
+            let lhsScore = displayPriority(
+                for: lhs,
+                now: now,
+                staleCompletedThreshold: staleCompletedThreshold
+            )
+            let rhsScore = displayPriority(
+                for: rhs,
+                now: now,
+                staleCompletedThreshold: staleCompletedThreshold
+            )
 
             if lhsScore == rhsScore {
                 if lhs.islandActivityDate == rhs.islandActivityDate {
@@ -1691,7 +1793,11 @@ final class AppModel {
         var primary: [AgentSession] = []
         var claimedLiveAttachmentKeys: Set<String> = []
 
-        for session in rankedSessions where session.isVisibleInIsland {
+        for session in rankedSessions where shouldSurfaceInPrimaryList(
+            session,
+            now: now,
+            staleCompletedThreshold: staleCompletedThreshold
+        ) {
             guard !session.isSubagentSession else { continue }
 
             if let liveAttachmentKey = monitoring.liveAttachmentKey(for: session) {
@@ -1708,7 +1814,52 @@ final class AppModel {
         return (primary, overflow)
     }
 
-    private func displayPriority(for session: AgentSession, now: Date) -> Int {
+    private func shouldSurfaceInPrimaryList(
+        _ session: AgentSession,
+        now: Date,
+        staleCompletedThreshold: TimeInterval
+    ) -> Bool {
+        session.isVisibleInIsland
+            && !session.isStaleCompletedForIsland(at: now, threshold: staleCompletedThreshold)
+    }
+
+    private func nextSessionBucketsCacheExpiry(
+        after now: Date,
+        staleCompletedThreshold: TimeInterval
+    ) -> Date? {
+        var earliestExpiry: Date?
+
+        for session in state.sessions where !session.isSubagentSession {
+            if staleCompletedThreshold.isFinite, session.phase == .completed {
+                let staleAt = session.islandActivityDate.addingTimeInterval(staleCompletedThreshold)
+                if staleAt > now {
+                    earliestExpiry = Self.earlierDate(staleAt, earliestExpiry)
+                }
+            }
+
+            for ageBoundary in Self.sessionBucketPriorityAgeBoundaries {
+                let ageBoundaryDate = session.islandActivityDate.addingTimeInterval(ageBoundary)
+                if ageBoundaryDate > now {
+                    earliestExpiry = Self.earlierDate(ageBoundaryDate, earliestExpiry)
+                }
+            }
+        }
+
+        return earliestExpiry
+    }
+
+    private static func earlierDate(_ candidate: Date, _ current: Date?) -> Date {
+        guard let current else {
+            return candidate
+        }
+        return min(candidate, current)
+    }
+
+    private func displayPriority(
+        for session: AgentSession,
+        now: Date,
+        staleCompletedThreshold: TimeInterval
+    ) -> Int {
         var score = 0
 
         let presence = session.islandPresence(at: now)
@@ -1742,7 +1893,7 @@ final class AppModel {
             score += 600
         }
 
-        if session.isStaleCompletedForIsland(at: now, threshold: completedStaleThreshold.seconds) {
+        if session.isStaleCompletedForIsland(at: now, threshold: staleCompletedThreshold) {
             score -= 900
         }
 

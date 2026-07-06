@@ -94,6 +94,7 @@ struct AppModelSessionListTests {
     func islandListDeduplicatesSessionsSharingTheSameLiveGhosttyTerminal() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
+        model.sessionBucketDateProvider = { now }
 
         var runningLive = AgentSession(
             id: "running-live",
@@ -167,6 +168,7 @@ struct AppModelSessionListTests {
     func islandListKeepsDistinctCodexAppThreadsInTheSameWorkspace() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
+        model.sessionBucketDateProvider = { now }
 
         var firstThread = AgentSession(
             id: "codex-app-thread-1",
@@ -263,9 +265,10 @@ struct AppModelSessionListTests {
     }
 
     @Test
-    func freshCompletedSessionsSortAheadOfV8StaleCompletedSessions() {
-        let now = Date()
+    func freshCompletedSessionsStayVisibleWhenStaleCompletedFallsToRecent() {
+        let now = Date(timeIntervalSince1970: 10_000)
         let model = AppModel()
+        model.sessionBucketDateProvider = { now }
 
         var staleCompleted = AgentSession(
             id: "stale-completed",
@@ -307,13 +310,42 @@ struct AppModelSessionListTests {
 
         model.state = SessionState(sessions: [staleCompleted, freshCompleted])
 
-        #expect(model.islandListSessions.map(\.id) == ["fresh-completed", "stale-completed"])
+        #expect(model.islandListSessions.map(\.id) == ["fresh-completed"])
+        #expect(model.recentSessions.map(\.id).contains("stale-completed"))
+        #expect(model.liveSessionCount == 1)
     }
 
     @Test
-    func islandSessionSectionsGroupStaleCompletedIntoIdle() {
-        let now = Date()
+    func completedSessionLeavesPrimaryWhenStaleThresholdPassesWithoutStateChange() {
+        var now = Date(timeIntervalSince1970: 20_000)
         let model = AppModel()
+        model.sessionBucketDateProvider = { now }
+        model.completedStaleThreshold = .twoMinutes
+
+        var session = listSession(
+            id: "finishing",
+            phase: .completed,
+            updatedAt: now.addingTimeInterval(-119)
+        )
+        session.isProcessAlive = true
+        model.state = SessionState(sessions: [session])
+
+        #expect(model.islandListSessions.map(\.id) == ["finishing"])
+        #expect(model.liveSessionCount == 1)
+        #expect(model.recentSessions.isEmpty)
+
+        now = now.addingTimeInterval(2)
+
+        #expect(model.islandListSessions.isEmpty)
+        #expect(model.recentSessions.map(\.id) == ["finishing"])
+        #expect(model.liveSessionCount == 0)
+    }
+
+    @Test
+    func islandSessionSectionsExcludeStaleCompletedFromPrimaryAndKeepThemRecent() {
+        let now = Date(timeIntervalSince1970: 30_000)
+        let model = AppModel()
+        model.sessionBucketDateProvider = { now }
         model.islandSessionGroup = .state
         model.completedStaleThreshold = .fiveMinutes
 
@@ -332,14 +364,16 @@ struct AppModelSessionListTests {
 
         model.state = SessionState(sessions: [stale, done, approval])
 
-        #expect(model.islandSessionSections.map(\.id) == ["state-approval", "state-done", "state-idle"])
-        #expect(model.islandSessionSections.map(\.sessions.first?.id) == ["approval", "done", "stale"])
+        #expect(model.islandSessionSections.map(\.id) == ["state-approval", "state-done"])
+        #expect(model.islandSessionSections.map(\.sessions.first?.id) == ["approval", "done"])
+        #expect(model.recentSessions.map(\.id).contains("stale"))
     }
 
     @Test
     func islandSessionSectionsKeepCompletedInDoneWhenStaleThresholdIsNever() {
-        let now = Date()
+        let now = Date(timeIntervalSince1970: 40_000)
         let model = AppModel()
+        model.sessionBucketDateProvider = { now }
         model.islandSessionGroup = .state
         model.completedStaleThreshold = .never
 

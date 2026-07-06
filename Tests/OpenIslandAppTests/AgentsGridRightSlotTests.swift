@@ -143,6 +143,7 @@ struct AgentsGridRightSlotTests {
         let model = AppModel()
         model.islandRightSlot = .agents
         let now = Date(timeIntervalSince1970: 300_000)
+        model.sessionBucketDateProvider = { now }
 
         let running  = makeSession(id: "r", firstSeenAt: now,                         updatedAt: now, phase: .running)
         let waitingA = makeSession(

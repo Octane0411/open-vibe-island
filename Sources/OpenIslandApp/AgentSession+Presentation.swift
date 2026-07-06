@@ -16,7 +16,7 @@ enum IslandSessionPresence: Equatable {
 
 extension AgentSession {
     private static let collapsedDetailAgeThreshold: TimeInterval = 20 * 60
-    private static let islandActivityThreshold: TimeInterval = 20 * 60
+    static let islandActivityThreshold: TimeInterval = 20 * 60
     static let staleCompletedDisplayThreshold: TimeInterval = 5 * 60
 
     /// Whether this session represents a subagent (worktree agent) that should
