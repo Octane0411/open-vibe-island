@@ -875,8 +875,6 @@ public final class BridgeServer: @unchecked Sendable {
             synchronizeClaudeJumpTarget(for: payload)
             synchronizeClaudeMetadata(for: payload)
 
-            // Turn is complete — all subagents from this turn must be finished.
-            clearAllActiveSubagents(fromSession: payload.sessionID)
             dropPendingClaudeContexts(forSession: payload.sessionID)
 
             emit(
@@ -897,8 +895,6 @@ public final class BridgeServer: @unchecked Sendable {
             synchronizeClaudeJumpTarget(for: payload)
             synchronizeClaudeMetadata(for: payload)
 
-            // Turn failed — all subagents from this turn must be finished.
-            clearAllActiveSubagents(fromSession: payload.sessionID)
             dropPendingClaudeContexts(forSession: payload.sessionID)
 
             emit(
@@ -2133,7 +2129,11 @@ public final class BridgeServer: @unchecked Sendable {
     /// Removes subagents that have been inactive for too long.
     /// Called on each hook event from the parent session as a fallback
     /// in case `SubagentStop` was never received (e.g. hook connection dropped).
-    private static let subagentStaleTimeout: TimeInterval = 3 * 60  // 3 minutes
+    ///
+    /// Claude can emit the parent Stop hook while the main agent is waiting
+    /// for background subagents, so this must be long enough for normal
+    /// subagent runs and only act as leak protection.
+    private static let subagentStaleTimeout: TimeInterval = 30 * 60  // 30 minutes
 
     private func cleanUpStaleSubagents(forSession sessionID: String) {
         guard var metadata = localState.session(id: sessionID)?.claudeMetadata,
@@ -2202,8 +2202,8 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     /// Clears all active subagents from the session.
-    /// Called when the session's turn ends (`stop`, `stopFailure`, `sessionEnd`)
-    /// to ensure no stale subagent indicators linger.
+    /// Called when the Claude session itself ends to ensure no stale subagent
+    /// indicators linger.
     private func clearAllActiveSubagents(fromSession sessionID: String) {
         guard var metadata = localState.session(id: sessionID)?.claudeMetadata,
               !metadata.activeSubagents.isEmpty else {

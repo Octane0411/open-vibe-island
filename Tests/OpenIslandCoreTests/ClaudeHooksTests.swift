@@ -665,6 +665,79 @@ struct ClaudeHooksTests {
     }
 
     @Test
+    func claudeStopKeepsActiveSubagentsUntilTheirStopEvent() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+
+        let collector = AgentEventCollector()
+        let collectionTask = Task {
+            do {
+                for try await event in stream {
+                    await collector.append(event)
+                }
+            } catch {}
+        }
+        defer { collectionTask.cancel() }
+
+        try await observer.send(.registerClient(role: .observer))
+
+        let sessionID = "claude-stop-keeps-active-subagents"
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processClaudeHook(
+                ClaudeHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .userPromptSubmit,
+                    sessionID: sessionID,
+                    transcriptPath: "/tmp/claude-stop-keeps-active-subagents.jsonl",
+                    prompt: "Launch background agents."
+                )
+            )
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processClaudeHook(
+                ClaudeHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .subagentStart,
+                    sessionID: sessionID,
+                    transcriptPath: "/tmp/claude-stop-keeps-active-subagents.jsonl",
+                    agentID: "agent-1",
+                    agentType: "general-purpose"
+                )
+            )
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processClaudeHook(
+                ClaudeHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .stop,
+                    sessionID: sessionID,
+                    transcriptPath: "/tmp/claude-stop-keeps-active-subagents.jsonl",
+                    lastAssistantMessage: "OK"
+                )
+            )
+        )
+
+        let events = await waitForCompletedSessionEvent(
+            sessionID: sessionID,
+            collector: collector
+        )
+        var state = SessionState()
+        for event in events {
+            state.apply(event)
+        }
+
+        let session = try #require(state.session(id: sessionID))
+        #expect(session.phase == .completed)
+        #expect(session.claudeMetadata?.activeSubagents.map(\.agentID) == ["agent-1"])
+    }
+
+    @Test
     func questionPromptAlwaysAppendsOtherFreeformOption() throws {
         let payload = ClaudeHookPayload(
             cwd: "/tmp",
