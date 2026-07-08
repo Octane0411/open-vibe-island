@@ -202,6 +202,7 @@
 
 /* Island Panel - Approval */
 "approval.toolPermissionRequested" = "请求工具权限";
+"approval.subagentAsking" = "子代理请求中";
 "approval.deny" = "拒绝";
 "approval.allowOnce" = "允许一次";
 "approval.alwaysAllow" = "始终允许（%@）";

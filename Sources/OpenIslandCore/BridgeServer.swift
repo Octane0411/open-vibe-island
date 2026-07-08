@@ -68,6 +68,11 @@ public final class BridgeServer: @unchecked Sendable {
     private var pendingApprovals: [String: PendingApproval] = [:]
     private var pendingClaudeToolContexts: [String: PendingClaudeToolContext] = [:]
     private var pendingClaudeInteractions: [String: PendingClaudeInteraction] = [:]
+    /// Per-session FIFO of interactions that arrived while another interaction
+    /// was already active for that session. Bridge-internal: the single active
+    /// slot in `pendingClaudeInteractions` is the only thing the UI/AppModel
+    /// ever sees. Queued interactions are emitted only when they become active.
+    private var queuedClaudeInteractions: [String: [PendingClaudeInteraction]] = [:]
     private var pendingOpenCodeInteractions: [String: PendingOpenCodeInteraction] = [:]
     private var pendingCursorInteractions: [String: PendingCursorInteraction] = [:]
     /// Caches Agent tool description from preToolUse for use by the next subagentStart.
@@ -181,6 +186,7 @@ public final class BridgeServer: @unchecked Sendable {
     private func stopLocked() {
         pendingApprovals.removeAll()
         pendingClaudeInteractions.removeAll()
+        queuedClaudeInteractions.removeAll()
         pendingClaudeToolContexts.removeAll()
         pendingAgentDescriptions.removeAll()
         pendingTaskCreations.removeAll()
@@ -615,9 +621,13 @@ public final class BridgeServer: @unchecked Sendable {
         // Subagent processes fire their own hooks with agentID set.
         // The parent session already receives SubagentStart/SubagentStop events,
         // so we suppress subagent hooks to avoid creating duplicate sessions.
+        // PermissionRequest is exempted so a subagent's permission prompt (and
+        // AskUserQuestion, which shares the same hook event) surfaces on the
+        // parent session instead of being silently acknowledged.
         if payload.agentID != nil,
            payload.hookEventName != .subagentStart,
-           payload.hookEventName != .subagentStop {
+           payload.hookEventName != .subagentStop,
+           payload.hookEventName != .permissionRequest {
             send(.response(.acknowledged), to: clientID)
             return
         }
@@ -717,48 +727,30 @@ public final class BridgeServer: @unchecked Sendable {
             synchronizeClaudeJumpTarget(for: payload)
             synchronizeClaudeMetadata(for: payload)
 
+            let interaction: PendingClaudeInteraction
             if let prompt = payload.questionPrompt {
-                emit(
-                    .questionAsked(
-                        QuestionAsked(
-                            sessionID: payload.sessionID,
-                            prompt: prompt,
-                            timestamp: .now
-                        )
-                    )
-                )
-
-                pendingClaudeInteractions[payload.sessionID] = PendingClaudeInteraction(
+                interaction = PendingClaudeInteraction(
                     clientID: clientID,
                     kind: .question(payload, prompt)
                 )
             } else {
-                let suggestions = payload.permissionSuggestions ?? []
-
-                emit(
-                    .permissionRequested(
-                        PermissionRequested(
-                            sessionID: payload.sessionID,
-                            request: PermissionRequest(
-                                title: payload.permissionRequestTitle,
-                                summary: payload.permissionRequestSummary,
-                                affectedPath: payload.permissionAffectedPath,
-                                primaryActionTitle: "Allow Once",
-                                secondaryActionTitle: "Deny",
-                                toolName: payload.toolName,
-                                toolUseID: claudeToolUseID(for: payload),
-                                suggestedUpdates: suggestions
-                            ),
-                            timestamp: .now
-                        )
-                    )
-                )
-
-                pendingClaudeInteractions[payload.sessionID] = PendingClaudeInteraction(
+                interaction = PendingClaudeInteraction(
                     clientID: clientID,
                     kind: .permission(payload)
                 )
             }
+
+            // If an interaction is already active for this session, queue this
+            // one without emitting. The single active slot must not be
+            // overwritten, or the in-flight hook connection would lose its
+            // directive. The queued hook connection stays blocked until it is
+            // promoted and later resolved.
+            if pendingClaudeInteractions[payload.sessionID] != nil {
+                queuedClaudeInteractions[payload.sessionID, default: []].append(interaction)
+                return
+            }
+
+            activateClaudeInteraction(interaction, for: payload.sessionID)
 
         case .postToolUse:
             clearStaleClaudeInteractionIfNeeded(for: payload.sessionID)
@@ -2177,6 +2169,10 @@ public final class BridgeServer: @unchecked Sendable {
             pending.sessionID != sessionID
         }
         pendingAgentDescriptions.removeValue(forKey: sessionID)
+        // The session is ending; any queued interactions it still holds can
+        // never be promoted, so drop them. (The active slot, if any, was
+        // already cleared by `clearStaleClaudeInteractionIfNeeded`.)
+        queuedClaudeInteractions.removeValue(forKey: sessionID)
     }
 
     struct PendingClaudeStateSnapshot: Sendable, Equatable {
@@ -2197,6 +2193,24 @@ public final class BridgeServer: @unchecked Sendable {
                 toolContextCount: pendingClaudeToolContexts.count,
                 agentDescriptionCount: pendingAgentDescriptions.count,
                 taskCreationCount: pendingTaskCreations.count
+            )
+        }
+    }
+
+    struct PendingClaudeInteractionSnapshot: Sendable, Equatable {
+        /// Number of sessions with an active (surfaced) interaction.
+        let activeCount: Int
+        /// Total queued interactions across all sessions.
+        let queuedCount: Int
+    }
+
+    /// Test-only accessor for the Claude interaction slot/queue. Goes through
+    /// the bridge's serial queue so the read is consistent.
+    func pendingClaudeInteractionSnapshotForTests() -> PendingClaudeInteractionSnapshot {
+        queue.sync {
+            PendingClaudeInteractionSnapshot(
+                activeCount: pendingClaudeInteractions.count,
+                queuedCount: queuedClaudeInteractions.values.reduce(0) { $0 + $1.count }
             )
         }
     }
@@ -2399,6 +2413,70 @@ public final class BridgeServer: @unchecked Sendable {
         send(.response(response), to: pendingApproval.clientID)
     }
 
+    /// Emits the appropriate event for `interaction` and stores it as the
+    /// single active interaction for `sessionID`. Called both on first
+    /// arrival and when a queued interaction is promoted after the previous
+    /// one was resolved.
+    private func activateClaudeInteraction(
+        _ interaction: PendingClaudeInteraction,
+        for sessionID: String
+    ) {
+        switch interaction.kind {
+        case let .question(_, prompt):
+            emit(
+                .questionAsked(
+                    QuestionAsked(
+                        sessionID: sessionID,
+                        prompt: prompt,
+                        timestamp: .now
+                    )
+                )
+            )
+
+        case let .permission(payload):
+            let suggestions = payload.permissionSuggestions ?? []
+
+            emit(
+                .permissionRequested(
+                    PermissionRequested(
+                        sessionID: sessionID,
+                        request: PermissionRequest(
+                            title: payload.permissionRequestTitle,
+                            summary: payload.permissionRequestSummary,
+                            affectedPath: payload.permissionAffectedPath,
+                            primaryActionTitle: "Allow Once",
+                            secondaryActionTitle: "Deny",
+                            toolName: payload.toolName,
+                            toolUseID: claudeToolUseID(for: payload),
+                            suggestedUpdates: suggestions,
+                            originatingAgentID: payload.agentID,
+                            originatingAgentType: payload.agentType
+                        ),
+                        timestamp: .now
+                    )
+                )
+            )
+        }
+
+        pendingClaudeInteractions[sessionID] = interaction
+    }
+
+    /// After the active interaction for `sessionID` was resolved, promote the
+    /// next queued interaction (if any) to active and emit its event. If the
+    /// queue is empty, the slot simply stays clear.
+    private func promoteNextQueuedClaudeInteraction(for sessionID: String) {
+        guard var queue = queuedClaudeInteractions[sessionID], let next = queue.first else {
+            return
+        }
+        queue.removeFirst()
+        if queue.isEmpty {
+            queuedClaudeInteractions.removeValue(forKey: sessionID)
+        } else {
+            queuedClaudeInteractions[sessionID] = queue
+        }
+        activateClaudeInteraction(next, for: sessionID)
+    }
+
     private func resolvePendingClaudeInteraction(
         sessionID: String,
         resolution: PermissionResolution
@@ -2464,6 +2542,8 @@ public final class BridgeServer: @unchecked Sendable {
         )
 
         send(.response(.claudeHookDirective(directive)), to: pendingInteraction.clientID)
+
+        promoteNextQueuedClaudeInteraction(for: sessionID)
     }
 
     private func resolvePendingClaudeQuestion(
@@ -2506,6 +2586,8 @@ public final class BridgeServer: @unchecked Sendable {
             ),
             to: pendingInteraction.clientID
         )
+
+        promoteNextQueuedClaudeInteraction(for: sessionID)
     }
 
     private func claudeToolUseID(for payload: ClaudeHookPayload) -> String? {
@@ -2633,6 +2715,19 @@ public final class BridgeServer: @unchecked Sendable {
                 )
             )
         }
+
+        // Purge any queued (not-yet-active) interactions owned by the
+        // disconnecting connection so they can never be promoted onto a dead
+        // connection. Queued interactions were never surfaced, so no event is
+        // emitted for them — they simply vanish from the queue.
+        var purgedQueuedClaudeInteractions: [String: [PendingClaudeInteraction]] = [:]
+        for (sessionID, queue) in queuedClaudeInteractions {
+            let filtered = queue.filter { $0.clientID != clientID }
+            if !filtered.isEmpty {
+                purgedQueuedClaudeInteractions[sessionID] = filtered
+            }
+        }
+        queuedClaudeInteractions = purgedQueuedClaudeInteractions
 
         let pendingOpenCodeSessionIDs = pendingOpenCodeInteractions.compactMap { entry -> String? in
             let (sessionID, pendingInteraction) = entry

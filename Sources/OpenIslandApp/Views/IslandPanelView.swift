@@ -1343,15 +1343,23 @@ private struct IslandSessionRow: View {
                 .foregroundStyle(.cyan.opacity(0.8))
 
                 ForEach(subagents, id: \.agentID) { sub in
+                    let isAsking = sub.agentID == session.permissionRequest?.originatingAgentID
                     HStack(spacing: 6) {
                         Circle()
-                            .fill(sub.summary != nil
-                                ? IslandDesignPalette.Status.completed
-                                : IslandDesignPalette.Status.running)
-                            .frame(width: 6, height: 6)
+                            .fill(isAsking
+                                ? Color.cyan
+                                : (sub.summary != nil
+                                    ? IslandDesignPalette.Status.completed
+                                    : IslandDesignPalette.Status.running))
+                            .frame(width: isAsking ? 7 : 6, height: isAsking ? 7 : 6)
+                            .overlay(
+                                isAsking
+                                    ? Circle().stroke(.cyan.opacity(0.4), lineWidth: 1).padding(2)
+                                    : nil
+                            )
                         Text(sub.agentType ?? sub.agentID)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.8))
+                            .font(.system(size: 11, weight: isAsking ? .semibold : .medium))
+                            .foregroundStyle(.white.opacity(isAsking ? 1.0 : 0.8))
                             .lineLimit(1)
                         if let desc = sub.taskDescription {
                             Text("(\(desc))")
@@ -1360,7 +1368,11 @@ private struct IslandSessionRow: View {
                                 .lineLimit(1)
                         }
                         Spacer(minLength: 0)
-                        if sub.summary != nil {
+                        if isAsking {
+                            Image(systemName: "hand.raised.fill")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(.cyan.opacity(0.9))
+                        } else if sub.summary != nil {
                             Text(lang.t("subagents.completed"))
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundStyle(.white.opacity(0.4))
@@ -1640,11 +1652,34 @@ private struct IslandSessionRow: View {
 
     // MARK: - Approval action area
 
+    /// Human-readable label for the subagent whose permission request is
+    /// currently surfaced, or `nil` for ordinary parent-origin requests.
+    /// Prefers `originatingAgentType`; falls back to a truncated agent id.
+    private var subagentOriginLabel: String? {
+        guard let id = session.permissionRequest?.originatingAgentID else {
+            return nil
+        }
+        return session.permissionRequest?.originatingAgentType ?? String(id.prefix(8))
+    }
+
     private var approvalActionBody: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(lang.t("approval.toolPermissionRequested"))
                 .font(.system(size: 12.5, weight: .semibold))
                 .foregroundStyle(V6Palette.paper.opacity(0.86))
+
+            if let originLabel = subagentOriginLabel {
+                HStack(spacing: 5) {
+                    Image(systemName: "arrow.triangle.branch")
+                        .font(.system(size: 9, weight: .medium))
+                    Text(lang.t("approval.subagentAsking"))
+                        .font(.system(size: 10, weight: .medium))
+                    Text(originLabel)
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(.cyan.opacity(0.85))
+            }
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(commandPreviewText)
