@@ -220,6 +220,21 @@ struct GeminiHooksTests {
     }
 
     @Test
+    func geminiInferTerminalAppRecognizesHerdrViaEnvVar() {
+        let payload = GeminiHookPayload(
+            cwd: "/tmp/worktree",
+            hookEventName: .sessionStart,
+            sessionID: "gemini-session-herdr"
+        ).withRuntimeContext(
+            environment: ["HERDR_ENV": "1", "HERDR_PANE_ID": "w2:p1"],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+        )
+
+        #expect(payload.terminalApp == "Herdr")
+    }
+
+    @Test
     func geminiGhosttyLocatorScriptSeparatesIDWorkingDirectoryAndTitle() {
         let script = GeminiHookPayload.terminalLocatorAppleScript(for: "Ghostty")
 

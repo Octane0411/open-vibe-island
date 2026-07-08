@@ -83,6 +83,7 @@ const ENV_KEYS = [
   "TMUX", "TMUX_PANE", "KITTY_WINDOW_ID",
   "CMUX_WORKSPACE_ID", "CMUX_SURFACE_ID", "CMUX_SOCKET_PATH",
   "ZELLIJ", "ZELLIJ_PANE_ID", "ZELLIJ_SESSION_NAME",
+  "HERDR_ENV", "HERDR_PANE_ID", "HERDR_SESSION", "HERDR_SOCKET_PATH",
 ];
 
 function collectEnv() {
@@ -105,6 +106,13 @@ function terminalFields() {
     const paneID = env.ZELLIJ_PANE_ID || "";
     const sessionName = env.ZELLIJ_SESSION_NAME || "";
     if (paneID) result.terminal_session_id = `${paneID}:${sessionName}`;
+  } else if (env.HERDR_ENV != null) {
+    result.terminal_app = "Herdr";
+    // herdr pane ids contain a colon (e.g. "w2:p1"), so encode with "|" and
+    // carry the socket so the jump service can focus the right session server.
+    const paneID = env.HERDR_PANE_ID || "";
+    const socketPath = env.HERDR_SOCKET_PATH || "";
+    if (paneID) result.terminal_session_id = socketPath ? `${paneID}|${socketPath}` : paneID;
   } else if (env.GHOSTTY_RESOURCES_DIR || (env.TERM_PROGRAM || "").toLowerCase().includes("ghostty")) {
     result.terminal_app = "Ghostty";
   } else if (env.TERM_PROGRAM === "Apple_Terminal") {

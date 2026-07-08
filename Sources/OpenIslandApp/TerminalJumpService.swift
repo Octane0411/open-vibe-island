@@ -331,6 +331,19 @@ struct TerminalJumpService {
             throw TerminalJumpError.unsupportedTerminal("Zellij (no parent terminal found)")
         }
 
+        // herdr is also a terminal multiplexer with no macOS .app. Focus the
+        // pane directly via the herdr CLI before the descriptor dispatch.
+        if target.terminalApp.lowercased() == "herdr" {
+            if jumpToHerdrPane(target) {
+                return "Focused the matching herdr pane."
+            }
+            if let parentBundleID = Self.zellijParentTerminals.first(where: { appRunningChecker($0) }) {
+                try openAction(["-b", parentBundleID])
+                return "Activated parent terminal. herdr pane targeting could not find the pane."
+            }
+            throw TerminalJumpError.unsupportedTerminal("herdr (no parent terminal found)")
+        }
+
         if let descriptor {
             switch resolvedBundleIdentifier ?? descriptor.bundleIdentifier {
             case "com.openai.codex":
@@ -793,6 +806,70 @@ struct TerminalJumpService {
         }
 
         return panes.first(where: { $0.id == paneID })?.tabPosition
+    }
+
+    // MARK: - herdr CLI-based jump
+
+    /// Parses the encoded `terminalSessionID` (format: `paneID|socketPath`,
+    /// socket optional) and focuses that pane via `herdr agent focus`. Unlike
+    /// Zellij, herdr needs no tab lookup: the pane id addresses the pane
+    /// directly on its session socket.
+    private func jumpToHerdrPane(_ target: JumpTarget) -> Bool {
+        guard let encoded = target.terminalSessionID, !encoded.isEmpty else {
+            return false
+        }
+
+        let parts = encoded.split(separator: "|", maxSplits: 1).map(String.init)
+        let paneID = parts[0]
+        let socketPath = parts.count > 1 ? parts[1] : nil
+
+        guard !paneID.isEmpty, let herdrPath = resolveHerdrPath() else {
+            return false
+        }
+
+        let focus = Process()
+        focus.executableURL = URL(fileURLWithPath: herdrPath)
+        focus.arguments = ["agent", "focus", paneID]
+        if let socketPath, !socketPath.isEmpty {
+            var env = ProcessInfo.processInfo.environment
+            env["HERDR_SOCKET_PATH"] = socketPath
+            focus.environment = env
+        }
+        focus.standardOutput = FileHandle.nullDevice
+        focus.standardError = FileHandle.nullDevice
+        guard (try? focus.run()) != nil else { return false }
+        focus.waitUntilExit()
+
+        // Activate the parent terminal app window hosting herdr.
+        if let parentBundleID = Self.zellijParentTerminals.first(where: { appRunningChecker($0) }) {
+            try? openAction(["-b", parentBundleID])
+        }
+
+        return focus.terminationStatus == 0
+    }
+
+    private func resolveHerdrPath() -> String? {
+        let candidates = [
+            NSHomeDirectory() + "/.local/bin/herdr",
+            "/usr/local/bin/herdr",
+            "/opt/homebrew/bin/herdr",
+        ]
+        if let found = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
+            return found
+        }
+
+        let whichTask = Process()
+        whichTask.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+        whichTask.arguments = ["herdr"]
+        let pipe = Pipe()
+        whichTask.standardOutput = pipe
+        whichTask.standardError = FileHandle.nullDevice
+        guard (try? whichTask.run()) != nil else { return nil }
+        whichTask.waitUntilExit()
+        guard whichTask.terminationStatus == 0 else { return nil }
+        let path = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return path.isEmpty ? nil : path
     }
 
     private func jumpToGhosttyTerminal(_ target: JumpTarget) throws -> Bool {

@@ -500,6 +500,10 @@ struct ActiveAgentProcessDiscovery {
             return "Zellij"
         }
 
+        if lowered.hasSuffix("/herdr") {
+            return "Herdr"
+        }
+
         // VS Code family — check forks BEFORE plain VS Code so fork apps that
         // retain the upstream "Code Helper" naming inside their Electron
         // framework aren't misidentified as VS Code (#415).
