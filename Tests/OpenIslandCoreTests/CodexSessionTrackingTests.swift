@@ -1198,6 +1198,83 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutDiscoverySkipsCodexDesktopSubagentThreads() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-subagent-\(UUID().uuidString)", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/04/02", isDirectory: true)
+        let parentRolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-parent.jsonl")
+        let subagentRolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-subagent.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        try [
+            sessionMetaLine(
+                sessionID: "codex-parent-thread",
+                timestamp: "2026-04-02T04:03:44.000Z",
+                cwd: "/Users/wangruobing/Personal/open-island"
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": "Launch background Codex agents.",
+                ]
+            ),
+        ].joined(separator: "\n").appending("\n").write(to: parentRolloutURL, atomically: true, encoding: .utf8)
+
+        try [
+            sessionMetaLine(
+                sessionID: "codex-subagent-thread",
+                timestamp: "2026-04-02T04:03:46.000Z",
+                cwd: "/Users/wangruobing/Personal/open-island",
+                extraPayload: [
+                    "session_id": "codex-parent-thread",
+                    "parent_thread_id": "codex-parent-thread",
+                    "thread_source": "subagent",
+                    "source": [
+                        "subagent": [
+                            "thread_spawn": [
+                                "parent_thread_id": "codex-parent-thread",
+                                "depth": 1,
+                                "agent_path": "/root/check-open-island",
+                                "agent_nickname": "reviewer",
+                            ],
+                        ],
+                    ],
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:47.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": "Reviewing from the subagent thread.",
+                ]
+            ),
+        ].joined(separator: "\n").appending("\n").write(to: subagentRolloutURL, atomically: true, encoding: .utf8)
+
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: parentRolloutURL.path)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: subagentRolloutURL.path)
+
+        #expect(!CodexRolloutDiscovery.isSubagentRollout(atPath: parentRolloutURL.path))
+        #expect(CodexRolloutDiscovery.isSubagentRollout(atPath: subagentRolloutURL.path))
+
+        let discovery = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10
+        )
+
+        let records = discovery.discoverRecentSessions(now: now)
+
+        #expect(records.map(\.sessionID) == ["codex-parent-thread"])
+    }
+
+    @Test
     func codexRolloutDiscoveryStreamsRolloutsLargerThanReadChunk() throws {
         // Pins streaming behavior across read-chunk boundaries. The
         // discovery path used to slurp the whole rollout via
@@ -1376,18 +1453,24 @@ private func rolloutLine(
 private func sessionMetaLine(
     sessionID: String,
     timestamp: String,
-    cwd: String
+    cwd: String,
+    extraPayload: [String: Any] = [:]
 ) -> String {
-    rolloutLine(
+    var payload: [String: Any] = [
+        "id": sessionID,
+        "timestamp": timestamp,
+        "cwd": cwd,
+        "originator": "codex-tui",
+        "source": "cli",
+    ]
+    for (key, value) in extraPayload {
+        payload[key] = value
+    }
+
+    return rolloutLine(
         timestamp: timestamp,
         type: "session_meta",
-        payload: [
-            "id": sessionID,
-            "timestamp": timestamp,
-            "cwd": cwd,
-            "originator": "codex-tui",
-            "source": "cli",
-        ]
+        payload: payload
     )
 }
 

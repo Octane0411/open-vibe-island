@@ -454,6 +454,24 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         }
     }
 
+    public static func isSubagentRollout(atPath path: String) -> Bool {
+        let trimmedPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPath.isEmpty else { return false }
+
+        return isSubagentRollout(fileURL: URL(fileURLWithPath: trimmedPath))
+    }
+
+    private static func isSubagentRollout(fileURL: URL) -> Bool {
+        guard let line = firstLine(in: fileURL),
+              let object = codexRolloutJSONObject(for: line),
+              object["type"] as? String == "session_meta" else {
+            return false
+        }
+
+        let payload = object["payload"] as? [String: Any] ?? [:]
+        return isSubagentSessionMetaPayload(payload)
+    }
+
     private func discoverRecord(
         fileURL: URL,
         modifiedAt: Date
@@ -530,6 +548,10 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         }
 
         let payload = object["payload"] as? [String: Any] ?? [:]
+        guard !Self.isSubagentSessionMetaPayload(payload) else {
+            return nil
+        }
+
         guard let sessionID = payload["id"] as? String,
               !sessionID.isEmpty,
               let cwd = payload["cwd"] as? String,
@@ -556,6 +578,47 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             lines.append(String(decoding: lineData, as: UTF8.self))
         }
         return lines
+    }
+
+    private static func isSubagentSessionMetaPayload(_ payload: [String: Any]) -> Bool {
+        if (payload["thread_source"] as? String)?.lowercased() == "subagent" {
+            return true
+        }
+
+        if let parentThreadID = payload["parent_thread_id"] as? String,
+           !parentThreadID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return true
+        }
+
+        if let source = payload["source"] as? [String: Any],
+           source["subagent"] != nil {
+            return true
+        }
+
+        return false
+    }
+
+    private static func firstLine(in fileURL: URL) -> String? {
+        guard let fileHandle = try? FileHandle(forReadingFrom: fileURL) else {
+            return nil
+        }
+        defer { try? fileHandle.close() }
+
+        let newline = UInt8(ascii: "\n")
+        let maxBytes = 512 * 1_024
+        var buffer = Data()
+
+        while buffer.count < maxBytes,
+              let chunk = try? fileHandle.read(upToCount: streamingChunkSize),
+              !chunk.isEmpty {
+            buffer.append(chunk)
+            if let newlineIndex = buffer.firstIndex(of: newline) {
+                return String(decoding: buffer.prefix(upTo: newlineIndex), as: UTF8.self)
+            }
+        }
+
+        guard !buffer.isEmpty else { return nil }
+        return String(decoding: buffer, as: UTF8.self)
     }
 }
 
