@@ -174,6 +174,64 @@ struct ClaudeHooksTests {
     }
 
     @Test
+    func claudeTranscriptDiscoveryRanksSessionsBySidechainSubagentActivity() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-claude-sidechain-rank-\(UUID().uuidString)", isDirectory: true)
+        let workspaceDirectory = rootURL
+            .appendingPathComponent("projects", isDirectory: true)
+            .appendingPathComponent("-tmp-demo-repo", isDirectory: true)
+        let activeSessionDirectory = workspaceDirectory.appendingPathComponent("session-active", isDirectory: true)
+        let subagentsDirectory = activeSessionDirectory.appendingPathComponent("subagents", isDirectory: true)
+        let activeTranscriptURL = workspaceDirectory.appendingPathComponent("session-active.jsonl")
+        let newerCompletedTranscriptURL = workspaceDirectory.appendingPathComponent("session-newer-completed.jsonl")
+        let discovery = ClaudeTranscriptDiscovery(
+            rootURL: rootURL.appendingPathComponent("projects", isDirectory: true),
+            maxFiles: 1
+        )
+        let oldDate = ISO8601DateFormatter().date(from: "2026-04-03T03:20:00Z")!
+        let middleDate = ISO8601DateFormatter().date(from: "2026-04-03T03:30:00Z")!
+        let latestSidechainDate = ISO8601DateFormatter().date(from: "2026-04-03T03:40:00Z")!
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        try FileManager.default.createDirectory(at: subagentsDirectory, withIntermediateDirectories: true)
+        try """
+        {"cwd":"/tmp/demo-repo","sessionId":"session-active","type":"user","message":{"role":"user","content":"Launch background planner."},"timestamp":"2026-04-03T03:20:00Z"}
+        {"cwd":"/tmp/demo-repo","sessionId":"session-active","type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_agent_1","name":"Agent","input":{"description":"Plan TIM-165 fixes","subagent_type":"general-purpose"}}]},"timestamp":"2026-04-03T03:20:01Z"}
+        {"cwd":"/tmp/demo-repo","sessionId":"session-active","type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_agent_1","content":""}]},"toolUseResult":{"status":"async_launched"},"timestamp":"2026-04-03T03:20:02Z"}
+        {"cwd":"/tmp/demo-repo","sessionId":"session-active","type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Waiting for background agents."}]},"timestamp":"2026-04-03T03:20:03Z"}
+        """.write(to: activeTranscriptURL, atomically: true, encoding: .utf8)
+        try """
+        {"cwd":"/tmp/demo-repo","sessionId":"session-newer-completed","type":"user","message":{"role":"user","content":"Do a short task."},"timestamp":"2026-04-03T03:30:00Z"}
+        {"cwd":"/tmp/demo-repo","sessionId":"session-newer-completed","type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Done."}]},"timestamp":"2026-04-03T03:30:01Z"}
+        """.write(to: newerCompletedTranscriptURL, atomically: true, encoding: .utf8)
+        try """
+        {"agentType":"general-purpose","description":"Plan TIM-165 fixes","toolUseId":"toolu_agent_1","spawnDepth":1}
+        """.write(
+            to: subagentsDirectory.appendingPathComponent("agent-a165.meta.json"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let subagentTranscriptURL = subagentsDirectory.appendingPathComponent("agent-a165.jsonl")
+        try """
+        {"cwd":"/tmp/demo-repo","sessionId":"session-active","isSidechain":true,"agentId":"a165","type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_sub_1","name":"Bash","input":{"command":"echo planning"}}]},"timestamp":"2026-04-03T03:40:00Z"}
+        """.write(to: subagentTranscriptURL, atomically: true, encoding: .utf8)
+
+        try FileManager.default.setAttributes([.modificationDate: oldDate], ofItemAtPath: activeTranscriptURL.path)
+        try FileManager.default.setAttributes([.modificationDate: middleDate], ofItemAtPath: newerCompletedTranscriptURL.path)
+        try FileManager.default.setAttributes([.modificationDate: latestSidechainDate], ofItemAtPath: subagentTranscriptURL.path)
+
+        let sessions = discovery.discoverRecentSessions(
+            now: ISO8601DateFormatter().date(from: "2026-04-03T03:45:00Z")!
+        )
+
+        #expect(sessions.map(\.id) == ["session-active"])
+        #expect(sessions.first?.claudeMetadata?.activeSubagents.map(\.agentID) == ["a165"])
+    }
+
+    @Test
     func claudeTranscriptDiscoveryStreamsTranscriptsLargerThanReadChunk() throws {
         // Pins streaming behavior across read-chunk boundaries. The
         // pre-fix `parseSession` used `String(contentsOf:)` which on

@@ -60,12 +60,19 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
 
             let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey])
             guard values?.isRegularFile == true,
-                  let modifiedAt = values?.contentModificationDate,
-                  modifiedAt >= cutoff else {
+                  let modifiedAt = values?.contentModificationDate else {
                 continue
             }
 
-            candidates.append(Candidate(fileURL: fileURL, modifiedAt: modifiedAt))
+            let effectiveModifiedAt = max(
+                modifiedAt,
+                latestSidechainModificationDate(forTranscript: fileURL) ?? modifiedAt
+            )
+            guard effectiveModifiedAt >= cutoff else {
+                continue
+            }
+
+            candidates.append(Candidate(fileURL: fileURL, modifiedAt: effectiveModifiedAt))
         }
 
         let sortedCandidates = candidates
@@ -326,6 +333,29 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
     private func modificationDate(at fileURL: URL) -> Date? {
         let values = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey])
         return values?.contentModificationDate
+    }
+
+    private func latestSidechainModificationDate(forTranscript transcriptURL: URL) -> Date? {
+        let subagentsDirectory = transcriptURL
+            .deletingPathExtension()
+            .appendingPathComponent("subagents", isDirectory: true)
+
+        guard let transcriptURLs = try? fileManager.contentsOfDirectory(
+            at: subagentsDirectory,
+            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return nil
+        }
+
+        return transcriptURLs
+            .filter { $0.pathExtension == "jsonl" }
+            .compactMap { fileURL -> Date? in
+                let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey])
+                guard values?.isRegularFile == true else { return nil }
+                return values?.contentModificationDate
+            }
+            .max()
     }
 
     private func latestTimestamp(in fileURL: URL) -> Date? {
