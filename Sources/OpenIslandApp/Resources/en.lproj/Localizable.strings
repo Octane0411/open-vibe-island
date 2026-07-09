@@ -225,3 +225,21 @@
 
 /* Window Titles */
 "window.settings" = "Open Island Settings";
+
+/* Custom CLI Settings */
+"settings.tab.customCLI" = "Custom CLI";
+"settings.customCLI.section" = "Custom CLIs";
+"settings.customCLI.footer" = "Configure additional Claude Code-compatible CLI wrappers so Open Island can recognize their sessions.";
+"settings.customCLI.empty" = "No custom CLIs configured.";
+"settings.customCLI.add" = "Add Custom CLI…";
+"settings.customCLI.addTitle" = "Add Custom CLI";
+"settings.customCLI.edit" = "Edit Custom CLI";
+"settings.customCLI.displayName" = "Display Name";
+"settings.customCLI.executablePath" = "Executable Path";
+"settings.customCLI.hookSource" = "Hook Source";
+"settings.customCLI.browse" = "Browse…";
+"settings.customCLI.save" = "Save";
+"settings.customCLI.delete" = "Delete";
+"settings.customCLI.deleteConfirm" = "Are you sure you want to remove \"%@\"?";
+"settings.customCLI.errorRequired" = "This field is required.";
+"settings.customCLI.errorHookSource" = "Only letters, numbers, dots, underscores, and hyphens are allowed.";

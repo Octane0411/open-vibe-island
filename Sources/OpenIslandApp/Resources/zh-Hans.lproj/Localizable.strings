@@ -225,3 +225,21 @@
 
 /* Window Titles */
 "window.settings" = "Open Island 设置";
+
+/* Custom CLI Settings */
+"settings.tab.customCLI" = "自定义 CLI";
+"settings.customCLI.section" = "自定义 CLI";
+"settings.customCLI.footer" = "配置其他兼容 Claude Code 的 CLI 包装工具，让 Open Island 能识别它们的会话。";
+"settings.customCLI.empty" = "尚未配置自定义 CLI。";
+"settings.customCLI.add" = "添加自定义 CLI…";
+"settings.customCLI.addTitle" = "添加自定义 CLI";
+"settings.customCLI.edit" = "编辑自定义 CLI";
+"settings.customCLI.displayName" = "显示名称";
+"settings.customCLI.executablePath" = "可执行文件路径";
+"settings.customCLI.hookSource" = "Hook 标识";
+"settings.customCLI.browse" = "选择…";
+"settings.customCLI.save" = "保存";
+"settings.customCLI.delete" = "删除";
+"settings.customCLI.deleteConfirm" = "确定要移除此“%@”配置吗？";
+"settings.customCLI.errorRequired" = "此字段为必填项。";
+"settings.customCLI.errorHookSource" = "仅允许字母、数字、点、下划线和短横线。";
