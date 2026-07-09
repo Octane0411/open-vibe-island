@@ -13,11 +13,13 @@ public struct ClaudeCompatibleCLIProfile: Codable, Equatable, Identifiable, Send
         executablePath: String
     ) {
         self.id = id
-        self.displayName = displayName
-        self.hookSource = hookSource
-        self.executablePath = executablePath
+        self.displayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.hookSource = hookSource.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.executablePath = executablePath.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Normalized path, always trimmed. Internal consumers should use this
+    /// rather than accessing `executablePath` directly.
     public var normalizedExecutablePath: String {
         executablePath.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -26,8 +28,9 @@ public struct ClaudeCompatibleCLIProfile: Codable, Equatable, Identifiable, Send
         URL(fileURLWithPath: normalizedExecutablePath).lastPathComponent
     }
 
+    /// Whether the profile has all required fields filled in and valid.
     public var isValid: Bool {
-        !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !displayName.isEmpty
             && Self.isValidHookSource(hookSource)
             && !normalizedExecutablePath.isEmpty
             && !executableBasename.isEmpty
@@ -46,13 +49,25 @@ public struct ClaudeCompatibleCLIProfile: Codable, Equatable, Identifiable, Send
             return true
         }
 
-        return Self.commandTokens(from: command).contains { token in
+        let tokens = command.split(whereSeparator: \.isWhitespace).map(String.init)
+        return tokens.contains { token in
             token == path || URL(fileURLWithPath: token).lastPathComponent == executableBasename
         }
     }
 
-    public static func commandTokens(from command: String) -> [String] {
-        command.split(whereSeparator: \.isWhitespace).map(String.init)
+    // MARK: - Codable
+
+    /// Trim whitespace on decode, matching the init behaviour so that
+    /// profiles persisted via JSON (UserDefaults) are always normalized.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(UUID.self, forKey: .id)
+        self.displayName = (try container.decode(String.self, forKey: .displayName))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        self.hookSource = (try container.decode(String.self, forKey: .hookSource))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        self.executablePath = (try container.decode(String.self, forKey: .executablePath))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
