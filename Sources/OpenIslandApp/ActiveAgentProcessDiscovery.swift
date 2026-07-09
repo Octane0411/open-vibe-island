@@ -211,6 +211,57 @@ struct ActiveAgentProcessDiscovery {
                 ))
                 continue
             }
+
+            if isQwenCodeProcess(command: process.command) {
+                let claimKey = "qwen:\(process.pid)"
+                guard claimedKeys.insert(claimKey).inserted else {
+                    continue
+                }
+
+                let lsofOutput = lsofOutput(pid: process.pid)
+                snapshots.append(ProcessSnapshot(
+                    tool: .qwenCode,
+                    sessionID: nil,
+                    workingDirectory: lsofOutput.flatMap(workingDirectory(from:)),
+                    terminalTTY: process.terminalTTY,
+                    terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+                ))
+                continue
+            }
+
+            if isFactoryProcess(command: process.command) {
+                let claimKey = "factory:\(process.pid)"
+                guard claimedKeys.insert(claimKey).inserted else {
+                    continue
+                }
+
+                let lsofOutput = lsofOutput(pid: process.pid)
+                snapshots.append(ProcessSnapshot(
+                    tool: .factory,
+                    sessionID: nil,
+                    workingDirectory: lsofOutput.flatMap(workingDirectory(from:)),
+                    terminalTTY: process.terminalTTY,
+                    terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+                ))
+                continue
+            }
+
+            if isCodeBuddyProcess(command: process.command) {
+                let claimKey = "codebuddy:\(process.pid)"
+                guard claimedKeys.insert(claimKey).inserted else {
+                    continue
+                }
+
+                let lsofOutput = lsofOutput(pid: process.pid)
+                snapshots.append(ProcessSnapshot(
+                    tool: .codebuddy,
+                    sessionID: nil,
+                    workingDirectory: lsofOutput.flatMap(workingDirectory(from:)),
+                    terminalTTY: process.terminalTTY,
+                    terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+                ))
+                continue
+            }
         }
 
         return snapshots
@@ -763,6 +814,55 @@ struct ActiveAgentProcessDiscovery {
         }
 
         return firstToken == "kimi" || firstToken.hasSuffix("/kimi")
+    }
+
+    /// Matches the `qwen` CLI entry-point (Alibaba Qwen Code, a Claude Code fork).
+    /// Binary installed by `@qwen-code/qwen-code` on npm.
+    private func isQwenCodeProcess(command: String) -> Bool {
+        let lowered = command.lowercased()
+        guard let firstToken = lowered.split(separator: " ").first.map(String.init) else {
+            return false
+        }
+
+        let binaryName = (firstToken as NSString).lastPathComponent
+        guard binaryName == "qwen" else {
+            return false
+        }
+
+        return firstToken == "qwen" || firstToken.hasSuffix("/qwen")
+    }
+
+    /// Matches Factory's CLI entry-point. Factory ships two binary names
+    /// (`factory` and `droid`) that both map to the same agent tool.
+    private func isFactoryProcess(command: String) -> Bool {
+        let lowered = command.lowercased()
+        guard let firstToken = lowered.split(separator: " ").first.map(String.init) else {
+            return false
+        }
+
+        let binaryName = (firstToken as NSString).lastPathComponent
+        guard binaryName == "factory" || binaryName == "droid" else {
+            return false
+        }
+
+        return firstToken == "factory" || firstToken.hasSuffix("/factory")
+            || firstToken == "droid" || firstToken.hasSuffix("/droid")
+    }
+
+    /// Matches the `codebuddy` CLI entry-point (Tencent CodeBuddy, a Claude Code fork).
+    /// Binary installed by the `codebuddy` npm package.
+    private func isCodeBuddyProcess(command: String) -> Bool {
+        let lowered = command.lowercased()
+        guard let firstToken = lowered.split(separator: " ").first.map(String.init) else {
+            return false
+        }
+
+        let binaryName = (firstToken as NSString).lastPathComponent
+        guard binaryName == "codebuddy" else {
+            return false
+        }
+
+        return firstToken == "codebuddy" || firstToken.hasSuffix("/codebuddy")
     }
 
     /// Returns `true` when the given `ps` command string belongs to a Claude Code process.

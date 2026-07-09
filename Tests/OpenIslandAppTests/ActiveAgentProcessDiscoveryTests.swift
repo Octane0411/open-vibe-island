@@ -257,4 +257,124 @@ struct ActiveAgentProcessDiscoveryTests {
             ),
         ])
     }
+
+    @Test
+    func discoverDetectsQwenCodeCLIProcess() {
+        let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
+            if executablePath == "/bin/ps" {
+                return """
+                  102 301 ttys002 qwen
+                  301 900 ttys002 -/opt/homebrew/bin/fish
+                  900 1 ?? /Applications/Ghostty.app/Contents/MacOS/ghostty
+                """
+            }
+
+            guard executablePath == "/usr/sbin/lsof",
+                  let pid = arguments.dropFirst(2).first else {
+                return nil
+            }
+
+            switch pid {
+            case "102":
+                return """
+                fcwd
+                n/tmp/open-island
+                """
+            default:
+                Issue.record("unexpected lsof lookup for pid \(pid)")
+                return nil
+            }
+        }
+
+        let snapshots = discovery.discover()
+
+        #expect(snapshots.count == 1)
+        #expect(snapshots.contains(.init(
+            tool: .qwenCode,
+            sessionID: nil,
+            workingDirectory: "/tmp/open-island",
+            terminalTTY: "/dev/ttys002",
+            terminalApp: "Ghostty"
+        )))
+    }
+
+    @Test
+    func discoverDetectsFactoryCLIProcess() {
+        let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
+            if executablePath == "/bin/ps" {
+                return """
+                  102 301 ttys002 droid
+                  301 900 ttys002 -/opt/homebrew/bin/fish
+                  900 1 ?? /Applications/Ghostty.app/Contents/MacOS/ghostty
+                """
+            }
+
+            guard executablePath == "/usr/sbin/lsof",
+                  let pid = arguments.dropFirst(2).first else {
+                return nil
+            }
+
+            switch pid {
+            case "102":
+                return """
+                fcwd
+                n/tmp/open-island
+                """
+            default:
+                Issue.record("unexpected lsof lookup for pid \(pid)")
+                return nil
+            }
+        }
+
+        let snapshots = discovery.discover()
+
+        #expect(snapshots.count == 1)
+        #expect(snapshots.contains(.init(
+            tool: .factory,
+            sessionID: nil,
+            workingDirectory: "/tmp/open-island",
+            terminalTTY: "/dev/ttys002",
+            terminalApp: "Ghostty"
+        )))
+    }
+
+    @Test
+    func discoverDetectsCodeBuddyCLIProcess() {
+        let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
+            if executablePath == "/bin/ps" {
+                return """
+                  102 301 ttys002 codebuddy
+                  301 900 ttys002 -/opt/homebrew/bin/fish
+                  900 1 ?? /Applications/Ghostty.app/Contents/MacOS/ghostty
+                """
+            }
+
+            guard executablePath == "/usr/sbin/lsof",
+                  let pid = arguments.dropFirst(2).first else {
+                return nil
+            }
+
+            switch pid {
+            case "102":
+                return """
+                fcwd
+                n/tmp/open-island
+                """
+            default:
+                Issue.record("unexpected lsof lookup for pid \(pid)")
+                return nil
+            }
+        }
+
+        let snapshots = discovery.discover()
+
+        #expect(snapshots.count == 1)
+        #expect(snapshots.contains(.init(
+            tool: .codebuddy,
+            sessionID: nil,
+            workingDirectory: "/tmp/open-island",
+            terminalTTY: "/dev/ttys002",
+            terminalApp: "Ghostty"
+        )))
+    }
 }
