@@ -6,6 +6,17 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
         var modifiedAt: Date
     }
 
+    private struct AgentToolMetadata {
+        var description: String?
+        var agentType: String?
+    }
+
+    private struct SidechainSubagentMetadata: Decodable {
+        var agentType: String?
+        var description: String?
+        var toolUseId: String
+    }
+
     public static var defaultRootURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects", isDirectory: true)
@@ -88,6 +99,8 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
         var currentTool: String?
         var currentToolInputPreview: String?
         var pendingToolUses: [String: (name: String, preview: String?)] = [:]
+        var agentToolMetadataByID: [String: AgentToolMetadata] = [:]
+        var asyncAgentToolUseIDs: Set<String> = []
 
         let processLine: (String) -> Void = { line in
             guard let data = line.data(using: .utf8),
@@ -121,8 +134,20 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
                 }
 
                 if let toolResultIDs = self.toolResultIDs(from: message?["content"]) {
+                    let toolResultStatus = self.toolUseResultStatus(from: object)
                     for toolResultID in toolResultIDs {
                         pendingToolUses.removeValue(forKey: toolResultID)
+
+                        if agentToolMetadataByID[toolResultID] != nil {
+                            switch toolResultStatus {
+                            case "async_launched":
+                                asyncAgentToolUseIDs.insert(toolResultID)
+                            case "completed", "failed", "cancelled", "canceled":
+                                asyncAgentToolUseIDs.remove(toolResultID)
+                            default:
+                                break
+                            }
+                        }
                     }
 
                     if pendingToolUses.isEmpty {
@@ -150,6 +175,15 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
                     if let lastToolUse = toolUses.last {
                         currentTool = lastToolUse.name
                         currentToolInputPreview = lastToolUse.preview
+                    }
+                }
+
+                if let agentToolUses = self.agentToolUses(from: message?["content"]) {
+                    for agentToolUse in agentToolUses {
+                        agentToolMetadataByID[agentToolUse.id] = AgentToolMetadata(
+                            description: agentToolUse.description,
+                            agentType: agentToolUse.agentType
+                        )
                     }
                 }
             } else if topLevelType == "summary",
@@ -181,6 +215,15 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
         }
 
         let workspaceName = WorkspaceNameResolver.workspaceName(for: cwd)
+        let activeSubagents = discoverActiveSidechainSubagents(
+            forTranscript: fileURL,
+            activeToolUseIDs: asyncAgentToolUseIDs,
+            agentToolMetadataByID: agentToolMetadataByID
+        )
+        if let latestSubagentActivity = activeSubagents.compactMap(\.startedAt).max(),
+           latestSubagentActivity > updatedAt {
+            updatedAt = latestSubagentActivity
+        }
         let metadata = ClaudeSessionMetadata(
             transcriptPath: fileURL.path,
             initialUserPrompt: initialUserPrompt,
@@ -188,7 +231,8 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
             lastAssistantMessage: lastAssistantMessage,
             currentTool: currentTool,
             currentToolInputPreview: currentToolInputPreview,
-            model: model
+            model: model,
+            activeSubagents: activeSubagents
         )
         let summary = lastAssistantMessage
             ?? lastUserPrompt
@@ -211,6 +255,112 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
             ),
             claudeMetadata: metadata.isEmpty ? nil : metadata
         )
+    }
+
+    private func discoverActiveSidechainSubagents(
+        forTranscript transcriptURL: URL,
+        activeToolUseIDs: Set<String>,
+        agentToolMetadataByID: [String: AgentToolMetadata]
+    ) -> [ClaudeSubagentInfo] {
+        guard !activeToolUseIDs.isEmpty else {
+            return []
+        }
+
+        let subagentsDirectory = transcriptURL
+            .deletingPathExtension()
+            .appendingPathComponent("subagents", isDirectory: true)
+
+        guard let metaURLs = try? fileManager.contentsOfDirectory(
+            at: subagentsDirectory,
+            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        return metaURLs
+            .filter { $0.lastPathComponent.hasSuffix(".meta.json") }
+            .compactMap { metaURL -> ClaudeSubagentInfo? in
+                guard let values = try? metaURL.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey]),
+                      values.isRegularFile == true,
+                      let data = try? Data(contentsOf: metaURL),
+                      let metadata = try? JSONDecoder().decode(SidechainSubagentMetadata.self, from: data),
+                      activeToolUseIDs.contains(metadata.toolUseId) else {
+                    return nil
+                }
+
+                let fallback = agentToolMetadataByID[metadata.toolUseId]
+                let metaBaseName = sidechainMetaBaseName(from: metaURL)
+                let transcriptPath = subagentsDirectory.appendingPathComponent("\(metaBaseName).jsonl")
+                let startedAt = latestTimestamp(in: transcriptPath)
+                    ?? modificationDate(at: transcriptPath)
+                    ?? values.contentModificationDate
+
+                return ClaudeSubagentInfo(
+                    agentID: sidechainAgentID(fromBaseName: metaBaseName),
+                    agentType: metadata.agentType ?? fallback?.agentType,
+                    taskDescription: metadata.description ?? fallback?.description,
+                    startedAt: startedAt
+                )
+            }
+            .sorted { lhs, rhs in
+                (lhs.startedAt ?? .distantPast) > (rhs.startedAt ?? .distantPast)
+            }
+    }
+
+    private func sidechainMetaBaseName(from metaURL: URL) -> String {
+        let name = metaURL.lastPathComponent
+        if name.hasSuffix(".meta.json") {
+            return String(name.dropLast(".meta.json".count))
+        }
+        return metaURL.deletingPathExtension().lastPathComponent
+    }
+
+    private func sidechainAgentID(fromBaseName baseName: String) -> String {
+        if baseName.hasPrefix("agent-") {
+            return String(baseName.dropFirst("agent-".count))
+        }
+        return baseName
+    }
+
+    private func modificationDate(at fileURL: URL) -> Date? {
+        let values = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey])
+        return values?.contentModificationDate
+    }
+
+    private func latestTimestamp(in fileURL: URL) -> Date? {
+        guard let fileHandle = try? FileHandle(forReadingFrom: fileURL) else {
+            return nil
+        }
+        defer { try? fileHandle.close() }
+
+        var latest: Date?
+        var buffer = Data()
+        while let chunk = try? fileHandle.read(upToCount: Self.streamingChunkSize),
+              !chunk.isEmpty {
+            buffer.append(chunk)
+            for line in extractCompleteLines(from: &buffer) {
+                latest = timestamp(fromTranscriptLine: line) ?? latest
+            }
+        }
+
+        if !buffer.isEmpty {
+            let trailing = String(decoding: buffer, as: UTF8.self)
+            if !trailing.isEmpty {
+                latest = timestamp(fromTranscriptLine: trailing) ?? latest
+            }
+        }
+
+        return latest
+    }
+
+    private func timestamp(fromTranscriptLine line: String) -> Date? {
+        guard let data = line.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let timestampText = object["timestamp"] as? String else {
+            return nil
+        }
+        return ISO8601DateFormatter().date(from: timestampText)
     }
 
     private static let streamingChunkSize = 64 * 1_024
@@ -302,6 +452,36 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
         }
 
         return uses.isEmpty ? nil : uses
+    }
+
+    private func agentToolUses(from content: Any?) -> [(id: String, description: String?, agentType: String?)]? {
+        guard let blocks = content as? [[String: Any]] else {
+            return nil
+        }
+
+        let uses = blocks.compactMap { block -> (id: String, description: String?, agentType: String?)? in
+            guard block["type"] as? String == "tool_use",
+                  block["name"] as? String == "Agent",
+                  let id = block["id"] as? String else {
+                return nil
+            }
+
+            let input = block["input"] as? [String: Any]
+            return (
+                id: id,
+                description: input?["description"] as? String,
+                agentType: input?["subagent_type"] as? String
+            )
+        }
+
+        return uses.isEmpty ? nil : uses
+    }
+
+    private func toolUseResultStatus(from object: [String: Any]) -> String? {
+        guard let result = object["toolUseResult"] as? [String: Any] else {
+            return nil
+        }
+        return result["status"] as? String
     }
 
     private func previewText(for value: Any) -> String? {

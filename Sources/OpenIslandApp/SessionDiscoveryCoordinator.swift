@@ -231,7 +231,11 @@ final class SessionDiscoveryCoordinator {
         merged.attachmentState = mergeAttachmentState(existing.attachmentState, discovered.attachmentState)
         merged.jumpTarget = existing.jumpTarget ?? discovered.jumpTarget
         merged.codexMetadata = mergeCodexMetadata(existing.codexMetadata, discovered.codexMetadata)
-        merged.claudeMetadata = mergeClaudeMetadata(existing.claudeMetadata, discovered.claudeMetadata)
+        merged.claudeMetadata = mergeClaudeMetadata(
+            existing.claudeMetadata,
+            discovered.claudeMetadata,
+            preferDiscoveredActivity: discoveredIsNewer
+        )
         merged.openCodeMetadata = mergeOpenCodeMetadata(existing.openCodeMetadata, discovered.openCodeMetadata)
         merged.cursorMetadata = mergeCursorMetadata(existing.cursorMetadata, discovered.cursorMetadata)
         // Once a session is identified as a Codex.app session by any source
@@ -332,7 +336,8 @@ final class SessionDiscoveryCoordinator {
 
     private func mergeClaudeMetadata(
         _ existing: ClaudeSessionMetadata?,
-        _ discovered: ClaudeSessionMetadata?
+        _ discovered: ClaudeSessionMetadata?,
+        preferDiscoveredActivity: Bool
     ) -> ClaudeSessionMetadata? {
         guard let existing else {
             return discovered?.isEmpty == true ? nil : discovered
@@ -355,7 +360,10 @@ final class SessionDiscoveryCoordinator {
             agentID: discovered.agentID ?? existing.agentID,
             agentType: discovered.agentType ?? existing.agentType,
             worktreeBranch: discovered.worktreeBranch ?? existing.worktreeBranch,
-            activeSubagents: existing.activeSubagents.isEmpty ? discovered.activeSubagents : existing.activeSubagents
+            activeSubagents: preferDiscoveredActivity || existing.activeSubagents.isEmpty
+                ? discovered.activeSubagents
+                : existing.activeSubagents,
+            activeTasks: existing.activeTasks.isEmpty ? discovered.activeTasks : existing.activeTasks
         )
         return merged.isEmpty ? nil : merged
     }

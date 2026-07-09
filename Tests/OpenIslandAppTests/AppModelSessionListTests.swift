@@ -970,6 +970,56 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func newerClaudeDiscoveryClearsCompletedSidechainSubagents() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "claude-session",
+                    title: "Claude · open-island",
+                    tool: .claudeCode,
+                    origin: .live,
+                    attachmentState: .stale,
+                    phase: .completed,
+                    summary: "Waiting for background agents.",
+                    updatedAt: now.addingTimeInterval(-60),
+                    claudeMetadata: ClaudeSessionMetadata(
+                        transcriptPath: "/tmp/claude.jsonl",
+                        activeSubagents: [
+                            ClaudeSubagentInfo(
+                                agentID: "a165",
+                                agentType: "general-purpose",
+                                taskDescription: "Plan TIM-165 fixes",
+                                startedAt: now.addingTimeInterval(-120)
+                            ),
+                        ]
+                    )
+                ),
+            ]
+        )
+
+        let merged = model.discovery.mergeDiscoveredSessions([
+            AgentSession(
+                id: "claude-session",
+                title: "Claude · open-island",
+                tool: .claudeCode,
+                origin: .live,
+                attachmentState: .stale,
+                phase: .completed,
+                summary: "Background agents finished.",
+                updatedAt: now,
+                claudeMetadata: ClaudeSessionMetadata(
+                    transcriptPath: "/tmp/claude.jsonl",
+                    lastAssistantMessage: "Background agents finished."
+                )
+            ),
+        ])
+
+        #expect(merged.first?.claudeMetadata?.activeSubagents == [])
+    }
+
+    @Test
     func mergedWithSyntheticClaudeSessionsAddsGhosttyClaudeProcessWhenNoTrackedSessionExists() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()

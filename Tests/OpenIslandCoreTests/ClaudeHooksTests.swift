@@ -118,6 +118,62 @@ struct ClaudeHooksTests {
     }
 
     @Test
+    func claudeTranscriptDiscoveryRecoversAsyncSubagentsFromSidechainMetadata() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-claude-async-subagents-\(UUID().uuidString)", isDirectory: true)
+        let workspaceDirectory = rootURL
+            .appendingPathComponent("projects", isDirectory: true)
+            .appendingPathComponent("-tmp-demo-repo", isDirectory: true)
+        let sessionDirectory = workspaceDirectory.appendingPathComponent("session-async", isDirectory: true)
+        let subagentsDirectory = sessionDirectory.appendingPathComponent("subagents", isDirectory: true)
+        let transcriptURL = workspaceDirectory.appendingPathComponent("session-async.jsonl")
+        let discovery = ClaudeTranscriptDiscovery(rootURL: rootURL.appendingPathComponent("projects", isDirectory: true))
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        try FileManager.default.createDirectory(at: subagentsDirectory, withIntermediateDirectories: true)
+        let transcript = """
+        {"cwd":"/tmp/demo-repo","sessionId":"session-async","type":"user","message":{"role":"user","content":"Launch background planner."},"timestamp":"2026-04-03T03:20:00Z"}
+        {"cwd":"/tmp/demo-repo","sessionId":"session-async","type":"assistant","message":{"role":"assistant","model":"claude-fable-5","content":[{"type":"tool_use","id":"toolu_agent_1","name":"Agent","input":{"description":"Plan TIM-165 fixes","subagent_type":"general-purpose"}}]},"timestamp":"2026-04-03T03:20:01Z"}
+        {"cwd":"/tmp/demo-repo","sessionId":"session-async","type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_agent_1","content":""}]},"toolUseResult":{"status":"async_launched"},"timestamp":"2026-04-03T03:20:02Z"}
+        {"cwd":"/tmp/demo-repo","sessionId":"session-async","type":"assistant","message":{"role":"assistant","model":"claude-fable-5","content":[{"type":"text","text":"Waiting for background agents."}]},"timestamp":"2026-04-03T03:20:03Z"}
+        """
+        try transcript.write(to: transcriptURL, atomically: true, encoding: .utf8)
+
+        try """
+        {"agentType":"general-purpose","description":"Plan TIM-165 fixes","toolUseId":"toolu_agent_1","spawnDepth":1}
+        """.write(
+            to: subagentsDirectory.appendingPathComponent("agent-a165.meta.json"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try """
+        {"cwd":"/tmp/demo-repo","sessionId":"session-async","isSidechain":true,"agentId":"a165","type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_sub_1","name":"Bash","input":{"command":"echo planning"}}]},"timestamp":"2026-04-03T03:20:04Z"}
+        """.write(
+            to: subagentsDirectory.appendingPathComponent("agent-a165.jsonl"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let sessions = discovery.discoverRecentSessions(
+            now: ISO8601DateFormatter().date(from: "2026-04-03T03:20:10Z")!
+        )
+
+        let session = try #require(sessions.first)
+        #expect(session.id == "session-async")
+        #expect(session.claudeMetadata?.activeSubagents == [
+            ClaudeSubagentInfo(
+                agentID: "a165",
+                agentType: "general-purpose",
+                taskDescription: "Plan TIM-165 fixes",
+                startedAt: ISO8601DateFormatter().date(from: "2026-04-03T03:20:04Z")
+            )
+        ])
+    }
+
+    @Test
     func claudeTranscriptDiscoveryStreamsTranscriptsLargerThanReadChunk() throws {
         // Pins streaming behavior across read-chunk boundaries. The
         // pre-fix `parseSession` used `String(contentsOf:)` which on
