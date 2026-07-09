@@ -242,3 +242,4 @@
 "settings.customCLI.deleteConfirm" = "Are you sure you want to remove \"%@\"?";
 "settings.customCLI.deleteConfirmTitle" = "Remove Custom CLI?";
 "settings.customCLI.errorRequired" = "This field is required.";
+"settings.customCLI.errorReservedSource" = "The executable name collides with a built-in agent source. Rename or use a wrapper script.";

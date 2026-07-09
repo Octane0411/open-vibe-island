@@ -242,3 +242,4 @@
 "settings.customCLI.deleteConfirm" = "确定要移除此“%@”配置吗？";
 "settings.customCLI.deleteConfirmTitle" = "移除自定义 CLI？";
 "settings.customCLI.errorRequired" = "此字段为必填项。";
+"settings.customCLI.errorReservedSource" = "可执行文件名与内置代理源冲突。请重命名或使用包装脚本。";

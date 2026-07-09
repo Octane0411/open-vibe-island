@@ -274,10 +274,16 @@ private struct EditCLIProfileSheet: View {
 
         guard nameError == nil, pathError == nil else { return }
 
+        let derivedSource = Self.deriveHookSource(from: trimmedPath)
+        if !HookSourceClassification.classify(derivedSource).isClaudeFormat {
+            pathError = lang("settings.customCLI.errorReservedSource")
+            return
+        }
+
         onSave(ClaudeCompatibleCLIProfile(
             id: profile.id,
             displayName: trimmedName,
-            hookSource: Self.deriveHookSource(from: trimmedPath),
+            hookSource: derivedSource,
             executablePath: trimmedPath
         ))
     }
