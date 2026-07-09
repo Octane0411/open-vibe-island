@@ -14,6 +14,7 @@ public final class BridgeServer: @unchecked Sendable {
     private struct PendingApproval {
         let clientID: UUID
         let hookEventName: CodexHookEventName
+        var isSubagent = false
     }
 
     private struct PendingClaudeToolContext {
@@ -404,6 +405,22 @@ public final class BridgeServer: @unchecked Sendable {
                 return "Permission denied in Open Island."
             }()
 
+            if pendingApproval.isSubagent {
+                emit(
+                    .activityUpdated(
+                        SessionActivityUpdated(
+                            sessionID: sessionID,
+                            summary: resolution.isApproved ? approvedSummary : deniedSummary,
+                            phase: .running,
+                            timestamp: .now
+                        )
+                    )
+                )
+                resolvePendingApproval(sessionID: sessionID, resolution: resolution)
+                send(.response(.acknowledged), to: clientID)
+                return
+            }
+
             localState.resolvePermission(sessionID: sessionID, resolution: resolution)
             broadcast([.event(
                 resolution.isApproved
@@ -478,6 +495,12 @@ public final class BridgeServer: @unchecked Sendable {
         if payload.terminalApp == "Codex.app",
            (payload.transcriptPath ?? "").isEmpty {
             send(.response(.acknowledged), to: clientID)
+            return
+        }
+
+        if let transcriptPath = payload.transcriptPath,
+           CodexRolloutDiscovery.isSubagentRollout(atPath: transcriptPath) {
+            handleCodexSubagentHook(payload, from: clientID)
             return
         }
 
@@ -609,6 +632,100 @@ public final class BridgeServer: @unchecked Sendable {
             )
             send(.response(.acknowledged), to: clientID)
         }
+    }
+
+    private func handleCodexSubagentHook(_ payload: CodexHookPayload, from clientID: UUID) {
+        ensureCodexParentSessionExists(for: payload)
+
+        switch payload.hookEventName {
+        case .sessionStart, .userPromptSubmit, .postToolUse:
+            emitCodexSubagentActivity(for: payload.sessionID)
+            send(.response(.acknowledged), to: clientID)
+
+        case .preToolUse:
+            let command = payload.commandPreview ?? "Bash command"
+            emit(
+                .permissionRequested(
+                    PermissionRequested(
+                        sessionID: payload.sessionID,
+                        request: PermissionRequest(
+                            title: "Run Bash command",
+                            summary: "Codex wants to run a shell command.",
+                            affectedPath: payload.commandText ?? command,
+                            primaryActionTitle: "Allow",
+                            secondaryActionTitle: "Deny"
+                        ),
+                        timestamp: .now
+                    )
+                )
+            )
+            pendingApprovals[payload.sessionID] = PendingApproval(
+                clientID: clientID,
+                hookEventName: .preToolUse,
+                isSubagent: true
+            )
+
+        case .permissionRequest:
+            emit(
+                .permissionRequested(
+                    PermissionRequested(
+                        sessionID: payload.sessionID,
+                        request: PermissionRequest(
+                            title: payload.permissionRequestTitle,
+                            summary: payload.permissionRequestSummary,
+                            affectedPath: payload.permissionRequestAffectedPath,
+                            primaryActionTitle: "Allow",
+                            secondaryActionTitle: "Deny",
+                            toolName: payload.toolName,
+                            toolUseID: payload.toolUseID
+                        ),
+                        timestamp: .now
+                    )
+                )
+            )
+            pendingApprovals[payload.sessionID] = PendingApproval(
+                clientID: clientID,
+                hookEventName: .permissionRequest,
+                isSubagent: true
+            )
+
+        case .stop:
+            send(.response(.acknowledged), to: clientID)
+        }
+    }
+
+    private func ensureCodexParentSessionExists(for payload: CodexHookPayload) {
+        guard !hasSession(id: payload.sessionID) else {
+            return
+        }
+
+        emit(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: payload.sessionID,
+                    title: payload.sessionTitle,
+                    tool: .codex,
+                    origin: .live,
+                    summary: "Codex subagent is working…",
+                    timestamp: .now,
+                    jumpTarget: payload.defaultJumpTarget,
+                    codexMetadata: nil
+                )
+            )
+        )
+    }
+
+    private func emitCodexSubagentActivity(for sessionID: String) {
+        emit(
+            .activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: sessionID,
+                    summary: "Codex subagent is working…",
+                    phase: .running,
+                    timestamp: .now
+                )
+            )
+        )
     }
 
     private func handleClaudeHook(_ payload: ClaudeHookPayload, from clientID: UUID) {

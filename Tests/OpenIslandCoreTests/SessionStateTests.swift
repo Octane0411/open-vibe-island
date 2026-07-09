@@ -503,6 +503,197 @@ struct SessionStateTests {
     }
 
     @Test
+    func codexSubagentHooksPreserveParentLifecycle() async throws {
+        let fixtureRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-codex-hook-subagent-\(UUID().uuidString)", isDirectory: true)
+        let parentRolloutURL = fixtureRoot.appendingPathComponent("parent.jsonl")
+        let childRolloutURL = fixtureRoot.appendingPathComponent("child.jsonl")
+        try FileManager.default.createDirectory(at: fixtureRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: fixtureRoot) }
+
+        try """
+        {"type":"session_meta","payload":{"id":"parent-thread","cwd":"/tmp/worktree","thread_source":"user","source":"vscode"}}
+        """.write(to: parentRolloutURL, atomically: true, encoding: .utf8)
+        try """
+        {"type":"session_meta","payload":{"id":"child-thread","session_id":"parent-thread","parent_thread_id":"parent-thread","thread_source":"subagent","cwd":"/tmp/worktree","source":{"subagent":{"thread_spawn":{"parent_thread_id":"parent-thread","depth":1}}}}}
+        """.write(to: childRolloutURL, atomically: true, encoding: .utf8)
+
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
+
+        let parentStart = CodexHookPayload(
+            cwd: "/tmp/worktree",
+            hookEventName: .sessionStart,
+            model: "gpt-5-codex",
+            permissionMode: .default,
+            sessionID: "parent-thread",
+            terminalApp: "Codex.app",
+            transcriptPath: parentRolloutURL.path
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(.processCodexHook(parentStart))
+
+        var iterator = stream.makeAsyncIterator()
+        let parentStartedEvent = try await nextEvent(from: &iterator)
+        guard case let .sessionStarted(parentStarted) = parentStartedEvent else {
+            Issue.record("Expected parent SessionStart")
+            return
+        }
+        #expect(parentStarted.codexMetadata?.transcriptPath == parentRolloutURL.path)
+
+        let childStart = CodexHookPayload(
+            cwd: "/tmp/worktree",
+            hookEventName: .sessionStart,
+            model: "gpt-5-codex",
+            permissionMode: .default,
+            sessionID: "parent-thread",
+            terminalApp: "Codex.app",
+            transcriptPath: childRolloutURL.path
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(.processCodexHook(childStart))
+
+        let childStartedEvent = try await nextEvent(from: &iterator)
+        guard case let .activityUpdated(childActivity) = childStartedEvent else {
+            Issue.record("Expected subagent SessionStart to keep the parent running")
+            return
+        }
+        #expect(childActivity.sessionID == "parent-thread")
+        #expect(childActivity.phase == .running)
+
+        let childStop = CodexHookPayload(
+            cwd: "/tmp/worktree",
+            hookEventName: .stop,
+            model: "gpt-5-codex",
+            permissionMode: .default,
+            sessionID: "parent-thread",
+            terminalApp: "Codex.app",
+            transcriptPath: childRolloutURL.path,
+            lastAssistantMessage: "Child finished."
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(.processCodexHook(childStop))
+
+        let parentPrompt = CodexHookPayload(
+            cwd: "/tmp/worktree",
+            hookEventName: .userPromptSubmit,
+            model: "gpt-5-codex",
+            permissionMode: .default,
+            sessionID: "parent-thread",
+            terminalApp: "Codex.app",
+            transcriptPath: parentRolloutURL.path,
+            prompt: "Continue the parent turn."
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(.processCodexHook(parentPrompt))
+
+        let parentMetadataEvent = try await nextEvent(from: &iterator)
+        #expect(parentMetadataEvent.trackedMetadataUpdate?.codexMetadata.transcriptPath == parentRolloutURL.path)
+        let parentActivityEvent = try await nextEvent(from: &iterator)
+        #expect(parentActivityEvent.activityUpdate?.phase == .running)
+
+        let parentStop = CodexHookPayload(
+            cwd: "/tmp/worktree",
+            hookEventName: .stop,
+            model: "gpt-5-codex",
+            permissionMode: .default,
+            sessionID: "parent-thread",
+            terminalApp: "Codex.app",
+            transcriptPath: parentRolloutURL.path,
+            lastAssistantMessage: "Parent finished."
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(.processCodexHook(parentStop))
+
+        let finalMetadataEvent = try await nextEvent(from: &iterator)
+        #expect(finalMetadataEvent.trackedMetadataUpdate?.codexMetadata.transcriptPath == parentRolloutURL.path)
+        let completedEvent = try await nextEvent(from: &iterator)
+        #expect(completedEvent.sessionCompleted?.summary == "Parent finished.")
+    }
+
+    @Test
+    func codexSubagentPermissionDenialKeepsParentRunning() async throws {
+        let fixtureRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-codex-hook-subagent-permission-\(UUID().uuidString)", isDirectory: true)
+        let parentRolloutURL = fixtureRoot.appendingPathComponent("parent.jsonl")
+        let childRolloutURL = fixtureRoot.appendingPathComponent("child.jsonl")
+        try FileManager.default.createDirectory(at: fixtureRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: fixtureRoot) }
+
+        try """
+        {"type":"session_meta","payload":{"id":"parent-thread","cwd":"/tmp/worktree","thread_source":"user","source":"vscode"}}
+        """.write(to: parentRolloutURL, atomically: true, encoding: .utf8)
+        try """
+        {"type":"session_meta","payload":{"id":"child-thread","session_id":"parent-thread","parent_thread_id":"parent-thread","thread_source":"subagent","cwd":"/tmp/worktree","source":{"subagent":{"thread_spawn":{"parent_thread_id":"parent-thread","depth":1}}}}}
+        """.write(to: childRolloutURL, atomically: true, encoding: .utf8)
+
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
+
+        let parentStart = CodexHookPayload(
+            cwd: "/tmp/worktree",
+            hookEventName: .sessionStart,
+            model: "gpt-5-codex",
+            permissionMode: .default,
+            sessionID: "parent-thread",
+            terminalApp: "Codex.app",
+            transcriptPath: parentRolloutURL.path
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(.processCodexHook(parentStart))
+
+        var iterator = stream.makeAsyncIterator()
+        _ = try await nextEvent(from: &iterator)
+
+        let childPermission = CodexHookPayload(
+            cwd: "/tmp/worktree",
+            hookEventName: .permissionRequest,
+            model: "gpt-5-codex",
+            permissionMode: .default,
+            sessionID: "parent-thread",
+            terminalApp: "Codex.app",
+            transcriptPath: childRolloutURL.path,
+            toolName: "apply_patch",
+            toolUseID: "child-tool-1",
+            toolInput: CodexHookToolInput(description: "Edit a child-owned file")
+        )
+        async let childResponse = sendOnGCDThread(.processCodexHook(childPermission), socketURL: socketURL)
+
+        let firstChildEvent = try await nextEvent(from: &iterator)
+        let permissionEvent: AgentEvent
+        if firstChildEvent.isPermissionRequested {
+            permissionEvent = firstChildEvent
+        } else {
+            permissionEvent = try await nextEvent(from: &iterator)
+        }
+        #expect(firstChildEvent.isPermissionRequested)
+        #expect(permissionEvent.isPermissionRequested)
+
+        try await observer.send(
+            .resolvePermission(
+                sessionID: "parent-thread",
+                resolution: .deny(message: "Skip this child edit.")
+            )
+        )
+
+        let resolutionEvent = try await nextEvent(from: &iterator)
+        #expect(resolutionEvent.activityUpdate?.phase == .running)
+        #expect(resolutionEvent.activityUpdate?.summary == "Skip this child edit.")
+        #expect(
+            try await childResponse
+                == .codexHookDirective(.permissionRequest(.deny(message: "Skip this child edit.")))
+        )
+    }
+
+    @Test
     func openCodeQuestionAskedCarriesStructuredOptionsUntilAnswered() async throws {
         let socketURL = BridgeSocketLocation.uniqueTestURL()
         let server = BridgeServer(socketURL: socketURL)
