@@ -211,6 +211,23 @@ struct ActiveAgentProcessDiscovery {
                 ))
                 continue
             }
+
+            if isQoderProcess(command: process.command) {
+                let claimKey = "qoder:\(process.pid)"
+                guard claimedKeys.insert(claimKey).inserted else {
+                    continue
+                }
+
+                let lsofOutput = lsofOutput(pid: process.pid)
+                snapshots.append(ProcessSnapshot(
+                    tool: .qoder,
+                    sessionID: nil,
+                    workingDirectory: lsofOutput.flatMap(workingDirectory(from:)),
+                    terminalTTY: process.terminalTTY,
+                    terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+                ))
+                continue
+            }
         }
 
         return snapshots
@@ -763,6 +780,23 @@ struct ActiveAgentProcessDiscovery {
         }
 
         return firstToken == "kimi" || firstToken.hasSuffix("/kimi")
+    }
+
+    /// Matches the `qoder` CLI entry-point. Qoder is a Claude Code fork that
+    /// ships its own `qoder` binary (installed by `@qoder-ai/qodercli`), so
+    /// `isClaudeProcess` does not pick it up.
+    private func isQoderProcess(command: String) -> Bool {
+        let lowered = command.lowercased()
+        guard let firstToken = lowered.split(separator: " ").first.map(String.init) else {
+            return false
+        }
+
+        let binaryName = (firstToken as NSString).lastPathComponent
+        guard binaryName == "qoder" else {
+            return false
+        }
+
+        return firstToken == "qoder" || firstToken.hasSuffix("/qoder")
     }
 
     /// Returns `true` when the given `ps` command string belongs to a Claude Code process.
