@@ -27,6 +27,8 @@ This index is the repository map for humans and coding agents. Read these files 
 ## Superpowers Plans
 
 - [docs/superpowers/plans/2026-04-18-opencode-stability.md](./superpowers/plans/2026-04-18-opencode-stability.md) for the OpenCode stability implementation plan
+- [docs/superpowers/specs/2026-07-09-codex-subagent-parent-lifecycle-design.md](./superpowers/specs/2026-07-09-codex-subagent-parent-lifecycle-design.md) for the Codex parent and subagent lifecycle design
+- [docs/superpowers/plans/2026-07-09-codex-subagent-parent-lifecycle.md](./superpowers/plans/2026-07-09-codex-subagent-parent-lifecycle.md) for the Codex parent and subagent lifecycle implementation plan
 
 ## Runtime And Product Notes
 
