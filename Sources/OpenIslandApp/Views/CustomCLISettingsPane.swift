@@ -3,6 +3,11 @@ import OpenIslandCore
 
 // MARK: - Custom CLI Settings Pane
 
+/// Settings pane for managing custom Claude-compatible CLI profiles.
+///
+/// Shows a list of configured profiles (display name + executable path),
+/// with add and delete actions. The add/edit sheet auto-derives the
+/// ``ClaudeCompatibleCLIProfile/hookSource`` from the executable path basename.
 struct CustomCLISettingsPane: View {
     var model: AppModel
 
@@ -101,10 +106,12 @@ struct CustomCLISettingsPane: View {
 
     // MARK: - Helpers
 
+    /// Reload profiles from the store.
     private func loadProfiles() {
         profiles = store.load()
     }
 
+    /// Insert or replace a profile in the local list and persist.
     private func saveProfile(_ profile: ClaudeCompatibleCLIProfile) {
         var updated = profiles
         if let index = updated.firstIndex(where: { $0.id == profile.id }) {
@@ -116,6 +123,7 @@ struct CustomCLISettingsPane: View {
         try? store.save(updated)
     }
 
+    /// Remove a profile from the local list and persist.
     private func deleteProfile(_ profile: ClaudeCompatibleCLIProfile) {
         profiles.removeAll { $0.id == profile.id }
         try? store.save(profiles)
@@ -124,6 +132,11 @@ struct CustomCLISettingsPane: View {
 
 // MARK: - Edit Profile Sheet
 
+/// Modal sheet for adding or editing a single custom CLI profile.
+///
+/// Shows two fields: display name and executable path. The executable path
+/// can be chosen via an ``NSOpenPanel`` file browser. The ``hookSource``
+/// is auto-derived from the path basename when the user saves.
 private struct EditCLIProfileSheet: View {
     var profile: ClaudeCompatibleCLIProfile
     var onSave: (ClaudeCompatibleCLIProfile) -> Void
@@ -193,6 +206,14 @@ private struct EditCLIProfileSheet: View {
 
     // MARK: - Field row helper
 
+    /// Build a labelled row suitable for a settings form, with optional
+    /// error text shown below the content.
+    ///
+    /// - Parameters:
+    ///   - label: The right-aligned label text.
+    ///   - content: The input control(s) for this field.
+    ///   - error: An optional error string; when non-nil, alignment shifts
+    ///     to top-of-text and the error is rendered in red below the content.
     @ViewBuilder
     private func fieldRow(_ label: String, @ViewBuilder content: () -> some View, error: () -> String?) -> some View {
         HStack(alignment: error() != nil ? .top : .firstTextBaseline) {
@@ -213,6 +234,7 @@ private struct EditCLIProfileSheet: View {
 
     // MARK: - Actions
 
+    /// Present an ``NSOpenPanel`` for choosing the CLI executable.
     private func browseFile() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = false
@@ -226,11 +248,23 @@ private struct EditCLIProfileSheet: View {
         }
     }
 
-    /// Derive hookSource from the executable path's basename (without extension).
+    /// Derive the hook source identifier from an executable path.
+    ///
+    /// Takes the last path component without its file extension.
+    /// For example:
+    /// - `/opt/company/bin/acme-claude` → `acme-claude`
+    /// - `/usr/local/bin/my-cc-wrapper` → `my-cc-wrapper`
+    ///
+    /// - Parameter path: The full executable path.
+    /// - Returns: The basename without extension.
     private static func deriveHookSource(from path: String) -> String {
         URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
     }
 
+    /// Validate fields and call back the save action.
+    ///
+    /// Trims input, sets inline errors for empty fields, and only calls
+    /// ``onSave`` when both fields are non-empty.
     private func commit() {
         let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedPath = executablePath.trimmingCharacters(in: .whitespacesAndNewlines)
