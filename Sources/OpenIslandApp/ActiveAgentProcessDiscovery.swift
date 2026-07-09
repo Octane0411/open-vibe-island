@@ -50,9 +50,14 @@ struct ActiveAgentProcessDiscovery {
     typealias CommandRunner = @Sendable (_ executablePath: String, _ arguments: [String]) -> String?
 
     private let commandRunner: CommandRunner
+    private let customClaudeProfileStore: ClaudeCompatibleCLIProfileStore
 
-    init(commandRunner: @escaping CommandRunner = Self.commandOutput) {
+    init(
+        commandRunner: @escaping CommandRunner = Self.commandOutput,
+        customClaudeProfileStore: ClaudeCompatibleCLIProfileStore = ClaudeCompatibleCLIProfileStore()
+    ) {
         self.commandRunner = commandRunner
+        self.customClaudeProfileStore = customClaudeProfileStore
     }
 
     func discover() -> [ProcessSnapshot] {
@@ -65,6 +70,7 @@ struct ActiveAgentProcessDiscovery {
 
         var snapshots: [ProcessSnapshot] = []
         var claimedKeys: Set<String> = []
+        let customClaudeProfiles = customClaudeProfileStore.load()
 
         for process in processes {
             guard process.terminalTTY != nil else {
@@ -85,7 +91,11 @@ struct ActiveAgentProcessDiscovery {
                 continue
             }
 
-            if isClaudeProcess(command: process.command) {
+            if isClaudeProcess(command: process.command)
+                || matchesCustomClaudeCompatibleProcess(
+                    command: process.command,
+                    profiles: customClaudeProfiles
+                ) {
                 guard let snapshot = claudeSnapshot(for: process, processesByPID: processesByPID) else {
                     continue
                 }
@@ -690,6 +700,13 @@ struct ActiveAgentProcessDiscovery {
 
         return firstToken == "claude"
             || firstToken.hasSuffix("/claude")
+    }
+
+    private func matchesCustomClaudeCompatibleProcess(
+        command: String,
+        profiles: [ClaudeCompatibleCLIProfile]
+    ) -> Bool {
+        profiles.contains { $0.matches(command: command) }
     }
 
     private static func commandOutput(executablePath: String, arguments: [String]) -> String? {
