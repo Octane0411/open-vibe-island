@@ -239,4 +239,5 @@
 "settings.customCLI.save" = "儲存";
 "settings.customCLI.delete" = "刪除";
 "settings.customCLI.deleteConfirm" = "確定要移除此「%@」配置嗎？";
+"settings.customCLI.deleteConfirmTitle" = "移除自訂 CLI？";
 "settings.customCLI.errorRequired" = "此欄位為必填項。";

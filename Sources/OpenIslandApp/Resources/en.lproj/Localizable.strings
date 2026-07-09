@@ -240,4 +240,5 @@
 "settings.customCLI.save" = "Save";
 "settings.customCLI.delete" = "Delete";
 "settings.customCLI.deleteConfirm" = "Are you sure you want to remove \"%@\"?";
+"settings.customCLI.deleteConfirmTitle" = "Remove Custom CLI?";
 "settings.customCLI.errorRequired" = "This field is required.";

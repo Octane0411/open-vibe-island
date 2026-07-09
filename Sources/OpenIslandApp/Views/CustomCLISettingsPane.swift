@@ -83,7 +83,7 @@ struct CustomCLISettingsPane: View {
                 }
             )
         }
-        .alert(lang.t("settings.general.uninstallConfirmTitle"),
+        .alert(lang.t("settings.customCLI.deleteConfirmTitle"),
                isPresented: Binding(
                 get: { deleteConfirm != nil },
                 set: { if !$0 { deleteConfirm = nil } }
