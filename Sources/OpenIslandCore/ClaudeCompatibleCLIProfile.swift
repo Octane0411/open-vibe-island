@@ -89,10 +89,9 @@ public struct ClaudeCompatibleCLIProfile: Codable, Equatable, Identifiable, Send
 
     /// Check whether a command line matches this profile.
     ///
-    /// Matching uses three strategies derived from ``executablePath``:
-    /// 1. The full path appears as a substring of the command.
-    /// 2. A whitespace-delimited token equals the full path.
-    /// 3. A token's last path component equals the executable's basename.
+    /// Matching uses two strategies derived from ``executablePath``:
+    /// 1. A whitespace-delimited token equals the full path.
+    /// 2. A token's last path component equals the executable's basename.
     ///
     /// - Parameter command: The raw command line (e.g. the ``command`` field
     ///   from a ``ProcessInfo``-style snapshot).
@@ -104,10 +103,6 @@ public struct ClaudeCompatibleCLIProfile: Codable, Equatable, Identifiable, Send
         guard isValid else { return false }
 
         let path = normalizedExecutablePath
-        if command.contains(path) {
-            return true
-        }
-
         let tokens = command.split(whereSeparator: \.isWhitespace).map(String.init)
         return tokens.contains { token in
             token == path || URL(fileURLWithPath: token).lastPathComponent == executableBasename
