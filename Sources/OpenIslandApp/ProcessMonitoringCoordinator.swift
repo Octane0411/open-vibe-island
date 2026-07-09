@@ -509,6 +509,18 @@ final class ProcessMonitoringCoordinator {
             }
         }
 
+        // Qoder sessions are hook-managed (Claude Code fork) and use UUIDs
+        // that Open Island cannot recover from ps/lsof. As long as any
+        // qoder process exists, keep every tracked Qoder session alive so
+        // Stop/completed sessions don't get evicted by the hook-managed
+        // liveness fallback in SessionState.markProcessLiveness.
+        let hasQoderProcess = activeProcesses.contains { $0.tool == .qoder }
+        if hasQoderProcess {
+            for session in sessions where session.tool == .qoder && !session.isDemoSession {
+                aliveIDs.insert(session.id)
+            }
+        }
+
         // Cursor sessions: prefer concrete cursor-agent processes when they
         // are visible (Cursor CLI / integrated terminal), then fall back to
         // app-level liveness for IDE-only hook sessions where there is no

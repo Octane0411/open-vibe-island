@@ -257,4 +257,44 @@ struct ActiveAgentProcessDiscoveryTests {
             ),
         ])
     }
+
+    @Test
+    func discoverDetectsQoderCLIProcess() {
+        let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
+            if executablePath == "/bin/ps" {
+                return """
+                  102 301 ttys002 qoder
+                  301 900 ttys002 -/opt/homebrew/bin/fish
+                  900 1 ?? /Applications/Ghostty.app/Contents/MacOS/ghostty
+                """
+            }
+
+            guard executablePath == "/usr/sbin/lsof",
+                  let pid = arguments.dropFirst(2).first else {
+                return nil
+            }
+
+            switch pid {
+            case "102":
+                return """
+                fcwd
+                n/tmp/open-island
+                """
+            default:
+                Issue.record("unexpected lsof lookup for pid \(pid)")
+                return nil
+            }
+        }
+
+        let snapshots = discovery.discover()
+
+        #expect(snapshots.count == 1)
+        #expect(snapshots.contains(.init(
+            tool: .qoder,
+            sessionID: nil,
+            workingDirectory: "/tmp/open-island",
+            terminalTTY: "/dev/ttys002",
+            terminalApp: "Ghostty"
+        )))
+    }
 }
