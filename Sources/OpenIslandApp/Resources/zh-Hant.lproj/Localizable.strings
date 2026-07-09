@@ -235,10 +235,8 @@
 "settings.customCLI.edit" = "編輯自訂 CLI";
 "settings.customCLI.displayName" = "顯示名稱";
 "settings.customCLI.executablePath" = "可執行檔路徑";
-"settings.customCLI.hookSource" = "Hook 識別碼";
 "settings.customCLI.browse" = "選擇…";
 "settings.customCLI.save" = "儲存";
 "settings.customCLI.delete" = "刪除";
 "settings.customCLI.deleteConfirm" = "確定要移除此「%@」配置嗎？";
 "settings.customCLI.errorRequired" = "此欄位為必填項。";
-"settings.customCLI.errorHookSource" = "僅允許字母、數字、點、底線和連字號。";

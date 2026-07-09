@@ -7,7 +7,6 @@ struct CustomCLISettingsPane: View {
     var model: AppModel
 
     @State private var profiles: [ClaudeCompatibleCLIProfile] = []
-    @State private var showEditSheet = false
     @State private var editingProfile: ClaudeCompatibleCLIProfile?
     @State private var deleteConfirm: ClaudeCompatibleCLIProfile?
 
@@ -59,7 +58,6 @@ struct CustomCLISettingsPane: View {
                         hookSource: "",
                         executablePath: ""
                     )
-                    showEditSheet = true
                 } label: {
                     Label(lang.t("settings.customCLI.add"), systemImage: "plus")
                 }
@@ -68,18 +66,17 @@ struct CustomCLISettingsPane: View {
         .formStyle(.grouped)
         .navigationTitle(lang.t("settings.tab.customCLI"))
         .onAppear(perform: loadProfiles)
-        .sheet(isPresented: $showEditSheet) {
-            if let profile = editingProfile {
-                EditCLIProfileSheet(
-                    profile: profile,
-                    isPresented: $showEditSheet,
-                    onSave: { updated in
-                        saveProfile(updated)
-                        showEditSheet = false
-                    },
-                    onCancel: { showEditSheet = false }
-                )
-            }
+        .sheet(item: $editingProfile) { profile in
+            EditCLIProfileSheet(
+                profile: profile,
+                onSave: { updated in
+                    saveProfile(updated)
+                    editingProfile = nil
+                },
+                onCancel: {
+                    editingProfile = nil
+                }
+            )
         }
         .alert(lang.t("settings.general.uninstallConfirmTitle"),
                isPresented: Binding(
@@ -128,94 +125,47 @@ struct CustomCLISettingsPane: View {
 // MARK: - Edit Profile Sheet
 
 private struct EditCLIProfileSheet: View {
-    @State var profile: ClaudeCompatibleCLIProfile
-    @Binding var isPresented: Bool
+    var profile: ClaudeCompatibleCLIProfile
     var onSave: (ClaudeCompatibleCLIProfile) -> Void
     var onCancel: () -> Void
 
     @State private var displayName: String = ""
     @State private var executablePath: String = ""
-    @State private var hookSource: String = ""
     @State private var nameError: String? = nil
     @State private var pathError: String? = nil
-    @State private var hookSourceError: String? = nil
 
-    private var isEditing: Bool {
-        !profile.displayName.isEmpty
-    }
-
-    private var isValid: Bool {
-        ClaudeCompatibleCLIProfile(
-            displayName: displayName,
-            hookSource: hookSource,
-            executablePath: executablePath
-        ).isValid
+    private var isEditing: Bool { !profile.displayName.isEmpty }
+    private var fieldsValid: Bool {
+        !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !executablePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
         VStack(spacing: 0) {
             Form {
                 Section {
-                    LabeledContent(lang("settings.customCLI.displayName")) {
-                        VStack(alignment: .trailing) {
-                            TextField("", text: $displayName)
+                    fieldRow(lang("settings.customCLI.displayName")) {
+                        TextField("", text: $displayName)
+                            .textFieldStyle(.roundedBorder)
+                            .onChange(of: displayName) { _, _ in nameError = nil }
+                    } error: {
+                        nameError
+                    }
+
+                    fieldRow(lang("settings.customCLI.executablePath")) {
+                        HStack(spacing: 6) {
+                            TextField("", text: $executablePath)
                                 .textFieldStyle(.roundedBorder)
-                                .frame(width: 280)
-                                .onChange(of: displayName) { _, _ in
-                                    nameError = nil
-                                }
-                            if let error = nameError {
-                                Text(error)
-                                    .font(.caption)
-                                    .foregroundStyle(.red)
+                            Button(lang("settings.customCLI.browse")) {
+                                browseFile()
                             }
                         }
+                    } error: {
+                        pathError
                     }
 
-                    LabeledContent(lang("settings.customCLI.executablePath")) {
-                        VStack(alignment: .trailing) {
-                            HStack(spacing: 6) {
-                                TextField("", text: $executablePath)
-                                    .textFieldStyle(.roundedBorder)
-                                    .frame(width: 220)
-                                    .onChange(of: executablePath) { _, newPath in
-                                        pathError = nil
-                                        autoFillHookSource(from: newPath)
-                                    }
-
-                                Button(lang("settings.customCLI.browse")) {
-                                    browseFile()
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                            }
-                            if let error = pathError {
-                                Text(error)
-                                    .font(.caption)
-                                    .foregroundStyle(.red)
-                            }
-                        }
-                    }
-
-                    LabeledContent(lang("settings.customCLI.hookSource")) {
-                        VStack(alignment: .trailing) {
-                            TextField("", text: $hookSource)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 200)
-                                .onChange(of: hookSource) { _, _ in
-                                    hookSourceError = nil
-                                }
-                            if let error = hookSourceError {
-                                Text(error)
-                                    .font(.caption)
-                                    .foregroundStyle(.red)
-                            }
-                        }
-                    }
                 } header: {
-                    Text(isEditing
-                         ? lang("settings.customCLI.edit")
-                         : lang("settings.customCLI.addTitle"))
+                    Text(isEditing ? lang("settings.customCLI.edit") : lang("settings.customCLI.addTitle"))
                 }
             }
             .formStyle(.grouped)
@@ -224,28 +174,39 @@ private struct EditCLIProfileSheet: View {
 
             HStack {
                 Spacer()
-                Button(lang("settings.general.cancel")) {
-                    onCancel()
-                }
-                .keyboardShortcut(.cancelAction)
-
-                Button(isEditing
-                       ? lang("settings.customCLI.save")
-                       : lang("settings.customCLI.add")) {
+                Button(lang("settings.general.cancel")) { onCancel() }
+                    .keyboardShortcut(.cancelAction)
+                Button(isEditing ? lang("settings.customCLI.save") : lang("settings.customCLI.add")) {
                     commit()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(!isValid)
+                .disabled(!fieldsValid)
             }
             .padding()
         }
-        .frame(width: 480)
+        .frame(width: 460)
         .onAppear {
             displayName = profile.displayName
             executablePath = profile.executablePath
-            hookSource = profile.hookSource
-            if hookSource.isEmpty {
-                autoFillHookSource(from: executablePath)
+        }
+    }
+
+    // MARK: - Field row helper
+
+    @ViewBuilder
+    private func fieldRow(_ label: String, @ViewBuilder content: () -> some View, error: () -> String?) -> some View {
+        HStack(alignment: error() != nil ? .top : .firstTextBaseline) {
+            Text(label)
+                .frame(width: 100, alignment: .trailing)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 4) {
+                content()
+                if let err = error() {
+                    Text(err)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
             }
         }
     }
@@ -262,49 +223,32 @@ private struct EditCLIProfileSheet: View {
         if panel.runModal() == .OK, let url = panel.url {
             executablePath = url.path
             pathError = nil
-            autoFillHookSource(from: executablePath)
         }
     }
 
-    private func autoFillHookSource(from path: String) {
-        guard !path.isEmpty else { return }
-        let basename = URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
-        if !basename.isEmpty {
-            hookSource = basename
-        }
+    /// Derive hookSource from the executable path's basename (without extension).
+    private static func deriveHookSource(from path: String) -> String {
+        URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
     }
 
     private func commit() {
         let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedPath = executablePath.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedSource = hookSource.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Validate
         nameError = trimmedName.isEmpty ? lang("settings.customCLI.errorRequired") : nil
         pathError = trimmedPath.isEmpty ? lang("settings.customCLI.errorRequired") : nil
-        if !ClaudeCompatibleCLIProfile.isValidHookSource(trimmedSource) {
-            hookSourceError = lang("settings.customCLI.errorHookSource")
-        } else {
-            hookSourceError = nil
-        }
 
-        guard nameError == nil, pathError == nil, hookSourceError == nil else {
-            return
-        }
+        guard nameError == nil, pathError == nil else { return }
 
-        let updated = ClaudeCompatibleCLIProfile(
+        onSave(ClaudeCompatibleCLIProfile(
             id: profile.id,
             displayName: trimmedName,
-            hookSource: trimmedSource,
+            hookSource: Self.deriveHookSource(from: trimmedPath),
             executablePath: trimmedPath
-        )
-
-        onSave(updated)
+        ))
     }
 
     private func lang(_ key: String) -> String {
-        // Access language via shared instance; model is not available in sheet.
-        // Use explicit NSLocalizedString with Bundle lookup via LanguageManager.
         LanguageManager.shared.t(key)
     }
 }

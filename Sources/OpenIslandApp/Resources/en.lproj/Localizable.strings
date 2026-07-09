@@ -236,10 +236,8 @@
 "settings.customCLI.edit" = "Edit Custom CLI";
 "settings.customCLI.displayName" = "Display Name";
 "settings.customCLI.executablePath" = "Executable Path";
-"settings.customCLI.hookSource" = "Hook Source";
 "settings.customCLI.browse" = "Browse…";
 "settings.customCLI.save" = "Save";
 "settings.customCLI.delete" = "Delete";
 "settings.customCLI.deleteConfirm" = "Are you sure you want to remove \"%@\"?";
 "settings.customCLI.errorRequired" = "This field is required.";
-"settings.customCLI.errorHookSource" = "Only letters, numbers, dots, underscores, and hyphens are allowed.";
