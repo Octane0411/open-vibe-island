@@ -523,6 +523,21 @@ public final class BridgeServer: @unchecked Sendable {
 
             let command = payload.commandPreview ?? "Bash command"
 
+            if payload.openIslandNotifyOnly == true {
+                emit(
+                    .activityUpdated(
+                        SessionActivityUpdated(
+                            sessionID: payload.sessionID,
+                            summary: "Running: \(command)",
+                            phase: .running,
+                            timestamp: .now
+                        )
+                    )
+                )
+                send(.response(.acknowledged), to: clientID)
+                return
+            }
+
             let approvalEvent = AgentEvent.permissionRequested(
                 PermissionRequested(
                     sessionID: payload.sessionID,
