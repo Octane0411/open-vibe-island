@@ -622,6 +622,7 @@ final class AppModel {
 
         overlay.appModel = self
         overlay.restoreDisplayPreference()
+        overlay.startObservingDisplayChanges()
         overlay.onStatusMessage = { [weak self] message in
             self?.lastActionMessage = message
         }
