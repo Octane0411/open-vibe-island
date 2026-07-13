@@ -38,6 +38,17 @@ final class OverlayPanelController {
     weak var model: AppModel?
     private(set) var notchRect: NSRect = .zero
 
+    /// When true, the overlay behaves as a menu bar drop-down: the closed pill
+    /// is hidden (the `NSStatusItem` is the closed state) and the opened panel
+    /// is anchored under the icon via `menuBarAnchorProvider`.
+    var menuBarMode = false
+    /// Returns the desired horizontal screen center for the opened panel, or
+    /// nil to fall back to the default (screen-centered) placement.
+    var menuBarAnchorProvider: (() -> CGFloat?)?
+    /// Returns the status item button's screen frame, so outside-click
+    /// dismissal can ignore clicks the button's own action already handles.
+    var menuBarButtonFrameProvider: (() -> NSRect?)?
+
     var isVisible: Bool {
         panel?.isVisible == true
     }
@@ -55,7 +66,12 @@ final class OverlayPanelController {
         let panel = self.panel ?? makePanel(model: model)
         self.panel = panel
         positionPanel(panel, preferredScreenID: preferredScreenID, animated: false)
-        panel.orderFrontRegardless()
+        if menuBarMode {
+            // The status item is the closed state — keep the floating pill hidden.
+            panel.orderOut(nil)
+        } else {
+            panel.orderFrontRegardless()
+        }
         panel.ignoresMouseEvents = true
         panel.acceptsMouseMovedEvents = false
         startEventMonitoring()
@@ -88,6 +104,21 @@ final class OverlayPanelController {
 
         if interactive {
             presentPanel(panel, activates: Self.shouldActivatePanel(for: model?.notchOpenReason))
+        } else if menuBarMode {
+            // Closed: in menu bar mode there is no visible pill to fall back to.
+            panel.orderOut(nil)
+        }
+    }
+
+    /// Reconcile panel visibility after `menuBarMode` is toggled at runtime.
+    func applyMenuBarModeVisibility() {
+        guard let panel else { return }
+        if menuBarMode {
+            if model?.notchStatus == .closed {
+                panel.orderOut(nil)
+            }
+        } else {
+            panel.orderFrontRegardless()
         }
     }
 
@@ -240,12 +271,16 @@ final class OverlayPanelController {
     private func handleMouseMoved(_ screenLocation: NSPoint) {
         guard let model else { return }
 
-        let inClosedSurfaceArea = isPointInClosedSurfaceArea(screenLocation)
+        // In menu bar mode the closed state is the status item — there is no
+        // floating pill to hover, so skip hover-open entirely (click-driven).
+        if !menuBarMode {
+            let inClosedSurfaceArea = isPointInClosedSurfaceArea(screenLocation)
 
-        if model.notchStatus == .closed && inClosedSurfaceArea {
-            scheduleHoverOpen()
-        } else if model.notchStatus == .closed && !inClosedSurfaceArea {
-            cancelHoverOpen()
+            if model.notchStatus == .closed && inClosedSurfaceArea {
+                scheduleHoverOpen()
+            } else if model.notchStatus == .closed && !inClosedSurfaceArea {
+                cancelHoverOpen()
+            }
         }
 
         let shouldTrackNotificationPointer = model.notchStatus == .opened
@@ -263,6 +298,21 @@ final class OverlayPanelController {
 
     private func handleMouseDown(_ screenLocation: NSPoint) {
         guard let model else { return }
+
+        if menuBarMode {
+            // Opening is owned by the status item button's action. Here we only
+            // dismiss on clicks outside the opened panel — and ignore clicks on
+            // the button itself, which the action already toggles.
+            guard model.notchStatus == .opened else { return }
+            if let buttonFrame = menuBarButtonFrameProvider?(),
+               Self.rectContainsIncludingEdges(buttonFrame, point: screenLocation) {
+                return
+            }
+            if !isPointInExpandedArea(screenLocation) {
+                model.notchClose()
+            }
+            return
+        }
 
         let inClosedSurfaceArea = isPointInClosedSurfaceArea(screenLocation)
 
@@ -452,13 +502,27 @@ final class OverlayPanelController {
 
     private func panelFrame(for model: AppModel?, on screen: NSScreen) -> NSRect {
         let size = panelSize(for: model, on: screen)
-        return NSRect(
-            x: screen.frame.midX - size.width / 2,
-            y: screen.frame.maxY - size.height,
-            width: size.width,
-            height: size.height
-        )
+        let x: CGFloat
+        let y: CGFloat
+        if menuBarMode, let anchorX = menuBarAnchorProvider?() {
+            // Center the panel under the icon, clamped to stay on-screen.
+            let margin: CGFloat = 8
+            let minX = screen.frame.minX + margin
+            let maxX = screen.frame.maxX - size.width - margin
+            x = min(max(anchorX - size.width / 2, minX), maxX)
+            // Drop the panel just below the menu bar. `visibleFrame.maxY` sits
+            // under the menu bar; subtracting the height puts the panel's top
+            // there, with a small gap so the flat surface tucks under the bar.
+            y = screen.visibleFrame.maxY - size.height - Self.menuBarPanelTopGap
+        } else {
+            x = screen.frame.midX - size.width / 2
+            y = screen.frame.maxY - size.height
+        }
+        return NSRect(x: x, y: y, width: size.width, height: size.height)
     }
+
+    /// Small breathing gap between the menu bar and the dropped-down panel.
+    private static let menuBarPanelTopGap: CGFloat = 2
 
     /// Always returns the maximum (opened) panel size so the window never
     /// needs to resize.  All visual transitions are driven purely by SwiftUI
@@ -509,6 +573,16 @@ final class OverlayPanelController {
             sessions: model.islandListSessions
         )
 
+        // Menu bar mode hugs the SwiftUI-measured natural content height once
+        // it's available, avoiding the estimate's slack (e.g. an expanded
+        // session reserving more than it renders).
+        if menuBarMode,
+           !visibleSessions.isEmpty,
+           model.notchOpenReason != .notification,
+           model.measuredMenuBarContentHeight > 0 {
+            return model.measuredMenuBarContentHeight
+        }
+
         if visibleSessions.isEmpty {
             return Self.openedEmptyStateHeight
         }
@@ -547,8 +621,16 @@ final class OverlayPanelController {
         let listHeight = rowsHeight + spacingHeight
         // Cap to match AutoHeightScrollView's maxHeight in IslandPanelView.
         let cappedListHeight = min(listHeight, Self.maxSessionListHeight)
-        return cappedListHeight + Self.openedContentVerticalInsets
+        // Menu bar mode hides the standalone list header (36pt row + 1pt
+        // divider) — its overview moved into the control strip — so reclaim
+        // that height to avoid an empty strip at the panel's bottom.
+        let headerSaving = menuBarMode ? Self.menuBarListHeaderSaving : 0
+        return cappedListHeight + Self.openedContentVerticalInsets - headerSaving
     }
+
+    /// Height reclaimed in menu bar mode where the standalone session-list
+    /// header is hidden (matches `sessionPanelHeader`'s 36pt + 1pt divider).
+    private static let menuBarListHeaderSaving: CGFloat = 37
 
     /// Additional height for the actionable session's inline action area.
     private func actionableBodyHeight(for session: AgentSession, model: AppModel) -> CGFloat {

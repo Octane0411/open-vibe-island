@@ -24,6 +24,8 @@
 "settings.general.autoHideNoSessions" = "Auto-hide without active sessions";
 "settings.general.autoCollapse" = "Auto-collapse on mouse exit";
 "settings.general.showDockIcon" = "Show icon in Dock";
+"settings.general.menuBarIcon" = "Show icon in menu bar (drops down from the icon)";
+"settings.menuBarMode.notApplicable" = "Not applicable in menu bar mode.";
 "settings.general.hapticFeedback" = "Haptic feedback on hover";
 "settings.general.suppressFrontmostNotifications" = "Suppress notifications for focused sessions";
 "settings.general.showCodexUsage" = "Show Codex usage";

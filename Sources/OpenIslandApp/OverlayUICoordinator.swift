@@ -166,6 +166,7 @@ final class OverlayUICoordinator {
                 self?.autoCollapseSurfaceHasBeenEntered = false
                 self?.isPointerInsideIslandSurface = false
                 self?.appModel?.measuredNotificationContentHeight = 0
+                self?.appModel?.measuredMenuBarContentHeight = 0
             }
         )
     }
