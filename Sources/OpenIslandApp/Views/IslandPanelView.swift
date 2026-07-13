@@ -2454,6 +2454,26 @@ private struct StructuredQuestionPromptView: View {
 
 // MARK: - Reply TextField (NSTextField wrapper for IME-safe Enter handling)
 
+/// NSTextField subclass that activates the app on first click. The overlay
+/// panel is `.nonactivatingPanel`, so a click into the panel makes it key
+/// but leaves the previously active app frontmost. Without an explicit
+/// activate, keystrokes continue to route to that other app and this field
+/// receives nothing — the user sees a focus ring but typing does not work.
+private final class ReplyNSTextField: NSTextField {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        // Activate synchronously before the field starts editing so the
+        // very first keystroke routes here instead of the previously
+        // active app (e.g. the terminal hosting the agent session).
+        if !NSApp.isActive {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        window?.makeKey()
+        super.mouseDown(with: event)
+    }
+}
+
 /// NSTextField wrapper that fires `onSubmit` only when the IME composition
 /// is finished — pressing Enter during Chinese/Japanese IME composition
 /// confirms the candidate instead of submitting.
@@ -2463,7 +2483,7 @@ private struct ReplyTextField: NSViewRepresentable {
     var onSubmit: () -> Void
 
     func makeNSView(context: Context) -> NSTextField {
-        let field = NSTextField()
+        let field = ReplyNSTextField()
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
@@ -2500,6 +2520,15 @@ private struct ReplyTextField: NSViewRepresentable {
         init(text: Binding<String>, onSubmit: @escaping () -> Void) {
             self.text = text
             self.onSubmit = onSubmit
+        }
+
+        func controlTextDidBeginEditing(_ obj: Notification) {
+            // Safety net: even if the field gained focus through some path
+            // that bypassed mouseDown (e.g. tab key, programmatic focus),
+            // ensure the app is active so keystrokes are delivered here.
+            if !NSApp.isActive {
+                NSApp.activate(ignoringOtherApps: true)
+            }
         }
 
         func controlTextDidChange(_ obj: Notification) {
