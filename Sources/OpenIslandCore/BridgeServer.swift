@@ -1003,6 +1003,14 @@ public final class BridgeServer: @unchecked Sendable {
             clearAllActiveSubagents(fromSession: payload.sessionID)
             dropPendingClaudeContexts(forSession: payload.sessionID)
 
+
+            // Claude Code forks (Qoder, Qwen Code, Factory, CodeBuddy) running
+            // as IDEs send SessionEnd after every model response, not just on
+            // actual exit. Treating SessionEnd as permanent would evict every
+            // turn's session within seconds. Treat it as a regular Stop for
+            // these forks so sessions persist via the liveness check until the
+            // IDE or CLI process is actually closed.
+            let isSessionEnd = ![.qoder, .qwenCode, .factory, .codebuddy].contains(payload.resolvedAgentTool)
             emit(
                 .sessionCompleted(
                     SessionCompleted(
@@ -1010,7 +1018,7 @@ public final class BridgeServer: @unchecked Sendable {
                         summary: "\(payload.resolvedAgentTool.displayName) session ended.",
                         timestamp: .now,
                         isInterrupt: true,
-                        isSessionEnd: true
+                        isSessionEnd: isSessionEnd
                     )
                 )
             )

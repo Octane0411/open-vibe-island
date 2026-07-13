@@ -509,6 +509,32 @@ final class ProcessMonitoringCoordinator {
             }
         }
 
+        // Qwen Code / Factory / CodeBuddy sessions are hook-managed (Claude Code
+        // forks) and use UUIDs that Open Island cannot recover from ps/lsof.
+        // As long as any of their processes exists, keep every tracked session
+        // alive so Stop/completed sessions don't get evicted by the hook-managed
+        // liveness fallback in SessionState.markProcessLiveness.
+        let hasQwenCodeProcess = activeProcesses.contains { $0.tool == .qwenCode }
+        if hasQwenCodeProcess {
+            for session in sessions where session.tool == .qwenCode && !session.isDemoSession {
+                aliveIDs.insert(session.id)
+            }
+        }
+
+        let hasFactoryProcess = activeProcesses.contains { $0.tool == .factory }
+        if hasFactoryProcess {
+            for session in sessions where session.tool == .factory && !session.isDemoSession {
+                aliveIDs.insert(session.id)
+            }
+        }
+
+        let hasCodeBuddyProcess = activeProcesses.contains { $0.tool == .codebuddy }
+        if hasCodeBuddyProcess {
+            for session in sessions where session.tool == .codebuddy && !session.isDemoSession {
+                aliveIDs.insert(session.id)
+            }
+        }
+
         // Cursor sessions: prefer concrete cursor-agent processes when they
         // are visible (Cursor CLI / integrated terminal), then fall back to
         // app-level liveness for IDE-only hook sessions where there is no
