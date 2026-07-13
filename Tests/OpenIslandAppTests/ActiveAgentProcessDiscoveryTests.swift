@@ -257,4 +257,38 @@ struct ActiveAgentProcessDiscoveryTests {
             ),
         ])
     }
+
+    @Test
+    func discoverDetectsOpenCodeProcessWithoutTTY() {
+        let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
+            if executablePath == "/bin/ps" {
+                return """
+                  102 1 ?? opencode
+                """
+            }
+
+            guard executablePath == "/usr/sbin/lsof",
+                  let pid = arguments.dropFirst(2).first else {
+                return nil
+            }
+
+            switch pid {
+            case "102":
+                return """
+                fcwd
+                n/tmp/open-island
+                """
+            default:
+                Issue.record("unexpected lsof lookup for pid \(pid)")
+                return nil
+            }
+        }
+
+        let snapshots = discovery.discover()
+
+        let openCodeSnapshots = snapshots.filter { $0.tool == .openCode }
+        #expect(openCodeSnapshots.count == 1)
+        #expect(openCodeSnapshots.first?.workingDirectory == "/tmp/open-island")
+        #expect(openCodeSnapshots.first?.terminalTTY == nil)
+    }
 }

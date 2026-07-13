@@ -67,7 +67,11 @@ struct ActiveAgentProcessDiscovery {
         var claimedKeys: Set<String> = []
 
         for process in processes {
-            guard process.terminalTTY != nil else {
+            // Most agent detection requires a TTY (terminal-attached process).
+            // OpenCode is an exception: it can run inside IDE integrated terminals
+            // that don't expose a TTY in `ps` output. Let OpenCode processes
+            // through so the liveness fallback can keep their sessions alive.
+            if process.terminalTTY == nil && !isOpenCodeProcess(command: process.command) {
                 continue
             }
 
