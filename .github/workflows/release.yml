@@ -58,22 +58,19 @@ jobs:
           # Add the keychain to the search list
           security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
 
-          # Store notarytool credentials in the keychain when possible. Apple
-          # can reject credential validation while legal agreements are pending
-          # or expired; keep the release moving as a signed, non-notarized build
-          # in that case and let the later notarization step skip itself.
+          # A release is notarized unless SKIP_NOTARIZE is explicitly enabled.
+          # Credential validation failures must stop the workflow before any
+          # release assets or update metadata are published.
           if [[ "${SKIP_NOTARIZE:-}" == "true" ]]; then
             echo "Skipping notarytool credential setup because SKIP_NOTARIZE is true."
             echo "notary_ready=false" >> "$GITHUB_OUTPUT"
-          elif xcrun notarytool store-credentials "open-island-notary" \
+          else
+            xcrun notarytool store-credentials "open-island-notary" \
               --apple-id "${{ secrets.APPLE_ID }}" \
               --team-id "${{ secrets.APPLE_TEAM_ID }}" \
               --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" \
-              --keychain "$KEYCHAIN_PATH"; then
+              --keychain "$KEYCHAIN_PATH"
             echo "notary_ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::warning::Notary credential validation failed; continuing with a signed, non-notarized release."
-            echo "notary_ready=false" >> "$GITHUB_OUTPUT"
           fi
 
           # Clean up
@@ -126,10 +123,9 @@ jobs:
 
           echo "Bundle structure OK"
 
-      - name: Notarize (best-effort)
+      - name: Notarize
         if: vars.SKIP_NOTARIZE != 'true' && steps.signing.outputs.notary_ready == 'true'
         id: notarize
-        continue-on-error: true
         env:
           OPEN_ISLAND_APP_NAME: "Open Island"
         run: |
@@ -140,7 +136,7 @@ jobs:
           echo "Submitting for notarization..."
           xcrun notarytool submit "$zip_path" \
             --keychain-profile "open-island-notary" \
-            --wait --timeout 10m || { echo "::warning::Notarization failed or timed out"; exit 1; }
+            --wait --timeout 10m
 
           echo "Stapling app bundle..."
           xcrun stapler staple -v "$bundle"
@@ -153,7 +149,7 @@ jobs:
           codesign --force --sign "${{ secrets.APPLE_SIGNING_IDENTITY }}" --timestamp "$dmg_path"
           xcrun notarytool submit "$dmg_path" \
             --keychain-profile "open-island-notary" \
-            --wait --timeout 10m || { echo "::warning::DMG notarization failed or timed out"; exit 1; }
+            --wait --timeout 10m
           xcrun stapler staple -v "$dmg_path"
 
           echo "notarized=true" >> "$GITHUB_OUTPUT"

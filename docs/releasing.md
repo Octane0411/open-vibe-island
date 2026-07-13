@@ -10,6 +10,24 @@ Follow [Semantic Versioning](https://semver.org/):
 - **Minor** (0.x.0): new features, non-breaking changes
 - **Major** (x.0.0): breaking changes
 
+## Notarization Preflight
+
+Before pushing a release tag, validate the repository's Apple notarization
+credentials against Apple's service:
+
+```bash
+gh workflow run "Notary Preflight" --ref main
+gh run list --workflow "Notary Preflight" --limit 1
+```
+
+Open the reported run and confirm that `Validate Apple notarization credentials`
+passes. Updated or expired Apple Developer agreements can make this check fail
+even while the existing Developer ID certificate can still sign an app.
+
+The release workflow treats signing and notarization as required by default. Set
+the `SKIP_NOTARIZE` repository variable to `true` only when intentionally shipping
+a signed but non-notarized build.
+
 ## Checklist
 
 1. **Confirm target**: ensure all intended changes are merged to `main`.
