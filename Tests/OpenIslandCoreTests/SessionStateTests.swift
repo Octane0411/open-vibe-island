@@ -959,15 +959,30 @@ struct SessionStateTests {
         #expect(managedStopHook?["statusMessage"] == nil)
 
         let sessionStartGroups = hooks?["SessionStart"] as? [[String: Any]]
+        #expect(sessionStartGroups?.contains(where: { $0["matcher"] as? String == "startup|resume" }) == true)
+        #expect(hooks?["PermissionRequest"] == nil)
+        #expect(hooks?["PreToolUse"] == nil)
+        #expect(hooks?["PostToolUse"] == nil)
+    }
+
+    @Test
+    func codexHookInstallerCanOptIntoPermissionRequestHook() throws {
+        let mutation = try CodexHookInstaller.installHooksJSON(
+            existingData: nil,
+            hookCommand: "'/tmp/OpenIslandHooks'",
+            includePermissionRequest: true
+        )
+
+        #expect(mutation.changed)
+        let root = try jsonObject(from: mutation.contents)
+        let hooks = root["hooks"] as? [String: Any]
         let permissionGroups = hooks?["PermissionRequest"] as? [[String: Any]]
         let managedPermissionHook = permissionGroups?
             .compactMap { $0["hooks"] as? [[String: Any]] }
             .flatMap { $0 }
             .first(where: { $0["command"] as? String == "'/tmp/OpenIslandHooks'" })
-        #expect(sessionStartGroups?.contains(where: { $0["matcher"] as? String == "startup|resume" }) == true)
+
         #expect(managedPermissionHook?["timeout"] as? Int == CodexHookInstaller.managedInteractiveTimeout)
-        #expect(hooks?["PreToolUse"] == nil)
-        #expect(hooks?["PostToolUse"] == nil)
     }
 
     @Test
@@ -1007,6 +1022,20 @@ struct SessionStateTests {
                   }
                 ]
               }
+            ],
+            "PermissionRequest": [
+              {
+                "hooks": [
+                  {
+                    "type": "command",
+                    "command": "'/tmp/old-debug/OpenIslandHooks'"
+                  },
+                  {
+                    "type": "command",
+                    "command": "/usr/bin/false"
+                  }
+                ]
+              }
             ]
           }
         }
@@ -1038,7 +1067,7 @@ struct SessionStateTests {
             .compactMap { $0["command"] as? String } ?? []
 
         #expect(preToolCommands == ["/usr/bin/printf"])
-        #expect(permissionCommands == ["'/tmp/new-release/OpenIslandHooks'"])
+        #expect(permissionCommands == ["/usr/bin/false"])
         #expect(hooks?["PostToolUse"] == nil)
         #expect(stopCommands.contains("/usr/bin/true"))
         #expect(stopCommands.contains("'/tmp/new-release/OpenIslandHooks'"))
@@ -1066,6 +1095,21 @@ struct SessionStateTests {
                   }
                 ]
               }
+            ],
+            "PermissionRequest": [
+              {
+                "hooks": [
+                  {
+                    "type": "command",
+                    "command": "'/tmp/OpenIslandHooks'",
+                    "statusMessage": "Managed by Open Island"
+                  },
+                  {
+                    "type": "command",
+                    "command": "/usr/bin/false"
+                  }
+                ]
+              }
             ]
           }
         }
@@ -1086,8 +1130,14 @@ struct SessionStateTests {
             .compactMap { $0["hooks"] as? [[String: Any]] }
             .flatMap { $0 }
             .compactMap { $0["command"] as? String } ?? []
+        let permissionGroups = hooks?["PermissionRequest"] as? [[String: Any]]
+        let permissionCommands = permissionGroups?
+            .compactMap { $0["hooks"] as? [[String: Any]] }
+            .flatMap { $0 }
+            .compactMap { $0["command"] as? String } ?? []
 
         #expect(stopCommands == ["/usr/bin/true"])
+        #expect(permissionCommands == ["/usr/bin/false"])
     }
 
     @Test
@@ -1324,12 +1374,14 @@ struct SessionStateTests {
         #expect(try Data(contentsOf: managedHooksBinaryURL) == Data("codex-hook".utf8))
         let hooksData = try Data(contentsOf: installed.hooksURL)
         let installedHooks = try jsonObject(from: hooksData)
-        let installedStopGroups = (installedHooks["hooks"] as? [String: Any])?["Stop"] as? [[String: Any]]
+        let installedHooksObject = installedHooks["hooks"] as? [String: Any]
+        let installedStopGroups = installedHooksObject?["Stop"] as? [[String: Any]]
         let installedManagedHook = installedStopGroups?
             .compactMap { $0["hooks"] as? [[String: Any]] }
             .flatMap { $0 }
             .first(where: { $0["command"] as? String == CodexHookInstaller.hookCommand(for: managedHooksBinaryURL.path) })
         #expect(installedManagedHook?["statusMessage"] == nil)
+        #expect(installedHooksObject?["PermissionRequest"] == nil)
 
         try FileManager.default.removeItem(at: hooksBinaryURL)
 
@@ -1341,6 +1393,46 @@ struct SessionStateTests {
         let uninstalled = try manager.uninstall()
         #expect(!uninstalled.managedHooksPresent)
         #expect(!FileManager.default.fileExists(atPath: uninstalled.manifestURL.path))
+    }
+
+    @Test
+    func codexHookInstallationManagerCanInstallPermissionRequestWhenEnabled() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-tests-\(UUID().uuidString)", isDirectory: true)
+        let codexDirectory = rootURL.appendingPathComponent(".codex", isDirectory: true)
+        let managedHooksBinaryURL = rootURL
+            .appendingPathComponent("managed", isDirectory: true)
+            .appendingPathComponent("OpenIslandHooks")
+        let manager = CodexHookInstallationManager(
+            codexDirectory: codexDirectory,
+            managedHooksBinaryURL: managedHooksBinaryURL
+        )
+        let hooksBinaryURL = rootURL
+            .appendingPathComponent("build", isDirectory: true)
+            .appendingPathComponent("VibeIslandHooks")
+
+        try FileManager.default.createDirectory(
+            at: hooksBinaryURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data("codex-hook".utf8).write(to: hooksBinaryURL)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hooksBinaryURL.path)
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        let installed = try manager.install(hooksBinaryURL: hooksBinaryURL, includePermissionRequest: true)
+        let hooksData = try Data(contentsOf: installed.hooksURL)
+        let installedHooks = try jsonObject(from: hooksData)
+        let installedHooksObject = installedHooks["hooks"] as? [String: Any]
+        let permissionGroups = installedHooksObject?["PermissionRequest"] as? [[String: Any]]
+        let managedPermissionHook = permissionGroups?
+            .compactMap { $0["hooks"] as? [[String: Any]] }
+            .flatMap { $0 }
+            .first(where: { $0["command"] as? String == CodexHookInstaller.hookCommand(for: managedHooksBinaryURL.path) })
+
+        #expect(managedPermissionHook?["timeout"] as? Int == CodexHookInstaller.managedInteractiveTimeout)
     }
 
     @Test
