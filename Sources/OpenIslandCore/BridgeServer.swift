@@ -1003,6 +1003,10 @@ public final class BridgeServer: @unchecked Sendable {
             clearAllActiveSubagents(fromSession: payload.sessionID)
             dropPendingClaudeContexts(forSession: payload.sessionID)
 
+            // Qoder IDE sends SessionEnd after every model response, not just
+            // on actual exit. Treat it as Stop for Qoder so the session
+            // persists via the Qoder.app liveness check until the IDE is closed.
+            let isSessionEnd = payload.resolvedAgentTool != .qoder
             emit(
                 .sessionCompleted(
                     SessionCompleted(
@@ -1010,7 +1014,7 @@ public final class BridgeServer: @unchecked Sendable {
                         summary: "\(payload.resolvedAgentTool.displayName) session ended.",
                         timestamp: .now,
                         isInterrupt: true,
-                        isSessionEnd: true
+                        isSessionEnd: isSessionEnd
                     )
                 )
             )
