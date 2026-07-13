@@ -116,7 +116,7 @@ struct OpenIslandHooksCLI {
 
     private static func logStderr(_ message: String) {
         guard let data = "[OpenIslandHooks] \(message)\n".data(using: .utf8) else { return }
-        FileHandle.standardError.write(data)
+        SafeFileDescriptorWriter.write(data)
     }
 
     private static func hookSource(arguments: [String]) -> HookSource {
