@@ -31,11 +31,11 @@ struct PerformancePolicyTests {
         #expect(ProcessMonitoringCoordinator.monitoringPollInterval(
             isResolvingInitialLiveSessions: false,
             hasTrackedLiveSessions: true
-        ) == 60)
+        ) == 20)
         #expect(ProcessMonitoringCoordinator.monitoringPollInterval(
             isResolvingInitialLiveSessions: false,
             hasTrackedLiveSessions: false
-        ) == 300)
+        ) == 30)
     }
 
     @MainActor
@@ -55,7 +55,7 @@ struct PerformancePolicyTests {
     @Test
     func trackedSessionTransitionForcesFullReconcileBeforeIdleDeadline() {
         let now = Date(timeIntervalSinceReferenceDate: 1_000)
-        let idleDeadline = now.addingTimeInterval(300)
+        let idleDeadline = now.addingTimeInterval(30)
 
         #expect(!ProcessMonitoringCoordinator.shouldPerformFullMonitorReconcile(
             now: now,

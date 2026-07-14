@@ -46,12 +46,21 @@ final class ProcessMonitoringCoordinator {
     private var sessionAttachmentMonitorTask: Task<Void, Never>?
 
     @ObservationIgnored
+    private var immediateReconcileTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var codexAppObservers: [NSObjectProtocol] = []
+
+    @ObservationIgnored
     private var wasCodexAppRunning = false
 
     private static let startupPollInterval: TimeInterval = 2
     private static let codexAppRunningProbeInterval: TimeInterval = 2
-    private static let activePollInterval: TimeInterval = 60
-    private static let idlePollInterval: TimeInterval = 300
+    private static let activePollInterval: TimeInterval = 2
+    private static let recentPollInterval: TimeInterval = 8
+    private static let idlePollInterval: TimeInterval = 20
+    private static let emptyPollInterval: TimeInterval = 30
+    private static let recentSessionWindow: TimeInterval = 120
     private static let cursorStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let codexAppStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let claudeDesktopStalenessTimeout: TimeInterval = 600  // 10 minutes
@@ -64,7 +73,7 @@ final class ProcessMonitoringCoordinator {
             return startupPollInterval
         }
 
-        return hasTrackedLiveSessions ? activePollInterval : idlePollInterval
+        return hasTrackedLiveSessions ? idlePollInterval : emptyPollInterval
     }
 
     static func monitoringWakeInterval(
@@ -104,6 +113,8 @@ final class ProcessMonitoringCoordinator {
     // MARK: - Monitoring lifecycle
 
     func startMonitoringIfNeeded() {
+        startCodexAppObserversIfNeeded()
+
         guard sessionAttachmentMonitorTask == nil else {
             return
         }
@@ -131,43 +142,25 @@ final class ProcessMonitoringCoordinator {
                     let discovery = self.activeAgentProcessDiscovery
                     let probe = self.terminalSessionAttachmentProbe
                     let resolver = self.terminalJumpTargetResolver
-                    let shouldResolveTerminals = hasTrackedLiveSessions
-                    let (snapshots, ghosttyAvail, terminalAvail, jumpTargets) = await Task.detached(priority: .utility) {
-                        let s = discovery.discover()
-                        let g: TerminalSessionAttachmentProbe.SnapshotAvailability<TerminalSessionAttachmentProbe.GhosttyTerminalSnapshot>
-                        let t: TerminalSessionAttachmentProbe.SnapshotAvailability<TerminalSessionAttachmentProbe.TerminalTabSnapshot>
-                        let j: [String: JumpTarget]
-
-                        if shouldResolveTerminals {
-                            g = probe.ghosttySnapshotAvailability()
-                            t = probe.terminalSnapshotAvailability()
-                            j = resolver.resolveJumpTargets(for: liveSessions, activeProcesses: s)
-                        } else {
-                            g = .available([], appIsRunning: false)
-                            t = .available([], appIsRunning: false)
-                            j = [:]
-                        }
-
-                        return (s, g, t, j)
-                    }.value
-                    let isCodexAppRunning = Self.isCodexDesktopAppRunning()
-                    self.reconcileSessionAttachments(
-                        activeProcesses: snapshots,
-                        ghosttyAvailability: ghosttyAvail,
-                        terminalAvailability: terminalAvail,
-                        preResolvedJumpTargets: jumpTargets,
-                        observedCodexAppRunning: isCodexAppRunning
+                    let options = Self.monitoringOptions(
+                        for: liveSessions,
+                        isResolvingInitialLiveSessions: self.isResolvingInitialLiveSessions
                     )
-                    if isCodexAppRunning {
-                        self.onCodexAppMaintenanceTick?()
-                    }
-
-                    let pollInterval = Self.monitoringPollInterval(
-                        isResolvingInitialLiveSessions: self.isResolvingInitialLiveSessions,
-                        hasTrackedLiveSessions: self.state.sessions.contains(where: \.isTrackedLiveSession)
+                    await self.performMonitoringPass(
+                        discovery: discovery,
+                        probe: probe,
+                        resolver: resolver,
+                        liveSessions: liveSessions,
+                        options: options
                     )
-                    nextFullReconcileAt = Date().addingTimeInterval(pollInterval)
-                    hadTrackedLiveSessions = self.state.sessions.contains(where: \.isTrackedLiveSession)
+
+                    let updatedLiveSessions = self.state.sessions.filter(\.isTrackedLiveSession)
+                    let updatedOptions = Self.monitoringOptions(
+                        for: updatedLiveSessions,
+                        isResolvingInitialLiveSessions: self.isResolvingInitialLiveSessions
+                    )
+                    nextFullReconcileAt = Date().addingTimeInterval(updatedOptions.pollInterval)
+                    hadTrackedLiveSessions = !updatedLiveSessions.isEmpty
                 } else {
                     let isCodexAppRunning = self.reconcileCodexAppRunningState()
                     if isCodexAppRunning {
@@ -195,12 +188,119 @@ final class ProcessMonitoringCoordinator {
         return isCodexAppRunning
     }
 
+    func scheduleReconcileSoon() {
+        immediateReconcileTask?.cancel()
+        immediateReconcileTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled, let self else {
+                return
+            }
+
+            let liveSessions = self.state.sessions.filter(\.isTrackedLiveSession)
+            let options = Self.monitoringOptions(
+                for: liveSessions,
+                isResolvingInitialLiveSessions: self.isResolvingInitialLiveSessions
+            )
+            await self.performMonitoringPass(
+                discovery: self.activeAgentProcessDiscovery,
+                probe: self.terminalSessionAttachmentProbe,
+                resolver: self.terminalJumpTargetResolver,
+                liveSessions: liveSessions,
+                options: options
+            )
+        }
+    }
+
+    @discardableResult
+    private func performMonitoringPass(
+        discovery: ActiveAgentProcessDiscovery,
+        probe: TerminalSessionAttachmentProbe,
+        resolver: TerminalJumpTargetResolver,
+        liveSessions: [AgentSession],
+        options: MonitoringOptions
+    ) async -> Bool {
+        let (snapshots, ghosttyAvail, terminalAvail, itermAvail, jumpTargets) = await Task.detached(priority: .utility) {
+            let s = discovery.discover()
+            let g: TerminalSessionAttachmentProbe.SnapshotAvailability<TerminalSessionAttachmentProbe.GhosttyTerminalSnapshot> = options.probeGhostty
+                ? probe.ghosttySnapshotAvailability()
+                : .available([], appIsRunning: false)
+            let t: TerminalSessionAttachmentProbe.SnapshotAvailability<TerminalSessionAttachmentProbe.TerminalTabSnapshot> = options.probeTerminal
+                ? probe.terminalSnapshotAvailability()
+                : .available([], appIsRunning: false)
+            let i: TerminalSessionAttachmentProbe.SnapshotAvailability<TerminalSessionAttachmentProbe.ITermSessionSnapshot> = options.probeITerm
+                ? probe.itermSnapshotAvailability()
+                : .available([], appIsRunning: false)
+            let j = liveSessions.isEmpty
+                ? [:]
+                : resolver.resolveJumpTargets(for: liveSessions, activeProcesses: s)
+            return (s, g, t, i, j)
+        }.value
+        let isCodexAppRunning = Self.isCodexDesktopAppRunning()
+        reconcileSessionAttachments(
+            activeProcesses: snapshots,
+            ghosttyAvailability: ghosttyAvail,
+            terminalAvailability: terminalAvail,
+            itermAvailability: itermAvail,
+            preResolvedJumpTargets: jumpTargets,
+            observedCodexAppRunning: isCodexAppRunning
+        )
+        if isCodexAppRunning {
+            onCodexAppMaintenanceTick?()
+        }
+        return isCodexAppRunning
+    }
+
+    private func startCodexAppObserversIfNeeded() {
+        guard codexAppObservers.isEmpty else { return }
+
+        let center = NSWorkspace.shared.notificationCenter
+        let launched = center.addObserver(
+            forName: NSWorkspace.didLaunchApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let bundleIdentifier = (notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?
+                .bundleIdentifier
+            Task { @MainActor [weak self, bundleIdentifier] in
+                self?.handleCodexAppWorkspaceNotification(bundleIdentifier: bundleIdentifier)
+            }
+        }
+        let terminated = center.addObserver(
+            forName: NSWorkspace.didTerminateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let bundleIdentifier = (notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?
+                .bundleIdentifier
+            Task { @MainActor [weak self, bundleIdentifier] in
+                self?.handleCodexAppWorkspaceNotification(bundleIdentifier: bundleIdentifier)
+            }
+        }
+        codexAppObservers = [launched, terminated]
+    }
+
+    private func handleCodexAppWorkspaceNotification(bundleIdentifier: String?) {
+        guard bundleIdentifier == "com.openai.codex" else {
+            return
+        }
+
+        let isRunning = Self.isCodexDesktopAppRunning()
+        guard isRunning != wasCodexAppRunning else {
+            return
+        }
+
+        wasCodexAppRunning = isRunning
+        onCodexAppRunningChanged?(isRunning)
+        scheduleReconcileSoon()
+    }
+
     // MARK: - Reconciliation
 
     func reconcileSessionAttachments(
         activeProcesses: [ActiveProcessSnapshot]? = nil,
         ghosttyAvailability: TerminalSessionAttachmentProbe.SnapshotAvailability<TerminalSessionAttachmentProbe.GhosttyTerminalSnapshot>? = nil,
         terminalAvailability: TerminalSessionAttachmentProbe.SnapshotAvailability<TerminalSessionAttachmentProbe.TerminalTabSnapshot>? = nil,
+        itermAvailability: TerminalSessionAttachmentProbe.SnapshotAvailability<TerminalSessionAttachmentProbe.ITermSessionSnapshot>? = nil,
         preResolvedJumpTargets: [String: JumpTarget]? = nil,
         observedCodexAppRunning: Bool? = nil
     ) {
@@ -253,6 +353,7 @@ final class ProcessMonitoringCoordinator {
                 for: sessions,
                 ghosttyAvailability: ghosttyAvailability,
                 terminalAvailability: terminalAvailability,
+                itermAvailability: itermAvailability ?? .available([], appIsRunning: false),
                 activeProcesses: activeProcesses,
                 allowRecentAttachmentGrace: !isResolvingInitialLiveSessions
             )
@@ -321,6 +422,90 @@ final class ProcessMonitoringCoordinator {
         }
         onSessionsReconciled?()
         onPersistenceNeeded?()
+    }
+
+    // MARK: - Monitoring policy
+
+    struct MonitoringOptions: Equatable {
+        var pollInterval: TimeInterval
+        var probeGhostty: Bool
+        var probeTerminal: Bool
+        var probeITerm: Bool
+    }
+
+    static func monitoringOptions(
+        for sessions: [AgentSession],
+        isResolvingInitialLiveSessions: Bool,
+        now: Date = .now
+    ) -> MonitoringOptions {
+        MonitoringOptions(
+            pollInterval: pollingInterval(
+                for: sessions,
+                isResolvingInitialLiveSessions: isResolvingInitialLiveSessions,
+                now: now
+            ),
+            probeGhostty: sessions.contains(where: shouldProbeGhostty),
+            probeTerminal: sessions.contains(where: shouldProbeTerminal),
+            probeITerm: sessions.contains(where: shouldProbeITerm)
+        )
+    }
+
+    static func pollingInterval(
+        for sessions: [AgentSession],
+        isResolvingInitialLiveSessions: Bool,
+        now: Date = .now
+    ) -> TimeInterval {
+        guard !isResolvingInitialLiveSessions else {
+            return startupPollInterval
+        }
+
+        guard !sessions.isEmpty else {
+            return emptyPollInterval
+        }
+
+        if sessions.contains(where: isActiveSession) {
+            return activePollInterval
+        }
+
+        if sessions.contains(where: { now.timeIntervalSince($0.updatedAt) <= recentSessionWindow }) {
+            return recentPollInterval
+        }
+
+        return idlePollInterval
+    }
+
+    private static func isActiveSession(_ session: AgentSession) -> Bool {
+        session.phase == .running || session.phase.requiresAttention
+    }
+
+    private static func shouldProbeGhostty(_ session: AgentSession) -> Bool {
+        switch normalizedTerminalName(for: session.jumpTarget?.terminalApp) {
+        case "ghostty", nil, "unknown":
+            true
+        default:
+            session.jumpTarget == nil
+        }
+    }
+
+    private static func shouldProbeTerminal(_ session: AgentSession) -> Bool {
+        normalizedTerminalName(for: session.jumpTarget?.terminalApp) == "terminal"
+    }
+
+    private static func shouldProbeITerm(_ session: AgentSession) -> Bool {
+        normalizedTerminalName(for: session.jumpTarget?.terminalApp) == "iterm"
+    }
+
+    private static func normalizedTerminalName(for value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+
+        let lowered = trimmed.lowercased()
+        if lowered == "iterm2" || lowered == "iterm.app" {
+            return "iterm"
+        }
+        return lowered
     }
 
     // MARK: - Event helpers
