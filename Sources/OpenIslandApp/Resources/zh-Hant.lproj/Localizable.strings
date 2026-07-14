@@ -224,3 +224,21 @@
 
 /* Window Titles */
 "window.settings" = "Open Island 設定";
+
+/* Custom CLI Settings */
+"settings.tab.customCLI" = "自訂 CLI";
+"settings.customCLI.section" = "自訂 CLI";
+"settings.customCLI.footer" = "設定其他與 Claude Code 相容的 CLI 包裝工具，讓 Open Island 能識別它們的連線階段。";
+"settings.customCLI.empty" = "尚未配置自訂 CLI。";
+"settings.customCLI.add" = "加入自訂 CLI…";
+"settings.customCLI.addTitle" = "加入自訂 CLI";
+"settings.customCLI.edit" = "編輯自訂 CLI";
+"settings.customCLI.displayName" = "顯示名稱";
+"settings.customCLI.executablePath" = "可執行檔路徑";
+"settings.customCLI.browse" = "選擇…";
+"settings.customCLI.save" = "儲存";
+"settings.customCLI.delete" = "刪除";
+"settings.customCLI.deleteConfirm" = "確定要移除此「%@」配置嗎？";
+"settings.customCLI.deleteConfirmTitle" = "移除自訂 CLI？";
+"settings.customCLI.errorRequired" = "此欄位為必填項。";
+"settings.customCLI.errorReservedSource" = "可執行檔名稱與內建代理來源衝突。請重新命名或使用包裝腳本。";
