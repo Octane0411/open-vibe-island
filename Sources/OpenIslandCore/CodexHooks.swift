@@ -600,13 +600,31 @@ public extension CodexHookPayload {
             }
         }
 
+        // For herdr, encode pane ID and session socket so the jump service can
+        // focus the correct pane via the herdr CLI. herdr pane ids contain a
+        // colon (e.g. "w2:p1"), so use "|" as the separator instead of the
+        // Zellij ":" scheme, and carry the socket so focus targets the right
+        // session server.
+        if isHerdrTerminalApp(payload.terminalApp) {
+            if payload.terminalSessionID == nil {
+                let paneID = environment["HERDR_PANE_ID"] ?? ""
+                let socketPath = environment["HERDR_SOCKET_PATH"] ?? ""
+                if !paneID.isEmpty {
+                    payload.terminalSessionID = socketPath.isEmpty
+                        ? paneID
+                        : "\(paneID)|\(socketPath)"
+                }
+            }
+        }
+
         if payload.terminalTTY == nil {
             payload.terminalTTY = currentTTYProvider()
         }
 
         let useLocator: Bool
-        if isCmuxTerminalApp(payload.terminalApp) || isZellijTerminalApp(payload.terminalApp) {
-            // cmux/Zellij session IDs come from environment variables;
+        if isCmuxTerminalApp(payload.terminalApp) || isZellijTerminalApp(payload.terminalApp)
+            || isHerdrTerminalApp(payload.terminalApp) {
+            // cmux/Zellij/herdr session IDs come from environment variables;
             // no AppleScript locator is available, so skip entirely.
             useLocator = false
         } else if let terminalApp = payload.terminalApp, isGhosttyTerminalApp(terminalApp) {
@@ -638,7 +656,7 @@ public extension CodexHookPayload {
     }
 
     private static let noLocatorTerminalApps: Set<String> = [
-        "cmux", "codex.app", "kaku", "wezterm", "zellij",
+        "cmux", "codex.app", "kaku", "wezterm", "zellij", "herdr",
         "vs code", "vs code insiders", "cursor", "windsurf", "trae",
         "intellij idea", "webstorm", "pycharm", "goland", "clion",
         "rubymine", "phpstorm", "rider", "rustrover",
@@ -665,6 +683,10 @@ public extension CodexHookPayload {
         terminalApp?.lowercased() == "zellij"
     }
 
+    private func isHerdrTerminalApp(_ terminalApp: String?) -> Bool {
+        terminalApp?.lowercased() == "herdr"
+    }
+
     private func inferTerminalApp(from environment: [String: String]) -> String? {
         // Multiplexers run inside a host terminal but expose their own pane
         // context. Detect them first so the captured jumpTarget points at
@@ -674,6 +696,9 @@ public extension CodexHookPayload {
         }
         if environment["ZELLIJ"] != nil {
             return "Zellij"
+        }
+        if environment["HERDR_ENV"] != nil {
+            return "Herdr"
         }
 
         // Codex desktop app — the hook binary runs as a child of Codex.app,
