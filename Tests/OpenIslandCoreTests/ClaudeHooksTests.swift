@@ -529,6 +529,444 @@ struct ClaudeHooksTests {
     }
 
     @Test
+    func claudeSubagentPermissionRequestSurfacesOnParentSession() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
+
+        let parentSessionID = "claude-subagent-permission-parent"
+        let subagentID = "subagent-alpha"
+        let subagentType = "general-purpose"
+
+        // Register the subagent on the parent so the card can label it.
+        let subagentStartPayload = ClaudeHookPayload(
+            cwd: "/tmp/worktree",
+            hookEventName: .subagentStart,
+            sessionID: parentSessionID,
+            agentID: subagentID,
+            agentType: subagentType
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(.processClaudeHook(subagentStartPayload))
+
+        let toolInput: ClaudeHookJSONValue = .object(["command": .string("rm -rf /tmp/scratch")])
+        let permissionPayload = ClaudeHookPayload(
+            cwd: "/tmp/worktree",
+            hookEventName: .permissionRequest,
+            sessionID: parentSessionID,
+            agentID: subagentID,
+            agentType: subagentType,
+            toolName: "Bash",
+            toolInput: toolInput,
+            toolUseID: "subagent-tool-use-1"
+        )
+
+        async let responseTask = sendOnGCDThread(.processClaudeHook(permissionPayload), socketURL: socketURL)
+
+        var iterator = stream.makeAsyncIterator()
+        let permissionEvent = try await nextMatchingEvent(from: &iterator, maxEvents: 8) { event in
+            if case .permissionRequested = event {
+                return true
+            }
+            return false
+        }
+
+        if case let .permissionRequested(payload) = permissionEvent {
+            #expect(payload.sessionID == parentSessionID)
+            #expect(payload.request.originatingAgentID == subagentID)
+            #expect(payload.request.originatingAgentType == subagentType)
+            #expect(payload.request.toolName == "Bash")
+            #expect(payload.request.toolUseID == "subagent-tool-use-1")
+        } else {
+            Issue.record("Expected a subagent permission request event on the parent session")
+        }
+
+        let pendingSnapshot = server.pendingClaudeInteractionSnapshotForTests()
+        #expect(pendingSnapshot.activeCount == 1)
+        #expect(pendingSnapshot.queuedCount == 0)
+
+        try await observer.send(.resolvePermission(sessionID: parentSessionID, resolution: .allowOnce()))
+
+        let response = try await responseTask
+        guard case let .some(.claudeHookDirective(.permissionRequest(.allow(updatedInput, updatedPermissions)))) = response else {
+            Issue.record("Expected an allow directive routed to the subagent's hook connection")
+            return
+        }
+        #expect(updatedPermissions.isEmpty)
+        #expect(updatedInput == toolInput)
+
+        let drainedSnapshot = server.pendingClaudeInteractionSnapshotForTests()
+        #expect(drainedSnapshot.activeCount == 0)
+        #expect(drainedSnapshot.queuedCount == 0)
+    }
+
+    @Test
+    func claudeConcurrentSubagentPermissionRequestsAreQueuedInArrivalOrder() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
+
+        let collector = AgentEventCollector()
+        let collectionTask = Task {
+            do { for try await event in stream { await collector.append(event) } } catch {}
+        }
+        defer { collectionTask.cancel() }
+
+        let parentSessionID = "claude-subagent-queue-parent"
+        let alphaToolInput: ClaudeHookJSONValue = .object(["command": .string("alpha-cmd")])
+        let betaToolInput: ClaudeHookJSONValue = .object(["command": .string("beta-cmd")])
+
+        func subagentPermissionPayload(agentID: String, toolInput: ClaudeHookJSONValue) -> ClaudeHookPayload {
+            ClaudeHookPayload(
+                cwd: "/tmp/worktree",
+                hookEventName: .permissionRequest,
+                sessionID: parentSessionID,
+                agentID: agentID,
+                agentType: "general-purpose",
+                toolName: "Bash",
+                toolInput: toolInput,
+                toolUseID: "tool-use-\(agentID)"
+            )
+        }
+
+        // A arrives first and becomes active; B arrives while A is active.
+        async let responseTaskA = sendOnGCDThread(
+            .processClaudeHook(subagentPermissionPayload(agentID: "subagent-alpha", toolInput: alphaToolInput)),
+            socketURL: socketURL
+        )
+        let alphaEvent = try await waitForPermissionRequestedEvent(
+            originatingAgentID: "subagent-alpha",
+            collector: collector
+        )
+        #expect(alphaEvent != nil)
+
+        async let responseTaskB = sendOnGCDThread(
+            .processClaudeHook(subagentPermissionPayload(agentID: "subagent-beta", toolInput: betaToolInput)),
+            socketURL: socketURL
+        )
+
+        // B must be queued, not emitted: exactly one permission request so far.
+        try await Task.sleep(for: .milliseconds(60))
+        let preResolveCount = await collector.snapshot().filter {
+            if case .permissionRequested = $0 { return true }
+            return false
+        }.count
+        #expect(preResolveCount == 1)
+
+        let queuedSnapshot = server.pendingClaudeInteractionSnapshotForTests()
+        #expect(queuedSnapshot.activeCount == 1)
+        #expect(queuedSnapshot.queuedCount == 1)
+
+        // Resolving A routes the directive to A's connection AND promotes B.
+        try await observer.send(.resolvePermission(sessionID: parentSessionID, resolution: .allowOnce()))
+
+        let responseA = try await responseTaskA
+        guard case let .some(.claudeHookDirective(.permissionRequest(.allow(inputA, _)))) = responseA,
+              inputA == alphaToolInput else {
+            Issue.record("Expected A's allow directive routed to A's hook connection")
+            return
+        }
+
+        let betaEvent = try await waitForPermissionRequestedEvent(
+            originatingAgentID: "subagent-beta",
+            collector: collector
+        )
+        #expect(betaEvent != nil)
+        let promotedSnapshot = server.pendingClaudeInteractionSnapshotForTests()
+        #expect(promotedSnapshot.activeCount == 1)
+        #expect(promotedSnapshot.queuedCount == 0)
+
+        // Resolving B routes to B's connection; the slot clears.
+        try await observer.send(.resolvePermission(sessionID: parentSessionID, resolution: .deny(message: nil, interrupt: false)))
+
+        let responseB = try await responseTaskB
+        guard case .some(.claudeHookDirective(.permissionRequest(.deny))) = responseB else {
+            Issue.record("Expected B's deny directive routed to B's hook connection")
+            return
+        }
+
+        let drainedSnapshot = server.pendingClaudeInteractionSnapshotForTests()
+        #expect(drainedSnapshot.activeCount == 0)
+        #expect(drainedSnapshot.queuedCount == 0)
+    }
+
+    @Test
+    func claudeSubagentAskUserQuestionIsQueuedBehindPermission() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
+
+        let collector = AgentEventCollector()
+        let collectionTask = Task {
+            do { for try await event in stream { await collector.append(event) } } catch {}
+        }
+        defer { collectionTask.cancel() }
+
+        let parentSessionID = "claude-subagent-question-parent"
+        let alphaToolInput: ClaudeHookJSONValue = .object(["command": .string("alpha-cmd")])
+        let questionToolInput: ClaudeHookJSONValue = .object([
+            "questions": .array([
+                .object([
+                    "question": .string("Which environment?"),
+                    "header": .string("Env"),
+                    "options": .array([
+                        option(label: "Production", description: "Use production"),
+                        option(label: "Staging", description: "Use staging"),
+                    ]),
+                    "multiSelect": .boolean(false),
+                ]),
+            ]),
+        ])
+
+        // A: a subagent permission request (active).
+        async let responseTaskA = sendOnGCDThread(
+            .processClaudeHook(ClaudeHookPayload(
+                cwd: "/tmp/worktree",
+                hookEventName: .permissionRequest,
+                sessionID: parentSessionID,
+                agentID: "subagent-alpha",
+                agentType: "general-purpose",
+                toolName: "Bash",
+                toolInput: alphaToolInput,
+                toolUseID: "tool-use-alpha"
+            )),
+            socketURL: socketURL
+        )
+        let alphaEvent = try await waitForPermissionRequestedEvent(
+            originatingAgentID: "subagent-alpha",
+            collector: collector
+        )
+        #expect(alphaEvent != nil)
+
+        // B: a subagent AskUserQuestion (queued behind A; no event yet).
+        async let responseTaskB = sendOnGCDThread(
+            .processClaudeHook(ClaudeHookPayload(
+                cwd: "/tmp/worktree",
+                hookEventName: .permissionRequest,
+                sessionID: parentSessionID,
+                agentID: "subagent-beta",
+                agentType: "general-purpose",
+                toolName: "AskUserQuestion",
+                toolInput: questionToolInput,
+                toolUseID: "tool-use-beta"
+            )),
+            socketURL: socketURL
+        )
+
+        try await Task.sleep(for: .milliseconds(60))
+        let preResolveQuestionCount = await collector.snapshot().filter {
+            if case .questionAsked = $0 { return true }
+            return false
+        }.count
+        #expect(preResolveQuestionCount == 0)
+
+        let queuedSnapshot = server.pendingClaudeInteractionSnapshotForTests()
+        #expect(queuedSnapshot.activeCount == 1)
+        #expect(queuedSnapshot.queuedCount == 1)
+
+        // Resolving A promotes B: B's AskUserQuestion is now surfaced.
+        try await observer.send(.resolvePermission(sessionID: parentSessionID, resolution: .allowOnce()))
+
+        let responseA = try await responseTaskA
+        guard case .some(.claudeHookDirective(.permissionRequest(.allow))) = responseA else {
+            Issue.record("Expected A's allow directive routed to A's hook connection")
+            return
+        }
+
+        let questionEvent = try await waitForQuestionAskedEvent(collector: collector)
+        #expect(questionEvent != nil)
+        #expect(questionEvent?.sessionID == parentSessionID)
+        let promotedSnapshot = server.pendingClaudeInteractionSnapshotForTests()
+        #expect(promotedSnapshot.activeCount == 1)
+        #expect(promotedSnapshot.queuedCount == 0)
+
+        // Answering B routes the directive to B's connection; the slot clears.
+        try await observer.send(
+            .answerQuestion(
+                sessionID: parentSessionID,
+                response: QuestionPromptResponse(answers: ["Which environment?": "Staging"])
+            )
+        )
+
+        let responseB = try await responseTaskB
+        guard case let .some(.claudeHookDirective(.permissionRequest(.allow(updatedInput, _)))) = responseB,
+              case let .object(root)? = updatedInput,
+              case let .object(answers)? = root["answers"] else {
+            Issue.record("Expected B's AskUserQuestion answers to round-trip through updatedInput")
+            return
+        }
+        #expect(answers["Which environment?"] == .string("Staging"))
+
+        let drainedSnapshot = server.pendingClaudeInteractionSnapshotForTests()
+        #expect(drainedSnapshot.activeCount == 0)
+        #expect(drainedSnapshot.queuedCount == 0)
+    }
+
+    @Test
+    func claudeSubagentQueuedRequestPurgedOnHookDisconnect() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
+
+        let collector = AgentEventCollector()
+        let collectionTask = Task {
+            do { for try await event in stream { await collector.append(event) } } catch {}
+        }
+        defer { collectionTask.cancel() }
+
+        let parentSessionID = "claude-subagent-disconnect-parent"
+
+        func subagentPermissionPayload(agentID: String) -> ClaudeHookPayload {
+            ClaudeHookPayload(
+                cwd: "/tmp/worktree",
+                hookEventName: .permissionRequest,
+                sessionID: parentSessionID,
+                agentID: agentID,
+                agentType: "general-purpose",
+                toolName: "Bash",
+                toolInput: .object(["command": .string("\(agentID)-cmd")]),
+                toolUseID: "tool-use-\(agentID)"
+            )
+        }
+
+        // Retain the hook clients' event streams for the lifetime of the test
+        // so their connections are not torn down by AsyncThrowingStream
+        // deallocation before we explicitly disconnect them.
+        var retainedHookStreams: [AsyncThrowingStream<AgentEvent, Error>] = []
+
+        // A is active (kept open via a persistent client; no blocking send).
+        let aClient = LocalBridgeClient(socketURL: socketURL)
+        retainedHookStreams.append(try aClient.connect())
+        defer { aClient.disconnect() }
+        try await aClient.send(.processClaudeHook(subagentPermissionPayload(agentID: "subagent-alpha")))
+
+        let alphaEvent = try await waitForPermissionRequestedEvent(
+            originatingAgentID: "subagent-alpha",
+            collector: collector
+        )
+        #expect(alphaEvent != nil)
+
+        // B arrives while A is active and is queued.
+        let bClient = LocalBridgeClient(socketURL: socketURL)
+        retainedHookStreams.append(try bClient.connect())
+        try await bClient.send(.processClaudeHook(subagentPermissionPayload(agentID: "subagent-beta")))
+
+        try await waitForQueuedClaudeInteractionCount(1, server: server)
+        #expect(server.pendingClaudeInteractionSnapshotForTests().activeCount == 1)
+
+        // B's hook process dies (socket closes without resolving). The queued
+        // interaction must be purged so it can never become active later.
+        bClient.disconnect()
+
+        try await waitForQueuedClaudeInteractionCount(0, server: server)
+        let afterDisconnect = server.pendingClaudeInteractionSnapshotForTests()
+        #expect(afterDisconnect.activeCount == 1)
+        #expect(afterDisconnect.queuedCount == 0)
+
+        // Resolving A must NOT promote B (it was purged): no beta event appears.
+        try await observer.send(.resolvePermission(sessionID: parentSessionID, resolution: .allowOnce()))
+
+        let betaEvent = try await waitForPermissionRequestedEvent(
+            originatingAgentID: "subagent-beta",
+            collector: collector
+        )
+        #expect(betaEvent == nil)
+
+        let drainedSnapshot = server.pendingClaudeInteractionSnapshotForTests()
+        #expect(drainedSnapshot.activeCount == 0)
+        #expect(drainedSnapshot.queuedCount == 0)
+    }
+
+    @Test
+    func claudeSubagentQueuedRequestClearedOnSessionEnd() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
+
+        let collector = AgentEventCollector()
+        let collectionTask = Task {
+            do { for try await event in stream { await collector.append(event) } } catch {}
+        }
+        defer { collectionTask.cancel() }
+
+        let parentSessionID = "claude-subagent-sessionend-parent"
+
+        func subagentPermissionPayload(agentID: String) -> ClaudeHookPayload {
+            ClaudeHookPayload(
+                cwd: "/tmp/worktree",
+                hookEventName: .permissionRequest,
+                sessionID: parentSessionID,
+                agentID: agentID,
+                agentType: "general-purpose",
+                toolName: "Bash",
+                toolInput: .object(["command": .string("\(agentID)-cmd")]),
+                toolUseID: "tool-use-\(agentID)"
+            )
+        }
+
+        var retainedHookStreams: [AsyncThrowingStream<AgentEvent, Error>] = []
+
+        let aClient = LocalBridgeClient(socketURL: socketURL)
+        retainedHookStreams.append(try aClient.connect())
+        defer { aClient.disconnect() }
+        try await aClient.send(.processClaudeHook(subagentPermissionPayload(agentID: "subagent-alpha")))
+
+        _ = try await waitForPermissionRequestedEvent(
+            originatingAgentID: "subagent-alpha",
+            collector: collector
+        )
+
+        let bClient = LocalBridgeClient(socketURL: socketURL)
+        retainedHookStreams.append(try bClient.connect())
+        defer { bClient.disconnect() }
+        try await bClient.send(.processClaudeHook(subagentPermissionPayload(agentID: "subagent-beta")))
+
+        try await waitForQueuedClaudeInteractionCount(1, server: server)
+
+        // The parent session ends: both the active slot and the queue must clear.
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processClaudeHook(ClaudeHookPayload(
+                cwd: "/tmp/worktree",
+                hookEventName: .sessionEnd,
+                sessionID: parentSessionID
+            ))
+        )
+
+        let drainedSnapshot = server.pendingClaudeInteractionSnapshotForTests()
+        #expect(drainedSnapshot.activeCount == 0)
+        #expect(drainedSnapshot.queuedCount == 0)
+    }
+
+    @Test
     func claudeAwaySummaryNotificationCompletesRunningSessionWhenStopWasMissed() async throws {
         let socketURL = BridgeSocketLocation.uniqueTestURL()
         let server = BridgeServer(socketURL: socketURL)
@@ -802,6 +1240,59 @@ private func waitForCompletedSessionEvent(
     }
 
     return await collector.snapshot()
+}
+
+private func waitForPermissionRequestedEvent(
+    originatingAgentID: String,
+    collector: AgentEventCollector
+) async throws -> PermissionRequested? {
+    for _ in 0..<100 {
+        let events = await collector.snapshot()
+        if let match = events.last(where: { event in
+            if case let .permissionRequested(payload) = event {
+                return payload.request.originatingAgentID == originatingAgentID
+            }
+            return false
+        }) {
+            if case let .permissionRequested(payload) = match {
+                return payload
+            }
+        }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    return nil
+}
+
+private func waitForQuestionAskedEvent(
+    collector: AgentEventCollector
+) async throws -> QuestionAsked? {
+    for _ in 0..<100 {
+        let events = await collector.snapshot()
+        if let match = events.last(where: { event in
+            if case .questionAsked = event { return true }
+            return false
+        }) {
+            if case let .questionAsked(payload) = match {
+                return payload
+            }
+        }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    return nil
+}
+
+private func waitForQueuedClaudeInteractionCount(
+    _ expected: Int,
+    server: BridgeServer
+) async throws {
+    for _ in 0..<100 {
+        if server.pendingClaudeInteractionSnapshotForTests().queuedCount == expected {
+            return
+        }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    // One final read so a failing assertion reports the actual value.
+    _ = server.pendingClaudeInteractionSnapshotForTests()
 }
 
 private func nextEvent(
