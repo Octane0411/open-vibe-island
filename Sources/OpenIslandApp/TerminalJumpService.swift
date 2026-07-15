@@ -165,6 +165,11 @@ struct TerminalJumpService {
             bundleIdentifier: "com.jetbrains.rustrover",
             aliases: ["rustrover"]
         ),
+        TerminalAppDescriptor(
+            displayName: "Obsidian",
+            bundleIdentifier: "md.obsidian",
+            aliases: ["obsidian"]
+        ),
     ]
 
     /// Bundle identifiers of JetBrains IDEs.
@@ -393,6 +398,14 @@ struct TerminalJumpService {
                     try openAction(["-b", id])
                     return "Activated \(descriptor.displayName)."
                 }
+            case "md.obsidian":
+                // Obsidian hosts a terminal plugin but has no per-pane
+                // jump primitive available. Just bring the app to front —
+                // do NOT pass the working directory as a document arg,
+                // since Obsidian would treat that as a "open vault"
+                // request and may prompt the user.
+                try openAction(["-b", "md.obsidian"])
+                return "Activated Obsidian."
             default:
                 break
             }
