@@ -202,6 +202,13 @@ final class AppModel {
             await hooks.repairHooksIfNeeded()
         }
     }
+
+    /// Force an immediate process scan + terminal reconciliation.
+    /// Call from UI (e.g. a refresh button) to detect newly opened terminals.
+    func refreshSessions() {
+        monitoring.triggerImmediateReconciliation()
+    }
+
     var isBridgeReady = false
     var lastActionMessage = "Waiting for agent hook events..." {
         didSet {
@@ -1503,6 +1510,13 @@ final class AppModel {
         if ingress == .bridge {
             monitoring.markSessionAttached(for: event)
             monitoring.markSessionProcessAlive(for: event)
+
+            // When a new session arrives via hook, trigger an immediate process
+            // scan so that terminal attachment and jump-target resolution happen
+            // right away instead of waiting for the next 2-second polling cycle.
+            if case .sessionStarted = event {
+                monitoring.triggerImmediateReconciliation()
+            }
         }
         synchronizeSelection()
         discovery.refreshCodexRolloutTracking()
