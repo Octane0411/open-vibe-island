@@ -1221,8 +1221,14 @@ public extension ClaudeHookPayload {
                 return "WezTerm"
             case "vscode":
                 // Cursor also sets TERM_PROGRAM=vscode; check its unique
-                // env var first.
-                if environment["CURSOR_TRACE_ID"] != nil {
+                // env var first. CURSOR_TRACE_ID is set by newer Cursor
+                // builds; for older builds, fall back to scanning the
+                // GIT_ASKPASS / VSCODE_GIT_ASKPASS_NODE paths which
+                // point inside Cursor.app when running in Cursor's terminal.
+                if environment["CURSOR_TRACE_ID"] != nil
+                    || environment["GIT_ASKPASS"]?.lowercased().contains("/cursor.app/") == true
+                    || environment["VSCODE_GIT_ASKPASS_NODE"]?.lowercased().contains("/cursor.app/") == true
+                {
                     return "Cursor"
                 }
                 return "VS Code"
