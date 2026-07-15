@@ -59,6 +59,11 @@ struct TerminalJumpService {
             aliases: ["ghostty"]
         ),
         TerminalAppDescriptor(
+            displayName: "Kitty",
+            bundleIdentifier: "net.kovidgoyal.kitty",
+            aliases: ["kitty"]
+        ),
+        TerminalAppDescriptor(
             displayName: "Terminal",
             bundleIdentifier: "com.apple.Terminal",
             aliases: ["terminal", "apple_terminal"]
@@ -263,6 +268,10 @@ struct TerminalJumpService {
                     if try jumpToGhosttyTerminal(target) {
                         return "Focused the matching tmux pane in Ghostty."
                     }
+                case "net.kovidgoyal.kitty":
+                    if jumpToKittyWindow(target) {
+                        return "Focused the matching tmux pane in Kitty."
+                    }
                 case "com.googlecode.iterm2":
                     if try jumpToITermSession(target) {
                         return "Focused the matching tmux pane in iTerm."
@@ -359,6 +368,10 @@ struct TerminalJumpService {
             case "com.mitchellh.ghostty":
                 if try jumpToGhosttyTerminal(target) {
                     return "Focused the matching Ghostty terminal."
+                }
+            case "net.kovidgoyal.kitty":
+                if jumpToKittyWindow(target) {
+                    return "Focused the matching Kitty window."
                 }
             case "com.apple.Terminal":
                 if try jumpToTerminalTab(target) {
@@ -922,6 +935,68 @@ struct TerminalJumpService {
         end tell
         return ""
         """
+    }
+
+    // MARK: - Kitty CLI-based jump
+
+    private func resolveKittenPath() -> String? {
+        let candidates = [
+            "/Applications/kitty.app/Contents/MacOS/kitten",
+            NSHomeDirectory() + "/Applications/kitty.app/Contents/MacOS/kitten",
+            "/opt/homebrew/bin/kitten",
+            "/usr/local/bin/kitten",
+        ]
+        if let found = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
+            return found
+        }
+
+        let whichTask = Process()
+        whichTask.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+        whichTask.arguments = ["kitten"]
+        let pipe = Pipe()
+        whichTask.standardOutput = pipe
+        whichTask.standardError = FileHandle.nullDevice
+        if let _ = try? whichTask.run() {
+            whichTask.waitUntilExit()
+            if whichTask.terminationStatus == 0 {
+                let path = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if !path.isEmpty { return path }
+            }
+        }
+        return nil
+    }
+
+    private func runKittenCommand(kittenPath: String, args: [String]) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: kittenPath)
+        process.arguments = ["@"] + args
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        } catch {
+            return false
+        }
+    }
+
+    private func jumpToKittyWindow(_ target: JumpTarget) -> Bool {
+        guard let kittenPath = resolveKittenPath() else {
+            try? openAction(["-b", "net.kovidgoyal.kitty"])
+            return true
+        }
+
+        if let windowID = target.terminalSessionID, !windowID.isEmpty {
+            _ = runKittenCommand(kittenPath: kittenPath, args: ["focus-window", "--match", "id:\(windowID)"])
+        } else if let cwd = target.workingDirectory, !cwd.isEmpty {
+            _ = runKittenCommand(kittenPath: kittenPath, args: ["focus-window", "--match", "cwd:\(cwd)"])
+        }
+
+        try? openAction(["-b", "net.kovidgoyal.kitty"])
+        return true
     }
 
     private func jumpToTerminalTab(_ target: JumpTarget) throws -> Bool {
