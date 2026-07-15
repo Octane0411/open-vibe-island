@@ -1697,8 +1697,9 @@ private struct IslandSessionRow: View {
         VStack(alignment: .leading, spacing: 0) {
             if !completionMessageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 AutoHeightScrollView(maxHeight: 160) {
-                    Markdown(completionMessageText)
-                        .markdownTheme(.completionCard)
+                    Text(completionMessageText.strippingMarkdownForCard)
+                        .font(.system(size: 13.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.88))
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 9)
@@ -2724,5 +2725,19 @@ private struct DismissButton: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+    }
+}
+
+private extension String {
+    var strippingMarkdownForCard: String {
+        var s = self
+        s = s.replacingOccurrences(of: "```[\\s\\S]*?```", with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: "`([^`]+)`", with: "$1", options: .regularExpression)
+        s = s.replacingOccurrences(of: "\\*{1,3}(.+?)\\*{1,3}", with: "$1", options: .regularExpression)
+        s = s.replacingOccurrences(of: "(?<![\\w])_{1,3}(.+?)_{1,3}(?![\\w])", with: "$1", options: .regularExpression)
+        s = s.replacingOccurrences(of: "(?m)^#{1,6}\\s+", with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: "\\[([^\\]]+)\\]\\([^)]+\\)", with: "$1", options: .regularExpression)
+        s = s.replacingOccurrences(of: "(?m)^[\\-*>+]\\s+", with: "", options: .regularExpression)
+        return s
     }
 }
