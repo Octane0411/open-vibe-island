@@ -73,16 +73,18 @@ public enum CodexHookInstaller {
     public static let managedStatusMessage = "Managed by Open Island"
     public static let legacyManagedStatusMessage = "Managed by Vibe Island"
     public static let managedTimeout = 45
+    public static let managedInteractiveTimeout = 60 * 60
     private static let currentFeatureKey = CodexHooksFeatureFlagKey.current.rawValue
     private static let legacyFeatureKey = CodexHooksFeatureFlagKey.legacy.rawValue
 
     // Keep the managed Codex install aligned with the original app's low-noise footprint.
     // The bridge still understands richer hook events, but we do not install them by default
     // because per-command Bash hooks produce a large amount of terminal log spam.
-    private static let eventSpecs: [(name: String, matcher: String?)] = [
-        ("SessionStart", "startup|resume"),
-        ("UserPromptSubmit", nil),
-        ("Stop", nil),
+    private static let eventSpecs: [(name: String, matcher: String?, timeout: Int)] = [
+        ("SessionStart", "startup|resume", managedTimeout),
+        ("UserPromptSubmit", nil, managedTimeout),
+        ("PermissionRequest", nil, managedInteractiveTimeout),
+        ("Stop", nil, managedTimeout),
     ]
 
     public static func hookCommand(for binaryPath: String) -> String {
@@ -109,7 +111,9 @@ public enum CodexHookInstaller {
         for spec in eventSpecs {
             let existingGroups = hooksObject[spec.name] as? [Any] ?? []
             let cleanedGroups = sanitizeForInstall(groups: existingGroups, replacingCommand: hookCommand)
-            hooksObject[spec.name] = cleanedGroups + [managedGroup(matcher: spec.matcher, hookCommand: hookCommand)]
+            hooksObject[spec.name] = cleanedGroups + [
+                managedGroup(matcher: spec.matcher, hookCommand: hookCommand, timeout: spec.timeout)
+            ]
         }
 
         rootObject["hooks"] = hooksObject
@@ -261,6 +265,7 @@ public enum CodexHookInstaller {
             || featureValue(for: legacyFeatureKey, lines: lines) == true
     }
 
+    /// Detects the Codex hook feature flag supported by the installed CLI.
     public static func preferredCodexHooksFeatureKey() -> CodexHooksFeatureFlagKey {
         if let featureKey = commandOutput(arguments: ["features", "list"])
             .flatMap(preferredCodexHooksFeatureKey(fromFeatureList:)) {
@@ -272,7 +277,7 @@ public enum CodexHookInstaller {
             return featureKey
         }
 
-        return .legacy
+        return .current
     }
 
     private static func loadRootObject(from data: Data?) throws -> [String: Any] {
@@ -357,12 +362,12 @@ public enum CodexHookInstaller {
         }
     }
 
-    private static func managedGroup(matcher: String?, hookCommand: String) -> [String: Any] {
+    private static func managedGroup(matcher: String?, hookCommand: String, timeout: Int) -> [String: Any] {
         var group: [String: Any] = [
             "hooks": [[
                 "type": "command",
                 "command": hookCommand,
-                "timeout": managedTimeout,
+                "timeout": timeout,
             ]]
         ]
 
@@ -481,6 +486,7 @@ public enum CodexHookInstaller {
         return (key: parts[0], value: parts[1])
     }
 
+    /// Parses `codex features list` output to find the supported hook feature flag.
     static func preferredCodexHooksFeatureKey(fromFeatureList output: String) -> CodexHooksFeatureFlagKey? {
         let featureNames = Set(output.split(whereSeparator: \.isNewline).compactMap { line -> String? in
             line.split(whereSeparator: \.isWhitespace).first.map(String.init)
@@ -495,6 +501,7 @@ public enum CodexHookInstaller {
         return nil
     }
 
+    /// Infers the hook feature flag from `codex --version` when feature listing is unavailable.
     static func preferredCodexHooksFeatureKey(fromVersionOutput output: String) -> CodexHooksFeatureFlagKey? {
         guard let versionToken = output.split(whereSeparator: \.isWhitespace).first(where: { token in
             token.first?.isNumber == true
@@ -525,12 +532,17 @@ public enum CodexHookInstaller {
         return nil
     }
 
+    /// Returns Codex CLI locations to probe, including app-bundled and shell-installed builds.
     private static func codexCommandCandidates() -> [(executableURL: URL, prefixArguments: [String])] {
         var candidates: [(executableURL: URL, prefixArguments: [String])] = [
             (URL(fileURLWithPath: "/usr/bin/env"), ["codex"]),
         ]
 
-        for path in ["/opt/homebrew/bin/codex", "/usr/local/bin/codex"] {
+        for path in [
+            "/Applications/Codex.app/Contents/Resources/codex",
+            "/opt/homebrew/bin/codex",
+            "/usr/local/bin/codex",
+        ] {
             if FileManager.default.isExecutableFile(atPath: path) {
                 candidates.append((URL(fileURLWithPath: path), []))
             }

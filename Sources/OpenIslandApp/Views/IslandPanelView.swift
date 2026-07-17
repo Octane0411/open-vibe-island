@@ -136,7 +136,7 @@ struct IslandPanelView: View {
 
     private var targetOverlayScreen: NSScreen? {
         if let targetScreenID = model.overlayPlacementDiagnostics?.targetScreenID,
-           let screen = NSScreen.screens.first(where: { screenID(for: $0) == targetScreenID }) {
+           let screen = NSScreen.screens.first(where: { OverlayDisplayResolver.screenID(for: $0) == targetScreenID }) {
             return screen
         }
 
@@ -1031,15 +1031,6 @@ struct IslandPanelView: View {
         .fixedSize(horizontal: true, vertical: false)
     }
 
-    private func screenID(for screen: NSScreen) -> String {
-        let key = NSDeviceDescriptionKey("NSScreenNumber")
-        if let number = screen.deviceDescription[key] as? NSNumber {
-            return "display-\(number.uint32Value)"
-        }
-
-        return screen.localizedName
-    }
-
     private func compactUsageChip(_ provider: UsageProviderPresentation, usesShortTitle: Bool) -> some View {
         HStack(spacing: 5) {
             Text(usesShortTitle ? provider.shortTitle : provider.title)
@@ -1878,18 +1869,16 @@ private struct IslandSessionRow: View {
         let tint = statusTint(for: presence)
         switch stateIndicator {
         case .animatedDot:
-            TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { context in
-                let pulse = presence == .running || isActionable
-                    ? (sin(context.date.timeIntervalSinceReferenceDate * 3.2) + 1) / 2
-                    : 0
-                Circle()
-                    .fill(tint)
-                    .frame(width: 9, height: 9)
-                    .scaleEffect(1 + (pulse * 0.18))
-                    .shadow(color: tint.opacity(presence == .inactive ? 0 : 0.36 + (pulse * 0.26)), radius: 4 + (pulse * 3))
-                    .padding(.top, 6)
+            if let interval = stateIndicator.timelineInterval(presence: presence, isActionable: isActionable) {
+                TimelineView(.periodic(from: .now, by: interval)) { context in
+                    let pulse = (sin(context.date.timeIntervalSinceReferenceDate * 3.2) + 1) / 2
+                    statusDot(tint: tint, presence: presence, pulse: pulse)
+                }
+                .frame(width: 10, height: 24, alignment: .top)
+            } else {
+                statusDot(tint: tint, presence: presence, pulse: 0)
+                    .frame(width: 10, height: 24, alignment: .top)
             }
-            .frame(width: 10, height: 24, alignment: .top)
         case .bar:
             RoundedRectangle(cornerRadius: 2.5, style: .continuous)
                 .fill(tint)
@@ -1907,6 +1896,15 @@ private struct IslandSessionRow: View {
                 .frame(width: 8, height: 8)
                 .padding(.top, 6)
         }
+    }
+
+    private func statusDot(tint: Color, presence: IslandSessionPresence, pulse: Double) -> some View {
+        Circle()
+            .fill(tint)
+            .frame(width: 9, height: 9)
+            .scaleEffect(1 + (pulse * 0.18))
+            .shadow(color: tint.opacity(presence == .inactive ? 0 : 0.36 + (pulse * 0.26)), radius: 4 + (pulse * 3))
+            .padding(.top, 6)
     }
 
     private func rowFillColor(for presence: IslandSessionPresence) -> Color {

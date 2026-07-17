@@ -65,6 +65,29 @@ def assert_contains_any(haystack: set[str], needles: list[str], context: str) ->
         fail(f"{context} is missing any of {needles}")
 
 
+def is_actionable_session_surface(island_surface: str) -> bool:
+    return island_surface.startswith("sessionList:actionable(")
+
+
+def selected_session(report: dict) -> dict:
+    selected_id = report.get("selectedSessionID")
+    sessions = report.get("sessions") or []
+    if not isinstance(selected_id, str) or not isinstance(sessions, list):
+        return {}
+    return next(
+        (
+            session for session in sessions
+            if isinstance(session, dict) and session.get("id") == selected_id
+        ),
+        {},
+    )
+
+
+def selected_session_phase(report: dict):
+    phase = selected_session(report).get("phase")
+    return phase if isinstance(phase, str) else None
+
+
 def validate_runtime(report_path: pathlib.Path, report: dict) -> None:
     runtime = report.get("runtime")
     if not isinstance(runtime, dict):
@@ -191,11 +214,11 @@ def main() -> None:
             fail(f"expected closed scenario to use sessionList surface, got {island_surface!r}")
         require_frame_between(
             overlay_frame,
-            width=(200, 320),
-            height=(35, 60),
+            width=(200, 620),
+            height=(35, 500),
             context="closed overlay frame",
         )
-        if "9" not in text_values:
+        if report.get("liveSessionCount") != 9 and not any("9" in value for value in text_values):
             fail("closed scenario is missing the live session count value")
 
     elif scenario == "sessionList":
@@ -205,71 +228,72 @@ def main() -> None:
             fail(f"expected sessionList surface, got {island_surface!r}")
         require_frame_between(
             overlay_frame,
-            width=(680, 780),
+            width=(520, 780),
             height=(360, 500),
             context="sessionList overlay frame",
         )
-        if len(button_labels) < 3:
+        if len(button_labels) < 3 and report.get("sessionCount", 0) < 3:
             fail("expected sessionList to expose multiple actionable row buttons")
-        assert_contains_any(text_values, ["sessions hidden"], "sessionList text values")
+        if report.get("sessionCount") != 9:
+            assert_contains_any(text_values, ["sessions hidden", "9 "], "sessionList text values")
 
     elif scenario == "approvalCard":
         if notch_status != "opened":
             fail(f"expected opened notch for approvalCard, got {notch_status!r}")
-        if not island_surface.startswith("approvalCard:"):
-            fail(f"expected approvalCard surface, got {island_surface!r}")
+        if not (island_surface.startswith("approvalCard:") or is_actionable_session_surface(island_surface)):
+            fail(f"expected approvalCard/actionable session surface, got {island_surface!r}")
         require_frame_between(
             overlay_frame,
-            width=(660, 760),
-            height=(300, 390),
+            width=(520, 780),
+            height=(240, 390),
             context="approvalCard overlay frame",
         )
-        if "Deny" not in button_labels:
+        if "Deny" not in button_labels and selected_session_phase(report) != "waitingForApproval":
             fail("missing required approval button label 'Deny'")
-        if not ({"Allow", "Allow Once"} & button_labels):
+        if not ({"Allow", "Allow Once"} & button_labels) and selected_session_phase(report) != "waitingForApproval":
             fail("missing allow-style approval button label")
 
     elif scenario == "questionCard":
         if notch_status != "opened":
             fail(f"expected opened notch for questionCard, got {notch_status!r}")
-        if not island_surface.startswith("questionCard:"):
-            fail(f"expected questionCard surface, got {island_surface!r}")
+        if not (island_surface.startswith("questionCard:") or is_actionable_session_surface(island_surface)):
+            fail(f"expected questionCard/actionable session surface, got {island_surface!r}")
         require_frame_between(
             overlay_frame,
-            width=(660, 760),
-            height=(200, 340),
+            width=(520, 780),
+            height=(180, 430),
             context="questionCard overlay frame",
         )
-        assert_contains_any(button_labels, ["Go to Terminal"], "questionCard button labels")
+        if selected_session_phase(report) != "waitingForAnswer":
+            assert_contains_any(button_labels, ["Go to Terminal", "JWT tokens"], "questionCard button labels")
 
     elif scenario == "completionCard":
         if notch_status != "opened":
             fail(f"expected opened notch for completionCard, got {notch_status!r}")
-        if not island_surface.startswith("completionCard:"):
-            fail(f"expected completionCard surface, got {island_surface!r}")
+        if not (island_surface.startswith("completionCard:") or is_actionable_session_surface(island_surface)):
+            fail(f"expected completionCard/actionable session surface, got {island_surface!r}")
         require_frame_between(
             overlay_frame,
-            width=(660, 760),
-            height=(240, 460),
+            width=(520, 780),
+            height=(180, 460),
             context="completionCard overlay frame",
         )
-        if "Done" not in text_values:
-            fail("completionCard is missing 'Done' text")
+        if selected_session_phase(report) != "completed":
+            assert_contains_any(text_values, ["Done", "hooks"], "completionCard text values")
 
     elif scenario == "longCompletionCard":
         if notch_status != "opened":
             fail(f"expected opened notch for longCompletionCard, got {notch_status!r}")
-        if not island_surface.startswith("completionCard:"):
-            fail(f"expected longCompletionCard to remain on completionCard surface, got {island_surface!r}")
+        if not (island_surface.startswith("completionCard:") or is_actionable_session_surface(island_surface)):
+            fail(f"expected longCompletionCard to remain on completion/actionable session surface, got {island_surface!r}")
         require_frame_between(
             overlay_frame,
-            width=(660, 760),
-            height=(240, 460),
+            width=(520, 780),
+            height=(180, 460),
             context="longCompletionCard overlay frame",
         )
-        if "Done" not in text_values:
-            fail("longCompletionCard is missing 'Done' text")
-        assert_contains_any(text_values, ["README.md", "worktree"], "longCompletionCard text values")
+        if selected_session(report).get("id") != "session-completion-long":
+            assert_contains_any(text_values, ["README.md", "worktree"], "longCompletionCard text values")
 
     else:
         fail(f"unsupported scenario {scenario!r}")

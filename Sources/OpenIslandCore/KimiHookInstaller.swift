@@ -57,7 +57,9 @@ public enum KimiHookInstaller {
         hookCommand: String
     ) -> KimiHookFileMutation {
         let original = existingContents ?? ""
-        let cleaned = stripManagedBlocks(from: original, managedCommand: hookCommand)
+        let cleaned = stripEmptyTopLevelHooksArray(
+            from: stripManagedBlocks(from: original, managedCommand: hookCommand)
+        )
 
         var output = cleaned
         if !output.isEmpty, !output.hasSuffix("\n") {
@@ -144,6 +146,151 @@ public enum KimiHookInstaller {
         }
 
         return result.joined(separator: "\n")
+    }
+
+    /// Kimi may seed config.toml with a top-level `hooks = []` placeholder.
+    /// Managed hooks use TOML array-of-tables syntax (`[[hooks]]`), so the
+    /// empty placeholder must be removed before appending managed blocks.
+    private static func stripEmptyTopLevelHooksArray(from contents: String) -> String {
+        let lines = contents.components(separatedBy: "\n")
+        var result: [String] = []
+        var hasEnteredTable = false
+        var multilineString: TOMLMultilineString?
+
+        for line in lines {
+            let syntax = tomlSyntax(in: line, multilineString: &multilineString)
+            let trimmedSyntax = syntax.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if !hasEnteredTable, isEmptyHooksArrayAssignment(trimmedSyntax) {
+                continue
+            }
+
+            if isTableHeader(trimmedSyntax) {
+                hasEnteredTable = true
+            }
+
+            result.append(line)
+        }
+
+        return result.joined(separator: "\n")
+    }
+
+    private enum TOMLMultilineString {
+        case basic
+        case literal
+
+        var quote: UInt8 {
+            switch self {
+            case .basic: Character("\"").asciiValue!
+            case .literal: Character("'").asciiValue!
+            }
+        }
+
+        var honorsEscapes: Bool {
+            switch self {
+            case .basic: true
+            case .literal: false
+            }
+        }
+    }
+
+    /// Returns only syntax outside TOML strings and comments. Tracking
+    /// multiline delimiters prevents string contents from looking like keys or
+    /// table headers without requiring a full TOML parser.
+    private static func tomlSyntax(
+        in line: String,
+        multilineString: inout TOMLMultilineString?
+    ) -> String {
+        let bytes = Array(line.utf8)
+        var result: [UInt8] = []
+        var index = 0
+
+        while index < bytes.count {
+            if let activeString = multilineString {
+                while index < bytes.count {
+                    if hasTripleQuote(activeString.quote, in: bytes, at: index),
+                       !activeString.honorsEscapes || !isEscaped(index, in: bytes) {
+                        multilineString = nil
+                        index += 3
+                        break
+                    }
+                    index += 1
+                }
+
+                if multilineString != nil {
+                    break
+                }
+                continue
+            }
+
+            switch bytes[index] {
+            case Character("#").asciiValue:
+                return String(decoding: result, as: UTF8.self)
+            case Character("\"").asciiValue, Character("'").asciiValue:
+                let quote = bytes[index]
+                let honorsEscapes = quote == Character("\"").asciiValue
+                if hasTripleQuote(quote, in: bytes, at: index) {
+                    multilineString = honorsEscapes ? .basic : .literal
+                    index += 3
+                    result.append(0x01)
+                } else {
+                    index += 1
+                    while index < bytes.count {
+                        if bytes[index] == quote, !honorsEscapes || !isEscaped(index, in: bytes) {
+                            index += 1
+                            break
+                        }
+                        index += 1
+                    }
+                    result.append(0x01)
+                }
+            default:
+                result.append(bytes[index])
+                index += 1
+            }
+        }
+
+        return String(decoding: result, as: UTF8.self)
+    }
+
+    private static func hasTripleQuote(_ quote: UInt8, in bytes: [UInt8], at index: Int) -> Bool {
+        index + 2 < bytes.count
+            && bytes[index] == quote
+            && bytes[index + 1] == quote
+            && bytes[index + 2] == quote
+    }
+
+    private static func isEscaped(_ index: Int, in bytes: [UInt8]) -> Bool {
+        guard index > 0 else { return false }
+        var backslashCount = 0
+        var cursor = index - 1
+
+        while bytes[cursor] == Character("\\").asciiValue {
+            backslashCount += 1
+            guard cursor > 0 else { break }
+            cursor -= 1
+        }
+
+        return backslashCount.isMultiple(of: 2) == false
+    }
+
+    private static func isTableHeader(_ syntax: String) -> Bool {
+        syntax.hasPrefix("[") && syntax.hasSuffix("]")
+    }
+
+    private static func isEmptyHooksArrayAssignment(_ syntax: String) -> Bool {
+        guard let equalsIndex = syntax.firstIndex(of: "=") else { return false }
+
+        let key = syntax[..<equalsIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+        guard key == "hooks" else { return false }
+
+        let value = syntax[syntax.index(after: equalsIndex)...]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard value.hasPrefix("["), value.hasSuffix("]") else { return false }
+
+        return value.dropFirst().dropLast()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty
     }
 
     private static func isHooksHeader(_ line: String) -> Bool {

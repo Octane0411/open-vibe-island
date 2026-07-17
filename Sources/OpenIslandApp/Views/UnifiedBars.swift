@@ -1,16 +1,30 @@
+import AppKit
 import SwiftUI
 
 /// v6 `UnifiedBars` glyph — three vertical bars that share the same geometry
-/// across all three notch states (idle / running / waiting), so transitions
-/// animate bar heights smoothly instead of swapping glyphs.
+/// across all three notch states (idle / running / waiting). Animation is
+/// handled by Core Animation layers so SwiftUI does not invalidate every frame.
 ///
 /// Canonical geometry (from the design handoff): 24×24 box, 3 bars of width
 /// 2.5 centered on columns x = 5.25 / 10.75 / 16.25, rounded to a pill.
 struct UnifiedBars: View {
     enum Mode: Equatable {
-        case idle       // rest — 3 short bars, middle breathes
-        case running    // wave — heights 4→12→4, stagger 0.15s
-        case waiting    // pause — outer bars tall, middle hidden, cross-pulse
+        case idle       // rest — 3 short bars with optional breathing
+        case running    // active — static tall wave frame
+        case waiting    // pause — static outer bars, middle hidden
+
+        var timelineInterval: TimeInterval? {
+            nil
+        }
+
+        var usesLayerAnimation: Bool {
+            switch self {
+            case .idle:
+                false
+            case .running, .waiting:
+                true
+            }
+        }
     }
 
     var mode: Mode
@@ -32,130 +46,186 @@ struct UnifiedBars: View {
         Column(x: 16.25, idleH: 3, waveCycle: [4, 10, 4], waveDelay: 0.30, waitH: 10),
     ]
 
+    @ViewBuilder
     var body: some View {
-        Group {
-            if isAnimated {
-                // Cap the redraw cadence per mode instead of riding the
-                // display's native refresh rate. This glyph lives in the notch
-                // and is visible 24/7 — on a 120 Hz ProMotion display an
-                // uncapped `.animation` schedule redraws the Canvas up to
-                // 120×/sec forever, even in the resting `.idle` state, which
-                // dominates energy use. The animations here are slow (0.9–2.8 s
-                // periods), so a modest frame cap is visually indistinguishable
-                // while cutting wakeups several-fold.
-                TimelineView(.animation(minimumInterval: frameInterval)) { timeline in
-                    barsCanvas(time: timeline.date.timeIntervalSinceReferenceDate)
-                }
-            } else {
-                // Static resting frame — zero continuous redraws. `staticTime`
-                // is chosen so the idle breath sits at its full-opacity rest.
-                barsCanvas(time: Self.staticIdleTime)
+        LayerRepresentable(mode: mode, tint: tint, idleAnimated: idleAnimated)
+            .frame(width: size, height: size)
+    }
+
+    private struct LayerRepresentable: NSViewRepresentable {
+        let mode: Mode
+        let tint: Color
+        let idleAnimated: Bool
+
+        func makeNSView(context: Context) -> LayerView {
+            let view = LayerView()
+            view.update(mode: mode, tint: NSColor(tint), idleAnimated: idleAnimated)
+            return view
+        }
+
+        func updateNSView(_ nsView: LayerView, context: Context) {
+            nsView.update(mode: mode, tint: NSColor(tint), idleAnimated: idleAnimated)
+        }
+    }
+
+    private final class LayerView: NSView {
+        private let barLayers = [CAShapeLayer(), CAShapeLayer(), CAShapeLayer()]
+        private var mode: Mode = .idle
+        private var tintColor = NSColor.white
+        private var idleAnimated = true
+
+        override init(frame frameRect: NSRect) {
+            super.init(frame: frameRect)
+            wantsLayer = true
+            layer = CALayer()
+            layer?.masksToBounds = false
+            barLayers.forEach { barLayer in
+                barLayer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+                barLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
+                layer?.addSublayer(barLayer)
             }
         }
-        .frame(width: size, height: size)
-    }
 
-    private func barsCanvas(time: TimeInterval) -> some View {
-        Canvas { context, canvasSize in
-            withScaledContext(context, canvasSize) { ctx in
-                drawBars(context: ctx, time: time)
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        func update(mode: Mode, tint: NSColor, idleAnimated: Bool) {
+            self.mode = mode
+            tintColor = tint
+            self.idleAnimated = idleAnimated
+            needsLayout = true
+        }
+
+        override func layout() {
+            super.layout()
+            configureLayers()
+        }
+
+        private func configureLayers() {
+            let side = min(bounds.width, bounds.height)
+            guard side > 0 else { return }
+
+            let scale = side / UnifiedBars.box
+            let dx = (bounds.width - side) / 2
+            let dy = (bounds.height - side) / 2
+
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            for (index, column) in UnifiedBars.columns.enumerated() {
+                let barLayer = barLayers[index]
+                let baseHeight = self.baseHeight(for: column)
+                let width = UnifiedBars.barWidth * scale
+                let height = baseHeight * scale
+                let center = CGPoint(
+                    x: dx + ((column.x + UnifiedBars.barWidth / 2) * scale),
+                    y: dy + (UnifiedBars.center * scale)
+                )
+
+                barLayer.isHidden = baseHeight <= 0
+                barLayer.bounds = CGRect(x: 0, y: 0, width: width, height: height)
+                barLayer.position = center
+                barLayer.fillColor = tintColor.cgColor
+                barLayer.path = CGPath(
+                    roundedRect: CGRect(x: 0, y: 0, width: width, height: height),
+                    cornerWidth: width / 2,
+                    cornerHeight: width / 2,
+                    transform: nil
+                )
+                barLayer.transform = CATransform3DMakeScale(1, initialScaleY(for: column), 1)
+                barLayer.opacity = initialOpacity(for: column)
+                configureAnimations(for: barLayer, column: column)
+            }
+            CATransaction.commit()
+        }
+
+        private func baseHeight(for column: Column) -> CGFloat {
+            switch mode {
+            case .idle:
+                column.idleH
+            case .running:
+                column.waveCycle.max() ?? column.idleH
+            case .waiting:
+                column.waitH
             }
         }
-    }
 
-    /// Whether this glyph should drive a live animation. `.running` / `.waiting`
-    /// always do; `.idle` only when the user hasn't opted into a static glyph.
-    private var isAnimated: Bool {
-        mode != .idle || idleAnimated
-    }
-
-    /// Time offset whose idle breath evaluates to full opacity (sin peak at
-    /// period/4 of the 2.8 s cycle), giving a clean resting glyph when static.
-    private static let staticIdleTime: TimeInterval = 0.7
-
-    /// Minimum interval between Canvas redraws, chosen per mode so each
-    /// animation stays smooth at the lowest cadence its period allows.
-    private var frameInterval: Double {
-        switch mode {
-        case .idle:    return 1.0 / 12.0   // 2.8 s breath — 12 fps is ample
-        case .running: return 1.0 / 30.0   // 0.9 s wave — fastest motion
-        case .waiting: return 1.0 / 15.0   // 1.8 s cross-pulse
-        }
-    }
-
-    // MARK: - Drawing
-
-    private func withScaledContext(
-        _ context: GraphicsContext,
-        _ canvasSize: CGSize,
-        body: (GraphicsContext) -> Void
-    ) {
-        var ctx = context
-        let side = min(canvasSize.width, canvasSize.height)
-        let scale = side / Self.box
-        let dx = (canvasSize.width - side) / 2
-        let dy = (canvasSize.height - side) / 2
-        ctx.translateBy(x: dx, y: dy)
-        ctx.scaleBy(x: scale, y: scale)
-        body(ctx)
-    }
-
-    private func drawBars(context: GraphicsContext, time: TimeInterval) {
-        for column in Self.columns {
-            let (height, y, opacity) = barGeometry(for: column, time: time)
-            guard opacity > 0, height > 0 else { continue }
-            let rect = CGRect(
-                x: column.x,
-                y: y,
-                width: Self.barWidth,
-                height: height
-            )
-            let path = Path(
-                roundedRect: rect,
-                cornerSize: CGSize(width: Self.barWidth / 2, height: Self.barWidth / 2)
-            )
-            context.fill(path, with: .color(tint.opacity(opacity)))
-        }
-    }
-
-    private func barGeometry(
-        for column: Column,
-        time: TimeInterval
-    ) -> (height: CGFloat, y: CGFloat, opacity: Double) {
-        switch mode {
-        case .idle:
-            let h = column.idleH
-            let isMiddle = column.x == Self.columns[1].x
-            let breath = isMiddle
-                ? 0.7 + 0.3 * abs(sin(time * 2 * .pi / 2.8))
-                : 1.0
-            return (h, Self.center - h / 2, breath)
-        case .running:
-            let cycle = column.waveCycle
-            let period: TimeInterval = 0.9
-            let raw = (time - column.waveDelay)
-                .truncatingRemainder(dividingBy: period) / period
-            let phase = raw < 0 ? raw + 1 : raw
-            let h: CGFloat
-            if phase < 0.5 {
-                let t = phase / 0.5
-                h = cycle[0] + (cycle[1] - cycle[0]) * t
-            } else {
-                let t = (phase - 0.5) / 0.5
-                h = cycle[1] + (cycle[2] - cycle[1]) * t
+        private func initialScaleY(for column: Column) -> CGFloat {
+            guard mode == .running,
+                  let maxHeight = column.waveCycle.max(),
+                  maxHeight > 0 else {
+                return 1
             }
-            return (h, Self.center - h / 2, 1.0)
-        case .waiting:
-            let h = column.waitH
-            guard h > 0 else { return (0, Self.center, 0) }
-            let isLeading = column.x < Self.center
-            let period: TimeInterval = 1.8
-            let offset = isLeading ? 0.0 : period / 2
-            let progress = ((time + offset)
-                .truncatingRemainder(dividingBy: period)) / period
-            let wave = 0.5 - 0.5 * cos(progress * 2 * .pi)
-            let opacity = 0.55 + 0.45 * wave
-            return (h, Self.center - h / 2, opacity)
+            return column.waveCycle[0] / maxHeight
+        }
+
+        private func initialOpacity(for column: Column) -> Float {
+            switch mode {
+            case .idle, .running:
+                1
+            case .waiting:
+                column.waitH > 0 ? 0.55 : 0
+            }
+        }
+
+        private func configureAnimations(for barLayer: CAShapeLayer, column: Column) {
+            barLayer.removeAllAnimations()
+            let shouldAnimate = mode.usesLayerAnimation || (mode == .idle && idleAnimated)
+            guard shouldAnimate, !barLayer.isHidden else { return }
+
+            switch mode {
+            case .idle:
+                addIdleAnimation(to: barLayer)
+            case .running:
+                addRunningAnimation(to: barLayer, column: column)
+            case .waiting:
+                addWaitingAnimation(to: barLayer, column: column)
+            }
+        }
+
+        private func addIdleAnimation(to barLayer: CAShapeLayer) {
+            let animation = CAKeyframeAnimation(keyPath: "opacity")
+            animation.values = [0.72, 1.0, 0.72]
+            animation.keyTimes = [0, 0.5, 1]
+            animation.duration = 2.8
+            animation.repeatCount = .infinity
+            animation.timingFunctions = [
+                CAMediaTimingFunction(name: .easeInEaseOut),
+                CAMediaTimingFunction(name: .easeInEaseOut),
+            ]
+            barLayer.add(animation, forKey: "idle-opacity")
+        }
+
+        private func addRunningAnimation(to barLayer: CAShapeLayer, column: Column) {
+            let maxHeight = column.waveCycle.max() ?? column.idleH
+            guard maxHeight > 0 else { return }
+
+            let animation = CAKeyframeAnimation(keyPath: "transform.scale.y")
+            animation.values = column.waveCycle.map { $0 / maxHeight }
+            animation.keyTimes = [0, 0.5, 1]
+            animation.duration = 0.9
+            animation.beginTime = CACurrentMediaTime() + column.waveDelay
+            animation.repeatCount = .infinity
+            animation.timingFunctions = [
+                CAMediaTimingFunction(name: .easeInEaseOut),
+                CAMediaTimingFunction(name: .easeInEaseOut),
+            ]
+            barLayer.add(animation, forKey: "running-scale-y")
+        }
+
+        private func addWaitingAnimation(to barLayer: CAShapeLayer, column: Column) {
+            let animation = CAKeyframeAnimation(keyPath: "opacity")
+            animation.values = [0.55, 1.0, 0.55]
+            animation.keyTimes = [0, 0.5, 1]
+            animation.duration = 1.8
+            animation.beginTime = CACurrentMediaTime() + (column.x < UnifiedBars.center ? 0 : 0.9)
+            animation.repeatCount = .infinity
+            animation.timingFunctions = [
+                CAMediaTimingFunction(name: .easeInEaseOut),
+                CAMediaTimingFunction(name: .easeInEaseOut),
+            ]
+            barLayer.add(animation, forKey: "waiting-opacity")
         }
     }
 

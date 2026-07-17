@@ -280,7 +280,7 @@ final class AppModel {
         didSet {
             guard hasFinishedInit, processDiscoveryCadence != oldValue else { return }
             UserDefaults.standard.set(processDiscoveryCadence.rawValue, forKey: Self.processDiscoveryCadenceDefaultsKey)
-            monitoring.pollInterval = processDiscoveryCadence.interval
+            monitoring.discoveryCadence = processDiscoveryCadence
         }
     }
     var launchAtLoginEnabled: Bool = false {
@@ -541,7 +541,11 @@ final class AppModel {
 
 
     @ObservationIgnored
-    var harnessRuntimeMonitor: HarnessRuntimeMonitor?
+    var harnessRuntimeMonitor: HarnessRuntimeMonitor? {
+        didSet {
+            overlay.harnessRuntimeMonitor = harnessRuntimeMonitor
+        }
+    }
 
 
     @ObservationIgnored
@@ -628,7 +632,7 @@ final class AppModel {
         processDiscoveryCadence = ProcessDiscoveryCadence(
             rawValue: UserDefaults.standard.string(forKey: Self.processDiscoveryCadenceDefaultsKey) ?? ""
         ) ?? .standard
-        monitoring.pollInterval = processDiscoveryCadence.interval
+        monitoring.discoveryCadence = processDiscoveryCadence
         launchAtLoginEnabled = LaunchAtLoginService.shared.isEnabled
         appearanceSettingsProfile = IslandAppearanceDisplayProfile(
             rawValue: UserDefaults.standard.string(forKey: Self.appearanceProfileSettingsDefaultsKey) ?? ""
@@ -642,6 +646,7 @@ final class AppModel {
 
         overlay.appModel = self
         overlay.restoreDisplayPreference()
+        overlay.startObservingDisplayChanges()
         overlay.onStatusMessage = { [weak self] message in
             self?.lastActionMessage = message
         }
@@ -668,6 +673,13 @@ final class AppModel {
         discovery.onStateChanged = { [weak self] in
             self?.synchronizeSelection()
             self?.refreshOverlayPlacementIfVisible()
+        }
+        discovery.onAgentEvent = { [weak self] event in
+            self?.applyTrackedEvent(
+                event,
+                updateLastActionMessage: false,
+                ingress: .rollout
+            )
         }
 
         discovery.codexRolloutWatcher.eventHandler = { [weak self] event in
@@ -710,6 +722,9 @@ final class AppModel {
             } else {
                 self.codexAppServer.disconnect()
             }
+        }
+        monitoring.onCodexAppMaintenanceTick = { [weak self] in
+            self?.discovery.maintainCodexAppSessionsIfNeeded()
         }
         refreshOverlayDisplayConfiguration()
         hasFinishedInit = true

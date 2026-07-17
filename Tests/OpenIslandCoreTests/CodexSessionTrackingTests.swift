@@ -570,6 +570,191 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutReducerMarksUsageLimitMessageAsCompleted() {
+        let initialSnapshot = CodexRolloutReducer.snapshot(for: [
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:44.500Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_reasoning",
+                ]
+            ),
+        ])
+        let quotaSnapshot = CodexRolloutReducer.snapshot(for: [
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:44.500Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_reasoning",
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": "你已达到使用上限。升级套餐或充值额度以继续，或在 15:25 后重试。",
+                ]
+            ),
+        ])
+        let events = CodexRolloutReducer.events(
+            from: initialSnapshot,
+            to: quotaSnapshot,
+            sessionID: "codex-session-quota",
+            transcriptPath: "/tmp/rollout.jsonl"
+        )
+
+        #expect(quotaSnapshot.phase == .completed)
+        #expect(quotaSnapshot.isCompleted)
+        #expect(!quotaSnapshot.isInterrupted)
+        #expect(events.contains(where: {
+            $0.trackedSessionCompletion?.summary.contains("你已达到使用上限") == true
+        }))
+    }
+
+    @Test
+    func codexRolloutReducerDetectsEnglishUsageLimitMessages() {
+        #expect(CodexRolloutReducer.isTerminalFailureMessage(
+            "You've reached your usage limit. Try again later."
+        ))
+        #expect(!CodexRolloutReducer.isTerminalFailureMessage(
+            "I'll inspect the Grafana panel next."
+        ))
+    }
+
+    @Test
+    func codexArchivedSessionIndexParsesRolloutFilenames() {
+        let sessionID = CodexArchivedSessionIndex.sessionID(
+            fromArchivedRolloutFilename: "rollout-2026-06-23T14-37-26-019ef332-b281-7292-874f-4cf8787fb4b8.jsonl"
+        )
+        #expect(sessionID == "019ef332-b281-7292-874f-4cf8787fb4b8")
+
+        let futureSessionID = CodexArchivedSessionIndex.sessionID(
+            fromArchivedRolloutFilename: "rollout-2026-08-15T12-00-00-01af0000-b281-7292-874f-4cf8787fb4b8.jsonl"
+        )
+        #expect(futureSessionID == "01af0000-b281-7292-874f-4cf8787fb4b8")
+    }
+
+    @Test
+    func codexAppSessionReconcilerIgnoresRunningSessionsWithoutTranscriptPath() {
+        let events = CodexAppSessionReconciler.stalledRunningEvents(for: [
+            AgentSession(
+                id: "codex-session-bootstrapping",
+                title: "Codex · demo",
+                tool: .codex,
+                origin: .live,
+                attachmentState: .attached,
+                phase: .running,
+                summary: "Thinking",
+                updatedAt: .now,
+                jumpTarget: JumpTarget(
+                    terminalApp: "Codex.app",
+                    workspaceName: "demo",
+                    paneTitle: "Codex",
+                    workingDirectory: "/tmp/demo",
+                    codexThreadID: "codex-session-bootstrapping"
+                )
+            ),
+        ])
+
+        #expect(events.isEmpty)
+    }
+
+    @Test
+    func codexAppSessionReconcilerEndsArchivedSessions() {
+        let events = CodexAppSessionReconciler.reconciliationEvents(
+            for: [
+                AgentSession(
+                    id: "019ef332-b281-7292-874f-4cf8787fb4b8",
+                    title: "Codex · hacking-activity",
+                    tool: .codex,
+                    origin: .live,
+                    attachmentState: .attached,
+                    phase: .completed,
+                    summary: "Turn stalled.",
+                    updatedAt: .now,
+                    jumpTarget: JumpTarget(
+                        terminalApp: "Codex.app",
+                        workspaceName: "hacking-activity",
+                        paneTitle: "Codex",
+                        workingDirectory: "/Users/admin/GoCode/hacking-activity",
+                        codexThreadID: "019ef332-b281-7292-874f-4cf8787fb4b8"
+                    )
+                ),
+            ],
+            archivedSessionIDs: ["019ef332-b281-7292-874f-4cf8787fb4b8"]
+        )
+
+        #expect(events.count == 1)
+        #expect(events.first?.trackedSessionCompletion?.isSessionEnd == true)
+        #expect(events.first?.trackedSessionCompletion?.summary == "Codex thread archived.")
+    }
+
+    @Test
+    func codexRolloutReducerMarksPrimaryRateLimitWhileAwaitingAgentResponse() {
+        let initialSnapshot = CodexRolloutReducer.snapshot(for: [
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:44.500Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": "Inspect the Grafana panel.",
+                ]
+            ),
+        ])
+        let limitedSnapshot = CodexRolloutReducer.snapshot(for: [
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:44.500Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": "Inspect the Grafana panel.",
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "token_count",
+                    "info": [
+                        "rate_limits": [
+                            "primary": [
+                                "used_percent": 100.0,
+                                "window_minutes": 300,
+                            ],
+                        ],
+                    ],
+                ]
+            ),
+        ])
+
+        #expect(limitedSnapshot.phase == .completed)
+        #expect(limitedSnapshot.summary == "Rate limit reached.")
+        #expect(CodexAppSessionReconciler.stalledRunningEvents(for: [
+            AgentSession(
+                id: "codex-session-stalled",
+                title: "Codex · demo",
+                tool: .codex,
+                origin: .live,
+                attachmentState: .attached,
+                phase: .running,
+                summary: "Prompt: blocked turn",
+                updatedAt: .now,
+                jumpTarget: JumpTarget(
+                    terminalApp: "Codex.app",
+                    workspaceName: "demo",
+                    paneTitle: "Codex",
+                    workingDirectory: "/tmp/demo",
+                    codexThreadID: "codex-session-stalled"
+                ),
+                codexMetadata: CodexSessionMetadata(
+                    transcriptPath: "/tmp/missing-rollout.jsonl"
+                )
+            ),
+        ], fileManager: MissingTranscriptFileManager()).count == 1)
+    }
+
+    @Test
     func codexRolloutReducerPreservesInitialPromptAcrossLaterPrompts() {
         let snapshot = CodexRolloutReducer.snapshot(for: [
             rolloutLine(
@@ -1139,6 +1324,12 @@ struct CodexSessionTrackingTests {
         #expect(records.count == 1)
         #expect(records.first?.sessionID == "codex-session-trailing")
         #expect(records.first?.codexMetadata?.lastAssistantMessage == "Final line without newline.")
+    }
+}
+
+private final class MissingTranscriptFileManager: FileManager, @unchecked Sendable {
+    override func fileExists(atPath path: String) -> Bool {
+        false
     }
 }
 

@@ -219,6 +219,125 @@ public final class CodexSessionStore: @unchecked Sendable {
     }
 }
 
+public enum CodexArchivedSessionIndex: Sendable {
+    public static var defaultDirectoryURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/archived_sessions", isDirectory: true)
+    }
+
+    /// Session IDs whose rollout files Codex moved into `archived_sessions/`.
+    public static func archivedSessionIDs(
+        fileManager: FileManager = .default,
+        directoryURL: URL = defaultDirectoryURL
+    ) -> Set<String> {
+        guard let names = try? fileManager.contentsOfDirectory(atPath: directoryURL.path) else {
+            return []
+        }
+
+        var ids = Set<String>()
+        for name in names where name.hasPrefix("rollout-") && name.hasSuffix(".jsonl") {
+            guard let sessionID = sessionID(fromArchivedRolloutFilename: name) else {
+                continue
+            }
+            ids.insert(sessionID)
+        }
+        return ids
+    }
+
+    static func sessionID(fromArchivedRolloutFilename filename: String) -> String? {
+        guard let range = filename.range(
+            of: #"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl$"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) else {
+            return nil
+        }
+        let match = String(filename[range])
+        return match.replacingOccurrences(of: ".jsonl", with: "")
+    }
+}
+
+public enum CodexAppSessionReconciler {
+    public static func reconciliationEvents(
+        for sessions: [AgentSession],
+        archivedSessionIDs: Set<String>,
+        fileManager: FileManager = .default,
+        now: Date = .now
+    ) -> [AgentEvent] {
+        sessions.compactMap { event(for: $0, archivedSessionIDs: archivedSessionIDs, fileManager: fileManager, now: now) }
+    }
+
+    /// Emits completion updates for Codex.app sessions stuck in `.running`
+    /// when their rollout transcript is missing — a common outcome when Codex
+    /// blocks on quota before writing `turn_complete`.
+    public static func stalledRunningEvents(
+        for sessions: [AgentSession],
+        fileManager: FileManager = .default,
+        now: Date = .now
+    ) -> [AgentEvent] {
+        reconciliationEvents(
+            for: sessions,
+            archivedSessionIDs: [],
+            fileManager: fileManager,
+            now: now
+        )
+    }
+
+    private static func event(
+        for session: AgentSession,
+        archivedSessionIDs: Set<String>,
+        fileManager: FileManager,
+        now: Date
+    ) -> AgentEvent? {
+        guard session.tool == .codex,
+              !session.isSessionEnded,
+              session.isCodexAppSession || session.jumpTarget?.terminalApp == "Codex.app" else {
+            return nil
+        }
+
+        if archivedSessionIDs.contains(session.id)
+            || isArchivedTranscriptPath(session.codexMetadata?.transcriptPath) {
+            return .sessionCompleted(
+                SessionCompleted(
+                    sessionID: session.id,
+                    summary: "Codex thread archived.",
+                    timestamp: now,
+                    isSessionEnd: true
+                )
+            )
+        }
+
+        guard session.phase == .running else {
+            return nil
+        }
+
+        let transcriptPath = session.codexMetadata?.transcriptPath?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !transcriptPath.isEmpty else {
+            return nil
+        }
+        guard fileManager.fileExists(atPath: transcriptPath) else {
+            return .activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: session.id,
+                    summary: "Turn stalled.",
+                    phase: .completed,
+                    timestamp: now
+                )
+            )
+        }
+
+        return nil
+    }
+
+    private static func isArchivedTranscriptPath(_ transcriptPath: String?) -> Bool {
+        guard let transcriptPath = transcriptPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !transcriptPath.isEmpty else {
+            return false
+        }
+
+        return transcriptPath.contains("/.codex/archived_sessions/")
+    }
+}
+
 public final class CodexRolloutDiscovery: @unchecked Sendable {
     private struct Candidate {
         var fileURL: URL
@@ -721,12 +840,80 @@ public enum CodexRolloutReducer {
             )
         case "context_compacted":
             applyThinking(to: &snapshot)
+        case "token_count":
+            applyRateLimitSignal(payload, to: &snapshot)
         default:
             break
         }
 
         if let timestamp {
             snapshot.updatedAt = timestamp
+        }
+    }
+
+    private static func applyRateLimitSignal(
+        _ payload: [String: Any],
+        to snapshot: inout CodexRolloutSnapshot
+    ) {
+        guard !snapshot.isCompleted else {
+            return
+        }
+
+        let rateLimits = (payload["info"] as? [String: Any])?["rate_limits"] as? [String: Any]
+            ?? payload["rate_limits"] as? [String: Any]
+        guard let rateLimits else {
+            return
+        }
+
+        if let reachedType = rateLimits["rate_limit_reached_type"] as? String,
+           !reachedType.isEmpty {
+            markRateLimitReached(on: &snapshot)
+            return
+        }
+
+        guard let primary = rateLimits["primary"] as? [String: Any],
+              let usedPercent = number(from: primary["used_percent"]),
+              usedPercent >= 100,
+              turnAwaitingAgentResponse(snapshot) else {
+            return
+        }
+
+        markRateLimitReached(on: &snapshot)
+    }
+
+    private static func turnAwaitingAgentResponse(_ snapshot: CodexRolloutSnapshot) -> Bool {
+        guard let summary = snapshot.summary?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !summary.isEmpty else {
+            return true
+        }
+
+        if summary.hasPrefix("Prompt:") {
+            return true
+        }
+
+        return summary == "Thinking."
+            || summary == "Codex started a new turn."
+    }
+
+    private static func markRateLimitReached(on snapshot: inout CodexRolloutSnapshot) {
+        snapshot.currentTool = nil
+        snapshot.currentCommandPreview = nil
+        snapshot.phase = .completed
+        snapshot.isCompleted = true
+        snapshot.isInterrupted = false
+        snapshot.summary = "Rate limit reached."
+    }
+
+    private static func number(from value: Any?) -> Double? {
+        switch value {
+        case let number as Double:
+            number
+        case let number as Int:
+            Double(number)
+        case let number as NSNumber:
+            number.doubleValue
+        default:
+            nil
         }
     }
 
@@ -894,11 +1081,17 @@ public enum CodexRolloutReducer {
         snapshot.lastAssistantMessage = message
         snapshot.summary = message
 
-        // After task_complete, the JSONL may still contain trailing
-        // response_item entries (the final assistant message). These should
-        // update content but NOT reset the completion state — only a new
-        // user prompt (applyUserMessage) starts a fresh turn.
-        if !snapshot.isCompleted {
+        if !snapshot.isCompleted, isTerminalFailureMessage(message) {
+            snapshot.currentTool = nil
+            snapshot.currentCommandPreview = nil
+            snapshot.phase = .completed
+            snapshot.isCompleted = true
+            snapshot.isInterrupted = false
+        } else if !snapshot.isCompleted {
+            // After task_complete, the JSONL may still contain trailing
+            // response_item entries (the final assistant message). These should
+            // update content but NOT reset the completion state — only a new
+            // user prompt (applyUserMessage) starts a fresh turn.
             snapshot.currentTool = nil
             snapshot.currentCommandPreview = nil
             snapshot.phase = .running
@@ -908,6 +1101,29 @@ public enum CodexRolloutReducer {
         if let timestamp {
             snapshot.updatedAt = timestamp
         }
+    }
+
+    /// Detects assistant messages that terminate the current turn without a
+    /// trailing `turn_complete`, such as Codex quota-limit errors.
+    static func isTerminalFailureMessage(_ message: String) -> Bool {
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return false
+        }
+
+        if trimmed.contains("你已达到使用上限") || trimmed.contains("使用上限") {
+            return true
+        }
+
+        let normalized = trimmed.lowercased()
+        let englishPatterns = [
+            "usage limit",
+            "rate limit",
+            "quota exceeded",
+            "you've reached your",
+            "you have reached your",
+        ]
+        return englishPatterns.contains { normalized.contains($0) }
     }
 
     private static func displayName(for toolName: String) -> String {

@@ -316,6 +316,62 @@ struct ClaudeHooksTests {
         #expect(payload.defaultJumpTarget.terminalApp == "Unknown")
     }
 
+    /// Verifies a Claude Desktop session is tagged `Claude.app` via the
+    /// authoritative `CLAUDE_CODE_ENTRYPOINT=claude-desktop` signal. The
+    /// desktop subprocess is TTY-less and invisible to process discovery, so
+    /// this tag is what lets liveness follow the desktop app instead of a
+    /// non-existent terminal process.
+    @Test
+    func claudeInferTerminalAppRecognizesClaudeDesktopViaEntrypoint() {
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: ["CLAUDE_CODE_ENTRYPOINT": "claude-desktop"],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+        )
+
+        #expect(payload.terminalApp == "Claude.app")
+        #expect(payload.defaultJumpTarget.terminalApp == "Claude.app")
+    }
+
+    /// Verifies the `__CFBundleIdentifier=com.anthropic.claudefordesktop`
+    /// fallback also tags the session `Claude.app` — the hook binary inherits
+    /// that bundle id when launched as a subprocess of Claude.app.
+    @Test
+    func claudeInferTerminalAppRecognizesClaudeDesktopViaBundleIdentifier() {
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: ["__CFBundleIdentifier": "com.anthropic.claudefordesktop"],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+        )
+
+        #expect(payload.terminalApp == "Claude.app")
+    }
+
+    /// Verifies the desktop entrypoint signal wins over a leaked
+    /// `TERM_PROGRAM`. Launching Claude.app from a terminal (e.g.
+    /// `open -a Claude` from Ghostty) leaks the parent shell's `TERM_PROGRAM`
+    /// into the subprocess env; the session must still classify as
+    /// `Claude.app`, not the launching terminal.
+    @Test
+    func claudeInferTerminalAppPrefersClaudeDesktopOverLeakedTermProgram() {
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: [
+                "CLAUDE_CODE_ENTRYPOINT": "claude-desktop",
+                "TERM_PROGRAM": "ghostty",
+            ],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+        )
+
+        #expect(payload.terminalApp == "Claude.app")
+    }
+
     @Test
     func claudePermissionRequestReturnsAllowDirectiveAfterApproval() async throws {
         let socketURL = BridgeSocketLocation.uniqueTestURL()
@@ -526,6 +582,89 @@ struct ClaudeHooksTests {
     }
 
     @Test
+    func claudeSubagentStopAfterStopDoesNotReopenCompletedSession() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+
+        let collector = AgentEventCollector()
+        let collectionTask = Task {
+            do {
+                for try await event in stream {
+                    await collector.append(event)
+                }
+            } catch {}
+        }
+        defer { collectionTask.cancel() }
+
+        try await observer.send(.registerClient(role: .observer))
+
+        let sessionID = "claude-subagent-stop-after-stop"
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processClaudeHook(
+                ClaudeHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .userPromptSubmit,
+                    sessionID: sessionID,
+                    transcriptPath: "/tmp/claude-subagent-stop-after-stop.jsonl",
+                    prompt: "Reply with exactly OK."
+                )
+            )
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processClaudeHook(
+                ClaudeHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .stop,
+                    sessionID: sessionID,
+                    transcriptPath: "/tmp/claude-subagent-stop-after-stop.jsonl",
+                    lastAssistantMessage: "OK"
+                )
+            )
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processClaudeHook(
+                ClaudeHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .subagentStop,
+                    sessionID: sessionID,
+                    transcriptPath: "/tmp/claude-subagent-stop-after-stop.jsonl",
+                    agentID: "statusline-agent",
+                    agentType: "",
+                    lastAssistantMessage: "(silence)"
+                )
+            )
+        )
+
+        let events = await waitForCompletedSessionEvent(
+            sessionID: sessionID,
+            collector: collector
+        )
+        var state = SessionState()
+        for event in events {
+            state.apply(event)
+        }
+
+        let session = try #require(state.session(id: sessionID))
+        #expect(session.phase == .completed)
+        #expect(session.summary == "OK")
+        #expect(session.claudeMetadata?.agentID == nil)
+        #expect(!events.contains { event in
+            if case let .activityUpdated(payload) = event {
+                return payload.sessionID == sessionID
+                    && payload.phase == .running
+                    && payload.summary == "(silence)"
+            }
+            return false
+        })
+    }
+
+    @Test
     func questionPromptAlwaysAppendsOtherFreeformOption() throws {
         let payload = ClaudeHookPayload(
             cwd: "/tmp",
@@ -630,6 +769,39 @@ struct ClaudeHooksTests {
 private enum ClaudeHooksTestError: Error {
     case streamEnded
     case noMatchingEvent
+}
+
+private actor AgentEventCollector {
+    private var events: [AgentEvent] = []
+
+    func append(_ event: AgentEvent) {
+        events.append(event)
+    }
+
+    func snapshot() -> [AgentEvent] {
+        events
+    }
+}
+
+private func waitForCompletedSessionEvent(
+    sessionID: String,
+    collector: AgentEventCollector
+) async -> [AgentEvent] {
+    for _ in 0..<100 {
+        let events = await collector.snapshot()
+        if events.contains(where: { event in
+            if case let .sessionCompleted(payload) = event {
+                return payload.sessionID == sessionID && payload.summary == "OK"
+            }
+            return false
+        }) {
+            return events
+        }
+
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+
+    return await collector.snapshot()
 }
 
 private func nextEvent(

@@ -1,0 +1,43 @@
+name: Notary Preflight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-credentials:
+    runs-on: macos-26
+    steps:
+      - name: Validate Apple notarization credentials
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          : "${APPLE_ID:?APPLE_ID secret is required}"
+          : "${APPLE_TEAM_ID:?APPLE_TEAM_ID secret is required}"
+          : "${APPLE_APP_SPECIFIC_PASSWORD:?APPLE_APP_SPECIFIC_PASSWORD secret is required}"
+
+          keychain_path="$RUNNER_TEMP/notary-preflight.keychain-db"
+          keychain_password="$(uuidgen)"
+
+          cleanup() {
+            security delete-keychain "$keychain_path" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 3600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+
+          xcrun notarytool store-credentials "open-island-notary-preflight" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --keychain "$keychain_path"
+
+          echo "Apple notarization credentials are valid."

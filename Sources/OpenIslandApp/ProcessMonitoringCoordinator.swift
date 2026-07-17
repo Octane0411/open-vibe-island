@@ -5,10 +5,9 @@ import OpenIslandCore
 
 typealias ActiveProcessSnapshot = ActiveAgentProcessDiscovery.ProcessSnapshot
 
-/// How often the session-attachment monitor scans running processes. Slower
-/// cadences trade a little detection latency (for agents started without a
-/// hook) for fewer `ps` scans and CPU wakeups — a battery-life lever the user
-/// controls from Settings.
+/// How aggressively the session-attachment monitor backs off process scans.
+/// Slower cadences trade detection latency (for agents started without a hook)
+/// for fewer `ps` scans and CPU wakeups.
 enum ProcessDiscoveryCadence: String, CaseIterable, Identifiable, Codable, Sendable {
     case standard
     case relaxed
@@ -16,11 +15,11 @@ enum ProcessDiscoveryCadence: String, CaseIterable, Identifiable, Codable, Senda
 
     var id: String { rawValue }
 
-    var interval: Duration {
+    var intervalMultiplier: TimeInterval {
         switch self {
-        case .standard:     return .seconds(2)
-        case .relaxed:      return .seconds(5)
-        case .batterySaver: return .seconds(10)
+        case .standard:     return 1
+        case .relaxed:      return 2
+        case .batterySaver: return 5
         }
     }
 }
@@ -30,10 +29,10 @@ enum ProcessDiscoveryCadence: String, CaseIterable, Identifiable, Codable, Senda
 final class ProcessMonitoringCoordinator {
     var isResolvingInitialLiveSessions = false
 
-    /// Interval between process scans, driven by the user's cadence preference.
-    /// Read fresh each loop iteration so changes take effect on the next cycle.
+    /// Backoff policy for full process scans. Read fresh each loop iteration so
+    /// preference changes take effect after the current deadline.
     @ObservationIgnored
-    var pollInterval: Duration = ProcessDiscoveryCadence.standard.interval
+    var discoveryCadence: ProcessDiscoveryCadence = .standard
 
     @ObservationIgnored
     var syntheticClaudeSessionPrefix = ""
@@ -54,6 +53,10 @@ final class ProcessMonitoringCoordinator {
     @ObservationIgnored
     var onCodexAppRunningChanged: ((_ isRunning: Bool) -> Void)?
 
+    /// Fires on each monitor tick while Codex.app is running (every ~2s).
+    @ObservationIgnored
+    var onCodexAppMaintenanceTick: (() -> Void)?
+
     @ObservationIgnored
     let activeAgentProcessDiscovery = ActiveAgentProcessDiscovery()
 
@@ -69,7 +72,55 @@ final class ProcessMonitoringCoordinator {
     @ObservationIgnored
     private var wasCodexAppRunning = false
 
+    private static let startupPollInterval: TimeInterval = 2
+    private static let codexAppRunningProbeInterval: TimeInterval = 2
+    private static let activePollInterval: TimeInterval = 60
+    private static let idlePollInterval: TimeInterval = 300
     private static let cursorStalenessTimeout: TimeInterval = 600  // 10 minutes
+    private static let codexAppStalenessTimeout: TimeInterval = 600  // 10 minutes
+    private static let claudeDesktopStalenessTimeout: TimeInterval = 600  // 10 minutes
+
+    static func monitoringPollInterval(
+        isResolvingInitialLiveSessions: Bool,
+        hasTrackedLiveSessions: Bool,
+        cadence: ProcessDiscoveryCadence = .standard
+    ) -> TimeInterval {
+        if isResolvingInitialLiveSessions {
+            return startupPollInterval
+        }
+
+        let baseInterval = hasTrackedLiveSessions ? activePollInterval : idlePollInterval
+        return baseInterval * cadence.intervalMultiplier
+    }
+
+    static func monitoringWakeInterval(
+        isResolvingInitialLiveSessions: Bool,
+        hasTrackedLiveSessions: Bool
+    ) -> TimeInterval {
+        min(
+            codexAppRunningProbeInterval,
+            monitoringPollInterval(
+                isResolvingInitialLiveSessions: isResolvingInitialLiveSessions,
+                hasTrackedLiveSessions: hasTrackedLiveSessions
+            )
+        )
+    }
+
+    static func shouldPerformFullMonitorReconcile(
+        now: Date,
+        nextFullReconcileAt: Date,
+        isResolvingInitialLiveSessions: Bool,
+        hasTrackedLiveSessions: Bool,
+        hadTrackedLiveSessions: Bool
+    ) -> Bool {
+        if isResolvingInitialLiveSessions {
+            return true
+        }
+        if hasTrackedLiveSessions, !hadTrackedLiveSessions {
+            return true
+        }
+        return now >= nextFullReconcileAt
+    }
 
     private var state: SessionState {
         get { stateAccessor?() ?? SessionState() }
@@ -88,45 +139,87 @@ final class ProcessMonitoringCoordinator {
                 return
             }
 
+            var nextFullReconcileAt = Date.distantPast
+            var hadTrackedLiveSessions = false
+
             while !Task.isCancelled {
-                let discovery = self.activeAgentProcessDiscovery
-                let probe = self.terminalSessionAttachmentProbe
-                let resolver = self.terminalJumpTargetResolver
                 let liveSessions = self.state.sessions.filter(\.isTrackedLiveSession)
-                // The terminal snapshot probes spawn `osascript` subprocesses and
-                // send Apple Events to Terminal/Ghostty. `reconcileSessionAttachments`
-                // only consumes their results when there are tracked live sessions
-                // (everything past its empty-sessions early return), so when idle
-                // these spawns are pure waste fired every cycle. Skip them — and the
-                // jump-target resolution — until there's a live session to resolve.
-                // A session synthesized from process discovery this cycle simply
-                // gets its attachment resolved on the next one.
-                let hasLiveSessions = !liveSessions.isEmpty
-                let (snapshots, ghosttyAvail, terminalAvail, jumpTargets):
-                    (
-                        [ActiveProcessSnapshot],
-                        TerminalSessionAttachmentProbe.SnapshotAvailability<TerminalSessionAttachmentProbe.GhosttyTerminalSnapshot>?,
-                        TerminalSessionAttachmentProbe.SnapshotAvailability<TerminalSessionAttachmentProbe.TerminalTabSnapshot>?,
-                        [String: JumpTarget]
-                    ) = await Task.detached(priority: .utility) {
-                    let s = discovery.discover()
-                    guard hasLiveSessions else {
-                        return (s, nil, nil, [:])
-                    }
-                    let g = probe.ghosttySnapshotAvailability()
-                    let t = probe.terminalSnapshotAvailability()
-                    let j = resolver.resolveJumpTargets(for: liveSessions, activeProcesses: s)
-                    return (s, g, t, j)
-                }.value
-                self.reconcileSessionAttachments(
-                    activeProcesses: snapshots,
-                    ghosttyAvailability: ghosttyAvail,
-                    terminalAvailability: terminalAvail,
-                    preResolvedJumpTargets: jumpTargets
+                let hasTrackedLiveSessions = !liveSessions.isEmpty
+                let shouldRunFullReconcile = Self.shouldPerformFullMonitorReconcile(
+                    now: Date(),
+                    nextFullReconcileAt: nextFullReconcileAt,
+                    isResolvingInitialLiveSessions: self.isResolvingInitialLiveSessions,
+                    hasTrackedLiveSessions: hasTrackedLiveSessions,
+                    hadTrackedLiveSessions: hadTrackedLiveSessions
                 )
-                try? await Task.sleep(for: self.pollInterval)
+
+                if shouldRunFullReconcile {
+                    let discovery = self.activeAgentProcessDiscovery
+                    let probe = self.terminalSessionAttachmentProbe
+                    let resolver = self.terminalJumpTargetResolver
+                    let shouldResolveTerminals = hasTrackedLiveSessions
+                    let (snapshots, ghosttyAvail, terminalAvail, jumpTargets) = await Task.detached(priority: .utility) {
+                        let s = discovery.discover()
+                        let g: TerminalSessionAttachmentProbe.SnapshotAvailability<TerminalSessionAttachmentProbe.GhosttyTerminalSnapshot>
+                        let t: TerminalSessionAttachmentProbe.SnapshotAvailability<TerminalSessionAttachmentProbe.TerminalTabSnapshot>
+                        let j: [String: JumpTarget]
+
+                        if shouldResolveTerminals {
+                            g = probe.ghosttySnapshotAvailability()
+                            t = probe.terminalSnapshotAvailability()
+                            j = resolver.resolveJumpTargets(for: liveSessions, activeProcesses: s)
+                        } else {
+                            g = .available([], appIsRunning: false)
+                            t = .available([], appIsRunning: false)
+                            j = [:]
+                        }
+
+                        return (s, g, t, j)
+                    }.value
+                    let isCodexAppRunning = Self.isCodexDesktopAppRunning()
+                    self.reconcileSessionAttachments(
+                        activeProcesses: snapshots,
+                        ghosttyAvailability: ghosttyAvail,
+                        terminalAvailability: terminalAvail,
+                        preResolvedJumpTargets: jumpTargets,
+                        observedCodexAppRunning: isCodexAppRunning
+                    )
+                    if isCodexAppRunning {
+                        self.onCodexAppMaintenanceTick?()
+                    }
+
+                    let pollInterval = Self.monitoringPollInterval(
+                        isResolvingInitialLiveSessions: self.isResolvingInitialLiveSessions,
+                        hasTrackedLiveSessions: self.state.sessions.contains(where: \.isTrackedLiveSession),
+                        cadence: self.discoveryCadence
+                    )
+                    nextFullReconcileAt = Date().addingTimeInterval(pollInterval)
+                    hadTrackedLiveSessions = self.state.sessions.contains(where: \.isTrackedLiveSession)
+                } else {
+                    let isCodexAppRunning = self.reconcileCodexAppRunningState()
+                    if isCodexAppRunning {
+                        self.onCodexAppMaintenanceTick?()
+                    }
+                    hadTrackedLiveSessions = hasTrackedLiveSessions
+                }
+
+                let wakeInterval = Self.monitoringWakeInterval(
+                    isResolvingInitialLiveSessions: self.isResolvingInitialLiveSessions,
+                    hasTrackedLiveSessions: self.state.sessions.contains(where: \.isTrackedLiveSession)
+                )
+                try? await Task.sleep(for: .milliseconds(Int(wakeInterval * 1_000)))
             }
         }
+    }
+
+    @discardableResult
+    private func reconcileCodexAppRunningState(_ observedCodexAppRunning: Bool? = nil) -> Bool {
+        let isCodexAppRunning = observedCodexAppRunning ?? Self.isCodexDesktopAppRunning()
+        if isCodexAppRunning != wasCodexAppRunning {
+            wasCodexAppRunning = isCodexAppRunning
+            onCodexAppRunningChanged?(isCodexAppRunning)
+        }
+        return isCodexAppRunning
     }
 
     // MARK: - Reconciliation
@@ -135,7 +228,8 @@ final class ProcessMonitoringCoordinator {
         activeProcesses: [ActiveProcessSnapshot]? = nil,
         ghosttyAvailability: TerminalSessionAttachmentProbe.SnapshotAvailability<TerminalSessionAttachmentProbe.GhosttyTerminalSnapshot>? = nil,
         terminalAvailability: TerminalSessionAttachmentProbe.SnapshotAvailability<TerminalSessionAttachmentProbe.TerminalTabSnapshot>? = nil,
-        preResolvedJumpTargets: [String: JumpTarget]? = nil
+        preResolvedJumpTargets: [String: JumpTarget]? = nil,
+        observedCodexAppRunning: Bool? = nil
     ) {
         let activeProcesses = activeProcesses ?? activeAgentProcessDiscovery.discover()
 
@@ -149,8 +243,12 @@ final class ProcessMonitoringCoordinator {
             local = SessionState(sessions: sanitizedSessions)
         }
 
-        let mergedSessions = mergedWithSyntheticClaudeSessions(
+        let mergedClaudeSessions = mergedWithSyntheticClaudeSessions(
             existingSessions: local.sessions,
+            activeProcesses: activeProcesses
+        )
+        let mergedSessions = mergedWithSyntheticCursorSessions(
+            existingSessions: mergedClaudeSessions,
             activeProcesses: activeProcesses
         )
         if mergedSessions != local.sessions {
@@ -159,16 +257,13 @@ final class ProcessMonitoringCoordinator {
 
         // Adopt process TTYs inline on local copy.
         adoptProcessTTYsForClaudeSessions(activeProcesses: activeProcesses, sessions: &local)
+        adoptProcessTTYsForCursorSessions(activeProcesses: activeProcesses, sessions: &local)
 
         // Detect Codex.app running state BEFORE the empty-sessions early
         // return — we need to fire the callback on a brand-new Codex.app
         // launch even when no sessions exist yet, so the app-server
         // coordinator can connect and report threads.
-        let isCodexAppRunning = Self.isCodexDesktopAppRunning()
-        if isCodexAppRunning != wasCodexAppRunning {
-            wasCodexAppRunning = isCodexAppRunning
-            onCodexAppRunningChanged?(isCodexAppRunning)
-        }
+        let isCodexAppRunning = reconcileCodexAppRunningState(observedCodexAppRunning)
         let sessions = local.sessions.filter(\.isTrackedLiveSession)
         guard !sessions.isEmpty else {
             // Flush local changes only if something actually changed.
@@ -207,7 +302,10 @@ final class ProcessMonitoringCoordinator {
         _ = local.reconcileJumpTargets(jumpTargetUpdates)
 
         // Phase 1: populate isProcessAlive in parallel with existing system.
-        let aliveIDs = sessionIDsWithAliveProcesses(activeProcesses: activeProcesses)
+        let aliveIDs = sessionIDsWithAliveProcesses(
+            activeProcesses: activeProcesses,
+            isCodexAppRunning: isCodexAppRunning
+        )
         _ = local.markProcessLiveness(
             aliveSessionIDs: aliveIDs,
             isCodexAppRunning: isCodexAppRunning
@@ -306,7 +404,8 @@ final class ProcessMonitoringCoordinator {
     /// heuristics (e.g. bundle-ID liveness for Cursor, PID matching for
     /// Codex/Claude/Gemini).
     func sessionIDsWithAliveProcesses(
-        activeProcesses: [ActiveProcessSnapshot]
+        activeProcesses: [ActiveProcessSnapshot],
+        isCodexAppRunning: Bool
     ) -> Set<String> {
         var aliveIDs: Set<String> = []
         let sessions = state.sessions
@@ -318,10 +417,16 @@ final class ProcessMonitoringCoordinator {
                 .compactMap(\.sessionID)
         )
         // Codex.app sessions: keep alive while the desktop app is running.
-        let isCodexAppRunning = Self.isCodexDesktopAppRunning()
         for session in sessions where session.tool == .codex && !session.isDemoSession {
             if session.isCodexAppSession {
-                if isCodexAppRunning { aliveIDs.insert(session.id) }
+                if session.isSessionEnded {
+                    continue
+                }
+                let isStale = session.phase == .completed
+                    && session.updatedAt.addingTimeInterval(Self.codexAppStalenessTimeout) < Date.now
+                if isCodexAppRunning, !isStale {
+                    aliveIDs.insert(session.id)
+                }
             } else if codexProcessIDs.contains(session.id) {
                 aliveIDs.insert(session.id)
             }
@@ -431,20 +536,59 @@ final class ProcessMonitoringCoordinator {
             }
         }
 
-        // Cursor sessions: Cursor is an Electron IDE — we cannot match
-        // individual session IDs from ps/lsof.  Keep Cursor sessions alive
-        // while Cursor.app is running, but let completed sessions expire
-        // after a staleness window so the notch clears when the user is
-        // no longer interacting with the conversation.  Cursor has no
-        // "tab closed" hook, so this timeout is the best available proxy.
+        // Cursor sessions: prefer concrete cursor-agent processes when they
+        // are visible (Cursor CLI / integrated terminal), then fall back to
+        // app-level liveness for IDE-only hook sessions where there is no
+        // stable subprocess to match.
+        let cursorProcesses = activeProcesses.filter { $0.tool == .cursor }
+        let trackedCursorSessions = sessions.filter { $0.tool == .cursor && !$0.isDemoSession }
+        var claimedCursorSessionIDs: Set<String> = []
+        for process in cursorProcesses {
+            guard let matched = uniqueTrackedCursorSession(
+                for: process,
+                sessions: trackedCursorSessions,
+                claimedSessionIDs: claimedCursorSessionIDs
+            ) else {
+                continue
+            }
+
+            aliveIDs.insert(matched.id)
+            claimedCursorSessionIDs.insert(matched.id)
+        }
+
         let isCursorRunning = !NSRunningApplication.runningApplications(
             withBundleIdentifier: "com.todesktop.230313mzl4w4u92"
         ).isEmpty
         if isCursorRunning {
-            for session in sessions where session.tool == .cursor && !session.isDemoSession {
+            for session in trackedCursorSessions where !claimedCursorSessionIDs.contains(session.id) {
                 if session.isSessionEnded { continue }
+                if normalizedTTYForMatching(session.jumpTarget?.terminalTTY) != nil { continue }
                 let isStale = session.phase == .completed
                     && session.updatedAt.addingTimeInterval(Self.cursorStalenessTimeout) < Date.now
+                if !isStale {
+                    aliveIDs.insert(session.id)
+                }
+            }
+        }
+
+        // Claude Desktop sessions: Claude Code launched by Claude.app ("local
+        // agent mode") runs as a TTY-less subprocess that ps/lsof discovery
+        // never sees, so the hook-managed liveness fallback in
+        // SessionState.markProcessLiveness would evict these sessions ~6s after
+        // they appear (#510).  Keep them alive while Claude.app is running, but
+        // let completed sessions expire after a staleness window — Claude
+        // Desktop has no per-conversation "closed" signal beyond the SessionEnd
+        // hook (mirrors the Cursor handling above).  The session is identified
+        // by the "Claude.app" terminalApp tag stamped by the hook.
+        let isClaudeDesktopRunning = Self.isClaudeDesktopAppRunning()
+        if isClaudeDesktopRunning {
+            for session in sessions
+            where session.tool == .claudeCode
+                && !session.isDemoSession
+                && session.jumpTarget?.terminalApp == "Claude.app" {
+                if session.isSessionEnded { continue }
+                let isStale = session.phase == .completed
+                    && session.updatedAt.addingTimeInterval(Self.claudeDesktopStalenessTimeout) < Date.now
                 if !isStale {
                     aliveIDs.insert(session.id)
                 }
@@ -641,7 +785,174 @@ final class ProcessMonitoringCoordinator {
         session.tool == .claudeCode && session.id.hasPrefix(syntheticClaudeSessionPrefix)
     }
 
+    // MARK: - Synthetic Cursor sessions
+
+    func mergedWithSyntheticCursorSessions(
+        existingSessions: [AgentSession],
+        activeProcesses: [ActiveProcessSnapshot],
+        now: Date = .now
+    ) -> [AgentSession] {
+        let activeCursorProcesses = activeProcesses.filter { $0.tool == .cursor }
+        guard !activeCursorProcesses.isEmpty else {
+            return existingSessions
+        }
+
+        let trackedCursorSessions = existingSessions.filter { $0.tool == .cursor && !$0.isDemoSession }
+        let representedProcessKeys = representedCursorProcessKeys(
+            sessions: trackedCursorSessions,
+            activeProcesses: activeCursorProcesses
+        )
+
+        var seenSessionIDs = Set(existingSessions.map(\.id))
+        var syntheticSessions: [AgentSession] = []
+        for process in activeCursorProcesses
+            .filter({ !representedProcessKeys.contains(processIdentityKey($0)) })
+            .sorted(by: { processIdentityKey($0) < processIdentityKey($1) }) {
+            let candidateID = cursorSyntheticSessionID(for: process)
+            guard seenSessionIDs.insert(candidateID).inserted else {
+                continue
+            }
+
+            syntheticSessions.append(syntheticCursorSession(for: process, sessionID: candidateID, now: now))
+        }
+
+        return existingSessions + syntheticSessions
+    }
+
+    private func cursorSyntheticSessionID(for process: ActiveProcessSnapshot) -> String {
+        process.sessionID ?? "cursor-process:\(processIdentityKey(process))"
+    }
+
+    private func syntheticCursorSession(
+        for process: ActiveProcessSnapshot,
+        sessionID: String? = nil,
+        now: Date
+    ) -> AgentSession {
+        let workingDirectory = process.workingDirectory
+        let workspaceName = workingDirectory.map { WorkspaceNameResolver.workspaceName(for: $0) } ?? "Workspace"
+        let terminalApp = supportedTerminalApp(for: process.terminalApp)
+            ?? process.terminalApp?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? "Unknown"
+        let sessionID = sessionID ?? cursorSyntheticSessionID(for: process)
+
+        var session = AgentSession(
+            id: sessionID,
+            title: "Cursor · \(workspaceName)",
+            tool: .cursor,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Cursor agent detected from \(terminalApp).",
+            updatedAt: now,
+            jumpTarget: JumpTarget(
+                terminalApp: terminalApp,
+                workspaceName: workspaceName,
+                paneTitle: "Cursor \(sessionID.prefix(8))",
+                workingDirectory: workingDirectory,
+                terminalTTY: process.terminalTTY,
+                tmuxTarget: process.tmuxTarget,
+                tmuxSocketPath: process.tmuxSocketPath
+            ),
+            cursorMetadata: CursorSessionMetadata(
+                conversationId: process.sessionID,
+                workspaceRoots: workingDirectory.map { [$0] }
+            )
+        )
+        session.isProcessAlive = true
+        return session
+    }
+
     // MARK: - Process matching
+
+    private func representedCursorProcessKeys(
+        sessions: [AgentSession],
+        activeProcesses: [ActiveProcessSnapshot]
+    ) -> Set<String> {
+        var representedProcessKeys: Set<String> = []
+        var claimedSessionIDs: Set<String> = []
+
+        for process in activeProcesses {
+            guard let processSessionID = process.sessionID,
+                  sessions.contains(where: {
+                      $0.id == processSessionID
+                          || $0.cursorMetadata?.conversationId == processSessionID
+                  }) else {
+                continue
+            }
+
+            representedProcessKeys.insert(processIdentityKey(process))
+        }
+
+        for process in activeProcesses {
+            let processKey = processIdentityKey(process)
+            guard !representedProcessKeys.contains(processKey) else {
+                continue
+            }
+
+            guard let matchedSession = uniqueTrackedCursorSession(
+                for: process,
+                sessions: sessions,
+                claimedSessionIDs: claimedSessionIDs
+            ) else {
+                continue
+            }
+
+            representedProcessKeys.insert(processKey)
+            claimedSessionIDs.insert(matchedSession.id)
+        }
+
+        return representedProcessKeys
+    }
+
+    private func uniqueTrackedCursorSession(
+        for process: ActiveProcessSnapshot,
+        sessions: [AgentSession],
+        claimedSessionIDs: Set<String>
+    ) -> AgentSession? {
+        let unclaimedSessions = sessions.filter { !claimedSessionIDs.contains($0.id) }
+        guard !unclaimedSessions.isEmpty else {
+            return nil
+        }
+
+        if let processSessionID = process.sessionID {
+            let exactMatches = unclaimedSessions.filter {
+                $0.id == processSessionID
+                    || $0.cursorMetadata?.conversationId == processSessionID
+            }
+            if exactMatches.count == 1 {
+                return exactMatches[0]
+            }
+        }
+
+        if let terminalTTY = normalizedTTYForMatching(process.terminalTTY) {
+            let ttyMatches = unclaimedSessions.filter {
+                normalizedTTYForMatching($0.jumpTarget?.terminalTTY) == terminalTTY
+            }
+            if ttyMatches.count == 1 {
+                return ttyMatches[0]
+            }
+            if ttyMatches.count > 1,
+               let processCWD = normalizedPathForMatching(process.workingDirectory) {
+                let cwdMatches = ttyMatches.filter {
+                    normalizedPathForMatching($0.jumpTarget?.workingDirectory) == processCWD
+                }
+                if cwdMatches.count == 1 {
+                    return cwdMatches[0]
+                }
+            }
+        }
+
+        if let processCWD = normalizedPathForMatching(process.workingDirectory) {
+            let cwdMatches = unclaimedSessions.filter {
+                normalizedPathForMatching($0.jumpTarget?.workingDirectory) == processCWD
+            }
+            if cwdMatches.count == 1 {
+                return cwdMatches[0]
+            }
+        }
+
+        return nil
+    }
 
     private func representedClaudeProcessKeys(
         sessions: [AgentSession],
@@ -841,6 +1152,80 @@ final class ProcessMonitoringCoordinator {
         return changed
     }
 
+    @discardableResult
+    private func adoptProcessTTYsForCursorSessions(
+        activeProcesses: [ActiveProcessSnapshot],
+        sessions localState: inout SessionState
+    ) -> Bool {
+        let cursorProcesses = activeProcesses.filter { $0.tool == .cursor }
+        guard !cursorProcesses.isEmpty else { return false }
+
+        var sessions = localState.sessions
+        var changed = false
+
+        for process in cursorProcesses {
+            guard let processSessionID = process.sessionID else {
+                continue
+            }
+
+            guard let index = sessions.firstIndex(where: {
+                $0.tool == .cursor
+                    && ($0.id == processSessionID || $0.cursorMetadata?.conversationId == processSessionID)
+            }) else {
+                continue
+            }
+
+            let session = sessions[index]
+            let workingDirectory = process.workingDirectory ?? session.jumpTarget?.workingDirectory
+            let workspaceName = workingDirectory.map { WorkspaceNameResolver.workspaceName(for: $0) }
+                ?? session.jumpTarget?.workspaceName
+                ?? "Workspace"
+            let terminalApp = supportedTerminalApp(for: process.terminalApp)
+                ?? process.terminalApp?.trimmingCharacters(in: .whitespacesAndNewlines)
+                ?? session.jumpTarget?.terminalApp
+                ?? "Unknown"
+            let existingPaneTitle = session.jumpTarget?.paneTitle
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let paneTitle: String
+            if let existingPaneTitle, !existingPaneTitle.isEmpty {
+                paneTitle = existingPaneTitle
+            } else {
+                paneTitle = "Cursor \(processSessionID.prefix(8))"
+            }
+
+            let jumpTarget = JumpTarget(
+                terminalApp: terminalApp,
+                workspaceName: workspaceName,
+                paneTitle: paneTitle,
+                workingDirectory: workingDirectory,
+                terminalSessionID: session.jumpTarget?.terminalSessionID,
+                terminalTTY: process.terminalTTY ?? session.jumpTarget?.terminalTTY,
+                tmuxTarget: process.tmuxTarget ?? session.jumpTarget?.tmuxTarget,
+                tmuxSocketPath: process.tmuxSocketPath ?? session.jumpTarget?.tmuxSocketPath,
+                warpPaneUUID: session.jumpTarget?.warpPaneUUID,
+                codexThreadID: session.jumpTarget?.codexThreadID
+            )
+
+            guard jumpTarget != session.jumpTarget
+                    || session.attachmentState != .attached
+                    || !session.isProcessAlive else {
+                continue
+            }
+
+            sessions[index].jumpTarget = jumpTarget
+            sessions[index].attachmentState = .attached
+            sessions[index].isProcessAlive = true
+            sessions[index].processNotSeenCount = 0
+            sessions[index].updatedAt = .now
+            changed = true
+        }
+
+        if changed {
+            localState = SessionState(sessions: sessions)
+        }
+        return changed
+    }
+
     // MARK: - Cross-tool sanitization
 
     func sanitizeCrossToolGhosttyJumpTargets(in sessions: [AgentSession]) -> [AgentSession] {
@@ -872,6 +1257,18 @@ final class ProcessMonitoringCoordinator {
             ?? jumpTarget.terminalApp.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !terminalApp.isEmpty else {
             return nil
+        }
+
+        if session.isCodexAppSession || terminalApp == "Codex.app" {
+            let threadID = jumpTarget.codexThreadID?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let disambiguator: String
+            if let threadID, !threadID.isEmpty {
+                disambiguator = threadID
+            } else {
+                disambiguator = session.id
+            }
+            return "codex.app:thread:\(disambiguator.lowercased())"
         }
 
         if let terminalSessionID = jumpTarget.terminalSessionID?
@@ -909,6 +1306,18 @@ final class ProcessMonitoringCoordinator {
     static func isCodexDesktopAppRunning() -> Bool {
         NSWorkspace.shared.runningApplications.contains { app in
             app.bundleIdentifier == "com.openai.codex"
+        }
+    }
+
+    /// Check whether the Claude desktop app is currently running.  Uses
+    /// `NSWorkspace.shared.runningApplications` for the same reason as
+    /// ``isCodexDesktopAppRunning()`` — the
+    /// `NSRunningApplication.runningApplications(withBundleIdentifier:)` API
+    /// can transiently return an empty array even while the app is running,
+    /// which would flicker visible Claude Desktop sessions out of the island.
+    static func isClaudeDesktopAppRunning() -> Bool {
+        NSWorkspace.shared.runningApplications.contains { app in
+            app.bundleIdentifier == "com.anthropic.claudefordesktop"
         }
     }
 

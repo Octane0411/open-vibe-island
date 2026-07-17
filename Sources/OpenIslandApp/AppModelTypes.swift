@@ -77,6 +77,11 @@ enum IslandSessionStateIndicator: String, CaseIterable, Identifiable, Sendable {
     case tint
 
     var id: String { rawValue }
+
+    func timelineInterval(presence: IslandSessionPresence, isActionable: Bool) -> TimeInterval? {
+        guard self == .animatedDot else { return nil }
+        return presence == .running || isActionable ? 1.0 / 15.0 : nil
+    }
 }
 
 enum IslandSessionGroup: String, CaseIterable, Identifiable, Sendable {

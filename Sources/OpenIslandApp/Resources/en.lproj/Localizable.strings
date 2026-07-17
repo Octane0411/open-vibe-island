@@ -29,9 +29,9 @@
 "settings.section.energy" = "Energy";
 "settings.general.idleGlyphAnimation" = "Animate idle notch glyph";
 "settings.general.processDiscoveryCadence" = "Session scan frequency";
-"settings.general.cadence.standard" = "Standard (2s)";
-"settings.general.cadence.relaxed" = "Relaxed (5s)";
-"settings.general.cadence.batterySaver" = "Battery Saver (10s)";
+"settings.general.cadence.standard" = "Standard";
+"settings.general.cadence.relaxed" = "Relaxed";
+"settings.general.cadence.batterySaver" = "Battery Saver";
 "settings.general.energy.footer" = "Lower settings reduce battery use. Slower scans take a little longer to detect agents started without a hook.";
 "settings.general.showCodexUsage" = "Show Codex usage";
 "settings.general.completionReply" = "Reply from completion card";

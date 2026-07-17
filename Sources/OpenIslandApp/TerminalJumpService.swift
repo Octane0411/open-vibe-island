@@ -79,6 +79,11 @@ struct TerminalJumpService {
             aliases: ["codex.app"]
         ),
         TerminalAppDescriptor(
+            displayName: "Claude.app",
+            bundleIdentifier: "com.anthropic.claudefordesktop",
+            aliases: ["claude.app"]
+        ),
+        TerminalAppDescriptor(
             displayName: "Kaku",
             bundleIdentifier: "fun.tw93.kaku",
             aliases: ["kaku"]
@@ -338,6 +343,11 @@ struct TerminalJumpService {
                 }
                 try openAction(["-b", "com.openai.codex"])
                 return "Activated Codex.app."
+            case "com.anthropic.claudefordesktop":
+                // Claude Desktop hosts the conversation in-app; there is no
+                // per-session deep link, so just bring the app forward.
+                try openAction(["-b", "com.anthropic.claudefordesktop"])
+                return "Activated Claude."
             case "com.googlecode.iterm2":
                 if try jumpToITermSession(target) {
                     return "Focused the matching iTerm session."

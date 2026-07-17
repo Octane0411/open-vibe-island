@@ -3,7 +3,50 @@ import Foundation
 import Testing
 @testable import OpenIslandCore
 
+/// Regression coverage for core session lifecycle and visibility behavior.
 struct SessionStateTests {
+    /// Completed Codex CLI sessions outside Codex.app should age out even while Codex.app is running.
+    @Test
+    func completedCodexCLISessionEndsEvenWhenCodexAppIsRunning() {
+        let startedAt = Date(timeIntervalSince1970: 7_000)
+        var state = SessionState()
+
+        state.apply(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: "codex-vscode-review",
+                    title: "Codex · jobfeed",
+                    tool: .codex,
+                    origin: .live,
+                    summary: "Reviewing code",
+                    timestamp: startedAt,
+                    jumpTarget: JumpTarget(
+                        terminalApp: "VS Code",
+                        workspaceName: "jobfeed",
+                        paneTitle: "Codex 019e9716",
+                        workingDirectory: "/Users/example/jobfeed"
+                    )
+                )
+            )
+        )
+        state.apply(
+            .sessionCompleted(
+                SessionCompleted(
+                    sessionID: "codex-vscode-review",
+                    summary: "no issues found",
+                    timestamp: startedAt.addingTimeInterval(10)
+                )
+            )
+        )
+
+        _ = state.markProcessLiveness(aliveSessionIDs: [], isCodexAppRunning: true)
+        _ = state.markProcessLiveness(aliveSessionIDs: [], isCodexAppRunning: true)
+
+        #expect(state.session(id: "codex-vscode-review")?.isSessionEnded == true)
+        #expect(state.liveSessionCount == 0)
+    }
+
+    /// Verifies permission and question events update an already-tracked session.
     @Test
     func appliesPermissionAndQuestionEventsToExistingSessions() {
         let startedAt = Date(timeIntervalSince1970: 1_000)
@@ -55,6 +98,44 @@ struct SessionStateTests {
         #expect(state.activeActionableSession?.phase == .waitingForAnswer)
         #expect(state.activeActionableSession?.questionPrompt?.options == ["Production", "Staging"])
         #expect(state.activeActionableSession?.permissionRequest == nil)
+    }
+
+    /// Contract that the Claude Desktop fix (#510) relies on: a hook-managed
+    /// Claude session stays visible for as long as its ID is reported in
+    /// `aliveSessionIDs`, and is only evicted after two consecutive polls
+    /// where it is absent. ProcessMonitoringCoordinator keeps Claude Desktop
+    /// session IDs in that set while Claude.app is running (the desktop
+    /// subprocess is TTY-less and invisible to ps/lsof discovery), so they no
+    /// longer vanish ~6s after appearing.
+    @Test
+    func hookManagedClaudeSessionLivenessFollowsReportedAliveSet() {
+        var session = AgentSession(
+            id: "desktop-1",
+            title: "Claude · demo",
+            tool: .claudeCode,
+            phase: .running,
+            summary: "Working",
+            updatedAt: Date(timeIntervalSince1970: 1_000)
+        )
+        session.isHookManaged = true
+        session.isProcessAlive = true
+        var state = SessionState(sessions: [session])
+
+        // Reported alive (Claude.app running): stays visible across polls.
+        state.markProcessLiveness(aliveSessionIDs: ["desktop-1"])
+        state.markProcessLiveness(aliveSessionIDs: ["desktop-1"])
+        #expect(state.session(id: "desktop-1")?.isSessionEnded == false)
+        #expect(state.session(id: "desktop-1")?.isVisibleInIsland == true)
+
+        // First miss (e.g. Claude.app just quit): debounced, not yet evicted.
+        state.markProcessLiveness(aliveSessionIDs: [])
+        #expect(state.session(id: "desktop-1")?.isSessionEnded == false)
+        #expect(state.session(id: "desktop-1")?.isVisibleInIsland == true)
+
+        // Second consecutive miss: session ends and leaves the island.
+        state.markProcessLiveness(aliveSessionIDs: [])
+        #expect(state.session(id: "desktop-1")?.isSessionEnded == true)
+        #expect(state.session(id: "desktop-1")?.isVisibleInIsland == false)
     }
 
     @Test
@@ -516,10 +597,129 @@ struct SessionStateTests {
         #expect(startedEvent.isSessionStarted)
         #expect(permissionEvent.isPermissionRequested)
 
-        try await observer.send(.resolvePermission(sessionID: "codex-session-1", resolution: .deny()))
+        try await observer.send(
+            .resolvePermission(
+                sessionID: "codex-session-1",
+                resolution: .deny(message: "Use the project cleanup script instead.")
+            )
+        )
 
         let response = try await responseTask
-        #expect(response == .codexHookDirective(.deny(reason: "Permission denied in Open Island.")))
+        #expect(response == .codexHookDirective(.deny(reason: "Use the project cleanup script instead.")))
+    }
+
+    @Test
+    func codexPermissionRequestReturnsAllowDirectiveAfterApproval() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
+
+        let payload = CodexHookPayload(
+            cwd: "/tmp/worktree",
+            hookEventName: .permissionRequest,
+            model: "gpt-5-codex",
+            permissionMode: .default,
+            sessionID: "codex-permission-allow",
+            transcriptPath: nil,
+            turnID: "turn-1",
+            toolName: "apply_patch",
+            toolUseID: "tool-use-1",
+            toolInput: CodexHookToolInput(description: "Apply a focused patch to Sources/App.swift")
+        )
+
+        async let responseTask = sendOnGCDThread(.processCodexHook(payload), socketURL: socketURL)
+
+        var iterator = stream.makeAsyncIterator()
+        let startedEvent = try await nextEvent(from: &iterator)
+        let permissionEvent = try await nextEvent(from: &iterator)
+
+        #expect(startedEvent.isSessionStarted)
+        guard case let .permissionRequested(permission) = permissionEvent else {
+            Issue.record("Expected Codex permission request")
+            return
+        }
+        #expect(permission.request.title == "Apply code patch")
+        #expect(permission.request.summary == "Apply a focused patch to Sources/App.swift")
+        #expect(permission.request.toolName == "apply_patch")
+        #expect(permission.request.toolUseID == "tool-use-1")
+
+        try await observer.send(.resolvePermission(sessionID: "codex-permission-allow", resolution: .allowOnce()))
+
+        let activityEvent = try await nextEvent(from: &iterator)
+        let response = try await responseTask
+
+        #expect(activityEvent.activityUpdate?.summary == "Permission approved. Codex continued the tool.")
+        #expect(response == .codexHookDirective(.permissionRequest(.allow)))
+    }
+
+    @Test
+    func codexPermissionRequestReturnsDenyDirectiveAfterRejection() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
+
+        let payload = CodexHookPayload(
+            cwd: "/tmp/worktree",
+            hookEventName: .permissionRequest,
+            model: "gpt-5-codex",
+            permissionMode: .default,
+            sessionID: "codex-permission-deny",
+            transcriptPath: nil,
+            turnID: "turn-1",
+            toolName: "Bash",
+            toolUseID: "tool-use-2",
+            toolInput: CodexHookToolInput(
+                command: "rm -rf build",
+                description: "Run a cleanup command"
+            )
+        )
+
+        async let responseTask = sendOnGCDThread(.processCodexHook(payload), socketURL: socketURL)
+
+        var iterator = stream.makeAsyncIterator()
+        _ = try await nextEvent(from: &iterator)
+        let permissionEvent = try await nextEvent(from: &iterator)
+
+        guard case let .permissionRequested(permission) = permissionEvent else {
+            Issue.record("Expected Codex permission request")
+            return
+        }
+        #expect(permission.request.title == "Run Bash command")
+        #expect(permission.request.summary == "Run a cleanup command")
+        #expect(permission.request.affectedPath == "rm -rf build")
+
+        try await observer.send(
+            .resolvePermission(
+                sessionID: "codex-permission-deny",
+                resolution: .deny(message: "Use the project cleanup script instead.")
+            )
+        )
+
+        let completedEvent = try await nextEvent(from: &iterator)
+        let response = try await responseTask
+
+        guard case let .sessionCompleted(completed) = completedEvent else {
+            Issue.record("Expected Codex completion after denial")
+            return
+        }
+        #expect(completed.summary == "Use the project cleanup script instead.")
+        #expect(
+            response == .codexHookDirective(
+                .permissionRequest(.deny(message: "Use the project cleanup script instead."))
+            )
+        )
     }
 
     @Test
@@ -759,7 +959,13 @@ struct SessionStateTests {
         #expect(managedStopHook?["statusMessage"] == nil)
 
         let sessionStartGroups = hooks?["SessionStart"] as? [[String: Any]]
+        let permissionGroups = hooks?["PermissionRequest"] as? [[String: Any]]
+        let managedPermissionHook = permissionGroups?
+            .compactMap { $0["hooks"] as? [[String: Any]] }
+            .flatMap { $0 }
+            .first(where: { $0["command"] as? String == "'/tmp/OpenIslandHooks'" })
         #expect(sessionStartGroups?.contains(where: { $0["matcher"] as? String == "startup|resume" }) == true)
+        #expect(managedPermissionHook?["timeout"] as? Int == CodexHookInstaller.managedInteractiveTimeout)
         #expect(hooks?["PreToolUse"] == nil)
         #expect(hooks?["PostToolUse"] == nil)
     }
@@ -825,8 +1031,14 @@ struct SessionStateTests {
             .compactMap { $0["hooks"] as? [[String: Any]] }
             .flatMap { $0 }
             .compactMap { $0["command"] as? String } ?? []
+        let permissionGroups = hooks?["PermissionRequest"] as? [[String: Any]]
+        let permissionCommands = permissionGroups?
+            .compactMap { $0["hooks"] as? [[String: Any]] }
+            .flatMap { $0 }
+            .compactMap { $0["command"] as? String } ?? []
 
         #expect(preToolCommands == ["/usr/bin/printf"])
+        #expect(permissionCommands == ["'/tmp/new-release/OpenIslandHooks'"])
         #expect(hooks?["PostToolUse"] == nil)
         #expect(stopCommands.contains("/usr/bin/true"))
         #expect(stopCommands.contains("'/tmp/new-release/OpenIslandHooks'"))
@@ -971,6 +1183,7 @@ struct SessionStateTests {
         """))
     }
 
+    /// Verifies Codex hook feature detection across current, legacy, and invalid CLI output.
     @Test
     func codexHookInstallerDetectsPreferredFeatureFlagFromCodexOutput() {
         let currentFeatures = """
@@ -986,6 +1199,8 @@ struct SessionStateTests {
         #expect(CodexHookInstaller.preferredCodexHooksFeatureKey(fromFeatureList: legacyFeatures) == .legacy)
         #expect(CodexHookInstaller.preferredCodexHooksFeatureKey(fromVersionOutput: "codex-cli 0.130.0") == .current)
         #expect(CodexHookInstaller.preferredCodexHooksFeatureKey(fromVersionOutput: "codex-cli 0.129.0") == .legacy)
+        #expect(CodexHookInstaller.preferredCodexHooksFeatureKey(fromFeatureList: "shell_tool stable true") == nil)
+        #expect(CodexHookInstaller.preferredCodexHooksFeatureKey(fromVersionOutput: "not a version") == nil)
     }
 
     @Test
