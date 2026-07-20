@@ -33,6 +33,7 @@ This index is the repository map for humans and coding agents. Read these files 
 
 - [docs/notch-surface-model.md](./notch-surface-model.md) for the island surface routing model and debug harness intent
 - [docs/app-ghostty-codex-chain.md](./app-ghostty-codex-chain.md) for terminal environment findings across the current supported chain
+- [docs/architecture-decisions/001-durable-graph-history.md](./architecture-decisions/001-durable-graph-history.md) for graph event sourcing, replay, snapshots, reconciliation, artifacts, and local persistence
 
 ## Refactoring Plans
 

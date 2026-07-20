@@ -2,7 +2,7 @@
 
 **Status:** Active
 **Started:** 2026-07-19
-**Current phase:** Phase 2, graph runtime recovery and execution truth
+**Current phase:** Phase 2, durable graph history and temporal inspection preparation
 
 ## Problem
 
@@ -180,9 +180,9 @@ Input ordering cannot change the result.
 - The stale compendium architect/researcher run is committed as an adapter-neutral JSON
   fixture. It is the restart baseline for interrupted/orphaned recovery and transitive
   dependency blocking.
-- The next migration boundary is persistence and replay, not a production executor or UI:
-  introduce store/evidence protocols, append-only event storage, and read-time reconciliation
-  before launching models.
+- Durable persistence and replay now use a versioned event envelope, deterministic projector,
+  snapshot cache boundary, evidence-isolated repository, and transactional SQLite store.
+  The next boundary is observational temporal inspection, not execution or UI mutation.
 
 ## Target Architecture
 
@@ -358,11 +358,20 @@ recent state transitions; polling cannot inflate metrics; timeline state survive
 - [x] Implement deterministic side-effect-free execution reconciliation.
 - [x] Commit the stale architect/researcher run as an adapter-neutral fixture and prove
   interrupted/orphaned recovery plus transitive downstream blocking.
-- [ ] Add append-only execution-event persistence and snapshot repositories behind protocols.
-- [ ] Add process-evidence adapters and reconcile persisted runs on startup and every read.
+- [x] Add append-only execution-event persistence and snapshot repositories behind protocols.
+- [x] Add optimistic concurrency, idempotent append, deterministic replay, explicit corruption
+  policy, and a production local SQLite implementation.
+- [x] Add a process-evidence boundary and reconcile persisted runs on every repository read,
+  returning projection and diagnostics when evidence is unavailable.
+- [x] Add content-addressed artifact references, checkpoint/fork metadata, durable human
+  interrupt facts, and OpenTelemetry-compatible internal vocabulary.
+- [x] Prove restart, replay, snapshots, concurrent writers, unknown events, retry ordinals,
+  sibling-write preservation, fixed-point reconciliation, and the stale compendium fixture.
+- [ ] Implement host-specific process-evidence adapters that emit canonical evidence.
 - [ ] Add scheduler-owned timeout, cancellation, retry, and failure propagation.
 - [ ] Replace the simulation runner with executor adapters for local models and CLI agents.
-- [ ] Add typed artifacts and handoffs, then supervise a graph with at least two local models.
+- [ ] Add typed handoff schemas on top of artifact references, then supervise a graph with at
+  least two local models.
 - [ ] Expose read-only graph inspect, logs, and metrics through the shared command service.
 - [ ] Add version-checked mutation commands for cancel, retry, and resume only after replay and
   restart behavior is proven.
@@ -399,18 +408,19 @@ for quality, latency, cost, and context growth.
 
 ## Immediate Execution Order
 
-1. Add `GraphExecutionStore` and `ProcessEvidenceSource` protocol boundaries, an append-only
-   execution-event store, and a read service that always applies `GraphExecutionReconciler`.
-2. Add restart/replay tests for duplicate events, stale snapshots, mismatched process identity,
-   crashed adapters, and retries with monotonic attempt ordinals.
-3. Implement process-evidence adapters that translate host observations into canonical exits
-   and heartbeat leases without exposing adapter concepts to the core graph model.
-4. Add scheduler policy and executor adapters only after read-time reconciliation and replay
-   are authoritative.
-5. Add read-only graph inspection, logs, and metrics; defer mutation commands until command
-   versioning and idempotency are tested.
-6. Add non-local CLI usage metrics and local-model resource metrics as distinct projections.
-7. Defer all visual redesign, including liquid glass, until orchestration behavior and
+1. Add temporal inspection APIs over the repository for list, inspect, history, explain,
+   checkpoint listing, dry-run replay, diff, and export.
+2. Expose those APIs through read-only `openisland graph` CLI commands with stable JSON output,
+   causal explanations, replay diagnostics, and OpenTelemetry-compatible CLI telemetry.
+3. Add integrity verification and redacted export policy before exposing artifact locators or
+   historical payloads broadly.
+4. Implement host-specific process-evidence adapters that translate observations into
+   canonical exits and heartbeat leases without mutating history.
+5. Add non-local CLI usage metrics and local-model resource metrics as distinct projections.
+6. Add scheduler policy and executor adapters only after temporal inspection proves persisted
+   and reconciled state is operator-debuggable.
+7. Defer mutation commands until command versioning and idempotency are tested.
+8. Defer all visual redesign, including liquid glass, until orchestration behavior and
    operator information architecture are stable.
 
 ## Progress Log
@@ -418,6 +428,13 @@ for quality, latency, cost, and context growth.
 - `fa64908 feat: recover native graph prototype`
 - `64a2bde feat: add authoritative graph execution state`
 - `6d3aa58 test: add stale compendium runtime fixture`
+- `79d7d1a docs: refine orchestration state and recovery plan`
+- `187367d fix: make graph reconciliation evidence ordering total`
+- `a4571b2 feat: add graph execution event store`
+- `fcb812b feat: add deterministic graph replay repository`
+- `2fc35b6 feat: add local SQLite graph persistence`
+- `38d0fc1 test: prove durable graph replay invariants`
+- `4f55d79 test: cover graph provenance and telemetry boundaries`
 
 ## Verification
 
