@@ -102,6 +102,7 @@ public enum GraphCLIExportFormat: String, Codable, Sendable {
     case json
     case jsonl
     case mermaid
+    case terminalWorkspacePlan = "terminal-workspace-plan"
 }
 
 public enum GraphCLICommand: Equatable, Sendable {
@@ -365,7 +366,7 @@ public enum GraphCLIParser {
         let exportFormat = try singleValue("--format", values).map {
             guard let format = GraphCLIExportFormat(rawValue: $0) else {
                 throw GraphCLIArgumentError.invalid(
-                    "Export format must be json, jsonl, or mermaid."
+                    "Export format must be json, jsonl, mermaid, or terminal-workspace-plan."
                 )
             }
             return format
@@ -464,6 +465,8 @@ public enum GraphCLIParser {
                 resolvedOutput = .jsonl
             case .mermaid:
                 resolvedOutput = .text
+            case .terminalWorkspacePlan:
+                resolvedOutput = .json
             }
         }
         if flags.contains("--emit-completion-record"),
@@ -513,7 +516,7 @@ public enum GraphCLIParser {
       openisland graph checkpoint list <run-id> [options]
       openisland graph replay <run-id> --dry-run [options]
       openisland graph diff <run|run@sequence|run#checkpoint> <reference> [options]
-      openisland graph export <run-id> --format json|jsonl|mermaid [options]
+      openisland graph export <run-id> --format json|jsonl|mermaid|terminal-workspace-plan [options]
 
     Stable output: --output text|json|jsonl --schema-version 1
     Filters: --node --attempt --state --event-type --since --until
@@ -657,6 +660,7 @@ public struct GraphCLICompletionRecord:
     public let resultCount: Int
     public let eventCount: Int
     public let lastSequence: UInt64?
+    public let context: GraphCLIExecutionContext?
 
     public init(
         schemaVersion: Int = GraphCLIOutputSchema.currentVersion,
@@ -665,7 +669,8 @@ public struct GraphCLICompletionRecord:
         exitCode: Int32,
         resultCount: Int,
         eventCount: Int,
-        lastSequence: UInt64?
+        lastSequence: UInt64?,
+        context: GraphCLIExecutionContext? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.recordType = "completion"
@@ -675,6 +680,7 @@ public struct GraphCLICompletionRecord:
         self.resultCount = resultCount
         self.eventCount = eventCount
         self.lastSequence = lastSequence
+        self.context = context
     }
 }
 
@@ -695,6 +701,7 @@ public struct GraphCLIOutputDocument<Payload: Encodable>: Encodable {
     public let eventCount: Int
     public let result: Payload
     public let diagnostics: [GraphCLIOutputDiagnostic]?
+    public let context: GraphCLIExecutionContext?
 
     public init(
         schemaVersion: Int = GraphCLIOutputSchema.currentVersion,
@@ -702,7 +709,8 @@ public struct GraphCLIOutputDocument<Payload: Encodable>: Encodable {
         resultCount: Int,
         eventCount: Int,
         result: Payload,
-        diagnostics: [GraphCLIOutputDiagnostic]? = nil
+        diagnostics: [GraphCLIOutputDiagnostic]? = nil,
+        context: GraphCLIExecutionContext? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.command = command
@@ -710,6 +718,7 @@ public struct GraphCLIOutputDocument<Payload: Encodable>: Encodable {
         self.eventCount = eventCount
         self.result = result
         self.diagnostics = diagnostics
+        self.context = context
     }
 }
 
@@ -719,19 +728,22 @@ public struct GraphCLIJSONLRecord<Payload: Encodable>: Encodable {
     public let recordType: String
     public let ordinal: Int
     public let payload: Payload
+    public let context: GraphCLIExecutionContext?
 
     public init(
         schemaVersion: Int = GraphCLIOutputSchema.currentVersion,
         command: String,
         recordType: String,
         ordinal: Int,
-        payload: Payload
+        payload: Payload,
+        context: GraphCLIExecutionContext? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.command = command
         self.recordType = recordType
         self.ordinal = ordinal
         self.payload = payload
+        self.context = context
     }
 }
 
@@ -876,18 +888,33 @@ public struct GraphCLICommandRunner: Sendable {
     private let inspector: any GraphTemporalInspecting
     private let stdout: any GraphCLIOutputSink
     private let stderr: any GraphCLIOutputSink
+    private let context: GraphCLIExecutionContext?
+    private let telemetry: any GraphCLITelemetrySink
+    private let clock: any GraphCLIMonotonicClock
+    private let isOutputTTY: Bool
 
     public init(
         inspector: any GraphTemporalInspecting,
         stdout: any GraphCLIOutputSink,
-        stderr: any GraphCLIOutputSink
+        stderr: any GraphCLIOutputSink,
+        context: GraphCLIExecutionContext? = nil,
+        telemetry: any GraphCLITelemetrySink =
+            NoopGraphCLITelemetrySink(),
+        clock: any GraphCLIMonotonicClock =
+            SystemGraphCLIMonotonicClock(),
+        isOutputTTY: Bool = true
     ) {
         self.inspector = inspector
         self.stdout = stdout
         self.stderr = stderr
+        self.context = context
+        self.telemetry = telemetry
+        self.clock = clock
+        self.isOutputTTY = isOutputTTY
     }
 
     public func run(arguments: [String]) async -> GraphCLIExitCode {
+        let started = clock.nowNanoseconds()
         let parsed: GraphCLIParseResult
 
         do {
@@ -900,11 +927,25 @@ public struct GraphCLICommandRunner: Sendable {
                 code = .invalidArguments
             }
             writeError(error.localizedDescription, code: code)
+            recordTelemetry(
+                command: "graph.invalid",
+                output: .text,
+                outcome: GraphCLICommandOutcome(exitCode: code),
+                started: started
+            )
             return code
         } catch {
             writeError(
                 error.localizedDescription,
                 code: .invalidArguments
+            )
+            recordTelemetry(
+                command: "graph.invalid",
+                output: .text,
+                outcome: GraphCLICommandOutcome(
+                    exitCode: .invalidArguments
+                ),
+                started: started
             )
             return .invalidArguments
         }
@@ -912,39 +953,48 @@ public struct GraphCLICommandRunner: Sendable {
         switch parsed {
         case let .help(text):
             _ = stdout.write(Data((text + "\n").utf8))
+            recordTelemetry(
+                command: "graph.help",
+                output: .text,
+                outcome: GraphCLICommandOutcome(exitCode: .success),
+                started: started
+            )
             return .success
         case let .invocation(invocation):
-            guard !invocation.quiet else {
-                return await executeQuiet(invocation)
-            }
-
             do {
-                return try await execute(invocation)
+                let outcome = invocation.quiet
+                    ? try await execute(
+                        invocation,
+                        suppressOutput: true
+                    )
+                    : try await execute(invocation)
+                recordTelemetry(
+                    command: invocation.command.name,
+                    output: invocation.output,
+                    outcome: outcome,
+                    started: started
+                )
+                return outcome.exitCode
             } catch {
                 let code = exitCode(for: error)
                 writeError(error.localizedDescription, code: code)
+                recordTelemetry(
+                    command: invocation.command.name,
+                    output: invocation.output,
+                    outcome: GraphCLICommandOutcome(
+                        exitCode: code
+                    ),
+                    started: started
+                )
                 return code
             }
-        }
-    }
-
-    private func executeQuiet(
-        _ invocation: GraphCLIInvocation
-    ) async -> GraphCLIExitCode {
-        do {
-            _ = try await execute(invocation, suppressOutput: true)
-            return .success
-        } catch {
-            let code = exitCode(for: error)
-            writeError(error.localizedDescription, code: code)
-            return code
         }
     }
 
     private func execute(
         _ invocation: GraphCLIInvocation,
         suppressOutput: Bool = false
-    ) async throws -> GraphCLIExitCode {
+    ) async throws -> GraphCLICommandOutcome {
         switch invocation.command {
         case .list:
             var summaries = try await inspector.listRuns(
@@ -952,7 +1002,7 @@ public struct GraphCLICommandRunner: Sendable {
                 limit: invocation.limit
             )
             summaries = filterSummaries(summaries, invocation)
-            return try emit(
+            let code = try emit(
                 summaries,
                 recordType: "run",
                 text: renderSummaries(summaries),
@@ -961,6 +1011,10 @@ public struct GraphCLICommandRunner: Sendable {
                 eventCount: 0,
                 suppressOutput: suppressOutput
             )
+            return GraphCLICommandOutcome(
+                exitCode: code,
+                resultCount: summaries.count
+            )
         case let .inspect(runID):
             let inspection = try await inspector.inspect(
                 runID: runID,
@@ -968,7 +1022,7 @@ public struct GraphCLICommandRunner: Sendable {
                 includeDiagnostics: invocation.includeDiagnostics
             )
             let filtered = filterInspection(inspection, invocation)
-            return try emit(
+            let code = try emit(
                 filtered,
                 records: [filtered],
                 recordType: "inspection",
@@ -978,6 +1032,15 @@ public struct GraphCLICommandRunner: Sendable {
                 eventCount: 0,
                 suppressOutput: suppressOutput,
                 diagnostics: diagnostics(filtered)
+            )
+            return GraphCLICommandOutcome(
+                exitCode: code,
+                resultCount: 1,
+                replayBoundary: filtered.summary.streamVersion,
+                snapshotDisposition:
+                    filtered.summary.snapshotDisposition,
+                reconciliationOutcome:
+                    filtered.summary.reconciledState.rawValue
             )
         case let .history(runID):
             return try await emitHistory(
@@ -990,7 +1053,7 @@ public struct GraphCLICommandRunner: Sendable {
                 runID: runID,
                 nodeID: invocation.nodeID ?? positionalNodeID
             )
-            return try emit(
+            let code = try emit(
                 explanation,
                 records: [explanation],
                 recordType: "explanation",
@@ -1000,11 +1063,16 @@ public struct GraphCLICommandRunner: Sendable {
                 eventCount: 0,
                 suppressOutput: suppressOutput
             )
+            return GraphCLICommandOutcome(
+                exitCode: code,
+                resultCount: 1,
+                reconciliationOutcome: explanation.state.rawValue
+            )
         case let .checkpointList(runID):
             let checkpoints = try await inspector.checkpoints(
                 runID: runID
             )
-            return try emit(
+            let code = try emit(
                 checkpoints,
                 recordType: "checkpoint",
                 text: renderCheckpoints(checkpoints),
@@ -1012,6 +1080,10 @@ public struct GraphCLICommandRunner: Sendable {
                 resultCount: checkpoints.count,
                 eventCount: 0,
                 suppressOutput: suppressOutput
+            )
+            return GraphCLICommandOutcome(
+                exitCode: code,
+                resultCount: checkpoints.count
             )
         case let .replay(runID):
             let boundary: GraphReplayBoundary
@@ -1032,7 +1104,7 @@ public struct GraphCLICommandRunner: Sendable {
                     : .configured
             )
             let output = try replayOutput(replay)
-            return try emit(
+            let code = try emit(
                 output,
                 records: [output],
                 recordType: "replay",
@@ -1045,12 +1117,21 @@ public struct GraphCLICommandRunner: Sendable {
                     ? diagnostics(replay)
                     : []
             )
+            return GraphCLICommandOutcome(
+                exitCode: code,
+                resultCount: 1,
+                eventCount: replay.replayedEventCount,
+                replayBoundary: replay.boundary,
+                snapshotDisposition: replay.snapshotDisposition,
+                reconciliationOutcome:
+                    output.reconciledRunState.rawValue
+            )
         case let .diff(left, right):
             let diff = try await inspector.diff(
                 left: left,
                 right: right
             )
-            return try emit(
+            let code = try emit(
                 diff,
                 records: diff.changes,
                 recordType: "change",
@@ -1060,16 +1141,32 @@ public struct GraphCLICommandRunner: Sendable {
                 eventCount: 0,
                 suppressOutput: suppressOutput
             )
+            return GraphCLICommandOutcome(
+                exitCode: code,
+                resultCount: diff.changes.count
+            )
         case let .export(runID):
             let inspection = try await inspector.inspect(
                 runID: runID,
                 includeArtifacts: true,
                 includeDiagnostics: invocation.includeDiagnostics
             )
-            return try emitExport(
+            let code = try emitExport(
                 inspection,
                 invocation: invocation,
                 suppressOutput: suppressOutput
+            )
+            return GraphCLICommandOutcome(
+                exitCode: code,
+                resultCount:
+                    inspection.nodes.count
+                        + inspection.attempts.count
+                        + inspection.artifacts.count,
+                replayBoundary: inspection.summary.streamVersion,
+                snapshotDisposition:
+                    inspection.summary.snapshotDisposition,
+                reconciliationOutcome:
+                    inspection.summary.reconciledState.rawValue
             )
         }
     }
@@ -1078,7 +1175,7 @@ public struct GraphCLICommandRunner: Sendable {
         runID: String,
         invocation: GraphCLIInvocation,
         suppressOutput: Bool
-    ) async throws -> GraphCLIExitCode {
+    ) async throws -> GraphCLICommandOutcome {
         var cursor = invocation.afterSequence
         var remaining = invocation.limit
         var records: [GraphInspectionEventRecord] = []
@@ -1115,7 +1212,12 @@ public struct GraphCLICommandRunner: Sendable {
                 for event in page.events {
                     let result = writeLine(renderEvent(event))
                     if result == .brokenPipe {
-                        return .success
+                        return GraphCLICommandOutcome(
+                            exitCode: .success,
+                            resultCount: emitted,
+                            eventCount: emitted,
+                            replayBoundary: cursor
+                        )
                     }
                     try requireWrite(result)
                     emitted += 1
@@ -1127,13 +1229,19 @@ public struct GraphCLICommandRunner: Sendable {
                         command: invocation.command.name,
                         recordType: "event",
                         ordinal: ordinal,
-                        payload: event
+                        payload: event,
+                        context: context
                     )
                     let result = writeLine(
                         try encodeString(record)
                     )
                     if result == .brokenPipe {
-                        return .success
+                        return GraphCLICommandOutcome(
+                            exitCode: .success,
+                            resultCount: emitted,
+                            eventCount: emitted,
+                            replayBoundary: cursor
+                        )
                     }
                     try requireWrite(result)
                     emitted += 1
@@ -1146,7 +1254,12 @@ public struct GraphCLICommandRunner: Sendable {
         }
 
         if suppressOutput {
-            return .success
+            return GraphCLICommandOutcome(
+                exitCode: .success,
+                resultCount: emitted,
+                eventCount: emitted,
+                replayBoundary: cursor
+            )
         }
         if invocation.output == .json {
             emitted = records.count
@@ -1154,11 +1267,17 @@ public struct GraphCLICommandRunner: Sendable {
                 command: invocation.command.name,
                 resultCount: records.count,
                 eventCount: records.count,
-                result: records
+                result: records,
+                context: context
             )
             let result = writeLine(try encodeString(document))
             if result == .brokenPipe {
-                return .success
+                return GraphCLICommandOutcome(
+                    exitCode: .success,
+                    resultCount: emitted,
+                    eventCount: emitted,
+                    replayBoundary: cursor
+                )
             }
             try requireWrite(result)
         }
@@ -1170,14 +1289,20 @@ public struct GraphCLICommandRunner: Sendable {
                 exitCode: GraphCLIExitCode.success.rawValue,
                 resultCount: emitted,
                 eventCount: emitted,
-                lastSequence: cursor
+                lastSequence: cursor,
+                context: context
             )
             let result = writeLine(try encodeString(completion))
             if result != .brokenPipe {
                 try requireWrite(result)
             }
         }
-        return .success
+        return GraphCLICommandOutcome(
+            exitCode: .success,
+            resultCount: emitted,
+            eventCount: emitted,
+            replayBoundary: cursor
+        )
     }
 
     private func emit<Payload: Encodable, Record: Encodable>(
@@ -1209,7 +1334,8 @@ public struct GraphCLICommandRunner: Sendable {
                         result: payload,
                         diagnostics: diagnostics.isEmpty
                             ? nil
-                            : diagnostics
+                            : diagnostics,
+                        context: context
                     )
                 )
             )
@@ -1222,7 +1348,8 @@ public struct GraphCLICommandRunner: Sendable {
                         command: invocation.command.name,
                         recordType: recordType,
                         ordinal: ordinal,
-                        payload: recordPayload
+                        payload: recordPayload,
+                        context: context
                     )
                 )
                 let writeResult = writeLine(line)
@@ -1238,7 +1365,8 @@ public struct GraphCLICommandRunner: Sendable {
                     exitCode: GraphCLIExitCode.success.rawValue,
                     resultCount: resultCount,
                     eventCount: eventCount,
-                    lastSequence: nil
+                    lastSequence: nil,
+                    context: context
                 )
                 let writeResult = writeLine(
                     try encodeString(completion)
@@ -1330,6 +1458,22 @@ public struct GraphCLICommandRunner: Sendable {
                 text: mermaid,
                 invocation: invocation,
                 resultCount: 1,
+                eventCount: 0,
+                suppressOutput: suppressOutput
+            )
+        case .terminalWorkspacePlan:
+            let plan = GraphTerminalWorkspacePlanBuilder.build(
+                inspection: inspection,
+                workspaceContext: context?.workspace
+            )
+            return try emit(
+                plan,
+                records: [plan],
+                recordType: "terminal_workspace_plan",
+                text: renderWorkspacePlan(plan),
+                invocation: invocation,
+                resultCount:
+                    plan.terminals.count + plan.connections.count,
                 eventCount: 0,
                 suppressOutput: suppressOutput
             )
@@ -1540,6 +1684,12 @@ public struct GraphCLICommandRunner: Sendable {
         }.joined(separator: "\n") + "\n"
     }
 
+    private func renderWorkspacePlan(
+        _ plan: GraphTerminalWorkspacePlan
+    ) -> String {
+        "\(plan.planID)  \(plan.terminals.count) terminals  \(plan.connections.count) connections  authority \(plan.authority)\n"
+    }
+
     private func writeLine(_ string: String) -> GraphCLIWriteResult {
         stdout.write(Data((string + (string.hasSuffix("\n") ? "" : "\n")).utf8))
     }
@@ -1584,6 +1734,33 @@ public struct GraphCLICommandRunner: Sendable {
         }
     }
 
+    private func recordTelemetry(
+        command: String,
+        output: GraphCLIOutputMode,
+        outcome: GraphCLICommandOutcome,
+        started: UInt64
+    ) {
+        let ended = clock.nowNanoseconds()
+        let duration = ended >= started ? ended - started : 0
+        telemetry.record(
+            GraphCLITelemetryRecord(
+                command: command,
+                outputMode: output,
+                durationMilliseconds: duration / 1_000_000,
+                exitCategory: outcome.exitCode.category,
+                resultCount: outcome.resultCount,
+                eventCount: outcome.eventCount,
+                replayBoundary: outcome.replayBoundary,
+                snapshotDisposition: outcome.snapshotDisposition,
+                reconciliationOutcome:
+                    outcome.reconciliationOutcome,
+                terminalGraphDetected:
+                    context?.terminalGraph.detected ?? false,
+                pipedOutput: !isOutputTTY
+            )
+        )
+    }
+
     private func encodeString<Value: Encodable>(
         _ value: Value
     ) throws -> String {
@@ -1594,6 +1771,31 @@ public struct GraphCLICommandRunner: Sendable {
             decoding: try encoder.encode(value),
             as: UTF8.self
         )
+    }
+}
+
+private struct GraphCLICommandOutcome: Sendable {
+    let exitCode: GraphCLIExitCode
+    let resultCount: Int
+    let eventCount: Int
+    let replayBoundary: UInt64?
+    let snapshotDisposition: GraphSnapshotDisposition?
+    let reconciliationOutcome: String?
+
+    init(
+        exitCode: GraphCLIExitCode,
+        resultCount: Int = 0,
+        eventCount: Int = 0,
+        replayBoundary: UInt64? = nil,
+        snapshotDisposition: GraphSnapshotDisposition? = nil,
+        reconciliationOutcome: String? = nil
+    ) {
+        self.exitCode = exitCode
+        self.resultCount = resultCount
+        self.eventCount = eventCount
+        self.replayBoundary = replayBoundary
+        self.snapshotDisposition = snapshotDisposition
+        self.reconciliationOutcome = reconciliationOutcome
     }
 }
 

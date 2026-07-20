@@ -29,10 +29,17 @@ struct OpenIslandCLI {
                 readStore: store,
                 snapshotStore: store
             )
+            let context = GraphCLIContextDiscovery.discover(
+                environment: environment,
+                workingDirectory: FileManager.default.currentDirectoryPath
+            )
             let runner = GraphCLICommandRunner(
                 inspector: inspector,
                 stdout: stdout,
-                stderr: stderr
+                stderr: stderr,
+                context: context,
+                telemetry: OSLogGraphCLITelemetrySink(),
+                isOutputTTY: isatty(STDOUT_FILENO) == 1
             )
             let code = await runner.run(
                 arguments: Array(CommandLine.arguments.dropFirst())
