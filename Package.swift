@@ -25,6 +25,10 @@ let package = Package(
             name: "OpenIslandApp",
             targets: ["OpenIslandApp"]
         ),
+        .executable(
+            name: "openisland",
+            targets: ["OpenIslandCLI"]
+        ),
     ],
     dependencies: [
         .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.1"),
@@ -52,6 +56,10 @@ let package = Package(
             resources: [
                 .process("Resources"),
             ]
+        ),
+        .executableTarget(
+            name: "OpenIslandCLI",
+            dependencies: ["OpenIslandCore"]
         ),
         .testTarget(
             name: "OpenIslandCoreTests",
