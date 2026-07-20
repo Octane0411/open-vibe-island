@@ -172,6 +172,165 @@ func loadStaleCompendiumFixture()
     )
 }
 
+func staleCompendiumEvents(
+    from input: ExecutionReconciliationInput
+) -> [GraphExecutionEventEnvelope] {
+    let producer = GraphExecutionProducer(
+        id: "stale-compendium-import",
+        kind: .importer
+    )
+    let nodeByAttempt = Dictionary(
+        uniqueKeysWithValues: input.attempts.map {
+            ($0.id, $0.nodeID)
+        }
+    )
+    var sequence: UInt64 = 1
+
+    func envelope(
+        id: String,
+        nodeID: String? = nil,
+        attemptID: String? = nil,
+        occurredAt: Date,
+        payload: GraphExecutionEventPayload
+    ) -> GraphExecutionEventEnvelope {
+        defer { sequence += 1 }
+        return GraphExecutionEventEnvelope(
+            id: id,
+            runID: input.run.id,
+            nodeID: nodeID,
+            attemptID: attemptID,
+            streamSequence: sequence,
+            occurredAt: occurredAt,
+            recordedAt: input.observedAt,
+            producer: producer,
+            payload: payload
+        )
+    }
+
+    var events = [
+        envelope(
+            id: "compendium-run",
+            occurredAt: input.run.createdAt,
+            payload: .runCreated(
+                GraphRunCreatedPayload(
+                    graphID: input.run.graphID,
+                    graphDefinitionVersion: "fixture-1",
+                    graphDefinitionDigest: GraphContentDigest(
+                        algorithm: "sha256",
+                        value: "stale-compendium-fixture"
+                    ),
+                    nodeIDs: input.run.nodeIDs
+                )
+            )
+        ),
+    ]
+
+    for node in input.nodes {
+        events.append(
+            envelope(
+                id: "compendium-node-\(node.id)",
+                nodeID: node.id,
+                occurredAt: node.updatedAt,
+                payload: .nodeRegistered(
+                    GraphNodeRegisteredPayload(
+                        title: node.title,
+                        dependencyNodeIDs: node.dependencyNodeIDs,
+                        executorID: node.executorID
+                    )
+                )
+            )
+        )
+    }
+
+    for attempt in input.attempts.sorted(by: { $0.id < $1.id }) {
+        events.append(
+            envelope(
+                id: "compendium-attempt-\(attempt.id)",
+                nodeID: attempt.nodeID,
+                attemptID: attempt.id,
+                occurredAt: attempt.createdAt,
+                payload: .attemptCreated(
+                    GraphAttemptCreatedPayload(
+                        ordinal: attempt.ordinal
+                    )
+                )
+            )
+        )
+        events.append(
+            envelope(
+                id: "compendium-start-\(attempt.id)",
+                nodeID: attempt.nodeID,
+                attemptID: attempt.id,
+                occurredAt: attempt.startedAt ?? attempt.createdAt,
+                payload: .attemptStarting(
+                    GraphAttemptStartingPayload()
+                )
+            )
+        )
+
+        if let identity = attempt.processIdentity {
+            events.append(
+                envelope(
+                    id: "compendium-process-\(attempt.id)",
+                    nodeID: attempt.nodeID,
+                    attemptID: attempt.id,
+                    occurredAt:
+                        identity.startedAt ?? attempt.createdAt,
+                    payload: .processIdentityObserved(
+                        GraphProcessIdentityObservedPayload(
+                            processIdentity: identity
+                        )
+                    )
+                )
+            )
+        }
+    }
+
+    for (index, heartbeat) in input.heartbeats.enumerated() {
+        guard let nodeID = nodeByAttempt[heartbeat.attemptID] else {
+            continue
+        }
+        events.append(
+            envelope(
+                id: "compendium-heartbeat-\(index)",
+                nodeID: nodeID,
+                attemptID: heartbeat.attemptID,
+                occurredAt: heartbeat.observedAt,
+                payload: .heartbeatObserved(
+                    GraphHeartbeatObservedPayload(
+                        processIdentity: heartbeat.processIdentity,
+                        validUntil: heartbeat.validUntil
+                    )
+                )
+            )
+        )
+    }
+
+    for (index, exit) in input.processExits.enumerated() {
+        guard let nodeID = nodeByAttempt[exit.attemptID] else {
+            continue
+        }
+        events.append(
+            envelope(
+                id: "compendium-exit-\(index)",
+                nodeID: nodeID,
+                attemptID: exit.attemptID,
+                occurredAt: exit.observedAt,
+                payload: .processExitObserved(
+                    GraphProcessExitObservedPayload(
+                        processIdentity: exit.processIdentity,
+                        exitCode: exit.exitCode,
+                        signal: exit.signal,
+                        reason: exit.reason
+                    )
+                )
+            )
+        )
+    }
+
+    return events
+}
+
 struct StaticProcessEvidenceSource: ProcessEvidenceSource {
     let outcome: GraphProcessEvidenceOutcome
 

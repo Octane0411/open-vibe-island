@@ -156,6 +156,7 @@ public struct GraphCLIInvocation: Equatable, Sendable {
     public let toSequence: UInt64?
     public let checkpointID: String?
     public let withoutLiveEvidence: Bool
+    public let requireLiveEvidence: Bool
     public let exportFormat: GraphCLIExportFormat
     public let emitCompletionRecord: Bool
 
@@ -178,6 +179,7 @@ public struct GraphCLIInvocation: Equatable, Sendable {
         toSequence: UInt64? = nil,
         checkpointID: String? = nil,
         withoutLiveEvidence: Bool = false,
+        requireLiveEvidence: Bool = false,
         exportFormat: GraphCLIExportFormat = .json,
         emitCompletionRecord: Bool = false
     ) {
@@ -199,6 +201,7 @@ public struct GraphCLIInvocation: Equatable, Sendable {
         self.toSequence = toSequence
         self.checkpointID = checkpointID
         self.withoutLiveEvidence = withoutLiveEvidence
+        self.requireLiveEvidence = requireLiveEvidence
         self.exportFormat = exportFormat
         self.emitCompletionRecord = emitCompletionRecord
     }
@@ -275,6 +278,7 @@ public enum GraphCLIParser {
             "--include-artifacts",
             "--dry-run",
             "--without-live-evidence",
+            "--require-live-evidence",
             "--emit-completion-record",
         ])
         var index = 0
@@ -475,6 +479,12 @@ public enum GraphCLIParser {
                 "--emit-completion-record requires --output jsonl."
             )
         }
+        if flags.contains("--without-live-evidence"),
+           flags.contains("--require-live-evidence") {
+            throw GraphCLIArgumentError.invalid(
+                "--without-live-evidence and --require-live-evidence are mutually exclusive."
+            )
+        }
 
         return .invocation(
             GraphCLIInvocation(
@@ -500,6 +510,8 @@ public enum GraphCLIParser {
                     try singleValue("--checkpoint", values),
                 withoutLiveEvidence:
                     flags.contains("--without-live-evidence"),
+                requireLiveEvidence:
+                    flags.contains("--require-live-evidence"),
                 exportFormat: exportFormat,
                 emitCompletionRecord:
                     flags.contains("--emit-completion-record")
@@ -522,7 +534,8 @@ public enum GraphCLIParser {
     Filters: --node --attempt --state --event-type --since --until
              --after-sequence --limit
     Safety: --no-color --quiet --include-diagnostics --include-artifacts
-            --without-live-evidence --emit-completion-record
+            --without-live-evidence --require-live-evidence
+            --emit-completion-record
     """
 
     private static func singleValue(
@@ -765,8 +778,21 @@ public struct GraphReplayOutput:
     public let projectedAttempts: [GraphStateOutput]
     public let reconciledAttempts: [GraphStateOutput]
     public let evidence: GraphEvidenceInspection
+    public let unknownEvents: [GraphUnknownEventOutput]
     public let replayDiagnostics: [GraphReplayDiagnostic]
     public let repositoryDiagnostics: [GraphRepositoryDiagnostic]
+}
+
+public struct GraphUnknownEventOutput:
+    Equatable,
+    Codable,
+    Sendable
+{
+    public let eventID: String
+    public let eventType: String
+    public let streamSequence: UInt64
+    public let payloadVersion: Int
+    public let redactions: [GraphRedactionRecord]
 }
 
 public struct GraphStateOutput:
@@ -1101,7 +1127,9 @@ public struct GraphCLICommandRunner: Sendable {
                 ),
                 evidenceMode: invocation.withoutLiveEvidence
                     ? .withoutLiveEvidence
-                    : .configured
+                    : invocation.requireLiveEvidence
+                        ? .requireAvailable
+                        : .configured
             )
             let output = try replayOutput(replay)
             let code = try emit(
@@ -1563,6 +1591,25 @@ public struct GraphCLICommandRunner: Sendable {
                     GraphStateOutput(id: $0.id, state: $0.state)
                 }.sorted { $0.id < $1.id },
             evidence: replay.evidence,
+            unknownEvents: replay.projected.unknownEvents.map {
+                GraphUnknownEventOutput(
+                    eventID: $0.id,
+                    eventType: $0.eventType,
+                    streamSequence: $0.streamSequence,
+                    payloadVersion: $0.payloadVersion,
+                    redactions: [
+                        GraphRedactionRecord(
+                            field: "payload",
+                            reason: .unsupportedPayload
+                        ),
+                    ]
+                )
+            }.sorted {
+                if $0.streamSequence != $1.streamSequence {
+                    return $0.streamSequence < $1.streamSequence
+                }
+                return $0.eventID < $1.eventID
+            },
             replayDiagnostics: replay.replayDiagnostics,
             repositoryDiagnostics: replay.repositoryDiagnostics
         )
