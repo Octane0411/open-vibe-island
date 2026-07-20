@@ -10,6 +10,7 @@ public struct CursorTrackedSessionRecord: Equatable, Codable, Sendable {
     public var updatedAt: Date
     public var jumpTarget: JumpTarget?
     public var cursorMetadata: CursorSessionMetadata?
+    public var observability: AgentSessionObservability?
 
     public init(
         sessionID: String,
@@ -20,7 +21,8 @@ public struct CursorTrackedSessionRecord: Equatable, Codable, Sendable {
         phase: SessionPhase,
         updatedAt: Date,
         jumpTarget: JumpTarget? = nil,
-        cursorMetadata: CursorSessionMetadata? = nil
+        cursorMetadata: CursorSessionMetadata? = nil,
+        observability: AgentSessionObservability? = nil
     ) {
         self.sessionID = sessionID
         self.title = title
@@ -31,6 +33,7 @@ public struct CursorTrackedSessionRecord: Equatable, Codable, Sendable {
         self.updatedAt = updatedAt
         self.jumpTarget = jumpTarget
         self.cursorMetadata = cursorMetadata
+        self.observability = observability
     }
 
     public init(session: AgentSession) {
@@ -43,7 +46,8 @@ public struct CursorTrackedSessionRecord: Equatable, Codable, Sendable {
             phase: session.phase,
             updatedAt: session.updatedAt,
             jumpTarget: session.jumpTarget,
-            cursorMetadata: session.cursorMetadata
+            cursorMetadata: session.cursorMetadata,
+            observability: session.observability
         )
     }
 
@@ -58,7 +62,8 @@ public struct CursorTrackedSessionRecord: Equatable, Codable, Sendable {
             summary: summary,
             updatedAt: updatedAt,
             jumpTarget: jumpTarget,
-            cursorMetadata: cursorMetadata
+            cursorMetadata: cursorMetadata,
+            observability: observability ?? AgentSessionObservability()
         )
     }
 

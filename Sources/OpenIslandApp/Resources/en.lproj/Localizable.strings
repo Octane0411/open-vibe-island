@@ -212,6 +212,12 @@
 "subagents.completed" = "Completed";
 "tasks.summary" = "Tasks (%lld completed, %lld in progress, %lld pending)";
 
+/* Island Panel - Observability */
+"observability.events" = "events";
+"observability.tools" = "tools";
+"observability.elapsed" = "elapsed";
+"observability.timeline" = "Timeline";
+
 /* Island Panel - Question */
 "question.submit" = "Submit Answers";
 "question.answerNeeded" = "Answer needed";

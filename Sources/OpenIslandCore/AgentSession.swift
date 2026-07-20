@@ -373,6 +373,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     public var geminiMetadata: GeminiSessionMetadata?
     public var openCodeMetadata: OpenCodeSessionMetadata?
     public var cursorMetadata: CursorSessionMetadata?
+    public var observability: AgentSessionObservability
 
     /// Whether this session originates from a remote (SSH) connection.
     public var isRemote: Bool = false
@@ -418,7 +419,8 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         claudeMetadata: ClaudeSessionMetadata? = nil,
         geminiMetadata: GeminiSessionMetadata? = nil,
         openCodeMetadata: OpenCodeSessionMetadata? = nil,
-        cursorMetadata: CursorSessionMetadata? = nil
+        cursorMetadata: CursorSessionMetadata? = nil,
+        observability: AgentSessionObservability = AgentSessionObservability()
     ) {
         self.id = id
         self.title = title
@@ -437,6 +439,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         self.geminiMetadata = geminiMetadata
         self.openCodeMetadata = openCodeMetadata
         self.cursorMetadata = cursorMetadata
+        self.observability = observability
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -457,6 +460,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         case geminiMetadata
         case openCodeMetadata
         case cursorMetadata
+        case observability
     }
 
     public init(from decoder: any Decoder) throws {
@@ -478,6 +482,8 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         geminiMetadata = try container.decodeIfPresent(GeminiSessionMetadata.self, forKey: .geminiMetadata)
         openCodeMetadata = try container.decodeIfPresent(OpenCodeSessionMetadata.self, forKey: .openCodeMetadata)
         cursorMetadata = try container.decodeIfPresent(CursorSessionMetadata.self, forKey: .cursorMetadata)
+        observability = try container.decodeIfPresent(AgentSessionObservability.self, forKey: .observability)
+            ?? AgentSessionObservability()
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -499,6 +505,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         try container.encodeIfPresent(geminiMetadata, forKey: .geminiMetadata)
         try container.encodeIfPresent(openCodeMetadata, forKey: .openCodeMetadata)
         try container.encodeIfPresent(cursorMetadata, forKey: .cursorMetadata)
+        try container.encode(observability, forKey: .observability)
     }
 }
 
@@ -524,17 +531,17 @@ public extension AgentSession {
     /// signals; non-hook sessions use process polling.
     var isVisibleInIsland: Bool {
         if isDemoSession { return true }
-        if phase.requiresAttention { return true }
-        // Codex.app sessions stay visible while the desktop app is running,
-        // except when the thread was archived/ended or the row has gone stale.
+        // Codex.app is a multi-thread host process, so app-level liveness is
+        // not evidence that an individual idle or completed thread is active.
         // Checked before isHookManaged because a Codex.app session may also
         // be hook-managed (when both hook and rediscovery converge on it).
         if isCodexAppSession {
             if isSessionEnded {
                 return false
             }
-            return isProcessAlive
+            return isProcessAlive && (phase == .running || phase.requiresAttention)
         }
+        if phase.requiresAttention { return true }
         if isHookManaged { return !isSessionEnded }
         if isProcessAlive { return true }
         return false

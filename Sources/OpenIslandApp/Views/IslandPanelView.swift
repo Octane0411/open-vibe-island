@@ -1322,6 +1322,13 @@ private struct IslandSessionRow: View {
                 .padding(.bottom, 10)
         }
 
+        if presentation == .list, session.observability.metrics.eventCount > 0 {
+            observabilityDetails
+                .padding(.leading, detailLeadingInset)
+                .padding(.trailing, sideInset)
+                .padding(.bottom, 10)
+        }
+
         if let subagents = session.claudeMetadata?.activeSubagents,
            !subagents.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
@@ -1392,6 +1399,130 @@ private struct IslandSessionRow: View {
             .padding(.leading, detailLeadingInset)
             .padding(.trailing, sideInset)
             .padding(.bottom, 10)
+        }
+    }
+
+    private var observabilityDetails: some View {
+        let metrics = session.observability.metrics
+        let timeline = Array(session.observability.timeline.suffix(4).reversed())
+
+        return VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 12) {
+                observabilityMetric(
+                    systemName: "list.bullet.rectangle",
+                    value: "\(metrics.eventCount)",
+                    label: lang.t("observability.events")
+                )
+                observabilityMetric(
+                    systemName: "hammer",
+                    value: "\(metrics.toolEventCount)",
+                    label: lang.t("observability.tools")
+                )
+                observabilityMetric(
+                    systemName: "clock",
+                    value: observabilityElapsedText(metrics),
+                    label: lang.t("observability.elapsed")
+                )
+                Spacer(minLength: 0)
+            }
+
+            if !timeline.isEmpty {
+                HStack(spacing: 5) {
+                    Image(systemName: "waveform.path.ecg")
+                        .font(.system(size: 9.5, weight: .semibold))
+                    Text(lang.t("observability.timeline"))
+                        .font(.system(size: 10.5, weight: .semibold))
+                }
+                .foregroundStyle(.white.opacity(0.5))
+
+                ForEach(timeline) { event in
+                    HStack(alignment: .top, spacing: 7) {
+                        Image(systemName: observabilityIcon(for: event.kind))
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .foregroundStyle(observabilityTint(for: event.kind))
+                            .frame(width: 12, height: 14)
+
+                        VStack(alignment: .leading, spacing: 1) {
+                            HStack(spacing: 6) {
+                                Text(event.title)
+                                    .font(.system(size: 10.5, weight: .medium))
+                                    .foregroundStyle(.white.opacity(0.72))
+                                    .lineLimit(1)
+                                Text(event.timestamp, style: .time)
+                                    .font(.system(size: 9.5, weight: .regular, design: .monospaced))
+                                    .foregroundStyle(.white.opacity(0.3))
+                            }
+
+                            if let detail = event.detail, !detail.isEmpty {
+                                Text(detail)
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.white.opacity(0.42))
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                            }
+                        }
+
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+        }
+    }
+
+    private func observabilityMetric(
+        systemName: String,
+        value: String,
+        label: String
+    ) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: systemName)
+                .font(.system(size: 9.5, weight: .semibold))
+            Text(value)
+                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+            Text(label)
+                .font(.system(size: 10))
+        }
+        .foregroundStyle(.white.opacity(0.48))
+    }
+
+    private func observabilityElapsedText(_ metrics: AgentSessionMetrics) -> String {
+        let reference = session.phase == .completed
+            ? (metrics.lastEventAt ?? referenceDate)
+            : referenceDate
+        let totalSeconds = Int(metrics.elapsed(at: reference).rounded(.down))
+        if totalSeconds >= 3_600 {
+            return "\(totalSeconds / 3_600)h \((totalSeconds % 3_600) / 60)m"
+        }
+        if totalSeconds >= 60 {
+            return "\(totalSeconds / 60)m \(totalSeconds % 60)s"
+        }
+        return "\(totalSeconds)s"
+    }
+
+    private func observabilityIcon(for kind: AgentTimelineEventKind) -> String {
+        switch kind {
+        case .lifecycle: "play.circle"
+        case .status: "waveform"
+        case .prompt: "text.bubble"
+        case .tool: "hammer"
+        case .permission: "lock.shield"
+        case .question: "questionmark.bubble"
+        case .response: "text.quote"
+        case .completion: "checkmark.circle"
+        case .system: "gearshape"
+        }
+    }
+
+    private func observabilityTint(for kind: AgentTimelineEventKind) -> Color {
+        switch kind {
+        case .permission, .question:
+            IslandDesignPalette.Status.waitingAggregate
+        case .completion:
+            IslandDesignPalette.Status.completed
+        case .tool:
+            .cyan.opacity(0.8)
+        case .lifecycle, .status, .prompt, .response, .system:
+            .white.opacity(0.48)
         }
     }
 

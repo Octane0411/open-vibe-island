@@ -243,8 +243,47 @@ private enum DebugSessionFactory {
                 lastAssistantMessage: "读取现有 notch 状态与事件路由，准备把提醒态从 session list 里拆出来。",
                 currentTool: "exec_command",
                 currentCommandPreview: "sed -n '1,260p' Sources/OpenIslandApp/Views/SettingsView.swift"
+            ),
+            observability: runningObservability(now: now)
+        )
+    }
+
+    static func runningObservability(now: Date) -> AgentSessionObservability {
+        var observability = AgentSessionObservability()
+        observability.record(
+            AgentTimelineEvent(
+                timestamp: now.addingTimeInterval(-12 * 60),
+                kind: .lifecycle,
+                title: "Session started",
+                detail: "Opened open-island orchestration work."
             )
         )
+        observability.record(
+            AgentTimelineEvent(
+                timestamp: now.addingTimeInterval(-8 * 60),
+                kind: .prompt,
+                title: "Prompt received",
+                detail: "Add active-session hygiene, logs, and metrics."
+            )
+        )
+        observability.record(
+            AgentTimelineEvent(
+                timestamp: now.addingTimeInterval(-3 * 60),
+                kind: .tool,
+                title: "Using exec_command",
+                detail: "swift test --filter AgentObservabilityTests",
+                toolName: "exec_command"
+            )
+        )
+        observability.record(
+            AgentTimelineEvent(
+                timestamp: now.addingTimeInterval(-45),
+                kind: .status,
+                title: "Running",
+                detail: "Reviewing the expanded session timeline."
+            )
+        )
+        return observability
     }
 
     static func recentCompletedSession(now: Date) -> AgentSession {

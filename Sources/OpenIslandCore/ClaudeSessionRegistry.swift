@@ -11,6 +11,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
     public var firstSeenAt: Date?
     public var jumpTarget: JumpTarget?
     public var claudeMetadata: ClaudeSessionMetadata?
+    public var observability: AgentSessionObservability?
 
     public init(
         sessionID: String,
@@ -22,7 +23,8 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
         updatedAt: Date,
         firstSeenAt: Date? = nil,
         jumpTarget: JumpTarget? = nil,
-        claudeMetadata: ClaudeSessionMetadata? = nil
+        claudeMetadata: ClaudeSessionMetadata? = nil,
+        observability: AgentSessionObservability? = nil
     ) {
         self.sessionID = sessionID
         self.title = title
@@ -34,6 +36,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
         self.firstSeenAt = firstSeenAt
         self.jumpTarget = jumpTarget
         self.claudeMetadata = claudeMetadata
+        self.observability = observability
     }
 
     public init(session: AgentSession) {
@@ -47,7 +50,8 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
             updatedAt: session.updatedAt,
             firstSeenAt: session.firstSeenAt,
             jumpTarget: session.jumpTarget,
-            claudeMetadata: session.claudeMetadata
+            claudeMetadata: session.claudeMetadata,
+            observability: session.observability
         )
     }
 
@@ -63,7 +67,8 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
             updatedAt: updatedAt,
             firstSeenAt: firstSeenAt,
             jumpTarget: jumpTarget,
-            claudeMetadata: claudeMetadata
+            claudeMetadata: claudeMetadata,
+            observability: observability ?? AgentSessionObservability()
         )
     }
 
@@ -84,6 +89,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
         case firstSeenAt
         case jumpTarget
         case claudeMetadata
+        case observability
     }
 
     public init(from decoder: any Decoder) throws {
@@ -98,6 +104,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
         firstSeenAt = try container.decodeIfPresent(Date.self, forKey: .firstSeenAt)
         jumpTarget = try container.decodeIfPresent(JumpTarget.self, forKey: .jumpTarget)
         claudeMetadata = try container.decodeIfPresent(ClaudeSessionMetadata.self, forKey: .claudeMetadata)
+        observability = try container.decodeIfPresent(AgentSessionObservability.self, forKey: .observability)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -112,6 +119,7 @@ public struct ClaudeTrackedSessionRecord: Equatable, Codable, Sendable {
         try container.encodeIfPresent(firstSeenAt, forKey: .firstSeenAt)
         try container.encodeIfPresent(jumpTarget, forKey: .jumpTarget)
         try container.encodeIfPresent(claudeMetadata, forKey: .claudeMetadata)
+        try container.encodeIfPresent(observability, forKey: .observability)
     }
 }
 

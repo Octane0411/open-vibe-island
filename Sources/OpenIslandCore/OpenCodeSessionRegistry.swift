@@ -10,6 +10,7 @@ public struct OpenCodeTrackedSessionRecord: Equatable, Codable, Sendable {
     public var updatedAt: Date
     public var jumpTarget: JumpTarget?
     public var openCodeMetadata: OpenCodeSessionMetadata?
+    public var observability: AgentSessionObservability?
 
     public init(
         sessionID: String,
@@ -20,7 +21,8 @@ public struct OpenCodeTrackedSessionRecord: Equatable, Codable, Sendable {
         phase: SessionPhase,
         updatedAt: Date,
         jumpTarget: JumpTarget? = nil,
-        openCodeMetadata: OpenCodeSessionMetadata? = nil
+        openCodeMetadata: OpenCodeSessionMetadata? = nil,
+        observability: AgentSessionObservability? = nil
     ) {
         self.sessionID = sessionID
         self.title = title
@@ -31,6 +33,7 @@ public struct OpenCodeTrackedSessionRecord: Equatable, Codable, Sendable {
         self.updatedAt = updatedAt
         self.jumpTarget = jumpTarget
         self.openCodeMetadata = openCodeMetadata
+        self.observability = observability
     }
 
     public init(session: AgentSession) {
@@ -43,7 +46,8 @@ public struct OpenCodeTrackedSessionRecord: Equatable, Codable, Sendable {
             phase: session.phase,
             updatedAt: session.updatedAt,
             jumpTarget: session.jumpTarget,
-            openCodeMetadata: session.openCodeMetadata
+            openCodeMetadata: session.openCodeMetadata,
+            observability: session.observability
         )
     }
 
@@ -58,7 +62,8 @@ public struct OpenCodeTrackedSessionRecord: Equatable, Codable, Sendable {
             summary: summary,
             updatedAt: updatedAt,
             jumpTarget: jumpTarget,
-            openCodeMetadata: openCodeMetadata
+            openCodeMetadata: openCodeMetadata,
+            observability: observability ?? AgentSessionObservability()
         )
     }
 
@@ -78,6 +83,7 @@ public struct OpenCodeTrackedSessionRecord: Equatable, Codable, Sendable {
         case updatedAt
         case jumpTarget
         case openCodeMetadata
+        case observability
     }
 
     public init(from decoder: any Decoder) throws {
@@ -91,6 +97,7 @@ public struct OpenCodeTrackedSessionRecord: Equatable, Codable, Sendable {
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         jumpTarget = try container.decodeIfPresent(JumpTarget.self, forKey: .jumpTarget)
         openCodeMetadata = try container.decodeIfPresent(OpenCodeSessionMetadata.self, forKey: .openCodeMetadata)
+        observability = try container.decodeIfPresent(AgentSessionObservability.self, forKey: .observability)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -104,6 +111,7 @@ public struct OpenCodeTrackedSessionRecord: Equatable, Codable, Sendable {
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(jumpTarget, forKey: .jumpTarget)
         try container.encodeIfPresent(openCodeMetadata, forKey: .openCodeMetadata)
+        try container.encodeIfPresent(observability, forKey: .observability)
     }
 }
 

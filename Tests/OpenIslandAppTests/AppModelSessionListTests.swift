@@ -174,8 +174,8 @@ struct AppModelSessionListTests {
             tool: .codex,
             origin: .live,
             attachmentState: .attached,
-            phase: .completed,
-            summary: "First Codex.app thread",
+            phase: .running,
+            summary: "First active Codex.app thread",
             updatedAt: now,
             jumpTarget: JumpTarget(
                 terminalApp: "Codex.app",
@@ -194,8 +194,8 @@ struct AppModelSessionListTests {
             tool: .codex,
             origin: .live,
             attachmentState: .attached,
-            phase: .completed,
-            summary: "Second Codex.app thread",
+            phase: .running,
+            summary: "Second active Codex.app thread",
             updatedAt: now.addingTimeInterval(-30),
             jumpTarget: JumpTarget(
                 terminalApp: "Codex.app",

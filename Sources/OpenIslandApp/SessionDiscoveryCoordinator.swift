@@ -416,6 +416,8 @@ final class SessionDiscoveryCoordinator {
     /// Called periodically when Codex.app is running as a fallback when
     /// the app-server connection is unavailable.  Throttled to at most
     /// once per 10 seconds.
+    static let codexAppRediscoveryActiveWindow: TimeInterval = 120
+
     func rediscoverCodexAppSessionsIfNeeded() {
         let now = Date.now
         guard now.timeIntervalSince(lastCodexAppRescanDate) >= 10 else { return }
@@ -432,11 +434,13 @@ final class SessionDiscoveryCoordinator {
     }
 
     private func applyCodexAppRediscovery(_ records: [CodexTrackedSessionRecord]) {
+        let now = Date.now
         let existingIDs = Set(state.sessions.filter { $0.tool == .codex }.map(\.id))
         let existingPaths = Set(state.sessions.compactMap(\.codexMetadata?.transcriptPath))
 
         let newRecords = records.filter { record in
-            !existingIDs.contains(record.sessionID)
+            Self.shouldRediscoverCodexAppRecord(record, now: now)
+                && !existingIDs.contains(record.sessionID)
                 && (record.codexMetadata?.transcriptPath).map { !existingPaths.contains($0) } ?? true
         }
         guard !newRecords.isEmpty else { return }
@@ -468,6 +472,14 @@ final class SessionDiscoveryCoordinator {
         refreshCodexRolloutTracking()
         scheduleCodexSessionPersistence()
         onStatusMessage?("Discovered \(newRecords.count) new Codex.app session(s) via rollout re-scan.")
+    }
+
+    static func shouldRediscoverCodexAppRecord(
+        _ record: CodexTrackedSessionRecord,
+        now: Date
+    ) -> Bool {
+        record.phase == .running
+            && record.updatedAt >= now.addingTimeInterval(-codexAppRediscoveryActiveWindow)
     }
 
     // MARK: - Persistence scheduling

@@ -22,6 +22,7 @@ This index is the repository map for humans and coding agents. Read these files 
 ## Harness And Planning
 
 - [docs/exec-plans/README.md](./exec-plans/README.md) for the active and completed execution-plan convention
+- [docs/exec-plans/active/2026-07-19-capability-first-orchestration-control-plane.md](./exec-plans/active/2026-07-19-capability-first-orchestration-control-plane.md) for the active capability-first orchestration and AgentPeek parity plan
 - [docs/references/README.md](./references/README.md) for pinned reference material and external behavior baselines
 
 ## Superpowers Plans
