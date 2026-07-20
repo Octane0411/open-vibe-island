@@ -96,7 +96,7 @@ public protocol GraphExecutionEventStore: Sendable {
 public actor InMemoryGraphExecutionEventStore:
     GraphExecutionEventStore
 {
-    private var streams: [String: [GraphExecutionEventEnvelope]] = [:]
+    package var streams: [String: [GraphExecutionEventEnvelope]] = [:]
     private var eventsByID: [String: GraphExecutionEventEnvelope] = [:]
 
     public init() {}

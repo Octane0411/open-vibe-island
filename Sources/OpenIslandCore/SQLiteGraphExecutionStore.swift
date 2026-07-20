@@ -3,7 +3,9 @@ import SQLite3
 
 public actor SQLiteGraphExecutionStore:
     GraphExecutionEventStore,
-    GraphExecutionSnapshotStore
+    GraphExecutionSnapshotStore,
+    GraphExecutionReadStore,
+    GraphExecutionSnapshotReadStore
 {
     public static let currentDatabaseSchemaVersion = 1
 
@@ -264,6 +266,177 @@ public actor SQLiteGraphExecutionStore:
         )
     }
 
+    public func listStreams() throws -> [GraphExecutionStreamDescriptor] {
+        let database = try Self.openConfiguredDatabase(
+            at: databasePath
+        )
+        defer { sqlite3_close(database) }
+        let statement = try Self.prepare(
+            database,
+            sql: """
+            SELECT run_id, current_version
+            FROM graph_execution_streams
+            ORDER BY run_id ASC;
+            """
+        )
+        defer { sqlite3_finalize(statement) }
+        var streams: [GraphExecutionStreamDescriptor] = []
+
+        while true {
+            let result = sqlite3_step(statement)
+
+            if result == SQLITE_DONE {
+                break
+            }
+
+            guard result == SQLITE_ROW else {
+                throw Self.storageError(
+                    database,
+                    operation: "list graph execution streams"
+                )
+            }
+
+            streams.append(
+                GraphExecutionStreamDescriptor(
+                    runID: try Self.textColumn(
+                        statement,
+                        index: 0,
+                        name: "run_id"
+                    ),
+                    currentVersion: UInt64(
+                        bitPattern: sqlite3_column_int64(statement, 1)
+                    )
+                )
+            )
+        }
+
+        return streams
+    }
+
+    public func streamDescriptor(
+        runID: String
+    ) throws -> GraphExecutionStreamDescriptor? {
+        let database = try Self.openConfiguredDatabase(
+            at: databasePath
+        )
+        defer { sqlite3_close(database) }
+        let statement = try Self.prepare(
+            database,
+            sql: """
+            SELECT current_version
+            FROM graph_execution_streams
+            WHERE run_id = ?;
+            """
+        )
+        defer { sqlite3_finalize(statement) }
+        try Self.bind(runID, at: 1, statement: statement)
+        let result = sqlite3_step(statement)
+
+        if result == SQLITE_DONE {
+            return nil
+        }
+
+        guard result == SQLITE_ROW else {
+            throw Self.storageError(
+                database,
+                operation: "read graph execution stream"
+            )
+        }
+
+        return GraphExecutionStreamDescriptor(
+            runID: runID,
+            currentVersion: UInt64(
+                bitPattern: sqlite3_column_int64(statement, 0)
+            )
+        )
+    }
+
+    public func readPage(
+        runID: String,
+        afterVersion: UInt64,
+        limit: Int
+    ) throws -> GraphExecutionEventPage {
+        let pageLimit = max(1, min(limit, 10_000))
+        let database = try Self.openConfiguredDatabase(
+            at: databasePath
+        )
+        defer { sqlite3_close(database) }
+        let currentVersion = try Self.currentVersion(
+            runID: runID,
+            database: database
+        )
+        let statement = try Self.prepare(
+            database,
+            sql: """
+            SELECT
+                event_id,
+                stream_sequence,
+                envelope_schema_version,
+                event_type,
+                payload_version,
+                event_json
+            FROM graph_execution_events
+            WHERE run_id = ? AND stream_sequence > ?
+            ORDER BY stream_sequence ASC, event_id ASC
+            LIMIT ?;
+            """
+        )
+        defer { sqlite3_finalize(statement) }
+        try Self.bind(runID, at: 1, statement: statement)
+        sqlite3_bind_int64(
+            statement,
+            2,
+            Int64(bitPattern: afterVersion)
+        )
+        sqlite3_bind_int(statement, 3, Int32(pageLimit))
+        var events: [GraphExecutionEventEnvelope] = []
+        var expectedSequence = afterVersion + 1
+
+        while true {
+            let result = sqlite3_step(statement)
+
+            if result == SQLITE_DONE {
+                break
+            }
+
+            guard result == SQLITE_ROW else {
+                throw Self.storageError(
+                    database,
+                    operation: "read graph execution event page"
+                )
+            }
+
+            let event = try Self.validatedEvent(
+                statement: statement,
+                expectedRunID: runID
+            )
+
+            guard event.streamSequence == expectedSequence else {
+                throw GraphExecutionPersistenceError.corruptRecord(
+                    "Run \(runID) expected sequence \(expectedSequence), found \(event.streamSequence)."
+                )
+            }
+
+            events.append(event)
+            expectedSequence += 1
+        }
+
+        if afterVersion < currentVersion, events.isEmpty {
+            throw GraphExecutionPersistenceError.corruptRecord(
+                "Run \(runID) has no event after sequence \(afterVersion), but its head is \(currentVersion)."
+            )
+        }
+
+        let nextVersion = events.last?.streamSequence ?? afterVersion
+        return GraphExecutionEventPage(
+            runID: runID,
+            afterVersion: afterVersion,
+            currentVersion: currentVersion,
+            events: events,
+            hasMore: nextVersion < currentVersion
+        )
+    }
+
     public func loadLatest(
         runID: String
     ) throws -> GraphExecutionSnapshot? {
@@ -306,6 +479,70 @@ public actor SQLiteGraphExecutionStore:
             name: "snapshot_json"
         )
         let snapshot = try Self.decodeSnapshot(data)
+
+        guard snapshot.runID == runID,
+              snapshot.streamVersion == storedVersion,
+              snapshot.schemaVersion == storedSchemaVersion else {
+            throw GraphExecutionPersistenceError.corruptRecord(
+                "Snapshot \(runID)@\(storedVersion) indexed metadata does not match its payload."
+            )
+        }
+
+        return snapshot
+    }
+
+    public func loadLatest(
+        runID: String,
+        throughVersion: UInt64
+    ) throws -> GraphExecutionSnapshot? {
+        let database = try Self.openConfiguredDatabase(
+            at: databasePath
+        )
+        defer { sqlite3_close(database) }
+        let sql = """
+        SELECT
+            stream_version,
+            snapshot_schema_version,
+            snapshot_json
+        FROM graph_execution_snapshots
+        WHERE run_id = ? AND stream_version <= ?
+        ORDER BY stream_version DESC
+        LIMIT 1;
+        """
+        let statement = try Self.prepare(database, sql: sql)
+        defer { sqlite3_finalize(statement) }
+        try Self.bind(runID, at: 1, statement: statement)
+        sqlite3_bind_int64(
+            statement,
+            2,
+            Int64(bitPattern: throughVersion)
+        )
+        let result = sqlite3_step(statement)
+
+        if result == SQLITE_DONE {
+            return nil
+        }
+
+        guard result == SQLITE_ROW else {
+            throw Self.storageError(
+                database,
+                operation: "load bounded snapshot"
+            )
+        }
+
+        let storedVersion = UInt64(
+            bitPattern: sqlite3_column_int64(statement, 0)
+        )
+        let storedSchemaVersion = Int(
+            sqlite3_column_int(statement, 1)
+        )
+        let snapshot = try Self.decodeSnapshot(
+            Self.dataColumn(
+                statement,
+                index: 2,
+                name: "snapshot_json"
+            )
+        )
 
         guard snapshot.runID == runID,
               snapshot.streamVersion == storedVersion,
@@ -882,6 +1119,51 @@ public actor SQLiteGraphExecutionStore:
                 "Unable to decode event envelope: \(error.localizedDescription)"
             )
         }
+    }
+
+    private static func validatedEvent(
+        statement: OpaquePointer,
+        expectedRunID: String
+    ) throws -> GraphExecutionEventEnvelope {
+        let storedID = try textColumn(
+            statement,
+            index: 0,
+            name: "event_id"
+        )
+        let storedSequence = UInt64(
+            bitPattern: sqlite3_column_int64(statement, 1)
+        )
+        let storedEnvelopeVersion = Int(
+            sqlite3_column_int(statement, 2)
+        )
+        let storedEventType = try textColumn(
+            statement,
+            index: 3,
+            name: "event_type"
+        )
+        let storedPayloadVersion = Int(
+            sqlite3_column_int(statement, 4)
+        )
+        let event = try decodeEvent(
+            dataColumn(
+                statement,
+                index: 5,
+                name: "event_json"
+            )
+        )
+
+        guard event.id == storedID,
+              event.runID == expectedRunID,
+              event.streamSequence == storedSequence,
+              event.schemaVersion == storedEnvelopeVersion,
+              event.eventType == storedEventType,
+              event.payloadVersion == storedPayloadVersion else {
+            throw GraphExecutionPersistenceError.corruptRecord(
+                "Event \(storedID) indexed metadata does not match its envelope."
+            )
+        }
+
+        return event
     }
 
     private static func decodeSnapshot(

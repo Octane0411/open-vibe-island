@@ -48,7 +48,7 @@ public protocol GraphExecutionSnapshotStore: Sendable {
 public actor InMemoryGraphExecutionSnapshotStore:
     GraphExecutionSnapshotStore
 {
-    private var snapshots: [String: [GraphExecutionSnapshot]]
+    package var snapshots: [String: [GraphExecutionSnapshot]]
 
     public init(snapshots: [GraphExecutionSnapshot] = []) {
         self.snapshots = Dictionary(
@@ -329,6 +329,45 @@ public struct GraphExecutionRepositoryLoadResult:
     }
 }
 
+public enum GraphExecutionProjectionReconciler {
+    public static func reconcile(
+        projection: GraphExecutionProjection,
+        evidenceOutcome: GraphProcessEvidenceOutcome,
+        observedAt: Date
+    ) -> ExecutionReconciliationResult? {
+        guard let run = projection.run else {
+            return nil
+        }
+
+        var processExits = projection.processExits
+        var heartbeats = projection.heartbeats
+
+        switch evidenceOutcome {
+        case let .available(evidence),
+             let .stale(evidence, _):
+            processExits.append(contentsOf: evidence.processExits)
+            heartbeats.append(contentsOf: evidence.heartbeats)
+        case .unavailable,
+             .permissionDenied,
+             .adapterFailed,
+             .identityMismatch:
+            break
+        }
+
+        return GraphExecutionReconciler.reconcile(
+            ExecutionReconciliationInput(
+                run: run,
+                nodes: projection.nodes,
+                attempts: projection.attempts,
+                processExits: processExits,
+                heartbeats: heartbeats,
+                events: projection.executionEvents,
+                observedAt: observedAt
+            )
+        )
+    }
+}
+
 public protocol GraphExecutionRepository: Sendable {
     func load(
         runID: String,
@@ -483,7 +522,7 @@ public struct DefaultGraphExecutionRepository:
             )
         )
 
-        let reconciled = reconcile(
+        let reconciled = GraphExecutionProjectionReconciler.reconcile(
             projection: replay.projection,
             evidenceOutcome: evidenceOutcome,
             observedAt: observedAt
@@ -607,43 +646,6 @@ public struct DefaultGraphExecutionRepository:
             )
             return (nil, .corrupt)
         }
-    }
-
-    private func reconcile(
-        projection: GraphExecutionProjection,
-        evidenceOutcome: GraphProcessEvidenceOutcome,
-        observedAt: Date
-    ) -> ExecutionReconciliationResult? {
-        guard let run = projection.run else {
-            return nil
-        }
-
-        var processExits = projection.processExits
-        var heartbeats = projection.heartbeats
-
-        switch evidenceOutcome {
-        case let .available(evidence),
-             let .stale(evidence, _):
-            processExits.append(contentsOf: evidence.processExits)
-            heartbeats.append(contentsOf: evidence.heartbeats)
-        case .unavailable,
-             .permissionDenied,
-             .adapterFailed,
-             .identityMismatch:
-            break
-        }
-
-        return GraphExecutionReconciler.reconcile(
-            ExecutionReconciliationInput(
-                run: run,
-                nodes: projection.nodes,
-                attempts: projection.attempts,
-                processExits: processExits,
-                heartbeats: heartbeats,
-                events: projection.executionEvents,
-                observedAt: observedAt
-            )
-        )
     }
 
     private func makeSnapshot(
