@@ -373,6 +373,54 @@ final class GraphExecutionDurabilityInvariantTests: XCTestCase {
         XCTAssertEqual(replay.projection.artifacts, [artifact])
     }
 
+    func testArtifactWithContradictoryProvenanceIsRejected() {
+        let artifact = GraphArtifactReference(
+            id: "contradictory",
+            contentDigest: GraphContentDigest(
+                algorithm: "sha256",
+                value: "content"
+            ),
+            mediaType: "text/plain",
+            logicalRole: "result",
+            producingRunID: "run",
+            producingNodeID: "different-node",
+            producingAttemptID: "attempt",
+            createdAt: graphTestTime,
+            storage: GraphArtifactStorageLocator(
+                scheme: "artifact",
+                opaqueReference: "contradictory"
+            )
+        )
+        let events = [
+            graphTestRunCreated(),
+            graphTestNodeRegistered(),
+            graphTestAttemptCreated(),
+            graphTestEvent(
+                id: "artifact-event",
+                sequence: 4,
+                nodeID: "node",
+                attemptID: "attempt",
+                payload: .artifactRecorded(
+                    GraphArtifactRecordedPayload(artifact: artifact)
+                )
+            ),
+        ]
+
+        XCTAssertThrowsError(
+            try GraphExecutionProjector.replay(
+                runID: "run",
+                events: events
+            )
+        ) {
+            XCTAssertEqual(
+                $0 as? GraphExecutionReplayError,
+                .artifactProvenanceMismatch(
+                    artifactID: "contradictory"
+                )
+            )
+        }
+    }
+
     func testCompletedParallelWriteSurvivesSiblingFailure() throws {
         let artifact = GraphArtifactReference(
             id: "parallel-output",
@@ -634,6 +682,41 @@ final class GraphExecutionDurabilityInvariantTests: XCTestCase {
         XCTAssertEqual(
             created.reconciledState,
             reloaded.reconciledState
+        )
+    }
+
+    func testRepositoryEmitsPrivacyBoundedTelemetryOperations() async throws {
+        let store = try await eventStore(baseRunningEvents())
+        let telemetry = RecordingGraphTelemetrySink()
+        let repository = DefaultGraphExecutionRepository(
+            eventStore: store,
+            snapshotStore: InMemoryGraphExecutionSnapshotStore(),
+            evidenceSource: UnavailableProcessEvidenceSource(),
+            telemetry: telemetry
+        )
+
+        _ = try await repository.load(
+            runID: "run",
+            observedAt: graphTestTime.addingTimeInterval(100)
+        )
+        let records = await telemetry.snapshot()
+        let operations = Set(records.map(\.operation))
+        let allowedKeys = Set([
+            GraphTelemetryAttribute.runID,
+            GraphTelemetryAttribute.streamVersion,
+            GraphTelemetryAttribute.replayCount,
+            GraphTelemetryAttribute.reconciliationResult,
+        ])
+
+        XCTAssertTrue(operations.contains(.repositoryLoad))
+        XCTAssertTrue(operations.contains(.snapshotLoad))
+        XCTAssertTrue(operations.contains(.eventReplay))
+        XCTAssertTrue(operations.contains(.processEvidenceQuery))
+        XCTAssertTrue(operations.contains(.reconciliation))
+        XCTAssertTrue(
+            records.allSatisfy {
+                Set($0.attributes.keys).isSubset(of: allowedKeys)
+            }
         )
     }
 
@@ -979,4 +1062,18 @@ private struct ThrowingSnapshotStore: GraphExecutionSnapshotStore {
     }
 
     func save(_ snapshot: GraphExecutionSnapshot) async throws {}
+}
+
+private actor RecordingGraphTelemetrySink:
+    GraphExecutionTelemetrySink
+{
+    private var records: [GraphTelemetryRecord] = []
+
+    func record(_ record: GraphTelemetryRecord) {
+        records.append(record)
+    }
+
+    func snapshot() -> [GraphTelemetryRecord] {
+        records
+    }
 }

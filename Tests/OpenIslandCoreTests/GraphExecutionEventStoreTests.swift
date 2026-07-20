@@ -165,6 +165,54 @@ final class GraphExecutionEventStoreTests: XCTestCase {
         )
     }
 
+    func testEventTaxonomyDistinguishesCommandsObservationsAndDeclarations() {
+        XCTAssertEqual(
+            GraphExecutionEventPayload.attemptStarting(
+                GraphAttemptStartingPayload()
+            ).factClass,
+            .command
+        )
+        XCTAssertEqual(
+            GraphExecutionEventPayload.heartbeatObserved(
+                GraphHeartbeatObservedPayload(
+                    processIdentity: graphTestProcess,
+                    validUntil: timestamp
+                )
+            ).factClass,
+            .observation
+        )
+        XCTAssertEqual(
+            GraphExecutionEventPayload.attemptCompleted(
+                GraphAttemptTerminalPayload()
+            ).factClass,
+            .declaration
+        )
+        XCTAssertEqual(
+            GraphExecutionEventPayload.artifactRecorded(
+                GraphArtifactRecordedPayload(
+                    artifact: GraphArtifactReference(
+                        id: "artifact",
+                        contentDigest: GraphContentDigest(
+                            algorithm: "sha256",
+                            value: "digest"
+                        ),
+                        mediaType: "text/plain",
+                        logicalRole: "result",
+                        producingRunID: "run",
+                        producingNodeID: "node",
+                        producingAttemptID: "attempt",
+                        createdAt: timestamp,
+                        storage: GraphArtifactStorageLocator(
+                            scheme: "artifact",
+                            opaqueReference: "artifact"
+                        )
+                    )
+                )
+            ).factClass,
+            .metadata
+        )
+    }
+
     private func event(
         id: String,
         sequence: UInt64,
