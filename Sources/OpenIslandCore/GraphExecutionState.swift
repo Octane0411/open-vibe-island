@@ -205,6 +205,7 @@ public enum ExecutionEventKind: String, Codable, CaseIterable, Sendable {
     case attemptCompleted
     case attemptFailed
     case attemptInterrupted
+    case attemptOrphaned
     case attemptCancelled
 }
 
@@ -733,6 +734,8 @@ private extension ExecutionEventKind {
             return .failed
         case .attemptInterrupted:
             return .interrupted
+        case .attemptOrphaned:
+            return .orphaned
         case .attemptCancelled:
             return .cancelled
         case .runStarted,
@@ -760,6 +763,7 @@ private extension ExecutionEventKind {
              .attemptCompleted,
              .attemptFailed,
              .attemptInterrupted,
+             .attemptOrphaned,
              .attemptCancelled:
             return nil
         }
