@@ -307,6 +307,10 @@ public enum GraphExecutionReconciler {
                 reconciledNode.activeAttemptID = attempt.id
 
                 if attempt.state != .pending {
+                    if reconciledNode.state != attempt.state {
+                        reconciledNode.updatedAt = input.observedAt
+                    }
+
                     reconciledNode.state = attempt.state
                 }
             }
@@ -447,8 +451,28 @@ public enum GraphExecutionReconciler {
                     return $0.observedAt < $1.observedAt
                 }
 
-                return $0.processIdentity.launchID
-                    < $1.processIdentity.launchID
+                if $0.processIdentity != $1.processIdentity {
+                    return processIdentityIsOrderedBefore(
+                        $0.processIdentity,
+                        $1.processIdentity
+                    )
+                }
+
+                if $0.exitCode != $1.exitCode {
+                    return optionalIsOrderedBefore(
+                        $0.exitCode,
+                        $1.exitCode
+                    )
+                }
+
+                if $0.signal != $1.signal {
+                    return optionalIsOrderedBefore(
+                        $0.signal,
+                        $1.signal
+                    )
+                }
+
+                return optionalIsOrderedBefore($0.reason, $1.reason)
             }
     }
 
@@ -472,8 +496,14 @@ public enum GraphExecutionReconciler {
                     return $0.observedAt < $1.observedAt
                 }
 
-                return $0.processIdentity.launchID
-                    < $1.processIdentity.launchID
+                if $0.validUntil != $1.validUntil {
+                    return $0.validUntil < $1.validUntil
+                }
+
+                return processIdentityIsOrderedBefore(
+                    $0.processIdentity,
+                    $1.processIdentity
+                )
             }
     }
 
@@ -516,7 +546,26 @@ public enum GraphExecutionReconciler {
             return lhs.occurredAt < rhs.occurredAt
         }
 
-        return lhs.id < rhs.id
+        if lhs.id != rhs.id {
+            return lhs.id < rhs.id
+        }
+
+        if lhs.kind != rhs.kind {
+            return lhs.kind.rawValue < rhs.kind.rawValue
+        }
+
+        if lhs.nodeID != rhs.nodeID {
+            return optionalIsOrderedBefore(lhs.nodeID, rhs.nodeID)
+        }
+
+        if lhs.attemptID != rhs.attemptID {
+            return optionalIsOrderedBefore(
+                lhs.attemptID,
+                rhs.attemptID
+            )
+        }
+
+        return optionalIsOrderedBefore(lhs.reason, rhs.reason)
     }
 
     private static func latestAttempt(
@@ -636,6 +685,42 @@ public enum GraphExecutionReconciler {
         }
 
         return "Process exited without a terminal execution event."
+    }
+
+    private static func processIdentityIsOrderedBefore(
+        _ lhs: ProcessIdentity,
+        _ rhs: ProcessIdentity
+    ) -> Bool {
+        if lhs.hostID != rhs.hostID {
+            return lhs.hostID < rhs.hostID
+        }
+
+        if lhs.launchID != rhs.launchID {
+            return lhs.launchID < rhs.launchID
+        }
+
+        if lhs.processID != rhs.processID {
+            return optionalIsOrderedBefore(
+                lhs.processID,
+                rhs.processID
+            )
+        }
+
+        return optionalIsOrderedBefore(lhs.startedAt, rhs.startedAt)
+    }
+
+    private static func optionalIsOrderedBefore<Value: Comparable>(
+        _ lhs: Value?,
+        _ rhs: Value?
+    ) -> Bool {
+        switch (lhs, rhs) {
+        case (.none, .some):
+            return true
+        case (.some, .none), (.none, .none):
+            return false
+        case let (.some(lhs), .some(rhs)):
+            return lhs < rhs
+        }
     }
 }
 

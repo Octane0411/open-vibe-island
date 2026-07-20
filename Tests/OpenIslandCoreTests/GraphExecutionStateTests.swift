@@ -109,6 +109,44 @@ final class GraphExecutionStateTests: XCTestCase {
         )
     }
 
+    func testEqualTimestampProcessExitsHaveDeterministicTieBreaker() {
+        let process = processIdentity()
+        let attempt = makeAttempt(processIdentity: process)
+        let firstExit = ProcessExit(
+            attemptID: attempt.id,
+            processIdentity: process,
+            observedAt: observedAt,
+            exitCode: 1,
+            reason: "First reason."
+        )
+        let secondExit = ProcessExit(
+            attemptID: attempt.id,
+            processIdentity: process,
+            observedAt: observedAt,
+            exitCode: 1,
+            reason: "Second reason."
+        )
+
+        let forward = GraphExecutionReconciler.reconcile(
+            makeInput(
+                attempts: [attempt],
+                processExits: [firstExit, secondExit]
+            )
+        )
+        let reversed = GraphExecutionReconciler.reconcile(
+            makeInput(
+                attempts: [attempt],
+                processExits: [secondExit, firstExit]
+            )
+        )
+
+        XCTAssertEqual(forward, reversed)
+        XCTAssertEqual(
+            forward.attempts[0].statusReason,
+            "Second reason."
+        )
+    }
+
     func testUnsupportedRunningClaimsBecomeInterruptedOrOrphaned() {
         let unidentified = makeAttempt(id: "unidentified", nodeID: "one")
         let identified = makeAttempt(
@@ -133,6 +171,28 @@ final class GraphExecutionStateTests: XCTestCase {
 
         XCTAssertEqual(states["unidentified"], .interrupted)
         XCTAssertEqual(states["identified"], .orphaned)
+    }
+
+    func testNodeTimestampTracksAttemptStateReconciliation() {
+        let originalUpdatedAt = observedAt.addingTimeInterval(-50)
+        let input = makeInput(
+            nodes: [
+                GraphNode(
+                    id: "node",
+                    graphRunID: "run",
+                    title: "node",
+                    state: .running,
+                    activeAttemptID: "attempt",
+                    updatedAt: originalUpdatedAt
+                ),
+            ],
+            attempts: [makeAttempt()]
+        )
+
+        let result = GraphExecutionReconciler.reconcile(input)
+
+        XCTAssertEqual(result.nodes[0].state, .interrupted)
+        XCTAssertEqual(result.nodes[0].updatedAt, observedAt)
     }
 
     func testEventOrderingIsDeterministicAcrossInputOrder() {
