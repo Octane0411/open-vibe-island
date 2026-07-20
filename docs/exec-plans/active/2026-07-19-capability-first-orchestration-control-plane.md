@@ -2,7 +2,7 @@
 
 **Status:** Active
 **Started:** 2026-07-19
-**Current phase:** Phase 2, durable graph history and temporal inspection preparation
+**Current phase:** Phase 2, durable scheduling and executor supervision preparation
 
 ## Problem
 
@@ -367,12 +367,17 @@ recent state transitions; polling cannot inflate metrics; timeline state survive
   interrupt facts, and OpenTelemetry-compatible internal vocabulary.
 - [x] Prove restart, replay, snapshots, concurrent writers, unknown events, retry ordinals,
   sibling-write preservation, fixed-point reconciliation, and the stale compendium fixture.
+- [x] Expose read-only temporal APIs and `openisland graph` commands for list, inspect,
+  history, explain, checkpoints, replay, diff, and redacted export.
+- [x] Add stable text, JSON, JSONL, completion, exit-code, telemetry, Unix pipeline, worktree,
+  multi-project, and neutral Terminal Graph workspace-plan contracts.
 - [ ] Implement host-specific process-evidence adapters that emit canonical evidence.
 - [ ] Add scheduler-owned timeout, cancellation, retry, and failure propagation.
 - [ ] Replace the simulation runner with executor adapters for local models and CLI agents.
 - [ ] Add typed handoff schemas on top of artifact references, then supervise a graph with at
   least two local models.
-- [ ] Expose read-only graph inspect, logs, and metrics through the shared command service.
+- [ ] Add graph logs and metric projections to the shared command service; temporal graph
+  inspection is now exposed through the standalone CLI boundary.
 - [ ] Add version-checked mutation commands for cancel, retry, and resume only after replay and
   restart behavior is proven.
 
@@ -408,19 +413,22 @@ for quality, latency, cost, and context growth.
 
 ## Immediate Execution Order
 
-1. Add temporal inspection APIs over the repository for list, inspect, history, explain,
-   checkpoint listing, dry-run replay, diff, and export.
-2. Expose those APIs through read-only `openisland graph` CLI commands with stable JSON output,
-   causal explanations, replay diagnostics, and OpenTelemetry-compatible CLI telemetry.
-3. Add integrity verification and redacted export policy before exposing artifact locators or
-   historical payloads broadly.
-4. Implement host-specific process-evidence adapters that translate observations into
+1. **Complete:** temporal inspection APIs for list, inspect, history, explain, checkpoint
+   listing, dry-run replay, diff, and export.
+2. **Complete:** read-only `openisland graph` CLI commands with stable JSON/JSONL, causal
+   explanations, replay diagnostics, bounded telemetry, and optional completion records.
+3. **Complete:** redacted artifact and repository-context exports plus deterministic neutral
+   workspace plans. Event/snapshot integrity policy remains enforced by the durable store.
+4. **Next:** add durable scheduler decision records, optimistic executor claims, renewable
+   leases, explicit retry policy, cancellation requests and acknowledgements, timeout
+   decisions, and deterministic failure propagation. Prove crash/restart and competing-worker
+   behavior without adding UI or model-specific launch code.
+5. Implement host-specific process-evidence adapters that translate observations into
    canonical exits and heartbeat leases without mutating history.
-5. Add non-local CLI usage metrics and local-model resource metrics as distinct projections.
-6. Add scheduler policy and executor adapters only after temporal inspection proves persisted
-   and reconciled state is operator-debuggable.
-7. Defer mutation commands until command versioning and idempotency are tested.
-8. Defer all visual redesign, including liquid glass, until orchestration behavior and
+6. Add non-local CLI usage metrics and local-model resource metrics as distinct projections.
+7. Add executor adapters only after scheduler decisions and claims are durable and inspectable.
+8. Defer mutation commands until command versioning and idempotency are tested.
+9. Defer all visual redesign, including liquid glass, until orchestration behavior and
    operator information architecture are stable.
 
 ## Progress Log
@@ -435,6 +443,27 @@ for quality, latency, cost, and context growth.
 - `2fc35b6 feat: add local SQLite graph persistence`
 - `38d0fc1 test: prove durable graph replay invariants`
 - `4f55d79 test: cover graph provenance and telemetry boundaries`
+- `77e017d docs: define durable graph history philosophy`
+- `d2c80cd feat: add temporal graph inspection APIs`
+- `3353374 feat: add read-only openisland graph commands`
+- `ed5ece0 feat: add terminal graph compatibility contracts`
+- `d1d7ce6 test: verify graph cli and streaming invariants`
+
+### Temporal inspection and integration decisions
+
+- The inspector depends on bounded read-store and snapshot-read protocols rather than SQLite.
+  Historical replay is side-effect-free and never updates snapshots.
+- Output schema version 1 separates text, JSON documents, and one-record-per-line JSONL.
+  Structured stdout is deterministic and diagnostics remain on stderr unless requested.
+- Open Island remains execution authority. Terminal Graph integration uses optional
+  environment context, typed semantic ports, stable external mapping keys, and a neutral
+  workspace plan; no Terminal Graph binary, private schema, state file, hook, or MCP call is
+  required.
+- Repository and artifact metadata is redaction-aware. CLI telemetry is bounded, local, and
+  excludes raw arguments, paths, environment values, prompts, and artifact bodies.
+- Durable scheduler decisions are the next correctness boundary. Mutation commands and
+  executor launching remain deferred until claims, leases, retries, cancellation, and restart
+  behavior are represented in history and proven under concurrency.
 
 ## Verification
 
