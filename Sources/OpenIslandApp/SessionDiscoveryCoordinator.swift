@@ -98,7 +98,9 @@ final class SessionDiscoveryCoordinator {
         let allCursor = (try? cursorSessionRegistry.load()) ?? []
         let cursorRecords = allCursor.filter { $0.updatedAt >= cutoff && $0.shouldRestoreToLiveState }
 
-        let discoveredCodex = codexRolloutDiscovery.discoverRecentSessions()
+        let discoveredCodex = codexRolloutDiscovery
+            .discoverRecentSessions()
+            .filter(\.shouldRestoreToLiveState)
         let discoveredClaude = claudeTranscriptDiscovery.discoverRecentSessions()
 
         return StartupDiscoveryPayload(
@@ -503,14 +505,25 @@ final class SessionDiscoveryCoordinator {
     func scheduleCodexSessionPersistence() {
         codexSessionPersistenceTask?.cancel()
 
+        let now = Date.now
         let records = state.sessions
-            .filter { $0.isTrackedLiveCodexSession && $0.updatedAt >= Date.now.addingTimeInterval(-86_400) }
+            .filter { Self.shouldPersistCodexSession($0, now: now) }
             .map(CodexTrackedSessionRecord.init(session:))
         let store = codexSessionStore
 
         codexSessionPersistenceTask = Self.persistenceTask {
             try store.save(records)
         }
+    }
+
+    static func shouldPersistCodexSession(
+        _ session: AgentSession,
+        now: Date
+    ) -> Bool {
+        session.isTrackedLiveCodexSession
+            && session.phase != .completed
+            && !session.isSessionEnded
+            && session.updatedAt >= now.addingTimeInterval(-86_400)
     }
 
     func scheduleClaudeSessionPersistence() {

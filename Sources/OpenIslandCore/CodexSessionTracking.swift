@@ -157,7 +157,9 @@ public extension CodexTrackedSessionRecord {
     }
 
     var shouldRestoreToLiveState: Bool {
-        origin != .demo && !LegacyMockSessionIDs.all.contains(sessionID)
+        origin != .demo
+            && !LegacyMockSessionIDs.all.contains(sessionID)
+            && phase != .completed
     }
 }
 

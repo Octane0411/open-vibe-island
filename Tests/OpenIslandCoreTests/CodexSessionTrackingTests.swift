@@ -70,6 +70,21 @@ struct CodexSessionTrackingTests {
             phase: .running,
             updatedAt: .now
         )
+        let completedLiveRecord = CodexTrackedSessionRecord(
+            sessionID: "019f2afd-e6fd-7e11-bdd4-945caba06867",
+            title: "Codex · UHCLregistrationbot",
+            origin: .live,
+            attachmentState: .stale,
+            summary: "Turn completed.",
+            phase: .completed,
+            updatedAt: .now,
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "UHCLregistrationbot",
+                paneTitle: "Codex · UHCLregistrationbot",
+                codexThreadID: "019f2afd-e6fd-7e11-bdd4-945caba06867"
+            )
+        )
         let legacyMockRecord = CodexTrackedSessionRecord(
             sessionID: "codex-backend-server",
             title: "backend server",
@@ -89,6 +104,7 @@ struct CodexSessionTrackingTests {
 
         #expect(liveRecord.shouldRestoreToLiveState)
         #expect(!demoRecord.shouldRestoreToLiveState)
+        #expect(!completedLiveRecord.shouldRestoreToLiveState)
         #expect(!legacyMockRecord.shouldRestoreToLiveState)
         #expect(!debugScenarioRecord.shouldRestoreToLiveState)
     }

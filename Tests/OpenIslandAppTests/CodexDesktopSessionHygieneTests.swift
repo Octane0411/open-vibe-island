@@ -34,6 +34,49 @@ struct CodexDesktopSessionHygieneTests {
     }
 
     @Test
+    func completedDesktopThreadIsExcludedFromStartupRestoration() {
+        let record = CodexTrackedSessionRecord(
+            sessionID: "019f2afd-e6fd-7e11-bdd4-945caba06867",
+            title: "Codex · UHCLregistrationbot",
+            origin: .live,
+            attachmentState: .stale,
+            summary: "Turn completed.",
+            phase: .completed,
+            updatedAt: Date(timeIntervalSince1970: 45_000),
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "UHCLregistrationbot",
+                paneTitle: "Codex · UHCLregistrationbot",
+                codexThreadID: "019f2afd-e6fd-7e11-bdd4-945caba06867"
+            )
+        )
+
+        #expect(!record.shouldRestoreToLiveState)
+    }
+
+    @Test
+    func completedDesktopThreadIsExcludedFromActiveStatePersistence() {
+        let now = Date(timeIntervalSince1970: 47_000)
+        var completed = AgentSession(
+            id: "019f2afd-e6fd-7e11-bdd4-945caba06867",
+            title: "Codex · UHCLregistrationbot",
+            tool: .codex,
+            origin: .live,
+            phase: .completed,
+            summary: "Turn completed.",
+            updatedAt: now
+        )
+        completed.isCodexAppSession = true
+
+        var running = completed
+        running.id = "active-thread"
+        running.phase = .running
+
+        #expect(!SessionDiscoveryCoordinator.shouldPersistCodexSession(completed, now: now))
+        #expect(SessionDiscoveryCoordinator.shouldPersistCodexSession(running, now: now))
+    }
+
+    @Test
     func completedDesktopThreadIsNotVisibleWhenHostAppIsRunning() {
         let startedAt = Date(timeIntervalSince1970: 50_000)
         var state = SessionState()
