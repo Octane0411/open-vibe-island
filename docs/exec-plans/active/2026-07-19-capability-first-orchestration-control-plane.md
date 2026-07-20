@@ -2,7 +2,7 @@
 
 **Status:** Active
 **Started:** 2026-07-19
-**Current phase:** Phase 1, session truth and observability
+**Current phase:** Phase 2, graph runtime recovery and execution truth
 
 ## Problem
 
@@ -81,6 +81,108 @@ hit a tool-call limit and the researcher timed out, but both retained only `.sta
 and idle tmux shells, so the status command still reports them as running. The native runtime
 must replace this marker-based inference with authoritative process exit, node state, timeout,
 error, retry, and terminal-session evidence.
+
+### Native prototype recovery inventory
+
+Only the portable definition, compatibility executor, and core tests were copied from the
+dirty source worktree. The source worktree, its stash, unrelated translation work, and graph
+UI files were not modified. "Discard" below means do not migrate the type into the
+authoritative runtime; it does not authorize deleting the source-worktree copy.
+
+| Recovered type | Classification | Decision |
+|---|---|---|
+| `AgentTaskNodeState` | replace | Keep for prototype compatibility; `ReconciledExecutionState` owns persisted runtime truth. |
+| `AgentExecutionKind` | amend | Keep for prototype decoding; migrate assignments to adapter-neutral executor registry IDs. |
+| `AgentTaskNode` | replace | It mixes definition, output, timestamps, and process state; split runtime identity and attempts into canonical records. |
+| `AgentTaskEdge` | reusable | Preserve as the declarative dependency primitive until typed ports require a versioned edge schema. |
+| `AgentTaskGraph` | amend | Preserve cycle/dependency behavior as an import and simulation model; remove runtime-state ownership during graph-definition versioning. |
+| `AgentTaskExecutionResult` | amend | Replace its output string with typed artifact and handoff envelopes when executor adapters arrive. |
+| `AgentGraphExecutionError` | reusable | Preserve cycle and stalled-graph diagnostics; extend with structured reasons at the scheduler boundary. |
+| `AgentGraphExecutor` | amend | Retain as a deterministic compatibility/simulation actor; a ledger-backed scheduler will replace it for production execution. |
+| private `NodeOutcome` | discard | Batch-local transport only; authoritative outcomes are `ExecutionEvent` and `ExecutionAttempt` records. |
+| `AgentTaskGraphTests` | reusable | Preserve the recovered dependency, cycle, and bounded-execution regression coverage. |
+
+Prototype candidates inspected but deliberately not recovered in this round:
+
+| Source artifact | Types | Classification and disposition |
+|---|---|---|
+| `SessionGraphCatalog.swift` | `SessionGraphSummary`, `SessionGraphCatalog`, private `GraphIdentity` | amend later; workspace-grouped sessions are a presentation projection, not a DAG. |
+| `AgentGraphPrototypeModel.swift` | `AgentGraphPrototypeModel` | discard after migration; it is a hard-coded timed simulation. |
+| `AgentTaskGraphPrototypeView.swift` | `AgentTaskGraphPrototypeView`, private node card and layout types | amend later against reconciled graph projections; no UI recovery in this task. |
+| `IslandGraphCatalogView.swift` | `IslandGraphCatalogView`, private row type | amend later to consume real graph runs instead of workspace groupings. |
+| `SessionGraphWindowView.swift` | `SessionGraphWindowView`, private canvas, node, layout, and edge types | amend later; visual topology is useful but inferred sequential edges are not authoritative. |
+| `SessionGraphWindowController.swift` | `SessionGraphWindowController` | reusable later as window lifecycle infrastructure. |
+| `LabSettingsPane.swift` | `LabSettingsPane` | discard as the graph-runtime owner; future navigation can host the recovered inspector without owning execution. |
+
+### Canonical execution records
+
+All canonical records are provider- and terminal-neutral. Adapter code may inspect tmux,
+process tables, provider storage, or marker files, but it must translate observations into
+these records before reconciliation.
+
+| Model | Authority |
+|---|---|
+| `GraphRun` | Identity and aggregate reconciled state for one execution of a versioned graph. |
+| `GraphNode` | Run-scoped dependency projection, executor registry ID, and latest reconciled node state. |
+| `ExecutionAttempt` | Monotonic retry ordinal, process ownership, lifecycle state, reason, and timing for one node attempt. |
+| `ProcessIdentity` | Opaque host and launch identity, with optional OS process metadata to prevent PID reuse ambiguity. |
+| `ProcessExit` | Adapter observation that an owned process ended; an exit code alone never proves task completion. |
+| `ExecutorHeartbeat` | Time-bounded lease proving that a matching executor instance was recently alive. |
+| `ExecutionEvent` | Ordered explicit lifecycle fact, including business-level completion, failure, interruption, or cancellation. |
+| `ReconciledExecutionState` | Shared state vocabulary: pending, ready, running, completed, failed, interrupted, orphaned, blocked, cancelled. |
+
+`ExecutionReconciliationInput` is the adapter handoff and
+`ExecutionReconciliationResult` is the disposable authoritative projection.
+`GraphExecutionReconciler` is deterministic and side-effect-free: it performs no process
+inspection, file access, clock reads, persistence, command execution, or provider decoding.
+
+### Reconciliation precedence
+
+Attempt evidence is evaluated in this exact order:
+
+1. The latest explicit terminal attempt event wins, ordered by `(sequence, occurredAt, id)`.
+2. A matching process exit without a terminal attempt event yields `interrupted`, including
+   exit code zero; business success requires an explicit completion event.
+3. A matching heartbeat whose lease includes `observedAt` yields `running`.
+4. A persisted or explicitly started running attempt without current evidence yields
+   `orphaned` when it has a recorded process identity.
+5. The same unsupported running claim yields `interrupted` when no process identity can be
+   recovered.
+6. Non-running attempt state is retained when none of the preceding evidence applies.
+
+Node dependency state is then recomputed to a fixed point, followed by run aggregation.
+Input ordering cannot change the result.
+
+| Condition | Attempt/node transition | Downstream/run consequence |
+|---|---|---|
+| explicit completion event | `running -> completed` | dependents can become `ready`; all-complete run becomes `completed` |
+| explicit failure event | `running -> failed` | unstarted dependents become `blocked`; inactive run becomes `failed` |
+| explicit interruption event or process exit | `running -> interrupted` | unstarted dependents become `blocked`; inactive run becomes `interrupted` |
+| stale lease with known process identity | `running -> orphaned` | unstarted dependents become `blocked`; inactive run becomes `orphaned` unless a higher aggregate failure exists |
+| unsupported start with no identity | `running -> interrupted` | unstarted dependents become `blocked` |
+| valid matching heartbeat | persisted state becomes/remains `running` | run remains `running` while active work exists |
+| every dependency completed | `pending/blocked -> ready` | node is eligible for a future scheduler decision |
+| any dependency failed, interrupted, orphaned, cancelled, or blocked | `pending/ready -> blocked` | blocking propagates transitively |
+| dependencies remain active or pending | `ready/blocked -> pending` | no execution is authorized |
+
+### Migration decisions
+
+- Existing `AgentTaskGraph` JSON remains a compatibility/import format, not the persistence
+  schema for live execution.
+- Canonical IDs are opaque strings so adapters can preserve external stable IDs; prototype
+  UUIDs are serialized into strings at the migration boundary.
+- `AgentExecutionKind` maps to an executor registry ID. Core state never switches directly on
+  Qwen, Codex, Ollama, tmux, rollout files, or marker-file concepts.
+- Persisted `running` state is always reconciled before a scheduler or operator surface reads
+  it. A snapshot cannot make itself authoritative.
+- Process and provider adapters emit `ProcessExit`, `ExecutorHeartbeat`, and `ExecutionEvent`
+  evidence. They do not mutate node state.
+- The stale compendium architect/researcher run is committed as an adapter-neutral JSON
+  fixture. It is the restart baseline for interrupted/orphaned recovery and transitive
+  dependency blocking.
+- The next migration boundary is persistence and replay, not a production executor or UI:
+  introduce store/evidence protocols, append-only event storage, and read-time reconciliation
+  before launching models.
 
 ## Target Architecture
 
@@ -248,15 +350,22 @@ recent state transitions; polling cannot inflate metrics; timeline state survive
 
 ### Phase 2: Recover and supervise the graph runtime
 
-- Import the existing native graph model, executor, views, and tests into the feature branch.
-- Replace the simulation-only runner with executor adapters for local Qwen/Ollama and CLI agents.
-- Convert the four-role compendium workflow into a versioned graph fixture with typed handoffs.
-- Add authoritative process ownership, exit capture, timeout, cancellation, retry, and failure
-  propagation so failed nodes cannot remain "running."
-- Emit graph/run/node events into the same ledger and expose graph inspect, logs, metrics,
-  cancel, retry, and resume through a versioned command service and initial CLI.
-- Re-run the failed architect/researcher scenario as a deterministic regression, then complete
-  one supervised graph with at least two local Qwen models.
+- [x] Recover the portable native graph model, compatibility executor, and tests without
+  modifying the original dirty worktree.
+- [x] Inventory every recovered type and explicitly retain, amend, replace, or discard it.
+- [x] Add canonical run, node, attempt, process, heartbeat, exit, event, and reconciled-state
+  records.
+- [x] Implement deterministic side-effect-free execution reconciliation.
+- [x] Commit the stale architect/researcher run as an adapter-neutral fixture and prove
+  interrupted/orphaned recovery plus transitive downstream blocking.
+- [ ] Add append-only execution-event persistence and snapshot repositories behind protocols.
+- [ ] Add process-evidence adapters and reconcile persisted runs on startup and every read.
+- [ ] Add scheduler-owned timeout, cancellation, retry, and failure propagation.
+- [ ] Replace the simulation runner with executor adapters for local models and CLI agents.
+- [ ] Add typed artifacts and handoffs, then supervise a graph with at least two local models.
+- [ ] Expose read-only graph inspect, logs, and metrics through the shared command service.
+- [ ] Add version-checked mutation commands for cancel, retry, and resume only after replay and
+  restart behavior is proven.
 
 ### Phase 3: Usage, inspection, and visual control plane
 
@@ -267,9 +376,6 @@ recent state transitions; polling cannot inflate metrics; timeline state survive
   subagents, logs, metrics, artifacts, handoffs, graph health, and provider usage.
 - Add plans, follow-up/cancel, exports, quick routes, richer permissions, structured questions,
   active/history browsing, and account/model-level usage views.
-- Establish a native liquid-glass visual system using macOS materials, vibrancy, restrained
-  highlights, translucent layering, adaptive contrast, and reduced-transparency fallbacks.
-  Glass styling must improve hierarchy without reducing metric density or legibility.
 
 ### Phase 4: Research and knowledge plane
 
@@ -282,8 +388,8 @@ compendium run with review checkpoints.
 
 Build the agent board, floating widgets, saved layouts, menu-bar controls, local-server
 discovery, fast actions, notifications, budgets, quiet hours, performance controls, and a
-runtime doctor. Apply the liquid-glass system across these surfaces after their information
-architecture is stable.
+runtime doctor. Visual redesign, including a liquid-glass system, is explicitly deferred
+until these surfaces and their information architecture are stable.
 
 ### Phase 6: Frontier/Codex integration and evaluation
 
@@ -293,16 +399,25 @@ for quality, latency, cost, and context growth.
 
 ## Immediate Execution Order
 
-1. Keep completed and dead sessions out of startup, persistence, app-server, and rollout
-   projections; record explicit removal and suppression reasons.
-2. Recover the native graph implementation into this clean branch and make its tests part of
-   the normal suite.
-3. Replace compendium marker inference with graph-run and node state driven by owned processes,
-   exits, heartbeats, timeouts, and artifacts.
-4. Add the first `openisland graph` commands and stream the same state to the native inspector.
-5. Add non-local CLI usage metrics and local Qwen resource metrics as distinct projections.
-6. Apply the liquid-glass visual baseline to the live island and graph inspector, including
-   accessibility fallbacks and screenshot verification.
+1. Add `GraphExecutionStore` and `ProcessEvidenceSource` protocol boundaries, an append-only
+   execution-event store, and a read service that always applies `GraphExecutionReconciler`.
+2. Add restart/replay tests for duplicate events, stale snapshots, mismatched process identity,
+   crashed adapters, and retries with monotonic attempt ordinals.
+3. Implement process-evidence adapters that translate host observations into canonical exits
+   and heartbeat leases without exposing adapter concepts to the core graph model.
+4. Add scheduler policy and executor adapters only after read-time reconciliation and replay
+   are authoritative.
+5. Add read-only graph inspection, logs, and metrics; defer mutation commands until command
+   versioning and idempotency are tested.
+6. Add non-local CLI usage metrics and local-model resource metrics as distinct projections.
+7. Defer all visual redesign, including liquid glass, until orchestration behavior and
+   operator information architecture are stable.
+
+## Progress Log
+
+- `fa64908 feat: recover native graph prototype`
+- `64a2bde feat: add authoritative graph execution state`
+- `6d3aa58 test: add stale compendium runtime fixture`
 
 ## Verification
 
