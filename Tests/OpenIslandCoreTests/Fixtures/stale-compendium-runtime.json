@@ -1,0 +1,149 @@
+{
+  "run": {
+    "id": "dose-regulations-compendium-2026-07-20",
+    "graphID": "dose-regulations-compendium",
+    "state": "running",
+    "nodeIDs": [
+      "architect",
+      "researcher",
+      "graph",
+      "reviewer"
+    ],
+    "createdAt": "2026-07-20T04:25:30Z",
+    "updatedAt": "2026-07-20T04:25:38Z",
+    "startedAt": "2026-07-20T04:25:38Z"
+  },
+  "nodes": [
+    {
+      "id": "architect",
+      "graphRunID": "dose-regulations-compendium-2026-07-20",
+      "title": "Architect",
+      "dependencyNodeIDs": [],
+      "executorID": "local-code-agent",
+      "state": "running",
+      "activeAttemptID": "architect-attempt-1",
+      "updatedAt": "2026-07-20T04:25:38Z"
+    },
+    {
+      "id": "researcher",
+      "graphRunID": "dose-regulations-compendium-2026-07-20",
+      "title": "Researcher",
+      "dependencyNodeIDs": [],
+      "executorID": "local-research-agent",
+      "state": "running",
+      "activeAttemptID": "researcher-attempt-1",
+      "updatedAt": "2026-07-20T04:25:38Z"
+    },
+    {
+      "id": "graph",
+      "graphRunID": "dose-regulations-compendium-2026-07-20",
+      "title": "Graph Builder",
+      "dependencyNodeIDs": [
+        "architect",
+        "researcher"
+      ],
+      "executorID": "local-code-agent",
+      "state": "pending",
+      "updatedAt": "2026-07-20T04:25:38Z"
+    },
+    {
+      "id": "reviewer",
+      "graphRunID": "dose-regulations-compendium-2026-07-20",
+      "title": "Reviewer",
+      "dependencyNodeIDs": [
+        "graph"
+      ],
+      "executorID": "local-review-agent",
+      "state": "pending",
+      "updatedAt": "2026-07-20T04:25:38Z"
+    }
+  ],
+  "attempts": [
+    {
+      "id": "architect-attempt-1",
+      "graphRunID": "dose-regulations-compendium-2026-07-20",
+      "nodeID": "architect",
+      "ordinal": 1,
+      "state": "running",
+      "processIdentity": {
+        "hostID": "local-workstation",
+        "launchID": "architect-launch-1",
+        "startedAt": "2026-07-20T04:25:38Z"
+      },
+      "createdAt": "2026-07-20T04:25:38Z",
+      "updatedAt": "2026-07-20T04:25:38Z",
+      "startedAt": "2026-07-20T04:25:38Z"
+    },
+    {
+      "id": "researcher-attempt-1",
+      "graphRunID": "dose-regulations-compendium-2026-07-20",
+      "nodeID": "researcher",
+      "ordinal": 1,
+      "state": "running",
+      "processIdentity": {
+        "hostID": "local-workstation",
+        "launchID": "researcher-launch-1",
+        "startedAt": "2026-07-20T04:25:38Z"
+      },
+      "createdAt": "2026-07-20T04:25:38Z",
+      "updatedAt": "2026-07-20T04:25:38Z",
+      "startedAt": "2026-07-20T04:25:38Z"
+    }
+  ],
+  "processExits": [
+    {
+      "attemptID": "architect-attempt-1",
+      "processIdentity": {
+        "hostID": "local-workstation",
+        "launchID": "architect-launch-1",
+        "startedAt": "2026-07-20T04:25:38Z"
+      },
+      "observedAt": "2026-07-20T04:25:45Z",
+      "exitCode": 1,
+      "reason": "Execution stopped after reaching its tool-call cap."
+    }
+  ],
+  "heartbeats": [
+    {
+      "attemptID": "architect-attempt-1",
+      "processIdentity": {
+        "hostID": "local-workstation",
+        "launchID": "architect-launch-1",
+        "startedAt": "2026-07-20T04:25:38Z"
+      },
+      "observedAt": "2026-07-20T04:25:40Z",
+      "validUntil": "2026-07-20T04:27:40Z"
+    },
+    {
+      "attemptID": "researcher-attempt-1",
+      "processIdentity": {
+        "hostID": "local-workstation",
+        "launchID": "researcher-launch-1",
+        "startedAt": "2026-07-20T04:25:38Z"
+      },
+      "observedAt": "2026-07-20T04:25:40Z",
+      "validUntil": "2026-07-20T04:27:40Z"
+    }
+  ],
+  "events": [
+    {
+      "id": "event-architect-started",
+      "graphRunID": "dose-regulations-compendium-2026-07-20",
+      "nodeID": "architect",
+      "attemptID": "architect-attempt-1",
+      "sequence": 1,
+      "occurredAt": "2026-07-20T04:25:38Z",
+      "kind": "attemptStarted"
+    },
+    {
+      "id": "event-researcher-started",
+      "graphRunID": "dose-regulations-compendium-2026-07-20",
+      "nodeID": "researcher",
+      "attemptID": "researcher-attempt-1",
+      "sequence": 2,
+      "occurredAt": "2026-07-20T04:25:38Z",
+      "kind": "attemptStarted"
+    }
+  ],
+  "observedAt": "2026-07-20T05:30:00Z"
+}

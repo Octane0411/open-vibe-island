@@ -55,7 +55,10 @@ let package = Package(
         ),
         .testTarget(
             name: "OpenIslandCoreTests",
-            dependencies: ["OpenIslandCore"]
+            dependencies: ["OpenIslandCore"],
+            resources: [
+                .copy("Fixtures"),
+            ]
         ),
         .testTarget(
             name: "OpenIslandAppTests",
