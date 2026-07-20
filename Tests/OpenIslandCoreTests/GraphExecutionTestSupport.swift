@@ -1,4 +1,5 @@
 import Foundation
+import XCTest
 @testable import OpenIslandCore
 
 let graphTestTime = Date(timeIntervalSince1970: 30_000)
@@ -138,5 +139,17 @@ struct StaticProcessEvidenceSource: ProcessEvidenceSource {
         for request: GraphProcessEvidenceRequest
     ) async -> GraphProcessEvidenceOutcome {
         outcome
+    }
+}
+
+func XCTAssertThrowsErrorAsync<T>(
+    _ expression: () async throws -> T,
+    verify: (Error) -> Void = { _ in }
+) async {
+    do {
+        _ = try await expression()
+        XCTFail("Expected expression to throw.")
+    } catch {
+        verify(error)
     }
 }

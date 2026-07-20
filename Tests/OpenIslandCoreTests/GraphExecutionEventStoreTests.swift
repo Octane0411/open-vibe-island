@@ -196,15 +196,3 @@ final class GraphExecutionEventStoreTests: XCTestCase {
         )
     }
 }
-
-private func XCTAssertThrowsErrorAsync<T>(
-    _ expression: () async throws -> T,
-    verify: (Error) -> Void = { _ in }
-) async {
-    do {
-        _ = try await expression()
-        XCTFail("Expected expression to throw.")
-    } catch {
-        verify(error)
-    }
-}
