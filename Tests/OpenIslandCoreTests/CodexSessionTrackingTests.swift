@@ -791,7 +791,11 @@ struct CodexSessionTrackingTests {
                     "content": [
                         [
                             "type": "input_text",
-                            "text": "# AGENTS.md instructions for /tmp/repo\n\n<INSTRUCTIONS>\nRepository guide\n</INSTRUCTIONS>",
+                            "text": "<recommended_plugins>\nHere is a list of plugins that are available but not installed.\n\n- Example (example@openai-curated-remote)\n</recommended_plugins>",
+                        ],
+                        [
+                            "type": "input_text",
+                            "text": "# AGENTS.md instructions\n\n<INSTRUCTIONS>\nRepository guide\n</INSTRUCTIONS>",
                         ],
                         [
                             "type": "input_text",

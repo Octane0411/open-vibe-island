@@ -824,6 +824,50 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func mergeDiscoveredCodexSessionsRepairsCachedContextualPrompt() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "codex-session",
+                    title: "Codex · open-island",
+                    tool: .codex,
+                    origin: .live,
+                    attachmentState: .stale,
+                    phase: .completed,
+                    summary: "Recovered from registry",
+                    updatedAt: now.addingTimeInterval(-60),
+                    codexMetadata: CodexSessionMetadata(
+                        transcriptPath: "/tmp/codex.jsonl",
+                        initialUserPrompt: "<recommended_plugins>stale contextual metadata</recommended_plugins>"
+                    )
+                ),
+            ]
+        )
+
+        let merged = model.discovery.mergeDiscoveredSessions([
+            AgentSession(
+                id: "codex-session",
+                title: "Codex · open-island",
+                tool: .codex,
+                origin: .live,
+                attachmentState: .stale,
+                phase: .running,
+                summary: "Recovered from transcript",
+                updatedAt: now,
+                codexMetadata: CodexSessionMetadata(
+                    transcriptPath: "/tmp/codex.jsonl",
+                    initialUserPrompt: "Fix the Codex session title."
+                )
+            ),
+        ])
+
+        #expect(merged.count == 1)
+        #expect(merged.first?.codexMetadata?.initialUserPrompt == "Fix the Codex session title.")
+    }
+
+    @Test
     func mergeDiscoveredClaudeSessionsPreservesRegistryJumpTargetAndAddsTranscriptMetadata() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()

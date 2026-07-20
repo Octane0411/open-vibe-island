@@ -1360,11 +1360,12 @@ public enum CodexRolloutReducer {
     }
 
     private static func isInjectedPromptBlock(_ text: String) -> Bool {
-        text.hasPrefix("# AGENTS.md instructions for ")
+        text.hasPrefix("# AGENTS.md instructions")
             || text.hasPrefix("<environment_context>")
             || text.hasPrefix("<permissions instructions>")
             || text.hasPrefix("<collaboration_mode>")
             || text.hasPrefix("<skills_instructions>")
+            || text.hasPrefix("<recommended_plugins>")
     }
 
     private static func clipped(_ value: String?, limit: Int = 110) -> String? {
