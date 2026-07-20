@@ -4,7 +4,7 @@ import XCTest
 
 final class StaleCompendiumRuntimeFixtureTests: XCTestCase {
     func testStaleCompendiumRunReconcilesWithoutLiveProcessClaims() throws {
-        let input = try loadFixture()
+        let input = try loadStaleCompendiumFixture()
 
         let result = GraphExecutionReconciler.reconcile(input)
         let attemptStates = Dictionary(
@@ -32,22 +32,5 @@ final class StaleCompendiumRuntimeFixtureTests: XCTestCase {
         XCTAssertEqual(nodeStates["reviewer"], .blocked)
         XCTAssertEqual(result.run.state, .interrupted)
         XCTAssertFalse(result.nodes.contains { $0.state == .running })
-    }
-
-    private func loadFixture() throws -> ExecutionReconciliationInput {
-        let url = try XCTUnwrap(
-            Bundle.module.url(
-                forResource: "stale-compendium-runtime",
-                withExtension: "json",
-                subdirectory: "Fixtures"
-            )
-        )
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-
-        return try decoder.decode(
-            ExecutionReconciliationInput.self,
-            from: Data(contentsOf: url)
-        )
     }
 }

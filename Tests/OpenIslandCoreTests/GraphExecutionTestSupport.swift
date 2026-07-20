@@ -132,6 +132,46 @@ func graphTestProcessObserved(
     )
 }
 
+func graphTestSnapshot(
+    for projection: GraphExecutionProjection,
+    schemaVersion: Int = GraphExecutionSchema.snapshotVersion,
+    streamVersion: UInt64? = nil,
+    graphDefinitionDigest: GraphContentDigest? = nil
+) -> GraphExecutionSnapshot {
+    GraphExecutionSnapshot(
+        schemaVersion: schemaVersion,
+        runID: projection.runID,
+        streamVersion: streamVersion ?? projection.streamVersion,
+        graphDefinitionVersion: projection.graphDefinitionVersion!,
+        graphDefinitionDigest: graphDefinitionDigest
+            ?? projection.graphDefinitionDigest!,
+        projectedState: projection,
+        createdAt: graphTestTime.addingTimeInterval(100),
+        createdBy: graphTestProducer,
+        checkpointNamespace: projection.checkpointNamespace,
+        namedCheckpoints: projection.namedCheckpoints
+    )
+}
+
+func loadStaleCompendiumFixture()
+    throws -> ExecutionReconciliationInput
+{
+    let url = try XCTUnwrap(
+        Bundle.module.url(
+            forResource: "stale-compendium-runtime",
+            withExtension: "json",
+            subdirectory: "Fixtures"
+        )
+    )
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+
+    return try decoder.decode(
+        ExecutionReconciliationInput.self,
+        from: Data(contentsOf: url)
+    )
+}
+
 struct StaticProcessEvidenceSource: ProcessEvidenceSource {
     let outcome: GraphProcessEvidenceOutcome
 
