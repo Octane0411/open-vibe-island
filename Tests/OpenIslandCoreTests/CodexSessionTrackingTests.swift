@@ -791,7 +791,11 @@ struct CodexSessionTrackingTests {
                     "content": [
                         [
                             "type": "input_text",
-                            "text": "# AGENTS.md instructions for /tmp/repo\n\n<INSTRUCTIONS>\nRepository guide\n</INSTRUCTIONS>",
+                            "text": "<recommended_plugins>\nHere is a list of plugins that are available but not installed.\n\n- Example (example@openai-curated-remote)\n</recommended_plugins>",
+                        ],
+                        [
+                            "type": "input_text",
+                            "text": "# AGENTS.md instructions\n\n<INSTRUCTIONS>\nRepository guide\n</INSTRUCTIONS>",
                         ],
                         [
                             "type": "input_text",
@@ -1172,6 +1176,7 @@ struct CodexSessionTrackingTests {
 
         let discovery = CodexRolloutDiscovery(
             rootURL: rootURL,
+            sessionIndexURL: rootURL.appendingPathComponent("missing-session-index.jsonl"),
             fileManager: .default,
             maxAge: 86_400,
             maxFiles: 10
@@ -1195,6 +1200,86 @@ struct CodexSessionTrackingTests {
         #expect(records.first?.codexMetadata?.currentCommandPreview == nil)
         #expect(records.first?.origin == .live)
         #expect(records.first?.attachmentState == .stale)
+    }
+
+    @Test
+    func codexRolloutDiscoveryUsesLatestIndexedThreadName() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-title-\(UUID().uuidString)", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/04/02", isDirectory: true)
+        let rolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-named.jsonl")
+        let sessionIndexURL = rootURL.appendingPathComponent("session_index.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let rollout = [
+            sessionMetaLine(
+                sessionID: "codex-session-named",
+                timestamp: "2026-04-02T04:03:44.000Z",
+                cwd: "/Users/wangruobing/Personal/had"
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": "Fix the session title.",
+                ]
+            ),
+        ]
+        try rollout.joined(separator: "\n").appending("\n")
+            .write(to: rolloutURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: rolloutURL.path)
+
+        let indexLines = [
+            #"{"id":"other-session","thread_name":"Ignore me","updated_at":"2026-04-02T04:03:40Z"}"#,
+            #"{"id":"codex-session-named","thread_name":"Old title","updated_at":"2026-04-02T04:03:41Z"}"#,
+            #"{"id":"codex-session-named","thread_name":"   ","updated_at":"2026-04-02T04:03:42Z"}"#,
+            "not valid JSON",
+            #"{"id":"codex-session-named","thread_name":"Open-Vibe-Island Fork","updated_at":"2026-04-02T04:03:43Z"}"#,
+        ]
+        // Deliberately omit the trailing newline to cover an index mid-flush.
+        try indexLines.joined(separator: "\n")
+            .write(to: sessionIndexURL, atomically: true, encoding: .utf8)
+
+        let discovery = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            sessionIndexURL: sessionIndexURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10
+        )
+
+        let records = discovery.discoverRecentSessions(now: now)
+
+        #expect(records.count == 1)
+        #expect(records.first?.title == "Codex · Open-Vibe-Island Fork")
+        #expect(records.first?.codexMetadata?.threadName == "Open-Vibe-Island Fork")
+        #expect(records.first?.codexMetadata?.initialUserPrompt == "Fix the session title.")
+    }
+
+    @Test
+    func codexRolloutDiscoveryReadsThreadNamesWithoutParsingRollouts() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-index-only-\(UUID().uuidString)", isDirectory: true)
+        let sessionIndexURL = rootURL.appendingPathComponent("session_index.jsonl")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        try #"{"id":"codex-session","thread_name":"Handle test prompt"}"#
+            .write(to: sessionIndexURL, atomically: true, encoding: .utf8)
+
+        let discovery = CodexRolloutDiscovery(
+            rootURL: rootURL.appendingPathComponent("missing-rollouts"),
+            sessionIndexURL: sessionIndexURL
+        )
+
+        #expect(
+            discovery.indexedThreadNames(for: ["codex-session"])
+                == ["codex-session": "Handle test prompt"]
+        )
     }
 
     @Test
@@ -1263,6 +1348,7 @@ struct CodexSessionTrackingTests {
 
         let discovery = CodexRolloutDiscovery(
             rootURL: rootURL,
+            sessionIndexURL: rootURL.appendingPathComponent("missing-session-index.jsonl"),
             fileManager: .default,
             maxAge: 86_400,
             maxFiles: 10
@@ -1314,6 +1400,7 @@ struct CodexSessionTrackingTests {
 
         let discovery = CodexRolloutDiscovery(
             rootURL: rootURL,
+            sessionIndexURL: rootURL.appendingPathComponent("missing-session-index.jsonl"),
             fileManager: .default,
             maxAge: 86_400,
             maxFiles: 10
