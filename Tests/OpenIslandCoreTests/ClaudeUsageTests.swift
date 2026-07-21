@@ -4,6 +4,39 @@ import Testing
 
 struct ClaudeUsageTests {
     @Test
+    func fileChangeMonitorDeliversWritesWithoutContentPolling() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-file-monitor-\(UUID().uuidString)", isDirectory: true)
+        let fileURL = rootURL.appendingPathComponent("usage.json")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: fileURL)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let signal = LockedSignal()
+        let monitor = FileChangeMonitor(
+            urls: [fileURL],
+            queueLabel: "app.openisland.tests.file-monitor"
+        ) { changedURL in
+            if changedURL == fileURL {
+                signal.fire()
+            }
+        }
+        monitor.start()
+
+        let handle = try FileHandle(forWritingTo: fileURL)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data("\n".utf8))
+        try handle.close()
+
+        for _ in 0..<50 where !signal.didFire {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        monitor.stop()
+
+        #expect(signal.didFire)
+    }
+
+    @Test
     func claudeUsageLoaderParsesCachedRateLimits() throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("open-island-claude-usage-\(UUID().uuidString)", isDirectory: true)
@@ -393,6 +426,19 @@ struct ClaudeUsageTests {
 
         #expect(finalStatus.managedStatusLineIsWrapper)
         #expect(finalStatus.managedStatusLineInstalled)
+    }
+}
+
+private final class LockedSignal: @unchecked Sendable {
+    private let lock = NSLock()
+    private var fired = false
+
+    var didFire: Bool {
+        lock.withLock { fired }
+    }
+
+    func fire() {
+        lock.withLock { fired = true }
     }
 }
 

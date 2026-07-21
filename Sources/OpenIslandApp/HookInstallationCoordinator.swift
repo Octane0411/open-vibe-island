@@ -94,6 +94,21 @@ final class HookInstallationCoordinator {
     private var claudeUsageMonitorTask: Task<Void, Never>?
 
     @ObservationIgnored
+    private var claudeUsageFileMonitor: FileChangeMonitor?
+
+    @ObservationIgnored
+    private var claudeUsageRefreshTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var claudeUsageSnapshotRefreshTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var claudeUsageFileRefreshTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var lastClaudeUsageFileRefreshDate: Date = .distantPast
+
+    @ObservationIgnored
     private var codexUsageMonitorTask: Task<Void, Never>?
 
     @ObservationIgnored
@@ -745,9 +760,11 @@ final class HookInstallationCoordinator {
     }
 
     func refreshClaudeUsageState() {
+        guard claudeUsageRefreshTask == nil else { return }
         let manager = claudeStatusLineInstallationManager
-        Task { [weak self] in
+        claudeUsageRefreshTask = Task { [weak self] in
             guard let self else { return }
+            defer { self.claudeUsageRefreshTask = nil }
 
             do {
                 let usageState = try await Task.detached(priority: .utility) {
@@ -768,6 +785,43 @@ final class HookInstallationCoordinator {
             } catch {
                 self.onStatusMessage?("Failed to read Claude usage state: \(error.localizedDescription)")
             }
+        }
+    }
+
+    private func refreshClaudeUsageSnapshot() {
+        guard claudeUsageSnapshotRefreshTask == nil else { return }
+        claudeUsageSnapshotRefreshTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.claudeUsageSnapshotRefreshTask = nil }
+
+            do {
+                self.claudeUsageSnapshot = try await Task.detached(priority: .utility) {
+                    try ClaudeUsageLoader.load()
+                }.value
+            } catch {
+                self.onStatusMessage?("Failed to read Claude usage snapshot: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func scheduleClaudeUsageSnapshotRefresh() {
+        guard claudeUsageFileRefreshTask == nil else { return }
+
+        let minimumInterval: TimeInterval = 5
+        let elapsed = Date.now.timeIntervalSince(lastClaudeUsageFileRefreshDate)
+        let delay = max(0, minimumInterval - elapsed)
+        claudeUsageFileRefreshTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            if delay > 0 {
+                do {
+                    try await Task.sleep(for: .milliseconds(Int(delay * 1_000)))
+                } catch {
+                    return
+                }
+            }
+            self.claudeUsageFileRefreshTask = nil
+            self.lastClaudeUsageFileRefreshDate = .now
+            self.refreshClaudeUsageSnapshot()
         }
     }
 
@@ -1072,12 +1126,28 @@ final class HookInstallationCoordinator {
     func startClaudeUsageMonitoringIfNeeded() {
         guard claudeUsageMonitorTask == nil else { return }
 
+        let fileMonitor = FileChangeMonitor(
+            urls: [ClaudeUsageLoader.defaultCacheURL, ClaudeUsageLoader.legacyCacheURL],
+            queueLabel: "app.openisland.claude-usage-file-monitor"
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.scheduleClaudeUsageSnapshotRefresh()
+            }
+        }
+        claudeUsageFileMonitor = fileMonitor
+        fileMonitor.start()
+
         claudeUsageMonitorTask = Task { @MainActor [weak self] in
             guard let self else { return }
 
             while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(60))
+                } catch {
+                    return
+                }
+                self.claudeUsageFileMonitor?.refresh()
                 self.refreshClaudeUsageState()
-                try? await Task.sleep(for: .seconds(5))
             }
         }
     }

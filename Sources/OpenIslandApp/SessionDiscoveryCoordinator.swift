@@ -361,7 +361,16 @@ final class SessionDiscoveryCoordinator {
     }
 
     @ObservationIgnored
-    private var lastCodexAppRescanDate: Date = .distantPast
+    private var nextCodexAppRescanDate: Date = .distantFuture
+
+    @ObservationIgnored
+    private var codexAppRescanBackoffStep = 0
+
+    @ObservationIgnored
+    private var codexAppRescanTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var isCodexAppServerConnected = false
 
     @ObservationIgnored
     private var lastCodexAppReconcileDate: Date = .distantPast
@@ -370,9 +379,18 @@ final class SessionDiscoveryCoordinator {
 
     /// Periodic Codex.app maintenance: reconcile archived/stalled sessions and
     /// re-scan rollouts. Throttled internally; safe to call from the 2s monitor loop.
-    func maintainCodexAppSessionsIfNeeded() {
+    func maintainCodexAppSessionsIfNeeded(appServerConnected: Bool) {
         reconcileStalledCodexAppSessionsIfNeeded()
-        rediscoverCodexAppSessionsIfNeeded()
+        rediscoverCodexAppSessionsIfNeeded(appServerConnected: appServerConnected)
+    }
+
+    func updateCodexAppRunning(_ isRunning: Bool, now: Date = .now) {
+        codexAppRescanTask?.cancel()
+        codexAppRescanBackoffStep = 0
+        isCodexAppServerConnected = false
+        nextCodexAppRescanDate = isRunning
+            ? now.addingTimeInterval(Self.codexAppRediscoveryDelay(afterBackoffStep: 0))
+            : .distantFuture
     }
 
     func refreshCodexRolloutTracking() {
@@ -414,21 +432,85 @@ final class SessionDiscoveryCoordinator {
 
     /// Re-scan `~/.codex/sessions/` for rollout files not yet tracked.
     /// Called periodically when Codex.app is running as a fallback when
-    /// the app-server connection is unavailable.  Throttled to at most
-    /// once per 10 seconds.
-    func rediscoverCodexAppSessionsIfNeeded() {
-        let now = Date.now
-        guard now.timeIntervalSince(lastCodexAppRescanDate) >= 10 else { return }
-        lastCodexAppRescanDate = now
-
-        let discovery = codexRolloutDiscovery
-        Task.detached(priority: .utility) { [weak self] in
-            let discovered = discovery.discoverRecentSessions()
-            guard !discovered.isEmpty else { return }
-            await MainActor.run { [weak self] in
-                self?.applyCodexAppRediscovery(discovered)
-            }
+    /// the app-server connection is unavailable. Successful fallback scans
+    /// back off from 30 to 60 and then 120 seconds.
+    func rediscoverCodexAppSessionsIfNeeded(appServerConnected: Bool, now: Date = .now) {
+        if appServerConnected {
+            isCodexAppServerConnected = true
+            codexAppRescanTask?.cancel()
+            codexAppRescanBackoffStep = 0
+            nextCodexAppRescanDate = .distantFuture
+            return
         }
+
+        if isCodexAppServerConnected {
+            isCodexAppServerConnected = false
+            codexAppRescanBackoffStep = 0
+            nextCodexAppRescanDate = now.addingTimeInterval(
+                Self.codexAppRediscoveryDelay(afterBackoffStep: 0)
+            )
+        }
+
+        guard Self.shouldRunCodexAppRediscovery(
+            appServerConnected: appServerConnected,
+            scanInFlight: codexAppRescanTask != nil,
+            now: now,
+            nextScanAt: nextCodexAppRescanDate
+        ) else { return }
+
+        // Reserve the slot before leaving the main actor so repeated 2-second
+        // maintenance ticks cannot start overlapping filesystem scans.
+        nextCodexAppRescanDate = .distantFuture
+        let backoffStep = codexAppRescanBackoffStep
+        let discovery = codexRolloutDiscovery
+        codexAppRescanTask = Task.detached(priority: .utility) { [weak self] in
+            let discovered = discovery.discoverRecentSessions()
+            let wasCancelled = Task.isCancelled
+            await self?.finishCodexAppRediscovery(
+                records: wasCancelled ? [] : discovered,
+                backoffStep: backoffStep,
+                completedAt: .now,
+                wasCancelled: wasCancelled
+            )
+        }
+    }
+
+    static func shouldRunCodexAppRediscovery(
+        appServerConnected: Bool,
+        scanInFlight: Bool,
+        now: Date,
+        nextScanAt: Date
+    ) -> Bool {
+        !appServerConnected && !scanInFlight && now >= nextScanAt
+    }
+
+    static func codexAppRediscoveryDelay(afterBackoffStep step: Int) -> TimeInterval {
+        switch step {
+        case ..<1: 30
+        case 1: 60
+        default: 120
+        }
+    }
+
+    private func finishCodexAppRediscovery(
+        records: [CodexTrackedSessionRecord],
+        backoffStep: Int,
+        completedAt: Date,
+        wasCancelled: Bool
+    ) {
+        codexAppRescanTask = nil
+
+        guard !wasCancelled, !isCodexAppServerConnected else {
+            return
+        }
+
+        if !records.isEmpty {
+            applyCodexAppRediscovery(records)
+        }
+        nextCodexAppRescanDate = completedAt.addingTimeInterval(
+            Self.codexAppRediscoveryDelay(afterBackoffStep: backoffStep)
+        )
+        codexAppRescanBackoffStep = min(backoffStep + 1, 2)
     }
 
     private func applyCodexAppRediscovery(_ records: [CodexTrackedSessionRecord]) {

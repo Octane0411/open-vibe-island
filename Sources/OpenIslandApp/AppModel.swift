@@ -717,6 +717,7 @@ final class AppModel {
         }
         monitoring.onCodexAppRunningChanged = { [weak self] isRunning in
             guard let self else { return }
+            self.discovery.updateCodexAppRunning(isRunning)
             if isRunning {
                 self.codexAppServer.ensureConnected()
             } else {
@@ -724,7 +725,10 @@ final class AppModel {
             }
         }
         monitoring.onCodexAppMaintenanceTick = { [weak self] in
-            self?.discovery.maintainCodexAppSessionsIfNeeded()
+            guard let self else { return }
+            self.discovery.maintainCodexAppSessionsIfNeeded(
+                appServerConnected: self.codexAppServer.hasLiveConnection
+            )
         }
         refreshOverlayDisplayConfiguration()
         hasFinishedInit = true
