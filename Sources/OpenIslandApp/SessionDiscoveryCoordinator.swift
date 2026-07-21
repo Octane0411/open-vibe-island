@@ -55,13 +55,19 @@ final class SessionDiscoveryCoordinator {
     let codexRolloutWatcher = CodexRolloutWatcher()
 
     @ObservationIgnored
-    private let codexRolloutDiscovery = CodexRolloutDiscovery()
+    private let codexRolloutDiscovery: CodexRolloutDiscovery
 
     @ObservationIgnored
     private let claudeTranscriptDiscovery = ClaudeTranscriptDiscovery()
 
     @ObservationIgnored
     private var codexSessionPersistenceTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var codexAppRediscoveryTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var codexThreadNameMonitoringTask: Task<Void, Never>?
 
     @ObservationIgnored
     private var claudeSessionPersistenceTask: Task<Void, Never>?
@@ -217,14 +223,27 @@ final class SessionDiscoveryCoordinator {
     private func merge(discovered: AgentSession, into existing: AgentSession) -> AgentSession {
         var merged = existing
         let discoveredIsNewer = discovered.updatedAt >= existing.updatedAt
+        let discoveredThreadName = discovered.codexMetadata?.threadName?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
 
         if discoveredIsNewer {
-            merged.title = discovered.title
+            // Keep a persisted Codex thread name when the index is temporarily
+            // unavailable and discovery falls back to the workspace title.
+            if existing.codexMetadata?.threadName == nil {
+                merged.title = discovered.title
+            }
             merged.phase = discovered.phase
             merged.summary = discovered.summary
             merged.updatedAt = discovered.updatedAt
             merged.permissionRequest = discovered.permissionRequest
             merged.questionPrompt = discovered.questionPrompt
+        }
+
+        // Codex generates and renames thread titles asynchronously, so a
+        // newly discovered title must win even when the session has newer
+        // live activity that should otherwise remain untouched.
+        if let discoveredThreadName, !discoveredThreadName.isEmpty {
+            merged.title = discovered.title
         }
 
         merged.origin = existing.origin ?? discovered.origin
@@ -321,6 +340,7 @@ final class SessionDiscoveryCoordinator {
 
         let merged = CodexSessionMetadata(
             transcriptPath: discovered.transcriptPath ?? existing.transcriptPath,
+            threadName: discovered.threadName ?? existing.threadName,
             initialUserPrompt: discovered.initialUserPrompt ?? existing.initialUserPrompt ?? discovered.lastUserPrompt,
             lastUserPrompt: discovered.lastUserPrompt ?? existing.lastUserPrompt,
             lastAssistantMessage: discovered.lastAssistantMessage ?? existing.lastAssistantMessage,
@@ -365,6 +385,10 @@ final class SessionDiscoveryCoordinator {
 
     @ObservationIgnored
     private var lastCodexAppReconcileDate: Date = .distantPast
+
+    init(codexRolloutDiscovery: CodexRolloutDiscovery = CodexRolloutDiscovery()) {
+        self.codexRolloutDiscovery = codexRolloutDiscovery
+    }
 
     // MARK: - Rollout tracking
 
@@ -412,26 +436,114 @@ final class SessionDiscoveryCoordinator {
 
     // MARK: - Codex.app periodic re-discovery
 
+    /// Keeps the small Codex title index in sync independently from rollout
+    /// discovery. A rollout can be hundreds of megabytes, while the index is
+    /// tiny and is the authoritative source for generated and renamed titles.
+    func startCodexThreadNameMonitoringIfNeeded() {
+        guard codexThreadNameMonitoringTask == nil else { return }
+
+        let discovery = codexRolloutDiscovery
+        codexThreadNameMonitoringTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                let sessionIDs = Set(self.state.sessions.lazy.filter { $0.tool == .codex }.map(\.id))
+
+                if !sessionIDs.isEmpty {
+                    let threadNames = await Task.detached(priority: .utility) {
+                        discovery.indexedThreadNames(for: sessionIDs)
+                    }.value
+                    guard !Task.isCancelled else { return }
+                    self.applyCodexThreadNames(threadNames)
+                }
+
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    func stopCodexThreadNameMonitoring() {
+        codexThreadNameMonitoringTask?.cancel()
+        codexThreadNameMonitoringTask = nil
+    }
+
     /// Re-scan `~/.codex/sessions/` for rollout files not yet tracked.
     /// Called periodically when Codex.app is running as a fallback when
     /// the app-server connection is unavailable.  Throttled to at most
     /// once per 10 seconds.
     func rediscoverCodexAppSessionsIfNeeded() {
         let now = Date.now
-        guard now.timeIntervalSince(lastCodexAppRescanDate) >= 10 else { return }
+        guard now.timeIntervalSince(lastCodexAppRescanDate) >= 10,
+              codexAppRediscoveryTask == nil else { return }
         lastCodexAppRescanDate = now
 
         let discovery = codexRolloutDiscovery
-        Task.detached(priority: .utility) { [weak self] in
+        let trackedSessionIDs = Set(state.sessions.lazy.filter { $0.tool == .codex }.map(\.id))
+        codexAppRediscoveryTask = Task.detached(priority: .utility) { [weak self] in
+            let indexedThreadNames = discovery.indexedThreadNames(for: trackedSessionIDs)
+            if !indexedThreadNames.isEmpty {
+                _ = await MainActor.run { [weak self] in
+                    self?.applyCodexThreadNames(indexedThreadNames)
+                }
+            }
+
             let discovered = discovery.discoverRecentSessions()
-            guard !discovered.isEmpty else { return }
             await MainActor.run { [weak self] in
-                self?.applyCodexAppRediscovery(discovered)
+                guard let self else { return }
+                if !discovered.isEmpty {
+                    self.applyCodexAppRediscovery(discovered)
+                }
+                self.codexAppRediscoveryTask = nil
             }
         }
     }
 
-    private func applyCodexAppRediscovery(_ records: [CodexTrackedSessionRecord]) {
+    func mergingCodexThreadNames(
+        _ threadNamesBySessionID: [String: String],
+        into sessions: [AgentSession]
+    ) -> [AgentSession] {
+        var merged = sessions
+
+        for index in merged.indices where merged[index].tool == .codex {
+            guard let rawThreadName = threadNamesBySessionID[merged[index].id] else {
+                continue
+            }
+
+            let threadName = rawThreadName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !threadName.isEmpty else { continue }
+
+            merged[index].title = "Codex · \(threadName)"
+            var metadata = merged[index].codexMetadata ?? CodexSessionMetadata()
+            metadata.threadName = threadName
+            merged[index].codexMetadata = metadata
+        }
+
+        return merged
+    }
+
+    @discardableResult
+    func applyCodexThreadNames(_ threadNamesBySessionID: [String: String]) -> Int {
+        let sessionsWithUpdatedTitles = mergingCodexThreadNames(
+            threadNamesBySessionID,
+            into: state.sessions
+        )
+        let updatedTitleCount = zip(state.sessions, sessionsWithUpdatedTitles).count { existing, updated in
+            existing.title != updated.title
+                || existing.codexMetadata?.threadName != updated.codexMetadata?.threadName
+        }
+        guard updatedTitleCount > 0 else { return 0 }
+
+        state = SessionState(sessions: sessionsWithUpdatedTitles)
+        scheduleCodexSessionPersistence()
+        onStatusMessage?("Updated \(updatedTitleCount) Codex session title(s).")
+        return updatedTitleCount
+    }
+
+    func applyCodexAppRediscovery(_ records: [CodexTrackedSessionRecord]) {
+        let indexedThreadNames = Dictionary(uniqueKeysWithValues: records.compactMap { record in
+            record.codexMetadata?.threadName.map { (record.sessionID, $0) }
+        })
+        let updatedTitleCount = applyCodexThreadNames(indexedThreadNames)
+
         let existingIDs = Set(state.sessions.filter { $0.tool == .codex }.map(\.id))
         let existingPaths = Set(state.sessions.compactMap(\.codexMetadata?.transcriptPath))
 
@@ -439,7 +551,7 @@ final class SessionDiscoveryCoordinator {
             !existingIDs.contains(record.sessionID)
                 && (record.codexMetadata?.transcriptPath).map { !existingPaths.contains($0) } ?? true
         }
-        guard !newRecords.isEmpty else { return }
+        guard !newRecords.isEmpty || updatedTitleCount > 0 else { return }
 
         let newSessions = newRecords.map { record -> AgentSession in
             var session = record.session
@@ -463,11 +575,15 @@ final class SessionDiscoveryCoordinator {
             return session
         }
 
-        let merged = mergeDiscoveredSessions(newSessions)
-        state = SessionState(sessions: merged)
+        if !newSessions.isEmpty {
+            let merged = mergeDiscoveredSessions(newSessions)
+            state = SessionState(sessions: merged)
+        }
         refreshCodexRolloutTracking()
         scheduleCodexSessionPersistence()
-        onStatusMessage?("Discovered \(newRecords.count) new Codex.app session(s) via rollout re-scan.")
+        if !newRecords.isEmpty {
+            onStatusMessage?("Discovered \(newRecords.count) new Codex.app session(s) via rollout re-scan.")
+        }
     }
 
     // MARK: - Persistence scheduling

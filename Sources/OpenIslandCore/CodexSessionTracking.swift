@@ -3,6 +3,7 @@ import Foundation
 
 public struct CodexSessionMetadata: Equatable, Codable, Sendable {
     public var transcriptPath: String?
+    public var threadName: String?
     public var initialUserPrompt: String?
     public var lastUserPrompt: String?
     public var lastAssistantMessage: String?
@@ -11,6 +12,7 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
 
     public init(
         transcriptPath: String? = nil,
+        threadName: String? = nil,
         initialUserPrompt: String? = nil,
         lastUserPrompt: String? = nil,
         lastAssistantMessage: String? = nil,
@@ -18,6 +20,7 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
         currentCommandPreview: String? = nil
     ) {
         self.transcriptPath = transcriptPath
+        self.threadName = threadName
         self.initialUserPrompt = initialUserPrompt
         self.lastUserPrompt = lastUserPrompt
         self.lastAssistantMessage = lastAssistantMessage
@@ -27,6 +30,7 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
 
     public var isEmpty: Bool {
         transcriptPath == nil
+            && threadName == nil
             && initialUserPrompt == nil
             && lastUserPrompt == nil
             && lastAssistantMessage == nil
@@ -368,18 +372,26 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             .appendingPathComponent(".codex/sessions", isDirectory: true)
     }
 
+    public static var defaultSessionIndexURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/session_index.jsonl")
+    }
+
     private let rootURL: URL
+    private let sessionIndexURL: URL
     private let fileManager: FileManager
     private let maxAge: TimeInterval
     private let maxFiles: Int
 
     public init(
         rootURL: URL = CodexRolloutDiscovery.defaultRootURL,
+        sessionIndexURL: URL = CodexRolloutDiscovery.defaultSessionIndexURL,
         fileManager: FileManager = .default,
         maxAge: TimeInterval = 86_400,
         maxFiles: Int = 40
     ) {
         self.rootURL = rootURL
+        self.sessionIndexURL = sessionIndexURL
         self.fileManager = fileManager
         self.maxAge = maxAge
         self.maxFiles = maxFiles
@@ -444,6 +456,8 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
 
             recordsByID[record.sessionID] = record
         }
+
+        applyIndexedThreadNames(to: &recordsByID)
 
         return recordsByID.values.sorted { lhs, rhs in
             if lhs.updatedAt == rhs.updatedAt {
@@ -522,6 +536,65 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
     }
 
     private static let streamingChunkSize = 64 * 1_024
+
+    private func applyIndexedThreadNames(
+        to recordsByID: inout [String: CodexTrackedSessionRecord]
+    ) {
+        for (sessionID, threadName) in indexedThreadNames(for: Set(recordsByID.keys)) {
+            guard var record = recordsByID[sessionID] else { continue }
+            record.title = "Codex · \(threadName)"
+
+            var metadata = record.codexMetadata ?? CodexSessionMetadata()
+            metadata.threadName = threadName
+            record.codexMetadata = metadata
+            recordsByID[sessionID] = record
+        }
+    }
+
+    /// Reads only Codex's append-only title index. This deliberately avoids
+    /// parsing rollout transcripts so live title updates stay fast even when
+    /// a recent session has a very large JSONL file.
+    public func indexedThreadNames(for sessionIDs: Set<String>) -> [String: String] {
+        guard !sessionIDs.isEmpty,
+              let fileHandle = try? FileHandle(forReadingFrom: sessionIndexURL) else {
+            return [:]
+        }
+        defer { try? fileHandle.close() }
+
+        var namesByID: [String: String] = [:]
+        var buffer = Data()
+
+        let processLine: (String) -> Void = { line in
+            guard let object = codexRolloutJSONObject(for: line),
+                  let sessionID = object["id"] as? String,
+                  sessionIDs.contains(sessionID),
+                  let rawThreadName = object["thread_name"] as? String else {
+                return
+            }
+
+            let threadName = rawThreadName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !threadName.isEmpty else { return }
+
+            // Codex's session index is append-only. Scanning forward and
+            // replacing the value mirrors its batch lookup: the last valid,
+            // non-empty name for each thread wins.
+            namesByID[sessionID] = threadName
+        }
+
+        while let chunk = try? fileHandle.read(upToCount: Self.streamingChunkSize),
+              !chunk.isEmpty {
+            buffer.append(chunk)
+            for line in extractCompleteLines(from: &buffer) {
+                processLine(line)
+            }
+        }
+
+        if !buffer.isEmpty {
+            processLine(String(decoding: buffer, as: UTF8.self))
+        }
+
+        return namesByID
+    }
 
     private func parseSessionMeta(fromLine line: String) -> SessionMeta? {
         guard let object = codexRolloutJSONObject(for: line),

@@ -2021,6 +2021,7 @@ public final class BridgeServer: @unchecked Sendable {
     ) -> CodexSessionMetadata {
         CodexSessionMetadata(
             transcriptPath: update.transcriptPath ?? existing?.transcriptPath,
+            threadName: update.threadName ?? existing?.threadName,
             initialUserPrompt: existing?.initialUserPrompt ?? update.initialUserPrompt ?? update.lastUserPrompt,
             lastUserPrompt: update.lastUserPrompt ?? existing?.lastUserPrompt,
             lastAssistantMessage: update.lastAssistantMessage ?? existing?.lastAssistantMessage,

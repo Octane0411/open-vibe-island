@@ -868,6 +868,120 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func rediscoveredCodexThreadNamePreservesNewerLiveState() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        var existing = AgentSession(
+            id: "codex-session",
+            title: "Codex · had",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Current live summary",
+            updatedAt: now,
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "had",
+                paneTitle: "Codex · had",
+                workingDirectory: "/tmp/had",
+                codexThreadID: "codex-session"
+            ),
+            codexMetadata: CodexSessionMetadata(
+                transcriptPath: "/tmp/codex.jsonl",
+                initialUserPrompt: "Current initial prompt",
+                lastUserPrompt: "Current latest prompt",
+                lastAssistantMessage: "Current assistant response"
+            )
+        )
+        existing.isCodexAppSession = true
+        existing.isProcessAlive = true
+
+        let model = AppModel()
+        let merged = model.discovery.mergingCodexThreadNames(
+            ["codex-session": "Open-Vibe-Island Fork"],
+            into: [existing]
+        )
+
+        #expect(merged.count == 1)
+        #expect(merged.first?.title == "Codex · Open-Vibe-Island Fork")
+        #expect(merged.first?.codexMetadata?.threadName == "Open-Vibe-Island Fork")
+        #expect(merged.first?.phase == .running)
+        #expect(merged.first?.summary == "Current live summary")
+        #expect(merged.first?.updatedAt == now)
+        #expect(merged.first?.attachmentState == .attached)
+        #expect(merged.first?.jumpTarget?.workspaceName == "had")
+        #expect(merged.first?.codexMetadata?.initialUserPrompt == "Current initial prompt")
+        #expect(merged.first?.codexMetadata?.lastUserPrompt == "Current latest prompt")
+        #expect(merged.first?.codexMetadata?.lastAssistantMessage == "Current assistant response")
+        #expect(merged.first?.isCodexAppSession == true)
+        #expect(merged.first?.isProcessAlive == true)
+    }
+
+    @Test
+    func codexAppServerPublishesGeneratedThreadNameImmediately() {
+        let coordinator = CodexAppServerCoordinator()
+        var receivedSessionID: String?
+        var receivedThreadName: String?
+        coordinator.onThreadNameUpdated = { sessionID, threadName in
+            receivedSessionID = sessionID
+            receivedThreadName = threadName
+        }
+
+        coordinator.handleNotification(
+            .threadNameUpdated(
+                threadId: "codex-session",
+                name: "  Handle test prompt  "
+            )
+        )
+
+        #expect(receivedSessionID == "codex-session")
+        #expect(receivedThreadName == "Handle test prompt")
+    }
+
+    @Test
+    func codexThreadNameMonitoringDoesNotWaitForRolloutDiscovery() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-title-monitor-\(UUID().uuidString)", isDirectory: true)
+        let indexURL = rootURL.appendingPathComponent("session_index.jsonl")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        try #"{"id":"codex-session","thread_name":"Handle test prompt"}"#
+            .write(to: indexURL, atomically: true, encoding: .utf8)
+
+        let discovery = SessionDiscoveryCoordinator(
+            codexRolloutDiscovery: CodexRolloutDiscovery(
+                rootURL: rootURL.appendingPathComponent("missing-rollouts"),
+                sessionIndexURL: indexURL
+            )
+        )
+        defer { discovery.stopCodexThreadNameMonitoring() }
+
+        var state = SessionState(sessions: [
+            AgentSession(
+                id: "codex-session",
+                title: "Codex · hi",
+                tool: .codex,
+                origin: .live,
+                attachmentState: .attached,
+                phase: .completed,
+                summary: "Done",
+                updatedAt: .now,
+                codexMetadata: CodexSessionMetadata(initialUserPrompt: "hi this is a test")
+            ),
+        ])
+        discovery.stateAccessor = { state }
+        discovery.stateUpdater = { state = $0 }
+
+        discovery.startCodexThreadNameMonitoringIfNeeded()
+        for _ in 0..<20 where state.session(id: "codex-session")?.codexMetadata?.threadName == nil {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+
+        #expect(state.session(id: "codex-session")?.title == "Codex · Handle test prompt")
+        #expect(state.session(id: "codex-session")?.codexMetadata?.threadName == "Handle test prompt")
+    }
+
+    @Test
     func mergeDiscoveredClaudeSessionsPreservesRegistryJumpTargetAndAddsTranscriptMetadata() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
