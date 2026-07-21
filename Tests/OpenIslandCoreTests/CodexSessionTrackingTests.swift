@@ -1325,6 +1325,158 @@ struct CodexSessionTrackingTests {
         #expect(records.first?.sessionID == "codex-session-trailing")
         #expect(records.first?.codexMetadata?.lastAssistantMessage == "Final line without newline.")
     }
+
+    @Test
+    func codexRolloutDiscoveryFoldsAppendedLinesIncrementally() throws {
+        // Pins the incremental re-scan path: a second discovery pass over a
+        // grown rollout must only fold the appended bytes, and a trailing
+        // partial line from the first pass must fold exactly once when a
+        // later append completes it. If the cached offset drifted into the
+        // partial line, the completed line would be parsed from mid-line
+        // garbage and the final assistant message would be lost.
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-incr-\(UUID().uuidString)", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/04/02", isDirectory: true)
+        let rolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-incremental.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let completedLine = rolloutLine(
+            timestamp: "2026-04-02T04:03:46.000Z",
+            type: "event_msg",
+            payload: [
+                "type": "agent_message",
+                "message": "Message completed across two scans.",
+            ]
+        )
+        let splitIndex = completedLine.index(completedLine.startIndex, offsetBy: completedLine.count / 2)
+
+        let firstChunk = [
+            sessionMetaLine(
+                sessionID: "codex-session-incremental",
+                timestamp: "2026-04-02T04:03:44.000Z",
+                cwd: "/Users/wangruobing/Personal/open-island"
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": "Start the incremental scan.",
+                ]
+            ),
+        ].joined(separator: "\n").appending("\n").appending(String(completedLine[..<splitIndex]))
+
+        try firstChunk.write(to: rolloutURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: rolloutURL.path)
+
+        let discovery = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10
+        )
+
+        let firstPass = discovery.discoverRecentSessions(now: now)
+        #expect(firstPass.count == 1)
+        #expect(firstPass.first?.codexMetadata?.lastUserPrompt == "Start the incremental scan.")
+
+        let secondChunk = String(completedLine[splitIndex...]).appending("\n").appending(
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:47.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": "Appended after the first scan.",
+                ]
+            )
+        ).appending("\n")
+
+        let appendHandle = try FileHandle(forWritingTo: rolloutURL)
+        try appendHandle.seekToEnd()
+        try appendHandle.write(contentsOf: Data(secondChunk.utf8))
+        try appendHandle.close()
+        let later = now.addingTimeInterval(30)
+        try FileManager.default.setAttributes([.modificationDate: later], ofItemAtPath: rolloutURL.path)
+
+        let secondPass = discovery.discoverRecentSessions(now: later)
+        let freshPass = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10
+        ).discoverRecentSessions(now: later)
+
+        #expect(secondPass.count == 1)
+        #expect(secondPass.first?.sessionID == "codex-session-incremental")
+        #expect(secondPass.first?.codexMetadata?.lastAssistantMessage == "Message completed across two scans.")
+        #expect(secondPass.first?.codexMetadata?.lastUserPrompt == "Appended after the first scan.")
+        #expect(secondPass.first == freshPass.first)
+    }
+
+    @Test
+    func codexRolloutDiscoveryReparsesTruncatedRollouts() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-trunc-\(UUID().uuidString)", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/04/02", isDirectory: true)
+        let rolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-truncated.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let longLines = [
+            sessionMetaLine(
+                sessionID: "codex-session-truncated",
+                timestamp: "2026-04-02T04:03:44.000Z",
+                cwd: "/Users/wangruobing/Personal/open-island"
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": "Original content before truncation, padded to outsize the rewrite. \(String(repeating: "x", count: 512))",
+                ]
+            ),
+        ]
+        try longLines.joined(separator: "\n").appending("\n").write(to: rolloutURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: rolloutURL.path)
+
+        let discovery = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10
+        )
+        _ = discovery.discoverRecentSessions(now: now)
+
+        let rewrittenLines = [
+            sessionMetaLine(
+                sessionID: "codex-session-truncated",
+                timestamp: "2026-04-02T04:03:44.000Z",
+                cwd: "/Users/wangruobing/Personal/open-island"
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:48.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": "Rewritten after truncation.",
+                ]
+            ),
+        ]
+        try rewrittenLines.joined(separator: "\n").appending("\n").write(to: rolloutURL, atomically: true, encoding: .utf8)
+        let later = now.addingTimeInterval(30)
+        try FileManager.default.setAttributes([.modificationDate: later], ofItemAtPath: rolloutURL.path)
+
+        let records = discovery.discoverRecentSessions(now: later)
+
+        #expect(records.count == 1)
+        #expect(records.first?.codexMetadata?.lastAssistantMessage == "Rewritten after truncation.")
+    }
 }
 
 private final class MissingTranscriptFileManager: FileManager, @unchecked Sendable {
