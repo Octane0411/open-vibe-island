@@ -93,7 +93,7 @@ final class OverlayUICoordinator {
 
     func restoreDisplayPreference() {
         overlayDisplaySelectionID = UserDefaults.standard.string(
-            forKey: "overlay.display.preference"
+            forKey: Self.displayPreferenceKey
         ) ?? OverlayDisplayOption.automaticID
     }
 
@@ -258,12 +258,23 @@ final class OverlayUICoordinator {
     // MARK: - Display configuration
 
     func refreshOverlayDisplayConfiguration() {
-        overlayDisplayOptions = overlayPanelController.availableDisplayOptions()
+        let connectedOptions = overlayPanelController.availableDisplayOptions()
+        let resolution = OverlayDisplayResolver.reconcileDisplaySelection(
+            selectionID: overlayDisplaySelectionID,
+            rememberedName: rememberedOverlayDisplayName,
+            connectedOptions: connectedOptions
+        )
 
-        let validSelectionIDs = Set(overlayDisplayOptions.map(\.id))
-        if !validSelectionIDs.contains(overlayDisplaySelectionID) {
-            overlayDisplaySelectionID = OverlayDisplayOption.automaticID
-            return
+        overlayDisplayOptions = resolution.options
+
+        // Keep the friendly name of the chosen display fresh while it is
+        // connected, so the picker can still label it after a later disconnect.
+        // The preference itself is never reset here — a temporarily unplugged
+        // display must survive so the island returns to it on reconnect.
+        if resolution.isPreferredDisplayConnected,
+           overlayDisplaySelectionID != OverlayDisplayOption.automaticID,
+           let name = connectedOptions.first(where: { $0.id == overlayDisplaySelectionID })?.title {
+            rememberOverlayDisplayName(name)
         }
 
         refreshOverlayPlacement()
@@ -509,12 +520,29 @@ final class OverlayUICoordinator {
 
     // MARK: - Persistence
 
+    private static let displayPreferenceKey = "overlay.display.preference"
+    private static let displayPreferenceNameKey = "overlay.display.preference.name"
+
+    private var rememberedOverlayDisplayName: String? {
+        UserDefaults.standard.string(forKey: Self.displayPreferenceNameKey)
+    }
+
+    private func rememberOverlayDisplayName(_ name: String) {
+        UserDefaults.standard.set(name, forKey: Self.displayPreferenceNameKey)
+    }
+
     private func persistOverlayDisplayPreference() {
         let defaults = UserDefaults.standard
         if overlayDisplaySelectionID == OverlayDisplayOption.automaticID {
-            defaults.removeObject(forKey: "overlay.display.preference")
+            defaults.removeObject(forKey: Self.displayPreferenceKey)
+            defaults.removeObject(forKey: Self.displayPreferenceNameKey)
         } else {
-            defaults.set(overlayDisplaySelectionID, forKey: "overlay.display.preference")
+            defaults.set(overlayDisplaySelectionID, forKey: Self.displayPreferenceKey)
+            // Capture the friendly name at pick time; the chosen display is
+            // connected now, so it is present in the current option list.
+            if let name = overlayDisplayOptions.first(where: { $0.id == overlayDisplaySelectionID })?.title {
+                defaults.set(name, forKey: Self.displayPreferenceNameKey)
+            }
         }
     }
 }
