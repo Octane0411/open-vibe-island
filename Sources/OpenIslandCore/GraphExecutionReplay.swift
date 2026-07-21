@@ -763,6 +763,11 @@ public enum GraphExecutionProjector {
         switch event.payload {
         case let .schedulerEvaluationRecorded(payload):
             evaluationID = payload.evaluationID
+            if !projection.scheduling.evaluations.contains(where: {
+                $0.evaluationID == payload.evaluationID
+            }) {
+                projection.scheduling.evaluations.append(payload)
+            }
 
         case let .nodeBecameRunnable(payload),
              let .nodeSchedulingDeferred(payload):
@@ -1266,6 +1271,9 @@ public enum GraphExecutionProjector {
                 return $0.sequence < $1.sequence
             }
             return $0.id < $1.id
+        }
+        projection.scheduling.evaluations.sort {
+            $0.evaluationID < $1.evaluationID
         }
         projection.scheduling.claims.sort {
             if $0.claim.nodeID != $1.claim.nodeID {

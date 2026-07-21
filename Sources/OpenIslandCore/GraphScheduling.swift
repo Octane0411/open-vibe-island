@@ -475,6 +475,7 @@ public struct GraphSchedulingRecord:
 }
 
 public struct GraphSchedulingProjection: Equatable, Codable, Sendable {
+    public var evaluations: [GraphSchedulerEvaluationPayload]
     public var records: [GraphSchedulingRecord]
     public var claims: [GraphExecutorClaimRecord]
     public var retries: [GraphRetryRecord]
@@ -483,6 +484,7 @@ public struct GraphSchedulingProjection: Equatable, Codable, Sendable {
     public var completedEvaluationIDs: [String]
 
     public init(
+        evaluations: [GraphSchedulerEvaluationPayload] = [],
         records: [GraphSchedulingRecord] = [],
         claims: [GraphExecutorClaimRecord] = [],
         retries: [GraphRetryRecord] = [],
@@ -490,6 +492,7 @@ public struct GraphSchedulingProjection: Equatable, Codable, Sendable {
         timeouts: [GraphTimeoutDecision] = [],
         completedEvaluationIDs: [String] = []
     ) {
+        self.evaluations = evaluations
         self.records = records
         self.claims = claims
         self.retries = retries
