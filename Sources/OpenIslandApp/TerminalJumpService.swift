@@ -530,8 +530,10 @@ struct TerminalJumpService {
         }
         guard connectResult == 0 else { return false }
 
-        // Send JSON-RPC surface.focus request.
-        let request = #"{"jsonrpc":"2.0","method":"surface.focus","params":{"surface_id":"\#(surfaceID)"},"id":1}"# + "\n"
+        // Send JSON-RPC surface.focus request. `select:true` makes the surface
+        // the visible tab in its pane and brings its workspace forward — without
+        // it, cmux only moves focus and leaves whatever tab/workspace was showing.
+        let request = #"{"jsonrpc":"2.0","method":"surface.focus","params":{"surface_id":"\#(surfaceID)","select":true},"id":1}"# + "\n"
         let sent = request.withCString { ptr in
             Darwin.send(fd, ptr, strlen(ptr), 0)
         }
