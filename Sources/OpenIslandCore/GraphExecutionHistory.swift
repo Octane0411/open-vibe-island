@@ -365,9 +365,27 @@ public enum GraphExecutionEventType: String, CaseIterable, Codable, Sendable {
     case humanInterruptRequested = "graph.human_interrupt.requested"
     case humanInterruptResolved = "graph.human_interrupt.resolved"
     case runTerminalStateRecorded = "graph.run.terminal.recorded"
+    case schedulerEvaluationRecorded = "graph.scheduler.evaluation.recorded"
+    case nodeBecameRunnable = "graph.scheduler.node.runnable"
+    case nodeSchedulingDeferred = "graph.scheduler.node.deferred"
+    case executorClaimRequested = "graph.executor.claim.requested"
+    case executorClaimGranted = "graph.executor.claim.granted"
+    case executorClaimRejected = "graph.executor.claim.rejected"
+    case executorLeaseRenewed = "graph.executor.lease.renewed"
+    case executorLeaseExpired = "graph.executor.lease.expired"
+    case executorClaimReleased = "graph.executor.claim.released"
+    case retryScheduled = "graph.scheduler.retry.scheduled"
+    case retrySuppressed = "graph.scheduler.retry.suppressed"
+    case cancellationRequested = "graph.cancellation.requested"
+    case cancellationAcknowledged = "graph.cancellation.acknowledged"
+    case timeoutDeclared = "graph.scheduler.timeout.declared"
+    case dependencyFailurePropagated =
+        "graph.scheduler.dependency_failure.propagated"
+    case schedulerCycleCompleted = "graph.scheduler.cycle.completed"
 }
 
 public enum GraphExecutionEventFactClass: String, Codable, Sendable {
+    case decision
     case command
     case observation
     case declaration
@@ -439,6 +457,24 @@ public enum GraphExecutionEventPayload: Equatable, Sendable {
     case humanInterruptRequested(GraphHumanInterruptRequestedPayload)
     case humanInterruptResolved(GraphHumanInterruptResolvedPayload)
     case runTerminalStateRecorded(GraphRunTerminalPayload)
+    case schedulerEvaluationRecorded(GraphSchedulerEvaluationPayload)
+    case nodeBecameRunnable(GraphNodeSchedulingPayload)
+    case nodeSchedulingDeferred(GraphNodeSchedulingPayload)
+    case executorClaimRequested(GraphExecutorClaimPayload)
+    case executorClaimGranted(GraphExecutorClaimPayload)
+    case executorClaimRejected(GraphExecutorClaimRejectedPayload)
+    case executorLeaseRenewed(GraphExecutorClaimPayload)
+    case executorLeaseExpired(GraphExecutorLeaseEndedPayload)
+    case executorClaimReleased(GraphExecutorLeaseEndedPayload)
+    case retryScheduled(GraphRetryScheduledPayload)
+    case retrySuppressed(GraphRetrySuppressedPayload)
+    case cancellationRequested(GraphCancellationRequestedPayload)
+    case cancellationAcknowledged(GraphCancellationAcknowledgedPayload)
+    case timeoutDeclared(GraphTimeoutDeclaredPayload)
+    case dependencyFailurePropagated(
+        GraphDependencyFailurePropagatedPayload
+    )
+    case schedulerCycleCompleted(GraphSchedulerCycleCompletedPayload)
     case unknown(eventType: String, body: GraphJSONValue)
 
     public var eventType: String {
@@ -475,6 +511,38 @@ public enum GraphExecutionEventPayload: Equatable, Sendable {
             GraphExecutionEventType.humanInterruptResolved.rawValue
         case .runTerminalStateRecorded:
             GraphExecutionEventType.runTerminalStateRecorded.rawValue
+        case .schedulerEvaluationRecorded:
+            GraphExecutionEventType.schedulerEvaluationRecorded.rawValue
+        case .nodeBecameRunnable:
+            GraphExecutionEventType.nodeBecameRunnable.rawValue
+        case .nodeSchedulingDeferred:
+            GraphExecutionEventType.nodeSchedulingDeferred.rawValue
+        case .executorClaimRequested:
+            GraphExecutionEventType.executorClaimRequested.rawValue
+        case .executorClaimGranted:
+            GraphExecutionEventType.executorClaimGranted.rawValue
+        case .executorClaimRejected:
+            GraphExecutionEventType.executorClaimRejected.rawValue
+        case .executorLeaseRenewed:
+            GraphExecutionEventType.executorLeaseRenewed.rawValue
+        case .executorLeaseExpired:
+            GraphExecutionEventType.executorLeaseExpired.rawValue
+        case .executorClaimReleased:
+            GraphExecutionEventType.executorClaimReleased.rawValue
+        case .retryScheduled:
+            GraphExecutionEventType.retryScheduled.rawValue
+        case .retrySuppressed:
+            GraphExecutionEventType.retrySuppressed.rawValue
+        case .cancellationRequested:
+            GraphExecutionEventType.cancellationRequested.rawValue
+        case .cancellationAcknowledged:
+            GraphExecutionEventType.cancellationAcknowledged.rawValue
+        case .timeoutDeclared:
+            GraphExecutionEventType.timeoutDeclared.rawValue
+        case .dependencyFailurePropagated:
+            GraphExecutionEventType.dependencyFailurePropagated.rawValue
+        case .schedulerCycleCompleted:
+            GraphExecutionEventType.schedulerCycleCompleted.rawValue
         case let .unknown(eventType, _):
             eventType
         }
@@ -482,7 +550,10 @@ public enum GraphExecutionEventPayload: Equatable, Sendable {
 
     public var factClass: GraphExecutionEventFactClass {
         switch self {
-        case .attemptStarting, .humanInterruptRequested:
+        case .attemptStarting,
+             .humanInterruptRequested,
+             .executorClaimRequested,
+             .cancellationRequested:
             .command
         case .processIdentityObserved,
              .heartbeatObserved,
@@ -494,8 +565,23 @@ public enum GraphExecutionEventPayload: Equatable, Sendable {
              .attemptOrphaned,
              .attemptCancelled,
              .humanInterruptResolved,
-             .runTerminalStateRecorded:
+             .runTerminalStateRecorded,
+             .executorClaimGranted,
+             .executorClaimRejected,
+             .executorLeaseRenewed,
+             .executorLeaseExpired,
+             .executorClaimReleased,
+             .cancellationAcknowledged,
+             .schedulerCycleCompleted:
             .declaration
+        case .schedulerEvaluationRecorded,
+             .nodeBecameRunnable,
+             .nodeSchedulingDeferred,
+             .retryScheduled,
+             .retrySuppressed,
+             .timeoutDeclared,
+             .dependencyFailurePropagated:
+            .decision
         case .runCreated,
              .nodeRegistered,
              .attemptCreated,
@@ -733,6 +819,72 @@ extension GraphExecutionEventEnvelope: Codable {
             return .runTerminalStateRecorded(
                 try GraphRunTerminalPayload(from: decoder)
             )
+        case .schedulerEvaluationRecorded:
+            return .schedulerEvaluationRecorded(
+                try GraphSchedulerEvaluationPayload(from: decoder)
+            )
+        case .nodeBecameRunnable:
+            return .nodeBecameRunnable(
+                try GraphNodeSchedulingPayload(from: decoder)
+            )
+        case .nodeSchedulingDeferred:
+            return .nodeSchedulingDeferred(
+                try GraphNodeSchedulingPayload(from: decoder)
+            )
+        case .executorClaimRequested:
+            return .executorClaimRequested(
+                try GraphExecutorClaimPayload(from: decoder)
+            )
+        case .executorClaimGranted:
+            return .executorClaimGranted(
+                try GraphExecutorClaimPayload(from: decoder)
+            )
+        case .executorClaimRejected:
+            return .executorClaimRejected(
+                try GraphExecutorClaimRejectedPayload(from: decoder)
+            )
+        case .executorLeaseRenewed:
+            return .executorLeaseRenewed(
+                try GraphExecutorClaimPayload(from: decoder)
+            )
+        case .executorLeaseExpired:
+            return .executorLeaseExpired(
+                try GraphExecutorLeaseEndedPayload(from: decoder)
+            )
+        case .executorClaimReleased:
+            return .executorClaimReleased(
+                try GraphExecutorLeaseEndedPayload(from: decoder)
+            )
+        case .retryScheduled:
+            return .retryScheduled(
+                try GraphRetryScheduledPayload(from: decoder)
+            )
+        case .retrySuppressed:
+            return .retrySuppressed(
+                try GraphRetrySuppressedPayload(from: decoder)
+            )
+        case .cancellationRequested:
+            return .cancellationRequested(
+                try GraphCancellationRequestedPayload(from: decoder)
+            )
+        case .cancellationAcknowledged:
+            return .cancellationAcknowledged(
+                try GraphCancellationAcknowledgedPayload(from: decoder)
+            )
+        case .timeoutDeclared:
+            return .timeoutDeclared(
+                try GraphTimeoutDeclaredPayload(from: decoder)
+            )
+        case .dependencyFailurePropagated:
+            return .dependencyFailurePropagated(
+                try GraphDependencyFailurePropagatedPayload(
+                    from: decoder
+                )
+            )
+        case .schedulerCycleCompleted:
+            return .schedulerCycleCompleted(
+                try GraphSchedulerCycleCompletedPayload(from: decoder)
+            )
         case nil:
             return .unknown(
                 eventType: eventType,
@@ -777,6 +929,38 @@ extension GraphExecutionEventEnvelope: Codable {
         case let .humanInterruptResolved(value):
             try value.encode(to: encoder)
         case let .runTerminalStateRecorded(value):
+            try value.encode(to: encoder)
+        case let .schedulerEvaluationRecorded(value):
+            try value.encode(to: encoder)
+        case let .nodeBecameRunnable(value):
+            try value.encode(to: encoder)
+        case let .nodeSchedulingDeferred(value):
+            try value.encode(to: encoder)
+        case let .executorClaimRequested(value):
+            try value.encode(to: encoder)
+        case let .executorClaimGranted(value):
+            try value.encode(to: encoder)
+        case let .executorClaimRejected(value):
+            try value.encode(to: encoder)
+        case let .executorLeaseRenewed(value):
+            try value.encode(to: encoder)
+        case let .executorLeaseExpired(value):
+            try value.encode(to: encoder)
+        case let .executorClaimReleased(value):
+            try value.encode(to: encoder)
+        case let .retryScheduled(value):
+            try value.encode(to: encoder)
+        case let .retrySuppressed(value):
+            try value.encode(to: encoder)
+        case let .cancellationRequested(value):
+            try value.encode(to: encoder)
+        case let .cancellationAcknowledged(value):
+            try value.encode(to: encoder)
+        case let .timeoutDeclared(value):
+            try value.encode(to: encoder)
+        case let .dependencyFailurePropagated(value):
+            try value.encode(to: encoder)
+        case let .schedulerCycleCompleted(value):
             try value.encode(to: encoder)
         case let .unknown(_, body):
             try body.encode(to: encoder)

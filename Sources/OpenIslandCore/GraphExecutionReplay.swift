@@ -64,6 +64,19 @@ public enum GraphExecutionReplayError: Error, Equatable, Sendable {
     case interruptIDCollision(requestID: String)
     case missingInterrupt(requestID: String)
     case interruptAlreadyResolved(requestID: String)
+    case claimIDCollision(claimID: String)
+    case duplicateActiveClaim(nodeID: String, attemptOrdinal: Int)
+    case missingClaim(claimID: String)
+    case claimGenerationMismatch(
+        claimID: String,
+        expected: UInt64,
+        actual: UInt64
+    )
+    case retryOrdinalConflict(nodeID: String, ordinal: Int)
+    case cancellationIDCollision(requestID: String)
+    case missingCancellation(requestID: String)
+    case cancellationAlreadyAcknowledged(requestID: String)
+    case timeoutIDCollision(timeoutID: String)
     case invalidSnapshot(String)
 }
 
@@ -114,6 +127,24 @@ extension GraphExecutionReplayError: LocalizedError {
             "Human interrupt \(requestID) does not exist."
         case let .interruptAlreadyResolved(requestID):
             "Human interrupt \(requestID) is already resolved."
+        case let .claimIDCollision(claimID):
+            "Executor claim ID \(claimID) has contradictory content."
+        case let .duplicateActiveClaim(nodeID, ordinal):
+            "Node \(nodeID) attempt \(ordinal) already has an active claim."
+        case let .missingClaim(claimID):
+            "Executor claim \(claimID) does not exist."
+        case let .claimGenerationMismatch(claimID, expected, actual):
+            "Executor claim \(claimID) expected generation \(expected), found \(actual)."
+        case let .retryOrdinalConflict(nodeID, ordinal):
+            "Node \(nodeID) has contradictory retry state for attempt \(ordinal)."
+        case let .cancellationIDCollision(requestID):
+            "Cancellation request ID \(requestID) has contradictory content."
+        case let .missingCancellation(requestID):
+            "Cancellation request \(requestID) does not exist."
+        case let .cancellationAlreadyAcknowledged(requestID):
+            "Cancellation request \(requestID) was already acknowledged."
+        case let .timeoutIDCollision(timeoutID):
+            "Timeout decision ID \(timeoutID) has contradictory content."
         case let .invalidSnapshot(message):
             "Invalid graph execution snapshot: \(message)"
         }
@@ -178,6 +209,7 @@ public struct GraphExecutionProjection: Equatable, Codable, Sendable {
     public var parentRunID: String?
     public var parentCheckpoint: GraphCheckpointReference?
     public var namedCheckpoints: [GraphCheckpointReference]
+    public var scheduling: GraphSchedulingProjection
 
     public init(
         runID: String,
@@ -196,7 +228,9 @@ public struct GraphExecutionProjection: Equatable, Codable, Sendable {
         checkpointNamespace: String = "root",
         parentRunID: String? = nil,
         parentCheckpoint: GraphCheckpointReference? = nil,
-        namedCheckpoints: [GraphCheckpointReference] = []
+        namedCheckpoints: [GraphCheckpointReference] = [],
+        scheduling: GraphSchedulingProjection =
+            GraphSchedulingProjection()
     ) {
         self.runID = runID
         self.streamVersion = streamVersion
@@ -215,6 +249,7 @@ public struct GraphExecutionProjection: Equatable, Codable, Sendable {
         self.parentRunID = parentRunID
         self.parentCheckpoint = parentCheckpoint
         self.namedCheckpoints = namedCheckpoints
+        self.scheduling = scheduling
     }
 }
 
@@ -694,9 +729,301 @@ public enum GraphExecutionProjector {
                 )
             )
 
+        case .schedulerEvaluationRecorded,
+             .nodeBecameRunnable,
+             .nodeSchedulingDeferred,
+             .executorClaimRequested,
+             .executorClaimGranted,
+             .executorClaimRejected,
+             .executorLeaseRenewed,
+             .executorLeaseExpired,
+             .executorClaimReleased,
+             .retryScheduled,
+             .retrySuppressed,
+             .cancellationRequested,
+             .cancellationAcknowledged,
+             .timeoutDeclared,
+             .dependencyFailurePropagated,
+             .schedulerCycleCompleted:
+            try applyScheduling(event, projection: &projection)
+
         case .unknown:
             projection.unknownEvents.append(event)
         }
+    }
+
+    private static func applyScheduling(
+        _ event: GraphExecutionEventEnvelope,
+        projection: inout GraphExecutionProjection
+    ) throws {
+        try requireRun(event: event, projection: projection)
+        var evaluationID: String?
+        var reason: GraphSchedulingReasonCode?
+
+        switch event.payload {
+        case let .schedulerEvaluationRecorded(payload):
+            evaluationID = payload.evaluationID
+
+        case let .nodeBecameRunnable(payload),
+             let .nodeSchedulingDeferred(payload):
+            _ = try requireNodeID(event)
+            evaluationID = payload.evaluationID
+            reason = payload.reason
+
+        case let .executorClaimRequested(payload):
+            try validateClaimEnvelope(payload.claim, event: event)
+            reason = payload.reason
+
+        case let .executorClaimGranted(payload):
+            try validateClaimEnvelope(payload.claim, event: event)
+            let claim = payload.claim
+
+            if let existing = projection.scheduling.claims.first(
+                where: { $0.claim.id == claim.id }
+            ) {
+                guard existing.claim == claim else {
+                    throw GraphExecutionReplayError.claimIDCollision(
+                        claimID: claim.id
+                    )
+                }
+            } else {
+                guard !projection.scheduling.claims.contains(where: {
+                    $0.claim.nodeID == claim.nodeID
+                        && $0.claim.attemptOrdinal == claim.attemptOrdinal
+                        && $0.status == .active
+                }) else {
+                    throw GraphExecutionReplayError.duplicateActiveClaim(
+                        nodeID: claim.nodeID,
+                        attemptOrdinal: claim.attemptOrdinal
+                    )
+                }
+                projection.scheduling.claims.append(
+                    GraphExecutorClaimRecord(
+                        claim: claim,
+                        statusChangedAt: event.occurredAt,
+                        reason: payload.reason
+                    )
+                )
+            }
+            reason = payload.reason
+
+        case let .executorClaimRejected(payload):
+            _ = try requireNodeID(event)
+            reason = payload.reason
+
+        case let .executorLeaseRenewed(payload):
+            let renewed = payload.claim
+            guard let index = projection.scheduling.claims.firstIndex(
+                where: { $0.claim.id == renewed.id }
+            ) else {
+                throw GraphExecutionReplayError.missingClaim(
+                    claimID: renewed.id
+                )
+            }
+            let current = projection.scheduling.claims[index].claim
+            guard projection.scheduling.claims[index].status == .active,
+                  renewed.runID == current.runID,
+                  renewed.nodeID == current.nodeID,
+                  renewed.attemptOrdinal == current.attemptOrdinal,
+                  renewed.executorID == current.executorID,
+                  renewed.executorCapabilityIdentity
+                    == current.executorCapabilityIdentity,
+                  renewed.hostID == current.hostID,
+                  renewed.grantedSequence == current.grantedSequence,
+                  renewed.leaseGeneration == current.leaseGeneration + 1
+            else {
+                throw GraphExecutionReplayError.claimGenerationMismatch(
+                    claimID: renewed.id,
+                    expected: current.leaseGeneration + 1,
+                    actual: renewed.leaseGeneration
+                )
+            }
+            projection.scheduling.claims[index].claim = renewed
+            projection.scheduling.claims[index].statusChangedAt =
+                event.occurredAt
+            projection.scheduling.claims[index].reason = payload.reason
+            reason = payload.reason
+
+        case let .executorLeaseExpired(payload):
+            try endClaim(
+                payload,
+                status: .expired,
+                at: event.occurredAt,
+                projection: &projection
+            )
+            reason = payload.reason
+
+        case let .executorClaimReleased(payload):
+            try endClaim(
+                payload,
+                status: .released,
+                at: event.occurredAt,
+                projection: &projection
+            )
+            reason = payload.reason
+
+        case let .retryScheduled(payload):
+            let retry = payload.retry
+            guard retry.nodeID == event.nodeID else {
+                throw GraphExecutionReplayError.missingNode(
+                    nodeID: retry.nodeID
+                )
+            }
+            if let existing = projection.scheduling.retries.first(
+                where: {
+                    $0.nodeID == retry.nodeID
+                        && $0.nextAttemptOrdinal
+                            == retry.nextAttemptOrdinal
+                }
+            ) {
+                guard existing == retry else {
+                    throw GraphExecutionReplayError.retryOrdinalConflict(
+                        nodeID: retry.nodeID,
+                        ordinal: retry.nextAttemptOrdinal
+                    )
+                }
+            } else {
+                projection.scheduling.retries.append(retry)
+            }
+            reason = retry.reason
+
+        case let .retrySuppressed(payload):
+            reason = payload.reason
+
+        case let .cancellationRequested(payload):
+            let cancellation = payload.cancellation
+            guard cancellation.runID == event.runID,
+                  cancellation.nodeID == event.nodeID,
+                  cancellation.attemptID == event.attemptID else {
+                throw GraphExecutionReplayError.cancellationIDCollision(
+                    requestID: cancellation.id
+                )
+            }
+            if let existing = projection.scheduling.cancellations.first(
+                where: { $0.id == cancellation.id }
+            ) {
+                guard existing == cancellation else {
+                    throw GraphExecutionReplayError
+                        .cancellationIDCollision(
+                            requestID: cancellation.id
+                        )
+                }
+            } else {
+                projection.scheduling.cancellations.append(cancellation)
+            }
+            reason = .cancellationPending
+
+        case let .cancellationAcknowledged(payload):
+            guard let index = projection.scheduling.cancellations
+                .firstIndex(where: { $0.id == payload.requestID }) else {
+                throw GraphExecutionReplayError.missingCancellation(
+                    requestID: payload.requestID
+                )
+            }
+            guard projection.scheduling.cancellations[index].state
+                    == .requested else {
+                throw GraphExecutionReplayError
+                    .cancellationAlreadyAcknowledged(
+                        requestID: payload.requestID
+                    )
+            }
+            guard projection.scheduling.cancellations[index].claimID
+                    == payload.claimID else {
+                throw GraphExecutionReplayError.claimIDCollision(
+                    claimID: payload.claimID ?? "unclaimed"
+                )
+            }
+            projection.scheduling.cancellations[index].state =
+                .acknowledged
+            projection.scheduling.cancellations[index].acknowledgedAt =
+                payload.acknowledgedAt
+            projection.scheduling.cancellations[index]
+                .acknowledgedByExecutorID = payload.executorID
+            reason = .cancellationAcknowledged
+
+        case let .timeoutDeclared(payload):
+            if let existing = projection.scheduling.timeouts.first(
+                where: { $0.id == payload.timeout.id }
+            ) {
+                guard existing == payload.timeout else {
+                    throw GraphExecutionReplayError.timeoutIDCollision(
+                        timeoutID: payload.timeout.id
+                    )
+                }
+            } else {
+                projection.scheduling.timeouts.append(payload.timeout)
+            }
+            reason = payload.timeout.reason
+
+        case let .dependencyFailurePropagated(payload):
+            evaluationID = payload.evaluationID
+            reason = payload.reason
+
+        case let .schedulerCycleCompleted(payload):
+            evaluationID = payload.evaluationID
+            if !projection.scheduling.completedEvaluationIDs.contains(
+                payload.evaluationID
+            ) {
+                projection.scheduling.completedEvaluationIDs.append(
+                    payload.evaluationID
+                )
+            }
+
+        default:
+            return
+        }
+
+        projection.scheduling.records.append(
+            GraphSchedulingRecord(
+                id: event.id,
+                sequence: event.streamSequence,
+                eventType: event.eventType,
+                factClass: event.factClass,
+                nodeID: event.nodeID,
+                attemptID: event.attemptID,
+                evaluationID: evaluationID,
+                reason: reason,
+                occurredAt: event.occurredAt
+            )
+        )
+    }
+
+    private static func validateClaimEnvelope(
+        _ claim: GraphExecutorClaim,
+        event: GraphExecutionEventEnvelope
+    ) throws {
+        guard claim.runID == event.runID,
+              claim.nodeID == event.nodeID else {
+            throw GraphExecutionReplayError.claimIDCollision(
+                claimID: claim.id
+            )
+        }
+    }
+
+    private static func endClaim(
+        _ payload: GraphExecutorLeaseEndedPayload,
+        status: GraphExecutorClaimStatus,
+        at occurredAt: Date,
+        projection: inout GraphExecutionProjection
+    ) throws {
+        guard let index = projection.scheduling.claims.firstIndex(
+            where: { $0.claim.id == payload.claimID }
+        ) else {
+            throw GraphExecutionReplayError.missingClaim(
+                claimID: payload.claimID
+            )
+        }
+        let claim = projection.scheduling.claims[index].claim
+        guard claim.leaseGeneration == payload.leaseGeneration else {
+            throw GraphExecutionReplayError.claimGenerationMismatch(
+                claimID: payload.claimID,
+                expected: claim.leaseGeneration,
+                actual: payload.leaseGeneration
+            )
+        }
+        projection.scheduling.claims[index].status = status
+        projection.scheduling.claims[index].statusChangedAt = occurredAt
+        projection.scheduling.claims[index].reason = payload.reason
     }
 
     private static func applyTerminalAttempt(
@@ -934,5 +1261,32 @@ public enum GraphExecutionProjector {
 
             return $0.checkpointID < $1.checkpointID
         }
+        projection.scheduling.records.sort {
+            if $0.sequence != $1.sequence {
+                return $0.sequence < $1.sequence
+            }
+            return $0.id < $1.id
+        }
+        projection.scheduling.claims.sort {
+            if $0.claim.nodeID != $1.claim.nodeID {
+                return $0.claim.nodeID < $1.claim.nodeID
+            }
+            if $0.claim.attemptOrdinal != $1.claim.attemptOrdinal {
+                return $0.claim.attemptOrdinal
+                    < $1.claim.attemptOrdinal
+            }
+            return $0.claim.id < $1.claim.id
+        }
+        projection.scheduling.retries.sort {
+            if $0.nodeID != $1.nodeID {
+                return $0.nodeID < $1.nodeID
+            }
+            return $0.nextAttemptOrdinal < $1.nextAttemptOrdinal
+        }
+        projection.scheduling.cancellations.sort { $0.id < $1.id }
+        projection.scheduling.timeouts.sort { $0.id < $1.id }
+        projection.scheduling.completedEvaluationIDs = Array(
+            Set(projection.scheduling.completedEvaluationIDs)
+        ).sorted()
     }
 }
