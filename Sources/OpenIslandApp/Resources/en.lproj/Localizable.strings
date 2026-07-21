@@ -117,6 +117,7 @@
 /* Settings - Display */
 "settings.display.monitor" = "Monitor";
 "settings.display.position" = "Display Position";
+"settings.display.disconnected" = "disconnected";
 "settings.display.diagnostics" = "Diagnostics";
 "settings.display.currentScreen" = "Current Screen";
 "settings.display.layoutMode" = "Layout Mode";

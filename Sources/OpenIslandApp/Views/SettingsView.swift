@@ -4,6 +4,15 @@ import OpenIslandCore
 
 // MARK: - Settings tabs
 
+/// Picker label for a display option. A remembered display that is not
+/// currently connected is suffixed so the user can see their choice is retained
+/// while the island temporarily falls back to the built-in screen.
+func overlayDisplayOptionLabel(_ option: OverlayDisplayOption, lang: LanguageManager) -> String {
+    option.isConnected
+        ? option.title
+        : "\(option.title) (\(lang.t("settings.display.disconnected")))"
+}
+
 enum SettingsTab: String, CaseIterable, Identifiable {
     case general
     case setup
@@ -188,7 +197,7 @@ struct GeneralSettingsPane: View {
                 )) {
                     Text(lang.t("settings.general.automatic")).tag(OverlayDisplayOption.automaticID)
                     ForEach(model.overlayDisplayOptions) { option in
-                        Text(option.title).tag(option.id)
+                        Text(overlayDisplayOptionLabel(option, lang: lang)).tag(option.id)
                     }
                 }
             }
@@ -247,7 +256,7 @@ struct DisplaySettingsPane: View {
                 )) {
                     Text(lang.t("settings.general.automatic")).tag(OverlayDisplayOption.automaticID)
                     ForEach(model.overlayDisplayOptions) { option in
-                        Text(option.title).tag(option.id)
+                        Text(overlayDisplayOptionLabel(option, lang: lang)).tag(option.id)
                     }
                 }
             }

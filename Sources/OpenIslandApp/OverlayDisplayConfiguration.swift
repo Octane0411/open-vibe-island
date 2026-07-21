@@ -6,6 +6,10 @@ struct OverlayDisplayOption: Identifiable, Equatable {
     let id: String
     let title: String
     let subtitle: String
+    /// `false` when this entry represents a remembered display that is not
+    /// currently connected. Such entries are kept in the picker so the saved
+    /// preference survives a disconnect and the island routes back on reconnect.
+    var isConnected: Bool = true
 }
 
 enum OverlayPlacementMode: String, Equatable {
@@ -67,6 +71,50 @@ enum OverlayDisplayResolver {
                 subtitle: "\(screenKindDescription(for: screen)) · \(Int(screen.frame.width))×\(Int(screen.frame.height))"
             )
         }
+    }
+
+    struct DisplaySelectionState: Equatable {
+        /// The picker option list, including a remembered (not-connected) entry
+        /// when the preferred display is temporarily unplugged.
+        let options: [OverlayDisplayOption]
+        /// `true` when the current preference is "automatic" or points at a
+        /// display that is connected right now.
+        let isPreferredDisplayConnected: Bool
+    }
+
+    /// Reconciles the picker option list with the persisted selection **without
+    /// mutating the selection or its persistence.**
+    ///
+    /// When the preferred display is temporarily disconnected (cable pulled,
+    /// sleep, KVM switch) its remembered entry is kept in the list — marked
+    /// `isConnected == false` — instead of the selection being reset to
+    /// automatic. Keeping the preference is what lets the island route straight
+    /// back to that monitor when it reconnects, rather than getting stuck on the
+    /// built-in screen. Placement itself falls back gracefully through
+    /// `resolveScreen(preferredScreenID:)` while the display is absent.
+    static func reconcileDisplaySelection(
+        selectionID: String,
+        rememberedName: String?,
+        connectedOptions: [OverlayDisplayOption]
+    ) -> DisplaySelectionState {
+        if selectionID == OverlayDisplayOption.automaticID
+            || connectedOptions.contains(where: { $0.id == selectionID }) {
+            return DisplaySelectionState(
+                options: connectedOptions,
+                isPreferredDisplayConnected: true
+            )
+        }
+
+        let remembered = OverlayDisplayOption(
+            id: selectionID,
+            title: rememberedName ?? selectionID,
+            subtitle: "",
+            isConnected: false
+        )
+        return DisplaySelectionState(
+            options: connectedOptions + [remembered],
+            isPreferredDisplayConnected: false
+        )
     }
 
     static func diagnostics(preferredScreenID: String?, panelSize: NSSize) -> OverlayPlacementDiagnostics? {
@@ -180,8 +228,9 @@ enum OverlayDisplayResolver {
     /// Disambiguates identical displays (e.g. two AirPlay receivers with the
     /// same model name and resolution) by appending the arrangement origin.
     /// The origin is not stable across display rearrangement, but a mismatched
-    /// preference will self-heal through the existing
-    /// `validSelectionIDs.contains` check in `refreshOverlayDisplayConfiguration()`.
+    /// preference simply falls back to the built-in notch via
+    /// `resolveScreen(preferredScreenID:)`; the stored preference is left intact
+    /// so the island routes back once the intended display returns.
     private static func fallbackScreenID(for screen: NSScreen) -> String {
         let width = Int(screen.frame.width.rounded())
         let height = Int(screen.frame.height.rounded())

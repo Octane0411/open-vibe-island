@@ -117,6 +117,7 @@
 /* Settings - Display */
 "settings.display.monitor" = "顯示器";
 "settings.display.position" = "顯示位置";
+"settings.display.disconnected" = "未連接";
 "settings.display.diagnostics" = "診斷";
 "settings.display.currentScreen" = "目前螢幕";
 "settings.display.layoutMode" = "版面模式";
