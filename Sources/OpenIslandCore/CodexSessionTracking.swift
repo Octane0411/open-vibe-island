@@ -342,6 +342,20 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
     private struct Candidate {
         var fileURL: URL
         var modifiedAt: Date
+        var fileSize: Int
+    }
+
+    /// Per-file incremental parse state. `snapshot`/`sessionMeta` only
+    /// reflect bytes up to `consumedOffset` — always the end of the last
+    /// complete line — so a partial trailing line is never folded in twice
+    /// when a later append completes it.
+    private struct ParseState {
+        var consumedOffset: Int
+        var snapshot: CodexRolloutSnapshot
+        var sessionMeta: SessionMeta?
+        var fileSize: Int
+        var modifiedAt: Date
+        var record: CodexTrackedSessionRecord?
     }
 
     private struct SessionMeta {
@@ -373,6 +387,10 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
     private let maxAge: TimeInterval
     private let maxFiles: Int
 
+    private let stateLock = NSLock()
+    private var parseStates: [String: ParseState] = [:]
+    private var scanInProgress = false
+
     public init(
         rootURL: URL = CodexRolloutDiscovery.defaultRootURL,
         fileManager: FileManager = .default,
@@ -386,10 +404,26 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
     }
 
     public func discoverRecentSessions(now: Date = .now) -> [CodexTrackedSessionRecord] {
+        // Re-entrancy guard: with a large active rollout a scan can outlast
+        // the caller's 10s rediscover throttle, and overlapping scans parse
+        // the same files on multiple threads at once.
+        stateLock.lock()
+        if scanInProgress {
+            stateLock.unlock()
+            return []
+        }
+        scanInProgress = true
+        stateLock.unlock()
+        defer {
+            stateLock.lock()
+            scanInProgress = false
+            stateLock.unlock()
+        }
+
         guard fileManager.fileExists(atPath: rootURL.path),
               let enumerator = fileManager.enumerator(
                 at: rootURL,
-                includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+                includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey, .fileSizeKey],
                 options: [.skipsHiddenFiles]
               ) else {
             return []
@@ -405,7 +439,7 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             }
 
             guard let resourceValues = try? fileURL.resourceValues(
-                forKeys: [.contentModificationDateKey, .isRegularFileKey]
+                forKeys: [.contentModificationDateKey, .isRegularFileKey, .fileSizeKey]
             ),
             resourceValues.isRegularFile == true else {
                 continue
@@ -416,7 +450,11 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
                 continue
             }
 
-            candidates.append(Candidate(fileURL: fileURL, modifiedAt: modifiedAt))
+            candidates.append(Candidate(
+                fileURL: fileURL,
+                modifiedAt: modifiedAt,
+                fileSize: resourceValues.fileSize ?? 0
+            ))
         }
 
         let recentCandidates = candidates
@@ -429,11 +467,19 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             }
             .prefix(maxFiles)
 
+        // Drop parse state for files that fell out of the scan window so
+        // the cache stays bounded by `maxFiles`.
+        let candidatePaths = Set(recentCandidates.map { $0.fileURL.path })
+        stateLock.lock()
+        parseStates = parseStates.filter { candidatePaths.contains($0.key) }
+        stateLock.unlock()
+
         var recordsByID: [String: CodexTrackedSessionRecord] = [:]
         for candidate in recentCandidates {
             guard let record = discoverRecord(
                 fileURL: candidate.fileURL,
-                modifiedAt: candidate.modifiedAt
+                modifiedAt: candidate.modifiedAt,
+                fileSize: candidate.fileSize
             ) else {
                 continue
             }
@@ -456,27 +502,57 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
 
     private func discoverRecord(
         fileURL: URL,
-        modifiedAt: Date
+        modifiedAt: Date,
+        fileSize: Int
     ) -> CodexTrackedSessionRecord? {
-        // Stream the rollout line by line instead of slurping the whole
-        // file. Long-lived Codex sessions accumulate JSONL files of tens
-        // of MB; combined with the 10s rediscover throttle that meant a
-        // full-file `String(contentsOf:)` + `split` + `map(String.init)`
-        // every 10 seconds — high autorelease churn that pushed the app
-        // toward swap. Peak working set is now one chunk plus the
-        // accumulated `CodexRolloutSnapshot`.
+        // Rollouts are append-only folds, so parse them incrementally:
+        // cache the accumulated snapshot per file and only reduce bytes
+        // past `consumedOffset`. Re-reducing every recent rollout from
+        // byte 0 on each 10s rediscover pass pinned a core for hours once
+        // an active session's file grew past a few tens of MB (a single
+        // 80 MB rollout takes ~the whole 10s window to fold), and the
+        // resulting overlap stacked concurrent full parses on top.
+        let path = fileURL.path
+
+        stateLock.lock()
+        var state = parseStates[path]
+        stateLock.unlock()
+
+        if let cached = state, cached.fileSize == fileSize, cached.modifiedAt == modifiedAt {
+            return cached.record
+        }
+        if let cached = state, fileSize < cached.consumedOffset {
+            // Truncated or replaced in place — the cached fold no longer
+            // matches the bytes on disk.
+            state = nil
+        }
+
         guard let fileHandle = try? FileHandle(forReadingFrom: fileURL) else {
             return nil
         }
         defer { try? fileHandle.close() }
 
-        var snapshot = CodexRolloutSnapshot()
-        var sessionMeta: SessionMeta?
+        var snapshot = state?.snapshot ?? CodexRolloutSnapshot()
+        var sessionMeta = state?.sessionMeta
+        var startOffset = state?.consumedOffset ?? 0
+
+        if startOffset > 0 {
+            do {
+                try fileHandle.seek(toOffset: UInt64(startOffset))
+            } catch {
+                snapshot = CodexRolloutSnapshot()
+                sessionMeta = nil
+                startOffset = 0
+            }
+        }
+
         var buffer = Data()
+        var bytesRead = 0
 
         while let chunk = try? fileHandle.read(upToCount: Self.streamingChunkSize),
               !chunk.isEmpty {
             buffer.append(chunk)
+            bytesRead += chunk.count
             for line in extractCompleteLines(from: &buffer) {
                 CodexRolloutReducer.apply(line: line, to: &snapshot)
                 if sessionMeta == nil {
@@ -485,17 +561,52 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             }
         }
 
+        // Cache only the fold over complete lines; the leftover partial
+        // line is folded into a throwaway copy below so it can't be
+        // applied twice once a later append completes it.
+        let consumedOffset = startOffset + bytesRead - buffer.count
+
+        var recordSnapshot = snapshot
+        var recordMeta = sessionMeta
+
         // A trailing line without a final newline should still count.
         if !buffer.isEmpty {
             let trailing = String(decoding: buffer, as: UTF8.self)
             if !trailing.isEmpty {
-                CodexRolloutReducer.apply(line: trailing, to: &snapshot)
-                if sessionMeta == nil {
-                    sessionMeta = parseSessionMeta(fromLine: trailing)
+                CodexRolloutReducer.apply(line: trailing, to: &recordSnapshot)
+                if recordMeta == nil {
+                    recordMeta = parseSessionMeta(fromLine: trailing)
                 }
             }
         }
 
+        let record = makeRecord(
+            fileURL: fileURL,
+            modifiedAt: modifiedAt,
+            snapshot: recordSnapshot,
+            sessionMeta: recordMeta
+        )
+
+        stateLock.lock()
+        parseStates[path] = ParseState(
+            consumedOffset: consumedOffset,
+            snapshot: snapshot,
+            sessionMeta: sessionMeta,
+            fileSize: fileSize,
+            modifiedAt: modifiedAt,
+            record: record
+        )
+        stateLock.unlock()
+
+        return record
+    }
+
+    private func makeRecord(
+        fileURL: URL,
+        modifiedAt: Date,
+        snapshot: CodexRolloutSnapshot,
+        sessionMeta: SessionMeta?
+    ) -> CodexTrackedSessionRecord? {
         guard let sessionMeta else { return nil }
 
         let summary = snapshot.summary ?? sessionMeta.defaultSummary
