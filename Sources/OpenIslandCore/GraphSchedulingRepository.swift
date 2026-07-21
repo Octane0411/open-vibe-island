@@ -211,6 +211,124 @@ public struct GraphExecutorClaimReleaseRequest: Equatable, Sendable {
     }
 }
 
+public struct GraphCancellationCommandRequest: Equatable, Sendable {
+    public let runID: String
+    public let nodeID: String
+    public let attemptID: String?
+    public let requestID: String
+    public let requestedBy: String
+    public let reason: String?
+    public let expectedVersion: UInt64
+    public let logicalTime: Date
+    public let producer: GraphExecutionProducer
+    public let recordedAt: Date
+
+    public init(
+        runID: String,
+        nodeID: String,
+        attemptID: String? = nil,
+        requestID: String,
+        requestedBy: String,
+        reason: String? = nil,
+        expectedVersion: UInt64,
+        logicalTime: Date,
+        producer: GraphExecutionProducer,
+        recordedAt: Date
+    ) {
+        self.runID = runID
+        self.nodeID = nodeID
+        self.attemptID = attemptID
+        self.requestID = requestID
+        self.requestedBy = requestedBy
+        self.reason = reason
+        self.expectedVersion = expectedVersion
+        self.logicalTime = logicalTime
+        self.producer = producer
+        self.recordedAt = recordedAt
+    }
+}
+
+public struct GraphCancellationAcknowledgementRequest:
+    Equatable,
+    Sendable
+{
+    public let runID: String
+    public let requestID: String
+    public let claimID: String?
+    public let executorID: String
+    public let expectedVersion: UInt64
+    public let logicalTime: Date
+    public let producer: GraphExecutionProducer
+    public let recordedAt: Date
+
+    public init(
+        runID: String,
+        requestID: String,
+        claimID: String?,
+        executorID: String,
+        expectedVersion: UInt64,
+        logicalTime: Date,
+        producer: GraphExecutionProducer,
+        recordedAt: Date
+    ) {
+        self.runID = runID
+        self.requestID = requestID
+        self.claimID = claimID
+        self.executorID = executorID
+        self.expectedVersion = expectedVersion
+        self.logicalTime = logicalTime
+        self.producer = producer
+        self.recordedAt = recordedAt
+    }
+}
+
+public struct GraphCancellationTerminalRequest: Equatable, Sendable {
+    public let runID: String
+    public let requestID: String
+    public let expectedVersion: UInt64
+    public let logicalTime: Date
+    public let reason: String?
+    public let producer: GraphExecutionProducer
+    public let recordedAt: Date
+
+    public init(
+        runID: String,
+        requestID: String,
+        expectedVersion: UInt64,
+        logicalTime: Date,
+        reason: String? = nil,
+        producer: GraphExecutionProducer,
+        recordedAt: Date
+    ) {
+        self.runID = runID
+        self.requestID = requestID
+        self.expectedVersion = expectedVersion
+        self.logicalTime = logicalTime
+        self.reason = reason
+        self.producer = producer
+        self.recordedAt = recordedAt
+    }
+}
+
+public struct GraphTimeoutCommandRequest: Equatable, Sendable {
+    public let decision: GraphTimeoutDecision
+    public let expectedVersion: UInt64
+    public let producer: GraphExecutionProducer
+    public let recordedAt: Date
+
+    public init(
+        decision: GraphTimeoutDecision,
+        expectedVersion: UInt64,
+        producer: GraphExecutionProducer,
+        recordedAt: Date
+    ) {
+        self.decision = decision
+        self.expectedVersion = expectedVersion
+        self.producer = producer
+        self.recordedAt = recordedAt
+    }
+}
+
 public struct GraphSchedulingTransactionResult: Equatable, Sendable {
     public let appendResult: GraphExecutionAppendResult
     public let projection: GraphExecutionProjection
@@ -231,6 +349,22 @@ public protocol GraphSchedulingRepository: Sendable {
 
     func releaseClaim(
         _ request: GraphExecutorClaimReleaseRequest
+    ) async throws -> GraphSchedulingTransactionResult
+
+    func requestCancellation(
+        _ request: GraphCancellationCommandRequest
+    ) async throws -> GraphSchedulingTransactionResult
+
+    func acknowledgeCancellation(
+        _ request: GraphCancellationAcknowledgementRequest
+    ) async throws -> GraphSchedulingTransactionResult
+
+    func declareCancellationTerminal(
+        _ request: GraphCancellationTerminalRequest
+    ) async throws -> GraphSchedulingTransactionResult
+
+    func recordTimeout(
+        _ request: GraphTimeoutCommandRequest
     ) async throws -> GraphSchedulingTransactionResult
 }
 
@@ -703,6 +837,393 @@ public struct DefaultGraphSchedulingRepository:
         )
         return try await appendTransaction(
             [event],
+            loaded: loaded,
+            expectedVersion: request.expectedVersion
+        )
+    }
+
+    public func requestCancellation(
+        _ request: GraphCancellationCommandRequest
+    ) async throws -> GraphSchedulingTransactionResult {
+        let loaded = try await load(runID: request.runID)
+        if let existing = loaded.projection.scheduling.cancellations
+            .first(where: { $0.id == request.requestID }) {
+            guard existing.runID == request.runID,
+                  existing.nodeID == request.nodeID,
+                  (request.attemptID == nil
+                    || existing.attemptID == request.attemptID),
+                  existing.requestedBy == request.requestedBy,
+                  existing.requestedAt == request.logicalTime,
+                  existing.reason == request.reason else {
+                throw conflict(
+                    .invalidRequest,
+                    "Cancellation ID \(request.requestID) has contradictory content."
+                )
+            }
+            return unchanged(loaded)
+        }
+        try requireVersion(
+            request.expectedVersion,
+            actual: loaded.stream.currentVersion,
+            runID: request.runID
+        )
+        guard loaded.projection.run?.state.isTerminal != true else {
+            throw conflict(
+                .runTerminal,
+                "Terminal runs cannot be cancelled again."
+            )
+        }
+        guard loaded.projection.nodes.contains(where: {
+            $0.id == request.nodeID
+        }) else {
+            throw conflict(
+                .invalidRequest,
+                "Node \(request.nodeID) is not registered."
+            )
+        }
+        let latestAttempt = loaded.projection.attempts
+            .filter { $0.nodeID == request.nodeID }
+            .max { $0.ordinal < $1.ordinal }
+        if let requestAttemptID = request.attemptID,
+           requestAttemptID != latestAttempt?.id {
+            throw conflict(
+                .invalidRequest,
+                "Cancellation attempt does not match the latest node attempt."
+            )
+        }
+        guard latestAttempt?.state.isTerminal != true else {
+            throw conflict(
+                .attemptTerminal,
+                "A terminal attempt cannot receive a cancellation request."
+            )
+        }
+        let claim = loaded.projection.scheduling.claims
+            .filter {
+                $0.claim.nodeID == request.nodeID
+                    && $0.status == .active
+            }
+            .max {
+                $0.claim.leaseGeneration < $1.claim.leaseGeneration
+            }?.claim
+        let cancellation = GraphCancellationRecord(
+            requestID: request.requestID,
+            runID: request.runID,
+            nodeID: request.nodeID,
+            attemptID: latestAttempt?.id,
+            claimID: claim?.id,
+            requestedBy: request.requestedBy,
+            requestedAt: request.logicalTime,
+            reason: request.reason
+        )
+        let event = envelope(
+            id: "cancellation-request-\(request.requestID)",
+            runID: request.runID,
+            nodeID: request.nodeID,
+            attemptID: latestAttempt?.id,
+            sequence: loaded.stream.currentVersion + 1,
+            occurredAt: request.logicalTime,
+            recordedAt: request.recordedAt,
+            producer: request.producer,
+            correlationID: request.requestID,
+            payload: .cancellationRequested(
+                GraphCancellationRequestedPayload(
+                    cancellation: cancellation
+                )
+            )
+        )
+        return try await appendTransaction(
+            [event],
+            loaded: loaded,
+            expectedVersion: request.expectedVersion
+        )
+    }
+
+    public func acknowledgeCancellation(
+        _ request: GraphCancellationAcknowledgementRequest
+    ) async throws -> GraphSchedulingTransactionResult {
+        let loaded = try await load(runID: request.runID)
+        guard let cancellation = loaded.projection.scheduling
+            .cancellations.first(where: {
+                $0.id == request.requestID
+            }) else {
+            throw conflict(
+                .cancellationNotFound,
+                "Cancellation \(request.requestID) does not exist."
+            )
+        }
+        if cancellation.state == .acknowledged {
+            guard cancellation.claimID == request.claimID,
+                  cancellation.acknowledgedByExecutorID
+                    == request.executorID,
+                  cancellation.acknowledgedAt == request.logicalTime else {
+                throw conflict(
+                    .staleCancellationAcknowledgement,
+                    "Cancellation was acknowledged by another owner."
+                )
+            }
+            return unchanged(loaded)
+        }
+        try requireVersion(
+            request.expectedVersion,
+            actual: loaded.stream.currentVersion,
+            runID: request.runID
+        )
+        guard let claimID = cancellation.claimID,
+              claimID == request.claimID,
+              let claimRecord = loaded.projection.scheduling.claims
+                .first(where: { $0.claim.id == claimID }),
+              claimRecord.status == .active,
+              claimRecord.claim.executorID == request.executorID,
+              claimRecord.claim.isValid(at: request.logicalTime) else {
+            throw conflict(
+                .staleCancellationAcknowledgement,
+                "Only the current valid claim owner may acknowledge cancellation."
+            )
+        }
+        let event = envelope(
+            id: "cancellation-ack-\(request.requestID)",
+            runID: request.runID,
+            nodeID: cancellation.nodeID,
+            attemptID: cancellation.attemptID,
+            sequence: loaded.stream.currentVersion + 1,
+            occurredAt: request.logicalTime,
+            recordedAt: request.recordedAt,
+            producer: request.producer,
+            correlationID: request.requestID,
+            payload: .cancellationAcknowledged(
+                GraphCancellationAcknowledgedPayload(
+                    requestID: request.requestID,
+                    claimID: request.claimID,
+                    executorID: request.executorID,
+                    acknowledgedAt: request.logicalTime
+                )
+            )
+        )
+        return try await appendTransaction(
+            [event],
+            loaded: loaded,
+            expectedVersion: request.expectedVersion
+        )
+    }
+
+    public func declareCancellationTerminal(
+        _ request: GraphCancellationTerminalRequest
+    ) async throws -> GraphSchedulingTransactionResult {
+        let loaded = try await load(runID: request.runID)
+        if loaded.stream.events.contains(where: {
+            $0.id == "cancellation-terminal-\(request.requestID)"
+        }) {
+            return unchanged(loaded)
+        }
+        guard let cancellation = loaded.projection.scheduling
+            .cancellations.first(where: {
+                $0.id == request.requestID
+            }) else {
+            throw conflict(
+                .cancellationNotFound,
+                "Cancellation \(request.requestID) does not exist."
+            )
+        }
+        try requireVersion(
+            request.expectedVersion,
+            actual: loaded.stream.currentVersion,
+            runID: request.runID
+        )
+        if cancellation.claimID != nil,
+           cancellation.state != .acknowledged {
+            throw conflict(
+                .cancellationPending,
+                "Claimed cancellation must be acknowledged before terminal declaration."
+            )
+        }
+        var events: [GraphExecutionEventEnvelope] = []
+        var sequence = loaded.stream.currentVersion + 1
+        var attempt = cancellation.attemptID.flatMap { id in
+            loaded.projection.attempts.first { $0.id == id }
+        }
+
+        if attempt == nil {
+            let ordinal = (loaded.projection.attempts
+                .filter { $0.nodeID == cancellation.nodeID }
+                .map(\.ordinal)
+                .max() ?? 0) + 1
+            let id = stableAttemptID(
+                runID: request.runID,
+                nodeID: cancellation.nodeID,
+                ordinal: ordinal
+            )
+            events.append(
+                envelope(
+                    id: id,
+                    runID: request.runID,
+                    nodeID: cancellation.nodeID,
+                    attemptID: id,
+                    sequence: sequence,
+                    occurredAt: request.logicalTime,
+                    recordedAt: request.recordedAt,
+                    producer: request.producer,
+                    correlationID: request.requestID,
+                    payload: .attemptCreated(
+                        GraphAttemptCreatedPayload(ordinal: ordinal)
+                    )
+                )
+            )
+            attempt = ExecutionAttempt(
+                id: id,
+                graphRunID: request.runID,
+                nodeID: cancellation.nodeID,
+                ordinal: ordinal,
+                createdAt: request.logicalTime,
+                updatedAt: request.logicalTime
+            )
+            sequence += 1
+        }
+        guard let terminalAttempt = attempt else {
+            throw GraphSchedulingRepositoryError.corruptHistory(
+                "Cancellation has no attempt."
+            )
+        }
+        guard !terminalAttempt.state.isTerminal else {
+            if terminalAttempt.state == .cancelled {
+                return unchanged(loaded)
+            }
+            throw conflict(
+                .attemptTerminal,
+                "Attempt \(terminalAttempt.id) already has another terminal result."
+            )
+        }
+
+        if let claimID = cancellation.claimID,
+           let claim = loaded.projection.scheduling.claims.first(
+                where: {
+                    $0.claim.id == claimID && $0.status == .active
+                }
+           )?.claim {
+            events.append(
+                envelope(
+                    id: "claim-release-\(claim.id)-\(claim.leaseGeneration)",
+                    runID: request.runID,
+                    nodeID: claim.nodeID,
+                    attemptID: terminalAttempt.id,
+                    sequence: sequence,
+                    occurredAt: request.logicalTime,
+                    recordedAt: request.recordedAt,
+                    producer: request.producer,
+                    correlationID: request.requestID,
+                    payload: .executorClaimReleased(
+                        GraphExecutorLeaseEndedPayload(
+                            claimID: claim.id,
+                            leaseGeneration: claim.leaseGeneration,
+                            reason: .claimReleased
+                        )
+                    )
+                )
+            )
+            sequence += 1
+        }
+        events.append(
+            envelope(
+                id: "cancellation-terminal-\(request.requestID)",
+                runID: request.runID,
+                nodeID: cancellation.nodeID,
+                attemptID: terminalAttempt.id,
+                sequence: sequence,
+                occurredAt: request.logicalTime,
+                recordedAt: request.recordedAt,
+                producer: request.producer,
+                correlationID: request.requestID,
+                payload: .attemptCancelled(
+                    GraphAttemptTerminalPayload(reason: request.reason)
+                )
+            )
+        )
+        return try await appendTransaction(
+            events,
+            loaded: loaded,
+            expectedVersion: request.expectedVersion
+        )
+    }
+
+    public func recordTimeout(
+        _ request: GraphTimeoutCommandRequest
+    ) async throws -> GraphSchedulingTransactionResult {
+        let loaded = try await load(runID: request.decision.runID)
+        if let existing = loaded.projection.scheduling.timeouts.first(
+            where: { $0.id == request.decision.id }
+        ) {
+            guard existing == request.decision else {
+                throw conflict(
+                    .invalidRequest,
+                    "Timeout ID \(request.decision.id) has contradictory content."
+                )
+            }
+            return unchanged(loaded)
+        }
+        try requireVersion(
+            request.expectedVersion,
+            actual: loaded.stream.currentVersion,
+            runID: request.decision.runID
+        )
+        guard request.decision.declaredAt >= request.decision.deadline else {
+            throw conflict(
+                .invalidRequest,
+                "A timeout cannot be declared before its durable deadline."
+            )
+        }
+        var events = [
+            envelope(
+                id: "timeout-\(request.decision.id)",
+                runID: request.decision.runID,
+                nodeID: request.decision.nodeID,
+                attemptID: request.decision.attemptID,
+                sequence: loaded.stream.currentVersion + 1,
+                occurredAt: request.decision.declaredAt,
+                recordedAt: request.recordedAt,
+                producer: request.producer,
+                correlationID: request.decision.id,
+                payload: .timeoutDeclared(
+                    GraphTimeoutDeclaredPayload(
+                        timeout: request.decision
+                    )
+                )
+            ),
+        ]
+        if request.decision.kind == .lease,
+           let claimID = request.decision.claimID,
+           let claim = loaded.projection.scheduling.claims.first(
+                where: {
+                    $0.claim.id == claimID && $0.status == .active
+                }
+           )?.claim {
+            guard request.decision.declaredAt >= claim.leaseExpiry else {
+                throw conflict(
+                    .invalidRequest,
+                    "Lease timeout precedes the current lease expiry."
+                )
+            }
+            events.append(
+                envelope(
+                    id: "claim-expired-\(claim.id)-\(claim.leaseGeneration)",
+                    runID: request.decision.runID,
+                    nodeID: claim.nodeID,
+                    attemptID: request.decision.attemptID,
+                    sequence: loaded.stream.currentVersion + 2,
+                    occurredAt: request.decision.declaredAt,
+                    recordedAt: request.recordedAt,
+                    producer: request.producer,
+                    correlationID: request.decision.id,
+                    payload: .executorLeaseExpired(
+                        GraphExecutorLeaseEndedPayload(
+                            claimID: claim.id,
+                            leaseGeneration: claim.leaseGeneration,
+                            reason: .leaseExpired
+                        )
+                    )
+                )
+            )
+        }
+        return try await appendTransaction(
+            events,
             loaded: loaded,
             expectedVersion: request.expectedVersion
         )

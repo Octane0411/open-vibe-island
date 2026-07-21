@@ -310,7 +310,7 @@ final class GraphSchedulingRepositoryTests: XCTestCase {
     }
 }
 
-private struct SchedulingRepositoryContext {
+struct SchedulingRepositoryContext {
     let runID = "claim-run"
     let time = Date(timeIntervalSince1970: 200_000)
     let digest = GraphContentDigest(
@@ -393,7 +393,7 @@ private struct SchedulingRepositoryContext {
     }
 }
 
-private func schedulingRepositoryContext()
+func schedulingRepositoryContext()
     async throws -> SchedulingRepositoryContext
 {
     let store = InMemoryGraphExecutionEventStore()

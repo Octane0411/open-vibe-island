@@ -528,7 +528,7 @@ public struct GraphSchedulingProjection: Equatable, Codable, Sendable {
         nodeID: String
     ) -> GraphCancellationRecord? {
         cancellations
-            .filter { $0.nodeID == nodeID && $0.state == .requested }
+            .filter { $0.nodeID == nodeID }
             .max {
                 if $0.requestedAt != $1.requestedAt {
                     return $0.requestedAt < $1.requestedAt
@@ -916,6 +916,14 @@ public enum GraphScheduler {
                 eligibleAt: nil
             )
         }
+        if let latest, latest.state == .completed || latest.state == .cancelled {
+            return NodeResult(
+                phase: .terminal,
+                reason: .terminalAttemptExists,
+                attemptOrdinal: latest.ordinal,
+                eligibleAt: nil
+            )
+        }
         if input.projectedState.scheduling.pendingCancellation(
             nodeID: node.id
         ) != nil {
@@ -923,14 +931,6 @@ public enum GraphScheduler {
                 phase: .cancellationPending,
                 reason: .cancellationPending,
                 attemptOrdinal: latest?.ordinal,
-                eligibleAt: nil
-            )
-        }
-        if let latest, latest.state == .completed || latest.state == .cancelled {
-            return NodeResult(
-                phase: .terminal,
-                reason: .terminalAttemptExists,
-                attemptOrdinal: latest.ordinal,
                 eligibleAt: nil
             )
         }
