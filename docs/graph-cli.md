@@ -4,15 +4,18 @@
 
 Open Island graph history is the authoritative execution record. The
 `openisland graph` commands in this release are read-only projections over that
-history. They do not append events, update snapshots, inspect mutation-capable
+history. They do not append events, update snapshots, call mutation-capable
 adapters, start models, schedule work, claim executors, or change graph state.
+The core scheduling repository may append scheduling events through its domain
+API; the CLI in this release can only inspect those events.
 
 History, projection, reconciliation, and decisions remain separate:
 
 1. immutable events record what was declared or observed;
 2. deterministic replay projects persisted logical state;
 3. reconciliation compares that projection with optional process evidence;
-4. a future scheduler will make version-checked execution decisions.
+4. the pure scheduler proposes version-checked execution decisions;
+5. claims establish exclusive ownership before a future executor acts.
 
 The stream sequence is authoritative ordering. Timestamps are descriptive and
 use ISO 8601 UTC encoding.
@@ -54,7 +57,7 @@ All applicable commands support:
 
 ```text
 --output text|json|jsonl
---schema-version 1
+--schema-version 1|2
 --no-color
 --quiet
 --include-diagnostics
@@ -89,7 +92,13 @@ Replay evidence modes are:
 The modes are mutually exclusive. Historical boundaries never query live
 evidence because present evidence cannot establish historical process state.
 
-## Output Schema Version 1
+## Output Schema Versions
+
+Version 2 is the default. Version 1 remains selectable for existing consumers.
+The document/record envelopes, exit codes, redaction rules, ordering, and
+JSONL streaming behavior are unchanged.
+
+### Version 1
 
 Text output is concise operator output. It is not a parsing contract.
 
@@ -160,6 +169,27 @@ Collections use explicit stable ordering:
 IDs are read from durable history or derived from stable content and do not
 change across repeated reads.
 
+### Version 2 scheduling fields
+
+Version 2 adds an optional `scheduling` object to `graph inspect` with:
+
+- the latest evaluation and complete versioned scheduler policy;
+- active claims with executor and capability identity, attempt ordinal, grant
+  sequence, lease start/expiry, generation, status, and host-presence Boolean;
+- deterministic claim history;
+- durable retries, policy, delay, and eligibility time;
+- pending cancellation and complete cancellation history;
+- explicit timeout decisions;
+- stable scheduler reason codes and ordered scheduling records.
+
+`graph explain` adds `schedulerReasons`. `graph diff` adds `scheduler`,
+`claim`, `retry`, `cancellation`, and `timeout` change categories. `graph
+history` exposes the versioned scheduling event taxonomy without changing its
+record envelope. Schema version 1 omits these additions.
+
+Node and attempt filters also filter scheduling entities. Host IDs are not
+returned by scheduling inspection; only `hostIdentityPresent` is exposed.
+
 ## Exit Codes
 
 | Code | Category | Meaning |
@@ -196,15 +226,16 @@ history, boundary, and evidence mode produce identical structured results.
 
 `graph diff` compares two run heads, checkpoints, or sequence boundaries. It
 reports graph-definition, run, node, attempt, event-set, artifact, evidence,
-reconciliation, and causal-reason changes. Timestamps alone are not semantic
-changes. Change records are deterministically sorted.
+reconciliation, causal-reason, scheduler, claim, retry, cancellation, and
+timeout changes. Timestamps alone are not semantic changes. Change records are
+deterministically sorted.
 
 ## Causal Explanations
 
 `graph explain` returns concise prose and a structured explanation graph. The
 graph contains stable entities, reason nodes, typed edges, a shortest causal
-chain, blocking dependency IDs, supporting and ignored event IDs, and readiness
-requirements.
+chain, blocking dependency IDs, supporting and ignored event IDs, readiness
+requirements, and version 2 scheduler reason codes.
 
 Version 1 reason codes are:
 

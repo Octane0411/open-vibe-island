@@ -2,7 +2,7 @@
 
 **Status:** Active
 **Started:** 2026-07-19
-**Current phase:** Phase 2, durable scheduling and executor supervision preparation
+**Current phase:** Phase 2, deterministic executor adapter and mutation-command preparation
 
 ## Problem
 
@@ -372,7 +372,17 @@ recent state transitions; polling cannot inflate metrics; timeline state survive
 - [x] Add stable text, JSON, JSONL, completion, exit-code, telemetry, Unix pipeline, worktree,
   multi-project, and neutral Terminal Graph workspace-plan contracts.
 - [ ] Implement host-specific process-evidence adapters that emit canonical evidence.
-- [ ] Add scheduler-owned timeout, cancellation, retry, and failure propagation.
+- [x] Add deterministic event-sourced scheduler decisions, runnable selection, fixed-point
+  dependency failure propagation, and explicit reason codes.
+- [x] Add optimistic executor claims, renewable generation-fenced leases, explicit expiry and
+  release, exact-redelivery idempotency, and competing-writer exclusion.
+- [x] Add versioned retry/backoff policy, cancellation request/acknowledgement/terminal
+  protocol, and five explicit timeout decision kinds.
+- [x] Prove crash-before/after-claim behavior, SQLite contention/restart/takeover, retry-delay
+  recovery, scheduler idempotency, snapshot compatibility, and the four-node compendium
+  success/failure/cancellation scenarios.
+- [x] Extend read-only graph inspection with schema-versioned policy, claim, lease, retry,
+  cancellation, timeout, and scheduler-reason projections while preserving schema version 1.
 - [ ] Replace the simulation runner with executor adapters for local models and CLI agents.
 - [ ] Add typed handoff schemas on top of artifact references, then supervise a graph with at
   least two local models.
@@ -419,15 +429,18 @@ for quality, latency, cost, and context growth.
    explanations, replay diagnostics, bounded telemetry, and optional completion records.
 3. **Complete:** redacted artifact and repository-context exports plus deterministic neutral
    workspace plans. Event/snapshot integrity policy remains enforced by the durable store.
-4. **Next:** add durable scheduler decision records, optimistic executor claims, renewable
-   leases, explicit retry policy, cancellation requests and acknowledgements, timeout
-   decisions, and deterministic failure propagation. Prove crash/restart and competing-worker
-   behavior without adding UI or model-specific launch code.
-5. Implement host-specific process-evidence adapters that translate observations into
+4. **Complete:** durable scheduling decisions, claims, renewable leases, retry,
+   cancellation, timeout, fixed-point failure propagation, schema v2 read-only inspection,
+   and SQLite restart/concurrency behavior.
+5. **Next:** implement graph mutation commands and an executor adapter boundary, then use a
+   no-op or deterministic test executor to create, claim, start, complete, retry, and cancel
+   the four-node compendium graph end to end before introducing real tmux, Codex, Qwen,
+   Ollama, or Terminal Graph MCP adapters.
+6. Implement host-specific process-evidence adapters that translate observations into
    canonical exits and heartbeat leases without mutating history.
-6. Add non-local CLI usage metrics and local-model resource metrics as distinct projections.
-7. Add executor adapters only after scheduler decisions and claims are durable and inspectable.
-8. Defer mutation commands until command versioning and idempotency are tested.
+7. Add non-local CLI usage metrics and local-model resource metrics as distinct projections.
+8. Add real provider/model executors only after the deterministic executor proves the command,
+   event, fencing, and recovery contracts.
 9. Defer all visual redesign, including liquid glass, until orchestration behavior and
    operator information architecture are stable.
 
@@ -448,22 +461,46 @@ for quality, latency, cost, and context growth.
 - `3353374 feat: add read-only openisland graph commands`
 - `ed5ece0 feat: add terminal graph compatibility contracts`
 - `d1d7ce6 test: verify graph cli and streaming invariants`
+- `5746c87 feat: add deterministic graph scheduler decisions`
+- `a188b1a feat: add executor claims and renewable leases`
+- `7c63d59 feat: add retry cancellation and timeout protocols`
+- `395e6f5 test: prove scheduling concurrency and restart invariants`
 
 ### Temporal inspection and integration decisions
 
 - The inspector depends on bounded read-store and snapshot-read protocols rather than SQLite.
   Historical replay is side-effect-free and never updates snapshots.
-- Output schema version 1 separates text, JSON documents, and one-record-per-line JSONL.
-  Structured stdout is deterministic and diagnostics remain on stderr unless requested.
+- Output schema version 2 adds scheduling policy, claims, leases, retries, cancellation,
+  timeout, and reason-code inspection. Version 1 remains selectable. Text, JSON documents,
+  and one-record-per-line JSONL remain deterministic; diagnostics stay on stderr unless
+  requested.
 - Open Island remains execution authority. Terminal Graph integration uses optional
   environment context, typed semantic ports, stable external mapping keys, and a neutral
   workspace plan; no Terminal Graph binary, private schema, state file, hook, or MCP call is
   required.
 - Repository and artifact metadata is redaction-aware. CLI telemetry is bounded, local, and
   excludes raw arguments, paths, environment values, prompts, and artifact bodies.
-- Durable scheduler decisions are the next correctness boundary. Mutation commands and
-  executor launching remain deferred until claims, leases, retries, cancellation, and restart
-  behavior are represented in history and proven under concurrency.
+- Durable scheduler decisions and exclusive ownership are complete. The next correctness
+  boundary is a version-checked mutation command surface plus a deterministic executor adapter
+  that proves full graph execution without provider-specific launching.
+
+### Durable scheduling and ownership decisions
+
+- The pure scheduler consumes definition, projection, reconciliation, policy, logical time,
+  capabilities, claims/leases, and failure categories, then proposes events without I/O.
+- Event-sourced claims use the existing expected-head append transaction for exclusion; lease
+  generation is the executor fencing value and process liveness does not imply ownership.
+- Retry delay and bounded jitter are deterministic and recorded. Cancellation is a four-stage
+  protocol. Historical timeouts are explicit events, never replay-time wall-clock inference.
+- Schema migration is additive: no SQLite table migration is needed; old snapshots default a
+  missing scheduling projection to empty, old evaluation events may omit embedded policy, and
+  CLI schema version 1 remains supported alongside version 2.
+- The committed scheduling fixture is `architect -> researcher -> graph -> reviewer`, with
+  capability-specific workers and complete success, failure, retry, cancellation, contention,
+  and restart evidence.
+- See [ADR 002](../../architecture-decisions/002-durable-graph-scheduling.md) for the event
+  taxonomy, phase table, precedence, transaction semantics, migration decisions, and complete
+  requirement audit.
 
 ## Verification
 

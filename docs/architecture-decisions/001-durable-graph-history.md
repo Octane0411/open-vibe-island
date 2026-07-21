@@ -4,6 +4,11 @@
 **Date:** 2026-07-20
 **Scope:** Native graph execution history, replay, snapshots, reconciliation, local persistence, artifacts, and telemetry vocabulary
 
+**Follow-on:** [ADR 002](./002-durable-graph-scheduling.md) now adds scheduling,
+claims, leases, retry, cancellation, and timeout decisions on this history
+boundary. Statements below that scheduling is absent describe this ADR's
+original scope, not the current repository capability.
+
 ## Context
 
 Open Island needs durable graph execution before it can safely add model launchers,
@@ -271,9 +276,8 @@ performance policy can evolve without changing replay semantics.
 ## Framework Interoperability
 
 - **Temporal-style durable execution:** this foundation supplies immutable history,
-  optimistic concurrency, replay, and version boundaries, but it does not implement task
-  queues, durable timers, scheduling, or workflow workers. A future executor can append to
-  this contract or bridge it to a durable workflow backend.
+  optimistic concurrency, replay, and version boundaries. ADR 002 adds local scheduler and
+  timeout decisions; task queues, workflow workers, and distributed transport remain absent.
 - **LangGraph-style checkpoints and time travel:** snapshots, named stream boundaries,
   parent checkpoint references, subgraph namespaces, human interrupts, and replay from a
   projection boundary provide the required data model. User-facing state mutation and fork
@@ -302,8 +306,9 @@ Costs and consciously deferred work:
 
 - event history grows without a retention/archival implementation
 - integrity metadata is stored but cryptographic verification policy is not yet selected
-- durable timers, dynamic graphs, scheduling, executor claiming, fencing tokens, and
-  distributed networking are not implemented
+- dynamic graphs, provider executors, resource reservation, and distributed networking are
+  not implemented; ADR 002 supplies scheduling, claiming, lease-generation fencing, and
+  explicit timeout decisions
 - no execution mutation commands or user-facing temporal debugger exist yet
 
 ## Requirement Audit
@@ -323,8 +328,9 @@ Costs and consciously deferred work:
 | 11. Required tests | complete | all listed cases are covered across `GraphExecutionEventStoreTests`, `GraphExecutionReplayTests`, `GraphExecutionRepositoryTests`, `SQLiteGraphExecutionStoreTests`, and `GraphExecutionDurabilityInvariantTests` |
 | 12. Property/model validation | complete | generated 1-20 attempt streams, duplicate/reverse replay equivalence, monotonic stream versions and ordinals, snapshot-boundary equivalence, fixed-point reconciliation, and no-manufactured-event reload tests |
 
-Architectural principles 1-10 are complete in the implemented boundaries: definition remains
-separate, history is immutable, projection and reconciliation are pure, scheduling is absent,
+Architectural principles 1-10 are complete in this ADR's implemented boundaries: definition remains
+separate, history is immutable, projection and reconciliation are pure, scheduling was kept
+outside this history layer and is now defined separately by ADR 002,
 attempt/process identity is distinct, artifacts are durable references, core has no
 provider/terminal/UI coupling, storage is accessed through protocols with SQLite confined to
 the local adapter, and every persisted public format is schema-versioned.

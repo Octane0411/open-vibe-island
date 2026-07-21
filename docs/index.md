@@ -34,6 +34,7 @@ This index is the repository map for humans and coding agents. Read these files 
 - [docs/notch-surface-model.md](./notch-surface-model.md) for the island surface routing model and debug harness intent
 - [docs/app-ghostty-codex-chain.md](./app-ghostty-codex-chain.md) for terminal environment findings across the current supported chain
 - [docs/architecture-decisions/001-durable-graph-history.md](./architecture-decisions/001-durable-graph-history.md) for graph event sourcing, replay, snapshots, reconciliation, artifacts, and local persistence
+- [docs/architecture-decisions/002-durable-graph-scheduling.md](./architecture-decisions/002-durable-graph-scheduling.md) for deterministic scheduling, executor claims, renewable leases, retry, cancellation, timeout, restart recovery, and scheduling inspection
 - [docs/graph-cli.md](./graph-cli.md) for the read-only temporal graph command, schema, exit-code, causal, replay, redaction, and telemetry contracts
 - [docs/terminal-graph-integration.md](./terminal-graph-integration.md) for Terminal Graph streams, typed ports, worktrees, workspace plans, hooks, and future MCP boundaries
 
