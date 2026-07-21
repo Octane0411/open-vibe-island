@@ -36,6 +36,16 @@ struct PerformancePolicyTests {
             isResolvingInitialLiveSessions: false,
             hasTrackedLiveSessions: false
         ) == 300)
+        #expect(ProcessMonitoringCoordinator.monitoringPollInterval(
+            isResolvingInitialLiveSessions: false,
+            hasTrackedLiveSessions: true,
+            cadence: .relaxed
+        ) == 120)
+        #expect(ProcessMonitoringCoordinator.monitoringPollInterval(
+            isResolvingInitialLiveSessions: false,
+            hasTrackedLiveSessions: false,
+            cadence: .batterySaver
+        ) == 1_500)
     }
 
     @MainActor
@@ -71,6 +81,52 @@ struct PerformancePolicyTests {
             hasTrackedLiveSessions: true,
             hadTrackedLiveSessions: false
         ))
+    }
+
+    @MainActor
+    @Test
+    func codexAppFallbackRediscoveryStopsWhenConnectedOrBusy() {
+        let now = Date(timeIntervalSinceReferenceDate: 1_000)
+
+        #expect(!SessionDiscoveryCoordinator.shouldRunCodexAppRediscovery(
+            appServerConnected: true,
+            scanInFlight: false,
+            now: now,
+            nextScanAt: .distantPast
+        ))
+        #expect(!SessionDiscoveryCoordinator.shouldRunCodexAppRediscovery(
+            appServerConnected: false,
+            scanInFlight: true,
+            now: now,
+            nextScanAt: .distantPast
+        ))
+        #expect(!SessionDiscoveryCoordinator.shouldRunCodexAppRediscovery(
+            appServerConnected: false,
+            scanInFlight: false,
+            now: now,
+            nextScanAt: now.addingTimeInterval(1)
+        ))
+        #expect(SessionDiscoveryCoordinator.shouldRunCodexAppRediscovery(
+            appServerConnected: false,
+            scanInFlight: false,
+            now: now,
+            nextScanAt: now
+        ))
+        #expect(SessionDiscoveryCoordinator.shouldRunCodexAppRediscovery(
+            appServerConnected: false,
+            scanInFlight: false,
+            now: now,
+            nextScanAt: now.addingTimeInterval(-1)
+        ))
+    }
+
+    @MainActor
+    @Test
+    func codexAppFallbackRediscoveryBacksOffToTwoMinutes() {
+        #expect(SessionDiscoveryCoordinator.codexAppRediscoveryDelay(afterBackoffStep: 0) == 30)
+        #expect(SessionDiscoveryCoordinator.codexAppRediscoveryDelay(afterBackoffStep: 1) == 60)
+        #expect(SessionDiscoveryCoordinator.codexAppRediscoveryDelay(afterBackoffStep: 2) == 120)
+        #expect(SessionDiscoveryCoordinator.codexAppRediscoveryDelay(afterBackoffStep: 20) == 120)
     }
 
     @Test

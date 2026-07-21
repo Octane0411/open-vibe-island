@@ -2,14 +2,14 @@ import AppKit
 import SwiftUI
 
 /// v6 `UnifiedBars` glyph — three vertical bars that share the same geometry
-/// across all three notch states (idle / running / waiting). Active states are
-/// animated by Core Animation layers so SwiftUI does not invalidate every frame.
+/// across all three notch states (idle / running / waiting). Animation is
+/// handled by Core Animation layers so SwiftUI does not invalidate every frame.
 ///
 /// Canonical geometry (from the design handoff): 24×24 box, 3 bars of width
 /// 2.5 centered on columns x = 5.25 / 10.75 / 16.25, rounded to a pill.
 struct UnifiedBars: View {
     enum Mode: Equatable {
-        case idle       // rest — 3 short static bars
+        case idle       // rest — 3 short bars with optional breathing
         case running    // active — static tall wave frame
         case waiting    // pause — static outer bars, middle hidden
 
@@ -31,6 +31,10 @@ struct UnifiedBars: View {
     var size: CGFloat = 24
     /// Ink color for bars / tick. Defaults to the v6 paper ink.
     var tint: Color = Color(red: 0xf1 / 255.0, green: 0xea / 255.0, blue: 0xd9 / 255.0)
+    /// When false, the resting `.idle` glyph is drawn statically instead of
+    /// breathing — a user-facing battery option. `.running` / `.waiting` always
+    /// animate, since they signal live activity worth showing.
+    var idleAnimated: Bool = true
 
     private static let box: CGFloat = 24
     private static let barWidth: CGFloat = 2.5
@@ -44,22 +48,23 @@ struct UnifiedBars: View {
 
     @ViewBuilder
     var body: some View {
-        LayerRepresentable(mode: mode, tint: tint)
+        LayerRepresentable(mode: mode, tint: tint, idleAnimated: idleAnimated)
             .frame(width: size, height: size)
     }
 
     private struct LayerRepresentable: NSViewRepresentable {
         let mode: Mode
         let tint: Color
+        let idleAnimated: Bool
 
         func makeNSView(context: Context) -> LayerView {
             let view = LayerView()
-            view.update(mode: mode, tint: NSColor(tint))
+            view.update(mode: mode, tint: NSColor(tint), idleAnimated: idleAnimated)
             return view
         }
 
         func updateNSView(_ nsView: LayerView, context: Context) {
-            nsView.update(mode: mode, tint: NSColor(tint))
+            nsView.update(mode: mode, tint: NSColor(tint), idleAnimated: idleAnimated)
         }
     }
 
@@ -67,6 +72,7 @@ struct UnifiedBars: View {
         private let barLayers = [CAShapeLayer(), CAShapeLayer(), CAShapeLayer()]
         private var mode: Mode = .idle
         private var tintColor = NSColor.white
+        private var idleAnimated = true
 
         override init(frame frameRect: NSRect) {
             super.init(frame: frameRect)
@@ -85,9 +91,10 @@ struct UnifiedBars: View {
             fatalError("init(coder:) has not been implemented")
         }
 
-        func update(mode: Mode, tint: NSColor) {
+        func update(mode: Mode, tint: NSColor, idleAnimated: Bool) {
             self.mode = mode
             tintColor = tint
+            self.idleAnimated = idleAnimated
             needsLayout = true
         }
 
@@ -164,16 +171,30 @@ struct UnifiedBars: View {
 
         private func configureAnimations(for barLayer: CAShapeLayer, column: Column) {
             barLayer.removeAllAnimations()
-            guard mode.usesLayerAnimation, !barLayer.isHidden else { return }
+            let shouldAnimate = mode.usesLayerAnimation || (mode == .idle && idleAnimated)
+            guard shouldAnimate, !barLayer.isHidden else { return }
 
             switch mode {
             case .idle:
-                return
+                addIdleAnimation(to: barLayer)
             case .running:
                 addRunningAnimation(to: barLayer, column: column)
             case .waiting:
                 addWaitingAnimation(to: barLayer, column: column)
             }
+        }
+
+        private func addIdleAnimation(to barLayer: CAShapeLayer) {
+            let animation = CAKeyframeAnimation(keyPath: "opacity")
+            animation.values = [0.72, 1.0, 0.72]
+            animation.keyTimes = [0, 0.5, 1]
+            animation.duration = 2.8
+            animation.repeatCount = .infinity
+            animation.timingFunctions = [
+                CAMediaTimingFunction(name: .easeInEaseOut),
+                CAMediaTimingFunction(name: .easeInEaseOut),
+            ]
+            barLayer.add(animation, forKey: "idle-opacity")
         }
 
         private func addRunningAnimation(to barLayer: CAShapeLayer, column: Column) {

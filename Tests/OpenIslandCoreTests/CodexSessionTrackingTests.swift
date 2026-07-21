@@ -4,6 +4,11 @@ import Testing
 
 struct CodexSessionTrackingTests {
     @Test
+    func codexRolloutWatcherUsesCoarseFallbackAfterFileEvents() {
+        #expect(CodexRolloutWatcher.defaultFallbackPollInterval == 60)
+    }
+
+    @Test
     func codexSessionStoreRoundTripsTrackedSessions() throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("open-island-tracking-\(UUID().uuidString)", isDirectory: true)
@@ -849,7 +854,7 @@ struct CodexSessionTrackingTests {
         }
 
         let recorder = EventRecorder()
-        let watcher = CodexRolloutWatcher(pollInterval: 0.05)
+        let watcher = CodexRolloutWatcher(pollInterval: 5)
         watcher.eventHandler = { event in
             Task {
                 await recorder.append(event)
@@ -1021,7 +1026,7 @@ struct CodexSessionTrackingTests {
 
         let recorder = EventRecorder()
         let watcher = CodexRolloutWatcher(
-            pollInterval: 0.05,
+            pollInterval: 5,
             initialReadLimit: 512,
             initialPromptBootstrapLimit: 4_096
         )
@@ -1087,7 +1092,7 @@ struct CodexSessionTrackingTests {
             .write(to: rolloutURL, atomically: true, encoding: .utf8)
 
         let recorder = EventRecorder()
-        let watcher = CodexRolloutWatcher(pollInterval: 0.05, initialReadLimit: 160)
+        let watcher = CodexRolloutWatcher(pollInterval: 5, initialReadLimit: 160)
         watcher.eventHandler = { event in
             Task {
                 await recorder.append(event)
@@ -1195,6 +1200,68 @@ struct CodexSessionTrackingTests {
         #expect(records.first?.codexMetadata?.currentCommandPreview == nil)
         #expect(records.first?.origin == .live)
         #expect(records.first?.attachmentState == .stale)
+    }
+
+    @Test
+    func codexRolloutDiscoveryDoesNotReparseUnchangedFiles() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-cache-\(UUID().uuidString)", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/04/02", isDirectory: true)
+        let rolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-cache.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        try [
+            sessionMetaLine(
+                sessionID: "codex-session-cache",
+                timestamp: "2026-04-02T04:03:44.000Z",
+                cwd: "/tmp/open-island"
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: ["type": "agent_message", "message": "Initial state."]
+            ),
+        ]
+        .joined(separator: "\n")
+        .appending("\n")
+        .write(to: rolloutURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: rolloutURL.path)
+
+        let discovery = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10
+        )
+        let readCounter = LockedCounter()
+        discovery.onRecordRead = { _ in readCounter.increment() }
+
+        _ = discovery.discoverRecentSessions(now: now)
+        _ = discovery.discoverRecentSessions(now: now)
+
+        #expect(readCounter.value == 1)
+
+        try appendRolloutLine(
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:46.000Z",
+                type: "event_msg",
+                payload: ["type": "agent_message", "message": "Updated state."]
+            ),
+            to: rolloutURL
+        )
+        let updatedNow = now.addingTimeInterval(1)
+        try FileManager.default.setAttributes(
+            [.modificationDate: updatedNow],
+            ofItemAtPath: rolloutURL.path
+        )
+
+        let updatedRecords = discovery.discoverRecentSessions(now: updatedNow)
+
+        #expect(readCounter.value == 2)
+        #expect(updatedRecords.first?.summary == "Updated state.")
     }
 
     @Test
@@ -1342,6 +1409,19 @@ private actor EventRecorder {
 
     func snapshot() -> [AgentEvent] {
         events
+    }
+}
+
+private final class LockedCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    var value: Int {
+        lock.withLock { count }
+    }
+
+    func increment() {
+        lock.withLock { count += 1 }
     }
 }
 

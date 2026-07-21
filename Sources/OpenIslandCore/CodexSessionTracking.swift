@@ -1,3 +1,4 @@
+import Darwin
 import Dispatch
 import Foundation
 
@@ -342,6 +343,22 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
     private struct Candidate {
         var fileURL: URL
         var modifiedAt: Date
+        var fileSize: Int
+    }
+
+    private struct FileSignature: Equatable {
+        var modifiedAt: Date
+        var fileSize: Int
+    }
+
+    private struct CacheEntry {
+        var signature: FileSignature
+        var record: CodexTrackedSessionRecord?
+    }
+
+    private enum CacheLookup {
+        case miss
+        case hit(CodexTrackedSessionRecord?)
     }
 
     private struct SessionMeta {
@@ -372,6 +389,12 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
     private let fileManager: FileManager
     private let maxAge: TimeInterval
     private let maxFiles: Int
+    private let cacheLock = NSLock()
+    private var recordCache: [String: CacheEntry] = [:]
+
+    /// Test instrumentation for asserting that unchanged rollout files are not
+    /// reparsed during periodic discovery.
+    var onRecordRead: (@Sendable (URL) -> Void)?
 
     public init(
         rootURL: URL = CodexRolloutDiscovery.defaultRootURL,
@@ -386,10 +409,11 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
     }
 
     public func discoverRecentSessions(now: Date = .now) -> [CodexTrackedSessionRecord] {
+        guard !Task.isCancelled else { return [] }
         guard fileManager.fileExists(atPath: rootURL.path),
               let enumerator = fileManager.enumerator(
                 at: rootURL,
-                includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+                includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey],
                 options: [.skipsHiddenFiles]
               ) else {
             return []
@@ -399,13 +423,14 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         var candidates: [Candidate] = []
 
         for case let fileURL as URL in enumerator {
+            guard !Task.isCancelled else { return [] }
             guard fileURL.lastPathComponent.hasPrefix("rollout-"),
                   fileURL.pathExtension == "jsonl" else {
                 continue
             }
 
             guard let resourceValues = try? fileURL.resourceValues(
-                forKeys: [.contentModificationDateKey, .isRegularFileKey]
+                forKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
             ),
             resourceValues.isRegularFile == true else {
                 continue
@@ -416,7 +441,11 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
                 continue
             }
 
-            candidates.append(Candidate(fileURL: fileURL, modifiedAt: modifiedAt))
+            candidates.append(Candidate(
+                fileURL: fileURL,
+                modifiedAt: modifiedAt,
+                fileSize: resourceValues.fileSize ?? 0
+            ))
         }
 
         let recentCandidates = candidates
@@ -431,10 +460,22 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
 
         var recordsByID: [String: CodexTrackedSessionRecord] = [:]
         for candidate in recentCandidates {
-            guard let record = discoverRecord(
-                fileURL: candidate.fileURL,
-                modifiedAt: candidate.modifiedAt
-            ) else {
+            guard !Task.isCancelled else { return [] }
+            let record: CodexTrackedSessionRecord?
+            switch cachedRecord(for: candidate) {
+            case .hit(let cached):
+                record = cached
+            case .miss:
+                let discovered = discoverRecord(
+                    fileURL: candidate.fileURL,
+                    modifiedAt: candidate.modifiedAt
+                )
+                guard !Task.isCancelled else { return [] }
+                cache(discovered, for: candidate)
+                record = discovered
+            }
+
+            guard let record else {
                 continue
             }
 
@@ -445,6 +486,8 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             recordsByID[record.sessionID] = record
         }
 
+        pruneCache(keeping: Set(recentCandidates.map { $0.fileURL.path }))
+
         return recordsByID.values.sorted { lhs, rhs in
             if lhs.updatedAt == rhs.updatedAt {
                 return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
@@ -454,13 +497,40 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         }
     }
 
+    private func cachedRecord(for candidate: Candidate) -> CacheLookup {
+        let signature = FileSignature(modifiedAt: candidate.modifiedAt, fileSize: candidate.fileSize)
+        return cacheLock.withLock {
+            guard let entry = recordCache[candidate.fileURL.path], entry.signature == signature else {
+                return .miss
+            }
+            return .hit(entry.record)
+        }
+    }
+
+    private func cache(_ record: CodexTrackedSessionRecord?, for candidate: Candidate) {
+        let entry = CacheEntry(
+            signature: FileSignature(modifiedAt: candidate.modifiedAt, fileSize: candidate.fileSize),
+            record: record
+        )
+        cacheLock.withLock {
+            recordCache[candidate.fileURL.path] = entry
+        }
+    }
+
+    private func pruneCache(keeping paths: Set<String>) {
+        cacheLock.withLock {
+            recordCache = recordCache.filter { paths.contains($0.key) }
+        }
+    }
+
     private func discoverRecord(
         fileURL: URL,
         modifiedAt: Date
     ) -> CodexTrackedSessionRecord? {
+        onRecordRead?(fileURL)
         // Stream the rollout line by line instead of slurping the whole
         // file. Long-lived Codex sessions accumulate JSONL files of tens
-        // of MB; combined with the 10s rediscover throttle that meant a
+        // of MB; combined with the former 10s rediscover throttle that meant a
         // full-file `String(contentsOf:)` + `split` + `map(String.init)`
         // every 10 seconds — high autorelease churn that pushed the app
         // toward swap. Peak working set is now one chunk plus the
@@ -474,7 +544,8 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         var sessionMeta: SessionMeta?
         var buffer = Data()
 
-        while let chunk = try? fileHandle.read(upToCount: Self.streamingChunkSize),
+        while !Task.isCancelled,
+              let chunk = try? fileHandle.read(upToCount: Self.streamingChunkSize),
               !chunk.isEmpty {
             buffer.append(chunk)
             for line in extractCompleteLines(from: &buffer) {
@@ -484,6 +555,8 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
                 }
             }
         }
+
+        guard !Task.isCancelled else { return nil }
 
         // A trailing line without a final newline should still count.
         if !buffer.isEmpty {
@@ -1406,11 +1479,14 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
         var pendingBuffer = Data()
         var snapshot = CodexRolloutSnapshot()
         var shouldTrimLeadingPartialLine = false
+        var fileSource: DispatchSourceFileSystemObject?
     }
+
+    public static let defaultFallbackPollInterval: TimeInterval = 60
 
     public var eventHandler: (@Sendable (AgentEvent) -> Void)?
 
-    private let pollInterval: TimeInterval
+    private let fallbackPollInterval: TimeInterval
     private let initialReadLimit: UInt64
     private let initialPromptBootstrapLimit: UInt64
     private let queue = DispatchQueue(label: "app.openisland.codex.rollout-watcher")
@@ -1418,11 +1494,11 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
     private var observations: [String: Observation] = [:]
 
     public init(
-        pollInterval: TimeInterval = 3.0,
+        pollInterval: TimeInterval = CodexRolloutWatcher.defaultFallbackPollInterval,
         initialReadLimit: UInt64 = 128 * 1_024,
         initialPromptBootstrapLimit: UInt64 = 4 * 1_024 * 1_024
     ) {
-        self.pollInterval = pollInterval
+        fallbackPollInterval = pollInterval
         self.initialReadLimit = initialReadLimit
         self.initialPromptBootstrapLimit = initialPromptBootstrapLimit
     }
@@ -1441,6 +1517,7 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
         queue.sync {
             timer?.cancel()
             timer = nil
+            observations.values.compactMap(\.fileSource).forEach { $0.cancel() }
             observations.removeAll()
         }
     }
@@ -1448,21 +1525,21 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
     private func syncLocked(targets: [CodexRolloutWatchTarget]) {
         let targetMap = Dictionary(uniqueKeysWithValues: targets.map { ($0.sessionID, $0) })
 
-        observations = observations.reduce(into: [:]) { partialResult, pair in
-            guard let updatedTarget = targetMap[pair.key] else {
-                return
-            }
-
-            if pair.value.target == updatedTarget {
-                partialResult[pair.key] = pair.value
+        var nextObservations: [String: Observation] = [:]
+        for target in targets {
+            if let existing = observations[target.sessionID], existing.target == target {
+                nextObservations[target.sessionID] = existing
             } else {
-                partialResult[pair.key] = makeObservation(for: updatedTarget)
+                observations[target.sessionID]?.fileSource?.cancel()
+                nextObservations[target.sessionID] = makeObservation(for: target)
             }
         }
-
-        for target in targets where observations[target.sessionID] == nil {
-            observations[target.sessionID] = makeObservation(for: target)
+        for (sessionID, observation) in observations where targetMap[sessionID] == nil {
+            observation.fileSource?.cancel()
         }
+        observations = nextObservations
+
+        Array(observations.keys).forEach(armFileSourceLocked)
 
         if observations.isEmpty {
             timer?.cancel()
@@ -1472,7 +1549,11 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
 
         if timer == nil {
             let timer = DispatchSource.makeTimerSource(queue: queue)
-            timer.schedule(deadline: .now() + pollInterval, repeating: pollInterval)
+            timer.schedule(
+                deadline: .now() + fallbackPollInterval,
+                repeating: fallbackPollInterval,
+                leeway: .seconds(5)
+            )
             timer.setEventHandler { [weak self] in
                 self?.pollLocked()
             }
@@ -1487,13 +1568,57 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
         let sessionIDs = Array(observations.keys)
 
         for sessionID in sessionIDs {
-            guard var observation = observations[sessionID] else {
-                continue
-            }
+            refreshSessionLocked(sessionID)
+            armFileSourceLocked(sessionID)
+        }
+    }
 
-            let events = refresh(observation: &observation)
-            observations[sessionID] = observation
-            events.forEach { eventHandler?($0) }
+    private func refreshSessionLocked(_ sessionID: String) {
+        guard var observation = observations[sessionID] else { return }
+        let events = refresh(observation: &observation)
+        observations[sessionID] = observation
+        events.forEach { eventHandler?($0) }
+    }
+
+    private func armFileSourceLocked(_ sessionID: String) {
+        guard var observation = observations[sessionID], observation.fileSource == nil else { return }
+
+        let descriptor = open(observation.target.transcriptPath, O_EVTONLY)
+        guard descriptor >= 0 else { return }
+
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: descriptor,
+            eventMask: [.write, .extend, .rename, .delete, .revoke],
+            queue: queue
+        )
+        source.setEventHandler { [weak self] in
+            self?.handleFileEventLocked(sessionID)
+        }
+        source.setCancelHandler {
+            close(descriptor)
+        }
+        observation.fileSource = source
+        observations[sessionID] = observation
+        source.resume()
+    }
+
+    private func handleFileEventLocked(_ sessionID: String) {
+        guard let observation = observations[sessionID],
+              let source = observation.fileSource else { return }
+        let event = source.data
+
+        refreshSessionLocked(sessionID)
+
+        guard event.contains(.rename)
+            || event.contains(.delete)
+            || event.contains(.revoke) else { return }
+
+        guard var refreshedObservation = observations[sessionID] else { return }
+        source.cancel()
+        refreshedObservation.fileSource = nil
+        observations[sessionID] = refreshedObservation
+        queue.asyncAfter(deadline: .now() + .milliseconds(100)) { [weak self] in
+            self?.armFileSourceLocked(sessionID)
         }
     }
 

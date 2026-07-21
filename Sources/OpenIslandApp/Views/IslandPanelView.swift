@@ -280,7 +280,8 @@ struct IslandPanelView: View {
             layout: layout,
             height: closedNotchHeight,
             physicalNotchWidth: layout == .macbook ? physicalNotchWidth : 0,
-            minWidth: 70
+            minWidth: 70,
+            idleAnimated: model.idleGlyphAnimationEnabled
         )
         .scaleEffect(isPopping ? 1.04 : 1, anchor: .top)
         .animation(popAnimation, value: isPopping)

@@ -5,10 +5,34 @@ import OpenIslandCore
 
 typealias ActiveProcessSnapshot = ActiveAgentProcessDiscovery.ProcessSnapshot
 
+/// How aggressively the session-attachment monitor backs off process scans.
+/// Slower cadences trade detection latency (for agents started without a hook)
+/// for fewer `ps` scans and CPU wakeups.
+enum ProcessDiscoveryCadence: String, CaseIterable, Identifiable, Codable, Sendable {
+    case standard
+    case relaxed
+    case batterySaver
+
+    var id: String { rawValue }
+
+    var intervalMultiplier: TimeInterval {
+        switch self {
+        case .standard:     return 1
+        case .relaxed:      return 2
+        case .batterySaver: return 5
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class ProcessMonitoringCoordinator {
     var isResolvingInitialLiveSessions = false
+
+    /// Backoff policy for full process scans. Read fresh each loop iteration so
+    /// preference changes take effect after the current deadline.
+    @ObservationIgnored
+    var discoveryCadence: ProcessDiscoveryCadence = .standard
 
     @ObservationIgnored
     var syntheticClaudeSessionPrefix = ""
@@ -58,13 +82,15 @@ final class ProcessMonitoringCoordinator {
 
     static func monitoringPollInterval(
         isResolvingInitialLiveSessions: Bool,
-        hasTrackedLiveSessions: Bool
+        hasTrackedLiveSessions: Bool,
+        cadence: ProcessDiscoveryCadence = .standard
     ) -> TimeInterval {
         if isResolvingInitialLiveSessions {
             return startupPollInterval
         }
 
-        return hasTrackedLiveSessions ? activePollInterval : idlePollInterval
+        let baseInterval = hasTrackedLiveSessions ? activePollInterval : idlePollInterval
+        return baseInterval * cadence.intervalMultiplier
     }
 
     static func monitoringWakeInterval(
@@ -164,7 +190,8 @@ final class ProcessMonitoringCoordinator {
 
                     let pollInterval = Self.monitoringPollInterval(
                         isResolvingInitialLiveSessions: self.isResolvingInitialLiveSessions,
-                        hasTrackedLiveSessions: self.state.sessions.contains(where: \.isTrackedLiveSession)
+                        hasTrackedLiveSessions: self.state.sessions.contains(where: \.isTrackedLiveSession),
+                        cadence: self.discoveryCadence
                     )
                     nextFullReconcileAt = Date().addingTimeInterval(pollInterval)
                     hadTrackedLiveSessions = self.state.sessions.contains(where: \.isTrackedLiveSession)

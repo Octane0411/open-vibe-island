@@ -26,6 +26,13 @@
 "settings.general.showDockIcon" = "Show icon in Dock";
 "settings.general.hapticFeedback" = "Haptic feedback on hover";
 "settings.general.suppressFrontmostNotifications" = "Suppress notifications for focused sessions";
+"settings.section.energy" = "Energy";
+"settings.general.idleGlyphAnimation" = "Animate idle notch glyph";
+"settings.general.processDiscoveryCadence" = "Session scan frequency";
+"settings.general.cadence.standard" = "Standard";
+"settings.general.cadence.relaxed" = "Relaxed";
+"settings.general.cadence.batterySaver" = "Battery Saver";
+"settings.general.energy.footer" = "Lower settings reduce battery use. Slower scans take a little longer to detect agents started without a hook.";
 "settings.general.showCodexUsage" = "Show Codex usage";
 "settings.general.completionReply" = "Reply from completion card";
 "settings.general.cliHooks" = "CLI Hooks";

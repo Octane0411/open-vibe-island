@@ -26,6 +26,13 @@
 "settings.general.showDockIcon" = "在 Dock 中显示图标";
 "settings.general.hapticFeedback" = "悬停时震动反馈";
 "settings.general.suppressFrontmostNotifications" = "前台会话不弹出通知";
+"settings.section.energy" = "能耗";
+"settings.general.idleGlyphAnimation" = "空闲时灵动岛动画";
+"settings.general.processDiscoveryCadence" = "会话扫描频率";
+"settings.general.cadence.standard" = "标准";
+"settings.general.cadence.relaxed" = "宽松";
+"settings.general.cadence.batterySaver" = "省电";
+"settings.general.energy.footer" = "更低的设置可减少耗电。扫描越慢,检测未配置 hook 的会话会略慢一些。";
 "settings.general.showCodexUsage" = "显示 Codex 用量";
 "settings.general.completionReply" = "在完成卡片中回复";
 "settings.general.cliHooks" = "CLI Hooks";

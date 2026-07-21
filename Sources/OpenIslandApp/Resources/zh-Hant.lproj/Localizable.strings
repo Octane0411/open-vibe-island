@@ -26,6 +26,13 @@
 "settings.general.showDockIcon" = "在 Dock 中顯示圖示";
 "settings.general.hapticFeedback" = "懸停時震動回饋";
 "settings.general.suppressFrontmostNotifications" = "前台工作階段不彈出通知";
+"settings.section.energy" = "能耗";
+"settings.general.idleGlyphAnimation" = "閒置時靈動島動畫";
+"settings.general.processDiscoveryCadence" = "工作階段掃描頻率";
+"settings.general.cadence.standard" = "標準";
+"settings.general.cadence.relaxed" = "寬鬆";
+"settings.general.cadence.batterySaver" = "省電";
+"settings.general.energy.footer" = "較低的設定可減少耗電。掃描越慢,偵測未設定 hook 的工作階段會稍慢一些。";
 "settings.general.showCodexUsage" = "顯示 Codex 用量";
 "settings.general.completionReply" = "在完成卡片中回覆";
 "settings.general.cliHooks" = "CLI Hooks";
