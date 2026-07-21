@@ -548,8 +548,30 @@ public struct GraphSchedulerEvaluationPayload:
     public let graphDefinitionDigest: GraphContentDigest
     public let schedulerPolicyID: String
     public let schedulerPolicyVersion: String
+    public let schedulerPolicy: GraphSchedulerPolicy?
     public let logicalTime: Date
     public let availableCapabilityIdentities: [String]
+
+    public init(
+        evaluationID: String,
+        graphDefinitionVersion: String,
+        graphDefinitionDigest: GraphContentDigest,
+        schedulerPolicyID: String,
+        schedulerPolicyVersion: String,
+        schedulerPolicy: GraphSchedulerPolicy? = nil,
+        logicalTime: Date,
+        availableCapabilityIdentities: [String]
+    ) {
+        self.evaluationID = evaluationID
+        self.graphDefinitionVersion = graphDefinitionVersion
+        self.graphDefinitionDigest = graphDefinitionDigest
+        self.schedulerPolicyID = schedulerPolicyID
+        self.schedulerPolicyVersion = schedulerPolicyVersion
+        self.schedulerPolicy = schedulerPolicy
+        self.logicalTime = logicalTime
+        self.availableCapabilityIdentities =
+            availableCapabilityIdentities.sorted()
+    }
 }
 
 public struct GraphNodeSchedulingPayload:
@@ -719,6 +741,7 @@ public enum GraphScheduler {
                 input.availableExecutors
                     .map(\.capabilityIdentity)
                     .joined(separator: ","),
+                schedulingStateIdentity(input),
             ].joined(separator: "|")
         )
         guard !input.projectedState.scheduling.completedEvaluationIDs
@@ -740,6 +763,7 @@ public enum GraphScheduler {
             graphDefinitionDigest: input.definition.digest,
             schedulerPolicyID: input.policy.policyID,
             schedulerPolicyVersion: input.policy.version,
+            schedulerPolicy: input.policy,
             logicalTime: input.logicalTime,
             availableCapabilityIdentities: input.availableExecutors
                 .map(\.capabilityIdentity)
@@ -996,7 +1020,7 @@ public enum GraphScheduler {
             ordinal: latest?.ordinal ?? nextOrdinal,
             claims: input.existingClaims,
             time: input.logicalTime
-        ) {
+        ), latest?.state.isTerminal != true {
             return NodeResult(
                 phase: .claimed,
                 reason: .existingActiveClaim,
@@ -1206,6 +1230,46 @@ public enum GraphScheduler {
             guard let phase = states[$0]?.phase else { return true }
             return phase == .blocked || phase == .terminal
         }
+    }
+
+    private static func schedulingStateIdentity(
+        _ input: GraphSchedulingInput
+    ) -> String {
+        let run = input.projectedState.run.map {
+            "run:\($0.id):\($0.state.rawValue)"
+        } ?? "run:none"
+        let nodes = input.projectedState.nodes.sorted { $0.id < $1.id }
+            .map { "node:\($0.id):\($0.state.rawValue)" }
+        let attempts = input.projectedState.attempts.sorted {
+            if $0.nodeID != $1.nodeID { return $0.nodeID < $1.nodeID }
+            if $0.ordinal != $1.ordinal { return $0.ordinal < $1.ordinal }
+            return $0.id < $1.id
+        }.map {
+            "attempt:\($0.id):\($0.ordinal):\($0.state.rawValue)"
+        }
+        let claims = input.existingClaims.sorted {
+            $0.claim.id < $1.claim.id
+        }.map {
+            "claim:\($0.claim.id):\($0.status.rawValue):\($0.claim.leaseGeneration):\(iso8601($0.claim.leaseExpiry))"
+        }
+        let retries = input.projectedState.scheduling.retries.sorted {
+            if $0.nodeID != $1.nodeID { return $0.nodeID < $1.nodeID }
+            return $0.nextAttemptOrdinal < $1.nextAttemptOrdinal
+        }.map {
+            "retry:\($0.nodeID):\($0.nextAttemptOrdinal):\(iso8601($0.eligibleAt))"
+        }
+        let cancellations = input.projectedState.scheduling.cancellations
+            .sorted { $0.id < $1.id }
+            .map { "cancel:\($0.id):\($0.state.rawValue)" }
+        let timeouts = input.projectedState.scheduling.timeouts
+            .sorted { $0.id < $1.id }
+            .map { "timeout:\($0.id):\($0.kind.rawValue)" }
+        let failures = input.failureCategoriesByAttemptID.keys.sorted().map {
+            "failure:\($0):\(input.failureCategoriesByAttemptID[$0]!)"
+        }
+        return ([run] + nodes + attempts + claims + retries
+            + cancellations + timeouts + failures)
+            .joined(separator: ";")
     }
 
     private static func proposal(

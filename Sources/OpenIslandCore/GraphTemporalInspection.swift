@@ -212,6 +212,142 @@ public struct GraphAttemptInspection:
     public let statusReason: String?
 }
 
+public struct GraphExecutorClaimInspection:
+    Equatable,
+    Codable,
+    Sendable,
+    Identifiable
+{
+    public let id: String
+    public let nodeID: String
+    public let attemptOrdinal: Int
+    public let executorID: String
+    public let executorCapabilityIdentity: String
+    public let grantedSequence: UInt64
+    public let leaseStart: Date
+    public let leaseExpiry: Date
+    public let leaseGeneration: UInt64
+    public let status: GraphExecutorClaimStatus
+    public let statusChangedAt: Date
+    public let reason: GraphSchedulingReasonCode
+    public let hostIdentityPresent: Bool
+
+    public init(record: GraphExecutorClaimRecord) {
+        id = record.claim.id
+        nodeID = record.claim.nodeID
+        attemptOrdinal = record.claim.attemptOrdinal
+        executorID = record.claim.executorID
+        executorCapabilityIdentity =
+            record.claim.executorCapabilityIdentity
+        grantedSequence = record.claim.grantedSequence
+        leaseStart = record.claim.leaseStart
+        leaseExpiry = record.claim.leaseExpiry
+        leaseGeneration = record.claim.leaseGeneration
+        status = record.status
+        statusChangedAt = record.statusChangedAt
+        reason = record.reason
+        hostIdentityPresent = record.claim.hostID != nil
+    }
+}
+
+public struct GraphSchedulingInspection: Equatable, Codable, Sendable {
+    public let schemaVersion: Int
+    public let latestEvaluation: GraphSchedulerEvaluationPayload?
+    public let currentPolicy: GraphSchedulerPolicy?
+    public let activeClaims: [GraphExecutorClaimInspection]
+    public let claimHistory: [GraphExecutorClaimInspection]
+    public let retries: [GraphRetryRecord]
+    public let pendingCancellations: [GraphCancellationRecord]
+    public let cancellationHistory: [GraphCancellationRecord]
+    public let timeouts: [GraphTimeoutDecision]
+    public let reasonCodes: [GraphSchedulingReasonCode]
+    public let records: [GraphSchedulingRecord]
+
+    public init(
+        schemaVersion: Int,
+        latestEvaluation: GraphSchedulerEvaluationPayload?,
+        currentPolicy: GraphSchedulerPolicy?,
+        activeClaims: [GraphExecutorClaimInspection],
+        claimHistory: [GraphExecutorClaimInspection],
+        retries: [GraphRetryRecord],
+        pendingCancellations: [GraphCancellationRecord],
+        cancellationHistory: [GraphCancellationRecord],
+        timeouts: [GraphTimeoutDecision],
+        reasonCodes: [GraphSchedulingReasonCode],
+        records: [GraphSchedulingRecord]
+    ) {
+        self.schemaVersion = schemaVersion
+        self.latestEvaluation = latestEvaluation
+        self.currentPolicy = currentPolicy
+        self.activeClaims = activeClaims
+        self.claimHistory = claimHistory
+        self.retries = retries
+        self.pendingCancellations = pendingCancellations
+        self.cancellationHistory = cancellationHistory
+        self.timeouts = timeouts
+        self.reasonCodes = reasonCodes
+        self.records = records
+    }
+
+    public init(
+        projection: GraphSchedulingProjection,
+        terminalNodeIDs: Set<String>
+    ) {
+        schemaVersion = GraphSchedulingSchema.definitionVersion
+        latestEvaluation = projection.evaluations.max {
+            if $0.logicalTime != $1.logicalTime {
+                return $0.logicalTime < $1.logicalTime
+            }
+            return $0.evaluationID < $1.evaluationID
+        }
+        currentPolicy = latestEvaluation?.schedulerPolicy
+        claimHistory = projection.claims
+            .map(GraphExecutorClaimInspection.init)
+            .sorted(by: claimInspectionIsOrderedBefore)
+        activeClaims = claimHistory.filter { $0.status == .active }
+        retries = projection.retries.sorted {
+            if $0.nodeID != $1.nodeID {
+                return $0.nodeID < $1.nodeID
+            }
+            return $0.nextAttemptOrdinal < $1.nextAttemptOrdinal
+        }
+        cancellationHistory = projection.cancellations.sorted {
+            if $0.nodeID != $1.nodeID {
+                return $0.nodeID < $1.nodeID
+            }
+            return $0.id < $1.id
+        }
+        pendingCancellations = cancellationHistory.filter {
+            !terminalNodeIDs.contains($0.nodeID)
+        }
+        timeouts = projection.timeouts.sorted {
+            if $0.declaredAt != $1.declaredAt {
+                return $0.declaredAt < $1.declaredAt
+            }
+            return $0.id < $1.id
+        }
+        reasonCodes = Array(
+            Set(projection.records.compactMap(\.reason))
+        ).sorted { $0.rawValue < $1.rawValue }
+        records = projection.records.sorted {
+            if $0.sequence != $1.sequence {
+                return $0.sequence < $1.sequence
+            }
+            return $0.id < $1.id
+        }
+    }
+}
+
+private func claimInspectionIsOrderedBefore(
+    _ lhs: GraphExecutorClaimInspection,
+    _ rhs: GraphExecutorClaimInspection
+) -> Bool {
+    if lhs.grantedSequence != rhs.grantedSequence {
+        return lhs.grantedSequence < rhs.grantedSequence
+    }
+    return lhs.id < rhs.id
+}
+
 public struct GraphRunInspection:
     Equatable,
     Codable,
@@ -228,8 +364,41 @@ public struct GraphRunInspection:
     public let checkpointNamespace: String
     public let graphDefinitionVersion: String?
     public let graphDefinitionDigest: GraphContentDigest?
+    public let scheduling: GraphSchedulingInspection?
     public let replayDiagnostics: [GraphReplayDiagnostic]
     public let repositoryDiagnostics: [GraphRepositoryDiagnostic]
+
+    public init(
+        summary: GraphRunInspectionSummary,
+        nodes: [GraphNodeInspection],
+        attempts: [GraphAttemptInspection],
+        checkpoints: [GraphCheckpointReference],
+        artifacts: [GraphArtifactInspection],
+        artifactsIncluded: Bool,
+        parentRunID: String?,
+        parentCheckpoint: GraphCheckpointReference?,
+        checkpointNamespace: String,
+        graphDefinitionVersion: String?,
+        graphDefinitionDigest: GraphContentDigest?,
+        scheduling: GraphSchedulingInspection? = nil,
+        replayDiagnostics: [GraphReplayDiagnostic],
+        repositoryDiagnostics: [GraphRepositoryDiagnostic]
+    ) {
+        self.summary = summary
+        self.nodes = nodes
+        self.attempts = attempts
+        self.checkpoints = checkpoints
+        self.artifacts = artifacts
+        self.artifactsIncluded = artifactsIncluded
+        self.parentRunID = parentRunID
+        self.parentCheckpoint = parentCheckpoint
+        self.checkpointNamespace = checkpointNamespace
+        self.graphDefinitionVersion = graphDefinitionVersion
+        self.graphDefinitionDigest = graphDefinitionDigest
+        self.scheduling = scheduling
+        self.replayDiagnostics = replayDiagnostics
+        self.repositoryDiagnostics = repositoryDiagnostics
+    }
 }
 
 public struct GraphInspectionEventFilter:
@@ -434,6 +603,7 @@ public struct GraphCausalExplanation:
     public let causalPredecessorNodeIDs: [String]
     public let blockingDependencyNodeIDs: [String]
     public let readinessRequirements: [String]
+    public let schedulerReasons: [GraphSchedulingReasonCode]?
     public let ignoredInputs: [GraphCausalReason]
 }
 
@@ -461,6 +631,11 @@ public enum GraphTemporalChangeCategory: String, Codable, Sendable {
     case evidence
     case reconciliation
     case causalExplanation = "causal_explanation"
+    case scheduler
+    case claim
+    case retry
+    case cancellation
+    case timeout
 }
 
 public struct GraphTemporalChange:
@@ -671,6 +846,12 @@ public struct DefaultGraphTemporalInspector:
                 replay.projected.graphDefinitionVersion,
             graphDefinitionDigest:
                 replay.projected.graphDefinitionDigest,
+            scheduling: GraphSchedulingInspection(
+                projection: replay.projected.scheduling,
+                terminalNodeIDs: Set(
+                    nodes.filter { $0.reconciledState.isTerminal }.map(\.id)
+                )
+            ),
             replayDiagnostics:
                 includeDiagnostics ? replay.replayDiagnostics : [],
             repositoryDiagnostics:
@@ -827,6 +1008,11 @@ public struct DefaultGraphTemporalInspector:
         compareArtifacts(
             left: leftResult.projected.artifacts,
             right: rightResult.projected.artifacts,
+            changes: &changes
+        )
+        compareScheduling(
+            left: leftResult.projected.scheduling,
+            right: rightResult.projected.scheduling,
             changes: &changes
         )
 
@@ -1438,6 +1624,13 @@ public struct DefaultGraphTemporalInspector:
             causalPredecessorNodeIDs: predecessors,
             blockingDependencyNodeIDs: blockers,
             readinessRequirements: requirements,
+            schedulerReasons: Array(
+                Set(
+                    result.projected.scheduling.records
+                        .filter { nodeID == nil || $0.nodeID == nodeID }
+                        .compactMap(\.reason)
+                )
+            ).sorted { $0.rawValue < $1.rawValue },
             ignoredInputs: ignored
         )
     }
@@ -1863,6 +2056,142 @@ public struct DefaultGraphTemporalInspector:
         }
     }
 
+    private func compareScheduling(
+        left: GraphSchedulingProjection,
+        right: GraphSchedulingProjection,
+        changes: inout [GraphTemporalChange]
+    ) {
+        appendChange(
+            category: .scheduler,
+            entityID: "latest",
+            field: "completed_evaluation",
+            left: left.records.last {
+                $0.eventType
+                    == GraphExecutionEventType
+                        .schedulerCycleCompleted.rawValue
+            }?.evaluationID,
+            right: right.records.last {
+                $0.eventType
+                    == GraphExecutionEventType
+                        .schedulerCycleCompleted.rawValue
+            }?.evaluationID,
+            to: &changes
+        )
+
+        let leftClaims = Dictionary(
+            uniqueKeysWithValues: left.claims.map { ($0.claim.id, $0) }
+        )
+        let rightClaims = Dictionary(
+            uniqueKeysWithValues: right.claims.map { ($0.claim.id, $0) }
+        )
+        for id in Set(leftClaims.keys).union(rightClaims.keys).sorted() {
+            appendChange(
+                category: .claim,
+                entityID: id,
+                field: "status",
+                left: leftClaims[id]?.status.rawValue,
+                right: rightClaims[id]?.status.rawValue,
+                to: &changes
+            )
+            appendChange(
+                category: .claim,
+                entityID: id,
+                field: "lease_generation",
+                left: leftClaims[id].map {
+                    String($0.claim.leaseGeneration)
+                },
+                right: rightClaims[id].map {
+                    String($0.claim.leaseGeneration)
+                },
+                to: &changes
+            )
+            appendChange(
+                category: .claim,
+                entityID: id,
+                field: "lease_expiry",
+                left: leftClaims[id].map {
+                    graphInspectionDateString($0.claim.leaseExpiry)
+                },
+                right: rightClaims[id].map {
+                    graphInspectionDateString($0.claim.leaseExpiry)
+                },
+                to: &changes
+            )
+        }
+
+        let leftRetries = Dictionary(
+            uniqueKeysWithValues: left.retries.map {
+                ("\($0.nodeID):\($0.nextAttemptOrdinal)", $0)
+            }
+        )
+        let rightRetries = Dictionary(
+            uniqueKeysWithValues: right.retries.map {
+                ("\($0.nodeID):\($0.nextAttemptOrdinal)", $0)
+            }
+        )
+        for id in Set(leftRetries.keys).union(rightRetries.keys).sorted() {
+            appendChange(
+                category: .retry,
+                entityID: id,
+                field: "eligible_at",
+                left: leftRetries[id].map {
+                    graphInspectionDateString($0.eligibleAt)
+                },
+                right: rightRetries[id].map {
+                    graphInspectionDateString($0.eligibleAt)
+                },
+                to: &changes
+            )
+        }
+
+        let leftCancellations = Dictionary(
+            uniqueKeysWithValues: left.cancellations.map { ($0.id, $0) }
+        )
+        let rightCancellations = Dictionary(
+            uniqueKeysWithValues: right.cancellations.map { ($0.id, $0) }
+        )
+        for id in Set(leftCancellations.keys)
+            .union(rightCancellations.keys).sorted() {
+            appendChange(
+                category: .cancellation,
+                entityID: id,
+                field: "state",
+                left: leftCancellations[id]?.state.rawValue,
+                right: rightCancellations[id]?.state.rawValue,
+                to: &changes
+            )
+        }
+
+        let leftTimeouts = Dictionary(
+            uniqueKeysWithValues: left.timeouts.map { ($0.id, $0) }
+        )
+        let rightTimeouts = Dictionary(
+            uniqueKeysWithValues: right.timeouts.map { ($0.id, $0) }
+        )
+        for id in Set(leftTimeouts.keys).union(rightTimeouts.keys).sorted() {
+            appendChange(
+                category: .timeout,
+                entityID: id,
+                field: "kind",
+                left: leftTimeouts[id]?.kind.rawValue,
+                right: rightTimeouts[id]?.kind.rawValue,
+                to: &changes
+            )
+            appendChange(
+                category: .timeout,
+                entityID: id,
+                field: "deadline",
+                left: leftTimeouts[id].map {
+                    graphInspectionDateString($0.deadline)
+                },
+                right: rightTimeouts[id].map {
+                    graphInspectionDateString($0.deadline)
+                },
+                to: &changes
+            )
+        }
+    }
+
     private func appendChange(
         category: GraphTemporalChangeCategory,
         entityID: String,
@@ -1970,6 +2299,10 @@ private func bounded(_ value: String?, limit: Int = 512) -> String? {
         return singleLine
     }
     return String(singleLine.prefix(limit))
+}
+
+private func graphInspectionDateString(_ date: Date) -> String {
+    ISO8601DateFormatter().string(from: date)
 }
 
 private func attemptIsOrderedBefore(

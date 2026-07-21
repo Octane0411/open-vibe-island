@@ -177,6 +177,44 @@ final class GraphSchedulingProtocolTests: XCTestCase {
         }
     }
 
+    func testExpiredOwnerDoesNotPreventTerminalCancellation()
+        async throws
+    {
+        let owned = try await claimedContext(leaseDuration: 2)
+        let cancellation = try await owned.context.repository
+            .requestCancellation(
+                GraphCancellationCommandRequest(
+                    runID: owned.context.runID,
+                    nodeID: "architect",
+                    attemptID: owned.attemptID,
+                    requestID: "cancel-expired-owner",
+                    requestedBy: "operator",
+                    expectedVersion: owned.version,
+                    logicalTime: owned.context.time.addingTimeInterval(1),
+                    producer: graphTestProducer,
+                    recordedAt: owned.context.time.addingTimeInterval(1)
+                )
+            )
+        let terminal = try await owned.context.repository
+            .declareCancellationTerminal(
+                GraphCancellationTerminalRequest(
+                    runID: owned.context.runID,
+                    requestID: "cancel-expired-owner",
+                    expectedVersion: cancellation.appendResult.newVersion,
+                    logicalTime: owned.context.time.addingTimeInterval(3),
+                    reason: "owner unavailable after lease expiry",
+                    producer: graphTestProducer,
+                    recordedAt: owned.context.time.addingTimeInterval(3)
+                )
+            )
+
+        XCTAssertEqual(terminal.projection.attempts.first?.state, .cancelled)
+        XCTAssertEqual(
+            terminal.projection.scheduling.claims.first?.status,
+            .expired
+        )
+    }
+
     func testTimeoutKindsAreDurableAndLeaseTimeoutDoesNotEndAttempt()
         async throws
     {

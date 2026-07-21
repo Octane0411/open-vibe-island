@@ -382,43 +382,34 @@ public struct DefaultGraphSchedulingRepository:
         _ request: GraphSchedulerEvaluationRequest
     ) async throws -> GraphSchedulingTransactionResult {
         let loaded = try await load(runID: request.runID)
+        if request.expectedVersion < loaded.stream.currentVersion {
+            let expectedProjection = try replay(
+                runID: request.runID,
+                events: loaded.stream.events.filter {
+                    $0.streamSequence <= request.expectedVersion
+                }
+            )
+            let redeliveredDecision = try schedulingDecision(
+                request,
+                projection: expectedProjection
+            )
+            if loaded.projection.scheduling.completedEvaluationIDs
+                .contains(redeliveredDecision.evaluationID) {
+                return unchanged(loaded)
+            }
+        }
+        let decision = try schedulingDecision(
+            request,
+            projection: loaded.projection
+        )
+        guard !decision.proposedEvents.isEmpty else {
+            return unchanged(loaded)
+        }
         try requireVersion(
             request.expectedVersion,
             actual: loaded.stream.currentVersion,
             runID: request.runID
         )
-        guard let reconciled = GraphExecutionProjectionReconciler.reconcile(
-            projection: loaded.projection,
-            evidenceOutcome: .available(GraphProcessEvidence()),
-            observedAt: request.logicalTime
-        ) else {
-            throw GraphSchedulingRepositoryError.corruptHistory(
-                "Run \(request.runID) has no run projection."
-            )
-        }
-        let decision = GraphScheduler.evaluate(
-            GraphSchedulingInput(
-                definition: request.definition,
-                projectedState: loaded.projection,
-                reconciledState: reconciled,
-                policy: request.policy,
-                logicalTime: request.logicalTime,
-                availableExecutors: request.availableExecutors,
-                failureCategoriesByAttemptID:
-                    request.failureCategoriesByAttemptID
-            )
-        )
-        guard !decision.proposedEvents.isEmpty else {
-            return GraphSchedulingTransactionResult(
-                appendResult: GraphExecutionAppendResult(
-                    previousVersion: loaded.stream.currentVersion,
-                    newVersion: loaded.stream.currentVersion,
-                    appendedCount: 0,
-                    deduplicatedCount: 0
-                ),
-                projection: loaded.projection
-            )
-        }
         let envelopes = envelopes(
             proposals: decision.proposedEvents,
             runID: request.runID,
@@ -441,6 +432,33 @@ public struct DefaultGraphSchedulingRepository:
         )
     }
 
+    private func schedulingDecision(
+        _ request: GraphSchedulerEvaluationRequest,
+        projection: GraphExecutionProjection
+    ) throws -> GraphSchedulingDecision {
+        guard let reconciled = GraphExecutionProjectionReconciler.reconcile(
+            projection: projection,
+            evidenceOutcome: .available(GraphProcessEvidence()),
+            observedAt: request.logicalTime
+        ) else {
+            throw GraphSchedulingRepositoryError.corruptHistory(
+                "Run \(request.runID) has no run projection."
+            )
+        }
+        return GraphScheduler.evaluate(
+            GraphSchedulingInput(
+                definition: request.definition,
+                projectedState: projection,
+                reconciledState: reconciled,
+                policy: request.policy,
+                logicalTime: request.logicalTime,
+                availableExecutors: request.availableExecutors,
+                failureCategoriesByAttemptID:
+                    request.failureCategoriesByAttemptID
+            )
+        )
+    }
+
     public func attemptClaim(
         _ request: GraphExecutorClaimRequest
     ) async throws -> GraphExecutorClaimResult {
@@ -450,7 +468,15 @@ public struct DefaultGraphSchedulingRepository:
             where: { $0.claim.id == request.claimID }
         ) {
             guard existing.claim.executorID == request.executor.executorID,
-                  existing.claim.nodeID == request.nodeID else {
+                  existing.claim.nodeID == request.nodeID,
+                  existing.claim.executorCapabilityIdentity
+                    == request.executor.capabilityIdentity,
+                  existing.claim.hostID == request.executor.hostID,
+                  existing.claim.leaseStart == request.logicalTime,
+                  existing.claim.leaseExpiry
+                    == request.logicalTime.addingTimeInterval(
+                        TimeInterval(request.leaseDurationSeconds)
+                    ) else {
                 throw conflict(
                     .claimIdentityCollision,
                     "Claim ID \(request.claimID) is already associated with another owner.",
@@ -489,6 +515,15 @@ public struct DefaultGraphSchedulingRepository:
             throw conflict(
                 .cancellationPending,
                 "Node \(request.nodeID) has a pending cancellation."
+            )
+        }
+        guard loaded.projection.scheduling.records.last(where: {
+            $0.eventType
+                == GraphExecutionEventType.schedulerCycleCompleted.rawValue
+        })?.evaluationID == request.evaluationID else {
+            throw conflict(
+                .schedulerEvaluationMissing,
+                "Claim must reference the latest completed scheduler evaluation."
             )
         }
         guard let runnable = loaded.projection.scheduling.records.last(
@@ -792,6 +827,15 @@ public struct DefaultGraphSchedulingRepository:
             )
         }
         if record.status == .released {
+            guard record.claim.executorID == request.executorID,
+                  record.claim.leaseGeneration
+                    == request.expectedGeneration,
+                  record.statusChangedAt == request.logicalTime else {
+                throw conflict(
+                    .claimAlreadyReleased,
+                    "Released claim redelivery has contradictory content."
+                )
+            }
             return unchanged(loaded)
         }
         try requireVersion(
@@ -1010,9 +1054,17 @@ public struct DefaultGraphSchedulingRepository:
         _ request: GraphCancellationTerminalRequest
     ) async throws -> GraphSchedulingTransactionResult {
         let loaded = try await load(runID: request.runID)
-        if loaded.stream.events.contains(where: {
+        if let existing = loaded.stream.events.first(where: {
             $0.id == "cancellation-terminal-\(request.requestID)"
         }) {
+            guard existing.occurredAt == request.logicalTime,
+                  case let .attemptCancelled(payload) = existing.payload,
+                  payload.reason == request.reason else {
+                throw conflict(
+                    .invalidRequest,
+                    "Terminal cancellation redelivery has contradictory content."
+                )
+            }
             return unchanged(loaded)
         }
         guard let cancellation = loaded.projection.scheduling
@@ -1029,8 +1081,15 @@ public struct DefaultGraphSchedulingRepository:
             actual: loaded.stream.currentVersion,
             runID: request.runID
         )
-        if cancellation.claimID != nil,
-           cancellation.state != .acknowledged {
+        let cancellationClaim = cancellation.claimID.flatMap { claimID in
+            loaded.projection.scheduling.claims.first {
+                $0.claim.id == claimID
+            }
+        }
+        if cancellation.state != .acknowledged,
+           let cancellationClaim,
+           cancellationClaim.status == .active,
+           cancellationClaim.claim.isValid(at: request.logicalTime) {
             throw conflict(
                 .cancellationPending,
                 "Claimed cancellation must be acknowledged before terminal declaration."
@@ -1093,15 +1152,15 @@ public struct DefaultGraphSchedulingRepository:
             )
         }
 
-        if let claimID = cancellation.claimID,
-           let claim = loaded.projection.scheduling.claims.first(
-                where: {
-                    $0.claim.id == claimID && $0.status == .active
-                }
-           )?.claim {
+        if let cancellationClaim,
+           cancellationClaim.status == .active {
+            let claim = cancellationClaim.claim
+            let leaseExpired = !claim.isValid(at: request.logicalTime)
             events.append(
                 envelope(
-                    id: "claim-release-\(claim.id)-\(claim.leaseGeneration)",
+                    id: leaseExpired
+                        ? "claim-expired-\(claim.id)-\(claim.leaseGeneration)"
+                        : "claim-release-\(claim.id)-\(claim.leaseGeneration)",
                     runID: request.runID,
                     nodeID: claim.nodeID,
                     attemptID: terminalAttempt.id,
@@ -1110,13 +1169,21 @@ public struct DefaultGraphSchedulingRepository:
                     recordedAt: request.recordedAt,
                     producer: request.producer,
                     correlationID: request.requestID,
-                    payload: .executorClaimReleased(
-                        GraphExecutorLeaseEndedPayload(
-                            claimID: claim.id,
-                            leaseGeneration: claim.leaseGeneration,
-                            reason: .claimReleased
+                    payload: leaseExpired
+                        ? .executorLeaseExpired(
+                            GraphExecutorLeaseEndedPayload(
+                                claimID: claim.id,
+                                leaseGeneration: claim.leaseGeneration,
+                                reason: .leaseExpired
+                            )
                         )
-                    )
+                        : .executorClaimReleased(
+                            GraphExecutorLeaseEndedPayload(
+                                claimID: claim.id,
+                                leaseGeneration: claim.leaseGeneration,
+                                reason: .claimReleased
+                            )
+                        )
                 )
             )
             sequence += 1

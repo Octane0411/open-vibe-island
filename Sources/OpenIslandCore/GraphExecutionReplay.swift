@@ -251,6 +251,125 @@ public struct GraphExecutionProjection: Equatable, Codable, Sendable {
         self.namedCheckpoints = namedCheckpoints
         self.scheduling = scheduling
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case runID
+        case streamVersion
+        case run
+        case nodes
+        case attempts
+        case processExits
+        case heartbeats
+        case executionEvents
+        case artifacts
+        case humanInterrupts
+        case unknownEvents
+        case graphDefinitionVersion
+        case graphDefinitionDigest
+        case checkpointNamespace
+        case parentRunID
+        case parentCheckpoint
+        case namedCheckpoints
+        case scheduling
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        runID = try values.decode(String.self, forKey: .runID)
+        streamVersion = try values.decode(UInt64.self, forKey: .streamVersion)
+        run = try values.decodeIfPresent(GraphRun.self, forKey: .run)
+        nodes = try values.decode([GraphNode].self, forKey: .nodes)
+        attempts = try values.decode(
+            [ExecutionAttempt].self,
+            forKey: .attempts
+        )
+        processExits = try values.decode(
+            [ProcessExit].self,
+            forKey: .processExits
+        )
+        heartbeats = try values.decode(
+            [ExecutorHeartbeat].self,
+            forKey: .heartbeats
+        )
+        executionEvents = try values.decode(
+            [ExecutionEvent].self,
+            forKey: .executionEvents
+        )
+        artifacts = try values.decode(
+            [GraphArtifactReference].self,
+            forKey: .artifacts
+        )
+        humanInterrupts = try values.decode(
+            [GraphHumanInterruptRecord].self,
+            forKey: .humanInterrupts
+        )
+        unknownEvents = try values.decode(
+            [GraphExecutionEventEnvelope].self,
+            forKey: .unknownEvents
+        )
+        graphDefinitionVersion = try values.decodeIfPresent(
+            String.self,
+            forKey: .graphDefinitionVersion
+        )
+        graphDefinitionDigest = try values.decodeIfPresent(
+            GraphContentDigest.self,
+            forKey: .graphDefinitionDigest
+        )
+        checkpointNamespace = try values.decode(
+            String.self,
+            forKey: .checkpointNamespace
+        )
+        parentRunID = try values.decodeIfPresent(
+            String.self,
+            forKey: .parentRunID
+        )
+        parentCheckpoint = try values.decodeIfPresent(
+            GraphCheckpointReference.self,
+            forKey: .parentCheckpoint
+        )
+        namedCheckpoints = try values.decode(
+            [GraphCheckpointReference].self,
+            forKey: .namedCheckpoints
+        )
+        scheduling = try values.decodeIfPresent(
+            GraphSchedulingProjection.self,
+            forKey: .scheduling
+        ) ?? GraphSchedulingProjection()
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(runID, forKey: .runID)
+        try values.encode(streamVersion, forKey: .streamVersion)
+        try values.encodeIfPresent(run, forKey: .run)
+        try values.encode(nodes, forKey: .nodes)
+        try values.encode(attempts, forKey: .attempts)
+        try values.encode(processExits, forKey: .processExits)
+        try values.encode(heartbeats, forKey: .heartbeats)
+        try values.encode(executionEvents, forKey: .executionEvents)
+        try values.encode(artifacts, forKey: .artifacts)
+        try values.encode(humanInterrupts, forKey: .humanInterrupts)
+        try values.encode(unknownEvents, forKey: .unknownEvents)
+        try values.encodeIfPresent(
+            graphDefinitionVersion,
+            forKey: .graphDefinitionVersion
+        )
+        try values.encodeIfPresent(
+            graphDefinitionDigest,
+            forKey: .graphDefinitionDigest
+        )
+        try values.encode(
+            checkpointNamespace,
+            forKey: .checkpointNamespace
+        )
+        try values.encodeIfPresent(parentRunID, forKey: .parentRunID)
+        try values.encodeIfPresent(
+            parentCheckpoint,
+            forKey: .parentCheckpoint
+        )
+        try values.encode(namedCheckpoints, forKey: .namedCheckpoints)
+        try values.encode(scheduling, forKey: .scheduling)
+    }
 }
 
 public struct GraphExecutionReplayResult: Equatable, Sendable {

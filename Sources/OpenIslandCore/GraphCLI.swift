@@ -208,7 +208,8 @@ public struct GraphCLIInvocation: Equatable, Sendable {
 }
 
 public enum GraphCLIOutputSchema {
-    public static let currentVersion = 1
+    public static let minimumSupportedVersion = 1
+    public static let currentVersion = 2
 }
 
 public enum GraphCLIArgumentError: Error, Equatable, Sendable {
@@ -323,7 +324,10 @@ public enum GraphCLIParser {
             singleValue("--schema-version", values),
             option: "--schema-version"
         ) ?? GraphCLIOutputSchema.currentVersion
-        guard requestedSchema == GraphCLIOutputSchema.currentVersion else {
+        guard requestedSchema
+                >= GraphCLIOutputSchema.minimumSupportedVersion,
+              requestedSchema
+                <= GraphCLIOutputSchema.currentVersion else {
             throw GraphCLIArgumentError.unsupportedSchema(
                 found: requestedSchema,
                 supported: GraphCLIOutputSchema.currentVersion
@@ -1075,9 +1079,13 @@ public struct GraphCLICommandRunner: Sendable {
                 suppressOutput: suppressOutput
             )
         case let .explain(runID, positionalNodeID):
-            let explanation = try await inspector.explain(
+            let inspectedExplanation = try await inspector.explain(
                 runID: runID,
                 nodeID: invocation.nodeID ?? positionalNodeID
+            )
+            let explanation = filterExplanation(
+                inspectedExplanation,
+                invocation
             )
             let code = try emit(
                 explanation,
@@ -1155,9 +1163,9 @@ public struct GraphCLICommandRunner: Sendable {
                     output.reconciledRunState.rawValue
             )
         case let .diff(left, right):
-            let diff = try await inspector.diff(
-                left: left,
-                right: right
+            let diff = filterDiff(
+                try await inspector.diff(left: left, right: right),
+                invocation
             )
             let code = try emit(
                 diff,
@@ -1174,10 +1182,13 @@ public struct GraphCLICommandRunner: Sendable {
                 resultCount: diff.changes.count
             )
         case let .export(runID):
-            let inspection = try await inspector.inspect(
-                runID: runID,
-                includeArtifacts: true,
-                includeDiagnostics: invocation.includeDiagnostics
+            let inspection = filterInspection(
+                try await inspector.inspect(
+                    runID: runID,
+                    includeArtifacts: true,
+                    includeDiagnostics: invocation.includeDiagnostics
+                ),
+                invocation
             )
             let code = try emitExport(
                 inspection,
@@ -1254,6 +1265,7 @@ public struct GraphCLICommandRunner: Sendable {
                 for event in page.events {
                     ordinal += 1
                     let record = GraphCLIJSONLRecord(
+                        schemaVersion: invocation.schemaVersion,
                         command: invocation.command.name,
                         recordType: "event",
                         ordinal: ordinal,
@@ -1292,6 +1304,7 @@ public struct GraphCLICommandRunner: Sendable {
         if invocation.output == .json {
             emitted = records.count
             let document = GraphCLIOutputDocument(
+                schemaVersion: invocation.schemaVersion,
                 command: invocation.command.name,
                 resultCount: records.count,
                 eventCount: records.count,
@@ -1312,6 +1325,7 @@ public struct GraphCLICommandRunner: Sendable {
         if invocation.output == .jsonl,
            invocation.emitCompletionRecord {
             let completion = GraphCLICompletionRecord(
+                schemaVersion: invocation.schemaVersion,
                 command: invocation.command.name,
                 status: GraphCLIExitCode.success.category,
                 exitCode: GraphCLIExitCode.success.rawValue,
@@ -1356,6 +1370,7 @@ public struct GraphCLICommandRunner: Sendable {
             result = writeLine(
                 try encodeString(
                     GraphCLIOutputDocument(
+                        schemaVersion: invocation.schemaVersion,
                         command: invocation.command.name,
                         resultCount: resultCount,
                         eventCount: eventCount,
@@ -1373,6 +1388,7 @@ public struct GraphCLICommandRunner: Sendable {
                 ordinal += 1
                 let line = try encodeString(
                     GraphCLIJSONLRecord(
+                        schemaVersion: invocation.schemaVersion,
                         command: invocation.command.name,
                         recordType: recordType,
                         ordinal: ordinal,
@@ -1388,6 +1404,7 @@ public struct GraphCLICommandRunner: Sendable {
             }
             if invocation.emitCompletionRecord {
                 let completion = GraphCLICompletionRecord(
+                    schemaVersion: invocation.schemaVersion,
                     command: invocation.command.name,
                     status: GraphCLIExitCode.success.category,
                     exitCode: GraphCLIExitCode.success.rawValue,
@@ -1539,6 +1556,13 @@ public struct GraphCLICommandRunner: Sendable {
             invocation.nodeID == nil
                 || $0.producingNodeID == invocation.nodeID
         }
+        let scheduling = invocation.schemaVersion >= 2
+            ? filteredScheduling(
+                inspection.scheduling,
+                nodeID: invocation.nodeID,
+                attemptID: invocation.attemptID
+            )
+            : nil
         return GraphRunInspection(
             summary: inspection.summary,
             nodes: nodes,
@@ -1553,8 +1577,104 @@ public struct GraphCLICommandRunner: Sendable {
                 inspection.graphDefinitionVersion,
             graphDefinitionDigest:
                 inspection.graphDefinitionDigest,
+            scheduling: scheduling,
             replayDiagnostics: inspection.replayDiagnostics,
             repositoryDiagnostics: inspection.repositoryDiagnostics
+        )
+    }
+
+    private func filteredScheduling(
+        _ scheduling: GraphSchedulingInspection?,
+        nodeID: String?,
+        attemptID: String?
+    ) -> GraphSchedulingInspection? {
+        guard let scheduling else { return nil }
+        guard nodeID != nil || attemptID != nil else { return scheduling }
+        let nodeMatches: (String) -> Bool = {
+            nodeID == nil || $0 == nodeID
+        }
+        let attemptMatches: (String?) -> Bool = {
+            attemptID == nil || $0 == attemptID
+        }
+        return GraphSchedulingInspection(
+            schemaVersion: scheduling.schemaVersion,
+            latestEvaluation: scheduling.latestEvaluation,
+            currentPolicy: scheduling.currentPolicy,
+            activeClaims: scheduling.activeClaims.filter {
+                nodeMatches($0.nodeID)
+            },
+            claimHistory: scheduling.claimHistory.filter {
+                nodeMatches($0.nodeID)
+            },
+            retries: scheduling.retries.filter {
+                nodeMatches($0.nodeID)
+                    && attemptMatches($0.failedAttemptID)
+            },
+            pendingCancellations:
+                scheduling.pendingCancellations.filter {
+                    nodeMatches($0.nodeID)
+                        && attemptMatches($0.attemptID)
+                },
+            cancellationHistory:
+                scheduling.cancellationHistory.filter {
+                    nodeMatches($0.nodeID)
+                        && attemptMatches($0.attemptID)
+                },
+            timeouts: scheduling.timeouts.filter {
+                nodeMatches($0.nodeID)
+                    && attemptMatches($0.attemptID)
+            },
+            reasonCodes: scheduling.reasonCodes,
+            records: scheduling.records.filter {
+                ($0.nodeID == nil || nodeMatches($0.nodeID!))
+                    && attemptMatches($0.attemptID)
+            }
+        )
+    }
+
+    private func filterExplanation(
+        _ explanation: GraphCausalExplanation,
+        _ invocation: GraphCLIInvocation
+    ) -> GraphCausalExplanation {
+        guard invocation.schemaVersion == 1 else { return explanation }
+        return GraphCausalExplanation(
+            runID: explanation.runID,
+            nodeID: explanation.nodeID,
+            state: explanation.state,
+            summary: explanation.summary,
+            reasons: explanation.reasons,
+            edges: explanation.edges,
+            shortestCausalChain: explanation.shortestCausalChain,
+            causalPredecessorNodeIDs:
+                explanation.causalPredecessorNodeIDs,
+            blockingDependencyNodeIDs:
+                explanation.blockingDependencyNodeIDs,
+            readinessRequirements: explanation.readinessRequirements,
+            schedulerReasons: nil,
+            ignoredInputs: explanation.ignoredInputs
+        )
+    }
+
+    private func filterDiff(
+        _ diff: GraphTemporalDiffResult,
+        _ invocation: GraphCLIInvocation
+    ) -> GraphTemporalDiffResult {
+        guard invocation.schemaVersion == 1 else { return diff }
+        let schedulingCategories: Set<GraphTemporalChangeCategory> = [
+            .scheduler,
+            .claim,
+            .retry,
+            .cancellation,
+            .timeout,
+        ]
+        return GraphTemporalDiffResult(
+            left: diff.left,
+            right: diff.right,
+            leftBoundary: diff.leftBoundary,
+            rightBoundary: diff.rightBoundary,
+            changes: diff.changes.filter {
+                !schedulingCategories.contains($0.category)
+            }
         )
     }
 
@@ -1678,6 +1798,28 @@ public struct GraphCLICommandRunner: Sendable {
                 "    \(attempt.id)  attempt \(attempt.ordinal)  \(attempt.reconciledState.rawValue)"
             )
         }
+        if let scheduling = inspection.scheduling {
+            for claim in scheduling.activeClaims {
+                lines.append(
+                    "    claim \(claim.id)  \(claim.nodeID)  generation \(claim.leaseGeneration)  expires \(graphCLIISO8601(claim.leaseExpiry))"
+                )
+            }
+            for retry in scheduling.retries {
+                lines.append(
+                    "    retry \(retry.nodeID)#\(retry.nextAttemptOrdinal)  eligible \(graphCLIISO8601(retry.eligibleAt))"
+                )
+            }
+            for cancellation in scheduling.pendingCancellations {
+                lines.append(
+                    "    cancellation \(cancellation.id)  \(cancellation.state.rawValue)"
+                )
+            }
+            for timeout in scheduling.timeouts {
+                lines.append(
+                    "    timeout \(timeout.id)  \(timeout.kind.rawValue)"
+                )
+            }
+        }
         if inspection.artifactsIncluded {
             for artifact in inspection.artifacts {
                 lines.append(
@@ -1703,6 +1845,9 @@ public struct GraphCLICommandRunner: Sendable {
         }
         for requirement in explanation.readinessRequirements {
             lines.append("  requires: \(requirement)")
+        }
+        for reason in explanation.schedulerReasons ?? [] {
+            lines.append("  scheduler: \(reason.rawValue)")
         }
         return lines.joined(separator: "\n") + "\n"
     }
@@ -1844,6 +1989,10 @@ private struct GraphCLICommandOutcome: Sendable {
         self.snapshotDisposition = snapshotDisposition
         self.reconciliationOutcome = reconciliationOutcome
     }
+}
+
+private func graphCLIISO8601(_ date: Date) -> String {
+    ISO8601DateFormatter().string(from: date)
 }
 
 public struct GraphExportEntity:

@@ -172,6 +172,109 @@ func loadStaleCompendiumFixture()
     )
 }
 
+func loadCompendiumSchedulingDefinition()
+    throws -> GraphSchedulingDefinition
+{
+    let url = try XCTUnwrap(
+        Bundle.module.url(
+            forResource: "compendium-scheduling-graph",
+            withExtension: "json",
+            subdirectory: "Fixtures"
+        )
+    )
+    return try JSONDecoder().decode(
+        GraphSchedulingDefinition.self,
+        from: Data(contentsOf: url)
+    )
+}
+
+func compendiumSchedulingBaseEvents(
+    definition: GraphSchedulingDefinition,
+    runID: String,
+    occurredAt: Date
+) -> [GraphExecutionEventEnvelope] {
+    var sequence: UInt64 = 1
+    var events = [
+        GraphExecutionEventEnvelope(
+            id: "\(runID)-created",
+            runID: runID,
+            streamSequence: sequence,
+            occurredAt: occurredAt,
+            recordedAt: occurredAt,
+            producer: graphTestProducer,
+            payload: .runCreated(
+                GraphRunCreatedPayload(
+                    graphID: definition.graphID,
+                    graphDefinitionVersion: definition.version,
+                    graphDefinitionDigest: definition.digest,
+                    nodeIDs: definition.nodes.map(\.id)
+                )
+            )
+        ),
+    ]
+    for node in definition.nodes {
+        sequence += 1
+        events.append(
+            GraphExecutionEventEnvelope(
+                id: "\(runID)-node-\(node.id)",
+                runID: runID,
+                nodeID: node.id,
+                streamSequence: sequence,
+                occurredAt: occurredAt,
+                recordedAt: occurredAt,
+                producer: graphTestProducer,
+                payload: .nodeRegistered(
+                    GraphNodeRegisteredPayload(
+                        title: node.title,
+                        dependencyNodeIDs: node.dependencyNodeIDs,
+                        definitionVersion: definition.version
+                    )
+                )
+            )
+        )
+    }
+    return events
+}
+
+func compendiumExecutorCapabilities()
+    -> [GraphExecutorCapabilities]
+{
+    [
+        GraphExecutorCapabilities(
+            executorID: "architect-worker",
+            capabilityIdentity: "compendium-architect-v1",
+            capabilities: [
+                "compendium-architecture",
+                "web-research-planning",
+            ]
+        ),
+        GraphExecutorCapabilities(
+            executorID: "research-worker",
+            capabilityIdentity: "regulatory-research-v1",
+            capabilities: [
+                "source-verification",
+                "web-scraping",
+            ]
+        ),
+        GraphExecutorCapabilities(
+            executorID: "graph-worker",
+            capabilityIdentity: "evidence-graph-v1",
+            capabilities: [
+                "citation-linking",
+                "knowledge-graph",
+            ]
+        ),
+        GraphExecutorCapabilities(
+            executorID: "review-worker",
+            capabilityIdentity: "regulatory-review-v1",
+            capabilities: [
+                "citation-audit",
+                "regulatory-review",
+            ]
+        ),
+    ]
+}
+
 func staleCompendiumEvents(
     from input: ExecutionReconciliationInput
 ) -> [GraphExecutionEventEnvelope] {

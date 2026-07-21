@@ -64,7 +64,10 @@ final class GraphCLITests: XCTestCase {
         )
 
         XCTAssertEqual(first, second)
-        XCTAssertEqual(object["schemaVersion"] as? Int, 1)
+        XCTAssertEqual(
+            object["schemaVersion"] as? Int,
+            GraphCLIOutputSchema.currentVersion
+        )
         XCTAssertEqual(object["command"] as? String, "graph.inspect")
         XCTAssertFalse(first.contains("\u{001B}["))
         XCTAssertTrue(harness.stderr.consume().isEmpty)
@@ -243,7 +246,7 @@ final class GraphCLITests: XCTestCase {
                 "--output",
                 "json",
                 "--schema-version",
-                "2",
+                String(GraphCLIOutputSchema.currentVersion + 1),
             ]
         )
 

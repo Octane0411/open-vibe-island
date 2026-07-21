@@ -64,7 +64,7 @@ final class GraphCLIStreamingInvariantTests: XCTestCase {
                     )
                     XCTAssertEqual(
                         object["schemaVersion"] as? Int,
-                        1
+                        GraphCLIOutputSchema.currentVersion
                     )
                 case .jsonl:
                     for line in stdout.split(separator: "\n") {
@@ -75,7 +75,7 @@ final class GraphCLIStreamingInvariantTests: XCTestCase {
                         )
                         XCTAssertEqual(
                             object["schemaVersion"] as? Int,
-                            1
+                            GraphCLIOutputSchema.currentVersion
                         )
                     }
                 }
