@@ -60,10 +60,15 @@ public struct SessionState: Equatable, Sendable {
             let preservedFirstSeenAt = existingSession?.firstSeenAt
             var codexMetadata = payload.codexMetadata
             if payload.tool == .codex,
-               codexMetadata?.threadName == nil,
-               let existingThreadName = existingSession?.codexMetadata?.threadName {
+               let existingCodexMetadata = existingSession?.codexMetadata {
                 var preservedMetadata = codexMetadata ?? CodexSessionMetadata()
-                preservedMetadata.threadName = existingThreadName
+                preservedMetadata.transcriptPath = preservedMetadata.transcriptPath ?? existingCodexMetadata.transcriptPath
+                preservedMetadata.threadName = preservedMetadata.threadName ?? existingCodexMetadata.threadName
+                preservedMetadata.initialUserPrompt = preservedMetadata.initialUserPrompt ?? existingCodexMetadata.initialUserPrompt
+                preservedMetadata.lastUserPrompt = preservedMetadata.lastUserPrompt ?? existingCodexMetadata.lastUserPrompt
+                preservedMetadata.lastAssistantMessage = preservedMetadata.lastAssistantMessage ?? existingCodexMetadata.lastAssistantMessage
+                preservedMetadata.currentTool = preservedMetadata.currentTool ?? existingCodexMetadata.currentTool
+                preservedMetadata.currentCommandPreview = preservedMetadata.currentCommandPreview ?? existingCodexMetadata.currentCommandPreview
                 codexMetadata = preservedMetadata
             }
             let title = payload.tool == .codex
