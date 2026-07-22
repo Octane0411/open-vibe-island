@@ -1386,7 +1386,7 @@ public struct DefaultGraphOrchestrationService:
         for nodeID in nodeIDs {
             guard let attempt = latest[nodeID] else { continue }
             if [.failed, .interrupted, .orphaned].contains(attempt.state) {
-                let policy = definition.schedulerPolicy.retryPolicy
+                let policy = definition.schedulerPolicy.retryPolicy(for: nodeID)
                 let category = attempt.statusReason ?? "execution_failure"
                 let retryAllowed = attempt.ordinal < policy.maximumAttempts
                     && !policy.nonRetryableFailureCategories.contains(category)

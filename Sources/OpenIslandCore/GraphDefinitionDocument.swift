@@ -113,40 +113,235 @@ public struct GraphDefinitionDocumentNode:
     public let id: String
     public var name: String
     public var description: String
+    public var nodeType: GraphDefinitionNodeType
+    public var tags: [String]
     public var requiredCapabilities: [String]
+    public var preferredCapabilities: [String]
+    public var executorKind: GraphDefinitionExecutorKind
+    public var platformConstraints: [String]
     public var specification: GraphImmutableExecutionSpecification
     public var workspace: GraphExecutionWorkspaceContext
     public var environmentAllowlist: [String]
     public var inputArtifactRoles: [GraphArtifactRole]
+    public var inputs: [GraphNodeInputDefinition]
+    public var outputs: [GraphNodeOutputDefinition]
+    public var retryConfiguration: GraphNodeRetryConfiguration
     public var timeoutPolicy: GraphExecutionTimeoutPolicy
+    public var timeoutConfiguration: GraphNodeTimeoutConfiguration
 
     public init(
         id: String,
         name: String,
         description: String = "",
+        nodeType: GraphDefinitionNodeType? = nil,
+        tags: [String] = [],
         requiredCapabilities: [String],
+        preferredCapabilities: [String] = [],
+        executorKind: GraphDefinitionExecutorKind? = nil,
+        platformConstraints: [String] = [],
         specification: GraphImmutableExecutionSpecification,
         workspace: GraphExecutionWorkspaceContext = .init(),
         environmentAllowlist: [String] = [],
         inputArtifactRoles: [GraphArtifactRole] = [.nodeOutput],
-        timeoutPolicy: GraphExecutionTimeoutPolicy
+        inputs: [GraphNodeInputDefinition] = [],
+        outputs: [GraphNodeOutputDefinition] = [],
+        retryConfiguration: GraphNodeRetryConfiguration = .init(),
+        timeoutPolicy: GraphExecutionTimeoutPolicy,
+        timeoutConfiguration: GraphNodeTimeoutConfiguration? = nil
     ) {
         self.id = id
         self.name = name
         self.description = description
+        let inferredType = nodeType ?? Self.inferNodeType(specification)
+        self.nodeType = inferredType
+        self.tags = tags.sorted()
         self.requiredCapabilities = requiredCapabilities.sorted()
+        self.preferredCapabilities = preferredCapabilities.sorted()
+        self.executorKind = executorKind
+            ?? Self.inferExecutorKind(specification, nodeType: inferredType)
+        self.platformConstraints = platformConstraints.sorted()
         self.specification = specification
         self.workspace = workspace
         self.environmentAllowlist = environmentAllowlist.sorted()
         self.inputArtifactRoles = inputArtifactRoles.sorted {
             $0.rawValue < $1.rawValue
         }
+        self.inputs = inputs.sorted { $0.id < $1.id }
+        self.outputs = outputs.isEmpty
+            ? Self.inferOutputs(specification) : outputs.sorted { $0.id < $1.id }
+        self.retryConfiguration = retryConfiguration
         self.timeoutPolicy = timeoutPolicy
+        self.timeoutConfiguration = timeoutConfiguration
+            ?? GraphNodeTimeoutConfiguration(
+                executionSeconds: timeoutPolicy.executionSeconds,
+                cancellationAcknowledgementSeconds:
+                    timeoutPolicy.cancellationAcknowledgementSeconds
+            )
+    }
+
+    private static func inferNodeType(
+        _ specification: GraphImmutableExecutionSpecification
+    ) -> GraphDefinitionNodeType {
+        switch specification.adapterKind {
+        case GraphLocalProcessSpecification.adapterKind: .localProcess
+        case "deterministic": .deterministicTest
+        case "generic_agent": .genericAgent
+        default: .genericAgent
+        }
+    }
+
+    private static func inferExecutorKind(
+        _ specification: GraphImmutableExecutionSpecification,
+        nodeType: GraphDefinitionNodeType
+    ) -> GraphDefinitionExecutorKind {
+        switch specification.adapterKind {
+        case GraphLocalProcessSpecification.adapterKind: .supervisedLocalProcess
+        case "deterministic": .deterministicTest
+        case "generic_agent": .unboundAgent
+        default: nodeType.isExecutable ? .unboundAgent : .none
+        }
+    }
+
+    private static func inferOutputs(
+        _ specification: GraphImmutableExecutionSpecification
+    ) -> [GraphNodeOutputDefinition] {
+        guard specification.adapterKind == GraphLocalProcessSpecification.adapterKind,
+              let process = try? GraphLocalProcessSpecification(
+                immutableSpecification: specification
+              ) else { return [] }
+        return process.outputArtifacts.map { declaration in
+            GraphNodeOutputDefinition(
+                id: declaration.stableID,
+                name: declaration.role.rawValue,
+                role: declaration.role,
+                relativePath: declaration.relativePath,
+                mediaType: declaration.mediaType,
+                isRequired: declaration.required,
+                maximumBytes: declaration.maximumBytes,
+                sensitivity: declaration.sensitivity,
+                downstreamVisibility: declaration.downstreamVisibility ?? .graph
+            )
+        }.sorted { $0.id < $1.id }
     }
 }
 
-public enum GraphDefinitionPortType: String, Codable, Sendable {
-    case dependency
+extension GraphDefinitionDocumentNode {
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case description
+        case nodeType
+        case tags
+        case requiredCapabilities
+        case preferredCapabilities
+        case executorKind
+        case platformConstraints
+        case specification
+        case workspace
+        case environmentAllowlist
+        case inputArtifactRoles
+        case inputs
+        case outputs
+        case retryConfiguration
+        case timeoutPolicy
+        case timeoutConfiguration
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let specification = try container.decode(
+            GraphImmutableExecutionSpecification.self,
+            forKey: .specification
+        )
+        let timeoutPolicy = try container.decode(
+            GraphExecutionTimeoutPolicy.self,
+            forKey: .timeoutPolicy
+        )
+        self.init(
+            id: try container.decode(String.self, forKey: .id),
+            name: try container.decode(String.self, forKey: .name),
+            description: try container.decodeIfPresent(
+                String.self,
+                forKey: .description
+            ) ?? "",
+            nodeType: try container.decodeIfPresent(
+                GraphDefinitionNodeType.self,
+                forKey: .nodeType
+            ),
+            tags: try container.decodeIfPresent(
+                [String].self,
+                forKey: .tags
+            ) ?? [],
+            requiredCapabilities: try container.decode(
+                [String].self,
+                forKey: .requiredCapabilities
+            ),
+            preferredCapabilities: try container.decodeIfPresent(
+                [String].self,
+                forKey: .preferredCapabilities
+            ) ?? [],
+            executorKind: try container.decodeIfPresent(
+                GraphDefinitionExecutorKind.self,
+                forKey: .executorKind
+            ),
+            platformConstraints: try container.decodeIfPresent(
+                [String].self,
+                forKey: .platformConstraints
+            ) ?? [],
+            specification: specification,
+            workspace: try container.decodeIfPresent(
+                GraphExecutionWorkspaceContext.self,
+                forKey: .workspace
+            ) ?? .init(),
+            environmentAllowlist: try container.decodeIfPresent(
+                [String].self,
+                forKey: .environmentAllowlist
+            ) ?? [],
+            inputArtifactRoles: try container.decodeIfPresent(
+                [GraphArtifactRole].self,
+                forKey: .inputArtifactRoles
+            ) ?? [.nodeOutput],
+            inputs: try container.decodeIfPresent(
+                [GraphNodeInputDefinition].self,
+                forKey: .inputs
+            ) ?? [],
+            outputs: try container.decodeIfPresent(
+                [GraphNodeOutputDefinition].self,
+                forKey: .outputs
+            ) ?? [],
+            retryConfiguration: try container.decodeIfPresent(
+                GraphNodeRetryConfiguration.self,
+                forKey: .retryConfiguration
+            ) ?? .init(),
+            timeoutPolicy: timeoutPolicy,
+            timeoutConfiguration: try container.decodeIfPresent(
+                GraphNodeTimeoutConfiguration.self,
+                forKey: .timeoutConfiguration
+            )
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(description, forKey: .description)
+        try container.encode(nodeType, forKey: .nodeType)
+        try container.encode(tags.sorted(), forKey: .tags)
+        try container.encode(requiredCapabilities.sorted(), forKey: .requiredCapabilities)
+        try container.encode(preferredCapabilities.sorted(), forKey: .preferredCapabilities)
+        try container.encode(executorKind, forKey: .executorKind)
+        try container.encode(platformConstraints.sorted(), forKey: .platformConstraints)
+        try container.encode(specification, forKey: .specification)
+        try container.encode(workspace, forKey: .workspace)
+        try container.encode(environmentAllowlist.sorted(), forKey: .environmentAllowlist)
+        try container.encode(inputArtifactRoles, forKey: .inputArtifactRoles)
+        try container.encode(inputs.sorted { $0.id < $1.id }, forKey: .inputs)
+        try container.encode(outputs.sorted { $0.id < $1.id }, forKey: .outputs)
+        try container.encode(retryConfiguration, forKey: .retryConfiguration)
+        try container.encode(timeoutPolicy, forKey: .timeoutPolicy)
+        try container.encode(timeoutConfiguration, forKey: .timeoutConfiguration)
+    }
 }
 
 public struct GraphDefinitionEdge:
@@ -177,6 +372,8 @@ public struct GraphDefinitionDocument: Equatable, Sendable {
     public var definitionVersion: String
     public var name: String
     public var description: String
+    public var graphInputs: [GraphDefinitionInput]
+    public var graphOutputs: [GraphDefinitionOutput]
     public var nodes: [GraphDefinitionDocumentNode]
     public var edges: [GraphDefinitionEdge]
     public var schedulerPolicy: GraphSchedulerPolicy
@@ -192,6 +389,8 @@ public struct GraphDefinitionDocument: Equatable, Sendable {
         definitionVersion: String,
         name: String,
         description: String = "",
+        graphInputs: [GraphDefinitionInput] = [],
+        graphOutputs: [GraphDefinitionOutput] = [],
         nodes: [GraphDefinitionDocumentNode],
         edges: [GraphDefinitionEdge],
         schedulerPolicy: GraphSchedulerPolicy,
@@ -206,6 +405,8 @@ public struct GraphDefinitionDocument: Equatable, Sendable {
         self.definitionVersion = definitionVersion
         self.name = name
         self.description = description
+        self.graphInputs = graphInputs.sorted { $0.id < $1.id }
+        self.graphOutputs = graphOutputs.sorted { $0.id < $1.id }
         self.nodes = nodes.sorted { $0.id < $1.id }
         self.edges = edges.sorted { $0.id < $1.id }
         self.schedulerPolicy = schedulerPolicy
@@ -323,12 +524,36 @@ public struct GraphDefinitionDocument: Equatable, Sendable {
 
     public func executableDefinition() throws -> GraphExecutableDefinition {
         let digest = try semanticDigest()
-        let schedulingNodes = nodes.map { node in
+        let executableNodes = nodes.filter(\.nodeType.isExecutable)
+        let executableNodeIDs = Set(executableNodes.map(\.id))
+        var nodeRetryPolicies = schedulerPolicy.nodeRetryPolicies ?? [:]
+        for node in executableNodes where !node.retryConfiguration.inheritsGraphDefault {
+            nodeRetryPolicies[node.id] = node.retryConfiguration.effective(
+                graphDefault: schedulerPolicy.retryPolicy
+            )
+        }
+        let executablePolicy = GraphSchedulerPolicy(
+            schemaVersion: schedulerPolicy.schemaVersion,
+            policyID: schedulerPolicy.policyID,
+            version: schedulerPolicy.version,
+            retryPolicy: schedulerPolicy.retryPolicy,
+            nodeRetryPolicies: nodeRetryPolicies.isEmpty ? nil : nodeRetryPolicies,
+            defaultLeaseDurationSeconds: schedulerPolicy.defaultLeaseDurationSeconds,
+            claimAcquisitionTimeoutSeconds: schedulerPolicy.claimAcquisitionTimeoutSeconds,
+            attemptExecutionTimeoutSeconds: schedulerPolicy.attemptExecutionTimeoutSeconds,
+            cancellationAcknowledgementTimeoutSeconds:
+                schedulerPolicy.cancellationAcknowledgementTimeoutSeconds,
+            allowExpiredLeaseTakeover: schedulerPolicy.allowExpiredLeaseTakeover,
+            schedulingEnabled: schedulerPolicy.schedulingEnabled
+        )
+        let schedulingNodes = executableNodes.map { node in
             GraphSchedulingDefinitionNode(
                 id: node.id,
                 title: node.name,
                 dependencyNodeIDs: edges.filter {
                     $0.targetNodeID == node.id
+                        && executableNodeIDs.contains($0.sourceNodeID)
+                        && [.dependency, .artifact].contains($0.portType)
                 }.map(\.sourceNodeID),
                 requiredCapabilities: node.requiredCapabilities
             )
@@ -340,8 +565,8 @@ public struct GraphDefinitionDocument: Equatable, Sendable {
                 digest: digest,
                 nodes: schedulingNodes
             ),
-            schedulerPolicy: schedulerPolicy,
-            executions: nodes.map { node in
+            schedulerPolicy: executablePolicy,
+            executions: executableNodes.map { node in
                 GraphNodeExecutionDefinition(
                     nodeID: node.id,
                     capabilityRequirement: node.requiredCapabilities,
@@ -359,6 +584,8 @@ public struct GraphDefinitionDocument: Equatable, Sendable {
         let semantic = GraphDefinitionSemanticContent(
             graphID: graphID,
             definitionVersion: definitionVersion,
+            graphInputs: graphInputs,
+            graphOutputs: graphOutputs,
             nodes: nodes,
             edges: edges,
             schedulerPolicy: schedulerPolicy,
@@ -409,7 +636,7 @@ public struct GraphDefinitionDocument: Equatable, Sendable {
 extension GraphDefinitionDocument: Codable {
     private static let knownKeys: Set<String> = [
         "schemaVersion", "graphID", "definitionVersion", "name",
-        "description", "nodes", "edges", "schedulerPolicy",
+        "description", "graphInputs", "graphOutputs", "nodes", "edges", "schedulerPolicy",
         "policyReferences", "layout", "metadata", "sourceRepository",
     ]
 
@@ -429,6 +656,14 @@ extension GraphDefinitionDocument: Codable {
             String.self,
             forKey: key("description")
         ) ?? ""
+        graphInputs = try container.decodeIfPresent(
+            [GraphDefinitionInput].self,
+            forKey: key("graphInputs")
+        )?.sorted { $0.id < $1.id } ?? []
+        graphOutputs = try container.decodeIfPresent(
+            [GraphDefinitionOutput].self,
+            forKey: key("graphOutputs")
+        )?.sorted { $0.id < $1.id } ?? []
         nodes = try container.decode(
             [GraphDefinitionDocumentNode].self,
             forKey: key("nodes")
@@ -480,6 +715,8 @@ extension GraphDefinitionDocument: Codable {
         try container.encode(definitionVersion, forKey: key("definitionVersion"))
         try container.encode(name, forKey: key("name"))
         try container.encode(description, forKey: key("description"))
+        try container.encode(graphInputs.sorted { $0.id < $1.id }, forKey: key("graphInputs"))
+        try container.encode(graphOutputs.sorted { $0.id < $1.id }, forKey: key("graphOutputs"))
         try container.encode(nodes.sorted { $0.id < $1.id }, forKey: key("nodes"))
         try container.encode(edges.sorted { $0.id < $1.id }, forKey: key("edges"))
         try container.encode(schedulerPolicy, forKey: key("schedulerPolicy"))
@@ -504,6 +741,8 @@ private struct GraphDocumentCodingKey: CodingKey {
 private struct GraphDefinitionSemanticContent: Codable {
     let graphID: String
     let definitionVersion: String
+    let graphInputs: [GraphDefinitionInput]
+    let graphOutputs: [GraphDefinitionOutput]
     let nodes: [GraphDefinitionDocumentNode]
     let edges: [GraphDefinitionEdge]
     let schedulerPolicy: GraphSchedulerPolicy

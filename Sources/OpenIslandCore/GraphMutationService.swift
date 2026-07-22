@@ -396,7 +396,7 @@ public struct DefaultGraphMutationService: GraphMutating, Sendable {
                 "retry requires a failed, interrupted, or orphaned attempt."
             )
         }
-        let policy = definition.schedulerPolicy.retryPolicy
+        let policy = definition.schedulerPolicy.retryPolicy(for: request.nodeID)
         let category = latest.statusReason ?? "execution_failure"
         guard latest.ordinal < policy.maximumAttempts,
               !policy.nonRetryableFailureCategories.contains(category),

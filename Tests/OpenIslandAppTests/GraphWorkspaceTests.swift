@@ -221,6 +221,137 @@ final class GraphWorkspaceTests: XCTestCase {
         XCTAssertFalse(viewModel.isDraft)
         XCTAssertEqual(viewModel.associatedRunCount, 0)
     }
+
+    func testNodePaletteCreatesExplicitExecutableAndReferenceTypes() throws {
+        let fixture = try WorkspaceTestFixture()
+        let viewModel = fixture.viewModel()
+        viewModel.newDocument()
+
+        for type in GraphDefinitionNodeType.allCases {
+            viewModel.addNode(type: type)
+        }
+
+        XCTAssertEqual(
+            Set(viewModel.document?.nodes.map(\.nodeType) ?? []),
+            Set(GraphDefinitionNodeType.allCases)
+        )
+        XCTAssertEqual(
+            viewModel.document?.nodes.filter(\.nodeType.isExecutable).count,
+            3
+        )
+        XCTAssertEqual(
+            try viewModel.document?.executableDefinition().scheduling.nodes.count,
+            3
+        )
+    }
+
+    func testCompleteLocalProcessNodeAuthoringPreservesIdentityAndUndo()
+        throws
+    {
+        let fixture = try WorkspaceTestFixture()
+        let viewModel = fixture.viewModel()
+        viewModel.newDocument()
+        viewModel.addNode(type: .localProcess)
+        let stableID = try XCTUnwrap(viewModel.selectedNodeID)
+
+        viewModel.updateSelectedNodeIdentity(
+            name: "Generate",
+            description: "Create the source artifact",
+            tags: ["fixture", "authoring"]
+        )
+        viewModel.updateSelectedNodeCapabilities(
+            required: ["local-process", "filesystem-write"],
+            preferred: ["arm64"],
+            executorKind: .supervisedLocalProcess,
+            platformConstraints: ["macOS"]
+        )
+        viewModel.updateSelectedLocalProcess(
+            executable: "/usr/bin/printf",
+            arguments: ["%s", "payload"],
+            workingDirectory: ".",
+            inheritedEnvironment: .allowlisted,
+            stdin: .closed,
+            environmentAllowlist: ["LANG", "PATH"],
+            workspaceRoot: fixture.root.path
+        )
+        viewModel.addSelectedNodeArgument()
+        viewModel.updateSelectedNodeArgument(at: 2, value: "tail")
+        viewModel.moveSelectedNodeArgument(from: 2, offset: -1)
+        viewModel.removeSelectedNodeArgument(at: 2)
+        viewModel.addSelectedNodeInput()
+        viewModel.addSelectedNodeOutput()
+
+        var input = try XCTUnwrap(viewModel.selectedNode?.inputs.first)
+        input.name = "Source"
+        input.mediaType = "application/json"
+        input.binding = GraphNodeInputBinding(
+            kind: .fileReference,
+            fileReference: "inputs/source.json"
+        )
+        viewModel.updateSelectedNodeInput(input)
+        var output = try XCTUnwrap(viewModel.selectedNode?.outputs.first)
+        output.name = "Generated Document"
+        output.relativePath = "artifacts/generated.json"
+        output.mediaType = "application/json"
+        output.maximumBytes = 2 * 1_024 * 1_024
+        output.sensitivity = .confidential
+        output.downstreamVisibility = .directDependents
+        viewModel.updateSelectedNodeOutput(output)
+
+        let retry = GraphRetryPolicy(
+            maximumAttempts: 4,
+            retryableFailureCategories: ["timeout"],
+            initialBackoffSeconds: 2,
+            maximumBackoffSeconds: 20,
+            timeoutBehavior: .retry
+        )
+        viewModel.updateSelectedNodeRetry(
+            GraphNodeRetryConfiguration(
+                inheritsGraphDefault: false,
+                override: retry
+            )
+        )
+        viewModel.updateSelectedNodeTimeout(
+            GraphNodeTimeoutConfiguration(
+                inheritsGraphDefault: false,
+                executionSeconds: 45,
+                cancellationAcknowledgementSeconds: 7,
+                claimSeconds: 11
+            )
+        )
+
+        let node = try XCTUnwrap(viewModel.selectedNode)
+        let process = try GraphLocalProcessSpecification(
+            immutableSpecification: node.specification
+        )
+        XCTAssertEqual(node.id, stableID)
+        XCTAssertEqual(node.name, "Generate")
+        XCTAssertEqual(node.tags, ["authoring", "fixture"])
+        XCTAssertEqual(process.executable, "/usr/bin/printf")
+        XCTAssertEqual(process.arguments, ["%s", "tail"])
+        XCTAssertEqual(node.environmentAllowlist, ["LANG", "PATH"])
+        XCTAssertEqual(node.inputs.first?.binding?.fileReference, "inputs/source.json")
+        XCTAssertEqual(process.outputArtifacts.first?.stableID, output.id)
+        XCTAssertEqual(process.outputArtifacts.first?.required, true)
+        XCTAssertEqual(node.timeoutPolicy.executionSeconds, 45)
+        XCTAssertEqual(
+            try viewModel.document?.executableDefinition().schedulerPolicy
+                .retryPolicy(for: stableID).maximumAttempts,
+            4
+        )
+
+        let encoded = try GraphDefinitionDocumentCodec.encode(
+            XCTUnwrap(viewModel.document)
+        )
+        let reopened = try GraphDefinitionDocumentCodec.decode(encoded)
+        XCTAssertEqual(reopened.nodes.first?.id, stableID)
+        XCTAssertEqual(reopened.nodes.first?.outputs.first?.id, output.id)
+
+        viewModel.undo()
+        XCTAssertNotEqual(viewModel.selectedNode?.timeoutPolicy.executionSeconds, 45)
+        viewModel.redo()
+        XCTAssertEqual(viewModel.selectedNode?.timeoutPolicy.executionSeconds, 45)
+    }
 }
 
 private struct WorkspaceTestFixture {

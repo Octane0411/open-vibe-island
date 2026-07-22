@@ -181,6 +181,7 @@ public struct GraphSchedulerPolicy: Equatable, Codable, Sendable {
     public let policyID: String
     public let version: String
     public let retryPolicy: GraphRetryPolicy
+    public let nodeRetryPolicies: [String: GraphRetryPolicy]?
     public let defaultLeaseDurationSeconds: UInt64
     public let claimAcquisitionTimeoutSeconds: UInt64
     public let attemptExecutionTimeoutSeconds: UInt64
@@ -193,6 +194,7 @@ public struct GraphSchedulerPolicy: Equatable, Codable, Sendable {
         policyID: String,
         version: String,
         retryPolicy: GraphRetryPolicy,
+        nodeRetryPolicies: [String: GraphRetryPolicy]? = nil,
         defaultLeaseDurationSeconds: UInt64 = 60,
         claimAcquisitionTimeoutSeconds: UInt64 = 30,
         attemptExecutionTimeoutSeconds: UInt64 = 3_600,
@@ -204,6 +206,7 @@ public struct GraphSchedulerPolicy: Equatable, Codable, Sendable {
         self.policyID = policyID
         self.version = version
         self.retryPolicy = retryPolicy
+        self.nodeRetryPolicies = nodeRetryPolicies
         self.defaultLeaseDurationSeconds = max(1, defaultLeaseDurationSeconds)
         self.claimAcquisitionTimeoutSeconds = max(
             1,
@@ -219,6 +222,10 @@ public struct GraphSchedulerPolicy: Equatable, Codable, Sendable {
         )
         self.allowExpiredLeaseTakeover = allowExpiredLeaseTakeover
         self.schedulingEnabled = schedulingEnabled
+    }
+
+    public func retryPolicy(for nodeID: String) -> GraphRetryPolicy {
+        nodeRetryPolicies?[nodeID] ?? retryPolicy
     }
 }
 
@@ -1059,8 +1066,9 @@ public enum GraphScheduler {
                 || latest.state == .orphaned {
             let failureCategory = input.failureCategoriesByAttemptID[latest.id]
                 ?? "execution_failure"
+            let retryPolicy = input.policy.retryPolicy(for: node.id)
             guard retryAllowed(
-                policy: input.policy.retryPolicy,
+                policy: retryPolicy,
                 failureCategory: failureCategory,
                 failedOrdinal: latest.ordinal
             ) else {
@@ -1071,7 +1079,7 @@ public enum GraphScheduler {
                     eligibleAt: nil
                 )
             }
-            let delay = input.policy.retryPolicy.delaySeconds(
+            let delay = retryPolicy.delaySeconds(
                 runID: input.projectedState.runID,
                 nodeID: node.id,
                 nextAttemptOrdinal: nextOrdinal
@@ -1128,7 +1136,7 @@ public enum GraphScheduler {
         }
         let category = input.failureCategoriesByAttemptID[attempt.id]
             ?? "execution_failure"
-        let policy = input.policy.retryPolicy
+        let policy = input.policy.retryPolicy(for: node.id)
 
         if retryAllowed(
             policy: policy,

@@ -859,6 +859,7 @@ public actor SupervisedLocalProcessExecutor: GraphExecutorAdapter {
         try resolved.specification.outputArtifacts.compactMap { declaration in
             guard let url = resolved.artifactURLs[declaration.role],
                   FileManager.default.fileExists(atPath: url.path) else {
+                if !declaration.required { return nil }
                 throw GraphLocalProcessRuntimeError
                     .artifactMissing(declaration.relativePath)
             }

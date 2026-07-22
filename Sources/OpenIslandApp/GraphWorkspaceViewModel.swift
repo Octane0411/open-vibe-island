@@ -110,8 +110,9 @@ enum GraphWorkspaceCommandPolicy {
                     denial: "retry_requires_attempt"
                 )
             }
-            let retryPolicy = inspection?.scheduling?.currentPolicy?.retryPolicy
-                ?? document?.schedulerPolicy.retryPolicy
+            let retryPolicy = inspection?.scheduling?.currentPolicy?
+                .retryPolicy(for: selectedNodeID)
+                ?? document?.schedulerPolicy.retryPolicy(for: selectedNodeID)
             let category = attempt.statusReason ?? "execution_failure"
             let categoryAllowed = retryPolicy.map {
                 !$0.nonRetryableFailureCategories.contains(category)
@@ -290,7 +291,9 @@ final class GraphWorkspaceViewModel {
                     "artifact_collection_failure",
                     "invalid_process_specification",
                 ]
-            )
+            ),
+            attemptExecutionTimeoutSeconds: request.defaultExecutionTimeoutSeconds,
+            cancellationAcknowledgementTimeoutSeconds: 10
         )
         defaultNodeWorkspaceDirectory = request.workspaceDirectory
         defaultNodeTimeoutSeconds = request.defaultExecutionTimeoutSeconds
@@ -482,7 +485,18 @@ final class GraphWorkspaceViewModel {
         }
     }
 
-    func addNode() {
+    func updateGraphIdentity(name: String, description: String) {
+        guard var document else { return }
+        registerUndo(coalescingKey: "graph-identity")
+        document.name = name
+        document.description = description
+        document.metadata.modifiedAt = Date()
+        document.metadata.modifiedBy = NSUserName()
+        self.document = document
+        markSemanticMutation()
+    }
+
+    func addNode(type: GraphDefinitionNodeType = .localProcess) {
         guard var document else { return }
         registerUndo(coalescingKey: nil)
         let existing = Set(document.nodes.map(\.id))
@@ -493,24 +507,13 @@ final class GraphWorkspaceViewModel {
             nodeID = "node-\(ordinal)"
         }
         do {
-            let specification = GraphLocalProcessSpecification(
-                executable: "/usr/bin/true"
+            let definition = try defaultNodeDefinition(
+                id: nodeID,
+                ordinal: ordinal,
+                type: type
             )
             try GraphDefinitionDocumentEditor.addNode(
-                GraphDefinitionDocumentNode(
-                    id: nodeID,
-                    name: "Node \(ordinal)",
-                    requiredCapabilities: ["local-process"],
-                    specification: try specification.immutableSpecification(),
-                    workspace: GraphExecutionWorkspaceContext(
-                        root: defaultNodeWorkspaceDirectory
-                            ?? FileManager.default.currentDirectoryPath
-                    ),
-                    timeoutPolicy: GraphExecutionTimeoutPolicy(
-                        executionSeconds: defaultNodeTimeoutSeconds,
-                        cancellationAcknowledgementSeconds: 10
-                    )
-                ),
+                definition,
                 to: &document,
                 position: GraphCanvasPoint(
                     x: Double(ordinal - 1) * 260,
@@ -573,6 +576,232 @@ final class GraphWorkspaceViewModel {
         } catch {
             rejectLocalAction("node_execution_edit_rejected", error)
         }
+    }
+
+    func updateSelectedNodeIdentity(
+        name: String,
+        description: String,
+        tags: [String]
+    ) {
+        mutateSelectedNode(coalescingKey: "identity") { node, _ in
+            node.name = name
+            node.description = description
+            node.tags = tags.sorted()
+        }
+    }
+
+    func updateSelectedNodeType(_ type: GraphDefinitionNodeType) {
+        guard let nodeID = selectedNodeID,
+              let ordinal = document?.nodes.firstIndex(where: { $0.id == nodeID })
+        else { return }
+        do {
+            let replacement = try defaultNodeDefinition(
+                id: nodeID,
+                ordinal: ordinal + 1,
+                type: type
+            )
+            mutateSelectedNode(coalescingKey: nil) { node, _ in
+                let identity = (node.name, node.description, node.tags)
+                node = replacement
+                node.name = identity.0
+                node.description = identity.1
+                node.tags = identity.2
+            }
+        } catch {
+            rejectLocalAction("node_type_edit_rejected", error)
+        }
+    }
+
+    func updateSelectedNodeCapabilities(
+        required: [String],
+        preferred: [String],
+        executorKind: GraphDefinitionExecutorKind,
+        platformConstraints: [String]
+    ) {
+        mutateSelectedNode(coalescingKey: "capabilities") { node, _ in
+            node.requiredCapabilities = required.sorted()
+            node.preferredCapabilities = preferred.sorted()
+            node.executorKind = executorKind
+            node.platformConstraints = platformConstraints.sorted()
+        }
+    }
+
+    func updateSelectedLocalProcess(
+        executable: String,
+        arguments: [String],
+        workingDirectory: String,
+        inheritedEnvironment: GraphLocalProcessEnvironmentInheritance,
+        stdin: GraphLocalProcessStdinPolicy,
+        environmentAllowlist: [String],
+        workspaceRoot: String?
+    ) {
+        mutateSelectedNode(coalescingKey: "local-process") { node, _ in
+            guard node.nodeType == .localProcess else { return }
+            let existing = (try? GraphLocalProcessSpecification(
+                immutableSpecification: node.specification
+            )) ?? GraphLocalProcessSpecification(executable: "/usr/bin/true")
+            let process = GraphLocalProcessSpecification(
+                executable: executable,
+                arguments: arguments,
+                workingDirectory: workingDirectory,
+                environment: existing.environment,
+                inheritedEnvironment: inheritedEnvironment,
+                stdin: stdin,
+                outputArtifacts: node.outputs.map(Self.processDeclaration),
+                retryableExitCodes: existing.retryableExitCodes,
+                logPolicy: existing.logPolicy
+            )
+            if let specification = try? process.immutableSpecification() {
+                node.specification = specification
+            }
+            node.environmentAllowlist = environmentAllowlist.sorted()
+            node.workspace = GraphExecutionWorkspaceContext(
+                root: workspaceRoot,
+                writableRelativePaths: node.outputs.compactMap {
+                    let path = URL(fileURLWithPath: $0.relativePath)
+                        .deletingLastPathComponent().path
+                    return path == "." ? "" : path
+                }.filter { !$0.isEmpty }
+            )
+        }
+    }
+
+    func addSelectedNodeArgument() {
+        guard let process = selectedLocalProcessSpecification else { return }
+        updateSelectedLocalProcess(
+            executable: process.executable,
+            arguments: process.arguments + [""],
+            workingDirectory: process.workingDirectory,
+            inheritedEnvironment: process.inheritedEnvironment,
+            stdin: process.stdin,
+            environmentAllowlist: selectedNode?.environmentAllowlist ?? [],
+            workspaceRoot: selectedNode?.workspace.root
+        )
+    }
+
+    func updateSelectedNodeArgument(at index: Int, value: String) {
+        guard let process = selectedLocalProcessSpecification,
+              process.arguments.indices.contains(index) else { return }
+        var arguments = process.arguments
+        arguments[index] = value
+        replaceSelectedProcessArguments(arguments, process: process)
+    }
+
+    func removeSelectedNodeArgument(at index: Int) {
+        guard let process = selectedLocalProcessSpecification,
+              process.arguments.indices.contains(index) else { return }
+        var arguments = process.arguments
+        arguments.remove(at: index)
+        replaceSelectedProcessArguments(arguments, process: process)
+    }
+
+    func moveSelectedNodeArgument(from index: Int, offset: Int) {
+        guard let process = selectedLocalProcessSpecification else { return }
+        let destination = index + offset
+        guard process.arguments.indices.contains(index),
+              process.arguments.indices.contains(destination) else { return }
+        var arguments = process.arguments
+        arguments.swapAt(index, destination)
+        replaceSelectedProcessArguments(arguments, process: process)
+    }
+
+    func addSelectedNodeInput() {
+        mutateSelectedNode(coalescingKey: nil) { node, _ in
+            let id = Self.nextStableID(prefix: "input", existing: node.inputs.map(\.id))
+            node.inputs.append(
+                GraphNodeInputDefinition(id: id, name: "Input \(node.inputs.count + 1)")
+            )
+            node.inputs.sort { $0.id < $1.id }
+        }
+    }
+
+    func updateSelectedNodeInput(_ input: GraphNodeInputDefinition) {
+        mutateSelectedNode(coalescingKey: "input:\(input.id)") { node, _ in
+            guard let index = node.inputs.firstIndex(where: { $0.id == input.id }) else {
+                return
+            }
+            node.inputs[index] = input
+        }
+    }
+
+    func removeSelectedNodeInput(_ inputID: String) {
+        mutateSelectedNode(coalescingKey: nil) { node, _ in
+            node.inputs.removeAll { $0.id == inputID }
+        }
+    }
+
+    func addSelectedNodeOutput() {
+        mutateSelectedNode(coalescingKey: nil) { node, _ in
+            let used = Set(node.outputs.map(\.role))
+            let role = GraphArtifactRole.allCases.first { !used.contains($0) }
+                ?? .nodeOutput
+            let id = Self.nextStableID(prefix: "output", existing: node.outputs.map(\.id))
+            node.outputs.append(
+                GraphNodeOutputDefinition(
+                    id: id,
+                    name: "Output \(node.outputs.count + 1)",
+                    role: role,
+                    relativePath: "artifacts/\(node.id)-\(id).json",
+                    mediaType: "application/json"
+                )
+            )
+            node.outputs.sort { $0.id < $1.id }
+            Self.synchronizeProcessOutputs(&node)
+        }
+    }
+
+    func updateSelectedNodeOutput(_ output: GraphNodeOutputDefinition) {
+        mutateSelectedNode(coalescingKey: "output:\(output.id)") { node, _ in
+            guard let index = node.outputs.firstIndex(where: { $0.id == output.id }) else {
+                return
+            }
+            node.outputs[index] = output
+            Self.synchronizeProcessOutputs(&node)
+        }
+    }
+
+    func removeSelectedNodeOutput(_ outputID: String) {
+        mutateSelectedNode(coalescingKey: nil) { node, _ in
+            node.outputs.removeAll { $0.id == outputID }
+            Self.synchronizeProcessOutputs(&node)
+        }
+    }
+
+    func updateSelectedNodeRetry(_ configuration: GraphNodeRetryConfiguration) {
+        mutateSelectedNode(coalescingKey: "retry") { node, _ in
+            node.retryConfiguration = configuration
+        }
+    }
+
+    func updateSelectedNodeTimeout(
+        _ configuration: GraphNodeTimeoutConfiguration
+    ) {
+        mutateSelectedNode(coalescingKey: "timeout") { node, document in
+            node.timeoutConfiguration = configuration
+            let execution = configuration.inheritsGraphDefault
+                ? document.schedulerPolicy.attemptExecutionTimeoutSeconds
+                : max(1, configuration.executionSeconds)
+            let cancellation = configuration.inheritsGraphDefault
+                ? document.schedulerPolicy.cancellationAcknowledgementTimeoutSeconds
+                : max(1, configuration.cancellationAcknowledgementSeconds)
+            node.timeoutPolicy = GraphExecutionTimeoutPolicy(
+                executionSeconds: execution,
+                cancellationAcknowledgementSeconds: cancellation
+            )
+        }
+    }
+
+    var selectedNode: GraphDefinitionDocumentNode? {
+        guard let selectedNodeID else { return nil }
+        return document?.nodes.first { $0.id == selectedNodeID }
+    }
+
+    var selectedLocalProcessSpecification: GraphLocalProcessSpecification? {
+        guard let node = selectedNode,
+              node.nodeType == .localProcess else { return nil }
+        return try? GraphLocalProcessSpecification(
+            immutableSpecification: node.specification
+        )
     }
 
     func deleteSelection() {
@@ -685,6 +914,12 @@ final class GraphWorkspaceViewModel {
             selectedNodeIDs = [nodeID]
         }
         if mode == .history { Task { await refreshExplanation() } }
+    }
+
+    func selectCanvas() {
+        selectedNodeIDs = []
+        selectedEdgeID = nil
+        undoCoalescingKey = nil
     }
 
     func createRun() async {
@@ -956,6 +1191,179 @@ final class GraphWorkspaceViewModel {
                 diagnostic: "Command rejected: \(decision.reasonCode)"
             )
         )
+    }
+
+    private func defaultNodeDefinition(
+        id: String,
+        ordinal: Int,
+        type: GraphDefinitionNodeType
+    ) throws -> GraphDefinitionDocumentNode {
+        let specification: GraphImmutableExecutionSpecification
+        let executorKind: GraphDefinitionExecutorKind
+        let capabilities: [String]
+        let outputs: [GraphNodeOutputDefinition]
+        switch type {
+        case .localProcess:
+            specification = try GraphLocalProcessSpecification(
+                executable: "/usr/bin/true"
+            ).immutableSpecification()
+            executorKind = .supervisedLocalProcess
+            capabilities = ["local-process"]
+            outputs = []
+        case .deterministicTest:
+            specification = GraphImmutableExecutionSpecification(
+                adapterKind: "deterministic",
+                operation: "test",
+                parameters: ["artifactRole": .string(GraphArtifactRole.nodeOutput.rawValue)]
+            )
+            executorKind = .deterministicTest
+            capabilities = ["deterministic"]
+            outputs = [
+                GraphNodeOutputDefinition(
+                    id: "output-node",
+                    name: "Node Output",
+                    role: .nodeOutput,
+                    relativePath: "artifacts/\(id).json",
+                    mediaType: "application/json"
+                ),
+            ]
+        case .genericAgent:
+            specification = GraphImmutableExecutionSpecification(
+                adapterKind: "generic_agent",
+                operation: "unbound"
+            )
+            executorKind = .unboundAgent
+            capabilities = ["agent"]
+            outputs = []
+        case .input, .output, .annotation:
+            specification = GraphImmutableExecutionSpecification(
+                adapterKind: "reference",
+                operation: type.rawValue
+            )
+            executorKind = .none
+            capabilities = []
+            outputs = []
+        }
+        return GraphDefinitionDocumentNode(
+            id: id,
+            name: "\(typeDisplayName(type)) \(ordinal)",
+            nodeType: type,
+            requiredCapabilities: capabilities,
+            executorKind: executorKind,
+            specification: specification,
+            workspace: GraphExecutionWorkspaceContext(
+                root: defaultNodeWorkspaceDirectory
+                    ?? FileManager.default.currentDirectoryPath
+            ),
+            outputs: outputs,
+            timeoutPolicy: GraphExecutionTimeoutPolicy(
+                executionSeconds: defaultNodeTimeoutSeconds,
+                cancellationAcknowledgementSeconds: 10
+            ),
+            timeoutConfiguration: GraphNodeTimeoutConfiguration(
+                executionSeconds: defaultNodeTimeoutSeconds,
+                cancellationAcknowledgementSeconds: 10
+            )
+        )
+    }
+
+    private func typeDisplayName(_ type: GraphDefinitionNodeType) -> String {
+        switch type {
+        case .localProcess: "Local Process"
+        case .deterministicTest: "Deterministic Test"
+        case .genericAgent: "Generic Agent"
+        case .input: "Input"
+        case .output: "Output"
+        case .annotation: "Annotation"
+        }
+    }
+
+    private func mutateSelectedNode(
+        coalescingKey: String?,
+        _ mutation: (inout GraphDefinitionDocumentNode, GraphDefinitionDocument) -> Void
+    ) {
+        guard var document,
+              let nodeID = selectedNodeID,
+              let index = document.nodes.firstIndex(where: { $0.id == nodeID })
+        else { return }
+        registerUndo(
+            coalescingKey: coalescingKey.map { "\($0):\(nodeID)" }
+        )
+        var node = document.nodes[index]
+        mutation(&node, document)
+        document.nodes[index] = node
+        document.metadata.modifiedAt = Date()
+        document.metadata.modifiedBy = NSUserName()
+        self.document = document
+        markSemanticMutation()
+    }
+
+    private func replaceSelectedProcessArguments(
+        _ arguments: [String],
+        process: GraphLocalProcessSpecification
+    ) {
+        updateSelectedLocalProcess(
+            executable: process.executable,
+            arguments: arguments,
+            workingDirectory: process.workingDirectory,
+            inheritedEnvironment: process.inheritedEnvironment,
+            stdin: process.stdin,
+            environmentAllowlist: selectedNode?.environmentAllowlist ?? [],
+            workspaceRoot: selectedNode?.workspace.root
+        )
+    }
+
+    private static func processDeclaration(
+        _ output: GraphNodeOutputDefinition
+    ) -> GraphLocalProcessArtifactDeclaration {
+        GraphLocalProcessArtifactDeclaration(
+            identifier: output.id,
+            relativePath: output.relativePath,
+            mediaType: output.mediaType,
+            role: output.role,
+            sensitivity: output.sensitivity,
+            maximumBytes: output.maximumBytes,
+            isRequired: output.isRequired,
+            downstreamVisibility: output.downstreamVisibility
+        )
+    }
+
+    private static func synchronizeProcessOutputs(
+        _ node: inout GraphDefinitionDocumentNode
+    ) {
+        guard node.nodeType == .localProcess,
+              let process = try? GraphLocalProcessSpecification(
+                immutableSpecification: node.specification
+              ) else { return }
+        node.specification = (try? GraphLocalProcessSpecification(
+            executable: process.executable,
+            arguments: process.arguments,
+            workingDirectory: process.workingDirectory,
+            environment: process.environment,
+            inheritedEnvironment: process.inheritedEnvironment,
+            stdin: process.stdin,
+            outputArtifacts: node.outputs.map(processDeclaration),
+            retryableExitCodes: process.retryableExitCodes,
+            logPolicy: process.logPolicy
+        ).immutableSpecification()) ?? node.specification
+        let writable = node.outputs.map {
+            URL(fileURLWithPath: $0.relativePath)
+                .deletingLastPathComponent().path
+        }.filter { !$0.isEmpty && $0 != "." }
+        node.workspace = GraphExecutionWorkspaceContext(
+            root: node.workspace.root,
+            writableRelativePaths: writable
+        )
+    }
+
+    private static func nextStableID(
+        prefix: String,
+        existing: [String]
+    ) -> String {
+        let values = Set(existing)
+        var ordinal = values.count + 1
+        while values.contains("\(prefix)-\(ordinal)") { ordinal += 1 }
+        return "\(prefix)-\(ordinal)"
     }
 
     private var authoringSnapshot: GraphAuthoringUndoSnapshot? {

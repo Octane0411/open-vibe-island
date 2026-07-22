@@ -32,24 +32,36 @@ public struct GraphLocalProcessArtifactDeclaration:
     Codable,
     Sendable
 {
+    public let identifier: String?
     public let relativePath: String
     public let mediaType: String
     public let role: GraphArtifactRole
     public let sensitivity: GraphArtifactSensitivity
     public let maximumBytes: Int
+    public let isRequired: Bool?
+    public let downstreamVisibility: GraphArtifactDownstreamVisibility?
+
+    public var stableID: String { identifier ?? "output-\(role.rawValue)" }
+    public var required: Bool { isRequired ?? true }
 
     public init(
+        identifier: String? = nil,
         relativePath: String,
         mediaType: String,
         role: GraphArtifactRole,
         sensitivity: GraphArtifactSensitivity = .internalUse,
-        maximumBytes: Int = 64 * 1_024 * 1_024
+        maximumBytes: Int = 64 * 1_024 * 1_024,
+        isRequired: Bool = true,
+        downstreamVisibility: GraphArtifactDownstreamVisibility = .graph
     ) {
+        self.identifier = identifier
         self.relativePath = relativePath
         self.mediaType = mediaType
         self.role = role
         self.sensitivity = sensitivity
         self.maximumBytes = max(1, maximumBytes)
+        self.isRequired = isRequired
+        self.downstreamVisibility = downstreamVisibility
     }
 }
 

@@ -189,8 +189,16 @@ struct GraphWorkspaceView: View {
             .keyboardShortcut("v", modifiers: [.command, .shift])
 
             Menu {
-                Button("Add Node") { viewModel.addNode() }
-                    .keyboardShortcut("n", modifiers: [.command, .shift])
+                Menu("Add Node") {
+                    Button("Local Process") { viewModel.addNode(type: .localProcess) }
+                        .keyboardShortcut("n", modifiers: [.command, .shift])
+                    Button("Deterministic Test") { viewModel.addNode(type: .deterministicTest) }
+                    Button("Generic Agent") { viewModel.addNode(type: .genericAgent) }
+                    Divider()
+                    Button("Input Reference") { viewModel.addNode(type: .input) }
+                    Button("Output Reference") { viewModel.addNode(type: .output) }
+                    Button("Annotation") { viewModel.addNode(type: .annotation) }
+                }
                 Button("Connect Selected Nodes") {
                     viewModel.connectSelectedNodes()
                 }
@@ -626,6 +634,18 @@ private struct GraphCanvasView: View {
                         }
                     }
                     .frame(width: canvasSize.width, height: canvasSize.height)
+                    .contentShape(Rectangle())
+                    .onTapGesture { viewModel.selectCanvas() }
+                    .contextMenu {
+                        Menu("Add Node") {
+                            Button("Local Process") { viewModel.addNode(type: .localProcess) }
+                            Button("Deterministic Test") { viewModel.addNode(type: .deterministicTest) }
+                            Button("Generic Agent") { viewModel.addNode(type: .genericAgent) }
+                            Button("Input Reference") { viewModel.addNode(type: .input) }
+                            Button("Output Reference") { viewModel.addNode(type: .output) }
+                            Button("Annotation") { viewModel.addNode(type: .annotation) }
+                        }
+                    }
                     .scaleEffect(zoom, anchor: .topLeading)
                     .frame(
                         width: canvasSize.width * zoom,
@@ -641,12 +661,19 @@ private struct GraphCanvasView: View {
             } else {
                 ContentUnavailableView {
                     Label(
-                        "Empty Graph",
+                        "Add your first node",
                         systemImage: "point.3.connected.trianglepath.dotted"
                     )
                 } actions: {
                     if isEditable {
-                        Button("Add Node") { viewModel.addNode() }
+                        Menu("Add Node") {
+                            Button("Local Process") { viewModel.addNode(type: .localProcess) }
+                            Button("Deterministic Test") { viewModel.addNode(type: .deterministicTest) }
+                            Button("Generic Agent") { viewModel.addNode(type: .genericAgent) }
+                            Button("Input Reference") { viewModel.addNode(type: .input) }
+                            Button("Output Reference") { viewModel.addNode(type: .output) }
+                            Button("Annotation") { viewModel.addNode(type: .annotation) }
+                        }
                     }
                 }
             }
@@ -771,6 +798,9 @@ private struct GraphNodeView: View {
                 .font(.caption2)
                 .foregroundStyle(Color.secondary)
                 .lineLimit(1)
+            Text(node.nodeType.rawValue.replacingOccurrences(of: "_", with: " "))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
             Spacer()
             if let attemptOrdinal {
                 Text("attempt \(attemptOrdinal)")
@@ -811,76 +841,63 @@ private struct GraphDefinitionInspector: View {
 
     var body: some View {
         Form {
-            Section("Definition") {
-                LabeledContent("Graph ID", value: viewModel.document?.graphID ?? "")
-                LabeledContent("Version", value: viewModel.document?.definitionVersion ?? "")
-                LabeledContent("Nodes", value: "\(viewModel.document?.nodes.count ?? 0)")
-                LabeledContent("Edges", value: "\(viewModel.document?.edges.count ?? 0)")
-            }
             if let node = selectedNode {
-                Section("Selected Node") {
+                Section("Identity") {
                     LabeledContent("Stable ID", value: node.id)
                     TextField(
                         "Name",
                         text: Binding(
                             get: { selectedNode?.name ?? "" },
-                            set: { viewModel.updateSelectedNode(
-                                name: $0,
-                                description: selectedNode?.description ?? ""
-                            ) }
+                            set: { updateIdentity(name: $0) }
                         )
                     )
                     TextField(
                         "Description",
                         text: Binding(
                             get: { selectedNode?.description ?? "" },
-                            set: { viewModel.updateSelectedNode(
-                                name: selectedNode?.name ?? "",
-                                description: $0
-                            ) }
+                            set: { updateIdentity(description: $0) }
                         ),
                         axis: .vertical
                     )
+                    Picker(
+                        "Node Type",
+                        selection: Binding(
+                            get: { selectedNode?.nodeType ?? .localProcess },
+                            set: { viewModel.updateSelectedNodeType($0) }
+                        )
+                    ) {
+                        Text("Local Process").tag(GraphDefinitionNodeType.localProcess)
+                        Text("Deterministic Test").tag(GraphDefinitionNodeType.deterministicTest)
+                        Text("Generic Agent").tag(GraphDefinitionNodeType.genericAgent)
+                        Text("Input Reference").tag(GraphDefinitionNodeType.input)
+                        Text("Output Reference").tag(GraphDefinitionNodeType.output)
+                        Text("Annotation").tag(GraphDefinitionNodeType.annotation)
+                    }
                     TextField(
-                        "Capabilities",
+                        "Tags",
                         text: Binding(
-                            get: {
-                                selectedNode?.requiredCapabilities
-                                    .joined(separator: ", ") ?? ""
-                            },
-                            set: {
-                                viewModel.updateSelectedNodeExecution(
-                                    capabilities: $0.split(separator: ",")
-                                        .map { $0.trimmingCharacters(in: .whitespaces) }
-                                        .filter { !$0.isEmpty },
-                                    executionSeconds: selectedNode?
-                                        .timeoutPolicy.executionSeconds ?? 300
-                                )
-                            }
+                            get: { selectedNode?.tags.joined(separator: ", ") ?? "" },
+                            set: { updateIdentity(tags: csv($0)) }
                         )
                     )
-                    Stepper(
-                        "Timeout: \(node.timeoutPolicy.executionSeconds)s",
-                        value: Binding(
-                            get: { Int(selectedNode?.timeoutPolicy.executionSeconds ?? 300) },
-                            set: {
-                                viewModel.updateSelectedNodeExecution(
-                                    capabilities: selectedNode?.requiredCapabilities ?? [],
-                                    executionSeconds: UInt64(max(1, $0))
-                                )
-                            }
-                        ),
-                        in: 1...86_400
-                    )
                 }
-                Section("Execution Specification") {
-                    LabeledContent("Adapter", value: node.specification.adapterKind)
-                    LabeledContent("Operation", value: node.specification.operation)
-                    LabeledContent(
-                        "Workspace",
-                        value: node.workspace.root ?? "Not assigned"
-                    )
+                if node.nodeType == .localProcess {
+                    localProcessSection
+                } else {
+                    Section("Execution") {
+                        LabeledContent("Adapter", value: node.specification.adapterKind)
+                        LabeledContent("Operation", value: node.specification.operation)
+                        if node.nodeType == .genericAgent {
+                            Label("A provider adapter must be assigned before this node can run.", systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(.orange)
+                        }
+                    }
                 }
+                capabilitiesSection
+                inputsSection
+                outputsSection
+                retrySection
+                timeoutSection
                 Section("Dependencies") {
                     let incoming = viewModel.document?.edges.filter {
                         $0.targetNodeID == node.id
@@ -901,20 +918,578 @@ private struct GraphDefinitionInspector: View {
                             .accessibilityLabel("Remove dependency")
                         }
                     }
+                    Button("Add Dependency") {
+                        viewModel.connectSelectedNodes()
+                    }
+                    .disabled(viewModel.selectedNodeIDs.count != 2)
                 }
             } else {
-                ContentUnavailableView(
-                    "No Node Selected",
-                    systemImage: "cursorarrow.click"
-                )
+                graphInspector
             }
         }
         .formStyle(.grouped)
     }
 
     private var selectedNode: GraphDefinitionDocumentNode? {
-        guard let nodeID = viewModel.selectedNodeID else { return nil }
-        return viewModel.document?.nodes.first { $0.id == nodeID }
+        viewModel.selectedNode
+    }
+
+    @ViewBuilder
+    private var graphInspector: some View {
+        if let document = viewModel.document {
+            Section("Graph") {
+                TextField(
+                    "Name",
+                    text: Binding(
+                        get: { viewModel.document?.name ?? "" },
+                        set: { viewModel.updateGraphIdentity(
+                            name: $0,
+                            description: viewModel.document?.description ?? ""
+                        ) }
+                    )
+                )
+                TextField(
+                    "Description",
+                    text: Binding(
+                        get: { viewModel.document?.description ?? "" },
+                        set: { viewModel.updateGraphIdentity(
+                            name: viewModel.document?.name ?? "",
+                            description: $0
+                        ) }
+                    ),
+                    axis: .vertical
+                )
+                LabeledContent("Graph ID", value: document.graphID)
+                LabeledContent("Definition Version", value: document.definitionVersion)
+                LabeledContent("State", value: viewModel.isDraft ? "Draft" : "Editable")
+                LabeledContent("Associated Runs", value: "\(viewModel.associatedRunCount)")
+                LabeledContent("Nodes", value: "\(document.nodes.count)")
+                LabeledContent("Edges", value: "\(document.edges.count)")
+                if viewModel.isDraft {
+                    Button("Create New Definition Version") {
+                        viewModel.createNewDefinitionVersion()
+                    }
+                }
+            }
+        } else {
+            ContentUnavailableView("No Graph Open", systemImage: "doc")
+        }
+    }
+
+    @ViewBuilder
+    private var localProcessSection: some View {
+        if let process = viewModel.selectedLocalProcessSpecification {
+            Section("Execution") {
+                HStack {
+                    TextField(
+                        "Executable Path",
+                        text: Binding(
+                            get: { viewModel.selectedLocalProcessSpecification?.executable ?? "" },
+                            set: { updateProcess(executable: $0) }
+                        )
+                    )
+                    Button("Choose") {
+                        if let url = GraphWorkspaceFilePanels.chooseExecutable() {
+                            updateProcess(executable: url.path)
+                        }
+                    }
+                    Button("Reveal") {
+                        NSWorkspace.shared.activateFileViewerSelecting([
+                            URL(fileURLWithPath: process.executable),
+                        ])
+                    }
+                }
+                HStack {
+                    TextField(
+                        "Workspace Directory",
+                        text: Binding(
+                            get: { selectedNode?.workspace.root ?? "" },
+                            set: { updateProcess(workspaceRoot: $0) }
+                        )
+                    )
+                    Button("Choose") {
+                        if let url = GraphWorkspaceFilePanels.chooseDirectory() {
+                            updateProcess(workspaceRoot: url.path)
+                        }
+                    }
+                }
+                TextField(
+                    "Working Directory (relative)",
+                    text: Binding(
+                        get: { viewModel.selectedLocalProcessSpecification?.workingDirectory ?? "." },
+                        set: { updateProcess(workingDirectory: $0) }
+                    )
+                )
+                Picker(
+                    "Environment Inheritance",
+                    selection: Binding(
+                        get: {
+                            viewModel.selectedLocalProcessSpecification?.inheritedEnvironment
+                                ?? GraphLocalProcessEnvironmentInheritance.none
+                        },
+                        set: { updateProcess(inheritedEnvironment: $0) }
+                    )
+                ) {
+                    Text("None").tag(GraphLocalProcessEnvironmentInheritance.none)
+                    Text("Allowlisted Only").tag(GraphLocalProcessEnvironmentInheritance.allowlisted)
+                }
+                TextField(
+                    "Allowed Environment Variables",
+                    text: Binding(
+                        get: { selectedNode?.environmentAllowlist.joined(separator: ", ") ?? "" },
+                        set: { updateProcess(environmentAllowlist: csv($0)) }
+                    )
+                )
+                Picker(
+                    "Standard Input",
+                    selection: Binding(
+                        get: { viewModel.selectedLocalProcessSpecification?.stdin ?? .nullDevice },
+                        set: { updateProcess(stdin: $0) }
+                    )
+                ) {
+                    Text("Null Device").tag(GraphLocalProcessStdinPolicy.nullDevice)
+                    Text("Closed").tag(GraphLocalProcessStdinPolicy.closed)
+                }
+                LabeledContent("Arguments") {
+                    Button("Add Argument") { viewModel.addSelectedNodeArgument() }
+                }
+                ForEach(Array(process.arguments.enumerated()), id: \.offset) { index, _ in
+                    HStack {
+                        TextField(
+                            "Argument \(index + 1)",
+                            text: Binding(
+                                get: {
+                                    let values = viewModel.selectedLocalProcessSpecification?.arguments ?? []
+                                    return values.indices.contains(index) ? values[index] : ""
+                                },
+                                set: { viewModel.updateSelectedNodeArgument(at: index, value: $0) }
+                            )
+                        )
+                        Button { viewModel.moveSelectedNodeArgument(from: index, offset: -1) } label: {
+                            Image(systemName: "arrow.up")
+                        }
+                        .disabled(index == 0)
+                        .help("Move Argument Up")
+                        Button { viewModel.moveSelectedNodeArgument(from: index, offset: 1) } label: {
+                            Image(systemName: "arrow.down")
+                        }
+                        .disabled(index == process.arguments.count - 1)
+                        .help("Move Argument Down")
+                        Button(role: .destructive) {
+                            viewModel.removeSelectedNodeArgument(at: index)
+                        } label: {
+                            Image(systemName: "minus.circle")
+                        }
+                        .help("Remove Argument")
+                    }
+                }
+            }
+        }
+    }
+
+    private var capabilitiesSection: some View {
+        Section("Capabilities") {
+            TextField(
+                "Required",
+                text: Binding(
+                    get: { selectedNode?.requiredCapabilities.joined(separator: ", ") ?? "" },
+                    set: { updateCapabilities(required: csv($0)) }
+                )
+            )
+            TextField(
+                "Preferred",
+                text: Binding(
+                    get: { selectedNode?.preferredCapabilities.joined(separator: ", ") ?? "" },
+                    set: { updateCapabilities(preferred: csv($0)) }
+                )
+            )
+            Picker(
+                "Executor Kind",
+                selection: Binding(
+                    get: { selectedNode?.executorKind ?? GraphDefinitionExecutorKind.none },
+                    set: { updateCapabilities(executor: $0) }
+                )
+            ) {
+                ForEach(GraphDefinitionExecutorKind.allCases, id: \.rawValue) {
+                    Text($0.displayName).tag($0)
+                }
+            }
+            TextField(
+                "Platform Constraints",
+                text: Binding(
+                    get: { selectedNode?.platformConstraints.joined(separator: ", ") ?? "" },
+                    set: { updateCapabilities(platforms: csv($0)) }
+                )
+            )
+        }
+    }
+
+    private var inputsSection: some View {
+        Section("Inputs") {
+            if selectedNode?.inputs.isEmpty != false {
+                Text("No declared inputs").foregroundStyle(.secondary)
+            }
+            ForEach(selectedNode?.inputs ?? []) { input in
+                VStack(alignment: .leading, spacing: 6) {
+                    TextField(
+                        "Input Name",
+                        text: inputBinding(input.id, \.name, fallback: input.name)
+                    )
+                    TextField(
+                        "Media Type",
+                        text: inputBinding(input.id, \.mediaType, fallback: input.mediaType)
+                    )
+                    Toggle(
+                        "Required",
+                        isOn: inputBinding(input.id, \.isRequired, fallback: input.isRequired)
+                    )
+                    Toggle(
+                        "Allow Multiple Providers",
+                        isOn: inputBinding(input.id, \.allowsMultiple, fallback: input.allowsMultiple)
+                    )
+                    LabeledContent("Stable ID", value: input.id)
+                    Button("Remove Input", role: .destructive) {
+                        viewModel.removeSelectedNodeInput(input.id)
+                    }
+                }
+            }
+            Button("Add Input") { viewModel.addSelectedNodeInput() }
+        }
+    }
+
+    private var outputsSection: some View {
+        Section("Outputs") {
+            if selectedNode?.outputs.isEmpty != false {
+                Text("No declared outputs").foregroundStyle(.secondary)
+            }
+            ForEach(selectedNode?.outputs ?? []) { output in
+                VStack(alignment: .leading, spacing: 6) {
+                    TextField(
+                        "Output Name",
+                        text: outputBinding(output.id, \.name, fallback: output.name)
+                    )
+                    TextField(
+                        "Relative Path",
+                        text: outputBinding(output.id, \.relativePath, fallback: output.relativePath)
+                    )
+                    TextField(
+                        "Media Type",
+                        text: outputBinding(output.id, \.mediaType, fallback: output.mediaType)
+                    )
+                    Picker(
+                        "Runtime Role",
+                        selection: outputBinding(output.id, \.role, fallback: output.role)
+                    ) {
+                        ForEach(GraphArtifactRole.allCases, id: \.rawValue) {
+                            Text($0.rawValue).tag($0)
+                        }
+                    }
+                    Toggle(
+                        "Required",
+                        isOn: outputBinding(output.id, \.isRequired, fallback: output.isRequired)
+                    )
+                    Stepper(
+                        "Maximum Size: \(output.maximumBytes / 1_024) KiB",
+                        value: outputBinding(output.id, \.maximumBytes, fallback: output.maximumBytes),
+                        in: 1_024...(1_024 * 1_024 * 1_024),
+                        step: 1_024
+                    )
+                    Picker(
+                        "Sensitivity",
+                        selection: outputBinding(output.id, \.sensitivity, fallback: output.sensitivity)
+                    ) {
+                        Text("Unspecified").tag(GraphArtifactSensitivity.unspecified)
+                        Text("Internal").tag(GraphArtifactSensitivity.internalUse)
+                        Text("Confidential").tag(GraphArtifactSensitivity.confidential)
+                        Text("Restricted").tag(GraphArtifactSensitivity.restricted)
+                        Text("Redacted").tag(GraphArtifactSensitivity.redacted)
+                    }
+                    Picker(
+                        "Downstream Visibility",
+                        selection: outputBinding(
+                            output.id,
+                            \.downstreamVisibility,
+                            fallback: output.downstreamVisibility
+                        )
+                    ) {
+                        Text("Whole Graph").tag(GraphArtifactDownstreamVisibility.graph)
+                        Text("Direct Dependents").tag(GraphArtifactDownstreamVisibility.directDependents)
+                        Text("Private to Node").tag(GraphArtifactDownstreamVisibility.privateToNode)
+                    }
+                    LabeledContent("Stable ID", value: output.id)
+                    Button("Remove Output", role: .destructive) {
+                        viewModel.removeSelectedNodeOutput(output.id)
+                    }
+                }
+            }
+            Button("Add Output") { viewModel.addSelectedNodeOutput() }
+        }
+    }
+
+    private var retrySection: some View {
+        Section("Retry") {
+            Toggle(
+                "Inherit Graph Default",
+                isOn: Binding(
+                    get: { selectedNode?.retryConfiguration.inheritsGraphDefault ?? true },
+                    set: { setRetryInheritance($0) }
+                )
+            )
+            if selectedNode?.retryConfiguration.inheritsGraphDefault == false {
+                let policy = retryPolicy
+                Stepper(
+                    "Maximum Attempts: \(policy.maximumAttempts)",
+                    value: Binding(
+                        get: { retryPolicy.maximumAttempts },
+                        set: { updateRetry(maximumAttempts: $0) }
+                    ),
+                    in: 1...20
+                )
+                TextField(
+                    "Retryable Categories",
+                    text: Binding(
+                        get: { retryPolicy.retryableFailureCategories.joined(separator: ", ") },
+                        set: { updateRetry(retryable: csv($0)) }
+                    )
+                )
+                TextField(
+                    "Non-Retryable Categories",
+                    text: Binding(
+                        get: { retryPolicy.nonRetryableFailureCategories.joined(separator: ", ") },
+                        set: { updateRetry(nonRetryable: csv($0)) }
+                    )
+                )
+                Stepper(
+                    "Base Delay: \(policy.initialBackoffSeconds)s",
+                    value: Binding(
+                        get: { retryPolicy.initialBackoffSeconds },
+                        set: { updateRetry(baseDelay: $0) }
+                    ),
+                    in: 0...3_600
+                )
+                Stepper(
+                    "Maximum Delay: \(policy.maximumBackoffSeconds)s",
+                    value: Binding(
+                        get: { retryPolicy.maximumBackoffSeconds },
+                        set: { updateRetry(maximumDelay: $0) }
+                    ),
+                    in: 0...86_400
+                )
+                Picker(
+                    "Timeout Failure",
+                    selection: Binding(
+                        get: { retryPolicy.timeoutBehavior },
+                        set: { updateRetry(timeoutBehavior: $0) }
+                    )
+                ) {
+                    Text("Retry").tag(GraphRetryTimeoutBehavior.retry)
+                    Text("Do Not Retry").tag(GraphRetryTimeoutBehavior.suppress)
+                }
+            }
+        }
+    }
+
+    private var timeoutSection: some View {
+        Section("Timeout") {
+            Toggle(
+                "Inherit Graph Default",
+                isOn: Binding(
+                    get: { selectedNode?.timeoutConfiguration.inheritsGraphDefault ?? true },
+                    set: { updateTimeout(inherits: $0) }
+                )
+            )
+            if selectedNode?.timeoutConfiguration.inheritsGraphDefault == false {
+                Stepper(
+                    "Execution: \(timeout.executionSeconds)s",
+                    value: Binding(
+                        get: { timeout.executionSeconds },
+                        set: { updateTimeout(execution: $0) }
+                    ),
+                    in: 1...86_400
+                )
+                Stepper(
+                    "Cancellation Grace: \(timeout.cancellationAcknowledgementSeconds)s",
+                    value: Binding(
+                        get: { timeout.cancellationAcknowledgementSeconds },
+                        set: { updateTimeout(cancellation: $0) }
+                    ),
+                    in: 1...3_600
+                )
+                Stepper(
+                    "Claim Timeout: \(timeout.claimSeconds)s",
+                    value: Binding(
+                        get: { timeout.claimSeconds },
+                        set: { updateTimeout(claim: $0) }
+                    ),
+                    in: 1...3_600
+                )
+            }
+        }
+    }
+
+    private var retryPolicy: GraphRetryPolicy {
+        selectedNode?.retryConfiguration.override
+            ?? viewModel.document?.schedulerPolicy.retryPolicy
+            ?? GraphRetryPolicy(maximumAttempts: 1, retryableFailureCategories: [])
+    }
+
+    private var timeout: GraphNodeTimeoutConfiguration {
+        selectedNode?.timeoutConfiguration ?? .init()
+    }
+
+    private func csv(_ value: String) -> [String] {
+        value.split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private func updateIdentity(
+        name: String? = nil,
+        description: String? = nil,
+        tags: [String]? = nil
+    ) {
+        guard let node = selectedNode else { return }
+        viewModel.updateSelectedNodeIdentity(
+            name: name ?? node.name,
+            description: description ?? node.description,
+            tags: tags ?? node.tags
+        )
+    }
+
+    private func updateCapabilities(
+        required: [String]? = nil,
+        preferred: [String]? = nil,
+        executor: GraphDefinitionExecutorKind? = nil,
+        platforms: [String]? = nil
+    ) {
+        guard let node = selectedNode else { return }
+        viewModel.updateSelectedNodeCapabilities(
+            required: required ?? node.requiredCapabilities,
+            preferred: preferred ?? node.preferredCapabilities,
+            executorKind: executor ?? node.executorKind,
+            platformConstraints: platforms ?? node.platformConstraints
+        )
+    }
+
+    private func updateProcess(
+        executable: String? = nil,
+        arguments: [String]? = nil,
+        workingDirectory: String? = nil,
+        inheritedEnvironment: GraphLocalProcessEnvironmentInheritance? = nil,
+        stdin: GraphLocalProcessStdinPolicy? = nil,
+        environmentAllowlist: [String]? = nil,
+        workspaceRoot: String? = nil
+    ) {
+        guard let process = viewModel.selectedLocalProcessSpecification,
+              let node = selectedNode else { return }
+        viewModel.updateSelectedLocalProcess(
+            executable: executable ?? process.executable,
+            arguments: arguments ?? process.arguments,
+            workingDirectory: workingDirectory ?? process.workingDirectory,
+            inheritedEnvironment: inheritedEnvironment ?? process.inheritedEnvironment,
+            stdin: stdin ?? process.stdin,
+            environmentAllowlist: environmentAllowlist ?? node.environmentAllowlist,
+            workspaceRoot: workspaceRoot ?? node.workspace.root
+        )
+    }
+
+    private func inputBinding<Value>(
+        _ id: String,
+        _ keyPath: WritableKeyPath<GraphNodeInputDefinition, Value>,
+        fallback: Value
+    ) -> Binding<Value> {
+        Binding(
+            get: {
+                viewModel.selectedNode?.inputs.first { $0.id == id }?[keyPath: keyPath]
+                    ?? fallback
+            },
+            set: { value in
+                guard var input = viewModel.selectedNode?.inputs.first(where: {
+                    $0.id == id
+                }) else { return }
+                input[keyPath: keyPath] = value
+                viewModel.updateSelectedNodeInput(input)
+            }
+        )
+    }
+
+    private func outputBinding<Value>(
+        _ id: String,
+        _ keyPath: WritableKeyPath<GraphNodeOutputDefinition, Value>,
+        fallback: Value
+    ) -> Binding<Value> {
+        Binding(
+            get: {
+                viewModel.selectedNode?.outputs.first { $0.id == id }?[keyPath: keyPath]
+                    ?? fallback
+            },
+            set: { value in
+                guard var output = viewModel.selectedNode?.outputs.first(where: {
+                    $0.id == id
+                }) else { return }
+                output[keyPath: keyPath] = value
+                viewModel.updateSelectedNodeOutput(output)
+            }
+        )
+    }
+
+    private func setRetryInheritance(_ inherits: Bool) {
+        viewModel.updateSelectedNodeRetry(
+            GraphNodeRetryConfiguration(
+                inheritsGraphDefault: inherits,
+                override: inherits ? nil : retryPolicy
+            )
+        )
+    }
+
+    private func updateRetry(
+        maximumAttempts: Int? = nil,
+        retryable: [String]? = nil,
+        nonRetryable: [String]? = nil,
+        baseDelay: UInt64? = nil,
+        maximumDelay: UInt64? = nil,
+        timeoutBehavior: GraphRetryTimeoutBehavior? = nil
+    ) {
+        let source = retryPolicy
+        let updated = GraphRetryPolicy(
+            maximumAttempts: maximumAttempts ?? source.maximumAttempts,
+            retryableFailureCategories: retryable
+                ?? source.retryableFailureCategories,
+            nonRetryableFailureCategories: nonRetryable
+                ?? source.nonRetryableFailureCategories,
+            initialBackoffSeconds: baseDelay ?? source.initialBackoffSeconds,
+            backoffMultiplier: source.backoffMultiplier,
+            maximumBackoffSeconds: maximumDelay ?? source.maximumBackoffSeconds,
+            jitterBasisPoints: source.jitterBasisPoints,
+            jitterSeed: source.jitterSeed,
+            timeoutBehavior: timeoutBehavior ?? source.timeoutBehavior,
+            cancellationBehavior: source.cancellationBehavior,
+            dependencyFailureBehavior: source.dependencyFailureBehavior
+        )
+        viewModel.updateSelectedNodeRetry(
+            GraphNodeRetryConfiguration(
+                inheritsGraphDefault: false,
+                override: updated
+            )
+        )
+    }
+
+    private func updateTimeout(
+        inherits: Bool? = nil,
+        execution: UInt64? = nil,
+        cancellation: UInt64? = nil,
+        claim: UInt64? = nil
+    ) {
+        let source = timeout
+        viewModel.updateSelectedNodeTimeout(
+            GraphNodeTimeoutConfiguration(
+                inheritsGraphDefault: inherits ?? source.inheritsGraphDefault,
+                executionSeconds: execution ?? source.executionSeconds,
+                cancellationAcknowledgementSeconds: cancellation
+                    ?? source.cancellationAcknowledgementSeconds,
+                claimSeconds: claim ?? source.claimSeconds
+            )
+        )
     }
 }
 
@@ -1207,6 +1782,14 @@ enum GraphWorkspaceFilePanels {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    static func chooseExecutable() -> URL? {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         return panel.runModal() == .OK ? panel.url : nil
     }
