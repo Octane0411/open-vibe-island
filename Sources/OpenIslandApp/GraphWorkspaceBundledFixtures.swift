@@ -119,4 +119,17 @@ enum GraphWorkspaceBundledFixtures {
                 isDirectory: true
             )
     }
+
+    static func templateWorkspaceURL(graphID: String) throws -> URL {
+        let support = try FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        return support
+            .appendingPathComponent("OpenIsland", isDirectory: true)
+            .appendingPathComponent("graph-template-workspaces", isDirectory: true)
+            .appendingPathComponent(graphID, isDirectory: true)
+    }
 }

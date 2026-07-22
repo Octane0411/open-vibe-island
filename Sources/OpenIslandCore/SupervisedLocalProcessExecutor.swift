@@ -932,6 +932,8 @@ public actor SupervisedLocalProcessExecutor: GraphExecutorAdapter {
             status = .staleClaim
         } else if case GraphLocalProcessRuntimeError.identityMismatch = error {
             status = .identityMismatch
+        } else if error is GraphLocalProcessSpecificationError {
+            status = .failed
         } else {
             status = .rejected
         }

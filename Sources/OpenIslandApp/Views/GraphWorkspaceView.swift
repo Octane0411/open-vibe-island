@@ -515,6 +515,17 @@ private struct GraphNewDocumentSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("New Graph").font(.title2.weight(.semibold))
             Form {
+                Section("Template") {
+                    Picker("Graph Template", selection: $request.template) {
+                        ForEach(GraphWorkspaceTemplate.allCases) { template in
+                            Text(template.name).tag(template)
+                        }
+                    }
+                    Text(request.template.summary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Template description: \(request.template.summary)")
+                }
                 Section("Identity") {
                     TextField("Graph Name", text: $request.name)
                         .accessibilityHint("The name shown in the workspace and run summary")
@@ -802,12 +813,26 @@ private struct GraphCanvasView: View {
         VStack(spacing: 0) {
             HStack {
                 Button {
+                    viewModel.automaticLayout()
+                } label: {
+                    Label("Auto Layout", systemImage: "rectangle.3.group")
+                }
+                .disabled(!isEditable || viewModel.document?.nodes.isEmpty != false)
+                .help("Arrange all graph nodes deterministically")
+                Button {
                     zoom = 0.75
                 } label: {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    Label("Fit", systemImage: "arrow.up.left.and.arrow.down.right")
                 }
                 .help("Fit Graph to View")
                 .accessibilityLabel("Fit Graph to View")
+                Button {
+                    zoom = 1
+                } label: {
+                    Label("Reset", systemImage: "1.magnifyingglass")
+                }
+                .help("Reset Graph Zoom to 100 Percent")
+                .accessibilityLabel("Reset Graph Zoom")
                 Slider(value: $zoom, in: 0.4...1.6, step: 0.05)
                     .frame(width: 140)
                     .accessibilityLabel("Graph zoom")
@@ -891,6 +916,7 @@ private struct GraphCanvasView: View {
                                     }
                                     .onEnded { _ in
                                         dragOrigins.removeValue(forKey: node.id)
+                                        viewModel.endUndoCoalescing()
                                     }
                             )
                         }

@@ -746,15 +746,20 @@ public struct DefaultGraphOrchestrationService:
                 )
                 persisted += persistedPrepare.appendResult.appendedCount
                 current = try await load(context.identity.runID)
-                let refreshed = try executionContext(
-                    claim: currentClaim(context.identity, current.projection),
-                    definition: definition,
-                    projection: current.projection,
-                    logicalTime: context.logicalTime
-                )
-                operation = .start
-                observation = try await invokeStart(refreshed)
-                invocations += 1
+                if prepared.status.isTerminalObservation {
+                    operation = .prepare
+                    observation = prepared
+                } else {
+                    let refreshed = try executionContext(
+                        claim: currentClaim(context.identity, current.projection),
+                        definition: definition,
+                        projection: current.projection,
+                        logicalTime: context.logicalTime
+                    )
+                    operation = .start
+                    observation = try await invokeStart(refreshed)
+                    invocations += 1
+                }
             } else if lifecycle?.phase == .startRequested {
                 operation = .recover
                 observation = try await invokeRecover(context)

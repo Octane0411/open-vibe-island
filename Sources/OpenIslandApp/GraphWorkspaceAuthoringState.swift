@@ -2,6 +2,39 @@ import CryptoKit
 import Foundation
 import OpenIslandCore
 
+enum GraphWorkspaceTemplate: String, CaseIterable, Identifiable, Sendable {
+    case blank = "blank"
+    case linearPipeline = "linear_pipeline"
+    case fanOutFanIn = "fan_out_fan_in"
+    case reviewLoop = "review_loop"
+    case compendiumFill = "compendium_fill"
+    case localProcessExample = "local_process_example"
+
+    var id: String { rawValue }
+
+    var name: String {
+        switch self {
+        case .blank: "Blank Graph"
+        case .linearPipeline: "Linear Pipeline"
+        case .fanOutFanIn: "Fan-Out/Fan-In"
+        case .reviewLoop: "Review Loop"
+        case .compendiumFill: "Compendium Fill"
+        case .localProcessExample: "Local Process Example"
+        }
+    }
+
+    var summary: String {
+        switch self {
+        case .blank: "Start with an empty editable canvas."
+        case .linearPipeline: "Three deterministic stages in sequence."
+        case .fanOutFanIn: "Parallel branches joined by a final stage."
+        case .reviewLoop: "Draft, parallel review, revision, and final review as a DAG."
+        case .compendiumFill: "Architect, researcher, graph, and reviewer local processes."
+        case .localProcessExample: "Generate, transform, and verify using supervised processes."
+        }
+    }
+}
+
 struct GraphDocumentFileState: Equatable, Sendable {
     let contentDigest: String
     let modificationDate: Date?
@@ -30,6 +63,7 @@ extension GraphDocumentStoreError: LocalizedError {
 }
 
 struct GraphNewDocumentRequest: Equatable, Sendable {
+    var template: GraphWorkspaceTemplate
     var name: String
     var graphID: String
     var definitionVersion: String
@@ -40,6 +74,7 @@ struct GraphNewDocumentRequest: Equatable, Sendable {
     var workspaceDirectory: String?
 
     init(
+        template: GraphWorkspaceTemplate = .blank,
         name: String,
         graphID: String,
         definitionVersion: String,
@@ -49,6 +84,7 @@ struct GraphNewDocumentRequest: Equatable, Sendable {
         defaultExecutorKind: String = "local_process",
         workspaceDirectory: String? = nil
     ) {
+        self.template = template
         self.name = name
         self.graphID = graphID
         self.definitionVersion = definitionVersion
@@ -63,6 +99,7 @@ struct GraphNewDocumentRequest: Equatable, Sendable {
         id: String = UUID().uuidString.lowercased()
     ) -> GraphNewDocumentRequest {
         GraphNewDocumentRequest(
+            template: .blank,
             name: "Untitled Graph",
             graphID: id,
             definitionVersion: "1",
@@ -70,7 +107,7 @@ struct GraphNewDocumentRequest: Equatable, Sendable {
             defaultRetryMaximumAttempts: 2,
             defaultExecutionTimeoutSeconds: 300,
             defaultExecutorKind: "local_process",
-            workspaceDirectory: FileManager.default.currentDirectoryPath
+            workspaceDirectory: nil
         )
     }
 }

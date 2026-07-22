@@ -299,28 +299,14 @@ final class GraphWorkspaceViewModel {
         request: GraphNewDocumentRequest = .defaults()
     ) {
         pauseOrchestration()
-        var newDocument = GraphDefinitionDocument.empty(graphID: request.graphID)
-        newDocument.name = request.name
-        newDocument.definitionVersion = request.definitionVersion
-        newDocument.description = request.description
-        newDocument.schedulerPolicy = GraphSchedulerPolicy(
-            policyID: "\(request.graphID)-policy",
-            version: request.definitionVersion,
-            retryPolicy: GraphRetryPolicy(
-                maximumAttempts: request.defaultRetryMaximumAttempts,
-                retryableFailureCategories: [
-                    "execution_failure",
-                    "process_exit_unobserved",
-                    "timeout",
-                ],
-                nonRetryableFailureCategories: [
-                    "artifact_collection_failure",
-                    "invalid_process_specification",
-                ]
-            ),
-            attemptExecutionTimeoutSeconds: request.defaultExecutionTimeoutSeconds,
-            cancellationAcknowledgementTimeoutSeconds: 10
-        )
+        guard let newDocument = try? GraphWorkspaceTemplateFactory.make(
+            request: request
+        ) else {
+            return rejectLocalAction(
+                "template_create_failed",
+                CocoaError(.fileNoSuchFile)
+            )
+        }
         defaultNodeWorkspaceDirectory = request.workspaceDirectory
         defaultNodeTimeoutSeconds = request.defaultExecutionTimeoutSeconds
         defaultNodeExecutorKind = request.defaultExecutorKind
@@ -334,7 +320,7 @@ final class GraphWorkspaceViewModel {
         inspection = nil
         history = nil
         explanation = nil
-        selectedNodeIDs = []
+        selectedNodeIDs = Set(newDocument.nodes.first.map { [$0.id] } ?? [])
         selectedEdgeID = nil
         validationDiagnostics = GraphDefinitionValidator.validate(newDocument)
         lastSuccessfulValidation = nil
@@ -349,7 +335,10 @@ final class GraphWorkspaceViewModel {
         mode = .definition
         defaults.removeObject(forKey: Self.lastDocumentPathKey)
         defaults.removeObject(forKey: Self.lastRunIDKey)
-        acceptedLocalAction("new_definition")
+        acceptedLocalAction(
+            request.template == .blank
+                ? "new_definition" : "template_definition_created"
+        )
     }
 
     func openDocument(url: URL) async {
@@ -383,23 +372,11 @@ final class GraphWorkspaceViewModel {
     }
 
     func openBundledCompendium() {
-        do {
-            let loaded = try GraphWorkspaceBundledFixtures.loadCompendium()
-            document = loaded
-            documentURL = nil
-            documentFileState = nil
-            lastSavedDocument = nil
-            associatedRunCount = 0
-            isDraft = false
-            selectedNodeIDs = Set(loaded.nodes.first.map { [$0.id] } ?? [])
-            selectedEdgeID = nil
-            validationDiagnostics = GraphDefinitionValidator.validate(loaded)
-            resetUndoHistory()
-            mode = .definition
-            acceptedLocalAction("compendium_definition_opened")
-        } catch {
-            rejectLocalAction("compendium_definition_open_failed", error)
-        }
+        var request = GraphNewDocumentRequest.defaults(id: "compendium-fill")
+        request.template = .compendiumFill
+        request.name = "Compendium Fill"
+        request.description = GraphWorkspaceTemplate.compendiumFill.summary
+        newDocument(request: request)
     }
 
     func saveDocument(url: URL? = nil) async {
@@ -867,8 +844,8 @@ final class GraphWorkspaceViewModel {
             node.workspace = GraphExecutionWorkspaceContext(
                 root: workspaceRoot,
                 writableRelativePaths: node.outputs.compactMap {
-                    let path = URL(fileURLWithPath: $0.relativePath)
-                        .deletingLastPathComponent().path
+                    let path = ($0.relativePath as NSString)
+                        .deletingLastPathComponent
                     return path == "." ? "" : path
                 }.filter { !$0.isEmpty }
             )
@@ -1221,6 +1198,10 @@ final class GraphWorkspaceViewModel {
         } catch {
             rejectLocalAction("layout_update_rejected", error)
         }
+    }
+
+    func endUndoCoalescing() {
+        undoCoalescingKey = nil
     }
 
     func automaticLayout() {
@@ -1689,6 +1670,7 @@ final class GraphWorkspaceViewModel {
                 root: defaultNodeWorkspaceDirectory
                     ?? FileManager.default.currentDirectoryPath
             ),
+            inputArtifactRoles: [],
             outputs: outputs,
             timeoutPolicy: GraphExecutionTimeoutPolicy(
                 executionSeconds: defaultNodeTimeoutSeconds,
@@ -1781,8 +1763,7 @@ final class GraphWorkspaceViewModel {
             logPolicy: process.logPolicy
         ).immutableSpecification()) ?? node.specification
         let writable = node.outputs.map {
-            URL(fileURLWithPath: $0.relativePath)
-                .deletingLastPathComponent().path
+            ($0.relativePath as NSString).deletingLastPathComponent
         }.filter { !$0.isEmpty && $0 != "." }
         node.workspace = GraphExecutionWorkspaceContext(
             root: node.workspace.root,
