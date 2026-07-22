@@ -188,6 +188,24 @@ func loadCompendiumSchedulingDefinition()
     )
 }
 
+func loadCompendiumExecutableDefinition()
+    throws -> GraphExecutableDefinition
+{
+    let url = try XCTUnwrap(
+        Bundle.module.url(
+            forResource: "compendium-execution",
+            withExtension: "json",
+            subdirectory: "Fixtures"
+        )
+    )
+    let definition = try JSONDecoder().decode(
+        GraphExecutableDefinition.self,
+        from: Data(contentsOf: url)
+    )
+    try definition.validate()
+    return definition
+}
+
 func compendiumSchedulingBaseEvents(
     definition: GraphSchedulingDefinition,
     runID: String,

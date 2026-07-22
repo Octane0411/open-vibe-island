@@ -210,6 +210,11 @@ public struct GraphExecutionProjection: Equatable, Codable, Sendable {
     public var parentCheckpoint: GraphCheckpointReference?
     public var namedCheckpoints: [GraphCheckpointReference]
     public var scheduling: GraphSchedulingProjection
+    public var executableDefinition: GraphExecutableDefinition?
+    public var runStartRequestedAt: Date?
+    public var runStartRequestID: String?
+    public var retryRequestIDs: [String]
+    public var attemptLifecycles: [GraphAttemptLifecycleRecord]
 
     public init(
         runID: String,
@@ -230,7 +235,12 @@ public struct GraphExecutionProjection: Equatable, Codable, Sendable {
         parentCheckpoint: GraphCheckpointReference? = nil,
         namedCheckpoints: [GraphCheckpointReference] = [],
         scheduling: GraphSchedulingProjection =
-            GraphSchedulingProjection()
+            GraphSchedulingProjection(),
+        executableDefinition: GraphExecutableDefinition? = nil,
+        runStartRequestedAt: Date? = nil,
+        runStartRequestID: String? = nil,
+        retryRequestIDs: [String] = [],
+        attemptLifecycles: [GraphAttemptLifecycleRecord] = []
     ) {
         self.runID = runID
         self.streamVersion = streamVersion
@@ -250,6 +260,11 @@ public struct GraphExecutionProjection: Equatable, Codable, Sendable {
         self.parentCheckpoint = parentCheckpoint
         self.namedCheckpoints = namedCheckpoints
         self.scheduling = scheduling
+        self.executableDefinition = executableDefinition
+        self.runStartRequestedAt = runStartRequestedAt
+        self.runStartRequestID = runStartRequestID
+        self.retryRequestIDs = retryRequestIDs
+        self.attemptLifecycles = attemptLifecycles
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -271,6 +286,11 @@ public struct GraphExecutionProjection: Equatable, Codable, Sendable {
         case parentCheckpoint
         case namedCheckpoints
         case scheduling
+        case executableDefinition
+        case runStartRequestedAt
+        case runStartRequestID
+        case retryRequestIDs
+        case attemptLifecycles
     }
 
     public init(from decoder: any Decoder) throws {
@@ -335,6 +355,26 @@ public struct GraphExecutionProjection: Equatable, Codable, Sendable {
             GraphSchedulingProjection.self,
             forKey: .scheduling
         ) ?? GraphSchedulingProjection()
+        executableDefinition = try values.decodeIfPresent(
+            GraphExecutableDefinition.self,
+            forKey: .executableDefinition
+        )
+        runStartRequestedAt = try values.decodeIfPresent(
+            Date.self,
+            forKey: .runStartRequestedAt
+        )
+        runStartRequestID = try values.decodeIfPresent(
+            String.self,
+            forKey: .runStartRequestID
+        )
+        retryRequestIDs = try values.decodeIfPresent(
+            [String].self,
+            forKey: .retryRequestIDs
+        ) ?? []
+        attemptLifecycles = try values.decodeIfPresent(
+            [GraphAttemptLifecycleRecord].self,
+            forKey: .attemptLifecycles
+        ) ?? []
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -369,6 +409,23 @@ public struct GraphExecutionProjection: Equatable, Codable, Sendable {
         )
         try values.encode(namedCheckpoints, forKey: .namedCheckpoints)
         try values.encode(scheduling, forKey: .scheduling)
+        try values.encodeIfPresent(
+            executableDefinition,
+            forKey: .executableDefinition
+        )
+        try values.encodeIfPresent(
+            runStartRequestedAt,
+            forKey: .runStartRequestedAt
+        )
+        try values.encodeIfPresent(
+            runStartRequestID,
+            forKey: .runStartRequestID
+        )
+        try values.encode(retryRequestIDs, forKey: .retryRequestIDs)
+        try values.encode(
+            attemptLifecycles,
+            forKey: .attemptLifecycles
+        )
     }
 }
 
@@ -556,6 +613,29 @@ public enum GraphExecutionProjector {
                 payload.checkpointNamespace
             projection.parentRunID = payload.parentRunID
             projection.parentCheckpoint = payload.parentCheckpoint
+            projection.executableDefinition =
+                payload.executableDefinition
+
+        case let .runStartRequested(payload):
+            try requireRun(event: event, projection: projection)
+            if let existing = projection.runStartRequestID,
+               existing != payload.requestID {
+                throw GraphExecutionReplayError.terminalRunRegression(
+                    runID: event.runID
+                )
+            }
+            projection.runStartRequestID = payload.requestID
+            projection.runStartRequestedAt = event.occurredAt
+            projection.run?.state = .ready
+            projection.run?.startedAt = event.occurredAt
+            projection.run?.updatedAt = event.occurredAt
+            projection.executionEvents.append(
+                executionEvent(
+                    from: event,
+                    kind: .runStarted,
+                    reason: "start_requested"
+                )
+            )
 
         case let .nodeRegistered(payload):
             try requireRun(event: event, projection: projection)
@@ -619,6 +699,15 @@ public enum GraphExecutionProjector {
                     updatedAt: event.occurredAt
                 )
             )
+            projection.attemptLifecycles.append(
+                GraphAttemptLifecycleRecord(
+                    attemptID: attemptID,
+                    nodeID: nodeID,
+                    ordinal: payload.ordinal,
+                    phase: .created,
+                    updatedAt: event.occurredAt
+                )
+            )
 
         case let .attemptStarting(payload):
             let attemptIndex = try requireAttemptIndex(
@@ -636,6 +725,12 @@ public enum GraphExecutionProjector {
                 event.occurredAt
             projection.attempts[attemptIndex].statusReason =
                 payload.reason
+            updateLifecycle(
+                attemptID: projection.attempts[attemptIndex].id,
+                phase: .startRequested,
+                at: event.occurredAt,
+                projection: &projection
+            )
             updateNode(
                 for: projection.attempts[attemptIndex],
                 state: .running,
@@ -667,6 +762,12 @@ public enum GraphExecutionProjector {
                 attemptIndex: index,
                 projection: &projection
             )
+            updateLifecycle(
+                attemptID: projection.attempts[index].id,
+                phase: .started,
+                at: event.occurredAt,
+                projection: &projection
+            )
 
         case let .heartbeatObserved(payload):
             let index = try requireAttemptIndex(
@@ -685,6 +786,12 @@ public enum GraphExecutionProjector {
                     observedAt: event.occurredAt,
                     validUntil: payload.validUntil
                 )
+            )
+            updateLifecycle(
+                attemptID: projection.attempts[index].id,
+                phase: .running,
+                at: event.occurredAt,
+                projection: &projection
             )
 
         case let .processExitObserved(payload):
@@ -848,6 +955,16 @@ public enum GraphExecutionProjector {
                 )
             )
 
+        case let .retryRequested(payload):
+            try requireRun(event: event, projection: projection)
+            _ = try requireNodeID(event)
+            if projection.retryRequestIDs.contains(payload.requestID) {
+                throw GraphExecutionReplayError.eventIDCollision(
+                    eventID: payload.requestID
+                )
+            }
+            projection.retryRequestIDs.append(payload.requestID)
+
         case .schedulerEvaluationRecorded,
              .nodeBecameRunnable,
              .nodeSchedulingDeferred,
@@ -929,6 +1046,13 @@ public enum GraphExecutionProjector {
                     )
                 )
             }
+            updateLifecycle(
+                attemptID: event.attemptID,
+                phase: .claimed,
+                claim: claim,
+                at: event.occurredAt,
+                projection: &projection
+            )
             reason = payload.reason
 
         case let .executorClaimRejected(payload):
@@ -984,6 +1108,12 @@ public enum GraphExecutionProjector {
                 at: event.occurredAt,
                 projection: &projection
             )
+            updateLifecycle(
+                attemptID: event.attemptID,
+                phase: .claimReleased,
+                at: event.occurredAt,
+                projection: &projection
+            )
             reason = payload.reason
 
         case let .retryScheduled(payload):
@@ -1035,6 +1165,12 @@ public enum GraphExecutionProjector {
             } else {
                 projection.scheduling.cancellations.append(cancellation)
             }
+            updateLifecycle(
+                attemptID: event.attemptID,
+                phase: .cancellationRequested,
+                at: event.occurredAt,
+                projection: &projection
+            )
             reason = .cancellationPending
 
         case let .cancellationAcknowledged(payload):
@@ -1179,6 +1315,12 @@ public enum GraphExecutionProjector {
                 reason: payload.reason
             )
         )
+        updateLifecycle(
+            attemptID: projection.attempts[index].id,
+            phase: .terminal,
+            at: event.occurredAt,
+            projection: &projection
+        )
     }
 
     private static func requireRun(
@@ -1311,6 +1453,30 @@ public enum GraphExecutionProjector {
         )
     }
 
+    private static func updateLifecycle(
+        attemptID: String?,
+        phase: GraphAttemptLifecyclePhase,
+        claim: GraphExecutorClaim? = nil,
+        at timestamp: Date,
+        projection: inout GraphExecutionProjection
+    ) {
+        guard let attemptID,
+              let index = projection.attemptLifecycles.firstIndex(
+                where: { $0.attemptID == attemptID }
+              ) else {
+            return
+        }
+        projection.attemptLifecycles[index].phase = phase
+        projection.attemptLifecycles[index].updatedAt = timestamp
+        if let claim {
+            projection.attemptLifecycles[index].claimID = claim.id
+            projection.attemptLifecycles[index].leaseGeneration =
+                claim.leaseGeneration
+            projection.attemptLifecycles[index].executorID =
+                claim.executorID
+        }
+    }
+
     private static func runEventKind(
         for state: ReconciledExecutionState
     ) -> ExecutionEventKind {
@@ -1390,6 +1556,13 @@ public enum GraphExecutionProjector {
                 return $0.sequence < $1.sequence
             }
             return $0.id < $1.id
+        }
+        projection.retryRequestIDs.sort()
+        projection.attemptLifecycles.sort {
+            if $0.nodeID != $1.nodeID {
+                return $0.nodeID < $1.nodeID
+            }
+            return $0.ordinal < $1.ordinal
         }
         projection.scheduling.evaluations.sort {
             $0.evaluationID < $1.evaluationID

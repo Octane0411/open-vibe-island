@@ -29,12 +29,17 @@ struct OpenIslandCLI {
                 readStore: store,
                 snapshotStore: store
             )
+            let mutator = DefaultGraphMutationService(
+                eventStore: store,
+                readStore: store
+            )
             let context = GraphCLIContextDiscovery.discover(
                 environment: environment,
                 workingDirectory: FileManager.default.currentDirectoryPath
             )
             let runner = GraphCLICommandRunner(
                 inspector: inspector,
+                mutator: mutator,
                 stdout: stdout,
                 stderr: stderr,
                 context: context,

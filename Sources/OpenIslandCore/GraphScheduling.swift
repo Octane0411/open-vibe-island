@@ -242,6 +242,7 @@ public enum GraphSchedulingReasonCode:
     case executorCapabilityUnavailable = "executor_capability_unavailable"
     case graphDefinitionMismatch = "graph_definition_mismatch"
     case schedulerPolicyDenied = "scheduler_policy_denied"
+    case runNotStarted = "run_not_started"
     case runTerminal = "run_terminal"
     case claimGranted = "claim_granted"
     case claimRejected = "claim_rejected"
@@ -920,6 +921,15 @@ public enum GraphScheduler {
             return NodeResult(
                 phase: .blocked,
                 reason: .graphDefinitionMismatch,
+                attemptOrdinal: nextOrdinal,
+                eligibleAt: nil
+            )
+        }
+        guard input.projectedState.executableDefinition == nil
+                || input.projectedState.runStartRequestedAt != nil else {
+            return NodeResult(
+                phase: .pending,
+                reason: .runNotStarted,
                 attemptOrdinal: nextOrdinal,
                 eligibleAt: nil
             )

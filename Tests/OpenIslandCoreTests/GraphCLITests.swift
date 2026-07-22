@@ -3,6 +3,73 @@ import XCTest
 @testable import OpenIslandCore
 
 final class GraphCLITests: XCTestCase {
+    func testParserRecognizesMutationCommandsAndSafetyOptions() throws {
+        let arguments = [
+            ["graph", "create", "definition.json", "--run-id", "run", "--idempotency-key", "create"],
+            ["graph", "start", "run", "--idempotency-key", "start"],
+            ["graph", "cancel", "run", "--node", "node", "--idempotency-key", "cancel"],
+            ["graph", "retry", "run", "node", "--idempotency-key", "retry", "--expected-version", "9", "--dry-run"],
+        ]
+
+        let invocations = try arguments.map { arguments in
+            guard case let .invocation(value) = try GraphCLIParser.parse(
+                arguments
+            ) else {
+                throw GraphCLIArgumentError.invalid("expected invocation")
+            }
+            return value
+        }
+
+        XCTAssertEqual(
+            invocations.map(\.command.name),
+            ["graph.create", "graph.start", "graph.cancel", "graph.retry"]
+        )
+        XCTAssertEqual(invocations.last?.expectedVersion, 9)
+        XCTAssertEqual(invocations.last?.dryRun, true)
+    }
+
+    func testMutationJSONOutputUsesSameStableEnvelope() async throws {
+        let store = InMemoryGraphExecutionEventStore()
+        let stdout = LockedGraphCLISink()
+        let stderr = LockedGraphCLISink()
+        let runner = GraphCLICommandRunner(
+            inspector: DefaultGraphTemporalInspector(
+                readStore: store,
+                snapshotStore: InMemoryGraphExecutionSnapshotStore()
+            ),
+            mutator: DefaultGraphMutationService(
+                eventStore: store,
+                readStore: store
+            ),
+            definitionLoader: FixedDefinitionLoader(
+                definition: try loadCompendiumExecutableDefinition()
+            ),
+            stdout: stdout,
+            stderr: stderr
+        )
+
+        let code = await runner.run(
+            arguments: [
+                "graph", "create", "ignored.json",
+                "--run-id", "cli-run",
+                "--idempotency-key", "cli-create",
+                "--logical-time", "1970-01-01T08:20:00Z",
+                "--output", "json",
+                "--no-color",
+            ]
+        )
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(
+                with: Data(stdout.consume().utf8)
+            ) as? [String: Any]
+        )
+
+        XCTAssertEqual(code, .success)
+        XCTAssertEqual(object["command"] as? String, "graph.create")
+        XCTAssertEqual(object["resultCount"] as? Int, 1)
+        XCTAssertTrue(stderr.consume().isEmpty)
+    }
+
     func testParserRecognizesEveryReadOnlyCommand() throws {
         let arguments = [
             ["graph", "list"],
@@ -292,6 +359,14 @@ private struct CLIHarness {
     let runner: GraphCLICommandRunner
     let stdout: LockedGraphCLISink
     let stderr: LockedGraphCLISink
+}
+
+private struct FixedDefinitionLoader: GraphExecutableDefinitionLoading {
+    let definition: GraphExecutableDefinition
+
+    func load(path: String) throws -> GraphExecutableDefinition {
+        definition
+    }
 }
 
 private final class LockedGraphCLISink:

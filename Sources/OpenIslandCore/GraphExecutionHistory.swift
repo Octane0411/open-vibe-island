@@ -110,6 +110,8 @@ public struct GraphArtifactReference: Equatable, Identifiable, Codable, Sendable
     public let producingRunID: String
     public let producingNodeID: String
     public let producingAttemptID: String
+    public let producingAttemptOrdinal: Int?
+    public let producingClaimID: String?
     public let createdAt: Date
     public let storage: GraphArtifactStorageLocator
     public let sensitivity: GraphArtifactSensitivity
@@ -123,6 +125,8 @@ public struct GraphArtifactReference: Equatable, Identifiable, Codable, Sendable
         producingRunID: String,
         producingNodeID: String,
         producingAttemptID: String,
+        producingAttemptOrdinal: Int? = nil,
+        producingClaimID: String? = nil,
         createdAt: Date,
         storage: GraphArtifactStorageLocator,
         sensitivity: GraphArtifactSensitivity = .unspecified
@@ -135,6 +139,8 @@ public struct GraphArtifactReference: Equatable, Identifiable, Codable, Sendable
         self.producingRunID = producingRunID
         self.producingNodeID = producingNodeID
         self.producingAttemptID = producingAttemptID
+        self.producingAttemptOrdinal = producingAttemptOrdinal
+        self.producingClaimID = producingClaimID
         self.createdAt = createdAt
         self.storage = storage
         self.sensitivity = sensitivity
@@ -168,6 +174,9 @@ public struct GraphRunCreatedPayload: Equatable, Codable, Sendable {
     public let parentRunID: String?
     public let parentCheckpoint: GraphCheckpointReference?
     public let checkpointNamespace: String
+    public let clientIdempotencyKey: String?
+    public let requestFingerprint: GraphContentDigest?
+    public let executableDefinition: GraphExecutableDefinition?
 
     public init(
         graphID: String,
@@ -176,7 +185,10 @@ public struct GraphRunCreatedPayload: Equatable, Codable, Sendable {
         nodeIDs: [String],
         parentRunID: String? = nil,
         parentCheckpoint: GraphCheckpointReference? = nil,
-        checkpointNamespace: String = "root"
+        checkpointNamespace: String = "root",
+        clientIdempotencyKey: String? = nil,
+        requestFingerprint: GraphContentDigest? = nil,
+        executableDefinition: GraphExecutableDefinition? = nil
     ) {
         self.graphID = graphID
         self.graphDefinitionVersion = graphDefinitionVersion
@@ -185,6 +197,41 @@ public struct GraphRunCreatedPayload: Equatable, Codable, Sendable {
         self.parentRunID = parentRunID
         self.parentCheckpoint = parentCheckpoint
         self.checkpointNamespace = checkpointNamespace
+        self.clientIdempotencyKey = clientIdempotencyKey
+        self.requestFingerprint = requestFingerprint
+        self.executableDefinition = executableDefinition
+    }
+}
+
+public struct GraphRunStartRequestedPayload: Equatable, Codable, Sendable {
+    public let requestID: String
+    public let clientIdempotencyKey: String
+    public let requestedBy: String
+
+    public init(
+        requestID: String,
+        clientIdempotencyKey: String,
+        requestedBy: String
+    ) {
+        self.requestID = requestID
+        self.clientIdempotencyKey = clientIdempotencyKey
+        self.requestedBy = requestedBy
+    }
+}
+
+public struct GraphRetryRequestedPayload: Equatable, Codable, Sendable {
+    public let requestID: String
+    public let clientIdempotencyKey: String
+    public let requestedBy: String
+
+    public init(
+        requestID: String,
+        clientIdempotencyKey: String,
+        requestedBy: String
+    ) {
+        self.requestID = requestID
+        self.clientIdempotencyKey = clientIdempotencyKey
+        self.requestedBy = requestedBy
     }
 }
 
@@ -350,6 +397,7 @@ public struct GraphRunTerminalPayload: Equatable, Codable, Sendable {
 
 public enum GraphExecutionEventType: String, CaseIterable, Codable, Sendable {
     case runCreated = "graph.run.created"
+    case runStartRequested = "graph.run.start.requested"
     case nodeRegistered = "graph.node.registered"
     case attemptCreated = "graph.attempt.created"
     case attemptStarting = "graph.attempt.starting"
@@ -375,6 +423,7 @@ public enum GraphExecutionEventType: String, CaseIterable, Codable, Sendable {
     case executorLeaseExpired = "graph.executor.lease.expired"
     case executorClaimReleased = "graph.executor.claim.released"
     case retryScheduled = "graph.scheduler.retry.scheduled"
+    case retryRequested = "graph.retry.requested"
     case retrySuppressed = "graph.scheduler.retry.suppressed"
     case cancellationRequested = "graph.cancellation.requested"
     case cancellationAcknowledged = "graph.cancellation.acknowledged"
@@ -442,6 +491,7 @@ public enum GraphJSONValue: Equatable, Codable, Sendable {
 
 public enum GraphExecutionEventPayload: Equatable, Sendable {
     case runCreated(GraphRunCreatedPayload)
+    case runStartRequested(GraphRunStartRequestedPayload)
     case nodeRegistered(GraphNodeRegisteredPayload)
     case attemptCreated(GraphAttemptCreatedPayload)
     case attemptStarting(GraphAttemptStartingPayload)
@@ -467,6 +517,7 @@ public enum GraphExecutionEventPayload: Equatable, Sendable {
     case executorLeaseExpired(GraphExecutorLeaseEndedPayload)
     case executorClaimReleased(GraphExecutorLeaseEndedPayload)
     case retryScheduled(GraphRetryScheduledPayload)
+    case retryRequested(GraphRetryRequestedPayload)
     case retrySuppressed(GraphRetrySuppressedPayload)
     case cancellationRequested(GraphCancellationRequestedPayload)
     case cancellationAcknowledged(GraphCancellationAcknowledgedPayload)
@@ -481,6 +532,8 @@ public enum GraphExecutionEventPayload: Equatable, Sendable {
         switch self {
         case .runCreated:
             GraphExecutionEventType.runCreated.rawValue
+        case .runStartRequested:
+            GraphExecutionEventType.runStartRequested.rawValue
         case .nodeRegistered:
             GraphExecutionEventType.nodeRegistered.rawValue
         case .attemptCreated:
@@ -531,6 +584,8 @@ public enum GraphExecutionEventPayload: Equatable, Sendable {
             GraphExecutionEventType.executorClaimReleased.rawValue
         case .retryScheduled:
             GraphExecutionEventType.retryScheduled.rawValue
+        case .retryRequested:
+            GraphExecutionEventType.retryRequested.rawValue
         case .retrySuppressed:
             GraphExecutionEventType.retrySuppressed.rawValue
         case .cancellationRequested:
@@ -551,6 +606,8 @@ public enum GraphExecutionEventPayload: Equatable, Sendable {
     public var factClass: GraphExecutionEventFactClass {
         switch self {
         case .attemptStarting,
+             .runStartRequested,
+             .retryRequested,
              .humanInterruptRequested,
              .executorClaimRequested,
              .cancellationRequested:
@@ -759,6 +816,10 @@ extension GraphExecutionEventEnvelope: Codable {
         switch GraphExecutionEventType(rawValue: eventType) {
         case .runCreated:
             return .runCreated(try GraphRunCreatedPayload(from: decoder))
+        case .runStartRequested:
+            return .runStartRequested(
+                try GraphRunStartRequestedPayload(from: decoder)
+            )
         case .nodeRegistered:
             return .nodeRegistered(
                 try GraphNodeRegisteredPayload(from: decoder)
@@ -859,6 +920,10 @@ extension GraphExecutionEventEnvelope: Codable {
             return .retryScheduled(
                 try GraphRetryScheduledPayload(from: decoder)
             )
+        case .retryRequested:
+            return .retryRequested(
+                try GraphRetryRequestedPayload(from: decoder)
+            )
         case .retrySuppressed:
             return .retrySuppressed(
                 try GraphRetrySuppressedPayload(from: decoder)
@@ -899,6 +964,8 @@ extension GraphExecutionEventEnvelope: Codable {
     ) throws {
         switch payload {
         case let .runCreated(value):
+            try value.encode(to: encoder)
+        case let .runStartRequested(value):
             try value.encode(to: encoder)
         case let .nodeRegistered(value):
             try value.encode(to: encoder)
@@ -949,6 +1016,8 @@ extension GraphExecutionEventEnvelope: Codable {
         case let .executorClaimReleased(value):
             try value.encode(to: encoder)
         case let .retryScheduled(value):
+            try value.encode(to: encoder)
+        case let .retryRequested(value):
             try value.encode(to: encoder)
         case let .retrySuppressed(value):
             try value.encode(to: encoder)

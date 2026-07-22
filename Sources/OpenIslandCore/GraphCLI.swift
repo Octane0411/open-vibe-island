@@ -16,6 +16,12 @@ public enum GraphCLIExitCode: Int32, Codable, CaseIterable, Sendable {
     case persistenceFailure = 6
     case evidenceUnavailable = 7
     case partialResult = 8
+    case optimisticConflict = 9
+    case policyDenied = 10
+    case staleExecutor = 11
+    case adapterUnavailable = 12
+    case executionTerminalFailure = 13
+    case cancellation = 14
     case interrupted = 130
 
     public var category: String {
@@ -36,6 +42,18 @@ public enum GraphCLIExitCode: Int32, Codable, CaseIterable, Sendable {
             "evidence_unavailable"
         case .partialResult:
             "partial_result"
+        case .optimisticConflict:
+            "optimistic_conflict"
+        case .policyDenied:
+            "policy_denied"
+        case .staleExecutor:
+            "stale_executor"
+        case .adapterUnavailable:
+            "adapter_unavailable"
+        case .executionTerminalFailure:
+            "execution_terminal_failure"
+        case .cancellation:
+            "cancellation"
         case .interrupted:
             "interrupted"
         }
@@ -106,6 +124,10 @@ public enum GraphCLIExportFormat: String, Codable, Sendable {
 }
 
 public enum GraphCLICommand: Equatable, Sendable {
+    case create(runID: String, definitionPath: String)
+    case start(runID: String)
+    case cancel(runID: String)
+    case retry(runID: String, nodeID: String)
     case list
     case inspect(runID: String)
     case history(runID: String)
@@ -117,6 +139,14 @@ public enum GraphCLICommand: Equatable, Sendable {
 
     public var name: String {
         switch self {
+        case .create:
+            "graph.create"
+        case .start:
+            "graph.start"
+        case .cancel:
+            "graph.cancel"
+        case .retry:
+            "graph.retry"
         case .list:
             "graph.list"
         case .inspect:
@@ -159,6 +189,12 @@ public struct GraphCLIInvocation: Equatable, Sendable {
     public let requireLiveEvidence: Bool
     public let exportFormat: GraphCLIExportFormat
     public let emitCompletionRecord: Bool
+    public let idempotencyKey: String?
+    public let expectedVersion: UInt64?
+    public let requestedBy: String
+    public let reason: String?
+    public let dryRun: Bool
+    public let logicalTime: Date?
 
     public init(
         command: GraphCLICommand,
@@ -181,7 +217,13 @@ public struct GraphCLIInvocation: Equatable, Sendable {
         withoutLiveEvidence: Bool = false,
         requireLiveEvidence: Bool = false,
         exportFormat: GraphCLIExportFormat = .json,
-        emitCompletionRecord: Bool = false
+        emitCompletionRecord: Bool = false,
+        idempotencyKey: String? = nil,
+        expectedVersion: UInt64? = nil,
+        requestedBy: String = "openisland.cli",
+        reason: String? = nil,
+        dryRun: Bool = false,
+        logicalTime: Date? = nil
     ) {
         self.command = command
         self.output = output
@@ -204,6 +246,12 @@ public struct GraphCLIInvocation: Equatable, Sendable {
         self.requireLiveEvidence = requireLiveEvidence
         self.exportFormat = exportFormat
         self.emitCompletionRecord = emitCompletionRecord
+        self.idempotencyKey = idempotencyKey
+        self.expectedVersion = expectedVersion
+        self.requestedBy = requestedBy
+        self.reason = reason
+        self.dryRun = dryRun
+        self.logicalTime = logicalTime
     }
 }
 
@@ -271,6 +319,12 @@ public enum GraphCLIParser {
             "--to-sequence",
             "--checkpoint",
             "--format",
+            "--run-id",
+            "--idempotency-key",
+            "--expected-version",
+            "--requested-by",
+            "--reason",
+            "--logical-time",
         ])
         let flagOptions = Set([
             "--no-color",
@@ -380,8 +434,81 @@ public enum GraphCLIParser {
             return format
         } ?? .json
         let command: GraphCLICommand
+        let runIDOption = try singleValue("--run-id", values)
+        let idempotencyKey = try singleValue(
+            "--idempotency-key",
+            values
+        )
+        let expectedVersion = try parseUInt64(
+            singleValue("--expected-version", values),
+            option: "--expected-version"
+        )
+        let requestedBy = try singleValue("--requested-by", values)
+            ?? "openisland.cli"
+        let reason = try singleValue("--reason", values)
+        let logicalTime = try parseDate(
+            singleValue("--logical-time", values),
+            option: "--logical-time"
+        )
 
         switch commandToken {
+        case "create":
+            try requirePositionals(
+                positional,
+                count: 1,
+                command: "create"
+            )
+            guard let runIDOption, idempotencyKey != nil else {
+                throw GraphCLIArgumentError.invalid(
+                    "`graph create` requires --run-id and --idempotency-key."
+                )
+            }
+            command = .create(
+                runID: runIDOption,
+                definitionPath: positional[0]
+            )
+        case "start":
+            try requirePositionals(
+                positional,
+                count: 1,
+                command: "start"
+            )
+            guard idempotencyKey != nil else {
+                throw GraphCLIArgumentError.invalid(
+                    "`graph start` requires --idempotency-key."
+                )
+            }
+            command = .start(runID: positional[0])
+        case "cancel":
+            try requirePositionals(
+                positional,
+                count: 1,
+                command: "cancel"
+            )
+            guard idempotencyKey != nil else {
+                throw GraphCLIArgumentError.invalid(
+                    "`graph cancel` requires --idempotency-key."
+                )
+            }
+            command = .cancel(runID: positional[0])
+        case "retry":
+            guard (1...2).contains(positional.count) else {
+                throw GraphCLIArgumentError.invalid(
+                    "Usage: openisland graph retry <run-id> <node-id>"
+                )
+            }
+            let retryNodeID = positional.count == 2
+                ? positional[1]
+                : optionNodeID
+            guard let retryNodeID, idempotencyKey != nil else {
+                throw GraphCLIArgumentError.invalid(
+                    "`graph retry` requires a node and --idempotency-key."
+                )
+            }
+            command = .retry(
+                runID: positional[0],
+                nodeID: retryNodeID
+            )
         case "list":
             try requirePositionals(positional, count: 0, command: "list")
             command = .list
@@ -518,13 +645,23 @@ public enum GraphCLIParser {
                     flags.contains("--require-live-evidence"),
                 exportFormat: exportFormat,
                 emitCompletionRecord:
-                    flags.contains("--emit-completion-record")
+                    flags.contains("--emit-completion-record"),
+                idempotencyKey: idempotencyKey,
+                expectedVersion: expectedVersion,
+                requestedBy: requestedBy,
+                reason: reason,
+                dryRun: flags.contains("--dry-run"),
+                logicalTime: logicalTime
             )
         )
     }
 
     public static let usage = """
     Usage:
+      openisland graph create <definition.json> --run-id <run-id> --idempotency-key <key> [options]
+      openisland graph start <run-id> --idempotency-key <key> [options]
+      openisland graph cancel <run-id> [--node <node-id>] --idempotency-key <key> [options]
+      openisland graph retry <run-id> <node-id> --idempotency-key <key> [options]
       openisland graph list [options]
       openisland graph inspect <run-id> [options]
       openisland graph history <run-id> [options]
@@ -540,6 +677,8 @@ public enum GraphCLIParser {
     Safety: --no-color --quiet --include-diagnostics --include-artifacts
             --without-live-evidence --require-live-evidence
             --emit-completion-record
+    Mutation: --idempotency-key --expected-version --dry-run
+              --requested-by --reason --logical-time
     """
 
     private static func singleValue(
@@ -916,6 +1055,8 @@ public enum GraphMermaidExporter {
 
 public struct GraphCLICommandRunner: Sendable {
     private let inspector: any GraphTemporalInspecting
+    private let mutator: (any GraphMutating)?
+    private let definitionLoader: any GraphExecutableDefinitionLoading
     private let stdout: any GraphCLIOutputSink
     private let stderr: any GraphCLIOutputSink
     private let context: GraphCLIExecutionContext?
@@ -925,6 +1066,9 @@ public struct GraphCLICommandRunner: Sendable {
 
     public init(
         inspector: any GraphTemporalInspecting,
+        mutator: (any GraphMutating)? = nil,
+        definitionLoader: any GraphExecutableDefinitionLoading =
+            FileGraphExecutableDefinitionLoader(),
         stdout: any GraphCLIOutputSink,
         stderr: any GraphCLIOutputSink,
         context: GraphCLIExecutionContext? = nil,
@@ -935,6 +1079,8 @@ public struct GraphCLICommandRunner: Sendable {
         isOutputTTY: Bool = true
     ) {
         self.inspector = inspector
+        self.mutator = mutator
+        self.definitionLoader = definitionLoader
         self.stdout = stdout
         self.stderr = stderr
         self.context = context
@@ -1026,6 +1172,80 @@ public struct GraphCLICommandRunner: Sendable {
         suppressOutput: Bool = false
     ) async throws -> GraphCLICommandOutcome {
         switch invocation.command {
+        case let .create(runID, definitionPath):
+            let mutator = try requireMutator()
+            let report = try await mutator.create(
+                GraphCreateRequest(
+                    runID: runID,
+                    definition: try definitionLoader.load(
+                        path: definitionPath
+                    ),
+                    idempotencyKey: invocation.idempotencyKey!,
+                    expectedVersion: invocation.expectedVersion,
+                    dryRun: invocation.dryRun,
+                    occurredAt: invocation.logicalTime ?? Date(),
+                    producer: mutationProducer
+                )
+            )
+            return try emitMutation(
+                report,
+                invocation: invocation,
+                suppressOutput: suppressOutput
+            )
+        case let .start(runID):
+            let report = try await requireMutator().start(
+                GraphStartRequest(
+                    runID: runID,
+                    idempotencyKey: invocation.idempotencyKey!,
+                    expectedVersion: invocation.expectedVersion,
+                    requestedBy: invocation.requestedBy,
+                    dryRun: invocation.dryRun,
+                    occurredAt: invocation.logicalTime ?? Date(),
+                    producer: mutationProducer
+                )
+            )
+            return try emitMutation(
+                report,
+                invocation: invocation,
+                suppressOutput: suppressOutput
+            )
+        case let .cancel(runID):
+            let report = try await requireMutator().cancel(
+                GraphCancelMutationRequest(
+                    runID: runID,
+                    nodeID: invocation.nodeID,
+                    idempotencyKey: invocation.idempotencyKey!,
+                    expectedVersion: invocation.expectedVersion,
+                    requestedBy: invocation.requestedBy,
+                    reason: invocation.reason,
+                    dryRun: invocation.dryRun,
+                    occurredAt: invocation.logicalTime ?? Date(),
+                    producer: mutationProducer
+                )
+            )
+            return try emitMutation(
+                report,
+                invocation: invocation,
+                suppressOutput: suppressOutput
+            )
+        case let .retry(runID, nodeID):
+            let report = try await requireMutator().retry(
+                GraphRetryMutationRequest(
+                    runID: runID,
+                    nodeID: nodeID,
+                    idempotencyKey: invocation.idempotencyKey!,
+                    expectedVersion: invocation.expectedVersion,
+                    requestedBy: invocation.requestedBy,
+                    dryRun: invocation.dryRun,
+                    occurredAt: invocation.logicalTime ?? Date(),
+                    producer: mutationProducer
+                )
+            )
+            return try emitMutation(
+                report,
+                invocation: invocation,
+                suppressOutput: suppressOutput
+            )
         case .list:
             var summaries = try await inspector.listRuns(
                 state: invocation.state,
@@ -1344,6 +1564,53 @@ public struct GraphCLICommandRunner: Sendable {
             resultCount: emitted,
             eventCount: emitted,
             replayBoundary: cursor
+        )
+    }
+
+    private var mutationProducer: GraphExecutionProducer {
+        GraphExecutionProducer(
+            id: "openisland.graph.cli",
+            kind: .user,
+            instanceID: context?.terminalGraph.nodeID
+        )
+    }
+
+    private func requireMutator() throws -> any GraphMutating {
+        guard let mutator else {
+            throw GraphMutationError.persistence(
+                "mutation service is unavailable."
+            )
+        }
+        return mutator
+    }
+
+    private func emitMutation(
+        _ report: GraphMutationReport,
+        invocation: GraphCLIInvocation,
+        suppressOutput: Bool
+    ) throws -> GraphCLICommandOutcome {
+        let text = [
+            "Operation: \(report.operation)",
+            "Status: \(report.status.rawValue)",
+            "Run: \(report.runID)",
+            "Version: \(report.previousVersion) -> \(report.streamVersion)",
+            "Events: \(report.eventTypes.joined(separator: ", "))",
+        ].joined(separator: "\n") + "\n"
+        let code = try emit(
+            report,
+            records: [report],
+            recordType: "mutation",
+            text: text,
+            invocation: invocation,
+            resultCount: 1,
+            eventCount: report.eventTypes.count,
+            suppressOutput: suppressOutput
+        )
+        return GraphCLICommandOutcome(
+            exitCode: code,
+            resultCount: 1,
+            eventCount: report.eventTypes.count,
+            replayBoundary: report.streamVersion
         )
     }
 
@@ -1909,6 +2176,20 @@ public struct GraphCLICommandRunner: Sendable {
     }
 
     private func exitCode(for error: Error) -> GraphCLIExitCode {
+        if let error = error as? GraphMutationError {
+            switch error {
+            case .invalidRequest:
+                return .invalidArguments
+            case .notFound:
+                return .notFound
+            case .optimisticConflict, .idempotencyConflict:
+                return .optimisticConflict
+            case .policyDenied:
+                return .policyDenied
+            case .persistence:
+                return .persistenceFailure
+            }
+        }
         guard let error = error as? GraphInspectionError else {
             return .persistenceFailure
         }
