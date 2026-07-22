@@ -94,6 +94,7 @@ private struct ConditionalDrawingGroup: ViewModifier {
 
 struct IslandPanelView: View {
     private static let headerControlButtonSize: CGFloat = 22
+    private static let graphWorkspaceButtonWidth: CGFloat = 118
     private static let headerControlSpacing: CGFloat = 8
     private static let headerHorizontalPadding: CGFloat = 18
     private static let headerTopPadding: CGFloat = 2
@@ -102,6 +103,7 @@ struct IslandPanelView: View {
     private static let minimumRightUsageLaneWidth: CGFloat = 58
 
     var model: AppModel
+    @Environment(\.openWindow) private var openWindow
     private var lang: LanguageManager { model.lang }
 
     @State private var isHovering = false
@@ -160,7 +162,9 @@ struct IslandPanelView: View {
     }
 
     private var openedHeaderButtonsWidth: CGFloat {
-        (Self.headerControlButtonSize * 3) + (Self.headerControlSpacing * 2)
+        Self.graphWorkspaceButtonWidth
+            + (Self.headerControlButtonSize * 3)
+            + (Self.headerControlSpacing * 3)
     }
 
     private var openedHeaderHorizontalPadding: CGFloat {
@@ -376,6 +380,27 @@ struct IslandPanelView: View {
 
     private var openedHeaderButtons: some View {
         HStack(spacing: Self.headerControlSpacing) {
+            Button {
+                openWindow(id: GraphWorkspaceEntryPoint.windowID)
+                model.showGraphWorkspace()
+            } label: {
+                Label(
+                    GraphWorkspaceEntryPoint.label,
+                    systemImage: "point.3.connected.trianglepath.dotted"
+                )
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.8))
+                .lineLimit(1)
+                .frame(
+                    width: Self.graphWorkspaceButtonWidth,
+                    height: Self.headerControlButtonSize
+                )
+                .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 5))
+            }
+            .buttonStyle(.plain)
+            .help("Open Graph Workspace (Command-Shift-G)")
+            .accessibilityLabel(GraphWorkspaceEntryPoint.label)
+
             headerIconButton(
                 systemName: model.isSoundMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
                 tint: model.isSoundMuted ? .orange.opacity(0.92) : .white.opacity(0.62)

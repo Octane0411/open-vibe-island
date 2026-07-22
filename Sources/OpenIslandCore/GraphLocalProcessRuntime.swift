@@ -160,6 +160,91 @@ public protocol GraphProcessInspecting: Sendable {
     ) -> GraphProcessRecoveryClassification
 }
 
+public struct GraphLocalProcessEvidenceSource:
+    ProcessEvidenceSource,
+    Sendable
+{
+    private let launchStore: GraphLocalProcessLaunchStore
+    private let inspector: any GraphProcessInspecting
+
+    public init(
+        launchStore: GraphLocalProcessLaunchStore,
+        inspector: any GraphProcessInspecting = DarwinGraphProcessInspector()
+    ) {
+        self.launchStore = launchStore
+        self.inspector = inspector
+    }
+
+    public func evidence(
+        for request: GraphProcessEvidenceRequest
+    ) async -> GraphProcessEvidenceOutcome {
+        do {
+            let records = try await launchStore.records().filter {
+                $0.identity.runID == request.runID
+            }
+            var evidence = GraphProcessEvidence()
+            var mismatch = false
+            for attempt in request.attempts {
+                guard let record = records
+                    .filter({ $0.identity.attemptID == attempt.id })
+                    .max(by: {
+                        $0.identity.leaseGeneration
+                            < $1.identity.leaseGeneration
+                    }) else { continue }
+                if let exit = record.exit {
+                    evidence.processExits.append(
+                        ProcessExit(
+                            attemptID: attempt.id,
+                            processIdentity: record.identity.process,
+                            observedAt: exit.observedAt,
+                            exitCode: exit.terminationReason == "exit"
+                                ? exit.terminationStatus : nil,
+                            signal: exit.terminationReason == "uncaught_signal"
+                                ? exit.terminationStatus : nil,
+                            reason: exit.terminationReason
+                        )
+                    )
+                    continue
+                }
+                switch inspector.classify(record.identity) {
+                case .matchingRunning:
+                    evidence.heartbeats.append(
+                        ExecutorHeartbeat(
+                            attemptID: attempt.id,
+                            processIdentity: record.identity.process,
+                            observedAt: request.observedAt,
+                            validUntil: request.observedAt
+                                .addingTimeInterval(5)
+                        )
+                    )
+                case .matchingExited:
+                    evidence.processExits.append(
+                        ProcessExit(
+                            attemptID: attempt.id,
+                            processIdentity: record.identity.process,
+                            observedAt: request.observedAt,
+                            reason: "process_exit_not_yet_persisted"
+                        )
+                    )
+                case .identityMismatch:
+                    mismatch = true
+                case .unavailableToInspect, .orphaned, .indeterminate:
+                    break
+                }
+            }
+            if mismatch {
+                return .identityMismatch(
+                    evidence,
+                    reason: "A durable local process identity no longer matches."
+                )
+            }
+            return .available(evidence)
+        } catch {
+            return .adapterFailed(reason: error.localizedDescription)
+        }
+    }
+}
+
 public struct DarwinGraphProcessInspector: GraphProcessInspecting, Sendable {
     public init() {}
 

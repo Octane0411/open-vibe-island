@@ -381,6 +381,15 @@ final class AppModel {
     var openSettingsWindow: (() -> Void)?
 
     @ObservationIgnored
+    var openGraphWorkspaceWindow: (() -> Void)?
+
+    @ObservationIgnored
+    var newGraphDefinitionAction: (() -> Void)?
+
+    @ObservationIgnored
+    var openGraphDefinitionAction: (() -> Void)?
+
+    @ObservationIgnored
     private var hasFinishedInit = false
 
     func appearancePreferences(for profile: IslandAppearanceDisplayProfile) -> IslandAppearancePreferences {
@@ -1272,6 +1281,19 @@ final class AppModel {
             window.makeKey()
         }
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func showGraphWorkspace() {
+        openGraphWorkspaceWindow?()
+        let application = NSApplication.shared
+        if let window = application.windows.first(where: {
+            $0.identifier?.rawValue == "graph-workspace"
+                || $0.title == "Graph Workspace"
+        }) {
+            window.orderFrontRegardless()
+            window.makeKey()
+        }
+        application.activate(ignoringOtherApps: true)
     }
 
     /// Opens Settings on the Setup tab so the user can install hooks.

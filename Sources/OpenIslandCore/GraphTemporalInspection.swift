@@ -778,7 +778,7 @@ public struct DefaultGraphTemporalInspector:
     ) async throws -> GraphRunInspection {
         let replay = try await load(
             reference: GraphTemporalReference(runID: runID),
-            evidenceMode: .withoutLiveEvidence
+            evidenceMode: .configured
         )
         guard let summary = makeSummary(replay) else {
             throw GraphInspectionError.corruptHistory(
