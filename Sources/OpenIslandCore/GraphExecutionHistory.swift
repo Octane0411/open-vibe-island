@@ -266,9 +266,26 @@ public struct GraphAttemptCreatedPayload: Equatable, Codable, Sendable {
 
 public struct GraphAttemptStartingPayload: Equatable, Codable, Sendable {
     public let reason: String?
+    public let identity: GraphExecutorInteractionIdentity?
 
-    public init(reason: String? = nil) {
+    public init(
+        reason: String? = nil,
+        identity: GraphExecutorInteractionIdentity? = nil
+    ) {
         self.reason = reason
+        self.identity = identity
+    }
+}
+
+public struct GraphExecutorObservationPayload:
+    Equatable,
+    Codable,
+    Sendable
+{
+    public let observation: GraphExecutorObservation
+
+    public init(observation: GraphExecutorObservation) {
+        self.observation = observation
     }
 }
 
@@ -404,6 +421,8 @@ public enum GraphExecutionEventType: String, CaseIterable, Codable, Sendable {
     case processIdentityObserved = "graph.process.identity.observed"
     case heartbeatObserved = "graph.executor.heartbeat.observed"
     case processExitObserved = "graph.process.exit.observed"
+    case executorObservationRecorded =
+        "graph.executor.observation.recorded"
     case attemptCompleted = "graph.attempt.completed"
     case attemptFailed = "graph.attempt.failed"
     case attemptInterrupted = "graph.attempt.interrupted"
@@ -498,6 +517,7 @@ public enum GraphExecutionEventPayload: Equatable, Sendable {
     case processIdentityObserved(GraphProcessIdentityObservedPayload)
     case heartbeatObserved(GraphHeartbeatObservedPayload)
     case processExitObserved(GraphProcessExitObservedPayload)
+    case executorObservationRecorded(GraphExecutorObservationPayload)
     case attemptCompleted(GraphAttemptTerminalPayload)
     case attemptFailed(GraphAttemptTerminalPayload)
     case attemptInterrupted(GraphAttemptTerminalPayload)
@@ -546,6 +566,8 @@ public enum GraphExecutionEventPayload: Equatable, Sendable {
             GraphExecutionEventType.heartbeatObserved.rawValue
         case .processExitObserved:
             GraphExecutionEventType.processExitObserved.rawValue
+        case .executorObservationRecorded:
+            GraphExecutionEventType.executorObservationRecorded.rawValue
         case .attemptCompleted:
             GraphExecutionEventType.attemptCompleted.rawValue
         case .attemptFailed:
@@ -614,7 +636,8 @@ public enum GraphExecutionEventPayload: Equatable, Sendable {
             .command
         case .processIdentityObserved,
              .heartbeatObserved,
-             .processExitObserved:
+             .processExitObserved,
+             .executorObservationRecorded:
             .observation
         case .attemptCompleted,
              .attemptFailed,
@@ -844,6 +867,10 @@ extension GraphExecutionEventEnvelope: Codable {
             return .processExitObserved(
                 try GraphProcessExitObservedPayload(from: decoder)
             )
+        case .executorObservationRecorded:
+            return .executorObservationRecorded(
+                try GraphExecutorObservationPayload(from: decoder)
+            )
         case .attemptCompleted:
             return .attemptCompleted(
                 try GraphAttemptTerminalPayload(from: decoder)
@@ -978,6 +1005,8 @@ extension GraphExecutionEventEnvelope: Codable {
         case let .heartbeatObserved(value):
             try value.encode(to: encoder)
         case let .processExitObserved(value):
+            try value.encode(to: encoder)
+        case let .executorObservationRecorded(value):
             try value.encode(to: encoder)
         case let .attemptCompleted(value):
             try value.encode(to: encoder)

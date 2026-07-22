@@ -215,6 +215,7 @@ public struct GraphExecutionProjection: Equatable, Codable, Sendable {
     public var runStartRequestID: String?
     public var retryRequestIDs: [String]
     public var attemptLifecycles: [GraphAttemptLifecycleRecord]
+    public var executorObservations: [GraphExecutorObservation]
 
     public init(
         runID: String,
@@ -240,7 +241,8 @@ public struct GraphExecutionProjection: Equatable, Codable, Sendable {
         runStartRequestedAt: Date? = nil,
         runStartRequestID: String? = nil,
         retryRequestIDs: [String] = [],
-        attemptLifecycles: [GraphAttemptLifecycleRecord] = []
+        attemptLifecycles: [GraphAttemptLifecycleRecord] = [],
+        executorObservations: [GraphExecutorObservation] = []
     ) {
         self.runID = runID
         self.streamVersion = streamVersion
@@ -265,6 +267,7 @@ public struct GraphExecutionProjection: Equatable, Codable, Sendable {
         self.runStartRequestID = runStartRequestID
         self.retryRequestIDs = retryRequestIDs
         self.attemptLifecycles = attemptLifecycles
+        self.executorObservations = executorObservations
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -291,6 +294,7 @@ public struct GraphExecutionProjection: Equatable, Codable, Sendable {
         case runStartRequestID
         case retryRequestIDs
         case attemptLifecycles
+        case executorObservations
     }
 
     public init(from decoder: any Decoder) throws {
@@ -375,6 +379,10 @@ public struct GraphExecutionProjection: Equatable, Codable, Sendable {
             [GraphAttemptLifecycleRecord].self,
             forKey: .attemptLifecycles
         ) ?? []
+        executorObservations = try values.decodeIfPresent(
+            [GraphExecutorObservation].self,
+            forKey: .executorObservations
+        ) ?? []
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -425,6 +433,10 @@ public struct GraphExecutionProjection: Equatable, Codable, Sendable {
         try values.encode(
             attemptLifecycles,
             forKey: .attemptLifecycles
+        )
+        try values.encode(
+            executorObservations,
+            forKey: .executorObservations
         )
     }
 }
@@ -717,10 +729,13 @@ public enum GraphExecutionProjector {
             try requireNonterminalAttempt(
                 projection.attempts[attemptIndex]
             )
-            projection.attempts[attemptIndex].state = .running
-            projection.attempts[attemptIndex].startedAt =
-                projection.attempts[attemptIndex].startedAt
-                    ?? event.occurredAt
+            if let identity = payload.identity {
+                try validateExecutorIdentity(
+                    identity,
+                    event: event,
+                    attempt: projection.attempts[attemptIndex]
+                )
+            }
             projection.attempts[attemptIndex].updatedAt =
                 event.occurredAt
             projection.attempts[attemptIndex].statusReason =
@@ -731,26 +746,14 @@ public enum GraphExecutionProjector {
                 at: event.occurredAt,
                 projection: &projection
             )
-            updateNode(
-                for: projection.attempts[attemptIndex],
-                state: .running,
-                at: event.occurredAt,
-                projection: &projection
-            )
-
-            if projection.run?.startedAt == nil {
-                projection.run?.startedAt = event.occurredAt
-            }
-
-            projection.run?.state = .running
-            projection.run?.updatedAt = event.occurredAt
-            projection.executionEvents.append(
-                executionEvent(
-                    from: event,
-                    kind: .attemptStarted,
-                    reason: payload.reason
+            if payload.identity == nil {
+                applyAttemptStarted(
+                    attemptIndex: attemptIndex,
+                    event: event,
+                    reason: payload.reason,
+                    projection: &projection
                 )
-            )
+            }
 
         case let .processIdentityObserved(payload):
             let index = try requireAttemptIndex(
@@ -814,6 +817,67 @@ public enum GraphExecutionProjector {
                     reason: payload.reason
                 )
             )
+
+        case let .executorObservationRecorded(payload):
+            let index = try requireAttemptIndex(
+                event: event,
+                projection: projection
+            )
+            try validateExecutorIdentity(
+                payload.observation.identity,
+                event: event,
+                attempt: projection.attempts[index]
+            )
+            if let existing = projection.executorObservations.first(
+                where: { $0.id == payload.observation.id }
+            ) {
+                guard existing == payload.observation else {
+                    throw GraphExecutionReplayError.eventIDCollision(
+                        eventID: payload.observation.id
+                    )
+                }
+            } else {
+                projection.executorObservations.append(
+                    payload.observation
+                )
+            }
+            if let processIdentity = payload.observation.processIdentity {
+                try assignProcessIdentity(
+                    processIdentity,
+                    attemptIndex: index,
+                    projection: &projection
+                )
+            }
+            switch payload.observation.status {
+            case .started:
+                applyAttemptStarted(
+                    attemptIndex: index,
+                    event: event,
+                    reason: nil,
+                    projection: &projection
+                )
+                updateLifecycle(
+                    attemptID: event.attemptID,
+                    phase: .started,
+                    at: event.occurredAt,
+                    projection: &projection
+                )
+            case .stillRunning:
+                applyAttemptStarted(
+                    attemptIndex: index,
+                    event: event,
+                    reason: nil,
+                    projection: &projection
+                )
+                updateLifecycle(
+                    attemptID: event.attemptID,
+                    phase: .running,
+                    at: event.occurredAt,
+                    projection: &projection
+                )
+            default:
+                break
+            }
 
         case let .attemptCompleted(payload):
             try applyTerminalAttempt(
@@ -1260,6 +1324,22 @@ public enum GraphExecutionProjector {
         }
     }
 
+    private static func validateExecutorIdentity(
+        _ identity: GraphExecutorInteractionIdentity,
+        event: GraphExecutionEventEnvelope,
+        attempt: ExecutionAttempt
+    ) throws {
+        guard identity.runID == event.runID,
+              identity.nodeID == event.nodeID,
+              identity.attemptID == event.attemptID,
+              identity.attemptID == attempt.id,
+              identity.attemptOrdinal == attempt.ordinal else {
+            throw GraphExecutionReplayError.missingAttempt(
+                attemptID: identity.attemptID
+            )
+        }
+    }
+
     private static func endClaim(
         _ payload: GraphExecutorLeaseEndedPayload,
         status: GraphExecutorClaimStatus,
@@ -1477,6 +1557,36 @@ public enum GraphExecutionProjector {
         }
     }
 
+    private static func applyAttemptStarted(
+        attemptIndex: Int,
+        event: GraphExecutionEventEnvelope,
+        reason: String?,
+        projection: inout GraphExecutionProjection
+    ) {
+        let wasRunning = projection.attempts[attemptIndex].state == .running
+        projection.attempts[attemptIndex].state = .running
+        projection.attempts[attemptIndex].startedAt =
+            projection.attempts[attemptIndex].startedAt ?? event.occurredAt
+        projection.attempts[attemptIndex].updatedAt = event.occurredAt
+        updateNode(
+            for: projection.attempts[attemptIndex],
+            state: .running,
+            at: event.occurredAt,
+            projection: &projection
+        )
+        projection.run?.state = .running
+        projection.run?.updatedAt = event.occurredAt
+        if !wasRunning {
+            projection.executionEvents.append(
+                executionEvent(
+                    from: event,
+                    kind: .attemptStarted,
+                    reason: reason
+                )
+            )
+        }
+    }
+
     private static func runEventKind(
         for state: ReconciledExecutionState
     ) -> ExecutionEventKind {
@@ -1563,6 +1673,12 @@ public enum GraphExecutionProjector {
                 return $0.nodeID < $1.nodeID
             }
             return $0.ordinal < $1.ordinal
+        }
+        projection.executorObservations.sort {
+            if $0.observedAt != $1.observedAt {
+                return $0.observedAt < $1.observedAt
+            }
+            return $0.id < $1.id
         }
         projection.scheduling.evaluations.sort {
             $0.evaluationID < $1.evaluationID
