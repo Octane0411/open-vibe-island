@@ -22,11 +22,13 @@ cd "$repo_root"
 swift build -c debug --product OpenIslandApp
 swift build -c debug --product OpenIslandHooks
 swift build -c debug --product OpenIslandSetup
+swift build -c debug --product OpenIslandProcessFixtureAgent
 
 build_root="$(swift build -c debug --show-bin-path)"
 app_binary="$build_root/OpenIslandApp"
 hooks_binary="$build_root/OpenIslandHooks"
 setup_binary="$build_root/OpenIslandSetup"
+process_fixture_binary="$build_root/OpenIslandProcessFixtureAgent"
 
 python3 "$brand_script"
 if [ "$skip_setup" = false ]; then
@@ -43,8 +45,13 @@ sleep 2
 command cp "$app_binary" "$bundle_binary"
 command cp "$hooks_binary" "$bundle_dir/Contents/Helpers/OpenIslandHooks"
 command cp "$setup_binary" "$bundle_dir/Contents/Helpers/OpenIslandSetup"
+command cp "$process_fixture_binary" "$bundle_dir/Contents/Helpers/OpenIslandProcessFixtureAgent"
 command cp "$brand_icon" "$bundle_dir/Contents/Resources/OpenIsland.icns"
-chmod +x "$bundle_binary" "$bundle_dir/Contents/Helpers/OpenIslandHooks" "$bundle_dir/Contents/Helpers/OpenIslandSetup"
+chmod +x \
+    "$bundle_binary" \
+    "$bundle_dir/Contents/Helpers/OpenIslandHooks" \
+    "$bundle_dir/Contents/Helpers/OpenIslandSetup" \
+    "$bundle_dir/Contents/Helpers/OpenIslandProcessFixtureAgent"
 
 # Add rpath so the binary can find Sparkle.framework in Contents/Frameworks/.
 install_name_tool -add_rpath @loader_path/../Frameworks "$bundle_binary" 2>/dev/null || true
