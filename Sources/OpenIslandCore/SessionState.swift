@@ -112,6 +112,15 @@ public struct SessionState: Equatable, Sendable {
             session.updatedAt = payload.timestamp
             upsert(session)
 
+        case let .sessionTitleUpdated(payload):
+            guard var session = sessionsByID[payload.sessionID] else {
+                return
+            }
+
+            session.title = payload.title
+            session.updatedAt = payload.timestamp
+            upsert(session)
+
         case let .permissionRequested(payload):
             guard var session = sessionsByID[payload.sessionID] else {
                 return

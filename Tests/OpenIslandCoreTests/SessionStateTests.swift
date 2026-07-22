@@ -1401,6 +1401,47 @@ struct SessionStateTests {
     }
 
     @Test
+    func sessionTitleUpdatePreservesLiveState() {
+        let t0 = Date(timeIntervalSince1970: 10_000)
+        var state = SessionState()
+        state.apply(.sessionStarted(SessionStarted(
+            sessionID: "codex-thread-1",
+            title: "Codex · repo",
+            tool: .codex,
+            summary: "Waiting for approval",
+            timestamp: t0,
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "repo",
+                paneTitle: "Codex · repo",
+                workingDirectory: "/tmp/repo",
+                codexThreadID: "codex-thread-1"
+            )
+        )))
+        state.apply(.permissionRequested(PermissionRequested(
+            sessionID: "codex-thread-1",
+            request: PermissionRequest(
+                title: "Approval Required",
+                summary: "Codex is waiting for approval.",
+                affectedPath: "/tmp/repo"
+            ),
+            timestamp: t0.addingTimeInterval(1)
+        )))
+
+        state.apply(.sessionTitleUpdated(SessionTitleUpdated(
+            sessionID: "codex-thread-1",
+            title: "Fix Open Island task titles",
+            timestamp: t0.addingTimeInterval(2)
+        )))
+
+        let session = state.session(id: "codex-thread-1")
+        #expect(session?.title == "Fix Open Island task titles")
+        #expect(session?.phase == .waitingForApproval)
+        #expect(session?.permissionRequest != nil)
+        #expect(session?.summary == "Codex is waiting for approval.")
+    }
+
+    @Test
     func firstSeenAtPersistsThroughRegistryRoundTrip() throws {
         let t0 = Date(timeIntervalSince1970: 20_000)
         let session = AgentSession(

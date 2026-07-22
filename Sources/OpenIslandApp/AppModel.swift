@@ -1518,6 +1518,7 @@ final class AppModel {
                 switch event {
                 case let .sessionStarted(p): return p.sessionID
                 case let .activityUpdated(p): return p.sessionID
+                case let .sessionTitleUpdated(p): return p.sessionID
                 case let .permissionRequested(p): return p.sessionID
                 case let .questionAsked(p): return p.sessionID
                 case let .sessionCompleted(p): return p.sessionID
@@ -1770,6 +1771,8 @@ final class AppModel {
             return "Session started: \(payload.title)"
         case let .activityUpdated(payload):
             return payload.summary
+        case let .sessionTitleUpdated(payload):
+            return "Session renamed: \(payload.title)"
         case let .permissionRequested(payload):
             return payload.request.summary
         case let .questionAsked(payload):

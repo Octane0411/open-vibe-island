@@ -148,6 +148,122 @@ struct CodexUsageTests {
     }
 
     @Test
+    func codexUsageLoaderPrefersPrimaryCodexBucketOverNewerSecondaryBucket() throws {
+        let rootURL = temporaryRootURL(named: "codex-usage-primary-bucket")
+        let primaryRolloutURL = rootURL
+            .appendingPathComponent("2026/07/22", isDirectory: true)
+            .appendingPathComponent("rollout-primary.jsonl")
+        let secondaryRolloutURL = rootURL
+            .appendingPathComponent("2026/07/22", isDirectory: true)
+            .appendingPathComponent("rollout-secondary.jsonl")
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        try writeRollout(
+            [
+                rolloutLine(
+                    timestamp: "2026-07-22T14:27:10.415Z",
+                    type: "event_msg",
+                    payload: [
+                        "type": "token_count",
+                        "rate_limits": [
+                            "limit_id": "codex",
+                            "plan_type": "pro",
+                            "primary": [
+                                "used_percent": 15.0,
+                                "window_minutes": 10_080,
+                                "resets_at": 1_775_635_184,
+                            ],
+                        ],
+                    ]
+                ),
+            ],
+            to: primaryRolloutURL
+        )
+        try writeRollout(
+            [
+                rolloutLine(
+                    timestamp: "2026-07-22T14:29:53.330Z",
+                    type: "event_msg",
+                    payload: [
+                        "type": "token_count",
+                        "rate_limits": [
+                            "limit_id": "codex_bengalfox",
+                            "plan_type": "pro",
+                            "primary": [
+                                "used_percent": 0.0,
+                                "window_minutes": 10_080,
+                                "resets_at": 1_775_635_184,
+                            ],
+                        ],
+                    ]
+                ),
+            ],
+            to: secondaryRolloutURL
+        )
+
+        try setModificationDate(Date(timeIntervalSince1970: 1_000), for: primaryRolloutURL)
+        try setModificationDate(Date(timeIntervalSince1970: 2_000), for: secondaryRolloutURL)
+
+        let snapshot = try CodexUsageLoader.load(fromRootURL: rootURL)
+
+        #expect(snapshot?.limitID == "codex")
+        #expect(snapshot?.windows.first?.roundedUsedPercentage == 15)
+        #expect(resolvedPath(snapshot?.sourceFilePath) == primaryRolloutURL.resolvingSymlinksInPath().path)
+    }
+
+    @Test
+    func codexUsageLoaderPrefersPrimaryBucketWithinOneRollout() throws {
+        let rootURL = temporaryRootURL(named: "codex-usage-one-rollout")
+        let rolloutURL = rootURL.appendingPathComponent("rollout-multiple-buckets.jsonl")
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        try writeRollout(
+            [
+                rolloutLine(
+                    timestamp: "2026-07-22T14:27:10.415Z",
+                    type: "event_msg",
+                    payload: [
+                        "type": "token_count",
+                        "rate_limits": [
+                            "limit_id": "codex",
+                            "primary": [
+                                "used_percent": 15.0,
+                                "window_minutes": 10_080,
+                            ],
+                        ],
+                    ]
+                ),
+                rolloutLine(
+                    timestamp: "2026-07-22T14:29:53.330Z",
+                    type: "event_msg",
+                    payload: [
+                        "type": "token_count",
+                        "rate_limits": [
+                            "limit_id": "codex_bengalfox",
+                            "primary": [
+                                "used_percent": 0.0,
+                                "window_minutes": 10_080,
+                            ],
+                        ],
+                    ]
+                ),
+            ],
+            to: rolloutURL
+        )
+
+        let snapshot = try CodexUsageLoader.load(fromRootURL: rootURL)
+
+        #expect(snapshot?.limitID == "codex")
+        #expect(snapshot?.windows.first?.roundedUsedPercentage == 15)
+    }
+
+    @Test
     func codexUsageLoaderFormatsNonStandardWindowLengths() throws {
         let rootURL = temporaryRootURL(named: "codex-usage-labels")
         let rolloutURL = rootURL

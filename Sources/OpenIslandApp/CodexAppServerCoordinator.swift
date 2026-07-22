@@ -101,7 +101,10 @@ final class CodexAppServerCoordinator {
                 // Skip threads already tracked — re-emitting sessionStarted
                 // rebuilds the AgentSession and would wipe richer state
                 // already accumulated from hooks or rediscovery.
-                if isSessionTracked?(thread.id) == true { continue }
+                if isSessionTracked?(thread.id) == true {
+                    emitTitleUpdated(sessionID: thread.id, title: thread.name)
+                    continue
+                }
                 emitSessionStarted(from: thread)
                 created += 1
             }
@@ -115,11 +118,14 @@ final class CodexAppServerCoordinator {
 
     // MARK: - Notification handling
 
-    private func handleNotification(_ notification: CodexAppServerNotification) {
+    func handleNotification(_ notification: CodexAppServerNotification) {
         switch notification {
         case .threadStarted(let thread):
             guard !thread.ephemeral else { return }
-            guard isSessionTracked?(thread.id) != true else { return }
+            if isSessionTracked?(thread.id) == true {
+                emitTitleUpdated(sessionID: thread.id, title: thread.name)
+                return
+            }
             emitSessionStarted(from: thread)
 
         case .threadStatusChanged(let threadId, let status):
@@ -195,12 +201,8 @@ final class CodexAppServerCoordinator {
                 )
             ))
 
-        case .threadNameUpdated:
-            // Title updates don't have a dedicated AgentEvent and we can't
-            // safely overwrite phase/summary here (would clobber running or
-            // waiting-for-approval state).  Skip for now — the title is
-            // populated at sessionStarted time which is usually enough.
-            break
+        case let .threadNameUpdated(threadId, name):
+            emitTitleUpdated(sessionID: threadId, title: name)
 
         case .turnStarted(let threadId, _):
             onEvent?(.activityUpdated(
@@ -272,6 +274,21 @@ final class CodexAppServerCoordinator {
                     transcriptPath: thread.path,
                     initialUserPrompt: thread.preview.isEmpty ? nil : thread.preview
                 )
+            )
+        ))
+    }
+
+    private func emitTitleUpdated(sessionID: String, title: String?) {
+        guard let title = title?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !title.isEmpty else {
+            return
+        }
+
+        onEvent?(.sessionTitleUpdated(
+            SessionTitleUpdated(
+                sessionID: sessionID,
+                title: title,
+                timestamp: .now
             )
         ))
     }

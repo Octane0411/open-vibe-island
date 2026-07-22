@@ -8,6 +8,9 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
     public var lastAssistantMessage: String?
     public var currentTool: String?
     public var currentCommandPreview: String?
+    public var model: String?
+    public var reasoningEffort: String?
+    public var serviceTier: String?
 
     public init(
         transcriptPath: String? = nil,
@@ -15,7 +18,10 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
         lastUserPrompt: String? = nil,
         lastAssistantMessage: String? = nil,
         currentTool: String? = nil,
-        currentCommandPreview: String? = nil
+        currentCommandPreview: String? = nil,
+        model: String? = nil,
+        reasoningEffort: String? = nil,
+        serviceTier: String? = nil
     ) {
         self.transcriptPath = transcriptPath
         self.initialUserPrompt = initialUserPrompt
@@ -23,6 +29,9 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
         self.lastAssistantMessage = lastAssistantMessage
         self.currentTool = currentTool
         self.currentCommandPreview = currentCommandPreview
+        self.model = model
+        self.reasoningEffort = reasoningEffort
+        self.serviceTier = serviceTier
     }
 
     public var isEmpty: Bool {
@@ -32,6 +41,9 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
             && lastAssistantMessage == nil
             && currentTool == nil
             && currentCommandPreview == nil
+            && model == nil
+            && reasoningEffort == nil
+            && serviceTier == nil
     }
 }
 
@@ -506,7 +518,10 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             lastUserPrompt: snapshot.lastUserPrompt,
             lastAssistantMessage: snapshot.lastAssistantMessage,
             currentTool: snapshot.currentTool,
-            currentCommandPreview: snapshot.currentCommandPreview
+            currentCommandPreview: snapshot.currentCommandPreview,
+            model: snapshot.model,
+            reasoningEffort: snapshot.reasoningEffort,
+            serviceTier: snapshot.serviceTier
         )
 
         return CodexTrackedSessionRecord(
@@ -578,6 +593,9 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
     public var lastAssistantMessage: String?
     public var currentTool: String?
     public var currentCommandPreview: String?
+    public var model: String?
+    public var reasoningEffort: String?
+    public var serviceTier: String?
     public var isCompleted: Bool
     public var isInterrupted: Bool
 
@@ -590,6 +608,9 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
         lastAssistantMessage: String? = nil,
         currentTool: String? = nil,
         currentCommandPreview: String? = nil,
+        model: String? = nil,
+        reasoningEffort: String? = nil,
+        serviceTier: String? = nil,
         isCompleted: Bool = false,
         isInterrupted: Bool = false
     ) {
@@ -601,6 +622,9 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
         self.lastAssistantMessage = lastAssistantMessage
         self.currentTool = currentTool
         self.currentCommandPreview = currentCommandPreview
+        self.model = model
+        self.reasoningEffort = reasoningEffort
+        self.serviceTier = serviceTier
         self.isCompleted = isCompleted
         self.isInterrupted = isInterrupted
     }
@@ -611,7 +635,10 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
             lastUserPrompt: lastUserPrompt,
             lastAssistantMessage: lastAssistantMessage,
             currentTool: currentTool,
-            currentCommandPreview: currentCommandPreview
+            currentCommandPreview: currentCommandPreview,
+            model: model,
+            reasoningEffort: reasoningEffort,
+            serviceTier: serviceTier
         )
     }
 }
@@ -636,6 +663,8 @@ public enum CodexRolloutReducer {
             applyEventMessage(payload, timestamp: timestamp, to: &snapshot)
         case "response_item":
             applyResponseItem(payload, timestamp: timestamp, to: &snapshot)
+        case "turn_context":
+            applySessionConfiguration(payload, timestamp: timestamp, to: &snapshot)
         default:
             break
         }
@@ -656,7 +685,10 @@ public enum CodexRolloutReducer {
                 lastUserPrompt: $0.lastUserPrompt,
                 lastAssistantMessage: $0.lastAssistantMessage,
                 currentTool: $0.currentTool,
-                currentCommandPreview: $0.currentCommandPreview
+                currentCommandPreview: $0.currentCommandPreview,
+                model: $0.model,
+                reasoningEffort: $0.reasoningEffort,
+                serviceTier: $0.serviceTier
             )
         }
         let newMetadata = CodexSessionMetadata(
@@ -665,7 +697,10 @@ public enum CodexRolloutReducer {
             lastUserPrompt: newSnapshot.lastUserPrompt,
             lastAssistantMessage: newSnapshot.lastAssistantMessage,
             currentTool: newSnapshot.currentTool,
-            currentCommandPreview: newSnapshot.currentCommandPreview
+            currentCommandPreview: newSnapshot.currentCommandPreview,
+            model: newSnapshot.model,
+            reasoningEffort: newSnapshot.reasoningEffort,
+            serviceTier: newSnapshot.serviceTier
         )
 
         if oldMetadata != newMetadata {
@@ -727,11 +762,18 @@ public enum CodexRolloutReducer {
             snapshot.isInterrupted = false
             snapshot.summary = snapshot.summary ?? "Codex started a new turn."
         case "user_message":
-            guard let message = clipped(payload["message"] as? String), !message.isEmpty else {
+            guard let message = cleanedUserPrompt(payload["message"] as? String) else {
                 break
             }
 
             applyUserMessage(message, timestamp: timestamp, to: &snapshot)
+            return
+        case "thread_settings_applied":
+            guard let settings = payload["thread_settings"] as? [String: Any] else {
+                break
+            }
+
+            applySessionConfiguration(settings, timestamp: timestamp, to: &snapshot)
             return
         case "agent_message":
             guard let message = clipped(payload["message"] as? String), !message.isEmpty else {
@@ -844,6 +886,29 @@ public enum CodexRolloutReducer {
             applyRateLimitSignal(payload, to: &snapshot)
         default:
             break
+        }
+
+        if let timestamp {
+            snapshot.updatedAt = timestamp
+        }
+    }
+
+    private static func applySessionConfiguration(
+        _ configuration: [String: Any],
+        timestamp: Date?,
+        to snapshot: inout CodexRolloutSnapshot
+    ) {
+        if let model = clipped(configuration["model"] as? String), !model.isEmpty {
+            snapshot.model = model
+        }
+        if let effort = clipped(
+            configuration["reasoning_effort"] as? String
+                ?? configuration["effort"] as? String
+        ), !effort.isEmpty {
+            snapshot.reasoningEffort = effort
+        }
+        if let serviceTier = clipped(configuration["service_tier"] as? String), !serviceTier.isEmpty {
+            snapshot.serviceTier = serviceTier
         }
 
         if let timestamp {
@@ -1345,8 +1410,8 @@ public enum CodexRolloutReducer {
                 return nil
             }
 
-            if skipsInjectedBlocks, isInjectedPromptBlock(trimmed) {
-                return nil
+            if skipsInjectedBlocks {
+                return cleanedUserPrompt(trimmed)
             }
 
             return trimmed
@@ -1361,10 +1426,50 @@ public enum CodexRolloutReducer {
 
     private static func isInjectedPromptBlock(_ text: String) -> Bool {
         text.hasPrefix("# AGENTS.md instructions for ")
+            || text.hasPrefix("<recommended_plugins>")
             || text.hasPrefix("<environment_context>")
             || text.hasPrefix("<permissions instructions>")
             || text.hasPrefix("<collaboration_mode>")
+            || text.hasPrefix("<multi_agent_mode>")
+            || text.hasPrefix("<app-context>")
+            || text.hasPrefix("<apps_instructions>")
+            || text.hasPrefix("<plugins_instructions>")
             || text.hasPrefix("<skills_instructions>")
+    }
+
+    private static func cleanedUserPrompt(_ value: String?) -> String? {
+        guard var remaining = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !remaining.isEmpty else {
+            return nil
+        }
+
+        let injectedBlocks = [
+            ("# AGENTS.md instructions for ", "</INSTRUCTIONS>"),
+            ("<recommended_plugins>", "</recommended_plugins>"),
+            ("<environment_context>", "</environment_context>"),
+            ("<permissions instructions>", "</permissions instructions>"),
+            ("<collaboration_mode>", "</collaboration_mode>"),
+            ("<multi_agent_mode>", "</multi_agent_mode>"),
+            ("<app-context>", "</app-context>"),
+            ("<apps_instructions>", "</apps_instructions>"),
+            ("<plugins_instructions>", "</plugins_instructions>"),
+            ("<skills_instructions>", "</skills_instructions>"),
+        ]
+
+        while let block = injectedBlocks.first(where: { remaining.hasPrefix($0.0) }) {
+            guard let closingRange = remaining.range(of: block.1) else {
+                return nil
+            }
+
+            remaining = String(remaining[closingRange.upperBound...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        guard !remaining.isEmpty, !isInjectedPromptBlock(remaining) else {
+            return nil
+        }
+
+        return clipped(remaining)
     }
 
     private static func clipped(_ value: String?, limit: Int = 110) -> String? {

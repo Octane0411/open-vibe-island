@@ -2033,7 +2033,10 @@ public final class BridgeServer: @unchecked Sendable {
                 existing: existing?.currentCommandPreview,
                 update: update.currentCommandPreview,
                 hookEventName: hookEventName
-            )
+            ),
+            model: update.model ?? existing?.model,
+            reasoningEffort: update.reasoningEffort ?? existing?.reasoningEffort,
+            serviceTier: update.serviceTier ?? existing?.serviceTier
         )
     }
 

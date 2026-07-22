@@ -61,6 +61,8 @@ public struct CodexUsageSnapshot: Equatable, Codable, Sendable {
 
 public enum CodexUsageLoader {
     public static let defaultRootURL = CodexRolloutDiscovery.defaultRootURL
+    private static let primaryLimitID = "codex"
+    private static let primaryPreferenceWindow: TimeInterval = 24 * 60 * 60
 
     private struct Candidate {
         var fileURL: URL
@@ -108,16 +110,28 @@ public enum CodexUsageLoader {
             return lhs.modifiedAt > rhs.modifiedAt
         }
 
+        let preferredCandidateCutoff = sortedCandidates.first?.modifiedAt.addingTimeInterval(-primaryPreferenceWindow)
+        var newestFallback: CodexUsageSnapshot?
         for candidate in sortedCandidates {
+            if newestFallback != nil,
+               let preferredCandidateCutoff,
+               candidate.modifiedAt < preferredCandidateCutoff {
+                break
+            }
+
             if let snapshot = loadLatestSnapshot(
                 from: candidate.fileURL,
                 modifiedAt: candidate.modifiedAt
             ) {
-                return snapshot
+                if snapshot.limitID == primaryLimitID {
+                    return snapshot
+                }
+
+                newestFallback = newestFallback ?? snapshot
             }
         }
 
-        return nil
+        return newestFallback
     }
 
     private static func loadLatestSnapshot(from fileURL: URL, modifiedAt: Date) -> CodexUsageSnapshot? {
@@ -125,7 +139,8 @@ public enum CodexUsageLoader {
             return nil
         }
 
-        var latestSnapshot: CodexUsageSnapshot?
+        var latestPreferredSnapshot: CodexUsageSnapshot?
+        var latestFallbackSnapshot: CodexUsageSnapshot?
         contents.enumerateLines { line, _ in
             guard let snapshot = snapshot(
                 from: line,
@@ -135,10 +150,14 @@ public enum CodexUsageLoader {
                 return
             }
 
-            latestSnapshot = snapshot
+            if snapshot.limitID == primaryLimitID {
+                latestPreferredSnapshot = snapshot
+            } else {
+                latestFallbackSnapshot = snapshot
+            }
         }
 
-        return latestSnapshot
+        return latestPreferredSnapshot ?? latestFallbackSnapshot
     }
 
     private static func snapshot(

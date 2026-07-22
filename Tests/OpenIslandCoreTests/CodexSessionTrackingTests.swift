@@ -780,6 +780,64 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutReducerStripsLeadingInjectedBlocksFromEventMessages() {
+        let snapshot = CodexRolloutReducer.snapshot(for: [
+            rolloutLine(
+                timestamp: "2026-07-22T14:37:28.346Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": """
+                    <recommended_plugins>
+                    Here is a list of plugins that are available but not installed.
+                    </recommended_plugins>
+                    <environment_context>
+                      <cwd>/tmp/repo</cwd>
+                    </environment_context>
+                    Fix the Open Island task title.
+                    """,
+                ]
+            ),
+        ])
+
+        #expect(snapshot.initialUserPrompt == "Fix the Open Island task title.")
+        #expect(snapshot.lastUserPrompt == "Fix the Open Island task title.")
+    }
+
+    @Test
+    func codexRolloutReducerTracksModelEffortAndServiceTier() {
+        let snapshot = CodexRolloutReducer.snapshot(for: [
+            rolloutLine(
+                timestamp: "2026-07-22T14:37:28.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "thread_settings_applied",
+                    "thread_settings": [
+                        "model": "gpt-5.6-sol",
+                        "reasoning_effort": "xhigh",
+                        "service_tier": "fast",
+                    ],
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-07-22T14:37:29.000Z",
+                type: "turn_context",
+                payload: [
+                    "model": "gpt-5.6-sol",
+                    "effort": "high",
+                ]
+            ),
+        ])
+
+        #expect(snapshot.model == "gpt-5.6-sol")
+        #expect(snapshot.reasoningEffort == "high")
+        #expect(snapshot.serviceTier == "fast")
+        #expect(snapshot.metadata.model == "gpt-5.6-sol")
+        #expect(snapshot.metadata.reasoningEffort == "high")
+        #expect(snapshot.metadata.serviceTier == "fast")
+    }
+
+    @Test
     func codexRolloutReducerTracksMessageResponsePromptsWithoutInjectedBlocks() {
         let snapshot = CodexRolloutReducer.snapshot(for: [
             rolloutLine(
