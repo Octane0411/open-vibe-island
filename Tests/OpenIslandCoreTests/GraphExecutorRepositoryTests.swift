@@ -135,6 +135,47 @@ final class GraphExecutorRepositoryTests: XCTestCase {
         }
     }
 
+    func testAcceptedProcessIdentityBecomesAuthoritativeHistory() async throws {
+        let context = try await ExecutorRepositoryContext.make()
+        let started = try await context.repository.recordStartRequest(
+            context.startCommand()
+        )
+        let process = ProcessIdentity(
+            hostID: "test-host",
+            launchID: "durable-launch",
+            processID: 812,
+            startedAt: context.time
+        )
+        let observation = context.observation(
+            status: .started,
+            operation: .start,
+            observedAt: context.time.addingTimeInterval(1),
+            processIdentity: process
+        )
+        let recorded = try await context.repository.recordObservation(
+            GraphExecutorObservationCommand(
+                observation: observation,
+                expectedVersion: started.appendResult.newVersion,
+                producer: graphTestProducer,
+                correlationID: "execute"
+            )
+        )
+
+        XCTAssertEqual(recorded.appendResult.appendedCount, 2)
+        XCTAssertEqual(
+            recorded.projection.attempts.first?.processIdentity,
+            process
+        )
+        let stream = try await context.store.read(
+            runID: "run",
+            afterVersion: 0
+        )
+        XCTAssertTrue(stream.events.contains {
+            $0.eventType == GraphExecutionEventType
+                .processIdentityObserved.rawValue
+        })
+    }
+
     func testStaleClaimCannotPublishAfterLeaseTakeover() async throws {
         let context = try await ExecutorRepositoryContext.make(
             leaseDuration: 5
@@ -313,6 +354,7 @@ private struct ExecutorRepositoryContext {
         status: GraphExecutorResponseStatus,
         operation: GraphExecutorOperation,
         observedAt: Date,
+        processIdentity: ProcessIdentity? = nil,
         artifacts: [GraphExecutorProducedArtifact] = []
     ) -> GraphExecutorObservation {
         GraphExecutorObservation(
@@ -321,6 +363,7 @@ private struct ExecutorRepositoryContext {
             identity: identity,
             status: status,
             observedAt: observedAt,
+            processIdentity: processIdentity,
             artifacts: artifacts
         )
     }

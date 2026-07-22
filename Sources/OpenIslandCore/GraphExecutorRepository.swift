@@ -242,12 +242,32 @@ public struct DefaultGraphExecutorRepository:
             }
             return unchanged(loaded)
         }
-        let eventID = "executor-observation-\(observation.id)"
-        var events = [
+        var events: [GraphExecutionEventEnvelope] = []
+        if let processIdentity = observation.processIdentity,
+           loaded.projection.attempts.first(where: {
+               $0.id == observation.identity.attemptID
+           })?.processIdentity != processIdentity {
+            events.append(
+                envelope(
+                    id: "process-identity-\(processIdentity.launchID)",
+                    identity: observation.identity,
+                    sequence: loaded.version + 1,
+                    occurredAt: observation.observedAt,
+                    producer: command.producer,
+                    correlationID: command.correlationID,
+                    payload: .processIdentityObserved(
+                        GraphProcessIdentityObservedPayload(
+                            processIdentity: processIdentity
+                        )
+                    )
+                )
+            )
+        }
+        events.append(
             envelope(
-                id: eventID,
+                id: "executor-observation-\(observation.id)",
                 identity: observation.identity,
-                sequence: loaded.version + 1,
+                sequence: loaded.version + UInt64(events.count) + 1,
                 occurredAt: observation.observedAt,
                 producer: command.producer,
                 correlationID: command.correlationID,
@@ -256,8 +276,8 @@ public struct DefaultGraphExecutorRepository:
                         observation: observation
                     )
                 )
-            ),
-        ]
+            )
+        )
         for artifact in observation.artifacts {
             let reference = try artifactReference(
                 artifact,

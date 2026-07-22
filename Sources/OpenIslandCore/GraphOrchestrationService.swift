@@ -810,7 +810,9 @@ public struct DefaultGraphOrchestrationService:
         var persisted = persisted
         var invocations = invocations
         var terminalObservation = initialObservation
-        if initialObservation.status == .succeeded,
+        if (initialObservation.status == .succeeded
+                || context.specification.adapterKind
+                    == GraphLocalProcessSpecification.adapterKind),
            operation != .collectResult {
             let refreshed = try refreshedContext(context, loaded: current)
             terminalObservation = try await invokeCollect(refreshed)

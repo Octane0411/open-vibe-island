@@ -178,7 +178,10 @@ public struct DarwinGraphProcessInspector: GraphProcessInspecting, Sendable {
         guard let actual = Self.snapshot(pid: pid) else {
             return .unavailableToInspect
         }
-        guard actual.birthIdentity == identity.birthIdentity,
+        guard let expectedBirth = identity.birthIdentity else {
+            return .indeterminate
+        }
+        guard actual.birthIdentity == expectedBirth,
               URL(fileURLWithPath: actual.executablePath).standardizedFileURL.path
                 == URL(fileURLWithPath: identity.executablePath)
                     .standardizedFileURL.path else {
@@ -211,7 +214,10 @@ public struct DarwinGraphProcessInspector: GraphProcessInspecting, Sendable {
                 seconds: Int64(info.pbi_start_tvsec),
                 microseconds: Int32(info.pbi_start_tvusec)
             ),
-            String(cString: pathBuffer)
+            String(
+                decoding: pathBuffer.prefix { $0 != 0 }.map(UInt8.init),
+                as: UTF8.self
+            )
         )
     }
 }
@@ -258,6 +264,31 @@ public actor GraphLocalProcessLaunchStore {
             withIntermediateDirectories: true
         )
         try data.write(to: url, options: .atomic)
+    }
+
+    public func records() throws -> [GraphLocalProcessLaunchRecord] {
+        let directory = rootURL
+            .appendingPathComponent("launch-records", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: directory.path) else {
+            return []
+        }
+        return try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ).filter { $0.pathExtension == "json" }
+            .map {
+                try JSONDecoder.graphProcess.decode(
+                    GraphLocalProcessLaunchRecord.self,
+                    from: Data(contentsOf: $0)
+                )
+            }
+            .sorted {
+                if $0.preparedAt != $1.preparedAt {
+                    return $0.preparedAt < $1.preparedAt
+                }
+                return $0.id < $1.id
+            }
     }
 
     public func update(
