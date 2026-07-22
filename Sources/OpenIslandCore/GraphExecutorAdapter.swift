@@ -108,6 +108,7 @@ public struct GraphExecutorCommandContext:
     public let timeoutPolicy: GraphExecutionTimeoutPolicy
     public let correlation: GraphExecutorCorrelationMetadata
     public let priorObservationCount: Int
+    public let logicalTime: Date
 
     public init(
         identity: GraphExecutorInteractionIdentity,
@@ -119,7 +120,8 @@ public struct GraphExecutorCommandContext:
         cancellation: GraphCancellationRecord?,
         timeoutPolicy: GraphExecutionTimeoutPolicy,
         correlation: GraphExecutorCorrelationMetadata,
-        priorObservationCount: Int
+        priorObservationCount: Int,
+        logicalTime: Date
     ) {
         self.identity = identity
         self.capabilityRequirement = capabilityRequirement.sorted()
@@ -131,6 +133,7 @@ public struct GraphExecutorCommandContext:
         self.timeoutPolicy = timeoutPolicy
         self.correlation = correlation
         self.priorObservationCount = priorObservationCount
+        self.logicalTime = logicalTime
     }
 }
 

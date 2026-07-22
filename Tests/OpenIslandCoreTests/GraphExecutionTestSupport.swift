@@ -206,6 +206,22 @@ func loadCompendiumExecutableDefinition()
     return definition
 }
 
+func loadCompendiumDeterministicScript()
+    throws -> GraphDeterministicExecutionScript
+{
+    let url = try XCTUnwrap(
+        Bundle.module.url(
+            forResource: "compendium-deterministic-script",
+            withExtension: "json",
+            subdirectory: "Fixtures"
+        )
+    )
+    return try JSONDecoder().decode(
+        GraphDeterministicExecutionScript.self,
+        from: Data(contentsOf: url)
+    )
+}
+
 func compendiumSchedulingBaseEvents(
     definition: GraphSchedulingDefinition,
     runID: String,

@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "attempts": [
+    {
+      "nodeID": "architect",
+      "attemptOrdinal": 1,
+      "runningPollCount": 0,
+      "terminalOutcome": "succeed",
+      "cancellationBehavior": "acknowledge",
+      "artifactRoles": ["node_output"],
+      "duplicateObservations": false,
+      "staleLeaseGenerationOffset": 0
+    },
+    {
+      "nodeID": "researcher",
+      "attemptOrdinal": 1,
+      "runningPollCount": 1,
+      "terminalOutcome": "succeed",
+      "cancellationBehavior": "acknowledge",
+      "artifactRoles": ["structured_result"],
+      "duplicateObservations": false,
+      "staleLeaseGenerationOffset": 0
+    },
+    {
+      "nodeID": "graph",
+      "attemptOrdinal": 1,
+      "runningPollCount": 0,
+      "terminalOutcome": "succeed",
+      "cancellationBehavior": "acknowledge",
+      "artifactRoles": ["structured_result"],
+      "duplicateObservations": false,
+      "staleLeaseGenerationOffset": 0
+    },
+    {
+      "nodeID": "reviewer",
+      "attemptOrdinal": 1,
+      "runningPollCount": 0,
+      "terminalOutcome": "succeed",
+      "cancellationBehavior": "acknowledge",
+      "artifactRoles": ["structured_result", "diagnostic"],
+      "duplicateObservations": false,
+      "staleLeaseGenerationOffset": 0
+    }
+  ]
+}
