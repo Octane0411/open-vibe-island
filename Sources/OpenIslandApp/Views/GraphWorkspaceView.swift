@@ -59,6 +59,11 @@ struct GraphWorkspaceView: View {
                         max: 380
                     )
             }
+            if viewModel.isShowingValidationPanel {
+                Divider()
+                GraphValidationPanel(viewModel: viewModel)
+                    .frame(minHeight: 120, idealHeight: 180, maxHeight: 240)
+            }
             if viewModel.isShowingLogs {
                 Divider()
                 GraphLogViewer(viewModel: viewModel)
@@ -77,6 +82,9 @@ struct GraphWorkspaceView: View {
             } onCancel: {
                 isShowingNewGraph = false
             }
+        }
+        .sheet(isPresented: $viewModel.isShowingCreateRunSheet) {
+            GraphCreateRunSheet(viewModel: viewModel)
         }
         .confirmationDialog(
             "Save changes before closing?",
@@ -222,7 +230,7 @@ struct GraphWorkspaceView: View {
             } label: {
                 Label("Edit", systemImage: "slider.horizontal.3")
             }
-            Button("Create Run") { Task { await viewModel.createRun() } }
+            Button("Create Run") { Task { await viewModel.prepareCreateRun() } }
                 .buttonStyle(.borderedProminent)
                 .disabled(!viewModel.decision(.createRun).isEnabled)
                 .keyboardShortcut("r", modifiers: [.command, .shift])
@@ -396,6 +404,22 @@ struct GraphWorkspaceView: View {
                     ? Color.secondary : Color.red
             )
             Spacer()
+            let errorCount = viewModel.validationDiagnostics.filter {
+                $0.severity == .error
+            }.count
+            let warningCount = viewModel.validationDiagnostics.filter {
+                $0.severity == .warning
+            }.count
+            if errorCount > 0 || warningCount > 0 {
+                Button("\(errorCount) errors, \(warningCount) warnings") {
+                    viewModel.isShowingValidationPanel.toggle()
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(errorCount > 0 ? Color.red : Color.orange)
+                .accessibilityLabel(
+                    "Graph validation: \(errorCount) errors and \(warningCount) warnings"
+                )
+            }
             if let inspection = viewModel.inspection {
                 Text("stream \(inspection.summary.streamVersion)")
                     .foregroundStyle(.secondary)
@@ -545,6 +569,221 @@ private struct GraphNewDocumentSheet: View {
         .padding(20)
         .frame(width: 560, height: 600)
         .accessibilityLabel("New Graph Configuration")
+    }
+}
+
+private struct GraphValidationPanel: View {
+    @Bindable var viewModel: GraphWorkspaceViewModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Validation").font(.headline)
+                Spacer()
+                Button("Validate Again") { viewModel.validateDocument() }
+                Button {
+                    viewModel.isShowingValidationPanel = false
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .help("Close Validation Panel")
+                .accessibilityLabel("Close Validation Panel")
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 34)
+            if viewModel.validationDiagnostics.isEmpty {
+                ContentUnavailableView(
+                    "No Validation Issues",
+                    systemImage: "checkmark.seal"
+                )
+            } else {
+                List(viewModel.validationDiagnostics) { diagnostic in
+                    Button {
+                        viewModel.selectValidationDiagnostic(diagnostic)
+                    } label: {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(
+                                systemName: diagnostic.severity == .error
+                                    ? "xmark.octagon.fill"
+                                    : "exclamationmark.triangle.fill"
+                            )
+                            .foregroundStyle(
+                                diagnostic.severity == .error
+                                    ? Color.red : Color.orange
+                            )
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(diagnostic.message)
+                                Text("\(diagnostic.code.rawValue) - \(diagnostic.suggestedAction)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(
+                        "\(diagnostic.severity.rawValue): \(diagnostic.message)"
+                    )
+                    .accessibilityHint("Selects the affected graph element")
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Graph Validation Results")
+        .accessibilityAddTraits(.updatesFrequently)
+    }
+}
+
+private struct GraphCreateRunSheet: View {
+    @Bindable var viewModel: GraphWorkspaceViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Create Durable Run").font(.title2.weight(.semibold))
+            Form {
+                Section("Definition") {
+                    LabeledContent("Graph", value: viewModel.document?.name ?? "")
+                    LabeledContent(
+                        "Version",
+                        value: viewModel.document?.definitionVersion ?? ""
+                    )
+                    LabeledContent("Digest", value: definitionDigest)
+                    LabeledContent(
+                        "Validation",
+                        value: validationErrors.isEmpty
+                            ? "Passed" : "\(validationErrors.count) errors"
+                    )
+                    LabeledContent(
+                        "Estimated Nodes",
+                        value: "\(viewModel.document?.nodes.filter(\.nodeType.isExecutable).count ?? 0)"
+                    )
+                }
+                Section("Execution Backend") {
+                    Picker("Backend", selection: $viewModel.runCreationDraft.backend) {
+                        ForEach(GraphWorkspaceExecutionBackend.allCases) { backend in
+                            Text(backend.rawValue).tag(backend)
+                                .disabled(!backend.isConfigured)
+                        }
+                    }
+                    Text(compatibilitySummary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Section("Workspace") {
+                    HStack {
+                        TextField(
+                            "Workspace Directory",
+                            text: Binding(
+                                get: { viewModel.runCreationDraft.workspaceDirectory ?? "" },
+                                set: { viewModel.runCreationDraft.workspaceDirectory = $0 }
+                            )
+                        )
+                        Button("Choose") {
+                            viewModel.runCreationDraft.workspaceDirectory =
+                                GraphWorkspaceFilePanels.chooseDirectory()?.path
+                        }
+                    }
+                }
+                if let inputs = viewModel.document?.graphInputs, !inputs.isEmpty {
+                    Section("Required Inputs") {
+                        ForEach(inputs) { input in
+                            if input.isSensitive {
+                                SecureField(
+                                    "\(input.name) Secret Reference",
+                                    text: Binding(
+                                        get: {
+                                            viewModel.runCreationDraft
+                                                .secretReferences[input.id] ?? ""
+                                        },
+                                        set: {
+                                            viewModel.runCreationDraft
+                                                .secretReferences[input.id] = $0
+                                            viewModel.runCreationInputDidChange()
+                                        }
+                                    )
+                                )
+                                Text("Enter a keychain or environment reference, not a secret value.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                TextField(
+                                    input.name,
+                                    text: Binding(
+                                        get: {
+                                            viewModel.runCreationDraft
+                                                .inputValues[input.id] ?? ""
+                                        },
+                                        set: {
+                                            viewModel.runCreationDraft
+                                                .inputValues[input.id] = $0
+                                            viewModel.runCreationInputDidChange()
+                                        }
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+                if !validationWarnings.isEmpty {
+                    Section("Policy Warnings") {
+                        ForEach(validationWarnings) { warning in
+                            Label(warning.message, systemImage: "exclamationmark.triangle")
+                        }
+                    }
+                }
+            }
+            .formStyle(.grouped)
+            HStack {
+                Spacer()
+                Button("Cancel") { viewModel.isShowingCreateRunSheet = false }
+                    .keyboardShortcut(.cancelAction)
+                Button("Create Run") {
+                    Task { await viewModel.confirmCreateRun() }
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(!validationErrors.isEmpty || !inputsResolved)
+            }
+        }
+        .padding(20)
+        .frame(width: 620, height: 680)
+        .accessibilityLabel("Create Durable Graph Run")
+    }
+
+    private var definitionDigest: String {
+        guard let document = viewModel.document,
+              let digest = (try? document.semanticDigest())?.value else {
+            return "Unavailable"
+        }
+        return String(digest.prefix(16))
+    }
+
+    private var validationErrors: [GraphValidationDiagnostic] {
+        viewModel.validationDiagnostics.filter { $0.severity == .error }
+    }
+
+    private var validationWarnings: [GraphValidationDiagnostic] {
+        viewModel.validationDiagnostics.filter { $0.severity == .warning }
+    }
+
+    private var inputsResolved: Bool {
+        let required = viewModel.document?.graphInputs.filter {
+            $0.isRequired && $0.defaultValue == nil
+        } ?? []
+        return required.allSatisfy {
+            viewModel.runCreationDraft.resolvedInputIDs.contains($0.id)
+        }
+    }
+
+    private var compatibilitySummary: String {
+        switch viewModel.runCreationDraft.backend {
+        case .supervisedLocalProcess:
+            "Runs Local Process nodes with supervised PID identity, logs, artifacts, cancellation, timeout, and recovery."
+        case .deterministicTest:
+            "Runs Deterministic Test nodes in-process."
+        case .codex, .qwen, .ollama, .openClaw:
+            "This provider is visible for planning but is not configured in this task."
+        }
     }
 }
 
@@ -1197,6 +1436,100 @@ private struct GraphDefinitionInspector: View {
                     }
                 }
             }
+            Section("Graph Inputs") {
+                if document.graphInputs.isEmpty {
+                    Text("No graph inputs").foregroundStyle(.secondary)
+                }
+                ForEach(document.graphInputs) { input in
+                    VStack(alignment: .leading, spacing: 6) {
+                        TextField(
+                            "Input Name",
+                            text: graphInputBinding(input.id, \.name, fallback: input.name)
+                        )
+                        Picker(
+                            "Type",
+                            selection: graphInputBinding(
+                                input.id,
+                                \.dataType,
+                                fallback: input.dataType
+                            )
+                        ) {
+                            ForEach(GraphDefinitionDataType.allCases, id: \.rawValue) {
+                                Text($0.rawValue.replacingOccurrences(of: "_", with: " "))
+                                    .tag($0)
+                            }
+                        }
+                        Toggle(
+                            "Required",
+                            isOn: graphInputBinding(
+                                input.id,
+                                \.isRequired,
+                                fallback: input.isRequired
+                            )
+                        )
+                        Toggle(
+                            "Sensitive - use secret reference at run time",
+                            isOn: graphInputBinding(
+                                input.id,
+                                \.isSensitive,
+                                fallback: input.isSensitive
+                            )
+                        )
+                        LabeledContent("Stable ID", value: input.id)
+                        Button("Remove Graph Input", role: .destructive) {
+                            viewModel.removeGraphInput(input.id)
+                        }
+                    }
+                }
+                Button("Add Graph Input") { viewModel.addGraphInput() }
+            }
+            Section("Graph Outputs") {
+                if document.graphOutputs.isEmpty {
+                    Text("No graph outputs").foregroundStyle(.secondary)
+                }
+                ForEach(document.graphOutputs) { output in
+                    VStack(alignment: .leading, spacing: 6) {
+                        TextField(
+                            "Output Name",
+                            text: graphOutputBinding(output.id, \.name, fallback: output.name)
+                        )
+                        Picker(
+                            "Source Node",
+                            selection: graphOutputBinding(
+                                output.id,
+                                \.sourceNodeID,
+                                fallback: output.sourceNodeID
+                            )
+                        ) {
+                            ForEach(document.nodes.filter { !$0.outputs.isEmpty }) {
+                                Text($0.name).tag($0.id)
+                            }
+                        }
+                        Picker(
+                            "Source Output",
+                            selection: graphOutputBinding(
+                                output.id,
+                                \.sourceOutputID,
+                                fallback: output.sourceOutputID
+                            )
+                        ) {
+                            ForEach(
+                                document.nodes.first {
+                                    $0.id == output.sourceNodeID
+                                }?.outputs ?? []
+                            ) {
+                                Text($0.name).tag($0.id)
+                            }
+                        }
+                        LabeledContent("Stable ID", value: output.id)
+                        Button("Remove Graph Output", role: .destructive) {
+                            viewModel.removeGraphOutput(output.id)
+                        }
+                    }
+                }
+                Button("Add Graph Output") { viewModel.addGraphOutput() }
+                    .disabled(document.nodes.allSatisfy(\.outputs.isEmpty))
+            }
         } else {
             ContentUnavailableView("No Graph Open", systemImage: "doc")
         }
@@ -1649,6 +1982,51 @@ private struct GraphDefinitionInspector: View {
                 guard var edge = viewModel.selectedEdge else { return }
                 edge[keyPath: keyPath] = value
                 viewModel.updateSelectedEdge(edge)
+            }
+        )
+    }
+
+    private func graphInputBinding<Value>(
+        _ id: String,
+        _ keyPath: WritableKeyPath<GraphDefinitionInput, Value>,
+        fallback: Value
+    ) -> Binding<Value> {
+        Binding(
+            get: {
+                guard let input = viewModel.document?.graphInputs.first(where: {
+                    $0.id == id
+                }) else { return fallback }
+                return input[keyPath: keyPath]
+            },
+            set: { value in
+                guard var input = viewModel.document?.graphInputs.first(where: {
+                    $0.id == id
+                }) else { return }
+                input[keyPath: keyPath] = value
+                if input.isSensitive { input.defaultValue = nil }
+                viewModel.updateGraphInput(input)
+            }
+        )
+    }
+
+    private func graphOutputBinding<Value>(
+        _ id: String,
+        _ keyPath: WritableKeyPath<GraphDefinitionOutput, Value>,
+        fallback: Value
+    ) -> Binding<Value> {
+        Binding(
+            get: {
+                guard let output = viewModel.document?.graphOutputs.first(where: {
+                    $0.id == id
+                }) else { return fallback }
+                return output[keyPath: keyPath]
+            },
+            set: { value in
+                guard var output = viewModel.document?.graphOutputs.first(where: {
+                    $0.id == id
+                }) else { return }
+                output[keyPath: keyPath] = value
+                viewModel.updateGraphOutput(output)
             }
         )
     }

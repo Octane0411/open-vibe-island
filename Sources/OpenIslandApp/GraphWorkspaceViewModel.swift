@@ -44,14 +44,26 @@ enum GraphWorkspaceCommandPolicy {
         document: GraphDefinitionDocument?,
         inspection: GraphRunInspection?,
         selectedNodeID: String?,
-        isOrchestrating: Bool
+        isOrchestrating: Bool,
+        validationDiagnostics: [GraphValidationDiagnostic] = [],
+        isDraft: Bool = false
     ) -> GraphWorkspaceCommandDecision {
         switch command {
         case .createRun:
+            let validationError = validationDiagnostics.contains {
+                $0.severity == .error
+                    && !($0.code == .missingRequiredInput
+                        && $0.target.kind == .graphInput)
+            }
             return decision(
                 command,
-                enabled: document?.nodes.isEmpty == false,
-                denial: "definition_has_no_nodes"
+                enabled: document?.nodes.isEmpty == false
+                    && !validationError && !isDraft,
+                denial: isDraft
+                    ? "definition_version_required"
+                    : validationError
+                        ? "definition_validation_failed"
+                        : "definition_has_no_nodes"
             )
         case .start:
             return decision(
@@ -193,6 +205,11 @@ final class GraphWorkspaceViewModel {
     var isOrchestrating = false
     var lastCommandResult: GraphWorkspaceCommandResult?
     var errorMessage: String?
+    var validationDiagnostics: [GraphValidationDiagnostic] = []
+    var lastSuccessfulValidation: Date?
+    var isShowingValidationPanel = false
+    var isShowingCreateRunSheet = false
+    var runCreationDraft = GraphRunCreationDraft()
 
     @ObservationIgnored private let service: any GraphWorkspaceServicing
     @ObservationIgnored private let defaults: UserDefaults
@@ -200,6 +217,7 @@ final class GraphWorkspaceViewModel {
     @ObservationIgnored private var orchestrationTask: Task<Void, Never>?
     @ObservationIgnored private var refreshGeneration: UInt64 = 0
     @ObservationIgnored private var hasStarted = false
+    @ObservationIgnored private var validationGeneration: UInt64 = 0
     @ObservationIgnored private var undoSnapshots: [GraphAuthoringUndoSnapshot] = []
     @ObservationIgnored private var redoSnapshots: [GraphAuthoringUndoSnapshot] = []
     @ObservationIgnored private var undoCoalescingKey: String?
@@ -271,7 +289,9 @@ final class GraphWorkspaceViewModel {
             document: document,
             inspection: inspection,
             selectedNodeID: selectedNodeID,
-            isOrchestrating: isOrchestrating
+            isOrchestrating: isOrchestrating,
+            validationDiagnostics: validationDiagnostics,
+            isDraft: isDraft
         )
     }
 
@@ -316,6 +336,15 @@ final class GraphWorkspaceViewModel {
         explanation = nil
         selectedNodeIDs = []
         selectedEdgeID = nil
+        validationDiagnostics = GraphDefinitionValidator.validate(newDocument)
+        lastSuccessfulValidation = nil
+        isShowingValidationPanel = false
+        isShowingCreateRunSheet = false
+        runCreationDraft = GraphRunCreationDraft(
+            backend: request.defaultExecutorKind == "deterministic"
+                ? .deterministicTest : .supervisedLocalProcess,
+            workspaceDirectory: request.workspaceDirectory
+        )
         resetUndoHistory()
         mode = .definition
         defaults.removeObject(forKey: Self.lastDocumentPathKey)
@@ -339,6 +368,10 @@ final class GraphWorkspaceViewModel {
             isDraft = false
             selectedNodeIDs = Set(loaded.nodes.first.map { [$0.id] } ?? [])
             selectedEdgeID = nil
+            validationDiagnostics = GraphDefinitionValidator.validate(loaded)
+            lastSuccessfulValidation = validationDiagnostics.contains {
+                $0.severity == .error
+            } ? nil : Date()
             resetUndoHistory()
             mode = .definition
             defaults.set(url.path, forKey: Self.lastDocumentPathKey)
@@ -360,6 +393,7 @@ final class GraphWorkspaceViewModel {
             isDraft = false
             selectedNodeIDs = Set(loaded.nodes.first.map { [$0.id] } ?? [])
             selectedEdgeID = nil
+            validationDiagnostics = GraphDefinitionValidator.validate(loaded)
             resetUndoHistory()
             mode = .definition
             acceptedLocalAction("compendium_definition_opened")
@@ -483,11 +517,101 @@ final class GraphWorkspaceViewModel {
     }
 
     func validateDocument() {
-        do {
-            try document?.validate()
+        guard let document else { return }
+        validationDiagnostics = GraphDefinitionValidator.validate(document)
+        isShowingValidationPanel = true
+        if validationDiagnostics.contains(where: { $0.severity == .error }) {
+            apply(.rejected(
+                "definition_invalid",
+                diagnostic: validationDiagnostics.filter {
+                    $0.severity == .error
+                }.map(\.message).joined(separator: "\n")
+            ))
+        } else {
+            lastSuccessfulValidation = Date()
             acceptedLocalAction("definition_valid")
-        } catch {
-            rejectLocalAction("definition_invalid", error)
+        }
+        Task { await refreshValidation(announce: true) }
+    }
+
+    func refreshValidation(
+        resolvedGraphInputIDs: Set<String> = [],
+        announce: Bool = false
+    ) async {
+        validationGeneration &+= 1
+        let generation = validationGeneration
+        guard let document else {
+            validationDiagnostics = []
+            return
+        }
+        var context = await service.validationContext(for: document)
+        guard generation == validationGeneration else { return }
+        context.resolvedGraphInputIDs = resolvedGraphInputIDs
+        if isDraft, let lastSavedDocument,
+           let digest = try? lastSavedDocument.semanticDigest() {
+            context.immutableDefinitionDigest = digest
+        }
+        validationDiagnostics = GraphDefinitionValidator.validate(
+            document,
+            context: context
+        )
+        let errors = validationDiagnostics.filter { $0.severity == .error }
+        if errors.isEmpty {
+            lastSuccessfulValidation = Date()
+            if announce { acceptedLocalAction("definition_valid") }
+        } else if announce {
+            apply(.rejected(
+                "definition_invalid",
+                diagnostic: errors.map(\.message).joined(separator: "\n")
+            ))
+        }
+    }
+
+    func selectValidationDiagnostic(_ diagnostic: GraphValidationDiagnostic) {
+        switch diagnostic.target.kind {
+        case .node:
+            if let id = diagnostic.target.id { selectNode(id) }
+        case .edge:
+            if let id = diagnostic.target.id { selectEdge(id) }
+        case .graph, .graphInput, .graphOutput:
+            selectCanvas()
+        }
+    }
+
+    func prepareCreateRun() async {
+        await refreshValidation(
+            resolvedGraphInputIDs: runCreationDraft.resolvedInputIDs
+        )
+        isShowingValidationPanel = !validationDiagnostics.isEmpty
+        let blocking = validationDiagnostics.filter {
+            $0.severity == .error
+                && !($0.code == .missingRequiredInput
+                    && $0.target.kind == .graphInput)
+        }
+        guard !isDraft, blocking.isEmpty,
+              document?.nodes.isEmpty == false else {
+            let policy = decision(.createRun)
+            return rejectedPolicy(policy)
+        }
+        if let document {
+            let types = Set(document.nodes.filter(\.nodeType.isExecutable).map(\.nodeType))
+            if types == [.deterministicTest] {
+                runCreationDraft.backend = .deterministicTest
+            } else {
+                runCreationDraft.backend = .supervisedLocalProcess
+            }
+            runCreationDraft.workspaceDirectory = document.nodes
+                .first(where: { $0.nodeType == .localProcess })?.workspace.root
+        }
+        isShowingCreateRunSheet = true
+    }
+
+    func runCreationInputDidChange() {
+        Task { [weak self] in
+            guard let self else { return }
+            await refreshValidation(
+                resolvedGraphInputIDs: runCreationDraft.resolvedInputIDs
+            )
         }
     }
 
@@ -498,6 +622,85 @@ final class GraphWorkspaceViewModel {
         document.description = description
         document.metadata.modifiedAt = Date()
         document.metadata.modifiedBy = NSUserName()
+        self.document = document
+        markSemanticMutation()
+    }
+
+    func addGraphInput() {
+        guard var document else { return }
+        registerUndo(coalescingKey: nil)
+        let id = Self.nextStableID(
+            prefix: "graph-input",
+            existing: document.graphInputs.map(\.id)
+        )
+        document.graphInputs.append(
+            GraphDefinitionInput(
+                id: id,
+                name: "Graph Input \(document.graphInputs.count + 1)",
+                dataType: .text
+            )
+        )
+        document.graphInputs.sort { $0.id < $1.id }
+        self.document = document
+        markSemanticMutation()
+    }
+
+    func updateGraphInput(_ input: GraphDefinitionInput) {
+        guard var document,
+              let index = document.graphInputs.firstIndex(where: {
+                  $0.id == input.id
+              }) else { return }
+        registerUndo(coalescingKey: "graph-input:\(input.id)")
+        document.graphInputs[index] = input
+        self.document = document
+        markSemanticMutation()
+    }
+
+    func removeGraphInput(_ inputID: String) {
+        guard var document else { return }
+        registerUndo(coalescingKey: nil)
+        document.graphInputs.removeAll { $0.id == inputID }
+        self.document = document
+        markSemanticMutation()
+    }
+
+    func addGraphOutput() {
+        guard var document,
+              let node = document.nodes.first(where: { !$0.outputs.isEmpty }),
+              let output = node.outputs.first else { return }
+        registerUndo(coalescingKey: nil)
+        let id = Self.nextStableID(
+            prefix: "graph-output",
+            existing: document.graphOutputs.map(\.id)
+        )
+        document.graphOutputs.append(
+            GraphDefinitionOutput(
+                id: id,
+                name: "Graph Output \(document.graphOutputs.count + 1)",
+                sourceNodeID: node.id,
+                sourceOutputID: output.id
+            )
+        )
+        document.graphOutputs.sort { $0.id < $1.id }
+        self.document = document
+        markSemanticMutation()
+    }
+
+    func updateGraphOutput(_ output: GraphDefinitionOutput) {
+        guard var document,
+              let index = document.graphOutputs.firstIndex(where: {
+                  $0.id == output.id
+              }) else { return }
+        registerUndo(coalescingKey: "graph-output:\(output.id)")
+        document.graphOutputs[index] = output
+        self.document = document
+        markSemanticMutation()
+    }
+
+    func removeGraphOutput(_ outputID: String) {
+        guard var document else { return }
+        registerUndo(coalescingKey: nil)
+        document.graphOutputs.removeAll { $0.id == outputID }
         self.document = document
         markSemanticMutation()
     }
@@ -1064,18 +1267,46 @@ final class GraphWorkspaceViewModel {
     }
 
     func createRun() async {
+        await confirmCreateRun()
+    }
+
+    func confirmCreateRun() async {
+        await refreshValidation(
+            resolvedGraphInputIDs: runCreationDraft.resolvedInputIDs
+        )
+        let unresolvedErrors = validationDiagnostics.filter {
+            $0.severity == .error
+        }
+        guard unresolvedErrors.isEmpty else {
+            return apply(.rejected(
+                "definition_validation_failed",
+                diagnostic: unresolvedErrors.map(\.message).joined(separator: "\n")
+            ))
+        }
         let policy = decision(.createRun)
         guard policy.isEnabled, let document else {
             return rejectedPolicy(policy)
         }
+        guard backendIsCompatible(runCreationDraft.backend, document: document) else {
+            return apply(.rejected(
+                "executor_backend_incompatible",
+                diagnostic: "The selected backend is incompatible with one or more executable nodes."
+            ))
+        }
+        let runtimeDocument = materializeRuntimeInputs(
+            document,
+            draft: runCreationDraft
+        )
         let runID = "\(document.graphID)-\(UUID().uuidString.lowercased())"
         let result = await service.createRun(
-            document: document,
+            document: runtimeDocument,
             runID: runID,
+            resolvedGraphInputIDs: runCreationDraft.resolvedInputIDs,
             occurredAt: Date()
         )
         apply(result)
         if result.accepted {
+            isShowingCreateRunSheet = false
             associatedRunCount += 1
             isDraft = false
             defaults.set(runID, forKey: Self.lastRunIDKey)
@@ -1332,6 +1563,68 @@ final class GraphWorkspaceViewModel {
                 diagnostic: "Command rejected: \(decision.reasonCode)"
             )
         )
+    }
+
+    private func backendIsCompatible(
+        _ backend: GraphWorkspaceExecutionBackend,
+        document: GraphDefinitionDocument
+    ) -> Bool {
+        let types = Set(document.nodes.filter(\.nodeType.isExecutable).map(\.nodeType))
+        switch backend {
+        case .supervisedLocalProcess:
+            return types == [.localProcess]
+        case .deterministicTest:
+            return types == [.deterministicTest]
+        case .codex, .qwen, .ollama, .openClaw:
+            return false
+        }
+    }
+
+    private func materializeRuntimeInputs(
+        _ source: GraphDefinitionDocument,
+        draft: GraphRunCreationDraft
+    ) -> GraphDefinitionDocument {
+        var document = source
+        var values = draft.inputValues
+        for input in source.graphInputs where values[input.id] == nil {
+            switch input.defaultValue {
+            case let .string(value): values[input.id] = value
+            case let .number(value): values[input.id] = String(value)
+            case let .bool(value): values[input.id] = String(value)
+            case .array, .object, .null, .none: break
+            }
+        }
+        for index in document.nodes.indices
+            where document.nodes[index].nodeType == .localProcess {
+            guard let process = try? GraphLocalProcessSpecification(
+                immutableSpecification: document.nodes[index].specification
+            ) else { continue }
+            let arguments = process.arguments.map { argument in
+                guard argument.hasPrefix("${graph-input:"),
+                      argument.hasSuffix("}") else { return argument }
+                let inputID = String(argument.dropFirst(14).dropLast())
+                return values[inputID] ?? argument
+            }
+            document.nodes[index].specification = (try? GraphLocalProcessSpecification(
+                executable: process.executable,
+                arguments: arguments,
+                workingDirectory: process.workingDirectory,
+                environment: process.environment,
+                inheritedEnvironment: process.inheritedEnvironment,
+                stdin: process.stdin,
+                outputArtifacts: process.outputArtifacts,
+                retryableExitCodes: process.retryableExitCodes,
+                logPolicy: process.logPolicy
+            ).immutableSpecification()) ?? document.nodes[index].specification
+            if let workspace = draft.workspaceDirectory, !workspace.isEmpty {
+                document.nodes[index].workspace = GraphExecutionWorkspaceContext(
+                    root: workspace,
+                    writableRelativePaths: document.nodes[index]
+                        .workspace.writableRelativePaths
+                )
+            }
+        }
+        return document
     }
 
     private func defaultNodeDefinition(
@@ -1592,6 +1885,10 @@ final class GraphWorkspaceViewModel {
 
     private func markSemanticMutation() {
         if associatedRunCount > 0 { isDraft = true }
+        if let document {
+            validationDiagnostics = GraphDefinitionValidator.validate(document)
+            Task { [weak self] in await self?.refreshValidation() }
+        }
     }
 
     private func closeDocumentDiscardingChanges() {

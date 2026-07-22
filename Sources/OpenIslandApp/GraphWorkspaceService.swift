@@ -46,9 +46,12 @@ protocol GraphWorkspaceServicing: Sendable {
     ) async throws -> GraphDocumentFileState
     func associatedRunCount(graphID: String, definitionVersion: String) async
         throws -> Int
+    func validationContext(for document: GraphDefinitionDocument) async
+        -> GraphDefinitionValidationContext
     func createRun(
         document: GraphDefinitionDocument,
         runID: String,
+        resolvedGraphInputIDs: Set<String>,
         occurredAt: Date
     ) async -> GraphWorkspaceCommandResult
     func startRun(runID: String, occurredAt: Date) async
@@ -77,6 +80,7 @@ actor GraphWorkspaceService: GraphWorkspaceServicing {
     private let inspector: any GraphTemporalInspecting
     private let processExecutor: SupervisedLocalProcessExecutor
     private let launchStore: GraphLocalProcessLaunchStore
+    private let workspaceExecutorCapabilities: Set<String>
     private var revision: UInt64 = 0
     private var revisionObservers: [UUID: AsyncStream<UInt64>.Continuation] = [:]
     private var logicalTimes: [String: Date] = [:]
@@ -88,6 +92,14 @@ actor GraphWorkspaceService: GraphWorkspaceServicing {
         processExecutor: SupervisedLocalProcessExecutor,
         launchStore: GraphLocalProcessLaunchStore
     ) {
+        let deterministic = DeterministicGraphExecutor(
+            capabilities: ["deterministic", "compendium"],
+            script: GraphDeterministicExecutionScript(attempts: [])
+        )
+        let router = RoutingGraphExecutor(adapters: [
+            GraphLocalProcessSpecification.adapterKind: processExecutor,
+            "deterministic": deterministic,
+        ])
         mutator = DefaultGraphMutationService(
             eventStore: eventStore,
             readStore: readStore
@@ -100,8 +112,13 @@ actor GraphWorkspaceService: GraphWorkspaceServicing {
             executorRepository: DefaultGraphExecutorRepository(
                 eventStore: eventStore
             ),
-            executor: processExecutor,
-            confirmationPolicy: LocalProcessExecutionConfirmationPolicy()
+            executor: router,
+            confirmationPolicy: RoutingGraphExecutionConfirmationPolicy(
+                supportedAdapterKinds: [
+                    GraphLocalProcessSpecification.adapterKind,
+                    "deterministic",
+                ]
+            )
         )
         inspector = DefaultGraphTemporalInspector(
             readStore: readStore,
@@ -112,6 +129,7 @@ actor GraphWorkspaceService: GraphWorkspaceServicing {
         )
         self.processExecutor = processExecutor
         self.launchStore = launchStore
+        workspaceExecutorCapabilities = Set(router.capabilities.capabilities)
     }
 
     static func live() throws -> GraphWorkspaceService {
@@ -207,9 +225,39 @@ actor GraphWorkspaceService: GraphWorkspaceServicing {
         return count
     }
 
+    func validationContext(
+        for document: GraphDefinitionDocument
+    ) -> GraphDefinitionValidationContext {
+        var executablePaths: Set<String> = []
+        var directoryPaths: Set<String> = []
+        for node in document.nodes where node.nodeType == .localProcess {
+            if let process = try? GraphLocalProcessSpecification(
+                immutableSpecification: node.specification
+            ), FileManager.default.isExecutableFile(atPath: process.executable) {
+                executablePaths.insert(process.executable)
+            }
+            if let root = node.workspace.root {
+                var isDirectory: ObjCBool = false
+                if FileManager.default.fileExists(
+                    atPath: root,
+                    isDirectory: &isDirectory
+                ), isDirectory.boolValue {
+                    directoryPaths.insert(root)
+                }
+            }
+        }
+        return GraphDefinitionValidationContext(
+            supportedExecutors: [.supervisedLocalProcess, .deterministicTest],
+            availableCapabilities: workspaceExecutorCapabilities,
+            availableExecutablePaths: executablePaths,
+            availableDirectoryPaths: directoryPaths
+        )
+    }
+
     func createRun(
         document: GraphDefinitionDocument,
         runID: String,
+        resolvedGraphInputIDs: Set<String>,
         occurredAt: Date
     ) async -> GraphWorkspaceCommandResult {
         do {
@@ -218,6 +266,19 @@ actor GraphWorkspaceService: GraphWorkspaceServicing {
                 proposed: occurredAt
             )
             try document.validate()
+            var context = validationContext(for: document)
+            context.resolvedGraphInputIDs = resolvedGraphInputIDs
+            let validationErrors = GraphDefinitionValidator.validate(
+                document,
+                context: context
+            ).filter { $0.severity == .error }
+            guard validationErrors.isEmpty else {
+                return .rejected(
+                    "run_validation_failed",
+                    runID: runID,
+                    diagnostic: validationErrors.map(\.message).joined(separator: "\n")
+                )
+            }
             let report = try await mutator.create(
                 GraphCreateRequest(
                     runID: runID,
@@ -517,7 +578,8 @@ actor UnavailableGraphWorkspaceService: GraphWorkspaceServicing {
     func documentFileState(url: URL) throws -> GraphDocumentFileState { throw error }
     func saveDocument(_ document: GraphDefinitionDocument, url: URL, expectedContentDigest: String?) throws -> GraphDocumentFileState { throw error }
     func associatedRunCount(graphID: String, definitionVersion: String) throws -> Int { throw error }
-    func createRun(document: GraphDefinitionDocument, runID: String, occurredAt: Date) -> GraphWorkspaceCommandResult { rejected(runID) }
+    func validationContext(for document: GraphDefinitionDocument) -> GraphDefinitionValidationContext { .init() }
+    func createRun(document: GraphDefinitionDocument, runID: String, resolvedGraphInputIDs: Set<String>, occurredAt: Date) -> GraphWorkspaceCommandResult { rejected(runID) }
     func startRun(runID: String, occurredAt: Date) -> GraphWorkspaceCommandResult { rejected(runID) }
     func step(runID: String, occurredAt: Date) -> GraphWorkspaceCommandResult { rejected(runID) }
     func retry(runID: String, nodeID: String, occurredAt: Date) -> GraphWorkspaceCommandResult { rejected(runID, nodeID) }

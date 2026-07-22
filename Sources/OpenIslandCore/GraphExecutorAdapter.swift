@@ -352,6 +352,7 @@ public protocol GraphExecutorAdapter: Sendable {
 
 public enum GraphExecutorAdapterError: Error, Equatable, Sendable {
     case unavailable
+    case unsupportedAdapter(String)
     case simulatedCrash(String)
     case invalidScript(String)
 }
@@ -361,6 +362,8 @@ extension GraphExecutorAdapterError: LocalizedError {
         switch self {
         case .unavailable:
             "Executor adapter is unavailable."
+        case let .unsupportedAdapter(kind):
+            "Executor adapter \(kind) is not configured."
         case let .simulatedCrash(boundary):
             "Executor adapter crashed at \(boundary)."
         case let .invalidScript(message):

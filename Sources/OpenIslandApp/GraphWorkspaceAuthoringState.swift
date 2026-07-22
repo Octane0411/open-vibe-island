@@ -105,3 +105,42 @@ enum GraphDefinitionVersioning {
         return "\(current).1"
     }
 }
+
+enum GraphWorkspaceExecutionBackend: String, CaseIterable, Identifiable, Sendable {
+    case supervisedLocalProcess = "Supervised Local Process"
+    case deterministicTest = "Deterministic Test Executor"
+    case codex = "Codex - not configured"
+    case qwen = "Qwen - not configured"
+    case ollama = "Ollama - not configured"
+    case openClaw = "OpenClaw - not configured"
+
+    var id: String { rawValue }
+
+    var isConfigured: Bool {
+        self == .supervisedLocalProcess || self == .deterministicTest
+    }
+}
+
+struct GraphRunCreationDraft: Equatable, Sendable {
+    var backend: GraphWorkspaceExecutionBackend
+    var inputValues: [String: String]
+    var secretReferences: [String: String]
+    var workspaceDirectory: String?
+
+    init(
+        backend: GraphWorkspaceExecutionBackend = .supervisedLocalProcess,
+        inputValues: [String: String] = [:],
+        secretReferences: [String: String] = [:],
+        workspaceDirectory: String? = nil
+    ) {
+        self.backend = backend
+        self.inputValues = inputValues
+        self.secretReferences = secretReferences
+        self.workspaceDirectory = workspaceDirectory
+    }
+
+    var resolvedInputIDs: Set<String> {
+        Set(inputValues.filter { !$0.value.isEmpty }.map(\.key))
+            .union(secretReferences.filter { !$0.value.isEmpty }.map(\.key))
+    }
+}

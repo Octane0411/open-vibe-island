@@ -483,6 +483,98 @@ final class GraphWorkspaceTests: XCTestCase {
         XCTAssertEqual(viewModel.selectedEdge?.sourceNodeID, source)
         XCTAssertEqual(viewModel.selectedEdge?.targetNodeID, target)
     }
+
+    func testValidationNavigationIncrementalUpdatesAndCreateRunInputGate()
+        async throws
+    {
+        let fixture = try WorkspaceTestFixture()
+        let viewModel = fixture.viewModel()
+        viewModel.newDocument()
+        viewModel.validateDocument()
+
+        XCTAssertTrue(viewModel.isShowingValidationPanel)
+        XCTAssertTrue(viewModel.validationDiagnostics.contains {
+            $0.code == .emptyGraph && $0.severity == .error
+        })
+
+        viewModel.addNode(type: .deterministicTest)
+        viewModel.addGraphInput()
+        await viewModel.refreshValidation()
+        let inputDiagnostic = try XCTUnwrap(
+            viewModel.validationDiagnostics.first {
+                $0.code == .missingRequiredInput
+                    && $0.target.kind == .graphInput
+            }
+        )
+        viewModel.selectValidationDiagnostic(inputDiagnostic)
+        XCTAssertTrue(viewModel.selectedNodeIDs.isEmpty)
+        XCTAssertNil(viewModel.selectedEdgeID)
+
+        await viewModel.prepareCreateRun()
+        XCTAssertTrue(viewModel.isShowingCreateRunSheet)
+        await viewModel.confirmCreateRun()
+        XCTAssertNil(viewModel.inspection)
+        XCTAssertEqual(
+            viewModel.lastCommandResult?.reasonCode,
+            "definition_validation_failed"
+        )
+
+        let inputID = try XCTUnwrap(viewModel.document?.graphInputs.first?.id)
+        viewModel.runCreationDraft.inputValues[inputID] = "resolved"
+        await viewModel.refreshValidation(
+            resolvedGraphInputIDs: viewModel.runCreationDraft.resolvedInputIDs
+        )
+        XCTAssertFalse(viewModel.validationDiagnostics.contains {
+            $0.severity == .error
+        })
+
+        await viewModel.confirmCreateRun()
+        XCTAssertEqual(viewModel.mode, .run)
+        XCTAssertEqual(
+            viewModel.runCreationDraft.backend,
+            .deterministicTest
+        )
+        XCTAssertTrue(viewModel.lastCommandResult?.accepted == true)
+    }
+
+    func testGraphInputOutputLifecycleAndDeterministicExecutorRouting()
+        async throws
+    {
+        let fixture = try WorkspaceTestFixture()
+        let viewModel = fixture.viewModel()
+        viewModel.newDocument()
+        viewModel.addNode(type: .deterministicTest)
+        let nodeID = try XCTUnwrap(viewModel.selectedNodeID)
+
+        viewModel.addGraphInput()
+        var graphInput = try XCTUnwrap(viewModel.document?.graphInputs.first)
+        graphInput.name = "Request"
+        graphInput.dataType = .json
+        graphInput.defaultValue = .object(["topic": .string("test")])
+        viewModel.updateGraphInput(graphInput)
+        viewModel.addGraphOutput()
+
+        let graphOutput = try XCTUnwrap(viewModel.document?.graphOutputs.first)
+        XCTAssertEqual(graphOutput.sourceNodeID, nodeID)
+        XCTAssertEqual(graphOutput.sourceOutputID, "output-node")
+
+        await viewModel.prepareCreateRun()
+        XCTAssertEqual(viewModel.runCreationDraft.backend, .deterministicTest)
+        await viewModel.confirmCreateRun()
+        await viewModel.startRun()
+        viewModel.run()
+        await viewModel.waitForLocalOrchestration()
+
+        XCTAssertEqual(
+            viewModel.inspection?.summary.persistedState,
+            .completed
+        )
+        XCTAssertEqual(
+            viewModel.inspection?.nodes.first?.persistedState,
+            .completed
+        )
+        XCTAssertFalse(viewModel.inspection?.artifacts.isEmpty ?? true)
+    }
 }
 
 private struct WorkspaceTestFixture {
