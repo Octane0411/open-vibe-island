@@ -18,6 +18,10 @@ Package.resolved
 
 # Local tooling artifacts
 .claude/
+.agents/
+.jarvis-memory
+.opencode/
+JARVIS_MEMORY.md
 .playwright-mcp/
 output/
 

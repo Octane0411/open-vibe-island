@@ -1,60 +1,113 @@
 # Graph Workspace
 
-The native Graph Workspace edits versioned graph definitions and operates
-durable runs through the same domain services as `openisland graph`.
+The native Graph Workspace authors versioned graph definitions and operates
+durable runs through the same domain services as `openisland graph`. Definition
+editing never appends run events, and run commands never rewrite a definition.
 
-## Open The Workspace
+## Open Or Create A Graph
 
-- Select **Graph Workspace** in the island toolbar.
-- Press Command-Shift-G.
-- Choose **Window -> Graph Workspace**.
+Open **Graph Workspace** from the island, the Window menu, or Command-Shift-G.
+The window is a singleton and restores the last available document, run, mode,
+selection, and viewport.
 
-Repeated activation focuses the existing window. The workspace restores the
-last document, run, mode, selection, and viewport when those records still
-exist. Use **File -> New Graph** for an empty document or **File -> Open Graph
-Definition** to load JSON. **Open Compendium Example** loads the bundled
-architect-to-reviewer process graph.
+Use **New Graph** to choose Blank Graph, Linear Pipeline, Fan-Out/Fan-In,
+Review Loop, Compendium Fill, or Local Process Example. The creation sheet sets
+the name, stable graph ID, definition version, description, default executor,
+retry and timeout defaults, and optional workspace. It creates an editable
+in-memory document, not a durable run.
 
-## Define A Graph
+An empty workspace offers new, open, recent, and example actions. **Open Graph**
+loads deterministic `.openisland-graph.json` documents.
 
-Use **Definition** mode to add or remove nodes, edit stable node properties,
-assign required capabilities and process specifications, and configure retry
-and timeout policy. Drag from a typed dependency output to an input to connect
-nodes. Select an edge or node and use Delete to remove it. The canvas supports
-selection, multi-selection, drag positioning, pan, zoom, fit, automatic layout,
-keyboard navigation, context menus, and accessibility descriptions.
+## Add And Configure Nodes
 
-Node positions are document layout metadata, not runtime state. Renaming a node
-does not change its stable ID. Validate before saving or creating a run; cycles,
-self-edges, duplicate edges, unknown nodes, and unsafe process paths are
-rejected. Save and export graph definitions as deterministic
-`.openisland-graph.json` files.
+Add nodes from the Edit menu, canvas menu, or keyboard command. The palette
+contains Local Process, Deterministic Test, Generic Agent, Input Reference,
+Output Reference, and Annotation. Only the first two are runnable. Reference
+and annotation nodes cannot accidentally enter executable dependencies.
 
-## Run A Graph
+Selecting a node opens its inspector:
 
-Creating a run records an immutable definition snapshot and digest. Switch to
-**Run**, then use **Start**, **Step**, or **Run**. Run advances scheduler and
-executor work until terminal state or an operator boundary. **Pause** stops only
-the local loop; it does not invent a durable paused state.
+- **Identity:** stable ID, name, description, type, and tags.
+- **Execution:** executable picker, discrete ordered arguments, workspace and
+  relative working directory, environment inheritance and allowlist, stdin,
+  output declarations, and reveal action.
+- **Capabilities:** required and preferred capabilities, executor kind, and
+  platform constraints.
+- **Inputs/Outputs:** typed ports, stable bindings, media types, runtime roles,
+  paths, required state, size limits, sensitivity, and visibility.
+- **Retry/Timeout:** graph-default inheritance or a complete node override.
+- **Validation:** node-local errors and warnings with corrective guidance.
 
-Node inspection shows attempts, claims, lease generation, executor, blockers,
-retry eligibility, cancellation, timestamps, artifacts, and causal summary.
-**Open Logs** displays bounded stdout and stderr captured for the selected local
-process. **Export** writes the current authoritative run inspection.
+Local-process arguments are vectors, never shell strings. `${workspace}`
+resolves the workspace, `${input:node_output}` resolves an upstream artifact,
+and `${artifact:structured_result}` resolves an output declared by the current
+node. Validation rejects unavailable roles before run creation.
 
-Cancel the selected node or entire run with the corresponding command. The
-request is durable before the supervised process group receives termination.
-Retry is enabled only when the typed policy decision permits it; the scheduler
-owns the next attempt ordinal and recorded eligibility time.
+## Connect Nodes
 
-## Inspect History
+Drag a dependency handle or typed output to a valid input, use the input
+binding's **Connect Upstream Output** menu, use **Add Dependency**, or use the
+keyboard dependency workflow. The same connection evaluator rejects self
+edges, cycles, duplicates, visual-node dependencies, incompatible port types,
+and incompatible media types before commit.
 
-Use **History** or **Inspect History** for events, scheduler decisions, claims,
-lease generations, retries, timeouts, artifacts, ignored evidence, checkpoints,
-and causal explanation. These views replay durable history and do not mutate
-the run. Equivalent terminal inspection is available through
-`openisland graph inspect`, `history`, `explain`, `replay`, `diff`, and `export`.
+Artifact bindings retain source node, source output, target input, role, and
+port identities. Selecting an edge opens its source, destination, type,
+required state, typed ports, and delete action. Escape cancels an in-progress
+connection.
 
-Definition import and export are separate from run export. Importing a changed
-document never mutates a run already created from an earlier version.
+Graph inputs support text, JSON, files, directories, artifact references,
+numbers, and Booleans. Sensitive values are runtime references, not persisted
+secrets. Graph outputs point to declared node outputs.
 
+## Validate And Save
+
+**Validate** opens a persistent diagnostic panel. Selecting a diagnostic
+selects its graph, node, or edge target. Validation runs after structural and
+execution edits and is a hard gate for **Create Run**. It covers identity,
+topology, execution specifications, local-process tokens and paths, typed
+ports, required bindings, artifact roles, policies, capabilities, reachability,
+terminal outputs, sensitive literals, and immutable-version rules.
+
+**Save** uses deterministic JSON and atomic replacement. **Document** provides
+Save As, Revert, and Close. Recent documents, dirty state, last saved digest,
+external modification, schema version, and last successful validation are
+tracked. An externally changed file is never silently overwritten. Closing a
+dirty document offers Save, Don't Save, and Cancel.
+
+Layout-only edits do not change the semantic digest. Once a definition owns a
+run, semantic edits produce a visible Draft. Use **Create New Definition
+Version** before creating another run. Existing runs retain their immutable
+definition snapshot and digest.
+
+Undo and Redo cover node, edge, inspector, artifact, policy, layout, and
+automatic-layout edits. A drag coalesces into one action. Undo never emits run
+mutations. **Auto Layout**, **Fit**, and **Reset** provide deterministic canvas
+control without changing node identity.
+
+## Create And Operate A Run
+
+**Create Run** shows graph identity, version, digest, validation state,
+compatible backend, workspace, unresolved graph inputs, policy warnings, and
+estimated node count. Supervised Local Process and Deterministic Test are
+available when compatible. Codex, Qwen, Ollama, and OpenClaw remain visible but
+disabled until adapters are configured.
+
+After creation, use **Start** to record run start, then **Step** or **Run**.
+Run mode projects authoritative nodes, attempts, claims, blockers, artifacts,
+and terminal state. Select a node and choose **Open Logs** for bounded stdout or
+stderr. **Inspect History** shows events, scheduler decisions, leases, retries,
+timeouts, checkpoints, and causal explanation. Retry and cancellation controls
+are enabled only when typed runtime policy permits them.
+
+The app and CLI inspect the same SQLite event history. Importing or editing a
+definition cannot mutate an existing run.
+
+## Keyboard And Accessibility
+
+Standard Save, Undo, Redo, Delete, and cancel shortcuts work while the graph
+window is focused. Commands also cover node creation, dependency creation,
+validation, and run creation. Critical controls have text labels or tooltips;
+nodes, edges, validation changes, modes, selections, sheet actions, and save
+state expose meaningful accessibility descriptions.

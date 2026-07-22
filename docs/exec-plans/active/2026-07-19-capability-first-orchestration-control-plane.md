@@ -2,7 +2,7 @@
 
 **Status:** Active
 **Started:** 2026-07-19
-**Current phase:** Phase 2 complete; provider adapters are the next graph-runtime task
+**Current phase:** Phase 2 complete; one provider adapter is the next isolated capability
 
 ## Problem
 
@@ -403,6 +403,61 @@ recent state transitions; polling cannot inflate metrics; timeline state survive
   process runtime; aggregate graph metric projections remain Phase 3 work.
 - [x] Add versioned graph-definition documents and a native Definition/Run/History workspace
   with a discoverable singleton entry point.
+- [x] Complete native graph authoring so a blank document can be configured, typed, wired,
+  validated, saved, reopened, versioned, and executed without fixture JSON or CLI construction.
+
+#### Native Graph Workspace usability audit (2026-07-22)
+
+The audit below reflects the packaged-app workflow, not merely the presence of model methods.
+
+| Capability | Baseline status before authoring-completeness work | Evidence |
+| --- | --- | --- |
+| Create blank graph | incomplete | An icon immediately creates an unnamed `Untitled Graph`; there is no creation sheet, template choice, or defaults editor. |
+| Add node and stable ID | incomplete | Toolbar and empty state create only `node-N`; identity survives rename, but type and ID generation are not user-visible. |
+| Edit node and choose type | incomplete | Name, description, capabilities, and timeout only; every node is a hard-coded local process. |
+| Configure execution specification | fixture-only | Adapter and operation are read-only; executable, arguments, stdin, environment inheritance, and artifacts cannot be edited. |
+| Select executable and working directory | missing | No file or directory pickers are exposed. |
+| Environment allowlist | missing | Persisted by the schema but not editable. |
+| Input and output artifacts | missing | Runtime roles exist, but declarations and stable bindings are not authorable. |
+| Capabilities, retry, and timeout | incomplete | Required capabilities and execution timeout are editable as unstructured text/stepper; preferred capabilities, executor/platform, retry, cancellation, and inheritance are absent. |
+| Drag edge | missing | Canvas ports are decorative. |
+| Inspector or keyboard edge | incomplete | Two alphabetically selected nodes can be connected; source/destination intent, typed ports, and keyboard flow are absent. |
+| Delete/select edge | incomplete | Incoming edges can be deleted from a node inspector, but edges cannot be selected or inspected. |
+| Validate and show errors | incomplete | A single thrown error is placed in the status bar; no typed diagnostics or navigation panel exists. |
+| Save and Save As | incomplete | One save icon opens a panel only for an unsaved document; Save As, revert, close, atomic-conflict handling, dirty state, and external-modification detection are absent. |
+| Reopen and recent documents | incomplete | Open and one last-path restore exist; recent documents and a guided empty state do not. |
+| Unsaved changes | missing | No digest-backed dirty state or close prompt exists. |
+| Create run and choose executor | incomplete | A run is created immediately when any node exists; there is no validation gate, input resolution, compatibility report, workspace confirmation, or backend choice. |
+| Start run | working | Start, Step, and Run operate the durable runtime after creation. |
+| Reconnect to run | working but hidden | Last run and durable run selection restore, but definition/run association and associated-run count are not presented. |
+| Canvas selection and layout | incomplete | Node selection, movement, deterministic auto-layout, zoom, and delete work; movement is not undo-coalesced and fit/reset controls are ambiguous. |
+| Undo and redo | missing | No document undo history or standard commands exist. |
+| Empty-state guidance | incomplete | Only `Empty Graph` and `Add Node` appear after a document exists; create/open/recent/example entry points are absent. |
+
+Authoring readiness requires closing every missing or incomplete item above before provider-specific
+adapters begin. Ordinary layout edits remain outside semantic digests. Semantic edits to a
+definition that already owns runs must become a draft and receive a new immutable definition
+version before another run can be created.
+
+#### Native Graph Workspace resolution (2026-07-22)
+
+Every baseline gap above is closed. New/Open/Save/Save As/Validate/Create Run are visible;
+the empty state includes new/open/recent/example routes; the creation sheet supplies identity
+and execution defaults; the node palette and inspector author complete process specifications,
+typed inputs/outputs, capabilities, retry, and timeout; all connection paths share one typed
+evaluator; validation is incremental, navigable, and a hard run gate; lifecycle state includes
+dirty/conflict/recent/revert/close/atomic save; semantic drafts require a new immutable version;
+undo/redo and deterministic layout are document-only; and six templates are ordinary editable
+documents.
+
+Packaged acceptance built `Generate -> Transform -> Verify` from Blank Graph, saved, closed,
+reopened, created version 2 after a semantic correction, and completed at stream 87 with all
+three nodes terminal-completed and nine artifacts. The run exposed an invalid `${artifact:...}`
+upstream token that validation had not caught; `invalid_argument_token` now rejects that error
+and directs authors to `${input:role}`. The Compendium Fill template was renamed, saved under a
+new name, and completed `architect -> researcher -> graph -> reviewer` at stream 122 with nine
+artifacts. Logs and artifact projections were inspected in the packaged app; the Verify stderr
+contained the expected fixture diagnostic. See ADR 005 for the grouped requirement audit.
 
 ### Phase 3: Usage, inspection, and visual control plane
 
@@ -452,8 +507,10 @@ for quality, latency, cost, and context growth.
    declared artifacts, cancellation, timeout, recovery, and the four-node compendium graph.
 7. **Complete:** Darwin process evidence plus native graph documents and the singleton
    Definition/Run/History workspace backed only by public graph services.
-8. **Next:** implement provider-specific agent adapters behind the proven executor boundary,
-   beginning with one supervised compendium node and evaluating providers independently.
+8. **Next:** Implement one provider adapter at a time behind the existing executor boundary,
+   beginning with a single architect node, after confirming that provider credentials, model
+   selection, prompt templates, structured outputs, cancellation, logs, artifacts, and recovery
+   can all be configured through the completed graph-authoring UI.
 9. Add non-local CLI usage metrics and local-model resource metrics as distinct projections.
 10. Defer all visual redesign, including liquid glass, until orchestration behavior and
    operator information architecture are stable.
@@ -492,6 +549,14 @@ for quality, latency, cost, and context growth.
 - `43a331f feat: add native graph workspace and entry button`
 - `5d70797 feat: run compendium graph with local processes`
 - `3d40d98 test: prove process recovery and graph workspace invariants`
+- `7f45f89 feat: add complete graph document lifecycle`
+- `711f008 feat: add node and execution-spec authoring`
+- `4c7df04 feat: add typed dependency and artifact wiring`
+- `e064f01 feat: add graph validation and run creation flow`
+- `58ea9bd feat: add graph templates and authoring guidance`
+- `77e310a test: prove UI-built graphs execute end to end`
+- `ea33c35 feat: complete graph input binding inspector`
+- `773662f fix: harden graph authoring validation and entry points`
 
 ### Local process and workspace decisions
 
@@ -523,8 +588,10 @@ for quality, latency, cost, and context growth.
 - Repository and artifact metadata is redaction-aware. CLI telemetry is bounded, local, and
   excludes raw arguments, paths, environment values, prompts, and artifact bodies.
 - Durable scheduler decisions, exclusive ownership, mutation commands, and deterministic
-  execution are complete. The next correctness boundary is durable process identity and
-  recovery for one supervised local executor.
+  execution, supervised process recovery, and native graph authoring are complete. The next
+  correctness boundary is one provider adapter behind the existing executor protocol, gated
+  by the completed credentials, model, prompt, structured-output, cancellation, log, artifact,
+  and recovery authoring surfaces.
 
 ### Durable scheduling and ownership decisions
 
@@ -581,6 +648,22 @@ Every phase requires:
 - visual verification for compact/expanded views on notch, non-notch, and external displays
 - provenance tests that trace every published claim to a stored source snapshot
 - a committed execution round on a feature branch
+
+Native graph authoring passed its completion gate on 2026-07-22:
+
+- `swift test`: 227 XCTest cases and 335 Swift Testing tests passed with zero failures.
+- `scripts/lint-strings.sh` and `scripts/check-docs.sh`: passed.
+- `swift build` and `swift build -c release`: passed; the only release warning is the existing
+  `SessionState.swift` `@discardableResult` warning.
+- `scripts/package-app.sh`: passed helper builds, bundle verification, outside-repository smoke
+  launch, ZIP creation, and DMG creation. `codesign --verify --deep --strict` passed for the
+  ad-hoc signed app and embedded helpers.
+- A packaged-app graph authored entirely through the UI completed generate, transform, and
+  verify nodes at stream position 87 with nine artifacts. Save, close, reopen, definition
+  versioning, durable run creation, logs, artifacts, and terminal inspection were exercised.
+- The packaged Compendium Fill template completed architect, researcher, graph, and reviewer
+  nodes at stream position 122 with nine artifacts. The final package also passed a fresh
+  `File > New Graph` accessibility-tree smoke check with distinct cancel/create controls.
 
 ## Risks
 
