@@ -128,6 +128,8 @@ public enum GraphCLICommand: Equatable, Sendable {
     case start(runID: String)
     case cancel(runID: String)
     case retry(runID: String, nodeID: String)
+    case step(runID: String)
+    case run(runID: String)
     case list
     case inspect(runID: String)
     case history(runID: String)
@@ -147,6 +149,10 @@ public enum GraphCLICommand: Equatable, Sendable {
             "graph.cancel"
         case .retry:
             "graph.retry"
+        case .step:
+            "graph.step"
+        case .run:
+            "graph.run"
         case .list:
             "graph.list"
         case .inspect:
@@ -195,6 +201,7 @@ public struct GraphCLIInvocation: Equatable, Sendable {
     public let reason: String?
     public let dryRun: Bool
     public let logicalTime: Date?
+    public let cycleLimit: Int
 
     public init(
         command: GraphCLICommand,
@@ -223,7 +230,8 @@ public struct GraphCLIInvocation: Equatable, Sendable {
         requestedBy: String = "openisland.cli",
         reason: String? = nil,
         dryRun: Bool = false,
-        logicalTime: Date? = nil
+        logicalTime: Date? = nil,
+        cycleLimit: Int = 100
     ) {
         self.command = command
         self.output = output
@@ -252,6 +260,7 @@ public struct GraphCLIInvocation: Equatable, Sendable {
         self.reason = reason
         self.dryRun = dryRun
         self.logicalTime = logicalTime
+        self.cycleLimit = cycleLimit
     }
 }
 
@@ -325,6 +334,7 @@ public enum GraphCLIParser {
             "--requested-by",
             "--reason",
             "--logical-time",
+            "--cycle-limit",
         ])
         let flagOptions = Set([
             "--no-color",
@@ -450,6 +460,15 @@ public enum GraphCLIParser {
             singleValue("--logical-time", values),
             option: "--logical-time"
         )
+        let cycleLimit = try parseInt(
+            singleValue("--cycle-limit", values),
+            option: "--cycle-limit"
+        ) ?? 100
+        guard (1...10_000).contains(cycleLimit) else {
+            throw GraphCLIArgumentError.invalid(
+                "--cycle-limit must be between 1 and 10000."
+            )
+        }
 
         switch commandToken {
         case "create":
@@ -509,6 +528,20 @@ public enum GraphCLIParser {
                 runID: positional[0],
                 nodeID: retryNodeID
             )
+        case "step":
+            try requirePositionals(
+                positional,
+                count: 1,
+                command: "step"
+            )
+            command = .step(runID: positional[0])
+        case "run":
+            try requirePositionals(
+                positional,
+                count: 1,
+                command: "run"
+            )
+            command = .run(runID: positional[0])
         case "list":
             try requirePositionals(positional, count: 0, command: "list")
             command = .list
@@ -651,7 +684,8 @@ public enum GraphCLIParser {
                 requestedBy: requestedBy,
                 reason: reason,
                 dryRun: flags.contains("--dry-run"),
-                logicalTime: logicalTime
+                logicalTime: logicalTime,
+                cycleLimit: cycleLimit
             )
         )
     }
@@ -662,6 +696,8 @@ public enum GraphCLIParser {
       openisland graph start <run-id> --idempotency-key <key> [options]
       openisland graph cancel <run-id> [--node <node-id>] --idempotency-key <key> [options]
       openisland graph retry <run-id> <node-id> --idempotency-key <key> [options]
+      openisland graph step <run-id> [options]
+      openisland graph run <run-id> [--cycle-limit <count>] [options]
       openisland graph list [options]
       openisland graph inspect <run-id> [options]
       openisland graph history <run-id> [options]
@@ -1056,6 +1092,7 @@ public enum GraphMermaidExporter {
 public struct GraphCLICommandRunner: Sendable {
     private let inspector: any GraphTemporalInspecting
     private let mutator: (any GraphMutating)?
+    private let orchestrator: (any GraphOrchestrating)?
     private let definitionLoader: any GraphExecutableDefinitionLoading
     private let stdout: any GraphCLIOutputSink
     private let stderr: any GraphCLIOutputSink
@@ -1067,6 +1104,7 @@ public struct GraphCLICommandRunner: Sendable {
     public init(
         inspector: any GraphTemporalInspecting,
         mutator: (any GraphMutating)? = nil,
+        orchestrator: (any GraphOrchestrating)? = nil,
         definitionLoader: any GraphExecutableDefinitionLoading =
             FileGraphExecutableDefinitionLoader(),
         stdout: any GraphCLIOutputSink,
@@ -1080,6 +1118,7 @@ public struct GraphCLICommandRunner: Sendable {
     ) {
         self.inspector = inspector
         self.mutator = mutator
+        self.orchestrator = orchestrator
         self.definitionLoader = definitionLoader
         self.stdout = stdout
         self.stderr = stderr
@@ -1242,6 +1281,35 @@ public struct GraphCLICommandRunner: Sendable {
                 )
             )
             return try emitMutation(
+                report,
+                invocation: invocation,
+                suppressOutput: suppressOutput
+            )
+        case let .step(runID):
+            let report = try await requireOrchestrator().step(
+                GraphOrchestrationStepRequest(
+                    runID: runID,
+                    logicalTime: invocation.logicalTime ?? Date(),
+                    expectedVersion: invocation.expectedVersion,
+                    dryRun: invocation.dryRun
+                )
+            )
+            return try emitCycle(
+                report,
+                invocation: invocation,
+                suppressOutput: suppressOutput
+            )
+        case let .run(runID):
+            let report = try await requireOrchestrator().run(
+                GraphOrchestrationRunRequest(
+                    runID: runID,
+                    cycleLimit: invocation.cycleLimit,
+                    expectedVersion: invocation.expectedVersion,
+                    dryRun: invocation.dryRun,
+                    logicalTime: invocation.logicalTime
+                )
+            )
+            return try emitRun(
                 report,
                 invocation: invocation,
                 suppressOutput: suppressOutput
@@ -1584,6 +1652,15 @@ public struct GraphCLICommandRunner: Sendable {
         return mutator
     }
 
+    private func requireOrchestrator() throws -> any GraphOrchestrating {
+        guard let orchestrator else {
+            throw GraphOrchestrationError.adapterUnavailable(
+                "orchestration service is unavailable."
+            )
+        }
+        return orchestrator
+    }
+
     private func emitMutation(
         _ report: GraphMutationReport,
         invocation: GraphCLIInvocation,
@@ -1614,6 +1691,92 @@ public struct GraphCLICommandRunner: Sendable {
         )
     }
 
+    private func emitCycle(
+        _ report: GraphOrchestrationCycleReport,
+        invocation: GraphCLIInvocation,
+        suppressOutput: Bool
+    ) throws -> GraphCLICommandOutcome {
+        let text = "\(report.runID)  \(report.status.rawValue)  v\(report.previousVersion)->v\(report.streamVersion)  \(report.runState.rawValue)\n"
+        let executionCode = executionExitCode(
+            report.runState,
+            status: report.status
+        )
+        let writeCode = try emit(
+            report,
+            records: [report],
+            recordType: "orchestration_cycle",
+            text: text,
+            invocation: invocation,
+            resultCount: 1,
+            eventCount: report.persistedEventCount,
+            suppressOutput: suppressOutput,
+            completionExitCode: executionCode
+        )
+        let code = writeCode == .success
+            ? executionCode
+            : writeCode
+        return GraphCLICommandOutcome(
+            exitCode: code,
+            resultCount: 1,
+            eventCount: report.persistedEventCount,
+            replayBoundary: report.streamVersion,
+            reconciliationOutcome: report.runState.rawValue
+        )
+    }
+
+    private func emitRun(
+        _ report: GraphOrchestrationRunReport,
+        invocation: GraphCLIInvocation,
+        suppressOutput: Bool
+    ) throws -> GraphCLICommandOutcome {
+        let text = "\(report.runID)  \(report.status.rawValue)  \(report.cycles.count) cycles  v\(report.finalVersion)  \(report.finalState.rawValue)\n"
+        let eventCount = report.cycles.reduce(0) {
+            $0 + $1.persistedEventCount
+        }
+        let executionCode = executionExitCode(
+            report.finalState,
+            status: report.status
+        )
+        let writeCode = try emit(
+            report,
+            records: report.cycles,
+            recordType: "orchestration_cycle",
+            text: text,
+            invocation: invocation,
+            resultCount: report.cycles.count,
+            eventCount: eventCount,
+            suppressOutput: suppressOutput,
+            completionExitCode: executionCode
+        )
+        let code = writeCode == .success
+            ? executionCode
+            : writeCode
+        return GraphCLICommandOutcome(
+            exitCode: code,
+            resultCount: report.cycles.count,
+            eventCount: eventCount,
+            replayBoundary: report.finalVersion,
+            reconciliationOutcome: report.finalState.rawValue
+        )
+    }
+
+    private func executionExitCode(
+        _ state: ReconciledExecutionState,
+        status: GraphOrchestrationCycleStatus
+    ) -> GraphCLIExitCode {
+        if status == .adapterUnavailable {
+            return .adapterUnavailable
+        }
+        switch state {
+        case .failed, .interrupted, .orphaned, .blocked:
+            return .executionTerminalFailure
+        case .cancelled:
+            return .cancellation
+        case .pending, .ready, .running, .completed:
+            return .success
+        }
+    }
+
     private func emit<Payload: Encodable, Record: Encodable>(
         _ payload: Payload,
         records: [Record],
@@ -1623,7 +1786,8 @@ public struct GraphCLICommandRunner: Sendable {
         resultCount: Int,
         eventCount: Int,
         suppressOutput: Bool,
-        diagnostics: [GraphCLIOutputDiagnostic] = []
+        diagnostics: [GraphCLIOutputDiagnostic] = [],
+        completionExitCode: GraphCLIExitCode = .success
     ) throws -> GraphCLIExitCode {
         guard !suppressOutput else {
             return .success
@@ -1673,8 +1837,8 @@ public struct GraphCLICommandRunner: Sendable {
                 let completion = GraphCLICompletionRecord(
                     schemaVersion: invocation.schemaVersion,
                     command: invocation.command.name,
-                    status: GraphCLIExitCode.success.category,
-                    exitCode: GraphCLIExitCode.success.rawValue,
+                    status: completionExitCode.category,
+                    exitCode: completionExitCode.rawValue,
                     resultCount: resultCount,
                     eventCount: eventCount,
                     lastSequence: nil,
@@ -2176,6 +2340,22 @@ public struct GraphCLICommandRunner: Sendable {
     }
 
     private func exitCode(for error: Error) -> GraphCLIExitCode {
+        if let error = error as? GraphOrchestrationError {
+            switch error {
+            case .notFound:
+                return .notFound
+            case .invalidDefinition:
+                return .invalidArguments
+            case .optimisticConflict:
+                return .optimisticConflict
+            case .staleExecutor:
+                return .staleExecutor
+            case .adapterUnavailable:
+                return .adapterUnavailable
+            case .persistence:
+                return .persistenceFailure
+            }
+        }
         if let error = error as? GraphMutationError {
             switch error {
             case .invalidRequest:

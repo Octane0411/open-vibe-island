@@ -1039,9 +1039,10 @@ public enum GraphScheduler {
             )
         }
 
-        if let retry = input.projectedState.scheduling.retries
+        let existingRetry = input.projectedState.scheduling.retries
             .filter({ $0.nodeID == node.id })
-            .max(by: { $0.nextAttemptOrdinal < $1.nextAttemptOrdinal }),
+            .max(by: { $0.nextAttemptOrdinal < $1.nextAttemptOrdinal })
+        if let retry = existingRetry,
            retry.nextAttemptOrdinal == nextOrdinal,
            input.logicalTime < retry.eligibleAt {
             return NodeResult(
@@ -1051,7 +1052,8 @@ public enum GraphScheduler {
                 eligibleAt: retry.eligibleAt
             )
         }
-        if let latest,
+        if existingRetry?.nextAttemptOrdinal != nextOrdinal,
+           let latest,
            latest.state == .failed
                 || latest.state == .interrupted
                 || latest.state == .orphaned {

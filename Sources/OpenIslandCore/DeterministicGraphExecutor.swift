@@ -102,12 +102,20 @@ public struct GraphDeterministicExecutionScript:
         nodeID: String,
         ordinal: Int
     ) -> GraphDeterministicAttemptScript {
+        configuredAttempt(nodeID: nodeID, ordinal: ordinal)
+            ?? GraphDeterministicAttemptScript(
+                nodeID: nodeID,
+                attemptOrdinal: ordinal
+            )
+    }
+
+    public func configuredAttempt(
+        nodeID: String,
+        ordinal: Int
+    ) -> GraphDeterministicAttemptScript? {
         attempts.first {
             $0.nodeID == nodeID && $0.attemptOrdinal == ordinal
-        } ?? GraphDeterministicAttemptScript(
-            nodeID: nodeID,
-            attemptOrdinal: ordinal
-        )
+        }
     }
 }
 
@@ -212,8 +220,12 @@ public struct DeterministicGraphExecutor:
     ) async throws -> GraphExecutorCollectResultResponse {
         let attempt = scriptedAttempt(request.context)
         let (status, failure) = terminalStatus(attempt)
+        let roles = script.configuredAttempt(
+            nodeID: request.context.identity.nodeID,
+            ordinal: request.context.identity.attemptOrdinal
+        ) == nil ? specificationArtifactRoles(request.context) : attempt.artifactRoles
         let artifacts = status == .succeeded
-            ? attempt.artifactRoles.map {
+            ? roles.map {
                 artifact(role: $0, context: request.context)
             }
             : []
@@ -377,5 +389,16 @@ public struct DeterministicGraphExecutor:
                 opaqueReference: digest
             )
         )
+    }
+
+    private func specificationArtifactRoles(
+        _ context: GraphExecutorCommandContext
+    ) -> [GraphArtifactRole] {
+        guard case let .string(value) = context.specification.parameters[
+            "artifactRole"
+        ], let role = GraphArtifactRole(rawValue: value) else {
+            return [.nodeOutput]
+        }
+        return [role]
     }
 }

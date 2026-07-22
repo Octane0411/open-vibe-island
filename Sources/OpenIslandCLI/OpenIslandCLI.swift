@@ -33,6 +33,20 @@ struct OpenIslandCLI {
                 eventStore: store,
                 readStore: store
             )
+            let orchestrator = DefaultGraphOrchestrationService(
+                eventStore: store,
+                schedulingRepository: DefaultGraphSchedulingRepository(
+                    eventStore: store
+                ),
+                executorRepository: DefaultGraphExecutorRepository(
+                    eventStore: store
+                ),
+                executor: DeterministicGraphExecutor(
+                    script: GraphDeterministicExecutionScript(
+                        attempts: []
+                    )
+                )
+            )
             let context = GraphCLIContextDiscovery.discover(
                 environment: environment,
                 workingDirectory: FileManager.default.currentDirectoryPath
@@ -40,6 +54,7 @@ struct OpenIslandCLI {
             let runner = GraphCLICommandRunner(
                 inspector: inspector,
                 mutator: mutator,
+                orchestrator: orchestrator,
                 stdout: stdout,
                 stderr: stderr,
                 context: context,
