@@ -93,7 +93,7 @@ final class GraphWorkspaceTemplateTests: XCTestCase {
         XCTAssertTrue(source.contains("Create New Graph"))
         XCTAssertTrue(source.contains("Open Existing Graph"))
         XCTAssertTrue(source.contains("Open Recent Graph"))
-        XCTAssertTrue(source.contains("Open Example Graph"))
+        XCTAssertTrue(source.contains("Open Templates"))
         XCTAssertTrue(source.contains("Add your first node"))
         XCTAssertTrue(source.contains("Auto Layout"))
         XCTAssertTrue(source.contains("Reset Graph Zoom"))
