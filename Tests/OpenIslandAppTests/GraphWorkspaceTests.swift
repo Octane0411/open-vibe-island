@@ -333,6 +333,7 @@ final class GraphWorkspaceTests: XCTestCase {
         XCTAssertEqual(node.inputs.first?.binding?.fileReference, "inputs/source.json")
         XCTAssertEqual(process.outputArtifacts.first?.stableID, output.id)
         XCTAssertEqual(process.outputArtifacts.first?.required, true)
+        XCTAssertEqual(node.workspace.writableRelativePaths, ["artifacts"])
         XCTAssertEqual(node.timeoutPolicy.executionSeconds, 45)
         XCTAssertEqual(
             try viewModel.document?.executableDefinition().schedulerPolicy

@@ -97,6 +97,13 @@ final class GraphWorkspaceTemplateTests: XCTestCase {
         XCTAssertTrue(source.contains("Add your first node"))
         XCTAssertTrue(source.contains("Auto Layout"))
         XCTAssertTrue(source.contains("Reset Graph Zoom"))
+        XCTAssertTrue(source.contains("Binding Source"))
+        XCTAssertTrue(source.contains("Connect Upstream Output"))
+        XCTAssertTrue(source.contains("Literal Value"))
+        XCTAssertTrue(source.contains("File Reference"))
+        XCTAssertTrue(source.contains("Secret Reference"))
+        XCTAssertTrue(source.contains("Backoff Multiplier"))
+        XCTAssertTrue(source.contains("selectedNodeValidationSection"))
     }
 
     func testLocalTemplatesCanBeEditedSavedAndRun() async throws {

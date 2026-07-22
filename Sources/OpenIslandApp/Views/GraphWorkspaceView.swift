@@ -1310,6 +1310,7 @@ private struct GraphDefinitionInspector: View {
                 outputsSection
                 retrySection
                 timeoutSection
+                selectedNodeValidationSection
                 Section("Dependencies") {
                     let incoming = viewModel.document?.edges.filter {
                         $0.targetNodeID == node.id
@@ -1724,6 +1725,18 @@ private struct GraphDefinitionInspector: View {
                         "Media Type",
                         text: inputBinding(input.id, \.mediaType, fallback: input.mediaType)
                     )
+                    Picker(
+                        "Port Type",
+                        selection: inputBinding(
+                            input.id,
+                            \.portType,
+                            fallback: input.portType
+                        )
+                    ) {
+                        ForEach(GraphDefinitionPortType.allCases, id: \.rawValue) {
+                            Text($0.rawValue.capitalized).tag($0)
+                        }
+                    }
                     Toggle(
                         "Required",
                         isOn: inputBinding(input.id, \.isRequired, fallback: input.isRequired)
@@ -1732,6 +1745,17 @@ private struct GraphDefinitionInspector: View {
                         "Allow Multiple Providers",
                         isOn: inputBinding(input.id, \.allowsMultiple, fallback: input.allowsMultiple)
                     )
+                    Picker(
+                        "Binding Source",
+                        selection: inputBindingKind(input)
+                    ) {
+                        Text("Unbound").tag(GraphNodeInputBindingKind?.none)
+                        ForEach(GraphNodeInputBindingKind.allCases, id: \.rawValue) {
+                            Text($0.rawValue.replacingOccurrences(of: "_", with: " ").capitalized)
+                                .tag(Optional($0))
+                        }
+                    }
+                    inputBindingEditor(input)
                     LabeledContent("Stable ID", value: input.id)
                     Button("Remove Input", role: .destructive) {
                         viewModel.removeSelectedNodeInput(input.id)
@@ -1761,6 +1785,18 @@ private struct GraphDefinitionInspector: View {
                         "Media Type",
                         text: outputBinding(output.id, \.mediaType, fallback: output.mediaType)
                     )
+                    Picker(
+                        "Port Type",
+                        selection: outputBinding(
+                            output.id,
+                            \.portType,
+                            fallback: output.portType
+                        )
+                    ) {
+                        ForEach(GraphDefinitionPortType.allCases, id: \.rawValue) {
+                            Text($0.rawValue.capitalized).tag($0)
+                        }
+                    }
                     Picker(
                         "Runtime Role",
                         selection: outputBinding(output.id, \.role, fallback: output.role)
@@ -1852,6 +1888,15 @@ private struct GraphDefinitionInspector: View {
                     ),
                     in: 0...3_600
                 )
+                LabeledContent("Backoff Type", value: "Exponential")
+                Stepper(
+                    "Backoff Multiplier: \(policy.backoffMultiplier)x",
+                    value: Binding(
+                        get: { retryPolicy.backoffMultiplier },
+                        set: { updateRetry(multiplier: $0) }
+                    ),
+                    in: 1...10
+                )
                 Stepper(
                     "Maximum Delay: \(policy.maximumBackoffSeconds)s",
                     value: Binding(
@@ -1920,6 +1965,116 @@ private struct GraphDefinitionInspector: View {
 
     private var timeout: GraphNodeTimeoutConfiguration {
         selectedNode?.timeoutConfiguration ?? .init()
+    }
+
+    @ViewBuilder
+    private var selectedNodeValidationSection: some View {
+        if let nodeID = viewModel.selectedNodeID {
+            let diagnostics = viewModel.validationDiagnostics.filter {
+                $0.target.kind == .node && $0.target.id == nodeID
+            }
+            if !diagnostics.isEmpty {
+                Section("Validation") {
+                    ForEach(diagnostics) { diagnostic in
+                        Label(
+                            diagnostic.message,
+                            systemImage: diagnostic.severity == .error
+                                ? "xmark.octagon.fill"
+                                : "exclamationmark.triangle.fill"
+                        )
+                        .foregroundStyle(
+                            diagnostic.severity == .error
+                                ? Color.red : Color.orange
+                        )
+                        .accessibilityLabel(
+                            "\(diagnostic.severity.rawValue): \(diagnostic.message)"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func inputBindingEditor(
+        _ input: GraphNodeInputDefinition
+    ) -> some View {
+        switch currentInput(input.id)?.binding?.kind {
+        case .graphInput:
+            Picker(
+                "Graph Input",
+                selection: inputBindingValue(
+                    input,
+                    get: \.graphInputID,
+                    set: { $0.graphInputID = $1 }
+                )
+            ) {
+                Text("Choose Graph Input").tag(String?.none)
+                ForEach(viewModel.document?.graphInputs ?? []) {
+                    Text($0.name).tag(Optional($0.id))
+                }
+            }
+        case .upstreamArtifact, .upstreamArtifactCollection:
+            Menu("Connect Upstream Output") {
+                let nodes = viewModel.document?.nodes.filter {
+                    $0.id != viewModel.selectedNodeID
+                } ?? []
+                ForEach(nodes) { node in
+                    ForEach(node.outputs.filter {
+                        $0.portType == input.portType
+                    }) { output in
+                        Button("\(node.name) - \(output.name)") {
+                            guard let target = viewModel.selectedNodeID else { return }
+                            _ = viewModel.connectNodes(
+                                sourceNodeID: node.id,
+                                targetNodeID: target,
+                                portType: input.portType,
+                                sourceOutputID: output.id,
+                                targetInputID: input.id
+                            )
+                        }
+                        .disabled(!canConnect(
+                            node: node,
+                            output: output,
+                            input: input
+                        ))
+                    }
+                }
+            }
+            if let binding = currentInput(input.id)?.binding,
+               let source = binding.sourceNodeID,
+               let output = binding.sourceOutputID {
+                LabeledContent("Connected Output", value: "\(source).\(output)")
+            }
+        case .staticLiteral:
+            TextField(
+                "Literal Value",
+                text: inputLiteralBinding(input)
+            )
+        case .fileReference:
+            TextField(
+                "File Reference",
+                text: inputStringBinding(
+                    input,
+                    get: \.fileReference,
+                    set: { $0.fileReference = $1 }
+                )
+            )
+        case .secretReference:
+            TextField(
+                "Secret Reference",
+                text: inputStringBinding(
+                    input,
+                    get: \.secretReference,
+                    set: { $0.secretReference = $1 }
+                )
+            )
+            Text("Store only a keychain or environment reference here.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case .none:
+            EmptyView()
+        }
     }
 
     private func csv(_ value: String) -> [String] {
@@ -1996,6 +2151,126 @@ private struct GraphDefinitionInspector: View {
                 viewModel.updateSelectedNodeInput(input)
             }
         )
+    }
+
+    private func currentInput(_ id: String) -> GraphNodeInputDefinition? {
+        viewModel.selectedNode?.inputs.first { $0.id == id }
+    }
+
+    private func inputBindingKind(
+        _ input: GraphNodeInputDefinition
+    ) -> Binding<GraphNodeInputBindingKind?> {
+        Binding(
+            get: { currentInput(input.id)?.binding?.kind },
+            set: { kind in
+                guard var updated = currentInput(input.id) else { return }
+                guard let kind else {
+                    updated.binding = nil
+                    viewModel.updateSelectedNodeInput(updated)
+                    return
+                }
+                if updated.binding?.kind != kind {
+                    switch kind {
+                    case .graphInput:
+                        updated.binding = GraphNodeInputBinding(
+                            kind: kind,
+                            graphInputID: viewModel.document?.graphInputs.first?.id
+                        )
+                    case .staticLiteral:
+                        updated.binding = GraphNodeInputBinding(
+                            kind: kind,
+                            literalValue: .string("")
+                        )
+                    case .fileReference:
+                        updated.binding = GraphNodeInputBinding(
+                            kind: kind,
+                            fileReference: ""
+                        )
+                    case .secretReference:
+                        updated.binding = GraphNodeInputBinding(
+                            kind: kind,
+                            secretReference: ""
+                        )
+                    case .upstreamArtifact:
+                        updated.binding = GraphNodeInputBinding(kind: kind)
+                    case .upstreamArtifactCollection:
+                        updated.allowsMultiple = true
+                        updated.binding = GraphNodeInputBinding(kind: kind)
+                    }
+                }
+                viewModel.updateSelectedNodeInput(updated)
+            }
+        )
+    }
+
+    private func inputBindingValue(
+        _ input: GraphNodeInputDefinition,
+        get: KeyPath<GraphNodeInputBinding, String?>,
+        set: @escaping (inout GraphNodeInputBinding, String?) -> Void
+    ) -> Binding<String?> {
+        Binding(
+            get: { currentInput(input.id)?.binding?[keyPath: get] },
+            set: { value in
+                guard var updated = currentInput(input.id),
+                      var binding = updated.binding else { return }
+                set(&binding, value)
+                updated.binding = binding
+                viewModel.updateSelectedNodeInput(updated)
+            }
+        )
+    }
+
+    private func inputStringBinding(
+        _ input: GraphNodeInputDefinition,
+        get: KeyPath<GraphNodeInputBinding, String?>,
+        set: @escaping (inout GraphNodeInputBinding, String?) -> Void
+    ) -> Binding<String> {
+        Binding(
+            get: { currentInput(input.id)?.binding?[keyPath: get] ?? "" },
+            set: { value in
+                guard var updated = currentInput(input.id),
+                      var binding = updated.binding else { return }
+                set(&binding, value)
+                updated.binding = binding
+                viewModel.updateSelectedNodeInput(updated)
+            }
+        )
+    }
+
+    private func inputLiteralBinding(
+        _ input: GraphNodeInputDefinition
+    ) -> Binding<String> {
+        Binding(
+            get: {
+                guard case let .string(value) = currentInput(input.id)?
+                    .binding?.literalValue else { return "" }
+                return value
+            },
+            set: { value in
+                guard var updated = currentInput(input.id),
+                      var binding = updated.binding else { return }
+                binding.literalValue = .string(value)
+                updated.binding = binding
+                viewModel.updateSelectedNodeInput(updated)
+            }
+        )
+    }
+
+    private func canConnect(
+        node: GraphDefinitionDocumentNode,
+        output: GraphNodeOutputDefinition,
+        input: GraphNodeInputDefinition
+    ) -> Bool {
+        guard let document = viewModel.document,
+              let target = viewModel.selectedNodeID else { return false }
+        return GraphConnectionEvaluator.evaluate(
+            document: document,
+            sourceNodeID: node.id,
+            targetNodeID: target,
+            portType: input.portType,
+            sourceOutputID: output.id,
+            targetInputID: input.id
+        ).isAllowed
     }
 
     private func edgeBinding<Value>(
@@ -2091,6 +2366,7 @@ private struct GraphDefinitionInspector: View {
         retryable: [String]? = nil,
         nonRetryable: [String]? = nil,
         baseDelay: UInt64? = nil,
+        multiplier: UInt64? = nil,
         maximumDelay: UInt64? = nil,
         timeoutBehavior: GraphRetryTimeoutBehavior? = nil
     ) {
@@ -2102,7 +2378,7 @@ private struct GraphDefinitionInspector: View {
             nonRetryableFailureCategories: nonRetryable
                 ?? source.nonRetryableFailureCategories,
             initialBackoffSeconds: baseDelay ?? source.initialBackoffSeconds,
-            backoffMultiplier: source.backoffMultiplier,
+            backoffMultiplier: multiplier ?? source.backoffMultiplier,
             maximumBackoffSeconds: maximumDelay ?? source.maximumBackoffSeconds,
             jitterBasisPoints: source.jitterBasisPoints,
             jitterSeed: source.jitterSeed,
