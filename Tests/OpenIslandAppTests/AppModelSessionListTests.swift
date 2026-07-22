@@ -759,6 +759,7 @@ struct AppModelSessionListTests {
     @Test
     func completionNotificationDefersTimedCollapseWhilePointerIsInside() {
         let model = AppModel()
+        model.pointerLocationAccessor = { NSPoint(x: -10_000, y: -10_000) }
         model.applyTrackedEvent(
             .sessionStarted(SessionStarted(
                 sessionID: "session-1",
@@ -797,6 +798,7 @@ struct AppModelSessionListTests {
     @Test
     func completionNotificationHoverCancelsPendingTimedCollapse() {
         let model = AppModel()
+        model.pointerLocationAccessor = { NSPoint(x: -10_000, y: -10_000) }
         model.state = SessionState(
             sessions: [
                 AgentSession(

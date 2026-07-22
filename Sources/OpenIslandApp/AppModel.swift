@@ -1238,6 +1238,10 @@ final class AppModel {
     var showsNotificationCard: Bool { overlay.showsNotificationCard }
     var shouldDeferTimedNotificationAutoCollapse: Bool { overlay.shouldDeferTimedNotificationAutoCollapse }
     var hasPendingNotificationAutoCollapse: Bool { overlay.hasPendingNotificationAutoCollapse }
+    var pointerLocationAccessor: (() -> NSPoint)? {
+        get { overlay.pointerLocationAccessor }
+        set { overlay.pointerLocationAccessor = newValue }
+    }
 
     func loadDebugSnapshot(
         _ snapshot: IslandDebugSnapshot,
