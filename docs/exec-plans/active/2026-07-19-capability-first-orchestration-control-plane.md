@@ -2,7 +2,7 @@
 
 **Status:** Active
 **Started:** 2026-07-19
-**Current phase:** Phase 2, deterministic executor adapter and mutation-command preparation
+**Current phase:** Phase 2, first real local executor adapter preparation
 
 ## Problem
 
@@ -182,7 +182,8 @@ Input ordering cannot change the result.
   dependency blocking.
 - Durable persistence and replay now use a versioned event envelope, deterministic projector,
   snapshot cache boundary, evidence-isolated repository, and transactional SQLite store.
-  The next boundary is observational temporal inspection, not execution or UI mutation.
+  Temporal inspection, durable scheduling, mutation commands, and deterministic execution now
+  share that history. The next boundary is one supervised local process adapter.
 
 ## Target Architecture
 
@@ -383,13 +384,21 @@ recent state transitions; polling cannot inflate metrics; timeline state survive
   success/failure/cancellation scenarios.
 - [x] Extend read-only graph inspection with schema-versioned policy, claim, lease, retry,
   cancellation, timeout, and scheduler-reason projections while preserving schema version 1.
-- [ ] Replace the simulation runner with executor adapters for local models and CLI agents.
+- [x] Add version-checked graph create, start, step, run, cancel, and retry commands with stable
+  text, JSON, JSONL, dry-run, exit-code, and expected-head contracts.
+- [x] Add a provider-neutral typed executor adapter, exact identity fencing, durable
+  intent/observation separation, terminal declarations, and content-addressed artifact handoffs.
+- [x] Add a bounded restart-safe orchestration service that schedules, claims, starts,
+  observes, renews leases, collects results, cleans up, releases claims, propagates
+  dependencies, and aggregates run outcomes without holding transactions across adapters.
+- [x] Execute the committed architect -> researcher -> graph -> reviewer fixture end to end with
+  deterministic retry, cancellation, timeout, stale-generation, duplicate, crash, SQLite
+  restart, replay, diff, export, and pipeline evidence.
+- [ ] Implement the first real supervised process executor for one local compendium node.
 - [ ] Add typed handoff schemas on top of artifact references, then supervise a graph with at
   least two local models.
 - [ ] Add graph logs and metric projections to the shared command service; temporal graph
   inspection is now exposed through the standalone CLI boundary.
-- [ ] Add version-checked mutation commands for cancel, retry, and resume only after replay and
-  restart behavior is proven.
 
 ### Phase 3: Usage, inspection, and visual control plane
 
@@ -432,16 +441,17 @@ for quality, latency, cost, and context growth.
 4. **Complete:** durable scheduling decisions, claims, renewable leases, retry,
    cancellation, timeout, fixed-point failure propagation, schema v2 read-only inspection,
    and SQLite restart/concurrency behavior.
-5. **Next:** implement graph mutation commands and an executor adapter boundary, then use a
-   no-op or deterministic test executor to create, claim, start, complete, retry, and cancel
-   the four-node compendium graph end to end before introducing real tmux, Codex, Qwen,
-   Ollama, or Terminal Graph MCP adapters.
-6. Implement host-specific process-evidence adapters that translate observations into
+5. **Complete:** mutation commands, provider-neutral executor protocol, fenced observation
+   repository, bounded orchestration cycles, deterministic executor, artifact propagation,
+   lease renewal, and four-node compendium execution across crash and restart boundaries.
+6. **Next:** implement one supervised local direct-process or tmux executor with durable
+   process identity and bounded log/artifact capture, then connect only the architect node.
+7. Implement host-specific process-evidence adapters that translate observations into
    canonical exits and heartbeat leases without mutating history.
-7. Add non-local CLI usage metrics and local-model resource metrics as distinct projections.
-8. Add real provider/model executors only after the deterministic executor proves the command,
+8. Add non-local CLI usage metrics and local-model resource metrics as distinct projections.
+9. Add provider/model executors only after the local process adapter proves the command,
    event, fencing, and recovery contracts.
-9. Defer all visual redesign, including liquid glass, until orchestration behavior and
+10. Defer all visual redesign, including liquid glass, until orchestration behavior and
    operator information architecture are stable.
 
 ## Progress Log
@@ -465,6 +475,13 @@ for quality, latency, cost, and context growth.
 - `a188b1a feat: add executor claims and renewable leases`
 - `7c63d59 feat: add retry cancellation and timeout protocols`
 - `395e6f5 test: prove scheduling concurrency and restart invariants`
+- `1fc3837 feat: add graph mutation service and commands`
+- `3342dac feat: add executor adapter and fencing protocol`
+- `54cea48 feat: add deterministic compendium executor`
+- `0b2628b feat: add bounded graph orchestration cycles`
+- `4b3333f test: prove graph execution and restart invariants`
+- `5864b22 fix: remove cursor-sensitive test nondeterminism`
+- `15a47c8 feat: renew active orchestration leases`
 
 ### Temporal inspection and integration decisions
 
@@ -480,9 +497,9 @@ for quality, latency, cost, and context growth.
   required.
 - Repository and artifact metadata is redaction-aware. CLI telemetry is bounded, local, and
   excludes raw arguments, paths, environment values, prompts, and artifact bodies.
-- Durable scheduler decisions and exclusive ownership are complete. The next correctness
-  boundary is a version-checked mutation command surface plus a deterministic executor adapter
-  that proves full graph execution without provider-specific launching.
+- Durable scheduler decisions, exclusive ownership, mutation commands, and deterministic
+  execution are complete. The next correctness boundary is durable process identity and
+  recovery for one supervised local executor.
 
 ### Durable scheduling and ownership decisions
 
@@ -501,6 +518,31 @@ for quality, latency, cost, and context growth.
 - See [ADR 002](../../architecture-decisions/002-durable-graph-scheduling.md) for the event
   taxonomy, phase table, precedence, transaction semantics, migration decisions, and complete
   requirement audit.
+
+### Mutation and executor decisions
+
+- `GraphExecutableDefinition` persists immutable node execution specifications, capability
+  requirements, workspace scope, environment-name allowlists, timeout policy, and artifact
+  roles. It does not contain provider credentials or unrestricted commands.
+- Mutation requests, scheduling decisions, claim ownership, start intent, adapter
+  observations, and terminal declarations are separate event classes. No CLI or adapter
+  return value mutates a projection directly.
+- Executor requests carry run, node, attempt, claim, executor, and lease-generation identity.
+  The repository rejects stale generations, inactive claims, mismatched owners, wrong
+  ordinals, completion before start, and invalid artifact provenance with stable codes.
+- A cycle persists intent before adapter work, performs adapter calls outside database
+  transactions, persists observations afterward at the expected head, and only then derives
+  terminal declarations. Active leases renew at half-life and every later interaction uses the
+  new fencing generation.
+- The committed deterministic fixture produces references only: section plan, researched
+  sections, relationship graph, and review verdict. Downstream resolution validates producer
+  run, node, attempt, ordinal, claim, role, digest, and completed-attempt provenance.
+- SQLite reopen, both start crash windows, retry delay, stale executor, cancellation, timeout,
+  duplicate observation, byte-identical replay, temporal diff, graph export, JSONL completion,
+  Unix pipe, and full app regression tests are the readiness baseline.
+- See [ADR 003](../../architecture-decisions/003-graph-mutation-and-executor-boundary.md) for
+  mutation semantics, adapter operations, fencing, lifecycle, transaction boundaries, crash
+  recovery, artifact flow, compendium execution, and real-adapter readiness criteria.
 
 ## Verification
 

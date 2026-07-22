@@ -1,13 +1,12 @@
-# Temporal Graph Inspection CLI
+# Graph Control And Temporal Inspection CLI
 
 ## Authority And Scope
 
-Open Island graph history is the authoritative execution record. The
-`openisland graph` commands in this release are read-only projections over that
-history. They do not append events, update snapshots, call mutation-capable
-adapters, start models, schedule work, claim executors, or change graph state.
-The core scheduling repository may append scheduling events through its domain
-API; the CLI in this release can only inspect those events.
+Open Island graph history is the authoritative execution record. Mutation
+commands append versioned requests, decisions, observations, and declarations;
+inspection commands project that history without changing it. An adapter return
+value is never treated as execution success until its observation and matching
+terminal declaration are durable.
 
 History, projection, reconciliation, and decisions remain separate:
 
@@ -15,7 +14,9 @@ History, projection, reconciliation, and decisions remain separate:
 2. deterministic replay projects persisted logical state;
 3. reconciliation compares that projection with optional process evidence;
 4. the pure scheduler proposes version-checked execution decisions;
-5. claims establish exclusive ownership before a future executor acts.
+5. claims establish exclusive ownership before an executor acts;
+6. fenced executor commands produce typed observations;
+7. durable terminal declarations establish attempt and run outcomes.
 
 The stream sequence is authoritative ordering. Timestamps are descriptive and
 use ISO 8601 UTC encoding.
@@ -23,6 +24,12 @@ use ISO 8601 UTC encoding.
 ## Command Reference
 
 ```text
+openisland graph create DEFINITION --run-id RUN_ID --idempotency-key KEY [options]
+openisland graph start RUN_ID --idempotency-key KEY [options]
+openisland graph step RUN_ID [options]
+openisland graph run RUN_ID [--cycle-limit N] [options]
+openisland graph cancel RUN_ID [--node NODE_ID] --idempotency-key KEY [options]
+openisland graph retry RUN_ID NODE_ID --idempotency-key KEY [options]
 openisland graph list [options]
 openisland graph inspect RUN_ID [options]
 openisland graph history RUN_ID [options]
@@ -31,6 +38,21 @@ openisland graph checkpoint list RUN_ID [options]
 openisland graph replay RUN_ID --dry-run [options]
 openisland graph diff LEFT_REF RIGHT_REF [options]
 openisland graph export RUN_ID --format FORMAT [options]
+```
+
+Examples:
+
+```sh
+openisland graph create Tests/OpenIslandCoreTests/Fixtures/compendium-execution.json --run-id compendium-001 --idempotency-key create-001 --output json
+openisland graph start compendium-001 --idempotency-key start-001 --output json
+openisland graph step compendium-001 --expected-version 9 --output json
+openisland graph run compendium-001 --cycle-limit 100 --output jsonl --emit-completion-record
+openisland graph cancel compendium-001 --node researcher --idempotency-key cancel-researcher --output json
+openisland graph retry compendium-001 researcher --idempotency-key retry-researcher --output json
+openisland graph inspect compendium-001 --include-artifacts --output json
+openisland graph history compendium-001 --output jsonl
+openisland graph explain compendium-001 reviewer --output json
+openisland graph export compendium-001 --format mermaid
 ```
 
 Temporal references use these forms:
@@ -51,6 +73,29 @@ envelopes. Mermaid is a deterministic text graph. The terminal workspace plan
 is the neutral integration model documented in
 [terminal-graph-integration.md](./terminal-graph-integration.md).
 
+## Mutation And Execution Semantics
+
+| Command | Durable effect |
+|---|---|
+| `create` | Validates and records a versioned executable definition and digest. The run remains inactive. Same-key redelivery is idempotent; conflicting reuse fails. |
+| `start` | Records scheduling intent. It never bypasses scheduler decisions, claims, or leases. |
+| `step` | Performs one bounded replay, reconciliation, scheduling, claim, and executor-operation cycle. |
+| `run` | Repeats bounded cycles until terminal, stalled, waiting for cancellation, adapter unavailable, interrupted, or at the cycle limit. Reinvocation resumes history. |
+| `cancel` | Records run- or node-scoped cancellation intent. The adapter owner must acknowledge a running cancellation before terminal cancellation is declared. |
+| `retry` | Records an operator retry request only when policy permits. Attempt ordinals remain monotonic and recorded backoff is not bypassed. |
+
+`--dry-run` performs no writes and invokes no adapter. For `step` and `run`, it
+reports proposed scheduler decisions, the claim candidate, the executor
+operation, expected event types, and policy denials. `--expected-version`
+enforces the caller's observed stream head. Mutation idempotency keys are
+required for `create`, `start`, `cancel`, and `retry`; orchestration cycles are
+made idempotent by deterministic decision, claim, command, and observation IDs.
+
+The built-in CLI currently configures only the in-process deterministic
+executor. Its purpose is local validation of the control protocol, not real
+model work. Codex, Qwen, Ollama, tmux, and Terminal Graph MCP execution are not
+connected.
+
 ## Options And Filters
 
 All applicable commands support:
@@ -63,7 +108,15 @@ All applicable commands support:
 --include-diagnostics
 --include-artifacts
 --emit-completion-record
+--idempotency-key KEY
+--expected-version VERSION
+--dry-run
+--logical-time UTC_DATE
 ```
+
+Mutation-specific options also include `--run-id` for `create`, `--requested-by`
+and `--reason` for operator provenance, and `--cycle-limit` for `run` (1 through
+10,000).
 
 `--emit-completion-record` is valid only with `--output jsonl`. `--quiet`
 executes and emits telemetry but suppresses successful stdout. Errors still go
@@ -130,6 +183,8 @@ The record types are:
 
 | Command | JSONL `recordType` |
 |---|---|
+| `create`, `start`, `cancel`, `retry` | `mutation` |
+| `step`, `run` | `orchestration_cycle` |
 | `list` | `run` |
 | `inspect` | `inspection` |
 | `history` | `event` |
@@ -202,6 +257,12 @@ returned by scheduling inspection; only `hostIdentityPresent` is exposed.
 | 6 | `persistence_failure` | Read-store or database failure |
 | 7 | `evidence_unavailable` | Live evidence was explicitly required but unavailable |
 | 8 | `partial_result` | Reserved for a structured partial result with diagnostics |
+| 9 | `optimistic_conflict` | Expected stream version or idempotency identity conflicts |
+| 10 | `policy_denied` | Retry or another requested mutation is not allowed by policy |
+| 11 | `stale_executor` | Claim, executor, attempt, or lease generation failed fencing |
+| 12 | `adapter_unavailable` | The configured executor adapter cannot perform the operation |
+| 13 | `execution_terminal_failure` | The run terminated failed, interrupted, orphaned, or blocked |
+| 14 | `cancellation` | The run terminated cancelled |
 | 130 | `interrupted` | SIGINT termination |
 
 A downstream broken pipe is treated as normal pipeline completion. Other write

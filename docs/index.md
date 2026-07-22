@@ -35,7 +35,8 @@ This index is the repository map for humans and coding agents. Read these files 
 - [docs/app-ghostty-codex-chain.md](./app-ghostty-codex-chain.md) for terminal environment findings across the current supported chain
 - [docs/architecture-decisions/001-durable-graph-history.md](./architecture-decisions/001-durable-graph-history.md) for graph event sourcing, replay, snapshots, reconciliation, artifacts, and local persistence
 - [docs/architecture-decisions/002-durable-graph-scheduling.md](./architecture-decisions/002-durable-graph-scheduling.md) for deterministic scheduling, executor claims, renewable leases, retry, cancellation, timeout, restart recovery, and scheduling inspection
-- [docs/graph-cli.md](./graph-cli.md) for the read-only temporal graph command, schema, exit-code, causal, replay, redaction, and telemetry contracts
+- [docs/architecture-decisions/003-graph-mutation-and-executor-boundary.md](./architecture-decisions/003-graph-mutation-and-executor-boundary.md) for mutation commands, fenced executor adapters, orchestration cycles, crash recovery, and artifact handoffs
+- [docs/graph-cli.md](./graph-cli.md) for graph mutation, execution, temporal inspection, schema, exit-code, redaction, and telemetry contracts
 - [docs/terminal-graph-integration.md](./terminal-graph-integration.md) for Terminal Graph streams, typed ports, worktrees, workspace plans, hooks, and future MCP boundaries
 
 ## Refactoring Plans
