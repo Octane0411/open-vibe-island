@@ -490,6 +490,67 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func rolloutRunningEventReopensCompletedSessionUnlessSnapshotIsOlder() {
+        let completedAt = Date(timeIntervalSince1970: 2_000)
+        let nextTurnAt = completedAt.addingTimeInterval(1)
+        let model = AppModel()
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "completed-session",
+                    title: "Codex · open-island",
+                    tool: .codex,
+                    origin: .live,
+                    attachmentState: .attached,
+                    phase: .completed,
+                    summary: "Previous turn completed.",
+                    updatedAt: completedAt
+                ),
+            ]
+        )
+
+        model.applyTrackedEvent(
+            .activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: "completed-session",
+                    summary: "Stale running snapshot.",
+                    phase: .running,
+                    timestamp: completedAt.addingTimeInterval(-1)
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .rollout
+        )
+        #expect(model.state.session(id: "completed-session")?.phase == .completed)
+
+        model.applyTrackedEvent(
+            .sessionMetadataUpdated(
+                SessionMetadataUpdated(
+                    sessionID: "completed-session",
+                    codexMetadata: CodexSessionMetadata(lastUserPrompt: "Start the next turn."),
+                    timestamp: nextTurnAt
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .rollout
+        )
+        model.applyTrackedEvent(
+            .activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: "completed-session",
+                    summary: "Prompt: Start the next turn.",
+                    phase: .running,
+                    timestamp: nextTurnAt
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .rollout
+        )
+
+        #expect(model.state.session(id: "completed-session")?.phase == .running)
+    }
+
+    @Test
     func bridgeEventsStillPromoteSessionsToAttached() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()

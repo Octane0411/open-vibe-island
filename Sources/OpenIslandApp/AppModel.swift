@@ -1487,14 +1487,15 @@ final class AppModel {
             return state.session(id: payload.sessionID)?.phase == .completed
         }()
 
-        // Guard: don't let rollout events downgrade a session from completed
-        // back to running. The bridge's sessionCompleted is authoritative; the
-        // rollout watcher may have read the JSONL before task_complete was
-        // flushed, producing a stale activityUpdated(phase: .running).
+        // Guard: don't let an older rollout snapshot downgrade a completed
+        // session. A newer snapshot can be the next turn; equality is valid
+        // because the watcher emits metadata first with the same timestamp.
         if ingress == .rollout,
            case let .activityUpdated(payload) = event,
            payload.phase == .running,
-           state.session(id: payload.sessionID)?.phase == .completed {
+           let session = state.session(id: payload.sessionID),
+           session.phase == .completed,
+           payload.timestamp < session.updatedAt {
             return
         }
 
