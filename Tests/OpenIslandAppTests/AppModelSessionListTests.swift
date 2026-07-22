@@ -24,6 +24,8 @@ struct AppModelSessionListTests {
             "appearance.island.v8.topBar.sessionGroup",
             "appearance.island.v8.topBar.sessionSort",
             "appearance.island.v8.topBar.completedStaleThreshold",
+            "appearance.island.v8.notch.showIdleSessions",
+            "appearance.island.v8.topBar.showIdleSessions",
             "app.suppressFrontmostNotifications",
             "feature.completionReply.enabled",
             "overlay.sound.muted",
@@ -94,6 +96,8 @@ struct AppModelSessionListTests {
     func islandListDeduplicatesSessionsSharingTheSameLiveGhosttyTerminal() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
+        model.updateAppearancePreferences(for: .topBar) { $0.showIdleSessions = true }
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
 
         var runningLive = AgentSession(
             id: "running-live",
@@ -167,6 +171,8 @@ struct AppModelSessionListTests {
     func islandListKeepsDistinctCodexAppThreadsInTheSameWorkspace() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
+        model.updateAppearancePreferences(for: .topBar) { $0.showIdleSessions = true }
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
 
         var firstThread = AgentSession(
             id: "codex-app-thread-1",
@@ -266,6 +272,8 @@ struct AppModelSessionListTests {
     func freshCompletedSessionsSortAheadOfV8StaleCompletedSessions() {
         let now = Date()
         let model = AppModel()
+        model.updateAppearancePreferences(for: .topBar) { $0.showIdleSessions = true }
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
 
         var staleCompleted = AgentSession(
             id: "stale-completed",
@@ -314,8 +322,12 @@ struct AppModelSessionListTests {
     func islandSessionSectionsGroupStaleCompletedIntoIdle() {
         let now = Date()
         let model = AppModel()
-        model.islandSessionGroup = .state
-        model.completedStaleThreshold = .fiveMinutes
+        model.updateAppearancePreferences(for: .topBar) {
+            $0.sessionGroup = .state
+            $0.completedStaleThreshold = .fiveMinutes
+            $0.showIdleSessions = true
+        }
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
 
         var approval = listSession(id: "approval", phase: .waitingForApproval, updatedAt: now)
         approval.permissionRequest = PermissionRequest(
@@ -340,8 +352,12 @@ struct AppModelSessionListTests {
     func islandSessionSectionsKeepCompletedInDoneWhenStaleThresholdIsNever() {
         let now = Date()
         let model = AppModel()
-        model.islandSessionGroup = .state
-        model.completedStaleThreshold = .never
+        model.updateAppearancePreferences(for: .topBar) {
+            $0.sessionGroup = .state
+            $0.completedStaleThreshold = .never
+            $0.showIdleSessions = true
+        }
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
 
         var oldDone = listSession(id: "old-done", phase: .completed, updatedAt: now.addingTimeInterval(-86_400))
         oldDone.isProcessAlive = true
@@ -352,10 +368,50 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func idleSessionsAreHiddenByDefaultAndCanBeEnabledPerDisplayProfile() {
+        let now = Date()
+        let model = AppModel()
+        var running = listSession(id: "running", phase: .running, updatedAt: now)
+        var idle = listSession(id: "idle", phase: .completed, updatedAt: now.addingTimeInterval(-360))
+        running.isProcessAlive = true
+        idle.isProcessAlive = true
+        model.state = SessionState(sessions: [idle, running])
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+        model.islandRightSlot = .count
+
+        #expect(model.islandListSessions.map(\.id) == ["running"])
+        #expect(model.islandClosedSpotlight?.id == "running")
+        if case let .count(count)? = model.islandClosedRightSlotContent() {
+            #expect(count == 1)
+        } else {
+            Issue.record("Expected a closed-island count with idle sessions filtered out")
+        }
+
+        model.updateAppearancePreferences(for: .topBar) { $0.showIdleSessions = true }
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+        #expect(model.showIdleSessions)
+        #expect(Set(model.surfacedSessions.map(\.id)) == Set(["running", "idle"]))
+        #expect(Set(model.islandListSessions.map(\.id)) == Set(["running", "idle"]))
+        if case let .count(count)? = model.islandClosedRightSlotContent() {
+            #expect(count == 2)
+        } else {
+            Issue.record("Expected a closed-island count with idle sessions enabled")
+        }
+
+        let reloaded = AppModel()
+        reloaded.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+        #expect(reloaded.showIdleSessions)
+    }
+
+    @Test
     func islandSessionListCanSortByLastUpdate() {
         let now = Date()
         let model = AppModel()
-        model.islandSessionSort = .lastUpdate
+        model.updateAppearancePreferences(for: .topBar) {
+            $0.sessionSort = .lastUpdate
+            $0.showIdleSessions = true
+        }
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
 
         var olderRunning = listSession(id: "older-running", phase: .running, updatedAt: now.addingTimeInterval(-120))
         var newerCompleted = listSession(id: "newer-completed", phase: .completed, updatedAt: now.addingTimeInterval(-10))
@@ -375,12 +431,14 @@ struct AppModelSessionListTests {
             $0.sessionGroup = .state
             $0.sessionStateIndicator = .bar
             $0.completedStaleThreshold = .twoMinutes
+            $0.showIdleSessions = false
         }
         model.updateAppearancePreferences(for: .topBar) {
             $0.usageDisplay = .compact
             $0.sessionGroup = .project
             $0.sessionStateIndicator = .tint
             $0.completedStaleThreshold = .never
+            $0.showIdleSessions = true
         }
 
         model.overlayPlacementDiagnostics = placementDiagnostics(mode: .notch)
@@ -388,12 +446,14 @@ struct AppModelSessionListTests {
         #expect(model.islandSessionGroup == .state)
         #expect(model.islandSessionStateIndicator == .bar)
         #expect(model.completedStaleThreshold == .twoMinutes)
+        #expect(!model.showIdleSessions)
 
         model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
         #expect(model.islandUsageDisplay == .compact)
         #expect(model.islandSessionGroup == .project)
         #expect(model.islandSessionStateIndicator == .tint)
         #expect(model.completedStaleThreshold == .never)
+        #expect(model.showIdleSessions)
 
         let reloaded = AppModel()
         reloaded.overlayPlacementDiagnostics = placementDiagnostics(mode: .notch)
@@ -487,6 +547,52 @@ struct AppModelSessionListTests {
         #expect(model.liveSessionCount == 0)
         #expect(model.state.session(id: "recovered-session")?.attachmentState == .stale)
         #expect(model.shouldShowSessionBootstrapPlaceholder)
+    }
+
+    @Test
+    func rolloutMetadataRefreshPreservesKnownCodexConfiguration() {
+        let now = Date()
+        let model = AppModel()
+        model.state = SessionState(sessions: [
+            AgentSession(
+                id: "codex-project-thread",
+                title: "Project task",
+                tool: .codex,
+                origin: .live,
+                attachmentState: .attached,
+                phase: .running,
+                summary: "Working",
+                updatedAt: now,
+                codexMetadata: CodexSessionMetadata(
+                    transcriptPath: "/tmp/rollout.jsonl",
+                    lastUserPrompt: "Original prompt",
+                    model: "gpt-5.6-sol",
+                    reasoningEffort: "xhigh",
+                    serviceTier: "priority"
+                )
+            ),
+        ])
+
+        model.applyTrackedEvent(
+            .sessionMetadataUpdated(
+                SessionMetadataUpdated(
+                    sessionID: "codex-project-thread",
+                    codexMetadata: CodexSessionMetadata(
+                        transcriptPath: "/tmp/rollout.jsonl",
+                        lastUserPrompt: "Updated prompt"
+                    ),
+                    timestamp: now.addingTimeInterval(1)
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .rollout
+        )
+
+        let metadata = model.state.session(id: "codex-project-thread")?.codexMetadata
+        #expect(metadata?.lastUserPrompt == "Updated prompt")
+        #expect(metadata?.model == "gpt-5.6-sol")
+        #expect(metadata?.reasoningEffort == "xhigh")
+        #expect(metadata?.serviceTier == "priority")
     }
 
     @Test

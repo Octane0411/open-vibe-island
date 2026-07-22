@@ -139,6 +139,7 @@ struct AppearanceSettingsPane: View {
             stateIndicatorSection
             sessionGroupSection
             sessionSortSection
+            idleVisibilitySection
             staleThresholdSection
         }
     }
@@ -466,6 +467,30 @@ struct AppearanceSettingsPane: View {
     }
 
     // MARK: - 06 · Done timeout
+
+    @ViewBuilder
+    private var idleVisibilitySection: some View {
+        sectionHeader(
+            title: lang.t("settings.appearance.showIdle.title"),
+            note: lang.t("settings.appearance.showIdle.note")
+        )
+
+        Toggle(
+            lang.t("settings.appearance.showIdle.option"),
+            isOn: Binding(
+                get: { editingPreferences.showIdleSessions },
+                set: { value in
+                    model.updateAppearancePreferences(for: editingProfile) {
+                        $0.showIdleSessions = value
+                    }
+                }
+            )
+        )
+        .toggleStyle(.switch)
+        .tint(V6Palette.paper.opacity(0.85))
+    }
+
+    // MARK: - 07 · Done timeout
 
     @ViewBuilder
     private var staleThresholdSection: some View {

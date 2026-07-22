@@ -93,7 +93,10 @@
 "settings.appearance.sessionSort.note" = "選擇展開列表中的預設排序。";
 "settings.appearance.sessionSort.attention" = "優先級";
 "settings.appearance.sessionSort.lastUpdate" = "最近更新";
-"settings.appearance.staleThreshold.title" = "06 · 完成逾時";
+"settings.appearance.showIdle.title" = "06 · 閒置任務";
+"settings.appearance.showIdle.note" = "關閉後，閒置任務不會出現在清單和頂部統計中。";
+"settings.appearance.showIdle.option" = "顯示閒置任務";
+"settings.appearance.staleThreshold.title" = "07 · 完成逾時";
 "settings.appearance.staleThreshold.note" = "完成會話經過這段時間後會降到低優先級閒置展示。";
 "settings.appearance.staleThreshold.twoMinutes" = "2 分鐘";
 "settings.appearance.staleThreshold.fiveMinutes" = "5 分鐘";

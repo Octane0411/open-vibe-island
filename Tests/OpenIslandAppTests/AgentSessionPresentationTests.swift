@@ -243,6 +243,7 @@ struct AgentSessionPresentationTests {
         #expect(session.spotlightHeadlineText == "Fix Open Island task titles")
         #expect(session.spotlightPromptLineText == "You: Fix the Open Island task title.")
         #expect(session.spotlightTerminalBadge == "5.6 Sol · XHigh · Fast")
+        #expect(session.spotlightCompactTerminalBadge == "5.6 · XH · F")
     }
 
     @Test

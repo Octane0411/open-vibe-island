@@ -119,6 +119,21 @@ extension AgentSession {
         return jumpTarget?.terminalApp
     }
 
+    var spotlightCompactTerminalBadge: String? {
+        guard tool == .codex,
+              isCodexAppSession || jumpTarget?.terminalApp == "Codex.app",
+              let metadata = codexMetadata else {
+            return nil
+        }
+
+        let parts = [
+            metadata.model.flatMap(Self.shortCodexModelName),
+            metadata.reasoningEffort.flatMap(Self.shortCodexEffortName),
+            metadata.serviceTier.flatMap(Self.shortCodexServiceTierName),
+        ].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     private var spotlightCodexConfigurationBadge: String? {
         guard let metadata = codexMetadata else {
             return nil
@@ -169,6 +184,32 @@ extension AgentSession {
         case "fast": return "Fast"
         case "priority": return "Priority"
         default: return trimmed.capitalized
+        }
+    }
+
+    private static func shortCodexModelName(_ value: String) -> String? {
+        guard let compact = compactCodexModelName(value) else { return nil }
+        return compact.split(separator: " ").first.map(String.init)
+    }
+
+    private static func shortCodexEffortName(_ value: String) -> String? {
+        guard let compact = compactCodexEffortName(value) else { return nil }
+        switch compact.lowercased() {
+        case "xhigh": return "XH"
+        case "high": return "H"
+        case "medium": return "M"
+        case "low": return "L"
+        default: return compact
+        }
+    }
+
+    private static func shortCodexServiceTierName(_ value: String) -> String? {
+        guard let compact = compactCodexServiceTierName(value) else { return nil }
+        switch compact.lowercased() {
+        case "priority": return "P"
+        case "fast": return "F"
+        case "standard": return "Std"
+        default: return compact
         }
     }
 

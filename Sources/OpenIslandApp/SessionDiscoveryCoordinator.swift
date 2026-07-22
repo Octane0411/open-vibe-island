@@ -58,6 +58,11 @@ final class SessionDiscoveryCoordinator {
     private let codexRolloutDiscovery = CodexRolloutDiscovery()
 
     @ObservationIgnored
+    var persistedCodexThreadTitles: ((Set<String>) -> [String: String]) = { threadIDs in
+        CodexThreadTitleStore().titles(for: threadIDs)
+    }
+
+    @ObservationIgnored
     private let claudeTranscriptDiscovery = ClaudeTranscriptDiscovery()
 
     @ObservationIgnored
@@ -98,7 +103,16 @@ final class SessionDiscoveryCoordinator {
         let allCursor = (try? cursorSessionRegistry.load()) ?? []
         let cursorRecords = allCursor.filter { $0.updatedAt >= cutoff && $0.shouldRestoreToLiveState }
 
-        let discoveredCodex = codexRolloutDiscovery.discoverRecentSessions()
+        // Every cached record already contains the rollout metadata needed for
+        // its last known state, including records that no longer need to appear
+        // in the live list. Only inspect rollout files absent from the complete
+        // cache so completed 30–200 MB transcripts are not reparsed on launch.
+        let cachedCodexTranscriptPaths = Set(
+            allCodex.compactMap(\.codexMetadata?.transcriptPath)
+        )
+        let discoveredCodex = codexRolloutDiscovery.discoverRecentSessions(
+            excludingTranscriptPaths: cachedCodexTranscriptPaths
+        )
         let discoveredClaude = claudeTranscriptDiscovery.discoverRecentSessions()
 
         return StartupDiscoveryPayload(
@@ -121,6 +135,13 @@ final class SessionDiscoveryCoordinator {
     /// Applies startup discovery results on the main thread after background I/O completes.
     /// Returns the hooksBinaryURL found during startup.
     func applyStartupDiscoveryPayload(_ payload: StartupDiscoveryPayload) {
+        knownCodexTranscriptPaths.formUnion(
+            payload.codexRecords.compactMap(\.codexMetadata?.transcriptPath)
+        )
+        knownCodexTranscriptPaths.formUnion(
+            payload.discoveredCodexRecords.compactMap(\.codexMetadata?.transcriptPath)
+        )
+
         // Prune stale records if needed.
         if payload.codexRecordsNeedPrune {
             try? codexSessionStore.save(payload.codexRecords)
@@ -367,7 +388,16 @@ final class SessionDiscoveryCoordinator {
     private var lastCodexAppRescanDate: Date = .distantPast
 
     @ObservationIgnored
+    private var codexAppRediscoveryTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var knownCodexTranscriptPaths: Set<String> = []
+
+    @ObservationIgnored
     private var lastCodexAppReconcileDate: Date = .distantPast
+
+    @ObservationIgnored
+    private var lastCodexTitleSyncDate: Date = .distantPast
 
     // MARK: - Rollout tracking
 
@@ -375,7 +405,39 @@ final class SessionDiscoveryCoordinator {
     /// re-scan rollouts. Throttled internally; safe to call from the 2s monitor loop.
     func maintainCodexAppSessionsIfNeeded() {
         reconcileStalledCodexAppSessionsIfNeeded()
+        refreshCodexThreadTitlesIfNeeded()
         rediscoverCodexAppSessionsIfNeeded()
+    }
+
+    func refreshCodexThreadTitlesIfNeeded(now: Date = .now) {
+        guard now.timeIntervalSince(lastCodexTitleSyncDate) >= 5 else { return }
+        lastCodexTitleSyncDate = now
+
+        let sessions = state.sessions.filter { $0.tool == .codex && !$0.isSessionEnded }
+        let titles = persistedCodexThreadTitles(Set(sessions.map(\.id)))
+        for session in sessions {
+            // SQLite is only a startup fallback. Once app-server has supplied
+            // the real task name, an older prompt-shaped database title must
+            // never overwrite it on the next maintenance tick.
+            guard shouldReplaceWithPersistedCodexTitle(session.title),
+                  let title = titles[session.id],
+                  title != session.title else { continue }
+            onAgentEvent?(.sessionTitleUpdated(
+                SessionTitleUpdated(
+                    sessionID: session.id,
+                    title: title,
+                    timestamp: now
+                )
+            ))
+        }
+    }
+
+    private func shouldReplaceWithPersistedCodexTitle(_ title: String) -> Bool {
+        let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty
+            || normalized == "Codex"
+            || normalized.hasPrefix("Codex ·")
+            || normalized.contains("<recommended_plugins>")
     }
 
     func refreshCodexRolloutTracking() {
@@ -391,7 +453,10 @@ final class SessionDiscoveryCoordinator {
 
             return CodexRolloutWatchTarget(
                 sessionID: session.id,
-                transcriptPath: transcriptPath
+                transcriptPath: transcriptPath,
+                bootstrapPrompts: session.phase != .completed,
+                cachedInitialUserPrompt: session.codexMetadata?.initialUserPrompt,
+                cachedLastUserPrompt: session.codexMetadata?.lastUserPrompt
             )
         }
 
@@ -421,20 +486,32 @@ final class SessionDiscoveryCoordinator {
     /// once per 10 seconds.
     func rediscoverCodexAppSessionsIfNeeded() {
         let now = Date.now
-        guard now.timeIntervalSince(lastCodexAppRescanDate) >= 10 else { return }
+        guard codexAppRediscoveryTask == nil,
+              now.timeIntervalSince(lastCodexAppRescanDate) >= 10 else { return }
         lastCodexAppRescanDate = now
 
         let discovery = codexRolloutDiscovery
-        Task.detached(priority: .utility) { [weak self] in
-            let discovered = discovery.discoverRecentSessions()
-            guard !discovered.isEmpty else { return }
+        let existingTranscriptPaths = knownCodexTranscriptPaths.union(
+            state.sessions.compactMap(\.codexMetadata?.transcriptPath)
+        )
+        codexAppRediscoveryTask = Task.detached(priority: .utility) { [weak self] in
+            let discovered = discovery.discoverRecentSessions(
+                excludingTranscriptPaths: existingTranscriptPaths
+            )
             await MainActor.run { [weak self] in
-                self?.applyCodexAppRediscovery(discovered)
+                guard let self else { return }
+                self.codexAppRediscoveryTask = nil
+                if !discovered.isEmpty {
+                    self.applyCodexAppRediscovery(discovered)
+                }
             }
         }
     }
 
     private func applyCodexAppRediscovery(_ records: [CodexTrackedSessionRecord]) {
+        knownCodexTranscriptPaths.formUnion(
+            records.compactMap(\.codexMetadata?.transcriptPath)
+        )
         let existingIDs = Set(state.sessions.filter { $0.tool == .codex }.map(\.id))
         let existingPaths = Set(state.sessions.compactMap(\.codexMetadata?.transcriptPath))
 
@@ -500,7 +577,17 @@ final class SessionDiscoveryCoordinator {
         let store = codexSessionStore
 
         codexSessionPersistenceTask = Self.persistenceTask {
-            try store.save(records)
+            let cutoff = Date.now.addingTimeInterval(-86_400)
+            let existing = ((try? store.load()) ?? []).filter {
+                $0.updatedAt >= cutoff && $0.shouldRestoreToLiveState
+            }
+            var recordsByID = Dictionary(
+                uniqueKeysWithValues: existing.map { ($0.sessionID, $0) }
+            )
+            for record in records {
+                recordsByID[record.sessionID] = record
+            }
+            try store.save(Array(recordsByID.values))
         }
     }
 

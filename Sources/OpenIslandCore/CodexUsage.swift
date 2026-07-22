@@ -135,29 +135,60 @@ public enum CodexUsageLoader {
     }
 
     private static func loadLatestSnapshot(from fileURL: URL, modifiedAt: Date) -> CodexUsageSnapshot? {
-        guard let contents = try? String(contentsOf: fileURL, encoding: .utf8) else {
+        guard let fileHandle = try? FileHandle(forReadingFrom: fileURL) else {
             return nil
         }
+        defer { try? fileHandle.close() }
 
-        var latestPreferredSnapshot: CodexUsageSnapshot?
-        var latestFallbackSnapshot: CodexUsageSnapshot?
-        contents.enumerateLines { line, _ in
-            guard let snapshot = snapshot(
-                from: line,
-                filePath: fileURL.path,
-                fallbackTimestamp: modifiedAt
-            ) else {
-                return
+        do {
+            let chunkSize: UInt64 = 1_024 * 1_024
+            var offset = try fileHandle.seekToEnd()
+            var newerLinePrefix = Data()
+            var newestFallbackSnapshot: CodexUsageSnapshot?
+
+            while offset > 0 {
+                let readStart = offset > chunkSize ? offset - chunkSize : 0
+                try fileHandle.seek(toOffset: readStart)
+                var data = try fileHandle.read(upToCount: Int(offset - readStart)) ?? Data()
+                data.append(newerLinePrefix)
+
+                let completeLineData: Data
+                if readStart > 0 {
+                    guard let firstNewline = data.firstIndex(of: UInt8(ascii: "\n")) else {
+                        newerLinePrefix = data
+                        offset = readStart
+                        continue
+                    }
+                    newerLinePrefix = Data(data[..<firstNewline])
+                    completeLineData = Data(data[data.index(after: firstNewline)...])
+                } else {
+                    completeLineData = data
+                }
+
+                if let contents = String(data: completeLineData, encoding: .utf8) {
+                    for line in contents.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
+                        guard let snapshot = snapshot(
+                            from: String(line),
+                            filePath: fileURL.path,
+                            fallbackTimestamp: modifiedAt
+                        ) else {
+                            continue
+                        }
+
+                        if snapshot.limitID == primaryLimitID {
+                            return snapshot
+                        }
+                        newestFallbackSnapshot = newestFallbackSnapshot ?? snapshot
+                    }
+                }
+
+                offset = readStart
             }
 
-            if snapshot.limitID == primaryLimitID {
-                latestPreferredSnapshot = snapshot
-            } else {
-                latestFallbackSnapshot = snapshot
-            }
+            return newestFallbackSnapshot
+        } catch {
+            return nil
         }
-
-        return latestPreferredSnapshot ?? latestFallbackSnapshot
     }
 
     private static func snapshot(
