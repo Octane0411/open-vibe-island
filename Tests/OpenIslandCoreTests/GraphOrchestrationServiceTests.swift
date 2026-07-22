@@ -474,6 +474,51 @@ final class GraphOrchestrationServiceTests: XCTestCase {
         }
     }
 
+    func testLongRunningAttemptRenewsLeaseWithNextFencingGeneration()
+        async throws
+    {
+        let script = GraphDeterministicExecutionScript(
+            attempts: [
+                GraphDeterministicAttemptScript(
+                    nodeID: "architect",
+                    attemptOrdinal: 1,
+                    terminalOutcome: .remainRunning
+                ),
+            ]
+        )
+        let context = try await OrchestrationContext.make(script: script)
+        _ = try await context.service.step(
+            GraphOrchestrationStepRequest(
+                runID: "run",
+                logicalTime: graphTestTime
+            )
+        )
+
+        let renewed = try await context.service.step(
+            GraphOrchestrationStepRequest(
+                runID: "run",
+                logicalTime: graphTestTime.addingTimeInterval(31)
+            )
+        )
+        let projection = try await context.projection()
+        let claim = try XCTUnwrap(
+            projection.scheduling.activeClaim(
+                nodeID: "architect",
+                at: graphTestTime.addingTimeInterval(31)
+            )
+        )
+
+        XCTAssertEqual(renewed.executorOperation, .observe)
+        XCTAssertEqual(renewed.executorStatus, .stillRunning)
+        XCTAssertEqual(claim.leaseGeneration, 2)
+        XCTAssertTrue(
+            projection.scheduling.records.contains {
+                $0.eventType == GraphExecutionEventType
+                    .executorLeaseRenewed.rawValue
+            }
+        )
+    }
+
     func testSQLiteProcessRestartResumesSameGraphWithoutDuplicateStart()
         async throws
     {

@@ -467,7 +467,7 @@ public struct DefaultGraphOrchestrationService:
             current = try await load(request.runID)
         }
 
-        guard let claim else {
+        guard var claim else {
             return report(
                 loaded: current,
                 initialVersion: initial.version,
@@ -477,6 +477,39 @@ public struct DefaultGraphOrchestrationService:
                 persistedCount: persisted,
                 denials: schedulingDenials(current.projection)
             )
+        }
+        if shouldRenew(
+            claim: claim,
+            logicalTime: request.logicalTime,
+            leaseDurationSeconds: definition.schedulerPolicy
+                .defaultLeaseDurationSeconds
+        ) {
+            let renewed = try await schedulingRepository.renewLease(
+                GraphExecutorLeaseRenewalRequest(
+                    runID: request.runID,
+                    claimID: claim.id,
+                    executorID: claim.executorID,
+                    expectedGeneration: claim.leaseGeneration,
+                    expectedVersion: current.version,
+                    logicalTime: request.logicalTime,
+                    leaseDurationSeconds: definition.schedulerPolicy
+                        .defaultLeaseDurationSeconds,
+                    producer: producer,
+                    recordedAt: request.logicalTime
+                )
+            )
+            persisted += renewed.appendResult.appendedCount
+            current = try await load(request.runID)
+            guard let renewedClaim = current.projection.scheduling
+                .activeClaim(
+                    nodeID: claim.nodeID,
+                    at: request.logicalTime
+                ) else {
+                throw GraphOrchestrationError.persistence(
+                    "renewed executor claim is not active."
+                )
+            }
+            claim = renewedClaim
         }
         let execution = try executionContext(
             claim: claim,
@@ -1165,6 +1198,16 @@ public struct DefaultGraphOrchestrationService:
         projection.scheduling.cancellations.filter {
             $0.state == .requested && $0.claimID == nil
         }.sorted { $0.id < $1.id }.first
+    }
+
+    private func shouldRenew(
+        claim: GraphExecutorClaim,
+        logicalTime: Date,
+        leaseDurationSeconds: UInt64
+    ) -> Bool {
+        let remaining = claim.leaseExpiry.timeIntervalSince(logicalTime)
+        return remaining > 0
+            && remaining <= TimeInterval(leaseDurationSeconds) / 2
     }
 
     private func timeoutKind(
