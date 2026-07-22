@@ -128,6 +128,99 @@ final class GraphWorkspaceTests: XCTestCase {
 
         XCTAssertEqual(viewModel.inspection?.graphDefinitionDigest, digest)
     }
+
+    func testDocumentLifecycleTracksDirtySaveReopenAndRecentDocuments()
+        async throws
+    {
+        let fixture = try WorkspaceTestFixture()
+        let viewModel = fixture.viewModel()
+        viewModel.newDocument(
+            request: GraphNewDocumentRequest(
+                name: "Authored Graph",
+                graphID: "authored-graph",
+                definitionVersion: "1",
+                description: "Lifecycle test",
+                workspaceDirectory: fixture.root.path
+            )
+        )
+
+        XCTAssertTrue(viewModel.isDirty)
+        XCTAssertEqual(viewModel.document?.name, "Authored Graph")
+        let url = fixture.root.appendingPathComponent("authored.openisland-graph.json")
+        await viewModel.saveDocument(url: url)
+        XCTAssertFalse(viewModel.isDirty)
+        XCTAssertEqual(viewModel.recentDocumentURLs.first, url)
+
+        viewModel.addNode()
+        XCTAssertTrue(viewModel.isDirty)
+        await viewModel.revertDocument()
+        XCTAssertFalse(viewModel.isDirty)
+        XCTAssertEqual(viewModel.document?.nodes.count, 0)
+
+        let restarted = fixture.viewModel()
+        await restarted.openDocument(url: url)
+        XCTAssertEqual(restarted.document?.graphID, "authored-graph")
+        XCTAssertFalse(restarted.isDirty)
+        XCTAssertEqual(restarted.recentDocumentURLs.first, url)
+    }
+
+    func testExternalModificationPreventsSilentOverwrite() async throws {
+        let fixture = try WorkspaceTestFixture()
+        let viewModel = fixture.viewModel()
+        viewModel.newDocument()
+        let url = fixture.root.appendingPathComponent("conflict.json")
+        await viewModel.saveDocument(url: url)
+        viewModel.addNode()
+        try Data("external-change".utf8).write(to: url, options: .atomic)
+
+        await viewModel.refreshExternalModificationState()
+        XCTAssertTrue(viewModel.hasExternalModification)
+        await viewModel.saveDocument()
+
+        XCTAssertEqual(viewModel.lastCommandResult?.reasonCode, "definition_save_failed")
+        XCTAssertTrue(viewModel.isDirty)
+        XCTAssertEqual(try Data(contentsOf: url), Data("external-change".utf8))
+    }
+
+    func testUnsavedCloseSupportsCancelAndDiscard() async throws {
+        let fixture = try WorkspaceTestFixture()
+        let viewModel = fixture.viewModel()
+        viewModel.newDocument()
+
+        viewModel.requestCloseDocument()
+        XCTAssertEqual(viewModel.closeState, .confirmationRequired)
+        await viewModel.resolveCloseDocument(.cancel)
+        XCTAssertNotNil(viewModel.document)
+        XCTAssertEqual(viewModel.closeState, .idle)
+
+        viewModel.requestCloseDocument()
+        await viewModel.resolveCloseDocument(.discard)
+        XCTAssertNil(viewModel.document)
+        XCTAssertFalse(viewModel.isDirty)
+    }
+
+    func testAuthoringUndoRedoAndDefinitionDraftVersioning() async throws {
+        let fixture = try WorkspaceTestFixture()
+        let viewModel = fixture.viewModel()
+        viewModel.newDocument()
+        viewModel.addNode()
+        XCTAssertEqual(viewModel.document?.nodes.count, 1)
+        viewModel.undo()
+        XCTAssertEqual(viewModel.document?.nodes.count, 0)
+        viewModel.redo()
+        XCTAssertEqual(viewModel.document?.nodes.count, 1)
+
+        await viewModel.createRun()
+        XCTAssertEqual(viewModel.associatedRunCount, 1)
+        viewModel.updateSelectedNode(name: "Renamed", description: "")
+        XCTAssertTrue(viewModel.isDraft)
+        XCTAssertEqual(viewModel.document?.nodes.first?.id, "node-1")
+
+        viewModel.createNewDefinitionVersion()
+        XCTAssertEqual(viewModel.document?.definitionVersion, "2")
+        XCTAssertFalse(viewModel.isDraft)
+        XCTAssertEqual(viewModel.associatedRunCount, 0)
+    }
 }
 
 private struct WorkspaceTestFixture {

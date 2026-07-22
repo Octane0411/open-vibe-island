@@ -32,6 +32,7 @@ struct GraphWorkspaceWindowContent: View {
 struct GraphWorkspaceView: View {
     @Bindable var viewModel: GraphWorkspaceViewModel
     @State private var canvasZoom = 1.0
+    @State private var isShowingNewGraph = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -69,6 +70,31 @@ struct GraphWorkspaceView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Graph Workspace")
+        .sheet(isPresented: $isShowingNewGraph) {
+            GraphNewDocumentSheet { request in
+                viewModel.newDocument(request: request)
+                isShowingNewGraph = false
+            } onCancel: {
+                isShowingNewGraph = false
+            }
+        }
+        .confirmationDialog(
+            "Save changes before closing?",
+            isPresented: Binding(
+                get: { viewModel.closeState == .confirmationRequired },
+                set: { if !$0 { viewModel.closeState = .idle } }
+            )
+        ) {
+            Button("Save") {
+                GraphWorkspaceFilePanels.saveAndCloseDefinition(viewModel)
+            }
+            Button("Don't Save", role: .destructive) {
+                Task { await viewModel.resolveCloseDocument(.discard) }
+            }
+            Button("Cancel", role: .cancel) {
+                Task { await viewModel.resolveCloseDocument(.cancel) }
+            }
+        }
     }
 
     private var workspaceToolbar: some View {
@@ -86,6 +112,17 @@ struct GraphWorkspaceView: View {
             Text(viewModel.document?.name ?? "Graph Workspace")
                 .font(.headline)
                 .lineLimit(1)
+            if viewModel.isDirty {
+                Text("Edited")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Document has unsaved changes")
+            }
+            if viewModel.isDraft {
+                Text("Draft")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.orange)
+            }
 
             Spacer()
 
@@ -104,37 +141,82 @@ struct GraphWorkspaceView: View {
 
     private var definitionToolbar: some View {
         HStack(spacing: 6) {
-            iconButton("doc.badge.plus", help: "New Graph") {
-                viewModel.newDocument()
+            Button {
+                isShowingNewGraph = true
+            } label: {
+                Label("New Graph", systemImage: "doc.badge.plus")
             }
-            iconButton("folder", help: "Open Graph Definition") {
+            .keyboardShortcut("n", modifiers: [.command])
+            .help("Create a blank graph or start from a template")
+
+            Button {
                 GraphWorkspaceFilePanels.openDefinition(viewModel)
+            } label: {
+                Label("Open Graph", systemImage: "folder")
             }
-            iconButton("books.vertical", help: "Open Compendium Example") {
-                viewModel.openBundledCompendium()
-            }
-            iconButton("square.and.arrow.down", help: "Save Graph Definition") {
+            .keyboardShortcut("o", modifiers: [.command])
+
+            Button {
                 GraphWorkspaceFilePanels.saveDefinition(viewModel)
+            } label: {
+                Label("Save", systemImage: "square.and.arrow.down")
             }
-            iconButton("checkmark.seal", help: "Validate Graph") {
+            .disabled(viewModel.document == nil)
+            .keyboardShortcut("s", modifiers: [.command])
+
+            Menu {
+                Button("Save As") {
+                    GraphWorkspaceFilePanels.saveAsDefinition(viewModel)
+                }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+                Button("Revert to Saved") {
+                    Task { await viewModel.revertDocument() }
+                }
+                .disabled(viewModel.documentURL == nil)
+                Divider()
+                Button("Close Graph") { viewModel.requestCloseDocument() }
+                    .disabled(viewModel.document == nil)
+            } label: {
+                Label("Document", systemImage: "ellipsis.circle")
+            }
+
+            Button {
                 viewModel.validateDocument()
+            } label: {
+                Label("Validate", systemImage: "checkmark.seal")
             }
-            iconButton("plus", help: "Add Node") { viewModel.addNode() }
-            iconButton("arrow.triangle.branch", help: "Connect Selected Nodes") {
-                viewModel.connectSelectedNodes()
+            .disabled(viewModel.document == nil)
+            .keyboardShortcut("v", modifiers: [.command, .shift])
+
+            Menu {
+                Button("Add Node") { viewModel.addNode() }
+                    .keyboardShortcut("n", modifiers: [.command, .shift])
+                Button("Connect Selected Nodes") {
+                    viewModel.connectSelectedNodes()
+                }
+                .disabled(viewModel.selectedNodeIDs.count != 2)
+                Divider()
+                Button("Undo") { viewModel.undo() }
+                    .disabled(!viewModel.canUndo)
+                    .keyboardShortcut("z", modifiers: [.command])
+                Button("Redo") { viewModel.redo() }
+                    .disabled(!viewModel.canRedo)
+                    .keyboardShortcut("z", modifiers: [.command, .shift])
+                Divider()
+                Button("Auto Layout") { viewModel.automaticLayout() }
+                Button("Delete Selection", role: .destructive) {
+                    viewModel.deleteSelection()
+                }
+                .disabled(viewModel.selectedNodeIDs.isEmpty)
+            } label: {
+                Label("Edit", systemImage: "slider.horizontal.3")
             }
-            .disabled(viewModel.selectedNodeIDs.count != 2)
-            iconButton("wand.and.stars", help: "Automatic Layout") {
-                viewModel.automaticLayout()
-            }
-            iconButton("trash", help: "Delete Selection", role: .destructive) {
-                viewModel.deleteSelection()
-            }
-            .disabled(viewModel.selectedNodeIDs.isEmpty)
             Button("Create Run") { Task { await viewModel.createRun() } }
                 .buttonStyle(.borderedProminent)
                 .disabled(!viewModel.decision(.createRun).isEnabled)
+                .keyboardShortcut("r", modifiers: [.command, .shift])
         }
+        .controlSize(.small)
     }
 
     private var runToolbar: some View {
@@ -251,15 +333,27 @@ struct GraphWorkspaceView: View {
 
     @ViewBuilder
     private var workspaceContent: some View {
-        switch viewModel.mode {
-        case .definition, .run:
-            GraphCanvasView(
-                viewModel: viewModel,
-                zoom: $canvasZoom,
-                isEditable: viewModel.mode == .definition
+        if viewModel.document == nil && viewModel.mode == .definition {
+            GraphWorkspaceEmptyState(
+                recentURLs: viewModel.recentDocumentURLs,
+                onNew: { isShowingNewGraph = true },
+                onOpen: { GraphWorkspaceFilePanels.openDefinition(viewModel) },
+                onOpenRecent: { url in
+                    Task { await viewModel.openDocument(url: url) }
+                },
+                onOpenExample: { viewModel.openBundledCompendium() }
             )
-        case .history:
-            GraphHistoryView(viewModel: viewModel)
+        } else {
+            switch viewModel.mode {
+            case .definition, .run:
+                GraphCanvasView(
+                    viewModel: viewModel,
+                    zoom: $canvasZoom,
+                    isEditable: viewModel.mode == .definition
+                )
+            case .history:
+                GraphHistoryView(viewModel: viewModel)
+            }
         }
     }
 
@@ -338,6 +432,108 @@ struct GraphWorkspaceView: View {
         case .run: "play.rectangle"
         case .history: "clock.arrow.circlepath"
         }
+    }
+}
+
+private struct GraphWorkspaceEmptyState: View {
+    let recentURLs: [URL]
+    let onNew: () -> Void
+    let onOpen: () -> Void
+    let onOpenRecent: (URL) -> Void
+    let onOpenExample: () -> Void
+
+    var body: some View {
+        ContentUnavailableView {
+            Label(
+                "Build an Executable Graph",
+                systemImage: "point.3.connected.trianglepath.dotted"
+            )
+        } description: {
+            Text("Create a graph, add executable nodes, connect dependencies, validate, and run it here.")
+        } actions: {
+            HStack {
+                Button("Create New Graph", action: onNew)
+                    .buttonStyle(.borderedProminent)
+                Button("Open Existing Graph", action: onOpen)
+                Menu("Open Recent Graph") {
+                    if recentURLs.isEmpty {
+                        Text("No Recent Graphs")
+                    } else {
+                        ForEach(recentURLs, id: \.path) { url in
+                            Button(url.lastPathComponent) { onOpenRecent(url) }
+                        }
+                    }
+                }
+                Button("Open Example Graph", action: onOpenExample)
+            }
+        }
+        .accessibilityLabel("Empty Graph Workspace")
+    }
+}
+
+private struct GraphNewDocumentSheet: View {
+    @State private var request = GraphNewDocumentRequest.defaults()
+    let onCreate: (GraphNewDocumentRequest) -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("New Graph").font(.title2.weight(.semibold))
+            Form {
+                Section("Identity") {
+                    TextField("Graph Name", text: $request.name)
+                        .accessibilityHint("The name shown in the workspace and run summary")
+                    TextField("Stable Graph ID", text: $request.graphID)
+                    TextField("Definition Version", text: $request.definitionVersion)
+                    TextField("Description", text: $request.description, axis: .vertical)
+                        .lineLimit(2...4)
+                }
+                Section("Execution Defaults") {
+                    Picker("Default Executor", selection: $request.defaultExecutorKind) {
+                        Text("Supervised Local Process")
+                            .tag(GraphLocalProcessSpecification.adapterKind)
+                        Text("Deterministic Test").tag("deterministic")
+                    }
+                    Stepper(
+                        "Maximum Attempts: \(request.defaultRetryMaximumAttempts)",
+                        value: $request.defaultRetryMaximumAttempts,
+                        in: 1...20
+                    )
+                    Stepper(
+                        "Execution Timeout: \(request.defaultExecutionTimeoutSeconds)s",
+                        value: $request.defaultExecutionTimeoutSeconds,
+                        in: 1...86_400
+                    )
+                    HStack {
+                        LabeledContent(
+                            "Workspace",
+                            value: request.workspaceDirectory ?? "Not selected"
+                        )
+                        Button("Choose") {
+                            request.workspaceDirectory = GraphWorkspaceFilePanels
+                                .chooseDirectory()?.path
+                        }
+                    }
+                }
+            }
+            .formStyle(.grouped)
+            HStack {
+                Spacer()
+                Button("Cancel", action: onCancel)
+                    .keyboardShortcut(.cancelAction)
+                Button("Create Graph") { onCreate(request) }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(
+                        request.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || request.graphID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || request.definitionVersion.isEmpty
+                    )
+            }
+        }
+        .padding(20)
+        .frame(width: 560, height: 600)
+        .accessibilityLabel("New Graph Configuration")
     }
 }
 
@@ -982,6 +1178,37 @@ enum GraphWorkspaceFilePanels {
         panel.nameFieldStringValue = "\(viewModel.document?.graphID ?? "graph").openisland-graph.json"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Task { await viewModel.saveDocument(url: url) }
+    }
+
+    static func saveAsDefinition(_ viewModel: GraphWorkspaceViewModel) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "\(viewModel.document?.graphID ?? "graph").openisland-graph.json"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task { await viewModel.saveAsDocument(url: url) }
+    }
+
+    static func saveAndCloseDefinition(_ viewModel: GraphWorkspaceViewModel) {
+        if viewModel.documentURL != nil {
+            Task { await viewModel.resolveCloseDocument(.save) }
+            return
+        }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "\(viewModel.document?.graphID ?? "graph").openisland-graph.json"
+        guard panel.runModal() == .OK, let url = panel.url else {
+            Task { await viewModel.resolveCloseDocument(.cancel) }
+            return
+        }
+        Task { await viewModel.resolveCloseDocument(.save, saveURL: url) }
+    }
+
+    static func chooseDirectory() -> URL? {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        return panel.runModal() == .OK ? panel.url : nil
     }
 
     static func exportRun(_ viewModel: GraphWorkspaceViewModel) {

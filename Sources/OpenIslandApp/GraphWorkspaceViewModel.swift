@@ -159,17 +159,29 @@ final class GraphWorkspaceViewModel {
     static let lastDocumentPathKey = "graph.workspace.lastDocumentPath"
     static let lastRunIDKey = "graph.workspace.lastRunID"
     static let lastModeKey = "graph.workspace.lastMode"
+    static let recentDocumentPathsKey = "graph.workspace.recentDocumentPaths"
 
     var mode: GraphWorkspaceMode = .definition {
         didSet { defaults.set(mode.rawValue, forKey: Self.lastModeKey) }
     }
     var document: GraphDefinitionDocument?
     var documentURL: URL?
+    var documentFileState: GraphDocumentFileState?
+    var lastSavedDocument: GraphDefinitionDocument?
+    var recentDocumentURLs: [URL] = []
+    var closeState: GraphDocumentCloseState = .idle
+    var hasExternalModification = false
+    var associatedRunCount = 0
+    var isDraft = false
+    var defaultNodeWorkspaceDirectory: String?
+    var defaultNodeTimeoutSeconds: UInt64 = 300
+    var defaultNodeExecutorKind = GraphLocalProcessSpecification.adapterKind
     var inspection: GraphRunInspection?
     var runs: [GraphRunInspectionSummary] = []
     var history: GraphInspectionEventPage?
     var explanation: GraphCausalExplanation?
     var selectedNodeIDs: Set<String> = []
+    var selectedEdgeID: String?
     var logPage: GraphProcessLogPage?
     var selectedLogChannel: GraphProcessLogChannel = .stdout
     var isFollowingLogs = true
@@ -185,6 +197,9 @@ final class GraphWorkspaceViewModel {
     @ObservationIgnored private var orchestrationTask: Task<Void, Never>?
     @ObservationIgnored private var refreshGeneration: UInt64 = 0
     @ObservationIgnored private var hasStarted = false
+    @ObservationIgnored private var undoSnapshots: [GraphAuthoringUndoSnapshot] = []
+    @ObservationIgnored private var redoSnapshots: [GraphAuthoringUndoSnapshot] = []
+    @ObservationIgnored private var undoCoalescingKey: String?
 
     init(
         service: any GraphWorkspaceServicing,
@@ -196,6 +211,9 @@ final class GraphWorkspaceViewModel {
            let restored = GraphWorkspaceMode(rawValue: raw) {
             mode = restored
         }
+        recentDocumentURLs = defaults.stringArray(
+            forKey: Self.recentDocumentPathsKey
+        )?.map(URL.init(fileURLWithPath:)) ?? []
     }
 
     deinit {
@@ -204,6 +222,12 @@ final class GraphWorkspaceViewModel {
     }
 
     var selectedNodeID: String? { selectedNodeIDs.sorted().first }
+    var isDirty: Bool {
+        guard let document else { return false }
+        return document != lastSavedDocument
+    }
+    var canUndo: Bool { !undoSnapshots.isEmpty }
+    var canRedo: Bool { !redoSnapshots.isEmpty }
 
     func start() {
         guard !hasStarted else { return }
@@ -244,15 +268,46 @@ final class GraphWorkspaceViewModel {
         )
     }
 
-    func newDocument() {
+    func newDocument(
+        request: GraphNewDocumentRequest = .defaults()
+    ) {
         pauseOrchestration()
-        let newDocument = GraphDefinitionDocument.empty()
+        var newDocument = GraphDefinitionDocument.empty(graphID: request.graphID)
+        newDocument.name = request.name
+        newDocument.definitionVersion = request.definitionVersion
+        newDocument.description = request.description
+        newDocument.schedulerPolicy = GraphSchedulerPolicy(
+            policyID: "\(request.graphID)-policy",
+            version: request.definitionVersion,
+            retryPolicy: GraphRetryPolicy(
+                maximumAttempts: request.defaultRetryMaximumAttempts,
+                retryableFailureCategories: [
+                    "execution_failure",
+                    "process_exit_unobserved",
+                    "timeout",
+                ],
+                nonRetryableFailureCategories: [
+                    "artifact_collection_failure",
+                    "invalid_process_specification",
+                ]
+            )
+        )
+        defaultNodeWorkspaceDirectory = request.workspaceDirectory
+        defaultNodeTimeoutSeconds = request.defaultExecutionTimeoutSeconds
+        defaultNodeExecutorKind = request.defaultExecutorKind
         document = newDocument
         documentURL = nil
+        documentFileState = nil
+        lastSavedDocument = nil
+        hasExternalModification = false
+        associatedRunCount = 0
+        isDraft = false
         inspection = nil
         history = nil
         explanation = nil
         selectedNodeIDs = []
+        selectedEdgeID = nil
+        resetUndoHistory()
         mode = .definition
         defaults.removeObject(forKey: Self.lastDocumentPathKey)
         defaults.removeObject(forKey: Self.lastRunIDKey)
@@ -262,11 +317,23 @@ final class GraphWorkspaceViewModel {
     func openDocument(url: URL) async {
         do {
             let loaded = try await service.loadDocument(url: url)
+            let fileState = try await service.documentFileState(url: url)
             document = loaded
             documentURL = url
+            documentFileState = fileState
+            lastSavedDocument = loaded
+            hasExternalModification = false
+            associatedRunCount = try await service.associatedRunCount(
+                graphID: loaded.graphID,
+                definitionVersion: loaded.definitionVersion
+            )
+            isDraft = false
             selectedNodeIDs = Set(loaded.nodes.first.map { [$0.id] } ?? [])
+            selectedEdgeID = nil
+            resetUndoHistory()
             mode = .definition
             defaults.set(url.path, forKey: Self.lastDocumentPathKey)
+            recordRecentDocument(url)
             acceptedLocalAction("definition_opened")
         } catch {
             rejectLocalAction("definition_open_failed", error)
@@ -278,7 +345,13 @@ final class GraphWorkspaceViewModel {
             let loaded = try GraphWorkspaceBundledFixtures.loadCompendium()
             document = loaded
             documentURL = nil
+            documentFileState = nil
+            lastSavedDocument = nil
+            associatedRunCount = 0
+            isDraft = false
             selectedNodeIDs = Set(loaded.nodes.first.map { [$0.id] } ?? [])
+            selectedEdgeID = nil
+            resetUndoHistory()
             mode = .definition
             acceptedLocalAction("compendium_definition_opened")
         } catch {
@@ -300,13 +373,104 @@ final class GraphWorkspaceViewModel {
             )
         }
         do {
-            try await service.saveDocument(document, url: destination)
+            let expectedDigest = destination == documentURL
+                ? documentFileState?.contentDigest : nil
+            let savedState = try await service.saveDocument(
+                document,
+                url: destination,
+                expectedContentDigest: expectedDigest
+            )
             documentURL = destination
+            documentFileState = savedState
+            lastSavedDocument = document
+            hasExternalModification = false
             defaults.set(destination.path, forKey: Self.lastDocumentPathKey)
+            recordRecentDocument(destination)
             acceptedLocalAction("definition_saved")
         } catch {
             rejectLocalAction("definition_save_failed", error)
         }
+    }
+
+    func saveAsDocument(url: URL) async {
+        await saveDocument(url: url)
+    }
+
+    func refreshExternalModificationState() async {
+        guard let documentURL, let documentFileState else {
+            hasExternalModification = false
+            return
+        }
+        do {
+            hasExternalModification = try await service.documentFileState(
+                url: documentURL
+            ).contentDigest != documentFileState.contentDigest
+        } catch {
+            hasExternalModification = true
+        }
+    }
+
+    func revertDocument() async {
+        guard let documentURL else { return }
+        await openDocument(url: documentURL)
+        if errorMessage == nil {
+            acceptedLocalAction("definition_reverted")
+        }
+    }
+
+    func requestCloseDocument() {
+        if isDirty {
+            closeState = .confirmationRequired
+        } else {
+            closeDocumentDiscardingChanges()
+        }
+    }
+
+    func resolveCloseDocument(
+        _ choice: GraphUnsavedCloseChoice,
+        saveURL: URL? = nil
+    ) async {
+        switch choice {
+        case .save:
+            await saveDocument(url: saveURL)
+            if !isDirty { closeDocumentDiscardingChanges() }
+        case .discard:
+            closeDocumentDiscardingChanges()
+        case .cancel:
+            closeState = .idle
+        }
+    }
+
+    func createNewDefinitionVersion() {
+        guard var document else { return }
+        registerUndo(coalescingKey: nil)
+        document.definitionVersion = GraphDefinitionVersioning.nextVersion(
+            after: document.definitionVersion
+        )
+        document.metadata.modifiedAt = Date()
+        document.metadata.modifiedBy = NSUserName()
+        self.document = document
+        associatedRunCount = 0
+        isDraft = false
+        acceptedLocalAction("definition_version_created")
+    }
+
+    func undo() {
+        guard let snapshot = undoSnapshots.popLast(),
+              let current = authoringSnapshot else { return }
+        redoSnapshots.append(current)
+        restore(snapshot)
+        undoCoalescingKey = nil
+        acceptedLocalAction("authoring_undo")
+    }
+
+    func redo() {
+        guard let snapshot = redoSnapshots.popLast(),
+              let current = authoringSnapshot else { return }
+        undoSnapshots.append(current)
+        restore(snapshot)
+        undoCoalescingKey = nil
+        acceptedLocalAction("authoring_redo")
     }
 
     func validateDocument() {
@@ -320,6 +484,7 @@ final class GraphWorkspaceViewModel {
 
     func addNode() {
         guard var document else { return }
+        registerUndo(coalescingKey: nil)
         let existing = Set(document.nodes.map(\.id))
         var ordinal = document.nodes.count + 1
         var nodeID = "node-\(ordinal)"
@@ -338,10 +503,11 @@ final class GraphWorkspaceViewModel {
                     requiredCapabilities: ["local-process"],
                     specification: try specification.immutableSpecification(),
                     workspace: GraphExecutionWorkspaceContext(
-                        root: FileManager.default.currentDirectoryPath
+                        root: defaultNodeWorkspaceDirectory
+                            ?? FileManager.default.currentDirectoryPath
                     ),
                     timeoutPolicy: GraphExecutionTimeoutPolicy(
-                        executionSeconds: 300,
+                        executionSeconds: defaultNodeTimeoutSeconds,
                         cancellationAcknowledgementSeconds: 10
                     )
                 ),
@@ -354,7 +520,9 @@ final class GraphWorkspaceViewModel {
                 modifiedBy: NSUserName()
             )
             self.document = document
+            markSemanticMutation()
             selectedNodeIDs = [nodeID]
+            selectedEdgeID = nil
             acceptedLocalAction("node_added", nodeIDs: [nodeID])
         } catch {
             rejectLocalAction("node_add_rejected", error)
@@ -363,6 +531,7 @@ final class GraphWorkspaceViewModel {
 
     func updateSelectedNode(name: String, description: String) {
         guard var document, let nodeID = selectedNodeID else { return }
+        registerUndo(coalescingKey: "identity:\(nodeID)")
         do {
             try GraphDefinitionDocumentEditor.renameNode(
                 id: nodeID,
@@ -373,6 +542,7 @@ final class GraphWorkspaceViewModel {
                 modifiedBy: NSUserName()
             )
             self.document = document
+            markSemanticMutation()
         } catch {
             rejectLocalAction("node_edit_rejected", error)
         }
@@ -387,6 +557,7 @@ final class GraphWorkspaceViewModel {
               let index = document.nodes.firstIndex(where: {
                   $0.id == nodeID
               }) else { return }
+        registerUndo(coalescingKey: "execution:\(nodeID)")
         document.nodes[index].requiredCapabilities = capabilities.sorted()
         document.nodes[index].timeoutPolicy = GraphExecutionTimeoutPolicy(
             executionSeconds: executionSeconds,
@@ -398,6 +569,7 @@ final class GraphWorkspaceViewModel {
         do {
             try document.validate()
             self.document = document
+            markSemanticMutation()
         } catch {
             rejectLocalAction("node_execution_edit_rejected", error)
         }
@@ -405,6 +577,7 @@ final class GraphWorkspaceViewModel {
 
     func deleteSelection() {
         guard var document, !selectedNodeIDs.isEmpty else { return }
+        registerUndo(coalescingKey: nil)
         do {
             for nodeID in selectedNodeIDs.sorted() {
                 try GraphDefinitionDocumentEditor.removeNode(
@@ -416,7 +589,9 @@ final class GraphWorkspaceViewModel {
             }
             let removed = selectedNodeIDs.sorted()
             selectedNodeIDs = []
+            selectedEdgeID = nil
             self.document = document
+            markSemanticMutation()
             acceptedLocalAction("selection_deleted", nodeIDs: removed)
         } catch {
             rejectLocalAction("selection_delete_rejected", error)
@@ -425,6 +600,7 @@ final class GraphWorkspaceViewModel {
 
     func connectSelectedNodes() {
         guard var document, selectedNodeIDs.count == 2 else { return }
+        registerUndo(coalescingKey: nil)
         let ordered = selectedNodeIDs.sorted()
         do {
             try GraphDefinitionDocumentEditor.addEdge(
@@ -437,6 +613,7 @@ final class GraphWorkspaceViewModel {
                 modifiedBy: NSUserName()
             )
             self.document = document
+            markSemanticMutation()
             acceptedLocalAction("dependency_added", nodeIDs: ordered)
         } catch {
             rejectLocalAction("dependency_add_rejected", error)
@@ -445,6 +622,7 @@ final class GraphWorkspaceViewModel {
 
     func removeEdge(_ edgeID: String) {
         guard var document else { return }
+        registerUndo(coalescingKey: nil)
         do {
             try GraphDefinitionDocumentEditor.removeEdge(
                 id: edgeID,
@@ -453,6 +631,8 @@ final class GraphWorkspaceViewModel {
                 modifiedBy: NSUserName()
             )
             self.document = document
+            selectedEdgeID = nil
+            markSemanticMutation()
             acceptedLocalAction("dependency_removed")
         } catch {
             rejectLocalAction("dependency_remove_rejected", error)
@@ -461,6 +641,7 @@ final class GraphWorkspaceViewModel {
 
     func moveNode(_ nodeID: String, to position: GraphCanvasPoint) {
         guard var document else { return }
+        registerUndo(coalescingKey: "move:\(nodeID)")
         do {
             try GraphDefinitionDocumentEditor.setPosition(
                 nodeID: nodeID,
@@ -477,6 +658,7 @@ final class GraphWorkspaceViewModel {
 
     func automaticLayout() {
         guard var document else { return }
+        registerUndo(coalescingKey: nil)
         do {
             try GraphDefinitionDocumentEditor.applyAutomaticLayout(
                 to: &document,
@@ -491,6 +673,8 @@ final class GraphWorkspaceViewModel {
     }
 
     func selectNode(_ nodeID: String, extending: Bool = false) {
+        undoCoalescingKey = nil
+        selectedEdgeID = nil
         if extending {
             if selectedNodeIDs.contains(nodeID) {
                 selectedNodeIDs.remove(nodeID)
@@ -516,6 +700,8 @@ final class GraphWorkspaceViewModel {
         )
         apply(result)
         if result.accepted {
+            associatedRunCount += 1
+            isDraft = false
             defaults.set(runID, forKey: Self.lastRunIDKey)
             mode = .run
             await refreshRunAndHistory()
@@ -724,7 +910,9 @@ final class GraphWorkspaceViewModel {
            FileManager.default.fileExists(atPath: path) {
             await openDocument(url: URL(fileURLWithPath: path))
         } else {
-            document = GraphDefinitionDocument.empty()
+            document = nil
+            lastSavedDocument = nil
+            documentFileState = nil
         }
         await refreshRunAndHistory()
         if inspection != nil {
@@ -767,6 +955,73 @@ final class GraphWorkspaceViewModel {
                 nodeIDs: [selectedNodeID].compactMap { $0 },
                 diagnostic: "Command rejected: \(decision.reasonCode)"
             )
+        )
+    }
+
+    private var authoringSnapshot: GraphAuthoringUndoSnapshot? {
+        guard let document else { return nil }
+        return GraphAuthoringUndoSnapshot(
+            document: document,
+            selectedNodeIDs: selectedNodeIDs,
+            selectedEdgeID: selectedEdgeID
+        )
+    }
+
+    private func registerUndo(coalescingKey: String?) {
+        guard let snapshot = authoringSnapshot else { return }
+        if let coalescingKey, undoCoalescingKey == coalescingKey {
+            return
+        }
+        undoSnapshots.append(snapshot)
+        if undoSnapshots.count > 200 {
+            undoSnapshots.removeFirst(undoSnapshots.count - 200)
+        }
+        redoSnapshots.removeAll()
+        undoCoalescingKey = coalescingKey
+    }
+
+    private func restore(_ snapshot: GraphAuthoringUndoSnapshot) {
+        document = snapshot.document
+        selectedNodeIDs = snapshot.selectedNodeIDs
+        selectedEdgeID = snapshot.selectedEdgeID
+        isDraft = associatedRunCount > 0
+    }
+
+    private func resetUndoHistory() {
+        undoSnapshots.removeAll()
+        redoSnapshots.removeAll()
+        undoCoalescingKey = nil
+    }
+
+    private func markSemanticMutation() {
+        if associatedRunCount > 0 { isDraft = true }
+    }
+
+    private func closeDocumentDiscardingChanges() {
+        pauseOrchestration()
+        document = nil
+        documentURL = nil
+        documentFileState = nil
+        lastSavedDocument = nil
+        hasExternalModification = false
+        associatedRunCount = 0
+        isDraft = false
+        selectedNodeIDs = []
+        selectedEdgeID = nil
+        closeState = .idle
+        resetUndoHistory()
+        defaults.removeObject(forKey: Self.lastDocumentPathKey)
+        mode = .definition
+        acceptedLocalAction("definition_closed")
+    }
+
+    private func recordRecentDocument(_ url: URL) {
+        recentDocumentURLs.removeAll { $0.standardizedFileURL == url.standardizedFileURL }
+        recentDocumentURLs.insert(url.standardizedFileURL, at: 0)
+        recentDocumentURLs = Array(recentDocumentURLs.prefix(10))
+        defaults.set(
+            recentDocumentURLs.map(\.path),
+            forKey: Self.recentDocumentPathsKey
         )
     }
 }

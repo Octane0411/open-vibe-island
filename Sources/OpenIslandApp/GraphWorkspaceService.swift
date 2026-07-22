@@ -38,7 +38,14 @@ struct GraphWorkspaceCommandResult: Equatable, Codable, Sendable {
 protocol GraphWorkspaceServicing: Sendable {
     func revisions() async -> AsyncStream<UInt64>
     func loadDocument(url: URL) async throws -> GraphDefinitionDocument
-    func saveDocument(_ document: GraphDefinitionDocument, url: URL) async throws
+    func documentFileState(url: URL) async throws -> GraphDocumentFileState
+    func saveDocument(
+        _ document: GraphDefinitionDocument,
+        url: URL,
+        expectedContentDigest: String?
+    ) async throws -> GraphDocumentFileState
+    func associatedRunCount(graphID: String, definitionVersion: String) async
+        throws -> Int
     func createRun(
         document: GraphDefinitionDocument,
         runID: String,
@@ -157,11 +164,47 @@ actor GraphWorkspaceService: GraphWorkspaceServicing {
         try GraphDefinitionDocumentCodec.load(url: url)
     }
 
+    func documentFileState(url: URL) throws -> GraphDocumentFileState {
+        let data = try Data(contentsOf: url)
+        let values = try url.resourceValues(forKeys: [.contentModificationDateKey])
+        return GraphDocumentFileState(
+            data: data,
+            modificationDate: values.contentModificationDate
+        )
+    }
+
     func saveDocument(
         _ document: GraphDefinitionDocument,
-        url: URL
-    ) throws {
+        url: URL,
+        expectedContentDigest: String?
+    ) throws -> GraphDocumentFileState {
+        if let expectedContentDigest,
+           FileManager.default.fileExists(atPath: url.path),
+           try documentFileState(url: url).contentDigest != expectedContentDigest {
+            throw GraphDocumentStoreError.externallyModified(url)
+        }
         try GraphDefinitionDocumentCodec.save(document, to: url)
+        return try documentFileState(url: url)
+    }
+
+    func associatedRunCount(
+        graphID: String,
+        definitionVersion: String
+    ) async throws -> Int {
+        let summaries = try await inspector.listRuns(state: nil, limit: 250)
+            .filter { $0.graphID == graphID }
+        var count = 0
+        for summary in summaries {
+            let run = try await inspector.inspect(
+                runID: summary.runID,
+                includeArtifacts: false,
+                includeDiagnostics: false
+            )
+            if run.graphDefinitionVersion == definitionVersion {
+                count += 1
+            }
+        }
+        return count
     }
 
     func createRun(
@@ -471,7 +514,9 @@ actor UnavailableGraphWorkspaceService: GraphWorkspaceServicing {
     }
 
     func loadDocument(url: URL) throws -> GraphDefinitionDocument { throw error }
-    func saveDocument(_ document: GraphDefinitionDocument, url: URL) throws { throw error }
+    func documentFileState(url: URL) throws -> GraphDocumentFileState { throw error }
+    func saveDocument(_ document: GraphDefinitionDocument, url: URL, expectedContentDigest: String?) throws -> GraphDocumentFileState { throw error }
+    func associatedRunCount(graphID: String, definitionVersion: String) throws -> Int { throw error }
     func createRun(document: GraphDefinitionDocument, runID: String, occurredAt: Date) -> GraphWorkspaceCommandResult { rejected(runID) }
     func startRun(runID: String, occurredAt: Date) -> GraphWorkspaceCommandResult { rejected(runID) }
     func step(runID: String, occurredAt: Date) -> GraphWorkspaceCommandResult { rejected(runID) }
