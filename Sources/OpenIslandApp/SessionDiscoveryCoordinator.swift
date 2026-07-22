@@ -319,15 +319,31 @@ final class SessionDiscoveryCoordinator {
             return existing.isEmpty ? nil : existing
         }
 
+        let existingInitialPrompt = existing.initialUserPrompt
+        let shouldReplaceInitialPrompt = existingInitialPrompt.map(Self.isInjectedCodexPromptPreview) ?? false
+        let initialUserPrompt = shouldReplaceInitialPrompt
+            ? discovered.initialUserPrompt ?? discovered.lastUserPrompt ?? existingInitialPrompt
+            : existingInitialPrompt ?? discovered.initialUserPrompt ?? discovered.lastUserPrompt
+
         let merged = CodexSessionMetadata(
             transcriptPath: discovered.transcriptPath ?? existing.transcriptPath,
-            initialUserPrompt: existing.initialUserPrompt ?? discovered.initialUserPrompt ?? discovered.lastUserPrompt,
+            initialUserPrompt: initialUserPrompt,
             lastUserPrompt: discovered.lastUserPrompt ?? existing.lastUserPrompt,
             lastAssistantMessage: discovered.lastAssistantMessage ?? existing.lastAssistantMessage,
             currentTool: discovered.currentTool ?? existing.currentTool,
             currentCommandPreview: discovered.currentCommandPreview ?? existing.currentCommandPreview
         )
         return merged.isEmpty ? nil : merged
+    }
+
+    private static func isInjectedCodexPromptPreview(_ prompt: String) -> Bool {
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.hasPrefix("<recommended_plugins>")
+            || trimmed.hasPrefix("# AGENTS.md instructions")
+            || trimmed.hasPrefix("# Files mentioned by the user:")
+            || trimmed.hasPrefix("# Chrome tabs:")
+            || trimmed.hasPrefix("## Referenced chats with Codex:")
+            || trimmed.hasPrefix("<image name=")
     }
 
     private func mergeClaudeMetadata(

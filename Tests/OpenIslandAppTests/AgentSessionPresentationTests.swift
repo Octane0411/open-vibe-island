@@ -214,6 +214,31 @@ struct AgentSessionPresentationTests {
     }
 
     @Test
+    func headlineOmitsRootWorkspacePlaceholderWhenPromptExists() {
+        let session = AgentSession(
+            id: "codex-root-session",
+            title: "Codex · /",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Working",
+            updatedAt: Date(timeIntervalSince1970: 10_000),
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "/",
+                paneTitle: "Codex",
+                workingDirectory: "/"
+            ),
+            codexMetadata: CodexSessionMetadata(
+                initialUserPrompt: "Fix the session headline."
+            )
+        )
+
+        #expect(session.spotlightHeadlineText == "Fix the session headline.")
+    }
+
+    @Test
     func detachedSessionHeadlineShowsInitialPrompt() {
         let session = AgentSession(
             id: "session-1",

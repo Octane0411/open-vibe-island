@@ -883,6 +883,79 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func mergeDiscoveredCodexSessionsReplacesInjectedCachedInitialPromptOnly() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "wrapped-codex-session",
+                    title: "Codex · /",
+                    tool: .codex,
+                    origin: .live,
+                    attachmentState: .stale,
+                    phase: .completed,
+                    summary: "Recovered from cache",
+                    updatedAt: now.addingTimeInterval(-60),
+                    codexMetadata: CodexSessionMetadata(
+                        initialUserPrompt: "# Files mentioned by the user: ## screenshot.png: /tmp/screenshot.png",
+                        lastUserPrompt: "# Chrome tabs: - Current URL: https://example.com"
+                    )
+                ),
+                AgentSession(
+                    id: "valid-codex-session",
+                    title: "Codex · project",
+                    tool: .codex,
+                    origin: .live,
+                    attachmentState: .stale,
+                    phase: .completed,
+                    summary: "Recovered from cache",
+                    updatedAt: now.addingTimeInterval(-60),
+                    codexMetadata: CodexSessionMetadata(
+                        initialUserPrompt: "Keep this valid cached topic."
+                    )
+                ),
+            ]
+        )
+
+        let merged = model.discovery.mergeDiscoveredSessions([
+            AgentSession(
+                id: "wrapped-codex-session",
+                title: "Codex · /",
+                tool: .codex,
+                origin: .live,
+                attachmentState: .stale,
+                phase: .completed,
+                summary: "Recovered from rollout",
+                updatedAt: now,
+                codexMetadata: CodexSessionMetadata(
+                    initialUserPrompt: "Fix the session headline.",
+                    lastUserPrompt: "The headline still looks wrong."
+                )
+            ),
+            AgentSession(
+                id: "valid-codex-session",
+                title: "Codex · project",
+                tool: .codex,
+                origin: .live,
+                attachmentState: .stale,
+                phase: .completed,
+                summary: "Recovered from rollout",
+                updatedAt: now,
+                codexMetadata: CodexSessionMetadata(
+                    initialUserPrompt: "Do not replace the cached topic."
+                )
+            ),
+        ])
+
+        let wrapped = merged.first(where: { $0.id == "wrapped-codex-session" })
+        let valid = merged.first(where: { $0.id == "valid-codex-session" })
+        #expect(wrapped?.codexMetadata?.initialUserPrompt == "Fix the session headline.")
+        #expect(wrapped?.codexMetadata?.lastUserPrompt == "The headline still looks wrong.")
+        #expect(valid?.codexMetadata?.initialUserPrompt == "Keep this valid cached topic.")
+    }
+
+    @Test
     func mergedWithSyntheticClaudeSessionsAddsGhosttyClaudeProcessWhenNoTrackedSessionExists() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
