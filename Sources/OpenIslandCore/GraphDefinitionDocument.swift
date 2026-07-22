@@ -350,19 +350,99 @@ public struct GraphDefinitionEdge:
     Sendable,
     Identifiable
 {
-    public var id: String { "\(sourceNodeID)->\(targetNodeID):\(portType.rawValue)" }
-    public let sourceNodeID: String
-    public let targetNodeID: String
-    public let portType: GraphDefinitionPortType
+    public var id: String { edgeID }
+    public let edgeID: String
+    public var sourceNodeID: String
+    public var targetNodeID: String
+    public var portType: GraphDefinitionPortType
+    public var sourceOutputID: String?
+    public var targetInputID: String?
+    public var isRequired: Bool
 
     public init(
+        edgeID: String? = nil,
         sourceNodeID: String,
         targetNodeID: String,
-        portType: GraphDefinitionPortType = .dependency
+        portType: GraphDefinitionPortType = .dependency,
+        sourceOutputID: String? = nil,
+        targetInputID: String? = nil,
+        isRequired: Bool = true
     ) {
+        self.edgeID = edgeID ?? Self.stableID(
+            sourceNodeID: sourceNodeID,
+            targetNodeID: targetNodeID,
+            portType: portType,
+            sourceOutputID: sourceOutputID,
+            targetInputID: targetInputID
+        )
         self.sourceNodeID = sourceNodeID
         self.targetNodeID = targetNodeID
         self.portType = portType
+        self.sourceOutputID = sourceOutputID
+        self.targetInputID = targetInputID
+        self.isRequired = isRequired
+    }
+
+    private static func stableID(
+        sourceNodeID: String,
+        targetNodeID: String,
+        portType: GraphDefinitionPortType,
+        sourceOutputID: String?,
+        targetInputID: String?
+    ) -> String {
+        [
+            sourceNodeID,
+            targetNodeID,
+            portType.rawValue,
+            sourceOutputID ?? "none",
+            targetInputID ?? "none",
+        ].joined(separator: "->")
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case edgeID
+        case sourceNodeID
+        case targetNodeID
+        case portType
+        case sourceOutputID
+        case targetInputID
+        case isRequired
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            edgeID: try container.decodeIfPresent(String.self, forKey: .edgeID),
+            sourceNodeID: try container.decode(String.self, forKey: .sourceNodeID),
+            targetNodeID: try container.decode(String.self, forKey: .targetNodeID),
+            portType: try container.decodeIfPresent(
+                GraphDefinitionPortType.self,
+                forKey: .portType
+            ) ?? .dependency,
+            sourceOutputID: try container.decodeIfPresent(
+                String.self,
+                forKey: .sourceOutputID
+            ),
+            targetInputID: try container.decodeIfPresent(
+                String.self,
+                forKey: .targetInputID
+            ),
+            isRequired: try container.decodeIfPresent(
+                Bool.self,
+                forKey: .isRequired
+            ) ?? true
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(edgeID, forKey: .edgeID)
+        try container.encode(sourceNodeID, forKey: .sourceNodeID)
+        try container.encode(targetNodeID, forKey: .targetNodeID)
+        try container.encode(portType, forKey: .portType)
+        try container.encodeIfPresent(sourceOutputID, forKey: .sourceOutputID)
+        try container.encodeIfPresent(targetInputID, forKey: .targetInputID)
+        try container.encode(isRequired, forKey: .isRequired)
     }
 }
 

@@ -352,6 +352,137 @@ final class GraphWorkspaceTests: XCTestCase {
         viewModel.redo()
         XCTAssertEqual(viewModel.selectedNode?.timeoutPolicy.executionSeconds, 45)
     }
+
+    func testTypedArtifactConnectionBindsStablePortsAndSupportsUndoDelete()
+        throws
+    {
+        let fixture = try WorkspaceTestFixture()
+        let viewModel = fixture.viewModel()
+        viewModel.newDocument()
+        viewModel.addNode(type: .localProcess)
+        let sourceID = try XCTUnwrap(viewModel.selectedNodeID)
+        viewModel.addSelectedNodeOutput()
+        var output = try XCTUnwrap(viewModel.selectedNode?.outputs.first)
+        output.mediaType = "application/json"
+        viewModel.updateSelectedNodeOutput(output)
+
+        viewModel.addNode(type: .localProcess)
+        let targetID = try XCTUnwrap(viewModel.selectedNodeID)
+        viewModel.addSelectedNodeInput()
+        var input = try XCTUnwrap(viewModel.selectedNode?.inputs.first)
+        input.mediaType = "application/json"
+        viewModel.updateSelectedNodeInput(input)
+
+        let decision = viewModel.connectNodes(
+            sourceNodeID: sourceID,
+            targetNodeID: targetID,
+            portType: .artifact,
+            sourceOutputID: output.id,
+            targetInputID: input.id
+        )
+
+        XCTAssertTrue(decision.isAllowed)
+        let edge = try XCTUnwrap(viewModel.selectedEdge)
+        XCTAssertEqual(edge.sourceOutputID, output.id)
+        XCTAssertEqual(edge.targetInputID, input.id)
+        let target = try XCTUnwrap(viewModel.document?.nodes.first {
+            $0.id == targetID
+        })
+        XCTAssertEqual(target.inputs.first?.binding?.sourceNodeID, sourceID)
+        XCTAssertEqual(target.inputs.first?.binding?.sourceOutputID, output.id)
+        XCTAssertEqual(target.inputArtifactRoles, [output.role])
+
+        var optionalEdge = edge
+        optionalEdge.isRequired = false
+        viewModel.updateSelectedEdge(optionalEdge)
+        XCTAssertEqual(viewModel.selectedEdge?.isRequired, false)
+
+        let duplicate = viewModel.connectNodes(
+            sourceNodeID: sourceID,
+            targetNodeID: targetID,
+            portType: .artifact,
+            sourceOutputID: output.id,
+            targetInputID: input.id
+        )
+        XCTAssertEqual(duplicate.rejection, .duplicateEdge)
+
+        viewModel.undo()
+        XCTAssertEqual(viewModel.selectedEdge?.isRequired, true)
+        viewModel.undo()
+        XCTAssertTrue(viewModel.document?.edges.isEmpty == true)
+        viewModel.redo()
+        XCTAssertEqual(viewModel.document?.edges.count, 1)
+        viewModel.selectEdge(try XCTUnwrap(viewModel.document?.edges.first?.id))
+        viewModel.deleteSelection()
+        XCTAssertTrue(viewModel.document?.edges.isEmpty == true)
+    }
+
+    func testConnectionPathsRejectSelfCycleVisualAndMediaMismatch() throws {
+        let fixture = try WorkspaceTestFixture()
+        let viewModel = fixture.viewModel()
+        viewModel.newDocument()
+        viewModel.addNode(type: .localProcess)
+        let first = try XCTUnwrap(viewModel.selectedNodeID)
+        viewModel.addSelectedNodeOutput()
+        let output = try XCTUnwrap(viewModel.selectedNode?.outputs.first)
+        viewModel.addNode(type: .localProcess)
+        let second = try XCTUnwrap(viewModel.selectedNodeID)
+        viewModel.addSelectedNodeInput()
+        var input = try XCTUnwrap(viewModel.selectedNode?.inputs.first)
+        input.mediaType = "text/plain"
+        viewModel.updateSelectedNodeInput(input)
+
+        XCTAssertEqual(
+            viewModel.connectNodes(sourceNodeID: first, targetNodeID: first)
+                .rejection,
+            .selfEdge
+        )
+        XCTAssertEqual(
+            viewModel.connectNodes(
+                sourceNodeID: first,
+                targetNodeID: second,
+                portType: .artifact,
+                sourceOutputID: output.id,
+                targetInputID: input.id
+            ).rejection,
+            .incompatibleMediaType
+        )
+        XCTAssertTrue(
+            viewModel.connectNodes(sourceNodeID: first, targetNodeID: second)
+                .isAllowed
+        )
+        XCTAssertEqual(
+            viewModel.connectNodes(sourceNodeID: second, targetNodeID: first)
+                .rejection,
+            .cycle
+        )
+
+        viewModel.addNode(type: .annotation)
+        let annotation = try XCTUnwrap(viewModel.selectedNodeID)
+        XCTAssertEqual(
+            viewModel.connectNodes(sourceNodeID: annotation, targetNodeID: first)
+                .rejection,
+            .nonExecutableDependency
+        )
+    }
+
+    func testKeyboardDependencyWorkflowUsesSameValidatedConnectionPath() throws {
+        let fixture = try WorkspaceTestFixture()
+        let viewModel = fixture.viewModel()
+        viewModel.newDocument()
+        viewModel.addNode(type: .localProcess)
+        let source = try XCTUnwrap(viewModel.selectedNodeID)
+        viewModel.addNode(type: .localProcess)
+        let target = try XCTUnwrap(viewModel.selectedNodeID)
+
+        viewModel.beginDependencyCreation(from: source)
+        viewModel.completeDependencyCreation(to: target)
+
+        XCTAssertNil(viewModel.dependencySourceNodeID)
+        XCTAssertEqual(viewModel.document?.edges.count, 1)
+        XCTAssertEqual(viewModel.selectedEdge?.sourceNodeID, source)
+        XCTAssertEqual(viewModel.selectedEdge?.targetNodeID, target)
+    }
 }
 
 private struct WorkspaceTestFixture {

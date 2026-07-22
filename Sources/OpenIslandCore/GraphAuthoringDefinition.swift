@@ -262,3 +262,136 @@ public struct GraphDefinitionOutput:
         self.sourceOutputID = sourceOutputID
     }
 }
+
+public enum GraphConnectionRejection: String, Codable, Sendable {
+    case sourceMissing = "source_missing"
+    case targetMissing = "target_missing"
+    case selfEdge = "self_edge"
+    case duplicateEdge = "duplicate_edge"
+    case cycle
+    case nonExecutableDependency = "non_executable_dependency"
+    case sourcePortMissing = "source_port_missing"
+    case targetPortMissing = "target_port_missing"
+    case incompatiblePortType = "incompatible_port_type"
+    case incompatibleMediaType = "incompatible_media_type"
+    case multipleProvidersNotAllowed = "multiple_providers_not_allowed"
+}
+
+public struct GraphConnectionDecision: Equatable, Sendable {
+    public let isAllowed: Bool
+    public let rejection: GraphConnectionRejection?
+    public let message: String
+
+    public static let allowed = GraphConnectionDecision(
+        isAllowed: true,
+        rejection: nil,
+        message: "Connection is valid."
+    )
+
+    public static func rejected(
+        _ rejection: GraphConnectionRejection,
+        _ message: String
+    ) -> GraphConnectionDecision {
+        GraphConnectionDecision(
+            isAllowed: false,
+            rejection: rejection,
+            message: message
+        )
+    }
+}
+
+public enum GraphConnectionEvaluator {
+    public static func evaluate(
+        document: GraphDefinitionDocument,
+        sourceNodeID: String,
+        targetNodeID: String,
+        portType: GraphDefinitionPortType,
+        sourceOutputID: String? = nil,
+        targetInputID: String? = nil
+    ) -> GraphConnectionDecision {
+        guard let source = document.nodes.first(where: { $0.id == sourceNodeID }) else {
+            return .rejected(.sourceMissing, "The source node no longer exists.")
+        }
+        guard let target = document.nodes.first(where: { $0.id == targetNodeID }) else {
+            return .rejected(.targetMissing, "The target node no longer exists.")
+        }
+        guard sourceNodeID != targetNodeID else {
+            return .rejected(.selfEdge, "A node cannot depend on itself.")
+        }
+        guard !document.edges.contains(where: {
+            $0.sourceNodeID == sourceNodeID
+                && $0.targetNodeID == targetNodeID
+                && $0.portType == portType
+                && $0.sourceOutputID == sourceOutputID
+                && $0.targetInputID == targetInputID
+        }) else {
+            return .rejected(.duplicateEdge, "This connection already exists.")
+        }
+        if portType == .dependency {
+            guard source.nodeType.isExecutable, target.nodeType.isExecutable else {
+                return .rejected(
+                    .nonExecutableDependency,
+                    "Reference and annotation nodes cannot enter execution dependencies."
+                )
+            }
+        } else {
+            guard let sourceOutputID,
+                  let output = source.outputs.first(where: { $0.id == sourceOutputID }) else {
+                return .rejected(.sourcePortMissing, "Choose a declared source output.")
+            }
+            guard let targetInputID,
+                  let input = target.inputs.first(where: { $0.id == targetInputID }) else {
+                return .rejected(.targetPortMissing, "Choose a declared target input.")
+            }
+            guard output.portType == portType, input.portType == portType else {
+                return .rejected(
+                    .incompatiblePortType,
+                    "The selected ports do not both use \(portType.rawValue)."
+                )
+            }
+            if portType == .artifact,
+               !mediaTypesAreCompatible(output.mediaType, input.mediaType) {
+                return .rejected(
+                    .incompatibleMediaType,
+                    "Output \(output.mediaType) cannot bind to input \(input.mediaType)."
+                )
+            }
+            if !input.allowsMultiple,
+               document.edges.contains(where: {
+                   $0.targetNodeID == targetNodeID
+                       && $0.targetInputID == targetInputID
+               }) {
+                return .rejected(
+                    .multipleProvidersNotAllowed,
+                    "The target input accepts only one provider."
+                )
+            }
+        }
+
+        var candidate = document
+        candidate.edges.append(
+            GraphDefinitionEdge(
+                sourceNodeID: sourceNodeID,
+                targetNodeID: targetNodeID,
+                portType: portType,
+                sourceOutputID: sourceOutputID,
+                targetInputID: targetInputID
+            )
+        )
+        guard candidate.topologicalNodeIDs() != nil else {
+            return .rejected(.cycle, "This connection would create a cycle.")
+        }
+        return .allowed
+    }
+
+    private static func mediaTypesAreCompatible(
+        _ source: String,
+        _ target: String
+    ) -> Bool {
+        source == target
+            || source == "application/octet-stream"
+            || target == "application/octet-stream"
+            || source == "*/*"
+            || target == "*/*"
+    }
+}

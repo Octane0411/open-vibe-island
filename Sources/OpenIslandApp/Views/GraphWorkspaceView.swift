@@ -215,7 +215,10 @@ struct GraphWorkspaceView: View {
                 Button("Delete Selection", role: .destructive) {
                     viewModel.deleteSelection()
                 }
-                .disabled(viewModel.selectedNodeIDs.isEmpty)
+                .disabled(
+                    viewModel.selectedNodeIDs.isEmpty
+                        && viewModel.selectedEdgeID == nil
+                )
             } label: {
                 Label("Edit", systemImage: "slider.horizontal.3")
             }
@@ -550,6 +553,8 @@ private struct GraphCanvasView: View {
     @Binding var zoom: Double
     let isEditable: Bool
     @State private var dragOrigins: [String: GraphCanvasPoint] = [:]
+    @State private var connectionDragSource: String?
+    @State private var connectionDragType: GraphDefinitionPortType = .dependency
 
     private let canvasSize = CGSize(width: 1_800, height: 1_200)
     private let origin = CGPoint(x: 180, y: 180)
@@ -587,7 +592,14 @@ private struct GraphCanvasView: View {
                         GraphEdgeCanvas(
                             document: document,
                             origin: origin,
-                            nodeSize: GraphNodeView.nodeSize
+                            nodeSize: GraphNodeView.nodeSize,
+                            selectedEdgeID: viewModel.selectedEdgeID
+                        )
+                        GraphEdgeSelectionOverlay(
+                            document: document,
+                            origin: origin,
+                            nodeSize: GraphNodeView.nodeSize,
+                            onSelect: viewModel.selectEdge
                         )
                         ForEach(document.nodes) { node in
                             let position = document.layout.position(nodeID: node.id)
@@ -601,11 +613,22 @@ private struct GraphCanvasView: View {
                                     .filter { $0.nodeID == node.id }
                                     .map(\.ordinal).max(),
                                 selected: viewModel.selectedNodeIDs.contains(node.id),
+                                connectionTargetHighlight: connectionTargetHighlight(
+                                    nodeID: node.id
+                                ),
                                 isEditable: isEditable,
                                 onSelect: { extending in
                                     viewModel.selectNode(node.id, extending: extending)
                                 },
-                                onDelete: { viewModel.deleteSelection() }
+                                onDelete: { viewModel.deleteSelection() },
+                                onConnectionDrag: { portType, phase in
+                                    handleConnectionDrag(
+                                        sourceNodeID: node.id,
+                                        portType: portType,
+                                        phase: phase,
+                                        document: document
+                                    )
+                                }
                             )
                             .position(
                                 x: origin.x + position.x
@@ -634,6 +657,7 @@ private struct GraphCanvasView: View {
                         }
                     }
                     .frame(width: canvasSize.width, height: canvasSize.height)
+                    .coordinateSpace(name: "graphCanvas")
                     .contentShape(Rectangle())
                     .onTapGesture { viewModel.selectCanvas() }
                     .contextMenu {
@@ -658,6 +682,10 @@ private struct GraphCanvasView: View {
                 .onDeleteCommand {
                     if isEditable { viewModel.deleteSelection() }
                 }
+                .onExitCommand {
+                    connectionDragSource = nil
+                    viewModel.cancelDependencyCreation()
+                }
             } else {
                 ContentUnavailableView {
                     Label(
@@ -680,12 +708,60 @@ private struct GraphCanvasView: View {
         }
         .accessibilityLabel("Graph canvas")
     }
+
+    private func connectionTargetHighlight(nodeID: String) -> Bool {
+        guard let source = connectionDragSource, source != nodeID else {
+            return false
+        }
+        return viewModel.canConnect(
+            sourceNodeID: source,
+            targetNodeID: nodeID,
+            portType: connectionDragType
+        ).isAllowed
+    }
+
+    private func handleConnectionDrag(
+        sourceNodeID: String,
+        portType: GraphDefinitionPortType,
+        phase: GraphConnectionDragPhase,
+        document: GraphDefinitionDocument
+    ) {
+        switch phase {
+        case .changed:
+            connectionDragSource = sourceNodeID
+            connectionDragType = portType
+        case let .ended(point):
+            let target = document.nodes.first { node in
+                guard node.id != sourceNodeID,
+                      let position = document.layout.position(nodeID: node.id) else {
+                    return false
+                }
+                return CGRect(
+                    x: origin.x + position.x,
+                    y: origin.y + position.y,
+                    width: GraphNodeView.nodeSize.width,
+                    height: GraphNodeView.nodeSize.height
+                ).contains(point)
+            }
+            if let target {
+                _ = viewModel.connectNodes(
+                    sourceNodeID: sourceNodeID,
+                    targetNodeID: target.id,
+                    portType: portType
+                )
+            } else {
+                viewModel.connectionGuidance = "Drop the connection on a highlighted node."
+            }
+            connectionDragSource = nil
+        }
+    }
 }
 
 private struct GraphEdgeCanvas: View {
     let document: GraphDefinitionDocument
     let origin: CGPoint
     let nodeSize: CGSize
+    let selectedEdgeID: String?
 
     var body: some View {
         Canvas { context, _ in
@@ -713,8 +789,11 @@ private struct GraphEdgeCanvas: View {
                 )
                 context.stroke(
                     path,
-                    with: .color(.secondary.opacity(0.65)),
-                    lineWidth: 1.5
+                    with: .color(
+                        edge.id == selectedEdgeID
+                            ? .accentColor : .secondary.opacity(0.65)
+                    ),
+                    lineWidth: edge.id == selectedEdgeID ? 3 : 1.5
                 )
                 var arrow = Path()
                 arrow.move(to: end)
@@ -729,6 +808,44 @@ private struct GraphEdgeCanvas: View {
     }
 }
 
+private struct GraphEdgeSelectionOverlay: View {
+    let document: GraphDefinitionDocument
+    let origin: CGPoint
+    let nodeSize: CGSize
+    let onSelect: (String) -> Void
+
+    var body: some View {
+        ForEach(document.edges) { edge in
+            if let source = document.layout.position(nodeID: edge.sourceNodeID),
+               let target = document.layout.position(nodeID: edge.targetNodeID) {
+                Button {
+                    onSelect(edge.id)
+                } label: {
+                    Image(systemName: edge.portType == .artifact ? "shippingbox" : "arrow.right")
+                        .font(.caption2)
+                        .frame(width: 24, height: 20)
+                }
+                .buttonStyle(.borderless)
+                .background(Color(nsColor: .controlBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .position(
+                    x: origin.x + (source.x + target.x + nodeSize.width) / 2,
+                    y: origin.y + (source.y + target.y + nodeSize.height) / 2
+                )
+                .help("Select \(edge.portType.rawValue) connection")
+                .accessibilityLabel(
+                    "Connection from \(edge.sourceNodeID) to \(edge.targetNodeID)"
+                )
+            }
+        }
+    }
+}
+
+private enum GraphConnectionDragPhase {
+    case changed(CGPoint)
+    case ended(CGPoint)
+}
+
 private struct GraphNodeView: View {
     static let nodeSize = CGSize(width: 210, height: 94)
 
@@ -736,9 +853,11 @@ private struct GraphNodeView: View {
     let state: ReconciledExecutionState?
     let attemptOrdinal: Int?
     let selected: Bool
+    let connectionTargetHighlight: Bool
     let isEditable: Bool
     let onSelect: (Bool) -> Void
     let onDelete: () -> Void
+    let onConnectionDrag: (GraphDefinitionPortType, GraphConnectionDragPhase) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
@@ -754,7 +873,11 @@ private struct GraphNodeView: View {
         .background(Color(nsColor: .controlBackgroundColor))
         .overlay {
             RoundedRectangle(cornerRadius: 6)
-                .stroke(selected ? Color.accentColor : Color.secondary.opacity(0.35), lineWidth: selected ? 2 : 1)
+                .stroke(
+                    selected || connectionTargetHighlight
+                        ? Color.accentColor : Color.secondary.opacity(0.35),
+                    lineWidth: selected || connectionTargetHighlight ? 2 : 1
+                )
         }
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle())
@@ -810,7 +933,29 @@ private struct GraphNodeView: View {
                 .fill(Color.accentColor)
                 .frame(width: 8, height: 8)
                 .accessibilityLabel("Dependency output port")
+                .gesture(connectionGesture(.dependency))
+            if node.outputs.contains(where: { $0.portType == .artifact }) {
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 8, height: 8)
+                    .accessibilityLabel("Artifact output port")
+                    .gesture(connectionGesture(.artifact))
+            }
         }
+    }
+
+    private func connectionGesture(
+        _ portType: GraphDefinitionPortType
+    ) -> some Gesture {
+        DragGesture(minimumDistance: 4, coordinateSpace: .named("graphCanvas"))
+            .onChanged { value in
+                guard isEditable else { return }
+                onConnectionDrag(portType, .changed(value.location))
+            }
+            .onEnded { value in
+                guard isEditable else { return }
+                onConnectionDrag(portType, .ended(value.location))
+            }
     }
 }
 
@@ -841,7 +986,9 @@ private struct GraphDefinitionInspector: View {
 
     var body: some View {
         Form {
-            if let node = selectedNode {
+            if selectedEdge != nil {
+                edgeInspector
+            } else if let node = selectedNode {
                 Section("Identity") {
                     LabeledContent("Stable ID", value: node.id)
                     TextField(
@@ -918,10 +1065,23 @@ private struct GraphDefinitionInspector: View {
                             .accessibilityLabel("Remove dependency")
                         }
                     }
-                    Button("Add Dependency") {
-                        viewModel.connectSelectedNodes()
+                    Button(
+                        viewModel.dependencySourceNodeID == nil
+                            ? "Use as Dependency Source"
+                            : "Connect from \(viewModel.dependencySourceNodeID ?? "")"
+                    ) {
+                        if viewModel.dependencySourceNodeID == nil {
+                            viewModel.beginDependencyCreation(from: node.id)
+                        } else {
+                            viewModel.completeDependencyCreation(to: node.id)
+                        }
                     }
-                    .disabled(viewModel.selectedNodeIDs.count != 2)
+                    .keyboardShortcut("d", modifiers: [.command, .shift])
+                    if let guidance = viewModel.connectionGuidance {
+                        Text(guidance)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             } else {
                 graphInspector
@@ -932,6 +1092,72 @@ private struct GraphDefinitionInspector: View {
 
     private var selectedNode: GraphDefinitionDocumentNode? {
         viewModel.selectedNode
+    }
+
+    private var selectedEdge: GraphDefinitionEdge? {
+        viewModel.selectedEdge
+    }
+
+    @ViewBuilder
+    private var edgeInspector: some View {
+        if let edge = selectedEdge, let document = viewModel.document {
+            Section("Connection") {
+                LabeledContent("Stable ID", value: edge.id)
+                Picker(
+                    "Source",
+                    selection: edgeBinding(\.sourceNodeID, fallback: edge.sourceNodeID)
+                ) {
+                    ForEach(document.nodes.filter(\.nodeType.isExecutable)) {
+                        Text($0.name).tag($0.id)
+                    }
+                }
+                Picker(
+                    "Destination",
+                    selection: edgeBinding(\.targetNodeID, fallback: edge.targetNodeID)
+                ) {
+                    ForEach(document.nodes.filter(\.nodeType.isExecutable)) {
+                        Text($0.name).tag($0.id)
+                    }
+                }
+                LabeledContent("Port Type", value: edge.portType.rawValue)
+                Toggle(
+                    "Required",
+                    isOn: edgeBinding(\.isRequired, fallback: edge.isRequired)
+                )
+                if edge.portType != .dependency {
+                    let sourceOutputs = document.nodes.first {
+                        $0.id == edge.sourceNodeID
+                    }?.outputs.filter { $0.portType == edge.portType } ?? []
+                    let targetInputs = document.nodes.first {
+                        $0.id == edge.targetNodeID
+                    }?.inputs.filter { $0.portType == edge.portType } ?? []
+                    Picker(
+                        "Source Output",
+                        selection: edgeBinding(
+                            \.sourceOutputID,
+                            fallback: edge.sourceOutputID
+                        )
+                    ) {
+                        Text("Choose Output").tag(String?.none)
+                        ForEach(sourceOutputs) { Text($0.name).tag(Optional($0.id)) }
+                    }
+                    Picker(
+                        "Target Input",
+                        selection: edgeBinding(
+                            \.targetInputID,
+                            fallback: edge.targetInputID
+                        )
+                    ) {
+                        Text("Choose Input").tag(String?.none)
+                        ForEach(targetInputs) { Text($0.name).tag(Optional($0.id)) }
+                    }
+                }
+                Button("Delete Connection", role: .destructive) {
+                    viewModel.removeEdge(edge.id)
+                }
+                .keyboardShortcut(.delete, modifiers: [])
+            }
+        }
     }
 
     @ViewBuilder
@@ -1409,6 +1635,20 @@ private struct GraphDefinitionInspector: View {
                 }) else { return }
                 input[keyPath: keyPath] = value
                 viewModel.updateSelectedNodeInput(input)
+            }
+        )
+    }
+
+    private func edgeBinding<Value>(
+        _ keyPath: WritableKeyPath<GraphDefinitionEdge, Value>,
+        fallback: Value
+    ) -> Binding<Value> {
+        Binding(
+            get: { viewModel.selectedEdge?[keyPath: keyPath] ?? fallback },
+            set: { value in
+                guard var edge = viewModel.selectedEdge else { return }
+                edge[keyPath: keyPath] = value
+                viewModel.updateSelectedEdge(edge)
             }
         )
     }

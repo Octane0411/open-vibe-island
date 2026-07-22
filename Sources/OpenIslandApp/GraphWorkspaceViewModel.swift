@@ -183,6 +183,8 @@ final class GraphWorkspaceViewModel {
     var explanation: GraphCausalExplanation?
     var selectedNodeIDs: Set<String> = []
     var selectedEdgeID: String?
+    var dependencySourceNodeID: String?
+    var connectionGuidance: String?
     var logPage: GraphProcessLogPage?
     var selectedLogChannel: GraphProcessLogChannel = .stdout
     var isFollowingLogs = true
@@ -223,6 +225,10 @@ final class GraphWorkspaceViewModel {
     }
 
     var selectedNodeID: String? { selectedNodeIDs.sorted().first }
+    var selectedEdge: GraphDefinitionEdge? {
+        guard let selectedEdgeID else { return nil }
+        return document?.edges.first { $0.id == selectedEdgeID }
+    }
     var isDirty: Bool {
         guard let document else { return false }
         return document != lastSavedDocument
@@ -805,6 +811,10 @@ final class GraphWorkspaceViewModel {
     }
 
     func deleteSelection() {
+        if let selectedEdgeID {
+            removeEdge(selectedEdgeID)
+            return
+        }
         guard var document, !selectedNodeIDs.isEmpty else { return }
         registerUndo(coalescingKey: nil)
         do {
@@ -828,24 +838,77 @@ final class GraphWorkspaceViewModel {
     }
 
     func connectSelectedNodes() {
-        guard var document, selectedNodeIDs.count == 2 else { return }
-        registerUndo(coalescingKey: nil)
+        guard selectedNodeIDs.count == 2 else { return }
         let ordered = selectedNodeIDs.sorted()
+        _ = connectNodes(sourceNodeID: ordered[0], targetNodeID: ordered[1])
+    }
+
+    @discardableResult
+    func connectNodes(
+        sourceNodeID: String,
+        targetNodeID: String,
+        portType: GraphDefinitionPortType = .dependency,
+        sourceOutputID: String? = nil,
+        targetInputID: String? = nil,
+        isRequired: Bool = true
+    ) -> GraphConnectionDecision {
+        guard var document else {
+            return .rejected(.sourceMissing, "No graph document is open.")
+        }
+        let resolvedSourceOutputID = sourceOutputID ?? (portType == .dependency
+            ? nil : document.nodes.first { $0.id == sourceNodeID }?
+                .outputs.first { $0.portType == portType }?.id)
+        let resolvedTargetInputID = targetInputID ?? (portType == .dependency
+            ? nil : document.nodes.first { $0.id == targetNodeID }?
+                .inputs.first { $0.portType == portType }?.id)
+        let decision = GraphConnectionEvaluator.evaluate(
+            document: document,
+            sourceNodeID: sourceNodeID,
+            targetNodeID: targetNodeID,
+            portType: portType,
+            sourceOutputID: resolvedSourceOutputID,
+            targetInputID: resolvedTargetInputID
+        )
+        guard decision.isAllowed else {
+            connectionGuidance = decision.message
+            apply(.rejected(
+                decision.rejection?.rawValue ?? "connection_rejected",
+                nodeIDs: [sourceNodeID, targetNodeID],
+                diagnostic: decision.message
+            ))
+            return decision
+        }
+        registerUndo(coalescingKey: nil)
         do {
+            let edge = GraphDefinitionEdge(
+                sourceNodeID: sourceNodeID,
+                targetNodeID: targetNodeID,
+                portType: portType,
+                sourceOutputID: resolvedSourceOutputID,
+                targetInputID: resolvedTargetInputID,
+                isRequired: isRequired
+            )
             try GraphDefinitionDocumentEditor.addEdge(
-                GraphDefinitionEdge(
-                    sourceNodeID: ordered[0],
-                    targetNodeID: ordered[1]
-                ),
+                edge,
                 to: &document,
                 modifiedAt: Date(),
                 modifiedBy: NSUserName()
             )
+            synchronizeArtifactBindings(in: &document)
             self.document = document
+            selectedNodeIDs = []
+            selectedEdgeID = edge.id
+            dependencySourceNodeID = nil
+            connectionGuidance = "Connected \(sourceNodeID) to \(targetNodeID)."
             markSemanticMutation()
-            acceptedLocalAction("dependency_added", nodeIDs: ordered)
+            acceptedLocalAction(
+                portType == .dependency ? "dependency_added" : "typed_connection_added",
+                nodeIDs: [sourceNodeID, targetNodeID]
+            )
+            return .allowed
         } catch {
             rejectLocalAction("dependency_add_rejected", error)
+            return .rejected(.cycle, error.localizedDescription)
         }
     }
 
@@ -859,6 +922,7 @@ final class GraphWorkspaceViewModel {
                 modifiedAt: Date(),
                 modifiedBy: NSUserName()
             )
+            synchronizeArtifactBindings(in: &document)
             self.document = document
             selectedEdgeID = nil
             markSemanticMutation()
@@ -866,6 +930,77 @@ final class GraphWorkspaceViewModel {
         } catch {
             rejectLocalAction("dependency_remove_rejected", error)
         }
+    }
+
+    func updateSelectedEdge(_ updated: GraphDefinitionEdge) {
+        guard var document,
+              let selectedEdgeID,
+              let index = document.edges.firstIndex(where: { $0.id == selectedEdgeID })
+        else { return }
+        var candidate = document
+        candidate.edges.remove(at: index)
+        let decision = GraphConnectionEvaluator.evaluate(
+            document: candidate,
+            sourceNodeID: updated.sourceNodeID,
+            targetNodeID: updated.targetNodeID,
+            portType: updated.portType,
+            sourceOutputID: updated.sourceOutputID,
+            targetInputID: updated.targetInputID
+        )
+        guard decision.isAllowed else {
+            connectionGuidance = decision.message
+            return
+        }
+        registerUndo(coalescingKey: "edge:\(selectedEdgeID)")
+        document.edges[index] = updated
+        document.edges.sort { $0.id < $1.id }
+        synchronizeArtifactBindings(in: &document)
+        document.metadata.modifiedAt = Date()
+        document.metadata.modifiedBy = NSUserName()
+        self.document = document
+        markSemanticMutation()
+    }
+
+    func beginDependencyCreation(from nodeID: String) {
+        dependencySourceNodeID = nodeID
+        connectionGuidance = "Choose a downstream target for \(nodeID)."
+    }
+
+    func completeDependencyCreation(to nodeID: String) {
+        guard let source = dependencySourceNodeID else {
+            beginDependencyCreation(from: nodeID)
+            return
+        }
+        _ = connectNodes(sourceNodeID: source, targetNodeID: nodeID)
+    }
+
+    func cancelDependencyCreation() {
+        dependencySourceNodeID = nil
+        connectionGuidance = nil
+    }
+
+    func canConnect(
+        sourceNodeID: String,
+        targetNodeID: String,
+        portType: GraphDefinitionPortType = .dependency
+    ) -> GraphConnectionDecision {
+        guard let document else {
+            return .rejected(.sourceMissing, "No graph document is open.")
+        }
+        let sourceOutputID = portType == .dependency ? nil : document.nodes
+            .first { $0.id == sourceNodeID }?.outputs
+            .first { $0.portType == portType }?.id
+        let targetInputID = portType == .dependency ? nil : document.nodes
+            .first { $0.id == targetNodeID }?.inputs
+            .first { $0.portType == portType }?.id
+        return GraphConnectionEvaluator.evaluate(
+            document: document,
+            sourceNodeID: sourceNodeID,
+            targetNodeID: targetNodeID,
+            portType: portType,
+            sourceOutputID: sourceOutputID,
+            targetInputID: targetInputID
+        )
     }
 
     func moveNode(_ nodeID: String, to position: GraphCanvasPoint) {
@@ -914,6 +1049,12 @@ final class GraphWorkspaceViewModel {
             selectedNodeIDs = [nodeID]
         }
         if mode == .history { Task { await refreshExplanation() } }
+    }
+
+    func selectEdge(_ edgeID: String) {
+        selectedNodeIDs = []
+        selectedEdgeID = edgeID
+        undoCoalescingKey = nil
     }
 
     func selectCanvas() {
@@ -1364,6 +1505,54 @@ final class GraphWorkspaceViewModel {
         var ordinal = values.count + 1
         while values.contains("\(prefix)-\(ordinal)") { ordinal += 1 }
         return "\(prefix)-\(ordinal)"
+    }
+
+    private func synchronizeArtifactBindings(
+        in document: inout GraphDefinitionDocument
+    ) {
+        for nodeIndex in document.nodes.indices {
+            for inputIndex in document.nodes[nodeIndex].inputs.indices {
+                let binding = document.nodes[nodeIndex].inputs[inputIndex].binding
+                if binding?.kind == .upstreamArtifact
+                    || binding?.kind == .upstreamArtifactCollection {
+                    document.nodes[nodeIndex].inputs[inputIndex].binding = nil
+                }
+            }
+        }
+        for edge in document.edges where edge.portType == .artifact {
+            guard let sourceOutputID = edge.sourceOutputID,
+                  let targetInputID = edge.targetInputID,
+                  let targetIndex = document.nodes.firstIndex(where: {
+                      $0.id == edge.targetNodeID
+                  }),
+                  let inputIndex = document.nodes[targetIndex].inputs.firstIndex(where: {
+                      $0.id == targetInputID
+                  }) else { continue }
+            let allowsMultiple = document.nodes[targetIndex]
+                .inputs[inputIndex].allowsMultiple
+            document.nodes[targetIndex].inputs[inputIndex].binding =
+                GraphNodeInputBinding(
+                    kind: allowsMultiple
+                        ? .upstreamArtifactCollection : .upstreamArtifact,
+                    sourceNodeID: edge.sourceNodeID,
+                    sourceOutputID: sourceOutputID
+                )
+        }
+        for nodeIndex in document.nodes.indices {
+            let nodeID = document.nodes[nodeIndex].id
+            let incoming = document.edges.filter {
+                $0.targetNodeID == nodeID && $0.portType == .artifact
+            }
+            guard !incoming.isEmpty else { continue }
+            let roles = incoming.compactMap { edge -> GraphArtifactRole? in
+                guard let source = document.nodes.first(where: {
+                    $0.id == edge.sourceNodeID
+                }), let outputID = edge.sourceOutputID else { return nil }
+                return source.outputs.first { $0.id == outputID }?.role
+            }
+            document.nodes[nodeIndex].inputArtifactRoles = Array(Set(roles))
+                .sorted { $0.rawValue < $1.rawValue }
+        }
     }
 
     private var authoringSnapshot: GraphAuthoringUndoSnapshot? {
