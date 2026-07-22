@@ -12,6 +12,12 @@ final class GraphCLIStreamingInvariantTests: XCTestCase {
         XCTAssertEqual(GraphCLIExitCode.persistenceFailure.rawValue, 6)
         XCTAssertEqual(GraphCLIExitCode.evidenceUnavailable.rawValue, 7)
         XCTAssertEqual(GraphCLIExitCode.partialResult.rawValue, 8)
+        XCTAssertEqual(GraphCLIExitCode.optimisticConflict.rawValue, 9)
+        XCTAssertEqual(GraphCLIExitCode.policyDenied.rawValue, 10)
+        XCTAssertEqual(GraphCLIExitCode.staleExecutor.rawValue, 11)
+        XCTAssertEqual(GraphCLIExitCode.adapterUnavailable.rawValue, 12)
+        XCTAssertEqual(GraphCLIExitCode.executionTerminalFailure.rawValue, 13)
+        XCTAssertEqual(GraphCLIExitCode.cancellation.rawValue, 14)
         XCTAssertEqual(GraphCLIExitCode.interrupted.rawValue, 130)
     }
 

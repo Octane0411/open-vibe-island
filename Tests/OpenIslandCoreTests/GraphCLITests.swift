@@ -9,6 +9,8 @@ final class GraphCLITests: XCTestCase {
             ["graph", "start", "run", "--idempotency-key", "start"],
             ["graph", "cancel", "run", "--node", "node", "--idempotency-key", "cancel"],
             ["graph", "retry", "run", "node", "--idempotency-key", "retry", "--expected-version", "9", "--dry-run"],
+            ["graph", "step", "run", "--dry-run"],
+            ["graph", "run", "run", "--cycle-limit", "20"],
         ]
 
         let invocations = try arguments.map { arguments in
@@ -22,10 +24,14 @@ final class GraphCLITests: XCTestCase {
 
         XCTAssertEqual(
             invocations.map(\.command.name),
-            ["graph.create", "graph.start", "graph.cancel", "graph.retry"]
+            [
+                "graph.create", "graph.start", "graph.cancel", "graph.retry",
+                "graph.step", "graph.run",
+            ]
         )
-        XCTAssertEqual(invocations.last?.expectedVersion, 9)
-        XCTAssertEqual(invocations.last?.dryRun, true)
+        XCTAssertEqual(invocations[3].expectedVersion, 9)
+        XCTAssertEqual(invocations[3].dryRun, true)
+        XCTAssertEqual(invocations[5].cycleLimit, 20)
     }
 
     func testMutationJSONOutputUsesSameStableEnvelope() async throws {
@@ -67,6 +73,199 @@ final class GraphCLITests: XCTestCase {
         XCTAssertEqual(code, .success)
         XCTAssertEqual(object["command"] as? String, "graph.create")
         XCTAssertEqual(object["resultCount"] as? Int, 1)
+        XCTAssertTrue(stderr.consume().isEmpty)
+    }
+
+    func testRunJSONLPreservesTerminalGraphCompatibleRecords()
+        async throws
+    {
+        let store = InMemoryGraphExecutionEventStore()
+        let stdout = LockedGraphCLISink()
+        let stderr = LockedGraphCLISink()
+        let mutator = DefaultGraphMutationService(
+            eventStore: store,
+            readStore: store
+        )
+        let orchestrator = DefaultGraphOrchestrationService(
+            eventStore: store,
+            schedulingRepository: DefaultGraphSchedulingRepository(
+                eventStore: store
+            ),
+            executorRepository: DefaultGraphExecutorRepository(
+                eventStore: store
+            ),
+            executor: DeterministicGraphExecutor(
+                script: try loadCompendiumDeterministicScript()
+            )
+        )
+        let runner = GraphCLICommandRunner(
+            inspector: DefaultGraphTemporalInspector(
+                readStore: store,
+                snapshotStore: InMemoryGraphExecutionSnapshotStore()
+            ),
+            mutator: mutator,
+            orchestrator: orchestrator,
+            definitionLoader: FixedDefinitionLoader(
+                definition: try loadCompendiumExecutableDefinition()
+            ),
+            stdout: stdout,
+            stderr: stderr,
+            isOutputTTY: false
+        )
+        let createCode = await runner.run(arguments: [
+                "graph", "create", "ignored",
+                "--run-id", "cli-execution",
+                "--idempotency-key", "create",
+                "--logical-time", "1970-01-01T08:20:00Z",
+                "--quiet",
+            ])
+        XCTAssertEqual(createCode, .success)
+        let startCode = await runner.run(arguments: [
+                "graph", "start", "cli-execution",
+                "--idempotency-key", "start",
+                "--logical-time", "1970-01-01T08:20:00Z",
+                "--quiet",
+            ])
+        XCTAssertEqual(startCode, .success)
+        let code = await runner.run(arguments: [
+            "graph", "run", "cli-execution",
+            "--cycle-limit", "30",
+            "--logical-time", "1970-01-01T08:20:00Z",
+            "--output", "jsonl",
+            "--emit-completion-record",
+            "--no-color",
+        ])
+        let lines = stdout.consume().split(separator: "\n")
+
+        XCTAssertEqual(code, .success)
+        XCTAssertGreaterThan(lines.count, 1)
+        for line in lines {
+            XCTAssertNoThrow(
+                try JSONSerialization.jsonObject(
+                    with: Data(line.utf8)
+                )
+            )
+        }
+        XCTAssertTrue(
+            lines.last?.contains("\"recordType\":\"completion\"") == true
+        )
+        XCTAssertTrue(stderr.consume().isEmpty)
+
+        let exportCode = await runner.run(arguments: [
+            "graph", "export", "cli-execution",
+            "--format", "jsonl",
+            "--output", "jsonl",
+        ])
+        let exportLines = stdout.consume().split(separator: "\n")
+        let exportRecords = try exportLines.map {
+            try XCTUnwrap(
+                JSONSerialization.jsonObject(
+                    with: Data($0.utf8)
+                ) as? [String: Any]
+            )
+        }
+        let payloads = exportRecords.compactMap {
+            $0["payload"] as? [String: Any]
+        }
+
+        XCTAssertEqual(exportCode, .success)
+        XCTAssertEqual(
+            payloads.filter { $0["kind"] as? String == "node" }.count,
+            4
+        )
+        XCTAssertEqual(
+            payloads.filter { $0["kind"] as? String == "artifact" }.count,
+            5
+        )
+    }
+
+    func testFailedRunJSONLCompletionReportsTerminalFailure()
+        async throws
+    {
+        let store = InMemoryGraphExecutionEventStore()
+        let stdout = LockedGraphCLISink()
+        let stderr = LockedGraphCLISink()
+        let mutator = DefaultGraphMutationService(
+            eventStore: store,
+            readStore: store
+        )
+        let runner = GraphCLICommandRunner(
+            inspector: DefaultGraphTemporalInspector(
+                readStore: store,
+                snapshotStore: InMemoryGraphExecutionSnapshotStore()
+            ),
+            mutator: mutator,
+            orchestrator: DefaultGraphOrchestrationService(
+                eventStore: store,
+                schedulingRepository: DefaultGraphSchedulingRepository(
+                    eventStore: store
+                ),
+                executorRepository: DefaultGraphExecutorRepository(
+                    eventStore: store
+                ),
+                executor: DeterministicGraphExecutor(
+                    script: GraphDeterministicExecutionScript(
+                        attempts: [
+                            GraphDeterministicAttemptScript(
+                                nodeID: "architect",
+                                attemptOrdinal: 1,
+                                terminalOutcome: .nonRetryableFailure,
+                                failureCategory: "invalid_input"
+                            ),
+                        ]
+                    )
+                )
+            ),
+            definitionLoader: FixedDefinitionLoader(
+                definition: try loadCompendiumExecutableDefinition()
+            ),
+            stdout: stdout,
+            stderr: stderr,
+            isOutputTTY: false
+        )
+        let createCode = await runner.run(arguments: [
+            "graph", "create", "ignored",
+            "--run-id", "failed-run",
+            "--idempotency-key", "create-failed",
+            "--logical-time", "1970-01-01T08:20:00Z",
+            "--quiet",
+        ])
+        let startCode = await runner.run(arguments: [
+            "graph", "start", "failed-run",
+            "--idempotency-key", "start-failed",
+            "--logical-time", "1970-01-01T08:20:00Z",
+            "--quiet",
+        ])
+
+        XCTAssertEqual(createCode, .success)
+        XCTAssertEqual(startCode, .success)
+
+        let code = await runner.run(arguments: [
+            "graph", "run", "failed-run",
+            "--cycle-limit", "30",
+            "--logical-time", "1970-01-01T08:20:00Z",
+            "--output", "jsonl",
+            "--emit-completion-record",
+        ])
+        let completion = try XCTUnwrap(
+            stdout.consume().split(separator: "\n").last
+        )
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(
+                with: Data(completion.utf8)
+            ) as? [String: Any]
+        )
+
+        XCTAssertEqual(code, .executionTerminalFailure)
+        XCTAssertEqual(object["recordType"] as? String, "completion")
+        XCTAssertEqual(
+            object["status"] as? String,
+            GraphCLIExitCode.executionTerminalFailure.category
+        )
+        XCTAssertEqual(
+            object["exitCode"] as? Int,
+            Int(GraphCLIExitCode.executionTerminalFailure.rawValue)
+        )
         XCTAssertTrue(stderr.consume().isEmpty)
     }
 
