@@ -176,6 +176,11 @@ struct GraphWorkspaceView: View {
                     GraphWorkspaceFilePanels.saveAsDefinition(viewModel)
                 }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
+                Button("Save as Template") {
+                    GraphWorkspaceFilePanels.saveTemplate(viewModel)
+                }
+                .disabled(viewModel.document == nil)
+                Divider()
                 Button("Revert to Saved") {
                     Task { await viewModel.revertDocument() }
                 }
@@ -304,7 +309,55 @@ struct GraphWorkspaceView: View {
 
     private var workspaceSidebar: some View {
         List {
-            Section("Workspace") {
+            Section("Graphs") {
+                Button {
+                    viewModel.presentNewGraphSheet()
+                } label: {
+                    Label("New Graph", systemImage: "plus.square")
+                }
+                Button {
+                    GraphWorkspaceFilePanels.openDefinition(viewModel)
+                } label: {
+                    Label("Open Saved Graph…", systemImage: "folder")
+                }
+                if viewModel.recentDocumentURLs.isEmpty {
+                    Text("No recent graphs")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(viewModel.recentDocumentURLs, id: \.path) { url in
+                        Button {
+                            Task { await viewModel.openDocument(url: url) }
+                        } label: {
+                            Label(url.deletingPathExtension().lastPathComponent, systemImage: "doc.text")
+                                .lineLimit(1)
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button("Reveal in Finder") {
+                                NSWorkspace.shared.activateFileViewerSelecting([url])
+                            }
+                        }
+                    }
+                }
+            }
+            Section("Templates") {
+                ForEach(GraphWorkspaceTemplate.allCases.filter { $0 != .blank }) { template in
+                    Button {
+                        viewModel.openTemplate(template)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Label(template.name, systemImage: "square.grid.2x2")
+                            Text(template.summary)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            Section("Workspace Mode") {
                 ForEach(GraphWorkspaceMode.allCases) { mode in
                     Button {
                         viewModel.mode = mode
@@ -312,15 +365,13 @@ struct GraphWorkspaceView: View {
                         Label(mode.rawValue, systemImage: modeIcon(mode))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("\(mode.rawValue) mode")
                 }
             }
             Section("Durable Runs") {
                 if viewModel.runs.isEmpty {
-                    ContentUnavailableView(
-                        "No Runs",
-                        systemImage: "point.3.connected.trianglepath.dotted"
-                    )
+                    Text("No durable runs")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 } else {
                     ForEach(viewModel.runs) { run in
                         Button {
@@ -339,9 +390,6 @@ struct GraphWorkspaceView: View {
                             }
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel(
-                            "Run \(run.graphID), \(run.reconciledState.rawValue)"
-                        )
                     }
                 }
             }
@@ -359,7 +407,7 @@ struct GraphWorkspaceView: View {
                 onOpenRecent: { url in
                     Task { await viewModel.openDocument(url: url) }
                 },
-                onOpenExample: { viewModel.openBundledCompendium() }
+                onOpenTemplates: { viewModel.presentNewGraphSheet() }
             )
         } else {
             switch viewModel.mode {
@@ -474,7 +522,7 @@ private struct GraphWorkspaceEmptyState: View {
     let onNew: () -> Void
     let onOpen: () -> Void
     let onOpenRecent: (URL) -> Void
-    let onOpenExample: () -> Void
+    let onOpenTemplates: () -> Void
 
     var body: some View {
         ContentUnavailableView {
@@ -498,7 +546,7 @@ private struct GraphWorkspaceEmptyState: View {
                         }
                     }
                 }
-                Button("Open Example Graph", action: onOpenExample)
+                Button("Open Templates", action: onOpenTemplates)
             }
         }
         .accessibilityLabel("Empty Graph Workspace")
@@ -1298,6 +1346,10 @@ private struct GraphDefinitionInspector: View {
                         )
                     )
                 }
+                if node.nodeType.isExecutable {
+                    agentRuntimeSection
+                    workspaceSection
+                }
                 if node.nodeType == .localProcess {
                     localProcessSection
                 } else {
@@ -1567,6 +1619,73 @@ private struct GraphDefinitionInspector: View {
         }
     }
 
+    private var agentRuntimeSection: some View {
+        Section("Agent Runtime") {
+            Picker("Provider", selection: runtimeBinding(prefix: "provider:", fallback: "Local Process")) {
+                Text("Local Process").tag("Local Process")
+                Text("Ollama").tag("Ollama")
+                Text("Qwen").tag("Qwen")
+                Text("OpenClaw").tag("OpenClaw")
+                Text("Codex (not configured)").tag("Codex")
+                Text("Custom Provider").tag("Custom Provider")
+            }
+            TextField("Model", text: runtimeBinding(prefix: "model:", fallback: ""))
+                .textContentType(.none)
+            TextField("Agent / Profile", text: runtimeBinding(prefix: "agent:", fallback: ""))
+            Text("Provider, model, and agent profile are saved with the node and remain provider-neutral until an adapter binds them at run time.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var workspaceSection: some View {
+        Section("Workspace") {
+            HStack {
+                TextField(
+                    "Workspace Directory",
+                    text: Binding(
+                        get: { selectedNode?.workspace.root ?? "" },
+                        set: { viewModel.updateSelectedNodeWorkspace(root: $0) }
+                    )
+                )
+                Button("Choose…") {
+                    if let url = GraphWorkspaceFilePanels.chooseDirectory() {
+                        viewModel.updateSelectedNodeWorkspace(root: url.path)
+                    }
+                }
+            }
+            if let root = selectedNode?.workspace.root, !root.isEmpty {
+                Button("Reveal in Finder") {
+                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: root)
+                }
+            }
+            if selectedNode?.workspace.root == "/" {
+                Label("Using the filesystem root is unsafe. Choose a project directory before creating a run.", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+            }
+        }
+    }
+
+    private func runtimeBinding(prefix: String, fallback: String) -> Binding<String> {
+        Binding(
+            get: {
+                selectedNode?.tags.first(where: { $0.hasPrefix(prefix) })
+                    .map { String($0.dropFirst(prefix.count)) } ?? fallback
+            },
+            set: { newValue in
+                let provider = prefix == "provider:" ? newValue : runtimeValue("provider:", fallback: "Local Process")
+                let model = prefix == "model:" ? newValue : runtimeValue("model:", fallback: "")
+                let agent = prefix == "agent:" ? newValue : runtimeValue("agent:", fallback: "")
+                viewModel.updateSelectedNodeRuntime(provider: provider, model: model, agentProfile: agent)
+            }
+        )
+    }
+
+    private func runtimeValue(_ prefix: String, fallback: String) -> String {
+        selectedNode?.tags.first(where: { $0.hasPrefix(prefix) })
+            .map { String($0.dropFirst(prefix.count)) } ?? fallback
+    }
+
     @ViewBuilder
     private var localProcessSection: some View {
         if let process = viewModel.selectedLocalProcessSpecification {
@@ -1588,20 +1707,6 @@ private struct GraphDefinitionInspector: View {
                         NSWorkspace.shared.activateFileViewerSelecting([
                             URL(fileURLWithPath: process.executable),
                         ])
-                    }
-                }
-                HStack {
-                    TextField(
-                        "Workspace Directory",
-                        text: Binding(
-                            get: { selectedNode?.workspace.root ?? "" },
-                            set: { updateProcess(workspaceRoot: $0) }
-                        )
-                    )
-                    Button("Choose") {
-                        if let url = GraphWorkspaceFilePanels.chooseDirectory() {
-                            updateProcess(workspaceRoot: url.path)
-                        }
                     }
                 }
                 TextField(
@@ -2684,6 +2789,20 @@ enum GraphWorkspaceFilePanels {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
         panel.nameFieldStringValue = "\(viewModel.document?.graphID ?? "graph").openisland-graph.json"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task { await viewModel.saveAsDocument(url: url) }
+    }
+
+
+    static func saveTemplate(_ viewModel: GraphWorkspaceViewModel) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.title = "Save Graph as Template"
+        panel.message = "Templates are ordinary Open Island graph documents that can be reopened and customized."
+        let base = viewModel.document?.name
+            .lowercased()
+            .replacingOccurrences(of: " ", with: "-") ?? "graph-template"
+        panel.nameFieldStringValue = "\(base).openisland-template.json"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Task { await viewModel.saveAsDocument(url: url) }
     }

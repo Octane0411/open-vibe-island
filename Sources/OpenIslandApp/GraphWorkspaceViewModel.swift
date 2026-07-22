@@ -377,10 +377,15 @@ final class GraphWorkspaceViewModel {
     }
 
     func openBundledCompendium() {
-        var request = GraphNewDocumentRequest.defaults(id: "compendium-fill")
-        request.template = .compendiumFill
-        request.name = "Compendium Fill"
-        request.description = GraphWorkspaceTemplate.compendiumFill.summary
+        openTemplate(.compendiumFill)
+    }
+
+    func openTemplate(_ template: GraphWorkspaceTemplate) {
+        var request = GraphNewDocumentRequest.defaults()
+        request.template = template
+        request.name = template == .blank ? "Untitled Graph" : template.name
+        request.description = template.summary
+        request.workspaceDirectory = defaultNodeWorkspaceDirectory
         newDocument(request: request)
     }
 
@@ -814,6 +819,39 @@ final class GraphWorkspaceViewModel {
             node.preferredCapabilities = preferred.sorted()
             node.executorKind = executorKind
             node.platformConstraints = platformConstraints.sorted()
+        }
+    }
+
+
+    func updateSelectedNodeWorkspace(root: String?) {
+        mutateSelectedNode(coalescingKey: "workspace") { node, _ in
+            node.workspace = GraphExecutionWorkspaceContext(
+                root: root?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+                writableRelativePaths: node.workspace.writableRelativePaths
+            )
+        }
+    }
+
+    func updateSelectedNodeRuntime(
+        provider: String,
+        model: String,
+        agentProfile: String
+    ) {
+        mutateSelectedNode(coalescingKey: "agent-runtime") { node, _ in
+            let reservedPrefixes = ["provider:", "model:", "agent:"]
+            var tags = node.tags.filter { tag in
+                !reservedPrefixes.contains { tag.hasPrefix($0) }
+            }
+            let values = [
+                ("provider:", provider),
+                ("model:", model),
+                ("agent:", agentProfile),
+            ]
+            for (prefix, value) in values {
+                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { tags.append(prefix + trimmed) }
+            }
+            node.tags = tags.sorted()
         }
     }
 
@@ -1904,4 +1942,8 @@ final class GraphWorkspaceViewModel {
             forKey: Self.recentDocumentPathsKey
         )
     }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
