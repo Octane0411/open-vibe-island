@@ -25,9 +25,30 @@ struct OpenIslandCLI {
             let store = try SQLiteGraphExecutionStore(
                 databasePath: databasePath
             )
+            let processRuntimeRoot: URL
+            if let configuredRoot = environment[
+                "OPENISLAND_PROCESS_RUNTIME_ROOT"
+            ] {
+                processRuntimeRoot = URL(
+                    fileURLWithPath: configuredRoot,
+                    isDirectory: true
+                )
+            } else {
+                processRuntimeRoot = try GraphLocalProcessLaunchStore
+                    .defaultRootURL()
+            }
+            let launchStore = try GraphLocalProcessLaunchStore(
+                rootURL: processRuntimeRoot
+            )
+            let executor = SupervisedLocalProcessExecutor(
+                launchStore: launchStore
+            )
             let inspector = DefaultGraphTemporalInspector(
                 readStore: store,
-                snapshotStore: store
+                snapshotStore: store,
+                evidenceSource: GraphLocalProcessEvidenceSource(
+                    launchStore: launchStore
+                )
             )
             let mutator = DefaultGraphMutationService(
                 eventStore: store,
@@ -41,11 +62,8 @@ struct OpenIslandCLI {
                 executorRepository: DefaultGraphExecutorRepository(
                     eventStore: store
                 ),
-                executor: DeterministicGraphExecutor(
-                    script: GraphDeterministicExecutionScript(
-                        attempts: []
-                    )
-                )
+                executor: executor,
+                confirmationPolicy: LocalProcessExecutionConfirmationPolicy()
             )
             let context = GraphCLIContextDiscovery.discover(
                 environment: environment,

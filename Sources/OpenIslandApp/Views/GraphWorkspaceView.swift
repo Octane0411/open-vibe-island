@@ -110,6 +110,9 @@ struct GraphWorkspaceView: View {
             iconButton("folder", help: "Open Graph Definition") {
                 GraphWorkspaceFilePanels.openDefinition(viewModel)
             }
+            iconButton("books.vertical", help: "Open Compendium Example") {
+                viewModel.openBundledCompendium()
+            }
             iconButton("square.and.arrow.down", help: "Save Graph Definition") {
                 GraphWorkspaceFilePanels.saveDefinition(viewModel)
             }

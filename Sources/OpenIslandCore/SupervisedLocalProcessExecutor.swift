@@ -17,6 +17,7 @@ public actor SupervisedLocalProcessExecutor: GraphExecutorAdapter {
     private let crashPoint: GraphLocalProcessCrashPoint?
     private var processes: [String: Process] = [:]
     private var exitWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
+    private var exitObservers: [UUID: AsyncStream<String>.Continuation] = [:]
 
     public init(
         executorID: String = "openisland.local-process",
@@ -366,6 +367,16 @@ public actor SupervisedLocalProcessExecutor: GraphExecutorAdapter {
         }
     }
 
+    public func exitEvents() -> AsyncStream<String> {
+        let id = UUID()
+        return AsyncStream { continuation in
+            exitObservers[id] = continuation
+            continuation.onTermination = { [weak self] _ in
+                Task { await self?.removeExitObserver(id) }
+            }
+        }
+    }
+
     public func launchRecord(
         id: String
     ) async throws -> GraphLocalProcessLaunchRecord? {
@@ -599,6 +610,11 @@ public actor SupervisedLocalProcessExecutor: GraphExecutorAdapter {
         }
         let waiters = exitWaiters.removeValue(forKey: launchID) ?? []
         waiters.forEach { $0.resume() }
+        exitObservers.values.forEach { $0.yield(launchID) }
+    }
+
+    private func removeExitObserver(_ id: UUID) {
+        exitObservers.removeValue(forKey: id)
     }
 
     private func resolvedRecord(

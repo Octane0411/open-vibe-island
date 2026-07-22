@@ -273,6 +273,19 @@ final class GraphWorkspaceViewModel {
         }
     }
 
+    func openBundledCompendium() {
+        do {
+            let loaded = try GraphWorkspaceBundledFixtures.loadCompendium()
+            document = loaded
+            documentURL = nil
+            selectedNodeIDs = Set(loaded.nodes.first.map { [$0.id] } ?? [])
+            mode = .definition
+            acceptedLocalAction("compendium_definition_opened")
+        } catch {
+            rejectLocalAction("compendium_definition_open_failed", error)
+        }
+    }
+
     func saveDocument(url: URL? = nil) async {
         guard let document else {
             return rejectLocalAction(
@@ -551,9 +564,17 @@ final class GraphWorkspaceViewModel {
                     break
                 }
                 if inspection?.nodes.contains(where: {
-                    $0.reconciledState == .running
-                }) == true {
-                    try? await Task.sleep(for: .milliseconds(200))
+                    $0.persistedState == .running
+                }) == true,
+                   let nodeID = inspection?.nodes.first(where: {
+                       $0.persistedState == .running
+                   })?.id {
+                    await service.waitForProcessChange(
+                        runID: runID,
+                        nodeID: nodeID
+                    )
+                } else {
+                    await service.waitForRetryEligibility(runID: runID)
                 }
             }
             isOrchestrating = false

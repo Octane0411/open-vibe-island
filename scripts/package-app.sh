@@ -33,11 +33,13 @@ fi
 swift build -c release "${arch_flags[@]}" --product OpenIslandApp
 swift build -c release "${arch_flags[@]}" --product OpenIslandHooks
 swift build -c release "${arch_flags[@]}" --product OpenIslandSetup
+swift build -c release "${arch_flags[@]}" --product OpenIslandProcessFixtureAgent
 
 build_bin_dir="$(swift build -c release "${arch_flags[@]}" --show-bin-path)"
 app_binary="$build_bin_dir/OpenIslandApp"
 hooks_binary="$build_bin_dir/OpenIslandHooks"
 setup_binary="$build_bin_dir/OpenIslandSetup"
+process_fixture_binary="$build_bin_dir/OpenIslandProcessFixtureAgent"
 brand_icon="$repo_root/Assets/Brand/OpenIsland.icns"
 
 python3 "$brand_script"
@@ -49,6 +51,7 @@ mkdir -p "$bundle_dir/Contents/MacOS" "$bundle_dir/Contents/Helpers" "$bundle_di
 cp "$app_binary" "$bundle_dir/Contents/MacOS/OpenIslandApp"
 cp "$hooks_binary" "$bundle_dir/Contents/Helpers/OpenIslandHooks"
 cp "$setup_binary" "$bundle_dir/Contents/Helpers/OpenIslandSetup"
+cp "$process_fixture_binary" "$bundle_dir/Contents/Helpers/OpenIslandProcessFixtureAgent"
 cp "$brand_icon" "$bundle_dir/Contents/Resources/OpenIsland.icns"
 
 # Copy Sparkle.framework for auto-update support.
@@ -72,7 +75,8 @@ fi
 chmod +x \
     "$bundle_dir/Contents/MacOS/OpenIslandApp" \
     "$bundle_dir/Contents/Helpers/OpenIslandHooks" \
-    "$bundle_dir/Contents/Helpers/OpenIslandSetup"
+    "$bundle_dir/Contents/Helpers/OpenIslandSetup" \
+    "$bundle_dir/Contents/Helpers/OpenIslandProcessFixtureAgent"
 
 # Add rpath so the binary can find Sparkle.framework in Contents/Frameworks/.
 install_name_tool -add_rpath @loader_path/../Frameworks "$bundle_dir/Contents/MacOS/OpenIslandApp" 2>/dev/null || true
@@ -126,6 +130,7 @@ for required in \
     "Contents/MacOS/OpenIslandApp" \
     "Contents/Helpers/OpenIslandHooks" \
     "Contents/Helpers/OpenIslandSetup" \
+    "Contents/Helpers/OpenIslandProcessFixtureAgent" \
     "Contents/Resources/OpenIsland.icns" \
     "Contents/Resources/OpenIsland_OpenIslandApp.bundle" \
 ; do
@@ -190,6 +195,8 @@ if [[ -n "$signing_identity" ]]; then
         "$bundle_dir/Contents/Helpers/OpenIslandHooks"
     codesign --force --options runtime --timestamp --sign "$signing_identity" \
         "$bundle_dir/Contents/Helpers/OpenIslandSetup"
+    codesign --force --options runtime --timestamp --sign "$signing_identity" \
+        "$bundle_dir/Contents/Helpers/OpenIslandProcessFixtureAgent"
 
     codesign \
         --force \
@@ -210,6 +217,7 @@ else
     fi
     codesign --force --sign - "$bundle_dir/Contents/Helpers/OpenIslandHooks" 2>/dev/null || true
     codesign --force --sign - "$bundle_dir/Contents/Helpers/OpenIslandSetup" 2>/dev/null || true
+    codesign --force --sign - "$bundle_dir/Contents/Helpers/OpenIslandProcessFixtureAgent" 2>/dev/null || true
     codesign --force --sign - "$bundle_dir" 2>/dev/null || true
 fi
 

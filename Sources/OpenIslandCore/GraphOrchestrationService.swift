@@ -447,6 +447,14 @@ public struct DefaultGraphOrchestrationService:
                 claimMaterial
             )
             let claimID = "claim-\(claimDigest)"
+            let durableEligibility = current.projection.scheduling.retries
+                .filter { $0.nodeID == nodeID }
+                .map(\.eligibleAt)
+                .max() ?? request.logicalTime
+            let claimLogicalTime = max(
+                request.logicalTime,
+                durableEligibility
+            )
             let claimed = try await schedulingRepository.attemptClaim(
                 GraphExecutorClaimRequest(
                     runID: request.runID,
@@ -455,16 +463,30 @@ public struct DefaultGraphOrchestrationService:
                     executor: executor.capabilities,
                     evaluationID: evaluationID,
                     expectedVersion: current.version,
-                    logicalTime: request.logicalTime,
+                    logicalTime: claimLogicalTime,
                     leaseDurationSeconds: definition.schedulerPolicy
                         .defaultLeaseDurationSeconds,
                     producer: producer,
-                    recordedAt: request.logicalTime
+                    recordedAt: claimLogicalTime
                 )
             )
             persisted += claimed.appendResult.appendedCount
-            claim = claimed.claim
             current = try await load(request.runID)
+            guard let grantedClaimID = claimed.claim?.id else {
+                throw GraphOrchestrationError.persistence(
+                    "claim grant did not return an executor claim."
+                )
+            }
+            guard let persistedClaim = current.projection.scheduling.claims
+                .first(where: {
+                    $0.claim.id == grantedClaimID
+                        && $0.status == .active
+                })?.claim else {
+                throw GraphOrchestrationError.persistence(
+                    "granted executor claim is missing from durable history."
+                )
+            }
+            claim = persistedClaim
         }
 
         guard var claim else {
@@ -500,11 +522,10 @@ public struct DefaultGraphOrchestrationService:
             )
             persisted += renewed.appendResult.appendedCount
             current = try await load(request.runID)
-            guard let renewedClaim = current.projection.scheduling
-                .activeClaim(
-                    nodeID: claim.nodeID,
-                    at: request.logicalTime
-                ) else {
+            guard let renewedClaim = current.projection.scheduling.claims
+                .first(where: {
+                    $0.claim.id == claim.id && $0.status == .active
+                })?.claim else {
                 throw GraphOrchestrationError.persistence(
                     "renewed executor claim is not active."
                 )
@@ -515,7 +536,7 @@ public struct DefaultGraphOrchestrationService:
             claim: claim,
             definition: definition,
             projection: current.projection,
-            logicalTime: request.logicalTime
+            logicalTime: max(request.logicalTime, claim.leaseStart)
         )
 
         if let timeout = timeoutKind(
@@ -810,9 +831,11 @@ public struct DefaultGraphOrchestrationService:
         var persisted = persisted
         var invocations = invocations
         var terminalObservation = initialObservation
-        if (initialObservation.status == .succeeded
-                || context.specification.adapterKind
-                    == GraphLocalProcessSpecification.adapterKind),
+        let shouldCollectResult = initialObservation.status == .succeeded
+            || (initialObservation.status == .failed
+                && context.specification.adapterKind
+                    == GraphLocalProcessSpecification.adapterKind)
+        if shouldCollectResult,
            operation != .collectResult {
             let refreshed = try refreshedContext(context, loaded: current)
             terminalObservation = try await invokeCollect(refreshed)
@@ -1070,7 +1093,7 @@ public struct DefaultGraphOrchestrationService:
             priorObservationCount: observations.filter {
                 $0.operation == .observe
             }.count,
-            logicalTime: logicalTime
+            logicalTime: max(logicalTime, claim.leaseStart)
         )
     }
 

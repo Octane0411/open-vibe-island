@@ -59,6 +59,8 @@ protocol GraphWorkspaceServicing: Sendable {
         -> GraphCausalExplanation
     func logs(runID: String, nodeID: String) async throws
         -> GraphProcessLogPage
+    func waitForProcessChange(runID: String, nodeID: String) async
+    func waitForRetryEligibility(runID: String) async
     func exportRun(runID: String, url: URL) async throws
 }
 
@@ -70,6 +72,7 @@ actor GraphWorkspaceService: GraphWorkspaceServicing {
     private let launchStore: GraphLocalProcessLaunchStore
     private var revision: UInt64 = 0
     private var revisionObservers: [UUID: AsyncStream<UInt64>.Continuation] = [:]
+    private var logicalTimes: [String: Date] = [:]
 
     init(
         eventStore: any GraphExecutionEventStore,
@@ -167,13 +170,17 @@ actor GraphWorkspaceService: GraphWorkspaceServicing {
         occurredAt: Date
     ) async -> GraphWorkspaceCommandResult {
         do {
+            let logicalTime = monotonicLogicalTime(
+                runID: runID,
+                proposed: occurredAt
+            )
             try document.validate()
             let report = try await mutator.create(
                 GraphCreateRequest(
                     runID: runID,
                     definition: try document.executableDefinition(),
                     idempotencyKey: "workspace-create-\(runID)",
-                    occurredAt: occurredAt,
+                    occurredAt: logicalTime,
                     producer: workspaceProducer
                 )
             )
@@ -193,12 +200,16 @@ actor GraphWorkspaceService: GraphWorkspaceServicing {
         occurredAt: Date
     ) async -> GraphWorkspaceCommandResult {
         do {
+            let logicalTime = monotonicLogicalTime(
+                runID: runID,
+                proposed: occurredAt
+            )
             let report = try await mutator.start(
                 GraphStartRequest(
                     runID: runID,
                     idempotencyKey: "workspace-start-\(runID)",
                     requestedBy: NSUserName(),
-                    occurredAt: occurredAt,
+                    occurredAt: logicalTime,
                     producer: workspaceProducer
                 )
             )
@@ -218,10 +229,14 @@ actor GraphWorkspaceService: GraphWorkspaceServicing {
         occurredAt: Date
     ) async -> GraphWorkspaceCommandResult {
         do {
+            let logicalTime = monotonicLogicalTime(
+                runID: runID,
+                proposed: occurredAt
+            )
             let report = try await orchestrator.step(
                 GraphOrchestrationStepRequest(
                     runID: runID,
-                    logicalTime: occurredAt
+                    logicalTime: logicalTime
                 )
             )
             emitRevision()
@@ -253,13 +268,17 @@ actor GraphWorkspaceService: GraphWorkspaceServicing {
         occurredAt: Date
     ) async -> GraphWorkspaceCommandResult {
         do {
+            let logicalTime = monotonicLogicalTime(
+                runID: runID,
+                proposed: occurredAt
+            )
             let report = try await mutator.retry(
                 GraphRetryMutationRequest(
                     runID: runID,
                     nodeID: nodeID,
                     idempotencyKey: "workspace-retry-\(UUID().uuidString)",
                     requestedBy: NSUserName(),
-                    occurredAt: occurredAt,
+                    occurredAt: logicalTime,
                     producer: workspaceProducer
                 )
             )
@@ -281,6 +300,10 @@ actor GraphWorkspaceService: GraphWorkspaceServicing {
         occurredAt: Date
     ) async -> GraphWorkspaceCommandResult {
         do {
+            let logicalTime = monotonicLogicalTime(
+                runID: runID,
+                proposed: occurredAt
+            )
             let report = try await mutator.cancel(
                 GraphCancelMutationRequest(
                     runID: runID,
@@ -288,7 +311,7 @@ actor GraphWorkspaceService: GraphWorkspaceServicing {
                     idempotencyKey: "workspace-cancel-\(UUID().uuidString)",
                     requestedBy: NSUserName(),
                     reason: "graph_workspace",
-                    occurredAt: occurredAt,
+                    occurredAt: logicalTime,
                     producer: workspaceProducer
                 )
             )
@@ -353,6 +376,38 @@ actor GraphWorkspaceService: GraphWorkspaceServicing {
         )
     }
 
+    func waitForProcessChange(runID: String, nodeID: String) async {
+        guard let record = try? await launchStore.records().filter({
+            $0.identity.runID == runID && $0.identity.nodeID == nodeID
+        }).max(by: {
+            $0.identity.attemptOrdinal < $1.identity.attemptOrdinal
+        }), record.exit == nil else { return }
+        let events = await processExecutor.exitEvents()
+        if let refreshed = try? await launchStore.record(id: record.id),
+           refreshed.exit != nil {
+            return
+        }
+        for await launchID in events {
+            if Task.isCancelled || launchID == record.id { return }
+        }
+    }
+
+    func waitForRetryEligibility(runID: String) async {
+        guard let inspection = try? await inspect(runID: runID),
+              let scheduling = inspection.scheduling,
+              let eligibleAt = scheduling.retries
+                .map(\.eligibleAt)
+                .filter({ $0 > Date() })
+                .min() else {
+            return
+        }
+        let milliseconds = max(
+            1,
+            Int(ceil(eligibleAt.timeIntervalSinceNow * 1_000))
+        )
+        try? await Task.sleep(for: .milliseconds(milliseconds))
+    }
+
     func exportRun(runID: String, url: URL) async throws {
         let inspection = try await inspect(runID: runID)
         let encoder = JSONEncoder()
@@ -370,6 +425,15 @@ actor GraphWorkspaceService: GraphWorkspaceServicing {
             id: "openisland.graph-workspace",
             kind: .application
         )
+    }
+
+    private func monotonicLogicalTime(
+        runID: String,
+        proposed: Date
+    ) -> Date {
+        let logicalTime = max(logicalTimes[runID] ?? proposed, proposed)
+        logicalTimes[runID] = logicalTime
+        return logicalTime
     }
 
     private func result(
@@ -418,6 +482,8 @@ actor UnavailableGraphWorkspaceService: GraphWorkspaceServicing {
     func history(runID: String) throws -> GraphInspectionEventPage { throw error }
     func explain(runID: String, nodeID: String?) throws -> GraphCausalExplanation { throw error }
     func logs(runID: String, nodeID: String) throws -> GraphProcessLogPage { throw error }
+    func waitForProcessChange(runID: String, nodeID: String) {}
+    func waitForRetryEligibility(runID: String) {}
     func exportRun(runID: String, url: URL) throws { throw error }
 
     private var error: NSError {

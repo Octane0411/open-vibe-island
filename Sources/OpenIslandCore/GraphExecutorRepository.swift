@@ -532,7 +532,14 @@ public struct DefaultGraphExecutorRepository:
             throw rejected(.claimInactive, "claim is not active.")
         }
         guard claim.isValid(at: logicalTime) else {
-            throw rejected(.leaseExpired, "claim lease has expired.")
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            throw rejected(
+                .leaseExpired,
+                "claim lease is invalid at \(formatter.string(from: logicalTime)); "
+                    + "valid interval is [\(formatter.string(from: claim.leaseStart)), "
+                    + "\(formatter.string(from: claim.leaseExpiry)))."
+            )
         }
         return claim
     }

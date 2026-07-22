@@ -29,6 +29,10 @@ let package = Package(
             name: "openisland",
             targets: ["OpenIslandCLI"]
         ),
+        .executable(
+            name: "OpenIslandProcessFixtureAgent",
+            targets: ["OpenIslandProcessFixtureAgent"]
+        ),
     ],
     dependencies: [
         .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.1"),
@@ -61,9 +65,12 @@ let package = Package(
             name: "OpenIslandCLI",
             dependencies: ["OpenIslandCore"]
         ),
+        .executableTarget(
+            name: "OpenIslandProcessFixtureAgent"
+        ),
         .testTarget(
             name: "OpenIslandCoreTests",
-            dependencies: ["OpenIslandCore"],
+            dependencies: ["OpenIslandCore", "OpenIslandProcessFixtureAgent"],
             resources: [
                 .copy("Fixtures"),
             ]
