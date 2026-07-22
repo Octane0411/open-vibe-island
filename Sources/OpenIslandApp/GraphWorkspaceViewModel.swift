@@ -208,6 +208,7 @@ final class GraphWorkspaceViewModel {
     var validationDiagnostics: [GraphValidationDiagnostic] = []
     var lastSuccessfulValidation: Date?
     var isShowingValidationPanel = false
+    var isShowingNewGraphSheet = false
     var isShowingCreateRunSheet = false
     var runCreationDraft = GraphRunCreationDraft()
 
@@ -293,6 +294,10 @@ final class GraphWorkspaceViewModel {
             validationDiagnostics: validationDiagnostics,
             isDraft: isDraft
         )
+    }
+
+    func presentNewGraphSheet() {
+        isShowingNewGraphSheet = true
     }
 
     func newDocument(

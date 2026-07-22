@@ -223,6 +223,67 @@ final class GraphDefinitionValidatorTests: XCTestCase {
         XCTAssertTrue(codes.contains(.multipleProviders))
         XCTAssertTrue(codes.contains(.unreachableNode))
     }
+
+    func testLocalProcessArgumentTokensDistinguishInputsFromOutputs() throws {
+        let output = GraphLocalProcessArtifactDeclaration(
+            relativePath: "artifacts/result.json",
+            mediaType: "application/json",
+            role: .structuredResult
+        )
+        let invalidProcess = GraphLocalProcessSpecification(
+            executable: "/usr/bin/true",
+            arguments: [
+                "${artifact:node_output}",
+                "${artifact:structured_result}",
+            ],
+            outputArtifacts: [output]
+        )
+        var node = GraphDefinitionDocumentNode(
+            id: "transform",
+            name: "Transform",
+            nodeType: .localProcess,
+            requiredCapabilities: ["local-process"],
+            executorKind: .supervisedLocalProcess,
+            specification: try invalidProcess.immutableSpecification(),
+            workspace: .init(
+                root: "/tmp",
+                writableRelativePaths: ["artifacts"]
+            ),
+            inputArtifactRoles: [.nodeOutput],
+            outputs: [
+                GraphNodeOutputDefinition(
+                    id: "result",
+                    name: "Result",
+                    role: .structuredResult,
+                    relativePath: "artifacts/result.json",
+                    mediaType: "application/json"
+                ),
+            ],
+            timeoutPolicy: GraphExecutionTimeoutPolicy(
+                executionSeconds: 30,
+                cancellationAcknowledgementSeconds: 5
+            )
+        )
+
+        var diagnostics = GraphDefinitionValidator.validate(
+            makeDocument(nodes: [node])
+        )
+        XCTAssertTrue(diagnostics.contains { $0.code == .invalidArgumentToken })
+
+        let validProcess = GraphLocalProcessSpecification(
+            executable: "/usr/bin/true",
+            arguments: [
+                "${input:node_output}",
+                "${artifact:structured_result}",
+            ],
+            outputArtifacts: [output]
+        )
+        node.specification = try validProcess.immutableSpecification()
+        diagnostics = GraphDefinitionValidator.validate(
+            makeDocument(nodes: [node])
+        )
+        XCTAssertFalse(diagnostics.contains { $0.code == .invalidArgumentToken })
+    }
 }
 
 private func makeDocument(

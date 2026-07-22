@@ -17,6 +17,7 @@ public enum GraphValidationCode: String, Codable, CaseIterable, Sendable {
     case missingExecutionSpecification = "missing_execution_specification"
     case executableMissing = "executable_missing"
     case executableNotAbsolute = "executable_not_absolute"
+    case invalidArgumentToken = "invalid_argument_token"
     case invalidWorkingDirectory = "invalid_working_directory"
     case invalidArtifactPath = "invalid_artifact_path"
     case artifactPathEscapesWorkspace = "artifact_path_escapes_workspace"
@@ -279,6 +280,57 @@ public enum GraphDefinitionValidator {
             append(.error, .invalidWorkingDirectory, target,
                    "The configured workspace is unavailable.", "Choose an existing workspace directory.")
         }
+        validateLocalProcessArguments(
+            process,
+            node: node,
+            target: target,
+            append: append
+        )
+    }
+
+    private static func validateLocalProcessArguments(
+        _ process: GraphLocalProcessSpecification,
+        node: GraphDefinitionDocumentNode,
+        target: GraphValidationTarget,
+        append: (
+            GraphValidationSeverity,
+            GraphValidationCode,
+            GraphValidationTarget,
+            String,
+            String
+        ) -> Void
+    ) {
+        let outputRoles = Set(process.outputArtifacts.map(\.role))
+        let inputRoles = Set(node.inputArtifactRoles)
+        let invalid = process.arguments.filter { argument in
+            guard argument.hasPrefix("${"), argument.hasSuffix("}") else {
+                return false
+            }
+            if argument == "${workspace}" { return false }
+            if argument.hasPrefix("${artifact:") {
+                let value = String(argument.dropFirst(11).dropLast())
+                guard let role = GraphArtifactRole(rawValue: value) else {
+                    return true
+                }
+                return !outputRoles.contains(role)
+            }
+            if argument.hasPrefix("${input:") {
+                let value = String(argument.dropFirst(8).dropLast())
+                guard let role = GraphArtifactRole(rawValue: value) else {
+                    return true
+                }
+                return !inputRoles.contains(role)
+            }
+            return true
+        }
+        guard !invalid.isEmpty else { return }
+        append(
+            .error,
+            .invalidArgumentToken,
+            target,
+            "Arguments reference unavailable runtime paths: \(invalid.joined(separator: ", ")).",
+            "Use ${input:role} for upstream artifacts and ${artifact:role} for outputs declared by this node."
+        )
     }
 
     private static func validateInputs(

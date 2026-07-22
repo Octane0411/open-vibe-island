@@ -45,6 +45,32 @@ final class GraphWorkspaceTests: XCTestCase {
         XCTAssertEqual(activations, 2)
     }
 
+    func testAllNewGraphEntryPointsPresentTemplateConfiguration() throws {
+        let fixture = try WorkspaceTestFixture()
+        let viewModel = fixture.viewModel()
+
+        XCTAssertFalse(viewModel.isShowingNewGraphSheet)
+        viewModel.presentNewGraphSheet()
+        XCTAssertTrue(viewModel.isShowingNewGraphSheet)
+
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: root.appendingPathComponent(
+                "Sources/OpenIslandApp/Views/GraphWorkspaceView.swift"
+            ),
+            encoding: .utf8
+        )
+        XCTAssertTrue(source.contains("viewModel?.presentNewGraphSheet()"))
+        XCTAssertGreaterThanOrEqual(
+            source.components(separatedBy: "viewModel.presentNewGraphSheet()").count - 1,
+            2
+        )
+        XCTAssertTrue(source.contains("isPresented: $viewModel.isShowingNewGraphSheet"))
+    }
+
     func testEmptyWorkspaceDefinitionRunAndHistoryModesWork() async throws {
         let fixture = try WorkspaceTestFixture()
         let viewModel = fixture.viewModel()

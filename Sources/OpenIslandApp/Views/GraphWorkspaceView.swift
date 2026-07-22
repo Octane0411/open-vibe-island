@@ -17,7 +17,7 @@ struct GraphWorkspaceWindowContent: View {
         GraphWorkspaceView(viewModel: viewModel)
             .onAppear {
                 model.newGraphDefinitionAction = { [weak viewModel] in
-                    viewModel?.newDocument()
+                    viewModel?.presentNewGraphSheet()
                 }
                 model.openGraphDefinitionAction = { [weak viewModel] in
                     guard let viewModel else { return }
@@ -32,7 +32,6 @@ struct GraphWorkspaceWindowContent: View {
 struct GraphWorkspaceView: View {
     @Bindable var viewModel: GraphWorkspaceViewModel
     @State private var canvasZoom = 1.0
-    @State private var isShowingNewGraph = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -75,12 +74,12 @@ struct GraphWorkspaceView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Graph Workspace")
-        .sheet(isPresented: $isShowingNewGraph) {
+        .sheet(isPresented: $viewModel.isShowingNewGraphSheet) {
             GraphNewDocumentSheet { request in
                 viewModel.newDocument(request: request)
-                isShowingNewGraph = false
+                viewModel.isShowingNewGraphSheet = false
             } onCancel: {
-                isShowingNewGraph = false
+                viewModel.isShowingNewGraphSheet = false
             }
         }
         .sheet(isPresented: $viewModel.isShowingCreateRunSheet) {
@@ -150,7 +149,7 @@ struct GraphWorkspaceView: View {
     private var definitionToolbar: some View {
         HStack(spacing: 6) {
             Button {
-                isShowingNewGraph = true
+                viewModel.presentNewGraphSheet()
             } label: {
                 Label("New Graph", systemImage: "doc.badge.plus")
             }
@@ -355,7 +354,7 @@ struct GraphWorkspaceView: View {
         if viewModel.document == nil && viewModel.mode == .definition {
             GraphWorkspaceEmptyState(
                 recentURLs: viewModel.recentDocumentURLs,
-                onNew: { isShowingNewGraph = true },
+                onNew: { viewModel.presentNewGraphSheet() },
                 onOpen: { GraphWorkspaceFilePanels.openDefinition(viewModel) },
                 onOpenRecent: { url in
                     Task { await viewModel.openDocument(url: url) }
@@ -567,9 +566,11 @@ private struct GraphNewDocumentSheet: View {
                 Spacer()
                 Button("Cancel", action: onCancel)
                     .keyboardShortcut(.cancelAction)
+                    .accessibilityLabel("Cancel New Graph")
                 Button("Create Graph") { onCreate(request) }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
+                    .accessibilityLabel("Create New Graph")
                     .disabled(
                         request.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                             || request.graphID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -579,6 +580,7 @@ private struct GraphNewDocumentSheet: View {
         }
         .padding(20)
         .frame(width: 560, height: 600)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("New Graph Configuration")
     }
 }
@@ -748,16 +750,19 @@ private struct GraphCreateRunSheet: View {
                 Spacer()
                 Button("Cancel") { viewModel.isShowingCreateRunSheet = false }
                     .keyboardShortcut(.cancelAction)
+                    .accessibilityLabel("Cancel Run Creation")
                 Button("Create Run") {
                     Task { await viewModel.confirmCreateRun() }
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
+                .accessibilityLabel("Create Durable Run")
                 .disabled(!validationErrors.isEmpty || !inputsResolved)
             }
         }
         .padding(20)
         .frame(width: 620, height: 680)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("Create Durable Graph Run")
     }
 
