@@ -135,6 +135,39 @@ struct AgentsGridRightSlotTests {
         }
     }
 
+    @Test
+    func overflowKeepsNewerRunningSessionVisible() {
+        let model = AppModel()
+        model.islandRightSlot = .agents
+        let now = Date(timeIntervalSince1970: 250_000)
+        var sessions = (0..<11).map { i in
+            makeSession(
+                id: "idle-\(i)",
+                firstSeenAt: now.addingTimeInterval(Double(i)),
+                updatedAt: now,
+                phase: .completed
+            )
+        }
+        sessions.append(makeSession(
+            id: "running",
+            firstSeenAt: now.addingTimeInterval(11),
+            updatedAt: now.addingTimeInterval(1),
+            phase: .running
+        ))
+        model.state = SessionState(sessions: sessions)
+
+        guard case let .agents(cells)? = model.islandClosedRightSlotContent() else {
+            Issue.record("Expected .agents right-slot content")
+            return
+        }
+        let visibleStates = cells.compactMap { cell -> AgentGridCellState? in
+            guard case let .session(_, state) = cell else { return nil }
+            return state
+        }
+        #expect(visibleStates.filter { $0 == .running }.count == 1)
+        #expect(cells.last == .overflow(5))
+    }
+
     /// Per-session state derives from `SessionPhase`: waiting-for-approval /
     /// waiting-for-answer map to `.waiting`, running to `.running`, and
     /// everything else (completed, stale) to `.idle`.

@@ -910,8 +910,23 @@ final class AppModel {
             if ordered.count <= 9 {
                 cells = ordered.map(Self.agentsGridCell(for:))
             } else {
-                cells = ordered.prefix(7).map(Self.agentsGridCell(for:))
-                cells.append(.overflow(ordered.count - 7))
+                // Keep live states visible when older idle sessions fill the
+                // grid, while preserving observation order for selected cells.
+                let prioritized = ordered
+                    .filter { $0.phase.requiresAttention || $0.phase == .running }
+                    .prefix(7)
+                let prioritizedIDs = Set(prioritized.map(\.id))
+                let remainingCapacity = 7 - prioritizedIDs.count
+                let fallbackIDs = ordered
+                    .lazy
+                    .filter { !prioritizedIDs.contains($0.id) }
+                    .prefix(remainingCapacity)
+                    .map(\.id)
+                let visibleIDs = prioritizedIDs.union(fallbackIDs)
+                cells = ordered
+                    .filter { visibleIDs.contains($0.id) }
+                    .map(Self.agentsGridCell(for:))
+                cells.append(.overflow(ordered.count - cells.count))
             }
             return cells.isEmpty ? nil : .agents(cells)
         }
