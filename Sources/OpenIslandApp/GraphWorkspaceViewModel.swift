@@ -211,9 +211,14 @@ final class GraphWorkspaceViewModel {
     var isShowingNewGraphSheet = false
     var isShowingCreateRunSheet = false
     var runCreationDraft = GraphRunCreationDraft()
+    var runtimeCatalog = GraphRuntimeCatalogSnapshot.empty
+    var isRefreshingRuntimeCatalog = false
+    var runtimeCatalogStatus: String?
 
     @ObservationIgnored private let service: any GraphWorkspaceServicing
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let runtimeCatalogDiscovery:
+        any GraphRuntimeCatalogDiscovering
     @ObservationIgnored private var revisionTask: Task<Void, Never>?
     @ObservationIgnored private var orchestrationTask: Task<Void, Never>?
     @ObservationIgnored private var refreshGeneration: UInt64 = 0
@@ -225,10 +230,13 @@ final class GraphWorkspaceViewModel {
 
     init(
         service: any GraphWorkspaceServicing,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        runtimeCatalogDiscovery: any GraphRuntimeCatalogDiscovering =
+            GraphRuntimeCatalogDiscovery()
     ) {
         self.service = service
         self.defaults = defaults
+        self.runtimeCatalogDiscovery = runtimeCatalogDiscovery
         if let raw = defaults.string(forKey: Self.lastModeKey),
            let restored = GraphWorkspaceMode(rawValue: raw) {
             mode = restored
@@ -260,6 +268,7 @@ final class GraphWorkspaceViewModel {
         hasStarted = true
         isLoading = true
         Task {
+            await refreshRuntimeCatalog()
             await restore()
             let revisions = await service.revisions()
             revisionTask = Task { [weak self] in
@@ -832,6 +841,169 @@ final class GraphWorkspaceViewModel {
         }
     }
 
+    func refreshRuntimeCatalog() async {
+        guard !isRefreshingRuntimeCatalog else { return }
+        isRefreshingRuntimeCatalog = true
+        runtimeCatalogStatus = "Discovering providers, models, and agents…"
+
+        let snapshot = await runtimeCatalogDiscovery.discover()
+        runtimeCatalog = snapshot
+        isRefreshingRuntimeCatalog = false
+
+        let providerCount = snapshot.providers.count
+        let modelCount = snapshot.models.count
+        let agentCount = snapshot.agents.count
+
+        if snapshot.diagnostics.isEmpty {
+            runtimeCatalogStatus =
+                "Found \(providerCount) providers, \(modelCount) models, " +
+                "and \(agentCount) installed agents."
+        } else {
+            runtimeCatalogStatus =
+                "Found \(providerCount) providers, \(modelCount) models, " +
+                "and \(agentCount) installed agents. " +
+                snapshot.diagnostics.joined(separator: " ")
+        }
+    }
+
+    func runtimeProvider(
+        for node: GraphDefinitionDocumentNode
+    ) -> GraphRuntimeProviderKind {
+        guard let value = runtimeTagValue("provider:", in: node) else {
+            switch node.specification.adapterKind {
+            case GraphLocalProcessSpecification.adapterKind:
+                return .localProcess
+            case "openai_compatible":
+                return .openAICompatible
+            default:
+                return .custom
+            }
+        }
+
+        if let provider = GraphRuntimeProviderKind(rawValue: value) {
+            return provider
+        }
+
+        switch value.lowercased() {
+        case "local process":
+            return .localProcess
+        case "ollama":
+            return .ollama
+        case "qwen", "qwen code":
+            return .qwenCode
+        case "gemini", "gemini cli":
+            return .geminiCLI
+        case "opencode", "open code":
+            return .openCode
+        case "openai-compatible endpoint", "openai compatible":
+            return .openAICompatible
+        default:
+            return .custom
+        }
+    }
+
+    func runtimeModel(
+        for node: GraphDefinitionDocumentNode
+    ) -> String {
+        runtimeTagValue("model:", in: node) ?? ""
+    }
+
+    func runtimeAgentProfile(
+        for node: GraphDefinitionDocumentNode
+    ) -> String {
+        runtimeTagValue("agent:", in: node) ?? ""
+    }
+
+    func runtimeModels(
+        for provider: GraphRuntimeProviderKind
+    ) -> [GraphRuntimeModel] {
+        runtimeCatalog.models(for: provider)
+    }
+
+    func runtimeAgents(
+        for provider: GraphRuntimeProviderKind
+    ) -> [GraphRuntimeAgentProfile] {
+        runtimeCatalog.agents(for: provider)
+    }
+
+    func runtimeProviderDefinition(
+        _ provider: GraphRuntimeProviderKind
+    ) -> GraphRuntimeProvider? {
+        runtimeCatalog.provider(provider)
+            ?? GraphRuntimeCatalogDiscovery.builtInProviders.first {
+                $0.id == provider
+            }
+    }
+
+    func bindSelectedNodeRuntime(
+        provider: GraphRuntimeProviderKind,
+        model: String,
+        agentProfile: String
+    ) {
+        guard let providerDefinition = runtimeProviderDefinition(provider)
+        else {
+            updateSelectedNodeRuntime(
+                provider: provider.rawValue,
+                model: model,
+                agentProfile: agentProfile
+            )
+            return
+        }
+
+        do {
+            let binding = try GraphRuntimeNodeBindingFactory.make(
+                provider: providerDefinition,
+                model: model,
+                agentProfileID: agentProfile,
+                catalog: runtimeCatalog
+            )
+
+            mutateSelectedNode(
+                coalescingKey: "agent-runtime"
+            ) { node, _ in
+                let reservedPrefixes = [
+                    "provider:",
+                    "model:",
+                    "agent:",
+                ]
+
+                var tags = node.tags.filter { tag in
+                    !reservedPrefixes.contains {
+                        tag.hasPrefix($0)
+                    }
+                }
+
+                let values = [
+                    ("provider:", provider.rawValue),
+                    ("model:", model),
+                    ("agent:", agentProfile),
+                ]
+
+                for (prefix, value) in values {
+                    let trimmed = value.trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    )
+                    if !trimmed.isEmpty {
+                        tags.append(prefix + trimmed)
+                    }
+                }
+
+                node.tags = tags.sorted()
+                node.specification = binding.specification
+                node.executorKind = binding.executorKind
+                node.requiredCapabilities =
+                    binding.requiredCapabilities.sorted()
+                node.environmentAllowlist =
+                    binding.environmentAllowlist.sorted()
+            }
+        } catch {
+            rejectLocalAction(
+                "runtime_binding_rejected",
+                error
+            )
+        }
+    }
+
     func updateSelectedNodeRuntime(
         provider: String,
         model: String,
@@ -848,10 +1020,23 @@ final class GraphWorkspaceViewModel {
                 ("agent:", agentProfile),
             ]
             for (prefix, value) in values {
-                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty { tags.append(prefix + trimmed) }
+                let trimmed = value.trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                )
+                if !trimmed.isEmpty {
+                    tags.append(prefix + trimmed)
+                }
             }
             node.tags = tags.sorted()
+        }
+    }
+
+    private func runtimeTagValue(
+        _ prefix: String,
+        in node: GraphDefinitionDocumentNode
+    ) -> String? {
+        node.tags.first { $0.hasPrefix(prefix) }.map {
+            String($0.dropFirst(prefix.count))
         }
     }
 

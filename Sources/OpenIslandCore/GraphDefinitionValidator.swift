@@ -223,7 +223,7 @@ public enum GraphDefinitionValidator {
         if !node.nodeType.isRunnable || !context.supportedExecutors.contains(node.executorKind) {
             append(.error, .unsupportedExecutorKind, target,
                    "Executor \(node.executorKind.displayName) is not runnable in this workspace.",
-                   "Choose Supervised Local Process or Deterministic Test Executor.")
+                   "Choose an executor configured and supported by this workspace.")
         }
         if let available = context.availableCapabilities,
            !Set(node.requiredCapabilities).isSubset(of: available) {

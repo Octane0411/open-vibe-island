@@ -18,13 +18,14 @@ public enum GraphDefinitionNodeType: String, Codable, CaseIterable, Sendable {
     }
 
     public var isRunnable: Bool {
-        self == .localProcess || self == .deterministicTest
+        isExecutable
     }
 }
 
 public enum GraphDefinitionExecutorKind: String, Codable, CaseIterable, Sendable {
     case supervisedLocalProcess = "local_process"
     case deterministicTest = "deterministic"
+    case openAICompatible = "openai_compatible"
     case unboundAgent = "generic_agent"
     case none
 
@@ -32,6 +33,7 @@ public enum GraphDefinitionExecutorKind: String, Codable, CaseIterable, Sendable
         switch self {
         case .supervisedLocalProcess: "Supervised Local Process"
         case .deterministicTest: "Deterministic Test Executor"
+        case .openAICompatible: "OpenAI-Compatible HTTP Executor"
         case .unboundAgent: "Generic Agent (not configured)"
         case .none: "No Executor"
         }

@@ -1621,21 +1621,208 @@ private struct GraphDefinitionInspector: View {
 
     private var agentRuntimeSection: some View {
         Section("Agent Runtime") {
-            Picker("Provider", selection: runtimeBinding(prefix: "provider:", fallback: "Local Process")) {
-                Text("Local Process").tag("Local Process")
-                Text("Ollama").tag("Ollama")
-                Text("Qwen").tag("Qwen")
-                Text("OpenClaw").tag("OpenClaw")
-                Text("Codex (not configured)").tag("Codex")
-                Text("Custom Provider").tag("Custom Provider")
+            Picker(
+                "Provider",
+                selection: Binding(
+                    get: { selectedRuntimeProvider },
+                    set: { provider in
+                        viewModel.bindSelectedNodeRuntime(
+                            provider: provider,
+                            model: "",
+                            agentProfile: ""
+                        )
+                    }
+                )
+            ) {
+                ForEach(runtimeProviders) { provider in
+                    Text(provider.displayName).tag(provider.id)
+                }
             }
-            TextField("Model", text: runtimeBinding(prefix: "model:", fallback: ""))
-                .textContentType(.none)
-            TextField("Agent / Profile", text: runtimeBinding(prefix: "agent:", fallback: ""))
-            Text("Provider, model, and agent profile are saved with the node and remain provider-neutral until an adapter binds them at run time.")
+
+            runtimeModelEditor
+            runtimeAgentEditor
+
+            if let provider = selectedRuntimeProviderDefinition {
+                LabeledContent("Adapter", value: provider.adapterKind)
+                LabeledContent("Operation", value: provider.operation)
+
+                if let endpoint = provider.endpoint {
+                    LabeledContent("Default Endpoint", value: endpoint)
+                }
+
+                if !provider.requiredCapabilities.isEmpty {
+                    LabeledContent(
+                        "Runtime Capabilities",
+                        value: provider.requiredCapabilities.joined(
+                            separator: ", "
+                        )
+                    )
+                }
+            }
+
+            HStack {
+                Button {
+                    Task { await viewModel.refreshRuntimeCatalog() }
+                } label: {
+                    if viewModel.isRefreshingRuntimeCatalog {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Label("Refresh Catalog", systemImage: "arrow.clockwise")
+                    }
+                }
+                .disabled(viewModel.isRefreshingRuntimeCatalog)
+
+                Spacer()
+            }
+
+            if let status = viewModel.runtimeCatalogStatus {
+                Text(status)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+
+            Text(
+                "Choose a discovered provider, model, and agent profile. " +
+                "The next execution-binding step will convert this selection " +
+                "into the node adapter and runnable specification."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var runtimeModelEditor: some View {
+        let models = viewModel.runtimeModels(
+            for: selectedRuntimeProvider
+        )
+        let provider = selectedRuntimeProviderDefinition
+
+        if !models.isEmpty {
+            Picker(
+                "Model",
+                selection: Binding(
+                    get: { selectedRuntimeModel },
+                    set: { model in
+                        viewModel.bindSelectedNodeRuntime(
+                            provider: selectedRuntimeProvider,
+                            model: model,
+                            agentProfile: selectedRuntimeAgent
+                        )
+                    }
+                )
+            ) {
+                Text("Select a model").tag("")
+                ForEach(models) { model in
+                    Text(model.name).tag(model.name)
+                }
+            }
+        } else if provider?.supportsModelDiscovery == true {
+            TextField(
+                "Model",
+                text: Binding(
+                    get: { selectedRuntimeModel },
+                    set: { model in
+                        viewModel.bindSelectedNodeRuntime(
+                            provider: selectedRuntimeProvider,
+                            model: model,
+                            agentProfile: selectedRuntimeAgent
+                        )
+                    }
+                )
+            )
+            .textContentType(.none)
+
+            Text("No models were discovered. Enter a model identifier or refresh the catalog.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    @ViewBuilder
+    private var runtimeAgentEditor: some View {
+        let agents = viewModel.runtimeAgents(
+            for: selectedRuntimeProvider
+        )
+        let provider = selectedRuntimeProviderDefinition
+
+        if !agents.isEmpty {
+            Picker(
+                "Agent / Profile",
+                selection: Binding(
+                    get: { selectedRuntimeAgent },
+                    set: { agent in
+                        viewModel.bindSelectedNodeRuntime(
+                            provider: selectedRuntimeProvider,
+                            model: selectedRuntimeModel,
+                            agentProfile: agent
+                        )
+                    }
+                )
+            ) {
+                Text("Select an installed agent").tag("")
+                ForEach(agents) { agent in
+                    Text(agent.name).tag(agent.id)
+                }
+            }
+
+            if let selected = agents.first(where: {
+                $0.id == selectedRuntimeAgent
+            }), let details = selected.details {
+                Text(details)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+        } else if provider?.supportsAgentProfiles == true {
+            TextField(
+                "Agent / Profile",
+                text: Binding(
+                    get: { selectedRuntimeAgent },
+                    set: { agent in
+                        viewModel.bindSelectedNodeRuntime(
+                            provider: selectedRuntimeProvider,
+                            model: selectedRuntimeModel,
+                            agentProfile: agent
+                        )
+                    }
+                )
+            )
+
+            Text("No installed executable or saved profile was discovered.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var runtimeProviders: [GraphRuntimeProvider] {
+        let discovered = viewModel.runtimeCatalog.providers
+        return discovered.isEmpty
+            ? GraphRuntimeCatalogDiscovery.builtInProviders
+            : discovered
+    }
+
+    private var selectedRuntimeProvider: GraphRuntimeProviderKind {
+        guard let selectedNode else { return .localProcess }
+        return viewModel.runtimeProvider(for: selectedNode)
+    }
+
+    private var selectedRuntimeProviderDefinition:
+        GraphRuntimeProvider?
+    {
+        viewModel.runtimeProviderDefinition(selectedRuntimeProvider)
+    }
+
+    private var selectedRuntimeModel: String {
+        guard let selectedNode else { return "" }
+        return viewModel.runtimeModel(for: selectedNode)
+    }
+
+    private var selectedRuntimeAgent: String {
+        guard let selectedNode else { return "" }
+        return viewModel.runtimeAgentProfile(for: selectedNode)
     }
 
     private var workspaceSection: some View {
@@ -1664,26 +1851,6 @@ private struct GraphDefinitionInspector: View {
                     .foregroundStyle(.orange)
             }
         }
-    }
-
-    private func runtimeBinding(prefix: String, fallback: String) -> Binding<String> {
-        Binding(
-            get: {
-                selectedNode?.tags.first(where: { $0.hasPrefix(prefix) })
-                    .map { String($0.dropFirst(prefix.count)) } ?? fallback
-            },
-            set: { newValue in
-                let provider = prefix == "provider:" ? newValue : runtimeValue("provider:", fallback: "Local Process")
-                let model = prefix == "model:" ? newValue : runtimeValue("model:", fallback: "")
-                let agent = prefix == "agent:" ? newValue : runtimeValue("agent:", fallback: "")
-                viewModel.updateSelectedNodeRuntime(provider: provider, model: model, agentProfile: agent)
-            }
-        )
-    }
-
-    private func runtimeValue(_ prefix: String, fallback: String) -> String {
-        selectedNode?.tags.first(where: { $0.hasPrefix(prefix) })
-            .map { String($0.dropFirst(prefix.count)) } ?? fallback
     }
 
     @ViewBuilder

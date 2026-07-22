@@ -90,7 +90,9 @@ actor GraphWorkspaceService: GraphWorkspaceServicing {
         readStore: any GraphExecutionReadStore,
         snapshotStore: any GraphExecutionSnapshotReadStore,
         processExecutor: SupervisedLocalProcessExecutor,
-        launchStore: GraphLocalProcessLaunchStore
+        launchStore: GraphLocalProcessLaunchStore,
+        openAICompatibleExecutor: OpenAICompatibleGraphExecutor =
+            OpenAICompatibleGraphExecutor()
     ) {
         let deterministic = DeterministicGraphExecutor(
             capabilities: ["deterministic", "compendium"],
@@ -99,6 +101,8 @@ actor GraphWorkspaceService: GraphWorkspaceServicing {
         let router = RoutingGraphExecutor(adapters: [
             GraphLocalProcessSpecification.adapterKind: processExecutor,
             "deterministic": deterministic,
+            OpenAICompatibleGraphExecutor.adapterKind:
+                openAICompatibleExecutor,
         ])
         mutator = DefaultGraphMutationService(
             eventStore: eventStore,
@@ -117,6 +121,7 @@ actor GraphWorkspaceService: GraphWorkspaceServicing {
                 supportedAdapterKinds: [
                     GraphLocalProcessSpecification.adapterKind,
                     "deterministic",
+                    OpenAICompatibleGraphExecutor.adapterKind,
                 ]
             )
         )
@@ -247,7 +252,11 @@ actor GraphWorkspaceService: GraphWorkspaceServicing {
             }
         }
         return GraphDefinitionValidationContext(
-            supportedExecutors: [.supervisedLocalProcess, .deterministicTest],
+            supportedExecutors: [
+                .supervisedLocalProcess,
+                .deterministicTest,
+                .openAICompatible,
+            ],
             availableCapabilities: workspaceExecutorCapabilities,
             availableExecutablePaths: executablePaths,
             availableDirectoryPaths: directoryPaths

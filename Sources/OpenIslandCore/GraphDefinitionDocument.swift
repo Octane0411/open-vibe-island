@@ -197,6 +197,7 @@ public struct GraphDefinitionDocumentNode:
         switch specification.adapterKind {
         case GraphLocalProcessSpecification.adapterKind: .supervisedLocalProcess
         case "deterministic": .deterministicTest
+        case "openai_compatible": .openAICompatible
         case "generic_agent": .unboundAgent
         default: nodeType.isExecutable ? .unboundAgent : .none
         }
