@@ -45,6 +45,7 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
     public var updatedAt: Date
     public var jumpTarget: JumpTarget?
     public var codexMetadata: CodexSessionMetadata?
+    public var observability: AgentSessionObservability?
 
     public init(
         sessionID: String,
@@ -55,7 +56,8 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
         phase: SessionPhase,
         updatedAt: Date,
         jumpTarget: JumpTarget? = nil,
-        codexMetadata: CodexSessionMetadata? = nil
+        codexMetadata: CodexSessionMetadata? = nil,
+        observability: AgentSessionObservability? = nil
     ) {
         self.sessionID = sessionID
         self.title = title
@@ -66,6 +68,7 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
         self.updatedAt = updatedAt
         self.jumpTarget = jumpTarget
         self.codexMetadata = codexMetadata
+        self.observability = observability
     }
 
     public init(session: AgentSession) {
@@ -78,7 +81,8 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
             phase: session.phase,
             updatedAt: session.updatedAt,
             jumpTarget: session.jumpTarget,
-            codexMetadata: session.codexMetadata
+            codexMetadata: session.codexMetadata,
+            observability: session.observability
         )
     }
 
@@ -93,7 +97,8 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
             summary: summary,
             updatedAt: updatedAt,
             jumpTarget: jumpTarget,
-            codexMetadata: codexMetadata
+            codexMetadata: codexMetadata,
+            observability: observability ?? AgentSessionObservability()
         )
         // Re-derive the Codex.app flag from the persisted terminalApp so
         // restarted sessions continue to use app-level liveness rather than
@@ -112,6 +117,7 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
         case updatedAt
         case jumpTarget
         case codexMetadata
+        case observability
     }
 
     public init(from decoder: any Decoder) throws {
@@ -125,6 +131,7 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         jumpTarget = try container.decodeIfPresent(JumpTarget.self, forKey: .jumpTarget)
         codexMetadata = try container.decodeIfPresent(CodexSessionMetadata.self, forKey: .codexMetadata)
+        observability = try container.decodeIfPresent(AgentSessionObservability.self, forKey: .observability)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -138,6 +145,7 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(jumpTarget, forKey: .jumpTarget)
         try container.encodeIfPresent(codexMetadata, forKey: .codexMetadata)
+        try container.encodeIfPresent(observability, forKey: .observability)
     }
 }
 
@@ -149,7 +157,9 @@ public extension CodexTrackedSessionRecord {
     }
 
     var shouldRestoreToLiveState: Bool {
-        origin != .demo && !LegacyMockSessionIDs.all.contains(sessionID)
+        origin != .demo
+            && !LegacyMockSessionIDs.all.contains(sessionID)
+            && phase != .completed
     }
 }
 

@@ -53,7 +53,6 @@ final class ProcessMonitoringCoordinator {
     private static let activePollInterval: TimeInterval = 60
     private static let idlePollInterval: TimeInterval = 300
     private static let cursorStalenessTimeout: TimeInterval = 600  // 10 minutes
-    private static let codexAppStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let claudeDesktopStalenessTimeout: TimeInterval = 600  // 10 minutes
 
     static func monitoringPollInterval(
@@ -389,15 +388,15 @@ final class ProcessMonitoringCoordinator {
                 .filter { $0.tool == .codex }
                 .compactMap(\.sessionID)
         )
-        // Codex.app sessions: keep alive while the desktop app is running.
+        // Codex.app is only host-process evidence. An individual thread is
+        // alive on the control surface only while app-server or rollout state
+        // says it is actively running or waiting for the user.
         for session in sessions where session.tool == .codex && !session.isDemoSession {
             if session.isCodexAppSession {
                 if session.isSessionEnded {
                     continue
                 }
-                let isStale = session.phase == .completed
-                    && session.updatedAt.addingTimeInterval(Self.codexAppStalenessTimeout) < Date.now
-                if isCodexAppRunning, !isStale {
+                if isCodexAppRunning, session.phase != .completed {
                     aliveIDs.insert(session.id)
                 }
             } else if codexProcessIDs.contains(session.id) {

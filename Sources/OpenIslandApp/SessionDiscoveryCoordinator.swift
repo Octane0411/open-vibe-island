@@ -98,7 +98,9 @@ final class SessionDiscoveryCoordinator {
         let allCursor = (try? cursorSessionRegistry.load()) ?? []
         let cursorRecords = allCursor.filter { $0.updatedAt >= cutoff && $0.shouldRestoreToLiveState }
 
-        let discoveredCodex = codexRolloutDiscovery.discoverRecentSessions()
+        let discoveredCodex = codexRolloutDiscovery
+            .discoverRecentSessions()
+            .filter(\.shouldRestoreToLiveState)
         let discoveredClaude = claudeTranscriptDiscovery.discoverRecentSessions()
 
         return StartupDiscoveryPayload(
@@ -416,6 +418,8 @@ final class SessionDiscoveryCoordinator {
     /// Called periodically when Codex.app is running as a fallback when
     /// the app-server connection is unavailable.  Throttled to at most
     /// once per 10 seconds.
+    static let codexAppRediscoveryActiveWindow: TimeInterval = 120
+
     func rediscoverCodexAppSessionsIfNeeded() {
         let now = Date.now
         guard now.timeIntervalSince(lastCodexAppRescanDate) >= 10 else { return }
@@ -432,11 +436,13 @@ final class SessionDiscoveryCoordinator {
     }
 
     private func applyCodexAppRediscovery(_ records: [CodexTrackedSessionRecord]) {
+        let now = Date.now
         let existingIDs = Set(state.sessions.filter { $0.tool == .codex }.map(\.id))
         let existingPaths = Set(state.sessions.compactMap(\.codexMetadata?.transcriptPath))
 
         let newRecords = records.filter { record in
-            !existingIDs.contains(record.sessionID)
+            Self.shouldRediscoverCodexAppRecord(record, now: now)
+                && !existingIDs.contains(record.sessionID)
                 && (record.codexMetadata?.transcriptPath).map { !existingPaths.contains($0) } ?? true
         }
         guard !newRecords.isEmpty else { return }
@@ -470,6 +476,14 @@ final class SessionDiscoveryCoordinator {
         onStatusMessage?("Discovered \(newRecords.count) new Codex.app session(s) via rollout re-scan.")
     }
 
+    static func shouldRediscoverCodexAppRecord(
+        _ record: CodexTrackedSessionRecord,
+        now: Date
+    ) -> Bool {
+        record.phase == .running
+            && record.updatedAt >= now.addingTimeInterval(-codexAppRediscoveryActiveWindow)
+    }
+
     // MARK: - Persistence scheduling
 
     private static func persistenceTask(
@@ -491,14 +505,25 @@ final class SessionDiscoveryCoordinator {
     func scheduleCodexSessionPersistence() {
         codexSessionPersistenceTask?.cancel()
 
+        let now = Date.now
         let records = state.sessions
-            .filter { $0.isTrackedLiveCodexSession && $0.updatedAt >= Date.now.addingTimeInterval(-86_400) }
+            .filter { Self.shouldPersistCodexSession($0, now: now) }
             .map(CodexTrackedSessionRecord.init(session:))
         let store = codexSessionStore
 
         codexSessionPersistenceTask = Self.persistenceTask {
             try store.save(records)
         }
+    }
+
+    static func shouldPersistCodexSession(
+        _ session: AgentSession,
+        now: Date
+    ) -> Bool {
+        session.isTrackedLiveCodexSession
+            && session.phase != .completed
+            && !session.isSessionEnded
+            && session.updatedAt >= now.addingTimeInterval(-86_400)
     }
 
     func scheduleClaudeSessionPersistence() {

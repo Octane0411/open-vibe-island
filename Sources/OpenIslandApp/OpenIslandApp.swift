@@ -4,6 +4,15 @@ import SwiftUI
 @MainActor
 final class OpenIslandAppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
+    let graphWorkspaceService: any GraphWorkspaceServicing = {
+        do {
+            return try GraphWorkspaceService.live()
+        } catch {
+            return UnavailableGraphWorkspaceService(
+                message: error.localizedDescription
+            )
+        }
+    }()
     private let harnessLaunchConfiguration = HarnessLaunchConfiguration()
     private let launchedAt = Date()
     private lazy var harnessRuntimeMonitor = HarnessRuntimeMonitor(launchedAt: launchedAt)
@@ -99,6 +108,18 @@ struct OpenIslandApp: App {
             SettingsWindowContent(model: appDelegate.model)
         }
         .windowResizability(.contentMinSize)
+
+        Window(
+            GraphWorkspaceEntryPoint.label,
+            id: GraphWorkspaceEntryPoint.windowID
+        ) {
+            GraphWorkspaceRegistrar(
+                model: appDelegate.model,
+                service: appDelegate.graphWorkspaceService
+            )
+        }
+        .defaultSize(width: 1_240, height: 780)
+        .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .appSettings) {
                 Button("Settings…") {
@@ -107,7 +128,51 @@ struct OpenIslandApp: App {
                 }
                 .keyboardShortcut(",", modifiers: .command)
             }
+            CommandGroup(after: .newItem) {
+                Button("New Graph") {
+                    openWindow(id: GraphWorkspaceEntryPoint.windowID)
+                    DispatchQueue.main.async {
+                        appDelegate.model.newGraphDefinitionAction?()
+                        appDelegate.model.showGraphWorkspace()
+                    }
+                }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
+
+                Button("Open Graph Definition…") {
+                    openWindow(id: GraphWorkspaceEntryPoint.windowID)
+                    DispatchQueue.main.async {
+                        appDelegate.model.openGraphDefinitionAction?()
+                        appDelegate.model.showGraphWorkspace()
+                    }
+                }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+            }
+            CommandGroup(after: .windowArrangement) {
+                Button(GraphWorkspaceEntryPoint.label) {
+                    openWindow(id: GraphWorkspaceEntryPoint.windowID)
+                    appDelegate.model.showGraphWorkspace()
+                }
+                .keyboardShortcut(
+                    GraphWorkspaceEntryPoint.shortcutKey,
+                    modifiers: [.command, .shift]
+                )
+            }
         }
+    }
+}
+
+private struct GraphWorkspaceRegistrar: View {
+    var model: AppModel
+    let service: any GraphWorkspaceServicing
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        GraphWorkspaceWindowContent(model: model, service: service)
+            .onAppear {
+                model.openGraphWorkspaceWindow = { [openWindow] in
+                    openWindow(id: GraphWorkspaceEntryPoint.windowID)
+                }
+            }
     }
 }
 

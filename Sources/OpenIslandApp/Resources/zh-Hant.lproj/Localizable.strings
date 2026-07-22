@@ -211,6 +211,12 @@
 "subagents.completed" = "完成";
 "tasks.summary" = "任務 (%lld 已完成, %lld 進行中, %lld 待處理)";
 
+/* Island Panel - Observability */
+"observability.events" = "事件";
+"observability.tools" = "工具";
+"observability.elapsed" = "耗時";
+"observability.timeline" = "時間線";
+
 /* Island Panel - Question */
 "question.submit" = "提交答案";
 "question.answerNeeded" = "需要回答";

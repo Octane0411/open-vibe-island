@@ -97,7 +97,10 @@ final class CodexAppServerCoordinator {
         do {
             let threads = try await client.listLoadedThreads()
             var created = 0
-            for thread in threads where !thread.ephemeral {
+            for thread in threads where Self.shouldSurface(
+                status: thread.status.type,
+                ephemeral: thread.ephemeral
+            ) {
                 // Skip threads already tracked — re-emitting sessionStarted
                 // rebuilds the AgentSession and would wipe richer state
                 // already accumulated from hooks or rediscovery.
@@ -118,72 +121,23 @@ final class CodexAppServerCoordinator {
     private func handleNotification(_ notification: CodexAppServerNotification) {
         switch notification {
         case .threadStarted(let thread):
-            guard !thread.ephemeral else { return }
+            guard Self.shouldSurface(
+                status: thread.status.type,
+                ephemeral: thread.ephemeral
+            ) else { return }
             guard isSessionTracked?(thread.id) != true else { return }
             emitSessionStarted(from: thread)
 
         case .threadStatusChanged(let threadId, let status):
-            switch status.type {
-            case .active:
-                if status.isWaitingOnApproval {
-                    onEvent?(.permissionRequested(
-                        PermissionRequested(
-                            sessionID: threadId,
-                            request: PermissionRequest(
-                                title: "Approval Required",
-                                summary: "Codex is waiting for approval.",
-                                affectedPath: ""
-                            ),
-                            timestamp: .now
-                        )
-                    ))
-                } else if status.isWaitingOnUserInput {
-                    onEvent?(.questionAsked(
-                        QuestionAsked(
-                            sessionID: threadId,
-                            prompt: QuestionPrompt(
-                                title: "Codex is waiting for input.",
-                                options: []
-                            ),
-                            timestamp: .now
-                        )
-                    ))
-                } else {
-                    onEvent?(.activityUpdated(
-                        SessionActivityUpdated(
-                            sessionID: threadId,
-                            summary: "Codex is working…",
-                            phase: .running,
-                            timestamp: .now
-                        )
-                    ))
+            if status.type == .active, isSessionTracked?(threadId) != true {
+                Task { [weak self] in
+                    guard let self else { return }
+                    await self.syncLoadedThreads()
+                    self.emitThreadStatusChanged(threadId: threadId, status: status)
                 }
-            case .idle:
-                // Idle means "between turns" in the same thread — the thread
-                // is still open.  Only `thread/closed` truly ends a session.
-                onEvent?(.activityUpdated(
-                    SessionActivityUpdated(
-                        sessionID: threadId,
-                        summary: "Idle.",
-                        phase: .completed,
-                        timestamp: .now
-                    )
-                ))
-            case .systemError:
-                // Quota limits and other hard failures can leave the thread in
-                // systemError without a turn/completed notification. Mark the
-                // turn as finished so the island does not stay stuck running.
-                onEvent?(.activityUpdated(
-                    SessionActivityUpdated(
-                        sessionID: threadId,
-                        summary: "Turn failed.",
-                        phase: .completed,
-                        timestamp: .now
-                    )
-                ))
-            case .notLoaded:
-                break
+                return
             }
+            emitThreadStatusChanged(threadId: threadId, status: status)
 
         case .threadClosed(let threadId):
             onEvent?(.sessionCompleted(
@@ -213,10 +167,6 @@ final class CodexAppServerCoordinator {
             ))
 
         case .turnCompleted(let threadId, let turn):
-            // A turn completing doesn't end the thread — the user can send
-            // another message.  Use activityUpdated(phase: .completed) so the
-            // session stays visible as "Completed" rather than being torn
-            // down.  `thread/closed` is the authoritative end signal.
             let summary: String
             switch turn.status {
             case .completed: summary = "Turn completed."
@@ -234,6 +184,72 @@ final class CodexAppServerCoordinator {
             ))
 
         case .unknown:
+            break
+        }
+    }
+
+    static func shouldSurface(
+        status: CodexThreadStatusType,
+        ephemeral: Bool
+    ) -> Bool {
+        !ephemeral && status == .active
+    }
+
+    private func emitThreadStatusChanged(threadId: String, status: CodexThreadStatus) {
+        switch status.type {
+        case .active:
+            if status.isWaitingOnApproval {
+                onEvent?(.permissionRequested(
+                    PermissionRequested(
+                        sessionID: threadId,
+                        request: PermissionRequest(
+                            title: "Approval Required",
+                            summary: "Codex is waiting for approval.",
+                            affectedPath: ""
+                        ),
+                        timestamp: .now
+                    )
+                ))
+            } else if status.isWaitingOnUserInput {
+                onEvent?(.questionAsked(
+                    QuestionAsked(
+                        sessionID: threadId,
+                        prompt: QuestionPrompt(
+                            title: "Codex is waiting for input.",
+                            options: []
+                        ),
+                        timestamp: .now
+                    )
+                ))
+            } else {
+                onEvent?(.activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: threadId,
+                        summary: "Codex is working…",
+                        phase: .running,
+                        timestamp: .now
+                    )
+                ))
+            }
+        case .idle:
+            onEvent?(.activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: threadId,
+                    summary: "Idle.",
+                    phase: .completed,
+                    timestamp: .now
+                )
+            ))
+        case .systemError:
+            onEvent?(.activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: threadId,
+                    summary: "Turn failed.",
+                    phase: .completed,
+                    timestamp: .now
+                )
+            ))
+        case .notLoaded:
             break
         }
     }

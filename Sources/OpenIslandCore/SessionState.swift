@@ -57,6 +57,8 @@ public struct SessionState: Equatable, Sendable {
         switch event {
         case let .sessionStarted(payload):
             let preservedFirstSeenAt = sessionsByID[payload.sessionID]?.firstSeenAt
+            let preservedObservability = sessionsByID[payload.sessionID]?.observability
+                ?? AgentSessionObservability()
             var session = AgentSession(
                 id: payload.sessionID,
                 title: payload.title,
@@ -72,7 +74,8 @@ public struct SessionState: Equatable, Sendable {
                 claudeMetadata: payload.claudeMetadata?.isEmpty == true ? nil : payload.claudeMetadata,
                 geminiMetadata: payload.geminiMetadata?.isEmpty == true ? nil : payload.geminiMetadata,
                 openCodeMetadata: payload.openCodeMetadata?.isEmpty == true ? nil : payload.openCodeMetadata,
-                cursorMetadata: payload.cursorMetadata?.isEmpty == true ? nil : payload.cursorMetadata
+                cursorMetadata: payload.cursorMetadata?.isEmpty == true ? nil : payload.cursorMetadata,
+                observability: preservedObservability
             )
             session.isRemote = payload.isRemote
             session.isHookManaged = payload.origin == .live
@@ -222,6 +225,8 @@ public struct SessionState: Equatable, Sendable {
             session.updatedAt = payload.timestamp
             upsert(session)
         }
+
+        recordObservability(for: event)
     }
 
     public mutating func resolvePermission(
@@ -258,6 +263,14 @@ public struct SessionState: Equatable, Sendable {
             }
         }
 
+        session.observability.record(
+            AgentTimelineEvent(
+                timestamp: timestamp,
+                kind: resolution.isApproved ? .status : .completion,
+                title: resolution.isApproved ? "Permission approved" : "Permission denied",
+                detail: session.summary
+            )
+        )
         upsert(session)
     }
 
@@ -275,6 +288,14 @@ public struct SessionState: Equatable, Sendable {
         let summary = response.displaySummary
         session.summary = summary.isEmpty ? "Answered the question." : "Answered: \(summary)"
         session.updatedAt = timestamp
+        session.observability.record(
+            AgentTimelineEvent(
+                timestamp: timestamp,
+                kind: .status,
+                title: "Question answered",
+                detail: session.summary
+            )
+        )
         upsert(session)
     }
 
@@ -432,6 +453,14 @@ public struct SessionState: Equatable, Sendable {
         session.isSessionEnded = true
         session.phase = .completed
         session.updatedAt = .now
+        session.observability.record(
+            AgentTimelineEvent(
+                timestamp: session.updatedAt,
+                kind: .completion,
+                title: "Session dismissed",
+                detail: session.summary
+            )
+        )
         upsert(session)
     }
 
@@ -445,5 +474,15 @@ public struct SessionState: Equatable, Sendable {
 
     private mutating func upsert(_ session: AgentSession) {
         sessionsByID[session.id] = session
+    }
+
+    private mutating func recordObservability(for event: AgentEvent) {
+        guard var session = sessionsByID[event.sessionID],
+              let timelineEvent = event.timelineEvent else {
+            return
+        }
+
+        session.observability.record(timelineEvent)
+        upsert(session)
     }
 }

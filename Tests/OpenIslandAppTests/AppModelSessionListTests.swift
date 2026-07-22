@@ -174,8 +174,8 @@ struct AppModelSessionListTests {
             tool: .codex,
             origin: .live,
             attachmentState: .attached,
-            phase: .completed,
-            summary: "First Codex.app thread",
+            phase: .running,
+            summary: "First active Codex.app thread",
             updatedAt: now,
             jumpTarget: JumpTarget(
                 terminalApp: "Codex.app",
@@ -194,8 +194,8 @@ struct AppModelSessionListTests {
             tool: .codex,
             origin: .live,
             attachmentState: .attached,
-            phase: .completed,
-            summary: "Second Codex.app thread",
+            phase: .running,
+            summary: "Second active Codex.app thread",
             updatedAt: now.addingTimeInterval(-30),
             jumpTarget: JumpTarget(
                 terminalApp: "Codex.app",
@@ -759,6 +759,7 @@ struct AppModelSessionListTests {
     @Test
     func completionNotificationDefersTimedCollapseWhilePointerIsInside() {
         let model = AppModel()
+        model.pointerLocationAccessor = { NSPoint(x: -10_000, y: -10_000) }
         model.applyTrackedEvent(
             .sessionStarted(SessionStarted(
                 sessionID: "session-1",
@@ -797,6 +798,7 @@ struct AppModelSessionListTests {
     @Test
     func completionNotificationHoverCancelsPendingTimedCollapse() {
         let model = AppModel()
+        model.pointerLocationAccessor = { NSPoint(x: -10_000, y: -10_000) }
         model.state = SessionState(
             sessions: [
                 AgentSession(

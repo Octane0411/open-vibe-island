@@ -22,6 +22,7 @@ This index is the repository map for humans and coding agents. Read these files 
 ## Harness And Planning
 
 - [docs/exec-plans/README.md](./exec-plans/README.md) for the active and completed execution-plan convention
+- [docs/exec-plans/active/2026-07-19-capability-first-orchestration-control-plane.md](./exec-plans/active/2026-07-19-capability-first-orchestration-control-plane.md) for the active capability-first orchestration and AgentPeek parity plan
 - [docs/references/README.md](./references/README.md) for pinned reference material and external behavior baselines
 
 ## Superpowers Plans
@@ -32,6 +33,14 @@ This index is the repository map for humans and coding agents. Read these files 
 
 - [docs/notch-surface-model.md](./notch-surface-model.md) for the island surface routing model and debug harness intent
 - [docs/app-ghostty-codex-chain.md](./app-ghostty-codex-chain.md) for terminal environment findings across the current supported chain
+- [docs/architecture-decisions/001-durable-graph-history.md](./architecture-decisions/001-durable-graph-history.md) for graph event sourcing, replay, snapshots, reconciliation, artifacts, and local persistence
+- [docs/architecture-decisions/002-durable-graph-scheduling.md](./architecture-decisions/002-durable-graph-scheduling.md) for deterministic scheduling, executor claims, renewable leases, retry, cancellation, timeout, restart recovery, and scheduling inspection
+- [docs/architecture-decisions/003-graph-mutation-and-executor-boundary.md](./architecture-decisions/003-graph-mutation-and-executor-boundary.md) for mutation commands, fenced executor adapters, orchestration cycles, crash recovery, and artifact handoffs
+- [docs/architecture-decisions/004-local-process-and-graph-workspace.md](./architecture-decisions/004-local-process-and-graph-workspace.md) for supervised process identity, cancellation, logs, artifacts, graph documents, and the native workspace boundary
+- [docs/architecture-decisions/005-native-graph-authoring.md](./architecture-decisions/005-native-graph-authoring.md) for complete native authoring, document versions, typed wiring, validation, undo, templates, and the run-creation boundary
+- [docs/graph-workspace.md](./graph-workspace.md) for operating the native Definition, Run, and History workspace
+- [docs/graph-cli.md](./graph-cli.md) for graph mutation, execution, temporal inspection, schema, exit-code, redaction, and telemetry contracts
+- [docs/terminal-graph-integration.md](./terminal-graph-integration.md) for Terminal Graph streams, typed ports, worktrees, workspace plans, hooks, and future MCP boundaries
 
 ## Refactoring Plans
 
