@@ -91,10 +91,12 @@ enforces the caller's observed stream head. Mutation idempotency keys are
 required for `create`, `start`, `cancel`, and `retry`; orchestration cycles are
 made idempotent by deterministic decision, claim, command, and observation IDs.
 
-The built-in CLI currently configures only the in-process deterministic
-executor. Its purpose is local validation of the control protocol, not real
-model work. Codex, Qwen, Ollama, tmux, and Terminal Graph MCP execution are not
-connected.
+The built-in CLI configures the supervised local direct-process executor and
+the same durable process-evidence source as the native workspace. Set
+`OPENISLAND_PROCESS_RUNTIME_ROOT` to isolate launch records and logs; set
+`OPENISLAND_GRAPH_DATABASE_PATH` to select the graph store. The deterministic
+executor remains available to tests. Codex, Qwen, Ollama, OpenClaw, tmux, and
+Terminal Graph MCP execution are not connected.
 
 ## Options And Filters
 

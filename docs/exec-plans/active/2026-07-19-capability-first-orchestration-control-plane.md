@@ -2,7 +2,7 @@
 
 **Status:** Active
 **Started:** 2026-07-19
-**Current phase:** Phase 2, first real local executor adapter preparation
+**Current phase:** Phase 2 complete; provider adapters are the next graph-runtime task
 
 ## Problem
 
@@ -372,7 +372,8 @@ recent state transitions; polling cannot inflate metrics; timeline state survive
   history, explain, checkpoints, replay, diff, and redacted export.
 - [x] Add stable text, JSON, JSONL, completion, exit-code, telemetry, Unix pipeline, worktree,
   multi-project, and neutral Terminal Graph workspace-plan contracts.
-- [ ] Implement host-specific process-evidence adapters that emit canonical evidence.
+- [x] Implement a Darwin process-evidence adapter that emits canonical identity and exit
+  classifications without owning graph state.
 - [x] Add deterministic event-sourced scheduler decisions, runnable selection, fixed-point
   dependency failure propagation, and explicit reason codes.
 - [x] Add optimistic executor claims, renewable generation-fenced leases, explicit expiry and
@@ -394,11 +395,14 @@ recent state transitions; polling cannot inflate metrics; timeline state survive
 - [x] Execute the committed architect -> researcher -> graph -> reviewer fixture end to end with
   deterministic retry, cancellation, timeout, stale-generation, duplicate, crash, SQLite
   restart, replay, diff, export, and pipeline evidence.
-- [ ] Implement the first real supervised process executor for one local compendium node.
+- [x] Implement the supervised direct-process executor and run all four local compendium
+  nodes with durable identity, logs, artifacts, recovery, cancellation, and timeout.
 - [ ] Add typed handoff schemas on top of artifact references, then supervise a graph with at
   least two local models.
-- [ ] Add graph logs and metric projections to the shared command service; temporal graph
-  inspection is now exposed through the standalone CLI boundary.
+- [x] Add bounded process-log access to the native graph workspace and shared production
+  process runtime; aggregate graph metric projections remain Phase 3 work.
+- [x] Add versioned graph-definition documents and a native Definition/Run/History workspace
+  with a discoverable singleton entry point.
 
 ### Phase 3: Usage, inspection, and visual control plane
 
@@ -444,13 +448,13 @@ for quality, latency, cost, and context growth.
 5. **Complete:** mutation commands, provider-neutral executor protocol, fenced observation
    repository, bounded orchestration cycles, deterministic executor, artifact propagation,
    lease renewal, and four-node compendium execution across crash and restart boundaries.
-6. **Next:** implement one supervised local direct-process or tmux executor with durable
-   process identity and bounded log/artifact capture, then connect only the architect node.
-7. Implement host-specific process-evidence adapters that translate observations into
-   canonical exits and heartbeat leases without mutating history.
-8. Add non-local CLI usage metrics and local-model resource metrics as distinct projections.
-9. Add provider/model executors only after the local process adapter proves the command,
-   event, fencing, and recovery contracts.
+6. **Complete:** supervised direct-process execution, durable process identity, bounded logs,
+   declared artifacts, cancellation, timeout, recovery, and the four-node compendium graph.
+7. **Complete:** Darwin process evidence plus native graph documents and the singleton
+   Definition/Run/History workspace backed only by public graph services.
+8. **Next:** implement provider-specific agent adapters behind the proven executor boundary,
+   beginning with one supervised compendium node and evaluating providers independently.
+9. Add non-local CLI usage metrics and local-model resource metrics as distinct projections.
 10. Defer all visual redesign, including liquid glass, until orchestration behavior and
    operator information architecture are stable.
 
@@ -482,6 +486,27 @@ for quality, latency, cost, and context growth.
 - `4b3333f test: prove graph execution and restart invariants`
 - `5864b22 fix: remove cursor-sensitive test nondeterminism`
 - `15a47c8 feat: renew active orchestration leases`
+- `643a974 feat: add supervised local process executor`
+- `65044c2 feat: add durable process logs and artifacts`
+- `feab43b feat: add versioned graph definition documents`
+- `43a331f feat: add native graph workspace and entry button`
+- `5d70797 feat: run compendium graph with local processes`
+- `3d40d98 test: prove process recovery and graph workspace invariants`
+
+### Local process and workspace decisions
+
+- Supervised direct processes precede tmux and provider adapters because PID birth identity,
+  process groups, streams, exit status, and cancellation can be proven without inheriting a
+  terminal's lifecycle model.
+- Durable launch records bind OS identity to attempt, claim, generation, invocation,
+  executable, workspace, and executor instance. PID equality alone never permits recovery or
+  signaling.
+- Definition documents and layout metadata are versioned separately from immutable run
+  snapshots and event history. Layout does not affect the semantic digest.
+- The native workspace sends typed intents to mutation, orchestration, and temporal services;
+  it cannot manufacture events or edit projected state.
+- The app and CLI now compose the same local adapter and process-evidence source. The
+  deterministic adapter remains a test implementation.
 
 ### Temporal inspection and integration decisions
 
