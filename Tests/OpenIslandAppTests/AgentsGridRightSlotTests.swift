@@ -271,6 +271,21 @@ struct AgentsGridRightSlotTests {
         sort: IslandAgentGridSort,
         completedStaleThreshold: IslandCompletedStaleThreshold = .fiveMinutes
     ) {
+        let defaults = UserDefaults.standard
+        let keys = Self.appearanceDefaultsKeys
+        let savedValues = keys.reduce(into: [String: Any]()) { values, key in
+            values[key] = defaults.object(forKey: key)
+        }
+        defer {
+            for key in keys {
+                if let savedValue = savedValues[key] {
+                    defaults.set(savedValue, forKey: key)
+                } else {
+                    defaults.removeObject(forKey: key)
+                }
+            }
+        }
+
         for profile in [IslandAppearanceDisplayProfile.notch, .topBar] {
             model.updateAppearancePreferences(for: profile) {
                 $0.rightSlot = .agents
@@ -278,6 +293,19 @@ struct AgentsGridRightSlotTests {
                 $0.completedStaleThreshold = completedStaleThreshold
             }
         }
+    }
+
+    private static let appearanceDefaultsKeys = IslandAppearanceDisplayProfile.allCases.flatMap { profile in
+        [
+            "rightSlot",
+            "agentGridSort",
+            "centerLabel",
+            "usageDisplay",
+            "stateIndicator",
+            "sessionGroup",
+            "sessionSort",
+            "completedStaleThreshold",
+        ].map { "appearance.island.v8.\(profile.rawValue).\($0)" }
     }
 
     private static func cellFor(_ session: AgentSession) -> AgentGridCell {

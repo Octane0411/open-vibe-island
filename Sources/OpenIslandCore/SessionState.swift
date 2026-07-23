@@ -167,7 +167,9 @@ public struct SessionState: Equatable, Sendable {
             }
 
             session.codexMetadata = payload.codexMetadata.isEmpty ? nil : payload.codexMetadata
-            session.updatedAt = payload.timestamp
+            // Metadata enriches the session but must not make its activity
+            // chronology move backward when an older rollout tail is replayed.
+            session.updatedAt = max(session.updatedAt, payload.timestamp)
             upsert(session)
 
         case let .claudeSessionMetadataUpdated(payload):

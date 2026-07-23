@@ -413,6 +413,23 @@ struct AppModelSessionListTests {
         #expect(reloaded.islandSessionGroup == .project)
         #expect(reloaded.islandSessionStateIndicator == .tint)
         #expect(reloaded.completedStaleThreshold == .never)
+
+        let defaults = UserDefaults.standard
+        let notchSortKey = "appearance.island.v8.notch.agentGridSort"
+        let topBarSortKey = "appearance.island.v8.topBar.agentGridSort"
+        defaults.removeObject(forKey: notchSortKey)
+        defaults.removeObject(forKey: topBarSortKey)
+
+        let missingValues = AppModel()
+        #expect(missingValues.appearancePreferences(for: .notch).agentGridSort == .statusPriority)
+        #expect(missingValues.appearancePreferences(for: .topBar).agentGridSort == .statusPriority)
+
+        defaults.set("unknown-grid-sort", forKey: notchSortKey)
+        defaults.set("unknown-grid-sort", forKey: topBarSortKey)
+
+        let invalidValues = AppModel()
+        #expect(invalidValues.appearancePreferences(for: .notch).agentGridSort == .statusPriority)
+        #expect(invalidValues.appearancePreferences(for: .topBar).agentGridSort == .statusPriority)
     }
 
     @Test
@@ -498,7 +515,65 @@ struct AppModelSessionListTests {
     }
 
     @Test
-    func rolloutRunningEventReopensCompletedSessionUnlessSnapshotIsOlder() {
+    func olderRolloutMetadataThenRunningActivityDoesNotReopenCompletedSession() {
+        let completedAt = Date(timeIntervalSince1970: 2_000)
+        let olderSnapshotAt = completedAt.addingTimeInterval(-1)
+        let model = AppModel()
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "completed-session",
+                    title: "Codex · open-island",
+                    tool: .codex,
+                    origin: .live,
+                    attachmentState: .attached,
+                    phase: .completed,
+                    summary: "Previous turn completed.",
+                    updatedAt: completedAt
+                ),
+            ]
+        )
+
+        let events = CodexRolloutReducer.events(
+            from: CodexRolloutSnapshot(
+                summary: "Previous turn completed.",
+                phase: .completed,
+                updatedAt: completedAt,
+                lastUserPrompt: "Finish the previous turn.",
+                isCompleted: true
+            ),
+            to: CodexRolloutSnapshot(
+                summary: "Stale running snapshot.",
+                phase: .running,
+                updatedAt: olderSnapshotAt,
+                lastUserPrompt: "Stale prompt from the rollout tail."
+            ),
+            sessionID: "completed-session",
+            transcriptPath: "/tmp/completed-session.jsonl"
+        )
+        guard events.count == 2,
+              case let .sessionMetadataUpdated(metadata) = events[0],
+              case let .activityUpdated(activity) = events[1] else {
+            Issue.record("Expected rollout metadata followed by running activity")
+            return
+        }
+        #expect(metadata.timestamp == olderSnapshotAt)
+        #expect(activity.timestamp == olderSnapshotAt)
+
+        for event in events {
+            model.applyTrackedEvent(
+                event,
+                updateLastActionMessage: false,
+                ingress: .rollout
+            )
+        }
+
+        #expect(model.state.session(id: "completed-session")?.phase == .completed)
+        #expect(model.state.session(id: "completed-session")?.updatedAt == completedAt)
+    }
+
+    @Test
+    func newerRolloutMetadataThenEqualTimestampRunningActivityReopensCompletedSession() {
         let completedAt = Date(timeIntervalSince1970: 2_000)
         let nextTurnAt = completedAt.addingTimeInterval(1)
         let model = AppModel()
@@ -517,45 +592,42 @@ struct AppModelSessionListTests {
             ]
         )
 
-        model.applyTrackedEvent(
-            .activityUpdated(
-                SessionActivityUpdated(
-                    sessionID: "completed-session",
-                    summary: "Stale running snapshot.",
-                    phase: .running,
-                    timestamp: completedAt.addingTimeInterval(-1)
-                )
+        let events = CodexRolloutReducer.events(
+            from: CodexRolloutSnapshot(
+                summary: "Previous turn completed.",
+                phase: .completed,
+                updatedAt: completedAt,
+                lastUserPrompt: "Finish the previous turn.",
+                isCompleted: true
             ),
-            updateLastActionMessage: false,
-            ingress: .rollout
+            to: CodexRolloutSnapshot(
+                summary: "Prompt: Start the next turn.",
+                phase: .running,
+                updatedAt: nextTurnAt,
+                lastUserPrompt: "Start the next turn."
+            ),
+            sessionID: "completed-session",
+            transcriptPath: "/tmp/completed-session.jsonl"
         )
-        #expect(model.state.session(id: "completed-session")?.phase == .completed)
+        guard events.count == 2,
+              case let .sessionMetadataUpdated(metadata) = events[0],
+              case let .activityUpdated(activity) = events[1] else {
+            Issue.record("Expected rollout metadata followed by running activity")
+            return
+        }
+        #expect(metadata.timestamp == activity.timestamp)
+        #expect(activity.timestamp == nextTurnAt)
 
-        model.applyTrackedEvent(
-            .sessionMetadataUpdated(
-                SessionMetadataUpdated(
-                    sessionID: "completed-session",
-                    codexMetadata: CodexSessionMetadata(lastUserPrompt: "Start the next turn."),
-                    timestamp: nextTurnAt
-                )
-            ),
-            updateLastActionMessage: false,
-            ingress: .rollout
-        )
-        model.applyTrackedEvent(
-            .activityUpdated(
-                SessionActivityUpdated(
-                    sessionID: "completed-session",
-                    summary: "Prompt: Start the next turn.",
-                    phase: .running,
-                    timestamp: nextTurnAt
-                )
-            ),
-            updateLastActionMessage: false,
-            ingress: .rollout
-        )
+        for event in events {
+            model.applyTrackedEvent(
+                event,
+                updateLastActionMessage: false,
+                ingress: .rollout
+            )
+        }
 
         #expect(model.state.session(id: "completed-session")?.phase == .running)
+        #expect(model.state.session(id: "completed-session")?.updatedAt == nextTurnAt)
     }
 
     @Test

@@ -566,6 +566,9 @@ struct AppearanceSettingsPane: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(title))
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func sectionHeader(title: String, note: String?) -> some View {
