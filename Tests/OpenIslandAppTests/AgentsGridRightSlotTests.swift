@@ -5,6 +5,7 @@ import Testing
 import OpenIslandCore
 
 @MainActor
+@Suite(.serialized)
 struct AgentsGridRightSlotTests {
     /// At bulk first observation (e.g. app launch) ties are broken by
     /// session.firstSeenAt so historical order is preserved.
@@ -12,6 +13,7 @@ struct AgentsGridRightSlotTests {
     func bulkFirstObservationOrdersByHistoricalFirstSeenAt() {
         let model = AppModel()
         model.islandRightSlot = .agents
+        model.islandAgentGridSort = .stable
 
         let now = Date(timeIntervalSince1970: 100_000)
         let sessionA = makeSession(id: "A", firstSeenAt: now,                       updatedAt: now.addingTimeInterval(60))
@@ -47,6 +49,7 @@ struct AgentsGridRightSlotTests {
     func newlyObservedSessionAlwaysLandsAtTheEndRegardlessOfHistoricalTime() {
         let model = AppModel()
         model.islandRightSlot = .agents
+        model.islandAgentGridSort = .stable
 
         let now = Date(timeIntervalSince1970: 200_000)
         let sessionA = makeSession(id: "A", firstSeenAt: now,                       updatedAt: now)
@@ -80,6 +83,7 @@ struct AgentsGridRightSlotTests {
     func returningSessionKeepsItsOriginalSlot() {
         let model = AppModel()
         model.islandRightSlot = .agents
+        model.islandAgentGridSort = .stable
 
         let now = Date(timeIntervalSince1970: 300_000)
         let sessionA = makeSession(id: "A", firstSeenAt: now,                       updatedAt: now)
@@ -139,6 +143,7 @@ struct AgentsGridRightSlotTests {
     func overflowKeepsNewerRunningSessionVisible() {
         let model = AppModel()
         model.islandRightSlot = .agents
+        model.islandAgentGridSort = .statusPriority
         let now = Date(timeIntervalSince1970: 250_000)
         var sessions = (0..<11).map { i in
             makeSession(
@@ -175,6 +180,7 @@ struct AgentsGridRightSlotTests {
     func cellStateReflectsSessionPhase() {
         let model = AppModel()
         model.islandRightSlot = .agents
+        model.islandAgentGridSort = .stable
         let now = Date(timeIntervalSince1970: 300_000)
 
         let running  = makeSession(id: "r", firstSeenAt: now,                         updatedAt: now, phase: .running)
@@ -208,6 +214,56 @@ struct AgentsGridRightSlotTests {
         #expect(s2 == .idle)
     }
 
+    @Test
+    func gridSortModesProduceExpectedOrder() {
+        let now = Date()
+        let waiting = makeSession(
+            id: "waiting", tool: .openCode,
+            firstSeenAt: now.addingTimeInterval(-40),
+            updatedAt: now.addingTimeInterval(-20),
+            phase: .waitingForAnswer
+        )
+        let running = makeSession(
+            id: "running", tool: .codex,
+            firstSeenAt: now.addingTimeInterval(-10),
+            updatedAt: now.addingTimeInterval(-30)
+        )
+        let recentDone = makeSession(
+            id: "recent", tool: .geminiCLI,
+            firstSeenAt: now.addingTimeInterval(-30),
+            updatedAt: now.addingTimeInterval(-5),
+            phase: .completed
+        )
+        let staleDone = makeSession(
+            id: "stale", tool: .claudeCode,
+            firstSeenAt: now.addingTimeInterval(-20),
+            updatedAt: now.addingTimeInterval(-300),
+            phase: .completed
+        )
+        let sessions = [running, staleDone, waiting, recentDone]
+        let cases: [(IslandAgentGridSort, [AgentSession])] = [
+            (.statusPriority, [waiting, running, recentDone, staleDone]),
+            (.recentActivity, [recentDone, waiting, running, staleDone]),
+            (.newestSession, [running, staleDone, recentDone, waiting]),
+            (.agent, [staleDone, running, recentDone, waiting]),
+            (.stable, [waiting, recentDone, staleDone, running]),
+        ]
+
+        for (sort, expected) in cases {
+            let model = AppModel()
+            model.islandRightSlot = .agents
+            model.islandAgentGridSort = sort
+            model.completedStaleThreshold = .twoMinutes
+            model.state = SessionState(sessions: sessions)
+
+            guard case let .agents(cells)? = model.islandClosedRightSlotContent() else {
+                Issue.record("Expected agents for \(sort.rawValue)")
+                continue
+            }
+            #expect(cells == expected.map(Self.cellFor), "Unexpected \(sort.rawValue) order")
+        }
+    }
+
     // MARK: - helpers
 
     private static func cellFor(_ session: AgentSession) -> AgentGridCell {
@@ -225,6 +281,7 @@ struct AgentsGridRightSlotTests {
 
     private func makeSession(
         id: String,
+        tool: AgentTool = .claudeCode,
         firstSeenAt: Date,
         updatedAt: Date,
         phase: SessionPhase = .running,
@@ -232,8 +289,8 @@ struct AgentsGridRightSlotTests {
     ) -> AgentSession {
         var session = AgentSession(
             id: id,
-            title: "Claude · \(id)",
-            tool: .claudeCode,
+            title: "\(tool.displayName) · \(id)",
+            tool: tool,
             origin: .live,
             attachmentState: .attached,
             phase: phase,
@@ -244,7 +301,7 @@ struct AgentsGridRightSlotTests {
             jumpTarget: JumpTarget(
                 terminalApp: "Ghostty",
                 workspaceName: id,
-                paneTitle: "claude ~/\(id)",
+                paneTitle: "agent ~/\(id)",
                 workingDirectory: "/tmp/\(id)",
                 terminalSessionID: "ghostty-\(id)"
             ),

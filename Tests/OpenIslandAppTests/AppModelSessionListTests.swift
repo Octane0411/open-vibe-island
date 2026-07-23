@@ -13,12 +13,14 @@ struct AppModelSessionListTests {
             "appearance.island.v8.sessionSort",
             "appearance.island.v8.completedStaleThreshold",
             "appearance.island.v8.notch.rightSlot",
+            "appearance.island.v8.notch.agentGridSort",
             "appearance.island.v8.notch.centerLabel",
             "appearance.island.v8.notch.stateIndicator",
             "appearance.island.v8.notch.sessionGroup",
             "appearance.island.v8.notch.sessionSort",
             "appearance.island.v8.notch.completedStaleThreshold",
             "appearance.island.v8.topBar.rightSlot",
+            "appearance.island.v8.topBar.agentGridSort",
             "appearance.island.v8.topBar.centerLabel",
             "appearance.island.v8.topBar.stateIndicator",
             "appearance.island.v8.topBar.sessionGroup",
@@ -371,12 +373,14 @@ struct AppModelSessionListTests {
     func islandAppearancePreferencesPersistPerDisplayProfile() {
         let model = AppModel()
         model.updateAppearancePreferences(for: .notch) {
+            $0.agentGridSort = .stable
             $0.usageDisplay = .hidden
             $0.sessionGroup = .state
             $0.sessionStateIndicator = .bar
             $0.completedStaleThreshold = .twoMinutes
         }
         model.updateAppearancePreferences(for: .topBar) {
+            $0.agentGridSort = .agent
             $0.usageDisplay = .compact
             $0.sessionGroup = .project
             $0.sessionStateIndicator = .tint
@@ -384,12 +388,14 @@ struct AppModelSessionListTests {
         }
 
         model.overlayPlacementDiagnostics = placementDiagnostics(mode: .notch)
+        #expect(model.islandAgentGridSort == .stable)
         #expect(model.islandUsageDisplay == .hidden)
         #expect(model.islandSessionGroup == .state)
         #expect(model.islandSessionStateIndicator == .bar)
         #expect(model.completedStaleThreshold == .twoMinutes)
 
         model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+        #expect(model.islandAgentGridSort == .agent)
         #expect(model.islandUsageDisplay == .compact)
         #expect(model.islandSessionGroup == .project)
         #expect(model.islandSessionStateIndicator == .tint)
@@ -397,10 +403,12 @@ struct AppModelSessionListTests {
 
         let reloaded = AppModel()
         reloaded.overlayPlacementDiagnostics = placementDiagnostics(mode: .notch)
+        #expect(reloaded.islandAgentGridSort == .stable)
         #expect(reloaded.islandUsageDisplay == .hidden)
         #expect(reloaded.islandSessionGroup == .state)
         #expect(reloaded.islandSessionStateIndicator == .bar)
         reloaded.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+        #expect(reloaded.islandAgentGridSort == .agent)
         #expect(reloaded.islandUsageDisplay == .compact)
         #expect(reloaded.islandSessionGroup == .project)
         #expect(reloaded.islandSessionStateIndicator == .tint)

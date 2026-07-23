@@ -347,6 +347,11 @@ final class AppModel {
         set { updateAppearancePreferences(for: activeAppearanceProfile) { $0.rightSlot = newValue } }
     }
 
+    var islandAgentGridSort: IslandAgentGridSort {
+        get { appearancePreferences(for: activeAppearanceProfile).agentGridSort }
+        set { updateAppearancePreferences(for: activeAppearanceProfile) { $0.agentGridSort = newValue } }
+    }
+
     var islandCenterLabel: IslandCenterLabel {
         get { appearancePreferences(for: activeAppearanceProfile).centerLabel }
         set { updateAppearancePreferences(for: activeAppearanceProfile) { $0.centerLabel = newValue } }
@@ -420,6 +425,7 @@ final class AppModel {
     ) {
         let defaults = UserDefaults.standard
         defaults.set(preferences.rightSlot.rawValue, forKey: Self.appearanceDefaultsKey(profile, "rightSlot"))
+        defaults.set(preferences.agentGridSort.rawValue, forKey: Self.appearanceDefaultsKey(profile, "agentGridSort"))
         defaults.set(preferences.centerLabel.rawValue, forKey: Self.appearanceDefaultsKey(profile, "centerLabel"))
         defaults.set(preferences.usageDisplay.rawValue, forKey: Self.appearanceDefaultsKey(profile, "usageDisplay"))
         defaults.set(preferences.sessionStateIndicator.rawValue, forKey: Self.appearanceDefaultsKey(profile, "stateIndicator"))
@@ -548,6 +554,9 @@ final class AppModel {
                     ?? defaults.string(forKey: islandRightSlotDefaultsKey)
                     ?? ""
             ) ?? .count,
+            agentGridSort: IslandAgentGridSort(
+                rawValue: defaults.string(forKey: appearanceDefaultsKey(profile, "agentGridSort")) ?? ""
+            ) ?? .statusPriority,
             centerLabel: IslandCenterLabel(
                 rawValue: defaults.string(forKey: appearanceDefaultsKey(profile, "centerLabel"))
                     ?? defaults.string(forKey: islandCenterLabelDefaultsKey)
@@ -892,40 +901,13 @@ final class AppModel {
             guard n > 0 else { return nil }
             return .count(n)
         case .agents:
-            // Display order = order-of-first-observation-in-the-island. A
-            // session that later flips visibility (e.g. attachment churn,
-            // completed↔running) keeps its existing slot instead of being
-            // reshuffled by session.firstSeenAt, which tracks the historical
-            // event time and can be older than visible peers. Bulk-observing
-            // N sessions at once (e.g. at app launch) breaks the tie by
-            // session.firstSeenAt so historical order is preserved.
             stampAgentsGridObservationTickets(for: sessions)
-            let ordered = sessions.sorted { a, b in
-                let ta = _agentsGridObservedSequence[a.id] ?? .max
-                let tb = _agentsGridObservedSequence[b.id] ?? .max
-                if ta != tb { return ta < tb }
-                return a.id < b.id
-            }
+            let ordered = orderedAgentsGridSessions(sessions)
             var cells: [AgentGridCell] = []
             if ordered.count <= 9 {
                 cells = ordered.map(Self.agentsGridCell(for:))
             } else {
-                // Keep live states visible when older idle sessions fill the
-                // grid, while preserving observation order for selected cells.
-                let prioritized = ordered
-                    .filter { $0.phase.requiresAttention || $0.phase == .running }
-                    .prefix(7)
-                let prioritizedIDs = Set(prioritized.map(\.id))
-                let remainingCapacity = 7 - prioritizedIDs.count
-                let fallbackIDs = ordered
-                    .lazy
-                    .filter { !prioritizedIDs.contains($0.id) }
-                    .prefix(remainingCapacity)
-                    .map(\.id)
-                let visibleIDs = prioritizedIDs.union(fallbackIDs)
-                cells = ordered
-                    .filter { visibleIDs.contains($0.id) }
-                    .map(Self.agentsGridCell(for:))
+                cells = ordered.prefix(7).map(Self.agentsGridCell(for:))
                 cells.append(.overflow(ordered.count - cells.count))
             }
             return cells.isEmpty ? nil : .agents(cells)
@@ -942,6 +924,48 @@ final class AppModel {
         for session in orderedNewcomers {
             _agentsGridObservedSequence[session.id] = _agentsGridNextTicket
             _agentsGridNextTicket += 1
+        }
+    }
+
+    private func orderedAgentsGridSessions(
+        _ sessions: [AgentSession],
+        now: Date = .now
+    ) -> [AgentSession] {
+        func statusRank(_ session: AgentSession) -> Int {
+            if session.phase.requiresAttention { return 0 }
+            if session.phase == .running { return 1 }
+            if !session.isStaleCompletedForIsland(
+                at: now,
+                threshold: completedStaleThreshold.seconds
+            ) { return 2 }
+            return 3
+        }
+
+        func agentRank(_ session: AgentSession) -> Int {
+            AgentTool.allCases.firstIndex { $0.rawValue == session.tool.rawValue } ?? .max
+        }
+
+        return sessions.sorted { a, b in
+            switch islandAgentGridSort {
+            case .statusPriority:
+                if statusRank(a) != statusRank(b) { return statusRank(a) < statusRank(b) }
+                if a.updatedAt != b.updatedAt { return a.updatedAt > b.updatedAt }
+            case .recentActivity:
+                if a.updatedAt != b.updatedAt { return a.updatedAt > b.updatedAt }
+            case .newestSession:
+                if a.firstSeenAt != b.firstSeenAt { return a.firstSeenAt > b.firstSeenAt }
+            case .agent:
+                if agentRank(a) != agentRank(b) { return agentRank(a) < agentRank(b) }
+                if statusRank(a) != statusRank(b) { return statusRank(a) < statusRank(b) }
+                if a.updatedAt != b.updatedAt { return a.updatedAt > b.updatedAt }
+            case .stable:
+                break
+            }
+
+            let ta = _agentsGridObservedSequence[a.id] ?? .max
+            let tb = _agentsGridObservedSequence[b.id] ?? .max
+            if ta != tb { return ta < tb }
+            return a.id < b.id
         }
     }
 
