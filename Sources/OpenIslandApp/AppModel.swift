@@ -1532,14 +1532,12 @@ final class AppModel {
             return state.session(id: payload.sessionID)?.phase == .completed
         }()
 
-        // Guard: don't let an older rollout snapshot downgrade a completed
-        // session. A newer snapshot can be the next turn; equality is valid
-        // because the watcher emits metadata first with the same timestamp.
+        // Rollout tails can replay after fresher bridge or watcher events. Reject
+        // them before the reducer can replace the newer phase or summary;
+        // equality remains valid because one snapshot emits paired events.
         if ingress == .rollout,
            case let .activityUpdated(payload) = event,
-           payload.phase == .running,
            let session = state.session(id: payload.sessionID),
-           session.phase == .completed,
            payload.timestamp < session.updatedAt {
             return
         }

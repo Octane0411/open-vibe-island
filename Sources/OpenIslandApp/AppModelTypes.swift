@@ -25,7 +25,7 @@ enum TrackedEventIngress {
 
 /// What the closed island renders in the right slot. Chosen in the
 /// Personalization tab; the pill layout only varies by content width.
-enum IslandRightSlot: String, CaseIterable, Identifiable, Sendable {
+enum IslandRightSlot: String, CaseIterable, Codable, Identifiable, Sendable {
     case count   // "×N" badge
     case agents  // colored dot stack, one per active agent tool
     case none    // pill collapses — useful if you just want the bars
@@ -36,7 +36,7 @@ enum IslandRightSlot: String, CaseIterable, Identifiable, Sendable {
 /// What the closed island renders in the center label (external displays
 /// only — on MacBook the physical notch covers this space so we suppress
 /// the label regardless).
-enum IslandCenterLabel: String, CaseIterable, Identifiable, Sendable {
+enum IslandCenterLabel: String, CaseIterable, Codable, Identifiable, Sendable {
     case sessionName  // e.g. "open-island"
     case agentAction  // e.g. "Claude · editing"
     case off
@@ -46,14 +46,14 @@ enum IslandCenterLabel: String, CaseIterable, Identifiable, Sendable {
 
 // MARK: - v8 island preferences
 
-enum IslandAppearanceDisplayProfile: String, CaseIterable, Identifiable, Sendable {
+enum IslandAppearanceDisplayProfile: String, CaseIterable, Codable, Identifiable, Sendable {
     case notch
     case topBar
 
     var id: String { rawValue }
 }
 
-struct IslandAppearancePreferences: Equatable, Sendable {
+struct IslandAppearancePreferences: Codable, Equatable, Sendable {
     var rightSlot: IslandRightSlot = .count
     var agentGridSort: IslandAgentGridSort = .statusPriority
     var centerLabel: IslandCenterLabel = .agentAction
@@ -64,7 +64,7 @@ struct IslandAppearancePreferences: Equatable, Sendable {
     var completedStaleThreshold: IslandCompletedStaleThreshold = .fiveMinutes
 }
 
-enum IslandAgentGridSort: String, CaseIterable, Identifiable, Sendable {
+enum IslandAgentGridSort: String, CaseIterable, Codable, Identifiable, Sendable {
     case statusPriority
     case recentActivity
     case newestSession
@@ -74,14 +74,14 @@ enum IslandAgentGridSort: String, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
 }
 
-enum IslandUsageDisplay: String, CaseIterable, Identifiable, Sendable {
+enum IslandUsageDisplay: String, CaseIterable, Codable, Identifiable, Sendable {
     case hidden
     case compact
 
     var id: String { rawValue }
 }
 
-enum IslandSessionStateIndicator: String, CaseIterable, Identifiable, Sendable {
+enum IslandSessionStateIndicator: String, CaseIterable, Codable, Identifiable, Sendable {
     case animatedDot
     case bar
     case glyph
@@ -95,7 +95,7 @@ enum IslandSessionStateIndicator: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-enum IslandSessionGroup: String, CaseIterable, Identifiable, Sendable {
+enum IslandSessionGroup: String, CaseIterable, Codable, Identifiable, Sendable {
     case none
     case state
     case agent
@@ -104,14 +104,14 @@ enum IslandSessionGroup: String, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
 }
 
-enum IslandSessionSort: String, CaseIterable, Identifiable, Sendable {
+enum IslandSessionSort: String, CaseIterable, Codable, Identifiable, Sendable {
     case attention
     case lastUpdate
 
     var id: String { rawValue }
 }
 
-enum IslandCompletedStaleThreshold: String, CaseIterable, Identifiable, Sendable {
+enum IslandCompletedStaleThreshold: String, CaseIterable, Codable, Identifiable, Sendable {
     case twoMinutes
     case fiveMinutes
     case tenMinutes

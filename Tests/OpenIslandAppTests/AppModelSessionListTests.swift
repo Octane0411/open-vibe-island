@@ -573,6 +573,81 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func staleRolloutMetadataDoesNotReplaceNewerSessionMetadata() {
+        let newerAt = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "running-session",
+                    title: "Codex · open-island",
+                    tool: .codex,
+                    origin: .live,
+                    attachmentState: .attached,
+                    phase: .running,
+                    summary: "Newer activity.",
+                    updatedAt: newerAt,
+                    codexMetadata: CodexSessionMetadata(lastUserPrompt: "Newest prompt")
+                ),
+            ]
+        )
+
+        model.applyTrackedEvent(
+            .sessionMetadataUpdated(
+                SessionMetadataUpdated(
+                    sessionID: "running-session",
+                    codexMetadata: CodexSessionMetadata(lastUserPrompt: "Stale prompt"),
+                    timestamp: newerAt.addingTimeInterval(-1)
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .rollout
+        )
+
+        let session = model.state.session(id: "running-session")
+        #expect(session?.codexMetadata?.lastUserPrompt == "Newest prompt")
+        #expect(session?.updatedAt == newerAt)
+    }
+
+    @Test
+    func staleRolloutActivityDoesNotReplaceNewerRunningSessionData() {
+        let newerAt = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "running-session",
+                    title: "Codex · open-island",
+                    tool: .codex,
+                    origin: .live,
+                    attachmentState: .attached,
+                    phase: .running,
+                    summary: "Newer activity.",
+                    updatedAt: newerAt
+                ),
+            ]
+        )
+
+        model.applyTrackedEvent(
+            .activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: "running-session",
+                    summary: "Stale activity.",
+                    phase: .waitingForAnswer,
+                    timestamp: newerAt.addingTimeInterval(-1)
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .rollout
+        )
+
+        let session = model.state.session(id: "running-session")
+        #expect(session?.phase == .running)
+        #expect(session?.summary == "Newer activity.")
+        #expect(session?.updatedAt == newerAt)
+    }
+
+    @Test
     func newerRolloutMetadataThenEqualTimestampRunningActivityReopensCompletedSession() {
         let completedAt = Date(timeIntervalSince1970: 2_000)
         let nextTurnAt = completedAt.addingTimeInterval(1)

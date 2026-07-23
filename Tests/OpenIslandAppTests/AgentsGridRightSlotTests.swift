@@ -15,9 +15,9 @@ struct AgentsGridRightSlotTests {
         configureAgentsGrid(model, sort: .stable)
 
         let now = Date(timeIntervalSince1970: 100_000)
-        let sessionA = makeSession(id: "A", firstSeenAt: now,                       updatedAt: now.addingTimeInterval(60))
-        let sessionB = makeSession(id: "B", firstSeenAt: now.addingTimeInterval(10), updatedAt: now.addingTimeInterval(5))
-        let sessionC = makeSession(id: "C", firstSeenAt: now.addingTimeInterval(20), updatedAt: now.addingTimeInterval(120))
+        let sessionA = makeSession(id: "A", tool: .codex, firstSeenAt: now, updatedAt: now.addingTimeInterval(60))
+        let sessionB = makeSession(id: "B", tool: .claudeCode, firstSeenAt: now.addingTimeInterval(10), updatedAt: now.addingTimeInterval(5))
+        let sessionC = makeSession(id: "C", tool: .openCode, firstSeenAt: now.addingTimeInterval(20), updatedAt: now.addingTimeInterval(120))
 
         // Insertion order differs from historical order — the grid must still
         // present A, B, C.
@@ -27,6 +27,7 @@ struct AgentsGridRightSlotTests {
             return
         }
         #expect(cells.count == 3)
+        #expect(cells == [sessionA, sessionB, sessionC].map(Self.cellFor))
 
         // A panel-sort signal (updatedAt) churn must not reshuffle the grid.
         var bumped = sessionB
@@ -50,9 +51,9 @@ struct AgentsGridRightSlotTests {
         configureAgentsGrid(model, sort: .stable)
 
         let now = Date(timeIntervalSince1970: 200_000)
-        let sessionA = makeSession(id: "A", firstSeenAt: now,                       updatedAt: now)
-        let sessionB = makeSession(id: "B", firstSeenAt: now.addingTimeInterval(10), updatedAt: now.addingTimeInterval(10))
-        let sessionC = makeSession(id: "C", firstSeenAt: now.addingTimeInterval(20), updatedAt: now.addingTimeInterval(20))
+        let sessionA = makeSession(id: "A", tool: .codex, firstSeenAt: now, updatedAt: now)
+        let sessionB = makeSession(id: "B", tool: .claudeCode, firstSeenAt: now.addingTimeInterval(10), updatedAt: now.addingTimeInterval(10))
+        let sessionC = makeSession(id: "C", tool: .openCode, firstSeenAt: now.addingTimeInterval(20), updatedAt: now.addingTimeInterval(20))
 
         model.state = SessionState(sessions: [sessionA, sessionB, sessionC])
         _ = model.islandClosedRightSlotContent()
@@ -61,6 +62,7 @@ struct AgentsGridRightSlotTests {
         // firstSeenAt pre-dates everything (e.g. found in a rollout tail).
         let sessionD = makeSession(
             id: "D",
+            tool: .geminiCLI,
             firstSeenAt: now.addingTimeInterval(-500),
             updatedAt: now.addingTimeInterval(40)
         )
@@ -83,9 +85,9 @@ struct AgentsGridRightSlotTests {
         configureAgentsGrid(model, sort: .stable)
 
         let now = Date(timeIntervalSince1970: 300_000)
-        let sessionA = makeSession(id: "A", firstSeenAt: now,                       updatedAt: now)
-        let sessionB = makeSession(id: "B", firstSeenAt: now.addingTimeInterval(10), updatedAt: now.addingTimeInterval(10))
-        let sessionC = makeSession(id: "C", firstSeenAt: now.addingTimeInterval(20), updatedAt: now.addingTimeInterval(20))
+        let sessionA = makeSession(id: "A", tool: .codex, firstSeenAt: now, updatedAt: now)
+        let sessionB = makeSession(id: "B", tool: .claudeCode, firstSeenAt: now.addingTimeInterval(10), updatedAt: now.addingTimeInterval(10))
+        let sessionC = makeSession(id: "C", tool: .openCode, firstSeenAt: now.addingTimeInterval(20), updatedAt: now.addingTimeInterval(20))
 
         model.state = SessionState(sessions: [sessionA, sessionB, sessionC])
         _ = model.islandClosedRightSlotContent()
