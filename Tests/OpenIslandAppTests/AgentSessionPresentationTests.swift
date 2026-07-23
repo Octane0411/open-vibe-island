@@ -247,6 +247,30 @@ struct AgentSessionPresentationTests {
     }
 
     @Test
+    func completedCodexAppNotificationPrefersThreadTitleOverWorkspace() {
+        var session = AgentSession(
+            id: "codex-thread-1",
+            title: "查找 VibeIsland 项目",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .completed,
+            summary: "Finished.",
+            updatedAt: Date(timeIntervalSince1970: 10_000),
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "git",
+                paneTitle: "查找 VibeIsland 项目",
+                workingDirectory: "/tmp/git",
+                codexThreadID: "codex-thread-1"
+            )
+        )
+        session.isCodexAppSession = true
+
+        #expect(session.completionNotificationHeadlineText == "查找 VibeIsland 项目")
+    }
+
+    @Test
     func codexAppHidesRedundantTerminalBadgeUntilConfigurationIsKnown() {
         let session = AgentSession(
             id: "codex-thread-1",

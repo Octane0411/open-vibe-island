@@ -285,6 +285,18 @@ extension AgentSession {
         return "\(headline) · \(prompt)"
     }
 
+    var completionNotificationHeadlineText: String {
+        var headline = spotlightCodexAppThreadTitle ?? spotlightWorkspaceName
+        if headline.isEmpty {
+            headline = tool.displayName
+        }
+        if let branch = spotlightWorktreeBranch?.trimmedForSurface,
+           !branch.isEmpty {
+            headline += " (\(branch))"
+        }
+        return headline
+    }
+
     private var spotlightCodexAppThreadTitle: String? {
         guard tool == .codex,
               isCodexAppSession || jumpTarget?.terminalApp == "Codex.app" else {
