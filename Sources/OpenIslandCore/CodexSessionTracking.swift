@@ -652,6 +652,8 @@ public struct CodexRolloutWatchTarget: Equatable, Sendable {
         lhs.sessionID == rhs.sessionID
             && lhs.transcriptPath == rhs.transcriptPath
             && lhs.bootstrapPrompts == rhs.bootstrapPrompts
+            && lhs.cachedInitialUserPrompt == rhs.cachedInitialUserPrompt
+            && lhs.cachedLastUserPrompt == rhs.cachedLastUserPrompt
     }
 }
 

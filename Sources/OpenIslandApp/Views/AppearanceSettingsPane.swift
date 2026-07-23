@@ -738,7 +738,7 @@ struct AppearanceSettingsPane: View {
     }
 
     private var previewSessionItems: [AppearanceSessionPreviewItem] {
-        [
+        let items: [AppearanceSessionPreviewItem] = [
             .init(
                 id: "approval",
                 title: "Codex · open-island",
@@ -820,6 +820,17 @@ struct AppearanceSettingsPane: View {
                 updatedRank: 4
             ),
         ]
+
+        guard !editingPreferences.showIdleSessions else {
+            return items
+        }
+
+        return items.filter { item in
+            if case .idle = item.phase {
+                return false
+            }
+            return true
+        }
     }
 }
 

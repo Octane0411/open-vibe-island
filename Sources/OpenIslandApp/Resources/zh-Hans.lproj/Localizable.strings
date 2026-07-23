@@ -93,9 +93,9 @@
 "settings.appearance.sessionSort.note" = "选择展开列表里的默认排序。";
 "settings.appearance.sessionSort.attention" = "优先级";
 "settings.appearance.sessionSort.lastUpdate" = "最近更新";
-"settings.appearance.showIdle.title" = "06 · 空闲任务";
-"settings.appearance.showIdle.note" = "关闭后，空闲任务不会出现在列表和顶部统计中。";
-"settings.appearance.showIdle.option" = "显示空闲任务";
+"settings.appearance.showIdle.title" = "06 · 空闲会话";
+"settings.appearance.showIdle.note" = "关闭后，空闲会话不会出现在列表和顶部统计中。";
+"settings.appearance.showIdle.option" = "显示空闲会话";
 "settings.appearance.staleThreshold.title" = "07 · 完成超时";
 "settings.appearance.staleThreshold.note" = "完成会话经过这段时间后会降到低优先级空闲展示。";
 "settings.appearance.staleThreshold.twoMinutes" = "2 分钟";

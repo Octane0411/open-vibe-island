@@ -4,6 +4,25 @@ import Testing
 
 struct CodexSessionTrackingTests {
     @Test
+    func codexRolloutWatchTargetEqualityIncludesCachedPrompts() {
+        let original = CodexRolloutWatchTarget(
+            sessionID: "codex-session-1",
+            transcriptPath: "/tmp/rollout.jsonl",
+            cachedInitialUserPrompt: "Original prompt",
+            cachedLastUserPrompt: "Original follow-up"
+        )
+
+        var updatedInitialPrompt = original
+        updatedInitialPrompt.cachedInitialUserPrompt = "Renamed conversation"
+
+        var updatedLastPrompt = original
+        updatedLastPrompt.cachedLastUserPrompt = "Latest follow-up"
+
+        #expect(original != updatedInitialPrompt)
+        #expect(original != updatedLastPrompt)
+    }
+
+    @Test
     func codexSessionStoreRoundTripsTrackedSessions() throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("open-island-tracking-\(UUID().uuidString)", isDirectory: true)
