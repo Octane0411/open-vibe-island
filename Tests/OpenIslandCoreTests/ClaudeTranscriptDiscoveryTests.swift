@@ -34,7 +34,7 @@ struct ClaudeTranscriptDiscoveryTests {
     }
 
     @Test
-    func missingDesktopEntrypointStaysUnknown() throws {
+    func cliEntrypointStaysUnknown() throws {
         // A terminal (`cli`) session has no claude-desktop entrypoint and must
         // keep the "Unknown" sentinel — the terminal resolver handles it later.
         let line = #"{"type":"attachment","sessionId":"def67890","cwd":"/Users/test/project","entrypoint":"cli","timestamp":"2026-07-22T18:00:00Z"}"#
@@ -45,5 +45,44 @@ struct ClaudeTranscriptDiscoveryTests {
 
         #expect(sessions.count == 1)
         #expect(sessions.first?.jumpTarget?.terminalApp == "Unknown")
+    }
+
+    @Test
+    func absentEntrypointFieldStaysUnknown() throws {
+        // Older transcripts predate the entrypoint field entirely; they must
+        // still resolve to "Unknown" rather than crashing or misclassifying.
+        let line = #"{"type":"attachment","sessionId":"aaa11111","cwd":"/Users/test/project","timestamp":"2026-07-22T18:00:00Z"}"#
+        let (discovery, root) = try makeDiscovery(line: line)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let sessions = discovery.discoverRecentSessions()
+
+        #expect(sessions.count == 1)
+        #expect(sessions.first?.jumpTarget?.terminalApp == "Unknown")
+    }
+
+    @Test
+    func firstNonEmptyEntrypointIsLatched() throws {
+        // The entrypoint is latched from the first record that carries it; a
+        // later record must not overwrite the captured value.
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-transcript-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let lines = [
+            #"{"type":"attachment","sessionId":"bbb22222","cwd":"/Users/test/project","entrypoint":"claude-desktop","timestamp":"2026-07-22T18:00:00Z"}"#,
+            #"{"type":"attachment","sessionId":"bbb22222","entrypoint":"cli","timestamp":"2026-07-22T18:05:00Z"}"#,
+        ].joined(separator: "\n") + "\n"
+        try lines.write(
+            to: root.appendingPathComponent("bbb22222.jsonl"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let sessions = ClaudeTranscriptDiscovery(rootURL: root).discoverRecentSessions()
+
+        #expect(sessions.count == 1)
+        #expect(sessions.first?.jumpTarget?.terminalApp == "Claude.app")
     }
 }

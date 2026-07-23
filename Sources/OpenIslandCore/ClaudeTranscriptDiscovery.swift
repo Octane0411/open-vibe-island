@@ -108,8 +108,10 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
             // "cli") as a top-level field. The desktop app runs a TTY-less
             // subprocess that process discovery can't see, so latch the
             // entrypoint here to stamp a "Claude.app" jump target below —
-            // mirroring the hook path's inferTerminalApp detection.
-            if let value = object["entrypoint"] as? String, !value.isEmpty {
+            // mirroring the hook path's inferTerminalApp detection. Latch the
+            // first non-empty value so later records can't overwrite it.
+            if entrypoint == nil,
+               let value = object["entrypoint"] as? String, !value.isEmpty {
                 entrypoint = value
             }
 
