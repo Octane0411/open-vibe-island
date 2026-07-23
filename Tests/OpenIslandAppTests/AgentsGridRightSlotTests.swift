@@ -12,8 +12,7 @@ struct AgentsGridRightSlotTests {
     @Test
     func bulkFirstObservationOrdersByHistoricalFirstSeenAt() {
         let model = AppModel()
-        model.islandRightSlot = .agents
-        model.islandAgentGridSort = .stable
+        configureAgentsGrid(model, sort: .stable)
 
         let now = Date(timeIntervalSince1970: 100_000)
         let sessionA = makeSession(id: "A", firstSeenAt: now,                       updatedAt: now.addingTimeInterval(60))
@@ -48,8 +47,7 @@ struct AgentsGridRightSlotTests {
     @Test
     func newlyObservedSessionAlwaysLandsAtTheEndRegardlessOfHistoricalTime() {
         let model = AppModel()
-        model.islandRightSlot = .agents
-        model.islandAgentGridSort = .stable
+        configureAgentsGrid(model, sort: .stable)
 
         let now = Date(timeIntervalSince1970: 200_000)
         let sessionA = makeSession(id: "A", firstSeenAt: now,                       updatedAt: now)
@@ -82,8 +80,7 @@ struct AgentsGridRightSlotTests {
     @Test
     func returningSessionKeepsItsOriginalSlot() {
         let model = AppModel()
-        model.islandRightSlot = .agents
-        model.islandAgentGridSort = .stable
+        configureAgentsGrid(model, sort: .stable)
 
         let now = Date(timeIntervalSince1970: 300_000)
         let sessionA = makeSession(id: "A", firstSeenAt: now,                       updatedAt: now)
@@ -114,7 +111,7 @@ struct AgentsGridRightSlotTests {
     @Test
     func moreThanNineSessionsFoldIntoOverflow() {
         let model = AppModel()
-        model.islandRightSlot = .agents
+        configureAgentsGrid(model, sort: .statusPriority)
         let now = Date(timeIntervalSince1970: 200_000)
 
         var sessions: [AgentSession] = []
@@ -142,8 +139,7 @@ struct AgentsGridRightSlotTests {
     @Test
     func overflowKeepsNewerRunningSessionVisible() {
         let model = AppModel()
-        model.islandRightSlot = .agents
-        model.islandAgentGridSort = .statusPriority
+        configureAgentsGrid(model, sort: .statusPriority)
         let now = Date(timeIntervalSince1970: 250_000)
         var sessions = (0..<11).map { i in
             makeSession(
@@ -179,8 +175,7 @@ struct AgentsGridRightSlotTests {
     @Test
     func cellStateReflectsSessionPhase() {
         let model = AppModel()
-        model.islandRightSlot = .agents
-        model.islandAgentGridSort = .stable
+        configureAgentsGrid(model, sort: .stable)
         let now = Date(timeIntervalSince1970: 300_000)
 
         let running  = makeSession(id: "r", firstSeenAt: now,                         updatedAt: now, phase: .running)
@@ -251,9 +246,11 @@ struct AgentsGridRightSlotTests {
 
         for (sort, expected) in cases {
             let model = AppModel()
-            model.islandRightSlot = .agents
-            model.islandAgentGridSort = sort
-            model.completedStaleThreshold = .twoMinutes
+            configureAgentsGrid(
+                model,
+                sort: sort,
+                completedStaleThreshold: .twoMinutes
+            )
             model.state = SessionState(sessions: sessions)
 
             guard case let .agents(cells)? = model.islandClosedRightSlotContent() else {
@@ -265,6 +262,23 @@ struct AgentsGridRightSlotTests {
     }
 
     // MARK: - helpers
+
+    /// The overlay can resolve to either display profile during AppModel setup.
+    /// Configure the closed-grid inputs for both so an async placement update
+    /// cannot make this test read an unrelated persisted profile preference.
+    private func configureAgentsGrid(
+        _ model: AppModel,
+        sort: IslandAgentGridSort,
+        completedStaleThreshold: IslandCompletedStaleThreshold = .fiveMinutes
+    ) {
+        for profile in [IslandAppearanceDisplayProfile.notch, .topBar] {
+            model.updateAppearancePreferences(for: profile) {
+                $0.rightSlot = .agents
+                $0.agentGridSort = sort
+                $0.completedStaleThreshold = completedStaleThreshold
+            }
+        }
+    }
 
     private static func cellFor(_ session: AgentSession) -> AgentGridCell {
         let color = Color(hex: session.tool.brandColorHex) ?? .gray
