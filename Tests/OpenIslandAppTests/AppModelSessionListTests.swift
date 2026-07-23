@@ -915,6 +915,23 @@ struct AppModelSessionListTests {
                         initialUserPrompt: "Keep this valid cached topic."
                     )
                 ),
+                AgentSession(
+                    id: "environment-context-codex-session",
+                    title: "Codex · /",
+                    tool: .codex,
+                    origin: .live,
+                    attachmentState: .stale,
+                    phase: .completed,
+                    summary: "Recovered from cache",
+                    updatedAt: now.addingTimeInterval(-60),
+                    codexMetadata: CodexSessionMetadata(
+                        initialUserPrompt: """
+                            <environment_context>
+                              <cwd>/tmp/open-island</cwd>
+                            </environment_context>
+                            """
+                    )
+                ),
             ]
         )
 
@@ -946,13 +963,31 @@ struct AppModelSessionListTests {
                     initialUserPrompt: "Do not replace the cached topic."
                 )
             ),
+            AgentSession(
+                id: "environment-context-codex-session",
+                title: "Codex · /",
+                tool: .codex,
+                origin: .live,
+                attachmentState: .stale,
+                phase: .completed,
+                summary: "Recovered from rollout",
+                updatedAt: now,
+                codexMetadata: CodexSessionMetadata(
+                    initialUserPrompt: "Replace the injected environment context."
+                )
+            ),
         ])
 
         let wrapped = merged.first(where: { $0.id == "wrapped-codex-session" })
         let valid = merged.first(where: { $0.id == "valid-codex-session" })
+        let environmentContext = merged.first(where: { $0.id == "environment-context-codex-session" })
         #expect(wrapped?.codexMetadata?.initialUserPrompt == "Fix the session headline.")
         #expect(wrapped?.codexMetadata?.lastUserPrompt == "The headline still looks wrong.")
         #expect(valid?.codexMetadata?.initialUserPrompt == "Keep this valid cached topic.")
+        #expect(
+            environmentContext?.codexMetadata?.initialUserPrompt
+                == "Replace the injected environment context."
+        )
     }
 
     @Test

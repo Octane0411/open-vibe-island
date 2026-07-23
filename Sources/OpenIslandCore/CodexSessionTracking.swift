@@ -1378,18 +1378,19 @@ public enum CodexRolloutReducer {
         return isInjectedPromptBlock(trimmed) ? nil : trimmed
     }
 
-    private static func isInjectedPromptBlock(_ text: String) -> Bool {
-        text.hasPrefix("<recommended_plugins>")
-            || text.hasPrefix("# AGENTS.md instructions")
-            || text.hasPrefix("# Files mentioned by the user:")
-            || text.hasPrefix("# Chrome tabs:")
-            || text.hasPrefix("## Referenced chats with Codex:")
-            || text.hasPrefix("<image name=")
-            || text == "</image>"
-            || text.hasPrefix("<environment_context>")
-            || text.hasPrefix("<permissions instructions>")
-            || text.hasPrefix("<collaboration_mode>")
-            || text.hasPrefix("<skills_instructions>")
+    package static func isInjectedPromptBlock(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.hasPrefix("<recommended_plugins>")
+            || trimmed.hasPrefix("# AGENTS.md instructions")
+            || trimmed.hasPrefix("# Files mentioned by the user:")
+            || trimmed.hasPrefix("# Chrome tabs:")
+            || trimmed.hasPrefix("## Referenced chats with Codex:")
+            || trimmed.hasPrefix("<image name=")
+            || trimmed == "</image>"
+            || trimmed.hasPrefix("<environment_context>")
+            || trimmed.hasPrefix("<permissions instructions>")
+            || trimmed.hasPrefix("<collaboration_mode>")
+            || trimmed.hasPrefix("<skills_instructions>")
     }
 
     private static func clipped(_ value: String?, limit: Int = 110) -> String? {
