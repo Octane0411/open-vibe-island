@@ -319,9 +319,16 @@ final class SessionDiscoveryCoordinator {
             return existing.isEmpty ? nil : existing
         }
 
+        let existingInitialPrompt = existing.initialUserPrompt
+        let shouldReplaceInitialPrompt =
+            existingInitialPrompt.map(CodexRolloutReducer.isInjectedPromptBlock) ?? false
+        let initialUserPrompt = shouldReplaceInitialPrompt
+            ? discovered.initialUserPrompt ?? discovered.lastUserPrompt ?? existingInitialPrompt
+            : existingInitialPrompt ?? discovered.initialUserPrompt ?? discovered.lastUserPrompt
+
         let merged = CodexSessionMetadata(
             transcriptPath: discovered.transcriptPath ?? existing.transcriptPath,
-            initialUserPrompt: existing.initialUserPrompt ?? discovered.initialUserPrompt ?? discovered.lastUserPrompt,
+            initialUserPrompt: initialUserPrompt,
             lastUserPrompt: discovered.lastUserPrompt ?? existing.lastUserPrompt,
             lastAssistantMessage: discovered.lastAssistantMessage ?? existing.lastAssistantMessage,
             currentTool: discovered.currentTool ?? existing.currentTool,

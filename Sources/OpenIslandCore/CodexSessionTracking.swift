@@ -727,7 +727,7 @@ public enum CodexRolloutReducer {
             snapshot.isInterrupted = false
             snapshot.summary = snapshot.summary ?? "Codex started a new turn."
         case "user_message":
-            guard let message = clipped(payload["message"] as? String), !message.isEmpty else {
+            guard let message = userPromptText(from: payload["message"] as? String), !message.isEmpty else {
                 break
             }
 
@@ -1340,16 +1340,11 @@ public enum CodexRolloutReducer {
                 return nil
             }
 
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else {
-                return nil
+            if skipsInjectedBlocks {
+                return userVisiblePromptSegment(from: text)
             }
 
-            if skipsInjectedBlocks, isInjectedPromptBlock(trimmed) {
-                return nil
-            }
-
-            return trimmed
+            return text.trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
         guard !segments.isEmpty else {
@@ -1359,12 +1354,43 @@ public enum CodexRolloutReducer {
         return clipped(segments.joined(separator: " "))
     }
 
-    private static func isInjectedPromptBlock(_ text: String) -> Bool {
-        text.hasPrefix("# AGENTS.md instructions for ")
-            || text.hasPrefix("<environment_context>")
-            || text.hasPrefix("<permissions instructions>")
-            || text.hasPrefix("<collaboration_mode>")
-            || text.hasPrefix("<skills_instructions>")
+    private static func userPromptText(from text: String?) -> String? {
+        guard let text,
+              let segment = userVisiblePromptSegment(from: text) else {
+            return nil
+        }
+
+        return clipped(segment)
+    }
+
+    private static func userVisiblePromptSegment(from text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return nil
+        }
+
+        if let markerRange = trimmed.range(of: "## My request for Codex:", options: .backwards) {
+            let request = trimmed[markerRange.upperBound...]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return request.isEmpty ? nil : request
+        }
+
+        return isInjectedPromptBlock(trimmed) ? nil : trimmed
+    }
+
+    package static func isInjectedPromptBlock(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.hasPrefix("<recommended_plugins>")
+            || trimmed.hasPrefix("# AGENTS.md instructions")
+            || trimmed.hasPrefix("# Files mentioned by the user:")
+            || trimmed.hasPrefix("# Chrome tabs:")
+            || trimmed.hasPrefix("## Referenced chats with Codex:")
+            || trimmed.hasPrefix("<image name=")
+            || trimmed == "</image>"
+            || trimmed.hasPrefix("<environment_context>")
+            || trimmed.hasPrefix("<permissions instructions>")
+            || trimmed.hasPrefix("<collaboration_mode>")
+            || trimmed.hasPrefix("<skills_instructions>")
     }
 
     private static func clipped(_ value: String?, limit: Int = 110) -> String? {
