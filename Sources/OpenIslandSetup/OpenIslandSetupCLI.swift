@@ -238,11 +238,15 @@ private struct SetupCommand {
 
     private func uninstallClaudeUsage() throws {
         let manager = ClaudeStatusLineInstallationManager(claudeDirectory: claudeDirectory)
+        // Capture wrapper state before uninstall — only a wrapper had an
+        // original command to restore. Post-uninstall `hasConflictingStatusLine`
+        // would also be true for a status line we never managed.
+        let wasWrapper = (try? manager.status())?.managedStatusLineIsWrapper ?? false
         let status = try manager.uninstall()
 
         print("Removed Claude usage bridge.")
         print("Claude dir: \(status.claudeDirectory.path)")
-        if status.hasConflictingStatusLine {
+        if wasWrapper {
             print("Restored your original statusLine command.")
         }
     }

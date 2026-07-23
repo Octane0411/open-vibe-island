@@ -171,6 +171,14 @@ public final class ClaudeStatusLineInstallationManager: @unchecked Sendable {
     /// command while still teeing `rate_limits` to the cache.
     @discardableResult
     public func installPreservingExisting() throws -> ClaudeStatusLineInstallationStatus {
+        // Re-installing over our own wrapper must stay idempotent. install()
+        // would not throw (the managed script isn't a "conflict"), so it would
+        // replace the wrapper with the plain managed script and orphan the saved
+        // original command — silently disabling the user's status line. Detect
+        // the wrapper up front and rebuild it from the saved original instead.
+        if try status().managedStatusLineIsWrapper {
+            return try installAsWrapper()
+        }
         do {
             return try install()
         } catch ClaudeStatusLineInstallationError.existingStatusLineConflict {
@@ -184,12 +192,6 @@ public final class ClaudeStatusLineInstallationManager: @unchecked Sendable {
     @discardableResult
     public func installAsWrapper() throws -> ClaudeStatusLineInstallationStatus {
         let currentStatus = try status()
-        guard currentStatus.hasConflictingStatusLine,
-              let originalCommand = currentStatus.statusLineCommand,
-              !originalCommand.isEmpty
-        else {
-            throw ClaudeStatusLineInstallationError.wrappableCommandMissing
-        }
 
         try fileManager.createDirectory(at: claudeDirectory, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: scriptDirectoryURL, withIntermediateDirectories: true)
@@ -199,10 +201,28 @@ public final class ClaudeStatusLineInstallationManager: @unchecked Sendable {
         let delegateScriptURL = scriptDirectoryURL.appendingPathComponent(Self.wrappedDelegateScriptName)
         var mutatedSettings = try loadSettings(at: settingsURL)
 
-        // Preserve the user's original statusLine dict so uninstall can restore it verbatim.
-        if let originalStatusLine = mutatedSettings["statusLine"] {
-            mutatedSettings[openIslandOriginalStatusLineKey] = originalStatusLine
+        // Resolve the command to wrap. When we're already wrapping, the live
+        // statusLine points at our managed script, so the user's real command
+        // lives under the saved-original key — prefer it so repeated installs
+        // rebuild the wrapper idempotently instead of wrapping our own wrapper.
+        let originalStatusLine: Any
+        let originalCommand: String
+        if currentStatus.managedStatusLineIsWrapper,
+           let saved = mutatedSettings[openIslandOriginalStatusLineKey] as? [String: Any],
+           let command = saved["command"] as? String, !command.isEmpty {
+            originalStatusLine = saved
+            originalCommand = command
+        } else if currentStatus.hasConflictingStatusLine,
+                  let liveStatusLine = mutatedSettings["statusLine"],
+                  let command = currentStatus.statusLineCommand, !command.isEmpty {
+            originalStatusLine = liveStatusLine
+            originalCommand = command
+        } else {
+            throw ClaudeStatusLineInstallationError.wrappableCommandMissing
         }
+
+        // Preserve the user's original statusLine so uninstall can restore it verbatim.
+        mutatedSettings[openIslandOriginalStatusLineKey] = originalStatusLine
         mutatedSettings["statusLine"] = managedStatusLine(for: scriptURL)
 
         let settingsData = try serializeSettings(mutatedSettings)

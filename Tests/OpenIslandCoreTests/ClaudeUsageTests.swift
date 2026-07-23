@@ -419,6 +419,53 @@ struct ClaudeUsageTests {
         #expect(!finalStatus.managedStatusLineIsWrapper)
         #expect(finalStatus.statusLineCommand == finalStatus.scriptURL.path)
     }
+
+    @Test
+    func installPreservingExistingIsIdempotentWhenAlreadyWrapping() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-claude-idempotent-\(UUID().uuidString)", isDirectory: true)
+        let claudeDirectory = rootURL.appendingPathComponent(".claude", isDirectory: true)
+        let scriptDirectory = rootURL
+            .appendingPathComponent(".open-island", isDirectory: true)
+            .appendingPathComponent("bin", isDirectory: true)
+        let manager = ClaudeStatusLineInstallationManager(
+            claudeDirectory: claudeDirectory,
+            scriptDirectoryURL: scriptDirectory
+        )
+        let settingsURL = claudeDirectory.appendingPathComponent("settings.json")
+
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let originalCommand = "/usr/local/bin/custom-status --flag"
+        try FileManager.default.createDirectory(at: claudeDirectory, withIntermediateDirectories: true)
+        try JSONSerialization.data(
+            withJSONObject: [
+                "statusLine": ["type": "command", "command": originalCommand, "padding": 0],
+            ],
+            options: [.prettyPrinted, .sortedKeys]
+        ).write(to: settingsURL, options: .atomic)
+
+        let first = try manager.installPreservingExisting()
+        #expect(first.managedStatusLineIsWrapper)
+
+        // A second install must NOT downgrade the wrapper to a plain managed
+        // script or clobber the saved original command.
+        let second = try manager.installPreservingExisting()
+        #expect(second.managedStatusLineIsWrapper)
+        #expect(second.managedStatusLineInstalled)
+
+        let delegateURL = scriptDirectory
+            .appendingPathComponent(ClaudeStatusLineInstallationManager.wrappedDelegateScriptName)
+        let wrapperContents = try String(contentsOf: second.scriptURL, encoding: .utf8)
+        #expect(wrapperContents.contains(delegateURL.path))
+
+        let delegateContents = try String(contentsOf: delegateURL, encoding: .utf8)
+        #expect(delegateContents.contains(originalCommand))
+
+        let settings = try jsonObject(from: Data(contentsOf: settingsURL))
+        let saved = settings[openIslandOriginalStatusLineKey] as? [String: Any]
+        #expect(saved?["command"] as? String == originalCommand)
+    }
 }
 
 private func jsonObject(from data: Data) throws -> [String: Any] {
