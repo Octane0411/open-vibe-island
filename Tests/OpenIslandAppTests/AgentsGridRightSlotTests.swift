@@ -170,13 +170,13 @@ struct AgentsGridRightSlotTests {
     }
 
     /// Per-session state derives from `SessionPhase`: waiting-for-approval /
-    /// waiting-for-answer map to `.waiting`, running to `.running`, and
-    /// everything else (completed, stale) to `.idle`.
+    /// waiting-for-answer map to `.waiting`, running to `.running`, recent
+    /// completed to `.done`, and stale completed to `.idle`.
     @Test
     func cellStateReflectsSessionPhase() {
         let model = AppModel()
         configureAgentsGrid(model, sort: .stable)
-        let now = Date(timeIntervalSince1970: 300_000)
+        let now = Date()
 
         let running  = makeSession(id: "r", firstSeenAt: now,                         updatedAt: now, phase: .running)
         let waitingA = makeSession(
@@ -206,7 +206,7 @@ struct AgentsGridRightSlotTests {
         }
         #expect(s0 == .running)
         #expect(s1 == .waiting)
-        #expect(s2 == .idle)
+        #expect(s2 == .done)
     }
 
     @Test
@@ -315,8 +315,10 @@ struct AgentsGridRightSlotTests {
             state = .waiting
         } else if session.phase == .running {
             state = .running
-        } else {
+        } else if session.isStaleCompletedForIsland(at: .now, threshold: 120) {
             state = .idle
+        } else {
+            state = .done
         }
         return .session(color: color, state: state)
     }

@@ -905,9 +905,9 @@ final class AppModel {
             let ordered = orderedAgentsGridSessions(sessions)
             var cells: [AgentGridCell] = []
             if ordered.count <= 9 {
-                cells = ordered.map(Self.agentsGridCell(for:))
+                cells = ordered.map(agentsGridCell(for:))
             } else {
-                cells = ordered.prefix(7).map(Self.agentsGridCell(for:))
+                cells = ordered.prefix(7).map(agentsGridCell(for:))
                 cells.append(.overflow(ordered.count - cells.count))
             }
             return cells.isEmpty ? nil : .agents(cells)
@@ -987,15 +987,21 @@ final class AppModel {
         }
     }
 
-    private static func agentsGridCell(for session: AgentSession) -> AgentGridCell {
+    private func agentsGridCell(for session: AgentSession) -> AgentGridCell {
         let color = Color(hex: session.tool.brandColorHex) ?? .gray
         let state: AgentGridCellState
         if session.phase.requiresAttention {
             state = .waiting
         } else if session.phase == .running {
             state = .running
-        } else {
+        // Completed stays Done until the shared stale threshold moves it to Idle.
+        } else if session.isStaleCompletedForIsland(
+            at: .now,
+            threshold: completedStaleThreshold.seconds
+        ) {
             state = .idle
+        } else {
+            state = .done
         }
         return .session(color: color, state: state)
     }
