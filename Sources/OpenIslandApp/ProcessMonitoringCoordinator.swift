@@ -296,8 +296,24 @@ final class ProcessMonitoringCoordinator {
             _ = local.reconcileJumpTargets(resolverJumpTargets)
         }
 
-        // Phase 4: remove sessions that are no longer visible.
-        _ = local.removeInvisibleSessions()
+        // Phase 4: remove sessions that are no longer visible. Keep resumable
+        // Codex.app threads in state while their rollout is still available:
+        // the watcher needs that record to observe a new turn after a long
+        // completed/idle period. They remain hidden because isProcessAlive is
+        // false, and are pruned by the persisted-record age policy on launch.
+        let resumableCodexAppSessionIDs = Set(
+            local.sessions.lazy
+                .filter {
+                    $0.tool == .codex
+                        && $0.isCodexAppSession
+                        && !$0.isSessionEnded
+                        && !($0.codexMetadata?.transcriptPath?.isEmpty ?? true)
+                }
+                .map(\.id)
+        )
+        _ = local.removeInvisibleSessions(
+            preservingSessionIDs: resumableCodexAppSessionIDs
+        )
 
         // Single state assignment — triggers didSet exactly once.
         // Compare against the original snapshot to catch all mutations

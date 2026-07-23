@@ -550,6 +550,101 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func newerRolloutActivityRestartsACompletedCodexTurn() {
+        let completedAt = Date(timeIntervalSince1970: 2_000)
+        let resumedAt = completedAt.addingTimeInterval(1)
+        let model = AppModel()
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+
+        var session = AgentSession(
+            id: "resumed-codex-thread",
+            title: "Project task",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .completed,
+            summary: "Previous turn completed.",
+            updatedAt: completedAt,
+            codexMetadata: CodexSessionMetadata(
+                transcriptPath: "/tmp/resumed-rollout.jsonl",
+                lastUserPrompt: "Previous prompt"
+            )
+        )
+        session.isCodexAppSession = true
+        session.isProcessAlive = false
+        model.state = SessionState(sessions: [session])
+
+        // The watcher emits metadata before activity for the same appended
+        // rollout batch, so both events carry the same newest timestamp.
+        model.applyTrackedEvent(
+            .sessionMetadataUpdated(
+                SessionMetadataUpdated(
+                    sessionID: session.id,
+                    codexMetadata: CodexSessionMetadata(
+                        transcriptPath: "/tmp/resumed-rollout.jsonl",
+                        lastUserPrompt: "Continue the project"
+                    ),
+                    timestamp: resumedAt
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .rollout
+        )
+        model.applyTrackedEvent(
+            .activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: session.id,
+                    summary: "Thinking.",
+                    phase: .running,
+                    timestamp: resumedAt
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .rollout
+        )
+
+        #expect(model.state.session(id: session.id)?.phase == .running)
+        #expect(model.state.session(id: session.id)?.summary == "Thinking.")
+        #expect(model.state.session(id: session.id)?.isProcessAlive == true)
+        #expect(model.islandListSessions.map(\.id) == [session.id])
+    }
+
+    @Test
+    func staleRolloutActivityDoesNotRestartACompletedCodexTurn() {
+        let completedAt = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        var session = AgentSession(
+            id: "completed-codex-thread",
+            title: "Completed project task",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .completed,
+            summary: "Turn completed.",
+            updatedAt: completedAt
+        )
+        session.isCodexAppSession = true
+        session.isProcessAlive = true
+        model.state = SessionState(sessions: [session])
+
+        model.applyTrackedEvent(
+            .activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: session.id,
+                    summary: "Stale rollout tail.",
+                    phase: .running,
+                    timestamp: completedAt.addingTimeInterval(-1)
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .rollout
+        )
+
+        #expect(model.state.session(id: session.id)?.phase == .completed)
+        #expect(model.state.session(id: session.id)?.summary == "Turn completed.")
+    }
+
+    @Test
     func rolloutMetadataRefreshPreservesKnownCodexConfiguration() {
         let now = Date()
         let model = AppModel()

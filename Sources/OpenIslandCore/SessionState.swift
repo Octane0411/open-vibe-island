@@ -444,10 +444,12 @@ public struct SessionState: Equatable, Sendable {
         upsert(session)
     }
 
-    public mutating func removeInvisibleSessions() -> Bool {
+    public mutating func removeInvisibleSessions(
+        preservingSessionIDs: Set<String> = []
+    ) -> Bool {
         let before = sessionsByID.count
         sessionsByID = sessionsByID.filter { _, session in
-            session.isVisibleInIsland
+            session.isVisibleInIsland || preservingSessionIDs.contains(session.id)
         }
         return sessionsByID.count != before
     }

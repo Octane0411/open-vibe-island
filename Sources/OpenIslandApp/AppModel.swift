@@ -1532,18 +1532,30 @@ final class AppModel {
             return state.session(id: payload.sessionID)?.phase == .completed
         }()
 
-        // Guard: don't let rollout events downgrade a session from completed
-        // back to running. The bridge's sessionCompleted is authoritative; the
-        // rollout watcher may have read the JSONL before task_complete was
-        // flushed, producing a stale activityUpdated(phase: .running).
+        // Reject only stale rollout activity after completion. A completed
+        // Codex thread can start another turn, and the watcher emits metadata
+        // before activity with the same newest timestamp. Equality therefore
+        // represents the current batch and must be allowed to resume it.
         if ingress == .rollout,
            case let .activityUpdated(payload) = event,
            payload.phase == .running,
-           state.session(id: payload.sessionID)?.phase == .completed {
-            return
+           let existing = state.session(id: payload.sessionID),
+           existing.phase == .completed {
+            if existing.isSessionEnded || payload.timestamp < existing.updatedAt {
+                return
+            }
         }
 
         state.apply(event)
+        if ingress == .rollout,
+           case let .activityUpdated(payload) = event,
+           payload.phase == .running,
+           state.session(id: payload.sessionID)?.isCodexAppSession == true {
+            // A fresh rollout activity event is direct evidence that this
+            // thread is alive. Restored Codex.app sessions may have been
+            // deliberately retained off-island with isProcessAlive=false.
+            state.markSingleSessionAlive(sessionID: payload.sessionID)
+        }
         reconcileIslandSurfaceAfterStateChange()
         if ingress == .bridge {
             monitoring.markSessionAttached(for: event)
