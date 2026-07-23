@@ -645,6 +645,115 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func appServerMetadataSyncDoesNotMakeOldCompletedThreadsRecent() {
+        let now = Date()
+        let model = AppModel()
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+        model.updateAppearancePreferences(for: .topBar) {
+            $0.completedStaleThreshold = .fiveMinutes
+            $0.showIdleSessions = false
+        }
+
+        var running = AgentSession(
+            id: "running-thread",
+            title: "Running task",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Thinking.",
+            updatedAt: now
+        )
+        running.isCodexAppSession = true
+        running.isProcessAlive = true
+
+        var recentlyCompleted = AgentSession(
+            id: "recent-thread",
+            title: "Recently completed task",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .completed,
+            summary: "Just finished.",
+            updatedAt: now.addingTimeInterval(-60)
+        )
+        recentlyCompleted.isCodexAppSession = true
+        recentlyCompleted.isProcessAlive = true
+
+        let oldCompletionDate = now.addingTimeInterval(-3_600)
+        var oldCompleted = AgentSession(
+            id: "old-thread",
+            title: "Old completed task",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .completed,
+            summary: "Finished long ago.",
+            updatedAt: oldCompletionDate,
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "old-project",
+                paneTitle: "Old completed task",
+                workingDirectory: "/tmp/old-project",
+                codexThreadID: "old-thread"
+            ),
+            codexMetadata: CodexSessionMetadata(
+                transcriptPath: "/tmp/old-thread.jsonl"
+            )
+        )
+        oldCompleted.isCodexAppSession = true
+        oldCompleted.isProcessAlive = true
+
+        model.state = SessionState(
+            sessions: [running, recentlyCompleted, oldCompleted]
+        )
+        #expect(Set(model.islandListSessions.map(\.id)) == ["running-thread", "recent-thread"])
+
+        let syncDate = now.addingTimeInterval(1)
+        model.applyTrackedEvent(
+            .sessionTitleUpdated(
+                SessionTitleUpdated(
+                    sessionID: oldCompleted.id,
+                    title: "Synced old task title",
+                    timestamp: syncDate
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .bridge
+        )
+        model.applyTrackedEvent(
+            .jumpTargetUpdated(
+                JumpTargetUpdated(
+                    sessionID: oldCompleted.id,
+                    jumpTarget: oldCompleted.jumpTarget!,
+                    timestamp: syncDate
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .bridge
+        )
+        model.applyTrackedEvent(
+            .sessionMetadataUpdated(
+                SessionMetadataUpdated(
+                    sessionID: oldCompleted.id,
+                    codexMetadata: CodexSessionMetadata(
+                        transcriptPath: "/tmp/old-thread.jsonl",
+                        model: "gpt-5.6-sol",
+                        reasoningEffort: "xhigh",
+                        serviceTier: "priority"
+                    ),
+                    timestamp: syncDate
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .bridge
+        )
+
+        #expect(model.state.session(id: oldCompleted.id)?.updatedAt == oldCompletionDate)
+        #expect(Set(model.islandListSessions.map(\.id)) == ["running-thread", "recent-thread"])
+    }
+
+    @Test
     func rolloutMetadataRefreshPreservesKnownCodexConfiguration() {
         let now = Date()
         let model = AppModel()

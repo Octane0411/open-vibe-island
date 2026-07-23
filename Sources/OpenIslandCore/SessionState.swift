@@ -118,7 +118,9 @@ public struct SessionState: Equatable, Sendable {
             }
 
             session.title = payload.title
-            session.updatedAt = payload.timestamp
+            if session.phase != .completed {
+                session.updatedAt = payload.timestamp
+            }
             upsert(session)
 
         case let .permissionRequested(payload):
@@ -166,7 +168,9 @@ public struct SessionState: Equatable, Sendable {
             }
 
             session.jumpTarget = payload.jumpTarget
-            session.updatedAt = payload.timestamp
+            if session.phase != .completed {
+                session.updatedAt = payload.timestamp
+            }
             Self.refreshCodexAppClassification(for: &session)
             upsert(session)
 
@@ -176,7 +180,9 @@ public struct SessionState: Equatable, Sendable {
             }
 
             session.codexMetadata = payload.codexMetadata.isEmpty ? nil : payload.codexMetadata
-            session.updatedAt = payload.timestamp
+            if session.phase != .completed {
+                session.updatedAt = payload.timestamp
+            }
             upsert(session)
 
         case let .claudeSessionMetadataUpdated(payload):
