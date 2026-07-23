@@ -360,8 +360,10 @@ struct ClaudeUsageTests {
     }
 
     @Test
-    func claudeStatusLineInstallAutoFallsBackToWrapperViaHandler() throws {
-        // Simulates HookInstallationCoordinator's catch-and-fall-back behavior.
+    func installPreservingExistingWrapsWhenCustomStatusLinePresent() throws {
+        // installPreservingExisting is the single decision point shared by the
+        // app UI and the OpenIslandSetup CLI: managed install, auto-wrapping a
+        // pre-existing custom statusLine instead of throwing.
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("open-island-claude-fallback-\(UUID().uuidString)", isDirectory: true)
         let claudeDirectory = rootURL.appendingPathComponent(".claude", isDirectory: true)
@@ -384,15 +386,38 @@ struct ClaudeUsageTests {
             options: [.prettyPrinted, .sortedKeys]
         ).write(to: settingsURL, options: .atomic)
 
-        let finalStatus: ClaudeStatusLineInstallationStatus
-        do {
-            finalStatus = try manager.install()
-        } catch ClaudeStatusLineInstallationError.existingStatusLineConflict {
-            finalStatus = try manager.installAsWrapper()
-        }
+        let finalStatus = try manager.installPreservingExisting()
 
         #expect(finalStatus.managedStatusLineIsWrapper)
         #expect(finalStatus.managedStatusLineInstalled)
+
+        // The user's original command must still run via the delegate.
+        let delegateURL = scriptDirectory
+            .appendingPathComponent(ClaudeStatusLineInstallationManager.wrappedDelegateScriptName)
+        let delegateContents = try String(contentsOf: delegateURL, encoding: .utf8)
+        #expect(delegateContents.contains("/usr/local/bin/custom-status"))
+    }
+
+    @Test
+    func installPreservingExistingUsesManagedScriptWhenNoStatusLinePresent() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-claude-managed-\(UUID().uuidString)", isDirectory: true)
+        let claudeDirectory = rootURL.appendingPathComponent(".claude", isDirectory: true)
+        let scriptDirectory = rootURL
+            .appendingPathComponent(".open-island", isDirectory: true)
+            .appendingPathComponent("bin", isDirectory: true)
+        let manager = ClaudeStatusLineInstallationManager(
+            claudeDirectory: claudeDirectory,
+            scriptDirectoryURL: scriptDirectory
+        )
+
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let finalStatus = try manager.installPreservingExisting()
+
+        #expect(finalStatus.managedStatusLineInstalled)
+        #expect(!finalStatus.managedStatusLineIsWrapper)
+        #expect(finalStatus.statusLineCommand == finalStatus.scriptURL.path)
     }
 }
 

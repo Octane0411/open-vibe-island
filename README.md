@@ -343,7 +343,13 @@ swift run OpenIslandSetup uninstall
 
 #### Connect Claude Code
 
-Claude usage setup is available from the app's Settings window and remains opt-in. The bridge writes a managed `statusLine.command` to `~/.open-island/bin/open-island-statusline`, caches `rate_limits` into `/tmp/open-island-rl.json`, and refuses to overwrite an existing custom status line automatically.
+Claude usage setup is available from the app's Settings window and remains opt-in. The bridge writes a managed `statusLine.command` to `~/.open-island/bin/open-island-statusline` and caches `rate_limits` into `/tmp/open-island-rl.json`. When you already have a custom status line, it installs in **wrapper mode** — your original command keeps running unchanged while the bridge tees `rate_limits` to the cache. Because rate limits are account-wide, one terminal `claude` render seeds the cache and the panel then reflects total usage (including Desktop sessions). Manage installation from the Settings window, or via CLI:
+
+```zsh
+swift run OpenIslandSetup installClaudeUsage    # install; auto-wraps an existing custom status line
+swift run OpenIslandSetup statusClaudeUsage     # report managed / wrapper / repair state
+swift run OpenIslandSetup uninstallClaudeUsage  # remove and restore the original status line
+```
 
 ### Repository Map
 

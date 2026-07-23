@@ -163,6 +163,21 @@ public final class ClaudeStatusLineInstallationManager: @unchecked Sendable {
         return try status()
     }
 
+    /// Install the usage bridge, transparently falling back to wrapper mode when
+    /// the user already has a custom `statusLine.command`. This is the single
+    /// decision point shared by the app's Settings action and the
+    /// OpenIslandSetup CLI, so both behave identically: a plain managed install
+    /// when no status line exists, or a wrapper that preserves the user's
+    /// command while still teeing `rate_limits` to the cache.
+    @discardableResult
+    public func installPreservingExisting() throws -> ClaudeStatusLineInstallationStatus {
+        do {
+            return try install()
+        } catch ClaudeStatusLineInstallationError.existingStatusLineConflict {
+            return try installAsWrapper()
+        }
+    }
+
     /// Install in "wrap mode": keep the user's existing statusLine command working,
     /// but prepend our cache-writing shim. The original command is saved under
     /// `_openIslandOriginalStatusLine` so `uninstall()` can restore it verbatim.
