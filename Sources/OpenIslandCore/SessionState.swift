@@ -166,6 +166,11 @@ public struct SessionState: Equatable, Sendable {
                 return
             }
 
+            // A replayed rollout metadata event must not replace fields already
+            // enriched by a newer snapshot. Equal timestamps are paired events.
+            guard payload.timestamp >= session.updatedAt else {
+                return
+            }
             session.codexMetadata = payload.codexMetadata.isEmpty ? nil : payload.codexMetadata
             session.updatedAt = payload.timestamp
             upsert(session)
