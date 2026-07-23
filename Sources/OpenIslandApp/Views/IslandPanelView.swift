@@ -99,7 +99,8 @@ struct IslandPanelView: View {
     private static let headerTopPadding: CGFloat = 2
     private static let notchHeaderHorizontalPadding: CGFloat = 46
     private static let notchLaneSafetyInset: CGFloat = 12
-    private static let minimumRightUsageLaneWidth: CGFloat = 58
+    /// How old a usage cache gets before the tooltip calls out its age.
+    private static let staleUsageThreshold: TimeInterval = 15 * 60
 
     var model: AppModel
     private var lang: LanguageManager { model.lang }
@@ -108,6 +109,8 @@ struct IslandPanelView: View {
     @State private var showingQuitConfirmation = false
     @State private var keepsOpenedSurfaceMounted = false
     @State private var openedSurfaceMountGeneration: UInt64 = 0
+    @State private var usageProviderOverride: UsageProvider?
+    @State private var isUsageDropdownPresented = false
 
     private var isOpened: Bool {
         model.notchStatus == .opened
@@ -192,6 +195,10 @@ struct IslandPanelView: View {
         }
         .onChange(of: model.notchStatus) { _, status in
             syncOpenedSurfaceMount(with: status)
+        }
+        .onChange(of: activeUsageProvider) {
+            usageProviderOverride = nil
+            isUsageDropdownPresented = false
         }
     }
 
@@ -338,24 +345,16 @@ struct IslandPanelView: View {
     private var openedHeaderContent: some View {
         if usesNotchAwareOpenedHeader {
             GeometryReader { geometry in
-                let providers = openedUsageProviders
-                let providerGroups = splitUsageProviders(providers)
                 let metrics = openedHeaderMetrics(for: geometry.size.width)
 
                 HStack(spacing: 0) {
-                    usageLaneView(providerGroups.left, alignment: .leading)
+                    openedUsageSelector
                         .frame(width: metrics.leftUsageWidth, alignment: .leading)
 
                     Color.clear
                         .frame(width: metrics.centerGapWidth)
 
-                    HStack(spacing: Self.headerControlSpacing) {
-                        if metrics.rightUsageWidth > 0, !providerGroups.right.isEmpty {
-                            usageLaneView(providerGroups.right, alignment: .trailing)
-                                .frame(width: metrics.rightUsageWidth, alignment: .trailing)
-                        }
-                        openedHeaderButtons
-                    }
+                    openedHeaderButtons
                     .frame(width: metrics.rightLaneWidth, alignment: .trailing)
                 }
                 .padding(.horizontal, openedHeaderHorizontalPadding)
@@ -363,7 +362,7 @@ struct IslandPanelView: View {
             }
         } else {
             HStack(spacing: 12) {
-                openedUsageSummary
+                openedUsageSelector
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 openedHeaderButtons
@@ -844,124 +843,106 @@ struct IslandPanelView: View {
 
     // MARK: - Helpers
 
-    @ViewBuilder
-    private var openedUsageSummary: some View {
-        let providers = openedUsageProviders
-
-        if providers.isEmpty == false {
-            ViewThatFits(in: .horizontal) {
-                compactUsageSummaryView(providers, usesShortTitles: false)
-                compactUsageSummaryView(providers, usesShortTitles: true)
-            }
-        } else {
-            Color.clear
-        }
-    }
-
-    private var openedUsageProviders: [UsageProviderPresentation] {
+    private var openedUsageProviders: [UsageProviderStatus] {
         guard model.islandUsageDisplay == .compact else {
             return []
         }
 
-        var providers: [UsageProviderPresentation] = []
-
-        if let snapshot = model.claudeUsageSnapshot,
-           snapshot.isEmpty == false {
-            var windows: [UsageWindowPresentation] = []
-
-            if let fiveHour = snapshot.fiveHour {
-                windows.append(
-                    UsageWindowPresentation(
-                        id: "claude-5h",
-                        label: "5h",
-                        usedPercentage: fiveHour.usedPercentage,
-                        resetsAt: fiveHour.resetsAt
-                    )
-                )
-            }
-
-            if let sevenDay = snapshot.sevenDay {
-                windows.append(
-                    UsageWindowPresentation(
-                        id: "claude-7d",
-                        label: "7d",
-                        usedPercentage: sevenDay.usedPercentage,
-                        resetsAt: sevenDay.resetsAt
-                    )
-                )
-            }
-
-            if windows.isEmpty == false {
-                providers.append(
-                    UsageProviderPresentation(
-                        id: "claude",
-                        title: "Claude",
-                        windows: windows
-                    )
-                )
-            }
-        }
-
-        if model.showCodexUsage,
-           let snapshot = model.codexUsageSnapshot,
-           snapshot.isEmpty == false {
-            let windows = snapshot.windows.map { window in
-                UsageWindowPresentation(
-                    id: "codex-\(window.key)",
-                    label: window.label,
-                    usedPercentage: window.usedPercentage,
-                    resetsAt: window.resetsAt
-                )
-            }
-
-            if windows.isEmpty == false {
-                providers.append(
-                    UsageProviderPresentation(
-                        id: "codex",
-                        title: "Codex",
-                        windows: windows
-                    )
-                )
-            }
-        }
-
-        return providers
+        return model.usageProviderStatuses
     }
 
-    private func splitUsageProviders(
-        _ providers: [UsageProviderPresentation]
-    ) -> (left: [UsageProviderPresentation], right: [UsageProviderPresentation]) {
-        switch providers.count {
-        case 0:
-            return ([], [])
-        case 1:
-            return ([providers[0]], [])
-        case 2:
-            return ([providers[0]], [providers[1]])
-        default:
-            let splitIndex = Int(ceil(Double(providers.count) / 2.0))
-            return (
-                Array(providers.prefix(splitIndex)),
-                Array(providers.dropFirst(splitIndex))
-            )
-        }
+    private var activeUsageProvider: UsageProvider? {
+        UsageProviderSelection.provider(for: model.islandClosedSpotlight?.tool)
+    }
+
+    private var selectedUsageProvider: UsageProviderStatus? {
+        let providers = openedUsageProviders
+        let selected = UsageProviderSelection.selected(
+            available: providers.map(\.provider),
+            activeTool: model.islandClosedSpotlight?.tool,
+            override: usageProviderOverride
+        )
+        return providers.first { $0.provider == selected }
     }
 
     @ViewBuilder
-    private func usageLaneView(
-        _ providers: [UsageProviderPresentation],
-        alignment: Alignment
-    ) -> some View {
-        if providers.isEmpty {
-            Color.clear
-                .frame(maxWidth: .infinity)
-        } else {
-            ViewThatFits(in: .horizontal) {
-                compactUsageSummaryView(providers, usesShortTitles: false)
-                compactUsageSummaryView(providers, usesShortTitles: true)
+    private var openedUsageSelector: some View {
+        let providers = openedUsageProviders
+
+        if let selected = selectedUsageProvider {
+            Button {
+                withAnimation(.easeOut(duration: 0.16)) {
+                    isUsageDropdownPresented.toggle()
+                }
+            } label: {
+                ViewThatFits(in: .horizontal) {
+                    compactUsageChip(
+                        selected,
+                        usesShortTitle: false,
+                        showsChevron: providers.count > 1,
+                        isExpanded: isUsageDropdownPresented
+                    )
+                    compactUsageChip(
+                        selected,
+                        usesShortTitle: true,
+                        showsChevron: providers.count > 1,
+                        isExpanded: isUsageDropdownPresented
+                    )
+                }
             }
-            .frame(maxWidth: .infinity, alignment: alignment)
+            .buttonStyle(.plain)
+            .fixedSize(horizontal: true, vertical: false)
+            .accessibilityLabel("Usage provider")
+            .accessibilityValue(usageMenuTitle(for: selected))
+            .popover(
+                isPresented: $isUsageDropdownPresented,
+                attachmentAnchor: .rect(.bounds),
+                arrowEdge: .top
+            ) {
+                usageProviderDropdown(providers, selected: selected.provider)
+                    .presentationCompactAdaptation(.popover)
+            }
+        } else {
+            Color.clear
         }
+    }
+
+    private func usageProviderDropdown(
+        _ providers: [UsageProviderStatus],
+        selected: UsageProvider
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            ForEach(providers) { provider in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        usageProviderOverride = provider.provider
+                        isUsageDropdownPresented = false
+                    }
+                } label: {
+                    compactUsageChip(provider, usesShortTitle: false)
+                        .overlay {
+                            Capsule()
+                                .strokeBorder(
+                                    provider.provider == selected
+                                        ? usageColor(for: provider.peakUsedPercentage).opacity(0.5)
+                                        : .clear,
+                                    lineWidth: 1
+                                )
+                        }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(usageMenuTitle(for: provider))
+            }
+        }
+        .padding(9)
+        .background(V6Palette.ink.opacity(0.98))
+    }
+
+    private func usageMenuTitle(for provider: UsageProviderStatus) -> String {
+        let windows = provider.windows.map {
+            "\($0.label) \($0.roundedUsedPercentage)%"
+        }.joined(separator: " · ")
+        return "\(provider.title) — \(windows)"
     }
 
     private func openedHeaderMetrics(for totalWidth: CGFloat) -> OpenedHeaderMetrics {
@@ -969,12 +950,11 @@ struct IslandPanelView: View {
         let contentWidth = max(0, totalWidth - (horizontalPadding * 2))
         guard usesNotchAwareOpenedHeader,
               let screen = targetOverlayScreen else {
-            let rightLaneWidth = min(contentWidth, openedHeaderButtonsWidth + (contentWidth / 2))
+            let rightLaneWidth = min(contentWidth, openedHeaderButtonsWidth)
             let leftUsageWidth = max(0, contentWidth - rightLaneWidth)
             return OpenedHeaderMetrics(
                 leftUsageWidth: leftUsageWidth,
                 centerGapWidth: 0,
-                rightUsageWidth: max(0, rightLaneWidth - openedHeaderButtonsWidth - Self.headerControlSpacing),
                 rightLaneWidth: rightLaneWidth
             )
         }
@@ -995,42 +975,25 @@ struct IslandPanelView: View {
 
         let leftUsageWidth = max(0, rawLeftWidth - Self.notchLaneSafetyInset)
         let rightAvailableWidth = max(0, rawRightWidth - Self.notchLaneSafetyInset)
-        let proposedRightUsageWidth = max(
-            0,
-            rightAvailableWidth - openedHeaderButtonsWidth - Self.headerControlSpacing
-        )
-        let rightUsageWidth = proposedRightUsageWidth >= Self.minimumRightUsageLaneWidth
-            ? proposedRightUsageWidth
-            : 0
         let rightLaneWidth = min(
             contentWidth,
-            openedHeaderButtonsWidth
-                + (rightUsageWidth > 0 ? Self.headerControlSpacing + rightUsageWidth : 0)
+            min(openedHeaderButtonsWidth, rightAvailableWidth)
         )
         let centerGapWidth = max(0, contentWidth - leftUsageWidth - rightLaneWidth)
 
         return OpenedHeaderMetrics(
             leftUsageWidth: leftUsageWidth,
             centerGapWidth: centerGapWidth,
-            rightUsageWidth: rightUsageWidth,
             rightLaneWidth: rightLaneWidth
         )
     }
 
-    private func compactUsageSummaryView(
-        _ providers: [UsageProviderPresentation],
-        usesShortTitles: Bool
+    private func compactUsageChip(
+        _ provider: UsageProviderStatus,
+        usesShortTitle: Bool,
+        showsChevron: Bool = false,
+        isExpanded: Bool = false
     ) -> some View {
-        HStack(spacing: 7) {
-            ForEach(providers) { provider in
-                compactUsageChip(provider, usesShortTitle: usesShortTitles)
-            }
-        }
-        .lineLimit(1)
-        .fixedSize(horizontal: true, vertical: false)
-    }
-
-    private func compactUsageChip(_ provider: UsageProviderPresentation, usesShortTitle: Bool) -> some View {
         HStack(spacing: 5) {
             Text(usesShortTitle ? provider.shortTitle : provider.title)
                 .font(.system(size: 11, weight: .semibold))
@@ -1043,6 +1006,14 @@ struct IslandPanelView: View {
             Text("\(provider.peakUsagePercentage)%")
                 .font(.system(size: 11.5, weight: .bold, design: .monospaced))
                 .foregroundStyle(usageColor(for: provider.peakUsedPercentage))
+
+            if showsChevron {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 7.5, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.34))
+                    .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                    .animation(.easeInOut(duration: 0.16), value: isExpanded)
+            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
@@ -1054,8 +1025,8 @@ struct IslandPanelView: View {
         .help(usageHelpText(for: provider))
     }
 
-    private func usageHelpText(for provider: UsageProviderPresentation) -> String {
-        provider.windows.map { window in
+    private func usageHelpText(for provider: UsageProviderStatus) -> String {
+        var components = provider.windows.map { window in
             var parts = ["\(window.label) \(window.roundedUsedPercentage)%"]
             if let resetsAt = window.resetsAt,
                let remaining = remainingDurationString(until: resetsAt) {
@@ -1063,7 +1034,16 @@ struct IslandPanelView: View {
             }
             return parts.joined(separator: " ")
         }
-        .joined(separator: " · ")
+
+        // The cache only refreshes while the harness runs, so say how old these
+        // numbers are once they stop tracking the live quota.
+        if let capturedAt = provider.capturedAt,
+           Date.now.timeIntervalSince(capturedAt) >= Self.staleUsageThreshold,
+           let age = durationString(for: Date.now.timeIntervalSince(capturedAt)) {
+            components.append("updated \(age) ago")
+        }
+
+        return components.joined(separator: " · ")
     }
 
     private func headerPill(_ title: String, tint: Color) -> some View {
@@ -1087,7 +1067,10 @@ struct IslandPanelView: View {
     }
 
     private func remainingDurationString(until date: Date) -> String? {
-        let interval = date.timeIntervalSinceNow
+        durationString(for: date.timeIntervalSinceNow)
+    }
+
+    private func durationString(for interval: TimeInterval) -> String? {
         guard interval > 0 else {
             return nil
         }
@@ -1110,56 +1093,9 @@ struct IslandPanelView: View {
     }
 }
 
-private struct UsageProviderPresentation: Identifiable {
-    let id: String
-    let title: String
-    let windows: [UsageWindowPresentation]
-
-    var peakWindow: UsageWindowPresentation? {
-        windows.max { lhs, rhs in
-            lhs.usedPercentage < rhs.usedPercentage
-        }
-    }
-
-    var peakWindowLabel: String {
-        peakWindow?.label ?? ""
-    }
-
-    var peakUsedPercentage: Double {
-        peakWindow?.usedPercentage ?? 0
-    }
-
-    var peakUsagePercentage: Int {
-        peakWindow?.roundedUsedPercentage ?? 0
-    }
-
-    var shortTitle: String {
-        switch id {
-        case "claude":
-            "Cl"
-        case "codex":
-            "Cx"
-        default:
-            String(title.prefix(2))
-        }
-    }
-}
-
-private struct UsageWindowPresentation: Identifiable {
-    let id: String
-    let label: String
-    let usedPercentage: Double
-    let resetsAt: Date?
-
-    var roundedUsedPercentage: Int {
-        Int(usedPercentage.rounded())
-    }
-}
-
 private struct OpenedHeaderMetrics {
     let leftUsageWidth: CGFloat
     let centerGapWidth: CGFloat
-    let rightUsageWidth: CGFloat
     let rightLaneWidth: CGFloat
 }
 
@@ -1209,7 +1145,7 @@ private struct IslandSessionRow: View {
             at: referenceDate,
             threshold: completedStaleThreshold
         )
-        let defaultShowsDetail = !isStaleCompleted && (rawPresence != .inactive || isActionable)
+        let defaultShowsDetail = !isStaleCompleted && (rawPresence == .running || isActionable)
         let showsDetail = detailOverride ?? defaultShowsDetail
         let presence = isStaleCompleted
             ? .inactive
@@ -1410,7 +1346,9 @@ private struct IslandSessionRow: View {
         Text(title)
             .font(.system(size: 10.5, weight: .medium, design: .monospaced))
             .foregroundStyle(V6Palette.paper.opacity(presentation == .notification ? 0.52 : 0.7))
-            .padding(.horizontal, 8)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .padding(.horizontal, 7)
             .padding(.vertical, 3)
             .background(.white.opacity(presentation == .notification ? 0.045 : 0.06), in: Capsule())
     }
