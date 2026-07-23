@@ -28,6 +28,20 @@ public struct UsageWindowSummary: Equatable, Sendable, Identifiable {
     public var roundedUsedPercentage: Int {
         Int(usedPercentage.rounded())
     }
+
+    /// True once the window's reset time has passed.
+    ///
+    /// Usage caches are only rewritten while the harness runs — Claude Code
+    /// writes on each turn, Codex on each rollout append. So a window past its
+    /// reset is not "current usage at 10%", it is a number from the previous
+    /// window that nothing has refreshed yet.
+    public func hasReset(by referenceDate: Date) -> Bool {
+        guard let resetsAt else {
+            return false
+        }
+
+        return resetsAt <= referenceDate
+    }
 }
 
 /// A provider-agnostic view of one usage cache.
@@ -36,6 +50,14 @@ public protocol UsageSnapshotSummarizing: Sendable {
     var windowSummaries: [UsageWindowSummary] { get }
     /// When the underlying cache was last written, if known.
     var summarizedAt: Date? { get }
+}
+
+extension UsageSnapshotSummarizing {
+    /// Windows that still describe current usage — rolled-over windows are
+    /// dropped rather than shown with their stale percentage.
+    public func liveWindowSummaries(at referenceDate: Date) -> [UsageWindowSummary] {
+        windowSummaries.filter { !$0.hasReset(by: referenceDate) }
+    }
 }
 
 extension ClaudeUsageSnapshot: UsageSnapshotSummarizing {

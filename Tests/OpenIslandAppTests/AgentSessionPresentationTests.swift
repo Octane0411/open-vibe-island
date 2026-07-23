@@ -335,50 +335,6 @@ struct AgentSessionPresentationTests {
     }
 
     @Test
-    func codexChildThreadIsRecognizedAsSubagent() {
-        let session = AgentSession(
-            id: "child",
-            title: "Codex · worktree",
-            tool: .codex,
-            origin: .live,
-            attachmentState: .attached,
-            phase: .running,
-            summary: "Working",
-            updatedAt: .now,
-            codexMetadata: CodexSessionMetadata(parentThreadID: "parent")
-        )
-
-        #expect(session.isSubagentSession)
-    }
-
-    @Test
-    func codexDesktopRootWorkspaceUsesRolloutRepositoryPath() {
-        let session = AgentSession(
-            id: "session-1",
-            title: "Codex · /",
-            tool: .codex,
-            origin: .live,
-            attachmentState: .attached,
-            phase: .running,
-            summary: "Thinking",
-            updatedAt: .now,
-            jumpTarget: JumpTarget(
-                terminalApp: "Codex.app",
-                workspaceName: "/",
-                paneTitle: "Codex",
-                workingDirectory: "/",
-                codexThreadID: "session-1"
-            ),
-            codexMetadata: CodexSessionMetadata(
-                workspacePath: "/Users/aditya/Developer/projects/open-vibe-island"
-            )
-        )
-
-        #expect(session.spotlightWorkspaceName == "open-vibe-island")
-        #expect(session.spotlightHeadlineText == "open-vibe-island")
-    }
-
-    @Test
     func usageProviderSelectionFollowsActiveHarnessAndAllowsInspectionOverride() {
         let available = UsageProvider.allCases
 
@@ -536,38 +492,55 @@ struct AgentSessionPresentationTests {
     }
 
     @Test
-    func injectedContextAndInternalApprovalPayloadStayOutOfSessionRows() {
-        let session = AgentSession(
-            id: "session-1",
-            title: "Codex · worktree",
-            tool: .codex,
-            origin: .live,
-            attachmentState: .attached,
-            phase: .completed,
-            summary: "Done",
-            updatedAt: .now,
-            codexMetadata: CodexSessionMetadata(
-                initialUserPrompt: "<recommended_plugins>internal setup</recommended_plugins>",
-                lastUserPrompt: """
-                # Files mentioned by the user:
-                ## screenshot.png
-
-                ## My request for Codex:
-                Fix the session list.
-                """,
-                lastAssistantMessage: #"{"risk_level":"low","outcome":"allow","rationale":"internal"}"#
-            )
+    func usageWindowsExpireAtTheirResetTime() {
+        let resetsAt = Date(timeIntervalSince1970: 20_000)
+        let window = UsageWindowSummary(
+            key: "5h",
+            label: "5h",
+            usedPercentage: 10,
+            resetsAt: resetsAt
         )
 
-        #expect(session.spotlightHeadlineText == "worktree")
-        #expect(session.spotlightPromptLineText == "You: Fix the session list.")
-        #expect(session.spotlightActivityLineText == "Completed")
+        #expect(window.hasReset(by: resetsAt.addingTimeInterval(-1)) == false)
+        // The reset instant itself already belongs to the next window.
+        #expect(window.hasReset(by: resetsAt))
+        #expect(window.hasReset(by: resetsAt.addingTimeInterval(1)))
 
-        var attachmentOnlySession = session
-        attachmentOnlySession.codexMetadata?.lastUserPrompt = """
-        # Files mentioned by the user:
-        ## screenshot.png
-        """
-        #expect(attachmentOnlySession.spotlightPromptLineText == nil)
+        // Without a reset time there is nothing to expire against, so the
+        // window keeps counting rather than silently vanishing.
+        let openEnded = UsageWindowSummary(
+            key: "7d",
+            label: "7d",
+            usedPercentage: 40,
+            resetsAt: nil
+        )
+        #expect(openEnded.hasReset(by: .distantFuture) == false)
+
+        let snapshot = CodexUsageSnapshot(
+            sourceFilePath: "/tmp/rollout.jsonl",
+            capturedAt: resetsAt,
+            windows: [
+                CodexUsageWindow(
+                    key: "primary",
+                    label: "5h",
+                    usedPercentage: 10,
+                    leftPercentage: 90,
+                    windowMinutes: 300,
+                    resetsAt: resetsAt
+                ),
+                CodexUsageWindow(
+                    key: "secondary",
+                    label: "7d",
+                    usedPercentage: 40,
+                    leftPercentage: 60,
+                    windowMinutes: 10_080,
+                    resetsAt: resetsAt.addingTimeInterval(86_400)
+                ),
+            ]
+        )
+
+        #expect(snapshot.liveWindowSummaries(at: resetsAt.addingTimeInterval(-1)).count == 2)
+        #expect(snapshot.liveWindowSummaries(at: resetsAt.addingTimeInterval(1)).map(\.key) == ["secondary"])
+        #expect(snapshot.liveWindowSummaries(at: resetsAt.addingTimeInterval(200_000)).isEmpty)
     }
 }

@@ -239,7 +239,7 @@ final class HookInstallationCoordinator {
             return nil
         }
 
-        var components = snapshot.windowSummaries.map { window in
+        var components = snapshot.liveWindowSummaries(at: .now).map { window in
             "\(window.label) \(window.roundedUsedPercentage)%"
         }
         components.append(contentsOf: extraComponents)

@@ -254,13 +254,19 @@ final class AppModel {
     /// registry order. The island pill and Settings summaries both read this
     /// instead of reaching for a specific provider's snapshot.
     var usageProviderStatuses: [UsageProviderStatus] {
+        usageProviderStatuses(at: .now)
+    }
+
+    func usageProviderStatuses(at referenceDate: Date) -> [UsageProviderStatus] {
         UsageProvider.allCases.compactMap { provider in
             guard isUsageProviderEnabled(provider),
                   let snapshot = usageSnapshot(for: provider) else {
                 return nil
             }
 
-            let windows = snapshot.windowSummaries
+            // A cache that has outlived its window describes usage that has
+            // already reset, so it must not keep driving the pill.
+            let windows = snapshot.liveWindowSummaries(at: referenceDate)
             guard !windows.isEmpty else {
                 return nil
             }
