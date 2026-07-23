@@ -63,15 +63,17 @@ struct ClaudeTranscriptDiscoveryTests {
 
     @Test
     func firstNonEmptyEntrypointIsLatched() throws {
-        // The entrypoint is latched from the first record that carries it; a
-        // later record must not overwrite the captured value.
+        // An empty earlier entrypoint is skipped, the first non-empty value is
+        // latched ("claude-desktop"), and a later record ("cli") must not
+        // overwrite it.
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("open-island-transcript-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
         let lines = [
-            #"{"type":"attachment","sessionId":"bbb22222","cwd":"/Users/test/project","entrypoint":"claude-desktop","timestamp":"2026-07-22T18:00:00Z"}"#,
+            #"{"type":"attachment","sessionId":"bbb22222","cwd":"/Users/test/project","entrypoint":"","timestamp":"2026-07-22T17:55:00Z"}"#,
+            #"{"type":"attachment","sessionId":"bbb22222","entrypoint":"claude-desktop","timestamp":"2026-07-22T18:00:00Z"}"#,
             #"{"type":"attachment","sessionId":"bbb22222","entrypoint":"cli","timestamp":"2026-07-22T18:05:00Z"}"#,
         ].joined(separator: "\n") + "\n"
         try lines.write(
