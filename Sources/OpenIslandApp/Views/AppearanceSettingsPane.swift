@@ -268,6 +268,34 @@ struct AppearanceSettingsPane: View {
                                       .foregroundStyle(V6Palette.paper.opacity(0.5)) },
                           title: lang.t("settings.appearance.rightSlot.none"))
         }
+
+        if editingPreferences.rightSlot == .agents {
+            sectionHeader(
+                title: lang.t("settings.appearance.agentGridSort.title"),
+                note: lang.t("settings.appearance.agentGridSort.note")
+            )
+
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 110), spacing: 12)],
+                alignment: .leading,
+                spacing: 12
+            ) {
+                ForEach(IslandAgentGridSort.allCases) { option in
+                    optionCard(
+                        selected: editingPreferences.agentGridSort == option,
+                        title: title(for: option)
+                    ) {
+                        model.updateAppearancePreferences(for: editingProfile) {
+                            $0.agentGridSort = option
+                        }
+                    } icon: {
+                        Image(systemName: icon(for: option))
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(V6Palette.paper.opacity(0.82))
+                    }
+                }
+            }
+        }
     }
 
     private func rightSlotCard<Content: View>(
@@ -609,6 +637,26 @@ struct AppearanceSettingsPane: View {
         switch option {
         case .attention:  lang.t("settings.appearance.sessionSort.attention")
         case .lastUpdate: lang.t("settings.appearance.sessionSort.lastUpdate")
+        }
+    }
+
+    private func title(for option: IslandAgentGridSort) -> String {
+        switch option {
+        case .statusPriority: lang.t("settings.appearance.agentGridSort.statusPriority")
+        case .recentActivity: lang.t("settings.appearance.agentGridSort.recentActivity")
+        case .newestSession:  lang.t("settings.appearance.agentGridSort.newestSession")
+        case .agent:          lang.t("settings.appearance.agentGridSort.agent")
+        case .stable:         lang.t("settings.appearance.agentGridSort.stable")
+        }
+    }
+
+    private func icon(for option: IslandAgentGridSort) -> String {
+        switch option {
+        case .statusPriority: "bolt.fill"
+        case .recentActivity: "clock.arrow.circlepath"
+        case .newestSession:  "sparkles"
+        case .agent:          "square.grid.2x2"
+        case .stable:         "pin.fill"
         }
     }
 

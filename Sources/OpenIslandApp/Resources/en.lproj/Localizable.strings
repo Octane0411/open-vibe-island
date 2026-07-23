@@ -225,3 +225,11 @@
 
 /* Window Titles */
 "window.settings" = "Open Island Settings";
+
+"settings.appearance.agentGridSort.title" = "Agent grid order";
+"settings.appearance.agentGridSort.note" = "Choose how sessions are placed in the closed island grid.";
+"settings.appearance.agentGridSort.statusPriority" = "Status priority";
+"settings.appearance.agentGridSort.recentActivity" = "Recent activity";
+"settings.appearance.agentGridSort.newestSession" = "Newest session";
+"settings.appearance.agentGridSort.agent" = "By agent";
+"settings.appearance.agentGridSort.stable" = "Stable order";
