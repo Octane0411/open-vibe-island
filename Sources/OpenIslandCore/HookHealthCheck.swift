@@ -1,7 +1,7 @@
 import Foundation
 
-/// Structured diagnostic result for a single hook integration (Claude or Codex).
-public struct HookHealthReport: Equatable, Sendable {
+/// Structured diagnostic result for a single hook integration.
+public struct HookHealthReport: Equatable, Sendable, Identifiable {
     public enum Severity: Equatable, Sendable {
         /// A real problem that may prevent hooks from working.
         case error
@@ -63,10 +63,32 @@ public struct HookHealthReport: Equatable, Sendable {
         }
     }
 
-    public var agent: String  // "claude" or "codex"
+    /// The integration a report covers. Adding an agent here is what makes it
+    /// show up correctly in Settings diagnostics — the UI reads `displayName`
+    /// instead of pattern-matching identifiers.
+    public enum Agent: String, CaseIterable, Codable, Sendable {
+        case claude
+        case codex
+        case openCode = "opencode"
+
+        public var displayName: String {
+            switch self {
+            case .claude:
+                "Claude Code"
+            case .codex:
+                "Codex"
+            case .openCode:
+                "OpenCode"
+            }
+        }
+    }
+
+    public var agent: Agent
     public var issues: [Issue]
     public var binaryPath: String?
     public var configPath: String?
+
+    public var id: Agent { agent }
 
     /// True when there are no errors (info-level notices are fine).
     public var isHealthy: Bool { errors.isEmpty }
@@ -86,7 +108,7 @@ public struct HookHealthReport: Equatable, Sendable {
         issues.filter(\.isAutoRepairable)
     }
 
-    public init(agent: String, issues: [Issue] = [], binaryPath: String? = nil, configPath: String? = nil) {
+    public init(agent: Agent, issues: [Issue] = [], binaryPath: String? = nil, configPath: String? = nil) {
         self.agent = agent
         self.issues = issues
         self.binaryPath = binaryPath
@@ -140,7 +162,7 @@ public enum HookHealthCheck {
                     }
 
                     // Check for other hooks (informational)
-                    var otherNames = findThirdPartyHookNames(in: data, agent: "claude")
+                    var otherNames = findThirdPartyHookNames(in: data)
                     if containsClaudeIslandHook(in: data) {
                         otherNames.append("claude-island")
                     }
@@ -161,7 +183,7 @@ public enum HookHealthCheck {
         }
 
         return HookHealthReport(
-            agent: "claude",
+            agent: .claude,
             issues: issues,
             binaryPath: resolvedBinaryPath,
             configPath: settingsPath
@@ -206,7 +228,7 @@ public enum HookHealthCheck {
                         issues.append(.staleCommandPath(recorded: cmd, configPath: hooksPath))
                     }
 
-                    let otherNames = findThirdPartyHookNames(in: data, agent: "codex")
+                    let otherNames = findThirdPartyHookNames(in: data)
                     if !otherNames.isEmpty {
                         issues.append(.otherHooksDetected(names: otherNames.sorted()))
                     }
@@ -224,7 +246,7 @@ public enum HookHealthCheck {
         }
 
         return HookHealthReport(
-            agent: "codex",
+            agent: .codex,
             issues: issues,
             binaryPath: resolvedBinaryPath,
             configPath: hooksPath
@@ -249,7 +271,7 @@ public enum HookHealthCheck {
         }
 
         return HookHealthReport(
-            agent: "opencode",
+            agent: .openCode,
             issues: issues,
             binaryPath: nil,
             configPath: pluginFileURL.path
@@ -324,7 +346,7 @@ public enum HookHealthCheck {
     }
 
     /// Finds third-party (non-Open Island) hook command names for display.
-    private static func findThirdPartyHookNames(in data: Data, agent: String) -> [String] {
+    private static func findThirdPartyHookNames(in data: Data) -> [String] {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let hooks = root["hooks"] as? [String: Any] else {
             return []

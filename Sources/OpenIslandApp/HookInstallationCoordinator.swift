@@ -462,8 +462,11 @@ final class HookInstallationCoordinator {
     var codexHealthReport: HookHealthReport?
     var claudeHealthReport: HookHealthReport?
     var openCodeHealthReport: HookHealthReport?
-    var cursorHealthReport: HookHealthReport?
-    var geminiHealthReport: HookHealthReport?
+
+    /// Every report produced by the last check, in display order.
+    var healthReports: [HookHealthReport] {
+        [claudeHealthReport, codexHealthReport, openCodeHealthReport].compactMap(\.self)
+    }
 
 
     /// Runs health checks for Claude, Codex and OpenCode hooks.
