@@ -1193,6 +1193,48 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func startupRestoreDropsCachedInternalCodexSubagents() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-cached-subagents-\(UUID().uuidString)", isDirectory: true)
+        let parentURL = rootURL.appendingPathComponent("rollout-parent.jsonl")
+        let childURL = rootURL.appendingPathComponent("rollout-child.jsonl")
+        let parentID = "codex-parent-thread"
+        let now = Date(timeIntervalSince1970: 1_774_536_000)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        try """
+        {"timestamp":"2026-03-27T12:00:00.000Z","type":"session_meta","payload":{"id":"\(parentID)","timestamp":"2026-03-27T12:00:00.000Z","cwd":"/tmp/project","source":"vscode"}}
+        """.appending("\n").write(to: parentURL, atomically: true, encoding: .utf8)
+        try """
+        {"timestamp":"2026-03-27T12:00:01.000Z","type":"session_meta","payload":{"id":"codex-child-thread","timestamp":"2026-03-27T12:00:01.000Z","cwd":"/tmp/project","source":{"subagent":{"thread_spawn":{"parent_thread_id":"\(parentID)","depth":1,"agent_path":"/root/audit"}}}}}
+        """.appending("\n").write(to: childURL, atomically: true, encoding: .utf8)
+
+        func record(id: String, transcriptPath: String) -> CodexTrackedSessionRecord {
+            CodexTrackedSessionRecord(
+                sessionID: id,
+                title: "Task",
+                origin: .live,
+                attachmentState: .attached,
+                summary: "Working",
+                phase: .running,
+                updatedAt: now,
+                codexMetadata: CodexSessionMetadata(transcriptPath: transcriptPath)
+            )
+        }
+
+        let records = SessionDiscoveryCoordinator.restorableCodexRecords(
+            from: [
+                record(id: parentID, transcriptPath: parentURL.path),
+                record(id: "codex-child-thread", transcriptPath: childURL.path),
+            ],
+            cutoff: now.addingTimeInterval(-60)
+        )
+
+        #expect(records.map(\.sessionID) == [parentID])
+    }
+
+    @Test
     func mergedWithSyntheticClaudeSessionsAddsGhosttyClaudeProcessWhenNoTrackedSessionExists() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()

@@ -1386,6 +1386,61 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutDiscoverySkipsInternalSubagentThreads() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-subagents-\(UUID().uuidString)", isDirectory: true)
+        let now = Date(timeIntervalSince1970: 1_774_536_000)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let parentID = "codex-parent-thread"
+        let parentURL = rootURL.appendingPathComponent("rollout-parent.jsonl")
+        try sessionMetaLine(
+            sessionID: parentID,
+            timestamp: "2026-03-27T12:00:00.000Z",
+            cwd: "/tmp/project"
+        ).appending("\n").write(to: parentURL, atomically: true, encoding: .utf8)
+
+        for index in 1...3 {
+            let childURL = rootURL.appendingPathComponent("rollout-child-\(index).jsonl")
+            let childMeta = rolloutLine(
+                timestamp: "2026-03-27T12:00:0\(index).000Z",
+                type: "session_meta",
+                payload: [
+                    "id": "codex-child-\(index)",
+                    "timestamp": "2026-03-27T12:00:0\(index).000Z",
+                    "cwd": "/tmp/project",
+                    "source": [
+                        "subagent": [
+                            "thread_spawn": [
+                                "parent_thread_id": parentID,
+                                "depth": 1,
+                                "agent_path": "/root/audit-\(index)",
+                            ],
+                        ],
+                    ],
+                ]
+            )
+            try childMeta.appending("\n").write(to: childURL, atomically: true, encoding: .utf8)
+        }
+
+        for case let fileURL as URL in FileManager.default.enumerator(
+            at: rootURL,
+            includingPropertiesForKeys: nil
+        )! {
+            try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: fileURL.path)
+        }
+
+        let records = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            maxAge: 86_400,
+            maxFiles: 10
+        ).discoverRecentSessions(now: now)
+
+        #expect(records.map(\.sessionID) == [parentID])
+    }
+
+    @Test
     func codexRolloutDiscoverySkipsAlreadyTrackedTranscriptPaths() throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("open-island-discovery-exclusions-\(UUID().uuidString)", isDirectory: true)

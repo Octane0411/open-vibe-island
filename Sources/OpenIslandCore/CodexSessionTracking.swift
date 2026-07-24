@@ -396,6 +396,7 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         var sessionID: String
         var cwd: String
         var timestamp: Date?
+        var isInternalSubagent: Bool
 
         var workspaceName: String {
             let workspace = URL(fileURLWithPath: cwd).lastPathComponent
@@ -553,7 +554,10 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             ) {
                 CodexRolloutReducer.apply(line: line, to: &snapshot)
                 if sessionMeta == nil {
-                    sessionMeta = parseSessionMeta(fromLine: line)
+                    sessionMeta = Self.parseSessionMeta(fromLine: line)
+                    if sessionMeta?.isInternalSubagent == true {
+                        return nil
+                    }
                 }
             }
         }
@@ -564,12 +568,15 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             if !trailing.isEmpty {
                 CodexRolloutReducer.apply(line: trailing, to: &snapshot)
                 if sessionMeta == nil {
-                    sessionMeta = parseSessionMeta(fromLine: trailing)
+                    sessionMeta = Self.parseSessionMeta(fromLine: trailing)
+                    if sessionMeta?.isInternalSubagent == true {
+                        return nil
+                    }
                 }
             }
         }
 
-        guard let sessionMeta else { return nil }
+        guard let sessionMeta, !sessionMeta.isInternalSubagent else { return nil }
 
         let summary = snapshot.summary ?? sessionMeta.defaultSummary
         let updatedAt = snapshot.updatedAt ?? sessionMeta.timestamp ?? modifiedAt
@@ -599,7 +606,31 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
 
     private static let streamingChunkSize = 64 * 1_024
 
-    private func parseSessionMeta(fromLine line: String) -> SessionMeta? {
+    /// Returns whether a cached rollout belongs to an internal Codex
+    /// subagent. Only the initial chunk is needed because `session_meta` is
+    /// written at the beginning of every rollout.
+    public static func isInternalSubagentTranscript(atPath path: String?) -> Bool {
+        guard let path, !path.isEmpty,
+              let fileHandle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else {
+            return false
+        }
+        defer { try? fileHandle.close() }
+
+        guard let data = try? fileHandle.read(upToCount: streamingChunkSize),
+              !data.isEmpty else {
+            return false
+        }
+
+        let contents = String(decoding: data, as: UTF8.self)
+        for line in contents.split(separator: "\n", omittingEmptySubsequences: true) {
+            if let sessionMeta = parseSessionMeta(fromLine: String(line)) {
+                return sessionMeta.isInternalSubagent
+            }
+        }
+        return false
+    }
+
+    private static func parseSessionMeta(fromLine line: String) -> SessionMeta? {
         guard let object = codexRolloutJSONObject(for: line),
               object["type"] as? String == "session_meta" else {
             return nil
@@ -618,7 +649,8 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             cwd: cwd,
             timestamp: codexRolloutParseTimestamp(
                 (payload["timestamp"] as? String) ?? (object["timestamp"] as? String)
-            )
+            ),
+            isInternalSubagent: (payload["source"] as? [String: Any])?["subagent"] != nil
         )
     }
 

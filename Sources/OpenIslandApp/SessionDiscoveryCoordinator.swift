@@ -92,7 +92,7 @@ final class SessionDiscoveryCoordinator {
         let cutoff = Date.now.addingTimeInterval(-86_400)
 
         let allCodex = (try? codexSessionStore.load()) ?? []
-        let codexRecords = allCodex.filter { $0.updatedAt >= cutoff && $0.shouldRestoreToLiveState }
+        let codexRecords = Self.restorableCodexRecords(from: allCodex, cutoff: cutoff)
 
         let allClaude = (try? claudeSessionRegistry.load()) ?? []
         let claudeRecords = allClaude.filter { $0.updatedAt >= cutoff && $0.shouldRestoreToLiveState }
@@ -130,6 +130,19 @@ final class SessionDiscoveryCoordinator {
                 executableDirectory: Bundle.main.executableURL?.deletingLastPathComponent()
             )
         )
+    }
+
+    nonisolated static func restorableCodexRecords(
+        from records: [CodexTrackedSessionRecord],
+        cutoff: Date
+    ) -> [CodexTrackedSessionRecord] {
+        records.filter { record in
+            record.updatedAt >= cutoff
+                && record.shouldRestoreToLiveState
+                && !CodexRolloutDiscovery.isInternalSubagentTranscript(
+                    atPath: record.codexMetadata?.transcriptPath
+                )
+        }
     }
 
     /// Applies startup discovery results on the main thread after background I/O completes.
