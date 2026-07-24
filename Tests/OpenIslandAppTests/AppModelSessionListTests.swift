@@ -24,6 +24,8 @@ struct AppModelSessionListTests {
             "appearance.island.v8.topBar.sessionGroup",
             "appearance.island.v8.topBar.sessionSort",
             "appearance.island.v8.topBar.completedStaleThreshold",
+            "appearance.island.v8.notch.showIdleSessions",
+            "appearance.island.v8.topBar.showIdleSessions",
             "app.suppressFrontmostNotifications",
             "feature.completionReply.enabled",
             "overlay.sound.muted",
@@ -94,6 +96,8 @@ struct AppModelSessionListTests {
     func islandListDeduplicatesSessionsSharingTheSameLiveGhosttyTerminal() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
+        model.updateAppearancePreferences(for: .topBar) { $0.showIdleSessions = true }
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
 
         var runningLive = AgentSession(
             id: "running-live",
@@ -167,6 +171,8 @@ struct AppModelSessionListTests {
     func islandListKeepsDistinctCodexAppThreadsInTheSameWorkspace() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
+        model.updateAppearancePreferences(for: .topBar) { $0.showIdleSessions = true }
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
 
         var firstThread = AgentSession(
             id: "codex-app-thread-1",
@@ -266,6 +272,8 @@ struct AppModelSessionListTests {
     func freshCompletedSessionsSortAheadOfV8StaleCompletedSessions() {
         let now = Date()
         let model = AppModel()
+        model.updateAppearancePreferences(for: .topBar) { $0.showIdleSessions = true }
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
 
         var staleCompleted = AgentSession(
             id: "stale-completed",
@@ -314,8 +322,12 @@ struct AppModelSessionListTests {
     func islandSessionSectionsGroupStaleCompletedIntoIdle() {
         let now = Date()
         let model = AppModel()
-        model.islandSessionGroup = .state
-        model.completedStaleThreshold = .fiveMinutes
+        model.updateAppearancePreferences(for: .topBar) {
+            $0.sessionGroup = .state
+            $0.completedStaleThreshold = .fiveMinutes
+            $0.showIdleSessions = true
+        }
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
 
         var approval = listSession(id: "approval", phase: .waitingForApproval, updatedAt: now)
         approval.permissionRequest = PermissionRequest(
@@ -340,8 +352,12 @@ struct AppModelSessionListTests {
     func islandSessionSectionsKeepCompletedInDoneWhenStaleThresholdIsNever() {
         let now = Date()
         let model = AppModel()
-        model.islandSessionGroup = .state
-        model.completedStaleThreshold = .never
+        model.updateAppearancePreferences(for: .topBar) {
+            $0.sessionGroup = .state
+            $0.completedStaleThreshold = .never
+            $0.showIdleSessions = true
+        }
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
 
         var oldDone = listSession(id: "old-done", phase: .completed, updatedAt: now.addingTimeInterval(-86_400))
         oldDone.isProcessAlive = true
@@ -352,10 +368,50 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func idleSessionsAreHiddenByDefaultAndCanBeEnabledPerDisplayProfile() {
+        let now = Date()
+        let model = AppModel()
+        var running = listSession(id: "running", phase: .running, updatedAt: now)
+        var idle = listSession(id: "idle", phase: .completed, updatedAt: now.addingTimeInterval(-360))
+        running.isProcessAlive = true
+        idle.isProcessAlive = true
+        model.state = SessionState(sessions: [idle, running])
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+        model.islandRightSlot = .count
+
+        #expect(model.islandListSessions.map(\.id) == ["running"])
+        #expect(model.islandClosedSpotlight?.id == "running")
+        if case let .count(count)? = model.islandClosedRightSlotContent() {
+            #expect(count == 1)
+        } else {
+            Issue.record("Expected a closed-island count with idle sessions filtered out")
+        }
+
+        model.updateAppearancePreferences(for: .topBar) { $0.showIdleSessions = true }
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+        #expect(model.showIdleSessions)
+        #expect(Set(model.surfacedSessions.map(\.id)) == Set(["running", "idle"]))
+        #expect(Set(model.islandListSessions.map(\.id)) == Set(["running", "idle"]))
+        if case let .count(count)? = model.islandClosedRightSlotContent() {
+            #expect(count == 2)
+        } else {
+            Issue.record("Expected a closed-island count with idle sessions enabled")
+        }
+
+        let reloaded = AppModel()
+        reloaded.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+        #expect(reloaded.showIdleSessions)
+    }
+
+    @Test
     func islandSessionListCanSortByLastUpdate() {
         let now = Date()
         let model = AppModel()
-        model.islandSessionSort = .lastUpdate
+        model.updateAppearancePreferences(for: .topBar) {
+            $0.sessionSort = .lastUpdate
+            $0.showIdleSessions = true
+        }
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
 
         var olderRunning = listSession(id: "older-running", phase: .running, updatedAt: now.addingTimeInterval(-120))
         var newerCompleted = listSession(id: "newer-completed", phase: .completed, updatedAt: now.addingTimeInterval(-10))
@@ -375,12 +431,14 @@ struct AppModelSessionListTests {
             $0.sessionGroup = .state
             $0.sessionStateIndicator = .bar
             $0.completedStaleThreshold = .twoMinutes
+            $0.showIdleSessions = false
         }
         model.updateAppearancePreferences(for: .topBar) {
             $0.usageDisplay = .compact
             $0.sessionGroup = .project
             $0.sessionStateIndicator = .tint
             $0.completedStaleThreshold = .never
+            $0.showIdleSessions = true
         }
 
         model.overlayPlacementDiagnostics = placementDiagnostics(mode: .notch)
@@ -388,12 +446,14 @@ struct AppModelSessionListTests {
         #expect(model.islandSessionGroup == .state)
         #expect(model.islandSessionStateIndicator == .bar)
         #expect(model.completedStaleThreshold == .twoMinutes)
+        #expect(!model.showIdleSessions)
 
         model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
         #expect(model.islandUsageDisplay == .compact)
         #expect(model.islandSessionGroup == .project)
         #expect(model.islandSessionStateIndicator == .tint)
         #expect(model.completedStaleThreshold == .never)
+        #expect(model.showIdleSessions)
 
         let reloaded = AppModel()
         reloaded.overlayPlacementDiagnostics = placementDiagnostics(mode: .notch)
@@ -487,6 +547,256 @@ struct AppModelSessionListTests {
         #expect(model.liveSessionCount == 0)
         #expect(model.state.session(id: "recovered-session")?.attachmentState == .stale)
         #expect(model.shouldShowSessionBootstrapPlaceholder)
+    }
+
+    @Test
+    func newerRolloutActivityRestartsACompletedCodexTurn() {
+        let completedAt = Date(timeIntervalSince1970: 2_000)
+        let resumedAt = completedAt.addingTimeInterval(1)
+        let model = AppModel()
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+
+        var session = AgentSession(
+            id: "resumed-codex-thread",
+            title: "Project task",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .completed,
+            summary: "Previous turn completed.",
+            updatedAt: completedAt,
+            codexMetadata: CodexSessionMetadata(
+                transcriptPath: "/tmp/resumed-rollout.jsonl",
+                lastUserPrompt: "Previous prompt"
+            )
+        )
+        session.isCodexAppSession = true
+        session.isProcessAlive = false
+        model.state = SessionState(sessions: [session])
+
+        // The watcher emits metadata before activity for the same appended
+        // rollout batch, so both events carry the same newest timestamp.
+        model.applyTrackedEvent(
+            .sessionMetadataUpdated(
+                SessionMetadataUpdated(
+                    sessionID: session.id,
+                    codexMetadata: CodexSessionMetadata(
+                        transcriptPath: "/tmp/resumed-rollout.jsonl",
+                        lastUserPrompt: "Continue the project"
+                    ),
+                    timestamp: resumedAt
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .rollout
+        )
+        model.applyTrackedEvent(
+            .activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: session.id,
+                    summary: "Thinking.",
+                    phase: .running,
+                    timestamp: resumedAt
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .rollout
+        )
+
+        #expect(model.state.session(id: session.id)?.phase == .running)
+        #expect(model.state.session(id: session.id)?.summary == "Thinking.")
+        #expect(model.state.session(id: session.id)?.isProcessAlive == true)
+        #expect(model.islandListSessions.map(\.id) == [session.id])
+    }
+
+    @Test
+    func staleRolloutActivityDoesNotRestartACompletedCodexTurn() {
+        let completedAt = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        var session = AgentSession(
+            id: "completed-codex-thread",
+            title: "Completed project task",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .completed,
+            summary: "Turn completed.",
+            updatedAt: completedAt
+        )
+        session.isCodexAppSession = true
+        session.isProcessAlive = true
+        model.state = SessionState(sessions: [session])
+
+        model.applyTrackedEvent(
+            .activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: session.id,
+                    summary: "Stale rollout tail.",
+                    phase: .running,
+                    timestamp: completedAt.addingTimeInterval(-1)
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .rollout
+        )
+
+        #expect(model.state.session(id: session.id)?.phase == .completed)
+        #expect(model.state.session(id: session.id)?.summary == "Turn completed.")
+    }
+
+    @Test
+    func appServerMetadataSyncDoesNotMakeOldCompletedThreadsRecent() {
+        let now = Date()
+        let model = AppModel()
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+        model.updateAppearancePreferences(for: .topBar) {
+            $0.completedStaleThreshold = .fiveMinutes
+            $0.showIdleSessions = false
+        }
+
+        var running = AgentSession(
+            id: "running-thread",
+            title: "Running task",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Thinking.",
+            updatedAt: now
+        )
+        running.isCodexAppSession = true
+        running.isProcessAlive = true
+
+        var recentlyCompleted = AgentSession(
+            id: "recent-thread",
+            title: "Recently completed task",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .completed,
+            summary: "Just finished.",
+            updatedAt: now.addingTimeInterval(-60)
+        )
+        recentlyCompleted.isCodexAppSession = true
+        recentlyCompleted.isProcessAlive = true
+
+        let oldCompletionDate = now.addingTimeInterval(-3_600)
+        var oldCompleted = AgentSession(
+            id: "old-thread",
+            title: "Old completed task",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .completed,
+            summary: "Finished long ago.",
+            updatedAt: oldCompletionDate,
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "old-project",
+                paneTitle: "Old completed task",
+                workingDirectory: "/tmp/old-project",
+                codexThreadID: "old-thread"
+            ),
+            codexMetadata: CodexSessionMetadata(
+                transcriptPath: "/tmp/old-thread.jsonl"
+            )
+        )
+        oldCompleted.isCodexAppSession = true
+        oldCompleted.isProcessAlive = true
+
+        model.state = SessionState(
+            sessions: [running, recentlyCompleted, oldCompleted]
+        )
+        #expect(Set(model.islandListSessions.map(\.id)) == ["running-thread", "recent-thread"])
+
+        let syncDate = now.addingTimeInterval(1)
+        model.applyTrackedEvent(
+            .sessionTitleUpdated(
+                SessionTitleUpdated(
+                    sessionID: oldCompleted.id,
+                    title: "Synced old task title",
+                    timestamp: syncDate
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .bridge
+        )
+        model.applyTrackedEvent(
+            .jumpTargetUpdated(
+                JumpTargetUpdated(
+                    sessionID: oldCompleted.id,
+                    jumpTarget: oldCompleted.jumpTarget!,
+                    timestamp: syncDate
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .bridge
+        )
+        model.applyTrackedEvent(
+            .sessionMetadataUpdated(
+                SessionMetadataUpdated(
+                    sessionID: oldCompleted.id,
+                    codexMetadata: CodexSessionMetadata(
+                        transcriptPath: "/tmp/old-thread.jsonl",
+                        model: "gpt-5.6-sol",
+                        reasoningEffort: "xhigh",
+                        serviceTier: "priority"
+                    ),
+                    timestamp: syncDate
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .bridge
+        )
+
+        #expect(model.state.session(id: oldCompleted.id)?.updatedAt == oldCompletionDate)
+        #expect(Set(model.islandListSessions.map(\.id)) == ["running-thread", "recent-thread"])
+    }
+
+    @Test
+    func rolloutMetadataRefreshPreservesKnownCodexConfiguration() {
+        let now = Date()
+        let model = AppModel()
+        model.state = SessionState(sessions: [
+            AgentSession(
+                id: "codex-project-thread",
+                title: "Project task",
+                tool: .codex,
+                origin: .live,
+                attachmentState: .attached,
+                phase: .running,
+                summary: "Working",
+                updatedAt: now,
+                codexMetadata: CodexSessionMetadata(
+                    transcriptPath: "/tmp/rollout.jsonl",
+                    lastUserPrompt: "Original prompt",
+                    model: "gpt-5.6-sol",
+                    reasoningEffort: "xhigh",
+                    serviceTier: "priority"
+                )
+            ),
+        ])
+
+        model.applyTrackedEvent(
+            .sessionMetadataUpdated(
+                SessionMetadataUpdated(
+                    sessionID: "codex-project-thread",
+                    codexMetadata: CodexSessionMetadata(
+                        transcriptPath: "/tmp/rollout.jsonl",
+                        lastUserPrompt: "Updated prompt"
+                    ),
+                    timestamp: now.addingTimeInterval(1)
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .rollout
+        )
+
+        let metadata = model.state.session(id: "codex-project-thread")?.codexMetadata
+        #expect(metadata?.lastUserPrompt == "Updated prompt")
+        #expect(metadata?.model == "gpt-5.6-sol")
+        #expect(metadata?.reasoningEffort == "xhigh")
+        #expect(metadata?.serviceTier == "priority")
     }
 
     @Test
@@ -880,6 +1190,48 @@ struct AppModelSessionListTests {
         #expect(merged.first?.claudeMetadata?.transcriptPath == "/tmp/claude.jsonl")
         #expect(merged.first?.claudeMetadata?.lastUserPrompt == "Check the Claude session registry.")
         #expect(merged.first?.phase == .running)
+    }
+
+    @Test
+    func startupRestoreDropsCachedInternalCodexSubagents() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-cached-subagents-\(UUID().uuidString)", isDirectory: true)
+        let parentURL = rootURL.appendingPathComponent("rollout-parent.jsonl")
+        let childURL = rootURL.appendingPathComponent("rollout-child.jsonl")
+        let parentID = "codex-parent-thread"
+        let now = Date(timeIntervalSince1970: 1_774_536_000)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        try """
+        {"timestamp":"2026-03-27T12:00:00.000Z","type":"session_meta","payload":{"id":"\(parentID)","timestamp":"2026-03-27T12:00:00.000Z","cwd":"/tmp/project","source":"vscode"}}
+        """.appending("\n").write(to: parentURL, atomically: true, encoding: .utf8)
+        try """
+        {"timestamp":"2026-03-27T12:00:01.000Z","type":"session_meta","payload":{"id":"codex-child-thread","timestamp":"2026-03-27T12:00:01.000Z","cwd":"/tmp/project","source":{"subagent":{"thread_spawn":{"parent_thread_id":"\(parentID)","depth":1,"agent_path":"/root/audit"}}}}}
+        """.appending("\n").write(to: childURL, atomically: true, encoding: .utf8)
+
+        func record(id: String, transcriptPath: String) -> CodexTrackedSessionRecord {
+            CodexTrackedSessionRecord(
+                sessionID: id,
+                title: "Task",
+                origin: .live,
+                attachmentState: .attached,
+                summary: "Working",
+                phase: .running,
+                updatedAt: now,
+                codexMetadata: CodexSessionMetadata(transcriptPath: transcriptPath)
+            )
+        }
+
+        let records = SessionDiscoveryCoordinator.restorableCodexRecords(
+            from: [
+                record(id: parentID, transcriptPath: parentURL.path),
+                record(id: "codex-child-thread", transcriptPath: childURL.path),
+            ],
+            cutoff: now.addingTimeInterval(-60)
+        )
+
+        #expect(records.map(\.sessionID) == [parentID])
     }
 
     @Test

@@ -214,6 +214,84 @@ struct AgentSessionPresentationTests {
     }
 
     @Test
+    func codexAppHeadlinePrefersThreadTitleOverPromptMetadata() {
+        let session = AgentSession(
+            id: "codex-thread-1",
+            title: "Fix Open Island task titles",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Working",
+            updatedAt: Date(timeIntervalSince1970: 10_000),
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "repo",
+                paneTitle: "Fix Open Island task titles",
+                workingDirectory: "/tmp/repo",
+                codexThreadID: "codex-thread-1"
+            ),
+            codexMetadata: CodexSessionMetadata(
+                initialUserPrompt: "<recommended_plugins> Here is a list of plugins...",
+                lastUserPrompt: "Fix the Open Island task title.",
+                model: "gpt-5.6-sol",
+                reasoningEffort: "xhigh",
+                serviceTier: "fast"
+            )
+        )
+
+        #expect(session.spotlightHeadlineText == "Fix Open Island task titles")
+        #expect(session.spotlightPromptLineText == "You: Fix the Open Island task title.")
+        #expect(session.spotlightTerminalBadge == "5.6 Sol · XHigh · Fast")
+        #expect(session.spotlightCompactTerminalBadge == "5.6 · XH · F")
+    }
+
+    @Test
+    func completedCodexAppNotificationPrefersThreadTitleOverWorkspace() {
+        var session = AgentSession(
+            id: "codex-thread-1",
+            title: "查找 VibeIsland 项目",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .completed,
+            summary: "Finished.",
+            updatedAt: Date(timeIntervalSince1970: 10_000),
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "git",
+                paneTitle: "查找 VibeIsland 项目",
+                workingDirectory: "/tmp/git",
+                codexThreadID: "codex-thread-1"
+            )
+        )
+        session.isCodexAppSession = true
+
+        #expect(session.completionNotificationHeadlineText == "查找 VibeIsland 项目")
+    }
+
+    @Test
+    func codexAppHidesRedundantTerminalBadgeUntilConfigurationIsKnown() {
+        let session = AgentSession(
+            id: "codex-thread-1",
+            title: "Fix Open Island task titles",
+            tool: .codex,
+            phase: .running,
+            summary: "Working",
+            updatedAt: .now,
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "repo",
+                paneTitle: "Fix Open Island task titles",
+                workingDirectory: "/tmp/repo",
+                codexThreadID: "codex-thread-1"
+            )
+        )
+
+        #expect(session.spotlightTerminalBadge == nil)
+    }
+
+    @Test
     func detachedSessionHeadlineShowsInitialPrompt() {
         let session = AgentSession(
             id: "session-1",

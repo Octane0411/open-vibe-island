@@ -1,6 +1,42 @@
 import Dispatch
 import Foundation
 
+/// Extracts newline-delimited UTF-8 records without repeatedly rescanning or
+/// deleting the front of an ever-growing `Data` buffer. `scannedByteCount`
+/// records the already-inspected trailing partial line between appends.
+func codexExtractCompleteJSONLLines(
+    from buffer: inout Data,
+    scannedByteCount: inout Int
+) -> [String] {
+    guard !buffer.isEmpty else {
+        scannedByteCount = 0
+        return []
+    }
+
+    let newline = UInt8(ascii: "\n")
+    let safeScannedCount = min(max(0, scannedByteCount), buffer.count)
+    var lineStart = buffer.startIndex
+    var searchStart = buffer.index(buffer.startIndex, offsetBy: safeScannedCount)
+    var consumedEnd = buffer.startIndex
+    var lines: [String] = []
+
+    while searchStart < buffer.endIndex,
+          let newlineIndex = buffer[searchStart...].firstIndex(of: newline) {
+        if lineStart < newlineIndex {
+            lines.append(String(decoding: buffer[lineStart..<newlineIndex], as: UTF8.self))
+        }
+        consumedEnd = buffer.index(after: newlineIndex)
+        lineStart = consumedEnd
+        searchStart = consumedEnd
+    }
+
+    if consumedEnd != buffer.startIndex {
+        buffer.removeSubrange(buffer.startIndex..<consumedEnd)
+    }
+    scannedByteCount = buffer.count
+    return lines
+}
+
 public struct CodexSessionMetadata: Equatable, Codable, Sendable {
     public var transcriptPath: String?
     public var initialUserPrompt: String?
@@ -8,6 +44,9 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
     public var lastAssistantMessage: String?
     public var currentTool: String?
     public var currentCommandPreview: String?
+    public var model: String?
+    public var reasoningEffort: String?
+    public var serviceTier: String?
 
     public init(
         transcriptPath: String? = nil,
@@ -15,7 +54,10 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
         lastUserPrompt: String? = nil,
         lastAssistantMessage: String? = nil,
         currentTool: String? = nil,
-        currentCommandPreview: String? = nil
+        currentCommandPreview: String? = nil,
+        model: String? = nil,
+        reasoningEffort: String? = nil,
+        serviceTier: String? = nil
     ) {
         self.transcriptPath = transcriptPath
         self.initialUserPrompt = initialUserPrompt
@@ -23,6 +65,9 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
         self.lastAssistantMessage = lastAssistantMessage
         self.currentTool = currentTool
         self.currentCommandPreview = currentCommandPreview
+        self.model = model
+        self.reasoningEffort = reasoningEffort
+        self.serviceTier = serviceTier
     }
 
     public var isEmpty: Bool {
@@ -32,6 +77,9 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
             && lastAssistantMessage == nil
             && currentTool == nil
             && currentCommandPreview == nil
+            && model == nil
+            && reasoningEffort == nil
+            && serviceTier == nil
     }
 }
 
@@ -348,6 +396,7 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         var sessionID: String
         var cwd: String
         var timestamp: Date?
+        var isInternalSubagent: Bool
 
         var workspaceName: String {
             let workspace = URL(fileURLWithPath: cwd).lastPathComponent
@@ -372,20 +421,31 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
     private let fileManager: FileManager
     private let maxAge: TimeInterval
     private let maxFiles: Int
+    private let persistedThreadTitles: @Sendable (Set<String>) -> [String: String]
 
     public init(
         rootURL: URL = CodexRolloutDiscovery.defaultRootURL,
         fileManager: FileManager = .default,
         maxAge: TimeInterval = 86_400,
-        maxFiles: Int = 40
+        maxFiles: Int = 40,
+        persistedThreadTitles: @escaping @Sendable (Set<String>) -> [String: String] = { threadIDs in
+            CodexThreadTitleStore().titles(for: threadIDs)
+        }
     ) {
         self.rootURL = rootURL
         self.fileManager = fileManager
         self.maxAge = maxAge
         self.maxFiles = maxFiles
+        self.persistedThreadTitles = persistedThreadTitles
     }
 
-    public func discoverRecentSessions(now: Date = .now) -> [CodexTrackedSessionRecord] {
+    public func discoverRecentSessions(
+        now: Date = .now,
+        excludingTranscriptPaths: Set<String> = []
+    ) -> [CodexTrackedSessionRecord] {
+        let excludedPaths = Set(excludingTranscriptPaths.map {
+            URL(fileURLWithPath: $0).standardizedFileURL.resolvingSymlinksInPath().path
+        })
         guard fileManager.fileExists(atPath: rootURL.path),
               let enumerator = fileManager.enumerator(
                 at: rootURL,
@@ -399,8 +459,10 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         var candidates: [Candidate] = []
 
         for case let fileURL as URL in enumerator {
+            let normalizedPath = fileURL.standardizedFileURL.resolvingSymlinksInPath().path
             guard fileURL.lastPathComponent.hasPrefix("rollout-"),
-                  fileURL.pathExtension == "jsonl" else {
+                  fileURL.pathExtension == "jsonl",
+                  !excludedPaths.contains(normalizedPath) else {
                 continue
             }
 
@@ -445,7 +507,15 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             recordsByID[record.sessionID] = record
         }
 
-        return recordsByID.values.sorted { lhs, rhs in
+        let titles = persistedThreadTitles(Set(recordsByID.keys))
+        let titledRecords = recordsByID.values.map { record in
+            guard let title = titles[record.sessionID] else { return record }
+            var titledRecord = record
+            titledRecord.title = title
+            return titledRecord
+        }
+
+        return titledRecords.sorted { lhs, rhs in
             if lhs.updatedAt == rhs.updatedAt {
                 return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
             }
@@ -473,14 +543,21 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         var snapshot = CodexRolloutSnapshot()
         var sessionMeta: SessionMeta?
         var buffer = Data()
+        var scannedByteCount = 0
 
         while let chunk = try? fileHandle.read(upToCount: Self.streamingChunkSize),
               !chunk.isEmpty {
             buffer.append(chunk)
-            for line in extractCompleteLines(from: &buffer) {
+            for line in codexExtractCompleteJSONLLines(
+                from: &buffer,
+                scannedByteCount: &scannedByteCount
+            ) {
                 CodexRolloutReducer.apply(line: line, to: &snapshot)
                 if sessionMeta == nil {
-                    sessionMeta = parseSessionMeta(fromLine: line)
+                    sessionMeta = Self.parseSessionMeta(fromLine: line)
+                    if sessionMeta?.isInternalSubagent == true {
+                        return nil
+                    }
                 }
             }
         }
@@ -491,12 +568,15 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             if !trailing.isEmpty {
                 CodexRolloutReducer.apply(line: trailing, to: &snapshot)
                 if sessionMeta == nil {
-                    sessionMeta = parseSessionMeta(fromLine: trailing)
+                    sessionMeta = Self.parseSessionMeta(fromLine: trailing)
+                    if sessionMeta?.isInternalSubagent == true {
+                        return nil
+                    }
                 }
             }
         }
 
-        guard let sessionMeta else { return nil }
+        guard let sessionMeta, !sessionMeta.isInternalSubagent else { return nil }
 
         let summary = snapshot.summary ?? sessionMeta.defaultSummary
         let updatedAt = snapshot.updatedAt ?? sessionMeta.timestamp ?? modifiedAt
@@ -506,7 +586,10 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             lastUserPrompt: snapshot.lastUserPrompt,
             lastAssistantMessage: snapshot.lastAssistantMessage,
             currentTool: snapshot.currentTool,
-            currentCommandPreview: snapshot.currentCommandPreview
+            currentCommandPreview: snapshot.currentCommandPreview,
+            model: snapshot.model,
+            reasoningEffort: snapshot.reasoningEffort,
+            serviceTier: snapshot.serviceTier
         )
 
         return CodexTrackedSessionRecord(
@@ -523,7 +606,31 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
 
     private static let streamingChunkSize = 64 * 1_024
 
-    private func parseSessionMeta(fromLine line: String) -> SessionMeta? {
+    /// Returns whether a cached rollout belongs to an internal Codex
+    /// subagent. Only the initial chunk is needed because `session_meta` is
+    /// written at the beginning of every rollout.
+    public static func isInternalSubagentTranscript(atPath path: String?) -> Bool {
+        guard let path, !path.isEmpty,
+              let fileHandle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else {
+            return false
+        }
+        defer { try? fileHandle.close() }
+
+        guard let data = try? fileHandle.read(upToCount: streamingChunkSize),
+              !data.isEmpty else {
+            return false
+        }
+
+        let contents = String(decoding: data, as: UTF8.self)
+        for line in contents.split(separator: "\n", omittingEmptySubsequences: true) {
+            if let sessionMeta = parseSessionMeta(fromLine: String(line)) {
+                return sessionMeta.isInternalSubagent
+            }
+        }
+        return false
+    }
+
+    private static func parseSessionMeta(fromLine line: String) -> SessionMeta? {
         guard let object = codexRolloutJSONObject(for: line),
               object["type"] as? String == "session_meta" else {
             return nil
@@ -542,30 +649,43 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             cwd: cwd,
             timestamp: codexRolloutParseTimestamp(
                 (payload["timestamp"] as? String) ?? (object["timestamp"] as? String)
-            )
+            ),
+            isInternalSubagent: (payload["source"] as? [String: Any])?["subagent"] != nil
         )
     }
 
-    private func extractCompleteLines(from buffer: inout Data) -> [String] {
-        let newline = UInt8(ascii: "\n")
-        var lines: [String] = []
-        while let newlineIndex = buffer.firstIndex(of: newline) {
-            let lineData = buffer.prefix(upTo: newlineIndex)
-            buffer.removeSubrange(...newlineIndex)
-            guard !lineData.isEmpty else { continue }
-            lines.append(String(decoding: lineData, as: UTF8.self))
-        }
-        return lines
-    }
 }
 
 public struct CodexRolloutWatchTarget: Equatable, Sendable {
     public var sessionID: String
     public var transcriptPath: String
+    /// Completed cached sessions only need a lightweight tail watch. If they
+    /// become active again, app-server status updates replace the target and
+    /// prompt bootstrapping is performed for that one resumed conversation.
+    public var bootstrapPrompts: Bool
+    public var cachedInitialUserPrompt: String?
+    public var cachedLastUserPrompt: String?
 
-    public init(sessionID: String, transcriptPath: String) {
+    public init(
+        sessionID: String,
+        transcriptPath: String,
+        bootstrapPrompts: Bool = true,
+        cachedInitialUserPrompt: String? = nil,
+        cachedLastUserPrompt: String? = nil
+    ) {
         self.sessionID = sessionID
         self.transcriptPath = transcriptPath
+        self.bootstrapPrompts = bootstrapPrompts
+        self.cachedInitialUserPrompt = cachedInitialUserPrompt
+        self.cachedLastUserPrompt = cachedLastUserPrompt
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.sessionID == rhs.sessionID
+            && lhs.transcriptPath == rhs.transcriptPath
+            && lhs.bootstrapPrompts == rhs.bootstrapPrompts
+            && lhs.cachedInitialUserPrompt == rhs.cachedInitialUserPrompt
+            && lhs.cachedLastUserPrompt == rhs.cachedLastUserPrompt
     }
 }
 
@@ -578,6 +698,9 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
     public var lastAssistantMessage: String?
     public var currentTool: String?
     public var currentCommandPreview: String?
+    public var model: String?
+    public var reasoningEffort: String?
+    public var serviceTier: String?
     public var isCompleted: Bool
     public var isInterrupted: Bool
 
@@ -590,6 +713,9 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
         lastAssistantMessage: String? = nil,
         currentTool: String? = nil,
         currentCommandPreview: String? = nil,
+        model: String? = nil,
+        reasoningEffort: String? = nil,
+        serviceTier: String? = nil,
         isCompleted: Bool = false,
         isInterrupted: Bool = false
     ) {
@@ -601,6 +727,9 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
         self.lastAssistantMessage = lastAssistantMessage
         self.currentTool = currentTool
         self.currentCommandPreview = currentCommandPreview
+        self.model = model
+        self.reasoningEffort = reasoningEffort
+        self.serviceTier = serviceTier
         self.isCompleted = isCompleted
         self.isInterrupted = isInterrupted
     }
@@ -611,7 +740,10 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
             lastUserPrompt: lastUserPrompt,
             lastAssistantMessage: lastAssistantMessage,
             currentTool: currentTool,
-            currentCommandPreview: currentCommandPreview
+            currentCommandPreview: currentCommandPreview,
+            model: model,
+            reasoningEffort: reasoningEffort,
+            serviceTier: serviceTier
         )
     }
 }
@@ -636,6 +768,8 @@ public enum CodexRolloutReducer {
             applyEventMessage(payload, timestamp: timestamp, to: &snapshot)
         case "response_item":
             applyResponseItem(payload, timestamp: timestamp, to: &snapshot)
+        case "turn_context":
+            applySessionConfiguration(payload, timestamp: timestamp, to: &snapshot)
         default:
             break
         }
@@ -656,7 +790,10 @@ public enum CodexRolloutReducer {
                 lastUserPrompt: $0.lastUserPrompt,
                 lastAssistantMessage: $0.lastAssistantMessage,
                 currentTool: $0.currentTool,
-                currentCommandPreview: $0.currentCommandPreview
+                currentCommandPreview: $0.currentCommandPreview,
+                model: $0.model,
+                reasoningEffort: $0.reasoningEffort,
+                serviceTier: $0.serviceTier
             )
         }
         let newMetadata = CodexSessionMetadata(
@@ -665,7 +802,10 @@ public enum CodexRolloutReducer {
             lastUserPrompt: newSnapshot.lastUserPrompt,
             lastAssistantMessage: newSnapshot.lastAssistantMessage,
             currentTool: newSnapshot.currentTool,
-            currentCommandPreview: newSnapshot.currentCommandPreview
+            currentCommandPreview: newSnapshot.currentCommandPreview,
+            model: newSnapshot.model,
+            reasoningEffort: newSnapshot.reasoningEffort,
+            serviceTier: newSnapshot.serviceTier
         )
 
         if oldMetadata != newMetadata {
@@ -727,11 +867,18 @@ public enum CodexRolloutReducer {
             snapshot.isInterrupted = false
             snapshot.summary = snapshot.summary ?? "Codex started a new turn."
         case "user_message":
-            guard let message = clipped(payload["message"] as? String), !message.isEmpty else {
+            guard let message = cleanedUserPrompt(payload["message"] as? String) else {
                 break
             }
 
             applyUserMessage(message, timestamp: timestamp, to: &snapshot)
+            return
+        case "thread_settings_applied":
+            guard let settings = payload["thread_settings"] as? [String: Any] else {
+                break
+            }
+
+            applySessionConfiguration(settings, timestamp: timestamp, to: &snapshot)
             return
         case "agent_message":
             guard let message = clipped(payload["message"] as? String), !message.isEmpty else {
@@ -844,6 +991,29 @@ public enum CodexRolloutReducer {
             applyRateLimitSignal(payload, to: &snapshot)
         default:
             break
+        }
+
+        if let timestamp {
+            snapshot.updatedAt = timestamp
+        }
+    }
+
+    private static func applySessionConfiguration(
+        _ configuration: [String: Any],
+        timestamp: Date?,
+        to snapshot: inout CodexRolloutSnapshot
+    ) {
+        if let model = clipped(configuration["model"] as? String), !model.isEmpty {
+            snapshot.model = model
+        }
+        if let effort = clipped(
+            configuration["reasoning_effort"] as? String
+                ?? configuration["effort"] as? String
+        ), !effort.isEmpty {
+            snapshot.reasoningEffort = effort
+        }
+        if let serviceTier = clipped(configuration["service_tier"] as? String), !serviceTier.isEmpty {
+            snapshot.serviceTier = serviceTier
         }
 
         if let timestamp {
@@ -1345,8 +1515,8 @@ public enum CodexRolloutReducer {
                 return nil
             }
 
-            if skipsInjectedBlocks, isInjectedPromptBlock(trimmed) {
-                return nil
+            if skipsInjectedBlocks {
+                return cleanedUserPrompt(trimmed)
             }
 
             return trimmed
@@ -1361,10 +1531,65 @@ public enum CodexRolloutReducer {
 
     private static func isInjectedPromptBlock(_ text: String) -> Bool {
         text.hasPrefix("# AGENTS.md instructions for ")
+            || text.hasPrefix("# Files mentioned by the user:")
+            || text.hasPrefix("<recommended_plugins>")
             || text.hasPrefix("<environment_context>")
             || text.hasPrefix("<permissions instructions>")
             || text.hasPrefix("<collaboration_mode>")
+            || text.hasPrefix("<multi_agent_mode>")
+            || text.hasPrefix("<app-context>")
+            || text.hasPrefix("<apps_instructions>")
+            || text.hasPrefix("<plugins_instructions>")
             || text.hasPrefix("<skills_instructions>")
+    }
+
+    private static func cleanedUserPrompt(_ value: String?) -> String? {
+        guard var remaining = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !remaining.isEmpty else {
+            return nil
+        }
+
+        let injectedBlocks = [
+            ("# AGENTS.md instructions for ", "</INSTRUCTIONS>"),
+            ("<recommended_plugins>", "</recommended_plugins>"),
+            ("<environment_context>", "</environment_context>"),
+            ("<permissions instructions>", "</permissions instructions>"),
+            ("<collaboration_mode>", "</collaboration_mode>"),
+            ("<multi_agent_mode>", "</multi_agent_mode>"),
+            ("<app-context>", "</app-context>"),
+            ("<apps_instructions>", "</apps_instructions>"),
+            ("<plugins_instructions>", "</plugins_instructions>"),
+            ("<skills_instructions>", "</skills_instructions>"),
+        ]
+
+        while true {
+            if remaining.hasPrefix("# Files mentioned by the user:") {
+                guard let requestMarker = remaining.range(of: "## My request for Codex:") else {
+                    return nil
+                }
+
+                remaining = String(remaining[requestMarker.upperBound...])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                continue
+            }
+
+            guard let block = injectedBlocks.first(where: { remaining.hasPrefix($0.0) }) else {
+                break
+            }
+
+            guard let closingRange = remaining.range(of: block.1) else {
+                return nil
+            }
+
+            remaining = String(remaining[closingRange.upperBound...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        guard !remaining.isEmpty, !isInjectedPromptBlock(remaining) else {
+            return nil
+        }
+
+        return clipped(remaining)
     }
 
     private static func clipped(_ value: String?, limit: Int = 110) -> String? {
@@ -1404,11 +1629,13 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
         var target: CodexRolloutWatchTarget
         var offset: UInt64 = 0
         var pendingBuffer = Data()
+        var pendingScannedByteCount = 0
         var snapshot = CodexRolloutSnapshot()
         var shouldTrimLeadingPartialLine = false
     }
 
     public var eventHandler: (@Sendable (AgentEvent) -> Void)?
+    public var contentChangeHandler: (@Sendable () -> Void)?
 
     private let pollInterval: TimeInterval
     private let initialReadLimit: UInt64
@@ -1512,6 +1739,7 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
         if fileSize < observation.offset {
             observation.offset = 0
             observation.pendingBuffer.removeAll(keepingCapacity: false)
+            observation.pendingScannedByteCount = 0
             observation.snapshot = CodexRolloutSnapshot()
         }
 
@@ -1522,15 +1750,20 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
                 return []
             }
 
+            contentChangeHandler?()
             observation.offset += UInt64(data.count)
             observation.pendingBuffer.append(data)
 
             if observation.shouldTrimLeadingPartialLine {
                 trimLeadingPartialLine(from: &observation.pendingBuffer)
+                observation.pendingScannedByteCount = 0
                 observation.shouldTrimLeadingPartialLine = false
             }
 
-            let lines = completeLines(from: &observation.pendingBuffer)
+            let lines = codexExtractCompleteJSONLLines(
+                from: &observation.pendingBuffer,
+                scannedByteCount: &observation.pendingScannedByteCount
+            )
             guard !lines.isEmpty else {
                 return []
             }
@@ -1549,24 +1782,6 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
         }
     }
 
-    private func completeLines(from buffer: inout Data) -> [String] {
-        let newline = UInt8(ascii: "\n")
-        var lines: [String] = []
-
-        while let newlineIndex = buffer.firstIndex(of: newline) {
-            let lineData = buffer.prefix(upTo: newlineIndex)
-            buffer.removeSubrange(...newlineIndex)
-
-            guard !lineData.isEmpty else {
-                continue
-            }
-
-            lines.append(String(decoding: lineData, as: UTF8.self))
-        }
-
-        return lines
-    }
-
     private func makeObservation(for target: CodexRolloutWatchTarget) -> Observation {
         let fileURL = URL(fileURLWithPath: target.transcriptPath)
         guard FileManager.default.fileExists(atPath: fileURL.path),
@@ -1583,10 +1798,20 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
             return Observation(target: target)
         }
 
-        let bootstrapSnapshot = bootstrapPromptSnapshot(
-            fileHandle: fileHandle,
-            fileSize: fileSize
-        )
+        let bootstrapSnapshot: CodexRolloutSnapshot
+        if target.cachedInitialUserPrompt != nil || target.cachedLastUserPrompt != nil {
+            bootstrapSnapshot = CodexRolloutSnapshot(
+                initialUserPrompt: target.cachedInitialUserPrompt,
+                lastUserPrompt: target.cachedLastUserPrompt ?? target.cachedInitialUserPrompt
+            )
+        } else if target.bootstrapPrompts {
+            bootstrapSnapshot = bootstrapPromptSnapshot(
+                fileHandle: fileHandle,
+                fileSize: fileSize
+            )
+        } else {
+            bootstrapSnapshot = CodexRolloutSnapshot()
+        }
 
         return Observation(
             target: target,
@@ -1628,6 +1853,7 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
         do {
             try fileHandle.seek(toOffset: 0)
             var buffer = Data()
+            var scannedByteCount = 0
             var snapshot = CodexRolloutSnapshot()
             var bytesRemaining = readLimit
 
@@ -1640,7 +1866,10 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
                 buffer.append(data)
                 bytesRemaining -= UInt64(data.count)
 
-                let lines = completeLines(from: &buffer)
+                let lines = codexExtractCompleteJSONLLines(
+                    from: &buffer,
+                    scannedByteCount: &scannedByteCount
+                )
                 guard !lines.isEmpty else {
                     continue
                 }
@@ -1671,7 +1900,13 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
                 trimLeadingPartialLine(from: &buffer)
             }
 
-            let tailSnapshot = CodexRolloutReducer.snapshot(for: completeLines(from: &buffer))
+            var scannedByteCount = 0
+            let tailSnapshot = CodexRolloutReducer.snapshot(
+                for: codexExtractCompleteJSONLLines(
+                    from: &buffer,
+                    scannedByteCount: &scannedByteCount
+                )
+            )
             return tailSnapshot.lastUserPrompt
         } catch {
             return nil

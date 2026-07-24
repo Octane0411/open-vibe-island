@@ -111,7 +111,106 @@ extension AgentSession {
     }
 
     var spotlightTerminalBadge: String? {
-        jumpTarget?.terminalApp
+        if tool == .codex,
+           isCodexAppSession || jumpTarget?.terminalApp == "Codex.app" {
+            return spotlightCodexConfigurationBadge
+        }
+
+        return jumpTarget?.terminalApp
+    }
+
+    var spotlightCompactTerminalBadge: String? {
+        guard tool == .codex,
+              isCodexAppSession || jumpTarget?.terminalApp == "Codex.app",
+              let metadata = codexMetadata else {
+            return nil
+        }
+
+        let parts = [
+            metadata.model.flatMap(Self.shortCodexModelName),
+            metadata.reasoningEffort.flatMap(Self.shortCodexEffortName),
+            metadata.serviceTier.flatMap(Self.shortCodexServiceTierName),
+        ].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private var spotlightCodexConfigurationBadge: String? {
+        guard let metadata = codexMetadata else {
+            return nil
+        }
+
+        let parts = [
+            metadata.model.flatMap(Self.compactCodexModelName),
+            metadata.reasoningEffort.flatMap(Self.compactCodexEffortName),
+            metadata.serviceTier.flatMap(Self.compactCodexServiceTierName),
+        ].compactMap { $0 }
+
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private static func compactCodexModelName(_ value: String) -> String? {
+        let trimmed = value.trimmedForSurface
+        guard !trimmed.isEmpty else { return nil }
+
+        let components = trimmed.split(separator: "-").map(String.init)
+        let visibleComponents = components.first?.lowercased() == "gpt"
+            ? Array(components.dropFirst())
+            : components
+        guard !visibleComponents.isEmpty else { return trimmed }
+
+        return visibleComponents.map { component in
+            component.allSatisfy { $0.isNumber || $0 == "." }
+                ? component
+                : component.capitalized
+        }.joined(separator: " ")
+    }
+
+    private static func compactCodexEffortName(_ value: String) -> String? {
+        let trimmed = value.trimmedForSurface
+        guard !trimmed.isEmpty else { return nil }
+
+        switch trimmed.lowercased() {
+        case "xhigh": return "XHigh"
+        default: return trimmed.capitalized
+        }
+    }
+
+    private static func compactCodexServiceTierName(_ value: String) -> String? {
+        let trimmed = value.trimmedForSurface
+        guard !trimmed.isEmpty else { return nil }
+
+        switch trimmed.lowercased() {
+        case "default", "standard": return "Standard"
+        case "fast": return "Fast"
+        case "priority": return "Priority"
+        default: return trimmed.capitalized
+        }
+    }
+
+    private static func shortCodexModelName(_ value: String) -> String? {
+        guard let compact = compactCodexModelName(value) else { return nil }
+        return compact.split(separator: " ").first.map(String.init)
+    }
+
+    private static func shortCodexEffortName(_ value: String) -> String? {
+        guard let compact = compactCodexEffortName(value) else { return nil }
+        switch compact.lowercased() {
+        case "xhigh": return "XH"
+        case "high": return "H"
+        case "medium": return "M"
+        case "low": return "L"
+        default: return compact
+        }
+    }
+
+    private static func shortCodexServiceTierName(_ value: String) -> String? {
+        guard let compact = compactCodexServiceTierName(value) else { return nil }
+        switch compact.lowercased() {
+        case "priority": return "P"
+        case "fast": return "F"
+        case "standard": return "Std"
+        default: return compact
+        }
     }
 
     var spotlightWorkspaceName: String {
@@ -168,10 +267,15 @@ extension AgentSession {
     }
 
     var spotlightHeadlineText: String {
-        var headline = spotlightWorkspaceName
+        let codexThreadTitle = spotlightCodexAppThreadTitle
+        var headline = codexThreadTitle ?? spotlightWorkspaceName
 
         if let branch = spotlightWorktreeBranch {
             headline += " (\(branch))"
+        }
+
+        if codexThreadTitle != nil {
+            return headline
         }
 
         guard let prompt = spotlightHeadlinePromptText else {
@@ -179,6 +283,36 @@ extension AgentSession {
         }
 
         return "\(headline) · \(prompt)"
+    }
+
+    var completionNotificationHeadlineText: String {
+        var headline = spotlightCodexAppThreadTitle ?? spotlightWorkspaceName
+        if headline.isEmpty {
+            headline = tool.displayName
+        }
+        if let branch = spotlightWorktreeBranch?.trimmedForSurface,
+           !branch.isEmpty {
+            headline += " (\(branch))"
+        }
+        return headline
+    }
+
+    private var spotlightCodexAppThreadTitle: String? {
+        guard tool == .codex,
+              isCodexAppSession || jumpTarget?.terminalApp == "Codex.app" else {
+            return nil
+        }
+
+        let candidate = title.trimmedForSurface
+        let workspaceName = spotlightWorkspaceName
+        guard !candidate.isEmpty,
+              candidate != workspaceName,
+              candidate != "Codex",
+              candidate != "Codex · \(workspaceName)" else {
+            return nil
+        }
+
+        return candidate
     }
 
     var spotlightHeadlinePromptText: String? {

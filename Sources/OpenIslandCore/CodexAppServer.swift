@@ -182,19 +182,25 @@ public final class CodexAppServerClient: @unchecked Sendable {
     /// List currently loaded threads from the app-server.
     public func listLoadedThreads() async throws -> [CodexThread] {
         struct Params: Encodable {}
-        struct Result: Decodable { let threads: [CodexThread] }
         let data = try await sendRequest(method: "thread/loaded/list", params: Params())
-        let result = try JSONDecoder().decode(Result.self, from: data)
-        return result.threads
+        return try decodeThreadList(data)
     }
 
     /// List all threads (including not-loaded) from the app-server.
     public func listThreads(limit: Int? = nil) async throws -> [CodexThread] {
         struct Params: Encodable { let limit: Int? }
-        struct Result: Decodable { let threads: [CodexThread] }
         let data = try await sendRequest(method: "thread/list", params: Params(limit: limit))
+        return try decodeThreadList(data)
+    }
+
+    private func decodeThreadList(_ data: Data) throws -> [CodexThread] {
+        struct Result: Decodable {
+            let threads: [CodexThread]?
+            let data: [CodexThread]?
+        }
+
         let result = try JSONDecoder().decode(Result.self, from: data)
-        return result.threads
+        return result.data ?? result.threads ?? []
     }
 
     // MARK: - JSON-RPC transport

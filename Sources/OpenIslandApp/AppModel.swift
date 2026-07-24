@@ -90,7 +90,7 @@ final class AppModel {
     var claudeHookStatus: ClaudeHookInstallationStatus? { hooks.claudeHookStatus }
     var claudeStatusLineStatus: ClaudeStatusLineInstallationStatus? { hooks.claudeStatusLineStatus }
     var claudeUsageSnapshot: ClaudeUsageSnapshot? { hooks.claudeUsageSnapshot }
-    var codexUsageSnapshot: CodexUsageSnapshot? { hooks.codexUsageSnapshot }
+    var codexUsageSnapshot: CodexUsageSnapshot?
     var hooksBinaryURL: URL? { hooks.hooksBinaryURL }
     var codexHooksInstalled: Bool { hooks.codexHooksInstalled }
     var claudeHooksInstalled: Bool { hooks.claudeHooksInstalled }
@@ -377,6 +377,11 @@ final class AppModel {
         set { updateAppearancePreferences(for: activeAppearanceProfile) { $0.completedStaleThreshold = newValue } }
     }
 
+    var showIdleSessions: Bool {
+        get { appearancePreferences(for: activeAppearanceProfile).showIdleSessions }
+        set { updateAppearancePreferences(for: activeAppearanceProfile) { $0.showIdleSessions = newValue } }
+    }
+
     @ObservationIgnored
     var openSettingsWindow: (() -> Void)?
 
@@ -408,7 +413,8 @@ final class AppModel {
     ) {
         if oldValue.sessionGroup != newValue.sessionGroup ||
             oldValue.sessionSort != newValue.sessionSort ||
-            oldValue.completedStaleThreshold != newValue.completedStaleThreshold {
+            oldValue.completedStaleThreshold != newValue.completedStaleThreshold ||
+            oldValue.showIdleSessions != newValue.showIdleSessions {
             _cachedSessionBuckets = nil
         }
         refreshOverlayPlacementIfVisible()
@@ -426,6 +432,7 @@ final class AppModel {
         defaults.set(preferences.sessionGroup.rawValue, forKey: Self.appearanceDefaultsKey(profile, "sessionGroup"))
         defaults.set(preferences.sessionSort.rawValue, forKey: Self.appearanceDefaultsKey(profile, "sessionSort"))
         defaults.set(preferences.completedStaleThreshold.rawValue, forKey: Self.appearanceDefaultsKey(profile, "completedStaleThreshold"))
+        defaults.set(preferences.showIdleSessions, forKey: Self.appearanceDefaultsKey(profile, "showIdleSessions"))
     }
 
     // MARK: - Watch Notification
@@ -576,7 +583,8 @@ final class AppModel {
                 rawValue: defaults.string(forKey: appearanceDefaultsKey(profile, "completedStaleThreshold"))
                     ?? defaults.string(forKey: legacyCompletedStaleThresholdDefaultsKey)
                     ?? ""
-            ) ?? .fiveMinutes
+            ) ?? .fiveMinutes,
+            showIdleSessions: defaults.bool(forKey: appearanceDefaultsKey(profile, "showIdleSessions"))
         )
     }
 
@@ -639,6 +647,9 @@ final class AppModel {
         hooks.onStatusMessage = { [weak self] message in
             self?.lastActionMessage = message
         }
+        hooks.onCodexUsageSnapshotChanged = { [weak self] snapshot in
+            self?.codexUsageSnapshot = snapshot
+        }
 
         discovery.syntheticClaudeSessionPrefix = Self.syntheticClaudeSessionPrefix
         discovery.onStatusMessage = { [weak self] message in
@@ -649,6 +660,7 @@ final class AppModel {
         discovery.onStateChanged = { [weak self] in
             self?.synchronizeSelection()
             self?.refreshOverlayPlacementIfVisible()
+            self?.codexAppServer.refreshThreadsIfNeeded()
         }
         discovery.onAgentEvent = { [weak self] event in
             self?.applyTrackedEvent(
@@ -667,6 +679,15 @@ final class AppModel {
                 )
             }
         }
+        discovery.codexRolloutWatcher.contentChangeHandler = { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.discovery.refreshCodexThreadTitlesIfNeeded()
+                if self.showCodexUsage {
+                    self.hooks.refreshCodexUsageState(minimumInterval: 60)
+                }
+            }
+        }
 
         codexAppServer.onEvent = { [weak self] event in
             self?.applyTrackedEvent(event, ingress: .bridge)
@@ -676,6 +697,12 @@ final class AppModel {
         }
         codexAppServer.isSessionTracked = { [weak self] id in
             self?.state.session(id: id) != nil
+        }
+        codexAppServer.existingCodexMetadata = { [weak self] id in
+            self?.state.session(id: id)?.codexMetadata
+        }
+        codexAppServer.existingJumpTarget = { [weak self] id in
+            self?.state.session(id: id)?.jumpTarget
         }
 
         monitoring.syntheticClaudeSessionPrefix = Self.syntheticClaudeSessionPrefix
@@ -700,7 +727,11 @@ final class AppModel {
             }
         }
         monitoring.onCodexAppMaintenanceTick = { [weak self] in
-            self?.discovery.maintainCodexAppSessionsIfNeeded()
+            guard let self else { return }
+            if !self.isResolvingInitialLiveSessions {
+                self.discovery.maintainCodexAppSessionsIfNeeded()
+                self.codexAppServer.refreshThreadsIfNeeded()
+            }
         }
         refreshOverlayDisplayConfiguration()
         hasFinishedInit = true
@@ -711,7 +742,7 @@ final class AppModel {
     }
 
     var allSessions: [AgentSession] {
-        state.sessions
+        visibleIslandSessions(from: state.sessions)
     }
 
     /// Measured by SwiftUI GeometryReader in notification mode. Used by panel controller for sizing.
@@ -739,7 +770,7 @@ final class AppModel {
     }
 
     var islandSessionSections: [IslandSessionSection] {
-        let sessions = sortIslandSessions(surfacedSessions)
+        let sessions = sortIslandSessions(visibleIslandSessions(from: surfacedSessions))
         switch islandSessionGroup {
         case .none:
             return [
@@ -774,15 +805,27 @@ final class AppModel {
     }
 
     var liveSessionCount: Int {
-        surfacedSessions.count
+        islandListSessions.count
     }
 
     var liveAttentionCount: Int {
-        surfacedSessions.filter { $0.phase.requiresAttention }.count
+        islandListSessions.filter { $0.phase.requiresAttention }.count
     }
 
     var liveRunningCount: Int {
-        surfacedSessions.filter { $0.phase == .running }.count
+        islandListSessions.filter { $0.phase == .running }.count
+    }
+
+    private func visibleIslandSessions(from sessions: [AgentSession], now: Date = .now) -> [AgentSession] {
+        guard !showIdleSessions else { return sessions }
+        return sessions.filter { session in
+            guard session.phase == .completed else { return true }
+            let isIdle = session.isStaleCompletedForIsland(
+                at: now,
+                threshold: completedStaleThreshold.seconds
+            ) || session.islandPresence(at: now) == .inactive
+            return !isIdle
+        }
     }
 
     private func sortIslandSessions(_ sessions: [AgentSession]) -> [AgentSession] {
@@ -842,7 +885,7 @@ final class AppModel {
     /// running; everything else is idle. Completed sessions are absorbed
     /// directly into idle so the pill never stops on a tick glyph.
     var islandClosedMode: UnifiedBars.Mode {
-        let sessions = surfacedSessions
+        let sessions = visibleIslandSessions(from: surfacedSessions)
         if sessions.contains(where: { $0.phase.requiresAttention }) { return .waiting }
         if sessions.contains(where: { $0.phase == .running })       { return .running }
         return .idle
@@ -852,9 +895,10 @@ final class AppModel {
     /// sessions first, then the most recent running one, then whatever's
     /// first.
     var islandClosedSpotlight: AgentSession? {
-        surfacedSessions.first(where: { $0.phase.requiresAttention })
-            ?? surfacedSessions.first(where: { $0.phase == .running })
-            ?? surfacedSessions.first
+        let sessions = visibleIslandSessions(from: surfacedSessions)
+        return sessions.first(where: { $0.phase.requiresAttention })
+            ?? sessions.first(where: { $0.phase == .running })
+            ?? sessions.first
     }
 
     /// Text to show in the closed island's center label. Respects the
@@ -883,7 +927,7 @@ final class AppModel {
     /// preference and current live state. Returns nil when the preference
     /// is `.none` or there's nothing meaningful to show.
     func islandClosedRightSlotContent() -> IslandRightSlotContent? {
-        let sessions = surfacedSessions
+        let sessions = visibleIslandSessions(from: surfacedSessions)
         switch islandRightSlot {
         case .none:
             return nil
@@ -1478,6 +1522,7 @@ final class AppModel {
         updateLastActionMessage: Bool = true,
         ingress: TrackedEventIngress = .bridge
     ) {
+        let event = preservingCodexConfiguration(in: event, ingress: ingress)
         // Snapshot whether this session was already completed before applying
         // the event. Used to suppress duplicate/stale completion notifications
         // (e.g. rollout watcher re-discovering an old completion on startup,
@@ -1487,18 +1532,30 @@ final class AppModel {
             return state.session(id: payload.sessionID)?.phase == .completed
         }()
 
-        // Guard: don't let rollout events downgrade a session from completed
-        // back to running. The bridge's sessionCompleted is authoritative; the
-        // rollout watcher may have read the JSONL before task_complete was
-        // flushed, producing a stale activityUpdated(phase: .running).
+        // Reject only stale rollout activity after completion. A completed
+        // Codex thread can start another turn, and the watcher emits metadata
+        // before activity with the same newest timestamp. Equality therefore
+        // represents the current batch and must be allowed to resume it.
         if ingress == .rollout,
            case let .activityUpdated(payload) = event,
            payload.phase == .running,
-           state.session(id: payload.sessionID)?.phase == .completed {
-            return
+           let existing = state.session(id: payload.sessionID),
+           existing.phase == .completed {
+            if existing.isSessionEnded || payload.timestamp < existing.updatedAt {
+                return
+            }
         }
 
         state.apply(event)
+        if ingress == .rollout,
+           case let .activityUpdated(payload) = event,
+           payload.phase == .running,
+           state.session(id: payload.sessionID)?.isCodexAppSession == true {
+            // A fresh rollout activity event is direct evidence that this
+            // thread is alive. Restored Codex.app sessions may have been
+            // deliberately retained off-island with isProcessAlive=false.
+            state.markSingleSessionAlive(sessionID: payload.sessionID)
+        }
         reconcileIslandSurfaceAfterStateChange()
         if ingress == .bridge {
             monitoring.markSessionAttached(for: event)
@@ -1518,6 +1575,7 @@ final class AppModel {
                 switch event {
                 case let .sessionStarted(p): return p.sessionID
                 case let .activityUpdated(p): return p.sessionID
+                case let .sessionTitleUpdated(p): return p.sessionID
                 case let .permissionRequested(p): return p.sessionID
                 case let .questionAsked(p): return p.sessionID
                 case let .sessionCompleted(p): return p.sessionID
@@ -1545,6 +1603,29 @@ final class AppModel {
                 ingress: ingress
             )
         }
+    }
+
+    private func preservingCodexConfiguration(
+        in event: AgentEvent,
+        ingress: TrackedEventIngress
+    ) -> AgentEvent {
+        guard ingress == .rollout,
+              case let .sessionMetadataUpdated(payload) = event,
+              let existing = state.session(id: payload.sessionID)?.codexMetadata else {
+            return event
+        }
+
+        var metadata = payload.codexMetadata
+        metadata.model = metadata.model ?? existing.model
+        metadata.reasoningEffort = metadata.reasoningEffort ?? existing.reasoningEffort
+        metadata.serviceTier = metadata.serviceTier ?? existing.serviceTier
+        return .sessionMetadataUpdated(
+            SessionMetadataUpdated(
+                sessionID: payload.sessionID,
+                codexMetadata: metadata,
+                timestamp: payload.timestamp
+            )
+        )
     }
 
     private func scheduleNotificationSurfacePresentationIfNeeded(
@@ -1770,6 +1851,8 @@ final class AppModel {
             return "Session started: \(payload.title)"
         case let .activityUpdated(payload):
             return payload.summary
+        case let .sessionTitleUpdated(payload):
+            return "Session renamed: \(payload.title)"
         case let .permissionRequested(payload):
             return payload.request.summary
         case let .questionAsked(payload):

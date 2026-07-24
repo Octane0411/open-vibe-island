@@ -874,7 +874,8 @@ struct IslandPanelView: View {
                     UsageWindowPresentation(
                         id: "claude-5h",
                         label: "5h",
-                        usedPercentage: fiveHour.usedPercentage,
+                        displayPercentage: fiveHour.usedPercentage,
+                        severityPercentage: fiveHour.usedPercentage,
                         resetsAt: fiveHour.resetsAt
                     )
                 )
@@ -885,7 +886,8 @@ struct IslandPanelView: View {
                     UsageWindowPresentation(
                         id: "claude-7d",
                         label: "7d",
-                        usedPercentage: sevenDay.usedPercentage,
+                        displayPercentage: sevenDay.usedPercentage,
+                        severityPercentage: sevenDay.usedPercentage,
                         resetsAt: sevenDay.resetsAt
                     )
                 )
@@ -909,7 +911,8 @@ struct IslandPanelView: View {
                 UsageWindowPresentation(
                     id: "codex-\(window.key)",
                     label: window.label,
-                    usedPercentage: window.usedPercentage,
+                    displayPercentage: window.leftPercentage,
+                    severityPercentage: window.usedPercentage,
                     resetsAt: window.resetsAt
                 )
             }
@@ -1056,7 +1059,7 @@ struct IslandPanelView: View {
 
     private func usageHelpText(for provider: UsageProviderPresentation) -> String {
         provider.windows.map { window in
-            var parts = ["\(window.label) \(window.roundedUsedPercentage)%"]
+            var parts = ["\(window.label) \(window.roundedDisplayPercentage)%"]
             if let resetsAt = window.resetsAt,
                let remaining = remainingDurationString(until: resetsAt) {
                 parts.append(remaining)
@@ -1110,14 +1113,14 @@ struct IslandPanelView: View {
     }
 }
 
-private struct UsageProviderPresentation: Identifiable {
+struct UsageProviderPresentation: Identifiable {
     let id: String
     let title: String
     let windows: [UsageWindowPresentation]
 
     var peakWindow: UsageWindowPresentation? {
         windows.max { lhs, rhs in
-            lhs.usedPercentage < rhs.usedPercentage
+            lhs.severityPercentage < rhs.severityPercentage
         }
     }
 
@@ -1126,11 +1129,11 @@ private struct UsageProviderPresentation: Identifiable {
     }
 
     var peakUsedPercentage: Double {
-        peakWindow?.usedPercentage ?? 0
+        peakWindow?.severityPercentage ?? 0
     }
 
     var peakUsagePercentage: Int {
-        peakWindow?.roundedUsedPercentage ?? 0
+        peakWindow?.roundedDisplayPercentage ?? 0
     }
 
     var shortTitle: String {
@@ -1145,14 +1148,15 @@ private struct UsageProviderPresentation: Identifiable {
     }
 }
 
-private struct UsageWindowPresentation: Identifiable {
+struct UsageWindowPresentation: Identifiable {
     let id: String
     let label: String
-    let usedPercentage: Double
+    let displayPercentage: Double
+    let severityPercentage: Double
     let resetsAt: Date?
 
-    var roundedUsedPercentage: Int {
-        Int(usedPercentage.rounded())
+    var roundedDisplayPercentage: Int {
+        Int(displayPercentage.rounded())
     }
 }
 
@@ -1291,7 +1295,13 @@ private struct IslandSessionRow: View {
                     sideBadge("SSH")
                 }
                 if let terminalBadge = session.spotlightTerminalBadge {
-                    sideBadge(terminalBadge)
+                    ViewThatFits(in: .horizontal) {
+                        sideBadge(terminalBadge)
+                        if let compactBadge = session.spotlightCompactTerminalBadge,
+                           compactBadge != terminalBadge {
+                            sideBadge(compactBadge)
+                        }
+                    }
                 }
                 Text(session.spotlightAgeBadge)
                     .font(.system(size: 10.5, weight: .medium, design: .monospaced))
@@ -1302,6 +1312,7 @@ private struct IslandSessionRow: View {
                     DismissButton(action: onDismiss)
                 }
             }
+            .layoutPriority(1)
         }
         .padding(.leading, rowLeadingInset)
         .padding(.trailing, sideInset)
@@ -1413,6 +1424,8 @@ private struct IslandSessionRow: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(.white.opacity(presentation == .notification ? 0.045 : 0.06), in: Capsule())
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
     }
 
     private var summaryPromptLineText: String? {
@@ -1428,21 +1441,10 @@ private struct IslandSessionRow: View {
 
     private var summaryHeadlineText: String {
         if presentation == .notification, session.phase == .completed {
-            return notificationWorkspaceHeadlineText
+            return session.completionNotificationHeadlineText
         }
 
         return session.spotlightHeadlineText
-    }
-
-    private var notificationWorkspaceHeadlineText: String {
-        let workspace = session.spotlightWorkspaceName.trimmedForNotificationCard
-        let title = workspace.isEmpty ? session.tool.displayName : workspace
-        guard let branch = session.spotlightWorktreeBranch?.trimmedForNotificationCard,
-              !branch.isEmpty else {
-            return title
-        }
-
-        return "\(title) (\(branch))"
     }
 
     private var notificationCompletedPromptLineText: String? {

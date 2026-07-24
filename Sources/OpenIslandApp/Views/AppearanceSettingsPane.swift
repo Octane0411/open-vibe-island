@@ -139,6 +139,7 @@ struct AppearanceSettingsPane: View {
             stateIndicatorSection
             sessionGroupSection
             sessionSortSection
+            idleVisibilitySection
             staleThresholdSection
         }
     }
@@ -468,6 +469,30 @@ struct AppearanceSettingsPane: View {
     // MARK: - 06 · Done timeout
 
     @ViewBuilder
+    private var idleVisibilitySection: some View {
+        sectionHeader(
+            title: lang.t("settings.appearance.showIdle.title"),
+            note: lang.t("settings.appearance.showIdle.note")
+        )
+
+        Toggle(
+            lang.t("settings.appearance.showIdle.option"),
+            isOn: Binding(
+                get: { editingPreferences.showIdleSessions },
+                set: { value in
+                    model.updateAppearancePreferences(for: editingProfile) {
+                        $0.showIdleSessions = value
+                    }
+                }
+            )
+        )
+        .toggleStyle(.switch)
+        .tint(V6Palette.paper.opacity(0.85))
+    }
+
+    // MARK: - 07 · Done timeout
+
+    @ViewBuilder
     private var staleThresholdSection: some View {
         sectionHeader(
             title: lang.t("settings.appearance.staleThreshold.title"),
@@ -713,7 +738,7 @@ struct AppearanceSettingsPane: View {
     }
 
     private var previewSessionItems: [AppearanceSessionPreviewItem] {
-        [
+        let items: [AppearanceSessionPreviewItem] = [
             .init(
                 id: "approval",
                 title: "Codex · open-island",
@@ -795,6 +820,17 @@ struct AppearanceSettingsPane: View {
                 updatedRank: 4
             ),
         ]
+
+        guard !editingPreferences.showIdleSessions else {
+            return items
+        }
+
+        return items.filter { item in
+            if case .idle = item.phase {
+                return false
+            }
+            return true
+        }
     }
 }
 

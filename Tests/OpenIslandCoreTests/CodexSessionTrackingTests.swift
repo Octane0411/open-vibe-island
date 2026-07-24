@@ -4,6 +4,25 @@ import Testing
 
 struct CodexSessionTrackingTests {
     @Test
+    func codexRolloutWatchTargetEqualityIncludesCachedPrompts() {
+        let original = CodexRolloutWatchTarget(
+            sessionID: "codex-session-1",
+            transcriptPath: "/tmp/rollout.jsonl",
+            cachedInitialUserPrompt: "Original prompt",
+            cachedLastUserPrompt: "Original follow-up"
+        )
+
+        var updatedInitialPrompt = original
+        updatedInitialPrompt.cachedInitialUserPrompt = "Renamed conversation"
+
+        var updatedLastPrompt = original
+        updatedLastPrompt.cachedLastUserPrompt = "Latest follow-up"
+
+        #expect(original != updatedInitialPrompt)
+        #expect(original != updatedLastPrompt)
+    }
+
+    @Test
     func codexSessionStoreRoundTripsTrackedSessions() throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("open-island-tracking-\(UUID().uuidString)", isDirectory: true)
@@ -780,6 +799,133 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutReducerStripsLeadingInjectedBlocksFromEventMessages() {
+        let snapshot = CodexRolloutReducer.snapshot(for: [
+            rolloutLine(
+                timestamp: "2026-07-22T14:37:28.346Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": """
+                    <recommended_plugins>
+                    Here is a list of plugins that are available but not installed.
+                    </recommended_plugins>
+                    <environment_context>
+                      <cwd>/tmp/repo</cwd>
+                    </environment_context>
+                    Fix the Open Island task title.
+                    """,
+                ]
+            ),
+        ])
+
+        #expect(snapshot.initialUserPrompt == "Fix the Open Island task title.")
+        #expect(snapshot.lastUserPrompt == "Fix the Open Island task title.")
+    }
+
+    @Test
+    func codexRolloutReducerStripsAttachedFileManifestFromEventMessages() {
+        let snapshot = CodexRolloutReducer.snapshot(for: [
+            rolloutLine(
+                timestamp: "2026-07-22T14:37:28.346Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": """
+                    # Files mentioned by the user:
+
+                    ## screenshot.png: /tmp/screenshot.png
+
+                    ## My request for Codex:
+                    这个名字也不对
+                    """,
+                ]
+            ),
+        ])
+
+        #expect(snapshot.initialUserPrompt == "这个名字也不对")
+        #expect(snapshot.lastUserPrompt == "这个名字也不对")
+    }
+
+    @Test
+    func codexRolloutWatcherReportsNewFileContentEvenWithoutAgentEvents() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-rollout-content-\(UUID().uuidString)", isDirectory: true)
+        let rolloutURL = rootURL.appendingPathComponent("rollout.jsonl")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try Data().write(to: rolloutURL)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let recorder = ChangeRecorder()
+        let watcher = CodexRolloutWatcher(pollInterval: 0.05)
+        watcher.contentChangeHandler = {
+            Task { await recorder.recordChange() }
+        }
+        watcher.sync(targets: [
+            CodexRolloutWatchTarget(
+                sessionID: "codex-session-usage",
+                transcriptPath: rolloutURL.path
+            ),
+        ])
+
+        try appendRolloutLine(
+            rolloutLine(
+                timestamp: "2026-07-22T14:37:28.346Z",
+                type: "event_msg",
+                payload: [
+                    "type": "token_count",
+                    "rate_limits": [
+                        "limit_id": "codex",
+                        "primary": [
+                            "used_percent": 22.0,
+                            "window_minutes": 10_080,
+                        ],
+                    ],
+                ]
+            ),
+            to: rolloutURL
+        )
+
+        try await Task.sleep(for: .milliseconds(200))
+        watcher.stop()
+
+        #expect(await recorder.count == 1)
+    }
+
+    @Test
+    func codexRolloutReducerTracksModelEffortAndServiceTier() {
+        let snapshot = CodexRolloutReducer.snapshot(for: [
+            rolloutLine(
+                timestamp: "2026-07-22T14:37:28.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "thread_settings_applied",
+                    "thread_settings": [
+                        "model": "gpt-5.6-sol",
+                        "reasoning_effort": "xhigh",
+                        "service_tier": "fast",
+                    ],
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-07-22T14:37:29.000Z",
+                type: "turn_context",
+                payload: [
+                    "model": "gpt-5.6-sol",
+                    "effort": "high",
+                ]
+            ),
+        ])
+
+        #expect(snapshot.model == "gpt-5.6-sol")
+        #expect(snapshot.reasoningEffort == "high")
+        #expect(snapshot.serviceTier == "fast")
+        #expect(snapshot.metadata.model == "gpt-5.6-sol")
+        #expect(snapshot.metadata.reasoningEffort == "high")
+        #expect(snapshot.metadata.serviceTier == "fast")
+    }
+
+    @Test
     func codexRolloutReducerTracksMessageResponsePromptsWithoutInjectedBlocks() {
         let snapshot = CodexRolloutReducer.snapshot(for: [
             rolloutLine(
@@ -1198,6 +1344,132 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutDiscoveryUsesPersistedTaskTitle() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-title-\(UUID().uuidString)", isDirectory: true)
+        let rolloutURL = rootURL.appendingPathComponent("rollout-title.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        try [
+            sessionMetaLine(
+                sessionID: "codex-session-title",
+                timestamp: "2026-04-02T04:03:44.000Z",
+                cwd: "/tmp/JLC-GPS"
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: ["type": "user_message", "message": "Build an AI car." ]
+            ),
+        ]
+        .joined(separator: "\n")
+        .appending("\n")
+        .write(to: rolloutURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: rolloutURL.path)
+
+        let discovery = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            maxAge: 86_400,
+            maxFiles: 10,
+            persistedThreadTitles: { threadIDs in
+                threadIDs.contains("codex-session-title")
+                    ? ["codex-session-title": "调研AI智能小车方案"]
+                    : [:]
+            }
+        )
+
+        let records = discovery.discoverRecentSessions(now: now)
+
+        #expect(records.first?.title == "调研AI智能小车方案")
+    }
+
+    @Test
+    func codexRolloutDiscoverySkipsInternalSubagentThreads() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-subagents-\(UUID().uuidString)", isDirectory: true)
+        let now = Date(timeIntervalSince1970: 1_774_536_000)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let parentID = "codex-parent-thread"
+        let parentURL = rootURL.appendingPathComponent("rollout-parent.jsonl")
+        try sessionMetaLine(
+            sessionID: parentID,
+            timestamp: "2026-03-27T12:00:00.000Z",
+            cwd: "/tmp/project"
+        ).appending("\n").write(to: parentURL, atomically: true, encoding: .utf8)
+
+        for index in 1...3 {
+            let childURL = rootURL.appendingPathComponent("rollout-child-\(index).jsonl")
+            let childMeta = rolloutLine(
+                timestamp: "2026-03-27T12:00:0\(index).000Z",
+                type: "session_meta",
+                payload: [
+                    "id": "codex-child-\(index)",
+                    "timestamp": "2026-03-27T12:00:0\(index).000Z",
+                    "cwd": "/tmp/project",
+                    "source": [
+                        "subagent": [
+                            "thread_spawn": [
+                                "parent_thread_id": parentID,
+                                "depth": 1,
+                                "agent_path": "/root/audit-\(index)",
+                            ],
+                        ],
+                    ],
+                ]
+            )
+            try childMeta.appending("\n").write(to: childURL, atomically: true, encoding: .utf8)
+        }
+
+        for case let fileURL as URL in FileManager.default.enumerator(
+            at: rootURL,
+            includingPropertiesForKeys: nil
+        )! {
+            try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: fileURL.path)
+        }
+
+        let records = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            maxAge: 86_400,
+            maxFiles: 10
+        ).discoverRecentSessions(now: now)
+
+        #expect(records.map(\.sessionID) == [parentID])
+    }
+
+    @Test
+    func codexRolloutDiscoverySkipsAlreadyTrackedTranscriptPaths() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-exclusions-\(UUID().uuidString)", isDirectory: true)
+        let trackedURL = rootURL.appendingPathComponent("rollout-tracked.jsonl")
+        let newURL = rootURL.appendingPathComponent("rollout-new.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        try sessionMetaLine(
+            sessionID: "tracked",
+            timestamp: "2026-04-02T04:03:44.000Z",
+            cwd: "/tmp/tracked"
+        ).appending("\n").write(to: trackedURL, atomically: true, encoding: .utf8)
+        try sessionMetaLine(
+            sessionID: "new",
+            timestamp: "2026-04-02T04:03:44.000Z",
+            cwd: "/tmp/new"
+        ).appending("\n").write(to: newURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: trackedURL.path)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: newURL.path)
+
+        let records = CodexRolloutDiscovery(rootURL: rootURL, maxAge: 86_400, maxFiles: 10)
+            .discoverRecentSessions(now: now, excludingTranscriptPaths: [trackedURL.path])
+
+        #expect(records.map(\.sessionID) == ["new"])
+    }
+
+    @Test
     func codexRolloutDiscoveryStreamsRolloutsLargerThanReadChunk() throws {
         // Pins streaming behavior across read-chunk boundaries. The
         // discovery path used to slurp the whole rollout via
@@ -1278,6 +1550,35 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func jsonlExtractionHandlesLargePartialLineIncrementally() {
+        var buffer = Data()
+        var scannedByteCount = 0
+        let chunk = Data(repeating: UInt8(ascii: "x"), count: 64 * 1_024)
+        let clock = ContinuousClock()
+        let start = clock.now
+
+        for _ in 0..<512 {
+            buffer.append(chunk)
+            #expect(codexExtractCompleteJSONLLines(
+                from: &buffer,
+                scannedByteCount: &scannedByteCount
+            ).isEmpty)
+            #expect(scannedByteCount == buffer.count)
+        }
+
+        buffer.append(UInt8(ascii: "\n"))
+        let lines = codexExtractCompleteJSONLLines(
+            from: &buffer,
+            scannedByteCount: &scannedByteCount
+        )
+
+        #expect(lines.count == 1)
+        #expect(lines.first?.utf8.count == 32 * 1_024 * 1_024)
+        #expect(buffer.isEmpty)
+        #expect(clock.now - start < .seconds(3))
+    }
+
+    @Test
     func codexRolloutDiscoveryHandlesTrailingLineWithoutNewline() throws {
         // A rollout written by Codex while the process is mid-flush
         // can land on disk without a trailing newline. The streamed
@@ -1342,6 +1643,14 @@ private actor EventRecorder {
 
     func snapshot() -> [AgentEvent] {
         events
+    }
+}
+
+private actor ChangeRecorder {
+    private(set) var count = 0
+
+    func recordChange() {
+        count += 1
     }
 }
 

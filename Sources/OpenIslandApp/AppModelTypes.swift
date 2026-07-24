@@ -61,6 +61,7 @@ struct IslandAppearancePreferences: Equatable, Sendable {
     var sessionGroup: IslandSessionGroup = .none
     var sessionSort: IslandSessionSort = .attention
     var completedStaleThreshold: IslandCompletedStaleThreshold = .fiveMinutes
+    var showIdleSessions: Bool = false
 }
 
 enum IslandUsageDisplay: String, CaseIterable, Identifiable, Sendable {
