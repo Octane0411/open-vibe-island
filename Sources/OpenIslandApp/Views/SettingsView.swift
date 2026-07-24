@@ -635,10 +635,14 @@ struct SetupSettingsPane: View {
                     Text(lang.t("settings.general.uninstallConfirmMessage.claudeUsage"))
                 }
 
-                Toggle(lang.t("settings.general.showCodexUsage"), isOn: Binding(
-                    get: { model.showCodexUsage },
-                    set: { model.showCodexUsage = $0 }
-                ))
+                ForEach(UsageProvider.optional) { provider in
+                    if let labelKey = provider.optInLabelKey {
+                        Toggle(lang.t(labelKey), isOn: Binding(
+                            get: { model.isUsageProviderEnabled(provider) },
+                            set: { model.setUsageProvider(provider, enabled: $0) }
+                        ))
+                    }
+                }
             } header: {
                 HStack(spacing: 4) {
                     Text(lang.t("setup.section.usage"))
