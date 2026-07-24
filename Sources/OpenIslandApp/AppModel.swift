@@ -120,8 +120,7 @@ final class AppModel {
     var isOpenCodeSetupBusy: Bool { hooks.isOpenCodeSetupBusy }
     var openCodePluginStatusTitle: String { hooks.openCodePluginStatusTitle }
     var openCodePluginStatusSummary: String { hooks.openCodePluginStatusSummary }
-    var claudeHealthReport: HookHealthReport? { hooks.claudeHealthReport }
-    var codexHealthReport: HookHealthReport? { hooks.codexHealthReport }
+    var healthReports: [HookHealthReport] { hooks.healthReports }
     var cursorHooksInstalled: Bool { hooks.cursorHooksInstalled }
     var isCursorHookSetupBusy: Bool { hooks.isCursorHookSetupBusy }
     var cursorHookStatus: CursorHookInstallationStatus? { hooks.cursorHookStatus }

@@ -333,4 +333,21 @@ struct AgentSessionPresentationTests {
         #expect(session.spotlightSecondaryText == "Running Search")
         #expect(session.displayCurrentToolName == "Search")
     }
+
+    @Test
+    func hookHealthReportsCarryTheirOwnDisplayName() {
+        // Regression: Settings rendered every non-Claude report as "Codex".
+        #expect(HookHealthCheck.checkClaude().agent == .claude)
+        #expect(HookHealthCheck.checkCodex().agent == .codex)
+        #expect(HookHealthCheck.checkOpenCode().agent == .openCode)
+
+        for agent in HookHealthReport.Agent.allCases {
+            #expect(agent.displayName.isEmpty == false)
+            #expect(HookHealthReport(agent: agent).id == agent)
+        }
+
+        #expect(HookHealthReport.Agent.openCode.displayName == "OpenCode")
+        #expect(Set(HookHealthReport.Agent.allCases.map(\.displayName)).count
+            == HookHealthReport.Agent.allCases.count)
+    }
 }

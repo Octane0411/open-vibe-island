@@ -780,34 +780,21 @@ struct SetupSettingsPane: View {
     }
 
     private var hasErrors: Bool {
-        let claudeErrors = model.claudeHealthReport?.errors.count ?? 0
-        let codexErrors = model.codexHealthReport?.errors.count ?? 0
-        return claudeErrors + codexErrors > 0
+        model.healthReports.contains { !$0.errors.isEmpty }
     }
 
     private var hasRepairableIssues: Bool {
-        let claude = model.claudeHealthReport?.repairableIssues.isEmpty == false
-        let codex = model.codexHealthReport?.repairableIssues.isEmpty == false
-        return claude || codex
-    }
-
-    private var hasNotices: Bool {
-        let claude = model.claudeHealthReport?.notices.isEmpty == false
-        let codex = model.codexHealthReport?.notices.isEmpty == false
-        return claude || codex
+        model.healthReports.contains { !$0.repairableIssues.isEmpty }
     }
 
     @ViewBuilder
     private var hookDiagnosticsSection: some View {
         Section {
-            if let claudeReport = model.claudeHealthReport, !claudeReport.issues.isEmpty {
-                issueList(report: claudeReport)
-            }
-            if let codexReport = model.codexHealthReport, !codexReport.issues.isEmpty {
-                issueList(report: codexReport)
+            ForEach(model.healthReports.filter { !$0.issues.isEmpty }) { report in
+                issueList(report: report)
             }
 
-            if model.claudeHealthReport == nil && model.codexHealthReport == nil {
+            if model.healthReports.isEmpty {
                 HStack {
                     Text(lang.t("setup.diagnostics.notRun"))
                         .foregroundStyle(.secondary)
@@ -856,7 +843,7 @@ struct SetupSettingsPane: View {
     @ViewBuilder
     private func issueList(report: HookHealthReport) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(report.agent == "claude" ? "Claude Code" : "Codex")
+            Text(report.agent.displayName)
                 .font(.caption)
                 .fontWeight(.semibold)
                 .foregroundStyle(.secondary)
