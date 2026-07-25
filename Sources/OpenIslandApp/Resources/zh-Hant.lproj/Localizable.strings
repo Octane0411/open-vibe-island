@@ -279,6 +279,9 @@
 "island.annual.state.loading" = "載入中";
 "island.annual.hint.setup" = "設定";
 
+/* Island Panel - Annual theme rows (AB-317) */
+"island.annual.row.jump" = "跳轉";
+
 /* Island Panel - Session List */
 "island.sessionList.title" = "會話";
 "island.sessionOverview.total" = "總計";

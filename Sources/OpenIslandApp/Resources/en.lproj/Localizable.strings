@@ -279,6 +279,9 @@
 "island.annual.state.loading" = "Loading";
 "island.annual.hint.setup" = "Setup";
 
+/* Island Panel - Annual theme rows (AB-317) */
+"island.annual.row.jump" = "Jump";
+
 /* Island Panel - Session List */
 "island.sessionList.title" = "Sessions";
 "island.sessionOverview.total" = "total";

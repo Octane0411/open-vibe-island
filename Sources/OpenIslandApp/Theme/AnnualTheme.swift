@@ -146,11 +146,17 @@ enum AnnualText {
 /// `AnnualInstallHooksHint`). The accent still appears only on the critical usage
 /// figure and on genuine attention states, never on a calm surface.
 ///
-/// Later slices restyle the session rows (AB-317) and the actionable interiors
-/// (AB-318) into the same idiom. Until they do, those slots fall back to the
-/// shared Classic component through the factories below; the fallbacks already
-/// read the Annual tokens from the environment, so they inherit the warm ground,
-/// the calm palette and the stronger hairlines for free.
+/// AB-317 (annual 3/4) typesets the **non-actionable** session rows on the dot
+/// grammar (`AnnualSessionRow`): a workspace headline over a lowercase mono meta
+/// line behind a 6px brand square, a single right-aligned time lane, filled /
+/// ring / dim / accent-pulse status dots with an interrupted / failed glyph swap,
+/// and a marginalia-rail expanded interior — all with zero pills and the accent
+/// spent only on attention. The **actionable** interiors (approval, question,
+/// completion) and the notification card still route to the shared Classic
+/// component; the fallback reads the Annual tokens from the environment, so it
+/// inherits the warm ground and calm palette for free. AB-318 (annual 4/4)
+/// replaces that last seam with the editorial alarm, question and notification
+/// card.
 ///
 /// Registered but **not** the default — Poured Island stays the product's face.
 struct AnnualTheme: IslandTheme {
@@ -173,9 +179,12 @@ struct AnnualTheme: IslandTheme {
 
     // MARK: Capability flags
 
-    /// The shell's rows are still Classic's flat views, which are safe to
-    /// rasterize. A later slice that adds motion to the editorial rows can flip
-    /// this alongside that change.
+    /// This flag only gates the shared Classic row body's off-screen rasterization
+    /// (`ConditionalDrawingGroup` in `IslandSessionRow`). Annual's non-actionable
+    /// rows are drawn by `AnnualSessionRow`, which never takes that path, and its
+    /// actionable rows route to Classic with `isActionable == true` (which also
+    /// bypasses it) — so the value is moot for Annual. Kept `true`, matching the
+    /// other re-skinned themes (Instrument / Flight Deck).
     let rowIsDrawingGroupSafe = true
 
     /// Annual is a printed page, not glass: the opened surface takes the opaque
@@ -253,10 +262,11 @@ struct AnnualTheme: IslandTheme {
         )
     }
 
-    // MARK: Fallback slots (restyled in AB-317 · AB-318)
+    // MARK: Annual session rows (AB-317)
 
-    /// Session row — falls back to the shared row until AB-317 typesets the rows
-    /// on Annual's editorial dot grammar.
+    /// Session row — the editorial dot-grammar re-skin for the non-actionable
+    /// states (`AnnualSessionRow`); actionable rows still route to Classic inside
+    /// it (the seam AB-318 replaces).
     func sessionRow(
         session: AgentSession,
         stateIndicator: IslandSessionStateIndicator,
@@ -273,7 +283,7 @@ struct AnnualTheme: IslandTheme {
         pulseClock: PulseClock?
     ) -> AnyView {
         AnyView(
-            IslandSessionRow(
+            AnnualSessionRow(
                 session: session,
                 stateIndicator: stateIndicator,
                 completedStaleThreshold: completedStaleThreshold,
@@ -294,8 +304,7 @@ struct AnnualTheme: IslandTheme {
     /// Session list (AB-316) — the large-numeral sessions summary, the
     /// hairline-ruled small-caps section headers for all four grouping modes, the
     /// scrollable list of rows, and a quiet footer. Rows inside it route through
-    /// `sessionRow` above — Classic's flat row until AB-317 typesets the editorial
-    /// rows.
+    /// `sessionRow` above — the editorial dot-grammar `AnnualSessionRow` (AB-317).
     func sessionList(
         sessions: [AgentSession],
         sections: [IslandSessionSection],
