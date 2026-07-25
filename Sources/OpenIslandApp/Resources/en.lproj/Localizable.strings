@@ -287,6 +287,45 @@
 "island.annual.approval.allow" = "Allow";
 "island.annual.approval.deny" = "Deny";
 
+/* Island Panel - Narrated activity verbs (AB-321) */
+"island.activity.verb.editing" = "Editing";
+"island.activity.verb.reading" = "Reading";
+"island.activity.verb.running" = "Running";
+"island.activity.verb.searching" = "Searching";
+"island.activity.verb.fetching" = "Fetching";
+"island.activity.verb.orchestrating" = "Orchestrating";
+"island.activity.verb.asking" = "Asking";
+"island.activity.verb.planning" = "Planning";
+"island.activity.verb.evaluating" = "Evaluating";
+"island.activity.verb.navigating" = "Navigating";
+"island.activity.verb.clicking" = "Clicking";
+"island.activity.verb.typing" = "Typing";
+"island.activity.verb.opening" = "Opening";
+"island.activity.verb.closing" = "Closing";
+"island.activity.verb.listing" = "Listing";
+"island.activity.verb.creating" = "Creating";
+"island.activity.verb.updating" = "Updating";
+"island.activity.verb.deleting" = "Deleting";
+"island.activity.verb.sending" = "Sending";
+"island.activity.verb.waiting" = "Waiting";
+"island.activity.verb.checking" = "Checking";
+"island.activity.verb.capturing" = "Capturing";
+"island.activity.verb.uploading" = "Uploading";
+"island.activity.verb.downloading" = "Downloading";
+"island.activity.verb.generating" = "Generating";
+"island.activity.verb.resolving" = "Resolving";
+"island.activity.verb.moving" = "Moving";
+"island.activity.verb.copying" = "Copying";
+"island.activity.verb.exporting" = "Exporting";
+"island.activity.verb.importing" = "Importing";
+"island.activity.verb.selecting" = "Selecting";
+"island.activity.verb.scrolling" = "Scrolling";
+"island.activity.verb.building" = "Building";
+"island.activity.verb.publishing" = "Publishing";
+"island.activity.verb.commenting" = "Commenting";
+"island.activity.verb.replying" = "Replying";
+"island.activity.verb.working" = "Working";
+
 /* Island Panel - Session List */
 "island.sessionList.title" = "Sessions";
 "island.sessionOverview.total" = "total";

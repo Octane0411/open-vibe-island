@@ -287,6 +287,45 @@
 "island.annual.approval.allow" = "允许";
 "island.annual.approval.deny" = "拒绝";
 
+/* Island Panel - Narrated activity verbs (AB-321) */
+"island.activity.verb.editing" = "正在编辑";
+"island.activity.verb.reading" = "正在读取";
+"island.activity.verb.running" = "正在运行";
+"island.activity.verb.searching" = "正在搜索";
+"island.activity.verb.fetching" = "正在获取";
+"island.activity.verb.orchestrating" = "正在调度";
+"island.activity.verb.asking" = "正在询问";
+"island.activity.verb.planning" = "正在规划";
+"island.activity.verb.evaluating" = "正在求值";
+"island.activity.verb.navigating" = "正在导航";
+"island.activity.verb.clicking" = "正在点击";
+"island.activity.verb.typing" = "正在输入";
+"island.activity.verb.opening" = "正在打开";
+"island.activity.verb.closing" = "正在关闭";
+"island.activity.verb.listing" = "正在列出";
+"island.activity.verb.creating" = "正在创建";
+"island.activity.verb.updating" = "正在更新";
+"island.activity.verb.deleting" = "正在删除";
+"island.activity.verb.sending" = "正在发送";
+"island.activity.verb.waiting" = "正在等待";
+"island.activity.verb.checking" = "正在检查";
+"island.activity.verb.capturing" = "正在截取";
+"island.activity.verb.uploading" = "正在上传";
+"island.activity.verb.downloading" = "正在下载";
+"island.activity.verb.generating" = "正在生成";
+"island.activity.verb.resolving" = "正在解析";
+"island.activity.verb.moving" = "正在移动";
+"island.activity.verb.copying" = "正在复制";
+"island.activity.verb.exporting" = "正在导出";
+"island.activity.verb.importing" = "正在导入";
+"island.activity.verb.selecting" = "正在选择";
+"island.activity.verb.scrolling" = "正在滚动";
+"island.activity.verb.building" = "正在构建";
+"island.activity.verb.publishing" = "正在发布";
+"island.activity.verb.commenting" = "正在评论";
+"island.activity.verb.replying" = "正在回复";
+"island.activity.verb.working" = "正在处理";
+
 /* Island Panel - Session List */
 "island.sessionList.title" = "会话";
 "island.sessionOverview.total" = "总计";

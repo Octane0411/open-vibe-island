@@ -287,6 +287,45 @@
 "island.annual.approval.allow" = "允許";
 "island.annual.approval.deny" = "拒絕";
 
+/* Island Panel - Narrated activity verbs (AB-321) */
+"island.activity.verb.editing" = "正在編輯";
+"island.activity.verb.reading" = "正在讀取";
+"island.activity.verb.running" = "正在執行";
+"island.activity.verb.searching" = "正在搜尋";
+"island.activity.verb.fetching" = "正在取得";
+"island.activity.verb.orchestrating" = "正在調度";
+"island.activity.verb.asking" = "正在詢問";
+"island.activity.verb.planning" = "正在規劃";
+"island.activity.verb.evaluating" = "正在求值";
+"island.activity.verb.navigating" = "正在導覽";
+"island.activity.verb.clicking" = "正在點擊";
+"island.activity.verb.typing" = "正在輸入";
+"island.activity.verb.opening" = "正在開啟";
+"island.activity.verb.closing" = "正在關閉";
+"island.activity.verb.listing" = "正在列出";
+"island.activity.verb.creating" = "正在建立";
+"island.activity.verb.updating" = "正在更新";
+"island.activity.verb.deleting" = "正在刪除";
+"island.activity.verb.sending" = "正在傳送";
+"island.activity.verb.waiting" = "正在等待";
+"island.activity.verb.checking" = "正在檢查";
+"island.activity.verb.capturing" = "正在擷取";
+"island.activity.verb.uploading" = "正在上傳";
+"island.activity.verb.downloading" = "正在下載";
+"island.activity.verb.generating" = "正在產生";
+"island.activity.verb.resolving" = "正在解析";
+"island.activity.verb.moving" = "正在移動";
+"island.activity.verb.copying" = "正在複製";
+"island.activity.verb.exporting" = "正在匯出";
+"island.activity.verb.importing" = "正在匯入";
+"island.activity.verb.selecting" = "正在選擇";
+"island.activity.verb.scrolling" = "正在捲動";
+"island.activity.verb.building" = "正在建置";
+"island.activity.verb.publishing" = "正在發佈";
+"island.activity.verb.commenting" = "正在留言";
+"island.activity.verb.replying" = "正在回覆";
+"island.activity.verb.working" = "正在處理";
+
 /* Island Panel - Session List */
 "island.sessionList.title" = "會話";
 "island.sessionOverview.total" = "總計";
