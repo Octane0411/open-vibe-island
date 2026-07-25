@@ -1,0 +1,1584 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Poured Island 2.0 — Liquid Glass</title>
+<style>
+/* ============================================================================
+   POURED ISLAND 2.0 · LIQUID GLASS
+   Design tokens lifted verbatim from the real theme (PouredIslandTheme /
+   IslandColorTokens.poured / IslandMetricsTokens.poured / IslandMotionTokens.poured)
+   so the mockup is inevitable — the app could render exactly this.
+   ========================================================================== */
+:root{
+  /* Surface — cool blue-black ink, cool paper (poured tokens) */
+  --ink:#0b0e16;
+  --ink-2:#121622;
+  --paper:#f2f5fb;
+
+  /* Status tints (shared with Classic — identical session semantics) */
+  --run:#6ea7ff;        /* running — cool blue          */
+  --done:#6fb982;       /* completed success — green     */
+  --approve:#f4a4a4;    /* waitingForApproval identity   */
+  --answer:#ffd58a;     /* waitingForAnswer — gold        */
+  --aggregate:#e7a762;  /* collapsed "N waiting" roll-up */
+  --warn:#d98c26;       /* interrupted / caution amber   */
+  --fail:#db5252;       /* failed — red                   */
+
+  /* Attention = warm amber light glowing from *within* the glass.
+     This is the single unifying "something needs you" signal. */
+  --attn:#ffb14d;
+  --attn-hot:#ff9d5c;
+
+  /* Agent brand — used ONLY as small identity accents (tick / glyph tint) */
+  --claude:#d97742;
+  --codex:#4aa3df;
+  --cursor:#7a5cff;
+  --gemini:#42e86b;
+  --opencode:#ffb547;
+  --kimi:#fde047;
+
+  /* Text tiers (poured opacities 1 / .6 / .5) */
+  --t1:rgba(242,245,251,.96);
+  --t2:rgba(242,245,251,.66);
+  --t3:rgba(242,245,251,.5);
+  --hair:rgba(242,245,251,.09);
+
+  /* Glass body — the pill and panel are one continuous liquid slab */
+  --glass:linear-gradient(180deg, rgba(26,31,44,.86) 0%, rgba(13,17,26,.94) 62%, rgba(9,12,20,.96) 100%);
+  --glass-fillet:rgba(20,25,36,.92);
+  --specular:inset 0 1px 0 rgba(255,255,255,.14);      /* 1px light catch  */
+  --hairline-inset:inset 0 0 0 .5px rgba(255,255,255,.05);
+  --shadow:0 18px 34px rgba(0,0,0,.5);                 /* deep soft shadow */
+
+  --r:26px;             /* continuous corner radius */
+  --fillet:12px;        /* concave notch fillet     */
+
+  --ui:-apple-system,BlinkMacSystemFont,"SF Pro","SF Pro Text","Helvetica Neue",sans-serif;
+  --mono:ui-monospace,"SF Mono","SFMono-Regular",Menlo,monospace;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+body{
+  font-family:var(--ui);
+  background:
+    radial-gradient(1200px 700px at 20% -10%, #1a2030 0%, transparent 55%),
+    radial-gradient(1000px 800px at 90% 10%, #171b28 0%, transparent 50%),
+    #06080d;
+  color:var(--t1);
+  padding:48px 24px 120px;
+  font-variant-numeric:tabular-nums;
+}
+.tnum{font-variant-numeric:tabular-nums}
+.mono{font-family:var(--mono)}
+
+/* ---------------------------------------------------------------- board */
+.board{max-width:1160px;margin:0 auto}
+.masthead{padding:0 8px 8px;border-bottom:1px solid var(--hair);margin-bottom:40px}
+.masthead .kicker{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--attn);font-weight:600}
+.masthead h1{font-size:40px;font-weight:640;letter-spacing:-.02em;margin:10px 0 6px;
+  background:linear-gradient(180deg,#fff,#c7ccd8);-webkit-background-clip:text;background-clip:text;color:transparent}
+.masthead .thesis{font-size:15px;color:var(--t2);max-width:720px;line-height:1.5}
+.masthead .legend{display:flex;flex-wrap:wrap;gap:16px;margin-top:18px;font-size:11px;color:var(--t3)}
+.masthead .legend b{color:var(--t2);font-weight:600}
+
+section{margin:64px 0}
+.sec-head{display:flex;align-items:baseline;gap:14px;padding:0 8px;margin-bottom:6px}
+.sec-head .id{font-size:13px;font-weight:700;color:var(--ink);background:var(--attn);
+  padding:2px 9px;border-radius:7px;letter-spacing:.02em}
+.sec-head h2{font-size:22px;font-weight:620;letter-spacing:-.015em}
+.sec-note{padding:0 8px;color:var(--t2);font-size:13px;max-width:820px;line-height:1.55;margin-bottom:26px}
+
+/* frame grid */
+.grid{display:flex;flex-wrap:wrap;gap:26px;padding:0 8px;align-items:flex-start}
+.frame{flex:1 1 340px}
+.frame.wide{flex-basis:100%}
+.frame.half{flex-basis:520px;flex-grow:1}
+.cap{margin-top:12px;font-size:12px;color:var(--t2);line-height:1.5}
+.cap b{color:var(--t1);font-weight:600}
+.cap .fid{color:var(--attn);font-weight:700;font-family:var(--mono);font-size:11px;margin-right:6px}
+
+/* ---------------------------------------------------------------- desktop stage
+   Simulated MacBook top: dark wallpaper, menu bar, physical notch.
+   The overlay is the star; this is credible context only. */
+.desk{
+  position:relative;border-radius:16px;overflow:hidden;padding:0 0 44px;
+  background:
+    radial-gradient(700px 300px at 50% -40%, #263049 0%, transparent 60%),
+    linear-gradient(180deg,#10141f,#0a0d15 70%);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.04);
+}
+.desk.tall{padding-bottom:26px}
+.menubar{height:26px;display:flex;align-items:center;justify-content:space-between;
+  padding:0 12px;font-size:11px;color:rgba(255,255,255,.5);
+  background:linear-gradient(180deg,rgba(0,0,0,.42),rgba(0,0,0,.16));position:relative;z-index:1}
+.menubar .mb-l{display:flex;gap:14px;align-items:center}
+.menubar .mb-l .apple{font-size:12px;color:rgba(255,255,255,.7)}
+.menubar .mb-r{display:flex;gap:12px;align-items:center}
+.menubar .mb-r .clk{font-variant-numeric:tabular-nums}
+/* physical notch */
+.notch{position:absolute;top:0;left:50%;transform:translateX(-50%);
+  width:172px;height:26px;background:#000;border-radius:0 0 11px 11px;z-index:6}
+.notch::after{content:"";position:absolute;top:9px;left:50%;transform:translateX(-50%);
+  width:7px;height:7px;border-radius:50%;background:#0c0e13;box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
+
+/* mount point — the glass hangs from directly under the notch line */
+.mount{position:relative;z-index:5;display:flex;justify-content:center;padding-top:0}
+.mount.push{padding-top:0}
+
+/* ---------------------------------------------------------------- glass body */
+.glass{position:relative;background:var(--glass);backdrop-filter:blur(24px) saturate(1.3);
+  -webkit-backdrop-filter:blur(24px) saturate(1.3);
+  box-shadow:var(--shadow),var(--specular),var(--hairline-inset);color:var(--paper)}
+/* concave fillets — where the slab fuses back up into the notch */
+.fillet{position:absolute;top:0;width:var(--fillet);height:var(--fillet);
+  background:var(--glass-fillet);pointer-events:none;z-index:-1}
+.fillet.l{left:calc(var(--fillet) * -1);
+  -webkit-mask:radial-gradient(circle var(--fillet) at 0 0, transparent var(--fillet), #000 calc(var(--fillet) + .5px));
+  mask:radial-gradient(circle var(--fillet) at 0 0, transparent var(--fillet), #000 calc(var(--fillet) + .5px))}
+.fillet.r{right:calc(var(--fillet) * -1);
+  -webkit-mask:radial-gradient(circle var(--fillet) at 100% 0, transparent var(--fillet), #000 calc(var(--fillet) + .5px));
+  mask:radial-gradient(circle var(--fillet) at 100% 0, transparent var(--fillet), #000 calc(var(--fillet) + .5px))}
+
+/* ================= COLLAPSED PILL ================= */
+.pill{
+  height:38px;border-radius:19px;display:flex;align-items:center;
+  padding:0 14px;gap:0;position:relative;min-width:212px;
+}
+.pill .wing{display:flex;align-items:center;gap:9px}
+.pill .wing.l{flex:0 0 auto}
+.pill .core{flex:1 1 auto;min-width:64px}    /* the notch/camera sits above this dead zone */
+.pill .wing.r{flex:0 0 auto;justify-content:flex-end}
+.pill .lab{font-size:12.5px;color:var(--t1);white-space:nowrap;letter-spacing:-.01em}
+.pill .lab .dim{color:var(--t2)}
+.pill.big{min-width:352px;height:40px}
+.pill.hover-lift{transform:scale(1.03)}
+
+/* status glyph — 3 animated bars (wave=running, breathe=waiting, still=idle) */
+.glyph{display:inline-flex;align-items:flex-end;gap:2.5px;height:15px;width:15px;color:var(--t2)}
+.glyph i{width:2.5px;height:5px;border-radius:1.5px;background:currentColor;display:block}
+.glyph.run{color:var(--run)}
+.glyph.run i{animation:wave 1.05s ease-in-out infinite}
+.glyph.run i:nth-child(1){animation-delay:0s}
+.glyph.run i:nth-child(2){animation-delay:.14s}
+.glyph.run i:nth-child(3){animation-delay:.28s}
+.glyph.wait i{animation:breathe 2.6s ease-in-out infinite}
+.glyph.idle{color:var(--t3)}
+.glyph.idle i{height:5px;opacity:.6}
+@keyframes wave{0%,100%{height:5px}50%{height:14px}}
+@keyframes breathe{0%,100%{height:6px;opacity:.5}50%{height:11px;opacity:1}}
+
+/* count badge / agents grid (right slot) */
+.count{min-width:20px;height:20px;padding:0 6px;border-radius:10px;display:inline-flex;
+  align-items:center;justify-content:center;font-size:12px;font-weight:650;
+  background:rgba(242,245,251,.1);color:var(--t1)}
+.count.attn{background:var(--attn);color:#2a1c05;box-shadow:0 0 14px rgba(255,177,77,.55)}
+.agrid{display:grid;grid-template-columns:repeat(3,7px);gap:3px}
+.agrid i{width:7px;height:7px;border-radius:2px;background:var(--t3)}
+.agrid i.on{background:var(--run);box-shadow:0 0 6px rgba(110,167,255,.6)}
+.agrid i.wait{background:var(--attn);animation:breathe-dot 2.4s ease-in-out infinite}
+@keyframes breathe-dot{0%,100%{opacity:.45}50%{opacity:1}}
+
+/* ambient life */
+.breathing{animation:lumen 3s ease-in-out infinite}
+@keyframes lumen{
+  0%,100%{box-shadow:var(--shadow),var(--specular),var(--hairline-inset),0 0 0 rgba(110,167,255,0)}
+  50%{box-shadow:var(--shadow),var(--specular),var(--hairline-inset),0 0 22px rgba(110,167,255,.16)}
+}
+/* attention — warm amber glow BLEEDING outside the silhouette */
+.attn-glow{animation:attnpulse 1.9s ease-in-out infinite}
+@keyframes attnpulse{
+  0%,100%{box-shadow:var(--shadow),var(--specular),0 0 18px rgba(255,177,77,.28)}
+  50%{box-shadow:var(--shadow),var(--specular),0 0 34px 4px rgba(255,177,77,.55)}
+}
+.settle{animation:settle 2.6s ease-out infinite}
+@keyframes settle{
+  0%{box-shadow:var(--shadow),var(--specular),0 0 30px 3px rgba(255,255,255,.4)}
+  22%{box-shadow:var(--shadow),var(--specular),0 0 22px 2px rgba(111,185,130,.4)}
+  100%{box-shadow:var(--shadow),var(--specular),0 0 0 rgba(111,185,130,0)}
+}
+
+/* dot marker (shape-coded, not color-only) */
+.dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;display:inline-block}
+.dot.run{background:var(--run);box-shadow:0 0 8px rgba(110,167,255,.6)}
+.dot.done{background:var(--done)}
+.dot.approve{background:var(--approve)}
+.dot.answer{background:var(--answer)}
+.dot.interrupt{background:var(--warn)}
+.dot.fail{background:var(--fail)}
+.dot.idle{background:var(--t3)}
+.ring{box-shadow:0 0 0 3px rgba(255,177,77,.22)}
+
+/* ================= EXPANDED PANEL ================= */
+.panel{width:520px;border-radius:var(--r);overflow:hidden}
+.panel.narrow{width:440px}
+
+/* header split around the notch */
+.p-head{display:flex;align-items:center;gap:10px;padding:12px 16px 10px;position:relative}
+.p-head .lane{display:flex;align-items:center;gap:14px;flex:1}
+.p-head .lane.r{justify-content:flex-end;gap:8px}
+.p-head .notch-gap{width:110px;flex:0 0 auto} /* space reserved under the physical notch */
+.brandmark{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;letter-spacing:-.01em}
+.brandmark .bglyph{width:16px;height:16px;color:var(--run)}
+
+/* usage ring (conic) */
+.uring{width:30px;height:30px;border-radius:50%;position:relative;display:grid;place-items:center;flex:0 0 auto}
+.uring::before{content:"";position:absolute;inset:0;border-radius:50%;
+  background:conic-gradient(var(--rc) calc(var(--p) * 1%), rgba(242,245,251,.12) 0)}
+.uring::after{content:"";position:absolute;inset:4px;border-radius:50%;background:#0d1119}
+.uring .uv{position:relative;z-index:1;font-size:9.5px;font-weight:700;color:var(--t1)}
+.umeter{display:flex;align-items:center;gap:8px}
+.umeter .ut{font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.07em;line-height:1.25}
+.umeter .ut b{display:block;color:var(--t2);font-size:11px;letter-spacing:0;text-transform:none;font-weight:600}
+
+/* circular controls */
+.ctl{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;
+  background:rgba(242,245,251,.08);color:var(--t2);cursor:pointer;transition:.15s}
+.ctl:hover{background:rgba(242,245,251,.16);color:var(--t1)}
+.ctl svg{width:13px;height:13px}
+
+/* summary strip */
+.summary{display:flex;gap:16px;padding:8px 16px;border-top:1px solid var(--hair);
+  border-bottom:1px solid var(--hair);font-size:11px;color:var(--t2)}
+.summary .b{display:flex;align-items:center;gap:6px}
+.summary .b .n{font-weight:700;color:var(--t1);font-size:12px}
+
+/* section header (grouped) */
+.grp{display:flex;align-items:center;gap:8px;padding:9px 16px 5px;font-size:10.5px;
+  text-transform:uppercase;letter-spacing:.09em;color:var(--t3);font-weight:650}
+.grp .gc{width:6px;height:6px;border-radius:2px}
+.grp .gn{margin-left:auto;color:var(--t3);font-weight:600}
+
+/* ================= SESSION ROW ================= */
+.row{position:relative;display:flex;gap:12px;padding:11px 16px;align-items:flex-start;
+  transition:background .15s;cursor:default}
+.row + .row{border-top:1px solid var(--hair)}
+.row:hover{background:rgba(242,245,251,.035)}
+.row .lead{display:flex;flex-direction:column;align-items:center;gap:6px;padding-top:3px;flex:0 0 auto}
+.row .body{flex:1;min-width:0}
+.row .title-line{display:flex;align-items:center;gap:8px;min-width:0}
+.row .ws{font-size:14px;font-weight:600;letter-spacing:-.01em;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .tick{width:2px;height:13px;border-radius:1px;flex:0 0 auto} /* 2px identity tick */
+.row .disamb{font-size:11px;color:var(--t3);font-family:var(--mono);white-space:nowrap;flex:0 0 auto}
+.row .act{font-size:12.5px;color:var(--t2);margin-top:3px;line-height:1.45;
+  display:flex;align-items:center;gap:6px}
+.row .act .live{color:var(--run)}
+.row .meta{display:flex;gap:10px;margin-top:6px;font-size:11px;color:var(--t3);flex-wrap:wrap;align-items:center}
+.row .meta .pin{display:inline-flex;align-items:center;gap:4px}
+.row .age{margin-left:auto;font-size:11px;color:var(--t3);flex:0 0 auto;padding-left:8px}
+
+/* hover-reveal dismiss */
+.dismiss{position:absolute;top:10px;right:12px;width:20px;height:20px;border-radius:50%;
+  display:grid;place-items:center;background:rgba(242,245,251,.08);color:var(--t3);
+  opacity:0;transform:scale(.8);transition:.14s;cursor:pointer;font-size:11px}
+.row:hover .dismiss{opacity:1;transform:scale(1)}
+.dismiss:hover{background:var(--fail);color:#fff}
+
+/* jump chip (primary CTA) */
+.jump{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;
+  color:var(--t2);padding:3px 9px;border-radius:8px;background:rgba(242,245,251,.06);cursor:pointer;transition:.15s}
+.jump:hover{background:rgba(110,167,255,.18);color:var(--t1)}
+.jump svg{width:12px;height:12px}
+
+/* pins / chips */
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;padding:2px 7px;border-radius:6px;
+  background:rgba(242,245,251,.06);color:var(--t2);font-weight:500;white-space:nowrap}
+.chip .cd{width:6px;height:6px;border-radius:50%}
+.chip.mono{font-family:var(--mono);font-size:10px}
+
+/* completion outcome badge */
+.outcome{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:650;
+  padding:2px 8px;border-radius:20px}
+.outcome.ok{color:var(--done);background:rgba(111,185,130,.14)}
+.outcome.intr{color:var(--warn);background:rgba(217,140,38,.16)}
+.outcome.fail{color:var(--fail);background:rgba(219,82,82,.16)}
+
+/* ================= ACTIONABLE — PERMISSION HERO ================= */
+.actionable{background:
+  radial-gradient(120% 90% at 50% -10%, rgba(255,177,77,.16), transparent 60%),
+  var(--glass)}
+.amber-hero{position:relative;border-radius:18px;margin:0;padding:14px 16px 15px;
+  background:linear-gradient(180deg, rgba(58,42,20,.55), rgba(30,22,12,.6));
+  box-shadow:inset 0 0 0 1px rgba(255,177,77,.28), 0 0 42px -6px rgba(255,177,77,.4)}
+.amber-hero.pulse{animation:heropulse 2.4s ease-in-out infinite}
+@keyframes heropulse{
+  0%,100%{box-shadow:inset 0 0 0 1px rgba(255,177,77,.24), 0 0 34px -8px rgba(255,177,77,.34)}
+  50%{box-shadow:inset 0 0 0 1px rgba(255,177,77,.4), 0 0 58px -4px rgba(255,177,77,.6)}
+}
+.hero-head{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+.hero-icon{width:24px;height:24px;border-radius:8px;display:grid;place-items:center;
+  background:rgba(255,177,77,.16);color:var(--attn);flex:0 0 auto}
+.hero-icon svg{width:14px;height:14px}
+.hero-head .ht{font-size:14px;font-weight:640;color:#ffe6c2;letter-spacing:-.01em}
+.hero-head .hs{font-size:11px;color:rgba(255,214,160,.7);margin-top:1px}
+.hero-head .agent-tag{margin-left:auto;font-size:10.5px;color:rgba(255,214,160,.85);
+  display:flex;align-items:center;gap:5px}
+
+/* code / command block with syntax highlight */
+.cmd{font-family:var(--mono);font-size:12px;line-height:1.6;padding:10px 12px;border-radius:10px;
+  background:rgba(6,8,13,.6);box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);
+  overflow-x:auto;white-space:pre;color:#c9cedb}
+.cmd .prompt{color:rgba(255,177,77,.7);user-select:none}
+.t-cmd{color:#f2f5fb;font-weight:600}
+.t-sub{color:#8fd0ff}
+.t-flag{color:#6ea7ff}
+.t-str{color:#7fd39a}
+.t-path{color:rgba(242,245,251,.55)}
+
+/* inline diff */
+.diff{font-family:var(--mono);font-size:11.5px;line-height:1.65;border-radius:10px;overflow:hidden;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);background:rgba(6,8,13,.55)}
+.diff .dl{display:flex;padding:1px 10px 1px 8px;white-space:pre}
+.diff .dl .gutter{width:26px;color:rgba(242,245,251,.3);user-select:none;flex:0 0 auto;text-align:right;padding-right:10px}
+.diff .del{background:rgba(219,82,82,.13)}
+.diff .del .gutter{color:rgba(219,82,82,.6)}
+.diff .del .txt{color:#f0b3b3}
+.diff .add{background:rgba(111,185,130,.14)}
+.diff .add .gutter{color:rgba(111,185,130,.7)}
+.diff .add .txt{color:#a8e0bb}
+.diff .ctx .txt{color:rgba(242,245,251,.55)}
+.diff .fname{padding:6px 10px;font-size:10.5px;color:var(--t2);background:rgba(255,255,255,.03);
+  border-bottom:1px solid var(--hair);display:flex;align-items:center;gap:6px}
+
+/* action buttons + keycaps */
+.actions{display:flex;gap:8px;margin-top:12px;align-items:center}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:11px;
+  font-size:13px;font-weight:600;cursor:pointer;transition:.15s;border:none;font-family:var(--ui)}
+.btn.primary{background:linear-gradient(180deg,#ffce8a,#ffb14d);color:#3a2405;
+  box-shadow:0 4px 16px -4px rgba(255,177,77,.6),inset 0 1px 0 rgba(255,255,255,.4)}
+.btn.primary:hover{filter:brightness(1.06)}
+.btn.ghost{background:rgba(242,245,251,.08);color:var(--t1)}
+.btn.ghost:hover{background:rgba(242,245,251,.14)}
+.btn.deny{background:rgba(219,82,82,.14);color:#f0a8a8}
+.btn.deny:hover{background:rgba(219,82,82,.24)}
+.kc{display:inline-flex;gap:2px;margin-left:2px}
+.kc kbd{font-family:var(--ui);font-size:10px;font-weight:600;min-width:15px;height:16px;padding:0 3px;
+  border-radius:4px;display:inline-flex;align-items:center;justify-content:center;
+  background:rgba(0,0,0,.28);box-shadow:inset 0 0 0 1px rgba(255,255,255,.14);color:rgba(255,255,255,.75)}
+.btn.primary .kc kbd{background:rgba(58,36,5,.25);box-shadow:inset 0 0 0 1px rgba(58,36,5,.3);color:#5a3a0c}
+
+/* scoped "always allow" secondary rows */
+.scopes{margin-top:11px;display:flex;flex-direction:column;gap:1px;border-radius:10px;overflow:hidden;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.05)}
+.scope{display:flex;align-items:center;gap:10px;padding:9px 11px;font-size:12px;color:var(--t2);
+  background:rgba(255,255,255,.02);cursor:pointer;transition:.14s}
+.scope:hover{background:rgba(255,177,77,.09);color:var(--t1)}
+.scope .sc-ic{width:15px;height:15px;color:var(--t3);flex:0 0 auto}
+.scope code{font-family:var(--mono);font-size:11px;color:#ffd9a8;background:rgba(255,177,77,.1);
+  padding:1px 5px;border-radius:4px}
+.scope .sk{margin-left:auto;flex:0 0 auto}
+
+/* codex jump-to-approve variant */
+.codex-note{display:flex;gap:10px;align-items:center;padding:10px 12px;border-radius:10px;margin-top:10px;
+  background:rgba(74,163,223,.1);box-shadow:inset 0 0 0 1px rgba(74,163,223,.25);font-size:12px;color:#bfe0f6}
+.codex-note svg{width:16px;height:16px;color:var(--codex);flex:0 0 auto}
+
+/* ================= QUESTION ================= */
+.q-hero{border-radius:18px;padding:14px 16px 15px;
+  background:linear-gradient(180deg, rgba(52,44,22,.4), rgba(26,22,12,.5));
+  box-shadow:inset 0 0 0 1px rgba(255,213,138,.24)}
+.q-head{display:flex;align-items:center;gap:9px;margin-bottom:4px}
+.q-chip{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+  color:#2a2205;background:var(--answer);padding:2px 7px;border-radius:6px}
+.q-progress{margin-left:auto;font-size:11px;color:var(--t3)}
+.q-text{font-size:14.5px;font-weight:560;color:#fff3dc;line-height:1.4;margin:8px 0 12px;letter-spacing:-.01em}
+.opts{display:flex;flex-direction:column;gap:7px}
+.opt{display:flex;gap:11px;padding:10px 12px;border-radius:11px;cursor:pointer;transition:.14s;
+  background:rgba(255,255,255,.03);box-shadow:inset 0 0 0 1px rgba(255,255,255,.05);align-items:flex-start}
+.opt:hover{background:rgba(255,213,138,.08)}
+.opt.sel{background:rgba(255,213,138,.12);box-shadow:inset 0 0 0 1.5px rgba(255,213,138,.5)}
+.opt .num{width:19px;height:19px;border-radius:6px;flex:0 0 auto;display:grid;place-items:center;
+  font-size:11px;font-weight:700;background:rgba(255,213,138,.14);color:var(--answer);margin-top:1px}
+.opt.sel .num{background:var(--answer);color:#2a2205}
+.opt .ol{font-size:13px;font-weight:600;color:var(--t1)}
+.opt .od{font-size:11.5px;color:var(--t2);margin-top:2px;line-height:1.4}
+.opt .ck{margin-left:auto;color:var(--answer);flex:0 0 auto;opacity:0}
+.opt.sel .ck{opacity:1}
+.opt.multi .num{border-radius:5px}
+.opt-other{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:11px;
+  background:rgba(255,255,255,.02);box-shadow:inset 0 0 0 1px rgba(255,255,255,.05);
+  font-size:12px;color:var(--t3);font-style:italic;margin-top:2px}
+.opt-other .num{width:19px;height:19px;border-radius:6px;flex:0 0 auto;display:grid;place-items:center;
+  font-size:11px;font-weight:700;background:rgba(242,245,251,.06);color:var(--t3);font-style:normal}
+.q-foot{display:flex;align-items:center;gap:8px;margin-top:12px}
+.q-hint{font-size:10.5px;color:var(--t3);display:flex;align-items:center;gap:6px}
+
+/* ================= SUBAGENTS / TASKS ================= */
+.nest{margin-top:10px;border-radius:12px;padding:4px;background:rgba(255,255,255,.025);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.05)}
+.nest-h{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);
+  padding:7px 9px 4px;font-weight:650;display:flex;align-items:center;gap:6px}
+.subagent{display:flex;align-items:center;gap:10px;padding:8px 9px;border-radius:9px}
+.subagent + .subagent{border-top:1px solid var(--hair)}
+.subagent .sa-glyph{color:var(--run)}
+.subagent .sa-t{flex:1;min-width:0}
+.subagent .sa-type{font-size:12px;font-weight:600;color:var(--t1)}
+.subagent .sa-task{font-size:11px;color:var(--t2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.subagent .sa-time{font-size:11px;color:var(--t3);font-variant-numeric:tabular-nums;flex:0 0 auto}
+.todos{padding:5px 9px 8px}
+.todo{display:flex;align-items:center;gap:8px;font-size:12px;padding:3px 0}
+.todo .tk{width:14px;height:14px;flex:0 0 auto;display:grid;place-items:center}
+.todo.done .tl{color:var(--t3);text-decoration:line-through}
+.todo.done .tk{color:var(--done)}
+.todo.doing .tl{color:var(--t1)}
+.todo.doing .tk{color:var(--run)}
+.todo.pending .tl{color:var(--t2)}
+.todo.pending .tk{color:var(--t3)}
+.todo .tl{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.todo .tsp{margin-left:auto;font-size:10px;color:var(--run);flex:0 0 auto}
+
+/* last assistant message rendered as rich text */
+.assistant{margin-top:10px;padding:11px 13px;border-radius:12px;font-size:12.5px;line-height:1.55;
+  color:var(--t2);background:rgba(255,255,255,.025);box-shadow:inset 0 0 0 1px rgba(255,255,255,.045)}
+.assistant .amh{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);
+  margin-bottom:6px;font-weight:650}
+.assistant strong{color:var(--t1);font-weight:640}
+.assistant code{font-family:var(--mono);font-size:11px;background:rgba(255,255,255,.06);
+  padding:1px 5px;border-radius:4px;color:#c9d3e6}
+.assistant ul{margin:6px 0 2px;padding-left:16px}
+.assistant li{margin:3px 0}
+
+/* detail metadata grid */
+.meta-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px}
+.mcell{display:flex;flex-direction:column;gap:2px;padding:8px 11px;border-radius:9px;
+  background:rgba(255,255,255,.025);box-shadow:inset 0 0 0 1px rgba(255,255,255,.045);min-width:88px}
+.mcell .mk{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--t3);font-weight:600}
+.mcell .mv{font-size:12.5px;color:var(--t1);font-weight:550;display:flex;align-items:center;gap:5px}
+.mcell .mv .mono{font-size:11.5px}
+
+/* footer */
+.p-foot{display:flex;align-items:center;gap:10px;padding:9px 16px;border-top:1px solid var(--hair);
+  font-size:11px;color:var(--t3)}
+.p-foot .grow{flex:1}
+.p-foot a{color:var(--t2);text-decoration:none;display:inline-flex;align-items:center;gap:5px;cursor:pointer}
+.p-foot a:hover{color:var(--t1)}
+
+/* empty state */
+.empty{padding:26px 20px 22px;text-align:center}
+.empty .eglyph{width:34px;height:34px;margin:0 auto 12px;color:var(--t3);opacity:.8}
+.empty .et{font-size:14px;font-weight:600;color:var(--t1)}
+.empty .es{font-size:12px;color:var(--t2);margin-top:5px;line-height:1.5;max-width:300px;margin-inline:auto}
+.empty .ecal{margin-top:14px;display:inline-flex;align-items:center;gap:7px;font-size:11px;color:var(--t3);
+  padding:5px 11px;border-radius:20px;background:rgba(255,255,255,.03)}
+
+/* ================= USAGE METERS (§I) ================= */
+.meter-card{width:520px;border-radius:var(--r);padding:16px 18px 18px}
+.meter-title{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);font-weight:650;margin-bottom:14px}
+.meters{display:flex;gap:22px;flex-wrap:wrap}
+.meter{display:flex;align-items:center;gap:12px;flex:1 1 200px}
+.dial{width:52px;height:52px;flex:0 0 auto}
+.meter .mtx{min-width:0}
+.meter .mtx .ml{font-size:12px;color:var(--t2);font-weight:550}
+.meter .mtx .mpct{font-size:20px;font-weight:640;letter-spacing:-.02em;line-height:1.1}
+.meter .mtx .mreset{font-size:11px;color:var(--t3);margin-top:2px}
+.pct-fine{color:var(--done)}
+.pct-warn{color:var(--answer)}
+.pct-crit{color:var(--fail)}
+.thlabel{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:650;
+  padding:1px 7px;border-radius:20px;margin-top:4px}
+.thlabel.fine{color:var(--done);background:rgba(111,185,130,.14)}
+.thlabel.warn{color:var(--answer);background:rgba(255,213,138,.14)}
+.thlabel.crit{color:var(--fail);background:rgba(219,82,82,.16)}
+
+/* motion strip */
+.motion-strip{display:flex;flex-wrap:wrap;gap:16px;padding:0 8px}
+.mdemo{flex:1 1 180px;background:rgba(255,255,255,.02);border-radius:14px;padding:20px 16px;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.05);min-height:150px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
+.mdemo .mlabel{font-size:11px;color:var(--t2);text-align:center;line-height:1.4}
+.mdemo .mlabel b{color:var(--t1);display:block;font-weight:600;font-size:12px}
+.mchip{height:22px;border-radius:11px;background:var(--glass);min-width:120px;
+  box-shadow:var(--specular),0 6px 16px rgba(0,0,0,.5)}
+.morph{background:var(--glass);box-shadow:var(--specular),0 10px 22px rgba(0,0,0,.5);
+  animation:morph 3.4s cubic-bezier(.2,.7,.2,1) infinite}
+@keyframes morph{
+  0%,18%{width:150px;height:24px;border-radius:12px}
+  50%,72%{width:190px;height:96px;border-radius:22px}
+  90%,100%{width:150px;height:24px;border-radius:12px}
+}
+.row-enter{width:170px;height:34px;border-radius:9px;background:rgba(255,255,255,.05);
+  animation:rowin 2.6s ease-out infinite}
+@keyframes rowin{
+  0%{opacity:0;transform:translateY(10px) scale(.98)}
+  30%,80%{opacity:1;transform:translateY(0) scale(1)}
+  100%{opacity:1;transform:translateY(0)}
+}
+.shimmer{width:150px;height:26px;border-radius:13px;background:var(--glass);position:relative;overflow:hidden;
+  box-shadow:var(--specular)}
+.shimmer::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(105deg,transparent 30%,rgba(255,255,255,.5) 50%,transparent 70%);
+  transform:translateX(-100%);animation:shim 2.6s ease-in-out infinite}
+@keyframes shim{0%{transform:translateX(-100%)}45%,100%{transform:translateX(100%)}}
+
+/* filmstrip */
+.film{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap}
+.film .fcell{display:flex;flex-direction:column;align-items:center;gap:8px}
+.film .fnum{font-size:10px;color:var(--t3);font-family:var(--mono)}
+.film .arrow{align-self:center;color:var(--t3);font-size:20px;padding-top:20px}
+
+.filmstage{background:linear-gradient(180deg,#10141f,#0a0d15);border-radius:12px;padding:16px 18px 20px;
+  display:flex;justify-content:center;min-width:150px}
+
+@media (max-width:560px){
+  .panel,.meter-card{width:100%}
+  .film .arrow{display:none}
+}
+</style>
+</head>
+<body>
+<div class="board">
+
+  <!-- ============================== MASTHEAD ============================== -->
+  <header class="masthead">
+    <div class="kicker">Open Island · Default Theme</div>
+    <h1>Poured Island 2.0 — Liquid Glass</h1>
+    <p class="thesis">Black glass poured out of the notch. The pill and panel are one continuous liquid body;
+      hierarchy is carried by <b style="color:var(--t1)">light, not chrome</b> — elevation is inner luminance,
+      attention is warm amber glowing from <em>inside</em> the glass. Near-monochrome by default so the one thing
+      that needs you is unmistakable from across the room.</p>
+    <div class="legend">
+      <span><b>Ink</b> #0b0e16</span>
+      <span><b>Paper</b> #f2f5fb</span>
+      <span><b>Radius</b> 26pt + 12pt notch fillet</span>
+      <span><b>Shadow</b> .5 · r34 · y18</span>
+      <span><b>Morph</b> spring · resp .5 · damp .84</span>
+      <span><b>Type</b> SF Pro 11/13/15 + display · tabular numerals</span>
+    </div>
+  </header>
+
+  <!-- ============================== §A AMBIENT PILL ============================== -->
+  <section>
+    <div class="sec-head"><span class="id">A</span><h2>Collapsed pill — ambient states</h2></div>
+    <p class="sec-note">Where the product lives 95% of the time. Content sits in the <b>wings</b> beside the
+      physical notch; the center is the camera dead-zone. The pill communicates count, liveness and attention —
+      one loud thing at a time. Kills §1.1 (no hierarchy) and §1.5 (no motion identity).</p>
+
+    <div class="grid">
+      <!-- A1 -->
+      <div class="frame">
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="clk">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount">
+            <div class="glass pill">
+              <span class="fillet l"></span><span class="fillet r"></span>
+              <div class="wing l"><span class="glyph idle"><i></i><i></i><i></i></span></div>
+              <div class="core"></div>
+              <div class="wing r"><span class="dot idle"></span></div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><span class="fid">A1</span><b>Idle / monitoring.</b> Nearly invisible — still glyph,
+          one dim dot. Calm confidence, no glow. The overlay disappears until it has something to say.</div>
+      </div>
+
+      <!-- A2 single working -->
+      <div class="frame">
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="clk">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount">
+            <div class="glass pill big breathing">
+              <span class="fillet l"></span><span class="fillet r"></span>
+              <div class="wing l"><span class="glyph run"><i></i><i></i><i></i></span></div>
+              <div class="core" style="min-width:96px"></div>
+              <div class="wing r"><span class="lab"><span class="dim">Editing</span> AppModel.swift</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><span class="fid">A2</span><b>One session working.</b> Slow 3s luminous breathing;
+          activity is <b>narrated</b> — "Editing AppModel.swift", not a raw tool identifier. Kills §1.2.</div>
+      </div>
+
+      <!-- A2 many working -->
+      <div class="frame">
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="clk">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount">
+            <div class="glass pill big breathing">
+              <span class="fillet l"></span><span class="fillet r"></span>
+              <div class="wing l"><span class="glyph run"><i></i><i></i><i></i></span>
+                <span class="lab"><b style="font-weight:600">3</b> <span class="dim">working</span></span></div>
+              <div class="core" style="min-width:70px"></div>
+              <div class="wing r"><span class="agrid"><i class="on"></i><i class="on"></i><i class="idle"></i>
+                <i class="on"></i><i></i><i></i></span></div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><span class="fid">A2&#8242;</span><b>Many working.</b> Right slot becomes a mini agents
+          grid — one cell per session, bright = running. Liveness at a glance without pill-soup.</div>
+      </div>
+
+      <!-- A3 permission -->
+      <div class="frame">
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="clk">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount">
+            <div class="glass pill big attn-glow">
+              <span class="fillet l"></span><span class="fillet r"></span>
+              <div class="wing l"><span class="dot approve ring"></span>
+                <span class="lab">Approve <span class="mono" style="font-size:11px">swift build</span>?</span></div>
+              <div class="core" style="min-width:40px"></div>
+              <div class="wing r"><span class="count attn">1</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><span class="fid">A3</span><b>Attention — permission.</b> The loudest ambient state:
+          warm amber light bleeds <em>outside</em> the silhouette + amber count. The one loud thing. Kills §1.1/§1.7.</div>
+      </div>
+
+      <!-- A4 question -->
+      <div class="frame">
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="clk">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount">
+            <div class="glass pill big" style="box-shadow:var(--shadow),var(--specular),0 0 26px rgba(255,213,138,.34)">
+              <span class="fillet l"></span><span class="fillet r"></span>
+              <div class="wing l"><span class="glyph wait" style="color:var(--answer)"><i></i><i></i><i></i></span>
+                <span class="lab">Answer needed</span></div>
+              <div class="core" style="min-width:56px"></div>
+              <div class="wing r"><span class="count" style="background:var(--answer);color:#2a2205">?</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><span class="fid">A4</span><b>Attention — question.</b> Gold light + breathing glyph +
+          "?" badge. Distinct from approval by hue <em>and</em> shape/label (never color alone).</div>
+      </div>
+
+      <!-- A5 just completed -->
+      <div class="frame">
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="clk">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount">
+            <div class="glass pill big settle">
+              <span class="fillet l"></span><span class="fillet r"></span>
+              <div class="wing l"><span class="dot done"></span>
+                <span class="lab"><span class="dim">Done ·</span> the-automator</span></div>
+              <div class="core" style="min-width:64px"></div>
+              <div class="wing r"><svg viewBox="0 0 24 24" width="15" height="15" fill="none"
+                stroke="var(--done)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 6 9 17l-5-5"/></svg></div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><span class="fid">A5</span><b>Just completed.</b> A brief cool-white shimmer that
+          settles into green, then fades to quiet. A moment, not a permanent badge.</div>
+      </div>
+
+      <!-- A6 outcome variants -->
+      <div class="frame">
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="clk">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount" style="gap:0;flex-direction:column;align-items:center">
+            <div class="glass pill big" style="margin-bottom:10px">
+              <span class="fillet l"></span><span class="fillet r"></span>
+              <div class="wing l"><span class="dot interrupt"></span>
+                <span class="lab"><span class="dim">Interrupted ·</span> niche-radar</span></div>
+              <div class="core" style="min-width:40px"></div>
+              <div class="wing r"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--warn)"
+                stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M6 12h.01"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg></div>
+            </div>
+            <div class="glass pill big">
+              <span class="fillet l"></span><span class="fillet r"></span>
+              <div class="wing l"><span class="dot fail"></span>
+                <span class="lab"><span class="dim">Failed ·</span> open-vibe-island</span></div>
+              <div class="core" style="min-width:40px"></div>
+              <div class="wing r"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--fail)"
+                stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><span class="fid">A6</span><b>Outcome variants.</b> Interrupted (amber, ▮ glyph) vs
+          failed (red, ✕) are finally distinct — a real state that was invisible before (§3).</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== §B HOVER PEEK ============================== -->
+  <section>
+    <div class="sec-head"><span class="id">B</span><h2>Hover peek &amp; the morph</h2></div>
+    <p class="sec-note">Pointer over the pill (0.15s dwell, scale 1.03). The single continuously-morphing shape
+      begins to grow and surfaces the one actionable item — before a full open. The status glyph <b>travels</b>
+      into the header, it does not crossfade.</p>
+
+    <div class="grid">
+      <div class="frame half">
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="clk">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount">
+            <div class="glass" style="width:404px;border-radius:20px;padding:11px 15px 12px;transform:scale(1.0)">
+              <span class="fillet l"></span><span class="fillet r"></span>
+              <div style="display:flex;align-items:center;gap:11px">
+                <span class="dot approve ring"></span>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:13px;font-weight:600;color:var(--t1)">the-automator wants to run a command</div>
+                  <div style="font-size:11.5px;color:var(--t2);margin-top:2px;font-family:var(--mono)">swift build</div>
+                </div>
+                <span class="chip"><span class="cd" style="background:var(--claude)"></span>Sonnet&nbsp;5</span>
+              </div>
+              <div style="display:flex;gap:10px;margin-top:9px;font-size:11px;color:var(--t3);align-items:center">
+                <span>Click to review &amp; approve</span>
+                <span style="margin-left:auto" class="chip">+2 more sessions</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><span class="fid">B</span><b>Peek.</b> The most actionable session is surfaced inline;
+          everything else compresses to "+2 more". Progressive disclosure — quiet by default, loud when needed.</div>
+      </div>
+
+      <!-- filmstrip -->
+      <div class="frame half">
+        <div class="film">
+          <div class="fcell">
+            <div class="filmstage"><div class="glass pill" style="min-width:150px;height:32px;border-radius:16px">
+              <div class="wing l"><span class="glyph run"><i></i><i></i><i></i></span></div>
+              <div class="core"></div><div class="wing r"><span class="count">3</span></div></div></div>
+            <span class="fnum">frame 1 · pill</span>
+          </div>
+          <span class="arrow">&rarr;</span>
+          <div class="fcell">
+            <div class="filmstage"><div class="glass" style="width:150px;height:60px;border-radius:19px;
+              box-shadow:var(--specular),0 10px 22px rgba(0,0,0,.5)"></div></div>
+            <span class="fnum">frame 2 · peek</span>
+          </div>
+          <span class="arrow">&rarr;</span>
+          <div class="fcell">
+            <div class="filmstage"><div class="glass" style="width:150px;height:96px;border-radius:22px;
+              box-shadow:var(--specular),0 10px 22px rgba(0,0,0,.5)"></div></div>
+            <span class="fnum">frame 3 · panel</span>
+          </div>
+        </div>
+        <div class="cap"><span class="fid">B&#8242;</span><b>Morph filmstrip.</b> Top radius 0&rarr;26, bottom
+          radius pillHeight/2&rarr;26 as the frame grows — one liquid body, never a crossfade. Live demo in §K.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== §C SESSION LIST ============================== -->
+  <section>
+    <div class="sec-head"><span class="id">C</span><h2>Expanded panel — session list</h2></div>
+    <p class="sec-note">A realistic mix. Grouped by state so <b>attention floats to the top</b>. Duplicate
+      "the-automator" rows disambiguated by branch / recency (§1.4). Header splits around the notch: usage on the
+      wings, controls on the right. Summary strip shows only non-zero buckets.</p>
+
+    <div class="grid"><div class="frame wide" style="max-width:560px;margin:0 auto">
+      <div class="desk tall"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span>
+        <span>Open Island</span></div><div class="mb-r"><span>&#9855;</span><span class="clk">9:41</span></div></div>
+        <div class="notch"></div>
+        <div class="mount">
+          <div class="glass panel">
+            <span class="fillet l"></span><span class="fillet r"></span>
+
+            <!-- header split around notch -->
+            <div class="p-head">
+              <div class="lane">
+                <div class="umeter"><div class="uring" style="--p:34;--rc:var(--done)"><span class="uv">34</span></div>
+                  <div class="ut">Claude 5h<b>resets 2h 10m</b></div></div>
+              </div>
+              <div class="notch-gap"></div>
+              <div class="lane r">
+                <div class="umeter"><div class="uring" style="--p:78;--rc:var(--answer)"><span class="uv">78</span></div>
+                  <div class="ut">Claude 7d<b>resets 3d</b></div></div>
+                <div class="ctl" title="Mute"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M23 9l-6 6M17 9l6 6"/></svg></div>
+                <div class="ctl" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
+                <div class="ctl" title="Quit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+              </div>
+            </div>
+
+            <!-- summary strip: only non-zero buckets -->
+            <div class="summary">
+              <span class="b"><span class="n">6</span> total</span>
+              <span class="b"><span class="dot approve" style="width:6px;height:6px"></span><span class="n">2</span> waiting</span>
+              <span class="b"><span class="dot run" style="width:6px;height:6px"></span><span class="n">2</span> running</span>
+              <span class="b"><span class="dot done" style="width:6px;height:6px"></span><span class="n">2</span> done</span>
+            </div>
+
+            <!-- GROUP: needs you -->
+            <div class="grp"><span class="gc" style="background:var(--attn)"></span>Needs you<span class="gn">2</span></div>
+
+            <!-- permission row (loudest) -->
+            <div class="row actionable">
+              <div class="lead"><span class="dot approve ring"></span></div>
+              <div class="body">
+                <div class="title-line"><span class="tick" style="background:var(--claude)"></span>
+                  <span class="ws">the-automator</span>
+                  <span class="disamb">feat/bridge-auth</span></div>
+                <div class="act" style="color:#ffd9a8;font-weight:550">Wants to run <span class="mono">swift build</span></div>
+                <div class="actions" style="margin-top:9px">
+                  <button class="btn primary" style="padding:6px 12px;font-size:12px">Approve
+                    <span class="kc"><kbd>&#8984;</kbd><kbd>Y</kbd></span></button>
+                  <button class="btn deny" style="padding:6px 12px;font-size:12px">Deny
+                    <span class="kc"><kbd>&#8984;</kbd><kbd>N</kbd></span></button>
+                </div>
+              </div>
+              <span class="age">1m</span>
+            </div>
+
+            <!-- question row -->
+            <div class="row actionable" style="background:radial-gradient(120% 90% at 50% -10%,rgba(255,213,138,.13),transparent 60%),var(--glass)">
+              <div class="lead"><span class="dot answer"></span></div>
+              <div class="body">
+                <div class="title-line"><span class="tick" style="background:var(--codex)"></span>
+                  <span class="ws">niche-radar</span></div>
+                <div class="act" style="color:#fff0cf">Which auth method should the bridge use?</div>
+                <div class="meta"><span class="chip"><span class="cd" style="background:var(--codex)"></span>codex</span>
+                  <span class="jump" style="background:rgba(255,213,138,.14);color:#ffe6b8">Answer
+                    <span class="kc"><kbd>1</kbd>&#8211;<kbd>3</kbd></span></span></div>
+              </div>
+              <span class="age">3m</span>
+            </div>
+
+            <!-- GROUP: working -->
+            <div class="grp"><span class="gc" style="background:var(--run)"></span>Working<span class="gn">2</span></div>
+
+            <div class="row">
+              <div class="lead"><span class="glyph run" style="width:12px"><i></i><i></i><i></i></span></div>
+              <div class="body">
+                <div class="title-line"><span class="tick" style="background:var(--claude)"></span>
+                  <span class="ws">open-vibe-island</span>
+                  <span class="disamb">feat/theme-poured</span></div>
+                <div class="act"><span class="live">Editing</span> AppModel.swift &middot; live 1m 42s</div>
+                <div class="meta"><span class="chip"><span class="cd" style="background:var(--claude)"></span>Opus&nbsp;4.8</span>
+                  <span class="chip">acceptEdits</span>
+                  <span class="jump">Jump <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                    stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M7 7h10v10"/></svg></span></div>
+              </div>
+              <span class="age">now</span>
+              <span class="dismiss">&#215;</span>
+            </div>
+
+            <div class="row">
+              <div class="lead"><span class="glyph run" style="width:12px"><i></i><i></i><i></i></span></div>
+              <div class="body">
+                <div class="title-line"><span class="tick" style="background:var(--claude)"></span>
+                  <span class="ws">the-automator</span>
+                  <span class="disamb">main &middot; 3 subagents</span></div>
+                <div class="act"><span class="live">Refactoring</span> hook installers across 3 subagents</div>
+                <div class="meta"><span class="chip"><span class="cd" style="background:var(--claude)"></span>Opus&nbsp;4.8</span>
+                  <span class="chip">&#9202; 2/5 tasks</span>
+                  <span class="chip"><svg viewBox="0 0 24 24" width="9" height="9" fill="currentColor"><path d="M4 4h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"/></svg> SSH</span></div>
+              </div>
+              <span class="age">8m</span>
+              <span class="dismiss">&#215;</span>
+            </div>
+
+            <!-- GROUP: done -->
+            <div class="grp"><span class="gc" style="background:var(--done)"></span>Done<span class="gn">2</span></div>
+
+            <div class="row">
+              <div class="lead"><span class="dot done"></span></div>
+              <div class="body">
+                <div class="title-line"><span class="tick" style="background:var(--claude)"></span>
+                  <span class="ws">the-automator</span>
+                  <span class="disamb">docs/agents-md</span></div>
+                <div class="act" style="color:var(--t2)">Updated AGENTS.md and CLAUDE.md</div>
+                <div class="meta"><span class="outcome ok"><svg viewBox="0 0 24 24" width="9" height="9" fill="none"
+                  stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Success</span>
+                  <span class="chip">43m</span>
+                  <span class="jump">Jump <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                    stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M7 7h10v10"/></svg></span></div>
+              </div>
+              <span class="age">12m</span>
+              <span class="dismiss">&#215;</span>
+            </div>
+
+            <div class="row">
+              <div class="lead"><span class="dot interrupt"></span></div>
+              <div class="body">
+                <div class="title-line"><span class="tick" style="background:var(--cursor)"></span>
+                  <span class="ws">open-vibe-island</span>
+                  <span class="disamb">fix/socket-leak</span></div>
+                <div class="act" style="color:var(--t2)">Stopped while editing BridgeServer.swift</div>
+                <div class="meta"><span class="outcome intr">&#9209; Interrupted</span>
+                  <span class="chip"><span class="cd" style="background:var(--cursor)"></span>cursor</span>
+                  <span class="chip">18m</span></div>
+              </div>
+              <span class="age">22m</span>
+              <span class="dismiss">&#215;</span>
+            </div>
+
+            <div class="p-foot"><span>Grouped by state</span><span class="grow"></span>
+              <a>All quiet elsewhere &middot; 0 idle</a></div>
+          </div>
+        </div>
+      </div>
+      <div class="cap"><span class="fid">C</span><b>The list.</b> Attention groups on top; three "the-automator"
+        rows read as distinct via branch/worktree tags. Color is state-only; each state also carries a glyph/shape.</div>
+    </div></div>
+  </section>
+
+  <!-- ============================== §D ROW DETAIL ============================== -->
+  <section>
+    <div class="sec-head"><span class="id">D</span><h2>Row expanded — session detail</h2></div>
+    <p class="sec-note">Tap a row to expand in place. Metadata as quiet cells, activity narrated, last assistant
+      message rendered as clean rich text (not a raw dump), transcript as a footnote, <b>jump is the primary CTA</b>,
+      dismiss is hover-reveal only. Kills §1.2, §1.7, §1.8.</p>
+
+    <div class="grid"><div class="frame wide" style="max-width:560px;margin:0 auto">
+      <div class="desk tall"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+        <div class="mb-r"><span class="clk">9:41</span></div></div><div class="notch"></div>
+        <div class="mount">
+          <div class="glass panel">
+            <span class="fillet l"></span><span class="fillet r"></span>
+            <div class="row" style="cursor:default">
+              <div class="lead"><span class="glyph run" style="width:12px"><i></i><i></i><i></i></span></div>
+              <div class="body">
+                <div class="title-line"><span class="tick" style="background:var(--claude)"></span>
+                  <span class="ws">open-vibe-island</span><span class="disamb">feat/theme-poured</span></div>
+                <div class="act"><span class="live">Editing</span> AppModel.swift &middot; narrating the bridge lifecycle change</div>
+
+                <div class="meta-grid">
+                  <div class="mcell"><span class="mk">Agent</span><span class="mv">
+                    <span class="cd" style="width:7px;height:7px;border-radius:50%;background:var(--claude)"></span>Claude Code</span></div>
+                  <div class="mcell"><span class="mk">Model</span><span class="mv">Opus 4.8</span></div>
+                  <div class="mcell"><span class="mk">Permission</span><span class="mv">acceptEdits</span></div>
+                  <div class="mcell"><span class="mk">Branch</span><span class="mv"><span class="mono">feat/theme-poured</span></span></div>
+                  <div class="mcell"><span class="mk">Live</span><span class="mv tnum">1m 42s</span></div>
+                  <div class="mcell"><span class="mk">Directory</span><span class="mv"><span class="mono">~/…/open-vibe-island</span></span></div>
+                </div>
+
+                <div class="assistant">
+                  <div class="amh">Last message · Claude</div>
+                  I moved bridge startup into <strong>AppModel.start()</strong> so the socket binds before
+                  registry restore. The reconcile pass now runs <strong>after</strong> the first
+                  <code>BridgeServer</code> accept, which fixes the race where a live hook arrived before
+                  discovery finished.
+                  <ul><li>Socket bind &rarr; registry restore &rarr; reconcile</li>
+                    <li>Added a guard for the detached-pane case</li></ul>
+                </div>
+
+                <div class="actions" style="margin-top:12px">
+                  <button class="btn primary" style="background:linear-gradient(180deg,#8fbcff,#6ea7ff);color:#0a1a35;
+                    box-shadow:0 4px 16px -4px rgba(110,167,255,.6),inset 0 1px 0 rgba(255,255,255,.4)">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2"
+                    stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M7 7h10v10"/></svg>Jump to terminal</button>
+                  <button class="btn ghost" style="padding:8px 12px">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>Transcript</button>
+                  <span style="margin-left:auto;font-size:11px;color:var(--t3);display:flex;align-items:center;gap:5px">
+                    <span class="chip"><svg viewBox="0 0 24 24" width="9" height="9" fill="var(--done)"><circle cx="12" cy="12" r="10"/></svg>Pane attached</span></span>
+                </div>
+              </div>
+              <span class="dismiss" style="top:14px">&#215;</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cap"><span class="fid">D</span><b>Detail.</b> Metadata reads as a calm cell grid; the assistant
+        message is prose with real emphasis and code, not <code style="font-family:var(--mono)">$ source ~/.nvm…</code>.
+        Jump dominates; dismiss hides until hover.</div>
+    </div></div>
+  </section>
+
+  <!-- ============================== §E PERMISSION HERO ============================== -->
+  <section>
+    <div class="sec-head"><span class="id">E</span><h2>Permission request — the hero frame</h2></div>
+    <p class="sec-note">The core value. Amber glass glowing from within, the command syntax-highlighted, scoped
+      "always allow" options as quiet secondary rows, keycap hints (&#8984;Y / &#8984;&#8679;Y / &#8984;N). Approve/Deny
+      is a real round-trip — the hook blocks until you decide. Inline-diff and Codex.app variants included.</p>
+
+    <div class="grid">
+      <!-- E1 command -->
+      <div class="frame half">
+        <div class="desk tall"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span class="clk">9:41</span></div></div><div class="notch"></div>
+          <div class="mount">
+            <div class="glass panel narrow actionable">
+              <span class="fillet l"></span><span class="fillet r"></span>
+              <div style="padding:12px">
+                <div class="amber-hero pulse">
+                  <div class="hero-head">
+                    <div class="hero-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg></div>
+                    <div><div class="ht">Run a shell command?</div>
+                      <div class="hs">the-automator &middot; project root</div></div>
+                    <div class="agent-tag"><span class="cd" style="width:7px;height:7px;border-radius:50%;background:var(--claude)"></span>Sonnet&nbsp;5</div>
+                  </div>
+                  <div class="cmd"><span class="prompt">$ </span><span class="t-cmd">swift</span> <span class="t-sub">build</span></div>
+                  <div style="font-size:11.5px;color:rgba(255,214,160,.75);margin-top:8px;line-height:1.4">
+                    Compiles the OpenIsland package. No files are modified.</div>
+
+                  <div class="actions">
+                    <button class="btn primary">Allow once<span class="kc"><kbd>&#8984;</kbd><kbd>Y</kbd></span></button>
+                    <button class="btn deny">Deny<span class="kc"><kbd>&#8984;</kbd><kbd>N</kbd></span></button>
+                  </div>
+
+                  <div class="scopes">
+                    <div class="scope"><svg class="sc-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                      stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                      Always allow <code>swift build</code> from this project
+                      <span class="sk kc"><kbd>&#8984;</kbd><kbd>&#8679;</kbd><kbd>Y</kbd></span></div>
+                    <div class="scope"><svg class="sc-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                      stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                      Always allow all <code>swift</code> commands</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><span class="fid">E1</span><b>Command variant.</b> Amber hero, syntax highlight, plain-English
+          effect line, scoped "always allow" as <em>quiet</em> rows below the loud primary. suggestedUpdates made human (§3).</div>
+      </div>
+
+      <!-- E2 diff -->
+      <div class="frame half">
+        <div class="desk tall"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span class="clk">9:41</span></div></div><div class="notch"></div>
+          <div class="mount">
+            <div class="glass panel narrow actionable">
+              <span class="fillet l"></span><span class="fillet r"></span>
+              <div style="padding:12px">
+                <div class="amber-hero">
+                  <div class="hero-head">
+                    <div class="hero-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></div>
+                    <div><div class="ht">Edit a file?</div>
+                      <div class="hs">open-vibe-island &middot; adds two agents</div></div>
+                    <div class="agent-tag"><span class="cd" style="width:7px;height:7px;border-radius:50%;background:var(--claude)"></span>Opus&nbsp;4.8</div>
+                  </div>
+                  <div class="diff">
+                    <div class="fname"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor"
+                      stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                      README.md &middot; support matrix</div>
+                    <div class="dl ctx"><span class="gutter">41</span><span class="txt">## Supported agents</span></div>
+                    <div class="dl del"><span class="gutter">42</span><span class="txt">- Claude, Codex, Gemini, Cursor</span></div>
+                    <div class="dl add"><span class="gutter">42</span><span class="txt">+ Claude, Codex, Gemini, Cursor, OpenCode, Kimi</span></div>
+                    <div class="dl ctx"><span class="gutter">43</span><span class="txt"> </span></div>
+                  </div>
+                  <div class="actions">
+                    <button class="btn primary">Allow once<span class="kc"><kbd>&#8984;</kbd><kbd>Y</kbd></span></button>
+                    <button class="btn deny">Deny<span class="kc"><kbd>&#8984;</kbd><kbd>N</kbd></span></button>
+                  </div>
+                  <div class="scopes">
+                    <div class="scope"><svg class="sc-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                      stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                      Always allow edits to <code>README.md</code>
+                      <span class="sk kc"><kbd>&#8984;</kbd><kbd>&#8679;</kbd><kbd>Y</kbd></span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><span class="fid">E2</span><b>Inline-diff variant.</b> For Edit/Write, the real old/new diff
+          renders in place (§3) — you approve the <em>change</em>, not a blind path.</div>
+      </div>
+
+      <!-- E3 codex -->
+      <div class="frame half">
+        <div class="desk tall"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span class="clk">9:41</span></div></div><div class="notch"></div>
+          <div class="mount">
+            <div class="glass panel narrow actionable"
+              style="background:radial-gradient(120% 90% at 50% -10%,rgba(74,163,223,.14),transparent 60%),var(--glass)">
+              <span class="fillet l"></span><span class="fillet r"></span>
+              <div style="padding:12px">
+                <div class="amber-hero" style="background:linear-gradient(180deg,rgba(24,40,54,.5),rgba(14,24,34,.55));
+                  box-shadow:inset 0 0 0 1px rgba(74,163,223,.3),0 0 42px -6px rgba(74,163,223,.35)">
+                  <div class="hero-head">
+                    <div class="hero-icon" style="background:rgba(74,163,223,.16);color:var(--codex)">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg></div>
+                    <div><div class="ht" style="color:#cfe8fb">Approval needed in Codex</div>
+                      <div class="hs" style="color:rgba(190,224,246,.7)">niche-radar &middot; run tests</div></div>
+                    <div class="agent-tag" style="color:rgba(190,224,246,.85)"><span class="cd" style="width:7px;height:7px;border-radius:50%;background:var(--codex)"></span>codex</div>
+                  </div>
+                  <div class="cmd"><span class="prompt">$ </span><span class="t-cmd">pytest</span> <span class="t-flag">-q</span> <span class="t-path">tests/</span></div>
+                  <div class="codex-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6m0 0 3-3m-3 3L9 5"/><rect x="4" y="10" width="16" height="11" rx="2"/></svg>
+                    Codex approves in-app. Open the pane to allow or deny there.</div>
+                  <div class="actions">
+                    <button class="btn primary" style="background:linear-gradient(180deg,#8fccf0,#4aa3df);color:#062133;
+                      box-shadow:0 4px 16px -4px rgba(74,163,223,.6),inset 0 1px 0 rgba(255,255,255,.4)">
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"
+                      stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M7 7h10v10"/></svg>Jump to Codex to approve
+                      <span class="kc"><kbd>&#8984;</kbd><kbd>Y</kbd></span></button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><span class="fid">E3</span><b>Codex.app variant.</b> Approval must happen in-app, so the
+          card is honest about it: one primary "jump to approve", no fake Approve button (§3).</div>
+      </div>
+
+      <!-- E4 notification card -->
+      <div class="frame half">
+        <div class="desk tall"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span class="clk">9:41</span></div></div><div class="notch"></div>
+          <div class="mount">
+            <div class="glass panel narrow actionable">
+              <span class="fillet l"></span><span class="fillet r"></span>
+              <div style="padding:12px">
+                <div class="amber-hero pulse">
+                  <div class="hero-head">
+                    <div class="hero-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg></div>
+                    <div><div class="ht">Run <span class="mono" style="font-size:13px">swift build</span>?</div>
+                      <div class="hs">the-automator</div></div>
+                  </div>
+                  <div class="actions">
+                    <button class="btn primary">Allow<span class="kc"><kbd>&#8984;</kbd><kbd>Y</kbd></span></button>
+                    <button class="btn ghost" style="font-size:12px;padding:8px 12px">Always<span class="kc"><kbd>&#8984;</kbd><kbd>&#8679;</kbd><kbd>Y</kbd></span></button>
+                    <button class="btn deny">Deny<span class="kc"><kbd>&#8984;</kbd><kbd>N</kbd></span></button>
+                  </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;padding:9px 4px 2px;font-size:11px;color:var(--t3)">
+                  <span>Auto-collapses in <span class="tnum">8s</span> &middot; hover pauses</span>
+                  <a style="margin-left:auto;color:var(--t2);cursor:pointer">Show all 6 sessions &rarr;</a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><span class="fid">E4</span><b>Notification card.</b> The one activeActionableSession pulls
+          the island open on its own. "Show all N" sits quietly below; the countdown pauses on hover (§6 contract).</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== §F QUESTION ============================== -->
+  <section>
+    <div class="sec-head"><span class="id">F</span><h2>Question prompt</h2></div>
+    <p class="sec-note">Answering from the overlay is real (Claude, OpenCode). Numbered options with descriptions,
+      multi-select, freeform "Other", digit-select + Enter to submit — the shared question structure, restyled not
+      restructured (§6). Kills §1.2 (raw data) with option descriptions in prose.</p>
+
+    <div class="grid">
+      <!-- multi question -->
+      <div class="frame half">
+        <div class="desk tall"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span class="clk">9:41</span></div></div><div class="notch"></div>
+          <div class="mount">
+            <div class="glass panel narrow"
+              style="background:radial-gradient(120% 80% at 50% -10%,rgba(255,213,138,.12),transparent 60%),var(--glass)">
+              <span class="fillet l"></span><span class="fillet r"></span>
+              <div style="padding:12px">
+                <div class="q-hero">
+                  <div class="q-head"><span class="q-chip">Auth</span>
+                    <span style="font-size:11px;color:var(--t2);display:flex;align-items:center;gap:5px">
+                      <span class="cd" style="width:7px;height:7px;border-radius:50%;background:var(--codex)"></span>niche-radar</span>
+                    <span class="q-progress">Question <span class="tnum">1</span> of <span class="tnum">2</span></span></div>
+                  <div class="q-text">Which auth method should the bridge use?</div>
+                  <div class="opts">
+                    <div class="opt sel"><span class="num">1</span>
+                      <div><div class="ol">Unix socket peer credentials</div>
+                        <div class="od">Trust the OS: verify the connecting process UID over the local socket. No secrets to store.</div></div>
+                      <svg class="ck" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+                        stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+                    <div class="opt"><span class="num">2</span>
+                      <div><div class="ol">Shared secret token</div>
+                        <div class="od">Hooks read a token from disk and send it in each envelope. Simple, but a file to protect.</div></div></div>
+                    <div class="opt"><span class="num">3</span>
+                      <div><div class="ol">mTLS on the loopback</div>
+                        <div class="od">Mutual certificates. Strongest, heaviest — likely overkill for a local-only bridge.</div></div></div>
+                    <div class="opt-other"><span class="num">&#8230;</span>Other &mdash; type a different approach</div>
+                  </div>
+                  <div class="q-foot">
+                    <button class="btn primary" style="background:linear-gradient(180deg,#ffe0a8,#ffd58a);color:#2a2205">
+                      Submit &amp; next<span class="kc"><kbd>&#8629;</kbd></span></button>
+                    <span class="q-hint" style="margin-left:auto">Press <kbd style="font-family:var(--ui);font-size:10px;
+                      padding:0 4px;height:15px;border-radius:4px;background:rgba(0,0,0,.28);
+                      box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)">1&#8211;3</kbd> to pick</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><span class="fid">F</span><b>Multi-question.</b> Options carry human descriptions, not
+          enum values. "1 of 2" progress, "Other" freeform, digit + Enter. State never color-only — selection has a tick.</div>
+      </div>
+
+      <!-- multiselect + compact -->
+      <div class="frame half">
+        <!-- multi-select -->
+        <div class="desk tall" style="margin-bottom:26px"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span class="clk">9:41</span></div></div><div class="notch"></div>
+          <div class="mount">
+            <div class="glass panel narrow"
+              style="background:radial-gradient(120% 80% at 50% -10%,rgba(255,213,138,.12),transparent 60%),var(--glass)">
+              <span class="fillet l"></span><span class="fillet r"></span>
+              <div style="padding:12px">
+                <div class="q-hero">
+                  <div class="q-head"><span class="q-chip">Targets</span>
+                    <span class="q-progress" style="margin-left:auto">Select all that apply</span></div>
+                  <div class="q-text">Which agents should ship in v0.6?</div>
+                  <div class="opts">
+                    <div class="opt multi sel"><span class="num" style="border-radius:5px">&#10003;</span>
+                      <div class="ol">OpenCode</div>
+                      <svg class="ck" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+                        stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+                    <div class="opt multi sel"><span class="num" style="border-radius:5px">&#10003;</span>
+                      <div class="ol">Kimi CLI</div>
+                      <svg class="ck" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+                        stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+                    <div class="opt multi"><span class="num" style="border-radius:5px">3</span>
+                      <div class="ol">Qwen Code</div></div>
+                  </div>
+                  <div class="q-foot"><button class="btn primary"
+                    style="background:linear-gradient(180deg,#ffe0a8,#ffd58a);color:#2a2205">Submit 2 selected
+                    <span class="kc"><kbd>&#8629;</kbd></span></button></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="cap" style="margin-bottom:22px"><span class="fid">F&#8242;</span><b>Multi-select.</b> Square
+          checks, running count in the submit label.</div>
+
+        <!-- compact single -->
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span class="clk">9:41</span></div></div><div class="notch"></div>
+          <div class="mount">
+            <div class="glass" style="width:404px;border-radius:20px;padding:13px 15px;
+              background:radial-gradient(120% 90% at 50% -10%,rgba(255,213,138,.14),transparent 60%),var(--glass)">
+              <span class="fillet l"></span><span class="fillet r"></span>
+              <div style="display:flex;align-items:center;gap:9px;margin-bottom:9px">
+                <span class="q-chip">Deploy</span>
+                <span style="font-size:13px;font-weight:560;color:#fff3dc">Proceed to production?</span></div>
+              <div style="display:flex;gap:8px">
+                <div class="opt sel" style="flex:1;padding:8px 11px"><span class="num">1</span><span class="ol">Yes, deploy</span></div>
+                <div class="opt" style="flex:1;padding:8px 11px"><span class="num">2</span><span class="ol">Hold</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><span class="fid">F&#8243;</span><b>Compact single.</b> Yes/No collapses to one row — the
+          same semantics, minimal footprint.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== §G SUBAGENTS + TASKS ============================== -->
+  <section>
+    <div class="sec-head"><span class="id">G</span><h2>Subagents &amp; tasks (nested in a session)</h2></div>
+    <p class="sec-note">Claude only. activeSubagents[] with live per-agent elapsed, plus a todo list with mixed
+      statuses — these live <b>inside</b> a session, not as separate rows (§3). Shown here expanded, and how it
+      compresses into a row and the pill.</p>
+
+    <div class="grid">
+      <div class="frame half">
+        <div class="desk tall"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span class="clk">9:41</span></div></div><div class="notch"></div>
+          <div class="mount">
+            <div class="glass panel narrow">
+              <span class="fillet l"></span><span class="fillet r"></span>
+              <div class="row" style="cursor:default">
+                <div class="lead"><span class="glyph run" style="width:12px"><i></i><i></i><i></i></span></div>
+                <div class="body">
+                  <div class="title-line"><span class="tick" style="background:var(--claude)"></span>
+                    <span class="ws">the-automator</span><span class="disamb">main</span></div>
+                  <div class="act"><span class="live">Refactoring</span> hook installers &middot; 3 subagents live</div>
+
+                  <div class="nest">
+                    <div class="nest-h"><span class="glyph run" style="width:10px;height:11px"><i></i><i></i><i></i></span>3 subagents</div>
+                    <div class="subagent"><span class="dot run" style="width:6px;height:6px"></span>
+                      <div class="sa-t"><div class="sa-type">explore</div>
+                        <div class="sa-task">Map every ClaudeHooks call site</div></div>
+                      <span class="sa-time tnum">0:42</span></div>
+                    <div class="subagent"><span class="dot run" style="width:6px;height:6px"></span>
+                      <div class="sa-t"><div class="sa-type">edit</div>
+                        <div class="sa-task">Rewrite CodexHooks payload model</div></div>
+                      <span class="sa-time tnum">1:15</span></div>
+                    <div class="subagent"><span class="dot run" style="width:6px;height:6px"></span>
+                      <div class="sa-t"><div class="sa-type">test</div>
+                        <div class="sa-task">Add BridgeCodec round-trip tests</div></div>
+                      <span class="sa-time tnum">0:08</span></div>
+                  </div>
+
+                  <div class="nest" style="margin-top:8px">
+                    <div class="nest-h">Tasks &middot; 2 of 5 done</div>
+                    <div class="todos">
+                      <div class="todo done"><span class="tk"><svg viewBox="0 0 24 24" width="12" height="12" fill="none"
+                        stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+                        <span class="tl">Extract shared hook installer</span></div>
+                      <div class="todo done"><span class="tk"><svg viewBox="0 0 24 24" width="12" height="12" fill="none"
+                        stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+                        <span class="tl">Unify NDJSON envelope codec</span></div>
+                      <div class="todo doing"><span class="tk"><span class="glyph run" style="width:8px;height:9px"><i></i><i></i><i></i></span></span>
+                        <span class="tl">Rewrite per-agent payload models</span><span class="tsp">now</span></div>
+                      <div class="todo pending"><span class="tk"><svg viewBox="0 0 24 24" width="11" height="11" fill="none"
+                        stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg></span>
+                        <span class="tl">Wire fail-open fallback</span></div>
+                      <div class="todo pending"><span class="tk"><svg viewBox="0 0 24 24" width="11" height="11" fill="none"
+                        stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg></span>
+                        <span class="tl">Update AGENTS.md matrix</span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><span class="fid">G</span><b>Expanded.</b> Subagents as a nested sub-list with live timers;
+          the todo list shows real status (done / doing / pending) — the Claude todo list that was invisible (§3).</div>
+      </div>
+
+      <div class="frame half">
+        <!-- compressed row -->
+        <div class="desk tall" style="margin-bottom:26px"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span class="clk">9:41</span></div></div><div class="notch"></div>
+          <div class="mount">
+            <div class="glass panel narrow">
+              <span class="fillet l"></span><span class="fillet r"></span>
+              <div class="row" style="cursor:default">
+                <div class="lead"><span class="glyph run" style="width:12px"><i></i><i></i><i></i></span></div>
+                <div class="body">
+                  <div class="title-line"><span class="tick" style="background:var(--claude)"></span>
+                    <span class="ws">the-automator</span><span class="disamb">main</span></div>
+                  <div class="act"><span class="live">Refactoring</span> hook installers</div>
+                  <div class="meta">
+                    <span class="chip"><span class="glyph run" style="width:9px;height:10px"><i></i><i></i><i></i></span>3 subagents</span>
+                    <span class="chip">&#9202; 2/5 tasks</span>
+                    <span style="font-size:10px;color:var(--t3)">tap to expand</span></div>
+                </div>
+                <span class="age">8m</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="cap" style="margin-bottom:22px"><span class="fid">G&#8242;</span><b>Compressed row.</b> Nested
+          work rolls up to two quiet chips — "3 subagents · 2/5 tasks" — until you open it.</div>
+
+        <!-- pill compression -->
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span class="clk">9:41</span></div></div><div class="notch"></div>
+          <div class="mount">
+            <div class="glass pill big breathing">
+              <span class="fillet l"></span><span class="fillet r"></span>
+              <div class="wing l"><span class="glyph run"><i></i><i></i><i></i></span>
+                <span class="lab"><span class="dim">Refactoring &middot;</span> 3 agents</span></div>
+              <div class="core" style="min-width:44px"></div>
+              <div class="wing r"><span class="count">&#9202; 2/5</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><span class="fid">G&#8243;</span><b>Pill compression.</b> "3 agents" + a task counter in the
+          right slot — the parallel fan-out is legible from across the room without opening.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== §H COMPLETED ============================== -->
+  <section>
+    <div class="sec-head"><span class="id">H</span><h2>Completed session</h2></div>
+    <p class="sec-note">Result rendered beautifully: outcome badge, duration, the summary as prose, and follow-up
+      affordances — jump, transcript, reply (narrow support), dismiss. Kills §1.3 (placeholder noise) and §1.8.</p>
+
+    <div class="grid"><div class="frame wide" style="max-width:480px;margin:0 auto">
+      <div class="desk tall"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+        <div class="mb-r"><span class="clk">9:41</span></div></div><div class="notch"></div>
+        <div class="mount">
+          <div class="glass panel narrow">
+            <span class="fillet l"></span><span class="fillet r"></span>
+            <div style="padding:14px 16px 12px">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+                <div style="width:30px;height:30px;border-radius:9px;display:grid;place-items:center;
+                  background:rgba(111,185,130,.14);color:var(--done)">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4"
+                    stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+                <div style="flex:1"><div style="display:flex;align-items:center;gap:8px">
+                  <span class="tick" style="background:var(--claude);height:14px"></span>
+                  <span style="font-size:15px;font-weight:640;letter-spacing:-.01em">the-automator</span>
+                  <span class="disamb">docs/agents-md</span></div>
+                  <div style="font-size:11px;color:var(--t3);margin-top:1px">Fable 5 &middot; finished 12m ago</div></div>
+                <span class="outcome ok" style="font-size:11px;padding:3px 10px"><svg viewBox="0 0 24 24" width="10"
+                  height="10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"
+                  stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Success</span>
+              </div>
+
+              <div class="assistant" style="margin-top:2px">
+                <div class="amh">Result</div>
+                Updated <strong>AGENTS.md</strong> and <strong>CLAUDE.md</strong> to document the new bridge-auth
+                flow. Added a "Working agreement" note about fail-open hooks and refreshed the support matrix to
+                include <code>OpenCode</code> and <code>Kimi</code>.
+                <ul><li>2 files changed</li><li>Support matrix now matches README</li></ul>
+              </div>
+
+              <div style="display:flex;gap:14px;margin-top:12px;font-size:11px;color:var(--t3)">
+                <span style="display:flex;align-items:center;gap:5px"><svg viewBox="0 0 24 24" width="11" height="11"
+                  fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                  <span class="tnum">43m</span> duration</span>
+                <span style="display:flex;align-items:center;gap:5px"><span class="cd" style="width:7px;height:7px;
+                  border-radius:50%;background:var(--claude)"></span>Claude Code</span>
+              </div>
+
+              <div class="actions" style="margin-top:12px">
+                <button class="btn primary" style="background:linear-gradient(180deg,#8fbcff,#6ea7ff);color:#0a1a35;
+                  box-shadow:0 4px 16px -4px rgba(110,167,255,.6),inset 0 1px 0 rgba(255,255,255,.4)">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"
+                  stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M7 7h10v10"/></svg>Jump to terminal</button>
+                <button class="btn ghost" style="padding:8px 12px;font-size:12px">Reply</button>
+                <button class="btn ghost" style="padding:8px 12px;font-size:12px">Transcript</button>
+                <button class="btn ghost" style="margin-left:auto;padding:8px 11px;font-size:12px;color:var(--t3)">Dismiss</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cap"><span class="fid">H</span><b>Completed.</b> Green outcome badge + tabular duration; the result
+        is prose with emphasis, not a dump. Jump primary; reply/transcript/dismiss as calm secondaries.</div>
+    </div></div>
+  </section>
+
+  <!-- ============================== §I USAGE METERS ============================== -->
+  <section>
+    <div class="sec-head"><span class="id">I</span><h2>Usage meters — redesigned</h2></div>
+    <p class="sec-note">Claude 5h + 7d and a Codex window, each with the <b>resets-in countdown</b> (was hidden — §3),
+      conic dials instead of EQ-segment soup, and threshold states fine/warn/critical. Higher % = more consumed.
+      Kills §1.6 (abbreviation soup, EQ bars, green-means-two-things).</p>
+
+    <div class="grid"><div class="frame wide" style="max-width:560px;margin:0 auto">
+      <div class="desk tall" style="padding-bottom:20px"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+        <div class="mb-r"><span class="clk">9:41</span></div></div><div class="notch"></div>
+        <div class="mount">
+          <div class="glass meter-card">
+            <span class="fillet l"></span><span class="fillet r"></span>
+            <div class="meter-title">Usage &middot; resets shown</div>
+            <div class="meters">
+              <!-- fine -->
+              <div class="meter">
+                <svg class="dial" viewBox="0 0 42 42"><circle cx="21" cy="21" r="17" fill="none" stroke="rgba(242,245,251,.1)" stroke-width="5"/>
+                  <circle cx="21" cy="21" r="17" fill="none" stroke="var(--done)" stroke-width="5" stroke-linecap="round"
+                    stroke-dasharray="107" stroke-dashoffset="70.6" transform="rotate(-90 21 21)"/></svg>
+                <div class="mtx"><div class="ml">Claude &middot; 5h</div>
+                  <div class="mpct pct-fine tnum">34%</div>
+                  <div class="mreset">resets in <span class="tnum">2h 10m</span></div>
+                  <span class="thlabel fine"><span class="dot done" style="width:5px;height:5px"></span>Fine</span></div>
+              </div>
+              <!-- warn -->
+              <div class="meter">
+                <svg class="dial" viewBox="0 0 42 42"><circle cx="21" cy="21" r="17" fill="none" stroke="rgba(242,245,251,.1)" stroke-width="5"/>
+                  <circle cx="21" cy="21" r="17" fill="none" stroke="var(--answer)" stroke-width="5" stroke-linecap="round"
+                    stroke-dasharray="107" stroke-dashoffset="23.5" transform="rotate(-90 21 21)"/></svg>
+                <div class="mtx"><div class="ml">Claude &middot; 7d</div>
+                  <div class="mpct pct-warn tnum">78%</div>
+                  <div class="mreset">resets in <span class="tnum">3d 4h</span></div>
+                  <span class="thlabel warn">&#9650; Warn</span></div>
+              </div>
+              <!-- crit -->
+              <div class="meter">
+                <svg class="dial" viewBox="0 0 42 42"><circle cx="21" cy="21" r="17" fill="none" stroke="rgba(242,245,251,.1)" stroke-width="5"/>
+                  <circle cx="21" cy="21" r="17" fill="none" stroke="var(--fail)" stroke-width="5" stroke-linecap="round"
+                    stroke-dasharray="107" stroke-dashoffset="8.6" transform="rotate(-90 21 21)"/></svg>
+                <div class="mtx"><div class="ml">Codex &middot; 7d &middot; Pro</div>
+                  <div class="mpct pct-crit tnum">92%</div>
+                  <div class="mreset">resets in <span class="tnum">18h 40m</span></div>
+                  <span class="thlabel crit">&#9679; Critical</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cap" style="max-width:none"><span class="fid">I</span><b>Full meters.</b> Threshold is carried by
+        color <em>and</em> shape/label (Fine ●, Warn ▲, Critical ●) plus the reset countdown that finally answers
+        "how long until I get it back?".</div>
+    </div></div>
+
+    <!-- pill compression -->
+    <div class="grid" style="margin-top:8px"><div class="frame">
+      <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+        <div class="mb-r"><span class="clk">9:41</span></div></div><div class="notch"></div>
+        <div class="mount">
+          <div class="glass pill big">
+            <span class="fillet l"></span><span class="fillet r"></span>
+            <div class="wing l"><span class="glyph idle"><i></i><i></i><i></i></span></div>
+            <div class="core" style="min-width:60px"></div>
+            <div class="wing r"><span class="chip" style="background:rgba(219,82,82,.16);color:#f0a8a8">
+              <svg viewBox="0 0 42 42" width="12" height="12"><circle cx="21" cy="21" r="15" fill="none" stroke="rgba(219,82,82,.3)" stroke-width="6"/>
+                <circle cx="21" cy="21" r="15" fill="none" stroke="var(--fail)" stroke-width="6" stroke-linecap="round"
+                  stroke-dasharray="94" stroke-dashoffset="7.5" transform="rotate(-90 21 21)"/></svg>92%</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="cap"><span class="fid">I&#8242;</span><b>Pill compression.</b> Only the <em>worst</em> window
+        surfaces in the collapsed pill — a small red dial + "92%". Fine windows stay silent.</div>
+    </div></div>
+  </section>
+
+  <!-- ============================== §J EMPTY ============================== -->
+  <section>
+    <div class="sec-head"><span class="id">J</span><h2>Empty state</h2></div>
+    <p class="sec-note">No sessions. Quiet confidence, not a hole — the island is watching, it just has nothing to
+      report yet.</p>
+
+    <div class="grid"><div class="frame" style="max-width:440px;margin:0 auto">
+      <div class="desk tall"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+        <div class="mb-r"><span class="clk">9:41</span></div></div><div class="notch"></div>
+        <div class="mount">
+          <div class="glass panel narrow">
+            <span class="fillet l"></span><span class="fillet r"></span>
+            <div class="empty">
+              <div class="eglyph breathing" style="border-radius:50%;display:grid;place-items:center;
+                background:rgba(255,255,255,.03)">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="var(--t2)" stroke-width="1.8"
+                  stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg></div>
+              <div class="et">All quiet</div>
+              <div class="es">No active agents. Open Island is watching your terminals — the next permission,
+                question, or finished run will surface here.</div>
+              <div class="ecal"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg>Hooks installed for Claude, Codex, Gemini</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cap"><span class="fid">J</span><b>Empty.</b> A slow-breathing monitor glyph + a confident line.
+        Confirms hooks are wired so silence reads as "nothing to do", not "is this broken?".</div>
+    </div></div>
+  </section>
+
+  <!-- ============================== §K MOTION ============================== -->
+  <section>
+    <div class="sec-head"><span class="id">K</span><h2>Motion spec — live CSS</h2></div>
+    <p class="sec-note">The liquid motion language, implemented (not described). Springs ~response .5 / damping .84
+      for the morph; slow 3s luminous breathing while working; a cool-white shimmer that settles on success.
+      Kills §1.5 — the metaphor finally moves.</p>
+
+    <div class="motion-strip">
+      <div class="mdemo">
+        <div class="mchip breathing" style="box-shadow:var(--specular),0 6px 16px rgba(0,0,0,.5),0 0 18px rgba(110,167,255,.12)"></div>
+        <div class="mlabel"><b>Pill breathing</b>3s luminous pulse &middot; "working"</div>
+      </div>
+      <div class="mdemo">
+        <div class="morph"></div>
+        <div class="mlabel"><b>Expand morph</b>one shape · radius &amp; frame grow</div>
+      </div>
+      <div class="mdemo">
+        <div class="mchip attn-glow" style="width:120px"></div>
+        <div class="mlabel"><b>Attention pulse</b>warm amber glow bleeds out</div>
+      </div>
+      <div class="mdemo">
+        <div class="row-enter"></div>
+        <div class="mlabel"><b>Row entrance</b>rise + fade, spring settle</div>
+      </div>
+      <div class="mdemo">
+        <div class="shimmer"></div>
+        <div class="mlabel"><b>Success settle</b>cool-white shimmer &rarr; quiet</div>
+      </div>
+    </div>
+  </section>
+
+  <footer style="text-align:center;color:var(--t3);font-size:11px;padding:40px 8px 0;border-top:1px solid var(--hair);margin-top:64px">
+    Poured Island 2.0 · Liquid Glass — expressible as the 8 theme slots + tokens (closedPill · openedHeader ·
+    sessionRow · sessionList · notificationCard · emptyState · bootstrapPlaceholder · installHint).
+    Every string above is computable from the real §3 data model.
+  </footer>
+
+</div>
+</body>
+</html>

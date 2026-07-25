@@ -19,6 +19,14 @@ This index is the repository map for humans and coding agents. Read these files 
 
 - [docs/hooks.md](./hooks.md) for the supported hook events, payload fields, and directive response protocol
 
+## Design
+
+- [docs/design/overlay-redesign/README.md](./design/overlay-redesign/README.md) for the vendored overlay-redesign materials, the `px @1x = pt` rule, and the authority order
+- [docs/design/overlay-redesign/BRIEF.md](./design/overlay-redesign/BRIEF.md) for the shared redesign brief: ground-truth data model, scenario matrix, and architecture contract
+- [docs/design/overlay-redesign/SPEC-poured-island.md](./design/overlay-redesign/SPEC-poured-island.md) for the Poured Island 2.0 conformance spec
+- [docs/design/overlay-redesign/SPEC-flight-deck.md](./design/overlay-redesign/SPEC-flight-deck.md) for the Flight Deck 2.0 conformance spec
+- [docs/design/overlay-redesign/SPEC-halo.md](./design/overlay-redesign/SPEC-halo.md) for the Halo greenfield build spec
+
 ## Harness And Planning
 
 - [docs/exec-plans/README.md](./exec-plans/README.md) for the active and completed execution-plan convention

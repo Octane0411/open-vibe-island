@@ -1,0 +1,1561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flight Deck 2.0 — Glass Cockpit</title>
+<style>
+/* ============================================================================
+   FLIGHT DECK 2.0 · GLASS COCKPIT — Open Island overlay redesign board
+   Aviation-grade information design (Garmin G3000 / SpaceX Dragon / A350 EICAS).
+   Phosphor palette is SEMANTIC, never brand, never decorative.
+   ============================================================================ */
+
+:root{
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro", "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+
+  /* Cockpit ground + panel materials */
+  --ground:    #08090a;
+  --surface:   #0e1113;   /* opened panel body */
+  --surface-2: #101519;   /* tiles / sub-panels */
+  --surface-hi:#161c22;   /* raised / hovered */
+  --well:      #060708;   /* recessed wells (tape tracks, code) */
+
+  /* Structure */
+  --hair:  rgba(154,176,188,0.14);
+  --hair2: rgba(154,176,188,0.26);
+  --hair3: rgba(154,176,188,0.40);
+
+  /* Legend text */
+  --paper:  #d8e1e6;
+  --dim:    #8a97a0;
+  --faint:  #5b656c;
+
+  /* SEMANTIC phosphor — the only saturated colour in the system */
+  --nominal:  #4ac99e;  /* running          — NOMINAL   (green-cyan) */
+  --advisory: #6392c4;  /* completed·success — ADVISORY  (blue)       */
+  --caution:  #e6aa42;  /* question / interrupted — CAUTION (amber)   */
+  --warning:  #e04a42;  /* permission (blocking) / failed — WARNING (red) */
+
+  /* Octagon chamfer default */
+  --ch: 6px;
+
+  /* Relay-snap motion — states latch, they don't ease */
+  --snap: cubic-bezier(.2,.85,.2,1);
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+body{
+  background:
+    radial-gradient(120% 80% at 50% -10%, #0d1114 0%, var(--ground) 60%),
+    var(--ground);
+  color:var(--paper);
+  font-family:var(--sans);
+  font-size:14px;
+  line-height:1.45;
+  padding:0 0 120px;
+}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.tab{font-variant-numeric:tabular-nums}
+
+/* Chamfered octagon clip */
+.oct{
+  clip-path:polygon(var(--ch) 0, calc(100% - var(--ch)) 0, 100% var(--ch),
+    100% calc(100% - var(--ch)), calc(100% - var(--ch)) 100%, var(--ch) 100%,
+    0 calc(100% - var(--ch)), 0 var(--ch));
+}
+/* Bezel: hairline all the way around a chamfered face (double-clip technique) */
+.bezel{background:var(--hair2)}
+.bezel>.face{background:var(--surface);margin:1px}
+
+/* ---- Caps micro-labels (unit tags, section captions) --------------------- */
+.caps{
+  font-family:var(--sans);
+  font-size:10px;
+  font-weight:600;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--faint);
+}
+.caps.lit{color:var(--dim)}
+
+/* =====================  BOARD SHELL  ====================================== */
+.board{max-width:1180px;margin:0 auto;padding:0 28px}
+.masthead{padding:64px 0 40px;border-bottom:1px solid var(--hair)}
+.masthead .kick{
+  display:inline-flex;align-items:center;gap:10px;
+  font-family:var(--mono);font-size:11px;letter-spacing:.24em;color:var(--nominal);
+  text-transform:uppercase;margin-bottom:20px;
+}
+.masthead .kick::before{
+  content:"";width:8px;height:8px;background:var(--nominal);
+  box-shadow:0 0 10px var(--nominal);border-radius:1px;
+  animation:phosphor 2s var(--snap) infinite;
+}
+.masthead h1{
+  font-size:40px;font-weight:680;letter-spacing:-.02em;line-height:1.02;
+}
+.masthead h1 b{color:var(--paper)}
+.masthead h1 span{color:var(--faint);font-weight:400}
+.masthead .thesis{
+  margin-top:16px;max-width:760px;color:var(--dim);font-size:15.5px;line-height:1.55;
+}
+.masthead .thesis b{color:var(--paper);font-weight:600}
+
+/* Semantic legend */
+.legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px}
+.legend .sw{
+  display:flex;align-items:center;gap:9px;
+  padding:7px 12px 7px 10px;background:var(--surface-2);
+  border:1px solid var(--hair);
+}
+.legend .sw .lamp{width:10px;height:10px;border-radius:1px}
+.legend .sw .t{font-family:var(--mono);font-size:10.5px;letter-spacing:.02em;color:var(--paper)}
+.legend .sw .t small{display:block;color:var(--faint);letter-spacing:.1em;text-transform:uppercase;font-size:9px}
+
+/* Section header */
+.section{padding:56px 0 8px}
+.section>h2{
+  display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
+  font-size:13px;letter-spacing:.04em;
+}
+.section>h2 .id{
+  font-family:var(--mono);font-size:12px;font-weight:700;color:var(--ground);
+  background:var(--paper);padding:3px 8px;letter-spacing:.05em;
+}
+.section>h2 .nm{font-size:19px;font-weight:640;letter-spacing:-.01em;color:var(--paper)}
+.section>h2 .why{color:var(--dim);font-weight:400;font-size:13.5px;flex:1;min-width:260px}
+.section>.rule{height:1px;background:var(--hair);margin:16px 0 30px}
+
+/* Frame — labelled desktop context slab */
+.grid{display:grid;gap:26px}
+.grid.two{grid-template-columns:1fr 1fr}
+.grid.three{grid-template-columns:repeat(3,1fr)}
+@media(max-width:960px){.grid.two,.grid.three{grid-template-columns:1fr}}
+
+.frame{min-width:0}
+.frame .cap{
+  display:flex;align-items:baseline;gap:10px;margin-bottom:12px;
+}
+.frame .cap .fid{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--nominal);letter-spacing:.05em}
+.frame .cap .fnm{font-size:13px;font-weight:640;color:var(--paper)}
+.frame .cap .fdesc{font-size:12px;color:var(--faint);flex:1;min-width:0}
+
+/* Desktop strip with menu bar + notch */
+.desk{
+  position:relative;
+  background:
+    linear-gradient(180deg,#0b0e10 0%, #090b0d 40%, #0a0d0f 100%);
+  border:1px solid var(--hair);
+  border-radius:12px;
+  padding:0 0 26px;
+  overflow:hidden;
+}
+.desk::after{ /* faint scan of ambient desktop light, extremely subtle */
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(120% 60% at 50% 0%, rgba(90,120,140,.05), transparent 60%);
+}
+.menubar{
+  position:relative;z-index:2;height:26px;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 12px;background:rgba(0,0,0,.32);border-bottom:1px solid rgba(0,0,0,.5);
+}
+.menubar .mleft{display:flex;gap:14px;align-items:center;color:var(--faint);font-size:11px}
+.menubar .mleft .apple{width:11px;height:12px;opacity:.55}
+.menubar .mleft b{color:var(--dim);font-weight:600}
+.menubar .mright{display:flex;gap:12px;align-items:center;color:var(--faint);font-size:11px}
+.menubar .mright svg{opacity:.5}
+.menubar .clock{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--dim);font-size:11px}
+
+.stage{position:relative;padding-top:6px;display:flex;flex-direction:column;align-items:center}
+/* physical notch cutout — camera housing, sits above the overlay */
+.notch{
+  position:absolute;top:-1px;left:50%;transform:translateX(-50%);
+  width:200px;height:30px;background:#000;z-index:5;
+  border-bottom-left-radius:12px;border-bottom-right-radius:12px;
+  box-shadow:0 1px 0 rgba(255,255,255,.02);
+}
+
+/* =====================  CLOSED PILL  ===================================== */
+.pill{
+  position:relative;z-index:4;display:grid;grid-template-columns:1fr 200px 1fr;align-items:center;
+  height:38px;background:var(--surface);
+  border:1px solid var(--hair2);
+  padding:0 12px;min-width:300px;
+  transition:min-width .32s var(--snap), background .32s var(--snap), border-color .12s linear;
+}
+/* Grid keeps the 200px notch lane centred so the physical notch always aligns
+   with the gap — wings stay symmetric around it, no wing text is ever occluded. */
+.pill .notchgap{width:200px}
+.pill .wing{display:flex;align-items:center;gap:9px;justify-self:start;min-width:0;overflow:hidden}
+.pill .wing.r{justify-self:end;justify-content:flex-end}
+
+/* liveness meter (elevated 3-tick signal readout) */
+.bars{display:flex;align-items:flex-end;gap:2px;height:16px;width:16px}
+.bars i{width:3px;background:var(--faint);border-radius:.5px;height:5px}
+.bars.run i{background:var(--nominal);box-shadow:0 0 5px rgba(74,201,158,.55)}
+.bars.run i:nth-child(1){animation:wave 1.4s var(--snap) infinite}
+.bars.run i:nth-child(2){animation:wave 1.4s var(--snap) .18s infinite}
+.bars.run i:nth-child(3){animation:wave 1.4s var(--snap) .36s infinite}
+.bars.wait i{background:var(--caution)}
+.bars.warn i{background:var(--warning)}
+.bars.idle i{height:4px;opacity:.5}
+@keyframes wave{0%,100%{height:5px}50%{height:15px}}
+
+.pill .narr{font-size:12px;color:var(--paper);white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis}
+.pill .narr .verb{color:var(--nominal)}
+.pill .clabel{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--faint);text-transform:uppercase}
+
+/* mini agents grid — annunciator lamps, one per session */
+.mgrid{display:grid;grid-auto-flow:column;grid-template-rows:repeat(2,7px);gap:3px}
+.mgrid .lamp{width:7px;height:7px;border:1px solid var(--hair2);background:var(--well)}
+.lamp.run{background:var(--nominal);border-color:transparent;box-shadow:0 0 5px rgba(74,201,158,.6);animation:phosphor 2s var(--snap) infinite}
+.lamp.done{background:var(--advisory);border-color:transparent}
+.lamp.wait{background:var(--caution);border-color:transparent;animation:attn 1.2s var(--snap) infinite}
+.lamp.perm{background:var(--warning);border-color:transparent;animation:attn 1s var(--snap) infinite}
+.lamp.idle{background:var(--well)}
+
+/* count / caution segment on the right wing */
+.seg{
+  display:flex;align-items:center;gap:6px;height:24px;padding:0 9px;
+  border:1px solid var(--hair2);font-family:var(--mono);font-size:11px;letter-spacing:.04em;color:var(--dim);
+}
+.seg .n{color:var(--paper);font-weight:700}
+.seg.caution{border-color:transparent;background:rgba(230,170,66,.14);color:var(--caution);animation:cautbg 1.2s var(--snap) infinite}
+.seg.caution .n{color:var(--caution)}
+.seg.warn{border-color:transparent;background:rgba(224,74,66,.16);color:var(--warning);animation:warnbg 1s var(--snap) infinite}
+.seg.warn .n{color:var(--warning)}
+.seg .ic{font-size:11px}
+
+/* pill state tints */
+.pill.attn-perm{border-color:rgba(224,74,66,.55);box-shadow:0 0 0 1px rgba(224,74,66,.18),0 6px 26px -14px rgba(224,74,66,.6)}
+.pill.attn-caut{border-color:rgba(230,170,66,.5);box-shadow:0 0 0 1px rgba(230,170,66,.16),0 6px 24px -16px rgba(230,170,66,.5)}
+.pill.done{border-color:rgba(99,146,196,.42)}
+
+@keyframes phosphor{0%,100%{opacity:.86;box-shadow:0 0 5px rgba(74,201,158,.5)}50%{opacity:1;box-shadow:0 0 11px rgba(74,201,158,.7)}}
+@keyframes attn{0%,100%{opacity:1}50%{opacity:.28}}
+@keyframes cautbg{0%,100%{background:rgba(230,170,66,.16)}50%{background:rgba(230,170,66,.05)}}
+@keyframes warnbg{0%,100%{background:rgba(224,74,66,.2)}50%{background:rgba(224,74,66,.06)}}
+
+/* mini tape (usage compressed to pill) */
+.minitape{width:56px;height:6px;background:var(--well);border:1px solid var(--hair);position:relative}
+.minitape>i{position:absolute;top:0;bottom:0;left:0}
+
+/* =====================  HOVER PEEK  ====================================== */
+.peekwrap{position:relative;z-index:4}
+.peek{
+  width:440px;background:var(--surface);border:1px solid var(--hair2);
+  transition:height .32s var(--snap);overflow:hidden;
+}
+.peekwrap .pill{width:100%;min-width:0}
+.peekrows{border-top:1px solid var(--hair);max-height:0;opacity:0;transition:max-height .32s var(--snap),opacity .2s linear;}
+.peekwrap:hover .peekrows{max-height:200px;opacity:1}
+.peekhint{padding:8px 12px;text-align:center}
+.mrow{display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--hair)}
+.mrow:last-child{border-bottom:0}
+.mrow .lamp{width:9px;height:9px;flex:none}
+.mrow .nm{font-size:12px;font-weight:600;color:var(--paper);flex:none}
+.mrow .nr{font-size:11.5px;color:var(--dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mrow .tm{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+
+/* notch-safe compact header — splits around the notch so no content is occluded,
+   and carries the system identity + the "Show all N" affordance the contract asks for */
+.minihead{display:grid;grid-template-columns:1fr 200px 1fr;align-items:center;height:30px;border-bottom:1px solid var(--hair);background:var(--well)}
+.minihead .mh-l{display:flex;align-items:center;gap:8px;padding-left:14px;min-width:0;overflow:hidden}
+.minihead .mh-r{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding-right:14px;min-width:0;overflow:hidden}
+.minihead .mk{width:11px;height:11px;background:var(--nominal);box-shadow:0 0 7px rgba(74,201,158,.55);--ch:3px;flex:none}
+.minihead .wm{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;color:var(--dim);white-space:nowrap}
+.minihead .mhx{font-family:var(--mono);font-size:9px;letter-spacing:.1em;color:var(--faint);text-transform:uppercase;white-space:nowrap;cursor:pointer;transition:color .12s linear}
+.minihead .mhx:hover{color:var(--paper)}
+
+/* =====================  EXPANDED PANEL  ================================= */
+.panel{
+  position:relative;z-index:4;width:520px;max-width:100%;
+  background:var(--surface);border:1px solid var(--hair2);
+}
+.panel.narrow{width:520px}
+
+/* header — splits around the notch */
+.phead{display:flex;align-items:stretch;border-bottom:1px solid var(--hair)}
+.phead .lane{flex:1;min-width:0;padding:12px 14px;display:flex;flex-direction:column;gap:9px;justify-content:center}
+.phead .lane.r{align-items:flex-end}
+.phead .notchgap{width:200px;flex:none}
+.brand{display:flex;align-items:center;gap:9px}
+.brand .mk{width:15px;height:15px;background:var(--nominal);box-shadow:0 0 8px rgba(74,201,158,.6);--ch:3px}
+.brand .wm{font-family:var(--mono);font-size:11px;letter-spacing:.18em;color:var(--paper)}
+.brand .wm small{color:var(--faint)}
+.statusplacard{
+  display:inline-flex;align-items:center;gap:7px;padding:3px 8px;
+  border:1px solid var(--hair2);font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--dim);text-transform:uppercase;
+}
+.statusplacard .d{width:7px;height:7px;background:var(--warning);box-shadow:0 0 7px var(--warning);animation:attn 1s var(--snap) infinite}
+
+.ctrls{display:flex;gap:7px}
+.ctrl{
+  width:26px;height:26px;border:1px solid var(--hair2);background:var(--surface-2);
+  display:flex;align-items:center;justify-content:center;color:var(--dim);cursor:pointer;--ch:4px;
+  transition:background .12s linear,color .12s linear,border-color .12s linear;
+}
+.ctrl:hover{background:var(--surface-hi);color:var(--paper);border-color:var(--hair3)}
+.ctrl svg{width:13px;height:13px}
+
+/* tape gauge instrument */
+.gauge{width:100%;max-width:210px}
+.gauge .grow{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:5px}
+.gauge .glabel{font-family:var(--sans);font-size:9.5px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--dim)}
+.gauge .gval{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--paper)}
+.gauge .gval u{font-style:normal;font-size:9px;letter-spacing:.1em;color:var(--faint);margin-left:1px}
+.tape{position:relative;height:8px;background:var(--well);border:1px solid var(--hair)}
+.tape .fill{position:absolute;top:0;bottom:0;left:0;transition:width .5s var(--snap)}
+.tape .tick{position:absolute;top:-2px;bottom:-2px;width:1px;background:var(--hair3)}
+.tape .tick.crit{background:var(--warning);opacity:.65}
+.gauge .greset{display:flex;justify-content:space-between;margin-top:5px}
+.gauge .greset .caps{font-size:9px}
+.gauge .greset .rv{font-family:var(--mono);font-size:9.5px;color:var(--faint);letter-spacing:.02em}
+.fill.ok{background:linear-gradient(90deg,rgba(74,201,158,.5),var(--nominal))}
+.fill.warn{background:linear-gradient(90deg,rgba(230,170,66,.5),var(--caution))}
+.fill.crit{background:linear-gradient(90deg,rgba(224,74,66,.5),var(--warning))}
+
+/* summary strip — annunciator tiles */
+.summary{display:flex;gap:1px;background:var(--hair);border-bottom:1px solid var(--hair)}
+.sumtile{
+  flex:1;background:var(--surface);padding:9px 12px;display:flex;flex-direction:column;gap:3px;
+  position:relative;
+}
+.sumtile.lit::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px}
+.sumtile.attn.lit::before{background:var(--warning);box-shadow:0 0 8px var(--warning)}
+.sumtile.run.lit::before{background:var(--nominal);box-shadow:0 0 8px var(--nominal)}
+.sumtile.done.lit::before{background:var(--advisory)}
+.sumtile .sn{font-family:var(--mono);font-size:17px;font-weight:700;color:var(--paper);line-height:1}
+.sumtile.dim .sn{color:var(--faint)}
+.sumtile .sl{font-size:9px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--dim)}
+.sumtile.attn.lit .sn{color:var(--warning)}
+
+/* column captions */
+.colcap{
+  display:grid;grid-template-columns:74px 1fr 96px 62px;gap:8px;
+  padding:7px 16px;border-bottom:1px solid var(--hair);
+}
+.colcap span{font-size:9px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
+.colcap span.rt{text-align:right}
+
+/* session row */
+.list{display:flex;flex-direction:column}
+.row{
+  position:relative;display:grid;grid-template-columns:74px 1fr 96px 62px;gap:8px;align-items:center;
+  padding:12px 16px;border-bottom:1px solid var(--hair);
+  transition:background .14s linear;cursor:pointer;
+}
+.row:hover{background:var(--surface-hi)}
+.row:last-child{border-bottom:0}
+.row .lane{display:flex;align-items:center;gap:8px}
+.row .lane .lamp{width:9px;height:9px;flex:none}
+.row .lane .code{font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.08em}
+.code.run{color:var(--nominal)} .code.done{color:var(--advisory)}
+.code.wait{color:var(--caution)} .code.perm{color:var(--warning)}
+.code.intr{color:var(--caution)} .code.fail{color:var(--warning)} .code.idle{color:var(--faint)}
+
+.row .body{min-width:0}
+.row .body .top{display:flex;align-items:center;gap:8px;min-width:0;overflow:hidden}
+.row .body .ws{font-size:13.5px;font-weight:640;color:var(--paper);letter-spacing:-.01em;white-space:nowrap;flex:none}
+.row .chip{flex:none}
+.row .chip{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.02em;color:var(--dim);
+  border:1px solid var(--hair);padding:1px 5px;white-space:nowrap;
+}
+.row .chip.br::before{content:"⑂ ";color:var(--faint)}
+.row .narr2{font-size:12px;color:var(--dim);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .narr2 b{color:var(--paper);font-weight:600}
+.row .narr2 .v{color:var(--nominal)}
+.row .meta{font-family:var(--mono);font-size:10.5px;color:var(--faint);letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .time{text-align:right}
+.row .time .dur{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--paper)}
+.row .time .age{font-family:var(--mono);font-size:10px;color:var(--faint);display:block;margin-top:2px}
+
+/* actionable row emphasis */
+.row.act-perm{background:linear-gradient(90deg,rgba(224,74,66,.1),rgba(224,74,66,.02));box-shadow:inset 3px 0 0 var(--warning)}
+.row.act-caut{background:linear-gradient(90deg,rgba(230,170,66,.08),rgba(230,170,66,.02));box-shadow:inset 3px 0 0 var(--caution)}
+.row.act-perm:hover{background:linear-gradient(90deg,rgba(224,74,66,.15),rgba(224,74,66,.04))}
+.ackchip{
+  font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.08em;padding:3px 8px;
+  color:var(--ground);
+}
+.ackchip.perm{background:var(--warning)} .ackchip.caut{background:var(--caution)}
+
+/* dismiss — hover reveal */
+.row .dismiss{
+  position:absolute;right:12px;top:50%;transform:translateY(-50%);
+  width:20px;height:20px;border:1px solid var(--hair2);background:var(--surface);
+  color:var(--faint);display:flex;align-items:center;justify-content:center;
+  opacity:0;transition:opacity .14s linear;font-size:11px;--ch:3px;
+}
+.row:hover .dismiss{opacity:.7}
+.row .dismiss:hover{opacity:1;color:var(--warning);border-color:var(--warning)}
+
+/* footer — BRIDGE LINK readout */
+.pfoot{
+  display:flex;align-items:center;gap:10px;padding:9px 16px;border-top:1px solid var(--hair);
+  background:var(--well);
+}
+.pfoot .blamp{width:8px;height:8px;background:var(--nominal);box-shadow:0 0 7px var(--nominal);animation:phosphor 2s var(--snap) infinite}
+.pfoot .btxt{font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--dim);text-transform:uppercase}
+.pfoot .btxt b{color:var(--nominal);font-weight:700}
+.pfoot .bmetrics{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--faint);letter-spacing:.04em}
+
+/* =====================  ROW DETAIL (expanded)  ========================== */
+.detail{background:var(--surface);border-top:1px solid var(--hair)}
+.metagrid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--hair);border-bottom:1px solid var(--hair)}
+.metacell{background:var(--surface);padding:10px 14px}
+.metacell .k{font-size:9px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--faint)}
+.metacell .v{font-family:var(--mono);font-size:12px;color:var(--paper);margin-top:3px;font-variant-numeric:tabular-nums}
+.metacell .v .badge{font-size:9px;letter-spacing:.08em;color:var(--nominal);border:1px solid rgba(74,201,158,.4);padding:0 4px;margin-left:2px}
+.detbody{padding:14px}
+.narrblock{margin-bottom:14px}
+.narrblock .lab{display:flex;align-items:center;gap:7px;margin-bottom:6px}
+.narrblock .lab .caps{color:var(--dim)}
+.narrblock .lab .d{width:6px;height:6px;background:var(--nominal);box-shadow:0 0 6px var(--nominal)}
+.narrblock p{font-size:13px;line-height:1.5;color:var(--paper)}
+.narrblock .assist{
+  background:var(--surface-2);border:1px solid var(--hair);padding:12px 14px;font-size:13px;line-height:1.55;color:var(--paper);
+}
+.narrblock .assist code{font-family:var(--mono);font-size:12px;background:var(--well);padding:1px 5px;color:var(--nominal);border:1px solid var(--hair)}
+.narrblock .assist strong{font-weight:680}
+.narrblock .assist ul{margin:8px 0 2px 2px;list-style:none}
+.narrblock .assist li{padding-left:16px;position:relative;margin:4px 0;color:var(--dim)}
+.narrblock .assist li::before{content:"›";position:absolute;left:2px;color:var(--advisory)}
+.detactions{display:flex;align-items:center;gap:8px;padding:12px 14px;border-top:1px solid var(--hair)}
+.btn{
+  display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.04em;
+  padding:8px 13px;cursor:pointer;--ch:4px;border:1px solid var(--hair2);color:var(--paper);background:var(--surface-2);
+  transition:background .12s linear,border-color .12s linear;
+}
+.btn:hover{background:var(--surface-hi);border-color:var(--hair3)}
+.btn.primary{background:rgba(74,201,158,.14);border-color:rgba(74,201,158,.5);color:var(--nominal)}
+.btn.primary:hover{background:rgba(74,201,158,.22)}
+.btn .kk{font-size:9px;color:var(--faint);border:1px solid var(--hair2);padding:0 3px;letter-spacing:0}
+.btn.ghost{background:transparent;border-color:var(--hair);color:var(--dim)}
+.detactions .spacer{flex:1}
+.linkbtn{font-family:var(--mono);font-size:10.5px;color:var(--dim);text-decoration:none;letter-spacing:.03em;display:inline-flex;gap:5px;align-items:center}
+.linkbtn:hover{color:var(--paper)}
+
+/* =====================  MASTER ALARM / CHECKLIST CARD  ================== */
+.alarm{position:relative;z-index:4;width:520px;max-width:100%;background:var(--surface);border:1px solid var(--hair2)}
+.annunc{
+  display:flex;align-items:center;gap:12px;padding:11px 16px;
+  border-bottom:1px solid;
+  font-family:var(--mono);
+}
+.annunc.warn{background:rgba(224,74,66,.1);border-bottom-color:rgba(224,74,66,.35)}
+.annunc.caut{background:rgba(230,170,66,.09);border-bottom-color:rgba(230,170,66,.32)}
+.annunc .master{
+  display:flex;flex-direction:column;line-height:1.1;padding-right:12px;border-right:1px solid var(--hair2);
+}
+.annunc .master .big{font-size:12px;font-weight:800;letter-spacing:.12em}
+.annunc .master .sub{font-size:9px;letter-spacing:.14em;color:var(--dim);margin-top:2px}
+.annunc.warn .master .big{color:var(--warning)}
+.annunc.caut .master .big{color:var(--caution)}
+.annunc .beacon{width:14px;height:14px;--ch:3px}
+.annunc.warn .beacon{background:var(--warning);box-shadow:0 0 12px var(--warning);animation:attn 1s var(--snap) infinite}
+.annunc.caut .beacon{background:var(--caution);box-shadow:0 0 12px var(--caution);animation:attn 1.2s var(--snap) infinite}
+.annunc .ann-ctx{flex:1;min-width:0}
+.annunc .ann-ctx .ws{font-family:var(--sans);font-size:13px;font-weight:640;color:var(--paper)}
+.annunc .ann-ctx .sc{font-size:10px;color:var(--dim);letter-spacing:.04em;margin-top:1px}
+.annunc .held{font-size:9px;letter-spacing:.12em;color:var(--dim);text-align:right}
+.annunc .held b{display:block;color:var(--paper);font-size:11px;font-variant-numeric:tabular-nums}
+
+/* checklist item — the command */
+.checklist{padding:16px}
+.cl-item{border:1px solid var(--hair2);background:var(--well)}
+.cl-item .clhdr{display:flex;align-items:center;gap:9px;padding:8px 12px;border-bottom:1px solid var(--hair);background:var(--surface-2)}
+.cl-item .clhdr .no{
+  width:18px;height:18px;display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:10px;font-weight:800;color:var(--ground);background:var(--paper);--ch:3px;
+}
+.cl-item .clhdr .tool{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--dim);text-transform:uppercase}
+.cl-item .clhdr .tool b{color:var(--paper)}
+.cl-item .clhdr .where{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--faint)}
+.cmd{padding:13px 14px;font-family:var(--mono);font-size:13px;line-height:1.5;overflow-x:auto}
+.cmd .p{color:var(--faint)}                 /* prompt $ */
+.cmd .c{color:var(--paper);font-weight:600} /* command */
+.cmd .s{color:var(--nominal)}               /* subcommand */
+.cmd .f{color:var(--advisory)}              /* flags */
+.cmd .str{color:var(--caution)}             /* strings */
+.cmd .pa{color:var(--dim)}                  /* paths */
+
+.clnarr{font-size:12.5px;color:var(--dim);padding:11px 14px 0;line-height:1.5}
+.clnarr b{color:var(--paper)}
+
+/* diff */
+.diff{border:1px solid var(--hair2);background:var(--well);font-family:var(--mono);font-size:12px;overflow:hidden}
+.diff .dhdr{display:flex;justify-content:space-between;padding:7px 12px;border-bottom:1px solid var(--hair);background:var(--surface-2);font-size:10px;color:var(--faint);letter-spacing:.04em}
+.diff .dhdr .fp{color:var(--paper)}
+.diff .dl{display:grid;grid-template-columns:34px 1fr;line-height:1.65}
+.diff .gut{text-align:right;padding-right:8px;color:var(--faint);user-select:none;border-right:1px solid var(--hair)}
+.diff .ln{padding-left:10px;white-space:pre;overflow-x:auto}
+.diff .del{background:rgba(224,74,66,.08)} .diff .del .gut{color:var(--warning);border-color:rgba(224,74,66,.3)} .diff .del .ln{color:#e6a5a0}
+.diff .add{background:rgba(74,201,158,.08)} .diff .add .gut{color:var(--nominal);border-color:rgba(74,201,158,.3)} .diff .add .ln{color:#a6e6cd}
+.diff .ctx .ln{color:var(--dim)}
+
+/* scoped always-allow */
+.scoped{margin-top:14px}
+.scoped .caps{margin-bottom:8px;display:block}
+.suggest{
+  display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--hair2);background:var(--surface-2);
+  margin-bottom:8px;cursor:pointer;transition:border-color .12s linear,background .12s linear;
+}
+.suggest:hover{border-color:rgba(74,201,158,.45);background:var(--surface-hi)}
+.suggest .radio{width:13px;height:13px;border:1px solid var(--hair3);flex:none;--ch:2px}
+.suggest .st{font-size:12.5px;color:var(--paper);flex:1}
+.suggest .st code{font-family:var(--mono);font-size:11.5px;color:var(--nominal);background:var(--well);padding:1px 5px;border:1px solid var(--hair)}
+.suggest .kk{font-family:var(--mono);font-size:9px;color:var(--faint);border:1px solid var(--hair2);padding:1px 4px}
+
+/* ACK switches */
+.acks{display:flex;gap:9px;padding:14px 16px;border-top:1px solid var(--hair)}
+.ack{
+  flex:1;display:flex;flex-direction:column;gap:5px;align-items:center;justify-content:center;
+  padding:11px 10px;cursor:pointer;--ch:5px;border:1px solid;position:relative;
+  transition:transform .12s var(--snap),background .12s linear;
+}
+.ack:active{transform:translateY(1px)}
+.ack .lab{font-family:var(--mono);font-size:12px;font-weight:800;letter-spacing:.1em}
+.ack .kk{font-family:var(--mono);font-size:9px;letter-spacing:.02em;color:var(--faint)}
+.ack.allow{background:rgba(74,201,158,.14);border-color:rgba(74,201,158,.55)}
+.ack.allow .lab{color:var(--nominal)}
+.ack.allow:hover{background:rgba(74,201,158,.24);box-shadow:0 0 18px -6px var(--nominal)}
+.ack.deny{background:rgba(224,74,66,.12);border-color:rgba(224,74,66,.5)}
+.ack.deny .lab{color:var(--warning)}
+.ack.deny:hover{background:rgba(224,74,66,.2);box-shadow:0 0 18px -6px var(--warning)}
+.ack.always{background:var(--surface-2);border-color:var(--hair2)}
+.ack.always .lab{color:var(--paper);font-size:10px}
+.ack.always:hover{border-color:var(--hair3);background:var(--surface-hi)}
+
+/* Codex jump-to-approve variant */
+.codexbar{
+  display:flex;align-items:center;gap:12px;padding:13px 16px;border-top:1px solid var(--hair);
+  background:rgba(99,146,196,.06);
+}
+.codexbar .txt{flex:1}
+.codexbar .txt .h{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--advisory)}
+.codexbar .txt .b{font-size:12.5px;color:var(--dim);margin-top:3px}
+.codexbar .btn.jump{background:rgba(99,146,196,.16);border-color:rgba(99,146,196,.5);color:#a9c4e8}
+
+/* =====================  QUESTION CARD  ================================= */
+.qopt{
+  display:grid;grid-template-columns:24px 1fr auto;gap:11px;align-items:start;
+  padding:11px 13px;border:1px solid var(--hair2);background:var(--surface-2);margin-bottom:8px;cursor:pointer;
+  transition:border-color .12s linear,background .12s linear;
+}
+.qopt:hover{border-color:rgba(230,170,66,.45);background:var(--surface-hi)}
+.qopt .digit{
+  width:22px;height:22px;display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:11px;font-weight:800;color:var(--ground);background:var(--caution);--ch:3px;
+}
+.qopt.multi .digit{background:transparent;color:var(--caution);border:1px solid var(--caution)}
+.qopt .qt{min-width:0}
+.qopt .qt .ol{font-size:13px;font-weight:600;color:var(--paper)}
+.qopt .qt .od{font-size:11.5px;color:var(--dim);margin-top:2px;line-height:1.4}
+.qopt .qt .od code{font-family:var(--mono);font-size:11px;color:var(--advisory)}
+.qopt .check{width:15px;height:15px;border:1px solid var(--hair3);--ch:3px;align-self:center}
+.qhead{display:flex;align-items:center;gap:9px;padding:12px 16px 8px}
+.qchip{font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.1em;color:var(--caution);border:1px solid rgba(230,170,66,.4);padding:2px 7px;text-transform:uppercase}
+.qtext{font-size:14px;font-weight:600;color:var(--paper);padding:0 16px 12px;line-height:1.4}
+.qmeta{font-family:var(--mono);font-size:9.5px;color:var(--faint);letter-spacing:.06em;margin-left:auto}
+.qbody{padding:0 16px}
+.qother{
+  display:flex;align-items:center;gap:11px;padding:11px 13px;border:1px dashed var(--hair2);background:var(--well);margin-bottom:10px;
+}
+.qother .digit{background:transparent;color:var(--faint);border:1px solid var(--hair2)}
+.qother input{
+  flex:1;background:transparent;border:0;outline:0;color:var(--paper);font-family:var(--sans);font-size:12.5px;
+}
+.qother input::placeholder{color:var(--faint)}
+.qsubmit{display:flex;align-items:center;gap:8px;padding:12px 16px;border-top:1px solid var(--hair)}
+.qsubmit .hint{font-family:var(--mono);font-size:10px;color:var(--faint);letter-spacing:.04em}
+.qsubmit .spacer{flex:1}
+.qn2{border-top:1px solid var(--hair);margin-top:6px}
+
+/* =====================  SUBAGENTS / TASKS  ============================= */
+.cluster{padding:14px}
+.cluster .chdr{display:flex;align-items:center;gap:9px;margin-bottom:11px}
+.cluster .chdr .caps{color:var(--dim)}
+.engines{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:14px}
+.engine{border:1px solid var(--hair2);background:var(--surface-2);padding:10px 11px}
+.engine .etop{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.engine .etype{font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.06em;color:var(--nominal)}
+.engine .elamp{width:8px;height:8px;background:var(--nominal);box-shadow:0 0 6px var(--nominal);animation:phosphor 2s var(--snap) infinite}
+.engine .etask{font-size:11.5px;color:var(--paper);line-height:1.35;min-height:31px}
+.engine .egauge{margin-top:9px;display:flex;align-items:center;justify-content:space-between}
+.engine .earc{width:100%;height:4px;background:var(--well);border:1px solid var(--hair);position:relative;margin-right:8px}
+.engine .earc i{position:absolute;left:0;top:0;bottom:0;background:var(--nominal);opacity:.75}
+.engine .eel{font-family:var(--mono);font-size:10.5px;font-weight:600;color:var(--paper);white-space:nowrap}
+
+/* todo list */
+.todos{border:1px solid var(--hair2);background:var(--well)}
+.todos .thdr{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--hair);background:var(--surface-2)}
+.todos .thdr .caps{color:var(--dim)}
+.todos .thdr .prog{font-family:var(--mono);font-size:10px;color:var(--faint)}
+.todo{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--hair);font-size:12.5px}
+.todo:last-child{border-bottom:0}
+.todo .box{width:13px;height:13px;flex:none;border:1px solid var(--hair3);display:flex;align-items:center;justify-content:center;--ch:2px}
+.todo.done{color:var(--faint)}
+.todo.done .box{background:var(--advisory);border-color:transparent}
+.todo.done .box::after{content:"✓";font-size:9px;color:var(--ground);font-weight:800}
+.todo.done .lbl{text-decoration:line-through;text-decoration-color:var(--hair3)}
+.todo.doing .box{border-color:var(--nominal);position:relative}
+.todo.doing .box::after{content:"";position:absolute;inset:2px;background:var(--nominal);box-shadow:0 0 6px var(--nominal);animation:phosphor 2s var(--snap) infinite}
+.todo.doing .lbl{color:var(--paper);font-weight:600}
+.todo.pend .lbl{color:var(--dim)}
+.todo .lbl{flex:1}
+.todo .tg{font-family:var(--mono);font-size:9px;letter-spacing:.08em;color:var(--faint);text-transform:uppercase}
+
+/* compression note */
+.compress{display:flex;gap:16px;align-items:center;margin-top:14px;flex-wrap:wrap}
+.compress .note{font-size:11.5px;color:var(--dim);max-width:220px;line-height:1.5}
+.compress .note b{color:var(--paper)}
+
+/* =====================  COMPLETED CARD  ================================ */
+.donecard{padding:16px}
+.donehero{display:flex;align-items:flex-start;gap:14px;margin-bottom:14px}
+.donebadge{
+  display:flex;flex-direction:column;align-items:center;gap:5px;padding:12px 14px;border:1px solid rgba(99,146,196,.4);background:rgba(99,146,196,.08);--ch:5px;
+}
+.donebadge .ic{width:22px;height:22px;color:var(--advisory)}
+.donebadge .bl{font-family:var(--mono);font-size:9px;letter-spacing:.12em;color:var(--advisory);font-weight:700}
+.doneinfo{flex:1;min-width:0}
+.doneinfo .ws{font-size:16px;font-weight:680;color:var(--paper);letter-spacing:-.01em}
+.doneinfo .sum{font-size:13px;color:var(--dim);margin-top:5px;line-height:1.5}
+.doneinfo .sum b{color:var(--paper)}
+.donestats{display:flex;gap:1px;background:var(--hair);border:1px solid var(--hair);margin-bottom:14px}
+.donestat{flex:1;background:var(--surface-2);padding:9px 12px}
+.donestat .k{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-weight:600}
+.donestat .v{font-family:var(--mono);font-size:13px;color:var(--paper);margin-top:3px}
+
+/* =====================  EMPTY STATE  =================================== */
+.empty{padding:34px 20px;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center}
+.empty .lampgrid{display:flex;gap:7px}
+.empty .lampgrid .l{width:11px;height:11px;border:1px solid var(--hair2);background:var(--well)}
+.empty .lampgrid .l.on{background:var(--nominal);border-color:transparent;box-shadow:0 0 8px rgba(74,201,158,.5);animation:phosphor 2.6s var(--snap) infinite}
+.empty h3{font-family:var(--mono);font-size:12px;letter-spacing:.18em;color:var(--paper);text-transform:uppercase}
+.empty p{font-size:12.5px;color:var(--dim);max-width:300px;line-height:1.5}
+.empty .sysline{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--faint);display:flex;gap:8px;align-items:center}
+.empty .sysline .d{width:6px;height:6px;background:var(--nominal);box-shadow:0 0 6px var(--nominal)}
+
+/* =====================  MOTION STRIP  ================================= */
+.motion{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--hair);border:1px solid var(--hair)}
+@media(max-width:760px){.motion{grid-template-columns:1fr 1fr}}
+.mcell{background:var(--surface);padding:20px 14px 14px;display:flex;flex-direction:column;align-items:center;gap:14px;min-height:118px;justify-content:space-between}
+.mcell .demo{flex:1;display:flex;align-items:center;justify-content:center;width:100%}
+.mcell .ml{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;color:var(--dim);text-transform:uppercase;text-align:center}
+.mcell .ml b{color:var(--paper);display:block;letter-spacing:.1em;margin-bottom:2px}
+
+/* motion demos */
+.d-breathe{width:14px;height:14px;background:var(--nominal);--ch:3px;animation:phosphor 2s var(--snap) infinite}
+.d-morph{width:40px;height:16px;border:1px solid var(--hair3);background:var(--surface-2);animation:morph 3s var(--snap) infinite}
+@keyframes morph{0%,20%{width:40px;height:16px;border-radius:8px}55%,80%{width:120px;height:44px;border-radius:2px}100%{width:40px;height:16px;border-radius:8px}}
+.d-pulse{width:14px;height:14px;background:var(--warning);--ch:3px;animation:attn 1s var(--snap) infinite,pglow 1s var(--snap) infinite}
+@keyframes pglow{0%,100%{box-shadow:0 0 14px var(--warning)}50%{box-shadow:0 0 2px var(--warning)}}
+.d-enter{display:flex;flex-direction:column;gap:5px}
+.d-enter i{width:80px;height:9px;background:var(--surface-hi);border-left:2px solid var(--nominal);animation:enter 2.4s var(--snap) infinite}
+.d-enter i:nth-child(2){animation-delay:.2s}.d-enter i:nth-child(3){animation-delay:.4s}
+@keyframes enter{0%,60%{transform:translateX(0);opacity:1}70%{transform:translateX(-14px);opacity:0}72%{transform:translateX(14px);opacity:0}82%,100%{transform:translateX(0);opacity:1}}
+.d-settle{width:16px;height:16px;--ch:3px;animation:settle 3s var(--snap) infinite}
+@keyframes settle{0%{background:var(--nominal);box-shadow:0 0 18px var(--nominal);transform:scale(1.25)}25%{background:var(--nominal);box-shadow:0 0 12px var(--nominal);transform:scale(1)}70%{background:var(--advisory);box-shadow:0 0 5px rgba(99,146,196,.5)}100%{background:var(--advisory);box-shadow:none}}
+.d-lamp{display:flex;gap:6px}
+.d-lamp i{width:12px;height:12px;border:1px solid var(--hair2);background:var(--well)}
+.d-lamp i:nth-child(1){animation:snapon 2.4s steps(1,end) infinite}
+.d-lamp i:nth-child(2){animation:snapon 2.4s steps(1,end) .3s infinite}
+.d-lamp i:nth-child(3){animation:snapon 2.4s steps(1,end) .6s infinite}
+@keyframes snapon{0%,10%{background:var(--well);box-shadow:none;border-color:var(--hair2)}12%,55%{background:var(--nominal);box-shadow:0 0 8px var(--nominal);border-color:transparent}100%{background:var(--well);box-shadow:none;border-color:var(--hair2)}}
+
+/* reduce motion */
+@media(prefers-reduced-motion:reduce){
+  *{animation-duration:.001ms!important;animation-iteration-count:1!important}
+}
+
+/* footer of board */
+.boardfoot{max-width:1180px;margin:60px auto 0;padding:26px 28px 0;border-top:1px solid var(--hair);color:var(--faint);font-size:11.5px;line-height:1.7}
+.boardfoot .mono{color:var(--dim)}
+</style>
+</head>
+<body>
+
+<!-- ==================== MASTHEAD ==================== -->
+<div class="board">
+  <div class="masthead">
+    <div class="kick">Open Island · Art Direction 02</div>
+    <h1><b>Flight Deck 2.0</b> <span>·</span> Glass Cockpit</h1>
+    <p class="thesis">Not aviation cosplay — aviation-grade <b>information design</b>. One dark
+      instrument panel where light is spent only on meaning: a lamp lights when, and only when,
+      something is true. <b>Attention is a MASTER ALARM</b> — permission is a red WARNING that
+      blocks, a question is an amber CAUTION that waits. Every value is a tabular readout; every
+      state pairs a lamp with a placard, so nothing depends on colour alone.</p>
+
+    <div class="legend">
+      <div class="sw"><span class="lamp" style="background:var(--nominal);box-shadow:0 0 8px var(--nominal)"></span><span class="t">RUN<small>Nominal · running</small></span></div>
+      <div class="sw"><span class="lamp" style="background:var(--advisory)"></span><span class="t">DONE<small>Advisory · success</small></span></div>
+      <div class="sw"><span class="lamp" style="background:var(--caution);box-shadow:0 0 8px var(--caution)"></span><span class="t">CAUT<small>Amber · question / interrupted</small></span></div>
+      <div class="sw"><span class="lamp" style="background:var(--warning);box-shadow:0 0 8px var(--warning)"></span><span class="t">WARN<small>Red · permission / failed</small></span></div>
+      <div class="sw"><span class="lamp" style="background:var(--well);border:1px solid var(--hair2)"></span><span class="t">DARK<small>Unlit · idle lamp</small></span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== §A COLLAPSED PILL ==================== -->
+<div class="board">
+  <div class="section">
+    <h2><span class="id">A</span> <span class="nm">Collapsed pill — ambient states</span>
+      <span class="why">Where the product lives 95% of the time. The pill fuses around the notch; content sits in the wings. Count · liveness · attention, readable from across the room.</span></h2>
+    <div class="rule"></div>
+
+    <div class="grid two">
+      <!-- A1 -->
+      <div class="frame">
+        <div class="cap"><span class="fid">A1</span><span class="fnm">Idle / monitoring</span><span class="fdesc">A dark panel with the power on. Barely there.</span></div>
+        <div class="desk">
+          <div class="menubar">
+            <div class="mleft"><span class="apple">◍</span><b>Open Island</b><span>File</span><span>View</span></div>
+            <div class="mright"><span>􀙇</span><span>􀯓</span><span class="clock js-clock">10:24</span></div>
+          </div>
+          <div class="stage"><div class="notch"></div>
+            <div class="pill">
+              <div class="wing"><span class="bars idle"><i></i><i></i><i></i></span></div>
+              <div class="notchgap"></div>
+              <div class="wing r"><span class="clabel">Standby</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- A2 -->
+      <div class="frame">
+        <div class="cap"><span class="fid">A2</span><span class="fnm">Working — narrated activity</span><span class="fdesc">Phosphor pulse = alive. The wing narrates the live action.</span></div>
+        <div class="desk">
+          <div class="menubar">
+            <div class="mleft"><span class="apple">◍</span><b>Open Island</b><span>File</span><span>View</span></div>
+            <div class="mright"><span>􀙇</span><span class="clock js-clock">10:24</span></div>
+          </div>
+          <div class="stage"><div class="notch"></div>
+            <div class="pill">
+              <div class="wing"><span class="bars run"><i></i><i></i><i></i></span><span class="narr"><span class="verb">Editing</span> AppModel.swift</span></div>
+              <div class="notchgap"></div>
+              <div class="wing r"><span class="mgrid"><span class="lamp run"></span><span class="lamp run"></span><span class="lamp idle"></span><span class="lamp done"></span></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- A3 -->
+      <div class="frame">
+        <div class="cap"><span class="fid">A3</span><span class="fnm">Attention — permission (WARNING)</span><span class="fdesc">The loudest ambient state. Red segment latches; the panel is held.</span></div>
+        <div class="desk">
+          <div class="menubar">
+            <div class="mleft"><span class="apple">◍</span><b>Open Island</b></div>
+            <div class="mright"><span class="clock js-clock">10:24</span></div>
+          </div>
+          <div class="stage"><div class="notch"></div>
+            <div class="pill attn-perm">
+              <div class="wing"><span class="bars warn"><i></i><i></i><i></i></span><span class="narr"><span style="color:var(--warning)">Permission</span> swift build</span></div>
+              <div class="notchgap"></div>
+              <div class="wing r"><span class="seg warn"><span class="ic">⚠</span>ACK<span class="n">×1</span></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- A4 -->
+      <div class="frame">
+        <div class="cap"><span class="fid">A4</span><span class="fnm">Attention — question (CAUTION)</span><span class="fdesc">Amber caution. Waits for an answer; does not block the run.</span></div>
+        <div class="desk">
+          <div class="menubar">
+            <div class="mleft"><span class="apple">◍</span><b>Open Island</b></div>
+            <div class="mright"><span class="clock js-clock">10:24</span></div>
+          </div>
+          <div class="stage"><div class="notch"></div>
+            <div class="pill attn-caut">
+              <div class="wing"><span class="bars wait"><i></i><i></i><i></i></span><span class="narr" style="color:var(--caution)">Which auth method?</span></div>
+              <div class="notchgap"></div>
+              <div class="wing r"><span class="seg caution"><span class="ic">?</span>ANSWER<span class="n">×1</span></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- A5 -->
+      <div class="frame">
+        <div class="cap"><span class="fid">A5</span><span class="fnm">Just completed — success settle</span><span class="fdesc">A brief blue advisory flash, then it settles to a calm dot.</span></div>
+        <div class="desk">
+          <div class="menubar">
+            <div class="mleft"><span class="apple">◍</span><b>Open Island</b></div>
+            <div class="mright"><span class="clock js-clock">10:24</span></div>
+          </div>
+          <div class="stage"><div class="notch"></div>
+            <div class="pill done">
+              <div class="wing"><span class="d-settle" style="width:14px;height:14px"></span><span class="narr" style="color:var(--advisory)">Done · AGENTS.md</span></div>
+              <div class="notchgap"></div>
+              <div class="wing r"><span class="mgrid"><span class="lamp done"></span><span class="lamp run"></span><span class="lamp idle"></span></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- A6 -->
+      <div class="frame">
+        <div class="cap"><span class="fid">A6</span><span class="fnm">Outcome variants — interrupted / failed</span><span class="fdesc">Success is not the only ending. Amber ⊘ vs red ✕, never green for both.</span></div>
+        <div class="desk">
+          <div class="menubar"><div class="mleft"><span class="apple">◍</span><b>Open Island</b></div><div class="mright"><span class="clock js-clock">10:24</span></div></div>
+          <div class="stage"><div class="notch"></div>
+            <div class="pill">
+              <div class="wing"><span class="mgrid" style="grid-template-rows:11px"><span class="lamp" style="background:var(--caution)"></span></span><span class="narr" style="color:var(--caution)">⊘ Interrupted · refactor</span></div>
+              <div class="notchgap"></div>
+              <div class="wing r"><span class="narr" style="color:var(--warning);max-width:130px">✕ Failed · niche-radar</span><span class="mgrid" style="grid-template-rows:11px"><span class="lamp perm" style="animation:none"></span></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== §B HOVER PEEK ==================== -->
+<div class="board">
+  <div class="section">
+    <h2><span class="id">B</span> <span class="nm">Hover peek — pre-click morph</span>
+      <span class="why">Dwell 0.15s and the shape begins to open: micro-rows drop in with the single actionable item surfaced first. Hover the pill below to see it live.</span></h2>
+    <div class="rule"></div>
+
+    <div class="grid two">
+      <div class="frame">
+        <div class="cap"><span class="fid">B</span><span class="fnm">Peek tray (hover me)</span><span class="fdesc">The morph begins — per-session micro-rows, actionable on top.</span></div>
+        <div class="desk">
+          <div class="menubar"><div class="mleft"><span class="apple">◍</span><b>Open Island</b></div><div class="mright"><span class="clock js-clock">10:24</span></div></div>
+          <div class="stage"><div class="notch"></div>
+            <div class="peekwrap">
+              <div class="peek">
+                <div class="pill attn-perm" style="border:0;border-bottom:1px solid var(--hair)">
+                  <div class="wing"><span class="bars warn"><i></i><i></i><i></i></span><span class="narr" style="color:var(--warning)">1 needs ACK</span></div>
+                  <div class="notchgap"></div>
+                  <div class="wing r"><span class="seg warn"><span class="n">×4</span></span></div>
+                </div>
+                <div class="peekrows">
+                  <div class="mrow"><span class="lamp perm"></span><span class="nm">the-automator</span><span class="nr">wants <b style="color:var(--paper)">swift build</b></span><span class="tm">ACK</span></div>
+                  <div class="mrow"><span class="lamp run"></span><span class="nm">open-vibe-island</span><span class="nr">Editing AppModel.swift</span><span class="tm">1m42s</span></div>
+                  <div class="mrow"><span class="lamp wait"></span><span class="nm">the-automator</span><span class="nr">Which auth method?</span><span class="tm">ANS</span></div>
+                  <div class="peekhint"><span class="caps">Click to open · Esc to dismiss</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="frame">
+        <div class="cap"><span class="fid">B·2</span><span class="fnm">Morph model</span><span class="fdesc">One continuous shape — top radius 0→R, glyph travels into the header.</span></div>
+        <div class="desk" style="display:flex;align-items:center;justify-content:center;min-height:220px">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:22px;padding:26px">
+            <div class="d-morph" style="animation:morph 3s var(--snap) infinite"></div>
+            <p style="font-size:12px;color:var(--dim);text-align:center;max-width:320px;line-height:1.55">
+              Hover scales the pill ~1.03 and opens after 0.15s dwell. Expand is
+              <b style="color:var(--paper)">one shape growing</b> — corner radius latches
+              square, the status lamp does not cross-fade, it flies from the wing into the
+              header. Motion is <span class="mono" style="color:var(--nominal)">relay-snap</span>
+              (response .32 / damping .92), not an ease.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== §C EXPANDED PANEL — LIST ==================== -->
+<div class="board">
+  <div class="section">
+    <h2><span class="id">C</span> <span class="nm">Expanded panel — session list</span>
+      <span class="why">Header splits around the notch (usage lanes + controls), an annunciator summary strip, a SESSION / MODEL / APP / TIME column grid, and a live BRIDGE LINK footer. Attention rows dominate; duplicate names disambiguate by branch.</span></h2>
+    <div class="rule"></div>
+
+    <div style="display:flex;justify-content:center">
+      <div class="cap" style="position:absolute"></div>
+      <div class="desk" style="width:600px;max-width:100%">
+        <div class="menubar">
+          <div class="mleft"><span class="apple">◍</span><b>Open Island</b><span>File</span><span>View</span><span>Window</span></div>
+          <div class="mright"><span>􀙇</span><span>􀯓</span><span class="clock js-clock">10:24</span></div>
+        </div>
+        <div class="stage"><div class="notch"></div>
+          <div class="panel">
+            <!-- header -->
+            <div class="phead">
+              <div class="lane">
+                <div class="brand"><span class="mk oct"></span><span class="wm">OPEN&nbsp;ISLAND <small>/ FLT DECK</small></span></div>
+                <div class="gauge">
+                  <div class="grow"><span class="glabel">Claude · 5H</span><span class="gval">17<u>%</u></span></div>
+                  <div class="tape"><div class="fill ok" style="width:17%"></div><div class="tick" style="left:70%"></div><div class="tick crit" style="left:90%"></div></div>
+                  <div class="greset"><span class="caps">Reset</span><span class="rv">2H 10M</span></div>
+                </div>
+              </div>
+              <div class="notchgap"></div>
+              <div class="lane r">
+                <div class="ctrls">
+                  <div class="ctrl" title="Mute"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M17 8l4 8M21 8l-4 8"/></svg></div>
+                  <div class="ctrl" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg></div>
+                  <div class="ctrl" title="Quit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6l12 12M18 6L6 18"/></svg></div>
+                </div>
+                <div class="gauge">
+                  <div class="grow"><span class="glabel">Claude · 7D</span><span class="gval" style="color:var(--caution)">76<u>%</u></span></div>
+                  <div class="tape"><div class="fill warn" style="width:76%"></div><div class="tick" style="left:70%"></div><div class="tick crit" style="left:90%"></div></div>
+                  <div class="greset"><span class="caps">Reset</span><span class="rv">4D 06H</span></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- summary strip -->
+            <div class="summary">
+              <div class="sumtile attn lit"><span class="sn">2</span><span class="sl">Attn</span></div>
+              <div class="sumtile run lit"><span class="sn">2</span><span class="sl">Run</span></div>
+              <div class="sumtile done lit"><span class="sn">3</span><span class="sl">Done</span></div>
+              <div class="sumtile dim"><span class="sn">0</span><span class="sl">Idle</span></div>
+            </div>
+
+            <!-- column captions -->
+            <div class="colcap"><span>Status</span><span>Session</span><span>Model</span><span class="rt">Time</span></div>
+
+            <!-- rows -->
+            <div class="list">
+              <!-- permission (loudest actionable) -->
+              <div class="row act-perm">
+                <div class="lane"><span class="lamp perm"></span><span class="code perm">WARN</span></div>
+                <div class="body">
+                  <div class="top"><span class="ws">the-automator</span><span class="chip br">feat/auth-bridge</span></div>
+                  <div class="narr2"><b style="color:var(--warning)">Permission</b> — wants to run <b>swift&nbsp;build</b></div>
+                </div>
+                <div class="meta">codex</div>
+                <div class="time"><span class="ackchip perm">⌘Y ACK</span><span class="age">held 8s</span></div>
+              </div>
+
+              <!-- question -->
+              <div class="row act-caut">
+                <div class="lane"><span class="lamp wait"></span><span class="code wait">CAUT</span></div>
+                <div class="body">
+                  <div class="top"><span class="ws">the-automator</span><span class="chip br">main</span></div>
+                  <div class="narr2" style="color:var(--caution)">Which auth method should the bridge use?</div>
+                </div>
+                <div class="meta">claude · Sonnet 5</div>
+                <div class="time"><span class="ackchip caut">ANSWER</span><span class="age">12s</span></div>
+              </div>
+
+              <!-- running w/ live activity -->
+              <div class="row">
+                <div class="lane"><span class="lamp run"></span><span class="code run">RUN</span></div>
+                <div class="body">
+                  <div class="top"><span class="ws">open-vibe-island</span><span class="chip">acceptEdits</span></div>
+                  <div class="narr2"><span class="v">Editing</span> <b>AppModel.swift</b> · bridge lifecycle</div>
+                </div>
+                <div class="meta">claude · Opus 4.8</div>
+                <div class="time"><span class="dur js-timer" data-seconds="102" data-fmt="ms">1m 42s</span><span class="age">now</span></div>
+                <div class="dismiss">✕</div>
+              </div>
+
+              <!-- running w/ subagents -->
+              <div class="row">
+                <div class="lane"><span class="lamp run"></span><span class="code run">RUN</span></div>
+                <div class="body">
+                  <div class="top"><span class="ws">open-vibe-island</span><span class="chip br">feat/theme-audit</span><span class="chip" style="color:var(--nominal);border-color:rgba(74,201,158,.4)">⚙ 3 SUB</span></div>
+                  <div class="narr2"><span class="v">Orchestrating</span> 3 subagents · <b>4 of 6 tasks done</b></div>
+                </div>
+                <div class="meta">claude · Opus 4.8</div>
+                <div class="time"><span class="dur js-timer" data-seconds="518" data-fmt="ms">8m 38s</span><span class="age">now</span></div>
+                <div class="dismiss">✕</div>
+              </div>
+
+              <!-- completed success -->
+              <div class="row">
+                <div class="lane"><span class="lamp done"></span><span class="code done">DONE</span></div>
+                <div class="body">
+                  <div class="top"><span class="ws">niche-radar</span></div>
+                  <div class="narr2">Updated <b>AGENTS.md</b> and <b>CLAUDE.md</b> · 3 files</div>
+                </div>
+                <div class="meta">gemini</div>
+                <div class="time"><span class="dur">43m</span><span class="age">ago</span></div>
+                <div class="dismiss">✕</div>
+              </div>
+
+              <!-- completed interrupted -->
+              <div class="row">
+                <div class="lane"><span class="lamp" style="background:var(--caution)"></span><span class="code intr">INTR</span></div>
+                <div class="body">
+                  <div class="top"><span class="ws">open-vibe-island</span><span class="chip br">wt/hotfix</span></div>
+                  <div class="narr2" style="color:var(--dim)">⊘ Interrupted mid-refactor · <b>ExtractView.swift</b></div>
+                </div>
+                <div class="meta">cursor</div>
+                <div class="time"><span class="dur">1h 04m</span><span class="age">ago</span></div>
+                <div class="dismiss">✕</div>
+              </div>
+            </div>
+
+            <!-- footer -->
+            <div class="pfoot">
+              <span class="blamp"></span>
+              <span class="btxt">Bridge Link <b>Connected</b></span>
+              <span class="bmetrics">socket /tmp/openisland.sock · 6 SESS · <span class="js-evt tab">128</span> EVT/MIN</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== §D ROW DETAIL ==================== -->
+<div class="board">
+  <div class="section">
+    <h2><span class="id">D</span> <span class="nm">Row expanded — session detail</span>
+      <span class="why">Metadata as an instrument readout, current + last activity narrated, the assistant reply as clean rich text, jump as the primary CTA, dismiss hidden until hover.</span></h2>
+    <div class="rule"></div>
+
+    <div style="display:flex;justify-content:center">
+      <div class="desk" style="width:560px;max-width:100%">
+        <div class="menubar"><div class="mleft"><span class="apple">◍</span><b>Open Island</b></div><div class="mright"><span class="clock js-clock">10:24</span></div></div>
+        <div class="stage"><div class="notch"></div>
+          <div class="panel">
+            <div class="minihead"><div class="mh-l"><span class="mk oct"></span><span class="wm">OPEN&nbsp;ISLAND</span></div><div class="notchgap"></div><div class="mh-r"><span class="mhx">‹ All sessions</span></div></div>
+            <!-- selected row header -->
+            <div class="row" style="cursor:default;background:var(--surface-hi)">
+              <div class="lane"><span class="lamp run"></span><span class="code run">RUN</span></div>
+              <div class="body"><div class="top"><span class="ws">open-vibe-island</span><span class="chip br">feat/auth-bridge</span><span class="chip" style="color:var(--nominal);border-color:rgba(74,201,158,.4)">● SSH</span></div></div>
+              <div class="meta"></div>
+              <div class="time"><span class="dur js-timer" data-seconds="1926" data-fmt="hms">32m 06s</span><span class="age">live</span></div>
+            </div>
+
+            <div class="detail">
+              <div class="metagrid">
+                <div class="metacell"><div class="k">Agent</div><div class="v">claude</div></div>
+                <div class="metacell"><div class="k">Model</div><div class="v">Opus 4.8</div></div>
+                <div class="metacell"><div class="k">Mode</div><div class="v">acceptEdits</div></div>
+                <div class="metacell"><div class="k">Branch</div><div class="v">feat/auth-bridge</div></div>
+                <div class="metacell"><div class="k">Uptime</div><div class="v tab js-timer" data-seconds="1926" data-fmt="hms">32m 06s</div></div>
+                <div class="metacell"><div class="k">Terminal</div><div class="v">Ghostty <span class="badge">ATTACHED</span></div></div>
+              </div>
+
+              <div class="detbody">
+                <div class="narrblock">
+                  <div class="lab"><span class="d"></span><span class="caps lit">Now</span></div>
+                  <p><span style="color:var(--nominal)">Editing</span> <b style="color:var(--paper)">BridgeServer.swift</b> — wiring the socket handshake to peer-credential auth.</p>
+                </div>
+                <div class="narrblock">
+                  <div class="lab"><span class="caps">Last message · Claude</span></div>
+                  <div class="assist">
+                    I've moved the bridge auth onto <strong>Unix-socket peer credentials</strong> so no
+                    token ever touches disk. The handshake now:
+                    <ul>
+                      <li>reads <code>SO_PEERCRED</code> on accept and pins the client uid</li>
+                      <li>rejects any connection whose uid ≠ the app's own</li>
+                      <li>keeps hooks <strong>fail-open</strong> — a denied peer degrades to no-overlay, never a blocked agent</li>
+                    </ul>
+                    Next I'll update <code>AGENTS.md</code> to document the trust boundary.
+                  </div>
+                </div>
+              </div>
+
+              <div class="detactions">
+                <div class="btn primary">Jump to terminal <span class="kk">⏎</span></div>
+                <a class="linkbtn" href="#">▤ Transcript</a>
+                <div class="spacer"></div>
+                <div class="btn ghost">Dismiss</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== §E PERMISSION — HERO ==================== -->
+<div class="board">
+  <div class="section">
+    <h2><span class="id">E</span> <span class="nm">Permission request — MASTER WARNING</span>
+      <span class="why">The core value, the most polished frame. A red WARNING annunciator lights, the command is a checklist item, and ACK-style switches carry the real ⌘Y / ⌘⇧Y / ⌘N hints. Approve/Deny is a live round-trip that unblocks the agent.</span></h2>
+    <div class="rule"></div>
+
+    <div class="grid two" style="align-items:start">
+      <!-- E1 command -->
+      <div class="frame">
+        <div class="cap"><span class="fid">E1</span><span class="fnm">Command · syntax-highlighted</span><span class="fdesc">A real blocking round-trip. Scoped "always allow" below.</span></div>
+        <div class="desk">
+          <div class="menubar"><div class="mleft"><span class="apple">◍</span><b>Open Island</b></div><div class="mright"><span class="clock js-clock">10:24</span></div></div>
+          <div class="stage"><div class="notch"></div>
+            <div class="alarm">
+              <div class="minihead"><div class="mh-l"><span class="mk oct"></span><span class="wm">OPEN&nbsp;ISLAND</span></div><div class="notchgap"></div><div class="mh-r"><span class="mhx">Show all 6 ›</span></div></div>
+              <div class="annunc warn">
+                <span class="beacon oct"></span>
+                <div class="master"><span class="big">MASTER WARN</span><span class="sub">Permission · agent held</span></div>
+                <div class="ann-ctx"><div class="ws">the-automator</div><div class="sc">claude · Opus 4.8 · feat/auth-bridge</div></div>
+                <div class="held"><span>HELD</span><b class="js-timer" data-seconds="8" data-fmt="s" data-up="1">0m 08s</b></div>
+              </div>
+
+              <div class="checklist">
+                <div class="cl-item">
+                  <div class="clhdr"><span class="no">1</span><span class="tool">Tool <b>Bash</b></span><span class="where">project root</span></div>
+                  <div class="cmd"><span class="p">$</span> <span class="c">swift</span> <span class="s">build</span> <span class="f">-c</span> <span class="str">release</span> <span class="f">--product</span> <span class="pa">OpenIslandHooks</span></div>
+                </div>
+                <p class="clnarr"><b>Compiles the hooks binary</b> in release mode. Writes only to <span class="mono" style="color:var(--dim)">.build/</span> — no network, no files outside the project.</p>
+
+                <div class="scoped">
+                  <span class="caps">Scoped always-allow · suggested</span>
+                  <div class="suggest"><span class="radio oct"></span><span class="st">Yes, allow <code>swift build</code> from <b>this project</b></span><span class="kk">⌘⇧Y</span></div>
+                  <div class="suggest"><span class="radio oct"></span><span class="st">Yes, allow all <code>swift</code> commands from this project</span></div>
+                </div>
+              </div>
+
+              <div class="acks">
+                <div class="ack allow"><span class="lab">ALLOW ONCE</span><span class="kk">⌘Y</span></div>
+                <div class="ack always"><span class="lab">ALLOW ALWAYS</span><span class="kk">⌘⇧Y</span></div>
+                <div class="ack deny"><span class="lab">DENY</span><span class="kk">⌘N</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- E2 diff -->
+      <div class="frame">
+        <div class="cap"><span class="fid">E2</span><span class="fnm">File edit · inline diff</span><span class="fdesc">Write/Edit renders old→new. Red del marker, cyan add marker.</span></div>
+        <div class="desk">
+          <div class="menubar"><div class="mleft"><span class="apple">◍</span><b>Open Island</b></div><div class="mright"><span class="clock js-clock">10:24</span></div></div>
+          <div class="stage"><div class="notch"></div>
+            <div class="alarm">
+              <div class="minihead"><div class="mh-l"><span class="mk oct"></span><span class="wm">OPEN&nbsp;ISLAND</span></div><div class="notchgap"></div><div class="mh-r"><span class="mhx">Show all 6 ›</span></div></div>
+              <div class="annunc warn">
+                <span class="beacon oct"></span>
+                <div class="master"><span class="big">MASTER WARN</span><span class="sub">Permission · agent held</span></div>
+                <div class="ann-ctx"><div class="ws">open-vibe-island</div><div class="sc">claude · Opus 4.8 · main</div></div>
+                <div class="held"><span>HELD</span><b class="js-timer" data-seconds="3" data-fmt="s" data-up="1">0m 03s</b></div>
+              </div>
+              <div class="checklist">
+                <div class="cl-item">
+                  <div class="clhdr"><span class="no">1</span><span class="tool">Tool <b>Edit</b></span><span class="where">AGENTS.md</span></div>
+                  <div class="diff">
+                    <div class="dhdr"><span class="fp">…/open-vibe-island/AGENTS.md</span><span>−1 +2</span></div>
+                    <div class="dl ctx"><span class="gut">14</span><span class="ln">## Bridge trust boundary</span></div>
+                    <div class="dl del"><span class="gut">15</span><span class="ln">- Auth: token file at ~/.openisland/token</span></div>
+                    <div class="dl add"><span class="gut">15</span><span class="ln">+ Auth: Unix-socket peer credentials (SO_PEERCRED)</span></div>
+                    <div class="dl add"><span class="gut">16</span><span class="ln">+ No secret is ever written to disk.</span></div>
+                    <div class="dl ctx"><span class="gut">17</span><span class="ln"></span></div>
+                  </div>
+                </div>
+                <p class="clnarr"><b>Rewrites the trust-boundary note</b> in AGENTS.md — replaces the token-file line with the peer-credential design.</p>
+              </div>
+              <div class="acks">
+                <div class="ack allow"><span class="lab">ALLOW</span><span class="kk">⌘Y</span></div>
+                <div class="ack always"><span class="lab">ALWAYS · EDITS HERE</span><span class="kk">⌘⇧Y</span></div>
+                <div class="ack deny"><span class="lab">DENY</span><span class="kk">⌘N</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- E3 codex jump -->
+    <div class="frame" style="margin-top:26px">
+      <div class="cap"><span class="fid">E3</span><span class="fnm">Codex.app variant — jump to approve</span><span class="fdesc">Codex approvals happen in-app; the overlay can't ACK, so it routes you there honestly.</span></div>
+      <div style="display:flex;justify-content:center">
+        <div class="desk" style="width:560px;max-width:100%">
+          <div class="menubar"><div class="mleft"><span class="apple">◍</span><b>Open Island</b></div><div class="mright"><span class="clock js-clock">10:24</span></div></div>
+          <div class="stage"><div class="notch"></div>
+            <div class="alarm">
+              <div class="minihead"><div class="mh-l"><span class="mk oct"></span><span class="wm">OPEN&nbsp;ISLAND</span></div><div class="notchgap"></div><div class="mh-r"><span class="mhx">Show all 6 ›</span></div></div>
+              <div class="annunc warn">
+                <span class="beacon oct"></span>
+                <div class="master"><span class="big">MASTER WARN</span><span class="sub">Permission · in Codex.app</span></div>
+                <div class="ann-ctx"><div class="ws">niche-radar</div><div class="sc">codex · approval required in-app</div></div>
+                <div class="held"><span>HELD</span><b class="js-timer" data-seconds="22" data-fmt="s" data-up="1">0m 22s</b></div>
+              </div>
+              <div class="checklist" style="padding-bottom:0">
+                <div class="cl-item">
+                  <div class="clhdr"><span class="no">1</span><span class="tool">Tool <b>Shell</b></span><span class="where">packages/ui</span></div>
+                  <div class="cmd"><span class="p">$</span> <span class="c">rtk</span> <span class="s">grep</span> <span class="f">-rn</span> <span class="str">"fetch("</span> <span class="pa">packages/ui/src</span></div>
+                </div>
+              </div>
+              <div class="codexbar">
+                <div class="txt"><div class="h">↗ Approve in Codex</div><div class="b">This agent gates approvals inside its own app. Open&nbsp;Island jumps you to the exact pane — ACK there.</div></div>
+                <div class="btn jump">Jump to Codex.app <span class="kk">⏎</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== §F QUESTION ==================== -->
+<div class="board">
+  <div class="section">
+    <h2><span class="id">F</span> <span class="nm">Question prompt — MASTER CAUTION</span>
+      <span class="why">Amber caution. Options are a numbered checklist (digits 1–9 select, Enter submits). Multi-select, per-option descriptions, and a freeform "Other" — restyled, never restructured.</span></h2>
+    <div class="rule"></div>
+
+    <div class="grid two" style="align-items:start">
+      <!-- F1 multi-question -->
+      <div class="frame">
+        <div class="cap"><span class="fid">F1</span><span class="fnm">Multi-question · descriptions · multi-select · Other</span><span class="fdesc">2 of N questions; second is multi-select.</span></div>
+        <div class="desk">
+          <div class="menubar"><div class="mleft"><span class="apple">◍</span><b>Open Island</b></div><div class="mright"><span class="clock js-clock">10:24</span></div></div>
+          <div class="stage"><div class="notch"></div>
+            <div class="alarm">
+              <div class="minihead"><div class="mh-l"><span class="mk oct"></span><span class="wm">OPEN&nbsp;ISLAND</span></div><div class="notchgap"></div><div class="mh-r"><span class="mhx">Show all 6 ›</span></div></div>
+              <div class="annunc caut">
+                <span class="beacon oct"></span>
+                <div class="master"><span class="big">MASTER CAUT</span><span class="sub">Question · awaiting answer</span></div>
+                <div class="ann-ctx"><div class="ws">the-automator</div><div class="sc">claude · Sonnet 5 · 2 questions</div></div>
+              </div>
+
+              <div class="qhead"><span class="qchip">AUTH</span><span class="qmeta">Q 1 / 2 · SINGLE</span></div>
+              <div class="qtext">Which auth method should the bridge use?</div>
+              <div class="qbody">
+                <div class="qopt"><span class="digit">1</span><div class="qt"><div class="ol">Unix-socket peer credentials</div><div class="od">Kernel-verified <code>SO_PEERCRED</code>. No secret on disk. Local-only.</div></div><span class="check oct"></span></div>
+                <div class="qopt"><span class="digit">2</span><div class="qt"><div class="ol">Token file</div><div class="od">Shared secret at <code>~/.openisland/token</code>. Simple, but written to disk.</div></div><span class="check oct"></span></div>
+                <div class="qopt"><span class="digit">3</span><div class="qt"><div class="ol">mTLS over loopback</div><div class="od">Mutual certs. Strongest, heaviest to provision.</div></div><span class="check oct"></span></div>
+              </div>
+
+              <div class="qhead qn2"><span class="qchip">SCOPE</span><span class="qmeta">Q 2 / 2 · MULTI</span></div>
+              <div class="qtext">Which agents should share this bridge? <span style="font-weight:400;color:var(--dim);font-size:12px">(select all)</span></div>
+              <div class="qbody">
+                <div class="qopt multi"><span class="digit">4</span><div class="qt"><div class="ol">Claude Code</div></div><span class="check oct" style="background:var(--caution);border-color:transparent"></span></div>
+                <div class="qopt multi"><span class="digit">5</span><div class="qt"><div class="ol">Codex</div></div><span class="check oct" style="background:var(--caution);border-color:transparent"></span></div>
+                <div class="qopt multi"><span class="digit">6</span><div class="qt"><div class="ol">Gemini</div></div><span class="check oct"></span></div>
+                <div class="qother"><span class="digit">7</span><input placeholder="Other — type a custom answer…"></div>
+              </div>
+
+              <div class="qsubmit"><span class="hint">Digits <b style="color:var(--caution)">1–9</b> select · Enter submits · Esc closes</span><span class="spacer"></span><div class="btn primary" style="background:rgba(230,170,66,.14);border-color:rgba(230,170,66,.5);color:var(--caution)">Submit <span class="kk">⏎</span></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- F2 compact single -->
+      <div class="frame">
+        <div class="cap"><span class="fid">F2</span><span class="fnm">Single-question · compact</span><span class="fdesc">The common case — one question, tight footprint.</span></div>
+        <div class="desk">
+          <div class="menubar"><div class="mleft"><span class="apple">◍</span><b>Open Island</b></div><div class="mright"><span class="clock js-clock">10:24</span></div></div>
+          <div class="stage"><div class="notch"></div>
+            <div class="alarm">
+              <div class="minihead"><div class="mh-l"><span class="mk oct"></span><span class="wm">OPEN&nbsp;ISLAND</span></div><div class="notchgap"></div><div class="mh-r"><span class="mhx">Show all 6 ›</span></div></div>
+              <div class="annunc caut">
+                <span class="beacon oct"></span>
+                <div class="master"><span class="big">MASTER CAUT</span><span class="sub">Question · awaiting answer</span></div>
+                <div class="ann-ctx"><div class="ws">niche-radar</div><div class="sc">opencode</div></div>
+              </div>
+              <div class="qhead"><span class="qchip">DEPLOY</span><span class="qmeta">SINGLE</span></div>
+              <div class="qtext">Push the release tag now?</div>
+              <div class="qbody" style="padding-bottom:14px">
+                <div class="qopt"><span class="digit">1</span><div class="qt"><div class="ol">Yes — tag v0.4.0 and push</div></div><span class="check oct"></span></div>
+                <div class="qopt"><span class="digit">2</span><div class="qt"><div class="ol">No — hold for review</div></div><span class="check oct"></span></div>
+              </div>
+              <div class="qsubmit"><span class="hint">1 / 2 · Enter submits</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== §G SUBAGENTS + TASKS ==================== -->
+<div class="board">
+  <div class="section">
+    <h2><span class="id">G</span> <span class="nm">Subagents + tasks — engine cluster</span>
+      <span class="why">Subagents render as an engine-instrument cluster: N small gauges with per-subagent elapsed. The todo list is a checklist. Both compress into a single row and one lamp on the pill.</span></h2>
+    <div class="rule"></div>
+
+    <div style="display:flex;justify-content:center">
+      <div class="desk" style="width:560px;max-width:100%">
+        <div class="menubar"><div class="mleft"><span class="apple">◍</span><b>Open Island</b></div><div class="mright"><span class="clock js-clock">10:24</span></div></div>
+        <div class="stage"><div class="notch"></div>
+          <div class="panel">
+            <div class="minihead"><div class="mh-l"><span class="mk oct"></span><span class="wm">OPEN&nbsp;ISLAND</span></div><div class="notchgap"></div><div class="mh-r"><span class="mhx">‹ All sessions</span></div></div>
+            <div class="row" style="cursor:default;background:var(--surface-hi)">
+              <div class="lane"><span class="lamp run"></span><span class="code run">RUN</span></div>
+              <div class="body"><div class="top"><span class="ws">open-vibe-island</span><span class="chip br">feat/theme-audit</span><span class="chip" style="color:var(--nominal);border-color:rgba(74,201,158,.4)">⚙ 3 ENGINES</span></div></div>
+              <div class="meta">Opus 4.8</div>
+              <div class="time"><span class="dur js-timer" data-seconds="518" data-fmt="ms">8m 38s</span><span class="age">live</span></div>
+            </div>
+
+            <div class="cluster">
+              <div class="chdr"><span class="caps lit">Subagents · running</span></div>
+              <div class="engines">
+                <div class="engine">
+                  <div class="etop"><span class="etype">EXPLORE</span><span class="elamp oct"></span></div>
+                  <div class="etask">Map every theme's token table</div>
+                  <div class="egauge"><span class="earc"><i style="width:64%"></i></span><span class="eel js-timer" data-seconds="184" data-fmt="ms">3m 04s</span></div>
+                </div>
+                <div class="engine">
+                  <div class="etop"><span class="etype">GENERAL</span><span class="elamp oct"></span></div>
+                  <div class="etask">Diff Flight Deck vs Poured metrics</div>
+                  <div class="egauge"><span class="earc"><i style="width:40%"></i></span><span class="eel js-timer" data-seconds="126" data-fmt="ms">2m 06s</span></div>
+                </div>
+                <div class="engine">
+                  <div class="etop"><span class="etype">PLAN</span><span class="elamp oct"></span></div>
+                  <div class="etask">Draft the contrast-audit checklist</div>
+                  <div class="egauge"><span class="earc"><i style="width:22%"></i></span><span class="eel js-timer" data-seconds="47" data-fmt="ms">0m 47s</span></div>
+                </div>
+              </div>
+
+              <div class="todos">
+                <div class="thdr"><span class="caps">Task list</span><span class="prog tab">4 / 6 DONE</span></div>
+                <div class="todo done"><span class="box"></span><span class="lbl">Enumerate theme token files</span><span class="tg">done</span></div>
+                <div class="todo done"><span class="box"></span><span class="lbl">Extract semantic colour roles</span><span class="tg">done</span></div>
+                <div class="todo done"><span class="box"></span><span class="lbl">Verify ≥10pt type floor</span><span class="tg">done</span></div>
+                <div class="todo done"><span class="box"></span><span class="lbl">Check contrast on caution tiles</span><span class="tg">done</span></div>
+                <div class="todo doing"><span class="box"></span><span class="lbl">Audit chamfer geometry drift</span><span class="tg">in&nbsp;progress</span></div>
+                <div class="todo pend"><span class="box"></span><span class="lbl">Write the drift report</span><span class="tg">pending</span></div>
+              </div>
+
+              <div class="compress">
+                <div class="desk" style="border-radius:8px;width:auto;padding:0;flex:none">
+                  <div class="stage" style="padding:0">
+                    <div class="pill" style="min-width:0;height:32px;display:flex;gap:12px">
+                      <div class="wing"><span class="bars run"><i></i><i></i><i></i></span><span class="narr" style="max-width:120px"><span class="verb">3 subagents</span> · 4/6</span></div>
+                      <div class="wing r"><span class="mgrid"><span class="lamp run"></span></span></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="note"><b>Compression:</b> the whole cluster rolls up to one pulsing lamp and a "3 subagents · 4/6" wing — liveness without noise.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== §H COMPLETED ==================== -->
+<div class="board">
+  <div class="section">
+    <h2><span class="id">H</span> <span class="nm">Completed session — result summary</span>
+      <span class="why">Advisory blue. The result is rendered as prose, not a dump; duration + outcome badge; follow-ups are jump / transcript / dismiss (reply where supported).</span></h2>
+    <div class="rule"></div>
+
+    <div style="display:flex;justify-content:center">
+      <div class="desk" style="width:560px;max-width:100%">
+        <div class="menubar"><div class="mleft"><span class="apple">◍</span><b>Open Island</b></div><div class="mright"><span class="clock js-clock">10:24</span></div></div>
+        <div class="stage"><div class="notch"></div>
+          <div class="panel">
+            <div class="minihead"><div class="mh-l"><span class="mk oct"></span><span class="wm">OPEN&nbsp;ISLAND</span></div><div class="notchgap"></div><div class="mh-r"><span class="mhx">Show all 6 ›</span></div></div>
+            <div class="donecard">
+              <div class="donehero">
+                <div class="donebadge">
+                  <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
+                  <span class="bl">SUCCESS</span>
+                </div>
+                <div class="doneinfo">
+                  <div class="ws">niche-radar</div>
+                  <div class="sum">Documented the new bridge trust boundary — rewrote <b>AGENTS.md</b> and
+                    <b>CLAUDE.md</b> to describe peer-credential auth and marked the token-file path deprecated.</div>
+                </div>
+              </div>
+
+              <div class="donestats">
+                <div class="donestat"><div class="k">Outcome</div><div class="v" style="color:var(--advisory)">✓ Success</div></div>
+                <div class="donestat"><div class="k">Duration</div><div class="v">43m 12s</div></div>
+                <div class="donestat"><div class="k">Files</div><div class="v">3 changed</div></div>
+                <div class="donestat"><div class="k">Agent</div><div class="v">gemini</div></div>
+              </div>
+
+              <div class="narrblock" style="margin-bottom:14px">
+                <div class="lab"><span class="caps">Final message · Gemini</span></div>
+                <div class="assist">
+                  Done. Both docs now describe the <strong>Unix-socket peer-credential</strong> handshake
+                  as the single source of truth. I left a <code>&gt; Deprecated</code> callout on the old
+                  token-file section rather than deleting it, so existing setups still resolve. No code
+                  paths changed — this was docs-only.
+                </div>
+              </div>
+
+              <div class="detactions" style="padding:0;border:0">
+                <div class="btn primary" style="background:rgba(99,146,196,.14);border-color:rgba(99,146,196,.5);color:#a9c4e8">Jump to terminal <span class="kk">⏎</span></div>
+                <a class="linkbtn" href="#">▤ Transcript</a>
+                <a class="linkbtn" href="#">↩ Reply</a>
+                <div class="spacer"></div>
+                <div class="btn ghost">Dismiss</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== §I USAGE METERS ==================== -->
+<div class="board">
+  <div class="section">
+    <h2><span class="id">I</span> <span class="nm">Usage meters — linear tape gauges</span>
+      <span class="why">Proper instruments: threshold ticks at 70 / 90, a tabular current-value readout, and a "RESET" countdown that was hidden before. Fine / warn / critical states — and how the worst window compresses into the pill.</span></h2>
+    <div class="rule"></div>
+
+    <div class="grid three">
+      <!-- fine -->
+      <div class="frame">
+        <div class="cap"><span class="fid">I·NOM</span><span class="fnm">Claude 5H · nominal</span><span class="fdesc">&lt; 70% — green fill, calm.</span></div>
+        <div class="desk"><div class="stage" style="padding:22px">
+          <div style="width:100%;padding:0 8px"><div class="gauge" style="max-width:none">
+            <div class="grow"><span class="glabel">Claude · 5H window</span><span class="gval">17<u>%</u></span></div>
+            <div class="tape" style="height:10px"><div class="fill ok" style="width:17%"></div><div class="tick" style="left:70%"></div><div class="tick crit" style="left:90%"></div></div>
+            <div class="greset"><span class="caps lit">Resets in</span><span class="rv js-timer" data-seconds="7800" data-fmt="hm">2h 10m</span></div>
+          </div></div>
+        </div></div>
+      </div>
+
+      <!-- warn -->
+      <div class="frame">
+        <div class="cap"><span class="fid">I·CAUT</span><span class="fnm">Claude 7D · caution</span><span class="fdesc">70–90% — amber, watch it.</span></div>
+        <div class="desk"><div class="stage" style="padding:22px">
+          <div style="width:100%;padding:0 8px"><div class="gauge" style="max-width:none">
+            <div class="grow"><span class="glabel">Claude · 7D window</span><span class="gval" style="color:var(--caution)">76<u>%</u></span></div>
+            <div class="tape" style="height:10px"><div class="fill warn" style="width:76%"></div><div class="tick" style="left:70%"></div><div class="tick crit" style="left:90%"></div></div>
+            <div class="greset"><span class="caps lit">Resets in</span><span class="rv js-timer" data-seconds="368000" data-fmt="dh">4d 06h</span></div>
+          </div></div>
+        </div></div>
+      </div>
+
+      <!-- crit -->
+      <div class="frame">
+        <div class="cap"><span class="fid">I·WARN</span><span class="fnm">Codex 7D · critical</span><span class="fdesc">≥ 90% — red, past the crit tick.</span></div>
+        <div class="desk"><div class="stage" style="padding:22px">
+          <div style="width:100%;padding:0 8px"><div class="gauge" style="max-width:none">
+            <div class="grow"><span class="glabel">Codex · Pro · 7D</span><span class="gval" style="color:var(--warning)">93<u>%</u></span></div>
+            <div class="tape" style="height:10px"><div class="fill crit" style="width:93%"></div><div class="tick" style="left:70%"></div><div class="tick crit" style="left:90%"></div></div>
+            <div class="greset"><span class="caps lit">Resets in</span><span class="rv js-timer" data-seconds="151200" data-fmt="dh">1d 18h</span></div>
+          </div></div>
+        </div></div>
+      </div>
+    </div>
+
+    <!-- compressed to pill -->
+    <div class="frame" style="margin-top:22px">
+      <div class="cap"><span class="fid">I·PILL</span><span class="fnm">Compressed to the pill</span><span class="fdesc">The worst window colours a single mini-tape + readout in the wing.</span></div>
+      <div class="desk"><div class="menubar"><div class="mleft"><span class="apple">◍</span><b>Open Island</b></div><div class="mright"><span class="clock js-clock">10:24</span></div></div>
+        <div class="stage"><div class="notch"></div>
+          <div class="pill">
+            <div class="wing"><span class="bars run"><i></i><i></i><i></i></span><span class="narr">2 running</span></div>
+            <div class="notchgap"></div>
+            <div class="wing r"><span class="caps" style="color:var(--caution)">7D</span><span class="minitape"><i class="fill warn" style="width:76%;position:absolute"></i></span><span class="mono" style="font-size:11px;color:var(--caution);font-weight:700">76%</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== §J EMPTY ==================== -->
+<div class="board">
+  <div class="section">
+    <h2><span class="id">J</span> <span class="nm">Empty state — standby, not a hole</span>
+      <span class="why">No sessions is a valid, confident state: a dark panel with the power on, monitoring. Quiet, never apologetic.</span></h2>
+    <div class="rule"></div>
+
+    <div style="display:flex;justify-content:center">
+      <div class="desk" style="width:520px;max-width:100%">
+        <div class="menubar"><div class="mleft"><span class="apple">◍</span><b>Open Island</b></div><div class="mright"><span class="clock js-clock">10:24</span></div></div>
+        <div class="stage"><div class="notch"></div>
+          <div class="panel">
+            <div class="minihead"><div class="mh-l"><span class="mk oct"></span><span class="wm">OPEN&nbsp;ISLAND</span></div><div class="notchgap"></div><div class="mh-r"><span class="mhx">Monitoring</span></div></div>
+            <div class="empty">
+              <div class="lampgrid"><span class="l on"></span><span class="l"></span><span class="l"></span><span class="l"></span></div>
+              <h3>All Systems Nominal</h3>
+              <p>No active sessions. Open Island is watching the bridge — the moment an agent needs approval, asks a question, or finishes, a lamp lights here.</p>
+              <div class="sysline"><span class="d oct"></span>BRIDGE LINK · MONITORING · 0 SESSIONS</div>
+            </div>
+            <div class="pfoot">
+              <span class="blamp"></span>
+              <span class="btxt">Bridge Link <b>Connected</b></span>
+              <span class="bmetrics">socket /tmp/openisland.sock · IDLE · <span class="tab">0</span> EVT/MIN</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== §K MOTION SPEC ==================== -->
+<div class="board">
+  <div class="section">
+    <h2><span class="id">K</span> <span class="nm">Motion spec — relay-snap language</span>
+      <span class="why">Real CSS, live above. Springs response .32 / damping .92: states latch, they don't ease. Lamps snap on in 120ms and decay soft on extinguish; running breathes at 2s, never blinks.</span></h2>
+    <div class="rule"></div>
+
+    <div class="motion">
+      <div class="mcell"><div class="demo"><span class="d-breathe oct"></span></div><div class="ml"><b>Phosphor pulse</b>running · 2s</div></div>
+      <div class="mcell"><div class="demo"><span class="d-morph"></span></div><div class="ml"><b>Expand morph</b>one shape · radius latch</div></div>
+      <div class="mcell"><div class="demo"><span class="d-pulse oct"></span></div><div class="ml"><b>Attention pulse</b>master alarm · 1s</div></div>
+      <div class="mcell"><div class="demo"><span class="d-enter"><i></i><i></i><i></i></span></div><div class="ml"><b>Row entrance</b>relay-snap in</div></div>
+      <div class="mcell"><div class="demo"><span class="d-settle oct"></span></div><div class="ml"><b>Success settle</b>flash → advisory</div></div>
+      <div class="mcell"><div class="demo"><span class="d-lamp"><i></i><i></i><i></i></span></div><div class="ml"><b>Lamp snap-on</b>120ms on · soft decay</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="boardfoot">
+  <p><b style="color:var(--paper)">Flight Deck 2.0 · Glass Cockpit</b> — Open Island overlay redesign board. One self-contained file, native system font stack, no external resources.</p>
+  <p class="mono" style="margin-top:8px">Colour = state only · every value is a tabular readout · every state pairs a lamp with a placard · permission = red WARNING (blocks) · question = amber CAUTION (waits) · dismiss is the only honest destructive verb — there is no kill.</p>
+</div>
+
+<script>
+/* Small liveness pass — clocks, live durations, resets-in countdowns, evt/min.
+   Purely cosmetic; every string is a value the app could truthfully compute. */
+(function(){
+  function pad(n){return n<10?'0'+n:''+n;}
+
+  function fmt(sec, mode){
+    sec = Math.max(0, Math.floor(sec));
+    var d = Math.floor(sec/86400);
+    var h = Math.floor((sec%86400)/3600);
+    var m = Math.floor((sec%3600)/60);
+    var s = sec%60;
+    switch(mode){
+      case 'ms':  return (Math.floor(sec/60))+'m '+pad(sec%60)+'s';
+      case 'hms': { var hh=Math.floor(sec/3600); return hh>0 ? hh+'h '+pad(m)+'m' : m+'m '+pad(s)+'s'; }
+      case 's':   return (Math.floor(sec/60))+'m '+pad(sec%60)+'s';
+      case 'hm':  return h+'h '+pad(m)+'m';
+      case 'dh':  return d+'d '+pad(h)+'h';
+      default:    return sec+'s';
+    }
+  }
+
+  var timers = Array.prototype.slice.call(document.querySelectorAll('.js-timer'));
+  timers.forEach(function(el){ el.__s = parseInt(el.getAttribute('data-seconds'),10)||0; el.__up = el.getAttribute('data-up')==='1'; el.__f = el.getAttribute('data-fmt')||'s'; });
+
+  function tickTimers(){
+    timers.forEach(function(el){
+      if(el.__up){ el.__s += 1; } else { el.__s = Math.max(0, el.__s - 1); }
+      el.textContent = fmt(el.__s, el.__f);
+    });
+  }
+
+  function tickClock(){
+    var now = new Date();
+    var t = pad(now.getHours())+':'+pad(now.getMinutes());
+    document.querySelectorAll('.js-clock').forEach(function(el){ el.textContent = t; });
+  }
+
+  function tickEvt(){
+    document.querySelectorAll('.js-evt').forEach(function(el){
+      el.textContent = (118 + Math.floor(Math.random()*24));
+    });
+  }
+
+  tickClock(); tickEvt();
+  setInterval(tickTimers, 1000);
+  setInterval(tickClock, 15000);
+  setInterval(tickEvt, 2500);
+})();
+</script>
+
+</body>
+</html>

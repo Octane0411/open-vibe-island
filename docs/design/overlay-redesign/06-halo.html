@@ -1,0 +1,1403 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Halo — Intelligence</title>
+<style>
+/* ============================================================================
+   HALO · INTELLIGENCE  — Open Island theme board
+   A true-black OLED void whose ONLY chrome is living prismatic edge-light.
+   The overlay reads as the notch itself growing: no fills, no cards, no
+   vibrancy — content floats in the void; structure is typography + hairlines.
+   The 1.5px edge IS the state channel. Motion identity: "light travels".
+   Design tokens map 1:1 to the real theme system (colors / metrics / motion /
+   material) + the 8 swappable slot views, so the app could render exactly this.
+   ========================================================================== */
+
+@property --a { syntax:"<angle>"; inherits:false; initial-value:0deg; }
+
+:root{
+  /* geometry (real metrics: pill = notch height ~38pt; panel 520pt) */
+  --r:20px;              /* panel corner radius              */
+  --pill-r:19px;         /* collapsed pill radius            */
+  --edge:1.5px;          /* prismatic edge thickness         */
+
+  /* text ramp — high-contrast white → 42% gray on pure black */
+  --t1:rgba(255,255,255,.95);
+  --t2:rgba(255,255,255,.63);
+  --t3:rgba(255,255,255,.42);
+  --hair:rgba(255,255,255,.08);   /* the bare idle edge / dividers  */
+  --hair2:rgba(255,255,255,.05);
+  --lift:rgba(255,255,255,.028);  /* whisper surface for mono blocks */
+
+  /* STATE LIGHT — the edge & dots speak only in these hues */
+  --cyan:#33dcff;        /* working  */
+  --violet:#7c5cff;      /* working  */
+  --amber:#ffb14d;       /* attention — permission (hottest) */
+  --magenta:#ff5ea8;     /* attention — permission (hot tip) */
+  --qgold:#ffcf7a;       /* attention — question (softer)     */
+  --green:#5fe39a;       /* success bloom                     */
+  --red:#e0596c;         /* failure — dim, static             */
+  --warn:#e6aa42;        /* interrupted                       */
+
+  /* usage-filament thresholds */
+  --fine:#5fe39a; --wrn:#ffcf7a; --crit:#ff6b6b;
+
+  /* board-chrome only (never the overlay): the direction's signature prism */
+  --prism:linear-gradient(90deg,#33dcff,#7c5cff,#ff5ea8,#ffb14d);
+
+  --ui:-apple-system,BlinkMacSystemFont,"SF Pro","SF Pro Text","Helvetica Neue",sans-serif;
+  --mono:ui-monospace,"SF Mono","SFMono-Regular",Menlo,monospace;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+body{
+  font-family:var(--ui);
+  background:
+    radial-gradient(1100px 640px at 18% -12%, #10131b 0%, transparent 55%),
+    radial-gradient(900px 700px at 88% 8%, #0d0f16 0%, transparent 52%),
+    #050608;
+  color:var(--t1);
+  padding:46px 24px 128px;
+  font-variant-numeric:tabular-nums;
+}
+.tnum{font-variant-numeric:tabular-nums}
+.mono{font-family:var(--mono)}
+
+/* ------------------------------------------------------------------ board */
+.board{max-width:1180px;margin:0 auto}
+.masthead{padding:0 8px 22px;position:relative;margin-bottom:26px}
+.masthead::after{content:"";position:absolute;left:8px;right:8px;bottom:0;height:1.5px;
+  background:var(--prism);opacity:.55;border-radius:2px}
+.masthead .kicker{font-size:11px;letter-spacing:.2em;text-transform:uppercase;font-weight:600;
+  background:var(--prism);-webkit-background-clip:text;background-clip:text;color:transparent}
+.masthead h1{font-size:42px;font-weight:680;letter-spacing:-.025em;margin:12px 0 8px;
+  background:linear-gradient(180deg,#fff,#b9bec9);-webkit-background-clip:text;background-clip:text;color:transparent}
+.masthead .thesis{font-size:15px;color:var(--t2);max-width:760px;line-height:1.55}
+.masthead .thesis b{color:var(--t1);font-weight:600}
+.masthead .legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:20px;font-size:11px;color:var(--t3)}
+.masthead .legend span{display:inline-flex;align-items:center;gap:6px}
+.masthead .legend b{color:var(--t2);font-weight:600}
+.sw{width:9px;height:9px;border-radius:50%;display:inline-block;flex:0 0 auto}
+
+section{margin:66px 0}
+.sec-head{display:flex;align-items:baseline;gap:14px;padding:0 8px;margin-bottom:6px}
+.sec-head .id{font-size:12px;font-weight:800;color:#05070b;background:var(--prism);
+  padding:3px 9px;border-radius:7px;letter-spacing:.03em}
+.sec-head h2{font-size:22px;font-weight:640;letter-spacing:-.02em}
+.sec-note{padding:0 8px;color:var(--t2);font-size:13px;max-width:860px;line-height:1.55;margin-bottom:26px}
+.sec-note b{color:var(--t1);font-weight:600}
+.sec-note .k{color:var(--cyan);font-weight:600}
+
+.grid{display:flex;flex-wrap:wrap;gap:26px;padding:0 8px;align-items:flex-start}
+.frame{flex:1 1 342px}
+.frame.wide{flex-basis:100%}
+.frame.half{flex-basis:520px;flex-grow:1}
+.cap{margin-top:13px;font-size:12px;color:var(--t2);line-height:1.5}
+.cap b{color:var(--t1);font-weight:600}
+.cap .fid{color:transparent;font-weight:800;font-family:var(--mono);font-size:11px;margin-right:7px;
+  background:var(--prism);-webkit-background-clip:text;background-clip:text}
+
+/* ------------------------------------------------------------- desktop stage
+   A credible dark MacBook top so the pure-#000 overlay reads as a true void
+   cutout and the edge-light pops. The overlay is the star. */
+.desk{position:relative;border-radius:16px;overflow:hidden;padding:0 0 46px;
+  background:
+    radial-gradient(120% 80% at 50% -34%, #1a2130 0%, transparent 62%),
+    linear-gradient(180deg,#0e1016,#07090d 78%);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.035)}
+.desk.tall{padding-bottom:24px}
+.menubar{height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;
+  font-size:11px;color:rgba(255,255,255,.5);
+  background:linear-gradient(180deg,rgba(0,0,0,.4),rgba(0,0,0,.12));position:relative;z-index:1}
+.menubar .mb-l{display:flex;gap:14px;align-items:center}
+.menubar .mb-l .apple{font-size:12px;color:rgba(255,255,255,.72)}
+.menubar .mb-r{display:flex;gap:12px;align-items:center}
+/* physical notch — same #000 as the overlay so they fuse into one shape */
+.notch{position:absolute;top:0;left:50%;transform:translateX(-50%);
+  width:172px;height:26px;background:#000;border-radius:0 0 12px 12px;z-index:6}
+.notch::after{content:"";position:absolute;top:9px;left:50%;transform:translateX(-50%);
+  width:7px;height:7px;border-radius:50%;background:#080a0d;box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
+.mount{position:relative;z-index:5;display:flex;justify-content:center}
+
+/* =================================================================
+   THE ISLE — pure-black body traced by a masked prismatic edge.
+   material slot: closedPill / openedHeader share this exact substance.
+   ================================================================= */
+.isle{position:relative;background:#000;border-radius:var(--r);color:#fff}
+.isle::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:var(--edge);
+  background:var(--hair);                       /* idle: bare 8% hairline, edge OFF */
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none;z-index:3}
+
+/* working — cool cyan→violet segment slowly ORBITING the perimeter (~6s) */
+.isle.work::before{
+  background:conic-gradient(from var(--a),
+    rgba(255,255,255,.05) 0deg 176deg,
+    var(--cyan) 232deg, var(--violet) 300deg,
+    rgba(255,255,255,.05) 348deg 360deg);
+  animation:orbit 6s linear infinite}
+.isle.work{box-shadow:0 0 26px -10px rgba(96,150,255,.45)}
+
+/* attention — permission: light concentrates, warms amber→magenta, pulses */
+.isle.perm::before{
+  background:conic-gradient(from 44deg,
+    rgba(255,150,70,.04) 0deg,
+    var(--amber) 40deg, var(--magenta) 84deg, var(--amber) 128deg,
+    rgba(255,150,70,.04) 190deg 360deg);
+  animation:edgepulse 1.9s ease-in-out infinite}
+.isle.perm{animation:bloompulse 1.9s ease-in-out infinite}
+
+/* attention — question: softer amber, gentler */
+.isle.ques::before{
+  background:conic-gradient(from 44deg,
+    rgba(255,207,122,.04) 0deg,
+    var(--qgold) 46deg, var(--qgold) 122deg,
+    rgba(255,207,122,.04) 190deg 360deg);
+  animation:edgepulse 2.6s ease-in-out infinite}
+.isle.ques{box-shadow:0 0 22px -10px rgba(255,207,122,.4)}
+
+/* success — brief cool-green bloom dissolving back to hairline */
+.isle.ok::before{background:conic-gradient(var(--green),#33dcff,var(--green));animation:okedge 3s ease-out infinite}
+.isle.ok{animation:okbloom 3s ease-out infinite}
+
+/* failure — static dim red segment, does NOT pulse */
+.isle.fail::before{
+  background:conic-gradient(from 128deg,
+    rgba(255,255,255,.05) 0deg 20deg,
+    var(--red) 60deg, var(--red) 120deg,
+    rgba(255,255,255,.05) 160deg 360deg)}
+
+@keyframes orbit{to{--a:360deg}}
+@keyframes edgepulse{0%,100%{opacity:.55}50%{opacity:1}}
+@keyframes bloompulse{
+  0%,100%{box-shadow:0 0 20px -8px rgba(255,140,80,.5)}
+  50%{box-shadow:0 0 46px -4px rgba(255,120,90,.85)}}
+@keyframes okedge{0%{opacity:1}70%,100%{opacity:.12}}
+@keyframes okbloom{0%{box-shadow:0 0 40px -6px rgba(95,227,154,.7)}70%,100%{box-shadow:0 0 0 rgba(95,227,154,0)}}
+
+/* ================= COLLAPSED PILL ================= */
+.pill{height:38px;border-radius:var(--pill-r);display:flex;align-items:center;
+  padding:0 15px;min-width:214px}
+.pill.big{min-width:352px;height:38px}
+.pill .wing{display:flex;align-items:center;gap:9px}
+.pill .wing.l{flex:0 0 auto}
+.pill .core{flex:1 1 auto;min-width:56px}   /* camera dead-zone under the notch */
+.pill .wing.r{flex:0 0 auto;justify-content:flex-end}
+.pill .lab{font-size:12.5px;color:var(--t1);white-space:nowrap;letter-spacing:-.01em}
+.pill .lab .dim{color:var(--t2)}
+.pill .lab .mn{font-family:var(--mono);font-size:11px;color:var(--t1)}
+.pill.hoverlift{transform:scale(1.03)}
+
+/* liveness glyph — light filaments, not flat bars */
+.gly{display:inline-flex;align-items:flex-end;gap:2.5px;height:15px}
+.gly i{width:2.5px;height:5px;border-radius:1.5px;background:var(--t3);display:block}
+.gly.run i{background:linear-gradient(180deg,var(--cyan),var(--violet));
+  box-shadow:0 0 5px rgba(80,150,255,.6);animation:wave 1.05s ease-in-out infinite}
+.gly.run i:nth-child(2){animation-delay:.13s} .gly.run i:nth-child(3){animation-delay:.26s}
+.gly.wait i{animation:breathe 2.4s ease-in-out infinite}
+.gly.idle i{opacity:.55}
+@keyframes wave{0%,100%{height:5px}50%{height:14px}}
+@keyframes breathe{0%,100%{height:6px;opacity:.5}50%{height:12px;opacity:1}}
+
+/* state dot — a tiny bloomed light source (never a flat circle) */
+.dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;display:inline-block;position:relative}
+.dot::after{content:"";position:absolute;inset:-3px;border-radius:50%;opacity:.55;filter:blur(2px)}
+.dot.run{background:var(--cyan)}   .dot.run::after{background:var(--cyan)}
+.dot.done{background:var(--green)} .dot.done::after{background:var(--green)}
+.dot.perm{background:var(--amber)} .dot.perm::after{background:var(--amber)}
+.dot.ques{background:var(--qgold)} .dot.ques::after{background:var(--qgold)}
+.dot.intr{background:var(--warn)}  .dot.intr::after{background:var(--warn)}
+.dot.fail{background:var(--red)}   .dot.fail::after{background:var(--red);opacity:.35}
+.dot.idle{background:var(--t3)}    .dot.idle::after{display:none}
+
+/* count / mini agents-grid in the right wing */
+.cnt{min-width:20px;height:20px;padding:0 6px;border-radius:10px;display:inline-flex;
+  align-items:center;justify-content:center;font-size:12px;font-weight:700;
+  background:rgba(255,255,255,.09);color:var(--t1)}
+.cnt.hot{color:#241203;background:linear-gradient(135deg,var(--amber),var(--magenta));
+  box-shadow:0 0 16px rgba(255,150,90,.6)}
+.cnt.q{color:#241a03;background:var(--qgold)}
+.agrid{display:grid;grid-template-columns:repeat(3,6px);gap:3.5px}
+.agrid i{width:6px;height:6px;border-radius:50%;background:var(--t3)}
+.agrid i.on{background:var(--cyan);box-shadow:0 0 5px rgba(80,180,255,.7)}
+.agrid i.wt{background:var(--amber);animation:breathe-dot 2s ease-in-out infinite}
+@keyframes breathe-dot{0%,100%{opacity:.4}50%{opacity:1}}
+
+/* agent monogram — identity is an ACHROMATIC whisper; light never brand-colored */
+.mono-tag{width:16px;height:16px;border-radius:5px;display:inline-flex;align-items:center;justify-content:center;
+  font-size:9.5px;font-weight:700;color:var(--t2);background:rgba(255,255,255,.07);
+  font-family:var(--mono);flex:0 0 auto;letter-spacing:-.02em}
+
+/* ================= EXPANDED PANEL ================= */
+.panel{width:520px;border-radius:var(--r)}
+.panel.narrow{width:452px}
+
+/* header split around the notch */
+.p-head{display:flex;align-items:center;gap:10px;padding:11px 16px 10px;position:relative}
+.p-head .lane{display:flex;align-items:center;gap:12px;flex:1}
+.p-head .lane.r{justify-content:flex-end;gap:8px}
+.p-head .ngap{width:96px;flex:0 0 auto}      /* reserved under the physical notch */
+
+/* usage filament — thin light arc + resets-in countdown */
+.fil{display:flex;align-items:center;gap:9px}
+.fil svg{width:30px;height:30px;flex:0 0 auto}
+.fil .ft{line-height:1.2}
+.fil .ft .fk{font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--t3);font-weight:600}
+.fil .ft .fv{font-size:11px;color:var(--t2);font-weight:600}
+
+.ctl{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;
+  background:rgba(255,255,255,.06);color:var(--t2);cursor:pointer;transition:.15s}
+.ctl:hover{background:rgba(255,255,255,.14);color:var(--t1)}
+.ctl svg{width:13px;height:13px}
+
+/* summary strip — only non-zero buckets, hairline-bounded */
+.summary{display:flex;gap:16px;padding:8px 16px;border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);
+  font-size:11px;color:var(--t2)}
+.summary .b{display:flex;align-items:center;gap:6px}
+.summary .b .n{font-weight:700;color:var(--t1);font-size:12px}
+
+/* grouped section header */
+.grp{display:flex;align-items:center;gap:8px;padding:10px 16px 5px;font-size:10px;
+  text-transform:uppercase;letter-spacing:.1em;color:var(--t3);font-weight:700}
+.grp .gd{width:6px;height:6px;border-radius:50%}
+.grp .gn{margin-left:auto;color:var(--t3);font-weight:600}
+
+/* ================= SESSION ROW ================= */
+.row{position:relative;display:flex;gap:13px;padding:12px 16px 12px 16px;align-items:flex-start;transition:background .15s}
+.row + .row{border-top:1px solid var(--hair)}
+.row:hover{background:rgba(255,255,255,.026)}
+.row .lead{display:flex;flex-direction:column;align-items:center;gap:7px;padding-top:3px;flex:0 0 auto}
+.row .body{flex:1;min-width:0}
+.row .tl{display:flex;align-items:center;gap:8px;min-width:0}
+.row .ws{font-size:14px;font-weight:600;letter-spacing:-.01em;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .disamb{font-size:10.5px;color:var(--t3);font-family:var(--mono);white-space:nowrap;flex:0 0 auto;
+  display:inline-flex;align-items:center;gap:4px}
+.row .act{font-size:12.5px;color:var(--t2);margin-top:4px;line-height:1.45;display:flex;align-items:center;gap:7px}
+.row .act .live{color:var(--cyan);font-weight:500}
+.row .meta{display:flex;gap:12px;margin-top:7px;font-size:11px;color:var(--t3);flex-wrap:wrap;align-items:center}
+.row .meta .pin{display:inline-flex;align-items:center;gap:4px}
+.row .age{margin-left:auto;font-size:11px;color:var(--t3);flex:0 0 auto;padding-left:8px}
+
+/* 2px edge-lit rail — ONLY on the active / actionable row */
+.rail{position:absolute;left:0;top:8px;bottom:8px;width:2px;border-radius:2px}
+.rail.run{background:linear-gradient(180deg,var(--cyan),var(--violet));box-shadow:0 0 8px rgba(80,150,255,.6)}
+.rail.perm{background:linear-gradient(180deg,var(--amber),var(--magenta));box-shadow:0 0 10px rgba(255,150,90,.7)}
+.rail.ques{background:var(--qgold);box-shadow:0 0 8px rgba(255,207,122,.6)}
+
+/* row entrance = a faint light sweep across the new row */
+.sweep{overflow:hidden}
+.sweep::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(100deg,transparent 34%,rgba(120,180,255,.14) 50%,transparent 66%);
+  transform:translateX(-100%);animation:rowsweep 3.4s ease-in-out infinite}
+@keyframes rowsweep{0%{transform:translateX(-100%)}40%,100%{transform:translateX(100%)}}
+
+/* hover-reveal dismiss (there is no kill) */
+.dismiss{position:absolute;top:11px;right:12px;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;
+  color:var(--t3);background:rgba(255,255,255,.06);opacity:0;transform:scale(.82);transition:.14s;cursor:pointer}
+.row:hover .dismiss{opacity:1;transform:scale(1)}
+.dismiss:hover{color:#fff;background:rgba(224,89,108,.6)}
+.dismiss svg{width:10px;height:10px}
+
+/* jump chip — primary action (row tap) */
+.jump{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--t2);
+  padding:3px 9px;border-radius:8px;background:rgba(255,255,255,.05);cursor:pointer;transition:.15s}
+.jump:hover{background:rgba(80,170,255,.16);color:var(--t1)}
+.jump svg{width:12px;height:12px}
+
+/* small text chips (branch, model, mode) — hairline, achromatic */
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;padding:2px 7px;border-radius:6px;
+  background:rgba(255,255,255,.05);color:var(--t2);font-weight:500;white-space:nowrap}
+.chip.mn{font-family:var(--mono);font-size:10px}
+.chip svg{width:10px;height:10px;opacity:.7}
+
+/* completion outcome badge (color + icon + word, never color alone) */
+.outc{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px}
+.outc svg{width:11px;height:11px}
+.outc.ok{color:var(--green);background:rgba(95,227,154,.12)}
+.outc.intr{color:var(--warn);background:rgba(230,170,66,.14)}
+.outc.fail{color:var(--red);background:rgba(224,89,108,.15)}
+
+/* =================================================================
+   PERMISSION HERO — the light condenses into a ring around the card.
+   No fill. The boundary IS the amber light. (notificationCard slot)
+   ================================================================= */
+.hero{position:relative;background:#000;border-radius:16px;padding:15px 16px 16px;
+  box-shadow:inset 0 0 0 1.5px rgba(255,160,80,.55), 0 0 48px -8px rgba(255,140,80,.5)}
+.hero::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1.5px;
+  background:conic-gradient(from 44deg,var(--amber),var(--magenta) 55%,var(--amber));
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none;animation:edgepulse 2.2s ease-in-out infinite}
+.hero.q{box-shadow:inset 0 0 0 1.5px rgba(255,207,122,.5), 0 0 40px -10px rgba(255,207,122,.4)}
+.hero.q::before{background:conic-gradient(from 44deg,var(--qgold),#ffe0a8 55%,var(--qgold))}
+
+.hero-head{display:flex;align-items:center;gap:10px;margin-bottom:11px}
+.annunc{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;flex:0 0 auto;
+  color:var(--amber);background:rgba(255,160,80,.1);box-shadow:inset 0 0 0 1px rgba(255,160,80,.3)}
+.annunc svg{width:15px;height:15px}
+.annunc.q{color:var(--qgold);background:rgba(255,207,122,.1);box-shadow:inset 0 0 0 1px rgba(255,207,122,.3)}
+.hero-head .ht{font-size:14px;font-weight:650;color:#ffe6c8;letter-spacing:-.01em}
+.hero-head .hs{font-size:11px;color:rgba(255,214,170,.72);margin-top:2px}
+.hero-head.q .ht{color:#fff0d4} .hero-head.q .hs{color:rgba(255,224,180,.72)}
+.hero-head .who{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--t2)}
+
+/* code / command block — a whisper surface, mono, syntax-lit */
+.cmd{font-family:var(--mono);font-size:12px;line-height:1.65;padding:10px 12px;border-radius:9px;
+  background:var(--lift);box-shadow:inset 0 0 0 1px var(--hair2);overflow-x:auto;white-space:pre;color:#c6ccd8}
+.cmd .pr{color:rgba(255,160,80,.65);user-select:none}
+.t-cmd{color:#f4f6fb;font-weight:600}
+.t-sub{color:var(--cyan)}
+.t-flag{color:#8fb6ff}
+.t-str{color:var(--green)}
+.t-path{color:rgba(255,255,255,.5)}
+
+/* inline diff (Edit / Write) */
+.diff{font-family:var(--mono);font-size:11.5px;line-height:1.65;border-radius:9px;overflow:hidden;
+  box-shadow:inset 0 0 0 1px var(--hair2);background:var(--lift)}
+.diff .fn{padding:6px 11px;font-size:10.5px;color:var(--t2);border-bottom:1px solid var(--hair);display:flex;align-items:center;gap:6px}
+.diff .fn svg{width:11px;height:11px;opacity:.7}
+.diff .dl{display:flex;padding:1px 11px 1px 8px;white-space:pre}
+.diff .dl .g{width:22px;color:var(--t3);user-select:none;flex:0 0 auto;text-align:right;padding-right:10px}
+.diff .del{background:rgba(224,89,108,.11)} .diff .del .g{color:rgba(224,89,108,.6)} .diff .del .x{color:#f2b0ba}
+.diff .add{background:rgba(95,227,154,.11)} .diff .add .g{color:rgba(95,227,154,.7)}  .diff .add .x{color:#a7ecc6}
+.diff .ctx .x{color:rgba(255,255,255,.5)}
+
+/* actions + keycaps */
+.actions{display:flex;gap:8px;margin-top:13px;align-items:center;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:8px 13px;border-radius:10px;font-size:13px;font-weight:600;
+  cursor:pointer;transition:.15s;border:none;font-family:var(--ui)}
+.btn.primary{background:linear-gradient(135deg,#ffce8a,#ffab54);color:#3a2205;
+  box-shadow:0 4px 18px -6px rgba(255,160,80,.7),inset 0 1px 0 rgba(255,255,255,.4)}
+.btn.primary:hover{filter:brightness(1.06)}
+.btn.ghost{background:rgba(255,255,255,.07);color:var(--t1)}
+.btn.ghost:hover{background:rgba(255,255,255,.13)}
+.btn.deny{background:rgba(224,89,108,.13);color:#f0a6b0}
+.btn.deny:hover{background:rgba(224,89,108,.22)}
+.kc{display:inline-flex;gap:2px;margin-left:1px}
+.kc kbd{font-family:var(--ui);font-size:10px;font-weight:600;min-width:15px;height:16px;padding:0 3px;border-radius:4px;
+  display:inline-flex;align-items:center;justify-content:center;background:rgba(0,0,0,.3);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.16);color:rgba(255,255,255,.78)}
+.btn.primary .kc kbd{background:rgba(58,34,5,.22);box-shadow:inset 0 0 0 1px rgba(58,34,5,.35);color:#603c0e}
+
+/* scoped "always allow" rows */
+.scopes{margin-top:11px;display:flex;flex-direction:column;gap:1px;border-radius:9px;overflow:hidden;
+  box-shadow:inset 0 0 0 1px var(--hair2)}
+.scope{display:flex;align-items:center;gap:10px;padding:9px 11px;font-size:12px;color:var(--t2);
+  background:rgba(255,255,255,.018);cursor:pointer;transition:.14s}
+.scope:hover{background:rgba(255,160,80,.08);color:var(--t1)}
+.scope svg{width:14px;height:14px;color:var(--t3);flex:0 0 auto}
+.scope:hover svg{color:var(--amber)}
+.scope code{font-family:var(--mono);font-size:11px;color:#ffd6a4;background:rgba(255,160,80,.1);padding:1px 5px;border-radius:4px}
+.scope .sk{margin-left:auto;flex:0 0 auto}
+
+/* codex jump-to-approve variant */
+.codex-note{display:flex;gap:10px;align-items:center;padding:10px 12px;border-radius:9px;margin-top:11px;
+  background:rgba(80,170,255,.09);box-shadow:inset 0 0 0 1px rgba(80,170,255,.24);font-size:12px;color:#bfe0f6}
+.codex-note svg{width:16px;height:16px;color:var(--cyan);flex:0 0 auto}
+.codex-note b{color:#e6f2fd;font-weight:600}
+
+/* ================= QUESTION ================= */
+.qtext{font-size:14.5px;font-weight:560;color:#fff2da;line-height:1.42;margin:2px 0 12px;letter-spacing:-.01em}
+.qprog{margin-left:auto;font-size:11px;color:var(--t3)}
+.opts{display:flex;flex-direction:column;gap:7px}
+.opt{display:flex;gap:11px;padding:10px 12px;border-radius:10px;cursor:pointer;transition:.14s;align-items:flex-start;
+  background:rgba(255,255,255,.022);box-shadow:inset 0 0 0 1px var(--hair2)}
+.opt:hover{background:rgba(255,207,122,.07)}
+.opt.sel{background:rgba(255,207,122,.1);box-shadow:inset 0 0 0 1.5px rgba(255,207,122,.55)}
+.opt .num{width:19px;height:19px;border-radius:6px;flex:0 0 auto;display:grid;place-items:center;font-size:11px;font-weight:700;
+  background:rgba(255,207,122,.13);color:var(--qgold);margin-top:1px;font-family:var(--mono)}
+.opt.sel .num{background:var(--qgold);color:#2a2003}
+.opt.multi .num{border-radius:4px}
+.opt .ol{font-size:13px;font-weight:600;color:var(--t1)}
+.opt .od{font-size:11.5px;color:var(--t2);margin-top:2px;line-height:1.42}
+.opt .ck{margin-left:auto;color:var(--qgold);flex:0 0 auto;opacity:0} .opt.sel .ck{opacity:1}
+.opt .ck svg{width:15px;height:15px}
+.opt-other{display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:10px;margin-top:1px;
+  background:rgba(255,255,255,.015);box-shadow:inset 0 0 0 1px var(--hair2);font-size:12px;color:var(--t3);font-style:italic}
+.opt-other .num{width:19px;height:19px;border-radius:6px;flex:0 0 auto;display:grid;place-items:center;font-size:11px;font-weight:700;
+  background:rgba(255,255,255,.05);color:var(--t3);font-family:var(--mono);font-style:normal}
+.q-foot{display:flex;align-items:center;gap:8px;margin-top:13px}
+.q-hint{font-size:10.5px;color:var(--t3);display:flex;align-items:center;gap:6px}
+.q-block{margin-top:14px;padding-top:13px;border-top:1px solid var(--hair)}
+.q-tag{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#2a2003;background:var(--qgold);
+  padding:2px 7px;border-radius:6px;display:inline-flex;align-items:center;gap:5px}
+
+/* ================= SUBAGENTS / TASKS (nested) ================= */
+.nest{margin-top:11px;border-radius:11px;box-shadow:inset 0 0 0 1px var(--hair2);overflow:hidden}
+.nest-h{font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:var(--t3);padding:8px 11px 6px;font-weight:700;
+  display:flex;align-items:center;gap:6px}
+.nest-h .nn{margin-left:auto;color:var(--t3)}
+.suba{display:flex;align-items:center;gap:10px;padding:8px 11px}
+.suba + .suba{border-top:1px solid var(--hair)}
+.suba .sg{width:15px;flex:0 0 auto}
+.suba .st{flex:1;min-width:0}
+.suba .sty{font-size:12px;font-weight:600;color:var(--t1)}
+.suba .stk{font-size:11px;color:var(--t2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.suba .sti{font-size:11px;color:var(--t3);flex:0 0 auto}
+.todos{padding:7px 11px 9px;border-top:1px solid var(--hair)}
+.todo{display:flex;align-items:center;gap:8px;font-size:12px;padding:3px 0}
+.todo .tk{width:14px;height:14px;flex:0 0 auto;display:grid;place-items:center}
+.todo .tk svg{width:14px;height:14px}
+.todo.done .tl{color:var(--t3);text-decoration:line-through} .todo.done .tk{color:var(--green)}
+.todo.doing .tl{color:var(--t1)} .todo.doing .tk{color:var(--cyan)}
+.todo.pend .tl{color:var(--t2)} .todo.pend .tk{color:var(--t3)}
+.todo .tl{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.todo .tsp{margin-left:auto;font-size:10px;color:var(--cyan);flex:0 0 auto}
+
+/* last assistant message as clean rich text */
+.assistant{margin-top:11px;padding:11px 13px;border-radius:11px;font-size:12.5px;line-height:1.55;color:var(--t2);
+  box-shadow:inset 0 0 0 1px var(--hair2)}
+.assistant .amh{font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:var(--t3);margin-bottom:6px;font-weight:700}
+.assistant strong{color:var(--t1);font-weight:640}
+.assistant code{font-family:var(--mono);font-size:11px;background:rgba(255,255,255,.07);padding:1px 5px;border-radius:4px;color:#c8d2e6}
+.assistant ul{margin:6px 0 2px;padding-left:16px} .assistant li{margin:3px 0}
+
+/* detail metadata grid */
+.mgrid{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.mcell{display:flex;flex-direction:column;gap:2px;padding:8px 11px;border-radius:9px;
+  box-shadow:inset 0 0 0 1px var(--hair2);min-width:86px}
+.mcell .mk{font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--t3);font-weight:700}
+.mcell .mv{font-size:12.5px;color:var(--t1);font-weight:560;display:flex;align-items:center;gap:5px}
+.mcell .mv .mono{font-size:11.5px}
+
+/* footer */
+.p-foot{display:flex;align-items:center;gap:10px;padding:9px 16px;border-top:1px solid var(--hair);font-size:11px;color:var(--t3)}
+.p-foot .grow{flex:1}
+.p-foot a{color:var(--t2);text-decoration:none;display:inline-flex;align-items:center;gap:5px;cursor:pointer}
+.p-foot a:hover{color:var(--t1)}
+.p-foot svg{width:12px;height:12px}
+
+/* empty state (emptyState slot) */
+.empty{padding:30px 20px 26px;text-align:center}
+.empty .eg{width:34px;height:34px;margin:0 auto 13px;color:var(--t3);opacity:.85}
+.empty .et{font-size:14px;font-weight:600;color:var(--t1)}
+.empty .es{font-size:12px;color:var(--t2);margin-top:6px;line-height:1.5;max-width:300px;margin-inline:auto}
+.empty .ec{margin-top:15px;display:inline-flex;align-items:center;gap:7px;font-size:11px;color:var(--t3);
+  padding:5px 11px;border-radius:20px;box-shadow:inset 0 0 0 1px var(--hair)}
+
+/* ================= USAGE METERS (§I) ================= */
+.meterc{width:520px;border-radius:var(--r);padding:16px 18px 18px}
+.meter-title{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--t3);font-weight:700;margin-bottom:16px}
+.meters{display:flex;gap:26px;flex-wrap:wrap}
+.meter{display:flex;align-items:center;gap:13px;flex:1 1 210px}
+.meter svg{width:52px;height:52px;flex:0 0 auto}
+.meter .mx{min-width:0}
+.meter .mx .ml{font-size:12px;color:var(--t2);font-weight:550}
+.meter .mx .mp{font-size:22px;font-weight:660;letter-spacing:-.02em;line-height:1.1}
+.meter .mx .mr{font-size:11px;color:var(--t3);margin-top:2px}
+.p-fine{color:var(--fine)} .p-warn{color:var(--wrn)} .p-crit{color:var(--crit)}
+.thl{display:inline-flex;align-items:center;gap:5px;font-size:9.5px;font-weight:700;padding:1px 7px;border-radius:20px;margin-top:5px}
+.thl.fine{color:var(--fine);background:rgba(95,227,154,.12)}
+.thl.warn{color:var(--wrn);background:rgba(255,207,122,.13)}
+.thl.crit{color:var(--crit);background:rgba(255,107,107,.14)}
+
+/* ================= MOTION STRIP (§K) ================= */
+.mstrip{display:flex;flex-wrap:wrap;gap:16px;padding:0 8px}
+.mdemo{flex:1 1 190px;border-radius:14px;padding:22px 16px 16px;box-shadow:inset 0 0 0 1px var(--hair);
+  min-height:172px;display:flex;flex-direction:column;align-items:center;gap:16px;
+  background:radial-gradient(120% 90% at 50% 0,#0e1017,#07090d)}
+.mdemo .stage{flex:1;display:flex;align-items:center;justify-content:center;width:100%}
+.mdemo .mlabel{font-size:11px;color:var(--t2);text-align:center;line-height:1.4}
+.mdemo .mlabel b{color:var(--t1);display:block;font-weight:600;font-size:12px;margin-bottom:2px}
+
+/* demo: orbit / pulse / bloom reuse .isle classes on a small chip */
+.chip-s{width:132px;height:26px;border-radius:13px}
+.morphd{background:#000;box-shadow:0 8px 22px rgba(0,0,0,.5);position:relative;animation:morph 3.6s cubic-bezier(.2,.7,.2,1) infinite}
+.morphd::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1.5px;
+  background:conic-gradient(from var(--a),rgba(255,255,255,.06) 200deg,var(--cyan) 250deg,var(--violet) 310deg,rgba(255,255,255,.06) 350deg);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;
+  animation:orbit 3.6s linear infinite}
+@keyframes morph{0%,16%{width:140px;height:26px;border-radius:13px}50%,72%{width:184px;height:92px;border-radius:20px}90%,100%{width:140px;height:26px;border-radius:13px}}
+.rowd{width:172px;height:38px;border-radius:9px;background:rgba(255,255,255,.03);position:relative;overflow:hidden;animation:rowin 3.2s ease-out infinite}
+.rowd::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 34%,rgba(120,180,255,.22) 50%,transparent 66%);
+  transform:translateX(-100%);animation:rowsweep 3.2s ease-out infinite}
+@keyframes rowin{0%{opacity:0;transform:translateY(9px)}26%,84%{opacity:1;transform:translateY(0)}100%{opacity:1}}
+
+/* filmstrips */
+.film{display:flex;align-items:stretch;gap:12px;flex-wrap:wrap}
+.film .fc{display:flex;flex-direction:column;align-items:center;gap:9px;flex:1 1 150px}
+.film .fnum{font-size:10px;color:var(--t3);font-family:var(--mono)}
+.film .arrow{align-self:center;color:var(--t3);font-size:19px;padding:0 2px;display:flex;align-items:center}
+.fstage{background:radial-gradient(120% 90% at 50% 0,#0f1118,#07090d);border-radius:12px;padding:22px 14px;
+  display:flex;justify-content:center;align-items:center;min-height:96px;width:100%;box-shadow:inset 0 0 0 1px var(--hair)}
+
+/* travel filmstrip: amber light stretched down an edge */
+.travel{position:relative;background:#000;border-radius:14px}
+.travel::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1.5px;
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude}
+.travel.f1{width:150px;height:34px;box-shadow:0 0 26px -8px rgba(255,140,80,.6)}
+.travel.f1::before{background:conic-gradient(from 44deg,rgba(255,160,80,.05) 0deg,var(--amber) 44deg,var(--magenta) 90deg,var(--amber) 136deg,rgba(255,160,80,.05) 200deg 360deg)}
+.travel.f2{width:150px;height:74px;box-shadow:-16px 0 30px -12px rgba(255,140,80,.55)}
+.travel.f2::before{background:linear-gradient(180deg,var(--amber),var(--magenta),rgba(255,160,80,.06) 92%)}
+.travel.f3{width:150px;height:96px;box-shadow:0 0 40px -6px rgba(255,140,80,.5),inset 0 0 0 1px rgba(255,160,80,.2)}
+.travel.f3::before{background:conic-gradient(from 44deg,var(--amber),var(--magenta) 55%,var(--amber));animation:edgepulse 1.9s ease-in-out infinite}
+
+@media (max-width:560px){.panel,.meterc{width:100%}.film .arrow{transform:rotate(90deg)}}
+</style>
+</head>
+<body>
+<div class="board">
+
+  <!-- ============================== MASTHEAD ============================== -->
+  <header class="masthead">
+    <div class="kicker">Open Island · Halo Theme</div>
+    <h1>Halo — Intelligence</h1>
+    <p class="thesis">A true-black OLED void that fuses with the notch — the overlay reads as the notch itself
+      <b>growing</b>. No fills, no cards, no vibrancy: content floats in the black, structure comes from type and
+      hairlines. The only chrome is a <b>1.5px living edge-light</b> — the Apple-Intelligence glow, engineered into
+      a monitoring instrument. The edge <b>is</b> the state channel: 95% of the time it's a bare hairline; when
+      something needs you, the light condenses, warms, and travels to the exact spot. Nothing moves but light.</p>
+    <div class="legend">
+      <span><b>Body</b> #000 pure black</span>
+      <span><b>Edge</b> 1.5px prismatic</span>
+      <span><span class="sw" style="background:var(--cyan)"></span>working cyan→violet · orbit 6s</span>
+      <span><span class="sw" style="background:var(--amber)"></span>permission amber→magenta</span>
+      <span><span class="sw" style="background:var(--qgold)"></span>question amber</span>
+      <span><span class="sw" style="background:var(--green)"></span>success bloom</span>
+      <span><span class="sw" style="background:var(--red)"></span>failure static red</span>
+      <span><b>Type</b> SF Pro 11/13/15 + 28 display · tabular</span>
+    </div>
+  </header>
+
+  <!-- ============================== §A AMBIENT PILL ============================== -->
+  <section>
+    <div class="sec-head"><span class="id">A</span><h2>Collapsed pill — ambient states</h2></div>
+    <p class="sec-note">Where the product lives 95% of the time. Content sits in the <b>wings</b>; the center is the
+      camera dead-zone. The edge-light carries liveness &amp; attention while type carries the narration. One loud
+      thing at a time. Kills <b>§1.1</b> (no hierarchy) and <b>§1.5</b> (no motion identity).</p>
+
+    <div class="grid">
+      <!-- A1 idle -->
+      <div class="frame">
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="tnum">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount"><div class="isle pill">
+            <div class="wing l"><span class="gly idle"><i></i><i></i><i></i></span></div>
+            <div class="core"></div>
+            <div class="wing r"><span class="dot idle"></span></div>
+          </div></div>
+        </div>
+        <div class="cap"><span class="fid">A1</span><b>Idle / monitoring.</b> The calmest theme of the set — edge off,
+          a bare 8% hairline, one dim dot, still glyph. The overlay disappears until it has something to say.</div>
+      </div>
+
+      <!-- A2 one working -->
+      <div class="frame">
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="tnum">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount"><div class="isle pill big work">
+            <div class="wing l"><span class="gly run"><i></i><i></i><i></i></span></div>
+            <div class="core" style="min-width:92px"></div>
+            <div class="wing r"><span class="lab"><span class="dim">Editing</span> <span class="mn">AppModel.swift</span></span></div>
+          </div></div>
+        </div>
+        <div class="cap"><span class="fid">A2</span><b>One session working.</b> A cyan→violet light segment slowly
+          <b>orbits</b> the silhouette (6s, barely bright); activity is <b>narrated</b> — "Editing AppModel.swift",
+          not a raw tool id. Kills <b>§1.2</b>.</div>
+      </div>
+
+      <!-- A2' many working -->
+      <div class="frame">
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="tnum">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount"><div class="isle pill big work">
+            <div class="wing l"><span class="gly run"><i></i><i></i><i></i></span>
+              <span class="lab"><b style="font-weight:600">3</b> <span class="dim">working</span></span></div>
+            <div class="core" style="min-width:52px"></div>
+            <div class="wing r"><span class="agrid"><i class="on"></i><i class="on"></i><i></i><i class="on"></i><i></i><i></i></span></div>
+          </div></div>
+        </div>
+        <div class="cap"><span class="fid">A2&#8242;</span><b>Many working.</b> Right wing becomes a mini agents-grid —
+          one bloomed light per session, bright = running. Count + liveness with zero pill-soup. Kills <b>§1.3</b>.</div>
+      </div>
+
+      <!-- A3 permission -->
+      <div class="frame">
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="tnum">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount"><div class="isle pill big perm">
+            <div class="wing l"><span class="dot perm"></span>
+              <span class="lab">Approve <span class="mn">swift&nbsp;build</span>?</span></div>
+            <div class="core" style="min-width:24px"></div>
+            <div class="wing r"><span class="cnt hot">1</span></div>
+          </div></div>
+        </div>
+        <div class="cap"><span class="fid">A3</span><b>Attention — permission.</b> The loudest ambient state: the light
+          concentrates, warms amber→magenta, pulses, and <b>bleeds outside</b> the silhouette. Visible across the room,
+          precise. Kills <b>§1.1</b>.</div>
+      </div>
+
+      <!-- A4 question -->
+      <div class="frame">
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="tnum">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount"><div class="isle pill big ques">
+            <div class="wing l"><span class="gly wait" style="color:var(--qgold)"><i></i><i></i><i></i></span>
+              <span class="lab"><span class="dim">Answer</span> needed</span></div>
+            <div class="core" style="min-width:40px"></div>
+            <div class="wing r"><span class="cnt q">?</span></div>
+          </div></div>
+        </div>
+        <div class="cap"><span class="fid">A4</span><b>Attention — question.</b> Softer amber, gentler pulse, breathing
+          glyph + "?" badge. Distinct from permission by hue <b>and</b> shape/label — never color alone.</div>
+      </div>
+
+      <!-- A5 just completed -->
+      <div class="frame">
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="tnum">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount"><div class="isle pill big ok">
+            <div class="wing l"><span class="dot done"></span>
+              <span class="lab"><span class="dim">Done ·</span> the-automator</span></div>
+            <div class="core" style="min-width:52px"></div>
+            <div class="wing r"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--green)"
+              stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+          </div></div>
+        </div>
+        <div class="cap"><span class="fid">A5</span><b>Just completed.</b> A brief cool-green bloom that dissolves back
+          to the bare hairline — a moment, not a permanent badge. Then it settles into quiet.</div>
+      </div>
+
+      <!-- A6 outcome variants -->
+      <div class="frame">
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="tnum">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount" style="flex-direction:column;gap:11px">
+            <div class="isle pill big">
+              <div class="wing l"><span class="dot intr"></span>
+                <span class="lab"><span class="dim">Interrupted ·</span> niche-radar</span></div>
+              <div class="core" style="min-width:24px"></div>
+              <div class="wing r"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--warn)"
+                stroke-width="2.2" stroke-linecap="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></div>
+            </div>
+            <div class="isle pill big fail">
+              <div class="wing l"><span class="dot fail"></span>
+                <span class="lab"><span class="dim">Failed ·</span> open-vibe-island</span></div>
+              <div class="core" style="min-width:24px"></div>
+              <div class="wing r"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--red)"
+                stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><span class="fid">A6</span><b>Outcome variants.</b> Interrupted (amber, ▢ stop, no glow) vs
+          failed (a <b>static dim red</b> edge segment that does not pulse) — finally distinct states (§3). Kills <b>§1.1</b>.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== §B HOVER PEEK & MORPH ============================== -->
+  <section>
+    <div class="sec-head"><span class="id">B</span><h2>Hover peek &amp; the morph</h2></div>
+    <p class="sec-note">Pointer over the pill (0.15s dwell, scale 1.03). The single black shape begins to grow and
+      surfaces the one actionable item before a full open; the edge-light stretches continuously around the growing
+      silhouette. <b>Hover the left frame</b> to see it. Progressive disclosure — quiet by default, loud when needed.</p>
+
+    <div class="grid">
+      <div class="frame half">
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="tnum">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount"><div class="isle perm" style="width:408px;border-radius:18px;padding:12px 15px;cursor:pointer">
+            <div style="display:flex;align-items:center;gap:12px">
+              <span class="dot perm"></span>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13px;font-weight:600;color:var(--t1)">the-automator wants to run a command</div>
+                <div style="font-size:11.5px;color:var(--t2);margin-top:2px;font-family:var(--mono)">swift build</div>
+              </div>
+              <span class="mono-tag">S5</span>
+            </div>
+            <div style="display:flex;gap:10px;margin-top:9px;font-size:11px;color:var(--t3);align-items:center">
+              <span>Click to review &amp; approve</span>
+              <span style="margin-left:auto" class="chip">+2 more sessions</span>
+            </div>
+          </div></div>
+        </div>
+        <div class="cap"><span class="fid">B</span><b>Peek.</b> The most actionable session surfaces inline; everything
+          else compresses to "+2 more". The amber ring has already begun condensing before the click.</div>
+      </div>
+
+      <div class="frame half">
+        <div class="film">
+          <div class="fc">
+            <div class="fstage"><div class="isle pill work" style="min-width:132px;height:30px">
+              <div class="wing l"><span class="gly run"><i></i><i></i><i></i></span></div>
+              <div class="core"></div><div class="wing r"><span class="cnt">3</span></div></div></div>
+            <span class="fnum">1 · pill</span>
+          </div>
+          <span class="arrow">&rarr;</span>
+          <div class="fc">
+            <div class="fstage"><div class="isle work" style="width:132px;height:58px;border-radius:18px"></div></div>
+            <span class="fnum">2 · peek</span>
+          </div>
+          <span class="arrow">&rarr;</span>
+          <div class="fc">
+            <div class="fstage"><div class="isle work" style="width:132px;height:92px;border-radius:20px"></div></div>
+            <span class="fnum">3 · panel</span>
+          </div>
+        </div>
+        <div class="cap"><span class="fid">B&#8242;</span><b>Morph filmstrip.</b> Top radius 0→20, bottom radius
+          pillHeight/2→20 as the frame grows; the orbiting edge-light never breaks — one liquid black body, never a
+          crossfade. Live demo in §K.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== §C SESSION LIST ============================== -->
+  <section>
+    <div class="sec-head"><span class="id">C</span><h2>Expanded panel — session list</h2></div>
+    <p class="sec-note">A realistic mix, grouped by state so <b>attention floats to the top</b>. Rows are near-chromeless:
+      a 2px edge-lit rail marks only the active/actionable row. Duplicate "the-automator" disambiguated by branch. Header
+      splits around the notch — usage filaments on the wings, controls right. Kills <b>§1.3</b>, <b>§1.4</b>, <b>§1.8</b>.</p>
+
+    <div class="grid"><div class="frame wide" style="max-width:560px;margin:0 auto">
+      <div class="desk tall"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span>
+        <span>Open Island</span></div><div class="mb-r"><span>&#9855;</span><span class="tnum">9:41</span></div></div>
+        <div class="notch"></div>
+        <div class="mount"><div class="isle panel">
+
+          <!-- header split around the notch -->
+          <div class="p-head">
+            <div class="lane"><div class="fil">
+              <svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="2.2" stroke-linecap="round" pathLength="100" stroke-dasharray="75 100" transform="rotate(135 20 20)"/><circle cx="20" cy="20" r="16" fill="none" stroke="var(--fine)" stroke-width="2.2" stroke-linecap="round" pathLength="100" stroke-dasharray="25.5 100" transform="rotate(135 20 20)" style="filter:drop-shadow(0 0 3px rgba(95,227,154,.6))"/></svg>
+              <div class="ft"><span class="fk">Claude 5h</span><br><span class="fv tnum">34% · 2h 10m</span></div>
+            </div></div>
+            <div class="ngap"></div>
+            <div class="lane r">
+              <div class="fil">
+                <svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="2.2" stroke-linecap="round" pathLength="100" stroke-dasharray="75 100" transform="rotate(135 20 20)"/><circle cx="20" cy="20" r="16" fill="none" stroke="var(--wrn)" stroke-width="2.2" stroke-linecap="round" pathLength="100" stroke-dasharray="58.5 100" transform="rotate(135 20 20)" style="filter:drop-shadow(0 0 3px rgba(255,207,122,.6))"/></svg>
+                <div class="ft"><span class="fk">Claude 7d</span><br><span class="fv tnum">78% · 3d</span></div>
+              </div>
+              <div class="ctl" title="Mute"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M23 9l-6 6M17 9l6 6"/></svg></div>
+              <div class="ctl" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
+              <div class="ctl" title="Quit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+            </div>
+          </div>
+
+          <!-- summary strip — only non-zero buckets -->
+          <div class="summary">
+            <span class="b"><span class="n">6</span> total</span>
+            <span class="b"><span class="dot perm" style="width:6px;height:6px"></span><span class="n">2</span> waiting</span>
+            <span class="b"><span class="dot run" style="width:6px;height:6px"></span><span class="n">2</span> running</span>
+            <span class="b"><span class="dot done" style="width:6px;height:6px"></span><span class="n">2</span> done</span>
+          </div>
+
+          <!-- GROUP: needs you -->
+          <div class="grp"><span class="gd" style="background:var(--amber)"></span>Needs you<span class="gn">2</span></div>
+
+          <!-- permission row (loudest) -->
+          <div class="row">
+            <span class="rail perm"></span>
+            <div class="lead"><span class="dot perm"></span><span class="mono-tag">S5</span></div>
+            <div class="body">
+              <div class="tl"><span class="ws">the-automator</span>
+                <span class="disamb"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M6 8.5v7M8.3 7.6 15.7 10"/></svg>feat/bridge-auth</span></div>
+              <div class="act">Wants to run <span class="mono" style="color:var(--t1)">swift build</span></div>
+              <div class="actions" style="margin-top:9px">
+                <button class="btn primary" style="padding:6px 11px;font-size:12px">Approve <span class="kc"><kbd>⌘</kbd><kbd>Y</kbd></span></button>
+                <button class="btn deny" style="padding:6px 11px;font-size:12px">Deny <span class="kc"><kbd>⌘</kbd><kbd>N</kbd></span></button>
+              </div>
+            </div>
+            <span class="age tnum">now</span>
+            <div class="dismiss"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+          </div>
+
+          <!-- question row -->
+          <div class="row">
+            <span class="rail ques"></span>
+            <div class="lead"><span class="dot ques"></span><span class="mono-tag">OC</span></div>
+            <div class="body">
+              <div class="tl"><span class="ws">niche-radar</span></div>
+              <div class="act">Asks: <span style="color:var(--t1)">Which auth method should the bridge use?</span></div>
+              <div class="actions" style="margin-top:9px">
+                <button class="btn ghost" style="padding:6px 11px;font-size:12px">Answer <span class="kc"><kbd>↵</kbd></span></button>
+                <span class="chip">3 options</span>
+              </div>
+            </div>
+            <span class="age tnum">1m</span>
+            <div class="dismiss"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+          </div>
+
+          <!-- GROUP: running -->
+          <div class="grp"><span class="gd" style="background:var(--cyan)"></span>Running<span class="gn">2</span></div>
+
+          <!-- running w/ live activity -->
+          <div class="row">
+            <span class="rail run"></span>
+            <div class="lead"><span class="dot run"></span><span class="mono-tag">C</span></div>
+            <div class="body">
+              <div class="tl"><span class="ws">open-vibe-island</span>
+                <span class="disamb"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M6 8.5v7M8.3 7.6 15.7 10"/></svg>main</span></div>
+              <div class="act"><span class="gly run" style="height:11px"><i></i><i></i><i></i></span>
+                <span class="live">Editing AppModel.swift</span> · compiling OpenIslandCore</div>
+              <div class="meta"><span class="chip mn">Opus 4.8</span><span class="chip">acceptEdits</span>
+                <span class="pin"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>1m 42s</span></div>
+            </div>
+            <span class="age tnum">now</span>
+            <div class="dismiss"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+          </div>
+
+          <!-- running w/ subagents -->
+          <div class="row">
+            <span class="rail run"></span>
+            <div class="lead"><span class="dot run"></span><span class="mono-tag">C</span></div>
+            <div class="body">
+              <div class="tl"><span class="ws">the-automator</span>
+                <span class="disamb"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M6 8.5v7M8.3 7.6 15.7 10"/></svg>main</span></div>
+              <div class="act"><span class="live">Orchestrating 3 subagents</span> · 2 of 5 tasks done</div>
+              <div class="meta"><span class="chip mn">Sonnet 5</span>
+                <span class="pin"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="8" r="3"/><circle cx="17" cy="15" r="3"/><path d="M10.5 10 14.5 13" stroke-linecap="round"/></svg>3 active</span>
+                <span class="pin"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>4m 03s</span></div>
+            </div>
+            <span class="age tnum">now</span>
+            <div class="dismiss"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+          </div>
+
+          <!-- GROUP: done -->
+          <div class="grp"><span class="gd" style="background:var(--green)"></span>Done<span class="gn">2</span></div>
+
+          <!-- completed success -->
+          <div class="row">
+            <div class="lead"><span class="dot done"></span><span class="mono-tag">G</span></div>
+            <div class="body">
+              <div class="tl"><span class="ws">niche-radar</span>
+                <span class="outc ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Success</span></div>
+              <div class="act">Updated <span style="color:var(--t2)">AGENTS.md</span> &amp; <span style="color:var(--t2)">CLAUDE.md</span> with the new worktree workflow</div>
+              <div class="meta"><span class="jump"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg>Jump to Ghostty</span><span class="jump">Transcript</span></div>
+            </div>
+            <span class="age tnum">4m</span>
+            <div class="dismiss"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+          </div>
+
+          <!-- completed interrupted -->
+          <div class="row">
+            <div class="lead"><span class="dot intr"></span><span class="mono-tag">X</span></div>
+            <div class="body">
+              <div class="tl"><span class="ws">open-vibe-island</span>
+                <span class="outc intr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Interrupted</span></div>
+              <div class="act">Stopped while running the test suite — 43m elapsed before stop</div>
+              <div class="meta"><span class="jump"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg>Jump to Terminal</span>
+                <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2 2 7v6c0 5 4 8 10 9 6-1 10-4 10-9V7z"/></svg>SSH · build-box</span></div>
+            </div>
+            <span class="age tnum">18m</span>
+            <div class="dismiss"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+          </div>
+
+          <div class="p-foot"><span class="grow">6 sessions · 2 need you</span>
+            <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 12h16M4 6h16M4 18h16"/></svg>Group by project</a></div>
+
+        </div></div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- ============================== §D ROW EXPANDED ============================== -->
+  <section>
+    <div class="sec-head"><span class="id">D</span><h2>Row expanded — session detail</h2></div>
+    <p class="sec-note">Tap a row to expand it in place. Metadata done tastefully as a small grid; current/last activity
+      narrated; the last assistant message rendered as clean rich text (not a raw dump). Jump is the primary CTA;
+      dismiss is hover-reveal. Kills <b>§1.2</b>, <b>§1.4</b>, <b>§1.7</b>.</p>
+
+    <div class="grid"><div class="frame wide" style="max-width:560px;margin:0 auto">
+      <div class="desk tall"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+        <div class="mb-r"><span>&#9855;</span><span class="tnum">9:41</span></div></div>
+        <div class="notch"></div>
+        <div class="mount"><div class="isle panel">
+          <div class="row" style="cursor:default">
+            <span class="rail run"></span>
+            <div class="lead"><span class="dot run"></span></div>
+            <div class="body">
+              <div class="tl"><span class="ws">open-vibe-island</span>
+                <span class="disamb"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M6 8.5v7M8.3 7.6 15.7 10"/></svg>main</span></div>
+              <div class="act"><span class="gly run" style="height:11px"><i></i><i></i><i></i></span>
+                <span class="live">Editing AppModel.swift</span> · compiling OpenIslandCore</div>
+
+              <div class="mgrid">
+                <div class="mcell"><span class="mk">Agent</span><span class="mv"><span class="mono-tag">C</span>Claude</span></div>
+                <div class="mcell"><span class="mk">Model</span><span class="mv mono">Opus 4.8</span></div>
+                <div class="mcell"><span class="mk">Permission</span><span class="mv">acceptEdits</span></div>
+                <div class="mcell"><span class="mk">Branch</span><span class="mv mono">main</span></div>
+                <div class="mcell"><span class="mk">Duration</span><span class="mv tnum">1m 42s</span></div>
+                <div class="mcell"><span class="mk">Terminal</span><span class="mv">Ghostty · attached</span></div>
+              </div>
+
+              <div class="assistant">
+                <div class="amh">Last message · Claude</div>
+                I refactored <strong>AppModel</strong> so bridge lifecycle lives behind a single
+                <code>BridgeCoordinator</code>. Next I'll wire the reconnect backoff and add a test for the
+                <code>SessionState.apply(_:)</code> reducer path. Compiling now to confirm the split builds.
+              </div>
+
+              <div class="meta" style="margin-top:12px">
+                <span class="jump" style="background:rgba(80,170,255,.16);color:var(--t1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg>Jump to Ghostty</span>
+                <span class="jump"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h5"/></svg>Transcript</span>
+                <span style="margin-left:auto;font-size:11px;color:var(--t3)" class="mono">~/Developer/open-vibe-island</span>
+              </div>
+            </div>
+            <div class="dismiss"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+          </div>
+        </div></div>
+      </div>
+      <div class="cap"><span class="fid">D</span><b>Detail.</b> Every field is something the app truly computes from §3 —
+        model, permission mode, branch, attachment state, working directory (mono, dimmed). No fabricated token/cost counters.</div>
+    </div></div>
+  </section>
+
+  <!-- ============================== §E PERMISSION HERO ============================== -->
+  <section>
+    <div class="sec-head"><span class="id">E</span><h2>Permission request — the hero</h2></div>
+    <p class="sec-note">The core value. When a permission fires, the light <b>travels</b> from the pill edge, down the
+      morphing silhouette, and condenses into a <b>ring around the card</b> — no fill, the boundary is the amber light.
+      Syntax-highlighted command, scoped "always allow", keycaps <span class="k">⌘Y</span> / <span class="k">⌘⇧Y</span> /
+      <span class="k">⌘N</span>. This is the most polished frame. Kills <b>§1.1</b>, <b>§1.7</b>, <b>§1.8</b>.</p>
+
+    <!-- the 3-frame travel story -->
+    <div class="grid" style="margin-bottom:8px"><div class="frame wide">
+      <div class="film" style="max-width:600px">
+        <div class="fc"><div class="fstage"><div class="travel f1"></div></div><span class="fnum">1 · light fires at the pill edge</span></div>
+        <span class="arrow">&rarr;</span>
+        <div class="fc"><div class="fstage"><div class="travel f2"></div></div><span class="fnum">2 · travels down the silhouette</span></div>
+        <span class="arrow">&rarr;</span>
+        <div class="fc"><div class="fstage"><div class="travel f3"></div></div><span class="fnum">3 · condenses into the card ring</span></div>
+      </div>
+    </div></div>
+
+    <div class="grid">
+      <!-- E1 command hero -->
+      <div class="frame half">
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="tnum">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount"><div class="isle panel narrow" style="padding:12px 12px">
+            <div class="hero">
+              <div class="hero-head">
+                <div class="annunc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></div>
+                <div><div class="ht">Permission needed</div><div class="hs">the-automator wants to run a command</div></div>
+                <div class="who"><span class="mono-tag">C</span>Sonnet 5</div>
+              </div>
+              <div class="cmd"><span class="pr">$ </span><span class="t-cmd">rtk</span> <span class="t-sub">grep</span> <span class="t-flag">-rn</span> <span class="t-str">"fetch("</span> <span class="t-path">packages/ui/src</span></div>
+              <div class="actions">
+                <button class="btn primary">Allow once <span class="kc"><kbd>⌘</kbd><kbd>Y</kbd></span></button>
+                <button class="btn deny">Deny <span class="kc"><kbd>⌘</kbd><kbd>N</kbd></span></button>
+              </div>
+              <div class="scopes">
+                <div class="scope"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                  Yes, allow <code>rtk grep</code> from this project<span class="sk kc"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>Y</kbd></span></div>
+                <div class="scope"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                  Yes, allow all <code>rtk</code> commands here</div>
+              </div>
+            </div>
+          </div></div>
+        </div>
+        <div class="cap"><span class="fid">E1</span><b>Command variant.</b> Real syntax highlighting (command / subcommand /
+          flag / string / path). Approve/Deny is a live round-trip; the hook blocks until you decide. Scoped grants are the
+          real <b>suggestedUpdates</b> with human labels.</div>
+      </div>
+
+      <!-- E2 diff hero -->
+      <div class="frame half">
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="tnum">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount"><div class="isle panel narrow" style="padding:12px 12px">
+            <div class="hero">
+              <div class="hero-head">
+                <div class="annunc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></div>
+                <div><div class="ht">Approve file edit</div><div class="hs">the-automator wants to edit AGENTS.md</div></div>
+                <div class="who"><span class="mono-tag">C</span>Opus 4.8</div>
+              </div>
+              <div class="diff">
+                <div class="fn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M13 2v7h7"/></svg>AGENTS.md · 2 changed</div>
+                <div class="dl ctx"><span class="g">12</span><span class="x">## Workflow</span></div>
+                <div class="dl del"><span class="g">13</span><span class="x">- Branch off main and open a PR.</span></div>
+                <div class="dl add"><span class="g">13</span><span class="x">+ Never edit the main worktree. Use EnterWorktree,</span></div>
+                <div class="dl add"><span class="g">14</span><span class="x">+ branched off latest local main.</span></div>
+                <div class="dl ctx"><span class="g">15</span><span class="x">  One coherent change per round.</span></div>
+              </div>
+              <div class="actions">
+                <button class="btn primary">Allow once <span class="kc"><kbd>⌘</kbd><kbd>Y</kbd></span></button>
+                <button class="btn deny">Deny <span class="kc"><kbd>⌘</kbd><kbd>N</kbd></span></button>
+              </div>
+              <div class="scopes">
+                <div class="scope"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                  Yes, allow edits to <code>*.md</code> in this project<span class="sk kc"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>Y</kbd></span></div>
+              </div>
+            </div>
+          </div></div>
+        </div>
+        <div class="cap"><span class="fid">E2</span><b>Edit variant.</b> A real inline diff (old/new from the Edit payload),
+          not a description. Same ring, same keycaps — the treatment is consistent whether it's a command or a file write.</div>
+      </div>
+
+      <!-- E3 codex jump-to-approve -->
+      <div class="frame half">
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="tnum">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount"><div class="isle panel narrow" style="padding:12px 12px">
+            <div class="hero">
+              <div class="hero-head">
+                <div class="annunc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></div>
+                <div><div class="ht">Approval waiting</div><div class="hs">Codex needs a decision — in-app only</div></div>
+                <div class="who"><span class="mono-tag">X</span>Codex</div>
+              </div>
+              <div class="cmd"><span class="pr">$ </span><span class="t-cmd">git</span> <span class="t-sub">push</span> <span class="t-flag">--force-with-lease</span> <span class="t-path">origin main</span></div>
+              <div class="codex-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg>
+                <span>Codex approvals happen inside the app. <b>Jump to Codex</b> to review this request.</span></div>
+              <div class="actions">
+                <button class="btn primary" style="background:linear-gradient(135deg,#7ec9ff,#4aa3df);color:#04233a;box-shadow:0 4px 18px -6px rgba(74,163,223,.7),inset 0 1px 0 rgba(255,255,255,.4)">Jump to Codex <span class="kc"><kbd>⌘</kbd><kbd>J</kbd></span></button>
+              </div>
+            </div>
+          </div></div>
+        </div>
+        <div class="cap"><span class="fid">E3</span><b>Codex variant.</b> Codex.app can't approve out-of-process, so the card
+          is honest: no fake Approve button — a cool-blue <b>jump-to-approve</b> instead. The edge stays amber (still attention).</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== §F QUESTION ============================== -->
+  <section>
+    <div class="sec-head"><span class="id">F</span><h2>Question prompt</h2></div>
+    <p class="sec-note">Same void, softer amber. Numbered options with descriptions, multi-select, freeform "Other".
+      Digits <span class="k">1–9</span> select, <span class="k">↵</span> submits. Answering is a real round-trip
+      (Claude, OpenCode). Kills <b>§1.2</b>, <b>§1.8</b>.</p>
+
+    <div class="grid">
+      <!-- F1 multi-question -->
+      <div class="frame half">
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="tnum">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount"><div class="isle panel narrow" style="padding:12px 12px">
+            <div class="hero q">
+              <div class="hero-head q">
+                <div class="annunc q"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.1 9a3 3 0 1 1 4.5 2.6c-.9.5-1.6 1.3-1.6 2.4M12 17h.01"/></svg></div>
+                <div><div class="ht">A question for you</div><div class="hs">niche-radar · OpenCode</div></div>
+                <div class="qprog">1 of 2</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:2px"><span class="q-tag">Auth</span></div>
+              <div class="qtext">Which auth method should the bridge use?</div>
+              <div class="opts">
+                <div class="opt sel"><span class="num">1</span><div><div class="ol">Unix socket peer creds</div><div class="od">Kernel-verified UID over the existing socket — no secret to store. Local-first.</div></div><span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+                <div class="opt"><span class="num">2</span><div><div class="ol">Shared secret token</div><div class="od">A token in the app's keychain, sent per connection. Simple, rotatable.</div></div></div>
+                <div class="opt"><span class="num">3</span><div><div class="ol">mTLS client certificate</div><div class="od">Mutual-TLS handshake. Strongest, but heavier to provision on each host.</div></div></div>
+              </div>
+              <div class="q-foot"><button class="btn primary" style="padding:6px 12px;font-size:12px">Next <span class="kc"><kbd>↵</kbd></span></button>
+                <span class="q-hint">Press <kbd style="font-family:var(--ui);font-size:10px;background:rgba(255,255,255,.08);padding:1px 4px;border-radius:3px">1</kbd>–<kbd style="font-family:var(--ui);font-size:10px;background:rgba(255,255,255,.08);padding:1px 4px;border-radius:3px">3</kbd> to choose</span></div>
+            </div>
+          </div></div>
+        </div>
+        <div class="cap"><span class="fid">F1</span><b>Multi-question.</b> Real option descriptions, chip label ≤12 chars,
+          progress "1 of 2". Selected option is confirmed by shape (ring + tick) as well as amber — never color alone.</div>
+      </div>
+
+      <!-- F2 multi-select + other -->
+      <div class="frame half">
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="tnum">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount"><div class="isle panel narrow" style="padding:12px 12px">
+            <div class="hero q">
+              <div class="hero-head q">
+                <div class="annunc q"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.1 9a3 3 0 1 1 4.5 2.6c-.9.5-1.6 1.3-1.6 2.4M12 17h.01"/></svg></div>
+                <div><div class="ht">A question for you</div><div class="hs">niche-radar · OpenCode</div></div>
+                <div class="qprog">2 of 2</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:2px"><span class="q-tag">Platforms</span>
+                <span class="chip" style="font-size:9.5px">multi-select</span></div>
+              <div class="qtext">Which platforms should CI test against?</div>
+              <div class="opts">
+                <div class="opt multi sel"><span class="num">1</span><div><div class="ol">macOS 14 (Sonoma)</div><div class="od">The minimum supported target.</div></div><span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+                <div class="opt multi sel"><span class="num">2</span><div><div class="ol">macOS 15 (Sequoia)</div><div class="od">Current release most users are on.</div></div><span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+                <div class="opt multi"><span class="num">3</span><div><div class="ol">macOS 26 (beta)</div><div class="od">Next-major beta — catch regressions early.</div></div></div>
+                <div class="opt-other"><span class="num">4</span>Other… (type a freeform answer)</div>
+              </div>
+              <div class="q-foot"><button class="btn primary" style="padding:6px 12px;font-size:12px">Submit <span class="kc"><kbd>↵</kbd></span></button>
+                <span class="q-hint">2 selected · toggle with digits</span></div>
+            </div>
+          </div></div>
+        </div>
+        <div class="cap"><span class="fid">F2</span><b>Multi-select + Other.</b> Square markers signal multi-select vs the
+          rounded single-select. Freeform "Other" is always the last row. Semantics are shared across themes; only the skin changes.</div>
+      </div>
+
+      <!-- F3 compact single -->
+      <div class="frame">
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="tnum">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount"><div class="isle panel narrow" style="width:404px;padding:11px 11px">
+            <div class="hero q" style="padding:13px 14px">
+              <div class="hero-head q" style="margin-bottom:9px">
+                <div class="annunc q" style="width:22px;height:22px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.1 9a3 3 0 1 1 4.5 2.6c-.9.5-1.6 1.3-1.6 2.4M12 17h.01"/></svg></div>
+                <div class="ht" style="font-size:13px">Continue past the failing test?</div>
+                <div class="who" style="margin-left:auto"><span class="mono-tag">C</span></div>
+              </div>
+              <div class="opts">
+                <div class="opt sel" style="padding:8px 11px"><span class="num">1</span><div class="ol">Yes, skip it for now</div><span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+                <div class="opt" style="padding:8px 11px"><span class="num">2</span><div class="ol">No, stop and let me look</div></div>
+              </div>
+            </div>
+          </div></div>
+        </div>
+        <div class="cap"><span class="fid">F3</span><b>Compact single-question.</b> A yes/no with no descriptions collapses to
+          two tight rows — the notification-card variant that pulls the island open on its own.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== §G SUBAGENTS ============================== -->
+  <section>
+    <div class="sec-head"><span class="id">G</span><h2>Subagents &amp; tasks (nested)</h2></div>
+    <p class="sec-note">A Claude session running 3 subagents plus a todo list. These live <b>inside</b> the session — not
+      separate rows. In the collapsed pill they compress to a single "3 active" light; expanded, each subagent shows its
+      own live elapsed. Kills <b>§1.4</b>, <b>§1.8</b>.</p>
+
+    <div class="grid">
+      <div class="frame half">
+        <div class="desk tall"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="tnum">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount"><div class="isle panel narrow">
+            <div class="row" style="cursor:default">
+              <span class="rail run"></span>
+              <div class="lead"><span class="dot run"></span><span class="mono-tag">C</span></div>
+              <div class="body">
+                <div class="tl"><span class="ws">the-automator</span>
+                  <span class="disamb">3 subagents</span></div>
+                <div class="act"><span class="live">Orchestrating the bridge-auth migration</span></div>
+                <div class="nest">
+                  <div class="nest-h"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="var(--t3)" stroke-width="2"><circle cx="8" cy="8" r="3"/><circle cx="17" cy="15" r="3"/><path d="M10.5 10 14.5 13" stroke-linecap="round"/></svg>Subagents<span class="nn">3 active</span></div>
+                  <div class="suba"><span class="gly run sg" style="height:12px"><i></i><i></i><i></i></span>
+                    <div class="st"><div class="sty">Explore</div><div class="stk">Map every fetch( call in packages/ui</div></div>
+                    <span class="sti tnum">1m 18s</span></div>
+                  <div class="suba"><span class="gly run sg" style="height:12px"><i></i><i></i><i></i></span>
+                    <div class="st"><div class="sty">general-purpose</div><div class="stk">Draft the socket peer-cred handshake</div></div>
+                    <span class="sti tnum">0m 46s</span></div>
+                  <div class="suba"><span class="gly run sg" style="height:12px"><i></i><i></i><i></i></span>
+                    <div class="st"><div class="sty">Plan</div><div class="stk">Sequence the migration + rollback</div></div>
+                    <span class="sti tnum">0m 12s</span></div>
+                  <div class="todos">
+                    <div class="todo done"><span class="tk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span class="tl">Audit current socket transport</span></div>
+                    <div class="todo done"><span class="tk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span class="tl">Choose auth strategy</span></div>
+                    <div class="todo doing"><span class="tk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="9"/><path d="M12 12 12 7" stroke-linecap="round"/></svg></span><span class="tl">Implement handshake</span><span class="tsp">in progress</span></div>
+                    <div class="todo pend"><span class="tk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg></span><span class="tl">Add reducer test</span></div>
+                    <div class="todo pend"><span class="tk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg></span><span class="tl">Update AGENTS.md</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div></div>
+        </div>
+        <div class="cap"><span class="fid">G</span><b>Expanded.</b> Per-subagent type + task + live elapsed; the todo list shows
+          done / in-progress / pending by <b>icon</b> (check / clock / ring), not color alone. 2 of 5 done.</div>
+      </div>
+
+      <div class="frame">
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="tnum">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount"><div class="isle pill big work">
+            <div class="wing l"><span class="gly run"><i></i><i></i><i></i></span>
+              <span class="lab">the-automator</span></div>
+            <div class="core" style="min-width:24px"></div>
+            <div class="wing r"><span class="lab"><span class="dim">3</span></span>
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--cyan)" stroke-width="2"><circle cx="8" cy="8" r="3"/><circle cx="17" cy="15" r="3"/><path d="M10.5 10 14.5 13" stroke-linecap="round"/></svg></div>
+          </div></div>
+        </div>
+        <div class="cap"><span class="fid">G&#8242;</span><b>Compressed to the pill.</b> Subagents collapse to a single count +
+          nodes glyph; the orbiting working-light already says "alive". No nested clutter across the room.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== §H COMPLETED ============================== -->
+  <section>
+    <div class="sec-head"><span class="id">H</span><h2>Completed session</h2></div>
+    <p class="sec-note">Result rendered beautifully: outcome badge (icon + word + hue), duration, a clean one-line summary,
+      and follow-up affordances. The edge has already bloomed green and settled to hairline. Kills <b>§1.2</b>, <b>§1.8</b>.</p>
+
+    <div class="grid"><div class="frame wide" style="max-width:560px;margin:0 auto">
+      <div class="desk tall"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+        <div class="mb-r"><span>&#9855;</span><span class="tnum">9:41</span></div></div>
+        <div class="notch"></div>
+        <div class="mount"><div class="isle panel">
+          <div class="row" style="cursor:default">
+            <div class="lead"><span class="dot done"></span><span class="mono-tag">C</span></div>
+            <div class="body">
+              <div class="tl"><span class="ws">open-vibe-island</span>
+                <span class="disamb"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M6 8.5v7M8.3 7.6 15.7 10"/></svg>feat/theme-halo</span>
+                <span class="outc ok" style="margin-left:auto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Success</span></div>
+              <div class="assistant" style="margin-top:9px">
+                <div class="amh">Result</div>
+                Added the <strong>Halo</strong> theme — tokens, the 8 slot views, and the closed-pill edge-light states.
+                Updated <code>AGENTS.md</code> and <code>CLAUDE.md</code> to document the worktree workflow.
+                <strong>swift build</strong> and <strong>swift test</strong> both pass.
+              </div>
+              <div class="mgrid">
+                <div class="mcell"><span class="mk">Outcome</span><span class="mv" style="color:var(--green)">Success</span></div>
+                <div class="mcell"><span class="mk">Duration</span><span class="mv tnum">14m 08s</span></div>
+                <div class="mcell"><span class="mk">Model</span><span class="mv mono">Opus 4.8</span></div>
+                <div class="mcell"><span class="mk">Finished</span><span class="mv tnum">2m ago</span></div>
+              </div>
+              <div class="meta" style="margin-top:12px">
+                <span class="jump" style="background:rgba(80,170,255,.16);color:var(--t1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg>Jump to Ghostty</span>
+                <span class="jump"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h5"/></svg>Transcript</span>
+                <span class="jump"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.4 8.4 0 0 1-3.8-.9L3 20l1-4.2a8.4 8.4 0 1 1 17-4.3z"/></svg>Reply</span>
+                <span style="margin-left:auto" class="jump" title="Dismiss (hide)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>Dismiss</span>
+              </div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+      <div class="cap"><span class="fid">H</span><b>Completed.</b> "Reply" appears only where the agent supports a follow-up
+        turn; "Dismiss" is the honest verb (hides the row — there is no kill). Duration &amp; finished-at are tabular.</div>
+    </div></div>
+  </section>
+
+  <!-- ============================== §I USAGE METERS ============================== -->
+  <section>
+    <div class="sec-head"><span class="id">I</span><h2>Usage meters — redesigned</h2></div>
+    <p class="sec-note">Thin <b>light-filament</b> arcs, filament color = threshold (fine / warn / critical), with the
+      previously-hidden <b>resets-in</b> countdown finally shown. No EQ bars, no abbreviation soup. Kills <b>§1.6</b>.</p>
+
+    <div class="grid">
+      <div class="frame half">
+        <div class="isle meterc">
+          <div class="meter-title">Usage</div>
+          <div class="meters">
+            <div class="meter">
+              <svg viewBox="0 0 52 52"><circle cx="26" cy="26" r="21" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="3" stroke-linecap="round" pathLength="100" stroke-dasharray="75 100" transform="rotate(135 26 26)"/><circle cx="26" cy="26" r="21" fill="none" stroke="var(--fine)" stroke-width="3" stroke-linecap="round" pathLength="100" stroke-dasharray="25.5 100" transform="rotate(135 26 26)" style="filter:drop-shadow(0 0 4px rgba(95,227,154,.55))"/></svg>
+              <div class="mx"><div class="ml">Claude · 5h</div><div class="mp p-fine tnum">34%</div><div class="mr tnum">resets in 2h 10m</div><span class="thl fine">FINE</span></div>
+            </div>
+            <div class="meter">
+              <svg viewBox="0 0 52 52"><circle cx="26" cy="26" r="21" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="3" stroke-linecap="round" pathLength="100" stroke-dasharray="75 100" transform="rotate(135 26 26)"/><circle cx="26" cy="26" r="21" fill="none" stroke="var(--wrn)" stroke-width="3" stroke-linecap="round" pathLength="100" stroke-dasharray="58.5 100" transform="rotate(135 26 26)" style="filter:drop-shadow(0 0 4px rgba(255,207,122,.55))"/></svg>
+              <div class="mx"><div class="ml">Claude · 7d</div><div class="mp p-warn tnum">78%</div><div class="mr tnum">resets in 3d 4h</div><span class="thl warn">WARN</span></div>
+            </div>
+            <div class="meter">
+              <svg viewBox="0 0 52 52"><circle cx="26" cy="26" r="21" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="3" stroke-linecap="round" pathLength="100" stroke-dasharray="75 100" transform="rotate(135 26 26)"/><circle cx="26" cy="26" r="21" fill="none" stroke="var(--crit)" stroke-width="3" stroke-linecap="round" pathLength="100" stroke-dasharray="70.5 100" transform="rotate(135 26 26)" style="filter:drop-shadow(0 0 5px rgba(255,107,107,.6))"/></svg>
+              <div class="mx"><div class="ml">Codex · 7d <span style="color:var(--t3)">· Pro</span></div><div class="mp p-crit tnum">94%</div><div class="mr tnum">resets in 19h</div><span class="thl crit">CRITICAL</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><span class="fid">I</span><b>Full meters.</b> Claude 5h + 7d and a Codex dynamic window with planType.
+          Three thresholds, each paired with a <b>word</b> (FINE/WARN/CRITICAL) so color is never the only signal.</div>
+      </div>
+
+      <div class="frame">
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="tnum">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount"><div class="isle pill big">
+            <div class="wing l"><svg viewBox="0 0 24 24" width="15" height="15"><circle cx="12" cy="12" r="9" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="2.4" stroke-linecap="round" pathLength="100" stroke-dasharray="75 100" transform="rotate(135 12 12)"/><circle cx="12" cy="12" r="9" fill="none" stroke="var(--crit)" stroke-width="2.4" stroke-linecap="round" pathLength="100" stroke-dasharray="70.5 100" transform="rotate(135 12 12)"/></svg>
+              <span class="lab"><span class="dim">Codex</span> <b style="font-weight:600;color:var(--crit)">94%</b></span></div>
+            <div class="core" style="min-width:24px"></div>
+            <div class="wing r"><span class="lab" style="font-size:11px;color:var(--t3)">19h</span></div>
+          </div></div>
+        </div>
+        <div class="cap"><span class="fid">I&#8242;</span><b>Compressed to the pill.</b> When a window goes critical the pill
+          surfaces a single filament + "94%" + reset — the only time usage earns a place in the ambient state.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== §J EMPTY ============================== -->
+  <section>
+    <div class="sec-head"><span class="id">J</span><h2>Empty state</h2></div>
+    <p class="sec-note">No sessions. Quiet confidence, not a hole — the void is the point. A single hairline pill and a calm line.</p>
+
+    <div class="grid">
+      <div class="frame half">
+        <div class="desk tall"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="tnum">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount"><div class="isle panel narrow">
+            <div class="empty">
+              <div class="eg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg></div>
+              <div class="et">All quiet</div>
+              <div class="es">No active agent sessions. Open Island is watching your terminals and IDEs — it'll light up the moment one needs you.</div>
+              <div class="ec"><span class="dot idle"></span>Monitoring · 4 workspaces</div>
+            </div>
+          </div></div>
+        </div>
+        <div class="cap"><span class="fid">J</span><b>Empty.</b> Mirrors the A1 idle pill — edge off, one dim dot. The overlay
+          earns its keep by disappearing until it has something true to say.</div>
+      </div>
+
+      <div class="frame">
+        <div class="desk"><div class="menubar"><div class="mb-l"><span class="apple">&#63743;</span></div>
+          <div class="mb-r"><span>&#9855;</span><span class="tnum">9:41</span></div></div>
+          <div class="notch"></div>
+          <div class="mount"><div class="isle pill">
+            <div class="wing l"><span class="gly idle"><i></i><i></i><i></i></span></div>
+            <div class="core"></div>
+            <div class="wing r"><span class="dot idle"></span></div>
+          </div></div>
+        </div>
+        <div class="cap"><span class="fid">J&#8242;</span><b>Idle pill.</b> The collapsed form of empty — indistinguishable from A1,
+          because "nothing needs you" and "nothing is running" should feel the same: calm.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== §K MOTION STRIP ============================== -->
+  <section>
+    <div class="sec-head"><span class="id">K</span><h2>Motion spec — "light travels"</h2></div>
+    <p class="sec-note">The whole identity in one law: <b>nothing moves except light</b>. Every demo below is real CSS,
+      the same primitives used across every frame above. Kills <b>§1.5</b>.</p>
+
+    <div class="mstrip">
+      <div class="mdemo">
+        <div class="stage"><div class="isle work chip-s"></div></div>
+        <div class="mlabel"><b>Working orbit</b>cyan→violet segment orbits the edge · 6s linear</div>
+      </div>
+      <div class="mdemo">
+        <div class="stage"><div class="morphd"></div></div>
+        <div class="mlabel"><b>Expand morph</b>black shape grows, edge-light stretches continuously</div>
+      </div>
+      <div class="mdemo">
+        <div class="stage"><div class="isle perm chip-s"></div></div>
+        <div class="mlabel"><b>Attention condense</b>light warms amber→magenta, pulses &amp; bleeds out · 1.9s</div>
+      </div>
+      <div class="mdemo">
+        <div class="stage"><div class="isle ok chip-s"></div></div>
+        <div class="mlabel"><b>Success bloom</b>green blooms then dissolves back to hairline · 3s</div>
+      </div>
+      <div class="mdemo">
+        <div class="stage"><div class="rowd"></div></div>
+        <div class="mlabel"><b>Row entrance</b>a faint light sweep crosses the new row</div>
+      </div>
+      <div class="mdemo">
+        <div class="stage"><div class="isle fail chip-s"></div></div>
+        <div class="mlabel"><b>Failure (static)</b>a dim red segment that does <i>not</i> pulse</div>
+      </div>
+      <div class="mdemo">
+        <div class="stage"><div class="isle chip-s"></div></div>
+        <div class="mlabel"><b>Idle hairline</b>edge off · bare 8% white · the 95% resting state</div>
+      </div>
+      <div class="mdemo">
+        <div class="stage"><span class="gly run" style="height:16px"><i></i><i></i><i></i></span></div>
+        <div class="mlabel"><b>Liveness glyph</b>filament bars wave (run) / breathe (wait) / still (idle)</div>
+      </div>
+    </div>
+  </section>
+
+  <footer style="padding:20px 8px 0;border-top:1px solid var(--hair);color:var(--t3);font-size:11px;line-height:1.6;margin-top:40px">
+    Halo · Intelligence — Open Island theme board. Expressible as the real slot system (closedPill · openedHeader ·
+    sessionRow · sessionList · notificationCard · emptyState · bootstrapPlaceholder · installHint) + tokens.
+    Every string is something the app can truthfully compute from §3. No fabricated token/cost counters, no kill action —
+    dismiss is the honest verb. Identity stays a whisper; color is state; the light does the talking.
+  </footer>
+
+</div>
+</body>
+</html>
