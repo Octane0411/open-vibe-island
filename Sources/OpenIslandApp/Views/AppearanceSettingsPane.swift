@@ -13,6 +13,8 @@ struct AppearanceSettingsPane: View {
     var model: AppModel
     @State private var previewMode: UnifiedBars.Mode = .idle
     @State private var previewAutoCycle: Bool = true
+    /// AB-326: which conformance scenario the session-list preview renders.
+    @State private var previewScenario: AppearancePreviewScenario = .list
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -327,21 +329,58 @@ struct AppearanceSettingsPane: View {
 
     @ViewBuilder
     private var sessionListPreviewSection: some View {
-        sectionHeader(title: lang.t("settings.appearance.sessionPreview"), note: nil)
+        sectionHeader(
+            title: lang.t("settings.appearance.sessionPreview"),
+            note: lang.t("settings.appearance.previewScenario.note")
+        )
 
-        SettingsPreviewStage(contentTopPadding: 20, contentBottomPadding: 28) {
+        scenarioPicker
+
+        // AB-326: horizontal + bottom margins are the previewed theme's opened
+        // shadow-inset tokens, so a large glow (e.g. Poured's 34pt bloom) is
+        // reserved room inside the stage instead of being clipped.
+        SettingsPreviewStage(
+            contentTopPadding: 20,
+            contentBottomPadding: tokens.metrics.openedShadowBottomInset
+        ) {
             AppearanceSessionListPreview(
                 profile: editingProfile,
-                sessions: previewSessions,
-                sections: previewSections,
+                sessions: scenarioSessions,
+                sections: scenarioSections,
                 group: editingPreferences.sessionGroup,
                 stateIndicator: editingPreferences.sessionStateIndicator,
                 completedStaleThreshold: editingPreferences.completedStaleThreshold.seconds,
+                actionableSessionID: scenarioContent.actionableSessionID,
+                usageProviders: scenarioContent.usageProviders,
                 lang: lang
             )
-            .padding(.horizontal, 18)
+            .padding(.horizontal, tokens.metrics.openedShadowHorizontalInset)
         }
         .padding(.top, 8)
+    }
+
+    /// Menu picker driving the session-list preview scenario. A `.menu` `Picker`
+    /// scales cleanly to the full scenario set (a chip strip would overflow) and
+    /// matches the native pickers the rest of Settings uses.
+    private var scenarioPicker: some View {
+        HStack(spacing: 10) {
+            Text(lang.t("settings.appearance.previewScenario.title").uppercased())
+                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                .tracking(1.0)
+                .foregroundStyle(V6Palette.paper.opacity(0.55))
+
+            Picker(lang.t("settings.appearance.previewScenario.title"), selection: $previewScenario) {
+                ForEach(AppearancePreviewScenario.allCases) { scenario in
+                    Text(title(for: scenario)).tag(scenario)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .fixedSize()
+            .tint(V6Palette.paper.opacity(0.85))
+
+            Spacer(minLength: 0)
+        }
     }
 
     private func runAutoCycle() async {
@@ -760,6 +799,10 @@ struct AppearanceSettingsPane: View {
         }
     }
 
+    private func title(for scenario: AppearancePreviewScenario) -> String {
+        lang.t(scenario.labelKey)
+    }
+
     private func title(for option: IslandCompletedStaleThreshold) -> String {
         switch option {
         case .twoMinutes:    lang.t("settings.appearance.staleThreshold.twoMinutes")
@@ -824,6 +867,31 @@ struct AppearanceSettingsPane: View {
     private var previewSections: [IslandSessionSection] {
         IslandSessionSectioning.sections(
             for: previewSessions,
+            group: editingPreferences.sessionGroup,
+            sort: editingPreferences.sessionSort,
+            completedStaleThreshold: editingPreferences.completedStaleThreshold.seconds
+        )
+    }
+
+    /// AB-326: the selected scenario's resolved preview content (sessions,
+    /// actionable hero id, optional header meters). Rebuilt against `Date.now`
+    /// per read for the same recent-vs-stale reason as `previewSessions`.
+    private var scenarioContent: AppearancePreviewScenarioContent {
+        AppearancePreviewFixtures.scenarioContent(previewScenario, now: .now, lang: lang)
+    }
+
+    /// The scenario's fixture sessions the session-list preview lists.
+    private var scenarioSessions: [AgentSession] {
+        scenarioContent.sessions
+    }
+
+    /// The scenario's sessions grouped + sorted through the same
+    /// `IslandSessionSectioning` the live overlay uses, with the editing
+    /// profile's preferences — so a scenario preview buckets exactly as the
+    /// real list would.
+    private var scenarioSections: [IslandSessionSection] {
+        IslandSessionSectioning.sections(
+            for: scenarioSessions,
             group: editingPreferences.sessionGroup,
             sort: editingPreferences.sessionSort,
             completedStaleThreshold: editingPreferences.completedStaleThreshold.seconds
@@ -964,6 +1032,14 @@ private struct AppearanceSessionListPreview: View {
     let group: IslandSessionGroup
     let stateIndicator: IslandSessionStateIndicator
     let completedStaleThreshold: TimeInterval
+    /// AB-326: the scenario's hero session. Non-`nil` promotes that row's
+    /// `isActionable` path so its permission / question / completion *card*
+    /// expands inside the list (a plain-list preview leaves this `nil`).
+    let actionableSessionID: String?
+    /// AB-326: when set (the `meters` scenario), the previewed theme's real
+    /// opened header is drawn above the list, fed these fixture providers, so
+    /// the usage meters render per theme. `nil` keeps the headerless list.
+    let usageProviders: [UsageProviderPresentation]?
     let lang: LanguageManager
 
     @Environment(\.islandTheme) private var theme
@@ -995,20 +1071,49 @@ private struct AppearanceSessionListPreview: View {
                 .clipShape(shape)
                 .shadow(color: shadow.resolvedColor, radius: shadow.radius, y: shadow.yOffset)
 
-            theme.sessionList(
-                sessions: sessions,
-                sections: sections,
-                group: group,
-                stateIndicator: stateIndicator,
-                completedStaleThreshold: completedStaleThreshold,
-                sideInset: sideInset,
-                isInteractive: false,
-                actionableSessionID: nil,
-                lang: lang,
-                keyboardCoordinator: nil,
-                pulseClock: nil,
-                makeActions: { _ in RowActions(jump: {}) }
-            )
+            VStack(spacing: 0) {
+                if let usageProviders {
+                    // The real per-theme header slot. Non-notch-aware layout +
+                    // inert control closures keep the preview simple; the top
+                    // pad clears the physical notch stem on the notch profile.
+                    theme.openedHeader(
+                        providers: usageProviders,
+                        usesNotchAwareLayout: false,
+                        targetScreen: nil,
+                        isSoundMuted: false,
+                        lang: lang,
+                        onToggleMute: {},
+                        onShowSettings: {},
+                        onQuit: {}
+                    )
+                    .padding(.top, profile == .notch ? 34 : 10)
+                    .padding(.bottom, 4)
+                }
+
+                if sessions.isEmpty {
+                    // Mirror the overlay: an empty session set routes to the
+                    // theme's empty scaffold, not an empty list. Also exercises
+                    // the AB-326 `workspaceCount` seam in the preview.
+                    theme.emptyState(lang: lang, hasRecentSessions: false, workspaceCount: 0)
+                        .frame(minHeight: 120)
+                        .padding(.vertical, 12)
+                } else {
+                    theme.sessionList(
+                        sessions: sessions,
+                        sections: sections,
+                        group: group,
+                        stateIndicator: stateIndicator,
+                        completedStaleThreshold: completedStaleThreshold,
+                        sideInset: sideInset,
+                        isInteractive: true,
+                        actionableSessionID: actionableSessionID,
+                        lang: lang,
+                        keyboardCoordinator: nil,
+                        pulseClock: nil,
+                        makeActions: { _ in RowActions(jump: {}) }
+                    )
+                }
+            }
             .clipShape(shape)
             .overlay {
                 shape.stroke(Color.white.opacity(0.07), lineWidth: 1)
@@ -1145,119 +1250,5 @@ private struct AppearanceRowThumbnail: View {
     }
 }
 
-// MARK: - Preview session fixtures (AB-305)
-
-/// Builds the fixture `AgentSession`s the appearance previews render. One per
-/// live state — running, needs-approval, needs-answer, recently-completed
-/// (`done`) and stale-completed (`idle`) — spread across agents and projects
-/// so agent/project grouping forms multiple sections, and time-stamped so the
-/// recent vs. stale completed rows land on opposite sides of the staleness cut.
-private enum AppearancePreviewFixtures {
-    static func sessions(now: Date, lang: LanguageManager) -> [AgentSession] {
-        // Attention order first (needs-approval, needs-answer, running, done,
-        // idle) — `IslandSessionSectioning` leaves `.attention` untouched, so
-        // this array *is* the attention ordering.
-        [
-            AgentSession(
-                id: "preview-approval",
-                title: "Codex · open-island",
-                tool: .codex,
-                origin: .demo,
-                attachmentState: .attached,
-                phase: .waitingForApproval,
-                summary: lang.t("settings.appearance.preview.approveShellCommand"),
-                updatedAt: now.addingTimeInterval(-90),
-                permissionRequest: PermissionRequest(
-                    title: lang.t("approval.toolPermissionRequested"),
-                    summary: lang.t("settings.appearance.preview.approveShellCommand"),
-                    affectedPath: "Sources/OpenIslandApp/Views/SettingsView.swift",
-                    primaryActionTitle: "Allow",
-                    secondaryActionTitle: "Deny"
-                ),
-                jumpTarget: JumpTarget(
-                    terminalApp: "Ghostty",
-                    workspaceName: "open-island",
-                    paneTitle: "codex ~/open-island",
-                    terminalSessionID: "preview-approval"
-                )
-            ),
-            AgentSession(
-                id: "preview-answer",
-                title: "Claude · open-island",
-                tool: .claudeCode,
-                origin: .demo,
-                attachmentState: .attached,
-                phase: .waitingForAnswer,
-                summary: lang.t("settings.appearance.preview.waitingForAnswer"),
-                updatedAt: now.addingTimeInterval(-150),
-                questionPrompt: QuestionPrompt(
-                    title: lang.t("settings.appearance.preview.waitingForAnswer"),
-                    questions: [
-                        QuestionPromptItem(
-                            question: lang.t("settings.appearance.preview.waitingForAnswer"),
-                            header: "",
-                            options: [
-                                QuestionOption(label: "Ship it"),
-                                QuestionOption(label: "Revise"),
-                            ]
-                        )
-                    ]
-                ),
-                jumpTarget: JumpTarget(
-                    terminalApp: "Ghostty",
-                    workspaceName: "open-island",
-                    paneTitle: "claude ~/open-island",
-                    terminalSessionID: "preview-answer"
-                )
-            ),
-            AgentSession(
-                id: "preview-running",
-                title: "Cursor · website",
-                tool: .cursor,
-                origin: .demo,
-                attachmentState: .attached,
-                phase: .running,
-                summary: lang.t("settings.appearance.preview.editingSessionListPreview"),
-                updatedAt: now.addingTimeInterval(-30),
-                jumpTarget: JumpTarget(
-                    terminalApp: "Cursor",
-                    workspaceName: "website",
-                    paneTitle: "cursor ~/website",
-                    terminalSessionID: "preview-running"
-                )
-            ),
-            AgentSession(
-                id: "preview-done",
-                title: "Gemini · docs",
-                tool: .geminiCLI,
-                origin: .demo,
-                attachmentState: .attached,
-                phase: .completed,
-                summary: lang.t("settings.appearance.preview.replyAvailable"),
-                updatedAt: now.addingTimeInterval(-45),
-                jumpTarget: JumpTarget(
-                    terminalApp: "WezTerm",
-                    workspaceName: "docs",
-                    paneTitle: "gemini ~/docs",
-                    terminalSessionID: "preview-done"
-                )
-            ),
-            AgentSession(
-                id: "preview-idle",
-                title: "Codex · open-island",
-                tool: .codex,
-                origin: .demo,
-                attachmentState: .attached,
-                phase: .completed,
-                summary: lang.t("settings.appearance.preview.completedEarlier"),
-                updatedAt: now.addingTimeInterval(-25 * 60),
-                jumpTarget: JumpTarget(
-                    terminalApp: "Ghostty",
-                    workspaceName: "open-island",
-                    paneTitle: "codex ~/open-island",
-                    terminalSessionID: "preview-idle"
-                )
-            ),
-        ]
-    }
-}
+// Preview session fixtures live in `AppearancePreviewFixtures.swift` (AB-326)
+// so `IslandDebugScenario` can reuse the exact same payloads.

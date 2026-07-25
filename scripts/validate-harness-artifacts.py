@@ -306,6 +306,92 @@ def main() -> None:
         if selected_session(report).get("id") != "session-completion-long":
             assert_contains_any(text_values, ["README.md", "worktree"], "longCompletionCard text values")
 
+    # AB-326 conformance scenarios (backed by AppearancePreviewFixtures).
+    elif scenario in ("diffApprovalCard", "codexApprovalCard"):
+        if notch_status != "opened":
+            fail(f"expected opened notch for {scenario}, got {notch_status!r}")
+        if not (island_surface.startswith("approvalCard:") or is_actionable_session_surface(island_surface)):
+            fail(f"expected {scenario} actionable approval surface, got {island_surface!r}")
+        require_frame_between(
+            overlay_frame,
+            width=(520, 780),
+            # The inline diff card (diffApprovalCard) is legitimately taller than
+            # a plain approval card, and the terminal-only card (codexApprovalCard)
+            # swaps its buttons for a respond-in-terminal CTA.
+            height=(180, 560),
+            context=f"{scenario} overlay frame",
+        )
+        if selected_session_phase(report) != "waitingForApproval":
+            fail(f"expected {scenario} to select a waitingForApproval session")
+
+    elif scenario == "multiQuestionCard":
+        if notch_status != "opened":
+            fail(f"expected opened notch for multiQuestionCard, got {notch_status!r}")
+        if not (island_surface.startswith("questionCard:") or is_actionable_session_surface(island_surface)):
+            fail(f"expected multiQuestionCard actionable question surface, got {island_surface!r}")
+        require_frame_between(
+            overlay_frame,
+            width=(520, 780),
+            # Two questions (single-select + multi-select) stack taller than the
+            # single-question questionCard fixture.
+            height=(200, 680),
+            context="multiQuestionCard overlay frame",
+        )
+        if selected_session_phase(report) != "waitingForAnswer":
+            fail("expected multiQuestionCard to select a waitingForAnswer session")
+
+    elif scenario in ("completedInterrupted", "completedFailed"):
+        if notch_status != "opened":
+            fail(f"expected opened notch for {scenario}, got {notch_status!r}")
+        if not (island_surface.startswith("completionCard:") or is_actionable_session_surface(island_surface)):
+            fail(f"expected {scenario} actionable completion surface, got {island_surface!r}")
+        require_frame_between(
+            overlay_frame,
+            width=(520, 780),
+            height=(150, 460),
+            context=f"{scenario} overlay frame",
+        )
+        if selected_session_phase(report) != "completed":
+            fail(f"expected {scenario} to select a completed session")
+
+    elif scenario == "subagentsCard":
+        if notch_status != "opened":
+            fail(f"expected opened notch for subagentsCard, got {notch_status!r}")
+        if island_surface != "sessionList":
+            fail(f"expected subagentsCard to use sessionList surface, got {island_surface!r}")
+        require_frame_between(
+            overlay_frame,
+            width=(520, 780),
+            height=(200, 760),
+            context="subagentsCard overlay frame",
+        )
+
+    elif scenario == "usageMeters":
+        if notch_status != "opened":
+            fail(f"expected opened notch for usageMeters, got {notch_status!r}")
+        if island_surface != "sessionList":
+            fail(f"expected usageMeters to use sessionList surface, got {island_surface!r}")
+        require_frame_between(
+            overlay_frame,
+            width=(520, 780),
+            height=(200, 760),
+            context="usageMeters overlay frame",
+        )
+
+    elif scenario == "emptyState":
+        if notch_status != "opened":
+            fail(f"expected opened notch for emptyState, got {notch_status!r}")
+        if island_surface != "sessionList":
+            fail(f"expected emptyState to use sessionList surface, got {island_surface!r}")
+        if report.get("liveSessionCount") != 0:
+            fail("expected emptyState to surface zero live sessions")
+        require_frame_between(
+            overlay_frame,
+            width=(200, 780),
+            height=(80, 400),
+            context="emptyState overlay frame",
+        )
+
     else:
         fail(f"unsupported scenario {scenario!r}")
 

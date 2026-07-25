@@ -1176,7 +1176,17 @@ final class AppModel {
     /// pill must not shout what the panel is keeping quiet. Codex additionally
     /// respects `showCodexUsage`. (AB-322 — lifted out of `IslandPanelView`'s
     /// private `openedUsageProviders` so both surfaces derive from one place.)
+    /// AB-326: when a debug scenario (`usageMeters`) supplies fixture usage
+    /// providers, they short-circuit the real Claude/Codex usage derivation so
+    /// the harness can capture the header meters without live usage state. `nil`
+    /// in every other path, so production behavior is untouched.
+    var debugUsageProvidersOverride: [UsageProviderPresentation]?
+
     var islandUsageProviders: [UsageProviderPresentation] {
+        if let debugUsageProvidersOverride {
+            return debugUsageProvidersOverride
+        }
+
         guard islandUsageDisplay == .compact else { return [] }
 
         var providers: [UsageProviderPresentation] = []
@@ -1562,6 +1572,7 @@ final class AppModel {
     ) {
         state = SessionState(sessions: snapshot.sessions)
         selectedSessionID = snapshot.selectedSessionID ?? snapshot.sessions.first?.id
+        debugUsageProvidersOverride = snapshot.usageProviders
         lastActionMessage = "Loaded debug scenario: \(snapshot.title)."
         harnessRuntimeMonitor?.recordMilestone("scenarioLoaded", message: snapshot.title)
 

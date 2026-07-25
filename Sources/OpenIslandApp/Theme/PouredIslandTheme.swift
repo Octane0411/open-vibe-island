@@ -247,7 +247,8 @@ struct PouredIslandTheme: IslandTheme {
 
     // MARK: Glass empty / bootstrap / install states (AB-301)
 
-    func emptyState(lang: LanguageManager, hasRecentSessions: Bool) -> AnyView {
+    func emptyState(lang: LanguageManager, hasRecentSessions: Bool, workspaceCount: Int) -> AnyView {
+        // Poured ignores `workspaceCount` — its empty copy is unchanged.
         AnyView(PouredEmptyState(lang: lang, hasRecentSessions: hasRecentSessions))
     }
 

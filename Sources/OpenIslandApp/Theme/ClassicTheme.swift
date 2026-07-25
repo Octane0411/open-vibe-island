@@ -194,7 +194,8 @@ struct ClassicTheme: IslandTheme {
         )
     }
 
-    func emptyState(lang: LanguageManager, hasRecentSessions: Bool) -> AnyView {
+    func emptyState(lang: LanguageManager, hasRecentSessions: Bool, workspaceCount: Int) -> AnyView {
+        // Classic ignores `workspaceCount` — its empty copy is unchanged.
         AnyView(IslandEmptyState(lang: lang, hasRecentSessions: hasRecentSessions))
     }
 

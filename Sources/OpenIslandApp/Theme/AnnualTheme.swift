@@ -389,7 +389,8 @@ struct AnnualTheme: IslandTheme {
 
     // MARK: Annual empty / bootstrap / install states (AB-316)
 
-    func emptyState(lang: LanguageManager, hasRecentSessions: Bool) -> AnyView {
+    func emptyState(lang: LanguageManager, hasRecentSessions: Bool, workspaceCount: Int) -> AnyView {
+        // Annual ignores `workspaceCount` — its empty copy is unchanged.
         AnyView(AnnualEmptyState(lang: lang, hasRecentSessions: hasRecentSessions))
     }
 

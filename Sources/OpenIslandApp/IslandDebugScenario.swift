@@ -11,6 +11,10 @@ struct IslandDebugSnapshot {
     let islandSurface: IslandSurface
     let sessions: [AgentSession]
     let selectedSessionID: String?
+    /// AB-326: usage meters to force into the header for the `usageMeters`
+    /// scenario. `nil` (the default) leaves the real usage path untouched, so
+    /// every pre-existing scenario renders exactly as before.
+    var usageProviders: [UsageProviderPresentation]? = nil
 }
 
 enum IslandDebugScenario: String, CaseIterable, Identifiable {
@@ -20,6 +24,15 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
     case questionCard
     case completionCard
     case longCompletionCard
+    // AB-326: conformance scenarios backed by `AppearancePreviewFixtures`.
+    case diffApprovalCard
+    case codexApprovalCard
+    case multiQuestionCard
+    case subagentsCard
+    case completedInterrupted
+    case completedFailed
+    case usageMeters
+    case emptyState
 
     var id: String { rawValue }
 
@@ -37,6 +50,22 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
             "Completion Card"
         case .longCompletionCard:
             "Long Completion Card"
+        case .diffApprovalCard:
+            "Diff Approval Card"
+        case .codexApprovalCard:
+            "Codex Terminal Approval"
+        case .multiQuestionCard:
+            "Multi-Question Card"
+        case .subagentsCard:
+            "Subagents & Tasks"
+        case .completedInterrupted:
+            "Completed — Interrupted"
+        case .completedFailed:
+            "Completed — Failed"
+        case .usageMeters:
+            "Usage Meters"
+        case .emptyState:
+            "Empty State"
         }
     }
 
@@ -54,6 +83,22 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
             "Auto-expanded finished-task reminder surface after a turn completes."
         case .longCompletionCard:
             "Long finished-task reply stays inside the card and scrolls internally."
+        case .diffApprovalCard:
+            "Edit permission with an inline old/new diff preview inside the hero."
+        case .codexApprovalCard:
+            "Codex permission that can only be answered in the terminal (respond-in-terminal CTA)."
+        case .multiQuestionCard:
+            "Two-question prompt: single-select with descriptions, then multi-select with a freeform option."
+        case .subagentsCard:
+            "Running session fanned out across three subagents with a five-item task list."
+        case .completedInterrupted:
+            "Finished-task reminder for a turn that was interrupted mid-run."
+        case .completedFailed:
+            "Finished-task reminder for a turn that ended in failure."
+        case .usageMeters:
+            "Expanded list with the header usage meters populated from fixture providers."
+        case .emptyState:
+            "Expanded surface with zero sessions — the empty scaffold."
         }
     }
 
@@ -135,6 +180,110 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
                 islandSurface: .sessionList(actionableSessionID: session.id),
                 sessions: DebugSessionFactory.notificationSessions(lead: session, now: now),
                 selectedSessionID: session.id
+            )
+
+        case .diffApprovalCard:
+            let session = AppearancePreviewFixtures.permissionDiff(now: now)
+            return IslandDebugSnapshot(
+                title: title,
+                summary: summary,
+                previewHeight: 380,
+                notchStatus: .opened,
+                notchOpenReason: .notification,
+                islandSurface: .sessionList(actionableSessionID: session.id),
+                sessions: DebugSessionFactory.notificationSessions(lead: session, now: now),
+                selectedSessionID: session.id
+            )
+
+        case .codexApprovalCard:
+            let session = AppearancePreviewFixtures.codexTerminalApproval(now: now)
+            return IslandDebugSnapshot(
+                title: title,
+                summary: summary,
+                previewHeight: 300,
+                notchStatus: .opened,
+                notchOpenReason: .notification,
+                islandSurface: .sessionList(actionableSessionID: session.id),
+                sessions: DebugSessionFactory.notificationSessions(lead: session, now: now),
+                selectedSessionID: session.id
+            )
+
+        case .multiQuestionCard:
+            let session = AppearancePreviewFixtures.questionMulti(now: now)
+            return IslandDebugSnapshot(
+                title: title,
+                summary: summary,
+                previewHeight: 380,
+                notchStatus: .opened,
+                notchOpenReason: .notification,
+                islandSurface: .sessionList(actionableSessionID: session.id),
+                sessions: DebugSessionFactory.notificationSessions(lead: session, now: now),
+                selectedSessionID: session.id
+            )
+
+        case .subagentsCard:
+            let session = AppearancePreviewFixtures.subagentsAndTasks(now: now)
+            return IslandDebugSnapshot(
+                title: title,
+                summary: summary,
+                previewHeight: 460,
+                notchStatus: .opened,
+                notchOpenReason: .click,
+                islandSurface: .sessionList(),
+                sessions: DebugSessionFactory.notificationSessions(lead: session, now: now),
+                selectedSessionID: session.id
+            )
+
+        case .completedInterrupted:
+            let session = AppearancePreviewFixtures.completedInterrupted(now: now)
+            return IslandDebugSnapshot(
+                title: title,
+                summary: summary,
+                previewHeight: 250,
+                notchStatus: .opened,
+                notchOpenReason: .notification,
+                islandSurface: .sessionList(actionableSessionID: session.id),
+                sessions: DebugSessionFactory.notificationSessions(lead: session, now: now),
+                selectedSessionID: session.id
+            )
+
+        case .completedFailed:
+            let session = AppearancePreviewFixtures.completedFailed(now: now)
+            return IslandDebugSnapshot(
+                title: title,
+                summary: summary,
+                previewHeight: 250,
+                notchStatus: .opened,
+                notchOpenReason: .notification,
+                islandSurface: .sessionList(actionableSessionID: session.id),
+                sessions: DebugSessionFactory.notificationSessions(lead: session, now: now),
+                selectedSessionID: session.id
+            )
+
+        case .usageMeters:
+            let sessions = DebugSessionFactory.listSessions(now: now)
+            return IslandDebugSnapshot(
+                title: title,
+                summary: summary,
+                previewHeight: 430,
+                notchStatus: .opened,
+                notchOpenReason: .click,
+                islandSurface: .sessionList(),
+                sessions: sessions,
+                selectedSessionID: sessions.first?.id,
+                usageProviders: AppearancePreviewFixtures.usageProviders(now: now)
+            )
+
+        case .emptyState:
+            return IslandDebugSnapshot(
+                title: title,
+                summary: summary,
+                previewHeight: 300,
+                notchStatus: .opened,
+                notchOpenReason: .click,
+                islandSurface: .sessionList(),
+                sessions: AppearancePreviewFixtures.empty,
+                selectedSessionID: nil
             )
         }
     }

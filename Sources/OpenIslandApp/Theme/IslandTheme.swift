@@ -156,7 +156,13 @@ protocol IslandTheme: Sendable {
 
     /// Shown in the opened panel when there are no sessions to list.
     /// (Scope: empty state.)
-    func emptyState(lang: LanguageManager, hasRecentSessions: Bool) -> AnyView
+    ///
+    /// `workspaceCount` is the number of distinct workspaces across the current
+    /// and recent sessions — supplied so a theme can tailor its empty copy
+    /// ("no live sessions across N workspaces" vs. a cold "start an agent").
+    /// The shipped themes ignore it (zero visual change); it exists as a seam
+    /// for the redesign themes (AB-326).
+    func emptyState(lang: LanguageManager, hasRecentSessions: Bool, workspaceCount: Int) -> AnyView
 
     /// Shown while the app is still probing terminals on a cold launch.
     /// (Scope: bootstrap placeholder.)

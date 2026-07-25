@@ -313,7 +313,8 @@ struct FlightDeckTheme: IslandTheme {
 
     // MARK: Flight Deck empty / bootstrap / install states (AB-312)
 
-    func emptyState(lang: LanguageManager, hasRecentSessions: Bool) -> AnyView {
+    func emptyState(lang: LanguageManager, hasRecentSessions: Bool, workspaceCount: Int) -> AnyView {
+        // Flight Deck ignores `workspaceCount` — its empty copy is unchanged.
         AnyView(FlightDeckEmptyState(lang: lang, hasRecentSessions: hasRecentSessions))
     }
 

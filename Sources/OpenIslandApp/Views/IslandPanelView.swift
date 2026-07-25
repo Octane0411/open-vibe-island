@@ -730,7 +730,11 @@ struct IslandPanelView: View {
                     .padding(.horizontal, 18)
                     .padding(.top, 8)
             } else if model.islandListSessions.isEmpty {
-                theme.emptyState(lang: lang, hasRecentSessions: !model.recentSessions.isEmpty)
+                theme.emptyState(
+                    lang: lang,
+                    hasRecentSessions: !model.recentSessions.isEmpty,
+                    workspaceCount: emptyStateWorkspaceCount
+                )
                     .padding(.horizontal, 18)
                     .padding(.top, 8)
             } else {
@@ -754,6 +758,17 @@ struct IslandPanelView: View {
             guard height > 0, !isNotificationMode else { return }
             model.measuredOpenedContentHeight = height
         }
+    }
+
+    /// Distinct workspaces across the current (surfaced) and recent sessions.
+    /// Computed cheaply at the call site and handed to `theme.emptyState` so a
+    /// theme can phrase its empty copy around how much history is off-list. Uses
+    /// `spotlightDisplayName` — the same row-headline accessor duplicate
+    /// detection keys off — so the count matches what the list actually shows.
+    private var emptyStateWorkspaceCount: Int {
+        Set(
+            (model.surfacedSessions + model.recentSessions).map(\.spotlightDisplayName)
+        ).count
     }
 
     private var actionableSessionID: String? {
