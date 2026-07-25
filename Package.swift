@@ -29,6 +29,11 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.1"),
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.0"),
+        // Test-only (AB-327): deterministic theme-conformance snapshot goldens.
+        // Linked only into the OpenIslandAppTests target below, so it never
+        // ships in any product binary. `Package.resolved` is gitignored repo-wide,
+        // so the pin lives here; validated against 1.19.3.
+        .package(url: "https://github.com/pointfreeco/swift-snapshot-testing", from: "1.19.3"),
     ],
     targets: [
         .target(
@@ -59,7 +64,13 @@ let package = Package(
         ),
         .testTarget(
             name: "OpenIslandAppTests",
-            dependencies: ["OpenIslandApp", "OpenIslandCore"]
+            dependencies: [
+                "OpenIslandApp",
+                "OpenIslandCore",
+                // AB-327: theme-conformance snapshot harness. Test-target-only —
+                // no product links against it.
+                .product(name: "SnapshotTesting", package: "swift-snapshot-testing"),
+            ]
         ),
     ]
 )

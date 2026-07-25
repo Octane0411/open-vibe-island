@@ -55,6 +55,83 @@ For the deterministic scenario suite, the harness now performs these semantic ch
 - `completionCard`: overlay stays open and exposes the `Done` completion copy
 - `longCompletionCard`: overlay stays open and exposes the long completion response text instead of collapsing away
 
+## Theme Snapshot Harness
+
+Deterministic per-scenario golden pins for the themed overlay live in
+`Tests/OpenIslandAppTests`. The helper `ThemeSnapshotting`
+(`Tests/OpenIslandAppTests/Support/ThemeSnapshotting.swift`) renders any
+`IslandTheme` slot — the closed pill or the opened session list — to a
+fixed-size dark bitmap and pins it against a committed golden under
+`__Snapshots__/`, using the test-target-only
+`pointfreeco/swift-snapshot-testing` dependency (AB-327). Later theme tickets
+add scenarios by calling
+`ThemeSnapshotting.assertSnapshot(theme:slot:profile:named:record:…)`; the
+`__Snapshots__` layout follows swift-snapshot-testing convention
+(`__Snapshots__/<TestFile>/<testMethod>.<name>.png`).
+
+### What each golden pins
+
+- **Fixed widths.** 540pt (notch profile) and 520pt (top-bar profile),
+  rasterized at an explicit **2×** into a bitmap the harness owns — never the
+  host screen's backing scale.
+- **Dark only.** The hosting view is forced to `NSAppearance(named: .darkAqua)`;
+  the overlay ships no light variant, so there are no light-mode goldens.
+- **Flat fill.** The opened surface is drawn on its reduce-transparency
+  `surfaceInk` fill, so no `NSVisualEffectView` vibrancy leaks in — off-window
+  vibrancy is neither deterministic nor window-server-independent.
+- **Frozen fixtures.** Sessions come from `AppearancePreviewFixtures` (AB-326),
+  which is fully `now`-injected, and no motion enters the bitmap (the capture
+  reads the model layer, not the animating presentation layer; no `PulseClock`
+  is supplied).
+
+### Recording / updating goldens
+
+Goldens re-record **only in the PR that intentionally changes pixels.** To
+(re)record:
+
+```bash
+OPEN_ISLAND_RECORD_SNAPSHOTS=1 swift test --filter ThemeSnapshotHarnessTests
+```
+
+Record mode writes the PNGs and reports a deliberate failure telling you to
+re-run; a plain `swift test --filter ThemeSnapshotHarnessTests` then asserts
+against them. Commit the regenerated `__Snapshots__/*.png` alongside the code
+change that moved the pixels, and call the re-record out in the PR body. Never
+re-record just to make a red check pass — a diff means either an intended
+visual change (record it and eyeball the image), or a regression (fix the
+code). Recording also refreshes `environment-fingerprint.txt` (below).
+
+### Determinism
+
+The same slot renders **byte-for-byte identically** run to run. The fixtures
+are `now`-injected, and the one wall-clock read that survives into pixels — the
+rows' relative-age badges (`spotlightAgeBadge`, and each row's
+`TimelineView(.periodic(from: .now …))`) — is bucketed coarsely (`<1m` / `1m` /
+`2m` / `25m`). The fixtures' offsets are chosen to sit mid-bucket (never within
+~30s of a `60s` boundary), so the rendered *string* never drifts even though the
+raw `Date` does. Verified by re-recording seconds later and diffing the PNG
+hashes (identical).
+
+### Environment fingerprint (keeps CI green)
+
+A golden recorded on one macOS build is **not** guaranteed byte-identical on
+another (font smoothing, Core Text, GPU). Each `__Snapshots__/<TestFile>/`
+directory therefore carries an `environment-fingerprint.txt` recording the
+macOS build, CPU arch, and render scale. When the runtime fingerprint doesn't
+match the recorded one, the pixel comparison is **skipped** (`XCTSkip`), not
+failed:
+
+- The view is still **rendered** on every runner, so a crash or a build-level
+  regression in a slot fails loudly everywhere.
+- Only the byte-exact pixel pin is relaxed across the environment boundary —
+  strict pins are preserved on a matching machine.
+
+CI runs on the pinned `macos-26` image (`.github/workflows/ci.yml`). The
+committed goldens were recorded on a different local build, so the snapshot
+tests **skip the pixel comparison on CI by design** while still exercising the
+render path. Re-record on the environment whose pixels you intend to pin, and
+review golden diffs there.
+
 ## Evidence Expectations
 
 Every meaningful round should leave behind:

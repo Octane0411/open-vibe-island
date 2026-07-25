@@ -14,6 +14,10 @@ on:
 
 jobs:
   harness:
+    # Pinned major image. The theme snapshot goldens (AB-327) are byte-exact
+    # pins gated on an environment fingerprint: on a runner whose macOS build
+    # differs from the one the goldens were recorded on, the pixel comparison
+    # skips (the view is still rendered) instead of failing. See docs/quality.md.
     runs-on: macos-26
 
     steps:
