@@ -77,8 +77,14 @@ enum InstrumentText {
 /// summary becomes an uppercase state-distribution strip with section headers for
 /// all four grouping modes and a status-line footer wired to the live session
 /// count (`InstrumentSessionListScaffold`), and the empty / bootstrap / install
-/// states move into squared hairline panels. The session rows still reuse
-/// Classic's flat views until AB-309 restyles them.
+/// states move into squared hairline panels.
+///
+/// AB-309 (instrument 3/4) restyles the session rows themselves: every
+/// non-actionable state (running, done, idle/stale) is typeset on one exact
+/// column grid — state / workspace / agent tick / model / host / age — by
+/// `InstrumentSessionRow`, with row rhythm (1-line done, 2-line running/idle)
+/// standing in for decoration and not a single filled pill. Actionable rows
+/// still delegate to Classic until AB-310.
 ///
 /// Registered but **not** the default — Poured Island stays the product's face.
 struct InstrumentTheme: IslandTheme {
@@ -101,9 +107,11 @@ struct InstrumentTheme: IslandTheme {
 
     // MARK: Capability flags
 
-    /// The shell's rows are still Classic's flat views, which are safe to
-    /// rasterize. A later slice that adds glow/motion to the instrument rows can
-    /// flip this alongside that change.
+    /// Instrument's rows are flat — squared ticks, hairline rules, mono type,
+    /// no glow or blur that a `.drawingGroup()` off-screen render would clip or
+    /// flatten — so they stay safe to rasterize (AB-309). Only the actionable
+    /// rows, which route to Classic, ever consult this flag, and they disable
+    /// the group regardless (`!isActionable`).
     let rowIsDrawingGroupSafe = true
 
     /// Instrument is a flat panel, not glass: the opened surface takes the opaque
@@ -181,8 +189,12 @@ struct InstrumentTheme: IslandTheme {
         )
     }
 
-    // MARK: Slots reused from Classic until later slices restyle them (AB-309…)
+    // MARK: Instrument tabular session rows (AB-309)
 
+    /// The tabular-grid session row: every non-actionable state (running, done,
+    /// idle/stale) is typeset on one exact column grid by `InstrumentSessionRow`.
+    /// Actionable approval / question / completion rows still delegate to Classic
+    /// from inside that view (a thin seam) until AB-310 restyles those interiors.
     func sessionRow(
         session: AgentSession,
         stateIndicator: IslandSessionStateIndicator,
@@ -199,7 +211,7 @@ struct InstrumentTheme: IslandTheme {
         pulseClock: PulseClock?
     ) -> AnyView {
         AnyView(
-            IslandSessionRow(
+            InstrumentSessionRow(
                 session: session,
                 stateIndicator: stateIndicator,
                 completedStaleThreshold: completedStaleThreshold,
@@ -220,8 +232,8 @@ struct InstrumentTheme: IslandTheme {
     /// The instrument session-list chrome (AB-308): the uppercase state-
     /// distribution summary strip, the section headers for all four grouping
     /// modes, and a status-line footer wired to the live session count. Rows
-    /// inside it route through `sessionRow` above — Classic's flat row for the
-    /// shell until AB-309 restyles the rows themselves.
+    /// inside it route through `sessionRow` above — the tabular
+    /// `InstrumentSessionRow` since AB-309.
     func sessionList(
         sessions: [AgentSession],
         sections: [IslandSessionSection],

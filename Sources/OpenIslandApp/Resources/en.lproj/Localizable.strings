@@ -235,6 +235,9 @@
 "island.instrument.state.probing" = "Probing";
 "island.instrument.hint.setup" = "Setup";
 
+/* Island Panel - Instrument theme rows (AB-309) */
+"island.instrument.row.jump" = "Jump";
+
 /* Island Panel - Session List */
 "island.sessionList.title" = "Sessions";
 "island.sessionOverview.total" = "total";

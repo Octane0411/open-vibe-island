@@ -235,6 +235,9 @@
 "island.instrument.state.probing" = "探測中";
 "island.instrument.hint.setup" = "設定";
 
+/* Island Panel - Instrument theme rows (AB-309) */
+"island.instrument.row.jump" = "跳轉";
+
 /* Island Panel - Session List */
 "island.sessionList.title" = "會話";
 "island.sessionOverview.total" = "總計";

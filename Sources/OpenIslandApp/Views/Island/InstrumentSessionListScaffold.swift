@@ -17,8 +17,7 @@ import OpenIslandCore
 ///
 /// Rows are built through the active theme's `sessionRow` factory (the shared
 /// scaffold's exact path), so the instrument list inherits whatever row the
-/// theme supplies — Classic's flat row for the instrument shell until AB-309
-/// restyles the rows themselves.
+/// theme supplies — the tabular `InstrumentSessionRow` since AB-309.
 struct InstrumentSessionListScaffold: View {
     /// Cap for the scrollable region — kept in sync with the shared scaffold so
     /// the opened surface's height math is identical across themes.
