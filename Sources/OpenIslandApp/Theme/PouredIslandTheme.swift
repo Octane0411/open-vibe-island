@@ -2,19 +2,26 @@ import AppKit
 import SwiftUI
 import OpenIslandCore
 
-/// "Poured Island" — the liquid-glass theme (AB-300), first of five slices.
+/// "Poured Island" — the liquid-glass theme, built up across five slices.
 ///
-/// This slice ships the theme's skeleton: the token identity (cool ink/paper,
-/// filleted opened shape, deep soft shadow, lighter vibrancy + specular top
-/// edge, softer "poured" motion), the themed `NSVisualEffectView` configuration
-/// carried by `IslandMaterialTokens`, the fillet-stem silhouette driven by
-/// `metrics.filletRadius`, and the glass closed pill (`PouredClosedPill`).
+/// AB-300 (poured 1/5) shipped the theme's skeleton: the token identity (cool
+/// ink/paper, filleted opened shape, deep soft shadow, lighter vibrancy +
+/// specular top edge, softer "poured" motion), the themed `NSVisualEffectView`
+/// configuration carried by `IslandMaterialTokens`, the fillet-stem silhouette
+/// driven by `metrics.filletRadius`, and the glass closed pill
+/// (`PouredClosedPill`).
 ///
-/// Everything else — the opened header, session rows, list, notification card
-/// and the empty/bootstrap/install states — deliberately returns Classic's slot
-/// views for now; those regions get their glass treatment in the later Poured
-/// slices (AB-301…). Mixed rendering behind the Lab switch is expected until
-/// then. Registered but **not** the default: the default flips in Poured 5/5.
+/// AB-301 (poured 2/5) adds the panel-chrome glass: the opened header with
+/// conic-gradient usage rings and glass control buttons (`PouredHeaderControls`
+/// / `PouredUsageSummary`), the session-list summary strip / section headers /
+/// footer (`PouredSessionListScaffold`), and the glass empty / bootstrap /
+/// install states.
+///
+/// Still Classic for now: the session rows drawn *inside* the list route through
+/// `sessionRow`, which lands in AB-302 (poured 3/5), and the notification card
+/// is out of scope for this slice. Mixed rendering behind the Lab switch is
+/// expected until then. Registered but **not** the default: the default flips in
+/// Poured 5/5.
 struct PouredIslandTheme: IslandTheme {
 
     // MARK: Identity
@@ -59,7 +66,7 @@ struct PouredIslandTheme: IslandTheme {
 
     // MARK: Slot factories
 
-    /// The one slot this slice restyles: the glass closed pill.
+    /// The glass closed pill (AB-300).
     func closedPill(
         mode: UnifiedBars.Mode,
         label: String?,
@@ -84,8 +91,10 @@ struct PouredIslandTheme: IslandTheme {
         )
     }
 
-    // MARK: Slots deferred to later Poured slices (Classic views for now)
+    // MARK: Slots restyled for glass (AB-301)
 
+    /// The opened header: usage as conic-gradient rings and glass control
+    /// buttons, on the shared notch-split / single-lane layout.
     func openedHeader(
         providers: [UsageProviderPresentation],
         usesNotchAwareLayout: Bool,
@@ -97,7 +106,7 @@ struct PouredIslandTheme: IslandTheme {
         onQuit: @escaping () -> Void
     ) -> AnyView {
         AnyView(
-            IslandHeaderControls(
+            PouredHeaderControls(
                 providers: providers,
                 usesNotchAwareLayout: usesNotchAwareLayout,
                 targetScreen: targetScreen,
@@ -110,6 +119,9 @@ struct PouredIslandTheme: IslandTheme {
         )
     }
 
+    // MARK: Slots deferred to later Poured slices (Classic views for now)
+
+    /// Session rows keep Classic's `IslandSessionRow` until AB-302 (poured 3/5).
     func sessionRow(
         session: AgentSession,
         stateIndicator: IslandSessionStateIndicator,
@@ -144,6 +156,9 @@ struct PouredIslandTheme: IslandTheme {
         )
     }
 
+    /// The glass session-list chrome: summary strip, section headers (all four
+    /// grouping modes) and footer. Rows inside it route through `sessionRow`
+    /// above, so they stay Classic until AB-302.
     func sessionList(
         sessions: [AgentSession],
         sections: [IslandSessionSection],
@@ -159,7 +174,7 @@ struct PouredIslandTheme: IslandTheme {
         makeActions: @escaping (AgentSession) -> RowActions
     ) -> AnyView {
         AnyView(
-            IslandSessionListScaffold(
+            PouredSessionListScaffold(
                 sessions: sessions,
                 sections: sections,
                 group: group,
@@ -176,6 +191,8 @@ struct PouredIslandTheme: IslandTheme {
         )
     }
 
+    /// The notification card stays Classic — its glass chrome is out of scope
+    /// for this slice (poured 2/5).
     func notificationCard(
         session: AgentSession?,
         isInteractive: Bool,
@@ -212,15 +229,17 @@ struct PouredIslandTheme: IslandTheme {
         )
     }
 
+    // MARK: Glass empty / bootstrap / install states (AB-301)
+
     func emptyState(lang: LanguageManager, hasRecentSessions: Bool) -> AnyView {
-        AnyView(IslandEmptyState(lang: lang, hasRecentSessions: hasRecentSessions))
+        AnyView(PouredEmptyState(lang: lang, hasRecentSessions: hasRecentSessions))
     }
 
     func bootstrapPlaceholder(lang: LanguageManager) -> AnyView {
-        AnyView(IslandBootstrapPlaceholder(lang: lang))
+        AnyView(PouredBootstrapPlaceholder(lang: lang))
     }
 
     func installHint(lang: LanguageManager, onTap: @escaping () -> Void) -> AnyView {
-        AnyView(IslandInstallHooksHint(lang: lang, onTap: onTap))
+        AnyView(PouredInstallHooksHint(lang: lang, onTap: onTap))
     }
 }
