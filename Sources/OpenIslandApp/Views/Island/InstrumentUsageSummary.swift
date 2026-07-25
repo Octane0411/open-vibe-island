@@ -85,34 +85,12 @@ struct InstrumentUsageProviderChip: View {
     private var helpText: String {
         provider.windows.map { window in
             var parts = ["\(window.label) \(window.roundedUsedPercentage)%"]
-            if let resetsAt = window.resetsAt,
-               let remaining = Self.remainingDurationString(until: resetsAt) {
+            if let remaining = window.remainingLabel(asOf: Date()) {
                 parts.append(remaining)
             }
             return parts.joined(separator: " ")
         }
         .joined(separator: " · ")
-    }
-
-    static func remainingDurationString(until date: Date) -> String? {
-        let interval = date.timeIntervalSinceNow
-        guard interval > 0 else { return nil }
-
-        let formatter = DateComponentsFormatter()
-        formatter.unitsStyle = .abbreviated
-
-        if interval >= 86_400 {
-            formatter.allowedUnits = [.day]
-            formatter.maximumUnitCount = 1
-        } else if interval >= 3_600 {
-            formatter.allowedUnits = [.hour, .minute]
-            formatter.maximumUnitCount = 2
-        } else {
-            formatter.allowedUnits = [.minute]
-            formatter.maximumUnitCount = 1
-        }
-
-        return formatter.string(from: interval)
     }
 }
 
