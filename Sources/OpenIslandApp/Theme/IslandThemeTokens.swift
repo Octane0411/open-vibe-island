@@ -62,3 +62,17 @@ extension IslandThemeTokens {
         material: .instrument
     )
 }
+
+// MARK: - Flight Deck
+
+extension IslandThemeTokens {
+    /// Flight Deck (avionics annunciator panel): a near-black cockpit ground lit
+    /// only by phosphor status colour, a tightly-cut flat panel with no vibrancy
+    /// or fillet, and a hard mechanical open/close snap.
+    static let flightDeck = IslandThemeTokens(
+        colors: .flightDeck,
+        metrics: .flightDeck,
+        motion: .flightDeck,
+        material: .flightDeck
+    )
+}

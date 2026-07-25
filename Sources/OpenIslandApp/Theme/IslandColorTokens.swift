@@ -262,3 +262,55 @@ extension IslandColorTokens {
     private static let instrumentAlarm = Color(red: 235.0 / 255.0, green: 77.0 / 255.0, blue: 75.0 / 255.0)
     private static let instrumentAmber = Color(red: 224.0 / 255.0, green: 168.0 / 255.0, blue: 74.0 / 255.0)
 }
+
+// MARK: - Flight Deck
+
+extension IslandColorTokens {
+    /// Flight Deck (avionics annunciator panel): an EICAS-style cockpit readout
+    /// on a near-black instrument ground, lit only by phosphor status colour. The
+    /// palette is the four the design language allows — a **cyan-green nominal**
+    /// (a session actively working), a **muted blue complete** (a finished
+    /// session, held apart from "live" the way an EICAS advisory sits below a
+    /// green status), an **amber caution** for the softer waiting / interrupted
+    /// states, and a **dim grey idle** — plus one **warning red** the annunciator
+    /// vocabulary always carries for the loudest states (a blocked permission
+    /// request and a failure). The semantic amber / red / green always win: agent
+    /// brand colour never tints a status light, so identity reads as the neutral
+    /// square mark and never competes with the caution/warning hierarchy. The
+    /// legend ink is a cool light grey; hairlines are strong because the panel's
+    /// bezels and rules are load-bearing hardware, not decoration.
+    static let flightDeck = IslandColorTokens(
+        surfaceInk: flightDeckInk,
+        paper: flightDeckPaper,
+        surfaceText: .white,
+        statusRunning: flightDeckNominal,
+        statusCompleted: flightDeckComplete,
+        statusWaitingForApproval: flightDeckWarning,
+        statusWaitingForAnswer: flightDeckCaution,
+        statusWaitingAggregate: flightDeckCaution,
+        statusWarning: flightDeckCaution,
+        statusInterrupted: flightDeckCaution,
+        statusFailed: flightDeckWarning,
+        statusIdle: flightDeckPaper.opacity(0.30),
+        statusInactive: flightDeckPaper.opacity(0.26),
+        secondaryTextOpacity: 0.6,
+        tertiaryTextOpacity: 0.5,
+        increasedContrastTextBoost: 0.24,
+        hairlineOpacity: 0.13,
+        hairlineOpacityIncreasedContrast: 0.32
+    )
+
+    /// Near-black cockpit ground with a faint cool cast, darker than Instrument's
+    /// console so the phosphor lights read as self-lit against unlit hardware.
+    private static let flightDeckInk = Color(red: 0x08 / 255.0, green: 0x09 / 255.0, blue: 0x0a / 255.0)
+    /// Cool light-grey legend ink for uppercase micro-labels and glyphs.
+    private static let flightDeckPaper = Color(red: 0xd4 / 255.0, green: 0xda / 255.0, blue: 0xd6 / 255.0)
+    /// Cyan-green nominal — a session actively working ("live").
+    private static let flightDeckNominal = Color(red: 74.0 / 255.0, green: 201.0 / 255.0, blue: 158.0 / 255.0)
+    /// Muted blue complete — a finished session, an advisory below "live".
+    private static let flightDeckComplete = Color(red: 99.0 / 255.0, green: 146.0 / 255.0, blue: 196.0 / 255.0)
+    /// Amber caution — the softer waiting / interrupted states.
+    private static let flightDeckCaution = Color(red: 230.0 / 255.0, green: 170.0 / 255.0, blue: 66.0 / 255.0)
+    /// Warning red — a blocked permission request and a failure outcome.
+    private static let flightDeckWarning = Color(red: 224.0 / 255.0, green: 74.0 / 255.0, blue: 66.0 / 255.0)
+}

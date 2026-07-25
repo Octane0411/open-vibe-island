@@ -1,0 +1,298 @@
+import AppKit
+import SwiftUI
+import OpenIslandCore
+
+/// Mono typography roles for the Flight Deck theme.
+///
+/// The shared `IslandThemeTokens` layer deliberately carries no typography —
+/// themes swap whole slot views, so per-view fonts belong to each theme. This
+/// enum is Flight Deck's own small type table, kept in one place so every
+/// Flight Deck view draws from the same monospaced roles and the ≥10pt floor is
+/// enforceable in one spot (`FlightDeckThemeTests`). Every role is
+/// `.monospaced` — the mono legend of an instrument panel — and no readable role
+/// dips below `floor`. The one intentional exception is the closed-grid overflow
+/// "+N", a fitted micro-indicator sized to its annunciator light rather than a
+/// readable role, so it is not listed here.
+enum FlightDeckTypography {
+    /// The lowest size any *readable* Flight Deck text may use. The ticket pins a
+    /// ≥10pt type floor: density comes from letterspacing and rules, never from
+    /// sub-10pt micro-type.
+    static let floor: CGFloat = 10
+
+    static let microLabelSize: CGFloat = 10
+    static let labelSize: CGFloat = 11
+    static let countSize: CGFloat = 11
+    static let bodySize: CGFloat = 12
+
+    /// Every readable role's point size — the vector `FlightDeckThemeTests`
+    /// asserts stays at or above `floor`.
+    static var readableRoleSizes: [CGFloat] {
+        [microLabelSize, labelSize, countSize, bodySize]
+    }
+
+    /// Uppercase letterspaced micro-labels (section captions, unit tags).
+    static let microLabel = Font.system(size: microLabelSize, weight: .semibold, design: .monospaced)
+
+    /// Standard mono label (pill labels, chip text).
+    static let label = Font.system(size: labelSize, weight: .medium, design: .monospaced)
+
+    /// The "×N" count badge in the closed pill's right slot.
+    static let count = Font.system(size: countSize, weight: .semibold, design: .monospaced)
+
+    /// Body copy inside the opened panel.
+    static let body = Font.system(size: bodySize, weight: .regular, design: .monospaced)
+}
+
+/// Script-aware helpers for Flight Deck's uppercase, letterspaced micro-labels.
+///
+/// The avionics idiom writes section captions and status tags as `UPPERCASE`
+/// with a touch of `.tracking()`. That is precision on Latin text and illegible
+/// noise on CJK (Han has no case, and letterspacing pries the glyphs apart).
+/// Every Flight Deck micro-label routes its casing and tracking through these
+/// two helpers so the neutralization lives in one place and is pinned by
+/// `FlightDeckThemeTests`. Mirrors Instrument's `InstrumentText`; kept per-theme
+/// so a later slice can diverge one theme's rule without touching the other's.
+enum FlightDeckText {
+    /// Uppercases Latin strings; passes CJK through unchanged.
+    static func caps(_ string: String, lang: LanguageManager) -> String {
+        lang.usesCJKScript ? string : string.uppercased()
+    }
+
+    /// The letterspacing for an uppercase micro-label — `base` on Latin,
+    /// neutralized to `0` on CJK.
+    static func tracking(_ base: CGFloat, lang: LanguageManager) -> CGFloat {
+        lang.usesCJKScript ? 0 : base
+    }
+}
+
+/// "Flight Deck" — an avionics annunciator-panel theme (EICAS-style cockpit
+/// instrument), built up across four slices.
+///
+/// AB-311 (flightdeck 1/4) ships the theme's shell: the token identity (a
+/// near-black cockpit ground lit only by the phosphor status palette — cyan-green
+/// nominal, muted blue complete, amber caution, warning red, dim grey idle — a
+/// tightly-cut flat panel with no vibrancy or fillet, and a hard mechanical
+/// snap), the mono typography roles, the theme's own square-annunciator-light
+/// grid geometry, and the flat closed pill (`FlightDeckClosedPill`). The opened
+/// chrome regions — the header, session rows, list states and actionable
+/// surfaces — reuse Classic's shared slot views for now; later slices
+/// (AB-312…314) restyle them into the annunciator-panel language.
+///
+/// Registered but **not** the default — Poured Island stays the product's face.
+struct FlightDeckTheme: IslandTheme {
+
+    // MARK: Identity
+
+    let id = "flightDeck"
+
+    func name(_ lang: LanguageManager) -> String {
+        lang.t("theme.flightDeck.name")
+    }
+
+    func descriptor(_ lang: LanguageManager) -> String {
+        lang.t("theme.flightDeck.descriptor")
+    }
+
+    // MARK: Styling
+
+    var tokens: IslandThemeTokens { .flightDeck }
+
+    // MARK: Capability flags
+
+    /// The shell's rows are still Classic's flat views, which are safe to
+    /// rasterize. A later slice that adds glow/motion to the annunciator rows can
+    /// flip this alongside that change.
+    let rowIsDrawingGroupSafe = true
+
+    /// Flight Deck is unlit hardware, not glass: the opened surface takes the
+    /// opaque `surfaceInk` path (`OpenedSurfaceBackground` never builds a vibrancy
+    /// view), which also makes Reduce Transparency a no-op for this theme.
+    let usesVibrancy = false
+
+    // MARK: Geometry strategy
+
+    /// Flight Deck reuses Classic's balanced matrix and cell/gap sizing (so the
+    /// pill width math and morph frame are unchanged) but squares the corners into
+    /// annunciator lights. Because the corner radius deviates, this is the theme's
+    /// own strategy, pinned by `FlightDeckThemeTests` — Classic's
+    /// `AgentsGridLayoutTests` are untouched.
+    var agentsGridGeometry: IslandAgentsGridGeometry {
+        IslandAgentsGridGeometry(
+            balancedRows: { FlightDeckAgentsGrid.balancedRows($0) },
+            cellGeometry: { FlightDeckAgentsGrid.cellGeometry(rowCount: $0) }
+        )
+    }
+
+    // MARK: Slot factories
+
+    /// The flat annunciator-panel closed pill (AB-311).
+    func closedPill(
+        mode: UnifiedBars.Mode,
+        label: String?,
+        rightSlot: IslandRightSlotContent?,
+        layout: V6ClosedLayout,
+        height: CGFloat,
+        physicalNotchWidth: CGFloat,
+        minWidth: CGFloat,
+        showsGlyph: Bool
+    ) -> AnyView {
+        AnyView(
+            FlightDeckClosedPill(
+                mode: mode,
+                label: label,
+                rightSlot: rightSlot,
+                layout: layout,
+                height: height,
+                physicalNotchWidth: physicalNotchWidth,
+                minWidth: minWidth,
+                showsGlyph: showsGlyph
+            )
+        )
+    }
+
+    // MARK: Shared-slot fallbacks (restyled in AB-312…314)
+
+    /// Opened header — reuses Classic's shared header until AB-312 restyles it
+    /// into the annunciator-panel usage readout.
+    func openedHeader(
+        providers: [UsageProviderPresentation],
+        usesNotchAwareLayout: Bool,
+        targetScreen: NSScreen?,
+        isSoundMuted: Bool,
+        lang: LanguageManager,
+        onToggleMute: @escaping () -> Void,
+        onShowSettings: @escaping () -> Void,
+        onQuit: @escaping () -> Void
+    ) -> AnyView {
+        AnyView(
+            IslandHeaderControls(
+                providers: providers,
+                usesNotchAwareLayout: usesNotchAwareLayout,
+                targetScreen: targetScreen,
+                isSoundMuted: isSoundMuted,
+                lang: lang,
+                onToggleMute: onToggleMute,
+                onShowSettings: onShowSettings,
+                onQuit: onQuit
+            )
+        )
+    }
+
+    /// Session row — reuses Classic's shared row until AB-313 / AB-314 restyle
+    /// the tabular and actionable states.
+    func sessionRow(
+        session: AgentSession,
+        stateIndicator: IslandSessionStateIndicator,
+        completedStaleThreshold: TimeInterval,
+        isActionable: Bool,
+        useDrawingGroup: Bool,
+        isInteractive: Bool,
+        isHighlighted: Bool,
+        presentation: IslandSessionRowPresentation,
+        sideInset: CGFloat,
+        lang: LanguageManager,
+        actions: RowActions,
+        keyboardCoordinator: OverlayUICoordinator?,
+        pulseClock: PulseClock?
+    ) -> AnyView {
+        AnyView(
+            IslandSessionRow(
+                session: session,
+                stateIndicator: stateIndicator,
+                completedStaleThreshold: completedStaleThreshold,
+                isActionable: isActionable,
+                useDrawingGroup: useDrawingGroup,
+                isInteractive: isInteractive,
+                isHighlighted: isHighlighted,
+                presentation: presentation,
+                sideInset: sideInset,
+                lang: lang,
+                actions: actions,
+                keyboardCoordinator: keyboardCoordinator,
+                pulseClock: pulseClock
+            )
+        )
+    }
+
+    /// Session list — reuses Classic's shared scaffold until AB-312 restyles the
+    /// summary, section headers and footer.
+    func sessionList(
+        sessions: [AgentSession],
+        sections: [IslandSessionSection],
+        group: IslandSessionGroup,
+        stateIndicator: IslandSessionStateIndicator,
+        completedStaleThreshold: TimeInterval,
+        sideInset: CGFloat,
+        isInteractive: Bool,
+        actionableSessionID: String?,
+        lang: LanguageManager,
+        keyboardCoordinator: OverlayUICoordinator?,
+        pulseClock: PulseClock?,
+        makeActions: @escaping (AgentSession) -> RowActions
+    ) -> AnyView {
+        AnyView(
+            IslandSessionListScaffold(
+                sessions: sessions,
+                sections: sections,
+                group: group,
+                stateIndicator: stateIndicator,
+                completedStaleThreshold: completedStaleThreshold,
+                sideInset: sideInset,
+                isInteractive: isInteractive,
+                actionableSessionID: actionableSessionID,
+                lang: lang,
+                keyboardCoordinator: keyboardCoordinator,
+                pulseClock: pulseClock,
+                makeActions: makeActions
+            )
+        )
+    }
+
+    func notificationCard(
+        session: AgentSession?,
+        isInteractive: Bool,
+        stateIndicator: IslandSessionStateIndicator,
+        completedStaleThreshold: TimeInterval,
+        sideInset: CGFloat,
+        totalSessionCount: Int,
+        lang: LanguageManager,
+        keyboardCoordinator: OverlayUICoordinator?,
+        pulseClock: PulseClock?,
+        makeActions: @escaping (AgentSession) -> RowActions,
+        onShowAll: @escaping (AgentSession) -> Void,
+        onPointerInside: @escaping () -> Void,
+        onPointerExited: @escaping () -> Void,
+        onMeasuredHeight: @escaping (CGFloat) -> Void
+    ) -> AnyView {
+        AnyView(
+            IslandNotificationCard(
+                session: session,
+                isInteractive: isInteractive,
+                stateIndicator: stateIndicator,
+                completedStaleThreshold: completedStaleThreshold,
+                sideInset: sideInset,
+                totalSessionCount: totalSessionCount,
+                lang: lang,
+                keyboardCoordinator: keyboardCoordinator,
+                pulseClock: pulseClock,
+                makeActions: makeActions,
+                onShowAll: onShowAll,
+                onPointerInside: onPointerInside,
+                onPointerExited: onPointerExited,
+                onMeasuredHeight: onMeasuredHeight
+            )
+        )
+    }
+
+    func emptyState(lang: LanguageManager, hasRecentSessions: Bool) -> AnyView {
+        AnyView(IslandEmptyState(lang: lang, hasRecentSessions: hasRecentSessions))
+    }
+
+    func bootstrapPlaceholder(lang: LanguageManager) -> AnyView {
+        AnyView(IslandBootstrapPlaceholder(lang: lang))
+    }
+
+    func installHint(lang: LanguageManager, onTap: @escaping () -> Void) -> AnyView {
+        AnyView(IslandInstallHooksHint(lang: lang, onTap: onTap))
+    }
+}

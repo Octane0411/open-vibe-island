@@ -94,3 +94,20 @@ extension IslandMotionTokens {
         openedSurfaceUnmountDelay: 0.3
     )
 }
+
+// MARK: - Flight Deck
+
+extension IslandMotionTokens {
+    /// A hard, deterministic snap — an annunciator panel latches to its readout
+    /// with no overshoot, the way a relay throws. The open spring damps to near
+    /// critical and responds fast; the attention "pop" carries a little more life
+    /// than the open but far less than Classic's bounce, so a new event registers
+    /// as a decisive flash rather than a wobble. The unmount delay shrinks to
+    /// match the quick close.
+    static let flightDeck = IslandMotionTokens(
+        openAnimation: .spring(response: 0.32, dampingFraction: 0.92, blendDuration: 0),
+        closeAnimation: .smooth(duration: 0.24, extraBounce: 0),
+        popAnimation: .spring(response: 0.22, dampingFraction: 0.6, blendDuration: 0),
+        openedSurfaceUnmountDelay: 0.28
+    )
+}

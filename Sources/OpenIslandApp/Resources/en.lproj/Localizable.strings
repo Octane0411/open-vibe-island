@@ -193,6 +193,8 @@
 "theme.poured.descriptor" = "Liquid glass poured from the notch.";
 "theme.instrument.name" = "Instrument";
 "theme.instrument.descriptor" = "Precision monospace console.";
+"theme.flightDeck.name" = "Flight Deck";
+"theme.flightDeck.descriptor" = "Avionics annunciator panel.";
 
 /* Settings - Shortcuts */
 "settings.shortcuts.global.section" = "Global Hotkey";

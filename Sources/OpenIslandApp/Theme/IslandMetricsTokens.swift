@@ -85,6 +85,36 @@ extension IslandMetricsTokens {
     )
 }
 
+// MARK: - Flight Deck
+
+extension IslandMetricsTokens {
+    /// Flight Deck's chrome: a tightly-cut annunciator panel. The opened radii
+    /// are small (a hair tighter than Instrument's 8pt) so the corners read as
+    /// *chamfered* — a cut instrument bezel rather than a soft "poured" curve —
+    /// while `filletRadius` stays `0`, the plain concave top corner, so the panel
+    /// still merges cleanly from the physical notch and morphs from the closed
+    /// pill in both display profiles. The drop shadow is crisp and shallow: an
+    /// avionics panel is seated in the airframe, it does not float. The shadow
+    /// insets match Classic's, which already contain the tighter blur, so
+    /// `OverlayPanelController`'s window sizing never clips the chrome.
+    static let flightDeck = IslandMetricsTokens(
+        openedTopRadius: 6,
+        openedBottomRadius: 6,
+        surfaceShadow: IslandShadowToken(
+            color: .black,
+            opacity: 0.42,
+            radius: 14,
+            yOffset: 7
+        ),
+        openedShadowHorizontalInset: 18,
+        openedShadowBottomInset: 22,
+        closedShadowHorizontalInset: 12,
+        closedShadowBottomInset: 14,
+        closedHoverScale: 1.028,
+        filletRadius: 0
+    )
+}
+
 // MARK: - Poured Island
 
 extension IslandMetricsTokens {

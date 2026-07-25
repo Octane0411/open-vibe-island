@@ -101,3 +101,22 @@ extension IslandMaterialTokens {
         specularTopEdge: nil
     )
 }
+
+// MARK: - Flight Deck
+
+extension IslandMaterialTokens {
+    /// Flight Deck is unlit hardware, not glass: `FlightDeckTheme.usesVibrancy`
+    /// is `false`, so `OpenedSurfaceBackground` takes the opaque `surfaceInk`
+    /// path and never instantiates a vibrancy view. These values are the fallback
+    /// the surface would use if vibrancy were ever forced on — a fully opaque ink
+    /// tint (`1.0`) and no specular edge, i.e. the same flat annunciator ground
+    /// even then. Reduce Transparency is therefore a no-op for this theme: the
+    /// panel is already opaque.
+    static let flightDeck = IslandMaterialTokens(
+        material: .hudWindow,
+        blendingMode: .behindWindow,
+        appearanceName: .vibrantDark,
+        tintOpacity: 1.0,
+        specularTopEdge: nil
+    )
+}

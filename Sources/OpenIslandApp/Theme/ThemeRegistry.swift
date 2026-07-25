@@ -18,6 +18,7 @@ enum ThemeRegistry {
         PouredIslandTheme(),
         ClassicTheme(),
         InstrumentTheme(),
+        FlightDeckTheme(),
     ]
 
     /// The default theme a fresh install and every unrecoverable lookup use.

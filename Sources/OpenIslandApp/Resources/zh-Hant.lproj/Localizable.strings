@@ -193,6 +193,8 @@
 "theme.poured.descriptor" = "從瀏海傾瀉而出的液態玻璃。";
 "theme.instrument.name" = "儀表板";
 "theme.instrument.descriptor" = "精密等寬主控台。";
+"theme.flightDeck.name" = "飛行甲板";
+"theme.flightDeck.descriptor" = "航電警示燈面板。";
 
 /* Settings - Shortcuts */
 "settings.shortcuts.global.section" = "全域快捷鍵";
