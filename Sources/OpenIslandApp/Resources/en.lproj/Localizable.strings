@@ -382,6 +382,11 @@
 "question.otherPlaceholder" = "Type your answer…";
 "question.sendReply" = "Send reply";
 "question.sendAnswer" = "Send answer";
+/* AB-325 — shared question interior: progress, keyboard hint, multi-select submit */
+"question.progress" = "Question %1$lld of %2$lld";
+"question.hint.keyboard.single" = "1 select · Enter submits · Esc closes";
+"question.hint.keyboard.range" = "1–%lld select · Enter submits · Esc closes";
+"question.submit.multiSelect" = "Submit — %lld selected";
 
 /* Island Panel - Completion */
 "completion.done" = "Done";

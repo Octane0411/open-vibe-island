@@ -381,6 +381,11 @@
 "question.otherPlaceholder" = "輸入你的回答…";
 "question.sendReply" = "傳送回覆";
 "question.sendAnswer" = "提交答案";
+/* AB-325 — shared question interior: progress, keyboard hint, multi-select submit */
+"question.progress" = "第 %1$lld 題，共 %2$lld 題";
+"question.hint.keyboard.single" = "1 選擇 · Enter 提交 · Esc 關閉";
+"question.hint.keyboard.range" = "1–%lld 選擇 · Enter 提交 · Esc 關閉";
+"question.submit.multiSelect" = "提交 — 已選 %lld 項";
 
 /* Island Panel - Completion */
 "completion.done" = "完成";

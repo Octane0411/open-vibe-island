@@ -269,7 +269,10 @@ def main() -> None:
         require_frame_between(
             overlay_frame,
             width=(520, 780),
-            height=(180, 430),
+            # AB-325 layered a keyboard-hint caption below the options for
+            # single-question prompts, so the measured interior is legitimately
+            # a text row taller than the pre-upgrade card.
+            height=(180, 470),
             context="questionCard overlay frame",
         )
         if selected_session_phase(report) != "waitingForAnswer":

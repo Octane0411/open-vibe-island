@@ -2157,9 +2157,16 @@ struct StructuredQuestionPromptView: View {
                 freeformAnswerBody
             } else {
                 VStack(alignment: .leading, spacing: 8) {
-                    ForEach(structuredQuestions, id: \.question) { question in
-                        questionRow(question)
+                    ForEach(Array(structuredQuestions.enumerated()), id: \.element.question) { index, question in
+                        questionRow(question, questionIndex: index)
                     }
+                }
+
+                if let hint = keyboardHintCaption {
+                    Text(hint)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(tokens.colors.surfaceText.opacity(tokens.colors.tertiaryTextOpacity))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 quickReplyField
@@ -2189,10 +2196,23 @@ struct StructuredQuestionPromptView: View {
 
     // MARK: - Per-question row
 
-    /// Renders a single question with its header, text, and vertical option list.
+    /// Renders a single question with its progress readout, header, text, and
+    /// vertical option list. Options render in *display* order ("Other" pinned
+    /// last) so the visible numbering matches the keyboard digit shortcuts.
     @ViewBuilder
-    private func questionRow(_ question: QuestionPromptItem) -> some View {
+    private func questionRow(_ question: QuestionPromptItem, questionIndex: Int) -> some View {
         VStack(alignment: .leading, spacing: 6) {
+            if let progress = QuestionPromptFormat.progressReadout(
+                questionIndex: questionIndex,
+                questionCount: structuredQuestions.count,
+                lang: lang
+            ) {
+                Text(progress)
+                    .font(.system(size: 10, weight: .bold))
+                    .monospacedDigit()
+                    .foregroundStyle(tokens.colors.surfaceText.opacity(tokens.colors.secondaryTextOpacity))
+            }
+
             if structuredQuestions.count > 1 {
                 Text(question.header)
                     .font(.system(size: 10, weight: .bold))
@@ -2205,8 +2225,11 @@ struct StructuredQuestionPromptView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(Array(question.options.enumerated()), id: \.element.id) { index, option in
-                    optionRow(option, optionIndex: index, question: question)
+                ForEach(
+                    Array(QuestionPromptFormat.orderedOptions(question.options).enumerated()),
+                    id: \.element.id
+                ) { displayIndex, displayOption in
+                    optionRow(displayOption.option, optionIndex: displayIndex, question: question)
                 }
             }
         }
@@ -2257,12 +2280,10 @@ struct StructuredQuestionPromptView: View {
 
                     Spacer(minLength: 0)
 
-                    if isSelected {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(tokens.colors.statusCompleted)
-                            .accessibilityHidden(true)
-                    }
+                    selectionMarker(
+                        shape: QuestionPromptFormat.markerShape(multiSelect: question.multiSelect),
+                        isSelected: isSelected
+                    )
                 }
                 .contentShape(Rectangle())
                 .padding(.vertical, 5)
@@ -2286,13 +2307,49 @@ struct StructuredQuestionPromptView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(optionStrokeColor(isSelected: isSelected, isHovered: isHovered))
+                .strokeBorder(
+                    optionStrokeColor(isSelected: isSelected, isHovered: isHovered),
+                    lineWidth: isSelected ? 1.5 : 1
+                )
         )
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.12)) {
                 hoveredOptionKey = hovering ? key : (hoveredOptionKey == key ? nil : hoveredOptionKey)
             }
         }
+    }
+
+    /// The trailing selection marker. Its *shape* encodes the question kind —
+    /// a rounded square (checkbox) for multi-select, a circle (radio) for
+    /// single-select — so state is never conveyed by colour alone: an empty
+    /// outline when unselected, a filled tint plus a tick when selected.
+    @ViewBuilder
+    private func selectionMarker(
+        shape: QuestionPromptFormat.MarkerShape,
+        isSelected: Bool
+    ) -> some View {
+        let tint = tokens.colors.statusWaitingForAnswer
+        ZStack {
+            switch shape {
+            case .square(let cornerRadius):
+                let square = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                square
+                    .fill(isSelected ? tint : Color.clear)
+                    .overlay(square.strokeBorder(isSelected ? Color.clear : tint.opacity(0.5), lineWidth: 1.2))
+            case .circle:
+                Circle()
+                    .fill(isSelected ? tint : Color.clear)
+                    .overlay(Circle().strokeBorder(isSelected ? Color.clear : tint.opacity(0.5), lineWidth: 1.2))
+            }
+
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 9, weight: .heavy))
+                    .foregroundStyle(tokens.colors.surfaceInk)
+            }
+        }
+        .frame(width: 16, height: 16)
+        .accessibilityHidden(true)
     }
 
     @ViewBuilder
@@ -2430,9 +2487,47 @@ struct StructuredQuestionPromptView: View {
         !trimmedReply.isEmpty || (!structuredQuestions.isEmpty && hasCompleteSelection)
     }
 
+    /// The single question when the prompt is exactly one multi-select question —
+    /// the case whose submit button carries a running "N selected" count.
+    private var singleMultiSelectQuestion: QuestionPromptItem? {
+        guard structuredQuestions.count == 1,
+              let question = structuredQuestions.first,
+              question.multiSelect else {
+            return nil
+        }
+        return question
+    }
+
+    /// The keyboard-shortcut hint caption, shown below the options for
+    /// single-question prompts whose digit/Enter keys are actually wired to the
+    /// overlay coordinator. `nil` (no caption) for multi-question prompts or when
+    /// no coordinator is registered, so the hint never advertises dead keys.
+    private var keyboardHintCaption: String? {
+        guard keyboardCoordinator != nil,
+              let question = structuredQuestions.first else {
+            return nil
+        }
+        return QuestionPromptFormat.keyboardHint(
+            optionCount: question.options.count,
+            questionCount: structuredQuestions.count,
+            lang: lang
+        )
+    }
+
     private var submitButtonTitle: String {
         if !trimmedReply.isEmpty {
             return lang.t("question.sendReply")
+        }
+
+        // A single multi-select question surfaces its running selection count so
+        // the primary action stays honest before any option is picked. The
+        // disabled-at-zero semantics are unchanged: `canSubmit` still gates the
+        // button, this only relabels it (e.g. "Submit — 0 selected").
+        if let question = singleMultiSelectQuestion {
+            return QuestionPromptFormat.multiSelectSubmitLabel(
+                selectedCount: selectedLabels(for: question).count,
+                lang: lang
+            )
         }
 
         if let primarySelectedAnswer, !primarySelectedAnswer.isEmpty {
@@ -2513,7 +2608,9 @@ struct StructuredQuestionPromptView: View {
 
     private func optionStrokeColor(isSelected: Bool, isHovered: Bool) -> Color {
         if isSelected {
-            return tokens.colors.paper.opacity(0.36)
+            // Unified selection ring — `statusWaitingForAnswer` tint at 0.5,
+            // 1.5pt inset. Themes do not restyle this ring (AB-325).
+            return tokens.colors.statusWaitingForAnswer.opacity(0.5)
         }
         if isHovered {
             return .white.opacity(0.13)
@@ -2569,11 +2666,18 @@ struct StructuredQuestionPromptView: View {
             OverlayUICoordinator.QuestionCardKeyboardHandlers(
                 optionCount: { structuredQuestions.first?.options.count ?? 0 },
                 toggleOption: { index in
-                    guard let question = structuredQuestions.first,
-                          question.options.indices.contains(index) else {
+                    // Resolve the pressed digit through *display* order so digit N
+                    // selects the option the user sees numbered N even when "Other"
+                    // was authored mid-list and pinned last (AB-325). The count is
+                    // reorder-invariant, so `optionCount` above is unchanged.
+                    guard let question = structuredQuestions.first else {
                         return
                     }
-                    toggle(option: question.options[index].label, for: question)
+                    let ordered = QuestionPromptFormat.orderedOptions(question.options)
+                    guard ordered.indices.contains(index) else {
+                        return
+                    }
+                    toggle(option: ordered[index].option.label, for: question)
                 },
                 submit: {
                     if canSubmit {
