@@ -76,3 +76,18 @@ extension IslandThemeTokens {
         material: .flightDeck
     )
 }
+
+// MARK: - Annual
+
+extension IslandThemeTokens {
+    /// Annual (editorial Swiss typographic calm): a warm near-black ground and
+    /// warm off-white ink spending one orange-red accent only on attention and
+    /// critical states, a quiet flat page with no vibrancy or fillet and modestly
+    /// rounded corners, and a calm, bounce-free settle.
+    static let annual = IslandThemeTokens(
+        colors: .annual,
+        metrics: .annual,
+        motion: .annual,
+        material: .annual
+    )
+}

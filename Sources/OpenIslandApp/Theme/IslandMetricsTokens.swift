@@ -115,6 +115,36 @@ extension IslandMetricsTokens {
     )
 }
 
+// MARK: - Annual
+
+extension IslandMetricsTokens {
+    /// Annual's chrome: a quiet editorial surface. The opened radii are modest —
+    /// softer than Flight Deck's cut chamfer, tighter than Poured's glass curve —
+    /// so the panel reads as a calmly rounded card rather than either a razor
+    /// bezel or a molten slab, while `filletRadius` stays `0` (the plain concave
+    /// top corner, the Classic path) so the surface still merges cleanly from the
+    /// physical notch and morphs from the closed pill in both display profiles.
+    /// The drop shadow is soft but restrained — the page sits on the desktop, it
+    /// does not float. The shadow insets match Classic's, which already contain
+    /// the blur, so `OverlayPanelController`'s window sizing never clips the chrome.
+    static let annual = IslandMetricsTokens(
+        openedTopRadius: 12,
+        openedBottomRadius: 12,
+        surfaceShadow: IslandShadowToken(
+            color: .black,
+            opacity: 0.32,
+            radius: 20,
+            yOffset: 10
+        ),
+        openedShadowHorizontalInset: 18,
+        openedShadowBottomInset: 22,
+        closedShadowHorizontalInset: 12,
+        closedShadowBottomInset: 14,
+        closedHoverScale: 1.028,
+        filletRadius: 0
+    )
+}
+
 // MARK: - Poured Island
 
 extension IslandMetricsTokens {

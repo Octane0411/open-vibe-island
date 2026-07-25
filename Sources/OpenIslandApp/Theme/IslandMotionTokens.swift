@@ -111,3 +111,20 @@ extension IslandMotionTokens {
         openedSurfaceUnmountDelay: 0.28
     )
 }
+
+// MARK: - Annual
+
+extension IslandMotionTokens {
+    /// A calm, refined settle — the editorial page eases open and comes to rest
+    /// with no bounce, the antithesis of a mechanical snap or a springy wobble.
+    /// The open spring damps high so it settles cleanly; the attention "pop"
+    /// damps far harder than Classic's playful bounce so a new event registers as
+    /// a quiet, composed nudge rather than a jiggle. The unmount delay tracks the
+    /// unhurried close.
+    static let annual = IslandMotionTokens(
+        openAnimation: .spring(response: 0.44, dampingFraction: 0.86, blendDuration: 0),
+        closeAnimation: .smooth(duration: 0.3, extraBounce: 0),
+        popAnimation: .spring(response: 0.3, dampingFraction: 0.72, blendDuration: 0),
+        openedSurfaceUnmountDelay: 0.34
+    )
+}

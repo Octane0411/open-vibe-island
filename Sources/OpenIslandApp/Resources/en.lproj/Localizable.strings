@@ -195,6 +195,8 @@
 "theme.instrument.descriptor" = "Precision monospace console.";
 "theme.flightDeck.name" = "Flight Deck";
 "theme.flightDeck.descriptor" = "Avionics annunciator panel.";
+"theme.annual.name" = "Annual";
+"theme.annual.descriptor" = "Editorial Swiss typographic calm.";
 
 /* Settings - Shortcuts */
 "settings.shortcuts.global.section" = "Global Hotkey";

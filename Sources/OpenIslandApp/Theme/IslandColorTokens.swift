@@ -314,3 +314,58 @@ extension IslandColorTokens {
     /// Warning red — a blocked permission request and a failure outcome.
     private static let flightDeckWarning = Color(red: 224.0 / 255.0, green: 74.0 / 255.0, blue: 66.0 / 255.0)
 }
+
+// MARK: - Annual
+
+extension IslandColorTokens {
+    /// Annual (editorial Swiss typographic calm): a warm near-black ground and a
+    /// warm off-white ink, with hierarchy carried by type scale, weight, case and
+    /// hairline rules rather than colour. The palette is deliberately
+    /// near-monochrome — a warm grayscale secondary scale for the calm states —
+    /// and spends its **one** warm orange-red accent *exclusively* on attention
+    /// and critical states: a blocked permission request, a pending question, the
+    /// collapsed waiting roll-up, and a failure outcome. Every non-attention,
+    /// non-critical role (running, completed, idle, inactive, and the caution /
+    /// interrupted tones that a persistent bypass badge or a soft interruption
+    /// use) resolves to a warm grey, never the accent — so a calm state carries
+    /// zero accent pixels apart from the agent brand squares, which is the
+    /// accent-discipline invariant `AnnualThemeTests` pins at the token level.
+    /// Hairlines are stronger than Classic's because hairline rules are the
+    /// theme's primary structural device.
+    static let annual = IslandColorTokens(
+        surfaceInk: annualInk,
+        paper: annualPaper,
+        surfaceText: .white,
+        statusRunning: annualGreyBright,
+        statusCompleted: annualGreyMid,
+        statusWaitingForApproval: annualAccent,
+        statusWaitingForAnswer: annualAccent,
+        statusWaitingAggregate: annualAccent,
+        statusWarning: annualGreyMid,
+        statusInterrupted: annualGreyMid,
+        statusFailed: annualAccent,
+        statusIdle: annualPaper.opacity(0.28),
+        statusInactive: annualPaper.opacity(0.24),
+        secondaryTextOpacity: 0.6,
+        tertiaryTextOpacity: 0.5,
+        increasedContrastTextBoost: 0.24,
+        hairlineOpacity: 0.10,
+        hairlineOpacityIncreasedContrast: 0.28
+    )
+
+    /// Warm near-black editorial ground — a hair warmer (more red than blue) than
+    /// the neutral console blacks, so the surface reads as ink on warm paper stock
+    /// rather than cold glass.
+    private static let annualInk = Color(red: 0x14 / 255.0, green: 0x12 / 255.0, blue: 0x10 / 255.0)
+    /// Warm off-white ink for headline chrome, glyphs and the filled-running mark.
+    private static let annualPaper = Color(red: 0xf2 / 255.0, green: 0xed / 255.0, blue: 0xe3 / 255.0)
+    /// The single warm orange-red accent, reserved for attention and critical
+    /// states. Nothing calm may resolve to this value.
+    static let annualAccent = Color(red: 0xe0 / 255.0, green: 0x4f / 255.0, blue: 0x2a / 255.0)
+    /// The brighter step of the warm grayscale secondary scale — the calm
+    /// "running" tone.
+    private static let annualGreyBright = Color(red: 0xcf / 255.0, green: 0xc8 / 255.0, blue: 0xba / 255.0)
+    /// The mid step of the warm grayscale secondary scale — completed, caution and
+    /// interrupted all share it (none of them are attention states).
+    private static let annualGreyMid = Color(red: 0x9c / 255.0, green: 0x96 / 255.0, blue: 0x8b / 255.0)
+}

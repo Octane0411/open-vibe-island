@@ -195,6 +195,8 @@
 "theme.instrument.descriptor" = "精密等寬主控台。";
 "theme.flightDeck.name" = "飛行甲板";
 "theme.flightDeck.descriptor" = "航電警示燈面板。";
+"theme.annual.name" = "年刊";
+"theme.annual.descriptor" = "瑞士編輯風格的排印靜謐。";
 
 /* Settings - Shortcuts */
 "settings.shortcuts.global.section" = "全域快捷鍵";
