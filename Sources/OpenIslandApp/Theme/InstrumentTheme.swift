@@ -83,8 +83,16 @@ enum InstrumentText {
 /// non-actionable state (running, done, idle/stale) is typeset on one exact
 /// column grid — state / workspace / agent tick / model / host / age — by
 /// `InstrumentSessionRow`, with row rhythm (1-line done, 2-line running/idle)
-/// standing in for decoration and not a single filled pill. Actionable rows
-/// still delegate to Classic until AB-310.
+/// standing in for decoration and not a single filled pill.
+///
+/// AB-310 (instrument 4/4) restyles the actionable interiors and closes the
+/// theme: the permission request is a typographic alarm (inverted `ATTN` chip,
+/// red hairline frame, command in a bordered mono box, ALLOW/DENY carrying the
+/// real ⌘Y / ⌘⇧Y / ⌘N key-hint glyphs), the question reuses the shared
+/// `StructuredQuestionPromptView`, and the completion is a squared mono card —
+/// all drawn by `InstrumentSessionRow` / `InstrumentApprovalCard`. The shared
+/// `IslandNotificationCard` inherits the treatment through this `sessionRow`
+/// factory.
 ///
 /// Registered but **not** the default — Poured Island stays the product's face.
 struct InstrumentTheme: IslandTheme {
@@ -189,12 +197,13 @@ struct InstrumentTheme: IslandTheme {
         )
     }
 
-    // MARK: Instrument tabular session rows (AB-309)
+    // MARK: Instrument session rows (AB-309 tabular · AB-310 actionable)
 
-    /// The tabular-grid session row: every non-actionable state (running, done,
-    /// idle/stale) is typeset on one exact column grid by `InstrumentSessionRow`.
-    /// Actionable approval / question / completion rows still delegate to Classic
-    /// from inside that view (a thin seam) until AB-310 restyles those interiors.
+    /// The instrument session row: every non-actionable state (running, done,
+    /// idle/stale) is typeset on one exact column grid, and the actionable
+    /// approval / question / completion interiors are drawn in the instrument
+    /// idiom (the typographic alarm card, the shared question prompt, the squared
+    /// completion card) — both by `InstrumentSessionRow` (AB-309 · AB-310).
     func sessionRow(
         session: AgentSession,
         stateIndicator: IslandSessionStateIndicator,

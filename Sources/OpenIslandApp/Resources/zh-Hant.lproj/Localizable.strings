@@ -238,6 +238,11 @@
 /* Island Panel - Instrument theme rows (AB-309) */
 "island.instrument.row.jump" = "跳轉";
 
+/* Island Panel - Instrument theme actionable surfaces (AB-310) */
+"island.instrument.approval.attn" = "注意";
+"island.instrument.approval.allow" = "允許";
+"island.instrument.approval.deny" = "拒絕";
+
 /* Island Panel - Session List */
 "island.sessionList.title" = "會話";
 "island.sessionOverview.total" = "總計";

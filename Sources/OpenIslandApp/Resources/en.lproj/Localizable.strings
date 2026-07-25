@@ -238,6 +238,11 @@
 /* Island Panel - Instrument theme rows (AB-309) */
 "island.instrument.row.jump" = "Jump";
 
+/* Island Panel - Instrument theme actionable surfaces (AB-310) */
+"island.instrument.approval.attn" = "ATTN";
+"island.instrument.approval.allow" = "Allow";
+"island.instrument.approval.deny" = "Deny";
+
 /* Island Panel - Session List */
 "island.sessionList.title" = "Sessions";
 "island.sessionOverview.total" = "total";

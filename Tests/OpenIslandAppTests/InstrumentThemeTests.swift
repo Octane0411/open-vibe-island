@@ -202,4 +202,37 @@ struct InstrumentThemeTests {
         #expect(zhHant.usesCJKScript == true)
         #expect(InstrumentText.tracking(0.9, lang: zhHant) == 0)
     }
+
+    // MARK: - Actionable surface strings localize (AB-310 AC #8)
+
+    /// The instrument alarm card's own strings (the `ATTN` chip and the
+    /// ALLOW / DENY defaults) resolve to a real translation — not the bare key —
+    /// in English and both Chinese scripts.
+    @Test
+    func actionableApprovalStringsLocalizeInEveryLanguage() {
+        let originalLanguage = UserDefaults.standard.string(forKey: "appLanguage")
+        defer {
+            if let originalLanguage {
+                UserDefaults.standard.set(originalLanguage, forKey: "appLanguage")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "appLanguage")
+            }
+        }
+
+        let keys = [
+            "island.instrument.approval.attn",
+            "island.instrument.approval.allow",
+            "island.instrument.approval.deny",
+        ]
+
+        for language in [LanguageManager.AppLanguage.en, .zhHans, .zhHant] {
+            let manager = LanguageManager()
+            manager.language = language
+            for key in keys {
+                let resolved = manager.t(key)
+                #expect(resolved != key, "\(key) is unlocalized in \(language)")
+                #expect(!resolved.isEmpty)
+            }
+        }
+    }
 }

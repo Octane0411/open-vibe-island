@@ -108,4 +108,46 @@ struct InstrumentSessionRowTests {
             #expect(size >= InstrumentTypography.floor)
         }
     }
+
+    // MARK: - Actionable approval surfaces (AB-310)
+
+    /// AC #1 / #2: the ALLOW / always-allow / DENY buttons must print the
+    /// **real** registered `OverlayPanelController` shortcuts — ⌘Y, ⌘⇧Y, ⌘N —
+    /// never the mockup's ⏎/⎋.
+    @Test
+    func approvalKeyHintGlyphsMatchTheRegisteredShortcuts() {
+        #expect(InstrumentApprovalFormat.Shortcut.allowOnce.glyphString == "⌘Y")
+        #expect(InstrumentApprovalFormat.Shortcut.alwaysAllow.glyphString == "⌘⇧Y")
+        #expect(InstrumentApprovalFormat.Shortcut.deny.glyphString == "⌘N")
+
+        // Every glyph string is built from the ordered glyph run, and the three
+        // shortcuts stay distinct so no two buttons print the same hint.
+        for shortcut in InstrumentApprovalFormat.Shortcut.allCases {
+            #expect(shortcut.glyphString == shortcut.glyphs.joined())
+        }
+        let hints = InstrumentApprovalFormat.Shortcut.allCases.map(\.glyphString)
+        #expect(Set(hints).count == hints.count)
+    }
+
+    /// AC #4: a non-success completion never shares the success row's quiet
+    /// check — interrupted and failed each get a distinct, unmistakable glyph.
+    @Test
+    func completionOutcomeBannerGlyphsAreDistinct() {
+        let interrupted = InstrumentApprovalFormat.completionOutcomeGlyphName(outcome: .interrupted)
+        let failed = InstrumentApprovalFormat.completionOutcomeGlyphName(outcome: .failed)
+        #expect(interrupted != failed)
+        // Neither collides with the success-row check the tabular grid draws.
+        #expect(interrupted != InstrumentSessionRowFormat.statusGlyphName(phase: .completed, outcome: .success))
+        #expect(failed != InstrumentSessionRowFormat.statusGlyphName(phase: .completed, outcome: .success))
+    }
+
+    /// AC #7: the alarm / completion surfaces hold the same ≥10pt readable floor
+    /// as the rest of the theme — no 8.5px micro-type.
+    @Test
+    func everyReadableActionableSizeHoldsTheTenPointFloor() {
+        #expect(!InstrumentApprovalFormat.readableTextSizes.isEmpty)
+        for size in InstrumentApprovalFormat.readableTextSizes {
+            #expect(size >= InstrumentTypography.floor)
+        }
+    }
 }
