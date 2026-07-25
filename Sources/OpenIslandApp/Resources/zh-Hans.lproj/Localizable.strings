@@ -245,6 +245,23 @@
 "island.instrument.approval.allow" = "允许";
 "island.instrument.approval.deny" = "拒绝";
 
+/* Island Panel - Flight Deck theme (AB-312) */
+"island.flightDeck.annunciator.attn" = "注意";
+"island.flightDeck.annunciator.run" = "运行";
+"island.flightDeck.annunciator.done" = "完成";
+"island.flightDeck.annunciator.idle" = "空闲";
+"island.flightDeck.column.session" = "会话";
+"island.flightDeck.column.model" = "模型";
+"island.flightDeck.column.app" = "应用";
+"island.flightDeck.column.time" = "时间";
+"island.flightDeck.footer.bridgeLink" = "桥接链路";
+"island.flightDeck.footer.link" = "已连接";
+"island.flightDeck.footer.noLink" = "未连接";
+"island.flightDeck.footer.sessions" = "%lld 个会话";
+"island.flightDeck.state.noSignal" = "无信号";
+"island.flightDeck.state.standby" = "待命";
+"island.flightDeck.hint.setup" = "配置";
+
 /* Island Panel - Session List */
 "island.sessionList.title" = "会话";
 "island.sessionOverview.total" = "总计";

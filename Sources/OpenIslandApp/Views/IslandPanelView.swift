@@ -315,6 +315,10 @@ struct IslandPanelView: View {
         // slot component resolves its look through the current selection.
         .environment(\.islandTheme, theme)
         .environment(\.islandTokens, tokens)
+        // AB-312: expose the live bridge-socket state so a theme's opened chrome
+        // can wire a status readout to the truth of the connection (Flight Deck's
+        // "BRIDGE LINK" footer). Themes that don't consume it are unaffected.
+        .environment(\.islandBridgeIsLive, model.isBridgeReady)
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
         .alert(model.lang.t("island.quit.confirmTitle"), isPresented: $showingQuitConfirmation) {

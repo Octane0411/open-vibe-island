@@ -189,6 +189,38 @@ struct FlightDeckThemeTests {
         #expect(FlightDeckText.tracking(0.9, lang: zhHant) == 0)
     }
 
+    // MARK: - 12-tick gauge colour + placard bands (AB-312 AC #1)
+
+    @Test
+    func tickGaugeColoursBandOnTheExactUsageCutoffs() {
+        // `>= 90` red, `70..<90` orange, else green — the same cut-offs the app
+        // ships in `IslandUsageSummary`; the theme must not drift. Screenshot
+        // points 99% (CRIT/red) and 7% (NOM/green) are covered by the endpoints.
+        #expect(FlightDeckUsageWindowGauge.usageColor(for: 99) == Color.red.opacity(0.95))
+        #expect(FlightDeckUsageWindowGauge.usageColor(for: 90) == Color.red.opacity(0.95))
+        #expect(FlightDeckUsageWindowGauge.usageColor(for: 89.9) == Color.orange.opacity(0.95))
+        #expect(FlightDeckUsageWindowGauge.usageColor(for: 70) == Color.orange.opacity(0.95))
+        #expect(FlightDeckUsageWindowGauge.usageColor(for: 69.9) == Color.green.opacity(0.95))
+        #expect(FlightDeckUsageWindowGauge.usageColor(for: 7) == Color.green.opacity(0.95))
+    }
+
+    @Test
+    func tickGaugePlacardsBandOnTheSameCutoffsAsTheColour() {
+        // A red gauge always reads CRIT, an orange one CAUT, a green one NOM.
+        #expect(FlightDeckUsageWindowGauge.placard(for: 99) == .crit)
+        #expect(FlightDeckUsageWindowGauge.placard(for: 90) == .crit)
+        #expect(FlightDeckUsageWindowGauge.placard(for: 89.9) == .caut)
+        #expect(FlightDeckUsageWindowGauge.placard(for: 70) == .caut)
+        #expect(FlightDeckUsageWindowGauge.placard(for: 69.9) == .nom)
+        #expect(FlightDeckUsageWindowGauge.placard(for: 0) == .nom)
+    }
+
+    @Test
+    func tickGaugeIsTwelveSegments() {
+        // The ticket pins a 12-tick segmented gauge.
+        #expect(FlightDeckTickGauge(fraction: 0.5, color: .green, isCritical: false).segments == 12)
+    }
+
     // MARK: - Theme name / descriptor localize (AC #1)
 
     @Test

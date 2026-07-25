@@ -245,6 +245,23 @@
 "island.instrument.approval.allow" = "Allow";
 "island.instrument.approval.deny" = "Deny";
 
+/* Island Panel - Flight Deck theme (AB-312) */
+"island.flightDeck.annunciator.attn" = "Attn";
+"island.flightDeck.annunciator.run" = "Run";
+"island.flightDeck.annunciator.done" = "Done";
+"island.flightDeck.annunciator.idle" = "Idle";
+"island.flightDeck.column.session" = "Session";
+"island.flightDeck.column.model" = "Model";
+"island.flightDeck.column.app" = "App";
+"island.flightDeck.column.time" = "Time";
+"island.flightDeck.footer.bridgeLink" = "Bridge Link";
+"island.flightDeck.footer.link" = "Link";
+"island.flightDeck.footer.noLink" = "No Link";
+"island.flightDeck.footer.sessions" = "%lld sessions";
+"island.flightDeck.state.noSignal" = "No Signal";
+"island.flightDeck.state.standby" = "Standby";
+"island.flightDeck.hint.setup" = "Setup";
+
 /* Island Panel - Session List */
 "island.sessionList.title" = "Sessions";
 "island.sessionOverview.total" = "total";

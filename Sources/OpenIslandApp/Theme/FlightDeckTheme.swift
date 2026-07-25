@@ -73,10 +73,18 @@ enum FlightDeckText {
 /// nominal, muted blue complete, amber caution, warning red, dim grey idle — a
 /// tightly-cut flat panel with no vibrancy or fillet, and a hard mechanical
 /// snap), the mono typography roles, the theme's own square-annunciator-light
-/// grid geometry, and the flat closed pill (`FlightDeckClosedPill`). The opened
-/// chrome regions — the header, session rows, list states and actionable
-/// surfaces — reuse Classic's shared slot views for now; later slices
-/// (AB-312…314) restyle them into the annunciator-panel language.
+/// grid geometry, and the flat closed pill (`FlightDeckClosedPill`).
+///
+/// AB-312 (flightdeck 2/4) restyles the opened chrome: the header renders usage
+/// as 12-tick segmented gauges with numeric readouts and CRIT / CAUT / NOM
+/// placards and switches the controls to panel switches (`FlightDeckHeaderControls`
+/// / `FlightDeckUsageSummary`); the session-list summary becomes a strip of
+/// annunciator tiles (ATTN / RUN / DONE / IDLE, lit when non-zero) over a
+/// SESSION / MODEL / APP / TIME column-caption strip, with section headers for
+/// all four grouping modes and a BRIDGE LINK footer wired to the live bridge
+/// socket (`FlightDeckSessionListScaffold`), and the empty / bootstrap / install
+/// states move into squared hairline panels. The session rows still reuse
+/// Classic's flat views until AB-313 restyles them onto the column grid.
 ///
 /// Registered but **not** the default — Poured Island stays the product's face.
 struct FlightDeckTheme: IslandTheme {
@@ -150,10 +158,11 @@ struct FlightDeckTheme: IslandTheme {
         )
     }
 
-    // MARK: Shared-slot fallbacks (restyled in AB-312…314)
+    // MARK: Flight Deck opened header + 12-tick gauge usage (AB-312)
 
-    /// Opened header — reuses Classic's shared header until AB-312 restyles it
-    /// into the annunciator-panel usage readout.
+    /// The opened header: usage as 12-tick segmented gauges with numeric readouts
+    /// and CRIT / CAUT / NOM placards, and flat squared panel-switch control
+    /// buttons, on the shared notch-split / single-lane layout.
     func openedHeader(
         providers: [UsageProviderPresentation],
         usesNotchAwareLayout: Bool,
@@ -165,7 +174,7 @@ struct FlightDeckTheme: IslandTheme {
         onQuit: @escaping () -> Void
     ) -> AnyView {
         AnyView(
-            IslandHeaderControls(
+            FlightDeckHeaderControls(
                 providers: providers,
                 usesNotchAwareLayout: usesNotchAwareLayout,
                 targetScreen: targetScreen,
@@ -177,6 +186,8 @@ struct FlightDeckTheme: IslandTheme {
             )
         )
     }
+
+    // MARK: Slots reused from Classic until AB-313 / AB-314 restyle them
 
     /// Session row — reuses Classic's shared row until AB-313 / AB-314 restyle
     /// the tabular and actionable states.
@@ -214,8 +225,11 @@ struct FlightDeckTheme: IslandTheme {
         )
     }
 
-    /// Session list — reuses Classic's shared scaffold until AB-312 restyles the
-    /// summary, section headers and footer.
+    /// Session list (AB-312) — the annunciator-tile summary strip, the SESSION /
+    /// MODEL / APP / TIME column captions, the section headers for all four
+    /// grouping modes, and a BRIDGE LINK footer wired to the live bridge socket.
+    /// Rows inside it route through `sessionRow` above — Classic's flat row for
+    /// the shell until AB-313 restyles the rows onto the column grid.
     func sessionList(
         sessions: [AgentSession],
         sections: [IslandSessionSection],
@@ -231,7 +245,7 @@ struct FlightDeckTheme: IslandTheme {
         makeActions: @escaping (AgentSession) -> RowActions
     ) -> AnyView {
         AnyView(
-            IslandSessionListScaffold(
+            FlightDeckSessionListScaffold(
                 sessions: sessions,
                 sections: sections,
                 group: group,
@@ -284,15 +298,17 @@ struct FlightDeckTheme: IslandTheme {
         )
     }
 
+    // MARK: Flight Deck empty / bootstrap / install states (AB-312)
+
     func emptyState(lang: LanguageManager, hasRecentSessions: Bool) -> AnyView {
-        AnyView(IslandEmptyState(lang: lang, hasRecentSessions: hasRecentSessions))
+        AnyView(FlightDeckEmptyState(lang: lang, hasRecentSessions: hasRecentSessions))
     }
 
     func bootstrapPlaceholder(lang: LanguageManager) -> AnyView {
-        AnyView(IslandBootstrapPlaceholder(lang: lang))
+        AnyView(FlightDeckBootstrapPlaceholder(lang: lang))
     }
 
     func installHint(lang: LanguageManager, onTap: @escaping () -> Void) -> AnyView {
-        AnyView(IslandInstallHooksHint(lang: lang, onTap: onTap))
+        AnyView(FlightDeckInstallHooksHint(lang: lang, onTap: onTap))
     }
 }
