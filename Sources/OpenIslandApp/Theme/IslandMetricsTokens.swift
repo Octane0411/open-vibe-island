@@ -109,3 +109,32 @@ extension IslandMetricsTokens {
         filletRadius: 12
     )
 }
+
+// MARK: - Instrument
+
+extension IslandMetricsTokens {
+    /// Instrument's chrome: a squared-off panel (small opened radii instead of
+    /// Classic's soft 22pt) that still merges cleanly from the notch via the
+    /// plain concave top corner — `filletRadius` stays `0`, the Classic path, so
+    /// there is no "poured" fillet. The drop shadow is crisp and restrained
+    /// rather than the deep soft bloom Poured casts: a flat instrument sits on
+    /// the wallpaper, it does not float above it. The shadow insets match
+    /// Classic's, which already comfortably contain the tighter blur, so panel
+    /// sizing in `OverlayPanelController` never clips the chrome.
+    static let instrument = IslandMetricsTokens(
+        openedTopRadius: 8,
+        openedBottomRadius: 8,
+        surfaceShadow: IslandShadowToken(
+            color: .black,
+            opacity: 0.4,
+            radius: 16,
+            yOffset: 8
+        ),
+        openedShadowHorizontalInset: 18,
+        openedShadowBottomInset: 22,
+        closedShadowHorizontalInset: 12,
+        closedShadowBottomInset: 14,
+        closedHoverScale: 1.028,
+        filletRadius: 0
+    )
+}

@@ -17,6 +17,7 @@ enum ThemeRegistry {
     static let all: [any IslandTheme] = [
         PouredIslandTheme(),
         ClassicTheme(),
+        InstrumentTheme(),
     ]
 
     /// The default theme a fresh install and every unrecoverable lookup use.

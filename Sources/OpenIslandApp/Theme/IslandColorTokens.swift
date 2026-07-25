@@ -222,3 +222,43 @@ extension IslandColorTokens {
     private static let pouredInk = Color(red: 0x0b / 255.0, green: 0x0e / 255.0, blue: 0x16 / 255.0)
     private static let pouredPaper = Color(red: 0xf2 / 255.0, green: 0xf5 / 255.0, blue: 0xfb / 255.0)
 }
+
+// MARK: - Instrument
+
+extension IslandColorTokens {
+    /// Instrument (precision monospace console): a near-monochrome palette where
+    /// colour is spent *only* on status. The surface is a near-black console
+    /// ground with a cool light-grey ink; the status tints collapse to the three
+    /// the design language allows — one alarm red (approval / failure), one
+    /// run/done green (running and completed share the "live" green), and a
+    /// caution amber for the softer waiting/interrupted states — while idle and
+    /// inactive drop to dim greys. Hairlines are stronger than Classic's because
+    /// hairline rules are a load-bearing part of the instrument look, not an
+    /// afterthought.
+    static let instrument = IslandColorTokens(
+        surfaceInk: instrumentInk,
+        paper: instrumentPaper,
+        surfaceText: .white,
+        statusRunning: instrumentGreen,
+        statusCompleted: instrumentGreen,
+        statusWaitingForApproval: instrumentAlarm,
+        statusWaitingForAnswer: instrumentAmber,
+        statusWaitingAggregate: instrumentAmber,
+        statusWarning: instrumentAmber,
+        statusInterrupted: instrumentAmber,
+        statusFailed: instrumentAlarm,
+        statusIdle: instrumentPaper.opacity(0.32),
+        statusInactive: instrumentPaper.opacity(0.28),
+        secondaryTextOpacity: 0.6,
+        tertiaryTextOpacity: 0.5,
+        increasedContrastTextBoost: 0.24,
+        hairlineOpacity: 0.12,
+        hairlineOpacityIncreasedContrast: 0.3
+    )
+
+    private static let instrumentInk = Color(red: 0x0a / 255.0, green: 0x0a / 255.0, blue: 0x0b / 255.0)
+    private static let instrumentPaper = Color(red: 0xdf / 255.0, green: 0xe1 / 255.0, blue: 0xde / 255.0)
+    private static let instrumentGreen = Color(red: 76.0 / 255.0, green: 201.0 / 255.0, blue: 111.0 / 255.0)
+    private static let instrumentAlarm = Color(red: 235.0 / 255.0, green: 77.0 / 255.0, blue: 75.0 / 255.0)
+    private static let instrumentAmber = Color(red: 224.0 / 255.0, green: 168.0 / 255.0, blue: 74.0 / 255.0)
+}

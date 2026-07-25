@@ -79,3 +79,18 @@ extension IslandMotionTokens {
         openedSurfaceUnmountDelay: 0.4
     )
 }
+
+// MARK: - Instrument
+
+extension IslandMotionTokens {
+    /// A crisp, mechanical spring — an instrument panel snaps to its readout
+    /// rather than easing. Both the open and the attention "pop" damp harder and
+    /// respond faster than Classic so the motion reads as precise; the unmount
+    /// delay shrinks to match the quicker close.
+    static let instrument = IslandMotionTokens(
+        openAnimation: .spring(response: 0.34, dampingFraction: 0.9, blendDuration: 0),
+        closeAnimation: .smooth(duration: 0.26, extraBounce: 0),
+        popAnimation: .spring(response: 0.24, dampingFraction: 0.62, blendDuration: 0),
+        openedSurfaceUnmountDelay: 0.3
+    )
+}

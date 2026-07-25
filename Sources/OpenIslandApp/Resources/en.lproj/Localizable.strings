@@ -191,6 +191,8 @@
 "theme.classic.descriptor" = "The original ink-and-paper island.";
 "theme.poured.name" = "Poured Island";
 "theme.poured.descriptor" = "Liquid glass poured from the notch.";
+"theme.instrument.name" = "Instrument";
+"theme.instrument.descriptor" = "Precision monospace console.";
 
 /* Settings - Shortcuts */
 "settings.shortcuts.global.section" = "Global Hotkey";

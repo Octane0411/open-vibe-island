@@ -48,3 +48,17 @@ extension IslandThemeTokens {
         material: .poured
     )
 }
+
+// MARK: - Instrument
+
+extension IslandThemeTokens {
+    /// Instrument (precision monospace console): a near-monochrome palette that
+    /// spends colour only on status, a squared-off flat panel with no vibrancy or
+    /// fillet, and a crisp mechanical open/close spring.
+    static let instrument = IslandThemeTokens(
+        colors: .instrument,
+        metrics: .instrument,
+        motion: .instrument,
+        material: .instrument
+    )
+}

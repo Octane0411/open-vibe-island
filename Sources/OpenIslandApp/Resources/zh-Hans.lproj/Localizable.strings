@@ -191,6 +191,8 @@
 "theme.classic.descriptor" = "最初的墨与纸风格灵动岛。";
 "theme.poured.name" = "流光岛";
 "theme.poured.descriptor" = "从刘海倾泻而出的液态玻璃。";
+"theme.instrument.name" = "仪表盘";
+"theme.instrument.descriptor" = "精密等宽控制台。";
 
 /* Settings - Shortcuts */
 "settings.shortcuts.global.section" = "全局快捷键";
