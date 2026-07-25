@@ -127,34 +127,24 @@ extension AgentSession {
         return trimmedTitle
     }
 
-    var spotlightWorktreeBranch: String? {
-        // This is a SwiftUI computed property read on every layout
-        // pass. It MUST stay free of filesystem IO. Calling
-        // `WorkspaceNameResolver.gitBranch` here previously walked
-        // parent directories every layout, which combined with
-        // SwiftUI's measure/layout convergence cycle pinned the
-        // process at 99 % CPU during session-list rendering even
-        // with the resolver result cached.
-        //
-        // Read order: hook-supplied metadata wins (already resolved
-        // by `BridgeServer` from the hook payload), then the pure
-        // string-based worktree-path detector (no IO). Other
-        // sessions surface the workspace name without a branch
-        // suffix; for branch info on arbitrary `cwd` values to
-        // come back, it has to be resolved when the session is
-        // created or updated, not from the view body.
-        if let branch = claudeMetadata?.worktreeBranch?.trimmedForSurface,
-           !branch.isEmpty {
-            return branch
-        }
-
-        guard let workingDirectory = jumpTarget?.workingDirectory?.trimmedForSurface,
-              !workingDirectory.isEmpty else {
-            return nil
-        }
-
-        return WorkspaceNameResolver.worktreeBranch(for: workingDirectory)
+    /// The name a row headline leads with: workspace name → the segment after
+    /// `·` in the title → the raw title → the agent's display name.
+    ///
+    /// AB-323: `SessionDisambiguation` keys duplicate detection off this exact
+    /// accessor, and `spotlightHeadlineText` renders it, so the collision key
+    /// and the visible name are structurally incapable of drifting apart.
+    var spotlightDisplayName: String {
+        let workspace = spotlightWorkspaceName
+        return workspace.isEmpty ? tool.displayName : workspace
     }
+
+    // AB-323 removed `spotlightWorktreeBranch`. It read the hook-supplied
+    // `claudeMetadata.worktreeBranch` and then fell back to inferring a branch
+    // from any session's `workingDirectory` — which handed Codex/Gemini rows a
+    // branch the session never actually carries. Branch is Claude-only ground
+    // truth (BRIEF §3), so the single honest accessor is now
+    // `SessionDisambiguation.branch(for:)`, and it is only surfaced when a
+    // duplicate workspace name makes it useful.
 
     var spotlightSubagentLabel: String? {
         guard let subagents = claudeMetadata?.activeSubagents, !subagents.isEmpty else {
@@ -163,11 +153,28 @@ extension AgentSession {
         return "Subagents (\(subagents.count))"
     }
 
+    /// Headline with no disambiguating suffix — the correct rendering for a
+    /// session whose display name is unique in the list.
+    ///
+    /// AB-323: this used to append `(branch)` unconditionally whenever a branch
+    /// resolved, which was noise on unique rows and silent on non-Claude ones.
+    /// The suffix is now list-level state, so callers that know the list pass it
+    /// in via ``spotlightHeadlineText(disambiguator:)``.
     var spotlightHeadlineText: String {
-        var headline = spotlightWorkspaceName
+        spotlightHeadlineText(disambiguator: nil)
+    }
 
-        if let branch = spotlightWorktreeBranch {
-            headline += " (\(branch))"
+    /// Headline with an optional disambiguating suffix.
+    ///
+    /// `disambiguator` must come from `SessionDisambiguation` — it is the single
+    /// source of truth for whether a suffix is warranted and what it says
+    /// (branch for Claude, recency otherwise). Passing `nil` renders the clean
+    /// unique-row form.
+    func spotlightHeadlineText(disambiguator: String?) -> String {
+        var headline = spotlightDisplayName
+
+        if let disambiguator = disambiguator?.trimmedForSurface, !disambiguator.isEmpty {
+            headline += " (\(disambiguator))"
         }
 
         guard let prompt = spotlightHeadlinePromptText else {
@@ -306,7 +313,14 @@ extension AgentSession {
     }
 
     var spotlightAgeBadge: String {
-        let age = max(0, Int(Date.now.timeIntervalSince(islandActivityDate)))
+        spotlightAgeBadge(at: .now)
+    }
+
+    /// AB-323: the age vocabulary, evaluated against an explicit reference date
+    /// so `SessionDisambiguation`'s recency phrases are deterministic in tests
+    /// and identical to what the row's own age badge shows.
+    func spotlightAgeBadge(at referenceDate: Date) -> String {
+        let age = max(0, Int(referenceDate.timeIntervalSince(islandActivityDate)))
 
         if age < 60 {
             return "<1m"

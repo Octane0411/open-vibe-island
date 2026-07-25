@@ -15,6 +15,29 @@ extension EnvironmentValues {
     }
 }
 
+private struct IslandSessionDisambiguatorsKey: EnvironmentKey {
+    static let defaultValue: [String: String] = [:]
+}
+
+extension EnvironmentValues {
+    /// AB-323: session id → duplicate-workspace disambiguator (branch or
+    /// recency) for the sessions currently on screen, produced by
+    /// `SessionDisambiguation` and injected once by `IslandPanelView`.
+    ///
+    /// The suffix is list-level state — a row on its own cannot know whether its
+    /// workspace name collides — so it travels through the environment rather
+    /// than the theme's `sessionRow(...)` signature. A theme that ignores it
+    /// renders exactly as before; one that reads it can style the disambiguator
+    /// in its own vocabulary instead of the default parenthesised suffix.
+    ///
+    /// Defaults to empty, i.e. "no collisions", so any view rendered without an
+    /// explicit injection shows clean unique-row headlines.
+    var islandSessionDisambiguators: [String: String] {
+        get { self[IslandSessionDisambiguatorsKey.self] }
+        set { self[IslandSessionDisambiguatorsKey.self] = newValue }
+    }
+}
+
 private struct IslandBridgeIsLiveKey: EnvironmentKey {
     static let defaultValue: Bool = false
 }

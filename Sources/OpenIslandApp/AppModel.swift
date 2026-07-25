@@ -946,6 +946,15 @@ final class AppModel {
         )
     }
 
+    /// AB-323: session id → duplicate-workspace disambiguator for the sessions
+    /// the opened list currently shows. Keyed off `surfacedSessions` (the same
+    /// set `islandSessionSections` groups) because collisions are only
+    /// meaningful among rows the user can actually see side by side.
+    /// `IslandPanelView` injects this into `\.islandSessionDisambiguators`.
+    var sessionDisambiguators: [String: String] {
+        SessionDisambiguation.disambiguators(for: surfacedSessions)
+    }
+
     var recentSessionCount: Int {
         recentSessions.count
     }

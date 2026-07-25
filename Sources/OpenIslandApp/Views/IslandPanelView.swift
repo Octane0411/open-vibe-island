@@ -319,6 +319,10 @@ struct IslandPanelView: View {
         // can wire a status readout to the truth of the connection (Flight Deck's
         // "BRIDGE LINK" footer). Themes that don't consume it are unaffected.
         .environment(\.islandBridgeIsLive, model.isBridgeReady)
+        // AB-323: duplicate-workspace disambiguators for the surfaced list.
+        // Computed once here (collision detection is list-level) so every row —
+        // in any theme — resolves the same suffix from one source of truth.
+        .environment(\.islandSessionDisambiguators, model.sessionDisambiguators)
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
         .alert(model.lang.t("island.quit.confirmTitle"), isPresented: $showingQuitConfirmation) {
@@ -923,6 +927,17 @@ struct IslandSessionRow: View {
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     private var increasesContrast: Bool { colorSchemeContrast == .increased }
 
+    /// AB-323: list-level duplicate-workspace disambiguators, injected by
+    /// `IslandPanelView`. Empty (the default) means "no collisions" and the
+    /// headline renders clean.
+    @Environment(\.islandSessionDisambiguators) private var sessionDisambiguators
+
+    /// The suffix this row should carry, or `nil` when its workspace name is
+    /// unique among the visible sessions.
+    private var disambiguator: String? {
+        sessionDisambiguators[session.id]
+    }
+
     /// AB-296: every status tint, paper tone and text/hairline opacity below
     /// resolves from here. One read on the row covers all of its `private
     /// func`/`private var` builders; the separate types it composes
@@ -1356,18 +1371,20 @@ struct IslandSessionRow: View {
             return notificationWorkspaceHeadlineText
         }
 
-        return session.spotlightHeadlineText
+        return session.spotlightHeadlineText(disambiguator: disambiguator)
     }
 
     private var notificationWorkspaceHeadlineText: String {
-        let workspace = session.spotlightWorkspaceName.trimmedForNotificationCard
+        let workspace = session.spotlightDisplayName.trimmedForNotificationCard
         let title = workspace.isEmpty ? session.tool.displayName : workspace
-        guard let branch = session.spotlightWorktreeBranch?.trimmedForNotificationCard,
-              !branch.isEmpty else {
+        // AB-323: the suffix is the shared disambiguator, not an unconditional
+        // branch — a name nothing collides with reads clean here too.
+        guard let disambiguator = disambiguator?.trimmedForNotificationCard,
+              !disambiguator.isEmpty else {
             return title
         }
 
-        return "\(title) (\(branch))"
+        return "\(title) (\(disambiguator))"
     }
 
     private var notificationCompletedPromptLineText: String? {
