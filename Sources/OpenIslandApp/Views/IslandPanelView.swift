@@ -61,7 +61,11 @@ struct AutoHeightScrollView<Content: View>: View {
 /// scrollable container so a long diff scrolls in place rather than
 /// stretching the panel — the same measured-height + capped-scroll pattern
 /// `AutoHeightScrollView` already establishes elsewhere on this card (AB-228).
-private struct PermissionDiffPreview: View {
+/// AB-303: internal (not `private`) so Poured's actionable approval body can
+/// reuse the exact same diff renderer — the 500-line / 180pt caps and the
+/// token-driven +/− colours (already legible on glass) are shared, not
+/// re-implemented.
+struct PermissionDiffPreview: View {
     let result: PermissionDiffResult
     let lang: LanguageManager
 
@@ -2136,7 +2140,12 @@ struct IslandSessionRow: View {
     }
 }
 
-private struct StructuredQuestionPromptView: View {
+/// AB-303: internal (not `private`) so Poured's actionable question body can
+/// reuse the same structured prompt — the numbered option rows, 1–9 / Enter
+/// keyboard wiring, multi-select toggles, freeform + quick-reply fields and
+/// submit are contract-level behaviour, driven by tokens that already read on
+/// glass, so they're shared rather than re-implemented.
+struct StructuredQuestionPromptView: View {
     let prompt: QuestionPrompt?
     var lang: LanguageManager = .shared
     /// When set, registers this card's option-select/submit actions so
@@ -2600,7 +2609,9 @@ private struct StructuredQuestionPromptView: View {
 /// NSTextField wrapper that fires `onSubmit` only when the IME composition
 /// is finished — pressing Enter during Chinese/Japanese IME composition
 /// confirms the candidate instead of submitting.
-private struct ReplyTextField: NSViewRepresentable {
+/// AB-303: internal (not `private`) so Poured's actionable completion / question
+/// bodies can reuse the same IME-safe reply field.
+struct ReplyTextField: NSViewRepresentable {
     var placeholder: String
     @Binding var text: String
     var onSubmit: () -> Void
@@ -2688,7 +2699,12 @@ private struct IslandCompactButtonStyle: ButtonStyle {
     }
 }
 
-private struct IslandActionButtonStyle: ButtonStyle {
+/// AB-303: internal (not `private`) so Poured's actionable bodies drive their
+/// Allow / Deny / always-allow / terminal-CTA / submit buttons through the same
+/// token-styled button style — a filled `primary`/`warning` and a quiet
+/// `secondary`, resolved from `\.islandTokens`, so the buttons re-tint to
+/// `.poured` without a parallel style.
+struct IslandActionButtonStyle: ButtonStyle {
     enum Kind {
         case primary
         case secondary

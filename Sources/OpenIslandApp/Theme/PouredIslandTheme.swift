@@ -20,13 +20,17 @@ import OpenIslandCore
 /// AB-302 (poured 3/5) re-skins the session rows themselves for glass:
 /// `PouredSessionRow` renders every non-actionable state (collapsed, running,
 /// done, idle/stale) as luminous-glow glass across the list and notification
-/// presentations, and delegates the actionable approval / question / completion
-/// interiors back to Classic's `IslandSessionRow`.
+/// presentations.
 ///
-/// Still Classic for now: those actionable bodies (poured 4/5, AB-303) and the
-/// notification-card chrome. Mixed rendering behind the Lab switch is expected
-/// until then. Registered but **not** the default: the default flips in Poured
-/// 5/5.
+/// AB-303 (poured 4/5) completes the row: the actionable approval / question /
+/// completion interiors are now fully Poured too — the permission request is
+/// the hero, an amber-glow card that radiates a pulsing warm glow above the
+/// glass (static under Reduce Motion). The single-actionable notification card
+/// reuses the shared `IslandNotificationCard` chrome, whose one row is drawn
+/// through this theme's `sessionRow` factory, so it inherits the Poured
+/// actionable surfaces automatically.
+///
+/// Registered but **not** the default: the default flips in Poured 5/5.
 struct PouredIslandTheme: IslandTheme {
 
     // MARK: Identity
@@ -127,11 +131,9 @@ struct PouredIslandTheme: IslandTheme {
         )
     }
 
-    /// The glass session row (AB-302): every non-actionable state — collapsed,
-    /// running, done, idle/stale — is re-skinned as `PouredSessionRow`. The
-    /// approval / question / completion actionable interiors it would wrap stay
-    /// on Classic until AB-303, so `PouredSessionRow` delegates actionable rows
-    /// straight back to `IslandSessionRow`.
+    /// The glass session row (AB-302 · AB-303): every state — collapsed,
+    /// running, done, idle/stale, and the actionable approval / question /
+    /// completion interiors — is rendered by `PouredSessionRow`.
     func sessionRow(
         session: AgentSession,
         stateIndicator: IslandSessionStateIndicator,
@@ -201,8 +203,12 @@ struct PouredIslandTheme: IslandTheme {
         )
     }
 
-    /// The notification card stays Classic — its glass chrome is out of scope
-    /// for this slice (poured 2/5).
+    /// The single-actionable notification card (AB-303). The chrome — the
+    /// "Show all N" affordance and the auto-collapse timing — is shared with
+    /// Classic via `IslandNotificationCard` and reads through the token layer;
+    /// the card's one row is drawn by this theme's `sessionRow` factory, so it
+    /// picks up the Poured actionable surfaces (incl. the amber-glow approval
+    /// hero) without a parallel card.
     func notificationCard(
         session: AgentSession?,
         isInteractive: Bool,

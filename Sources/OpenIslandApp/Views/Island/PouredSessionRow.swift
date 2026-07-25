@@ -1,26 +1,27 @@
 import AppKit
 import SwiftUI
+@preconcurrency import MarkdownUI
 import OpenIslandCore
 
-/// Poured Island's session row (AB-302, poured 3/5).
+/// Poured Island's session row (AB-302 · AB-303).
 ///
-/// The glass re-skin of `IslandSessionRow` for every *non-actionable* row
-/// state — collapsed, running, done, idle/stale — across the `.list` and
-/// `.notification` presentations. Status is expressed as luminous glow rather
-/// than a chip: a running row carries a breathing green dot (static under
-/// Reduce Motion), a done row settles to a quiet check, and an idle row
-/// recedes into the material; hover lifts the row with a lighter glass tint in
-/// `.list` only.
+/// The glass re-skin of `IslandSessionRow` for **every** row state — collapsed,
+/// running, done, idle/stale (AB-302) and the actionable approval / question /
+/// completion interiors (AB-303) — across the `.list` and `.notification`
+/// presentations. Status is expressed as luminous glow rather than a chip: a
+/// running row carries a breathing green dot (static under Reduce Motion), a
+/// done row settles to a quiet check, and an idle row recedes into the
+/// material; hover lifts the row with a lighter glass tint in `.list` only.
 ///
-/// **Actionable bodies stay Classic this slice.** The approval / question /
-/// completion interiors — and therefore the whole actionable row that wraps
-/// them — route to `IslandSessionRow` until the poured 4/5 actionable surfaces
-/// land (AB-303). `isActionable` is the seam: `true` (a permission/question
-/// phase, the auto-expanded completion card, or the notification card, which
-/// always passes `true`) delegates to Classic; `false` renders the glass row
-/// below. The display rules (AB-282…286), grouped VoiceOver summary, type
-/// scaling and Increase Contrast behaviour are reproduced verbatim from
-/// Classic so the two rows stay interchangeable inside one list.
+/// **Actionable rows are now fully Poured (AB-303).** A permission request
+/// radiates a pulsing warm-amber glow above the glass — the loudest surface in
+/// the panel — with a filled Allow and a quiet Deny; the question and completion
+/// bodies reuse the shared, token-driven `StructuredQuestionPromptView` /
+/// completion card, which already read cleanly on the frosted surface. The
+/// behaviours that are contract-level — approve / answer / reply callbacks, the
+/// ⌘Y / ⌘⇧Y / ⌘N keyboard wiring (driven globally from `OverlayPanelController`),
+/// the 1–9 / Enter question shortcuts, and the grouped VoiceOver summary — are
+/// preserved verbatim; only the surfaces change.
 struct PouredSessionRow: View {
     let session: AgentSession
     var stateIndicator: IslandSessionStateIndicator = .animatedDot
@@ -34,66 +35,52 @@ struct PouredSessionRow: View {
     var sideInset: CGFloat = 16
     var lang: LanguageManager = .shared
     let actions: RowActions
+    /// Lets the visible question card register its option-selection state with
+    /// `OverlayPanelController`'s keyboard shortcut handler (AB-227).
     var keyboardCoordinator: OverlayUICoordinator?
-    /// Shared 15fps clock for the breathing status dot (AB-228). Passed
-    /// through to `PouredPulsingStatusDot`; rows that don't animate never
-    /// touch it.
+    /// Shared 15fps clock for the breathing status dot (AB-228) and the amber
+    /// approval glow (AB-303). Passed through to the leaf views that animate;
+    /// rows that don't animate never touch it.
     var pulseClock: PulseClock?
 
     var body: some View {
-        // Actionable rows keep Classic's `IslandSessionRow` — the approval /
-        // question / completion interiors it draws are out of scope until
-        // AB-303. `IslandSessionRow` reads the same environment tokens, so its
-        // status tints already come from `.poured` while it renders.
-        if isActionable {
-            IslandSessionRow(
-                session: session,
-                stateIndicator: stateIndicator,
-                completedStaleThreshold: completedStaleThreshold,
-                isActionable: isActionable,
-                useDrawingGroup: useDrawingGroup,
-                isInteractive: isInteractive,
-                isHighlighted: isHighlighted,
-                presentation: presentation,
-                sideInset: sideInset,
-                lang: lang,
-                actions: actions,
-                keyboardCoordinator: keyboardCoordinator,
-                pulseClock: pulseClock
-            )
-        } else {
-            PouredNonActionableRow(
-                session: session,
-                stateIndicator: stateIndicator,
-                completedStaleThreshold: completedStaleThreshold,
-                isInteractive: isInteractive,
-                isHighlighted: isHighlighted,
-                presentation: presentation,
-                sideInset: sideInset,
-                lang: lang,
-                actions: actions,
-                pulseClock: pulseClock
-            )
-        }
+        PouredRowContent(
+            session: session,
+            stateIndicator: stateIndicator,
+            completedStaleThreshold: completedStaleThreshold,
+            isActionable: isActionable,
+            isInteractive: isInteractive,
+            isHighlighted: isHighlighted,
+            presentation: presentation,
+            sideInset: sideInset,
+            lang: lang,
+            actions: actions,
+            keyboardCoordinator: keyboardCoordinator,
+            pulseClock: pulseClock
+        )
     }
 }
 
-/// The glass body for every non-actionable Poured row. Split out so the
-/// actionable delegation above stays a single decision and this view owns only
-/// the states it actually renders.
-private struct PouredNonActionableRow: View {
+/// The glass body for every Poured row. Renders the shared summary / auxiliary
+/// chrome (verbatim from Classic so the two rows stay interchangeable inside one
+/// list) plus, for actionable rows, the Poured approval / question / completion
+/// interiors.
+private struct PouredRowContent: View {
     let session: AgentSession
     let stateIndicator: IslandSessionStateIndicator
     let completedStaleThreshold: TimeInterval
+    let isActionable: Bool
     let isInteractive: Bool
     let isHighlighted: Bool
     let presentation: IslandSessionRowPresentation
     let sideInset: CGFloat
     let lang: LanguageManager
     let actions: RowActions
+    let keyboardCoordinator: OverlayUICoordinator?
     let pulseClock: PulseClock?
 
     @State private var detailOverride: Bool?
+    @State private var replyText: String = ""
 
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     private var increasesContrast: Bool { colorSchemeContrast == .increased }
@@ -129,7 +116,7 @@ private struct PouredNonActionableRow: View {
             at: referenceDate,
             threshold: completedStaleThreshold
         )
-        let defaultShowsDetail = !isStaleCompleted && rawPresence != .inactive
+        let defaultShowsDetail = !isStaleCompleted && (rawPresence != .inactive || isActionable)
         let showsDetail = detailOverride ?? defaultShowsDetail
         let presence: IslandSessionPresence = isStaleCompleted
             ? .inactive
@@ -141,8 +128,8 @@ private struct PouredNonActionableRow: View {
             if showsDetail {
                 rowAuxiliaryDetails(presence: presence)
 
-                if session.phase == .running, let runningDetailText {
-                    runningDetailBody(runningDetailText)
+                if shouldShowEmbeddedDetailBody {
+                    embeddedDetailBody
                         .padding(.leading, detailLeadingInset)
                         .padding(.trailing, sideInset)
                         .padding(.bottom, 13)
@@ -359,6 +346,37 @@ private struct PouredNonActionableRow: View {
         }
     }
 
+    // MARK: - Embedded detail body (running preview / actionable interiors)
+
+    /// Mirrors Classic's gate: attention phases always earn the body, a
+    /// completed row only when it's the actionable card with something to show,
+    /// and a running row only when it has a command/activity preview.
+    private var shouldShowEmbeddedDetailBody: Bool {
+        if session.phase.requiresAttention {
+            return true
+        }
+        if session.phase == .completed {
+            return isActionable && completionHasExpandedBody
+        }
+        return session.phase == .running && runningDetailText != nil
+    }
+
+    @ViewBuilder
+    private var embeddedDetailBody: some View {
+        switch session.phase {
+        case .waitingForApproval:
+            PouredApprovalCard(session: session, lang: lang, actions: actions, pulseClock: pulseClock)
+        case .waitingForAnswer:
+            questionActionBody
+        case .completed:
+            completionActionBody
+        case .running:
+            if let runningDetailText {
+                runningDetailBody(runningDetailText)
+            }
+        }
+    }
+
     private func runningDetailBody(_ text: String) -> some View {
         Text(text)
             .font(.system(size: 12, weight: .semibold, design: .monospaced))
@@ -380,6 +398,169 @@ private struct PouredNonActionableRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    // MARK: - Question action area
+
+    /// The structured question card is fully token-driven and already reads on
+    /// glass, so Poured reuses it verbatim — that keeps the 1–9 / Enter keyboard
+    /// wiring, multi-select toggles, freeform + quick-reply fields and submit
+    /// behaviour identical to Classic (AB-303).
+    private var questionActionBody: some View {
+        StructuredQuestionPromptView(
+            prompt: session.questionPrompt,
+            lang: lang,
+            keyboardCoordinator: keyboardCoordinator,
+            onAnswer: { actions.answer?($0) }
+        )
+    }
+
+    // MARK: - Completion action area
+
+    /// The completion card, restyled for glass: the markdown body resolves its
+    /// text / link / code colours from `.completionCard(tokens.colors)` (already
+    /// token-driven, so links and code read on the frosted surface), scrolls
+    /// within the same 160pt cap, and the reply input / send stay wired to
+    /// `actions.reply` exactly as Classic.
+    private var completionActionBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if !completionMessageText.trimmedForRow.isEmpty {
+                if session.outcome != .success {
+                    completionOutcomeBanner
+                }
+
+                AutoHeightScrollView(maxHeight: 160) {
+                    Markdown(completionMessageText)
+                        .markdownTheme(.completionCard(tokens.colors))
+                        .markdownImageProvider(.noNetwork)
+                        .markdownInlineImageProvider(.noNetwork)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                }
+            } else {
+                completionEmptyState
+            }
+
+            if actions.reply != nil {
+                Rectangle()
+                    .fill(.white.opacity(0.05))
+                    .frame(height: 1)
+
+                completionReplyInput
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(.white.opacity(0.09))
+        )
+    }
+
+    private var completionHasExpandedBody: Bool {
+        // A non-success outcome always earns the expanded card — even with no
+        // message body — so an interrupted/failed completion isn't silently
+        // indistinguishable from a plain "Completed" row.
+        session.outcome != .success
+            || !completionMessageText.trimmedForRow.isEmpty
+            || actions.reply != nil
+    }
+
+    private var completionDoneOpacity: Double {
+        presentation == .notification ? 0.82 : 0.96
+    }
+
+    private var completionOutcomeBanner: some View {
+        HStack(spacing: 6) {
+            Image(systemName: completionOutcomeGlyphName)
+                .font(.system(size: 10.5, weight: .bold))
+                .accessibilityHidden(true)
+            Text(completionOutcomeLabel)
+                .font(.system(size: 11, weight: .bold))
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(completionOutcomeTint.opacity(completionDoneOpacity))
+        .padding(.horizontal, 14)
+        .padding(.top, 10)
+        .padding(.bottom, 4)
+    }
+
+    /// Only ever rendered from `completionOutcomeBanner`, which is gated on
+    /// `session.outcome != .success` — "stop" is just the glyph for the
+    /// remaining `.interrupted` case.
+    private var completionOutcomeGlyphName: String {
+        session.outcome == .failed ? "xmark.circle.fill" : "stop.circle.fill"
+    }
+
+    private var completionOutcomeTint: Color {
+        tokens.colors.statusTint(for: .completed, outcome: session.outcome)
+    }
+
+    private var completionOutcomeLabel: String {
+        switch session.outcome {
+        case .success:
+            lang.t("completion.done")
+        case .interrupted:
+            lang.t("completion.interrupted")
+        case .failed:
+            lang.t("completion.failed")
+        }
+    }
+
+    private var completionEmptyState: some View {
+        HStack {
+            Text(completionOutcomeLabel)
+                .font(.system(size: 11.5, weight: .bold))
+                .foregroundStyle(completionOutcomeTint.opacity(completionDoneOpacity))
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    @ViewBuilder
+    private var completionReplyInput: some View {
+        HStack(spacing: 8) {
+            ReplyTextField(
+                placeholder: lang.t("completion.replyPlaceholder", session.completionReplyRecipientName),
+                text: $replyText,
+                onSubmit: { submitReply() }
+            )
+            .frame(height: 32)
+
+            Button {
+                submitReply()
+            } label: {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 24))
+                    .foregroundColor(replyText.trimmingCharacters(in: .whitespaces).isEmpty
+                        ? .white.opacity(0.2) : .white.opacity(0.9))
+            }
+            .buttonStyle(.plain)
+            .disabled(replyText.trimmingCharacters(in: .whitespaces).isEmpty)
+            .accessibilityLabel(lang.t("a11y.completion.sendReply"))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    private func submitReply() {
+        let text = replyText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        replyText = ""
+        actions.reply?(text)
+    }
+
+    private var completionMessageText: String {
+        if let text = session.completionAssistantMessageText?.trimmedForRow, !text.isEmpty {
+            return text
+        }
+        let summary = session.summary.trimmedForRow
+        return summary == SessionPhase.completed.displayName ? "" : summary
+    }
+
     // MARK: - Status indicator (all four preferences)
 
     @ViewBuilder
@@ -391,7 +572,7 @@ private struct PouredNonActionableRow: View {
         case .bar:
             RoundedRectangle(cornerRadius: 2.5, style: .continuous)
                 .fill(tint)
-                .frame(width: 4, height: 28)
+                .frame(width: 4, height: isActionable ? 34 : 28)
                 .shadow(color: tint.opacity(presence == .inactive ? 0 : 0.5), radius: 4)
                 .padding(.top, 2)
         case .glyph:
@@ -410,8 +591,9 @@ private struct PouredNonActionableRow: View {
     }
 
     /// The default indicator carries Poured's design language most directly:
-    /// a running row breathes a glowing dot, a done-success row settles to a
-    /// quiet check, and an idle row recedes to a dim, glow-less dot.
+    /// a running (or actionable-waiting) row breathes a glowing dot, a
+    /// done-success row settles to a quiet check, and an idle row recedes to a
+    /// dim, glow-less dot.
     @ViewBuilder
     private func animatedIndicator(tint: Color, presence: IslandSessionPresence) -> some View {
         if session.phase == .completed, session.outcome == .success, presence != .inactive {
@@ -421,7 +603,7 @@ private struct PouredNonActionableRow: View {
                 .shadow(color: tint.opacity(0.4), radius: 3)
                 .frame(width: 14, height: 24, alignment: .top)
                 .padding(.top, 3)
-        } else if let pulseClock, presence == .running {
+        } else if let pulseClock, stateIndicator.pulses(presence: presence, isActionable: isActionable) {
             PouredPulsingStatusDot(pulseClock: pulseClock, tint: tint, presence: presence)
                 .frame(width: 12, height: 24, alignment: .top)
         } else {
@@ -735,12 +917,12 @@ private struct PouredNonActionableRow: View {
             return .clear
         }
 
-        let base = isHighlighted ? Color.white.opacity(0.06) : Color.clear
+        let base = isHighlighted ? Color.white.opacity(isActionable ? 0.07 : 0.06) : Color.clear
         guard stateIndicator == .tint else { return base }
 
         let tintOpacity: Double
         if isHighlighted {
-            tintOpacity = 0.13
+            tintOpacity = isActionable ? 0.15 : 0.13
         } else {
             tintOpacity = presence == .inactive ? 0.035 : 0.08
         }
@@ -783,6 +965,217 @@ private struct PouredNonActionableRow: View {
                 .frame(width: 6, height: 6)
                 .accessibilityLabel(lang.t("a11y.task.pending"))
         }
+    }
+}
+
+// MARK: - Poured approval hero card
+
+/// The permission request rendered as Poured Island's hero: an amber-glow card
+/// that radiates a pulsing warm glow above everything else on the glass (static
+/// under Reduce Motion), a command preview in a mono block, an affected-path
+/// line, an optional `PermissionDiffPreview`, and a prominent filled Allow next
+/// to a quiet Deny — or the always-allow options / Codex terminal CTA.
+///
+/// Isolated in its own `View` so the amber glow's 15fps pulse (read off the
+/// shared `PulseClock` via `PouredAmberGlow`) invalidates only the glow, and so
+/// the approve / deny callbacks stay exactly the ones ⌘Y / ⌘⇧Y / ⌘N fire
+/// against from `OverlayPanelController`.
+private struct PouredApprovalCard: View {
+    let session: AgentSession
+    let lang: LanguageManager
+    let actions: RowActions
+    let pulseClock: PulseClock?
+
+    @Environment(\.islandTokens) private var tokens
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    private var increasesContrast: Bool { colorSchemeContrast == .increased }
+
+    /// The hero glow is warm amber (`statusWarning`) so the permission card
+    /// reads as the loudest, warmest surface next to the cool running/done/idle
+    /// rows.
+    private var amber: Color { tokens.colors.statusWarning }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(lang.t("approval.toolPermissionRequested"))
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(tokens.colors.paper.opacity(contrastText(0.9)))
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(commandPreviewText)
+                    .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(tokens.colors.paper.opacity(contrastText(0.82)))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let path = affectedPath {
+                    Text(path)
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(tokens.colors.paper.opacity(contrastText(0.5)))
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.white.opacity(0.06))
+            )
+
+            // AB-235: only for Edit/Write requests whose `tool_input` carried
+            // enough to compute a diff; the shared renderer's token-driven +/−
+            // colours already read on glass, within its 500-line / 180pt caps.
+            if let diffResult = permissionDiffResult {
+                PermissionDiffPreview(result: diffResult, lang: lang)
+            }
+
+            if session.permissionRequest?.requiresTerminalApproval == true {
+                terminalApprovalCTA
+            } else {
+                HStack(spacing: 8) {
+                    Button(session.permissionRequest?.secondaryActionTitle ?? lang.t("approval.deny")) { actions.approve?(.deny) }
+                        .buttonStyle(IslandActionButtonStyle(kind: .secondary, expands: true))
+                        .accessibilityLabel(session.permissionRequest?.secondaryActionTitle ?? lang.t("a11y.approval.deny"))
+                    Button(session.permissionRequest?.primaryActionTitle ?? lang.t("approval.allowOnce")) { actions.approve?(.allowOnce) }
+                        .buttonStyle(IslandActionButtonStyle(kind: .warning, expands: true))
+                        .accessibilityLabel(session.permissionRequest?.primaryActionTitle ?? lang.t("a11y.approval.allowOnce"))
+                }
+
+                alwaysAllowOptions
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(cardFill)
+        .overlay(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .strokeBorder(amber.opacity(reduceTransparency ? 0.75 : 0.5), lineWidth: 1)
+        )
+        .modifier(PouredAmberGlow(tint: amber, pulseClock: pulseClock))
+        // The buttons carry their own labels/actions; group the surrounding
+        // copy so VoiceOver reads the card, then reaches Allow / Deny.
+        .accessibilityElement(children: .contain)
+    }
+
+    /// A warm amber wash over the frosted slab. Under Reduce Transparency the
+    /// wash sits on an opaque ink base so the card never relies on the glass
+    /// showing through to stay legible (AB-303).
+    @ViewBuilder
+    private var cardFill: some View {
+        let shape = RoundedRectangle(cornerRadius: 13, style: .continuous)
+        ZStack {
+            if reduceTransparency {
+                shape.fill(tokens.colors.surfaceInk)
+                shape.fill(amber.opacity(0.22))
+            } else {
+                shape.fill(amber.opacity(0.1))
+            }
+        }
+    }
+
+    /// AB-235: scoped always-allow options (one button per suggested update) or
+    /// the generic session-scoped "Always allow <tool>" fallback. Choosing one
+    /// fires `RowActions.approve(.allowWithUpdates(...))` with exactly that
+    /// update — the same call ⌘⇧Y drives.
+    @ViewBuilder
+    private var alwaysAllowOptions: some View {
+        if let updates = session.permissionRequest?.suggestedUpdates, !updates.isEmpty {
+            VStack(spacing: 6) {
+                ForEach(Array(updates.enumerated()), id: \.offset) { _, update in
+                    Button(update.displayLabel) {
+                        actions.approve?(.allowWithUpdates([update]))
+                    }
+                    .buttonStyle(IslandActionButtonStyle(kind: .primary, expands: true))
+                }
+            }
+        } else if let toolName = session.permissionRequest?.toolName {
+            Button(lang.t("approval.alwaysAllow", toolName)) {
+                let rule = ClaudePermissionRuleValue(toolName: toolName)
+                let update = ClaudePermissionUpdate.addRules(
+                    destination: .session,
+                    rules: [rule],
+                    behavior: .allow
+                )
+                actions.approve?(.allowWithUpdates([update]))
+            }
+            .buttonStyle(IslandActionButtonStyle(kind: .primary, expands: true))
+        }
+    }
+
+    /// AB-235: shown instead of Deny/Allow when `requiresTerminalApproval` is
+    /// set — the decision can't be round-tripped through the bridge, so the CTA
+    /// jumps to wherever the request lives (terminal pane or `codex://` URL).
+    private var terminalApprovalCTA: some View {
+        Button {
+            actions.jump()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.up.forward.app")
+                    .font(.system(size: 11, weight: .semibold))
+                    .accessibilityHidden(true)
+                Text(lang.t("approval.respondInTerminal"))
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(IslandActionButtonStyle(kind: .primary, expands: true))
+    }
+
+    private var affectedPath: String? {
+        guard let path = session.permissionRequest?.affectedPath.trimmingCharacters(in: .whitespacesAndNewlines),
+              !path.isEmpty else {
+            return nil
+        }
+        return path
+    }
+
+    private var commandPreviewText: String {
+        let preview = session.currentCommandPreviewText?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let preview, !preview.isEmpty {
+            return "$ \(preview)"
+        }
+        return (session.permissionRequest?.summary ?? session.summary)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Computes the diff lazily from the request's captured old/new text
+    /// (AB-235). `nil` when there's nothing to diff or old/new are identical.
+    private var permissionDiffResult: PermissionDiffResult? {
+        guard let source = session.permissionRequest?.fileDiffSource else {
+            return nil
+        }
+        let result = PermissionDiff.compute(oldText: source.oldText, newText: source.newText)
+        return result.isEmpty ? nil : result
+    }
+
+    private func contrastText(_ base: Double) -> Double {
+        tokens.colors.text(base, increaseContrast: increasesContrast)
+    }
+}
+
+/// Wraps the approval card in Poured's pulsing amber glow. Isolated as a
+/// modifier so the 15fps `PulseClock` read invalidates only the glow (not the
+/// buttons inside), and so Reduce Motion — or a missing clock — renders a
+/// static-but-still-loud glow rather than a breathing one (AB-303).
+private struct PouredAmberGlow: ViewModifier {
+    let tint: Color
+    let pulseClock: PulseClock?
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var animates: Bool { !reduceMotion && pulseClock != nil }
+
+    private var pulse: Double {
+        animates ? (pulseClock?.phase ?? 0) : 0
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .shadow(color: tint.opacity(0.34 + pulse * 0.26), radius: 10 + pulse * 8)
+            .shadow(color: tint.opacity(0.18 + pulse * 0.16), radius: 20 + pulse * 10)
+            .onAppear { if animates { pulseClock?.acquire() } }
+            .onDisappear { if animates { pulseClock?.release() } }
     }
 }
 
