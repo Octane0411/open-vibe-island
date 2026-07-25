@@ -339,11 +339,29 @@ struct IslandPanelView: View {
 
     @ViewBuilder
     private func notchContent(availableSize: CGSize) -> some View {
-        // Window is always at opened size — use opened insets unconditionally.
-        let panelShadowHorizontalInset = IslandChromeMetrics.openedShadowHorizontalInset
-        let panelShadowBottomInset = IslandChromeMetrics.openedShadowBottomInset
-        let layoutWidth = max(0, availableSize.width - (panelShadowHorizontalInset * 2))
-        let layoutHeight = max(0, availableSize.height - panelShadowBottomInset)
+        // AB-320: the window is always at opened size, and the headroom the
+        // surface has to leave inside it comes from the *live theme's* metric
+        // tokens — the same `IslandChromeLayout` math `OverlayPanelController`
+        // sized the window with, inverted back out of the geometry we're handed.
+        // Reading the legacy `IslandChromeMetrics` statics here instead meant
+        // any theme with non-Classic insets drew a surface wider than the
+        // controller's hit-test rect.
+        let chromeInsets = IslandChromeLayout.insets(
+            forWindowWidth: availableSize.width,
+            metrics: tokens.metrics
+        )
+        let panelShadowHorizontalInset = chromeInsets.horizontal
+        let panelShadowBottomInset = chromeInsets.bottom
+        // The surface rect the padding below carves out, taken from the same
+        // seam rather than recomputed here — it is `contentRect(in:metrics:)`
+        // (what the controller hit-tests against) with the vertical axis
+        // flipped, so the drawn surface and the interactive area cannot drift.
+        let surfaceRect = IslandChromeLayout.surfaceRect(
+            inWindowOfSize: availableSize,
+            metrics: tokens.metrics
+        )
+        let layoutWidth = surfaceRect.width
+        let layoutHeight = surfaceRect.height
 
         let outerHorizontalPadding: CGFloat = 0
         let outerBottomPadding: CGFloat = 0
@@ -354,7 +372,7 @@ struct IslandPanelView: View {
             islandSurfaceBody(openedWidth: openedWidth, openedHeight: openedHeight)
                 .frame(maxWidth: .infinity, alignment: .top)
         }
-        .scaleEffect(usesOpenedVisualState ? 1 : (isHovering ? IslandChromeMetrics.closedHoverScale : 1), anchor: .top)
+        .scaleEffect(usesOpenedVisualState ? 1 : (isHovering ? tokens.metrics.closedHoverScale : 1), anchor: .top)
         .padding(.horizontal, panelShadowHorizontalInset)
         .padding(.bottom, panelShadowBottomInset)
         .animation(notchTransitionAnimation, value: model.notchStatus)
@@ -557,6 +575,11 @@ struct IslandPanelView: View {
             }
 
             v6ClosedSurface()
+                // AB-320: mirrors the morph path's closed-state shadow so a
+                // theme that declares a closed glow keeps it under Reduce
+                // Motion. Applied only when the theme opts in, so the Classic
+                // (and every other shipped theme's) render tree is untouched.
+                .modifier(OptionalShadow(token: tokens.metrics.closedSurfaceShadow))
                 .opacity(usesOpenedVisualState ? 0 : 1)
                 .allowsHitTesting(!usesOpenedVisualState)
         }
@@ -613,7 +636,12 @@ struct IslandPanelView: View {
             bottomCornerRadius: opened ? tokens.metrics.openedBottomRadius : (closedNotchHeight / 2),
             filletRadius: tokens.metrics.filletRadius
         )
-        let shadow = tokens.metrics.surfaceShadow
+        // AB-320: the closed end of the morph is no longer hard-zeroed. It
+        // interpolates towards whatever the theme declares for the closed state
+        // (`closedSurfaceShadow`), which defaults to an inert same-hue shadow —
+        // byte-identical to the old `opacity/radius/y = 0` behaviour for every
+        // shipped theme, but the seam a colour-glow theme opts into.
+        let shadow = opened ? tokens.metrics.surfaceShadow : tokens.metrics.resolvedClosedSurfaceShadow
         let closedLeadingInset = closedNotchHeight / 2
 
         ZStack(alignment: .top) {
@@ -630,11 +658,7 @@ struct IslandPanelView: View {
             }
             .frame(width: surfaceWidth, height: surfaceHeight)
             .clipShape(shape)
-            .shadow(
-                color: shadow.color.opacity(opened ? shadow.opacity : 0),
-                radius: opened ? shadow.radius : 0,
-                y: opened ? shadow.yOffset : 0
-            )
+            .shadow(color: shadow.resolvedColor, radius: shadow.radius, y: shadow.yOffset)
             .animation(.easeInOut(duration: 0.2), value: reduceTransparency)
 
             ZStack(alignment: .top) {

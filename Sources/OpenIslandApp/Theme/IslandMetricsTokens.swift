@@ -21,13 +21,30 @@ struct IslandShadowToken: Equatable, Sendable {
     }
 }
 
+/// Applies an `IslandShadowToken` only when the theme declares one, leaving the
+/// render tree of themes that don't completely untouched.
+struct OptionalShadow: ViewModifier {
+    var token: IslandShadowToken?
+
+    func body(content: Content) -> some View {
+        if let token {
+            content.shadow(color: token.resolvedColor, radius: token.radius, y: token.yOffset)
+        } else {
+            content
+        }
+    }
+}
+
 /// Geometry half of the island theme token layer.
 ///
 /// Values were lifted verbatim from `NotchShape`'s opened-state radii,
 /// `IslandChromeMetrics`' shadow insets and hover scale, and the opened
 /// surface's shadow in `IslandPanelView` — the last of which now exists only
-/// here (AB-295). The shadow insets and hover scale still have un-migrated
-/// `IslandChromeMetrics` call sites; later tickets route the rest.
+/// here (AB-295). AB-320 routed the remaining `IslandChromeMetrics` call sites
+/// (content padding, hover scale) through these tokens too, so this struct is
+/// now the sole definition of the overlay's chrome geometry; the legacy enum
+/// survives only as the Classic drift pin. `IslandChromeLayout` turns these
+/// values into the actual window / content / hit-test rects.
 struct IslandMetricsTokens: Equatable, Sendable {
     /// Concave top-corner radius of the opened island shape.
     var openedTopRadius: CGFloat
@@ -38,6 +55,17 @@ struct IslandMetricsTokens: Equatable, Sendable {
     /// Drop shadow cast by the opened island surface.
     var surfaceShadow: IslandShadowToken
 
+    /// Optional drop shadow cast by the *closed* pill surface — the seam a
+    /// theme uses to declare a closed-state glow (AB-320).
+    ///
+    /// `nil` — the default, and the value every shipped theme uses — means the
+    /// closed pill casts nothing at all, which is exactly what the morph used
+    /// to hard-code. Opting in also requires the window to have room for the
+    /// glow: size `closedShadowHorizontalInset` / `closedShadowBottomInset` to
+    /// contain it, since `IslandChromeLayout.reservedInsets(for:)` grows the
+    /// overlay window from those tokens.
+    var closedSurfaceShadow: IslandShadowToken? = nil
+
     /// Horizontal padding the opened shadow needs inside the overlay window
     /// so it is not clipped.
     var openedShadowHorizontalInset: CGFloat
@@ -45,10 +73,15 @@ struct IslandMetricsTokens: Equatable, Sendable {
     /// Bottom padding the opened shadow needs inside the overlay window.
     var openedShadowBottomInset: CGFloat
 
-    /// Horizontal padding reserved for the closed pill's shadow.
+    /// Horizontal padding reserved for the closed pill's shadow. Since AB-320
+    /// this is live: `IslandChromeLayout.reservedInsets(for:)` takes the max of
+    /// it and `openedShadowHorizontalInset`, so a theme whose closed glow is
+    /// louder than its opened shadow grows the overlay window rather than
+    /// getting clipped by it.
     var closedShadowHorizontalInset: CGFloat
 
-    /// Bottom padding reserved for the closed pill's shadow.
+    /// Bottom padding reserved for the closed pill's shadow. Same max-with-
+    /// opened treatment as `closedShadowHorizontalInset`.
     var closedShadowBottomInset: CGFloat
 
     /// Scale applied to the closed pill while the pointer hovers it.
@@ -60,6 +93,24 @@ struct IslandMetricsTokens: Equatable, Sendable {
     /// positive value deepens and softens the transition. Ignored by the
     /// top-bar profile, which has no physical notch to merge with.
     var filletRadius: CGFloat
+}
+
+extension IslandMetricsTokens {
+    /// `closedSurfaceShadow`, or an inert shadow when the theme declares none.
+    ///
+    /// The fallback deliberately keeps `surfaceShadow`'s base colour and only
+    /// zeroes opacity/radius/offset, so the open↔closed morph interpolates
+    /// between two shadows of the same hue instead of snapping through a colour
+    /// change. With the default `nil` this reproduces the previously hard-coded
+    /// "closed casts nothing" behaviour exactly.
+    var resolvedClosedSurfaceShadow: IslandShadowToken {
+        closedSurfaceShadow ?? IslandShadowToken(
+            color: surfaceShadow.color,
+            opacity: 0,
+            radius: 0,
+            yOffset: 0
+        )
+    }
 }
 
 // MARK: - Classic

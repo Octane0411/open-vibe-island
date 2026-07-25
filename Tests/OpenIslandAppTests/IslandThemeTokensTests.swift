@@ -179,6 +179,32 @@ struct IslandThemeTokensTests {
         #expect(shadow.resolvedColor == Color.black.opacity(0.36))
     }
 
+    /// AB-320 shape pin: `closedSurfaceShadow` is opt-in. Every shipped theme
+    /// leaves it `nil`, which is what makes the morph's new
+    /// theme-driven closed shadow a no-op for all of them — the previous code
+    /// hard-zeroed the closed end of the interpolation.
+    @MainActor
+    @Test
+    func shippedThemesDeclareNoClosedSurfaceShadow() {
+        for theme in ThemeRegistry.all {
+            #expect(theme.tokens.metrics.closedSurfaceShadow == nil)
+        }
+    }
+
+    /// The fallback the morph interpolates towards when a theme declares no
+    /// closed shadow: same hue as the opened shadow, everything else zeroed —
+    /// exactly the `opacity/radius/y == 0` the morph used to hard-code.
+    @Test
+    func resolvedClosedSurfaceShadowIsInertWithoutOptIn() {
+        let metrics = IslandThemeTokens.classic.metrics
+        let closed = metrics.resolvedClosedSurfaceShadow
+
+        #expect(closed.color == metrics.surfaceShadow.color)
+        #expect(closed.opacity == 0)
+        #expect(closed.radius == 0)
+        #expect(closed.yOffset == 0)
+    }
+
     // MARK: - Motion
 
     /// Literal pin: `openAnimation` / `closeAnimation` / `popAnimation` /

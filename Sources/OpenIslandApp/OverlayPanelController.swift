@@ -469,17 +469,11 @@ final class OverlayPanelController {
         let preferredWidth = screen.safeAreaInsets.top > 0
             ? Self.preferredNotchOpenedPanelWidth
             : Self.preferredTopBarOpenedPanelWidth
-        return max(360, min(preferredWidth, screen.visibleFrame.width - 32))
+        return max(IslandChromeLayout.minimumContentWidth, min(preferredWidth, screen.visibleFrame.width - 32))
     }
 
     func contentRect(for model: AppModel, in bounds: NSRect) -> NSRect? {
-        let insets = panelShadowInsets(for: model)
-        return NSRect(
-            x: bounds.minX + insets.horizontal,
-            y: bounds.minY + insets.bottom,
-            width: max(0, bounds.width - (insets.horizontal * 2)),
-            height: max(0, bounds.height - insets.bottom)
-        )
+        IslandChromeLayout.contentRect(in: bounds, metrics: chromeMetrics(for: model))
     }
 
     nonisolated static func closedSurfaceRect(
@@ -559,39 +553,26 @@ final class OverlayPanelController {
     /// needs to resize.  All visual transitions are driven purely by SwiftUI
     /// inside this fixed-size window.
     private func panelSize(for model: AppModel?, on screen: NSScreen) -> CGSize {
-        let insets = panelShadowInsets(for: model)
-
-        guard let model else {
-            return CGSize(
-                width: openedPanelWidth(for: screen) + Self.openedContentWidthPadding + (insets.horizontal * 2),
-                height: screen.notchSize.height + Self.openedEmptyStateHeight + Self.openedContentBottomPadding + insets.bottom
-            )
-        }
-
-        let panelWidth = openedPanelWidth(for: screen)
-        let contentHeight = openedContentHeight(for: model)
         // Use at least the empty-state height so the window doesn't shrink
         // when sessions come and go while opened.
-        let height = screen.notchSize.height + max(contentHeight, Self.openedEmptyStateHeight) + Self.openedContentBottomPadding + insets.bottom
+        let contentHeight = model.map { max(openedContentHeight(for: $0), Self.openedEmptyStateHeight) }
+            ?? Self.openedEmptyStateHeight
 
-        return CGSize(
-            width: panelWidth + Self.openedContentWidthPadding + (insets.horizontal * 2),
-            height: height
+        return IslandChromeLayout.windowSize(
+            preferredContentWidth: openedPanelWidth(for: screen) + Self.openedContentWidthPadding,
+            contentHeight: screen.notchSize.height + contentHeight + Self.openedContentBottomPadding,
+            metrics: chromeMetrics(for: model),
+            availableWidth: screen.visibleFrame.width
         )
     }
 
-    /// Opened-size shadow insets sourced from the active theme's metric tokens
-    /// (AB-299) — always opened size since the window never shrinks. With
-    /// Classic active `tokens.metrics` equals the legacy `IslandChromeMetrics`
-    /// statics (pinned by `IslandThemeTokensTests`), so the computed panel
-    /// frames are byte-identical to before this ticket. Falls back to Classic
-    /// when there's no model yet (early sizing during panel creation).
-    private func panelShadowInsets(for model: AppModel?) -> (horizontal: CGFloat, bottom: CGFloat) {
-        let metrics = (model?.islandTheme.tokens ?? .classic).metrics
-        return (
-            horizontal: metrics.openedShadowHorizontalInset,
-            bottom: metrics.openedShadowBottomInset
-        )
+    /// Chrome metrics of the active theme (AB-299). With Classic active these
+    /// equal the legacy `IslandChromeMetrics` statics (pinned by
+    /// `IslandThemeTokensTests`), so the computed panel frames are identical to
+    /// before the token layer existed. Falls back to Classic when there's no
+    /// model yet (early sizing during panel creation).
+    private func chromeMetrics(for model: AppModel?) -> IslandMetricsTokens {
+        (model?.islandTheme.tokens ?? .classic).metrics
     }
 
     private func closedPanelWidth(for model: AppModel, on screen: NSScreen) -> CGFloat {
