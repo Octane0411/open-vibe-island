@@ -2877,7 +2877,9 @@ extension MarkdownUI.Theme {
     }
 }
 
-private struct DismissButton: View {
+/// AB-302: internal (not `private`) so the extracted `PouredSessionRow` slot
+/// component can reuse the same trailing-rail dismiss glyph as Classic's row.
+struct DismissButton: View {
     let action: () -> Void
     var lang: LanguageManager = .shared
     @State private var isHovered = false
@@ -2911,7 +2913,10 @@ private struct DismissButton: View {
 /// `<session-id>.jsonl` filename — the row headline already carries the
 /// workspace, and a 36-character UUID read as developer debris. The full
 /// path stays one hover (tooltip) or one context-menu click away.
-private struct TranscriptAffordance: View {
+///
+/// AB-302: internal (not `private`) so `PouredSessionRow` renders the same
+/// Transcript affordance in its expanded body as Classic's row.
+struct TranscriptAffordance: View {
     let path: String
     let workspace: String
     let lang: LanguageManager

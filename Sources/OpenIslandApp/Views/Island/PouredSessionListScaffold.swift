@@ -12,9 +12,9 @@ import OpenIslandCore
 /// the section headers wear a faint frosted wash so hierarchy is carried by
 /// light rather than chrome, matching the rest of the poured slab.
 ///
-/// Rows are still built through the active theme's `sessionRow` factory (poured
-/// keeps Classic's `IslandSessionRow` until AB-302), exactly as the shared
-/// scaffold does — the glass row treatment lands in the next slice.
+/// Rows are built through the active theme's `sessionRow` factory (poured
+/// returns the glass `PouredSessionRow` since AB-302), exactly as the shared
+/// scaffold does.
 struct PouredSessionListScaffold: View {
     /// Cap for the scrollable region — kept in sync with the shared scaffold so
     /// the opened surface's height math is identical across themes.

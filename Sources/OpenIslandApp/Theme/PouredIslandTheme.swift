@@ -17,11 +17,16 @@ import OpenIslandCore
 /// footer (`PouredSessionListScaffold`), and the glass empty / bootstrap /
 /// install states.
 ///
-/// Still Classic for now: the session rows drawn *inside* the list route through
-/// `sessionRow`, which lands in AB-302 (poured 3/5), and the notification card
-/// is out of scope for this slice. Mixed rendering behind the Lab switch is
-/// expected until then. Registered but **not** the default: the default flips in
-/// Poured 5/5.
+/// AB-302 (poured 3/5) re-skins the session rows themselves for glass:
+/// `PouredSessionRow` renders every non-actionable state (collapsed, running,
+/// done, idle/stale) as luminous-glow glass across the list and notification
+/// presentations, and delegates the actionable approval / question / completion
+/// interiors back to Classic's `IslandSessionRow`.
+///
+/// Still Classic for now: those actionable bodies (poured 4/5, AB-303) and the
+/// notification-card chrome. Mixed rendering behind the Lab switch is expected
+/// until then. Registered but **not** the default: the default flips in Poured
+/// 5/5.
 struct PouredIslandTheme: IslandTheme {
 
     // MARK: Identity
@@ -42,9 +47,12 @@ struct PouredIslandTheme: IslandTheme {
 
     // MARK: Capability flags
 
-    /// Rows still render Classic's flat views this slice, which are safe to
-    /// rasterize; the glass row treatment (and any flag flip) lands in AB-301.
-    let rowIsDrawingGroupSafe = true
+    /// `false` since AB-302: `PouredSessionRow` expresses status as luminous
+    /// glow (soft `.shadow` bleeds around the status dot / bar / glyph). A
+    /// `.drawingGroup()` off-screen render would flatten those glows and clip
+    /// them to the row bounds, so the row opts out of the rasterization
+    /// Classic's flat views are safe to take.
+    let rowIsDrawingGroupSafe = false
 
     /// The opened slab is a frosted `NSVisualEffectView` surface, so vibrancy
     /// is on — it falls back to a flat `surfaceInk` fill under Reduce
@@ -119,9 +127,11 @@ struct PouredIslandTheme: IslandTheme {
         )
     }
 
-    // MARK: Slots deferred to later Poured slices (Classic views for now)
-
-    /// Session rows keep Classic's `IslandSessionRow` until AB-302 (poured 3/5).
+    /// The glass session row (AB-302): every non-actionable state — collapsed,
+    /// running, done, idle/stale — is re-skinned as `PouredSessionRow`. The
+    /// approval / question / completion actionable interiors it would wrap stay
+    /// on Classic until AB-303, so `PouredSessionRow` delegates actionable rows
+    /// straight back to `IslandSessionRow`.
     func sessionRow(
         session: AgentSession,
         stateIndicator: IslandSessionStateIndicator,
@@ -138,7 +148,7 @@ struct PouredIslandTheme: IslandTheme {
         pulseClock: PulseClock?
     ) -> AnyView {
         AnyView(
-            IslandSessionRow(
+            PouredSessionRow(
                 session: session,
                 stateIndicator: stateIndicator,
                 completedStaleThreshold: completedStaleThreshold,
@@ -158,7 +168,7 @@ struct PouredIslandTheme: IslandTheme {
 
     /// The glass session-list chrome: summary strip, section headers (all four
     /// grouping modes) and footer. Rows inside it route through `sessionRow`
-    /// above, so they stay Classic until AB-302.
+    /// above — the glass `PouredSessionRow` since AB-302.
     func sessionList(
         sessions: [AgentSession],
         sections: [IslandSessionSection],
