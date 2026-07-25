@@ -845,74 +845,10 @@ struct IslandPanelView: View {
 
     // MARK: - Helpers
 
+    /// AB-322: the derivation moved to `AppModel.islandUsageProviders` so the
+    /// closed pill's usage badge and these header chips read the same windows.
     private var openedUsageProviders: [UsageProviderPresentation] {
-        guard model.islandUsageDisplay == .compact else {
-            return []
-        }
-
-        var providers: [UsageProviderPresentation] = []
-
-        if let snapshot = model.claudeUsageSnapshot,
-           snapshot.isEmpty == false {
-            var windows: [UsageWindowPresentation] = []
-
-            if let fiveHour = snapshot.fiveHour {
-                windows.append(
-                    UsageWindowPresentation(
-                        id: "claude-5h",
-                        label: "5h",
-                        usedPercentage: fiveHour.usedPercentage,
-                        resetsAt: fiveHour.resetsAt
-                    )
-                )
-            }
-
-            if let sevenDay = snapshot.sevenDay {
-                windows.append(
-                    UsageWindowPresentation(
-                        id: "claude-7d",
-                        label: "7d",
-                        usedPercentage: sevenDay.usedPercentage,
-                        resetsAt: sevenDay.resetsAt
-                    )
-                )
-            }
-
-            if windows.isEmpty == false {
-                providers.append(
-                    UsageProviderPresentation(
-                        id: "claude",
-                        title: "Claude",
-                        windows: windows
-                    )
-                )
-            }
-        }
-
-        if model.showCodexUsage,
-           let snapshot = model.codexUsageSnapshot,
-           snapshot.isEmpty == false {
-            let windows = snapshot.windows.map { window in
-                UsageWindowPresentation(
-                    id: "codex-\(window.key)",
-                    label: window.label,
-                    usedPercentage: window.usedPercentage,
-                    resetsAt: window.resetsAt
-                )
-            }
-
-            if windows.isEmpty == false {
-                providers.append(
-                    UsageProviderPresentation(
-                        id: "codex",
-                        title: "Codex",
-                        windows: windows
-                    )
-                )
-            }
-        }
-
-        return providers
+        model.islandUsageProviders
     }
 
 }

@@ -326,6 +326,18 @@
 "island.activity.verb.replying" = "正在回覆";
 "island.activity.verb.working" = "正在處理";
 
+/* Island Panel - Closed pill label vocabulary (AB-322).
+   Only the fixed words localize — workspace names, commands and file names
+   are data and are interpolated raw. */
+"island.closed.label.working" = "%lld 個進行中";
+"island.closed.label.agents" = "%lld 個子代理";
+"island.closed.label.approve" = "批准 %@？";
+"island.closed.label.approvalNeeded" = "需要批准";
+"island.closed.label.answerNeeded" = "需要回答";
+"island.closed.label.done" = "已完成";
+"island.closed.label.interrupted" = "已中斷";
+"island.closed.label.failed" = "已失敗";
+
 /* Island Panel - Session List */
 "island.sessionList.title" = "會話";
 "island.sessionOverview.total" = "總計";
@@ -409,3 +421,10 @@
 "a11y.agentsGrid.idle" = "%lld 個閒置";
 "a11y.agentsGrid.more" = "還有 %lld 個";
 "a11y.agentsGrid.countBadge" = "%lld 個工作階段";
+
+/* AB-322 — closed-pill right slot: attention / task / usage badges */
+"a11y.rightSlot.attention.permission" = "%lld 個等待授權";
+"a11y.rightSlot.attention.question" = "%lld 個等待回答";
+"a11y.rightSlot.tasks" = "已完成 %2$lld 項中的 %1$lld 項";
+"a11y.rightSlot.subagents" = "%lld 個子代理";
+"a11y.rightSlot.usage" = "%1$@ %2$@ 用量 %3$lld%%";

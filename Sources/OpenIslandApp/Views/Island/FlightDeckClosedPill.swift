@@ -167,11 +167,20 @@ private enum FlightDeckRightSlotKey: Hashable {
     case none
     case count(Int)
     case agents(Int)
+    case attention(Int, IslandAttentionKind)
+    case tasks(Int, Int, Int)
+    case usage(Int, String, String)
 
     init(_ content: IslandRightSlotContent) {
         switch content {
         case .count(let n):   self = .count(n)
         case .agents(let cs): self = .agents(cs.count)
+        case .attentionCount(let count, let kind):
+            self = .attention(count, kind)
+        case .taskCounter(let completed, let total, let subagents):
+            self = .tasks(completed, total, subagents)
+        case .usage(let percent, let window, let provider):
+            self = .usage(percent, window, provider)
         }
     }
 }
@@ -208,18 +217,26 @@ struct FlightDeckRightSlotView: View {
 
     var body: some View {
         switch content {
-        case .count(let n):
-            Text("×\(n)")
-                .font(FlightDeckTypography.count)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .foregroundStyle(tokens.colors.paper.opacity(0.72))
-                .accessibilityLabel(lang.t("a11y.agentsGrid.countBadge", n))
+        case .count, .attentionCount, .taskCounter, .usage:
+            // AB-322: the attention / task-counter / usage kinds degrade to this
+            // theme's existing count badge until its own redesign ticket gives
+            // them a rendering. Spelled out rather than `default:` so a future
+            // case breaks the build here instead of quietly becoming a number.
+            countBadge
         case .agents(let cells):
             FlightDeckAgentsGridBody(cells: cells)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(V6RightSlotView.agentsGridAccessibilitySummary(for: cells, lang: lang))
         }
+    }
+
+    private var countBadge: some View {
+        Text("×\(content.fallbackBadgeCount ?? 0)")
+            .font(FlightDeckTypography.count)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .foregroundStyle(tokens.colors.paper.opacity(0.72))
+            .accessibilityLabel(content.fallbackBadgeAccessibilityLabel(lang))
     }
 }
 

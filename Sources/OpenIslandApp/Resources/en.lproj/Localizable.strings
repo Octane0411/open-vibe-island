@@ -326,6 +326,18 @@
 "island.activity.verb.replying" = "Replying";
 "island.activity.verb.working" = "Working";
 
+/* Island Panel - Closed pill label vocabulary (AB-322).
+   Only the fixed words localize — workspace names, commands and file names
+   are data and are interpolated raw. */
+"island.closed.label.working" = "%lld working";
+"island.closed.label.agents" = "%lld agents";
+"island.closed.label.approve" = "Approve %@?";
+"island.closed.label.approvalNeeded" = "Approval needed";
+"island.closed.label.answerNeeded" = "Answer needed";
+"island.closed.label.done" = "Done";
+"island.closed.label.interrupted" = "Interrupted";
+"island.closed.label.failed" = "Failed";
+
 /* Island Panel - Session List */
 "island.sessionList.title" = "Sessions";
 "island.sessionOverview.total" = "total";
@@ -410,3 +422,10 @@
 "a11y.agentsGrid.idle" = "%lld idle";
 "a11y.agentsGrid.more" = "%lld more";
 "a11y.agentsGrid.countBadge" = "%lld sessions";
+
+/* AB-322 — closed-pill right slot: attention / task / usage badges */
+"a11y.rightSlot.attention.permission" = "%lld waiting for approval";
+"a11y.rightSlot.attention.question" = "%lld waiting for an answer";
+"a11y.rightSlot.tasks" = "%1$lld of %2$lld tasks done";
+"a11y.rightSlot.subagents" = "%lld subagents";
+"a11y.rightSlot.usage" = "%1$@ %2$@ usage %3$lld percent";

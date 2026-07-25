@@ -11,7 +11,7 @@ struct AgentsGridRightSlotTests {
     @Test
     func bulkFirstObservationOrdersByHistoricalFirstSeenAt() {
         let model = AppModel()
-        model.islandRightSlot = .agents
+        pinAgentsGridPreference(on: model)
 
         let now = Date(timeIntervalSince1970: 100_000)
         let sessionA = makeSession(id: "A", firstSeenAt: now,                       updatedAt: now.addingTimeInterval(60))
@@ -46,7 +46,7 @@ struct AgentsGridRightSlotTests {
     @Test
     func newlyObservedSessionAlwaysLandsAtTheEndRegardlessOfHistoricalTime() {
         let model = AppModel()
-        model.islandRightSlot = .agents
+        pinAgentsGridPreference(on: model)
 
         let now = Date(timeIntervalSince1970: 200_000)
         let sessionA = makeSession(id: "A", firstSeenAt: now,                       updatedAt: now)
@@ -79,7 +79,7 @@ struct AgentsGridRightSlotTests {
     @Test
     func returningSessionKeepsItsOriginalSlot() {
         let model = AppModel()
-        model.islandRightSlot = .agents
+        pinAgentsGridPreference(on: model)
 
         let now = Date(timeIntervalSince1970: 300_000)
         let sessionA = makeSession(id: "A", firstSeenAt: now,                       updatedAt: now)
@@ -110,7 +110,7 @@ struct AgentsGridRightSlotTests {
     @Test
     func moreThanNineSessionsFoldIntoOverflow() {
         let model = AppModel()
-        model.islandRightSlot = .agents
+        pinAgentsGridPreference(on: model)
         let now = Date(timeIntervalSince1970: 200_000)
 
         var sessions: [AgentSession] = []
@@ -141,7 +141,7 @@ struct AgentsGridRightSlotTests {
     @Test
     func cellStateReflectsSessionPhase() {
         let model = AppModel()
-        model.islandRightSlot = .agents
+        pinAgentsGridPreference(on: model)
         let now = Date(timeIntervalSince1970: 300_000)
 
         let running  = makeSession(id: "r", firstSeenAt: now,                         updatedAt: now, phase: .running)
@@ -156,7 +156,11 @@ struct AgentsGridRightSlotTests {
 
         model.state = SessionState(sessions: [running, waitingA, completed])
 
-        guard case let .agents(cells)? = model.islandClosedRightSlotContent() else {
+        // AB-322: a waiting session now outranks the resting preference in
+        // `islandClosedRightSlotContent()` (it returns `.attentionCount`), so
+        // the grid's own phase→cell mapping is exercised through the preference
+        // derivation. The mapping under test is unchanged.
+        guard case let .agents(cells)? = model.islandPreferredRightSlotContent() else {
             Issue.record("Expected .agents right-slot content")
             return
         }
@@ -176,6 +180,21 @@ struct AgentsGridRightSlotTests {
     }
 
     // MARK: - helpers
+
+    /// Pin the agents-grid preference on *both* display profiles.
+    ///
+    /// `AppModel.islandRightSlot` reads and writes whichever profile
+    /// `activeAppearanceProfile` resolves to, and that resolves from
+    /// `overlayPlacementDiagnostics` — which the overlay fills in
+    /// asynchronously. Assigning `islandRightSlot` once therefore lands in
+    /// whichever bucket happened to be active at that instant, and a placement
+    /// arriving mid-test flipped the getter to the other bucket's default
+    /// `.count`. That race is why these tests failed in rotation; writing both
+    /// buckets makes the preference profile-independent (AB-322).
+    private func pinAgentsGridPreference(on model: AppModel) {
+        model.updateAppearancePreferences(for: .notch) { $0.rightSlot = .agents }
+        model.updateAppearancePreferences(for: .topBar) { $0.rightSlot = .agents }
+    }
 
     private static func cellFor(_ session: AgentSession) -> AgentGridCell {
         let color = Color(hex: session.tool.brandColorHex) ?? .gray

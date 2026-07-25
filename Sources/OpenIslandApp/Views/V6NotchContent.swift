@@ -18,12 +18,77 @@ enum AgentGridCell: Equatable {
 }
 
 /// Concrete payload for the closed island's right slot. The `AppModel`
-/// computes one of these from live session state according to the user's
-/// `islandRightSlot` preference; the view side is agnostic to which
-/// setting produced it.
+/// computes one of these from live session state — the first three cases are
+/// derived from what the agents are actually doing and outrank the user's
+/// `islandRightSlot` preference, the last two *are* that preference
+/// (`IslandRightSlotResolver` owns the ladder). The view side is agnostic to
+/// which rule produced it.
 enum IslandRightSlotContent: Equatable {
     case count(Int)              // "×N" badge
     case agents([AgentGridCell]) // balanced grid, one tile per session
+
+    /// AB-322: how many sessions are blocked on the user, and on what.
+    /// `count` is sessions, never queued requests.
+    case attentionCount(count: Int, kind: IslandAttentionKind)
+
+    /// AB-322: the spotlight session's todo progress (`⏲ 2/5`) and subagent
+    /// fan-out. `subagents` is 0 when the session isn't fanning out.
+    case taskCounter(completed: Int, total: Int, subagents: Int)
+
+    /// AB-322: the worst rate-limit window once it turns critical
+    /// (`IslandRightSlotResolver.usageAlertThreshold`). `percent` is already
+    /// rounded for display.
+    case usage(percent: Int, windowLabel: String, providerTitle: String)
+}
+
+extension IslandRightSlotContent {
+    /// The number a themed "×N" count badge shows for this content.
+    ///
+    /// AB-322 adds three content kinds but only their *selection*; the themed
+    /// visuals (attention pill, `⏲ 2/5` chip, usage dial/tape) land with each
+    /// theme's own ticket. Until then every theme degrades the new kinds to the
+    /// count badge it already draws, and this is the value it renders — never a
+    /// blank slot. `nil` for `.agents`, which has its own grid rendering.
+    var fallbackBadgeCount: Int? {
+        switch self {
+        case .count(let n):
+            return n
+        case .agents:
+            return nil
+        case .attentionCount(let count, _):
+            return count
+        case .taskCounter(_, let total, let subagents):
+            // The todo list is the headline; a pure fan-out falls back to the
+            // number of subagents so the badge is never a bare "×0".
+            return total > 0 ? total : subagents
+        case .usage(let percent, _, _):
+            return percent
+        }
+    }
+
+    /// VoiceOver text for the degraded count-badge rendering. Each kind says
+    /// what it actually is — a stack of unexplained numbers would be worse than
+    /// the shipped "N sessions".
+    func fallbackBadgeAccessibilityLabel(_ lang: LanguageManager) -> String {
+        switch self {
+        case .count(let n):
+            return lang.t("a11y.agentsGrid.countBadge", n)
+        case .agents(let cells):
+            return V6RightSlotView.agentsGridAccessibilitySummary(for: cells, lang: lang)
+        case .attentionCount(let count, let kind):
+            switch kind {
+            case .permission: return lang.t("a11y.rightSlot.attention.permission", count)
+            case .question:   return lang.t("a11y.rightSlot.attention.question", count)
+            }
+        case .taskCounter(let completed, let total, let subagents):
+            if total > 0 {
+                return lang.t("a11y.rightSlot.tasks", completed, total)
+            }
+            return lang.t("a11y.rightSlot.subagents", subagents)
+        case .usage(let percent, let windowLabel, let providerTitle):
+            return lang.t("a11y.rightSlot.usage", providerTitle, windowLabel, percent)
+        }
+    }
 }
 
 // MARK: - Right-slot renderers
@@ -35,18 +100,26 @@ struct V6RightSlotView: View {
 
     var body: some View {
         switch content {
-        case .count(let n):
-            Text("×\(n)")
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .foregroundStyle(tokens.colors.paper.opacity(0.72))
-                .accessibilityLabel(lang.t("a11y.agentsGrid.countBadge", n))
+        case .count, .attentionCount, .taskCounter, .usage:
+            // AB-322: the three new kinds degrade to Classic's count badge until
+            // their themed renderings land. Listed explicitly — no `default:` —
+            // so a future case fails the build here instead of silently
+            // rendering as a number.
+            countBadge
         case .agents(let cells):
             AgentsGridBody(cells: cells)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Self.agentsGridAccessibilitySummary(for: cells, lang: lang))
         }
+    }
+
+    private var countBadge: some View {
+        Text("×\(content.fallbackBadgeCount ?? 0)")
+            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .foregroundStyle(tokens.colors.paper.opacity(0.72))
+            .accessibilityLabel(content.fallbackBadgeAccessibilityLabel(lang))
     }
 
     /// AB-244: the closed-island agents grid packs each session into a tiny
@@ -82,10 +155,10 @@ struct V6RightSlotView: View {
     /// without HStack compression forcing a wrap.
     static func intrinsicWidth(of content: IslandRightSlotContent) -> CGFloat {
         switch content {
-        case .count(let n):
-            let digits = Double(max(1, String(n).count))
-            // "×" + digits at 11pt mono ≈ 7.2pt/char.
-            return CGFloat(14.4 + max(0.0, digits - 1.0) * 7.2)
+        case .count, .attentionCount, .taskCounter, .usage:
+            // All four render as the "×N" badge today, so they share its width
+            // math — the pill reserves room for the number it will actually draw.
+            return countBadgeWidth(content.fallbackBadgeCount ?? 0)
         case .agents(let cells):
             let n = cells.count
             guard n > 0 else { return 0 }
@@ -94,6 +167,13 @@ struct V6RightSlotView: View {
             let geom = cellGeometry(rowCount: rows.count)
             return CGFloat(maxRow) * geom.cell + CGFloat(max(0, maxRow - 1)) * geom.gap
         }
+    }
+
+    /// Width of the "×N" badge for an N-digit number.
+    static func countBadgeWidth(_ n: Int) -> CGFloat {
+        let digits = Double(max(1, String(n).count))
+        // "×" + digits at 11pt mono ≈ 7.2pt/char.
+        return CGFloat(14.4 + max(0.0, digits - 1.0) * 7.2)
     }
 
     // MARK: Balanced layout algorithm
@@ -495,14 +575,26 @@ enum V6ClosedLayout: Equatable {
     case macbook
 }
 
+/// Identity of the right slot for the pill's layout animation — the *shape* of
+/// the content, not its rendering. Two payloads that hash equal must never
+/// require a re-layout.
 private enum RightSlotKey: Hashable {
     case count(Int)
     case agents(Int)
+    case attention(Int, IslandAttentionKind)
+    case tasks(Int, Int, Int)
+    case usage(Int, String, String)
 
     init(_ content: IslandRightSlotContent) {
         switch content {
         case .count(let n):    self = .count(n)
         case .agents(let cs):  self = .agents(cs.count)
+        case .attentionCount(let count, let kind):
+            self = .attention(count, kind)
+        case .taskCounter(let completed, let total, let subagents):
+            self = .tasks(completed, total, subagents)
+        case .usage(let percent, let window, let provider):
+            self = .usage(percent, window, provider)
         }
     }
 }
