@@ -254,6 +254,7 @@
 "island.flightDeck.column.model" = "Model";
 "island.flightDeck.column.app" = "App";
 "island.flightDeck.column.time" = "Time";
+"island.flightDeck.row.jump" = "Jump";
 "island.flightDeck.footer.bridgeLink" = "Bridge Link";
 "island.flightDeck.footer.link" = "Link";
 "island.flightDeck.footer.noLink" = "No Link";

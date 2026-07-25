@@ -254,6 +254,7 @@
 "island.flightDeck.column.model" = "模型";
 "island.flightDeck.column.app" = "應用程式";
 "island.flightDeck.column.time" = "時間";
+"island.flightDeck.row.jump" = "跳轉";
 "island.flightDeck.footer.bridgeLink" = "橋接連結";
 "island.flightDeck.footer.link" = "已連線";
 "island.flightDeck.footer.noLink" = "未連線";

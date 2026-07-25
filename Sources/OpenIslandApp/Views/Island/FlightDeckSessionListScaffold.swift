@@ -18,10 +18,11 @@ import OpenIslandCore
 /// CJK so 中文 never letterspaces into illegibility.
 ///
 /// Rows are built through the active theme's `sessionRow` factory (the shared
-/// scaffold's exact path), so the Flight Deck list inherits whatever row the
-/// theme supplies — Classic's flat row for the Flight Deck shell until AB-313
-/// restyles the rows onto the SESSION / MODEL / APP / TIME column grid. Until
-/// then the column-caption strip's alignment is a deliberate placeholder.
+/// scaffold's exact path), so the Flight Deck list inherits the theme's
+/// `FlightDeckSessionRow` (AB-313): every non-actionable row carries a status
+/// lane on the SESSION / MODEL / APP / TIME column grid, registered directly
+/// under this strip's captions. Actionable rows still route to Classic through
+/// the row's thin seam until AB-314.
 struct FlightDeckSessionListScaffold: View {
     /// Cap for the scrollable region — kept in sync with the shared scaffold so
     /// the opened surface's height math is identical across themes.
@@ -177,21 +178,30 @@ struct FlightDeckSessionListScaffold: View {
 
     // MARK: - Column-caption strip
 
-    /// The SESSION / MODEL / APP / TIME column captions over the list. Rows land
-    /// on this grid in AB-313; until then the column widths are a deliberate
-    /// placeholder (the leading SESSION caption flexes, the trailing three sit at
-    /// fixed avionics-legend widths) so the strip reads correctly even though the
-    /// Classic-shell rows below it don't yet align to it.
+    /// The SESSION / MODEL / APP / TIME column captions over the list. As of
+    /// AB-313 the captions and the rows share one geometry: the SESSION caption
+    /// flexes over the flexing headline, and the MODEL / APP / TIME captions sit
+    /// at the exact `FlightDeckSessionRowGrid` lane widths (with the chevron and
+    /// dismiss control lanes reserved as clear trailing space) so each caption
+    /// lands directly over its cell across every row.
     private var columnCaptionStrip: some View {
         HStack(spacing: 8) {
             columnCaption(lang.t("island.flightDeck.column.session"))
                 .frame(maxWidth: .infinity, alignment: .leading)
-            columnCaption(lang.t("island.flightDeck.column.model"))
-                .frame(width: 64, alignment: .leading)
-            columnCaption(lang.t("island.flightDeck.column.app"))
-                .frame(width: 52, alignment: .leading)
-            columnCaption(lang.t("island.flightDeck.column.time"))
-                .frame(width: 44, alignment: .trailing)
+
+            HStack(spacing: FlightDeckSessionRowGrid.columnGap) {
+                columnCaption(lang.t("island.flightDeck.column.model"))
+                    .frame(width: FlightDeckSessionRowGrid.modelColumnWidth, alignment: .leading)
+                columnCaption(lang.t("island.flightDeck.column.app"))
+                    .frame(width: FlightDeckSessionRowGrid.appColumnWidth, alignment: .leading)
+                columnCaption(lang.t("island.flightDeck.column.time"))
+                    .frame(width: FlightDeckSessionRowGrid.timeColumnWidth, alignment: .trailing)
+                // Reserve the chevron + dismiss control lanes so the TIME caption
+                // registers over the row's TIME cell, which sits left of them.
+                Color.clear.frame(width: FlightDeckSessionRowGrid.detailToggleColumnWidth, height: 1)
+                Color.clear.frame(width: FlightDeckSessionRowGrid.dismissColumnWidth, height: 1)
+            }
+            .fixedSize(horizontal: true, vertical: false)
         }
         .padding(.leading, sideInset)
         .padding(.trailing, sideInset)

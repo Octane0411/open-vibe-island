@@ -187,10 +187,13 @@ struct FlightDeckTheme: IslandTheme {
         )
     }
 
-    // MARK: Slots reused from Classic until AB-313 / AB-314 restyle them
+    // MARK: Flight Deck session row (AB-313)
 
-    /// Session row — reuses Classic's shared row until AB-313 / AB-314 restyle
-    /// the tabular and actionable states.
+    /// Session row — the annunciator re-skin (`FlightDeckSessionRow`): every
+    /// non-actionable row carries a colored status lane on the SESSION / MODEL /
+    /// APP / TIME column grid. Actionable rows (MASTER CAUTION / question /
+    /// completion) still route to Classic through the row's thin seam until
+    /// AB-314 restyles those interiors.
     func sessionRow(
         session: AgentSession,
         stateIndicator: IslandSessionStateIndicator,
@@ -207,7 +210,7 @@ struct FlightDeckTheme: IslandTheme {
         pulseClock: PulseClock?
     ) -> AnyView {
         AnyView(
-            IslandSessionRow(
+            FlightDeckSessionRow(
                 session: session,
                 stateIndicator: stateIndicator,
                 completedStaleThreshold: completedStaleThreshold,
