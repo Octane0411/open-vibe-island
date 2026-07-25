@@ -227,6 +227,14 @@
 "island.recentSessions" = "最近的工作階段將保留在這裡，直到終端機重新開啟";
 "island.hint.installHooks" = "尚未安裝任何代理 hook，工作階段不會觸發事件 · 點擊設定";
 
+/* Island Panel - Instrument theme (AB-308) */
+"island.instrument.footer.monitoring" = "監控中";
+"island.instrument.footer.standby" = "待命";
+"island.instrument.footer.sessions" = "%lld 個工作階段";
+"island.instrument.state.noSignal" = "無訊號";
+"island.instrument.state.probing" = "探測中";
+"island.instrument.hint.setup" = "設定";
+
 /* Island Panel - Session List */
 "island.sessionList.title" = "會話";
 "island.sessionOverview.total" = "總計";

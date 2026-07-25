@@ -227,6 +227,14 @@
 "island.recentSessions" = "最近的会话将保留在这里，直到终端重新打开";
 "island.hint.installHooks" = "尚未安装任何代理 hook，会话不会触发事件 · 点击配置";
 
+/* Island Panel - Instrument theme (AB-308) */
+"island.instrument.footer.monitoring" = "监控中";
+"island.instrument.footer.standby" = "待命";
+"island.instrument.footer.sessions" = "%lld 个会话";
+"island.instrument.state.noSignal" = "无信号";
+"island.instrument.state.probing" = "探测中";
+"island.instrument.hint.setup" = "配置";
+
 /* Island Panel - Session List */
 "island.sessionList.title" = "会话";
 "island.sessionOverview.total" = "总计";

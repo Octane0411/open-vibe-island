@@ -143,4 +143,63 @@ struct InstrumentThemeTests {
         // The shell reuses Classic's flat rows, which are safe to rasterize.
         #expect(InstrumentTheme().rowIsDrawingGroupSafe == true)
     }
+
+    // MARK: - Tick-meter usage colour + tag bands (AB-308 AC #1)
+
+    @Test
+    func tickMeterColoursBandOnTheExactUsageCutoffs() {
+        // `>= 90` red, `70..<90` orange, else green — the same cut-offs the app
+        // ships in `IslandUsageSummary`; the theme must not drift.
+        #expect(InstrumentUsageWindowMeter.usageColor(for: 99) == Color.red.opacity(0.95))
+        #expect(InstrumentUsageWindowMeter.usageColor(for: 90) == Color.red.opacity(0.95))
+        #expect(InstrumentUsageWindowMeter.usageColor(for: 89.9) == Color.orange.opacity(0.95))
+        #expect(InstrumentUsageWindowMeter.usageColor(for: 70) == Color.orange.opacity(0.95))
+        #expect(InstrumentUsageWindowMeter.usageColor(for: 69.9) == Color.green.opacity(0.95))
+        #expect(InstrumentUsageWindowMeter.usageColor(for: 7) == Color.green.opacity(0.95))
+    }
+
+    @Test
+    func tickMeterTagsBandOnTheSameCutoffsAsTheColour() {
+        // A red meter always reads CRIT, an orange one HIGH, a green one OK.
+        #expect(InstrumentUsageWindowMeter.tag(for: 99) == .crit)
+        #expect(InstrumentUsageWindowMeter.tag(for: 90) == .crit)
+        #expect(InstrumentUsageWindowMeter.tag(for: 89.9) == .high)
+        #expect(InstrumentUsageWindowMeter.tag(for: 70) == .high)
+        #expect(InstrumentUsageWindowMeter.tag(for: 69.9) == .ok)
+        #expect(InstrumentUsageWindowMeter.tag(for: 0) == .ok)
+    }
+
+    // MARK: - Uppercase micro-labels neutralize for CJK (AB-308 AC #5)
+
+    @Test
+    func uppercaseMicroLabelsNeutralizeForCJK() {
+        let originalLanguage = UserDefaults.standard.string(forKey: "appLanguage")
+        defer {
+            if let originalLanguage {
+                UserDefaults.standard.set(originalLanguage, forKey: "appLanguage")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "appLanguage")
+            }
+        }
+
+        let en = LanguageManager()
+        en.language = .en
+        // Latin: uppercased and letterspaced — the precision instrument look.
+        #expect(en.usesCJKScript == false)
+        #expect(InstrumentText.caps("sessions", lang: en) == "SESSIONS")
+        #expect(InstrumentText.tracking(1.4, lang: en) == 1.4)
+
+        // CJK: passed through uncased and untracked so Han glyphs (which have no
+        // case) are never pried apart into illegibility.
+        let zhHans = LanguageManager()
+        zhHans.language = .zhHans
+        #expect(zhHans.usesCJKScript == true)
+        #expect(InstrumentText.caps("会话", lang: zhHans) == "会话")
+        #expect(InstrumentText.tracking(1.4, lang: zhHans) == 0)
+
+        let zhHant = LanguageManager()
+        zhHant.language = .zhHant
+        #expect(zhHant.usesCJKScript == true)
+        #expect(InstrumentText.tracking(0.9, lang: zhHant) == 0)
+    }
 }

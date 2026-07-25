@@ -41,6 +41,27 @@ enum InstrumentTypography {
     static let body = Font.system(size: bodySize, weight: .regular, design: .monospaced)
 }
 
+/// Script-aware helpers for Instrument's uppercase, letterspaced micro-labels.
+///
+/// The instrument idiom writes section captions and status tags as
+/// `UPPERCASE` with a touch of `.tracking()`. That is precision on Latin text
+/// and illegible noise on CJK (Han has no case, and letterspacing pries the
+/// glyphs apart). Every Instrument micro-label routes its casing and tracking
+/// through these two helpers so the neutralization lives in one place and is
+/// pinned by `InstrumentThemeTests` (AB-308 §5).
+enum InstrumentText {
+    /// Uppercases Latin strings; passes CJK through unchanged.
+    static func caps(_ string: String, lang: LanguageManager) -> String {
+        lang.usesCJKScript ? string : string.uppercased()
+    }
+
+    /// The letterspacing for an uppercase micro-label — `base` on Latin,
+    /// neutralized to `0` on CJK.
+    static func tracking(_ base: CGFloat, lang: LanguageManager) -> CGFloat {
+        lang.usesCJKScript ? 0 : base
+    }
+}
+
 /// "Instrument" — a precision monospace console theme, built up across four
 /// slices.
 ///
@@ -48,9 +69,16 @@ enum InstrumentTypography {
 /// palette that spends colour only on status, squared-off flat panel with no
 /// vibrancy or fillet, crisp mechanical motion), the mono typography roles, the
 /// theme's own squared-tick grid geometry, and the flat closed pill
-/// (`InstrumentClosedPill`). The opened chrome regions, session rows, header and
-/// list states reuse Classic's shared slot views for now; later slices
-/// (AB-308…) restyle them into the instrument-panel language.
+/// (`InstrumentClosedPill`).
+///
+/// AB-308 (instrument 2/4) restyles the opened chrome: the header renders usage
+/// as segmented tick-meters with numeric readouts and CRIT / HIGH / OK tags
+/// (`InstrumentHeaderControls` / `InstrumentUsageSummary`), the session-list
+/// summary becomes an uppercase state-distribution strip with section headers for
+/// all four grouping modes and a status-line footer wired to the live session
+/// count (`InstrumentSessionListScaffold`), and the empty / bootstrap / install
+/// states move into squared hairline panels. The session rows still reuse
+/// Classic's flat views until AB-309 restyles them.
 ///
 /// Registered but **not** the default — Poured Island stays the product's face.
 struct InstrumentTheme: IslandTheme {
@@ -124,8 +152,11 @@ struct InstrumentTheme: IslandTheme {
         )
     }
 
-    // MARK: Slots reused from Classic until later slices restyle them (AB-308…)
+    // MARK: Instrument opened header + tick-meter usage (AB-308)
 
+    /// The opened header: usage as segmented tick-meters with numeric readouts
+    /// and CRIT / HIGH / OK tags, and flat squared instrument control buttons, on
+    /// the shared notch-split / single-lane layout.
     func openedHeader(
         providers: [UsageProviderPresentation],
         usesNotchAwareLayout: Bool,
@@ -137,7 +168,7 @@ struct InstrumentTheme: IslandTheme {
         onQuit: @escaping () -> Void
     ) -> AnyView {
         AnyView(
-            IslandHeaderControls(
+            InstrumentHeaderControls(
                 providers: providers,
                 usesNotchAwareLayout: usesNotchAwareLayout,
                 targetScreen: targetScreen,
@@ -149,6 +180,8 @@ struct InstrumentTheme: IslandTheme {
             )
         )
     }
+
+    // MARK: Slots reused from Classic until later slices restyle them (AB-309…)
 
     func sessionRow(
         session: AgentSession,
@@ -184,6 +217,11 @@ struct InstrumentTheme: IslandTheme {
         )
     }
 
+    /// The instrument session-list chrome (AB-308): the uppercase state-
+    /// distribution summary strip, the section headers for all four grouping
+    /// modes, and a status-line footer wired to the live session count. Rows
+    /// inside it route through `sessionRow` above — Classic's flat row for the
+    /// shell until AB-309 restyles the rows themselves.
     func sessionList(
         sessions: [AgentSession],
         sections: [IslandSessionSection],
@@ -199,7 +237,7 @@ struct InstrumentTheme: IslandTheme {
         makeActions: @escaping (AgentSession) -> RowActions
     ) -> AnyView {
         AnyView(
-            IslandSessionListScaffold(
+            InstrumentSessionListScaffold(
                 sessions: sessions,
                 sections: sections,
                 group: group,
@@ -252,15 +290,17 @@ struct InstrumentTheme: IslandTheme {
         )
     }
 
+    // MARK: Instrument empty / bootstrap / install states (AB-308)
+
     func emptyState(lang: LanguageManager, hasRecentSessions: Bool) -> AnyView {
-        AnyView(IslandEmptyState(lang: lang, hasRecentSessions: hasRecentSessions))
+        AnyView(InstrumentEmptyState(lang: lang, hasRecentSessions: hasRecentSessions))
     }
 
     func bootstrapPlaceholder(lang: LanguageManager) -> AnyView {
-        AnyView(IslandBootstrapPlaceholder(lang: lang))
+        AnyView(InstrumentBootstrapPlaceholder(lang: lang))
     }
 
     func installHint(lang: LanguageManager, onTap: @escaping () -> Void) -> AnyView {
-        AnyView(IslandInstallHooksHint(lang: lang, onTap: onTap))
+        AnyView(InstrumentInstallHooksHint(lang: lang, onTap: onTap))
     }
 }
