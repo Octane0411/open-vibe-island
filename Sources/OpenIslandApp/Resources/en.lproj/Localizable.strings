@@ -271,6 +271,14 @@
 "island.flightDeck.approval.allow" = "Allow";
 "island.flightDeck.approval.deny" = "Deny";
 
+/* Island Panel - Annual theme (AB-316) */
+"island.annual.usage.healthy" = "Healthy";
+"island.annual.usage.elevated" = "Elevated";
+"island.annual.usage.critical" = "Critical";
+"island.annual.state.empty" = "No sessions";
+"island.annual.state.loading" = "Loading";
+"island.annual.hint.setup" = "Setup";
+
 /* Island Panel - Session List */
 "island.sessionList.title" = "Sessions";
 "island.sessionOverview.total" = "total";

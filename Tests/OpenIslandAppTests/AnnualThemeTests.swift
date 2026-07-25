@@ -223,6 +223,86 @@ struct AnnualThemeTests {
         #expect(AnnualText.tracking(0.9, lang: zhHant) == 0)
     }
 
+    // MARK: - Usage verdict bands + accent discipline (AB-316 AC #1 · #6 · #7)
+
+    /// The verdict bands mirror the exact `usageColor` cut-offs the app ships
+    /// (`>= 90` critical, `70..<90` elevated, else healthy) — pinned at both
+    /// boundaries so Annual can't drift from the shared usage semantics. The
+    /// screenshot points 99% (critical) and 7% (healthy) are covered by the
+    /// endpoints.
+    @Test
+    func usageVerdictBandsMatchTheUsageColorCutoffs() {
+        #expect(AnnualUsageVerdict.verdict(for: 99) == .critical)
+        #expect(AnnualUsageVerdict.verdict(for: 90) == .critical)
+        #expect(AnnualUsageVerdict.verdict(for: 89.9) == .elevated)
+        #expect(AnnualUsageVerdict.verdict(for: 70) == .elevated)
+        #expect(AnnualUsageVerdict.verdict(for: 69.9) == .healthy)
+        #expect(AnnualUsageVerdict.verdict(for: 7) == .healthy)
+        #expect(AnnualUsageVerdict.verdict(for: 0) == .healthy)
+    }
+
+    /// Accent discipline on the usage surface: **only** the critical verdict is
+    /// allowed to spend the accent (on its figure, its verdict word and its meter
+    /// fill). Elevated and healthy are calm, so with healthy usage the usage lane
+    /// carries zero accent — the code-level half of AC #7 (the pixel screenshot is
+    /// flagged manual in the PR).
+    @Test
+    func onlyTheCriticalUsageVerdictSpendsTheAccent() {
+        #expect(AnnualUsageVerdict.critical.isCritical == true)
+        #expect(AnnualUsageVerdict.elevated.isCritical == false)
+        #expect(AnnualUsageVerdict.healthy.isCritical == false)
+        // The three bands as they resolve from a percentage: only the 90+ band is
+        // loud, so 7% (healthy) and 75% (elevated) stay accent-free.
+        #expect(AnnualUsageVerdict.verdict(for: 7).isCritical == false)
+        #expect(AnnualUsageVerdict.verdict(for: 75).isCritical == false)
+        #expect(AnnualUsageVerdict.verdict(for: 95).isCritical == true)
+    }
+
+    // MARK: - Header controls (AB-316 AC #2)
+
+    @Test
+    func headerControlHitTargetsAreAtLeastTwentyFourPoints() {
+        // The quiet glyph controls carry ≥24×24pt hit areas.
+        #expect(AnnualHeaderControls.headerControlButtonSize >= 24)
+    }
+
+    // MARK: - AB-316 strings localize (AC #1 · #4)
+
+    /// Every new AB-316 string (usage verdicts, the pre-list eyebrows, the setup
+    /// tag) resolves to a real translation — not the bare key — in English and
+    /// both Chinese scripts, so the `AnnualText` neutralization has real localized
+    /// copy to render naturally for CJK.
+    @Test
+    func annualOpenedChromeStringsLocalizeInEveryLanguage() {
+        let originalLanguage = UserDefaults.standard.string(forKey: "appLanguage")
+        defer {
+            if let originalLanguage {
+                UserDefaults.standard.set(originalLanguage, forKey: "appLanguage")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "appLanguage")
+            }
+        }
+
+        let keys = [
+            "island.annual.usage.healthy",
+            "island.annual.usage.elevated",
+            "island.annual.usage.critical",
+            "island.annual.state.empty",
+            "island.annual.state.loading",
+            "island.annual.hint.setup",
+        ]
+
+        for language in [LanguageManager.AppLanguage.en, .zhHans, .zhHant] {
+            let manager = LanguageManager()
+            manager.language = language
+            for key in keys {
+                let resolved = manager.t(key)
+                #expect(resolved != key, "\(key) is unlocalized in \(language)")
+                #expect(!resolved.isEmpty)
+            }
+        }
+    }
+
     // MARK: - Theme name / descriptor localize (AC #1)
 
     @Test

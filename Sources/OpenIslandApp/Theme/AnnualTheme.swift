@@ -28,21 +28,38 @@ enum AnnualTypography {
     static let labelSize: CGFloat = 11
     static let countSize: CGFloat = 11
     static let bodySize: CGFloat = 12
-    /// The oversized light-numeral role — the editorial hero figure (a usage
-    /// percentage, a session count). Large and set in a light weight so the
-    /// figure reads as a display numeral rather than body text; consumed by the
-    /// header in AB-316.
+    /// The oversized light-numeral role — the editorial hero figure (a session
+    /// count in the summary). Large and set in a light weight so the figure reads
+    /// as a display numeral rather than body text; spent by the sessions summary
+    /// in AB-316.
     static let numeralSize: CGFloat = 34
+    /// A scaled light numeral for the opened header's usage percentages. The
+    /// header is height-capped to the physical notch (`closedNotchHeight`), so the
+    /// full 34pt hero cannot fit there — the header spends this fitted light
+    /// numeral, still oversized against the 10–11pt labels beside it, while the
+    /// full `numeral` role stays the summary's hero figure.
+    static let headerNumeralSize: CGFloat = 20
 
     /// Every readable role's point size — the vector `AnnualThemeTests` asserts
-    /// stays at or above `floor` (the oversized numeral included: it is large,
+    /// stays at or above `floor` (the oversized numerals included: they are large,
     /// never small).
     static var readableRoleSizes: [CGFloat] {
-        [microLabelSize, labelSize, countSize, bodySize, numeralSize]
+        [microLabelSize, labelSize, countSize, bodySize, headerNumeralSize, numeralSize]
     }
 
     /// Lowercase letterspaced micro-labels (section captions, unit tags).
     static let microLabel = Font.system(size: microLabelSize, weight: .medium, design: .monospaced)
+
+    /// The small-caps eyebrow role — verdicts, state labels and section titles set
+    /// in true small capitals. Built on the `.default` design (whose SF face
+    /// carries the small-caps OpenType feature) rather than the mono grid, so the
+    /// caps actually render as small capitals; fed lowercased Latin through
+    /// `AnnualText.lower`, it renders Latin as small caps and passes CJK through
+    /// untouched (the feature is a no-op on Han).
+    static let smallCaps = Font.system(size: microLabelSize, weight: .medium, design: .default).smallCaps()
+
+    /// A slightly larger small-caps role for the summary's state labels.
+    static let smallCapsLabel = Font.system(size: labelSize, weight: .medium, design: .default).smallCaps()
 
     /// Standard quiet mono label (closed-pill labels, chip text).
     static let label = Font.system(size: labelSize, weight: .regular, design: .monospaced)
@@ -55,6 +72,10 @@ enum AnnualTypography {
 
     /// The oversized light numeral, built at `numeralSize` in a light weight.
     static let numeral = Font.system(size: numeralSize, weight: .light, design: .default)
+
+    /// The header's fitted light numeral (`headerNumeralSize`), for the usage
+    /// percentages that must sit inside the notch-height header row.
+    static let headerNumeral = Font.system(size: headerNumeralSize, weight: .light, design: .default)
 }
 
 /// Hairline weights for the Annual theme.
@@ -113,13 +134,23 @@ enum AnnualText {
 /// through three dot grammars (filled = running, ring = done, dim = idle,
 /// pulsing accent = attention).
 ///
-/// Later slices restyle the opened surfaces — the oversized-numeral header,
-/// summary and list states (AB-316), the session rows (AB-317), and the
-/// actionable interiors (AB-318) — into the same editorial idiom. Until they do,
-/// each un-restyled slot falls back to the shared Classic component through the
-/// factories below, exactly like the other themes' first slice did; those
-/// fallbacks already read the Annual tokens from the environment, so they inherit
-/// the warm ground, the calm palette and the stronger hairlines for free.
+/// AB-316 (annual 2/4) restyles the opened chrome into the editorial idiom: the
+/// header renders usage as fitted light numerals with small-caps
+/// healthy / elevated / critical verdicts and 2px hairline meters, and swaps the
+/// controls to quiet glyph buttons (`AnnualHeaderControls` / `AnnualUsageSummary`);
+/// the sessions summary becomes a large light hero numeral over small-caps
+/// state-label counts with hairline-ruled section headers for all four grouping
+/// modes and a quiet footer (`AnnualSessionListScaffold`); and the empty /
+/// bootstrap / install states are set purely typographically with no boxes or
+/// pills (`AnnualEmptyState` / `AnnualBootstrapPlaceholder` /
+/// `AnnualInstallHooksHint`). The accent still appears only on the critical usage
+/// figure and on genuine attention states, never on a calm surface.
+///
+/// Later slices restyle the session rows (AB-317) and the actionable interiors
+/// (AB-318) into the same idiom. Until they do, those slots fall back to the
+/// shared Classic component through the factories below; the fallbacks already
+/// read the Annual tokens from the environment, so they inherit the warm ground,
+/// the calm palette and the stronger hairlines for free.
 ///
 /// Registered but **not** the default — Poured Island stays the product's face.
 struct AnnualTheme: IslandTheme {
@@ -193,11 +224,11 @@ struct AnnualTheme: IslandTheme {
         )
     }
 
-    // MARK: Fallback slots (restyled in AB-316 · AB-317 · AB-318)
+    // MARK: Annual opened header + usage numerals (AB-316)
 
-    /// Opened header — falls back to the shared control row until AB-316 brings
-    /// the oversized-numeral usage header. It already reads the Annual tokens, so
-    /// it renders on the warm ground with the calm palette.
+    /// The opened header: usage as fitted light numerals with small-caps
+    /// verdicts and 2px hairline meters, and quiet glyph control buttons, on the
+    /// shared notch-split / single-lane layout.
     func openedHeader(
         providers: [UsageProviderPresentation],
         usesNotchAwareLayout: Bool,
@@ -209,7 +240,7 @@ struct AnnualTheme: IslandTheme {
         onQuit: @escaping () -> Void
     ) -> AnyView {
         AnyView(
-            IslandHeaderControls(
+            AnnualHeaderControls(
                 providers: providers,
                 usesNotchAwareLayout: usesNotchAwareLayout,
                 targetScreen: targetScreen,
@@ -221,6 +252,8 @@ struct AnnualTheme: IslandTheme {
             )
         )
     }
+
+    // MARK: Fallback slots (restyled in AB-317 · AB-318)
 
     /// Session row — falls back to the shared row until AB-317 typesets the rows
     /// on Annual's editorial dot grammar.
@@ -258,8 +291,11 @@ struct AnnualTheme: IslandTheme {
         )
     }
 
-    /// Session list — falls back to the shared scaffold until AB-316 brings the
-    /// editorial summary and section structure.
+    /// Session list (AB-316) — the large-numeral sessions summary, the
+    /// hairline-ruled small-caps section headers for all four grouping modes, the
+    /// scrollable list of rows, and a quiet footer. Rows inside it route through
+    /// `sessionRow` above — Classic's flat row until AB-317 typesets the editorial
+    /// rows.
     func sessionList(
         sessions: [AgentSession],
         sections: [IslandSessionSection],
@@ -275,7 +311,7 @@ struct AnnualTheme: IslandTheme {
         makeActions: @escaping (AgentSession) -> RowActions
     ) -> AnyView {
         AnyView(
-            IslandSessionListScaffold(
+            AnnualSessionListScaffold(
                 sessions: sessions,
                 sections: sections,
                 group: group,
@@ -328,15 +364,17 @@ struct AnnualTheme: IslandTheme {
         )
     }
 
+    // MARK: Annual empty / bootstrap / install states (AB-316)
+
     func emptyState(lang: LanguageManager, hasRecentSessions: Bool) -> AnyView {
-        AnyView(IslandEmptyState(lang: lang, hasRecentSessions: hasRecentSessions))
+        AnyView(AnnualEmptyState(lang: lang, hasRecentSessions: hasRecentSessions))
     }
 
     func bootstrapPlaceholder(lang: LanguageManager) -> AnyView {
-        AnyView(IslandBootstrapPlaceholder(lang: lang))
+        AnyView(AnnualBootstrapPlaceholder(lang: lang))
     }
 
     func installHint(lang: LanguageManager, onTap: @escaping () -> Void) -> AnyView {
-        AnyView(IslandInstallHooksHint(lang: lang, onTap: onTap))
+        AnyView(AnnualInstallHooksHint(lang: lang, onTap: onTap))
     }
 }

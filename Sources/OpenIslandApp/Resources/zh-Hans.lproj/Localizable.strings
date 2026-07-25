@@ -271,6 +271,14 @@
 "island.flightDeck.approval.allow" = "允许";
 "island.flightDeck.approval.deny" = "拒绝";
 
+/* Island Panel - Annual theme (AB-316) */
+"island.annual.usage.healthy" = "正常";
+"island.annual.usage.elevated" = "偏高";
+"island.annual.usage.critical" = "临界";
+"island.annual.state.empty" = "暂无会话";
+"island.annual.state.loading" = "加载中";
+"island.annual.hint.setup" = "配置";
+
 /* Island Panel - Session List */
 "island.sessionList.title" = "会话";
 "island.sessionOverview.total" = "总计";
