@@ -9,12 +9,14 @@ import Foundation
 @MainActor
 enum ThemeRegistry {
 
-    /// Every theme, in picker order. Classic is first, so it's the default.
-    /// Poured Island is registered and selectable but not the default — the
-    /// default flips to it in the final Poured slice (AB-300, poured 5/5).
+    /// Every theme, in picker order. Poured Island is first, so it's the
+    /// default — the final Poured slice (AB-304, poured 5/5) flipped the default
+    /// to it, making it the product's face. Classic stays registered and
+    /// selectable (second in the picker) for anyone who prefers the original
+    /// ink-and-paper look.
     static let all: [any IslandTheme] = [
-        ClassicTheme(),
         PouredIslandTheme(),
+        ClassicTheme(),
     ]
 
     /// The default theme a fresh install and every unrecoverable lookup use.

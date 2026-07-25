@@ -225,6 +225,7 @@ struct PouredHeaderButton: View {
 
     @State private var hovering = false
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var fillOpacity: Double {
         if reduceTransparency {
@@ -251,6 +252,8 @@ struct PouredHeaderButton: View {
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)
         .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.14), value: hovering)
+        // The hover lift settles instantly under Reduce Motion — the state
+        // (and its opacity) still changes, it just doesn't ease (AB-304).
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: hovering)
     }
 }

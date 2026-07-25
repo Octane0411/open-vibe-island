@@ -16,6 +16,7 @@ struct PouredInstallHooksHint: View {
     private var increasesContrast: Bool { colorSchemeContrast == .increased }
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.islandTokens) private var tokens
 
     private var fillOpacity: Double {
@@ -58,6 +59,7 @@ struct PouredInstallHooksHint: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.14), value: hovering)
+        // Hover lift settles without easing under Reduce Motion (AB-304).
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: hovering)
     }
 }

@@ -22,29 +22,34 @@ struct ThemeSelectionTests {
     // MARK: - Registry
 
     @Test
-    func classicIsTheRegistryDefault() {
-        #expect(ThemeRegistry.default.id == "classic")
-        #expect(ThemeRegistry.all.first?.id == "classic")
+    func pouredIsTheRegistryDefault() {
+        // AB-304 (poured 5/5) flipped the default: Poured Island is now the
+        // product's face, so it's first in the picker and the fresh-install
+        // fallback.
+        #expect(ThemeRegistry.default.id == "poured")
+        #expect(ThemeRegistry.all.first?.id == "poured")
     }
 
     @Test
     func registryResolvesKnownAndFallsBackForNilOrUnknown() {
         #expect(ThemeRegistry.theme(id: "classic").id == "classic")
+        #expect(ThemeRegistry.theme(id: "poured").id == "poured")
         // Nil (never selected) and garbage (stale / hand-edited defaults) both
         // resolve to the default rather than crashing or rendering blank.
         #expect(ThemeRegistry.theme(id: nil).id == ThemeRegistry.default.id)
         #expect(ThemeRegistry.theme(id: "does-not-exist").id == ThemeRegistry.default.id)
     }
 
-    // MARK: - Poured Island (AB-300)
+    // MARK: - Poured Island (AB-300 · default flip AB-304)
 
     @Test
-    func pouredIsRegisteredAndSelectableButNotDefault() {
-        // Registered and resolvable from the Lab switch...
-        #expect(ThemeRegistry.all.contains { $0.id == "poured" })
-        #expect(ThemeRegistry.theme(id: "poured").id == "poured")
-        // ...but Classic remains the default until Poured 5/5 flips it.
-        #expect(ThemeRegistry.default.id == "classic")
+    func classicIsRegisteredAndSelectableButNotDefault() {
+        // Classic stays registered and resolvable from the picker...
+        #expect(ThemeRegistry.all.contains { $0.id == "classic" })
+        #expect(ThemeRegistry.theme(id: "classic").id == "classic")
+        // ...but Poured is the default since Poured 5/5 flipped it.
+        #expect(ThemeRegistry.default.id != "classic")
+        #expect(ThemeRegistry.default.id == "poured")
     }
 
     @Test
@@ -97,19 +102,31 @@ struct ThemeSelectionTests {
 
     @Test
     func freshInstallUsesTheDefaultTheme() {
+        // No stored value (fresh install) → the flipped default, Poured Island.
         UserDefaults.standard.removeObject(forKey: Self.themeKey)
         let model = AppModel()
-        #expect(model.islandThemeID == "classic")
-        #expect(model.islandTheme.id == "classic")
+        #expect(model.islandThemeID == "poured")
+        #expect(model.islandTheme.id == "poured")
+        #expect(model.islandThemeID == ThemeRegistry.default.id)
     }
 
     @Test
-    func storedSelectionReloadsFromDefaults() {
-        // Set → reload from defaults → same theme.
+    func explicitClassicSelectionIsPreservedOverTheNewDefault() {
+        // A user who explicitly chose Classic before the flip keeps Classic —
+        // the new default only applies when nothing is stored.
         UserDefaults.standard.set("classic", forKey: Self.themeKey)
         let reloaded = AppModel()
         #expect(reloaded.islandThemeID == "classic")
         #expect(reloaded.islandTheme.id == "classic")
+    }
+
+    @Test
+    func explicitPouredSelectionReloadsFromDefaults() {
+        // Set → reload from defaults → same theme.
+        UserDefaults.standard.set("poured", forKey: Self.themeKey)
+        let reloaded = AppModel()
+        #expect(reloaded.islandThemeID == "poured")
+        #expect(reloaded.islandTheme.id == "poured")
     }
 
     @Test
@@ -144,7 +161,10 @@ struct ThemeSelectionTests {
         #expect(metrics.openedShadowHorizontalInset == IslandChromeMetrics.openedShadowHorizontalInset)
         #expect(metrics.openedShadowBottomInset == IslandChromeMetrics.openedShadowBottomInset)
 
+        // The fresh-install default is now Poured (AB-304), so pin Classic
+        // explicitly to assert the Classic-active panel geometry is unchanged.
         let model = AppModel()
+        model.islandThemeID = "classic"
         #expect(model.islandTheme.tokens.metrics.openedShadowHorizontalInset == IslandChromeMetrics.openedShadowHorizontalInset)
         #expect(model.islandTheme.tokens.metrics.openedShadowBottomInset == IslandChromeMetrics.openedShadowBottomInset)
     }
