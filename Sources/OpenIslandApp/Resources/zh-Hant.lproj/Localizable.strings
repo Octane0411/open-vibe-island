@@ -282,6 +282,11 @@
 /* Island Panel - Annual theme rows (AB-317) */
 "island.annual.row.jump" = "跳轉";
 
+/* Island Panel - Annual theme actionable surfaces (AB-318) */
+"island.annual.approval.permissionRequired" = "需要授權";
+"island.annual.approval.allow" = "允許";
+"island.annual.approval.deny" = "拒絕";
+
 /* Island Panel - Session List */
 "island.sessionList.title" = "會話";
 "island.sessionOverview.total" = "總計";

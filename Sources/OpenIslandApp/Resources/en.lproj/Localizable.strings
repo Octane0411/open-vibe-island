@@ -282,6 +282,11 @@
 /* Island Panel - Annual theme rows (AB-317) */
 "island.annual.row.jump" = "Jump";
 
+/* Island Panel - Annual theme actionable surfaces (AB-318) */
+"island.annual.approval.permissionRequired" = "Permission Required";
+"island.annual.approval.allow" = "Allow";
+"island.annual.approval.deny" = "Deny";
+
 /* Island Panel - Session List */
 "island.sessionList.title" = "Sessions";
 "island.sessionOverview.total" = "total";

@@ -247,4 +247,95 @@ struct AnnualSessionRowTests {
             #expect(!resolved.isEmpty)
         }
     }
+
+    // MARK: - Typographic alarm: key-hint glyphs (AB-318 · AC #1 · #2)
+
+    /// The `allow` / always-allow / `deny` buttons must print the **real** registered
+    /// `OverlayPanelController` shortcuts — ⌘Y, ⌘⇧Y, ⌘N — so the on-screen hint never
+    /// drifts from the keys that actually fire.
+    @Test
+    func approvalKeyHintGlyphsMatchTheRegisteredShortcuts() {
+        #expect(AnnualApprovalFormat.Shortcut.allowOnce.glyphString == "⌘Y")
+        #expect(AnnualApprovalFormat.Shortcut.alwaysAllow.glyphString == "⌘⇧Y")
+        #expect(AnnualApprovalFormat.Shortcut.deny.glyphString == "⌘N")
+
+        // Every glyph string is built from the ordered glyph run, and the three
+        // shortcuts stay distinct so no two buttons print the same hint.
+        for shortcut in AnnualApprovalFormat.Shortcut.allCases {
+            #expect(shortcut.glyphString == shortcut.glyphs.joined())
+        }
+        let hints = AnnualApprovalFormat.Shortcut.allCases.map(\.glyphString)
+        #expect(Set(hints).count == hints.count)
+    }
+
+    // MARK: - Approval / question are the accent-bearing phases (AB-318 · AC #6)
+
+    /// The single accent is spent only on the alarm and the pending question. Both
+    /// attention phases resolve to the `.attention` mark, which is the one mark that
+    /// spends the accent — every completion / running actionable header stays grey.
+    @Test
+    func onlyAttentionPhasesLightTheAlarmAccent() {
+        for phase in [SessionPhase.waitingForApproval, .waitingForAnswer] {
+            let mark = AnnualSessionRowFormat.statusMark(phase: phase, presence: .active, outcome: .success)
+            #expect(mark == .attention)
+            #expect(AnnualSessionRowFormat.spendsAccent(mark) == true)
+        }
+        // A completed actionable header (success / interrupted / failed) never spends
+        // the accent, so a completion card can't compete with the permission row.
+        for outcome in [SessionOutcome.success, .interrupted, .failed] {
+            let mark = AnnualSessionRowFormat.statusMark(phase: .completed, presence: .active, outcome: outcome)
+            #expect(AnnualSessionRowFormat.spendsAccent(mark) == false)
+        }
+    }
+
+    // MARK: - Completion outcome glyphs are distinct + accent-free (AB-318 · AC #4)
+
+    @Test
+    func completionOutcomeGlyphsAreDistinct() {
+        let interrupted = AnnualApprovalFormat.completionOutcomeGlyphName(outcome: .interrupted)
+        let failed = AnnualApprovalFormat.completionOutcomeGlyphName(outcome: .failed)
+        #expect(interrupted != failed)
+        // Neither collides with the success-row check the header draws.
+        #expect(interrupted != AnnualSessionRowFormat.statusGlyphName(phase: .completed, outcome: .success))
+        #expect(failed != AnnualSessionRowFormat.statusGlyphName(phase: .completed, outcome: .success))
+    }
+
+    // MARK: - ≥10pt floor on the alarm / completion surfaces (AB-318 · AC #7)
+
+    @Test
+    func everyReadableActionableSizeHoldsTheTenPointFloor() {
+        #expect(!AnnualApprovalFormat.readableTextSizes.isEmpty)
+        for size in AnnualApprovalFormat.readableTextSizes {
+            #expect(size >= AnnualTypography.floor)
+        }
+    }
+
+    // MARK: - Approval strings localize in every language (AB-318 · AC #7)
+
+    @Test
+    func approvalStringsLocalizeInEveryLanguage() {
+        let originalLanguage = UserDefaults.standard.string(forKey: "appLanguage")
+        defer {
+            if let originalLanguage {
+                UserDefaults.standard.set(originalLanguage, forKey: "appLanguage")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "appLanguage")
+            }
+        }
+
+        let keys = [
+            "island.annual.approval.permissionRequired",
+            "island.annual.approval.allow",
+            "island.annual.approval.deny",
+        ]
+        for language in [LanguageManager.AppLanguage.en, .zhHans, .zhHant] {
+            let manager = LanguageManager()
+            manager.language = language
+            for key in keys {
+                let resolved = manager.t(key)
+                #expect(resolved != key, "\(key) is unlocalized in \(language)")
+                #expect(!resolved.isEmpty)
+            }
+        }
+    }
 }

@@ -151,12 +151,20 @@ enum AnnualText {
 /// line behind a 6px brand square, a single right-aligned time lane, filled /
 /// ring / dim / accent-pulse status dots with an interrupted / failed glyph swap,
 /// and a marginalia-rail expanded interior — all with zero pills and the accent
-/// spent only on attention. The **actionable** interiors (approval, question,
-/// completion) and the notification card still route to the shared Classic
-/// component; the fallback reads the Annual tokens from the environment, so it
-/// inherits the warm ground and calm palette for free. AB-318 (annual 4/4)
-/// replaces that last seam with the editorial alarm, question and notification
-/// card.
+/// spent only on attention.
+///
+/// AB-318 (annual 4/4) — the final slice of the theme and the last ticket of the
+/// whole theme program — replaces the last seam: the **actionable** interiors now
+/// draw in the Annual editorial idiom (`AnnualActionableRowContent`). A permission
+/// request is the typographic alarm — a 2px accent rule, a small-caps
+/// `permission required` kicker, a left-ruled mono command quote, and understated
+/// `allow` / `deny` text buttons carrying the real ⌘Y / ⌘⇧Y / ⌘N key-hints with
+/// strong contrast on `allow` (`AnnualApprovalCard`); the question reuses the
+/// shared, token-driven `StructuredQuestionPromptView`; and the completion is a
+/// quiet editorial markdown card. The accent still appears only on the alarm and
+/// the pending question — never on a completion or a calm surface. The
+/// notification card needs no fork: `IslandNotificationCard` routes its single row
+/// through `sessionRow(isActionable: true)`, so it inherits the same alarm.
 ///
 /// Registered but **not** the default — Poured Island stays the product's face.
 struct AnnualTheme: IslandTheme {
@@ -262,11 +270,11 @@ struct AnnualTheme: IslandTheme {
         )
     }
 
-    // MARK: Annual session rows (AB-317)
+    // MARK: Annual session rows (AB-317 · actionable AB-318)
 
     /// Session row — the editorial dot-grammar re-skin for the non-actionable
-    /// states (`AnnualSessionRow`); actionable rows still route to Classic inside
-    /// it (the seam AB-318 replaces).
+    /// states and the typographic alarm / question / completion surfaces for the
+    /// actionable states (`AnnualSessionRow`); nothing routes to Classic anymore.
     func sessionRow(
         session: AgentSession,
         stateIndicator: IslandSessionStateIndicator,
@@ -337,6 +345,12 @@ struct AnnualTheme: IslandTheme {
         )
     }
 
+    /// Notification card (AB-318) — the shared, theme-agnostic
+    /// `IslandNotificationCard`, which routes its single actionable session through
+    /// `sessionRow(isActionable: true)`. That means the card inherits Annual's
+    /// typographic alarm / question / completion surfaces for free, with no
+    /// card-specific fork; the "show all N" affordance and the auto-collapse
+    /// behaviour are unchanged from the shared component.
     func notificationCard(
         session: AgentSession?,
         isInteractive: Bool,
