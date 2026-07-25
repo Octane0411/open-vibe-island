@@ -151,7 +151,15 @@ struct SettingsView: View {
             case .shortcuts:
                 ShortcutsSettingsPane(model: model)
             case .lab:
-                LabSettingsPane(model: model)
+                // AB-306: the real theme picker now lives in Settings →
+                // Appearance, so the temporary theme switch that AB-299 parked
+                // here is retired. The Lab tab stays as an experimental-features
+                // placeholder for whatever lands next.
+                PlaceholderSettingsPane(
+                    model: model,
+                    titleKey: "settings.tab.lab",
+                    subtitleKey: "settings.lab.comingSoon"
+                )
             case .about:
                 AboutSettingsPane(model: model)
             }
@@ -1166,40 +1174,6 @@ struct WatchSettingsPane: View {
 }
 
 // MARK: - Placeholder
-
-// MARK: - Lab
-
-/// AB-299: a temporary theme switch for testing the theme runtime. The real,
-/// designed appearance picker lands in a later ticket (AB-305); this just
-/// exercises the selection → persistence → live-re-render path. With only
-/// Classic registered today it offers a single option, and new themes appear
-/// here automatically as they're added to `ThemeRegistry`.
-struct LabSettingsPane: View {
-    var model: AppModel
-
-    private var lang: LanguageManager { model.lang }
-
-    var body: some View {
-        Form {
-            Section {
-                Picker(lang.t("settings.lab.theme.title"), selection: Binding(
-                    get: { model.islandThemeID },
-                    set: { model.islandThemeID = $0 }
-                )) {
-                    ForEach(ThemeRegistry.all, id: \.id) { theme in
-                        Text(theme.name(lang)).tag(theme.id)
-                    }
-                }
-            } header: {
-                Text(lang.t("settings.lab.theme.section"))
-            } footer: {
-                Text(lang.t("settings.lab.theme.note"))
-            }
-        }
-        .formStyle(.grouped)
-        .navigationTitle(lang.t("settings.tab.lab"))
-    }
-}
 
 struct PlaceholderSettingsPane: View {
     var model: AppModel

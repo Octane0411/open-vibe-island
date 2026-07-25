@@ -37,6 +37,7 @@ struct AppearanceSettingsPane: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 32) {
+                themePart
                 displayProfilePart
                 notchPersonalizationPart
                 sessionListPersonalizationPart
@@ -52,6 +53,100 @@ struct AppearanceSettingsPane: View {
         // the overlay does at its own root.
         .environment(\.islandTheme, theme)
         .environment(\.islandTokens, tokens)
+    }
+
+    // MARK: - Theme (AB-306)
+
+    /// The real theme picker. One card per registered theme, each rendered
+    /// through THAT theme's own slot views (closed pill + a short session-row
+    /// snippet fed the shared fixtures) so the card previews the identity it
+    /// selects. Theme is a GLOBAL choice — one product identity shared by the
+    /// notch and top-bar profiles — so it sits above the per-profile display
+    /// controls rather than inside them.
+    private var themePart: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader(
+                title: lang.t("settings.appearance.theme.title"),
+                note: lang.t("settings.appearance.theme.note")
+            )
+
+            VStack(spacing: 12) {
+                ForEach(ThemeRegistry.all, id: \.id) { theme in
+                    themeCard(theme)
+                }
+            }
+        }
+    }
+
+    private func themeCard(_ cardTheme: any IslandTheme) -> some View {
+        let selected = model.islandThemeID == cardTheme.id
+        let name = cardTheme.name(lang)
+        // AC: VoiceOver reads "<theme name>, <selected/not selected>".
+        let a11yLabel = "\(name), \(selected ? lang.t("settings.appearance.theme.selected") : lang.t("settings.appearance.theme.notSelected"))"
+
+        return Button {
+            // Applies to the live overlay immediately (AppModel.islandTheme is
+            // derived from this) and persists to `appearance.island.v8.theme`
+            // via the property's didSet.
+            model.islandThemeID = cardTheme.id
+        } label: {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(name)
+                            .font(.system(size: 13.5, weight: .semibold))
+                            .foregroundStyle(V6Palette.paper.opacity(0.94))
+                        Text(cardTheme.descriptor(lang))
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(V6Palette.paper.opacity(0.5))
+                            .lineLimit(2)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    if selected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(V6Palette.paper.opacity(0.92))
+                    }
+                }
+
+                ThemeMiniPreview(
+                    theme: cardTheme,
+                    sessions: themePreviewSnippet,
+                    stateIndicator: editingPreferences.sessionStateIndicator,
+                    completedStaleThreshold: editingPreferences.completedStaleThreshold.seconds,
+                    lang: lang
+                )
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.white.opacity(selected ? 0.075 : 0.025))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(
+                        selected ? V6Palette.paper.opacity(0.86) : Color.white.opacity(0.08),
+                        lineWidth: selected ? 1.5 : 1
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        // Collapse the preview's inner rows/pill so VoiceOver reads only the
+        // card's name + selection state; the button stays keyboard-focusable
+        // and Return/Space-activatable like the pane's other cards.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(a11yLabel)
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
+    }
+
+    /// A short, shared-fixture snippet (three compact rows — running, recently
+    /// completed, stale) for each theme card's mini-preview. Drawn from the same
+    /// `previewSessions` fixtures the big session-list preview uses.
+    private var themePreviewSnippet: [AgentSession] {
+        Array(previewSessions.suffix(3))
     }
 
     // MARK: - Display profile
@@ -918,6 +1013,89 @@ private struct AppearanceSessionListPreview: View {
             .overlay {
                 shape.stroke(Color.white.opacity(0.07), lineWidth: 1)
             }
+        }
+        .frame(width: width)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// The per-theme-card mini-preview (AB-306). Renders a closed pill and a short
+/// session-row snippet through the *card's* theme — it injects that theme (and
+/// its tokens) into the environment, overriding the pane-level active theme, so
+/// every card shows its own identity even though they share one fixture set and
+/// the real slot components (`V6ClosedPill`, `theme.sessionRow`, the opened
+/// surface chrome). Nothing here is theme-specific drawing code.
+private struct ThemeMiniPreview: View {
+    let theme: any IslandTheme
+    let sessions: [AgentSession]
+    let stateIndicator: IslandSessionStateIndicator
+    let completedStaleThreshold: TimeInterval
+    let lang: LanguageManager
+
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    var body: some View {
+        SettingsPreviewStage(contentTopPadding: 16, contentBottomPadding: 18) {
+            VStack(spacing: 14) {
+                V6ClosedPill(
+                    mode: .running,
+                    label: nil,
+                    rightSlot: .count(sessions.count),
+                    layout: .external
+                )
+                .frame(maxWidth: .infinity, alignment: .center)
+
+                rowsSnippet
+            }
+            .padding(.horizontal, 18)
+        }
+        // Override the pane's active-theme injection with this card's theme so
+        // the pill's tokens and the rows' slot all resolve to this identity.
+        .environment(\.islandTheme, theme)
+        .environment(\.islandTokens, theme.tokens)
+    }
+
+    private var rowsSnippet: some View {
+        let shape = OpenedIslandSurfaceShape(
+            topProfile: .topBar,
+            topCornerRadius: theme.tokens.metrics.openedTopRadius,
+            bottomCornerRadius: theme.tokens.metrics.openedBottomRadius,
+            filletRadius: theme.tokens.metrics.filletRadius
+        )
+        return ViewThatFits(in: .horizontal) {
+            panel(shape: shape, width: 460)
+            panel(shape: shape, width: 400)
+            panel(shape: shape, width: 340)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    private func panel(shape: OpenedIslandSurfaceShape, width: CGFloat) -> some View {
+        ZStack(alignment: .top) {
+            OpenedSurfaceBackground(reduceTransparency: reduceTransparency || !theme.usesVibrancy)
+                .clipShape(shape)
+
+            VStack(spacing: 0) {
+                ForEach(sessions) { session in
+                    theme.sessionRow(
+                        session: session,
+                        stateIndicator: stateIndicator,
+                        completedStaleThreshold: completedStaleThreshold,
+                        isActionable: false,
+                        useDrawingGroup: false,
+                        isInteractive: false,
+                        isHighlighted: false,
+                        presentation: .list,
+                        sideInset: 16,
+                        lang: lang,
+                        actions: RowActions(jump: {}),
+                        keyboardCoordinator: nil,
+                        pulseClock: nil
+                    )
+                }
+            }
+            .clipShape(shape)
+            .overlay { shape.stroke(Color.white.opacity(0.07), lineWidth: 1) }
         }
         .frame(width: width)
         .fixedSize(horizontal: false, vertical: true)

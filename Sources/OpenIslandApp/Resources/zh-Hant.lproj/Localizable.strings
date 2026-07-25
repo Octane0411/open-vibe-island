@@ -180,10 +180,11 @@
 /* Settings - Placeholder */
 "settings.lab.comingSoon" = "實驗性功能即將推出。";
 
-/* Settings - Lab: theme switch (AB-299) */
-"settings.lab.theme.section" = "主題（實驗性）";
-"settings.lab.theme.title" = "靈動島主題";
-"settings.lab.theme.note" = "切換靈動島的視覺主題。此為測試用的臨時開關，完整的選擇器即將推出。";
+/* Settings - Appearance: theme picker (AB-306) */
+"settings.appearance.theme.title" = "主題";
+"settings.appearance.theme.note" = "整座靈動島統一的視覺風格，瀏海與頂欄兩種模式共享。選擇主題後立即生效。";
+"settings.appearance.theme.selected" = "已選擇";
+"settings.appearance.theme.notSelected" = "未選擇";
 
 /* Themes */
 "theme.classic.name" = "經典";

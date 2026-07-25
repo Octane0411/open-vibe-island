@@ -180,10 +180,11 @@
 /* Settings - Placeholder */
 "settings.lab.comingSoon" = "实验性功能即将推出。";
 
-/* Settings - Lab: theme switch (AB-299) */
-"settings.lab.theme.section" = "主题（实验性）";
-"settings.lab.theme.title" = "灵动岛主题";
-"settings.lab.theme.note" = "切换灵动岛的视觉主题。此为测试用的临时开关，完整的选择器即将推出。";
+/* Settings - Appearance: theme picker (AB-306) */
+"settings.appearance.theme.title" = "主题";
+"settings.appearance.theme.note" = "整座灵动岛统一的视觉风格，刘海与顶栏两种模式共享。选择主题后立即生效。";
+"settings.appearance.theme.selected" = "已选择";
+"settings.appearance.theme.notSelected" = "未选择";
 
 /* Themes */
 "theme.classic.name" = "经典";

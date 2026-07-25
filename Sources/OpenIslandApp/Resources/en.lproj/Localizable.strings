@@ -180,10 +180,11 @@
 /* Settings - Placeholder */
 "settings.lab.comingSoon" = "Experimental features coming soon.";
 
-/* Settings - Lab: theme switch (AB-299) */
-"settings.lab.theme.section" = "Theme (experimental)";
-"settings.lab.theme.title" = "Island theme";
-"settings.lab.theme.note" = "Switch the island's visual theme. A temporary switch for testing — the full picker is coming soon.";
+/* Settings - Appearance: theme picker (AB-306) */
+"settings.appearance.theme.title" = "Theme";
+"settings.appearance.theme.note" = "One visual identity for the whole island, shared by the notch and top-bar profiles. Picking a theme applies it instantly.";
+"settings.appearance.theme.selected" = "selected";
+"settings.appearance.theme.notSelected" = "not selected";
 
 /* Themes */
 "theme.classic.name" = "Classic";
