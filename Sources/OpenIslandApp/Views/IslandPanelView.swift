@@ -463,11 +463,11 @@ struct IslandPanelView: View {
         let shadow = tokens.metrics.surfaceShadow
 
         ZStack(alignment: .top) {
-            // AB-242: native vibrancy base + a soft shadow, matching the drop
-            // shadow `AppearanceSettingsPane`'s `SessionListPanelPreview` has
-            // always rendered (the real overlay used to be a flat opaque fill
-            // with neither). Falls back to that original flat ink fill under
-            // Reduce Transparency.
+            // AB-242: native vibrancy base + a soft shadow (the real overlay
+            // used to be a flat opaque fill with neither). AB-305 routes the
+            // Settings appearance preview through this same surface, so the two
+            // can no longer drift. Falls back to a flat ink fill under Reduce
+            // Transparency.
             OpenedSurfaceBackground(reduceTransparency: reduceTransparency || !theme.usesVibrancy)
                 .frame(width: openedWidth, height: openedHeight)
                 .clipShape(surfaceShape)

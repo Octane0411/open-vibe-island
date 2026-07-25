@@ -934,34 +934,16 @@ final class AppModel {
     }
 
     var islandSessionSections: [IslandSessionSection] {
-        let sessions = sortIslandSessions(surfacedSessions)
-        switch islandSessionGroup {
-        case .none:
-            return [
-                IslandSessionSection(
-                    id: "all",
-                    title: "island.section.sessions",
-                    sessions: sessions
-                )
-            ]
-        case .state:
-            return stateGroupedSections(for: sessions)
-        case .agent:
-            return AgentTool.allCases.compactMap { tool in
-                let list = sessions.filter { $0.tool == tool }
-                guard !list.isEmpty else { return nil }
-                return IslandSessionSection(id: "agent-\(tool.rawValue)", title: tool.displayName, sessions: list)
-            }
-        case .project:
-            let names = Set(sessions.map(projectGroupName(for:))).sorted {
-                $0.localizedStandardCompare($1) == .orderedAscending
-            }
-            return names.compactMap { name in
-                let list = sessions.filter { projectGroupName(for: $0) == name }
-                guard !list.isEmpty else { return nil }
-                return IslandSessionSection(id: "project-\(name)", title: name, sessions: list)
-            }
-        }
+        // AB-305: the grouping/sorting itself lives in the pure
+        // `IslandSessionSectioning` so the Settings appearance preview builds
+        // its sections through the identical logic (fed fixtures + the editing
+        // profile's preferences) instead of a divergent re-implementation.
+        IslandSessionSectioning.sections(
+            for: surfacedSessions,
+            group: islandSessionGroup,
+            sort: islandSessionSort,
+            completedStaleThreshold: completedStaleThreshold.seconds
+        )
     }
 
     var recentSessionCount: Int {
@@ -1074,57 +1056,6 @@ final class AppModel {
         selectedSessionID = sessionID
         NSApp?.activate(ignoringOtherApps: true)
         notchOpen(reason: .click, surface: .sessionList(actionableSessionID: sessionID))
-    }
-
-    private func sortIslandSessions(_ sessions: [AgentSession]) -> [AgentSession] {
-        switch islandSessionSort {
-        case .attention:
-            return sessions
-        case .lastUpdate:
-            return sessions.sorted { lhs, rhs in
-                if lhs.islandActivityDate == rhs.islandActivityDate {
-                    return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
-                }
-                return lhs.islandActivityDate > rhs.islandActivityDate
-            }
-        }
-    }
-
-    private func stateGroupedSections(for sessions: [AgentSession]) -> [IslandSessionSection] {
-        let definitions: [(id: String, title: String, include: (AgentSession) -> Bool)] = [
-            ("approval", "island.section.needsApproval", { $0.phase == .waitingForApproval }),
-            ("answer", "island.section.needsAnswer", { $0.phase == .waitingForAnswer }),
-            ("running", "island.section.inProgress", { $0.phase == .running }),
-            ("done", "island.section.justDone", { [completedStaleThreshold] session in
-                session.phase == .completed
-                    && !session.isStaleCompletedForIsland(at: .now, threshold: completedStaleThreshold.seconds)
-            }),
-            ("idle", "island.section.idle", { [completedStaleThreshold] session in
-                session.phase == .completed
-                    && session.isStaleCompletedForIsland(at: .now, threshold: completedStaleThreshold.seconds)
-            }),
-        ]
-
-        return definitions.compactMap { definition in
-            let list = sessions.filter(definition.include)
-            guard !list.isEmpty else { return nil }
-            return IslandSessionSection(id: "state-\(definition.id)", title: definition.title, sessions: list)
-        }
-    }
-
-    private func projectGroupName(for session: AgentSession) -> String {
-        if let workspace = session.jumpTarget?.workspaceName.trimmingCharacters(in: .whitespacesAndNewlines),
-           !workspace.isEmpty {
-            return workspace
-        }
-
-        let title = session.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty else { return session.tool.displayName }
-
-        let pieces = title.split(separator: "·", maxSplits: 1).map {
-            String($0).trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return pieces.last?.isEmpty == false ? pieces.last! : title
     }
 
     // MARK: - v6 closed-island derivation

@@ -14,10 +14,18 @@ struct AppearanceSettingsPane: View {
     @State private var previewMode: UnifiedBars.Mode = .idle
     @State private var previewAutoCycle: Bool = true
 
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
     private static let autoCycleOrder: [UnifiedBars.Mode] = [.idle, .running, .waiting]
     private static let autoCycleInterval: TimeInterval = 2.0
 
     private var lang: LanguageManager { model.lang }
+
+    /// AB-305: the previews render through the model's active theme's real slot
+    /// components, so switching themes (Lab switch today, picker in AB-306)
+    /// re-skins every preview with no per-theme preview code.
+    private var theme: any IslandTheme { model.islandTheme }
+    private var tokens: IslandThemeTokens { theme.tokens }
     private var editingProfile: IslandAppearanceDisplayProfile { model.appearanceSettingsProfile }
     private var editingPreferences: IslandAppearancePreferences {
         model.appearancePreferences(for: editingProfile)
@@ -38,6 +46,12 @@ struct AppearanceSettingsPane: View {
         }
         .background(Color(red: 0.055, green: 0.055, blue: 0.06))
         .navigationTitle(lang.t("settings.tab.appearance"))
+        // AB-305: inject the active theme + its tokens so every real slot
+        // component in the previews (closed pill, session list, rows, usage
+        // chips) resolves its look through the current selection, exactly as
+        // the overlay does at its own root.
+        .environment(\.islandTheme, theme)
+        .environment(\.islandTokens, tokens)
     }
 
     // MARK: - Display profile
@@ -221,11 +235,13 @@ struct AppearanceSettingsPane: View {
         sectionHeader(title: lang.t("settings.appearance.sessionPreview"), note: nil)
 
         SettingsPreviewStage(contentTopPadding: 20, contentBottomPadding: 28) {
-            SessionListPanelPreview(
-                sections: previewSessionSections,
-                showsSections: editingPreferences.sessionGroup != .none,
-                indicator: editingPreferences.sessionStateIndicator,
+            AppearanceSessionListPreview(
                 profile: editingProfile,
+                sessions: previewSessions,
+                sections: previewSections,
+                group: editingPreferences.sessionGroup,
+                stateIndicator: editingPreferences.sessionStateIndicator,
+                completedStaleThreshold: editingPreferences.completedStaleThreshold.seconds,
                 lang: lang
             )
             .padding(.horizontal, 18)
@@ -385,9 +401,25 @@ struct AppearanceSettingsPane: View {
                 ) {
                     model.updateAppearancePreferences(for: editingProfile) { $0.usageDisplay = option }
                 } icon: {
-                    UsageDisplayPreview(option: option)
+                    usageDisplayIcon(option)
                 }
             }
+        }
+    }
+
+    /// AB-305: `.compact` renders the real `IslandUsageSummary` chips (the same
+    /// component the opened header uses) with sample providers; `.hidden` shows
+    /// the collapsed dash. No bespoke chip re-implementation.
+    @ViewBuilder
+    private func usageDisplayIcon(_ option: IslandUsageDisplay) -> some View {
+        switch option {
+        case .compact:
+            IslandUsageSummary(providers: Self.previewUsageProviders)
+                .frame(maxWidth: 104)
+        case .hidden:
+            Text("—")
+                .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                .foregroundStyle(V6Palette.paper.opacity(0.5))
         }
     }
 
@@ -415,7 +447,14 @@ struct AppearanceSettingsPane: View {
         ) {
             model.updateAppearancePreferences(for: editingProfile) { $0.sessionStateIndicator = option }
         } icon: {
-            StateIndicatorPreview(option: option)
+            // AB-305: a real themed row carrying this indicator — the exact
+            // styling the list uses — rather than a hand-drawn dot/bar mockup.
+            AppearanceRowThumbnail(
+                sessions: previewIndicatorRows,
+                stateIndicator: option,
+                completedStaleThreshold: editingPreferences.completedStaleThreshold.seconds,
+                lang: lang
+            )
         }
     }
 
@@ -436,7 +475,15 @@ struct AppearanceSettingsPane: View {
                 ) {
                     model.updateAppearancePreferences(for: editingProfile) { $0.sessionGroup = option }
                 } icon: {
-                    SessionGroupPreview(option: option)
+                    // AB-305: real rows drawn from the leading rows of the
+                    // sections this grouping produces, so each option's
+                    // thumbnail reflects how it actually buckets the fixtures.
+                    AppearanceRowThumbnail(
+                        sessions: previewGroupRows(for: option),
+                        stateIndicator: editingPreferences.sessionStateIndicator,
+                        completedStaleThreshold: editingPreferences.completedStaleThreshold.seconds,
+                        lang: lang
+                    )
                 }
             }
         }
@@ -459,7 +506,13 @@ struct AppearanceSettingsPane: View {
                 ) {
                     model.updateAppearancePreferences(for: editingProfile) { $0.sessionSort = option }
                 } icon: {
-                    SessionSortPreview(option: option)
+                    // AB-305: real rows in the order this sort produces.
+                    AppearanceRowThumbnail(
+                        sessions: previewSortRows(for: option),
+                        stateIndicator: editingPreferences.sessionStateIndicator,
+                        completedStaleThreshold: editingPreferences.completedStaleThreshold.seconds,
+                        lang: lang
+                    )
                 }
             }
         }
@@ -658,180 +711,70 @@ struct AppearanceSettingsPane: View {
         }
     }
 
-    private var previewSessionSections: [AppearanceSessionPreviewSection] {
-        let items = sortedPreviewSessionItems
+    // MARK: - Preview fixtures (AB-305)
 
-        switch editingPreferences.sessionGroup {
-        case .none:
-            return [
-                AppearanceSessionPreviewSection(
-                    id: "all",
-                    title: lang.t("settings.appearance.sessionGroup.none"),
-                    items: items
-                )
-            ]
-        case .state:
-            let groups: [(String, String, (AppearanceSessionPreviewItem) -> Bool)] = [
-                ("approval", lang.t("island.section.needsApproval"), { $0.phase == .approval }),
-                ("answer", lang.t("island.section.needsAnswer"), { $0.phase == .answer }),
-                ("running", lang.t("island.section.inProgress"), { $0.phase == .running }),
-                ("done", lang.t("island.section.justDone"), { $0.phase == .done }),
-                ("idle", lang.t("island.section.idle"), { $0.phase == .idle }),
-            ]
-            return groups.compactMap { id, title, include in
-                let groupItems = items.filter(include)
-                guard !groupItems.isEmpty else { return nil }
-                return AppearanceSessionPreviewSection(id: id, title: title, items: groupItems)
-            }
-        case .agent:
-            let groups = ["Codex", "Claude", "Cursor", "Gemini"]
-            return groups.compactMap { agent in
-                let groupItems = items.filter { $0.agent == agent }
-                guard !groupItems.isEmpty else { return nil }
-                return AppearanceSessionPreviewSection(id: agent, title: agent, items: groupItems)
-            }
-        case .project:
-            let groups = ["open-island", "website", "docs"]
-            return groups.compactMap { project in
-                let groupItems = items.filter { $0.project == project }
-                guard !groupItems.isEmpty else { return nil }
-                return AppearanceSessionPreviewSection(id: project, title: project, items: groupItems)
-            }
-        }
+    /// The fixture `AgentSession`s every session-list-flavoured preview is fed.
+    /// Covers one running, one needs-approval, one needs-answer, one recently
+    /// completed (`done`) and one stale-completed (`idle`) session, spread
+    /// across agents and projects so the agent/project groupings produce more
+    /// than one section. Rebuilt against `Date.now` per read so the recent vs.
+    /// stale completed rows stay on the correct side of the staleness cut.
+    private var previewSessions: [AgentSession] {
+        AppearancePreviewFixtures.sessions(now: .now, lang: lang)
     }
 
-    private var sortedPreviewSessionItems: [AppearanceSessionPreviewItem] {
-        switch editingPreferences.sessionSort {
-        case .attention:
-            return previewSessionItems.sorted { lhs, rhs in
-                if lhs.attentionRank == rhs.attentionRank {
-                    return lhs.updatedRank < rhs.updatedRank
-                }
-                return lhs.attentionRank < rhs.attentionRank
-            }
-        case .lastUpdate:
-            return previewSessionItems.sorted { $0.updatedRank < $1.updatedRank }
-        }
+    /// The fixtures grouped + sorted through the same `IslandSessionSectioning`
+    /// the live overlay uses — with the *editing* profile's preferences — so
+    /// the preview can never diverge from how the real list buckets and orders.
+    private var previewSections: [IslandSessionSection] {
+        IslandSessionSectioning.sections(
+            for: previewSessions,
+            group: editingPreferences.sessionGroup,
+            sort: editingPreferences.sessionSort,
+            completedStaleThreshold: editingPreferences.completedStaleThreshold.seconds
+        )
     }
 
-    private var previewSessionItems: [AppearanceSessionPreviewItem] {
-        [
-            .init(
-                id: "approval",
-                title: "Codex · open-island",
-                detail: lang.t("settings.appearance.preview.approveShellCommand"),
-                agent: "Codex",
-                agentShort: "codex",
-                agentColor: Color(hex: AgentTool.codex.brandColorHex) ?? Color(red: 0.55, green: 0.72, blue: 1.0),
-                project: "open-island",
-                branch: "v8-design",
-                prompt: lang.t("settings.appearance.preview.promptImplementPlan"),
-                terminal: "Ghostty",
-                age: "now",
-                phase: .approval,
-                attentionRank: 0,
-                updatedRank: 2
-            ),
-            .init(
-                id: "answer",
-                title: "Claude · open-island",
-                detail: lang.t("settings.appearance.preview.waitingForAnswer"),
-                agent: "Claude",
-                agentShort: "claude",
-                agentColor: Color(hex: AgentTool.claudeCode.brandColorHex) ?? Color(red: 0.9, green: 0.55, blue: 0.34),
-                project: "open-island",
-                branch: "main",
-                prompt: lang.t("settings.appearance.preview.promptChooseNotificationCopy"),
-                terminal: "Ghostty",
-                age: "1m",
-                phase: .answer,
-                attentionRank: 1,
-                updatedRank: 3
-            ),
-            .init(
-                id: "running",
-                title: "Cursor · website",
-                detail: lang.t("settings.appearance.preview.editingSessionListPreview"),
-                agent: "Cursor",
-                agentShort: "cursor",
-                agentColor: Color(hex: AgentTool.cursor.brandColorHex) ?? Color(red: 0.62, green: 0.66, blue: 1.0),
-                project: "website",
-                branch: "main",
-                prompt: lang.t("settings.appearance.preview.promptTightenSettingsUI"),
-                terminal: "Cursor",
-                age: "2m",
-                phase: .running,
-                attentionRank: 2,
-                updatedRank: 0
-            ),
-            .init(
-                id: "done",
-                title: "Gemini · docs",
-                detail: lang.t("settings.appearance.preview.replyAvailable"),
-                agent: "Gemini",
-                agentShort: "gemini",
-                agentColor: Color(hex: AgentTool.geminiCLI.brandColorHex) ?? Color(red: 0.45, green: 0.78, blue: 1.0),
-                project: "docs",
-                branch: "main",
-                prompt: lang.t("settings.appearance.preview.promptSummarizeDesignBundle"),
-                terminal: "WezTerm",
-                age: title(for: editingPreferences.completedStaleThreshold),
-                phase: .done,
-                attentionRank: 3,
-                updatedRank: 1
-            ),
-            .init(
-                id: "idle",
-                title: "Codex · open-island",
-                detail: lang.t("settings.appearance.preview.completedEarlier"),
-                agent: "Codex",
-                agentShort: "codex",
-                agentColor: Color(hex: AgentTool.codex.brandColorHex) ?? Color(red: 0.55, green: 0.72, blue: 1.0),
-                project: "open-island",
-                branch: nil,
-                prompt: nil,
-                terminal: "Ghostty",
-                age: lang.t("island.sessionOverview.idle"),
-                phase: .idle,
-                attentionRank: 4,
-                updatedRank: 4
-            ),
-        ]
+    /// A single running fixture — the row the state-indicator thumbnails carry.
+    private var previewIndicatorRows: [AgentSession] {
+        Array(previewSessions.filter { $0.phase == .running }.prefix(1))
     }
+
+    /// Leading rows of the first two sections a grouping produces, so each
+    /// group option's thumbnail reflects the buckets it actually forms.
+    private func previewGroupRows(for option: IslandSessionGroup) -> [AgentSession] {
+        IslandSessionSectioning.sections(
+            for: previewSessions,
+            group: option,
+            sort: editingPreferences.sessionSort,
+            completedStaleThreshold: editingPreferences.completedStaleThreshold.seconds
+        )
+        .prefix(2)
+        .compactMap(\.sessions.first)
+    }
+
+    /// The first two fixtures in the order a sort produces.
+    private func previewSortRows(for option: IslandSessionSort) -> [AgentSession] {
+        Array(
+            IslandSessionSectioning.sortedSessions(previewSessions, sort: option).prefix(2)
+        )
+    }
+
+    private static let previewUsageProviders: [UsageProviderPresentation] = [
+        UsageProviderPresentation(
+            id: "claude",
+            title: "Claude",
+            windows: [UsageWindowPresentation(id: "claude-5h", label: "5h", usedPercentage: 42, resetsAt: nil)]
+        ),
+        UsageProviderPresentation(
+            id: "codex",
+            title: "Codex",
+            windows: [UsageWindowPresentation(id: "codex-7d", label: "7d", usedPercentage: 13, resetsAt: nil)]
+        ),
+    ]
 }
 
 // MARK: - Small preview ornaments
-
-private struct AppearanceSessionPreviewSection: Identifiable {
-    let id: String
-    let title: String
-    let items: [AppearanceSessionPreviewItem]
-}
-
-private struct AppearanceSessionPreviewItem: Identifiable {
-    enum Phase {
-        case approval
-        case answer
-        case running
-        case done
-        case idle
-    }
-
-    let id: String
-    let title: String
-    let detail: String
-    let agent: String
-    let agentShort: String
-    let agentColor: Color
-    let project: String
-    let branch: String?
-    let prompt: String?
-    let terminal: String
-    let age: String
-    let phase: Phase
-    let attentionRank: Int
-    let updatedRank: Int
-}
 
 private struct SettingsPreviewStage<Content: View>: View {
     var contentTopPadding: CGFloat = 20
@@ -889,474 +832,6 @@ private struct SettingsPreviewWallpaper: View {
     }
 }
 
-private struct SessionListPanelPreview: View {
-    let sections: [AppearanceSessionPreviewSection]
-    let showsSections: Bool
-    let indicator: IslandSessionStateIndicator
-    let profile: IslandAppearanceDisplayProfile
-    let lang: LanguageManager
-
-    private var items: [AppearanceSessionPreviewItem] {
-        sections.flatMap(\.items)
-    }
-
-    private var waitingCount: Int {
-        items.filter { $0.phase == .approval || $0.phase == .answer }.count
-    }
-
-    private var runningCount: Int {
-        items.filter { $0.phase == .running }.count
-    }
-
-    private var doneCount: Int {
-        items.filter { $0.phase == .done }.count
-    }
-
-    private var idleCount: Int {
-        items.filter { $0.phase == .idle }.count
-    }
-
-    var body: some View {
-        ViewThatFits(in: .horizontal) {
-            panel(width: preferredPanelWidth)
-            panel(width: 500)
-            panel(width: 460)
-        }
-        .frame(maxWidth: .infinity, alignment: .center)
-    }
-
-    private var preferredPanelWidth: CGFloat {
-        profile == .notch ? 540 : 520
-    }
-
-    private func panel(width: CGFloat) -> some View {
-        ZStack(alignment: .top) {
-            surfaceShape
-                .fill(V6Palette.ink)
-                .shadow(color: .black.opacity(0.36), radius: 22, y: 12)
-
-            VStack(spacing: 0) {
-                panelHead
-                listBody
-                panelFoot
-            }
-            .clipShape(surfaceShape)
-        }
-        .frame(width: width)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private var surfaceShape: OpenedIslandSurfaceShape {
-        OpenedIslandSurfaceShape(topProfile: profile == .notch ? .notch : .topBar)
-    }
-
-    private var sideInset: CGFloat {
-        profile == .notch ? 46 : 16
-    }
-
-    private var panelHead: some View {
-        HStack(spacing: 8) {
-            UnifiedBars(mode: .waiting, size: 22)
-                .frame(width: 24, height: 24)
-
-            Text(lang.t("island.sessionList.title").uppercased())
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                .tracking(1.4)
-                .foregroundStyle(V6Palette.paper.opacity(0.55))
-
-            ViewThatFits(in: .horizontal) {
-                previewSessionOverview(compact: false)
-                previewSessionOverview(compact: true)
-            }
-
-            Spacer(minLength: 0)
-
-            previewHeaderButton(systemName: "gearshape.fill")
-        }
-        .padding(.leading, sideInset)
-        .padding(.trailing, sideInset)
-        .frame(height: 42)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(.white.opacity(0.05))
-                .frame(height: 1)
-        }
-    }
-
-    private func previewHeaderButton(systemName: String) -> some View {
-        Image(systemName: systemName)
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(.white.opacity(0.62))
-            .frame(width: 22, height: 22)
-            .background(.white.opacity(0.08), in: Circle())
-    }
-
-    private func previewSessionOverview(compact: Bool) -> some View {
-        HStack(spacing: compact ? 7 : 9) {
-            previewSessionOverviewMetric(
-                count: items.count,
-                title: lang.t("island.sessionOverview.total"),
-                compactTitle: "",
-                tint: nil,
-                compact: compact
-            )
-            if waitingCount > 0 {
-                previewSessionOverviewMetric(
-                    count: waitingCount,
-                    title: lang.t("island.sessionOverview.waiting"),
-                    compactTitle: lang.t("island.sessionOverview.waitingCompact"),
-                    tint: IslandDesignPalette.Status.waitingAggregate,
-                    compact: compact
-                )
-            }
-            if runningCount > 0 {
-                previewSessionOverviewMetric(
-                    count: runningCount,
-                    title: lang.t("island.sessionOverview.running"),
-                    compactTitle: lang.t("island.sessionOverview.runningCompact"),
-                    tint: IslandDesignPalette.Status.running,
-                    compact: compact
-                )
-            }
-            if doneCount > 0 {
-                previewSessionOverviewMetric(
-                    count: doneCount,
-                    title: lang.t("island.sessionOverview.done"),
-                    compactTitle: lang.t("island.sessionOverview.done"),
-                    tint: IslandDesignPalette.Status.completed,
-                    compact: compact
-                )
-            }
-            if idleCount > 0 {
-                previewSessionOverviewMetric(
-                    count: idleCount,
-                    title: lang.t("island.sessionOverview.idle"),
-                    compactTitle: lang.t("island.sessionOverview.idle"),
-                    tint: IslandDesignPalette.Status.idle,
-                    compact: compact
-                )
-            }
-        }
-        .lineLimit(1)
-        .fixedSize(horizontal: true, vertical: false)
-    }
-
-    private func previewSessionOverviewMetric(
-        count: Int,
-        title: String,
-        compactTitle: String,
-        tint: Color?,
-        compact: Bool
-    ) -> some View {
-        HStack(spacing: 4) {
-            if let tint {
-                Circle()
-                    .fill(tint)
-                    .frame(width: 5.5, height: 5.5)
-            }
-
-            let label = title == "total"
-                ? (compact ? "\(count)" : "\(count) \(title)")
-                : "\(count) \(compact ? compactTitle : title)"
-
-            Text(label)
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                .foregroundStyle(tint == nil ? V6Palette.paper.opacity(0.34) : V6Palette.paper.opacity(0.48))
-        }
-    }
-
-    private var listBody: some View {
-        VStack(spacing: 0) {
-            ForEach(sections) { section in
-                if showsSections {
-                    sectionHeader(section)
-                }
-
-                ForEach(section.items) { item in
-                    SessionListLivePreviewRow(
-                        item: item,
-                        indicator: indicator,
-                        sideInset: sideInset,
-                        lang: lang
-                    )
-                }
-            }
-        }
-    }
-
-    private func sectionHeader(_ section: AppearanceSessionPreviewSection) -> some View {
-        HStack(spacing: 8) {
-            sectionDot(for: section)
-            Text(section.title.uppercased())
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                .tracking(0.4)
-                .foregroundStyle(V6Palette.paper.opacity(0.7))
-            Text("\(section.items.count)")
-                .font(.system(size: 10.5, weight: .medium, design: .monospaced))
-                .foregroundStyle(V6Palette.paper.opacity(0.4))
-            Spacer(minLength: 0)
-        }
-        .padding(.leading, sideInset)
-        .padding(.trailing, sideInset)
-        .padding(.top, 9)
-        .padding(.bottom, 6)
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(.white.opacity(0.05))
-                .frame(height: 1)
-        }
-    }
-
-    @ViewBuilder
-    private func sectionDot(for section: AppearanceSessionPreviewSection) -> some View {
-        Circle()
-            .fill(section.items.first?.phase.tint ?? V6Palette.paper.opacity(0.35))
-            .frame(width: 7, height: 7)
-    }
-
-    private var panelFoot: some View {
-        Color.clear
-            .frame(height: 10)
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(.white.opacity(0.05))
-                .frame(height: 1)
-        }
-    }
-}
-
-private struct SessionListLivePreviewRow: View {
-    let item: AppearanceSessionPreviewItem
-    let indicator: IslandSessionStateIndicator
-    let sideInset: CGFloat
-    let lang: LanguageManager
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .center, spacing: 10) {
-                if indicator != .tint {
-                    indicatorView
-                }
-
-                VStack(alignment: .leading, spacing: 3) {
-                    titleLine
-
-                    if let prompt = item.prompt {
-                        Text(prompt)
-                            .font(.system(size: 11.5, weight: .medium))
-                            .foregroundStyle(V6Palette.paper.opacity(item.phase == .idle ? 0.34 : 0.52))
-                            .lineLimit(1)
-                    }
-                }
-
-                Spacer(minLength: 10)
-
-                HStack(spacing: IslandSessionRowMetrics.badgeSpacing) {
-                    agentChip
-                    sideBadge(item.terminal)
-                    Text(item.age)
-                        .font(.system(size: 10.5, weight: .medium, design: .monospaced))
-                        .foregroundStyle(V6Palette.paper.opacity(item.phase == .idle ? 0.32 : 0.45))
-                        .frame(minWidth: IslandSessionRowMetrics.ageColumnWidth, alignment: .trailing)
-
-                    Image(systemName: item.phase == .idle ? "chevron.right" : "chevron.down")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(V6Palette.paper.opacity(item.phase == .idle ? 0.42 : 0.68))
-                        .frame(
-                            width: IslandSessionRowMetrics.detailToggleColumnWidth,
-                            height: IslandSessionRowMetrics.trailingControlHeight
-                        )
-                        .background(
-                            Circle()
-                                .fill(.white.opacity(item.phase == .idle ? 0.02 : 0.045))
-                        )
-                }
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-            }
-            .padding(.horizontal, rowLeadingPadding)
-            .padding(.vertical, 11)
-            .background(rowFill)
-
-            if item.phase != .idle {
-                detailPreview
-            }
-        }
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(.white.opacity(0.04))
-                .frame(height: 1)
-        }
-        .overlay(alignment: .leading) {
-            if indicator == .bar {
-                RoundedRectangle(cornerRadius: 999, style: .continuous)
-                    .fill(tint)
-                    .frame(width: 3)
-                    .padding(.vertical, 8)
-                    .padding(.leading, 14)
-            }
-        }
-        .opacity(item.phase == .idle ? 0.74 : 1)
-    }
-
-    private var titleLine: some View {
-        HStack(spacing: 0) {
-            Text(item.project)
-                .fontWeight(.semibold)
-                .foregroundStyle(projectColor)
-            if let branch = item.branch {
-                Text(" (\(branch))")
-                    .foregroundStyle(V6Palette.paper.opacity(0.55))
-            }
-            Text(" · ")
-                .foregroundStyle(V6Palette.paper.opacity(0.22))
-            Text(item.detail)
-                .foregroundStyle(V6Palette.paper.opacity(0.7))
-        }
-        .font(.system(size: 13, weight: .medium))
-        .lineLimit(1)
-    }
-
-    private var agentChip: some View {
-        Text(item.agentShort)
-            .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-            .foregroundStyle(item.agentColor)
-            .frame(minWidth: IslandSessionRowMetrics.agentTitleWidth)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(item.agentColor.opacity(0.13), in: Capsule())
-            .overlay(Capsule().stroke(item.agentColor.opacity(0.35), lineWidth: 1))
-    }
-
-    private func sideBadge(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 10.5, weight: .medium, design: .monospaced))
-            .foregroundStyle(V6Palette.paper.opacity(0.7))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(.white.opacity(0.06), in: Capsule())
-    }
-
-    private var detailPreview: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            switch item.phase {
-            case .approval:
-                Text(lang.t("approval.toolPermissionRequested"))
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(V6Palette.paper.opacity(0.86))
-                Text(lang.t("settings.appearance.preview.permissionBody"))
-                    .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(V6Palette.paper.opacity(0.78))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            case .answer:
-                Text(lang.t("settings.appearance.preview.pickOrTypeAnswer"))
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(V6Palette.paper.opacity(0.82))
-            case .running:
-                Text(item.detail)
-                    .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(V6Palette.paper.opacity(0.78))
-            case .done:
-                Text(lang.t("settings.appearance.preview.replyAvailable"))
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(V6Palette.paper.opacity(0.82))
-            case .idle:
-                EmptyView()
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, detailLeadingPadding)
-        .padding(.trailing, sideInset)
-        .padding(.bottom, 12)
-        .background(.white.opacity(0.015))
-    }
-
-    @ViewBuilder
-    private var indicatorView: some View {
-        switch indicator {
-        case .animatedDot:
-            Circle()
-                .fill(tint)
-                .frame(width: 9, height: 9)
-                .shadow(color: tint.opacity(item.phase == .idle ? 0 : 0.44), radius: 5)
-                .frame(width: 20, height: 20)
-        case .bar:
-            EmptyView()
-        case .glyph:
-            glyphView
-                .frame(width: 20, height: 20)
-        case .tint:
-            EmptyView()
-        }
-    }
-
-    private var rowFill: Color {
-        guard indicator == .tint else { return Color.clear }
-        return tint.opacity(item.phase == .idle ? 0.015 : 0.045)
-    }
-
-    @ViewBuilder
-    private var glyphView: some View {
-        switch item.phase {
-        case .idle:
-            Circle()
-                .fill(V6Palette.paper.opacity(0.3))
-                .frame(width: 4, height: 4)
-        case .running:
-            UnifiedBars(mode: .running, size: 16, tint: tint)
-        case .approval, .answer:
-            UnifiedBars(mode: .waiting, size: 16, tint: tint)
-        case .done:
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(tint)
-        }
-    }
-
-    private var projectColor: Color {
-        indicator == .tint && item.phase != .idle ? tint : V6Palette.paper.opacity(item.phase == .idle ? 0.72 : 0.92)
-    }
-
-    private var tint: Color {
-        item.phase.tint
-    }
-
-    private var rowLeadingPadding: CGFloat {
-        switch indicator {
-        case .bar: max(28, sideInset)
-        case .tint: sideInset
-        case .animatedDot, .glyph: sideInset
-        }
-    }
-
-    private var detailLeadingPadding: CGFloat {
-        switch indicator {
-        case .bar: max(28, sideInset)
-        case .tint: sideInset
-        case .animatedDot, .glyph: sideInset + 30
-        }
-    }
-}
-
-private extension AppearanceSessionPreviewItem.Phase {
-    var tint: Color {
-        switch self {
-        case .approval:
-            IslandDesignPalette.Status.waitingForApproval
-        case .answer:
-            IslandDesignPalette.Status.waitingForAnswer
-        case .running:
-            IslandDesignPalette.Status.running
-        case .done:
-            IslandDesignPalette.Status.completed
-        case .idle:
-            IslandDesignPalette.Status.idle
-        }
-    }
-}
-
 private struct CountBadgePreview: View {
     let count: Int
     var body: some View {
@@ -1379,165 +854,232 @@ private struct AgentsMiniGridPreview: View {
     }
 }
 
-private struct StateIndicatorPreview: View {
-    let option: IslandSessionStateIndicator
+
+// MARK: - Real-component previews (AB-305)
+
+/// The session-list preview, rendered through the active theme's real
+/// `sessionList` slot inside the real opened-surface chrome (shape, vibrancy
+/// base, shadow, hairline stroke) — the same components the overlay composes.
+/// Fixture `AgentSession`s and pre-grouped sections are passed in; nothing here
+/// re-implements a row, section header, or overview.
+private struct AppearanceSessionListPreview: View {
+    let profile: IslandAppearanceDisplayProfile
+    let sessions: [AgentSession]
+    let sections: [IslandSessionSection]
+    let group: IslandSessionGroup
+    let stateIndicator: IslandSessionStateIndicator
+    let completedStaleThreshold: TimeInterval
+    let lang: LanguageManager
+
+    @Environment(\.islandTheme) private var theme
+    @Environment(\.islandTokens) private var tokens
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    private var sideInset: CGFloat { profile == .notch ? 46 : 16 }
 
     var body: some View {
-        HStack(spacing: 8) {
-            indicator
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(V6Palette.paper.opacity(option == .tint ? 0.55 : 0.22))
-                .frame(width: 58, height: 6)
+        ViewThatFits(in: .horizontal) {
+            panel(width: profile == .notch ? 540 : 520)
+            panel(width: 500)
+            panel(width: 460)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(option == .tint ? Color(hex: AgentTool.codex.brandColorHex)?.opacity(0.22) ?? Color.white.opacity(0.08) : Color.clear)
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    private func panel(width: CGFloat) -> some View {
+        let shape = OpenedIslandSurfaceShape(
+            topProfile: profile == .notch ? .notch : .topBar,
+            topCornerRadius: tokens.metrics.openedTopRadius,
+            bottomCornerRadius: tokens.metrics.openedBottomRadius,
+            filletRadius: tokens.metrics.filletRadius
         )
-    }
+        let shadow = tokens.metrics.surfaceShadow
 
-    @ViewBuilder
-    private var indicator: some View {
-        let color = Color(hex: AgentTool.codex.brandColorHex) ?? V6Palette.paper
-        switch option {
-        case .animatedDot:
-            Circle()
-                .fill(color)
-                .frame(width: 10, height: 10)
-                .shadow(color: color.opacity(0.55), radius: 5)
-        case .bar:
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(color)
-                .frame(width: 4, height: 28)
-        case .glyph:
-            Image(systemName: "sparkle")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(color)
-        case .tint:
-            Circle()
-                .fill(V6Palette.paper.opacity(0.72))
-                .frame(width: 10, height: 10)
-        }
-    }
-}
+        return ZStack(alignment: .top) {
+            OpenedSurfaceBackground(reduceTransparency: reduceTransparency || !theme.usesVibrancy)
+                .clipShape(shape)
+                .shadow(color: shadow.resolvedColor, radius: shadow.radius, y: shadow.yOffset)
 
-private struct UsageDisplayPreview: View {
-    let option: IslandUsageDisplay
-
-    var body: some View {
-        HStack(spacing: 6) {
-            if option == .compact {
-                usageChip("Cl", window: "5h", value: 42, color: Color(hex: AgentTool.claudeCode.brandColorHex) ?? .orange)
-                usageChip("Cx", window: "7d", value: 13, color: Color(hex: AgentTool.codex.brandColorHex) ?? .blue)
-            } else {
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(V6Palette.paper.opacity(0.18))
-                    .frame(width: 72, height: 5)
+            theme.sessionList(
+                sessions: sessions,
+                sections: sections,
+                group: group,
+                stateIndicator: stateIndicator,
+                completedStaleThreshold: completedStaleThreshold,
+                sideInset: sideInset,
+                isInteractive: false,
+                actionableSessionID: nil,
+                lang: lang,
+                keyboardCoordinator: nil,
+                pulseClock: nil,
+                makeActions: { _ in RowActions(jump: {}) }
+            )
+            .clipShape(shape)
+            .overlay {
+                shape.stroke(Color.white.opacity(0.07), lineWidth: 1)
             }
         }
-        .frame(width: 104, alignment: .center)
-    }
-
-    private func usageChip(_ title: String, window: String, value: Int, color: Color) -> some View {
-        HStack(spacing: 4) {
-            Text(title)
-                .font(.system(size: 9.5, weight: .semibold))
-                .foregroundStyle(V6Palette.paper.opacity(0.66))
-            Text(window)
-                .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                .foregroundStyle(V6Palette.paper.opacity(0.42))
-            Text("\(value)%")
-                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                .foregroundStyle(color)
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 3)
-        .background(.white.opacity(0.055), in: Capsule())
+        .frame(width: width)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
-private struct SessionGroupPreview: View {
-    let option: IslandSessionGroup
+/// A tiny option-card thumbnail that draws one or two *real* themed session
+/// rows (via the active theme's `sessionRow` slot), scaled to fit and clipped.
+/// Used by the state-indicator / grouping / sorting selectors so their icons
+/// are the genuine row styling rather than a hand-drawn mockup.
+private struct AppearanceRowThumbnail: View {
+    let sessions: [AgentSession]
+    let stateIndicator: IslandSessionStateIndicator
+    let completedStaleThreshold: TimeInterval
+    let lang: LanguageManager
+    var renderWidth: CGFloat = 340
+
+    @Environment(\.islandTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            switch option {
-            case .none:
-                previewLine(width: 72, color: V6Palette.paper.opacity(0.42))
-                previewLine(width: 54, color: V6Palette.paper.opacity(0.28))
-                previewLine(width: 64, color: V6Palette.paper.opacity(0.22))
-            case .state:
-                groupBlock(width: 52)
-                groupBlock(width: 70)
-            case .agent:
-                agentBlock(color: Color(hex: AgentTool.claudeCode.brandColorHex) ?? .white)
-                agentBlock(color: Color(hex: AgentTool.codex.brandColorHex) ?? .white)
-            case .project:
-                groupBlock(width: 76)
-                groupBlock(width: 46)
-            }
-        }
-        .frame(width: 84, alignment: .leading)
-    }
-
-    private func previewLine(width: CGFloat, color: Color) -> some View {
-        RoundedRectangle(cornerRadius: 2, style: .continuous)
-            .fill(color)
-            .frame(width: width, height: 5)
-    }
-
-    private func groupBlock(width: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            previewLine(width: width * 0.48, color: V6Palette.paper.opacity(0.48))
-            previewLine(width: width, color: V6Palette.paper.opacity(0.22))
-        }
-    }
-
-    private func agentBlock(color: Color) -> some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(color)
-                .frame(width: 7, height: 7)
-            previewLine(width: 54, color: V6Palette.paper.opacity(0.25))
-        }
-    }
-}
-
-private struct SessionSortPreview: View {
-    let option: IslandSessionSort
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            ForEach(rows.indices, id: \.self) { index in
-                HStack(spacing: 6) {
-                    Text(rows[index].rank)
-                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(V6Palette.paper.opacity(0.55))
-                        .frame(width: 12, alignment: .leading)
-                    RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(rows[index].color)
-                        .frame(width: rows[index].width, height: 5)
+        GeometryReader { geo in
+            let scale = geo.size.width > 0 ? min(1, geo.size.width / renderWidth) : 1
+            VStack(spacing: 0) {
+                ForEach(sessions) { session in
+                    theme.sessionRow(
+                        session: session,
+                        stateIndicator: stateIndicator,
+                        completedStaleThreshold: completedStaleThreshold,
+                        isActionable: false,
+                        useDrawingGroup: false,
+                        isInteractive: false,
+                        isHighlighted: false,
+                        presentation: .list,
+                        sideInset: 14,
+                        lang: lang,
+                        actions: RowActions(jump: {}),
+                        keyboardCoordinator: nil,
+                        pulseClock: nil
+                    )
                 }
             }
+            .frame(width: renderWidth, alignment: .topLeading)
+            .fixedSize(horizontal: false, vertical: true)
+            .scaleEffect(scale, anchor: .topLeading)
         }
-        .frame(width: 82, alignment: .leading)
+        .clipped()
     }
+}
 
-    private var rows: [(rank: String, width: CGFloat, color: Color)] {
-        switch option {
-        case .attention:
-            return [
-                ("!", 62, Color(hex: AgentTool.claudeCode.brandColorHex) ?? .white),
-                ("2", 48, V6Palette.paper.opacity(0.28)),
-                ("3", 58, V6Palette.paper.opacity(0.2)),
-            ]
-        case .lastUpdate:
-            return [
-                ("1", 64, V6Palette.paper.opacity(0.38)),
-                ("2", 56, V6Palette.paper.opacity(0.3)),
-                ("3", 42, V6Palette.paper.opacity(0.22)),
-            ]
-        }
+// MARK: - Preview session fixtures (AB-305)
+
+/// Builds the fixture `AgentSession`s the appearance previews render. One per
+/// live state — running, needs-approval, needs-answer, recently-completed
+/// (`done`) and stale-completed (`idle`) — spread across agents and projects
+/// so agent/project grouping forms multiple sections, and time-stamped so the
+/// recent vs. stale completed rows land on opposite sides of the staleness cut.
+private enum AppearancePreviewFixtures {
+    static func sessions(now: Date, lang: LanguageManager) -> [AgentSession] {
+        // Attention order first (needs-approval, needs-answer, running, done,
+        // idle) — `IslandSessionSectioning` leaves `.attention` untouched, so
+        // this array *is* the attention ordering.
+        [
+            AgentSession(
+                id: "preview-approval",
+                title: "Codex · open-island",
+                tool: .codex,
+                origin: .demo,
+                attachmentState: .attached,
+                phase: .waitingForApproval,
+                summary: lang.t("settings.appearance.preview.approveShellCommand"),
+                updatedAt: now.addingTimeInterval(-90),
+                permissionRequest: PermissionRequest(
+                    title: lang.t("approval.toolPermissionRequested"),
+                    summary: lang.t("settings.appearance.preview.approveShellCommand"),
+                    affectedPath: "Sources/OpenIslandApp/Views/SettingsView.swift",
+                    primaryActionTitle: "Allow",
+                    secondaryActionTitle: "Deny"
+                ),
+                jumpTarget: JumpTarget(
+                    terminalApp: "Ghostty",
+                    workspaceName: "open-island",
+                    paneTitle: "codex ~/open-island",
+                    terminalSessionID: "preview-approval"
+                )
+            ),
+            AgentSession(
+                id: "preview-answer",
+                title: "Claude · open-island",
+                tool: .claudeCode,
+                origin: .demo,
+                attachmentState: .attached,
+                phase: .waitingForAnswer,
+                summary: lang.t("settings.appearance.preview.waitingForAnswer"),
+                updatedAt: now.addingTimeInterval(-150),
+                questionPrompt: QuestionPrompt(
+                    title: lang.t("settings.appearance.preview.waitingForAnswer"),
+                    questions: [
+                        QuestionPromptItem(
+                            question: lang.t("settings.appearance.preview.waitingForAnswer"),
+                            header: "",
+                            options: [
+                                QuestionOption(label: "Ship it"),
+                                QuestionOption(label: "Revise"),
+                            ]
+                        )
+                    ]
+                ),
+                jumpTarget: JumpTarget(
+                    terminalApp: "Ghostty",
+                    workspaceName: "open-island",
+                    paneTitle: "claude ~/open-island",
+                    terminalSessionID: "preview-answer"
+                )
+            ),
+            AgentSession(
+                id: "preview-running",
+                title: "Cursor · website",
+                tool: .cursor,
+                origin: .demo,
+                attachmentState: .attached,
+                phase: .running,
+                summary: lang.t("settings.appearance.preview.editingSessionListPreview"),
+                updatedAt: now.addingTimeInterval(-30),
+                jumpTarget: JumpTarget(
+                    terminalApp: "Cursor",
+                    workspaceName: "website",
+                    paneTitle: "cursor ~/website",
+                    terminalSessionID: "preview-running"
+                )
+            ),
+            AgentSession(
+                id: "preview-done",
+                title: "Gemini · docs",
+                tool: .geminiCLI,
+                origin: .demo,
+                attachmentState: .attached,
+                phase: .completed,
+                summary: lang.t("settings.appearance.preview.replyAvailable"),
+                updatedAt: now.addingTimeInterval(-45),
+                jumpTarget: JumpTarget(
+                    terminalApp: "WezTerm",
+                    workspaceName: "docs",
+                    paneTitle: "gemini ~/docs",
+                    terminalSessionID: "preview-done"
+                )
+            ),
+            AgentSession(
+                id: "preview-idle",
+                title: "Codex · open-island",
+                tool: .codex,
+                origin: .demo,
+                attachmentState: .attached,
+                phase: .completed,
+                summary: lang.t("settings.appearance.preview.completedEarlier"),
+                updatedAt: now.addingTimeInterval(-25 * 60),
+                jumpTarget: JumpTarget(
+                    terminalApp: "Ghostty",
+                    workspaceName: "open-island",
+                    paneTitle: "codex ~/open-island",
+                    terminalSessionID: "preview-idle"
+                )
+            ),
+        ]
     }
 }
