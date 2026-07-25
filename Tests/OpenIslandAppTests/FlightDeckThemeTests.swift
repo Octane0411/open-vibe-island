@@ -246,4 +246,41 @@ struct FlightDeckThemeTests {
             #expect(descriptor != "theme.flightDeck.descriptor", "descriptor is unlocalized in \(language)")
         }
     }
+
+    // MARK: - Actionable surface strings localize (AB-314 AC #6 · #8)
+
+    /// The MASTER CAUTION block's own strings (the `MASTER CAUTION` /
+    /// `PERMISSION REQUIRED` stencils and the ALLOW / DENY defaults) resolve to a
+    /// real translation — not the bare key — in English and both Chinese scripts.
+    /// The `FlightDeckText` neutralization (tested above) then guarantees the
+    /// stencil casing/tracking is dropped for those CJK strings so the labels stay
+    /// legible.
+    @Test
+    func actionableApprovalStringsLocalizeInEveryLanguage() {
+        let originalLanguage = UserDefaults.standard.string(forKey: "appLanguage")
+        defer {
+            if let originalLanguage {
+                UserDefaults.standard.set(originalLanguage, forKey: "appLanguage")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "appLanguage")
+            }
+        }
+
+        let keys = [
+            "island.flightDeck.approval.masterCaution",
+            "island.flightDeck.approval.permissionRequired",
+            "island.flightDeck.approval.allow",
+            "island.flightDeck.approval.deny",
+        ]
+
+        for language in [LanguageManager.AppLanguage.en, .zhHans, .zhHant] {
+            let manager = LanguageManager()
+            manager.language = language
+            for key in keys {
+                let resolved = manager.t(key)
+                #expect(resolved != key, "\(key) is unlocalized in \(language)")
+                #expect(!resolved.isEmpty)
+            }
+        }
+    }
 }

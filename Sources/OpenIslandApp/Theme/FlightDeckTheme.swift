@@ -68,6 +68,14 @@ enum FlightDeckText {
 /// "Flight Deck" — an avionics annunciator-panel theme (EICAS-style cockpit
 /// instrument), built up across four slices.
 ///
+/// AB-314 (flightdeck 4/4) closes the theme: the actionable interiors move into
+/// the Flight Deck idiom — the permission request becomes the MASTER CAUTION
+/// alarm (a full-width chamfered block with a pulsing caution glow, a stenciled
+/// `MASTER CAUTION` / `PERMISSION REQUIRED` header, and chamfered ALLOW / DENY
+/// switches carrying the real ⌘Y / ⌘⇧Y / ⌘N key hints), the question reuses the
+/// shared `StructuredQuestionPromptView`, and the completion is a chamfered mono
+/// card — all drawn by `FlightDeckSessionRow` / `FlightDeckApprovalCard`.
+///
 /// AB-311 (flightdeck 1/4) ships the theme's shell: the token identity (a
 /// near-black cockpit ground lit only by the phosphor status palette — cyan-green
 /// nominal, muted blue complete, amber caution, warning red, dim grey idle — a
@@ -187,13 +195,15 @@ struct FlightDeckTheme: IslandTheme {
         )
     }
 
-    // MARK: Flight Deck session row (AB-313)
+    // MARK: Flight Deck session row (AB-313 annunciator · AB-314 actionable)
 
     /// Session row — the annunciator re-skin (`FlightDeckSessionRow`): every
     /// non-actionable row carries a colored status lane on the SESSION / MODEL /
-    /// APP / TIME column grid. Actionable rows (MASTER CAUTION / question /
-    /// completion) still route to Classic through the row's thin seam until
-    /// AB-314 restyles those interiors.
+    /// APP / TIME column grid, and the actionable interiors are now drawn in the
+    /// Flight Deck idiom too (AB-314) — the MASTER CAUTION alarm block for a
+    /// permission request, the shared question prompt, and a chamfered mono
+    /// completion card, all by `FlightDeckSessionRow`. The shared
+    /// `IslandNotificationCard` inherits the treatment through this factory.
     func sessionRow(
         session: AgentSession,
         stateIndicator: IslandSessionStateIndicator,

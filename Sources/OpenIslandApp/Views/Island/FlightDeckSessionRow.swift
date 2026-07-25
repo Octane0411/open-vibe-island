@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+@preconcurrency import MarkdownUI
 import OpenIslandCore
 
 /// Flight Deck's session row (AB-313 · flightdeck 3/4).
@@ -16,14 +17,19 @@ import OpenIslandCore
 /// dismiss controls sit in reserved lanes so the registers never shift. Agent
 /// identity is a small neutral mono mark so the lane's state colour always wins.
 ///
-/// **Actionable rows still route to Classic (this is a thin seam).** A
-/// permission request (MASTER CAUTION), a question, or the single completion
-/// card is drawn by `IslandSessionRow` until flightdeck 4/4 (AB-314) restyles
-/// those interiors; because that row reads `\.islandTokens`, it already renders
-/// in the near-black phosphor palette in the meantime. The behaviours that are
-/// contract-level — the jump tap, the ⌘/1–9 keyboard wiring, and the grouped
-/// VoiceOver summary — are preserved verbatim from Classic so the two rows stay
-/// interchangeable inside one list.
+/// **Actionable rows are now fully Flight Deck (AB-314).** A permission request
+/// draws the **MASTER CAUTION** annunciator — a full-width chamfered alert block
+/// with a pulsing status glow (static under Reduce Motion), a stenciled
+/// `MASTER CAUTION` placard + `PERMISSION REQUIRED` kicker, the command in a
+/// bordered mono box above the affected-path line and `PermissionDiffPreview`,
+/// and chamfered ALLOW / DENY switches carrying the real ⌘Y / ⌘⇧Y / ⌘N key-hint
+/// glyphs — via `FlightDeckApprovalCard`; the question reuses the shared,
+/// token-driven `StructuredQuestionPromptView`, and the completion is a squared
+/// mono card. The behaviours that are contract-level — the jump tap, the
+/// ⌘Y / ⌘⇧Y / ⌘N approval wiring and the 1–9 / Enter question shortcuts (both
+/// driven globally from `OverlayPanelController`), the reply callback, and the
+/// grouped VoiceOver summary — are preserved verbatim so the two rows stay
+/// interchangeable inside one list. Only the surfaces change.
 struct FlightDeckSessionRow: View {
     let session: AgentSession
     var stateIndicator: IslandSessionStateIndicator = .animatedDot
@@ -44,15 +50,15 @@ struct FlightDeckSessionRow: View {
 
     var body: some View {
         if isActionable {
-            // Thin seam (AB-313): approval / question / completion interiors are
-            // Classic's until AB-314 restyles them — Classic's row already
-            // renders in the Flight Deck palette via `\.islandTokens`.
-            IslandSessionRow(
+            // AB-314: the approval (MASTER CAUTION) / question / completion
+            // interiors are now drawn in the Flight Deck idiom by
+            // `FlightDeckActionableRowContent` (the old thin seam to Classic is
+            // gone). The header keeps the mono tabular idiom so an actionable row
+            // still reads as one of the annunciator grid.
+            FlightDeckActionableRowContent(
                 session: session,
                 stateIndicator: stateIndicator,
                 completedStaleThreshold: completedStaleThreshold,
-                isActionable: isActionable,
-                useDrawingGroup: useDrawingGroup,
                 isInteractive: isInteractive,
                 isHighlighted: isHighlighted,
                 presentation: presentation,
@@ -234,6 +240,58 @@ enum FlightDeckSessionRowFormat {
     /// assertion (AC #6). The scaled reading roles sit above 10; the fixed
     /// tabular columns sit at exactly the 10.5 mono lane.
     static let readableTextSizes: [CGFloat] = [13.2, 11, 10.5]
+}
+
+// MARK: - Actionable surface logic (AB-314)
+
+/// Pure display rules for the Flight Deck MASTER CAUTION / completion surfaces,
+/// split out so the AC-bearing decisions (which key-hint glyph a switch carries,
+/// which glyph a non-success completion shows, the pulsing caution-glow ramp, and
+/// the ≥10pt floor on the alarm block) are unit-testable without rendering a
+/// SwiftUI view.
+enum FlightDeckApprovalFormat {
+    /// The three approval decisions the MASTER CAUTION block exposes, each paired
+    /// with the **real** registered `OverlayPanelController` shortcut it fires. The
+    /// glyph strings the ALLOW / DENY / always-allow switches print must stay in
+    /// lock-step with that handler (`⌘Y` / `⌘⇧Y` / `⌘N`), never the mockup's ⏎/⎋.
+    enum Shortcut: CaseIterable {
+        case allowOnce
+        case alwaysAllow
+        case deny
+
+        /// The key-hint glyphs printed on the switch, in order.
+        var glyphs: [String] {
+            switch self {
+            case .allowOnce: return ["⌘", "Y"]
+            case .alwaysAllow: return ["⌘", "⇧", "Y"]
+            case .deny: return ["⌘", "N"]
+            }
+        }
+
+        /// The joined glyph string (e.g. `⌘⇧Y`) — the a11y / test-facing form.
+        var glyphString: String { glyphs.joined() }
+    }
+
+    /// The completion outcome banner glyph (AC #4): a stop for an interrupted
+    /// turn, a cross for a failure. Only ever shown for a non-success outcome.
+    static func completionOutcomeGlyphName(outcome: SessionOutcome) -> String {
+        outcome == .failed ? "xmark.square.fill" : "stop.fill"
+    }
+
+    /// The MASTER CAUTION block's caution-glow opacity (AC #1). A smooth triangle
+    /// breathe off the shared clock's phase — the loud, slow throb of a warning
+    /// annunciator, not the crisp two-step of the status lane — pinned to a steady
+    /// mid-level under Reduce Motion so the glow reads without animating.
+    static func glowOpacity(phase: Double, reduceMotion: Bool) -> Double {
+        let restingLevel = 0.5
+        guard !reduceMotion else { return restingLevel }
+        let triangle = phase < 0.5 ? phase * 2 : (1 - phase) * 2  // 0 → 1 → 0
+        return 0.3 + triangle * 0.35                              // 0.30 … 0.65
+    }
+
+    /// Every readable point size the alarm / completion surfaces draw, for the
+    /// ≥10pt-floor assertion (AC #7).
+    static let readableTextSizes: [CGFloat] = [13.2, 12.5, 11.5, 11, 10.5, 10]
 }
 
 // MARK: - Row content
@@ -858,5 +916,850 @@ private struct FlightDeckOptionalNamedAccessibilityAction: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+// MARK: - Chamfer geometry
+
+/// A rectangle with its four corners cut at 45° — the Flight Deck idiom's answer
+/// to a rounded corner. A true bevel (not a fillet), so the panel reads as
+/// milled hardware rather than poured glass; the `chamfer` size is clamped so it
+/// can never exceed half the shorter edge. `InsettableShape` so it composes with
+/// `strokeBorder` like `RoundedRectangle`.
+struct FlightDeckChamferedRectangle: InsettableShape {
+    var chamfer: CGFloat
+    var inset: CGFloat = 0
+
+    func inset(by amount: CGFloat) -> FlightDeckChamferedRectangle {
+        FlightDeckChamferedRectangle(chamfer: chamfer, inset: inset + amount)
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let r = rect.insetBy(dx: inset, dy: inset)
+        let c = min(chamfer, min(r.width, r.height) / 2)
+        var path = Path()
+        path.move(to: CGPoint(x: r.minX + c, y: r.minY))
+        path.addLine(to: CGPoint(x: r.maxX - c, y: r.minY))
+        path.addLine(to: CGPoint(x: r.maxX, y: r.minY + c))
+        path.addLine(to: CGPoint(x: r.maxX, y: r.maxY - c))
+        path.addLine(to: CGPoint(x: r.maxX - c, y: r.maxY))
+        path.addLine(to: CGPoint(x: r.minX + c, y: r.maxY))
+        path.addLine(to: CGPoint(x: r.minX, y: r.maxY - c))
+        path.addLine(to: CGPoint(x: r.minX, y: r.minY + c))
+        path.closeSubpath()
+        return path
+    }
+}
+
+// MARK: - Actionable row content (AB-314)
+
+/// The Flight Deck body for an **actionable** row — a permission request
+/// (MASTER CAUTION), a question, or the single completion card — across the
+/// `.list` and `.notification` presentations. A mono tabular header (so an
+/// actionable row still reads as one of the annunciator grid) sits above the
+/// phase-specific interior: `FlightDeckApprovalCard` for approvals, the shared
+/// `StructuredQuestionPromptView` for questions, and a squared mono completion
+/// card for completions. The header carries the same grouped VoiceOver summary as
+/// every other theme, and the tap-to-jump / dismiss behaviours are preserved
+/// verbatim from Classic.
+private struct FlightDeckActionableRowContent: View {
+    let session: AgentSession
+    let stateIndicator: IslandSessionStateIndicator
+    let completedStaleThreshold: TimeInterval
+    let isInteractive: Bool
+    let isHighlighted: Bool
+    let presentation: IslandSessionRowPresentation
+    let sideInset: CGFloat
+    let lang: LanguageManager
+    let actions: RowActions
+    let keyboardCoordinator: OverlayUICoordinator?
+    let pulseClock: PulseClock?
+
+    @State private var replyText: String = ""
+
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    private var increasesContrast: Bool { colorSchemeContrast == .increased }
+
+    @Environment(\.islandTokens) private var tokens
+
+    @ScaledMetric(relativeTo: .body) private var typeScaleReference: CGFloat = 13
+    private var typeScale: CGFloat { typeScaleReference / 13 }
+
+    private func scaledFont(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        .system(size: size * typeScale, weight: weight, design: .monospaced)
+    }
+
+    private static let ageRefreshInterval: TimeInterval = 30
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: Self.ageRefreshInterval)) { context in
+            rowBody(referenceDate: context.date)
+        }
+    }
+
+    private func rowBody(referenceDate: Date) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header(referenceDate: referenceDate)
+
+            if showsActionableBody {
+                actionableBody
+                    .padding(.leading, detailLeadingInset)
+                    .padding(.trailing, sideInset)
+                    .padding(.bottom, 13)
+            }
+        }
+        .background(rowFillColor)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(tokens.colors.paper.opacity(tokens.colors.hairline(increaseContrast: increasesContrast)))
+                .frame(height: 1)
+        }
+        .contentShape(Rectangle())
+        .animation(.easeInOut(duration: 0.12), value: isHighlighted)
+        .animation(.easeInOut(duration: 0.16), value: session.phase)
+        .animation(.easeInOut(duration: 0.16), value: session.outcome)
+        .onTapGesture(perform: handlePrimaryTap)
+    }
+
+    // MARK: - Header (mono tabular idiom)
+
+    private func header(referenceDate: Date) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            if showsLeadingStatusIndicator {
+                Image(systemName: FlightDeckSessionRowFormat.statusGlyphName(phase: session.phase, outcome: session.outcome))
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(statusTint)
+                    .frame(width: 18, alignment: .top)
+                    .padding(.top, 1)
+                    .accessibilityHidden(true)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(displayHeadline)
+                    .font(scaledFont(13.2, weight: .semibold))
+                    .foregroundStyle(tokens.colors.paper)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(session.spotlightWorkspaceName)
+
+                if let promptLine = headerPromptLineText {
+                    Text(promptLine)
+                        .font(scaledFont(11, weight: .medium))
+                        .foregroundStyle(tokens.colors.paper.opacity(contrastText(tokens.colors.secondaryTextOpacity)))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+
+            Spacer(minLength: 10)
+
+            HStack(spacing: FlightDeckSessionRowGrid.columnGap) {
+                agentCell
+                Text(ageBadgeText(at: referenceDate))
+                    .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                    .foregroundStyle(tokens.colors.paper.opacity(contrastText(tokens.colors.secondaryTextOpacity)))
+                    .frame(width: FlightDeckSessionRowGrid.timeColumnWidth, alignment: .trailing)
+                if let dismiss = actions.dismiss {
+                    DismissButton(action: dismiss, lang: lang)
+                }
+            }
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+        }
+        .padding(.leading, rowLeadingInset)
+        .padding(.trailing, sideInset)
+        .padding(.top, 11)
+        .padding(.bottom, showsActionableBody ? 8 : 11)
+        // The one grouped VoiceOver summary, identical wording to every theme.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityRowSummaryText(referenceDate: referenceDate))
+        .accessibilityAddTraits(isInteractive ? .isButton : [])
+        .accessibilityAction {
+            guard isInteractive else { return }
+            actions.jump()
+        }
+        .modifier(FlightDeckOptionalNamedAccessibilityAction(
+            name: actions.dismiss != nil ? lang.t("a11y.session.dismiss") : nil,
+            action: { actions.dismiss?() }
+        ))
+    }
+
+    /// Agent identity as a small **neutral** mono mark (a dim square + label) so
+    /// the annunciator status colour — the row's real signal — always wins.
+    private var agentCell: some View {
+        HStack(spacing: 5) {
+            Rectangle()
+                .fill(tokens.colors.paper.opacity(contrastText(tokens.colors.tertiaryTextOpacity)))
+                .frame(width: 3, height: 11)
+                .accessibilityHidden(true)
+            Text(agentBadgeTitle)
+                .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                .foregroundStyle(tokens.colors.paper.opacity(contrastText(tokens.colors.secondaryTextOpacity)))
+                .lineLimit(1)
+        }
+    }
+
+    // MARK: - Actionable body
+
+    /// Mirrors Classic's gate: attention phases always earn the body, a completed
+    /// row only when it has something to show, a running row only with a preview —
+    /// so a content-less completed-success row never draws an empty card, just its
+    /// header.
+    private var showsActionableBody: Bool {
+        switch session.phase {
+        case .waitingForApproval, .waitingForAnswer:
+            return true
+        case .completed:
+            return completionHasExpandedBody
+        case .running:
+            return runningDetailText != nil
+        }
+    }
+
+    private var completionHasExpandedBody: Bool {
+        session.outcome != .success
+            || !completionMessageText.isEmpty
+            || actions.reply != nil
+    }
+
+    @ViewBuilder
+    private var actionableBody: some View {
+        switch session.phase {
+        case .waitingForApproval:
+            FlightDeckApprovalCard(session: session, lang: lang, actions: actions, pulseClock: pulseClock)
+        case .waitingForAnswer:
+            StructuredQuestionPromptView(
+                prompt: session.questionPrompt,
+                lang: lang,
+                keyboardCoordinator: keyboardCoordinator,
+                onAnswer: { actions.answer?($0) }
+            )
+        case .completed:
+            completionBody
+        case .running:
+            if let preview = runningDetailText {
+                runningPreviewBox(preview)
+            }
+        }
+    }
+
+    private func runningPreviewBox(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11.5, weight: .medium, design: .monospaced))
+            .foregroundStyle(tokens.colors.paper.opacity(contrastText(0.82)))
+            .lineLimit(3)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(FlightDeckChamferedRectangle(chamfer: 6).fill(tokens.colors.paper.opacity(0.04)))
+            .overlay(FlightDeckChamferedRectangle(chamfer: 6).strokeBorder(tokens.colors.paper.opacity(0.1), lineWidth: 1))
+    }
+
+    // MARK: - Completion body (chamfered, mono-leaning)
+
+    private var completionBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if !completionMessageText.isEmpty {
+                if session.outcome != .success {
+                    completionOutcomeBanner
+                }
+
+                AutoHeightScrollView(maxHeight: 160) {
+                    Markdown(completionMessageText)
+                        .markdownTheme(.completionCard(tokens.colors))
+                        .markdownImageProvider(.noNetwork)
+                        .markdownInlineImageProvider(.noNetwork)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 9)
+                }
+            } else {
+                completionEmptyState
+            }
+
+            if actions.reply != nil {
+                Rectangle()
+                    .fill(tokens.colors.paper.opacity(0.08))
+                    .frame(height: 1)
+
+                completionReplyInput
+            }
+        }
+        .background(FlightDeckChamferedRectangle(chamfer: 6).fill(tokens.colors.paper.opacity(0.04)))
+        .overlay(FlightDeckChamferedRectangle(chamfer: 6).strokeBorder(tokens.colors.paper.opacity(0.12), lineWidth: 1))
+    }
+
+    private var completionOutcomeBanner: some View {
+        HStack(spacing: 6) {
+            Image(systemName: FlightDeckApprovalFormat.completionOutcomeGlyphName(outcome: session.outcome))
+                .font(.system(size: 10.5, weight: .bold))
+                .accessibilityHidden(true)
+            Text(FlightDeckText.caps(completionOutcomeLabel, lang: lang))
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .tracking(FlightDeckText.tracking(0.8, lang: lang))
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(statusTint.opacity(0.96))
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 4)
+    }
+
+    private var completionEmptyState: some View {
+        HStack {
+            Text(FlightDeckText.caps(completionOutcomeLabel, lang: lang))
+                .font(.system(size: 11.5, weight: .bold, design: .monospaced))
+                .tracking(FlightDeckText.tracking(0.8, lang: lang))
+                .foregroundStyle(statusTint.opacity(0.96))
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+
+    @ViewBuilder
+    private var completionReplyInput: some View {
+        HStack(spacing: 8) {
+            ReplyTextField(
+                placeholder: lang.t("completion.replyPlaceholder", session.completionReplyRecipientName),
+                text: $replyText,
+                onSubmit: { submitReply() }
+            )
+            .frame(height: 32)
+
+            Button {
+                submitReply()
+            } label: {
+                Image(systemName: "arrow.up.square.fill")
+                    .font(.system(size: 22))
+                    .foregroundStyle(replyText.trimmingCharacters(in: .whitespaces).isEmpty
+                        ? tokens.colors.paper.opacity(0.2) : tokens.colors.paper.opacity(0.9))
+            }
+            .buttonStyle(.plain)
+            .disabled(replyText.trimmingCharacters(in: .whitespaces).isEmpty)
+            .accessibilityLabel(lang.t("a11y.completion.sendReply"))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+
+    private func submitReply() {
+        let text = replyText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        replyText = ""
+        actions.reply?(text)
+    }
+
+    private func handlePrimaryTap() {
+        guard isInteractive else { return }
+        actions.jump()
+    }
+
+    private var completionOutcomeLabel: String {
+        switch session.outcome {
+        case .success: return lang.t("completion.done")
+        case .interrupted: return lang.t("completion.interrupted")
+        case .failed: return lang.t("completion.failed")
+        }
+    }
+
+    private var completionMessageText: String {
+        if let text = session.completionAssistantMessageText?.flightDeckTrimmed, !text.isEmpty {
+            return text
+        }
+        let summary = session.summary.flightDeckTrimmed
+        return summary == SessionPhase.completed.displayName ? "" : summary
+    }
+
+    // MARK: - Accessibility (identical wording to Classic)
+
+    private func accessibilityRowSummaryText(referenceDate: Date) -> String {
+        lang.t(
+            "a11y.session.summary",
+            session.tool.displayName,
+            session.spotlightWorkspaceName,
+            accessibilityPhaseText,
+            accessibilityElapsedText(at: referenceDate)
+        )
+    }
+
+    private var accessibilityPhaseText: String {
+        switch session.phase {
+        case .running:
+            return lang.t("a11y.phase.running")
+        case .waitingForApproval:
+            return lang.t("a11y.phase.waitingForApproval")
+        case .waitingForAnswer:
+            return lang.t("a11y.phase.waitingForAnswer")
+        case .completed:
+            switch session.outcome {
+            case .success: return lang.t("a11y.phase.completed")
+            case .interrupted: return lang.t("a11y.phase.interrupted")
+            case .failed: return lang.t("a11y.phase.failed")
+            }
+        }
+    }
+
+    private func accessibilityElapsedText(at referenceDate: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = Locale(identifier: lang.language.resolvedCode)
+        formatter.unitsStyle = .full
+        let reference = session.phase == .running ? session.firstSeenAt : session.islandActivityDate
+        return formatter.localizedString(for: reference, relativeTo: referenceDate)
+    }
+
+    // MARK: - Text / tint helpers
+
+    private var displayHeadline: String {
+        FlightDeckSessionRowFormat.displayHeadline(
+            headline: session.spotlightHeadlineText,
+            workspace: session.spotlightWorkspaceName,
+            fallback: session.tool.displayName
+        )
+    }
+
+    private var headerPromptLineText: String? {
+        if presentation == .notification {
+            return session.notificationHeaderPromptLineText
+        }
+        return session.spotlightPromptLineText
+    }
+
+    private var runningDetailText: String? {
+        if let preview = session.currentCommandPreviewText?.flightDeckTrimmed, !preview.isEmpty {
+            return "$ \(preview)"
+        }
+        if let activity = session.spotlightActivityLineText?.flightDeckTrimmed, !activity.isEmpty {
+            return activity
+        }
+        let summary = session.summary.flightDeckTrimmed
+        return summary.isEmpty ? nil : summary
+    }
+
+    private var agentBadgeTitle: String {
+        switch session.tool {
+        case .claudeCode: return "claude"
+        case .geminiCLI: return "gemini"
+        case .qwenCode: return "qwen"
+        case .kimiCLI: return "kimi"
+        default: return session.tool.shortName.lowercased()
+        }
+    }
+
+    private func ageBadgeText(at referenceDate: Date) -> String {
+        if session.phase == .running {
+            return session.elapsedRunningLabel(at: referenceDate)
+        }
+        return session.spotlightAgeBadge
+    }
+
+    private func contrastText(_ base: Double) -> Double {
+        tokens.colors.text(base, increaseContrast: increasesContrast)
+    }
+
+    private var statusTint: Color {
+        tokens.colors.statusTint(for: session.phase, outcome: session.outcome)
+    }
+
+    // MARK: - Layout insets
+
+    private var showsLeadingStatusIndicator: Bool {
+        presentation == .list && stateIndicator != .tint && stateIndicator != .bar
+    }
+
+    private var rowLeadingInset: CGFloat {
+        if presentation == .notification { return sideInset }
+        return sideInset
+    }
+
+    private var detailLeadingInset: CGFloat {
+        if presentation == .notification { return sideInset }
+        switch stateIndicator {
+        case .bar, .tint:
+            return sideInset
+        case .animatedDot, .glyph:
+            return sideInset + 28
+        }
+    }
+
+    private var rowFillColor: Color {
+        if presentation == .notification { return .clear }
+        return isHighlighted ? tokens.colors.paper.opacity(0.05) : .clear
+    }
+}
+
+// MARK: - Flight Deck approval card (AB-314)
+
+/// The permission request rendered as the Flight Deck **MASTER CAUTION** —
+/// a full-width chamfered alert block that stays the loudest row on the panel.
+/// A pulsing caution glow rides the block edge (a slow warning-annunciator throb
+/// off the shared clock, held steady under Reduce Motion); a stenciled
+/// `MASTER CAUTION` placard and `PERMISSION REQUIRED` kicker head it, the command
+/// sits in a chamfered mono box above the affected-path line and the optional
+/// `PermissionDiffPreview` (whose +/− already render in the phosphor green/red),
+/// and the ALLOW (inverted) / DENY (outlined) chamfered switches each print the
+/// **real** ⌘Y / ⌘N key-hint glyph the global keyboard handler fires; the
+/// always-allow options carry ⌘⇧Y.
+///
+/// The alarm tint follows the semantic status token — warning **red** for a
+/// blocked permission (`statusWaitingForApproval == statusFailed`) — so the block
+/// matches the red status lane the row already draws in the list; the amber
+/// caution light stays the question phase's signal. (Semantic state colours
+/// always win.) Nothing but the glow animates, so Reduce Motion pins it steady.
+private struct FlightDeckApprovalCard: View {
+    let session: AgentSession
+    let lang: LanguageManager
+    let actions: RowActions
+    let pulseClock: PulseClock?
+
+    @Environment(\.islandTokens) private var tokens
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    private var increasesContrast: Bool { colorSchemeContrast == .increased }
+
+    private static let cardChamfer: CGFloat = 6
+
+    /// The alarm tint — the same token approval / failure status resolves to.
+    private var alarm: Color { tokens.colors.statusWaitingForApproval }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            masterCautionHeader
+
+            // Command preview in a chamfered mono box + affected-path line.
+            VStack(alignment: .leading, spacing: 6) {
+                Text(commandPreviewText)
+                    .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(tokens.colors.paper.opacity(contrastText(0.86)))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let path = affectedPath {
+                    Text(path)
+                        .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                        .foregroundStyle(tokens.colors.paper.opacity(contrastText(0.5)))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .background(FlightDeckChamferedRectangle(chamfer: 5).fill(tokens.colors.paper.opacity(0.05)))
+            .overlay(FlightDeckChamferedRectangle(chamfer: 5).strokeBorder(tokens.colors.paper.opacity(0.14), lineWidth: 1))
+
+            if let diffResult = permissionDiffResult {
+                PermissionDiffPreview(result: diffResult, lang: lang)
+            }
+
+            if session.permissionRequest?.requiresTerminalApproval == true {
+                terminalApprovalCTA
+            } else {
+                HStack(spacing: 8) {
+                    FlightDeckApprovalButton(
+                        title: denyTitle,
+                        shortcut: .deny,
+                        kind: .outlined,
+                        lang: lang,
+                        accessibilityLabel: session.permissionRequest?.secondaryActionTitle ?? lang.t("a11y.approval.deny"),
+                        action: { actions.approve?(.deny) }
+                    )
+                    FlightDeckApprovalButton(
+                        title: allowTitle,
+                        shortcut: .allowOnce,
+                        kind: .inverted,
+                        lang: lang,
+                        accessibilityLabel: session.permissionRequest?.primaryActionTitle ?? lang.t("a11y.approval.allowOnce"),
+                        action: { actions.approve?(.allowOnce) }
+                    )
+                }
+
+                alwaysAllowOptions
+            }
+        }
+        .padding(13)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(FlightDeckChamferedRectangle(chamfer: Self.cardChamfer).fill(cardFill))
+        // The chamfered alarm frame — a hard bevel, no fillet.
+        .overlay(
+            FlightDeckChamferedRectangle(chamfer: Self.cardChamfer)
+                .strokeBorder(alarm.opacity(increasesContrast ? 1 : 0.85), lineWidth: 1.5)
+        )
+        // The MASTER CAUTION glow behind the block — pulsing with motion, steady
+        // under Reduce Motion (both handled by the leaf).
+        .background(
+            FlightDeckCautionGlow(color: alarm, chamfer: Self.cardChamfer, pulseClock: pulseClock)
+        )
+        .accessibilityElement(children: .contain)
+    }
+
+    /// The stenciled alarm header: a filled `MASTER CAUTION` placard chip beside a
+    /// `PERMISSION REQUIRED` kicker, both uppercase + letterspaced on Latin and
+    /// neutralized (uncased, untracked) on CJK. A caution triangle rides the front
+    /// so the alarm survives a grayscale screenshot.
+    private var masterCautionHeader: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(alarm)
+                .accessibilityHidden(true)
+
+            Text(FlightDeckText.caps(lang.t("island.flightDeck.approval.masterCaution"), lang: lang))
+                .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                .tracking(FlightDeckText.tracking(1.2, lang: lang))
+                .foregroundStyle(tokens.colors.surfaceInk)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(FlightDeckChamferedRectangle(chamfer: 3).fill(alarm))
+                .accessibilityHidden(true)
+
+            Text(FlightDeckText.caps(lang.t("island.flightDeck.approval.permissionRequired"), lang: lang))
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .tracking(FlightDeckText.tracking(0.6, lang: lang))
+                .foregroundStyle(alarm.opacity(increasesContrast ? 1 : 0.92))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// Under Reduce Transparency (a no-op for this opaque theme, but guarded) and
+    /// by default the card sits on the opaque ink ground with a faint alarm wash,
+    /// so legibility never depends on anything showing through.
+    private var cardFill: Color {
+        reduceTransparency ? tokens.colors.surfaceInk : alarm.opacity(0.08)
+    }
+
+    /// AB-235: scoped always-allow options (one per suggested update) or the
+    /// generic session-scoped fallback — the same calls ⌘⇧Y drives. The first
+    /// option carries the ⌘⇧Y key-hint glyph the shortcut fires against.
+    @ViewBuilder
+    private var alwaysAllowOptions: some View {
+        if let updates = session.permissionRequest?.suggestedUpdates, !updates.isEmpty {
+            VStack(spacing: 6) {
+                ForEach(Array(updates.enumerated()), id: \.offset) { index, update in
+                    FlightDeckApprovalButton(
+                        title: update.displayLabel,
+                        shortcut: index == 0 ? .alwaysAllow : nil,
+                        kind: .ghost,
+                        lang: lang,
+                        uppercases: false,
+                        accessibilityLabel: update.displayLabel,
+                        action: { actions.approve?(.allowWithUpdates([update])) }
+                    )
+                }
+            }
+        } else if let toolName = session.permissionRequest?.toolName {
+            FlightDeckApprovalButton(
+                title: lang.t("approval.alwaysAllow", toolName),
+                shortcut: .alwaysAllow,
+                kind: .ghost,
+                lang: lang,
+                uppercases: false,
+                accessibilityLabel: lang.t("approval.alwaysAllow", toolName),
+                action: {
+                    let rule = ClaudePermissionRuleValue(toolName: toolName)
+                    let update = ClaudePermissionUpdate.addRules(
+                        destination: .session,
+                        rules: [rule],
+                        behavior: .allow
+                    )
+                    actions.approve?(.allowWithUpdates([update]))
+                }
+            )
+        }
+    }
+
+    private var terminalApprovalCTA: some View {
+        FlightDeckApprovalButton(
+            title: lang.t("approval.respondInTerminal"),
+            shortcut: nil,
+            kind: .ghost,
+            lang: lang,
+            leadingGlyph: "arrow.up.forward.square",
+            accessibilityLabel: lang.t("approval.respondInTerminal"),
+            action: { actions.jump() }
+        )
+    }
+
+    private var allowTitle: String {
+        session.permissionRequest?.primaryActionTitle ?? lang.t("island.flightDeck.approval.allow")
+    }
+
+    private var denyTitle: String {
+        session.permissionRequest?.secondaryActionTitle ?? lang.t("island.flightDeck.approval.deny")
+    }
+
+    private var affectedPath: String? {
+        guard let path = session.permissionRequest?.affectedPath.flightDeckTrimmed, !path.isEmpty else {
+            return nil
+        }
+        return path
+    }
+
+    private var commandPreviewText: String {
+        if let preview = session.currentCommandPreviewText?.flightDeckTrimmed, !preview.isEmpty {
+            return "$ \(preview)"
+        }
+        return (session.permissionRequest?.summary ?? session.summary).flightDeckTrimmed
+    }
+
+    private var permissionDiffResult: PermissionDiffResult? {
+        guard let source = session.permissionRequest?.fileDiffSource else { return nil }
+        let result = PermissionDiff.compute(oldText: source.oldText, newText: source.newText)
+        return result.isEmpty ? nil : result
+    }
+
+    private func contrastText(_ base: Double) -> Double {
+        tokens.colors.text(base, increaseContrast: increasesContrast)
+    }
+}
+
+/// The pulsing MASTER CAUTION glow behind the alarm block. A blurred chamfered
+/// halo in the alarm tint whose opacity throbs off the shared 15fps clock;
+/// isolated in its own `View` so Observation's per-view tracking invalidates only
+/// the halo at 15fps (AB-228), and so Reduce Motion never even acquires the clock
+/// — the steady halo is drawn instead (AB-244).
+private struct FlightDeckCautionGlow: View {
+    let color: Color
+    let chamfer: CGFloat
+    let pulseClock: PulseClock?
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        if let pulseClock, !reduceMotion {
+            FlightDeckPulsingGlow(color: color, chamfer: chamfer, pulseClock: pulseClock)
+        } else {
+            halo(opacity: FlightDeckApprovalFormat.glowOpacity(phase: 0, reduceMotion: true))
+        }
+    }
+
+    func halo(opacity: Double) -> some View {
+        FlightDeckChamferedRectangle(chamfer: chamfer)
+            .fill(color)
+            .blur(radius: 9)
+            .opacity(opacity)
+            .padding(-2)
+            .accessibilityHidden(true)
+    }
+}
+
+private struct FlightDeckPulsingGlow: View {
+    let color: Color
+    let chamfer: CGFloat
+    let pulseClock: PulseClock
+
+    var body: some View {
+        FlightDeckChamferedRectangle(chamfer: chamfer)
+            .fill(color)
+            .blur(radius: 9)
+            .opacity(FlightDeckApprovalFormat.glowOpacity(phase: pulseClock.phase, reduceMotion: false))
+            .padding(-2)
+            .onAppear { pulseClock.acquire() }
+            .onDisappear { pulseClock.release() }
+            .accessibilityHidden(true)
+    }
+}
+
+/// A chamfered Flight Deck approval switch. `inverted` fills with paper for the
+/// loud affirmative (ALLOW), `outlined` is a paper hairline frame (DENY), and
+/// `ghost` is a dim outline for the stacked always-allow / terminal options. The
+/// trailing key-hint chip prints the real registered shortcut glyphs.
+private struct FlightDeckApprovalButton: View {
+    enum Kind { case inverted, outlined, ghost }
+
+    let title: String
+    let shortcut: FlightDeckApprovalFormat.Shortcut?
+    let kind: Kind
+    let lang: LanguageManager
+    var uppercases: Bool = true
+    var leadingGlyph: String?
+    let accessibilityLabel: String
+    let action: () -> Void
+
+    @Environment(\.islandTokens) private var tokens
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    private var increasesContrast: Bool { colorSchemeContrast == .increased }
+
+    private static let chamfer: CGFloat = 5
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 7) {
+                if let leadingGlyph {
+                    Image(systemName: leadingGlyph)
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .accessibilityHidden(true)
+                }
+                Text(uppercases ? FlightDeckText.caps(title, lang: lang) : title)
+                    .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                    .tracking(uppercases ? FlightDeckText.tracking(0.8, lang: lang) : 0)
+                    .lineLimit(1)
+                if let shortcut {
+                    keyHint(shortcut)
+                }
+            }
+            .foregroundStyle(foreground)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 8)
+            .background(FlightDeckChamferedRectangle(chamfer: Self.chamfer).fill(background))
+            .overlay(FlightDeckChamferedRectangle(chamfer: Self.chamfer).strokeBorder(border, lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    /// The key-hint chip — a chamfered mono glyph run (`⌘Y`) in the switch's own
+    /// foreground, faintly boxed so it reads as a keycap without shouting.
+    private func keyHint(_ shortcut: FlightDeckApprovalFormat.Shortcut) -> some View {
+        Text(shortcut.glyphString)
+            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            .foregroundStyle(foreground.opacity(0.85))
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
+            .overlay(FlightDeckChamferedRectangle(chamfer: 2.5).strokeBorder(foreground.opacity(0.35), lineWidth: 1))
+            .accessibilityHidden(true)
+    }
+
+    private var foreground: Color {
+        switch kind {
+        case .inverted:
+            return tokens.colors.surfaceInk
+        case .outlined:
+            return tokens.colors.paper.opacity(tokens.colors.text(0.85, increaseContrast: increasesContrast))
+        case .ghost:
+            return tokens.colors.paper.opacity(tokens.colors.text(0.7, increaseContrast: increasesContrast))
+        }
+    }
+
+    private var background: Color {
+        switch kind {
+        case .inverted:
+            return tokens.colors.paper
+        case .outlined, .ghost:
+            return tokens.colors.paper.opacity(0.03)
+        }
+    }
+
+    private var border: Color {
+        switch kind {
+        case .inverted:
+            return tokens.colors.paper
+        case .outlined:
+            return tokens.colors.paper.opacity(increasesContrast ? 0.7 : 0.4)
+        case .ghost:
+            return tokens.colors.paper.opacity(increasesContrast ? 0.5 : 0.18)
+        }
+    }
+}
+
+private extension String {
+    var flightDeckTrimmed: String {
+        trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

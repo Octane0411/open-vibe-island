@@ -196,4 +196,68 @@ struct FlightDeckSessionRowTests {
             #expect(size >= FlightDeckTypography.floor)
         }
     }
+
+    // MARK: - MASTER CAUTION approval surfaces (AB-314)
+
+    /// AC #1 / #2: the ALLOW / always-allow / DENY switches must print the
+    /// **real** registered `OverlayPanelController` shortcuts — ⌘Y, ⌘⇧Y, ⌘N —
+    /// never the mockup's ⏎/⎋.
+    @Test
+    func approvalKeyHintGlyphsMatchTheRegisteredShortcuts() {
+        #expect(FlightDeckApprovalFormat.Shortcut.allowOnce.glyphString == "⌘Y")
+        #expect(FlightDeckApprovalFormat.Shortcut.alwaysAllow.glyphString == "⌘⇧Y")
+        #expect(FlightDeckApprovalFormat.Shortcut.deny.glyphString == "⌘N")
+
+        // Every glyph string is built from the ordered glyph run, and the three
+        // shortcuts stay distinct so no two switches print the same hint.
+        for shortcut in FlightDeckApprovalFormat.Shortcut.allCases {
+            #expect(shortcut.glyphString == shortcut.glyphs.joined())
+        }
+        let hints = FlightDeckApprovalFormat.Shortcut.allCases.map(\.glyphString)
+        #expect(Set(hints).count == hints.count)
+    }
+
+    /// AC #4: a non-success completion never shares the success row's quiet
+    /// check — interrupted and failed each get a distinct, unmistakable glyph.
+    @Test
+    func completionOutcomeBannerGlyphsAreDistinct() {
+        let interrupted = FlightDeckApprovalFormat.completionOutcomeGlyphName(outcome: .interrupted)
+        let failed = FlightDeckApprovalFormat.completionOutcomeGlyphName(outcome: .failed)
+        #expect(interrupted != failed)
+        // Neither collides with the success-row check the row draws.
+        #expect(interrupted != FlightDeckSessionRowFormat.statusGlyphName(phase: .completed, outcome: .success))
+        #expect(failed != FlightDeckSessionRowFormat.statusGlyphName(phase: .completed, outcome: .success))
+    }
+
+    /// AC #1 / #7: the MASTER CAUTION glow pulses only with motion — under Reduce
+    /// Motion it is pinned to a steady mid-level so the alarm reads without
+    /// animating, and it always stays a legible, in-range opacity.
+    @Test
+    func cautionGlowIsGatedByReduceMotion() {
+        // Under Reduce Motion the glow holds one steady level across the phase.
+        let steadyLow = FlightDeckApprovalFormat.glowOpacity(phase: 0.0, reduceMotion: true)
+        let steadyHigh = FlightDeckApprovalFormat.glowOpacity(phase: 1.0, reduceMotion: true)
+        #expect(steadyLow == steadyHigh)
+        #expect(steadyLow > 0 && steadyLow <= 1)
+
+        // With motion it throbs: the trough (phase 0) is dimmer than the crest
+        // (phase 0.5), and every value stays a visible, in-range opacity.
+        let trough = FlightDeckApprovalFormat.glowOpacity(phase: 0.0, reduceMotion: false)
+        let crest = FlightDeckApprovalFormat.glowOpacity(phase: 0.5, reduceMotion: false)
+        #expect(crest > trough)
+        for step in stride(from: 0.0, through: 1.0, by: 0.1) {
+            let value = FlightDeckApprovalFormat.glowOpacity(phase: step, reduceMotion: false)
+            #expect(value > 0 && value <= 1)
+        }
+    }
+
+    /// AC #7: the alarm / completion surfaces hold the same ≥10pt readable floor
+    /// as the rest of the theme — no sub-10pt micro-type.
+    @Test
+    func everyReadableActionableSizeHoldsTheTenPointFloor() {
+        #expect(!FlightDeckApprovalFormat.readableTextSizes.isEmpty)
+        for size in FlightDeckApprovalFormat.readableTextSizes {
+            #expect(size >= FlightDeckTypography.floor)
+        }
+    }
 }

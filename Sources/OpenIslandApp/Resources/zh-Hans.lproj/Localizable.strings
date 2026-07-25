@@ -263,6 +263,12 @@
 "island.flightDeck.state.standby" = "待命";
 "island.flightDeck.hint.setup" = "配置";
 
+/* Island Panel - Flight Deck theme actionable surfaces (AB-314) */
+"island.flightDeck.approval.masterCaution" = "主警戒";
+"island.flightDeck.approval.permissionRequired" = "需要授权";
+"island.flightDeck.approval.allow" = "允许";
+"island.flightDeck.approval.deny" = "拒绝";
+
 /* Island Panel - Session List */
 "island.sessionList.title" = "会话";
 "island.sessionOverview.total" = "总计";

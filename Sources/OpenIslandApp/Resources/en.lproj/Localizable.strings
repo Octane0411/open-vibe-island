@@ -263,6 +263,12 @@
 "island.flightDeck.state.standby" = "Standby";
 "island.flightDeck.hint.setup" = "Setup";
 
+/* Island Panel - Flight Deck theme actionable surfaces (AB-314) */
+"island.flightDeck.approval.masterCaution" = "Master Caution";
+"island.flightDeck.approval.permissionRequired" = "Permission Required";
+"island.flightDeck.approval.allow" = "Allow";
+"island.flightDeck.approval.deny" = "Deny";
+
 /* Island Panel - Session List */
 "island.sessionList.title" = "Sessions";
 "island.sessionOverview.total" = "total";
