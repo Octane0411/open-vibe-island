@@ -32,6 +32,8 @@ This index is the repository map for humans and coding agents. Read these files 
 
 - [docs/notch-surface-model.md](./notch-surface-model.md) for the island surface routing model and debug harness intent
 - [docs/app-ghostty-codex-chain.md](./app-ghostty-codex-chain.md) for terminal environment findings across the current supported chain
+- [docs/orbit/consolidation-plan.md](./orbit/consolidation-plan.md) for the Orbit clean-room consolidation architecture and verification boundaries
+- [docs/orbit/reference-intake.md](./orbit/reference-intake.md) for Orbit reference provenance, licensing, and clean-room intake constraints
 
 ## Refactoring Plans
 
