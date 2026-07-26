@@ -308,8 +308,11 @@ private struct FlightDeckAnnunciatorTile: Identifiable {
 /// One annunciator tile: a square status lamp, the count, and an uppercase
 /// caption, boxed in a hairline housing. Lit tiles light their lamp and raise
 /// their text; dark tiles seat a dim lamp and drop their text into the ground —
-/// an unlit annunciator is still a readout. The lamp is a flat square (no glow),
-/// so there is nothing to animate and Reduce Motion is a no-op here.
+/// an unlit annunciator is still a readout. A lit lamp is now self-lit phosphor
+/// (AB-336): it bleeds a static halo outside its square via the shared
+/// `phosphorGlow` primitive so the summary strip reads as a bank of self-lit
+/// annunciators. The glow is static (a count readout, not a live lamp), so
+/// there is nothing to animate and Reduce Motion is a no-op here.
 private struct FlightDeckAnnunciatorTileView: View {
     let tile: FlightDeckAnnunciatorTile
     let compact: Bool
@@ -344,6 +347,14 @@ private struct FlightDeckAnnunciatorTileView: View {
             Rectangle()
                 .fill(lampColor)
                 .frame(width: 6, height: 6)
+                // A lit annunciator bleeds a phosphor halo outside its square; a
+                // dark one casts nothing (intensity 0).
+                .phosphorGlow(
+                    shape: Rectangle(),
+                    tint: tile.tint,
+                    radius: FlightDeckMotion.Breathe.glowRadiusMin,
+                    intensity: tile.isLit ? 0.55 : 0
+                )
                 .accessibilityHidden(true)
 
             Text("\(tile.count)")
@@ -434,8 +445,11 @@ private struct FlightDeckBridgeFooter: View {
     }
 }
 
-/// The footer's live link lamp: a flat status square that blinks while the bridge
-/// is up, and holds a steady square when the link is down or under Reduce Motion.
+/// The footer's live link lamp: a self-lit status square that blinks while the
+/// bridge is up, and holds a steady square when the link is down or under Reduce
+/// Motion. A phosphor halo (AB-336, the shared primitive) bleeds outside the
+/// square and tracks the blink so the link lamp reads as a lit annunciator, not a
+/// flat swatch; a down link holds a steady dim halo.
 private struct FlightDeckLinkLamp: View {
     let color: Color
     let isLive: Bool
@@ -443,11 +457,27 @@ private struct FlightDeckLinkLamp: View {
     @State private var blink = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    private var lampOpacity: Double {
+        isLive && !reduceMotion ? (blink ? 1 : 0.4) : (isLive ? 1 : 0.85)
+    }
+
+    /// The halo tracks the blink (bright at the lit peak, dim at the trough); a
+    /// down link keeps a steady low halo.
+    private var glowIntensity: Double {
+        isLive && !reduceMotion ? (blink ? 0.6 : 0.25) : (isLive ? 0.55 : 0.35)
+    }
+
     var body: some View {
         Rectangle()
             .fill(color)
             .frame(width: 6, height: 6)
-            .opacity(isLive && !reduceMotion ? (blink ? 1 : 0.4) : (isLive ? 1 : 0.85))
+            .opacity(lampOpacity)
+            .phosphorGlow(
+                shape: Rectangle(),
+                tint: color,
+                radius: FlightDeckMotion.Breathe.glowRadiusMin,
+                intensity: glowIntensity
+            )
             .onAppear {
                 guard isLive, !reduceMotion else { return }
                 withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {

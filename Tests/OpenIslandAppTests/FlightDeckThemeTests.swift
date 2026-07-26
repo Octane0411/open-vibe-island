@@ -150,9 +150,13 @@ struct FlightDeckThemeTests {
     // MARK: - Capability flags
 
     @Test
-    func shellRowsStayDrawingGroupSafe() {
-        // The shell reuses Classic's flat rows, which are safe to rasterize.
-        #expect(FlightDeckTheme().rowIsDrawingGroupSafe == true)
+    func shellRowsAreDrawingGroupUnsafeForPhosphorBleed() {
+        // AB-336: the row status lane is now a self-lit phosphor lamp whose halo
+        // bleeds *outside* the row silhouette (breathe halo to 11pt, the success
+        // settle flash to 18pt). A `.drawingGroup()` off-screen render flattens the
+        // row to its own bounds and would clip that out-of-bounds bleed — the same
+        // reason Poured is unsafe — so the row opts out of rasterization.
+        #expect(FlightDeckTheme().rowIsDrawingGroupSafe == false)
     }
 
     // MARK: - Uppercase micro-labels neutralize for CJK

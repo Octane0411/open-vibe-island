@@ -32,6 +32,10 @@ struct FlightDeckClosedPill: View {
     var showsGlyph: Bool = true
 
     @Environment(\.islandTokens) private var tokens
+    /// The spotlight's phase/outcome (AB-330 plumbing), folded into the pill's
+    /// attention bloom so a held permission / open question tints the bezel and
+    /// (via the seam layer) blooms a coloured glow — the pill's "one loud thing".
+    @Environment(\.islandClosedPillActivity) private var activity
 
     private static let glyphSize: CGFloat = 24
     private static let innerGap: CGFloat = 6
@@ -58,12 +62,26 @@ struct FlightDeckClosedPill: View {
             .fill(tokens.colors.surfaceInk)
             .overlay(
                 V6ClosedPillShape()
-                    .stroke(
-                        tokens.colors.paper.opacity(tokens.colors.hairlineOpacity),
-                        lineWidth: 1
-                    )
+                    .stroke(bezelColor, lineWidth: 1)
                     .allowsHitTesting(false)
             )
+    }
+
+    /// The pill's bezel rule (AB-336): the neutral hairline normally, repointed to
+    /// the attention tint (warning red / caution amber, at the mockup's border
+    /// alpha) while the pill is the loud attention state — the border half of the
+    /// bloom, whose colored-shadow half rides the `FlightDeckClosedGlow` seam.
+    private var bezelColor: Color {
+        if let bloom {
+            return bloom.tint(tokens.colors).opacity(bloom.borderOpacity)
+        }
+        return tokens.colors.paper.opacity(tokens.colors.hairlineOpacity)
+    }
+
+    /// The resolved attention bloom, or `nil` for every non-attention state (the
+    /// pill stays flat hardware).
+    private var bloom: FlightDeckPillBloom? {
+        FlightDeckPillBloom.resolve(activity: activity, mode: mode, rightSlot: rightSlot)
     }
 
     @ViewBuilder
@@ -301,10 +319,16 @@ private struct FlightDeckAnnunciatorLight: View {
         case .session(_, let state):
             switch state {
             case .running:
-                // A working agent lights its lamp full cyan-green nominal — flat,
-                // no glow. Brand colour is intentionally dropped for the semantic
-                // status colour.
-                lamp(fill: tokens.colors.statusRunning)
+                // AB-336: a working agent's lamp is self-lit phosphor now — it
+                // breathes at 2.0s and blooms a nominal-green halo outside its
+                // silhouette (was a flat, glow-free fill). Brand colour is still
+                // intentionally dropped for the semantic status colour.
+                FlightDeckRunningLight(
+                    color: tokens.colors.statusRunning,
+                    size: size,
+                    radius: radius,
+                    housing: AnyView(housing)
+                )
             case .idle:
                 // The lamp is off: a dark core seated in its housing.
                 lamp(fill: tokens.colors.statusIdle.opacity(0.5))
@@ -342,10 +366,58 @@ private struct FlightDeckAnnunciatorLight: View {
     }
 }
 
-/// A waiting agent's annunciator light: an amber lamp that flashes its opacity
-/// with motion enabled, and holds a fixed mid-opacity under Reduce Motion so it
-/// still reads as distinct from an idle (dark) or running (steady-lit) lamp
-/// without animating.
+/// A running agent's annunciator light (AB-336): a self-lit nominal-green lamp
+/// that **breathes** — opacity `0.86 → 1.0` with a phosphor halo swelling
+/// `5 → 11pt` outside its silhouette, once per `FlightDeckMotion.Breathe.period`
+/// (2.0s), ease-in-out. Motion is a single `@State` toggle driven `repeatForever`
+/// (the `FlightDeckWaitingLight` / `PouredPillGlow` precedent); under Reduce
+/// Motion no animation is started and the lamp holds its **lit peak** (full
+/// opacity + fully-bloomed halo) so it never even acquires a clock.
+private struct FlightDeckRunningLight: View {
+    let color: Color
+    let size: CGFloat
+    let radius: CGFloat
+    let housing: AnyView
+
+    @State private var breathing = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// `true` (peak) whenever Reduce Motion holds the lamp steady-lit, otherwise
+    /// the animated toggle drives it between trough and peak.
+    private var lit: Bool { reduceMotion || breathing }
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .fill(color)
+                .opacity(lit ? FlightDeckMotion.Breathe.opacityMax : FlightDeckMotion.Breathe.opacityMin)
+                // The phosphor halo bleeds outside the lamp (BRIEF §7); the shape
+                // matches the lamp fill so the light sits exactly under it.
+                .phosphorGlow(
+                    shape: RoundedRectangle(cornerRadius: radius, style: .continuous),
+                    tint: color,
+                    radius: lit ? FlightDeckMotion.Breathe.glowRadiusMax : FlightDeckMotion.Breathe.glowRadiusMin,
+                    intensity: lit ? 0.7 : 0.5
+                )
+            housing
+        }
+        .frame(width: size, height: size)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(
+                .easeInOut(duration: FlightDeckMotion.Breathe.period / 2).repeatForever(autoreverses: true)
+            ) {
+                breathing = true
+            }
+        }
+    }
+}
+
+/// A waiting agent's annunciator light (AB-336): an amber caution lamp that now
+/// carries a phosphor halo and pulses on the caution attention cadence
+/// (`FlightDeckMotion.Attention.cautionPeriod`, 1.2s) so it reads as a lit
+/// alarm, distinct from the running lamp's calmer breathe. Under Reduce Motion
+/// it holds its lit peak (never dark), still distinct from an idle (dark) lamp.
 private struct FlightDeckWaitingLight: View {
     let color: Color
     let size: CGFloat
@@ -354,19 +426,152 @@ private struct FlightDeckWaitingLight: View {
     @State private var blink = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    private var lit: Bool { reduceMotion || blink }
+
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: radius, style: .continuous)
                 .fill(color)
-                .opacity(reduceMotion ? 0.7 : (blink ? 1.0 : 0.3))
+                .opacity(lit ? FlightDeckMotion.Attention.opacityMax : FlightDeckMotion.Attention.opacityMin)
+                .phosphorGlow(
+                    shape: RoundedRectangle(cornerRadius: radius, style: .continuous),
+                    tint: color,
+                    radius: FlightDeckMotion.Breathe.glowRadiusMin,
+                    intensity: lit ? 0.6 : 0.3
+                )
             housing
         }
         .frame(width: size, height: size)
         .onAppear {
             guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
+            withAnimation(
+                .easeInOut(duration: FlightDeckMotion.Attention.cautionPeriod / 2).repeatForever(autoreverses: true)
+            ) {
                 blink = true
             }
         }
+    }
+}
+
+// MARK: - Attention bloom
+
+/// The closed pill's attention bloom (AB-336 · mockup `.attn-perm` / `.attn-caut`).
+///
+/// Only the two attention states bloom: a held permission (warning red) and an
+/// open question (caution amber). Every other state resolves to `nil`, so the
+/// pill stays flat hardware — the bloom is the pill's "exactly one loud thing".
+/// The fold from the spotlight's phase/mode reuses the shared
+/// `PouredPillAmbientState.resolve` (a theme-agnostic mapping despite its name)
+/// so the pill picks the same frame Poured does; only the two attention frames
+/// are surfaced here. The geometry constants live in `FlightDeckMotion.Bloom`.
+enum FlightDeckPillBloom: Equatable {
+    case permission
+    case question
+
+    static func resolve(
+        activity: IslandClosedPillActivity?,
+        mode: UnifiedBars.Mode,
+        rightSlot: IslandRightSlotContent?
+    ) -> FlightDeckPillBloom? {
+        switch PouredPillAmbientState.resolve(activity: activity, mode: mode, rightSlot: rightSlot) {
+        case .permission: return .permission
+        case .question:   return .question
+        case .idle, .working, .completed: return nil
+        }
+    }
+
+    /// The semantic status tint — warning red for a permission, caution amber for
+    /// a question (the same tokens the row lanes and beacons resolve to).
+    func tint(_ colors: IslandColorTokens) -> Color {
+        switch self {
+        case .permission: return colors.statusWaitingForApproval
+        case .question:   return colors.statusWaitingForAnswer
+        }
+    }
+
+    var borderOpacity: Double {
+        self == .permission
+            ? FlightDeckMotion.Bloom.permissionBorderOpacity
+            : FlightDeckMotion.Bloom.questionBorderOpacity
+    }
+
+    var glowRadius: CGFloat {
+        self == .permission
+            ? FlightDeckMotion.Bloom.permissionRadius
+            : FlightDeckMotion.Bloom.questionRadius
+    }
+
+    var glowOpacity: Double {
+        self == .permission
+            ? FlightDeckMotion.Bloom.permissionGlowOpacity
+            : FlightDeckMotion.Bloom.questionGlowOpacity
+    }
+
+    /// The pulse cadence — the faster warning period for a permission, the calmer
+    /// caution period for a question.
+    var period: Double {
+        self == .permission
+            ? FlightDeckMotion.Attention.warningPeriod
+            : FlightDeckMotion.Attention.cautionPeriod
+    }
+}
+
+/// The closed-pill attention-bloom **seam** (AB-336, the AB-330 seam pattern).
+///
+/// `IslandPanelView` mounts this *behind* the closed surface and OUTSIDE the
+/// notch morph's content clip, so its coloured `.shadow` bleeds past the pill
+/// silhouette instead of being truncated at it. It draws the pill shape filled
+/// with `surfaceInk` — occluded by the real pill drawn on top — so only the
+/// bloom shows. The overlay window already reserves headroom via the theme's
+/// closed-shadow insets / the larger opened reservation, which comfortably
+/// contains this tight bloom (mockup effective radius ≤ 12pt).
+struct FlightDeckClosedGlow: View {
+    let bloom: FlightDeckPillBloom
+    let width: CGFloat
+    let height: CGFloat
+
+    @Environment(\.islandTokens) private var tokens
+
+    var body: some View {
+        V6ClosedPillShape()
+            .fill(tokens.colors.surfaceInk)
+            .frame(width: width, height: height)
+            .modifier(FlightDeckPillBloomGlow(bloom: bloom))
+            .allowsHitTesting(false)
+    }
+}
+
+/// The bloom's colored drop-glow. SwiftUI `.shadow` has no spread, so the
+/// mockup's negative-spread shadow is approximated as a tight radius
+/// (`FlightDeckMotion.Bloom`) with the mockup's `6pt` down-offset. It pulses on
+/// the `attn` cadence via a single `@State` toggle (`PouredPillGlow` precedent);
+/// Reduce Motion never starts it and the glow holds its lit peak (§K).
+private struct FlightDeckPillBloomGlow: ViewModifier {
+    let bloom: FlightDeckPillBloom
+
+    @Environment(\.islandTokens) private var tokens
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var breathing = false
+
+    /// `true` at the pulse peak; held `true` (peak) under Reduce Motion.
+    private var lit: Bool { reduceMotion || breathing }
+
+    func body(content: Content) -> some View {
+        let tint = bloom.tint(tokens.colors)
+        let troughFactor = FlightDeckMotion.Attention.opacityMin / FlightDeckMotion.Attention.opacityMax
+        let opacity = lit ? bloom.glowOpacity : bloom.glowOpacity * troughFactor
+        return content
+            .shadow(
+                color: tint.opacity(opacity),
+                radius: bloom.glowRadius,
+                x: 0,
+                y: FlightDeckMotion.Bloom.yOffset
+            )
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeInOut(duration: bloom.period / 2).repeatForever(autoreverses: true)) {
+                    breathing = true
+                }
+            }
     }
 }

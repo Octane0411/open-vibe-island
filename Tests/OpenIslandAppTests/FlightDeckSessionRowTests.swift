@@ -74,29 +74,85 @@ struct FlightDeckSessionRowTests {
         }
     }
 
-    // MARK: - Status lane: which lanes pulse (AC #1)
+    // MARK: - Status lane: retimed motion mode (AC #1 / #4 / #5)
 
     @Test
-    func onlyLiveLanesPulse() {
-        // A running turn and an attention phase pulse (the live/EICAS blink)…
-        #expect(FlightDeckSessionRowFormat.lanePulses(phase: .running, presence: .running) == true)
-        #expect(FlightDeckSessionRowFormat.lanePulses(phase: .waitingForApproval, presence: .active) == true)
-        #expect(FlightDeckSessionRowFormat.lanePulses(phase: .waitingForAnswer, presence: .active) == true)
-        // …while every settled outcome holds steady.
-        #expect(FlightDeckSessionRowFormat.lanePulses(phase: .completed, presence: .active) == false)
-        #expect(FlightDeckSessionRowFormat.lanePulses(phase: .completed, presence: .inactive) == false)
+    func laneMotionSplitsRunningBreatheFromAttentionCadence() {
+        // A running turn breathes (2.0s phosphor), replacing the old two-step blink.
+        #expect(
+            FlightDeckSessionRowFormat.laneMotion(phase: .running, presence: .running, outcome: .success)
+                == .breathe
+        )
+        // The attention phases keep their *distinct* EICAS cadences: warning red
+        // (permission) throbs faster than caution amber (question).
+        #expect(
+            FlightDeckSessionRowFormat.laneMotion(phase: .waitingForApproval, presence: .active, outcome: .success)
+                == .attention(period: FlightDeckMotion.Attention.warningPeriod)
+        )
+        #expect(
+            FlightDeckSessionRowFormat.laneMotion(phase: .waitingForAnswer, presence: .active, outcome: .success)
+                == .attention(period: FlightDeckMotion.Attention.cautionPeriod)
+        )
+        #expect(FlightDeckMotion.Attention.warningPeriod < FlightDeckMotion.Attention.cautionPeriod)
     }
 
-    // MARK: - Motion-gated pulse (AC #1)
+    @Test
+    func laneMotionSettlesOnSuccessAndHoldsSteadyOtherwise() {
+        // A fresh completed *success* plays the one-shot settle (nominal flash →
+        // advisory dot, A5)…
+        #expect(
+            FlightDeckSessionRowFormat.laneMotion(phase: .completed, presence: .active, outcome: .success)
+                == .settle
+        )
+        // …while a non-success completion rests steady in its loud alert colour
+        // (glyph + width carry the state, not a pulse)…
+        #expect(
+            FlightDeckSessionRowFormat.laneMotion(phase: .completed, presence: .active, outcome: .failed)
+                == .steady
+        )
+        #expect(
+            FlightDeckSessionRowFormat.laneMotion(phase: .completed, presence: .active, outcome: .interrupted)
+                == .steady
+        )
+        // …and an inactive/stale row recedes to a steady dim bar regardless of phase.
+        #expect(
+            FlightDeckSessionRowFormat.laneMotion(phase: .running, presence: .inactive, outcome: .success)
+                == .steady
+        )
+        #expect(
+            FlightDeckSessionRowFormat.laneMotion(phase: .completed, presence: .inactive, outcome: .success)
+                == .steady
+        )
+    }
+
+    // MARK: - Success settle ramp (AC #5)
 
     @Test
-    func lanePulseIsGatedByReduceMotion() {
-        // Under Reduce Motion the lane is pinned fully lit — no animation.
-        #expect(FlightDeckSessionRowFormat.pulseOpacity(phase: 0.0, reduceMotion: true) == 1)
-        #expect(FlightDeckSessionRowFormat.pulseOpacity(phase: 1.0, reduceMotion: true) == 1)
-        // With motion, it steps crisply between lit and dim across the phase.
-        #expect(FlightDeckSessionRowFormat.pulseOpacity(phase: 0.9, reduceMotion: false) == 1)
-        #expect(FlightDeckSessionRowFormat.pulseOpacity(phase: 0.1, reduceMotion: false) < 1)
+    func settleFlashDecaysThenRests() {
+        // At the instant of completion the flash is full (scaled + wide green halo)…
+        #expect(FlightDeckMotion.settleFlashAmount(progress: 0) == 1)
+        // …decays to nothing by the flash key-time…
+        #expect(FlightDeckMotion.settleFlashAmount(progress: FlightDeckMotion.Settle.flashKeyTime) == 0)
+        // …and stays at nothing through the settled rest (a done row born settled
+        // shows the calm advisory dot, not the flash — deterministic under snapshot).
+        #expect(FlightDeckMotion.settleFlashAmount(progress: 1) == 0)
+        // Monotonic across the flash window.
+        let early = FlightDeckMotion.settleFlashAmount(progress: FlightDeckMotion.Settle.flashKeyTime * 0.25)
+        let late = FlightDeckMotion.settleFlashAmount(progress: FlightDeckMotion.Settle.flashKeyTime * 0.75)
+        #expect(early > late)
+    }
+
+    // MARK: - Steady-lane phosphor (AC #1)
+
+    @Test
+    func steadyAlertLaneGlowsButIdleLaneStaysDark() {
+        // A loud steady lane (failed/interrupted, resting opacity 1.0) is still a
+        // lit lamp — it casts a static halo…
+        let alert = FlightDeckSessionRowFormat.laneOpacity(.alert)
+        #expect(FlightDeckSessionRowFormat.steadyLaneGlowIntensity(restingOpacity: alert) > 0)
+        // …while the recessed idle lane (0.4) is unlit and casts nothing.
+        let idle = FlightDeckSessionRowFormat.laneOpacity(.idle)
+        #expect(FlightDeckSessionRowFormat.steadyLaneGlowIntensity(restingOpacity: idle) == 0)
     }
 
     // MARK: - One column grid (AC #2)
@@ -275,40 +331,43 @@ struct FlightDeckSessionRowTests {
         )
     }
 
-    /// AC #4: the beacon pulses only with motion. Under Reduce Motion it is pinned
-    /// to steady full brightness (a lit lamp, never dark); with motion it breathes
-    /// through a legible, in-range band and returns to its start after one period.
+    /// AC #4: the beacon pulses only with motion, now on the shared `attn` ramp
+    /// (AB-336). Under Reduce Motion it is pinned to the lit peak (`opacityMax`, a
+    /// lit lamp never dark); with motion it is brightest at the cycle boundary and
+    /// dimmest mid-cycle (the mockup `attn` opacity `1.0 → 0.28`), stays in that
+    /// band, and returns to its start after one period.
     @Test
     func beaconLevelIsGatedByReduceMotion() {
         let period = FlightDeckApprovalFormat.permissionBeaconPeriod
         let base = Date(timeIntervalSinceReferenceDate: 0)
 
-        // Reduce Motion: one steady lit level across the whole cycle.
+        // Reduce Motion: one steady lit level (the peak) across the whole cycle.
         for offset in stride(from: 0.0, through: period, by: period / 8) {
             let value = FlightDeckApprovalFormat.beaconLevel(
                 now: base.addingTimeInterval(offset), period: period, reduceMotion: true
             )
-            #expect(value == 1.0)
+            #expect(value == FlightDeckMotion.Attention.opacityMax)
         }
 
-        // With motion it breathes: the trough (cycle start) is dimmer than the
-        // crest (half a period in), and every level stays a visible, in-range value.
-        let trough = FlightDeckApprovalFormat.beaconLevel(now: base, period: period, reduceMotion: false)
-        let crest = FlightDeckApprovalFormat.beaconLevel(
+        // With motion (`attn` ramp): brightest at the cycle boundary, dimmest half
+        // a period in; every level stays inside the [opacityMin, opacityMax] band.
+        let boundary = FlightDeckApprovalFormat.beaconLevel(now: base, period: period, reduceMotion: false)
+        let mid = FlightDeckApprovalFormat.beaconLevel(
             now: base.addingTimeInterval(period / 2), period: period, reduceMotion: false
         )
-        #expect(crest > trough)
+        #expect(boundary > mid)
         for offset in stride(from: 0.0, through: period, by: period / 16) {
             let value = FlightDeckApprovalFormat.beaconLevel(
                 now: base.addingTimeInterval(offset), period: period, reduceMotion: false
             )
-            #expect(value > 0 && value <= 1)
+            #expect(value >= FlightDeckMotion.Attention.opacityMin - 0.0001)
+            #expect(value <= FlightDeckMotion.Attention.opacityMax + 0.0001)
         }
         // Periodic: the level is identical exactly one period later.
         let full = FlightDeckApprovalFormat.beaconLevel(
             now: base.addingTimeInterval(period), period: period, reduceMotion: false
         )
-        #expect(abs(full - trough) < 0.0001)
+        #expect(abs(full - boundary) < 0.0001)
     }
 
     // MARK: - HELD count-up (AB-334)

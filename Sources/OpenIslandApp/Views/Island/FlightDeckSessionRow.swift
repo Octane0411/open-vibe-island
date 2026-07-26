@@ -44,8 +44,10 @@ struct FlightDeckSessionRow: View {
     var lang: LanguageManager = .shared
     let actions: RowActions
     var keyboardCoordinator: OverlayUICoordinator?
-    /// Shared 15fps clock for the pulsing lane (AB-228). Passed through to the
-    /// leaf lane view; rows that don't animate never touch it.
+    /// Shared 15fps clock for the actionable card's annunciator beacon / caution
+    /// glow (AB-228). The non-actionable status lane no longer needs it — since
+    /// AB-336 the lane breathes / settles off its own clock-free `@State` (the
+    /// `FlightDeckRunningLight` pattern), so only the alarm interiors touch this.
     var pulseClock: PulseClock?
 
     var body: some View {
@@ -78,8 +80,7 @@ struct FlightDeckSessionRow: View {
                 presentation: presentation,
                 sideInset: sideInset,
                 lang: lang,
-                actions: actions,
-                pulseClock: pulseClock
+                actions: actions
             )
         }
     }
@@ -175,12 +176,40 @@ enum FlightDeckSessionRowFormat {
         }
     }
 
-    /// Whether the lane pulses (AC #1): the live states — a running turn and an
-    /// attention phase — blink like a warning light; every settled outcome holds
-    /// steady. The view layer gates this on Reduce Motion so the pulse is static
-    /// when motion is off.
-    static func lanePulses(phase: SessionPhase, presence: IslandSessionPresence) -> Bool {
-        presence == .running || phase.requiresAttention
+    /// The retimed 2.0 motion a status lane runs in (AB-336 · SPEC §1c / §4K).
+    /// The shipped lane lit running *and* waiting identically off one two-step
+    /// blink; the phosphor identity splits them: a running lane **breathes** (2.0s,
+    /// halo `5 → 11pt`), an attention lane **pulses** on its EICAS cadence
+    /// (warning red `1.0s` / caution amber `1.2s`, brighter than the calm breathe),
+    /// a freshly-completed *success* lane plays the one-shot **settle** (nominal
+    /// flash → advisory dot, A5), and every settled / idle lane holds **steady**.
+    /// A non-success completion (interrupted / failed) rests steady in its loud
+    /// alert colour — its glyph + width carry the state, not a pulse.
+    enum LaneMotion: Equatable {
+        case steady
+        case breathe
+        case attention(period: Double)
+        case settle
+    }
+
+    static func laneMotion(
+        phase: SessionPhase,
+        presence: IslandSessionPresence,
+        outcome: SessionOutcome
+    ) -> LaneMotion {
+        // A stale / inactive row recedes to a steady dim bar regardless of its
+        // stored phase (mirrors `lanePriority`'s idle-wins rule).
+        if presence == .inactive { return .steady }
+        switch phase {
+        case .waitingForApproval:
+            return .attention(period: FlightDeckMotion.Attention.warningPeriod)
+        case .waitingForAnswer:
+            return .attention(period: FlightDeckMotion.Attention.cautionPeriod)
+        case .running:
+            return .breathe
+        case .completed:
+            return outcome == .success ? .settle : .steady
+        }
     }
 
     /// Row rhythm (AC #4): `done` (a fresh completed row) is a single line;
@@ -209,11 +238,14 @@ enum FlightDeckSessionRowFormat {
         return trimmed
     }
 
-    /// The pulsing lane's blink (AC #1): a crisp two-step mechanical blink off the
-    /// shared clock's phase, pinned fully lit (static) under Reduce Motion.
-    static func pulseOpacity(phase: Double, reduceMotion: Bool) -> Double {
-        guard !reduceMotion else { return 1 }
-        return phase > 0.5 ? 1 : 0.45
+    /// The alert-lane static glow intensity (AB-336): a loud steady lane (a failed
+    /// / interrupted completion, resting opacity `1.0`) still reads as a self-lit
+    /// phosphor lamp, so it carries a modest static halo; the recessed idle lane
+    /// (resting opacity `0.4`) stays dark — an unlit lamp casts no light. Gated on
+    /// resting opacity so the mapping stays a pure function of the lane's own
+    /// brightness ramp.
+    static func steadyLaneGlowIntensity(restingOpacity: Double) -> Double {
+        restingOpacity > 0.5 ? 0.4 : 0
     }
 
     /// The status glyph (AC #4): a quiet check for a clean finish, and distinct
@@ -293,28 +325,26 @@ enum FlightDeckApprovalFormat {
     /// ≥10pt-floor assertion (AC #7).
     static let readableTextSizes: [CGFloat] = [13.2, 12.5, 11.5, 11, 10.5, 10]
 
-    // MARK: - Annunciator beacon (AB-334)
+    // MARK: - Annunciator beacon (AB-334 · retimed AB-336)
 
-    /// Beacon-lamp pulse periods, seconds. EICAS retiming (AB-334): the red
-    /// **WARNING** lamp on a held permission throbs faster (a 1.0s alarm cadence)
-    /// than the amber **CAUTION** lamp on a question (a calmer 1.2s), so the two
-    /// annunciators are distinguishable by rhythm as well as colour.
-    static let permissionBeaconPeriod: Double = 1.0
-    static let questionBeaconPeriod: Double = 1.2
+    /// Beacon-lamp pulse periods, seconds. EICAS retiming: the red **WARNING**
+    /// lamp on a held permission throbs faster (a 1.0s alarm cadence) than the
+    /// amber **CAUTION** lamp on a question (a calmer 1.2s), so the two
+    /// annunciators are distinguishable by rhythm as well as colour. AB-336 folds
+    /// these into `FlightDeckMotion.Attention` so the pill bloom, the beacons and
+    /// the motion strip share one source of truth — these stay the beacon's
+    /// public names but read straight off the motion enum.
+    static let permissionBeaconPeriod: Double = FlightDeckMotion.Attention.warningPeriod
+    static let questionBeaconPeriod: Double = FlightDeckMotion.Attention.cautionPeriod
 
-    /// The annunciator beacon-lamp brightness (AB-334). A smooth triangle breathe
-    /// off wall-clock time at the lamp's own `period` (each lamp is retimed
-    /// independently, which the shared fixed-period `PulseClock` can't express), so
-    /// the lamp swells from a dim floor to fully lit and back once per period.
-    /// Reduce Motion pins it to steady full brightness — a lit lamp, never dark.
+    /// The annunciator beacon-lamp brightness. AB-336 routes it through the shared
+    /// `FlightDeckMotion.attentionLevel` ramp (mockup `attn`: opacity `1.0 → 0.28`
+    /// at the lamp's own `period`), a pure function of wall-clock time so the red
+    /// (1.0s) and amber (1.2s) lamps retime independently — something the shared
+    /// fixed-period `PulseClock` can't express. Reduce Motion pins it to the peak
+    /// (`opacityMax`) — a lit lamp, never dark.
     static func beaconLevel(now: Date, period: Double, reduceMotion: Bool) -> Double {
-        let litLevel = 1.0
-        guard !reduceMotion, period > 0 else { return litLevel }
-        let cyclePosition = now.timeIntervalSinceReferenceDate
-            .truncatingRemainder(dividingBy: period) / period            // 0 … 1
-        let phase = cyclePosition < 0 ? cyclePosition + 1 : cyclePosition // guard negatives
-        let triangle = phase < 0.5 ? phase * 2 : (1 - phase) * 2          // 0 → 1 → 0
-        return 0.4 + triangle * 0.6                                       // 0.40 … 1.0
+        FlightDeckMotion.attentionLevel(now: now, period: period, reduceMotion: reduceMotion)
     }
 
     // MARK: - HELD count-up (AB-334)
@@ -353,7 +383,6 @@ private struct FlightDeckRowContent: View {
     let sideInset: CGFloat
     let lang: LanguageManager
     let actions: RowActions
-    let pulseClock: PulseClock?
 
     @State private var expandedOverride: Bool?
 
@@ -422,10 +451,14 @@ private struct FlightDeckRowContent: View {
             if showsStatusLane {
                 FlightDeckStatusLane(
                     color: statusTint(for: presence),
+                    flashTint: tokens.colors.statusRunning,
                     width: FlightDeckSessionRowFormat.laneWidth(priority),
                     restingOpacity: FlightDeckSessionRowFormat.laneOpacity(priority),
-                    pulses: FlightDeckSessionRowFormat.lanePulses(phase: session.phase, presence: presence),
-                    pulseClock: pulseClock
+                    motion: FlightDeckSessionRowFormat.laneMotion(
+                        phase: session.phase,
+                        presence: presence,
+                        outcome: session.outcome
+                    )
                 )
                 .padding(.vertical, 6)
                 .padding(.leading, laneLeadingInset)
@@ -905,49 +938,169 @@ private struct FlightDeckRowContent: View {
 
 // MARK: - Flight Deck status lane
 
-/// The colored EICAS warning-light lane on the row's left edge. A flat squared
-/// bar (no fillet, the Flight Deck idiom) that fills the row's height. Live
-/// lanes pulse off the shared 15fps clock; settled lanes — and any lane under
-/// Reduce Motion — hold a steady bar at their resting opacity.
+/// The colored EICAS warning-light lane on the row's left edge — now a self-lit
+/// phosphor lamp (AB-336). A flat squared bar (no fillet, the Flight Deck idiom)
+/// that fills the row's height and, per its `motion` mode, breathes (running),
+/// pulses on its EICAS cadence (attention), plays the one-shot success settle, or
+/// holds steady; every lit bar bleeds a phosphor halo outside its silhouette via
+/// the shared `phosphorGlow` primitive.
+///
+/// All four modes live in this one leaf (rather than branching into per-mode
+/// sub-views) so its `@State` keeps a **stable identity** across a phase change:
+/// that lets the settle fire only on the *live* transition into completed-success
+/// (via `onChange`), not when a list of already-done rows first appears — which
+/// keeps the settled dot deterministic under the snapshot harness and stops the
+/// panel re-flashing every done row on each open. Motion is driven by two
+/// clock-free `@State` values (the `FlightDeckRunningLight` / `PouredPillGlow`
+/// precedent): a peak/trough toggle animated `repeatForever` for the breathe /
+/// attention ramps, and a one-shot `settleProgress`. Under Reduce Motion no
+/// animation is started and no clock is acquired — the lamp holds its lit peak
+/// (breathe / attention) or its settled dot (settle), never dark.
 private struct FlightDeckStatusLane: View {
+    /// The lamp's settled/resting tint (advisory blue for a done lane, the alert
+    /// hue for a failed one, the dim idle grey when inactive).
     let color: Color
+    /// The nominal-green tint the success settle flashes through before it crosses
+    /// to `color` (`statusRunning`).
+    let flashTint: Color
     let width: CGFloat
     let restingOpacity: Double
-    let pulses: Bool
-    let pulseClock: PulseClock?
+    let motion: FlightDeckSessionRowFormat.LaneMotion
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    var body: some View {
-        if pulses, !reduceMotion, let pulseClock {
-            FlightDeckPulsingLane(color: color, width: width, pulseClock: pulseClock)
-        } else {
-            Rectangle()
-                .fill(color.opacity(restingOpacity))
-                .frame(width: width)
-                .frame(maxHeight: .infinity)
-                .accessibilityHidden(true)
+    /// Peak/trough toggle for the breathe + attention ramps. `true` (peak) whenever
+    /// Reduce Motion holds the lamp steady-lit, otherwise driven between trough and
+    /// peak by the `repeatForever` animation.
+    @State private var breathePhase = false
+    /// The one-shot success settle `0 → 1`. Starts at `1` (settled) so a lane born
+    /// completed rests as the calm advisory dot; a live transition into
+    /// completed-success drives it `0 → 1` for the flash.
+    @State private var settleProgress: Double = 1
+
+    private var lit: Bool { reduceMotion || breathePhase }
+    private var flashAmount: Double {
+        FlightDeckMotion.settleFlashAmount(progress: settleProgress)
+    }
+
+    // Per-frame resolved values (functions of `motion` + the two `@State`s).
+
+    private var barOpacity: Double {
+        switch motion {
+        case .breathe:
+            return lit ? FlightDeckMotion.Breathe.opacityMax : FlightDeckMotion.Breathe.opacityMin
+        case .attention:
+            return lit ? FlightDeckMotion.Attention.opacityMax : FlightDeckMotion.Attention.opacityMin
+        case .settle, .steady:
+            return restingOpacity
         }
     }
-}
 
-/// The pulsing lane, isolated in its own `View` so Observation's per-view
-/// tracking invalidates only this bar at 15fps (AB-228), and so Reduce Motion
-/// never even acquires the shared clock — the steady bar is drawn instead
-/// (AB-244). The blink is a crisp two-step (mechanical), not a breathe.
-private struct FlightDeckPulsingLane: View {
-    let color: Color
-    let width: CGFloat
-    let pulseClock: PulseClock
+    private var glowRadius: CGFloat {
+        switch motion {
+        case .breathe:
+            return lit ? FlightDeckMotion.Breathe.glowRadiusMax : FlightDeckMotion.Breathe.glowRadiusMin
+        case .attention:
+            return FlightDeckMotion.Breathe.glowRadiusMin
+        case .settle:
+            let span = FlightDeckMotion.Settle.flashGlowRadius - FlightDeckMotion.Settle.settledGlowRadius
+            return FlightDeckMotion.Settle.settledGlowRadius + span * CGFloat(flashAmount)
+        case .steady:
+            return FlightDeckMotion.Breathe.glowRadiusMin
+        }
+    }
+
+    private var glowIntensity: Double {
+        switch motion {
+        case .breathe:
+            return lit ? 0.8 : 0.55
+        case .attention:
+            return lit ? 0.6 : 0.3
+        case .settle:
+            return 0.55 + 0.35 * flashAmount
+        case .steady:
+            return FlightDeckSessionRowFormat.steadyLaneGlowIntensity(restingOpacity: restingOpacity)
+        }
+    }
+
+    private var laneScale: CGFloat {
+        guard case .settle = motion else { return 1 }
+        return 1 + (FlightDeckMotion.Settle.flashScale - 1) * CGFloat(flashAmount)
+    }
 
     var body: some View {
         Rectangle()
-            .fill(color.opacity(FlightDeckSessionRowFormat.pulseOpacity(phase: pulseClock.phase, reduceMotion: false)))
+            .fill(color)
+            .opacity(barOpacity)
+            // The settle flashes the nominal green through the settled advisory bar
+            // by crossfading a green overlay on top (SwiftUI can't blend two
+            // `Color`s directly); `flashAmount` is `0` at rest so the bar reads pure
+            // advisory once settled.
+            .overlay {
+                if case .settle = motion, flashAmount > 0 {
+                    Rectangle().fill(flashTint).opacity(flashAmount)
+                }
+            }
             .frame(width: width)
             .frame(maxHeight: .infinity)
-            .onAppear { pulseClock.acquire() }
-            .onDisappear { pulseClock.release() }
+            .scaleEffect(x: laneScale, y: 1, anchor: .center)
+            // The phosphor halo bleeds outside the bar (BRIEF §7). During the
+            // settle flash the halo is the nominal green; once settled it's the
+            // advisory tint — a small steady dot.
+            .phosphorGlow(
+                shape: Rectangle(),
+                tint: settleFlashing ? flashTint : color,
+                radius: glowRadius,
+                intensity: glowIntensity
+            )
             .accessibilityHidden(true)
+            .onAppear { syncMotion(initial: true) }
+            .onChange(of: motion) { _, _ in syncMotion(initial: false) }
+    }
+
+    private var settleFlashing: Bool {
+        if case .settle = motion { return flashAmount > 0 }
+        return false
+    }
+
+    private func syncMotion(initial: Bool) {
+        // Reduce Motion: hold the lit peak / settled dot, never animate, never
+        // acquire a clock (AC #5, §K).
+        guard !reduceMotion else {
+            breathePhase = false // `lit` resolves to peak via `reduceMotion || …`
+            settleProgress = 1
+            return
+        }
+        switch motion {
+        case .breathe:
+            animateBreathe(period: FlightDeckMotion.Breathe.period)
+        case .attention(let period):
+            animateBreathe(period: period)
+        case .settle:
+            if initial {
+                // Born completed — rest at the settled advisory dot, no flash.
+                settleProgress = 1
+            } else {
+                // Live completion — play the one-shot nominal flash → advisory (A5).
+                settleProgress = 0
+                withAnimation(.easeOut(duration: FlightDeckMotion.Settle.duration)) {
+                    settleProgress = 1
+                }
+            }
+        case .steady:
+            break
+        }
+    }
+
+    /// Drives the peak/trough toggle on a `period`-second ease-in-out that
+    /// autoreverses forever, so `barOpacity` / `glowRadius` bounce between their
+    /// pinned trough and peak (the `FlightDeckRunningLight` pattern). Half the
+    /// period per leg, so a full breathe/pulse cycle takes `period`.
+    private func animateBreathe(period: Double) {
+        breathePhase = false
+        withAnimation(.easeInOut(duration: period / 2).repeatForever(autoreverses: true)) {
+            breathePhase = true
+        }
     }
 }
 
@@ -1884,13 +2037,19 @@ private struct FlightDeckCautionGlow: View {
         }
     }
 
+    /// The alarm halo is now the shared `FlightDeckPhosphorGlow` primitive
+    /// (AB-336) at the caution block's radius (9) — the same blur/bleed the
+    /// shipped inline halo drew, so the MASTER WARNING / CAUTION goldens are
+    /// unchanged, but there is one glow technique across the theme now.
+    static let haloRadius: CGFloat = 9
+
     func halo(opacity: Double) -> some View {
-        FlightDeckChamferedRectangle(chamfer: chamfer)
-            .fill(color)
-            .blur(radius: 9)
-            .opacity(opacity)
-            .padding(-2)
-            .accessibilityHidden(true)
+        FlightDeckPhosphorGlow(
+            shape: FlightDeckChamferedRectangle(chamfer: chamfer),
+            tint: color,
+            radius: Self.haloRadius,
+            intensity: opacity
+        )
     }
 }
 
@@ -1900,14 +2059,14 @@ private struct FlightDeckPulsingGlow: View {
     let pulseClock: PulseClock
 
     var body: some View {
-        FlightDeckChamferedRectangle(chamfer: chamfer)
-            .fill(color)
-            .blur(radius: 9)
-            .opacity(FlightDeckApprovalFormat.glowOpacity(phase: pulseClock.phase, reduceMotion: false))
-            .padding(-2)
-            .onAppear { pulseClock.acquire() }
-            .onDisappear { pulseClock.release() }
-            .accessibilityHidden(true)
+        FlightDeckPhosphorGlow(
+            shape: FlightDeckChamferedRectangle(chamfer: chamfer),
+            tint: color,
+            radius: FlightDeckCautionGlow.haloRadius,
+            intensity: FlightDeckApprovalFormat.glowOpacity(phase: pulseClock.phase, reduceMotion: false)
+        )
+        .onAppear { pulseClock.acquire() }
+        .onDisappear { pulseClock.release() }
     }
 }
 
