@@ -65,6 +65,13 @@
 "settings.appearance.centerLabel.sessionName" = "會話名";
 "settings.appearance.centerLabel.off" = "關閉";
 "settings.appearance.notchPart.title" = "凹槽";
+"settings.appearance.starfield.title" = "午夜軌道";
+"settings.appearance.starfield.note" = "為展開的介面加入安靜的星空背景，不影響互動。";
+"settings.appearance.starfield.enabled" = "顯示星空";
+"settings.appearance.starfield.density" = "密度";
+"settings.appearance.starfield.sparse" = "稀疏";
+"settings.appearance.starfield.balanced" = "平衡";
+"settings.appearance.starfield.vivid" = "明亮";
 "settings.appearance.sessionListPart.title" = "會話列表";
 "settings.appearance.sessionPreview" = "預覽";
 "settings.appearance.profile.title" = "顯示器配置";

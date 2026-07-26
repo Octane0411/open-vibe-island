@@ -124,8 +124,44 @@ struct AppearanceSettingsPane: View {
         VStack(alignment: .leading, spacing: 18) {
             partHeader(title: lang.t("settings.appearance.notchPart.title"))
             previewSection
+            starfieldSection
             rightSlotSection
             centerLabelSection
+        }
+    }
+
+    private var starfieldSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader(
+                title: lang.t("settings.appearance.starfield.title"),
+                note: lang.t("settings.appearance.starfield.note")
+            )
+
+            Toggle(isOn: Binding(
+                get: { model.orbitStarfieldEnabled },
+                set: { model.orbitStarfieldEnabled = $0 }
+            )) {
+                Label(
+                    lang.t("settings.appearance.starfield.enabled"),
+                    systemImage: "sparkles"
+                )
+            }
+            .toggleStyle(.switch)
+            .tint(.blue)
+
+            Picker(
+                lang.t("settings.appearance.starfield.density"),
+                selection: Binding(
+                    get: { model.orbitStarDensity },
+                    set: { model.orbitStarDensity = $0 }
+                )
+            ) {
+                ForEach(OrbitStarDensity.allCases) { density in
+                    Text(lang.t(density.titleKey)).tag(density)
+                }
+            }
+            .pickerStyle(.segmented)
+            .disabled(!model.orbitStarfieldEnabled)
         }
     }
 

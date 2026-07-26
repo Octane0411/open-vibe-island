@@ -303,6 +303,12 @@ struct IslandPanelView: View {
                 .fill(V6Palette.ink)
                 .frame(width: surfaceWidth, height: surfaceHeight)
 
+            if model.orbitStarfieldEnabled {
+                OrbitSurfaceBackdrop(density: model.orbitStarDensity)
+                    .clipShape(surfaceShape)
+                    .frame(width: surfaceWidth, height: surfaceHeight)
+            }
+
             VStack(spacing: 0) {
                 openedHeaderContent
                     .frame(height: closedNotchHeight)

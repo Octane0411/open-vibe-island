@@ -65,6 +65,13 @@
 "settings.appearance.centerLabel.sessionName" = "Session name";
 "settings.appearance.centerLabel.off" = "Off";
 "settings.appearance.notchPart.title" = "Notch";
+"settings.appearance.starfield.title" = "Midnight Orbit";
+"settings.appearance.starfield.note" = "A quiet star field for the expanded surface. It stays off the interaction path.";
+"settings.appearance.starfield.enabled" = "Show star field";
+"settings.appearance.starfield.density" = "Density";
+"settings.appearance.starfield.sparse" = "Sparse";
+"settings.appearance.starfield.balanced" = "Balanced";
+"settings.appearance.starfield.vivid" = "Vivid";
 "settings.appearance.sessionListPart.title" = "Session list";
 "settings.appearance.sessionPreview" = "Preview";
 "settings.appearance.profile.title" = "Display profile";

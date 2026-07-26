@@ -28,6 +28,8 @@ final class AppModel {
     private static let legacyIslandSessionSortDefaultsKey = "appearance.island.v8.sessionSort"
     private static let legacyCompletedStaleThresholdDefaultsKey = "appearance.island.v8.completedStaleThreshold"
     private static let appearanceProfileSettingsDefaultsKey = "appearance.island.v8.settingsProfile"
+    private static let orbitStarfieldEnabledDefaultsKey = "appearance.orbit.starfield.enabled"
+    private static let orbitStarDensityDefaultsKey = "appearance.orbit.starfield.density"
 
     private static let syntheticClaudeSessionPrefix = "claude-process:"
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
@@ -324,6 +326,20 @@ final class AppModel {
         }
     }
 
+    var orbitStarfieldEnabled: Bool = true {
+        didSet {
+            guard orbitStarfieldEnabled != oldValue else { return }
+            UserDefaults.standard.set(orbitStarfieldEnabled, forKey: Self.orbitStarfieldEnabledDefaultsKey)
+        }
+    }
+
+    var orbitStarDensity: OrbitStarDensity = .balanced {
+        didSet {
+            guard orbitStarDensity != oldValue else { return }
+            UserDefaults.standard.set(orbitStarDensity.rawValue, forKey: Self.orbitStarDensityDefaultsKey)
+        }
+    }
+
     private var notchAppearancePreferences = IslandAppearancePreferences() {
         didSet {
             guard notchAppearancePreferences != oldValue else { return }
@@ -600,6 +616,8 @@ final class AppModel {
             Self.hapticFeedbackEnabledDefaultsKey: false,
             Self.completionReplyEnabledDefaultsKey: false,
             Self.suppressFrontmostNotificationsDefaultsKey: true,
+            Self.orbitStarfieldEnabledDefaultsKey: true,
+            Self.orbitStarDensityDefaultsKey: OrbitStarDensity.balanced.rawValue,
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
@@ -614,6 +632,10 @@ final class AppModel {
             )
         }
         completionReplyEnabled = UserDefaults.standard.bool(forKey: Self.completionReplyEnabledDefaultsKey)
+        orbitStarfieldEnabled = UserDefaults.standard.bool(forKey: Self.orbitStarfieldEnabledDefaultsKey)
+        orbitStarDensity = OrbitStarDensity(
+            rawValue: UserDefaults.standard.string(forKey: Self.orbitStarDensityDefaultsKey) ?? ""
+        ) ?? .balanced
         launchAtLoginEnabled = LaunchAtLoginService.shared.isEnabled
         appearanceSettingsProfile = IslandAppearanceDisplayProfile(
             rawValue: UserDefaults.standard.string(forKey: Self.appearanceProfileSettingsDefaultsKey) ?? ""
