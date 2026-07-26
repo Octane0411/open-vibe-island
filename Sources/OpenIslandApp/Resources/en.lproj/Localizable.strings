@@ -211,6 +211,9 @@
 
 
 /* Island Panel - Subagents & Tasks */
+"session.timer.goal" = "Goal";
+"session.timer.plan" = "Plan";
+"session.timer.thinking" = "Thinking";
 "subagents.title" = "Subagents (%lld)";
 "subagents.completed" = "Completed";
 "tasks.summary" = "Tasks (%lld completed, %lld in progress, %lld pending)";

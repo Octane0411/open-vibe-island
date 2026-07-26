@@ -4,12 +4,16 @@ import Testing
 
 struct CodexSessionTrackingTests {
     @Test
-    func codexRolloutWatchTargetEqualityIncludesCachedPrompts() {
+    func codexRolloutWatchTargetEqualityIncludesCachedPromptsAndTimers() {
         let original = CodexRolloutWatchTarget(
             sessionID: "codex-session-1",
             transcriptPath: "/tmp/rollout.jsonl",
             cachedInitialUserPrompt: "Original prompt",
-            cachedLastUserPrompt: "Original follow-up"
+            cachedLastUserPrompt: "Original follow-up",
+            cachedProcessedDuration: 900,
+            cachedCurrentTurnStartedAt: Date(timeIntervalSince1970: 1_000),
+            cachedActiveGoalStartedAt: Date(timeIntervalSince1970: 100),
+            cachedActivePlanStartedAt: Date(timeIntervalSince1970: 500)
         )
 
         var updatedInitialPrompt = original
@@ -18,8 +22,24 @@ struct CodexSessionTrackingTests {
         var updatedLastPrompt = original
         updatedLastPrompt.cachedLastUserPrompt = "Latest follow-up"
 
+        var updatedProcessedDuration = original
+        updatedProcessedDuration.cachedProcessedDuration = 1_200
+
+        var updatedTurnStart = original
+        updatedTurnStart.cachedCurrentTurnStartedAt = Date(timeIntervalSince1970: 2_000)
+
+        var updatedGoalStart = original
+        updatedGoalStart.cachedActiveGoalStartedAt = Date(timeIntervalSince1970: 200)
+
+        var updatedPlanStart = original
+        updatedPlanStart.cachedActivePlanStartedAt = Date(timeIntervalSince1970: 600)
+
         #expect(original != updatedInitialPrompt)
         #expect(original != updatedLastPrompt)
+        #expect(original != updatedProcessedDuration)
+        #expect(original != updatedTurnStart)
+        #expect(original != updatedGoalStart)
+        #expect(original != updatedPlanStart)
     }
 
     @Test
@@ -53,7 +73,11 @@ struct CodexSessionTrackingTests {
                     lastUserPrompt: "Check the rollout watcher state.",
                     lastAssistantMessage: "Inspecting rollout watcher.",
                     currentTool: "exec_command",
-                    currentCommandPreview: "git status -sb"
+                    currentCommandPreview: "git status -sb",
+                    processedDuration: 900,
+                    currentTurnStartedAt: Date(timeIntervalSince1970: 990),
+                    activeGoalStartedAt: Date(timeIntervalSince1970: 100),
+                    activePlanStartedAt: Date(timeIntervalSince1970: 500)
                 )
             )
         ]
@@ -365,6 +389,173 @@ struct CodexSessionTrackingTests {
         #expect(snapshot.currentTool == "tool_search")
         #expect(snapshot.currentCommandPreview == "search docs")
         #expect(snapshot.summary == "Running tool search.")
+    }
+
+    @Test
+    func codexRolloutReducerTracksCurrentTurnAndActiveGoalStarts() {
+        var snapshot = CodexRolloutSnapshot()
+        let firstTurnStart = iso8601Date("2026-04-02T04:03:44.500Z")
+        let goalStart = iso8601Date("2026-04-02T04:04:00.000Z")
+        let secondTurnStart = iso8601Date("2026-04-03T08:00:00.000Z")
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-02T04:03:44.500Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": "Start the production goal.",
+                ]
+            ),
+            to: &snapshot
+        )
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-02T04:03:44.600Z",
+                type: "response_item",
+                payload: [
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        [
+                            "type": "input_text",
+                            "text": "Start the production goal.",
+                        ],
+                    ],
+                ]
+            ),
+            to: &snapshot
+        )
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-02T04:04:00.000Z",
+                type: "response_item",
+                payload: [
+                    "type": "function_call",
+                    "name": "create_goal",
+                    "arguments": #"{"objective":"Finish the board"}"#,
+                    "call_id": "call-create-goal",
+                ]
+            ),
+            to: &snapshot
+        )
+
+        #expect(snapshot.currentTurnStartedAt == firstTurnStart)
+        #expect(snapshot.activeGoalStartedAt == goalStart)
+        #expect(snapshot.metadata.currentTurnStartedAt == firstTurnStart)
+        #expect(snapshot.metadata.activeGoalStartedAt == goalStart)
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-02T04:08:00.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "turn_complete",
+                    "last_agent_message": "Finished the first turn.",
+                ]
+            ),
+            to: &snapshot
+        )
+
+        #expect(snapshot.currentTurnStartedAt == nil)
+        #expect(snapshot.processedDuration == 255.5)
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-03T08:00:00.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": "Continue the next conversation turn.",
+                ]
+            ),
+            to: &snapshot
+        )
+
+        #expect(snapshot.currentTurnStartedAt == secondTurnStart)
+        #expect(snapshot.activeGoalStartedAt == goalStart)
+        #expect(snapshot.processedDuration == 255.5)
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-03T08:05:00.000Z",
+                type: "response_item",
+                payload: [
+                    "type": "function_call",
+                    "name": "update_goal",
+                    "arguments": #"{"status":"blocked"}"#,
+                    "call_id": "call-block-goal",
+                ]
+            ),
+            to: &snapshot
+        )
+
+        #expect(snapshot.activeGoalStartedAt == goalStart)
+        #expect(snapshot.currentTurnStartedAt == secondTurnStart)
+        #expect(snapshot.metadata.processedDuration == 255.5)
+    }
+
+    @Test
+    func codexRolloutReducerTracksActivePlanAndIgnoresInjectedGoalPrompt() {
+        var snapshot = CodexRolloutSnapshot(
+            lastUserPrompt: "Keep routing the board.",
+            currentTurnStartedAt: iso8601Date("2026-04-03T08:00:00.000Z")
+        )
+        let planStart = iso8601Date("2026-04-03T08:01:00.000Z")
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-03T08:01:00.000Z",
+                type: "response_item",
+                payload: [
+                    "type": "function_call",
+                    "name": "update_plan",
+                    "arguments": #"{"plan":[{"step":"Route USB","status":"in_progress"},{"step":"Run DRC","status":"pending"}]}"#,
+                ]
+            ),
+            to: &snapshot
+        )
+
+        #expect(snapshot.activePlanStartedAt == planStart)
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-03T08:02:00.000Z",
+                type: "response_item",
+                payload: [
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        [
+                            "type": "input_text",
+                            "text": """
+                            <codex_internal_context source="goal">
+                            Continue working toward the active thread goal.
+                            </codex_internal_context>
+                            """,
+                        ],
+                    ],
+                ]
+            ),
+            to: &snapshot
+        )
+
+        #expect(snapshot.lastUserPrompt == "Keep routing the board.")
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-03T08:03:00.000Z",
+                type: "response_item",
+                payload: [
+                    "type": "function_call",
+                    "name": "update_plan",
+                    "arguments": #"{"plan":[{"step":"Route USB","status":"completed"},{"step":"Run DRC","status":"completed"}]}"#,
+                ]
+            ),
+            to: &snapshot
+        )
+
+        #expect(snapshot.activePlanStartedAt == nil)
     }
 
     @Test
@@ -1680,6 +1871,12 @@ private func rolloutLine(
     ]
     let data = try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     return String(decoding: data, as: UTF8.self)
+}
+
+private func iso8601Date(_ value: String) -> Date {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.date(from: value)!
 }
 
 private func sessionMetaLine(

@@ -221,9 +221,9 @@ private enum DebugSessionFactory {
     }
 
     static func runningSession(now: Date) -> AgentSession {
-        AgentSession(
+        var session = AgentSession(
             id: "session-running",
-            title: "Codex · open-island",
+            title: "查找 VibeIsland 项目",
             tool: .codex,
             origin: .demo,
             attachmentState: .attached,
@@ -231,20 +231,29 @@ private enum DebugSessionFactory {
             summary: "Reading IslandPanelView.swift and AppModel.swift",
             updatedAt: now.addingTimeInterval(-45),
             jumpTarget: JumpTarget(
-                terminalApp: "Ghostty",
+                terminalApp: "Codex.app",
                 workspaceName: "open-island",
-                paneTitle: "codex ~/Personal/open-island",
+                paneTitle: "查找 VibeIsland 项目",
                 workingDirectory: "/Users/wangruobing/Personal/open-island",
-                terminalSessionID: "ghostty-running"
+                codexThreadID: "session-running"
             ),
             codexMetadata: CodexSessionMetadata(
                 initialUserPrompt: "把 DEV 完全重构成一个 debug 页面，我需要稳定验收这些 card 的 UI。",
-                lastUserPrompt: "之前也有错误的改动吧 你应该重新改",
+                lastUserPrompt: "把我发送的内容完整显示一到两行，优先保留任务名称、模型和思考时间；如果可用空间仍然不够，再在内容末尾用省略号收尾。",
                 lastAssistantMessage: "读取现有 notch 状态与事件路由，准备把提醒态从 session list 里拆出来。",
                 currentTool: "exec_command",
-                currentCommandPreview: "sed -n '1,260p' Sources/OpenIslandApp/Views/SettingsView.swift"
+                currentCommandPreview: "sed -n '1,260p' Sources/OpenIslandApp/Views/SettingsView.swift",
+                model: "gpt-5.6-sol",
+                reasoningEffort: "xhigh",
+                serviceTier: "priority",
+                processedDuration: 14 * 60 + 11,
+                currentTurnStartedAt: now.addingTimeInterval(-(3_600 + 43 * 60 + 37)),
+                activeGoalStartedAt: now.addingTimeInterval(-(26 * 3_600)),
+                activePlanStartedAt: now.addingTimeInterval(-(22 * 60))
             )
         )
+        session.isCodexAppSession = true
+        return session
     }
 
     static func recentCompletedSession(now: Date) -> AgentSession {

@@ -47,6 +47,10 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
     public var model: String?
     public var reasoningEffort: String?
     public var serviceTier: String?
+    public var processedDuration: TimeInterval?
+    public var currentTurnStartedAt: Date?
+    public var activeGoalStartedAt: Date?
+    public var activePlanStartedAt: Date?
 
     public init(
         transcriptPath: String? = nil,
@@ -57,7 +61,11 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
         currentCommandPreview: String? = nil,
         model: String? = nil,
         reasoningEffort: String? = nil,
-        serviceTier: String? = nil
+        serviceTier: String? = nil,
+        processedDuration: TimeInterval? = nil,
+        currentTurnStartedAt: Date? = nil,
+        activeGoalStartedAt: Date? = nil,
+        activePlanStartedAt: Date? = nil
     ) {
         self.transcriptPath = transcriptPath
         self.initialUserPrompt = initialUserPrompt
@@ -68,6 +76,10 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
         self.model = model
         self.reasoningEffort = reasoningEffort
         self.serviceTier = serviceTier
+        self.processedDuration = processedDuration
+        self.currentTurnStartedAt = currentTurnStartedAt
+        self.activeGoalStartedAt = activeGoalStartedAt
+        self.activePlanStartedAt = activePlanStartedAt
     }
 
     public var isEmpty: Bool {
@@ -80,6 +92,10 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
             && model == nil
             && reasoningEffort == nil
             && serviceTier == nil
+            && processedDuration == nil
+            && currentTurnStartedAt == nil
+            && activeGoalStartedAt == nil
+            && activePlanStartedAt == nil
     }
 }
 
@@ -589,7 +605,11 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             currentCommandPreview: snapshot.currentCommandPreview,
             model: snapshot.model,
             reasoningEffort: snapshot.reasoningEffort,
-            serviceTier: snapshot.serviceTier
+            serviceTier: snapshot.serviceTier,
+            processedDuration: snapshot.processedDuration,
+            currentTurnStartedAt: snapshot.currentTurnStartedAt,
+            activeGoalStartedAt: snapshot.activeGoalStartedAt,
+            activePlanStartedAt: snapshot.activePlanStartedAt
         )
 
         return CodexTrackedSessionRecord(
@@ -665,19 +685,31 @@ public struct CodexRolloutWatchTarget: Equatable, Sendable {
     public var bootstrapPrompts: Bool
     public var cachedInitialUserPrompt: String?
     public var cachedLastUserPrompt: String?
+    public var cachedProcessedDuration: TimeInterval?
+    public var cachedCurrentTurnStartedAt: Date?
+    public var cachedActiveGoalStartedAt: Date?
+    public var cachedActivePlanStartedAt: Date?
 
     public init(
         sessionID: String,
         transcriptPath: String,
         bootstrapPrompts: Bool = true,
         cachedInitialUserPrompt: String? = nil,
-        cachedLastUserPrompt: String? = nil
+        cachedLastUserPrompt: String? = nil,
+        cachedProcessedDuration: TimeInterval? = nil,
+        cachedCurrentTurnStartedAt: Date? = nil,
+        cachedActiveGoalStartedAt: Date? = nil,
+        cachedActivePlanStartedAt: Date? = nil
     ) {
         self.sessionID = sessionID
         self.transcriptPath = transcriptPath
         self.bootstrapPrompts = bootstrapPrompts
         self.cachedInitialUserPrompt = cachedInitialUserPrompt
         self.cachedLastUserPrompt = cachedLastUserPrompt
+        self.cachedProcessedDuration = cachedProcessedDuration
+        self.cachedCurrentTurnStartedAt = cachedCurrentTurnStartedAt
+        self.cachedActiveGoalStartedAt = cachedActiveGoalStartedAt
+        self.cachedActivePlanStartedAt = cachedActivePlanStartedAt
     }
 
     public static func == (lhs: Self, rhs: Self) -> Bool {
@@ -686,6 +718,10 @@ public struct CodexRolloutWatchTarget: Equatable, Sendable {
             && lhs.bootstrapPrompts == rhs.bootstrapPrompts
             && lhs.cachedInitialUserPrompt == rhs.cachedInitialUserPrompt
             && lhs.cachedLastUserPrompt == rhs.cachedLastUserPrompt
+            && lhs.cachedProcessedDuration == rhs.cachedProcessedDuration
+            && lhs.cachedCurrentTurnStartedAt == rhs.cachedCurrentTurnStartedAt
+            && lhs.cachedActiveGoalStartedAt == rhs.cachedActiveGoalStartedAt
+            && lhs.cachedActivePlanStartedAt == rhs.cachedActivePlanStartedAt
     }
 }
 
@@ -701,6 +737,10 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
     public var model: String?
     public var reasoningEffort: String?
     public var serviceTier: String?
+    public var processedDuration: TimeInterval
+    public var currentTurnStartedAt: Date?
+    public var activeGoalStartedAt: Date?
+    public var activePlanStartedAt: Date?
     public var isCompleted: Bool
     public var isInterrupted: Bool
 
@@ -716,6 +756,10 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
         model: String? = nil,
         reasoningEffort: String? = nil,
         serviceTier: String? = nil,
+        processedDuration: TimeInterval = 0,
+        currentTurnStartedAt: Date? = nil,
+        activeGoalStartedAt: Date? = nil,
+        activePlanStartedAt: Date? = nil,
         isCompleted: Bool = false,
         isInterrupted: Bool = false
     ) {
@@ -730,6 +774,10 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
         self.model = model
         self.reasoningEffort = reasoningEffort
         self.serviceTier = serviceTier
+        self.processedDuration = processedDuration
+        self.currentTurnStartedAt = currentTurnStartedAt
+        self.activeGoalStartedAt = activeGoalStartedAt
+        self.activePlanStartedAt = activePlanStartedAt
         self.isCompleted = isCompleted
         self.isInterrupted = isInterrupted
     }
@@ -743,7 +791,11 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
             currentCommandPreview: currentCommandPreview,
             model: model,
             reasoningEffort: reasoningEffort,
-            serviceTier: serviceTier
+            serviceTier: serviceTier,
+            processedDuration: processedDuration,
+            currentTurnStartedAt: currentTurnStartedAt,
+            activeGoalStartedAt: activeGoalStartedAt,
+            activePlanStartedAt: activePlanStartedAt
         )
     }
 }
@@ -793,7 +845,11 @@ public enum CodexRolloutReducer {
                 currentCommandPreview: $0.currentCommandPreview,
                 model: $0.model,
                 reasoningEffort: $0.reasoningEffort,
-                serviceTier: $0.serviceTier
+                serviceTier: $0.serviceTier,
+                processedDuration: $0.processedDuration,
+                currentTurnStartedAt: $0.currentTurnStartedAt,
+                activeGoalStartedAt: $0.activeGoalStartedAt,
+                activePlanStartedAt: $0.activePlanStartedAt
             )
         }
         let newMetadata = CodexSessionMetadata(
@@ -805,7 +861,11 @@ public enum CodexRolloutReducer {
             currentCommandPreview: newSnapshot.currentCommandPreview,
             model: newSnapshot.model,
             reasoningEffort: newSnapshot.reasoningEffort,
-            serviceTier: newSnapshot.serviceTier
+            serviceTier: newSnapshot.serviceTier,
+            processedDuration: newSnapshot.processedDuration,
+            currentTurnStartedAt: newSnapshot.currentTurnStartedAt,
+            activeGoalStartedAt: newSnapshot.activeGoalStartedAt,
+            activePlanStartedAt: newSnapshot.activePlanStartedAt
         )
 
         if oldMetadata != newMetadata {
@@ -866,6 +926,7 @@ public enum CodexRolloutReducer {
             snapshot.isCompleted = false
             snapshot.isInterrupted = false
             snapshot.summary = snapshot.summary ?? "Codex started a new turn."
+            snapshot.currentTurnStartedAt = snapshot.currentTurnStartedAt ?? timestamp
         case "user_message":
             guard let message = cleanedUserPrompt(payload["message"] as? String) else {
                 break
@@ -888,6 +949,7 @@ public enum CodexRolloutReducer {
             applyAssistantMessage(message, timestamp: timestamp, to: &snapshot)
             return
         case "task_complete", "turn_complete":
+            finishCurrentProcessingSegment(at: timestamp, in: &snapshot)
             snapshot.currentTool = nil
             snapshot.currentCommandPreview = nil
             snapshot.phase = .completed
@@ -901,6 +963,7 @@ public enum CodexRolloutReducer {
                 snapshot.summary = snapshot.summary ?? "Codex completed the turn."
             }
         case "turn_aborted":
+            finishCurrentProcessingSegment(at: timestamp, in: &snapshot)
             snapshot.currentTool = nil
             snapshot.currentCommandPreview = nil
             snapshot.phase = .completed
@@ -988,7 +1051,7 @@ public enum CodexRolloutReducer {
         case "context_compacted":
             applyThinking(to: &snapshot)
         case "token_count":
-            applyRateLimitSignal(payload, to: &snapshot)
+            applyRateLimitSignal(payload, timestamp: timestamp, to: &snapshot)
         default:
             break
         }
@@ -1015,6 +1078,10 @@ public enum CodexRolloutReducer {
         if let serviceTier = clipped(configuration["service_tier"] as? String), !serviceTier.isEmpty {
             snapshot.serviceTier = serviceTier
         }
+        if let collaborationMode = configuration["collaboration_mode"] as? [String: Any],
+           (collaborationMode["mode"] as? String)?.lowercased() == "plan" {
+            snapshot.activePlanStartedAt = snapshot.activePlanStartedAt ?? timestamp
+        }
 
         if let timestamp {
             snapshot.updatedAt = timestamp
@@ -1023,6 +1090,7 @@ public enum CodexRolloutReducer {
 
     private static func applyRateLimitSignal(
         _ payload: [String: Any],
+        timestamp: Date?,
         to snapshot: inout CodexRolloutSnapshot
     ) {
         guard !snapshot.isCompleted else {
@@ -1037,7 +1105,7 @@ public enum CodexRolloutReducer {
 
         if let reachedType = rateLimits["rate_limit_reached_type"] as? String,
            !reachedType.isEmpty {
-            markRateLimitReached(on: &snapshot)
+            markRateLimitReached(at: timestamp, on: &snapshot)
             return
         }
 
@@ -1048,7 +1116,7 @@ public enum CodexRolloutReducer {
             return
         }
 
-        markRateLimitReached(on: &snapshot)
+        markRateLimitReached(at: timestamp, on: &snapshot)
     }
 
     private static func turnAwaitingAgentResponse(_ snapshot: CodexRolloutSnapshot) -> Bool {
@@ -1065,7 +1133,11 @@ public enum CodexRolloutReducer {
             || summary == "Codex started a new turn."
     }
 
-    private static func markRateLimitReached(on snapshot: inout CodexRolloutSnapshot) {
+    private static func markRateLimitReached(
+        at timestamp: Date?,
+        on snapshot: inout CodexRolloutSnapshot
+    ) {
+        finishCurrentProcessingSegment(at: timestamp, in: &snapshot)
         snapshot.currentTool = nil
         snapshot.currentCommandPreview = nil
         snapshot.phase = .completed
@@ -1123,6 +1195,18 @@ public enum CodexRolloutReducer {
                 return
             }
 
+            applyGoalLifecycle(
+                toolName: toolName,
+                arguments: payload["arguments"],
+                timestamp: timestamp,
+                to: &snapshot
+            )
+            applyPlanLifecycle(
+                toolName: toolName,
+                arguments: payload["arguments"],
+                timestamp: timestamp,
+                to: &snapshot
+            )
             applyToolActivity(
                 toolName,
                 preview: commandPreview(for: toolName, payload: payload),
@@ -1229,8 +1313,17 @@ public enum CodexRolloutReducer {
         timestamp: Date?,
         to snapshot: inout CodexRolloutSnapshot
     ) {
+        let startsNewProcessingSegment = snapshot.lastUserPrompt != message
+        if startsNewProcessingSegment,
+           snapshot.currentTurnStartedAt != nil {
+            finishCurrentProcessingSegment(at: timestamp, in: &snapshot)
+        }
+
         snapshot.initialUserPrompt = snapshot.initialUserPrompt ?? message
         snapshot.lastUserPrompt = message
+        if startsNewProcessingSegment || snapshot.currentTurnStartedAt == nil {
+            snapshot.currentTurnStartedAt = timestamp ?? snapshot.currentTurnStartedAt
+        }
         snapshot.currentTool = nil
         snapshot.currentCommandPreview = nil
         snapshot.phase = .running
@@ -1243,6 +1336,76 @@ public enum CodexRolloutReducer {
         }
     }
 
+    private static func finishCurrentProcessingSegment(
+        at timestamp: Date?,
+        in snapshot: inout CodexRolloutSnapshot
+    ) {
+        guard let startedAt = snapshot.currentTurnStartedAt,
+              let timestamp else {
+            return
+        }
+
+        snapshot.processedDuration += max(0, timestamp.timeIntervalSince(startedAt))
+        snapshot.currentTurnStartedAt = nil
+    }
+
+    private static func applyGoalLifecycle(
+        toolName: String,
+        arguments: Any?,
+        timestamp: Date?,
+        to snapshot: inout CodexRolloutSnapshot
+    ) {
+        switch toolName {
+        case "create_goal":
+            snapshot.activeGoalStartedAt = timestamp ?? snapshot.activeGoalStartedAt
+        case "update_goal":
+            guard let status = goalStatus(from: arguments),
+                  status == "complete" else {
+                return
+            }
+            snapshot.activeGoalStartedAt = nil
+        default:
+            break
+        }
+    }
+
+    private static func goalStatus(from arguments: Any?) -> String? {
+        (argumentsDictionary(from: arguments)?["status"] as? String)?.lowercased()
+    }
+
+    private static func applyPlanLifecycle(
+        toolName: String,
+        arguments: Any?,
+        timestamp: Date?,
+        to snapshot: inout CodexRolloutSnapshot
+    ) {
+        guard toolName == "update_plan",
+              let plan = argumentsDictionary(from: arguments)?["plan"] as? [[String: Any]],
+              !plan.isEmpty else {
+            return
+        }
+
+        if plan.allSatisfy({ ($0["status"] as? String)?.lowercased() == "completed" }) {
+            snapshot.activePlanStartedAt = nil
+        } else {
+            snapshot.activePlanStartedAt = snapshot.activePlanStartedAt ?? timestamp
+        }
+    }
+
+    private static func argumentsDictionary(from arguments: Any?) -> [String: Any]? {
+        if let dictionary = arguments as? [String: Any] {
+            return dictionary
+        }
+
+        guard let string = arguments as? String,
+              let data = string.data(using: .utf8),
+              let rawObject = try? JSONSerialization.jsonObject(with: data),
+              let object = rawObject as? [String: Any] else {
+            return nil
+        }
+        return object
+    }
+
     private static func applyAssistantMessage(
         _ message: String,
         timestamp: Date?,
@@ -1252,6 +1415,7 @@ public enum CodexRolloutReducer {
         snapshot.summary = message
 
         if !snapshot.isCompleted, isTerminalFailureMessage(message) {
+            finishCurrentProcessingSegment(at: timestamp, in: &snapshot)
             snapshot.currentTool = nil
             snapshot.currentCommandPreview = nil
             snapshot.phase = .completed
@@ -1541,6 +1705,7 @@ public enum CodexRolloutReducer {
             || text.hasPrefix("<apps_instructions>")
             || text.hasPrefix("<plugins_instructions>")
             || text.hasPrefix("<skills_instructions>")
+            || text.hasPrefix("<codex_internal_context")
     }
 
     private static func cleanedUserPrompt(_ value: String?) -> String? {
@@ -1560,6 +1725,7 @@ public enum CodexRolloutReducer {
             ("<apps_instructions>", "</apps_instructions>"),
             ("<plugins_instructions>", "</plugins_instructions>"),
             ("<skills_instructions>", "</skills_instructions>"),
+            ("<codex_internal_context", "</codex_internal_context>"),
         ]
 
         while true {
@@ -1802,7 +1968,11 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
         if target.cachedInitialUserPrompt != nil || target.cachedLastUserPrompt != nil {
             bootstrapSnapshot = CodexRolloutSnapshot(
                 initialUserPrompt: target.cachedInitialUserPrompt,
-                lastUserPrompt: target.cachedLastUserPrompt ?? target.cachedInitialUserPrompt
+                lastUserPrompt: target.cachedLastUserPrompt ?? target.cachedInitialUserPrompt,
+                processedDuration: target.cachedProcessedDuration ?? 0,
+                currentTurnStartedAt: target.cachedCurrentTurnStartedAt,
+                activeGoalStartedAt: target.cachedActiveGoalStartedAt,
+                activePlanStartedAt: target.cachedActivePlanStartedAt
             )
         } else if target.bootstrapPrompts {
             bootstrapSnapshot = bootstrapPromptSnapshot(
@@ -1835,14 +2005,18 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
             fileHandle: fileHandle,
             readLimit: readLimit
         )
-        let lastPrompt = bootstrapLastPrompt(
+        let tailSnapshot = bootstrapTailSnapshot(
             fileHandle: fileHandle,
             fileSize: fileSize,
             readLimit: readLimit
         )
         return CodexRolloutSnapshot(
             initialUserPrompt: initialPrompt,
-            lastUserPrompt: lastPrompt ?? initialPrompt
+            lastUserPrompt: tailSnapshot?.lastUserPrompt ?? initialPrompt,
+            processedDuration: tailSnapshot?.processedDuration ?? 0,
+            currentTurnStartedAt: tailSnapshot?.currentTurnStartedAt,
+            activeGoalStartedAt: tailSnapshot?.activeGoalStartedAt,
+            activePlanStartedAt: tailSnapshot?.activePlanStartedAt
         )
     }
 
@@ -1883,11 +2057,11 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
         }
     }
 
-    private func bootstrapLastPrompt(
+    private func bootstrapTailSnapshot(
         fileHandle: FileHandle,
         fileSize: UInt64,
         readLimit: UInt64
-    ) -> String? {
+    ) -> CodexRolloutSnapshot? {
         do {
             let startOffset = fileSize > readLimit ? fileSize - readLimit : 0
             try fileHandle.seek(toOffset: startOffset)
@@ -1901,13 +2075,12 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
             }
 
             var scannedByteCount = 0
-            let tailSnapshot = CodexRolloutReducer.snapshot(
+            return CodexRolloutReducer.snapshot(
                 for: codexExtractCompleteJSONLLines(
                     from: &buffer,
                     scannedByteCount: &scannedByteCount
                 )
             )
-            return tailSnapshot.lastUserPrompt
         } catch {
             return nil
         }

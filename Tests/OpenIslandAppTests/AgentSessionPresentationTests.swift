@@ -366,6 +366,65 @@ struct AgentSessionPresentationTests {
     }
 
     @Test
+    func runningCodexSessionShowsGoalPlanAndCurrentTurnTimers() {
+        let referenceDate = Date(timeIntervalSince1970: 100_000)
+        let goalStart = referenceDate.addingTimeInterval(-(2 * 86_400 + 3 * 3_600))
+        let planStart = referenceDate.addingTimeInterval(-(22 * 60))
+        let turnStart = referenceDate.addingTimeInterval(-(3_600 + 43 * 60 + 37))
+        let priorProcessedDuration: TimeInterval = 14 * 60 + 11
+        let session = AgentSession(
+            id: "session-1",
+            title: "Build the production board",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Thinking.",
+            updatedAt: referenceDate,
+            codexMetadata: CodexSessionMetadata(
+                lastUserPrompt: "Finish the current layout pass.",
+                processedDuration: priorProcessedDuration,
+                currentTurnStartedAt: turnStart,
+                activeGoalStartedAt: goalStart,
+                activePlanStartedAt: planStart
+            )
+        )
+
+        #expect(session.spotlightElapsedTimers == [
+            SpotlightElapsedTimer(kind: .goal, startedAt: goalStart),
+            SpotlightElapsedTimer(kind: .plan, startedAt: planStart),
+            SpotlightElapsedTimer(kind: .thinking, startedAt: turnStart),
+        ])
+        #expect(AgentSession.compactElapsedDuration(since: goalStart, at: referenceDate) == "2d 3h")
+        #expect(AgentSession.compactElapsedDuration(
+            session.spotlightElapsedTimers[2].elapsed(at: referenceDate),
+            includingSecondsWhenHours: true
+        ) == "1h 43m 37s")
+    }
+
+    @Test
+    func completedCodexSessionHidesElapsedTimers() {
+        let referenceDate = Date(timeIntervalSince1970: 100_000)
+        let session = AgentSession(
+            id: "session-1",
+            title: "Completed task",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .completed,
+            summary: "Done",
+            updatedAt: referenceDate,
+            codexMetadata: CodexSessionMetadata(
+                currentTurnStartedAt: referenceDate.addingTimeInterval(-60),
+                activeGoalStartedAt: referenceDate.addingTimeInterval(-3_600),
+                activePlanStartedAt: referenceDate.addingTimeInterval(-600)
+            )
+        )
+
+        #expect(session.spotlightElapsedTimers.isEmpty)
+    }
+
+    @Test
     func runningCodexSessionKeepsWriteStdinAsInput() {
         let session = AgentSession(
             id: "session-1",

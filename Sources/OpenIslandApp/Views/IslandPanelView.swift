@@ -57,8 +57,8 @@ extension AgentSession {
         // Base: vertical padding (22) + headline (~17) + divider rounding.
         var height: CGFloat = 40
         guard presence != .inactive else { return height }
-        if spotlightPromptLineText != nil { height += 17 }
-        if spotlightActivityLineText != nil { height += 20 }
+        if spotlightPromptLineText != nil { height += 32 }
+        if spotlightActivityLineText != nil { height += 30 }
         if let subagents = claudeMetadata?.activeSubagents, !subagents.isEmpty {
             height += 18
             height += CGFloat(subagents.count) * 18  // each subagent row (spacing 4 + text 14)
@@ -1264,30 +1264,30 @@ private struct IslandSessionRow: View {
     }
 
     private func rowSummary(presence: IslandSessionPresence, showsDetail: Bool) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            if showsLeadingStatusIndicator {
-                statusIndicator(for: presence)
-                    .frame(width: 20, alignment: .top)
-            }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 10) {
+                if showsLeadingStatusIndicator {
+                    statusIndicator(for: presence)
+                        .frame(width: 20, alignment: .top)
+                }
 
-            VStack(alignment: .leading, spacing: 3) {
                 Text(summaryHeadlineText)
                     .font(summaryTitleFont)
                     .foregroundStyle(titleColor(for: presence))
                     .lineLimit(1)
                     .truncationMode(.tail)
+                    .layoutPriority(2)
 
-                if showsDetail,
-                   let promptLine = summaryPromptLineText {
-                    Text(promptLine)
-                        .font(.system(size: 11.2, weight: .medium))
-                        .foregroundStyle(summaryPromptColor(for: presence))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                Spacer(minLength: 8)
+
+                HStack(spacing: 6) {
+                    detailToggleButton(isOpen: showsDetail)
+                    if let onDismiss {
+                        DismissButton(action: onDismiss)
+                    }
                 }
+                .layoutPriority(0)
             }
-
-            Spacer(minLength: 10)
 
             HStack(spacing: 6) {
                 agentBadge
@@ -1303,16 +1303,24 @@ private struct IslandSessionRow: View {
                         }
                     }
                 }
+                Spacer(minLength: 4)
                 Text(session.spotlightAgeBadge)
                     .font(.system(size: 10.5, weight: .medium, design: .monospaced))
                     .foregroundStyle(summaryAgeColor(for: presence))
                     .frame(minWidth: 30, alignment: .trailing)
-                detailToggleButton(isOpen: showsDetail)
-                if let onDismiss {
-                    DismissButton(action: onDismiss)
-                }
             }
-            .layoutPriority(1)
+            .padding(.leading, showsLeadingStatusIndicator ? 30 : 0)
+
+            if showsDetail,
+               let promptLine = summaryPromptLineText {
+                Text(promptLine)
+                    .font(.system(size: 11.2, weight: .medium))
+                    .foregroundStyle(summaryPromptColor(for: presence))
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, showsLeadingStatusIndicator ? 30 : 0)
+            }
         }
         .padding(.leading, rowLeadingInset)
         .padding(.trailing, sideInset)
@@ -1588,7 +1596,8 @@ private struct IslandSessionRow: View {
         if session.phase == .completed {
             return isActionable && completionHasExpandedBody
         }
-        return session.phase == .running && runningDetailText != nil
+        return session.phase == .running
+            && (!session.spotlightElapsedTimers.isEmpty || runningDetailText != nil)
     }
 
     private var completionHasExpandedBody: Bool {
@@ -1606,29 +1615,67 @@ private struct IslandSessionRow: View {
         }
     }
 
+    @ViewBuilder
     private var runningDetailBody: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if let runningDetailText {
-                Text(runningDetailText)
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.82))
-                    .lineLimit(3)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(Color.white.opacity(0.045))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .strokeBorder(.white.opacity(0.06))
-                    )
+        if !session.spotlightElapsedTimers.isEmpty {
+            TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                HStack(spacing: 7) {
+                    ForEach(session.spotlightElapsedTimers) { timer in
+                        elapsedTimerChip(timer, at: timeline.date)
+                    }
+                }
             }
+            .padding(.vertical, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else if let runningDetailText {
+            Text(runningDetailText)
+                .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.82))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.white.opacity(0.045))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(.white.opacity(0.10))
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 2)
         }
-        .padding(.vertical, 2)
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func elapsedTimerChip(
+        _ timer: SpotlightElapsedTimer,
+        at referenceDate: Date
+    ) -> some View {
+        HStack(spacing: 5) {
+            Text(lang.t(timer.kind.localizationKey))
+                .fontWeight(.semibold)
+            Text(
+                AgentSession.compactElapsedDuration(
+                    timer.elapsed(at: referenceDate),
+                    includingSecondsWhenHours: timer.kind == .thinking
+                )
+            )
+                .foregroundStyle(.white.opacity(0.62))
+        }
+        .font(.system(size: 11.5, design: .monospaced))
+        .foregroundStyle(.white.opacity(0.84))
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.white.opacity(0.045))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .strokeBorder(.white.opacity(0.10))
+        )
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     // MARK: - Approval action area
@@ -1818,6 +1865,10 @@ private struct IslandSessionRow: View {
     }
 
     private var runningDetailText: String? {
+        guard session.tool != .codex else {
+            return nil
+        }
+
         if let preview = session.currentCommandPreviewText?.trimmedForNotificationCard,
            !preview.isEmpty {
             return "$ \(preview)"

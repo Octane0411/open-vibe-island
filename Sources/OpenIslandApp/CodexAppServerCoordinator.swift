@@ -403,7 +403,11 @@ final class CodexAppServerCoordinator {
             currentCommandPreview: existing?.currentCommandPreview,
             model: configuration?.model ?? existing?.model,
             reasoningEffort: configuration?.reasoningEffort ?? existing?.reasoningEffort,
-            serviceTier: existing?.serviceTier ?? configuration?.serviceTier
+            serviceTier: existing?.serviceTier ?? configuration?.serviceTier,
+            processedDuration: existing?.processedDuration,
+            currentTurnStartedAt: existing?.currentTurnStartedAt,
+            activeGoalStartedAt: existing?.activeGoalStartedAt,
+            activePlanStartedAt: existing?.activePlanStartedAt
         )
     }
 

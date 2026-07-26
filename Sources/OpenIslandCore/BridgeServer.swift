@@ -2036,7 +2036,11 @@ public final class BridgeServer: @unchecked Sendable {
             ),
             model: update.model ?? existing?.model,
             reasoningEffort: update.reasoningEffort ?? existing?.reasoningEffort,
-            serviceTier: update.serviceTier ?? existing?.serviceTier
+            serviceTier: update.serviceTier ?? existing?.serviceTier,
+            processedDuration: update.processedDuration ?? existing?.processedDuration,
+            currentTurnStartedAt: update.currentTurnStartedAt ?? existing?.currentTurnStartedAt,
+            activeGoalStartedAt: update.activeGoalStartedAt ?? existing?.activeGoalStartedAt,
+            activePlanStartedAt: update.activePlanStartedAt ?? existing?.activePlanStartedAt
         )
     }
 

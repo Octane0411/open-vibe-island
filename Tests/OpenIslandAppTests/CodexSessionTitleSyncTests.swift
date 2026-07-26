@@ -4,6 +4,39 @@ import Testing
 import OpenIslandCore
 
 struct CodexSessionTitleSyncTests {
+    @Test
+    func runningLegacyCodexSessionRequiresOneProcessingDurationBackfill() {
+        let metadataWithoutDuration = CodexSessionMetadata(
+            transcriptPath: "/tmp/rollout.jsonl",
+            currentTurnStartedAt: Date(timeIntervalSince1970: 1_000)
+        )
+        let legacyRecord = CodexTrackedSessionRecord(
+            sessionID: "codex-thread-1",
+            title: "Running task",
+            summary: "Thinking.",
+            phase: .running,
+            updatedAt: Date(timeIntervalSince1970: 1_010),
+            codexMetadata: metadataWithoutDuration
+        )
+        let backfilledRecord = CodexTrackedSessionRecord(
+            sessionID: "codex-thread-1",
+            title: "Running task",
+            summary: "Thinking.",
+            phase: .running,
+            updatedAt: Date(timeIntervalSince1970: 1_010),
+            codexMetadata: CodexSessionMetadata(
+                transcriptPath: "/tmp/rollout.jsonl",
+                processedDuration: 0,
+                currentTurnStartedAt: Date(timeIntervalSince1970: 1_000)
+            )
+        )
+
+        #expect(SessionDiscoveryCoordinator.needsCodexProcessingDurationBackfill(legacyRecord))
+        #expect(SessionDiscoveryCoordinator.needsCodexProcessingDurationBackfill(legacyRecord.session))
+        #expect(!SessionDiscoveryCoordinator.needsCodexProcessingDurationBackfill(backfilledRecord))
+        #expect(!SessionDiscoveryCoordinator.needsCodexProcessingDurationBackfill(backfilledRecord.session))
+    }
+
     @MainActor
     @Test
     func maintenanceReplacesWorkspaceFallbackWithPersistedTaskTitle() {

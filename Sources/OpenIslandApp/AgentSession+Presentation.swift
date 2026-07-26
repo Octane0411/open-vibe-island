@@ -14,6 +14,41 @@ enum IslandSessionPresence: Equatable {
     case inactive
 }
 
+enum SpotlightElapsedTimerKind: String, Equatable, Identifiable {
+    case goal
+    case plan
+    case thinking
+
+    var id: String { rawValue }
+
+    var localizationKey: String {
+        switch self {
+        case .goal:
+            "session.timer.goal"
+        case .plan:
+            "session.timer.plan"
+        case .thinking:
+            "session.timer.thinking"
+        }
+    }
+}
+
+struct SpotlightElapsedTimer: Equatable, Identifiable {
+    let kind: SpotlightElapsedTimerKind
+    let startedAt: Date
+
+    var id: SpotlightElapsedTimerKind { kind }
+
+    init(kind: SpotlightElapsedTimerKind, startedAt: Date) {
+        self.kind = kind
+        self.startedAt = startedAt
+    }
+
+    func elapsed(at referenceDate: Date) -> TimeInterval {
+        max(0, referenceDate.timeIntervalSince(startedAt))
+    }
+}
+
 extension AgentSession {
     private static let collapsedDetailAgeThreshold: TimeInterval = 20 * 60
     private static let islandActivityThreshold: TimeInterval = 20 * 60
@@ -400,6 +435,57 @@ extension AgentSession {
 
             return jumpTarget != nil ? "Ready" : "Completed"
         }
+    }
+
+    var spotlightElapsedTimers: [SpotlightElapsedTimer] {
+        guard tool == .codex, phase == .running else {
+            return []
+        }
+
+        var timers: [SpotlightElapsedTimer] = []
+        if let goalStartedAt = codexMetadata?.activeGoalStartedAt {
+            timers.append(SpotlightElapsedTimer(kind: .goal, startedAt: goalStartedAt))
+        }
+        if let planStartedAt = codexMetadata?.activePlanStartedAt {
+            timers.append(SpotlightElapsedTimer(kind: .plan, startedAt: planStartedAt))
+        }
+        if let turnStartedAt = codexMetadata?.currentTurnStartedAt {
+            timers.append(
+                SpotlightElapsedTimer(
+                    kind: .thinking,
+                    startedAt: turnStartedAt
+                )
+            )
+        }
+        return timers
+    }
+
+    static func compactElapsedDuration(since startedAt: Date, at referenceDate: Date) -> String {
+        compactElapsedDuration(referenceDate.timeIntervalSince(startedAt))
+    }
+
+    static func compactElapsedDuration(
+        _ duration: TimeInterval,
+        includingSecondsWhenHours: Bool = false
+    ) -> String {
+        let elapsed = max(0, Int(duration))
+        if elapsed < 60 {
+            return "\(elapsed)s"
+        }
+
+        if elapsed < 3_600 {
+            return "\(elapsed / 60)m \(elapsed % 60)s"
+        }
+
+        if elapsed < 86_400 {
+            let hoursAndMinutes = "\(elapsed / 3_600)h \((elapsed % 3_600) / 60)m"
+            if includingSecondsWhenHours {
+                return "\(hoursAndMinutes) \(elapsed % 60)s"
+            }
+            return hoursAndMinutes
+        }
+
+        return "\(elapsed / 86_400)d \((elapsed % 86_400) / 3_600)h"
     }
 
     var spotlightActivityTone: SpotlightActivityTone {

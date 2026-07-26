@@ -210,6 +210,9 @@
 "approval.alwaysAllow" = "始終允許（%@）";
 
 /* Island Panel - Subagents & Tasks */
+"session.timer.goal" = "目標";
+"session.timer.plan" = "計劃";
+"session.timer.thinking" = "思考";
 "subagents.title" = "子代理 (%lld)";
 "subagents.completed" = "完成";
 "tasks.summary" = "任務 (%lld 已完成, %lld 進行中, %lld 待處理)";

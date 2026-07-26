@@ -211,6 +211,9 @@
 
 
 /* Island Panel - Subagents & Tasks */
+"session.timer.goal" = "目标";
+"session.timer.plan" = "计划";
+"session.timer.thinking" = "思考";
 "subagents.title" = "子代理 (%lld)";
 "subagents.completed" = "完成";
 "tasks.summary" = "任务 (%lld 已完成, %lld 进行中, %lld 待处理)";

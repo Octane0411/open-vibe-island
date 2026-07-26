@@ -103,12 +103,16 @@ final class SessionDiscoveryCoordinator {
         let allCursor = (try? cursorSessionRegistry.load()) ?? []
         let cursorRecords = allCursor.filter { $0.updatedAt >= cutoff && $0.shouldRestoreToLiveState }
 
-        // Every cached record already contains the rollout metadata needed for
-        // its last known state, including records that no longer need to appear
-        // in the live list. Only inspect rollout files absent from the complete
-        // cache so completed 30–200 MB transcripts are not reparsed on launch.
-        let cachedCodexTranscriptPaths = Set(
-            allCodex.compactMap(\.codexMetadata?.transcriptPath)
+        // Cached records normally contain all rollout metadata. Running records
+        // written before cumulative processing time was introduced need one
+        // full backfill; a stored zero marks that migration as complete.
+        let cachedCodexTranscriptPaths = Set<String>(
+            allCodex.compactMap { record in
+                guard !Self.needsCodexProcessingDurationBackfill(record) else {
+                    return nil
+                }
+                return record.codexMetadata?.transcriptPath
+            }
         )
         let discoveredCodex = codexRolloutDiscovery.discoverRecentSessions(
             excludingTranscriptPaths: cachedCodexTranscriptPaths
@@ -362,7 +366,11 @@ final class SessionDiscoveryCoordinator {
             currentCommandPreview: discovered.currentCommandPreview ?? existing.currentCommandPreview,
             model: discovered.model ?? existing.model,
             reasoningEffort: discovered.reasoningEffort ?? existing.reasoningEffort,
-            serviceTier: discovered.serviceTier ?? existing.serviceTier
+            serviceTier: discovered.serviceTier ?? existing.serviceTier,
+            processedDuration: discovered.processedDuration ?? existing.processedDuration,
+            currentTurnStartedAt: discovered.currentTurnStartedAt ?? existing.currentTurnStartedAt,
+            activeGoalStartedAt: discovered.activeGoalStartedAt ?? existing.activeGoalStartedAt,
+            activePlanStartedAt: discovered.activePlanStartedAt ?? existing.activePlanStartedAt
         )
         return merged.isEmpty ? nil : merged
     }
@@ -469,7 +477,11 @@ final class SessionDiscoveryCoordinator {
                 transcriptPath: transcriptPath,
                 bootstrapPrompts: session.phase != .completed,
                 cachedInitialUserPrompt: session.codexMetadata?.initialUserPrompt,
-                cachedLastUserPrompt: session.codexMetadata?.lastUserPrompt
+                cachedLastUserPrompt: session.codexMetadata?.lastUserPrompt,
+                cachedProcessedDuration: session.codexMetadata?.processedDuration,
+                cachedCurrentTurnStartedAt: session.codexMetadata?.currentTurnStartedAt,
+                cachedActiveGoalStartedAt: session.codexMetadata?.activeGoalStartedAt,
+                cachedActivePlanStartedAt: session.codexMetadata?.activePlanStartedAt
             )
         }
 
@@ -504,9 +516,24 @@ final class SessionDiscoveryCoordinator {
         lastCodexAppRescanDate = now
 
         let discovery = codexRolloutDiscovery
-        let existingTranscriptPaths = knownCodexTranscriptPaths.union(
-            state.sessions.compactMap(\.codexMetadata?.transcriptPath)
+        let pathsNeedingBackfill = Set<String>(
+            state.sessions.compactMap { session in
+                guard Self.needsCodexProcessingDurationBackfill(session) else {
+                    return nil
+                }
+                return session.codexMetadata?.transcriptPath
+            }
         )
+        let existingTranscriptPaths = knownCodexTranscriptPaths
+            .subtracting(pathsNeedingBackfill)
+            .union(
+                state.sessions.compactMap { session in
+                    guard !Self.needsCodexProcessingDurationBackfill(session) else {
+                        return nil
+                    }
+                    return session.codexMetadata?.transcriptPath
+                }
+            )
         codexAppRediscoveryTask = Task.detached(priority: .utility) { [weak self] in
             let discovered = discovery.discoverRecentSessions(
                 excludingTranscriptPaths: existingTranscriptPaths
@@ -521,6 +548,45 @@ final class SessionDiscoveryCoordinator {
         }
     }
 
+    nonisolated static func needsCodexProcessingDurationBackfill(
+        _ record: CodexTrackedSessionRecord
+    ) -> Bool {
+        record.phase == .running
+            && record.codexMetadata?.processedDuration == nil
+            && record.codexMetadata?.transcriptPath?.isEmpty == false
+    }
+
+    nonisolated static func needsCodexProcessingDurationBackfill(
+        _ session: AgentSession
+    ) -> Bool {
+        session.tool == .codex
+            && session.phase == .running
+            && session.codexMetadata?.processedDuration == nil
+            && session.codexMetadata?.transcriptPath?.isEmpty == false
+    }
+
+    private func rediscoveredSession(
+        from record: CodexTrackedSessionRecord
+    ) -> AgentSession {
+        var session = record.session
+        session.isCodexAppSession = true
+        session.isProcessAlive = true
+        let cwd = record.jumpTarget?.workingDirectory ?? ""
+        if session.jumpTarget == nil {
+            session.jumpTarget = JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: URL(fileURLWithPath: cwd).lastPathComponent,
+                paneTitle: session.title,
+                workingDirectory: cwd.isEmpty ? nil : cwd,
+                codexThreadID: session.id
+            )
+        } else {
+            session.jumpTarget?.terminalApp = "Codex.app"
+            session.jumpTarget?.codexThreadID = session.id
+        }
+        return session
+    }
+
     private func applyCodexAppRediscovery(_ records: [CodexTrackedSessionRecord]) {
         knownCodexTranscriptPaths.formUnion(
             records.compactMap(\.codexMetadata?.transcriptPath)
@@ -532,35 +598,25 @@ final class SessionDiscoveryCoordinator {
             !existingIDs.contains(record.sessionID)
                 && (record.codexMetadata?.transcriptPath).map { !existingPaths.contains($0) } ?? true
         }
-        guard !newRecords.isEmpty else { return }
-
-        let newSessions = newRecords.map { record -> AgentSession in
-            var session = record.session
-            session.isCodexAppSession = true
-            session.isProcessAlive = true
-            // Prefer the discovered record's cwd (sourced from the rollout
-            // file's session_meta) over an empty fallback.
-            let cwd = record.jumpTarget?.workingDirectory ?? ""
-            if session.jumpTarget == nil {
-                session.jumpTarget = JumpTarget(
-                    terminalApp: "Codex.app",
-                    workspaceName: URL(fileURLWithPath: cwd).lastPathComponent,
-                    paneTitle: session.title,
-                    workingDirectory: cwd.isEmpty ? nil : cwd,
-                    codexThreadID: session.id
-                )
-            } else {
-                session.jumpTarget?.terminalApp = "Codex.app"
-                session.jumpTarget?.codexThreadID = session.id
-            }
-            return session
+        let backfillRecords = records.filter { record in
+            existingIDs.contains(record.sessionID)
+                && state.sessions.contains(where: {
+                    $0.id == record.sessionID
+                        && Self.needsCodexProcessingDurationBackfill($0)
+                })
         }
+        let recordsToMerge = newRecords + backfillRecords
+        guard !recordsToMerge.isEmpty else { return }
 
-        let merged = mergeDiscoveredSessions(newSessions)
+        let merged = mergeDiscoveredSessions(recordsToMerge.map(rediscoveredSession(from:)))
         state = SessionState(sessions: merged)
         refreshCodexRolloutTracking()
         scheduleCodexSessionPersistence()
-        onStatusMessage?("Discovered \(newRecords.count) new Codex.app session(s) via rollout re-scan.")
+        if !newRecords.isEmpty {
+            onStatusMessage?("Discovered \(newRecords.count) new Codex.app session(s) via rollout re-scan.")
+        } else if !backfillRecords.isEmpty {
+            onStatusMessage?("Updated processing time for \(backfillRecords.count) active Codex.app session(s).")
+        }
     }
 
     // MARK: - Persistence scheduling
