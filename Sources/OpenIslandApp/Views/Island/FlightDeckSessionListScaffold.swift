@@ -64,6 +64,13 @@ struct FlightDeckSessionListScaffold: View {
             sessionPanelFooter
         }
         .padding(.vertical, 2)
+        // AB-335: the opened panel body renders the FD `panel` tone (#0E1113),
+        // a distinct step *lighter* than the `surfaceInk` cockpit ground the
+        // shared `OpenedSurfaceBackground` fills beneath it — so the list reads
+        // as a lit panel seated over the darker ground. The closed pill / ground
+        // keep `surfaceInk`.
+        .frame(maxWidth: .infinity)
+        .background(FlightDeckSurfaces.panel)
     }
 
     @ViewBuilder
@@ -350,13 +357,17 @@ private struct FlightDeckAnnunciatorTileView: View {
         }
         .padding(.horizontal, compact ? 5 : 7)
         .padding(.vertical, 4)
+        // AB-335: annunciator tiles seat on the FD `tile` sub-panel tone
+        // (#101519), one step above the panel body, framed by a tier-2 bezel
+        // that brightens under Increase Contrast. Lit vs dark is carried by the
+        // lamp and text, not a wash of the fill.
         .background(
             RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .fill(tokens.colors.paper.opacity(tile.isLit ? (increasesContrast ? 0.06 : 0.035) : (increasesContrast ? 0.03 : 0.012)))
+                .fill(FlightDeckSurfaces.tile)
                 .overlay(
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .strokeBorder(
-                            tokens.colors.paper.opacity(tokens.colors.hairline(increaseContrast: increasesContrast)),
+                            FlightDeckSurfaces.hairline(tier: 2, increaseContrast: increasesContrast),
                             lineWidth: 1
                         )
                 )

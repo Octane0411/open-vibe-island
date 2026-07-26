@@ -858,7 +858,9 @@ private struct FlightDeckRowContent: View {
         if presentation == .notification {
             return .clear
         }
-        let base = isHighlighted ? tokens.colors.paper.opacity(0.05) : Color.clear
+        // AB-335: hover lifts the row onto the FD `hover` surface tone
+        // (#161C22), replacing the shipped `paper.opacity(0.05)` wash.
+        let base = isHighlighted ? FlightDeckSurfaces.hover : Color.clear
         guard stateIndicator == .tint else { return base }
 
         let tintOpacity: Double
@@ -1238,8 +1240,11 @@ private struct FlightDeckActionableRowContent: View {
                 completionReplyInput
             }
         }
-        .background(FlightDeckChamferedRectangle(chamfer: 6).fill(tokens.colors.paper.opacity(0.04)))
-        .overlay(FlightDeckChamferedRectangle(chamfer: 6).strokeBorder(tokens.colors.paper.opacity(0.12), lineWidth: 1))
+        // AB-335: the completion card seats on the FD `tile` sub-panel tone
+        // (#101519), framed by a tier-2 bezel that brightens under Increase
+        // Contrast, replacing the shipped `paper.opacity(0.04)` wash.
+        .background(FlightDeckChamferedRectangle(chamfer: 6).fill(FlightDeckSurfaces.tile))
+        .overlay(FlightDeckChamferedRectangle(chamfer: 6).strokeBorder(FlightDeckSurfaces.hairline(tier: 2, increaseContrast: increasesContrast), lineWidth: 1))
     }
 
     private var completionOutcomeBanner: some View {
@@ -1437,7 +1442,8 @@ private struct FlightDeckActionableRowContent: View {
 
     private var rowFillColor: Color {
         if presentation == .notification { return .clear }
-        return isHighlighted ? tokens.colors.paper.opacity(0.05) : .clear
+        // AB-335: hover lifts onto the FD `hover` surface tone (#161C22).
+        return isHighlighted ? FlightDeckSurfaces.hover : .clear
     }
 }
 
@@ -1627,11 +1633,21 @@ private struct FlightDeckApprovalCard: View {
             .padding(.vertical, 7)
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
-            .background(FlightDeckChamferedRectangle(chamfer: 5).fill(tokens.colors.paper.opacity(0.05)))
-            .overlay(FlightDeckChamferedRectangle(chamfer: 5).strokeBorder(tokens.colors.paper.opacity(0.14), lineWidth: 1))
+            // AB-335: the command sits in a recessed FD `well` (#060708), darker
+            // than the card around it, so it reads as sunk into the panel — not
+            // the shipped light `paper` wash that read raised.
+            .background(FlightDeckChamferedRectangle(chamfer: 5).fill(FlightDeckSurfaces.well))
+            .overlay(FlightDeckChamferedRectangle(chamfer: 5).strokeBorder(FlightDeckSurfaces.hairline(tier: 2, increaseContrast: increasesContrast), lineWidth: 1))
 
             if let diffResult = permissionDiffResult {
+                // AB-335: the diff reads recessed too — seated in the same FD
+                // `well` tone as the command box, a matched pair of sunk panels.
                 PermissionDiffPreview(result: diffResult, lang: lang)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 7)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(FlightDeckChamferedRectangle(chamfer: 5).fill(FlightDeckSurfaces.well))
+                    .overlay(FlightDeckChamferedRectangle(chamfer: 5).strokeBorder(FlightDeckSurfaces.hairline(tier: 2, increaseContrast: increasesContrast), lineWidth: 1))
             }
 
             if session.permissionRequest?.requiresTerminalApproval == true {

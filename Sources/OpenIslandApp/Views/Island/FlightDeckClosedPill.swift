@@ -288,7 +288,10 @@ private struct FlightDeckAnnunciatorLight: View {
     private var housing: some View {
         RoundedRectangle(cornerRadius: radius, style: .continuous)
             .strokeBorder(
-                tokens.colors.paper.opacity(tokens.colors.hairlineOpacity * 2),
+                // AB-335: the lamp-housing bezel is the named FD hairline tier-2
+                // (`#9AB0BC` @ 0.26), replacing the shipped inline
+                // `hairlineOpacity * 2` paper wash.
+                FlightDeckSurfaces.hairline2,
                 lineWidth: 1
             )
     }

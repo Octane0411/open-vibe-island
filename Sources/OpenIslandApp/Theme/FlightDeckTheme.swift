@@ -43,6 +43,102 @@ enum FlightDeckTypography {
     static let body = Font.system(size: bodySize, weight: .regular, design: .monospaced)
 }
 
+/// Flight Deck's layered surface hierarchy (AB-335).
+///
+/// SPEC-flight-deck §1a declares a whole EICAS surface stack the shipped theme
+/// never had a name for — an opened panel body *lighter* than the cockpit
+/// ground, explicit tile / hover / recessed-well tones, a cool blue-grey
+/// hairline base with three tiers, and dim / faint legend inks. Like
+/// `FlightDeckTypography`, this is a **theme-local** paint table, deliberately
+/// kept out of the shared `IslandColorTokens` layer: those tokens are the
+/// cross-theme contract (surfaceInk, paper, the status palette, the single
+/// `hairlineOpacity`), and Flight Deck's near-black tile/well tones and its
+/// `#9AB0BC` hairline recolor are *its* paint, not values any other theme
+/// consumes. The shared `flightDeck` colour tokens (`surfaceInk` #08090A ground,
+/// `hairlineOpacity` 0.13) are untouched by this enum — the closed pill and the
+/// cockpit ground still draw from them.
+///
+/// Every constant is pinned by `FlightDeckThemeTests` with exact 8-bit
+/// component equality so a drift in any tone fails the build. Later FD tickets
+/// (T17–T20) build their glow, gauges and sub-panels on these tones instead of
+/// ad-hoc paper washes.
+enum FlightDeckSurfaces {
+
+    // MARK: Surface tones (opaque near-blacks)
+
+    /// The opened panel body — a distinct tone *lighter* than the `surfaceInk`
+    /// cockpit ground, so the opened surface reads as a lit panel seated over
+    /// the darker ground. (SPEC `--surface`.)
+    static let panel = Color(red: 0x0E / 255.0, green: 0x11 / 255.0, blue: 0x13 / 255.0)
+
+    /// Tiles / sub-panels — the summary annunciator tiles, the completion card,
+    /// the engine cluster (T20). One step above the panel body. (SPEC
+    /// `--surface-2`.)
+    static let tile = Color(red: 0x10 / 255.0, green: 0x15 / 255.0, blue: 0x19 / 255.0)
+
+    /// Raised / hovered surface — a lit row or tile on pointer hover, replacing
+    /// the shipped `paper.opacity(0.05)` hover wash. (SPEC `--surface-hi`.)
+    static let hover = Color(red: 0x16 / 255.0, green: 0x1C / 255.0, blue: 0x22 / 255.0)
+
+    /// Recessed wells — code / command boxes, the diff area, and the tape
+    /// tracks (T19). *Darker* than the ground so the content reads as sunk into
+    /// the panel, not raised off a light wash. (SPEC `--well`.)
+    static let well = Color(red: 0x06 / 255.0, green: 0x07 / 255.0, blue: 0x08 / 255.0)
+
+    // MARK: Hairline tiers
+
+    /// The cool blue-grey hairline base (SPEC `#9AB0BC`) — the recolor of the
+    /// shipped `paper`-derived rules into the instrument's cool bezel grey.
+    /// FD-local paint: the shared `hairlineOpacity` token (0.13) still governs
+    /// every rule that draws from `paper`; this base + tiers are the new avionics
+    /// bezel palette the panel's tiers draw from.
+    static let hairlineBase = Color(red: 0x9A / 255.0, green: 0xB0 / 255.0, blue: 0xBC / 255.0)
+
+    /// Faint rules (row / section dividers). (SPEC `--hair`.)
+    static let hairlineTier1Opacity: Double = 0.14
+    /// Bezel housings — lamp housings, tile frames. (SPEC `--hair2`.) Replaces
+    /// the shipped inline `hairlineOpacity * 2`.
+    static let hairlineTier2Opacity: Double = 0.26
+    /// Strong bezels / gauge ticks (consumed by T19). (SPEC `--hair3`.)
+    static let hairlineTier3Opacity: Double = 0.40
+
+    /// The Increase-Contrast brightening applied to a hairline tier, mirroring
+    /// the shared token's `hairlineOpacity 0.13 → 0.32` lift (≈ +0.19) so the FD
+    /// tiers strengthen under Increase Contrast exactly as the shared rules do.
+    static let hairlineIncreasedContrastBoost: Double = 0.19
+
+    /// Tier-1 hairline colour (row / section dividers).
+    static var hairline1: Color { hairlineBase.opacity(hairlineTier1Opacity) }
+    /// Tier-2 hairline colour (bezel housings).
+    static var hairline2: Color { hairlineBase.opacity(hairlineTier2Opacity) }
+    /// Tier-3 hairline colour (strong bezels / ticks).
+    static var hairline3: Color { hairlineBase.opacity(hairlineTier3Opacity) }
+
+    /// A hairline tier, brightened under Increase Contrast per the shared
+    /// token's IC pattern. `tier` is 1…3; out-of-range clamps to tier 1.
+    static func hairline(tier: Int, increaseContrast: Bool = false) -> Color {
+        let base: Double
+        switch tier {
+        case 2: base = hairlineTier2Opacity
+        case 3: base = hairlineTier3Opacity
+        default: base = hairlineTier1Opacity
+        }
+        let opacity = increaseContrast ? min(1, base + hairlineIncreasedContrastBoost) : base
+        return hairlineBase.opacity(opacity)
+    }
+
+    // MARK: Legend inks
+
+    /// Dim legend ink (SPEC `--dim #8A97A0`) — an explicit cooler grey for
+    /// de-emphasised-but-informative labels, replacing `paper.opacity(0.6)`
+    /// derivations. Available for T18's type/column split.
+    static let dimInk = Color(red: 0x8A / 255.0, green: 0x97 / 255.0, blue: 0xA0 / 255.0)
+
+    /// Faint legend ink (SPEC `--faint #5B656C`) — the dimmest legible tier,
+    /// replacing `paper.opacity(0.5)` derivations. Available for T18.
+    static let faintInk = Color(red: 0x5B / 255.0, green: 0x65 / 255.0, blue: 0x6C / 255.0)
+}
+
 /// Script-aware helpers for Flight Deck's uppercase, letterspaced micro-labels.
 ///
 /// The avionics idiom writes section captions and status tags as `UPPERCASE`

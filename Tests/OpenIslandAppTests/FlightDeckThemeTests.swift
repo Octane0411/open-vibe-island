@@ -321,4 +321,81 @@ struct FlightDeckThemeTests {
             )
         }
     }
+
+    // MARK: - Layered surface hierarchy (AB-335)
+
+    /// The four opaque surface tones pin to the SPEC hex by exact 8-bit
+    /// components, so a drift in any tone fails the build.
+    @Test
+    func surfaceTonesPinToTheSpecHex() {
+        #expect(FlightDeckSurfaces.panel == Color(red: 0x0E / 255.0, green: 0x11 / 255.0, blue: 0x13 / 255.0))
+        #expect(FlightDeckSurfaces.tile == Color(red: 0x10 / 255.0, green: 0x15 / 255.0, blue: 0x19 / 255.0))
+        #expect(FlightDeckSurfaces.hover == Color(red: 0x16 / 255.0, green: 0x1C / 255.0, blue: 0x22 / 255.0))
+        #expect(FlightDeckSurfaces.well == Color(red: 0x06 / 255.0, green: 0x07 / 255.0, blue: 0x08 / 255.0))
+    }
+
+    /// The hairline base recolors to the cool blue-grey `#9AB0BC`, and the three
+    /// tiers hold their SPEC opacities. Tier-2 is the named replacement for the
+    /// shipped inline `hairlineOpacity * 2`.
+    @Test
+    func hairlineTiersPinBaseColourAndOpacities() {
+        #expect(FlightDeckSurfaces.hairlineBase == Color(red: 0x9A / 255.0, green: 0xB0 / 255.0, blue: 0xBC / 255.0))
+        #expect(FlightDeckSurfaces.hairlineTier1Opacity == 0.14)
+        #expect(FlightDeckSurfaces.hairlineTier2Opacity == 0.26)
+        #expect(FlightDeckSurfaces.hairlineTier3Opacity == 0.40)
+
+        // The tier accessors are the base recolored at each tier opacity.
+        #expect(FlightDeckSurfaces.hairline1 == FlightDeckSurfaces.hairlineBase.opacity(0.14))
+        #expect(FlightDeckSurfaces.hairline2 == FlightDeckSurfaces.hairlineBase.opacity(0.26))
+        #expect(FlightDeckSurfaces.hairline3 == FlightDeckSurfaces.hairlineBase.opacity(0.40))
+        #expect(FlightDeckSurfaces.hairline(tier: 2) == FlightDeckSurfaces.hairline2)
+        // An out-of-range tier clamps to tier 1.
+        #expect(FlightDeckSurfaces.hairline(tier: 9) == FlightDeckSurfaces.hairline1)
+    }
+
+    /// Increase Contrast brightens every hairline tier, mirroring the shared
+    /// token's `0.13 → 0.32` lift (≈ +0.19).
+    @Test
+    func hairlineTiersBrightenUnderIncreaseContrast() {
+        #expect(FlightDeckSurfaces.hairline(tier: 1, increaseContrast: true) == FlightDeckSurfaces.hairlineBase.opacity(0.14 + 0.19))
+        #expect(FlightDeckSurfaces.hairline(tier: 2, increaseContrast: true) == FlightDeckSurfaces.hairlineBase.opacity(0.26 + 0.19))
+        #expect(FlightDeckSurfaces.hairline(tier: 3, increaseContrast: true) == FlightDeckSurfaces.hairlineBase.opacity(0.40 + 0.19))
+    }
+
+    /// The dim / faint legend inks pin to their SPEC hex.
+    @Test
+    func legendInksPinToTheSpecHex() {
+        #expect(FlightDeckSurfaces.dimInk == Color(red: 0x8A / 255.0, green: 0x97 / 255.0, blue: 0xA0 / 255.0))
+        #expect(FlightDeckSurfaces.faintInk == Color(red: 0x5B / 255.0, green: 0x65 / 255.0, blue: 0x6C / 255.0))
+    }
+
+    /// The surface hierarchy is a genuine stack: the opened panel body is a
+    /// distinct tone from the cockpit ground it seats on, and the recessed well
+    /// is distinct too. The tones are FD-local paint — they are *not* the shared
+    /// `surfaceInk` token.
+    @Test
+    func surfaceTonesAreDistinctFromTheSharedGround() {
+        let ground = IslandThemeTokens.flightDeck.colors.surfaceInk
+        #expect(FlightDeckSurfaces.panel != ground)
+        #expect(FlightDeckSurfaces.tile != ground)
+        #expect(FlightDeckSurfaces.hover != ground)
+        #expect(FlightDeckSurfaces.well != ground)
+        #expect(FlightDeckSurfaces.panel != FlightDeckSurfaces.tile)
+        #expect(FlightDeckSurfaces.tile != FlightDeckSurfaces.hover)
+    }
+
+    /// The shared `IslandColorTokens.flightDeck` contract is UNTOUCHED by the
+    /// FD-local surface work: the cockpit ground stays `#08090A` and the shared
+    /// hairline token stays 0.13 / 0.32. The `#9AB0BC` tiers are FD-local paint,
+    /// not a mutation of the token layer.
+    @Test
+    func sharedFlightDeckColourTokensStayUntouched() {
+        let colors = IslandThemeTokens.flightDeck.colors
+        #expect(colors.surfaceInk == Color(red: 0x08 / 255.0, green: 0x09 / 255.0, blue: 0x0a / 255.0))
+        #expect(colors.hairlineOpacity == 0.13)
+        #expect(colors.hairlineOpacityIncreasedContrast == 0.32)
+        // The ground and the FD-local hairline base are different colours — the
+        // recolor lives only in `FlightDeckSurfaces`.
+        #expect(FlightDeckSurfaces.hairlineBase != colors.paper)
+    }
 }
