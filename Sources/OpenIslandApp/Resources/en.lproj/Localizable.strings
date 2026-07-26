@@ -403,6 +403,23 @@
 "subagents.completed" = "Completed";
 "tasks.summary" = "Tasks (%lld completed, %lld in progress, %lld pending)";
 
+/* Island Panel - Poured Island 2.0 session detail (AB-332) */
+"poured.detail.meta.agent" = "Agent";
+"poured.detail.meta.model" = "Model";
+"poured.detail.meta.permission" = "Permission";
+"poured.detail.meta.branch" = "Branch";
+"poured.detail.meta.live" = "Live";
+"poured.detail.meta.directory" = "Directory";
+"poured.detail.lastMessage" = "Last message · %@";
+"poured.detail.jump" = "Jump to terminal";
+"poured.detail.attachment.attached" = "Pane attached";
+"poured.detail.attachment.stale" = "Pane stale";
+"poured.detail.attachment.detached" = "Detached";
+"poured.subagents.count" = "%lld subagents";
+"poured.tasks.chip" = "%1$lld/%2$lld tasks";
+"poured.tasks.header" = "Tasks · %1$lld of %2$lld done";
+"poured.tasks.doing" = "now";
+
 /* Island Panel - Question */
 "question.submit" = "Submit Answers";
 "question.answerNeeded" = "Answer needed";

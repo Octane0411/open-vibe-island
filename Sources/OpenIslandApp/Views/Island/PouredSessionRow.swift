@@ -87,18 +87,10 @@ private struct PouredRowContent: View {
 
     @Environment(\.islandTokens) private var tokens
 
-    /// AB-302: type ramp for this row's core reading content, identical to
-    /// Classic's — every literal point size is expressed relative to this one
-    /// reference value so the whole row scales together off one measurement.
-    @ScaledMetric(relativeTo: .body) private var typeScaleReference: CGFloat = 13
-
-    private var typeScale: CGFloat {
-        typeScaleReference / 13
-    }
-
-    private func scaledFont(_ size: CGFloat, weight: Font.Weight = .regular, design: Font.Design = .default) -> Font {
-        .system(size: size * typeScale, weight: weight, design: design)
-    }
+    /// AB-332: list-level duplicate-workspace disambiguators (AB-323), injected
+    /// by `IslandPanelView`. Empty (the default) means "no collisions" and the
+    /// title line renders the workspace name alone.
+    @Environment(\.islandSessionDisambiguators) private var sessionDisambiguators
 
     /// Each row owns its own age refresh (AB-228) so a tick invalidates only
     /// this row, not its siblings or the list header.
@@ -126,13 +118,25 @@ private struct PouredRowContent: View {
             rowSummary(presence: presence, showsDetail: showsDetail, referenceDate: referenceDate)
 
             if showsDetail {
-                rowAuxiliaryDetails(presence: presence)
+                // §4G nested lists always ride at the top of the detail — a
+                // fan-out is worth seeing whether the row is an actionable hero
+                // or a quiet running session.
+                subagentsAndTasksNests(presence: presence)
 
                 if shouldShowEmbeddedDetailBody {
+                    // Actionable interiors (approval / question / completion)
+                    // are AB-333's to restyle — Poured renders them verbatim
+                    // here, with the transcript kept as a footnote beneath.
                     embeddedDetailBody
                         .padding(.leading, detailLeadingInset)
                         .padding(.trailing, sideInset)
                         .padding(.bottom, 13)
+                    transcriptFootnote
+                } else {
+                    // §4D: the quiet session-detail — metadata grid, last
+                    // assistant message as rich prose, jump-primary + transcript
+                    // + attachment chip.
+                    sessionDetailBody(presence: presence, referenceDate: referenceDate)
                 }
             }
         }
@@ -181,30 +185,39 @@ private struct PouredRowContent: View {
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(session.spotlightHeadlineText)
-                    .font(scaledFont(summaryTitleFontSize, weight: .semibold))
-                    .foregroundStyle(titleColor(for: presence))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                titleLine(presence: presence)
 
-                if showsDetail, let promptLine = summaryPromptLineText {
-                    Text(promptLine)
-                        .font(scaledFont(11.2, weight: .medium))
-                        .foregroundStyle(summaryPromptColor(for: presence))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                if showsDetail {
+                    activityLine(presence: presence)
                 }
             }
 
             Spacer(minLength: 10)
 
             HStack(spacing: IslandSessionRowMetrics.badgeSpacing) {
-                agentBadge
+                // AB-332: the capsule agent badge is gone from the collapsed row —
+                // identity is now the 2pt brand tick before the workspace name
+                // ("identity stays a whisper", SPEC §1.5). The agent's full name
+                // reappears only as the dot+label chip in the expanded metadata
+                // grid (`agentIdentityChip`).
                 if let modelBadge = session.displayModelName {
                     sideBadge(modelBadge)
                 }
                 if let permissionChip = permissionModeBadgeKind {
                     permissionModeChip(permissionChip)
+                }
+                // AB-332 · SPEC §4G: when the detail is collapsed, the nested
+                // subagent / task work rolls up to two quiet chips
+                // (`3 subagents` · `⏲ 2/5 tasks`) — the only counts the row
+                // invents are these real ones. Expanded, the full nests replace
+                // them below (`subagentsAndTasksNests`).
+                if !showsDetail {
+                    if let subagentCount = collapsedSubagentCount {
+                        sideBadge(lang.t("poured.subagents.count", subagentCount))
+                    }
+                    if let taskRollup = collapsedTaskRollup {
+                        sideBadge("⏲ " + lang.t("poured.tasks.chip", taskRollup.done, taskRollup.total))
+                    }
                 }
                 if session.isRemote {
                     sideBadge("SSH")
@@ -213,12 +226,22 @@ private struct PouredRowContent: View {
                     sideBadge(terminalBadge)
                 }
                 Text(ageBadgeText(at: referenceDate))
-                    .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                    // AB-332: §2 `age` role — SF Pro 11/500 `.monospacedDigit()`
+                    // at tertiary. The mono chrome is retired; only the digits
+                    // stay tabular so ages line up column-to-column.
+                    .font(PouredType.Role.age.font)
                     .foregroundStyle(summaryAgeColor(for: presence))
                     .frame(minWidth: IslandSessionRowMetrics.ageColumnWidth, alignment: .trailing)
                 detailToggleButton(isOpen: showsDetail)
                 if let dismiss = actions.dismiss {
+                    // AB-332: hover-reveal — hidden at rest, fades in on the row's
+                    // `isHighlighted` (which never becomes true in `.notification`,
+                    // where `actions.dismiss` is nil anyway). The row's grouped
+                    // VoiceOver summary already exposes dismiss as a named rotor
+                    // action, so it stays reachable while visually hidden.
                     DismissButton(action: dismiss, lang: lang)
+                        .opacity(isHighlighted ? PouredRowMotion.Dismiss.revealedOpacity : PouredRowMotion.Dismiss.hiddenOpacity)
+                        .accessibilityHidden(true)
                 }
             }
             .lineLimit(1)
@@ -244,97 +267,528 @@ private struct PouredRowContent: View {
         .modifier(PouredOptionalNamedAccessibilityAction(name: actions.dismiss != nil ? lang.t("a11y.session.dismiss") : nil, action: { actions.dismiss?() }))
     }
 
-    // MARK: - Auxiliary details
+    // MARK: - Title line (identity tick + workspace + disambiguator)
 
+    /// The mockup's `.title-line` (SPEC §C): a 2pt brand-coloured identity tick,
+    /// the workspace name at the `workspaceTitle` role, and — only when a
+    /// duplicate workspace name in the list demands it — the T05 branch/recency
+    /// disambiguator as a mono span at tertiary. The workspace name yields
+    /// (tail-truncates) before the disambiguator, which pins its intrinsic width,
+    /// so a long name never squeezes the branch out of view.
+    private func titleLine(presence: IslandSessionPresence) -> some View {
+        HStack(spacing: 8) {
+            identityTick(presence: presence)
+
+            Text(session.spotlightDisplayName)
+                .font(PouredType.Role.workspaceTitle.font)
+                .tracking(PouredType.Role.workspaceTitle.spec.trackingPoints)
+                .foregroundStyle(titleColor(for: presence))
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            if let disambiguator = disambiguatorSuffix {
+                Text(disambiguator)
+                    .font(PouredType.Role.branchDisambiguator.font)
+                    .foregroundStyle(tokens.colors.paper.opacity(contrastText(tokens.colors.tertiaryTextOpacity)))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+        }
+    }
+
+    /// The 2×13 brand-colour tick that replaces the capsule agent badge in the
+    /// collapsed row. Radius 1, brand hue from `AgentSession.brandColorHex`; it
+    /// dims with the row when a stale/inactive row recedes into the glass.
+    private func identityTick(presence: IslandSessionPresence) -> some View {
+        RoundedRectangle(cornerRadius: PouredRowMotion.IdentityTick.cornerRadius, style: .continuous)
+            .fill(Color(hex: session.tool.brandColorHex) ?? tokens.colors.paper)
+            .frame(
+                width: PouredRowMotion.IdentityTick.width,
+                height: PouredRowMotion.IdentityTick.height
+            )
+            .opacity(presence == .inactive ? 0.7 : 1)
+            .accessibilityHidden(true)
+    }
+
+    // MARK: - Activity line (T03 narration · mockup `.act`)
+
+    /// The mockup's `.act` line (SPEC §C / §4C): the narrated activity, split so
+    /// the verb reads at secondary opacity and the object (file / command / host)
+    /// at primary. A running session narrates verb+object via the T03 layer
+    /// (`AgentSession.narratedActivity`); every other row speaks a human summary
+    /// (permission/question text, last message, outcome) wholly at secondary —
+    /// never a raw tool id or a `$ …` command echo.
     @ViewBuilder
-    private func rowAuxiliaryDetails(presence: IslandSessionPresence) -> some View {
-        if session.phase != .running,
-           let activityLine = session.spotlightActivityLineText ?? expandedActivityLineText {
-            Text(activityLine)
-                .font(scaledFont(11, weight: .medium))
-                .foregroundStyle(activityColor(for: presence).opacity(0.94))
-                .lineLimit(2)
+    private func activityLine(presence: IslandSessionPresence) -> some View {
+        let segments = activitySegments
+        if !segments.isEmpty {
+            composedActivityText(segments)
+                .font(PouredType.Role.activityLine.font)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+    }
+
+    /// Tone-split runs for the `.act` line. Running rows narrate verb+object;
+    /// the rest fall back to the human activity summary (never the `$` echo,
+    /// which lived only in the retired running command block).
+    private var activitySegments: [PouredRowActivityTone.Segment] {
+        if let narrated = session.narratedActivity {
+            return PouredRowActivityTone.segments(
+                verb: narrated.localizedVerb(lang),
+                object: narrated.object,
+                fallback: nil
+            )
+        }
+        return PouredRowActivityTone.segments(
+            verb: nil,
+            object: nil,
+            fallback: session.spotlightActivityLineText ?? expandedActivityLineText
+        )
+    }
+
+    private func composedActivityText(_ segments: [PouredRowActivityTone.Segment]) -> Text {
+        let primary = tokens.colors.paper.opacity(contrastText(0.96))
+        let secondary = tokens.colors.paper.opacity(contrastText(tokens.colors.secondaryTextOpacity))
+        return segments.reduce(Text(verbatim: "")) { accumulated, segment in
+            accumulated + Text(verbatim: segment.text)
+                .foregroundStyle(segment.isPrimary ? primary : secondary)
+        }
+    }
+
+    /// The bare branch / recency disambiguator for this row, or `nil` when its
+    /// workspace name is unique among the visible sessions. Rendered as its own
+    /// mono span (no parentheses) — see `PouredRowDisambiguation`.
+    private var disambiguatorSuffix: String? {
+        PouredRowDisambiguation.suffix(sessionDisambiguators[session.id])
+    }
+
+    // MARK: - Subagents & tasks nests (§4G · mockup §G)
+
+    /// The expanded §4G nests: a subagent sub-list with live `M:SS` timers and
+    /// the Claude todo list with real done/doing/pending state — each wrapped in
+    /// a quiet "nest" slab (mockup `.nest`, an inset-hairline card) so the
+    /// fan-out reads as one grouped surface rather than loose rows.
+    @ViewBuilder
+    private func subagentsAndTasksNests(presence: IslandSessionPresence) -> some View {
+        if let subagents = session.claudeMetadata?.activeSubagents, !subagents.isEmpty {
+            subagentNest(subagents)
                 .padding(.leading, detailLeadingInset)
                 .padding(.trailing, sideInset)
                 .padding(.bottom, 10)
         }
 
-        if let subagents = session.claudeMetadata?.activeSubagents, !subagents.isEmpty {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 5) {
-                    Image(systemName: "arrow.triangle.branch")
-                        .font(.system(size: 9, weight: .medium))
-                        .accessibilityHidden(true)
-                    Text(lang.t("subagents.title", subagents.count))
-                        .font(.system(size: 10.5, weight: .medium))
-                }
-                .foregroundStyle(.cyan.opacity(0.8))
-
-                ForEach(subagents, id: \.agentID) { sub in
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(sub.summary != nil
-                                ? tokens.colors.statusCompleted
-                                : tokens.colors.statusRunning)
-                            .frame(width: 6, height: 6)
-                            .accessibilityLabel(lang.t(sub.summary != nil ? "subagents.completed" : "a11y.subagent.running"))
-                        Text(sub.agentType ?? sub.agentID)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.8))
-                            .lineLimit(1)
-                        if let desc = sub.taskDescription {
-                            Text("(\(desc))")
-                                .font(.system(size: 10.5))
-                                .foregroundStyle(.white.opacity(0.5))
-                                .lineLimit(1)
-                        }
-                        Spacer(minLength: 0)
-                        if sub.summary != nil {
-                            Text(lang.t("subagents.completed"))
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.4))
-                        } else if let started = sub.startedAt {
-                            TimelineView(.periodic(from: .now, by: 1)) { timeline in
-                                Text(subagentElapsed(since: started, at: timeline.date))
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundStyle(.white.opacity(0.4))
-                            }
-                        }
-                    }
-                    .accessibilityElement(children: .combine)
-                }
-            }
-            .padding(.leading, detailLeadingInset)
-            .padding(.trailing, sideInset)
-            .padding(.bottom, 10)
-        }
-
         if let tasks = session.claudeMetadata?.activeTasks, !tasks.isEmpty {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(taskSummary(tasks))
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.45))
-                ForEach(tasks) { task in
-                    HStack(spacing: 5) {
-                        taskStatusIcon(task.status)
-                        Text(task.title)
-                            .font(.system(size: 10.5, weight: .medium))
-                            .foregroundStyle(task.status == .completed
-                                ? .white.opacity(0.4)
-                                : .white.opacity(0.7))
-                            .strikethrough(task.status == .completed)
-                            .lineLimit(1)
-                    }
-                    .accessibilityElement(children: .combine)
+            taskNest(tasks)
+                .padding(.leading, detailLeadingInset)
+                .padding(.trailing, sideInset)
+                .padding(.bottom, 10)
+        }
+    }
+
+    private func subagentNest(_ subagents: [ClaudeSubagentInfo]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 9, weight: .semibold))
+                    .accessibilityHidden(true)
+                Text(pouredUppercased(lang.t("poured.subagents.count", subagents.count)))
+                    .font(PouredType.Role.nestHeader.font)
+                    .tracking(PouredType.Role.nestHeader.spec.trackingPoints)
+            }
+            .foregroundStyle(tokens.colors.paper.opacity(contrastText(tokens.colors.tertiaryTextOpacity)))
+            .padding(.horizontal, 9)
+            .padding(.top, 7)
+            .padding(.bottom, 4)
+
+            ForEach(Array(subagents.enumerated()), id: \.element.agentID) { index, sub in
+                if index > 0 {
+                    Rectangle()
+                        .fill(.white.opacity(tokens.colors.hairline(increaseContrast: increasesContrast)))
+                        .frame(height: 1)
+                }
+                subagentRow(sub)
+            }
+        }
+        .background(nestBackground)
+    }
+
+    private func subagentRow(_ sub: ClaudeSubagentInfo) -> some View {
+        let isRunning = sub.summary == nil
+        return HStack(spacing: 10) {
+            Circle()
+                .fill(isRunning ? tokens.colors.statusRunning : tokens.colors.statusCompleted)
+                .frame(width: 6, height: 6)
+                .accessibilityLabel(lang.t(isRunning ? "a11y.subagent.running" : "subagents.completed"))
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(sub.agentType ?? sub.agentID)
+                    .font(PouredType.Role.subagentType.font)
+                    .foregroundStyle(tokens.colors.paper.opacity(contrastText(0.96)))
+                    .lineLimit(1)
+                if let desc = sub.taskDescription?.trimmedForRow, !desc.isEmpty {
+                    Text(desc)
+                        .font(PouredType.Role.subagentTask.font)
+                        .foregroundStyle(tokens.colors.paper.opacity(contrastText(tokens.colors.secondaryTextOpacity)))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
             }
-            .padding(.leading, detailLeadingInset)
-            .padding(.trailing, sideInset)
-            .padding(.bottom, 10)
-        }
 
-        if let transcriptPath = session.trackingTranscriptPath?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !transcriptPath.isEmpty {
+            Spacer(minLength: 6)
+
+            subagentTiming(sub, isRunning: isRunning)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 8)
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private func subagentTiming(_ sub: ClaudeSubagentInfo, isRunning: Bool) -> some View {
+        let elapsedColor = tokens.colors.paper.opacity(contrastText(tokens.colors.tertiaryTextOpacity))
+        if isRunning, let started = sub.startedAt {
+            TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                Text(PouredSubagentTiming.clockLabel(
+                    seconds: Int(timeline.date.timeIntervalSince(started))
+                ))
+                .font(PouredType.Role.subagentElapsed.font)
+                .foregroundStyle(elapsedColor)
+            }
+        } else if !isRunning {
+            Text(lang.t("subagents.completed"))
+                .font(PouredType.Role.subagentElapsed.font)
+                .foregroundStyle(elapsedColor)
+        }
+    }
+
+    private func taskNest(_ tasks: [ClaudeTaskInfo]) -> some View {
+        let rollup = PouredTaskRollup(statuses: tasks.map(\.status))
+        return VStack(alignment: .leading, spacing: 0) {
+            Text(pouredUppercased(lang.t("poured.tasks.header", rollup.done, rollup.total)))
+                .font(PouredType.Role.nestHeader.font)
+                .tracking(PouredType.Role.nestHeader.spec.trackingPoints)
+                .foregroundStyle(tokens.colors.paper.opacity(contrastText(tokens.colors.tertiaryTextOpacity)))
+                .padding(.horizontal, 9)
+                .padding(.top, 7)
+                .padding(.bottom, 4)
+
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(tasks) { task in
+                    taskRow(task)
+                }
+            }
+            .padding(.horizontal, 9)
+            .padding(.bottom, 8)
+        }
+        .background(nestBackground)
+    }
+
+    private func taskRow(_ task: ClaudeTaskInfo) -> some View {
+        HStack(spacing: 8) {
+            taskStatusIcon(task.status)
+                .frame(width: 14, height: 14)
+
+            Text(task.title)
+                .font(PouredType.Role.todo.font)
+                .foregroundStyle(taskTitleColor(task.status))
+                .strikethrough(task.status == .completed)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            if task.status == .inProgress {
+                Spacer(minLength: 6)
+                Text(lang.t("poured.tasks.doing"))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(tokens.colors.statusRunning)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func taskTitleColor(_ status: ClaudeTaskInfo.Status) -> Color {
+        switch status {
+        case .completed:
+            tokens.colors.paper.opacity(contrastText(tokens.colors.tertiaryTextOpacity))
+        case .inProgress:
+            tokens.colors.paper.opacity(contrastText(0.96))
+        case .pending:
+            tokens.colors.paper.opacity(contrastText(tokens.colors.secondaryTextOpacity))
+        }
+    }
+
+    private var nestBackground: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(Color.white.opacity(0.025))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(.white.opacity(0.05), lineWidth: 1)
+            )
+    }
+
+    /// Collapsed-row rollup counts (mockup §G′): only present when there is real
+    /// nested work to summarise, so a plain row invents nothing.
+    private var collapsedSubagentCount: Int? {
+        guard let subagents = session.claudeMetadata?.activeSubagents, !subagents.isEmpty else {
+            return nil
+        }
+        return subagents.count
+    }
+
+    private var collapsedTaskRollup: PouredTaskRollup? {
+        guard let tasks = session.claudeMetadata?.activeTasks, !tasks.isEmpty else {
+            return nil
+        }
+        return PouredTaskRollup(statuses: tasks.map(\.status))
+    }
+
+    // MARK: - Session detail body (§4D · mockup §D)
+
+    /// The quiet expanded detail for a non-actionable row: the metadata cell
+    /// grid, the last assistant message as rich prose, and the action rail
+    /// (jump-primary + transcript ghost + pane-attachment chip). Actionable rows
+    /// route to `embeddedDetailBody` (AB-333) instead and never reach here.
+    @ViewBuilder
+    private func sessionDetailBody(presence: IslandSessionPresence, referenceDate: Date) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            metadataGrid(presence: presence, referenceDate: referenceDate)
+
+            if let message = lastAssistantMessageForDetail {
+                assistantMessageCard(message)
+                    .padding(.top, 10)
+            }
+
+            detailActionRail
+                .padding(.top, 12)
+        }
+        .padding(.leading, detailLeadingInset)
+        .padding(.trailing, sideInset)
+        .padding(.bottom, 13)
+    }
+
+    // MARK: - Metadata grid (§4D · mockup `.meta-grid`)
+
+    /// The mockup's calm cell grid. Each cell is a key (10pt uppercase tertiary,
+    /// lifted to the Poured floor) over a 12.5 value. Absent fields render
+    /// **nothing** — no `—` dashes (BRIEF §1.3): Model appears only with a
+    /// resolved model name, Permission / Branch only for Claude, Live only while
+    /// running, Directory only with a working directory.
+    private func metadataGrid(presence: IslandSessionPresence, referenceDate: Date) -> some View {
+        PouredFlowLayout(spacing: 8) {
+            metadataCell(key: lang.t("poured.detail.meta.agent")) {
+                agentIdentityChip
+            }
+
+            if let model = session.displayModelName {
+                metadataTextCell(key: lang.t("poured.detail.meta.model"), value: model)
+            }
+
+            if let permission = permissionModeValueText {
+                metadataTextCell(key: lang.t("poured.detail.meta.permission"), value: permission)
+            }
+
+            if let branch = SessionDisambiguation.branch(for: session) {
+                metadataTextCell(
+                    key: lang.t("poured.detail.meta.branch"),
+                    value: SessionDisambiguation.displayBranch(branch),
+                    mono: true
+                )
+            }
+
+            if session.phase == .running {
+                metadataTextCell(
+                    key: lang.t("poured.detail.meta.live"),
+                    value: session.elapsedRunningLabel(at: referenceDate),
+                    tabular: true
+                )
+            }
+
+            if let directory = directoryDisplayText {
+                metadataTextCell(
+                    key: lang.t("poured.detail.meta.directory"),
+                    value: directory,
+                    mono: true
+                )
+            }
+        }
+        .padding(.top, 11)
+    }
+
+    private func metadataTextCell(key: String, value: String, mono: Bool = false, tabular: Bool = false) -> some View {
+        let baseFont = mono ? PouredType.Role.metadataValueMono.font : PouredType.Role.metadataValue.font
+        return metadataCell(key: key) {
+            Text(value)
+                .font(tabular ? baseFont.monospacedDigit() : baseFont)
+                .foregroundStyle(metadataValueColor)
+                .lineLimit(1)
+                .truncationMode(mono ? .middle : .tail)
+        }
+    }
+
+    private func metadataCell<Content: View>(key: String, @ViewBuilder value: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(pouredUppercased(key))
+                .font(PouredType.Role.metadataKey.font)
+                .tracking(PouredType.Role.metadataKey.spec.trackingPoints)
+                .foregroundStyle(metadataKeyColor)
+            value()
+        }
+        .modifier(MetadataCellChrome())
+    }
+
+    /// The dot+label agent chip that resurfaces the agent's full identity in the
+    /// grid — the whisper of §7 becomes a plain statement once the row is open.
+    private var agentIdentityChip: some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(Color(hex: session.tool.brandColorHex) ?? tokens.colors.paper)
+                .frame(width: 7, height: 7)
+            Text(session.tool.displayName)
+                .font(PouredType.Role.metadataValue.font)
+                .foregroundStyle(metadataValueColor)
+                .lineLimit(1)
+        }
+    }
+
+    private var metadataKeyColor: Color {
+        tokens.colors.paper.opacity(contrastText(tokens.colors.tertiaryTextOpacity))
+    }
+
+    private var metadataValueColor: Color {
+        tokens.colors.paper.opacity(contrastText(0.96))
+    }
+
+    /// Claude-only permission mode, surfaced verbatim (`acceptEdits`, `plan`,
+    /// `bypassPermissions`). The implicit `.default` mode carries no information,
+    /// so it renders nothing rather than a noisy "default" cell.
+    private var permissionModeValueText: String? {
+        guard session.tool == .claudeCode,
+              let mode = session.claudeMetadata?.permissionMode,
+              mode != .default else {
+            return nil
+        }
+        return mode.rawValue
+    }
+
+    /// Home-abbreviated, middle-truncated working directory (mockup
+    /// `~/…/open-vibe-island`). `nil` when the session carries no directory.
+    private var directoryDisplayText: String? {
+        guard let raw = session.jumpTarget?.workingDirectory?.trimmedForRow, !raw.isEmpty else {
+            return nil
+        }
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        var abbreviated = raw
+        if raw == home {
+            abbreviated = "~"
+        } else if raw.hasPrefix(home + "/") {
+            abbreviated = "~" + raw.dropFirst(home.count)
+        }
+        return ActivityNarrator.middleTruncated(abbreviated, maxLength: 34)
+    }
+
+    // MARK: - Last assistant message (§4D · mockup `.assistant`)
+
+    /// The last assistant message rendered as rich prose (Markdown + the
+    /// `.completionCard` theme so inline `code` reads mono ~11pt and emphasis
+    /// resolves on glass) — never the raw single-line dump the shipped detail
+    /// echoed. Capped in an `AutoHeightScrollView` so a long message can't run
+    /// the row off the panel.
+    private func assistantMessageCard(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(pouredUppercased(lang.t("poured.detail.lastMessage", session.tool.displayName)))
+                .font(PouredType.Role.assistantLabel.font)
+                .tracking(PouredType.Role.assistantLabel.spec.trackingPoints)
+                .foregroundStyle(tokens.colors.paper.opacity(contrastText(tokens.colors.tertiaryTextOpacity)))
+
+            AutoHeightScrollView(maxHeight: 150) {
+                Markdown(message)
+                    .markdownTheme(.completionCard(tokens.colors))
+                    .markdownImageProvider(.noNetwork)
+                    .markdownInlineImageProvider(.noNetwork)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+        }
+        .padding(.horizontal, 13)
+        .padding(.vertical, 11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.white.opacity(0.025))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(.white.opacity(0.045), lineWidth: 1)
+                )
+        )
+    }
+
+    private var lastAssistantMessageForDetail: String? {
+        guard let text = session.lastAssistantMessageText?.trimmedForRow, !text.isEmpty else {
+            return nil
+        }
+        return text
+    }
+
+    // MARK: - Detail action rail (§4D · mockup `.actions`)
+
+    /// Jump-to-terminal as the primary CTA (a blue gradient button, mockup §D),
+    /// the transcript as a ghost affordance, and the pane-attachment chip pushed
+    /// to the trailing edge.
+    private var detailActionRail: some View {
+        HStack(spacing: 10) {
+            Button(action: handlePrimaryTap) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.up.forward")
+                        .font(.system(size: 11.5, weight: .bold))
+                        .accessibilityHidden(true)
+                    Text(lang.t("poured.detail.jump"))
+                        .font(PouredType.Role.jumpChip.font)
+                        .lineLimit(1)
+                }
+            }
+            .buttonStyle(PouredJumpButtonStyle())
+            .accessibilityLabel(lang.t("poured.detail.jump"))
+
+            if let transcriptPath = trimmedTranscriptPath {
+                TranscriptAffordance(
+                    path: transcriptPath,
+                    workspace: session.spotlightWorkspaceName,
+                    lang: lang
+                )
+            }
+
+            Spacer(minLength: 8)
+
+            attachmentChip
+        }
+    }
+
+    /// `Pane attached` (green dot) / `Pane stale` / `Detached` from
+    /// `attachmentState` — AB-332 is the first surface to render this field.
+    private var attachmentChip: some View {
+        let chip = PouredAttachmentChip(session.attachmentState)
+        let label = lang.t(chip.localizationKey)
+        return HStack(spacing: 5) {
+            Circle()
+                .fill(chip.isLive ? tokens.colors.statusCompleted : tokens.colors.paper.opacity(0.3))
+                .frame(width: 7, height: 7)
+            Text(label)
+                .font(PouredType.Role.metaChip.font)
+                .foregroundStyle(tokens.colors.paper.opacity(contrastText(tokens.colors.tertiaryTextOpacity)))
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(.white.opacity(0.05), in: Capsule())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(label)
+    }
+
+    /// The transcript kept as a footnote beneath an actionable hero (approval /
+    /// question / completion), where it can't ride the §4D action rail.
+    @ViewBuilder
+    private var transcriptFootnote: some View {
+        if let transcriptPath = trimmedTranscriptPath {
             TranscriptAffordance(
                 path: transcriptPath,
                 workspace: session.spotlightWorkspaceName,
@@ -346,11 +800,21 @@ private struct PouredRowContent: View {
         }
     }
 
-    // MARK: - Embedded detail body (running preview / actionable interiors)
+    private var trimmedTranscriptPath: String? {
+        guard let path = session.trackingTranscriptPath?.trimmedForRow, !path.isEmpty else {
+            return nil
+        }
+        return path
+    }
 
-    /// Mirrors Classic's gate: attention phases always earn the body, a
-    /// completed row only when it's the actionable card with something to show,
-    /// and a running row only when it has a command/activity preview.
+    // MARK: - Embedded detail body (actionable interiors)
+
+    /// Attention phases always earn the body; a completed row only when it's the
+    /// actionable card with something to show. A **running** row no longer earns
+    /// an embedded body — its activity is narrated in the `.act` line above, and
+    /// the shipped boxed `$ command` echo (a raw preview the Poured direction
+    /// explicitly bans) is retired with it (AB-332 · SPEC §C). The permission /
+    /// question / completion interiors are stage 2's to restyle.
     private var shouldShowEmbeddedDetailBody: Bool {
         if session.phase.requiresAttention {
             return true
@@ -358,7 +822,7 @@ private struct PouredRowContent: View {
         if session.phase == .completed {
             return isActionable && completionHasExpandedBody
         }
-        return session.phase == .running && runningDetailText != nil
+        return false
     }
 
     @ViewBuilder
@@ -371,31 +835,9 @@ private struct PouredRowContent: View {
         case .completed:
             completionActionBody
         case .running:
-            if let runningDetailText {
-                runningDetailBody(runningDetailText)
-            }
+            // Running rows narrate in `.act`; no boxed command echo (see above).
+            EmptyView()
         }
-    }
-
-    private func runningDetailBody(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 12, weight: .semibold, design: .monospaced))
-            .foregroundStyle(.white.opacity(0.82))
-            .lineLimit(3)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.white.opacity(0.05))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(.white.opacity(0.08))
-            )
-            .padding(.vertical, 2)
-            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Question action area
@@ -614,18 +1056,6 @@ private struct PouredRowContent: View {
 
     // MARK: - Badges (display rules AB-282…286, verbatim from Classic)
 
-    private var agentBadge: some View {
-        let tint = Color(hex: session.tool.brandColorHex) ?? tokens.colors.paper
-        return Text(agentBadgeTitle)
-            .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-            .foregroundStyle(tint.opacity(notificationChromeOpacity))
-            .frame(minWidth: IslandSessionRowMetrics.agentTitleWidth)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(tint.opacity(notificationBadgeFillOpacity), in: Capsule())
-            .overlay(Capsule().stroke(tint.opacity(notificationBadgeStrokeOpacity), lineWidth: 1))
-    }
-
     private func sideBadge(_ title: String) -> some View {
         Text(title)
             .font(.system(size: 10.5, weight: .medium, design: .monospaced))
@@ -756,20 +1186,10 @@ private struct PouredRowContent: View {
 
     // MARK: - Text / tint helpers
 
-    private var summaryPromptLineText: String? {
-        if presentation == .notification {
-            return session.notificationHeaderPromptLineText
-        }
-        return session.spotlightPromptLineText ?? expandedPromptLineText
-    }
-
-    /// Prompt line for a manually expanded inactive row (bypasses the
-    /// time-based filter), matching Classic.
-    private var expandedPromptLineText: String? {
-        guard detailOverride == true, let prompt = session.spotlightPromptText else { return nil }
-        return "You: \(prompt)"
-    }
-
+    /// Activity line for a manually expanded inactive row (bypasses the
+    /// time-based filter) — the row's last assistant message, or a terse
+    /// "Ready"/"Completed" fallback. The T03 `.act` line uses this when
+    /// `spotlightActivityLineText` has aged out but the row is force-expanded.
     private var expandedActivityLineText: String? {
         guard detailOverride == true else { return nil }
         let trimmed = session.lastAssistantMessageText?
@@ -778,43 +1198,6 @@ private struct PouredRowContent: View {
             return assistantMessage
         }
         return session.jumpTarget != nil ? "Ready" : "Completed"
-    }
-
-    private var runningDetailText: String? {
-        if let preview = session.currentCommandPreviewText?.trimmedForRow, !preview.isEmpty {
-            return "$ \(preview)"
-        }
-        if let activity = session.spotlightActivityLineText?.trimmedForRow, !activity.isEmpty {
-            return activity
-        }
-        let summary = session.summary.trimmedForRow
-        return summary.isEmpty ? nil : summary
-    }
-
-    private var agentBadgeTitle: String {
-        switch session.tool {
-        case .claudeCode: "claude"
-        case .geminiCLI: "gemini"
-        case .qwenCode: "qwen"
-        case .kimiCLI: "kimi"
-        default: session.tool.shortName.lowercased()
-        }
-    }
-
-    private var summaryTitleFontSize: CGFloat {
-        presentation == .notification ? 13.2 : 13.2
-    }
-
-    private var notificationChromeOpacity: Double {
-        presentation == .notification ? 0.82 : 1
-    }
-
-    private var notificationBadgeFillOpacity: Double {
-        presentation == .notification ? 0.09 : 0.14
-    }
-
-    private var notificationBadgeStrokeOpacity: Double {
-        presentation == .notification ? 0.24 : 0.35
     }
 
     private var showsLeadingStatusIndicator: Bool {
@@ -855,33 +1238,11 @@ private struct PouredRowContent: View {
             : tokens.colors.paper
     }
 
-    private func summaryPromptColor(for presence: IslandSessionPresence) -> Color {
-        if presentation == .notification {
-            return tokens.colors.paper.opacity(contrastText(tokens.colors.secondaryTextOpacity))
-        }
-        return tokens.colors.paper.opacity(contrastText(presence == .inactive ? tokens.colors.tertiaryTextOpacity : tokens.colors.secondaryTextOpacity))
-    }
-
+    /// AB-332: age reads at tertiary on every row (mockup `.age{color:var(--t3)}`)
+    /// — the shipped presence-dependent secondary/tertiary split is retired so
+    /// the right rail stays quiet and consistent.
     private func summaryAgeColor(for presence: IslandSessionPresence) -> Color {
-        if presentation == .notification {
-            return tokens.colors.paper.opacity(contrastText(tokens.colors.tertiaryTextOpacity))
-        }
-        return tokens.colors.paper.opacity(contrastText(presence == .inactive ? tokens.colors.tertiaryTextOpacity : tokens.colors.secondaryTextOpacity))
-    }
-
-    private func activityColor(for presence: IslandSessionPresence) -> Color {
-        switch session.spotlightActivityTone {
-        case .attention:
-            return tokens.colors.statusTint(for: session.phase)
-        case .live:
-            return statusTint(for: presence)
-        case .idle:
-            return tokens.colors.paper.opacity(contrastText(tokens.colors.secondaryTextOpacity))
-        case .ready:
-            return presence == .inactive
-                ? tokens.colors.paper.opacity(contrastText(tokens.colors.secondaryTextOpacity))
-                : statusTint(for: presence)
-        }
+        tokens.colors.paper.opacity(contrastText(tokens.colors.tertiaryTextOpacity))
     }
 
     private func contrastText(_ base: Double) -> Double {
@@ -929,40 +1290,42 @@ private struct PouredRowContent: View {
         return statusTint(for: presence).opacity(tintOpacity)
     }
 
-    // MARK: - Small formatters (verbatim from Classic)
+    // MARK: - Small formatters
 
-    private func subagentElapsed(since start: Date, at now: Date) -> String {
-        let seconds = Int(now.timeIntervalSince(start))
-        if seconds < 60 { return "\(seconds)s" }
-        let minutes = seconds / 60
-        let secs = seconds % 60
-        return "\(minutes)m \(secs)s"
+    /// Uppercases a role's copy for the consuming view (metadata keys, nest
+    /// headers, assistant-message label) — the `isUppercase` treatment travels
+    /// with the role in `PouredType`, applied here since a `Font` can't carry
+    /// case. A no-op for CJK strings.
+    private func pouredUppercased(_ text: String) -> String {
+        text.uppercased()
     }
 
-    private func taskSummary(_ tasks: [ClaudeTaskInfo]) -> String {
-        let done = tasks.filter { $0.status == .completed }.count
-        let prog = tasks.filter { $0.status == .inProgress }.count
-        let pend = tasks.filter { $0.status == .pending }.count
-        return lang.t("tasks.summary", done, prog, pend)
-    }
-
+    /// §4G todo glyphs — icon+text, never colour alone (a11y): done reads as a
+    /// green check (#6FB982) with the title struck through, doing as the running
+    /// bars in the run tint, pending as a hollow circle at tertiary.
     @ViewBuilder
     private func taskStatusIcon(_ status: ClaudeTaskInfo.Status) -> some View {
         switch status {
         case .completed:
-            Image(systemName: "checkmark.square.fill")
-                .font(.system(size: 9))
-                .foregroundStyle(.white.opacity(0.35))
+            Image(systemName: "checkmark")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(tokens.colors.statusCompleted)
                 .accessibilityLabel(lang.t("a11y.task.completed"))
         case .inProgress:
-            Circle()
-                .fill(tokens.colors.statusRunning)
-                .frame(width: 6, height: 6)
-                .accessibilityLabel(lang.t("a11y.task.inProgress"))
+            if let pulseClock {
+                PouredPulsingStatusDot(pulseClock: pulseClock, tint: tokens.colors.statusRunning, presence: .active)
+                    .frame(width: 8, height: 8)
+                    .accessibilityLabel(lang.t("a11y.task.inProgress"))
+            } else {
+                Circle()
+                    .fill(tokens.colors.statusRunning)
+                    .frame(width: 7, height: 7)
+                    .accessibilityLabel(lang.t("a11y.task.inProgress"))
+            }
         case .pending:
             Circle()
-                .strokeBorder(.white.opacity(0.3), lineWidth: 1)
-                .frame(width: 6, height: 6)
+                .strokeBorder(tokens.colors.paper.opacity(contrastText(tokens.colors.tertiaryTextOpacity)), lineWidth: 1.4)
+                .frame(width: 11, height: 11)
                 .accessibilityLabel(lang.t("a11y.task.pending"))
         }
     }
@@ -1179,6 +1542,40 @@ private struct PouredAmberGlow: ViewModifier {
     }
 }
 
+// MARK: - Row entrance
+
+/// AB-332: the one-shot rise+fade a Poured row plays when it is **inserted** into
+/// an already-mounted list (`PouredRowMotion.Entrance`, mockup `rowin`).
+///
+/// Expressed as a SwiftUI insertion `.transition` (applied per row by
+/// `PouredSessionListScaffold`, driven by the scaffold's `entranceAnimation`
+/// keyed to the row-id set) rather than an `onAppear` state machine. Two things
+/// fall out for free: a container's **initial** appearance never plays insertion
+/// transitions, so the whole list arrives at its settled frame under the panel's
+/// own open-morph (and a first-render snapshot pins that settled frame); and the
+/// scaffold gates the driving animation on Reduce Motion, so a reduced-motion
+/// insert simply snaps in — no clock is ever touched.
+enum PouredRowEntrance {
+    /// Rise (`translateY`) + fade + top-anchored scale, from the mockup `rowin`
+    /// keyframe. Removal is a plain fade so a dismissed row doesn't lurch.
+    static var transition: AnyTransition {
+        .asymmetric(
+            insertion: .offset(y: PouredRowMotion.Entrance.riseOffset)
+                .combined(with: .opacity)
+                .combined(with: .scale(scale: PouredRowMotion.Entrance.initialScale, anchor: .top)),
+            removal: .opacity
+        )
+    }
+
+    /// The settle spring the scaffold drives the insertion with (nil under
+    /// Reduce Motion → the insert snaps).
+    static let animation: Animation = .spring(
+        response: PouredRowMotion.Entrance.springResponse,
+        dampingFraction: PouredRowMotion.Entrance.springDamping,
+        blendDuration: 0
+    )
+}
+
 // MARK: - Glow dot
 
 /// Poured's status dot: a filled circle wrapped in a soft luminous glow so
@@ -1237,5 +1634,135 @@ private struct PouredOptionalNamedAccessibilityAction: ViewModifier {
 private extension String {
     var trimmedForRow: String {
         trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+// MARK: - Metadata cell chrome (mockup §D `.mcell`)
+
+/// The quiet cell slab every metadata entry sits in — a faint fill with an
+/// inset hairline and a floor width so the grid reads as an even lattice rather
+/// than ragged pills. Isolated as a modifier so every cell (text, agent chip,
+/// live timer) wears the identical frame.
+private struct MetadataCellChrome: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .frame(minWidth: 84, alignment: .leading)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(Color.white.opacity(0.025))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .strokeBorder(.white.opacity(0.045), lineWidth: 1)
+                    )
+            )
+    }
+}
+
+// MARK: - Jump primary CTA (mockup §D `.btn.primary`)
+
+/// The blue-gradient primary button the §4D detail leads with. Poured-local so
+/// the shared `IslandActionButtonStyle` (paper-filled) is left untouched; the
+/// gradient + glow are lifted straight from the mockup's inline style.
+private struct PouredJumpButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(Color(red: 0.04, green: 0.10, blue: 0.21))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.56, green: 0.74, blue: 1.0),
+                                Color(red: 0.43, green: 0.65, blue: 1.0),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(.white.opacity(0.4), lineWidth: 1)
+                            .blendMode(.overlay)
+                    )
+            )
+            .shadow(
+                color: reduceTransparency ? .clear : Color(red: 0.43, green: 0.65, blue: 1.0).opacity(0.5),
+                radius: 10,
+                y: 4
+            )
+            .opacity(configuration.isPressed ? 0.82 : 1)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+    }
+}
+
+// MARK: - Metadata flow layout (mockup §D `.meta-grid{flex-wrap:wrap}`)
+
+/// A left-to-right wrapping row (`flex-wrap: wrap`) for the metadata cells: it
+/// lays subviews at their ideal size, breaking to a new line when the next cell
+/// would overrun the proposed width. Small and self-contained so the grid can
+/// reflow at either panel width without a fixed column count.
+private struct PouredFlowLayout: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        let rows = arrange(subviews: subviews, maxWidth: maxWidth)
+        let width = rows.map(\.width).max() ?? 0
+        let height = rows.reduce(0) { $0 + $1.height } + spacing * CGFloat(max(0, rows.count - 1))
+        return CGSize(width: min(width, maxWidth), height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
+        let rows = arrange(subviews: subviews, maxWidth: bounds.width)
+        var y = bounds.minY
+        for row in rows {
+            var x = bounds.minX
+            for index in row.indices {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(
+                    at: CGPoint(x: x, y: y),
+                    anchor: .topLeading,
+                    proposal: ProposedViewSize(size)
+                )
+                x += size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private struct Row {
+        var indices: [Int] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
+    private func arrange(subviews: Subviews, maxWidth: CGFloat) -> [Row] {
+        var rows: [Row] = []
+        var current = Row()
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            let addedWidth = current.indices.isEmpty ? size.width : current.width + spacing + size.width
+            if !current.indices.isEmpty, addedWidth > maxWidth {
+                rows.append(current)
+                current = Row()
+                current.indices = [index]
+                current.width = size.width
+                current.height = size.height
+            } else {
+                current.indices.append(index)
+                current.width = addedWidth
+                current.height = max(current.height, size.height)
+            }
+        }
+        if !current.indices.isEmpty {
+            rows.append(current)
+        }
+        return rows
     }
 }

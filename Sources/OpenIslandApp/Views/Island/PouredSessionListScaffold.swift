@@ -37,6 +37,7 @@ struct PouredSessionListScaffold: View {
     private var increasesContrast: Bool { colorSchemeContrast == .increased }
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.islandTokens) private var tokens
     @Environment(\.islandTheme) private var theme
 
@@ -85,8 +86,21 @@ struct PouredSessionListScaffold: View {
                             pulseClock: pulseClock
                         )
                     }
+                    // AB-332: rise+fade spring settle when a row is inserted into
+                    // the already-mounted list. The transition never plays on the
+                    // list's initial appearance (that arrives under the panel's
+                    // own open-morph), only on a genuine insert; the drive
+                    // animation is nil under Reduce Motion, so a reduced-motion
+                    // insert simply snaps — no clock is touched.
+                    .transition(PouredRowEntrance.transition)
                 }
             }
+            // Keyed to the section's row-id set so an insert/remove animates the
+            // matching row's transition (and the neighbours settling around it).
+            .animation(
+                reduceMotion ? nil : PouredRowEntrance.animation,
+                value: section.sessions.map(\.id)
+            )
         }
     }
 

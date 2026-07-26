@@ -361,7 +361,11 @@ private extension View {
     /// the agents-grid waiting-tile pulse), and the capture reads the *model*
     /// layer, never the animating presentation layer — so no animation phase can
     /// reach the bitmap regardless of the Reduce Motion flag. `disablesAnimations`
-    /// covers the SwiftUI-level implicit animations for good measure.
+    /// covers the SwiftUI-level implicit animations for good measure. One-shot
+    /// insert entrances (e.g. the Poured row's `.transition`, AB-332) don't play
+    /// on a container's *initial* appearance — only when a row is inserted into
+    /// an already-mounted list — so a first-render snapshot captures the settled
+    /// resting frame without any Reduce-Motion plumbing.
     func themedSnapshotEnvironment(theme: any IslandTheme) -> some View {
         self
             .environment(\.islandTheme, theme)

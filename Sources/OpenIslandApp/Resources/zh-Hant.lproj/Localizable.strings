@@ -402,6 +402,23 @@
 "subagents.completed" = "完成";
 "tasks.summary" = "任務 (%lld 已完成, %lld 進行中, %lld 待處理)";
 
+/* Island Panel - Poured Island 2.0 session detail (AB-332) */
+"poured.detail.meta.agent" = "代理";
+"poured.detail.meta.model" = "模型";
+"poured.detail.meta.permission" = "權限";
+"poured.detail.meta.branch" = "分支";
+"poured.detail.meta.live" = "已執行";
+"poured.detail.meta.directory" = "目錄";
+"poured.detail.lastMessage" = "最新訊息 · %@";
+"poured.detail.jump" = "跳轉到終端機";
+"poured.detail.attachment.attached" = "已連接窗格";
+"poured.detail.attachment.stale" = "窗格失聯";
+"poured.detail.attachment.detached" = "已分離";
+"poured.subagents.count" = "%lld 個子代理";
+"poured.tasks.chip" = "%1$lld/%2$lld 任務";
+"poured.tasks.header" = "任務 · %2$lld 個中 %1$lld 個已完成";
+"poured.tasks.doing" = "進行中";
+
 /* Island Panel - Question */
 "question.submit" = "提交答案";
 "question.answerNeeded" = "需要回答";
