@@ -74,4 +74,33 @@ final class ThemeSnapshotHarnessTests: XCTestCase {
             named: "flightdeck-question-master-caution-notch"
         )
     }
+
+    // MARK: - Flight Deck row register + chips (AB-337 · AC #7)
+
+    /// Flight Deck · duplicate-workspace trio · notch (540pt) **and** top-bar
+    /// (520pt). Evidence the `STATUS | SESSION | MODEL | TIME` register survives at
+    /// both panel widths with the new folded chips: the two Claude rows carry `⑂`
+    /// branch chips (`feat/bridge-auth` / `main`) that double as the T05
+    /// disambiguator, one adds `⚙ 3 SUB`, and both narrate a verb-mapped activity
+    /// (`Editing …` / `Orchestrating …`), while the Codex row carries no branch
+    /// chip (SPEC §6 honesty gate). The name column absorbs truncation; the chips
+    /// and fixed lanes hold their columns. The trio carries no actionable HELD
+    /// counter, so unlike the `.list` baseline these goldens are time-stable.
+    func testFlightDeckDuplicateWorkspaceBranchChipsNotch() throws {
+        try ThemeSnapshotting.assertSnapshot(
+            theme: FlightDeckTheme(),
+            slot: .sessionList(scenario: .duplicates),
+            profile: .notch,
+            named: "flightdeck-duplicates-branch-chips-notch"
+        )
+    }
+
+    func testFlightDeckDuplicateWorkspaceBranchChipsTopBar() throws {
+        try ThemeSnapshotting.assertSnapshot(
+            theme: FlightDeckTheme(),
+            slot: .sessionList(scenario: .duplicates),
+            profile: .topBar,
+            named: "flightdeck-duplicates-branch-chips-topbar"
+        )
+    }
 }

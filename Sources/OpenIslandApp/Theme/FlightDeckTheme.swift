@@ -2,45 +2,135 @@ import AppKit
 import SwiftUI
 import OpenIslandCore
 
-/// Mono typography roles for the Flight Deck theme.
+/// The two-font typography system for the Flight Deck theme (SPEC §2 · AB-337).
 ///
 /// The shared `IslandThemeTokens` layer deliberately carries no typography —
 /// themes swap whole slot views, so per-view fonts belong to each theme. This
 /// enum is Flight Deck's own small type table, kept in one place so every
-/// Flight Deck view draws from the same monospaced roles and the ≥10pt floor is
-/// enforceable in one spot (`FlightDeckThemeTests`). Every role is
-/// `.monospaced` — the mono legend of an instrument panel — and no readable role
-/// dips below `floor`. The one intentional exception is the closed-grid overflow
-/// "+N", a fitted micro-indicator sized to its annunciator light rather than a
-/// readable role, so it is not listed here.
+/// Flight Deck view draws from the same roles and the ≥10pt floor is enforceable
+/// in one spot (`FlightDeckThemeTests`).
+///
+/// The shipped theme was **mono-only**. The 2.0 board demands a **two-font
+/// split** (SPEC §2): **sans narration** (`.default`) for prose the reader
+/// *reads* — session / workspace names, live-activity narration, assistant rich
+/// text, gauge legends — and **mono tabular** (`.monospaced`) for every *value*
+/// the reader *scans* — timers, counts, percentages, status codes, key hints,
+/// commands, the brand wordmark and every placard. Each role therefore declares
+/// its `Family`, and the font builders derive their `design` from it, so the
+/// mono/sans contract is one table `FlightDeckThemeTests` can pin (a `Font` is
+/// opaque and can't be introspected at runtime).
+///
+/// No readable role dips below `floor`. The one intentional exception is the
+/// closed-grid overflow "+N", a fitted micro-indicator sized to its annunciator
+/// light rather than a readable role, so it is not listed here.
 enum FlightDeckTypography {
     /// The lowest size any *readable* Flight Deck text may use. The ticket pins a
     /// ≥10pt type floor: density comes from letterspacing and rules, never from
     /// sub-10pt micro-type.
     static let floor: CGFloat = 10
 
+    /// The two typefaces the split draws in: `sans` narration prose, `mono`
+    /// tabular values. A role's `Family` is the source of truth its font's
+    /// `Font.Design` is derived from.
+    enum Family: Equatable {
+        case sans
+        case mono
+
+        var design: Font.Design { self == .mono ? .monospaced : .default }
+    }
+
+    // MARK: Sizes
+
     static let microLabelSize: CGFloat = 10
     static let labelSize: CGFloat = 11
     static let countSize: CGFloat = 11
     static let bodySize: CGFloat = 12
 
+    /// Session / workspace name (`.ws`, SPEC §2): sans, 13.5pt, weight 640,
+    /// −0.01em. `Font.Weight` has no 640 stop, so the nearest standard weight
+    /// (`.semibold`, 600) carries it — the row already headlined at `.semibold`.
+    static let sessionNameSize: CGFloat = 13.5
+    /// Live-activity narration (`.narr` / `.narr2`, SPEC §2): sans, 12pt.
+    static let narrationSize: CGFloat = 12
+    /// Assistant rich text (`.assist`, SPEC §2): sans, 13pt / 1.55 line height.
+    static let assistantSize: CGFloat = 13
+    /// Gauge legend (`.glabel`, SPEC §2): sans, lifted from the mockup's 9.5px to
+    /// the 10pt floor. The role is defined here; T19 (tape gauges) consumes it.
+    static let gaugeLabelSize: CGFloat = 10
+    /// Row STATUS code (`.code`, SPEC §2 / §3-Slot3): mono, lifted from the
+    /// mockup's 9.5px to the 10pt floor, 700 weight, 0.08em tracking.
+    static let statusCodeSize: CGFloat = 10
+
+    /// The session name's −0.01em tracking expressed at its 13.5pt size.
+    static let sessionNameTracking: CGFloat = -0.135
+    /// The STATUS code's 0.08em tracking expressed at its 10pt size.
+    static let statusCodeTracking: CGFloat = 0.8
+    /// Assistant rich text line-height multiple (SPEC §2: 13px / 1.55).
+    static let assistantLineHeightMultiple: CGFloat = 1.55
+
+    // MARK: Role table (the mono/sans split contract)
+
+    /// Every readable role, paired with the `Family` the two-font split assigns
+    /// it. The font builders below read their `design` from these entries, so a
+    /// role that flips family here flips its rendered font too — the contract
+    /// `FlightDeckThemeTests.monoSansSplitHoldsTheTwoFontContract` pins. Narration
+    /// roles are `.sans`; every value / code / placard role is `.mono`.
+    static let roleFamilies: [(name: String, family: Family, size: CGFloat)] = [
+        // Sans narration prose.
+        ("sessionName", .sans, sessionNameSize),
+        ("narration", .sans, narrationSize),
+        ("assistant", .sans, assistantSize),
+        ("gaugeLabel", .sans, gaugeLabelSize),
+        // Mono tabular values.
+        ("statusCode", .mono, statusCodeSize),
+        ("microLabel", .mono, microLabelSize),
+        ("label", .mono, labelSize),
+        ("count", .mono, countSize),
+        ("body", .mono, bodySize),
+    ]
+
+    /// The `Family` a named role draws in, or `nil` for an unknown name.
+    static func family(of role: String) -> Family? {
+        roleFamilies.first { $0.name == role }?.family
+    }
+
     /// Every readable role's point size — the vector `FlightDeckThemeTests`
     /// asserts stays at or above `floor`.
     static var readableRoleSizes: [CGFloat] {
-        [microLabelSize, labelSize, countSize, bodySize]
+        roleFamilies.map(\.size)
     }
 
+    // MARK: Mono value fonts
+
     /// Uppercase letterspaced micro-labels (section captions, unit tags).
-    static let microLabel = Font.system(size: microLabelSize, weight: .semibold, design: .monospaced)
+    static let microLabel = Font.system(size: microLabelSize, weight: .semibold, design: Family.mono.design)
 
     /// Standard mono label (pill labels, chip text).
-    static let label = Font.system(size: labelSize, weight: .medium, design: .monospaced)
+    static let label = Font.system(size: labelSize, weight: .medium, design: Family.mono.design)
 
     /// The "×N" count badge in the closed pill's right slot.
-    static let count = Font.system(size: countSize, weight: .semibold, design: .monospaced)
+    static let count = Font.system(size: countSize, weight: .semibold, design: Family.mono.design)
 
     /// Body copy inside the opened panel.
-    static let body = Font.system(size: bodySize, weight: .regular, design: .monospaced)
+    static let body = Font.system(size: bodySize, weight: .regular, design: Family.mono.design)
+
+    /// The row STATUS code (`RUN` / `DONE` / `CAUT` / `WARN` / `INTR` / `FAIL` /
+    /// `IDLE`) — mono, 700, letterspaced.
+    static let statusCode = Font.system(size: statusCodeSize, weight: .bold, design: Family.mono.design)
+
+    // MARK: Sans narration fonts
+
+    /// The session / workspace name headline — sans, semibold.
+    static let sessionName = Font.system(size: sessionNameSize, weight: .semibold, design: Family.sans.design)
+
+    /// Live-activity narration prose — sans, medium.
+    static let narration = Font.system(size: narrationSize, weight: .medium, design: Family.sans.design)
+
+    /// Assistant rich-text body — sans, regular.
+    static let assistant = Font.system(size: assistantSize, weight: .regular, design: Family.sans.design)
+
+    /// Gauge legend caps (T19) — sans, semibold.
+    static let gaugeLabel = Font.system(size: gaugeLabelSize, weight: .semibold, design: Family.sans.design)
 }
 
 /// Flight Deck's layered surface hierarchy (AB-335).

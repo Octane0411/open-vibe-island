@@ -124,6 +124,39 @@ struct FlightDeckThemeTests {
         }
     }
 
+    // MARK: - Two-font split contract (AB-337 · SPEC §2)
+
+    /// The 2.0 board's mono/sans split: narration prose the reader *reads* — the
+    /// session name, live narration, assistant rich text, gauge legends — draws
+    /// **sans**, and every *value* the reader *scans* — status codes, counts,
+    /// the mono body/label/micro-label — draws **mono tabular**. No test pinned
+    /// font design before this; a `Font` is opaque, so the contract is pinned on
+    /// the `roleFamilies` table the font builders derive their design from.
+    @Test
+    func monoSansSplitHoldsTheTwoFontContract() {
+        // Narration roles are sans — the headline is explicitly NOT monospaced.
+        #expect(FlightDeckTypography.family(of: "sessionName") == .sans)
+        #expect(FlightDeckTypography.family(of: "narration") == .sans)
+        #expect(FlightDeckTypography.family(of: "assistant") == .sans)
+        #expect(FlightDeckTypography.family(of: "gaugeLabel") == .sans)
+
+        // Value roles are mono — the status code and every counter/body ARE
+        // monospaced (tabular numerals ride the mono design for free).
+        #expect(FlightDeckTypography.family(of: "statusCode") == .mono)
+        #expect(FlightDeckTypography.family(of: "count") == .mono)
+        #expect(FlightDeckTypography.family(of: "microLabel") == .mono)
+        #expect(FlightDeckTypography.family(of: "label") == .mono)
+        #expect(FlightDeckTypography.family(of: "body") == .mono)
+
+        // The two families map onto the two `Font.Design`s the split intends.
+        #expect(FlightDeckTypography.Family.sans.design == .default)
+        #expect(FlightDeckTypography.Family.mono.design == .monospaced)
+
+        // Every role in the table declares a family, and an unknown role is nil.
+        #expect(FlightDeckTypography.family(of: "does-not-exist") == nil)
+        #expect(FlightDeckTypography.roleFamilies.allSatisfy { !$0.name.isEmpty })
+    }
+
     // MARK: - Own square-annunciator-light grid geometry (AC #6)
 
     @Test

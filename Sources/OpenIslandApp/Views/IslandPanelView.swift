@@ -3070,6 +3070,54 @@ extension MarkdownUI.Theme {
                 .relativeLineSpacing(.em(0.25))
         }
     }
+
+    /// AB-337 · SPEC §4D / §2: the Flight Deck §4D "Last message" rich-text theme.
+    /// Body prose renders on the sans `assistant` role (13pt / 1.55 line height);
+    /// inline `code` is tinted nominal green (`#4AC99E` = `statusRunning`) over a
+    /// recessed well wash (mockup `.assistant code`), so a code span reads as a lit
+    /// value the way every FD value does.
+    @MainActor static func flightDeckAssistant(_ colors: IslandColorTokens) -> Theme {
+        Theme()
+        .text {
+            ForegroundColor(colors.surfaceText.opacity(0.9))
+            FontFamilyVariant(.normal)
+            FontSize(FlightDeckTypography.assistantSize)
+            FontWeight(.regular)
+        }
+        .link {
+            ForegroundColor(colors.statusRunning)
+        }
+        .strong {
+            FontWeight(.semibold)
+        }
+        .code {
+            FontFamilyVariant(.monospaced)
+            FontSize(FlightDeckTypography.assistantSize - 1)
+            ForegroundColor(colors.statusRunning)
+            BackgroundColor(colors.surfaceText.opacity(0.08))
+        }
+        .codeBlock { configuration in
+            configuration.label
+                .markdownTextStyle {
+                    FontFamilyVariant(.monospaced)
+                    FontSize(FlightDeckTypography.assistantSize - 1)
+                    ForegroundColor(colors.surfaceText.opacity(0.88))
+                }
+                .padding(10)
+                .background(colors.surfaceText.opacity(0.06))
+        }
+        .paragraph { configuration in
+            configuration.label
+                // SPEC §2: assistant body is 13pt / 1.55 line height → 0.55em of
+                // relative line spacing over the role's own size.
+                .relativeLineSpacing(.em(FlightDeckTypography.assistantLineHeightMultiple - 1))
+                .markdownMargin(top: 0, bottom: 6)
+        }
+        .listItem { configuration in
+            configuration.label
+                .markdownMargin(top: 2, bottom: 2)
+        }
+    }
 }
 
 /// AB-302: internal (not `private`) so the extracted `PouredSessionRow` slot

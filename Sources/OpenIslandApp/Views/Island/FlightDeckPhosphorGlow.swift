@@ -165,6 +165,24 @@ enum FlightDeckMotion {
         static let questionBorderOpacity: Double = 0.5
     }
 
+    /// Row entrance — **relay-snap in** (§4K motion strip · mockup `enter`). A
+    /// freshly-inserted list row slides in from a small horizontal offset and
+    /// fades once into its settled frame, driven by the theme's named relay-snap
+    /// open spring (response `0.32` / damping `0.92`) so a row arriving reads with
+    /// the same decisive no-overshoot latch as the panel's open morph. One-shot;
+    /// under Reduce Motion the row is born settled — no offset, no fade, no clock
+    /// (§4K "gated under Reduce Motion").
+    enum Entrance {
+        /// Starting horizontal offset (mockup `enter` translateX), eased to `0`.
+        static let slideOffset: CGFloat = 12
+        /// Starting opacity, eased to `1`.
+        static let initialOpacity: Double = 0
+        /// The relay-snap open spring — the FD identity (`IslandMotionTokens
+        /// .flightDeck.openAnimation`), named here so the entrance can't drift off it.
+        static let springResponse: TimeInterval = 0.32
+        static let springDamping: Double = 0.92
+    }
+
     // MARK: Ramps (pure, wall-clock, Reduce-Motion gated)
 
     /// A normalized ease-in-out triangle for `now` at `period`: `0 → 1 → 0` over

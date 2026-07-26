@@ -265,9 +265,9 @@
 "island.flightDeck.annunciator.run" = "运行";
 "island.flightDeck.annunciator.done" = "完成";
 "island.flightDeck.annunciator.idle" = "空闲";
+"island.flightDeck.column.status" = "状态";
 "island.flightDeck.column.session" = "会话";
 "island.flightDeck.column.model" = "模型";
-"island.flightDeck.column.app" = "应用";
 "island.flightDeck.column.time" = "时间";
 "island.flightDeck.row.jump" = "跳转";
 "island.flightDeck.footer.bridgeLink" = "桥接链路";
@@ -286,6 +286,15 @@
 "island.flightDeck.approval.allow" = "允许";
 "island.flightDeck.approval.deny" = "拒绝";
 "island.flightDeck.question.kicker" = "问题";
+
+/* Island Panel - Flight Deck §4D row detail metagrid (AB-337) */
+"island.flightDeck.detail.agent" = "代理";
+"island.flightDeck.detail.model" = "模型";
+"island.flightDeck.detail.mode" = "模式";
+"island.flightDeck.detail.branch" = "分支";
+"island.flightDeck.detail.uptime" = "运行时长";
+"island.flightDeck.detail.terminal" = "终端";
+"island.flightDeck.detail.lastMessage" = "最新消息";
 
 /* Island Panel - Poured Island 2.0 usage meters (AB-331) */
 "island.poured.usage.metersTitle" = "用量 · 显示重置时间";

@@ -155,16 +155,60 @@ struct FlightDeckSessionRowTests {
         #expect(FlightDeckSessionRowFormat.steadyLaneGlowIntensity(restingOpacity: idle) == 0)
     }
 
-    // MARK: - One column grid (AC #2)
+    // MARK: - STATUS code column (AB-337 · SPEC §3-Slot3)
+
+    /// The STATUS text-code that heads each row is a pure function of
+    /// phase / presence / outcome — the code + lamp pair pinned here so the code
+    /// can never drift from the lamp's colour. Inactive presence wins first
+    /// (idle-wins, mirroring `lanePriority`); otherwise phase → code, with the
+    /// completion outcome splitting `DONE` / `INTR` / `FAIL`.
+    @Test
+    func statusCodePairsPhaseOutcomeToTheEICASCode() {
+        // Running → RUN (nominal); fresh success → DONE (advisory).
+        #expect(FlightDeckSessionRowFormat.statusCode(phase: .running, presence: .running, outcome: .success) == "RUN")
+        #expect(FlightDeckSessionRowFormat.statusCode(phase: .completed, presence: .active, outcome: .success) == "DONE")
+        // Attention phases: permission is the red WARN, question the amber CAUT.
+        #expect(FlightDeckSessionRowFormat.statusCode(phase: .waitingForApproval, presence: .active, outcome: .success) == "WARN")
+        #expect(FlightDeckSessionRowFormat.statusCode(phase: .waitingForAnswer, presence: .active, outcome: .success) == "CAUT")
+        // Non-success completions split into the amber INTR and the red FAIL.
+        #expect(FlightDeckSessionRowFormat.statusCode(phase: .completed, presence: .active, outcome: .interrupted) == "INTR")
+        #expect(FlightDeckSessionRowFormat.statusCode(phase: .completed, presence: .active, outcome: .failed) == "FAIL")
+        // Inactive presence recedes to IDLE regardless of the stored phase/outcome
+        // — a stale completed or a stale running row both read IDLE (idle-wins).
+        #expect(FlightDeckSessionRowFormat.statusCode(phase: .completed, presence: .inactive, outcome: .failed) == "IDLE")
+        #expect(FlightDeckSessionRowFormat.statusCode(phase: .running, presence: .inactive, outcome: .success) == "IDLE")
+        #expect(FlightDeckSessionRowFormat.statusCode(phase: .waitingForApproval, presence: .inactive, outcome: .success) == "IDLE")
+
+        // Every code is a short (≤4-glyph) uppercase Latin EICAS placard — the
+        // fixed-width column the caption registers over depends on it.
+        let codes = [
+            FlightDeckSessionRowFormat.statusCode(phase: .running, presence: .running, outcome: .success),
+            FlightDeckSessionRowFormat.statusCode(phase: .completed, presence: .active, outcome: .success),
+            FlightDeckSessionRowFormat.statusCode(phase: .waitingForApproval, presence: .active, outcome: .success),
+            FlightDeckSessionRowFormat.statusCode(phase: .waitingForAnswer, presence: .active, outcome: .success),
+            FlightDeckSessionRowFormat.statusCode(phase: .completed, presence: .active, outcome: .interrupted),
+            FlightDeckSessionRowFormat.statusCode(phase: .completed, presence: .active, outcome: .failed),
+            FlightDeckSessionRowFormat.statusCode(phase: .running, presence: .inactive, outcome: .success),
+        ]
+        #expect(codes.allSatisfy { !$0.isEmpty && $0.count <= 4 && $0 == $0.uppercased() })
+    }
+
+    // MARK: - One column grid (AC #2 · AB-337)
 
     @Test
     func registeredTrailingColumnsHaveFixedNonZeroLanes() {
-        // Model, app and time each hold a constant lane so they land on the same
-        // x under their captions across every row — the "exact vertical registers"
-        // the grid is built on. A zero-width lane would collapse the register.
+        // The leading STATUS lane, and the trailing model and time lanes, each
+        // hold a constant width so they land on the same x under their captions
+        // across every row — the "exact vertical registers" the grid is built on.
+        // A zero-width lane would collapse the register. AB-337 re-registers the
+        // grid to STATUS | SESSION | MODEL | TIME (APP folded into the SSH chip),
+        // so the STATUS column is now one of the fixed lanes.
         for width in FlightDeckSessionRowGrid.registeredColumnWidths {
             #expect(width > 0)
         }
+        #expect(FlightDeckSessionRowGrid.statusColumnWidth > 0)
+        #expect(FlightDeckSessionRowGrid.registeredColumnWidths.contains(FlightDeckSessionRowGrid.statusColumnWidth))
+        #expect(FlightDeckSessionRowGrid.leadingColumnGap > 0)
         // The reserved control lanes match the shared trailing-cluster metrics so
         // the caption strip and the row share one trailing geometry.
         #expect(FlightDeckSessionRowGrid.detailToggleColumnWidth == IslandSessionRowMetrics.detailToggleColumnWidth)
@@ -406,6 +450,127 @@ struct FlightDeckSessionRowTests {
             FlightDeckApprovalFormat.heldReadout(
                 now: now, since: now.addingTimeInterval(-(FlightDeckApprovalFormat.heldReadoutCeiling - 1))
             ) != nil
+        )
+    }
+
+    // MARK: - Narration verb map (AC #2 · T03 / AB-321)
+
+    /// The narration line tone-splits into a tinted **verb** run + a bright
+    /// **object** run, and a bare fallback renders as one dim `plain` run — never
+    /// the raw `$ <preview>` echo the shipped row printed.
+    @Test
+    func narrationSegmentsTintTheVerbAndDropTheCommandEcho() {
+        // Structured verb + object → verb run then a space-prefixed object run.
+        let narrated = FlightDeckSessionRowFormat.narrationSegments(
+            verb: "Editing", object: "AppModel.swift", fallback: nil
+        )
+        #expect(narrated == [
+            .init(text: "Editing", role: .verb),
+            .init(text: " AppModel.swift", role: .object),
+        ])
+
+        // A verb that says it all → a single tinted verb run, no object.
+        #expect(
+            FlightDeckSessionRowFormat.narrationSegments(verb: "Thinking", object: nil, fallback: nil)
+                == [.init(text: "Thinking", role: .verb)]
+        )
+
+        // No structured verb → the human fallback renders as one dim plain run.
+        #expect(
+            FlightDeckSessionRowFormat.narrationSegments(verb: nil, object: nil, fallback: "Updated AGENTS.md")
+                == [.init(text: "Updated AGENTS.md", role: .plain)]
+        )
+
+        // Nothing to narrate → no segments (the row draws no sub-line).
+        #expect(FlightDeckSessionRowFormat.narrationSegments(verb: nil, object: nil, fallback: nil).isEmpty)
+        #expect(FlightDeckSessionRowFormat.narrationSegments(verb: "  ", object: nil, fallback: "   ").isEmpty)
+
+        // A verb run is never a shell echo — no `$` prefix survives anywhere.
+        for segment in narrated {
+            #expect(!segment.text.hasPrefix("$"))
+        }
+    }
+
+    // MARK: - Attachment badge (AC #4 · §4D metagrid)
+
+    /// The §4D Terminal cell badge maps `attachmentState` to a Latin placard code,
+    /// with only an attached pane reading live (the nominal-green tint at the view).
+    @Test
+    func attachmentBadgeMapsStateToPlacardAndLiveness() {
+        #expect(FlightDeckSessionRowFormat.attachmentBadge(.attached) == ("ATTACHED", true))
+        #expect(FlightDeckSessionRowFormat.attachmentBadge(.stale) == ("STALE", false))
+        #expect(FlightDeckSessionRowFormat.attachmentBadge(.detached) == ("DETACHED", false))
+    }
+
+    // MARK: - Branch chip honesty gate (AC #1)
+
+    /// A branch chip renders **only** for a Claude session with a worktree branch;
+    /// a Codex row that collides on name shows a recency disambiguator and no
+    /// branch chip (the mockup's Codex branch is untruthful — SPEC §6).
+    @Test
+    func branchChipIsClaudeOnlyAndCodexCollisionFallsBackToRecency() {
+        let claude = Self.rowSession(id: "c", tool: .claudeCode, workspace: "the-automator", branch: "feat/auth-bridge")
+        // Claude with a branch → the row's branch source resolves it (chip shown).
+        #expect(SessionDisambiguation.branch(for: claude) == "feat/auth-bridge")
+
+        // Two Codex sessions colliding on the same workspace name.
+        let codexA = Self.rowSession(id: "a", tool: .codex, workspace: "the-automator", ageSeconds: 120)
+        let codexB = Self.rowSession(id: "b", tool: .codex, workspace: "the-automator", ageSeconds: 3_600)
+
+        // Neither Codex row can carry a branch chip — the honesty gate returns nil.
+        #expect(SessionDisambiguation.branch(for: codexA) == nil)
+        #expect(SessionDisambiguation.branch(for: codexB) == nil)
+
+        // The list-level disambiguator hands each colliding Codex row a recency
+        // phrase instead (what the FD row renders when the branch chip is absent).
+        let disambiguators = SessionDisambiguation.disambiguators(for: [codexA, codexB], now: Self.now)
+        #expect(disambiguators[codexA.id]?.isEmpty == false)
+        #expect(disambiguators[codexB.id]?.isEmpty == false)
+        #expect(disambiguators[codexA.id]?.contains("ago") == true)
+    }
+
+    // MARK: - Row entrance (AC #6 · §4K)
+
+    /// The relay-snap entrance is the FD open spring (response 0.32 / damping 0.92),
+    /// named on `FlightDeckMotion.Entrance` so it can't drift off the identity.
+    @Test
+    func rowEntranceIsTheNamedRelaySnapSpring() {
+        #expect(FlightDeckMotion.Entrance.springResponse == 0.32)
+        #expect(FlightDeckMotion.Entrance.springDamping == 0.92)
+        // A real slide-in offset that eases to a settled frame.
+        #expect(FlightDeckMotion.Entrance.slideOffset > 0)
+        #expect(FlightDeckMotion.Entrance.initialOpacity == 0)
+    }
+
+    // MARK: - Test fixtures
+
+    private static let now = Date(timeIntervalSince1970: 1_800_000)
+
+    private static func rowSession(
+        id: String,
+        tool: AgentTool,
+        workspace: String,
+        branch: String? = nil,
+        ageSeconds: TimeInterval = 60
+    ) -> AgentSession {
+        let claudeMetadata: ClaudeSessionMetadata? = tool == .claudeCode
+            ? ClaudeSessionMetadata(worktreeBranch: branch)
+            : nil
+        return AgentSession(
+            id: id,
+            title: "\(tool.displayName) · \(workspace)",
+            tool: tool,
+            phase: .running,
+            summary: "Working",
+            updatedAt: now.addingTimeInterval(-ageSeconds),
+            jumpTarget: JumpTarget(
+                terminalApp: "Ghostty",
+                workspaceName: workspace,
+                paneTitle: "\(tool.rawValue) ~/code/\(workspace)",
+                workingDirectory: "/Users/dev/code/\(workspace)",
+                terminalSessionID: "ghostty-\(id)"
+            ),
+            claudeMetadata: claudeMetadata
         )
     }
 }
