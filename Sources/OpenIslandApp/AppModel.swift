@@ -1113,6 +1113,34 @@ final class AppModel {
         )
     }
 
+    /// The spotlight session's phase/outcome behind the closed pill (AB-330),
+    /// threaded to the Poured pill through `\.islandClosedPillActivity` so it can
+    /// pick an ambient frame `UnifiedBars.Mode` can't express (running vs.
+    /// just-completed, permission vs. question, and the completion verdict).
+    ///
+    /// `nil` when there is no spotlight. The completion is marked *fresh* only
+    /// inside the same settle window the closed-pill label uses
+    /// (`IslandClosedPillTiming.outcomeLabelWindow`), so the pill's settle glyph
+    /// and its `Done · …` label appear and expire together. Time-injectable —
+    /// `referenceDate` drives that window — mirroring `islandClosedLabel(at:)`.
+    func islandClosedActivity(at referenceDate: Date = .now) -> IslandClosedPillActivity? {
+        guard let session = islandClosedSpotlight else { return nil }
+
+        let isFresh: Bool
+        if session.phase == .completed {
+            let age = referenceDate.timeIntervalSince(session.updatedAt)
+            isFresh = age >= 0 && age < IslandClosedPillTiming.outcomeLabelWindow
+        } else {
+            isFresh = false
+        }
+
+        return IslandClosedPillActivity(
+            phase: session.phase,
+            outcome: session.outcome,
+            isOutcomeFresh: isFresh
+        )
+    }
+
     /// Right-slot payload for the closed pill.
     ///
     /// AB-322: what the agents are *doing* outranks the user's resting

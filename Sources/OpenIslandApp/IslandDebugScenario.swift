@@ -19,6 +19,7 @@ struct IslandDebugSnapshot {
 
 enum IslandDebugScenario: String, CaseIterable, Identifiable {
     case closed
+    case closedAttention
     case sessionList
     case approvalCard
     case questionCard
@@ -40,6 +41,8 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
         switch self {
         case .closed:
             "Closed Notch"
+        case .closedAttention:
+            "Closed Notch — Permission"
         case .sessionList:
             "Session List"
         case .approvalCard:
@@ -73,6 +76,8 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
         switch self {
         case .closed:
             "Collapsed idle/running notch with live count and attention affordance."
+        case .closedAttention:
+            "Collapsed notch spotlighting a permission request — the A3 amber attention glow bleeding outside the pill."
         case .sessionList:
             "Manual expanded list with running, active, and inactive session rows."
         case .approvalCard:
@@ -115,6 +120,27 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
                 islandSurface: .sessionList(),
                 sessions: sessions,
                 selectedSessionID: sessions.first?.id
+            )
+
+        case .closedAttention:
+            // A collapsed notch whose spotlight session is blocked on a
+            // permission approval, so the Poured pill wears its A3 amber
+            // attention state (`SPEC-poured-island` §4A A3) — the glow bleeds
+            // outside the silhouette and the right slot is the amber count badge.
+            // The `attnpulse` never drops to zero opacity, so this frame is
+            // judgeable regardless of the capture's animation phase (unlike the
+            // `closed` A2 working glow, which breathes through 0).
+            let approval = DebugSessionFactory.approvalSession(now: now)
+            let sessions = DebugSessionFactory.notificationSessions(lead: approval, now: now)
+            return IslandDebugSnapshot(
+                title: title,
+                summary: summary,
+                previewHeight: 78,
+                notchStatus: .closed,
+                notchOpenReason: nil,
+                islandSurface: .sessionList(),
+                sessions: sessions,
+                selectedSessionID: approval.id
             )
 
         case .sessionList:

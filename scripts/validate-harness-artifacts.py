@@ -221,6 +221,22 @@ def main() -> None:
         if report.get("liveSessionCount") != 9 and not any("9" in value for value in text_values):
             fail("closed scenario is missing the live session count value")
 
+    elif scenario == "closedAttention":
+        # AB-330: a collapsed notch spotlighting a permission request — the pill
+        # wears its A3 amber attention state and the glow bleeds outside the
+        # silhouette (judged by eye from the PNG). Same closed-surface contract
+        # as `closed`; the interior differs (attention badge, not the count).
+        if notch_status != "closed":
+            fail(f"expected closed notch for closedAttention, got {notch_status!r}")
+        if island_surface != "sessionList":
+            fail(f"expected closedAttention to use sessionList surface, got {island_surface!r}")
+        require_frame_between(
+            overlay_frame,
+            width=(200, 620),
+            height=(35, 500),
+            context="closedAttention overlay frame",
+        )
+
     elif scenario == "sessionList":
         if notch_status != "opened":
             fail(f"expected opened notch for sessionList, got {notch_status!r}")

@@ -171,6 +171,65 @@ protocol IslandTheme: Sendable {
     /// The "install hooks" hint shown while no agent hooks are installed.
     /// (Scope: install hint.)
     func installHint(lang: LanguageManager, onTap: @escaping () -> Void) -> AnyView
+
+    // MARK: Closed-pill ambient seams (AB-330)
+
+    /// An ambient glow the theme casts around the **closed** pill that must
+    /// render OUTSIDE the notch morph's shared content `.clipShape` so it can
+    /// bleed past the pill silhouette (Poured's attention / working / settle
+    /// states). `IslandPanelView` places the returned view *behind* the
+    /// closed surface, outside every clip, sized to the closed pill.
+    ///
+    /// Returns `nil` — the default every theme but Poured takes — for no
+    /// external glow, so the closed-surface render tree stays byte-identical.
+    /// The spotlight's phase/outcome arrives as `activity` (the same value on
+    /// `\.islandClosedPillActivity`) so a theme can fold it into whatever ambient
+    /// vocabulary it draws.
+    ///
+    /// **Declared here (not only in the extension)** so a call through
+    /// `any IslandTheme` dynamically dispatches to the conformer's override
+    /// rather than statically binding to the extension default — the extension
+    /// below supplies the `nil` default so no shipped theme must implement it.
+    func closedSurfaceGlow(
+        mode: UnifiedBars.Mode,
+        rightSlot: IslandRightSlotContent?,
+        activity: IslandClosedPillActivity?,
+        width: CGFloat,
+        height: CGFloat
+    ) -> AnyView?
+
+    /// The ink the closed pill's **traveling** status glyph (`islandGlyphOverlay`,
+    /// which the morph mounts once so it can slide into the header) takes for the
+    /// current spotlight state — running blue / question gold / permission amber /
+    /// outcome tint. Returns `nil` — the default — to leave `UnifiedBars` on its
+    /// own paper tone, so every theme but Poured renders the glyph unchanged.
+    /// A protocol requirement for the same dynamic-dispatch reason as
+    /// `closedSurfaceGlow`.
+    func closedGlyphTint(
+        mode: UnifiedBars.Mode,
+        rightSlot: IslandRightSlotContent?,
+        activity: IslandClosedPillActivity?
+    ) -> Color?
+}
+
+// MARK: - Closed-pill ambient seam defaults (AB-330)
+
+extension IslandTheme {
+    /// Default: no external closed-pill glow. Every theme but Poured takes this.
+    func closedSurfaceGlow(
+        mode: UnifiedBars.Mode,
+        rightSlot: IslandRightSlotContent?,
+        activity: IslandClosedPillActivity?,
+        width: CGFloat,
+        height: CGFloat
+    ) -> AnyView? { nil }
+
+    /// Default: leave the traveling glyph on its own paper tone.
+    func closedGlyphTint(
+        mode: UnifiedBars.Mode,
+        rightSlot: IslandRightSlotContent?,
+        activity: IslandClosedPillActivity?
+    ) -> Color? { nil }
 }
 
 /// The closed-island agents-grid geometry a theme supplies. Expressed as plain

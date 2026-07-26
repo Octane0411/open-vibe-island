@@ -1,4 +1,5 @@
 import SwiftUI
+import OpenIslandCore
 
 private struct IslandThemeTokensKey: EnvironmentKey {
     static let defaultValue: IslandThemeTokens = .classic
@@ -35,6 +36,51 @@ extension EnvironmentValues {
     var islandSessionDisambiguators: [String: String] {
         get { self[IslandSessionDisambiguatorsKey.self] }
         set { self[IslandSessionDisambiguatorsKey.self] = newValue }
+    }
+}
+
+/// The spotlight session's phase + outcome, threaded to the closed pill so a
+/// theme can express ambient states that `UnifiedBars.Mode` alone cannot —
+/// `.idle`/`.running`/`.waiting` collapse *running vs. just-completed* and
+/// *permission vs. question* into the same glyph mode, and carry no outcome.
+///
+/// A neutral value (raw `SessionPhase` / `SessionOutcome`, plus whether the
+/// completion is still inside its settle window) rather than a Poured-specific
+/// enum, so it stays a truthful description of the spotlight and any theme can
+/// map it into its own vocabulary. `outcome` is only meaningful when
+/// `phase == .completed`; `isOutcomeFresh` is `true` only while a completion is
+/// recent enough to still narrate its verdict (mirrors the closed-pill label's
+/// settle window, `IslandClosedPillTiming.outcomeLabelWindow`).
+struct IslandClosedPillActivity: Equatable, Sendable {
+    var phase: SessionPhase
+    var outcome: SessionOutcome
+    var isOutcomeFresh: Bool
+
+    init(phase: SessionPhase, outcome: SessionOutcome, isOutcomeFresh: Bool) {
+        self.phase = phase
+        self.outcome = outcome
+        self.isOutcomeFresh = isOutcomeFresh
+    }
+}
+
+private struct IslandClosedPillActivityKey: EnvironmentKey {
+    static let defaultValue: IslandClosedPillActivity? = nil
+}
+
+extension EnvironmentValues {
+    /// AB-330: the spotlight session's phase/outcome behind the closed pill,
+    /// injected once by `IslandPanelView` from `AppModel.islandClosedActivity`.
+    ///
+    /// Like `islandSessionDisambiguators`, this is state the pill's own
+    /// arguments (`mode` / `label` / `rightSlot`) cannot carry, so it travels
+    /// through the environment rather than the theme's `closedPill(...)`
+    /// signature — a theme that ignores it (every theme but Poured today)
+    /// renders exactly as before. Defaults to `nil` ("no spotlight"), so a pill
+    /// rendered without an explicit injection resolves to its idle ambient
+    /// state rather than reading a stale verdict.
+    var islandClosedPillActivity: IslandClosedPillActivity? {
+        get { self[IslandClosedPillActivityKey.self] }
+        set { self[IslandClosedPillActivityKey.self] = newValue }
     }
 }
 

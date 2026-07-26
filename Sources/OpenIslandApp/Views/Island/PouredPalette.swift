@@ -21,4 +21,15 @@ enum PouredPalette {
     /// Attention hot — `#ff9d5c`. The warmer end of the attention pulse, hotter
     /// than `attention` for the peak of the amber breathing cycle.
     static let attentionHot = Color(red: 0xFF / 255.0, green: 0x9D / 255.0, blue: 0x5C / 255.0)
+
+    /// Ink drawn *on* the amber `count.attn` permission badge — `#2a1c05`
+    /// (`SPEC-poured-island` §4A A3 "text `#2a1c05`"). A near-black warm brown so
+    /// the count reads against the bright `attention` fill; theme-local for the
+    /// same reason as `attention` — it is a Poured accent, not a status token.
+    static let attentionBadgeInk = Color(red: 0x2A / 255.0, green: 0x1C / 255.0, blue: 0x05 / 255.0)
+
+    /// Ink drawn *on* the gold `?` question badge — `#2a2205`
+    /// (`SPEC-poured-island` §4A A4 "text `#2a2205`"). The question twin of
+    /// `attentionBadgeInk`, over the `statusWaitingForAnswer` gold fill.
+    static let questionBadgeInk = Color(red: 0x2A / 255.0, green: 0x22 / 255.0, blue: 0x05 / 255.0)
 }

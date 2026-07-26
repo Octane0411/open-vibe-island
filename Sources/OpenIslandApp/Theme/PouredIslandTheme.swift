@@ -103,6 +103,56 @@ struct PouredIslandTheme: IslandTheme {
         )
     }
 
+    /// The closed-pill ambient glow (AB-330 stage 2). Folds the spotlight's
+    /// phase/outcome into `PouredPillAmbientState` and, for the states that
+    /// bloom (`A2` working / `A2′` many / `A3` permission / `A4` question / `A5`
+    /// success settle), returns the `PouredClosedGlow` seam layer so the glow
+    /// bleeds *outside* the morph's content clip — the fix for the stage-1
+    /// deviation where the pill-internal `.shadow` was truncated at the
+    /// silhouette. Idle and the `A6` outcomes (interrupted / failed) cast no
+    /// glow, so this returns `nil` and no layer is mounted.
+    func closedSurfaceGlow(
+        mode: UnifiedBars.Mode,
+        rightSlot: IslandRightSlotContent?,
+        activity: IslandClosedPillActivity?,
+        width: CGFloat,
+        height: CGFloat
+    ) -> AnyView? {
+        let ambient = PouredPillAmbientState.resolve(activity: activity, mode: mode, rightSlot: rightSlot)
+        guard ambient.castsGlow else { return nil }
+        return AnyView(PouredClosedGlow(ambient: ambient, width: width, height: height))
+    }
+
+    /// Tints the closed pill's traveling glyph by ambient state (AB-330 stage 2).
+    /// In the live morph path the left indicator *is* this traveling
+    /// `UnifiedBars` overlay (the pill draws a transparent placeholder), so
+    /// without this it would stay paper-toned regardless of state; the tint
+    /// gives it the same status colour the glow blooms in — running blue,
+    /// question gold, permission amber, the outcome tint on a fresh completion.
+    func closedGlyphTint(
+        mode: UnifiedBars.Mode,
+        rightSlot: IslandRightSlotContent?,
+        activity: IslandClosedPillActivity?
+    ) -> Color? {
+        let colors = tokens.colors
+        switch PouredPillAmbientState.resolve(activity: activity, mode: mode, rightSlot: rightSlot) {
+        case .idle:
+            return colors.paper.opacity(colors.tertiaryTextOpacity)
+        case .working:
+            return colors.statusRunning
+        case .question:
+            return colors.statusWaitingForAnswer
+        case .permission:
+            return PouredPalette.attention
+        case .completed(let outcome):
+            switch outcome {
+            case .success:     return colors.statusCompleted
+            case .interrupted: return colors.statusWarning
+            case .failed:      return colors.statusFailed
+            }
+        }
+    }
+
     // MARK: Slots restyled for glass (AB-301)
 
     /// The opened header: usage as conic-gradient rings and glass control
