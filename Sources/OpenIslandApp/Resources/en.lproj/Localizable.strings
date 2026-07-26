@@ -165,8 +165,8 @@
 /* Settings - About */
 "settings.about.version" = "Version %@";
 "settings.about.checkForUpdates" = "Check for Updates…";
-"settings.about.quitApp" = "Quit Open Island";
-"island.quit.confirmTitle" = "Quit Open Island?";
+"settings.about.quitApp" = "Power Off Orbit";
+"island.quit.confirmTitle" = "Power Off Orbit?";
 "island.quit.confirmAction" = "Quit";
 "island.quit.confirmMessage" = "Are you sure you want to quit?";
 

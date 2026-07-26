@@ -361,7 +361,7 @@ struct AboutSettingsPane: View {
                 Section {
                     aboutActionRow(
                         title: lang.t("settings.about.quitApp"),
-                        systemImage: "rectangle.portrait.and.arrow.right",
+                        systemImage: "power",
                         tint: Color(red: 1.0, green: 0.29, blue: 0.29),
                         action: {
                             model.quitApplication()

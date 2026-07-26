@@ -107,6 +107,12 @@ struct OpenIslandApp: App {
                 }
                 .keyboardShortcut(",", modifiers: .command)
             }
+            CommandGroup(replacing: .appTermination) {
+                Button("Power Off Orbit") {
+                    appDelegate.model.quitApplication()
+                }
+                .keyboardShortcut("q", modifiers: .command)
+            }
         }
     }
 }
