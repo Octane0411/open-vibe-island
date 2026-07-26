@@ -762,6 +762,7 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
 
     private func configureTransparency() {
         wantsLayer = true
+        layer?.isOpaque = false
         layer?.backgroundColor = NSColor.clear.cgColor
     }
 
