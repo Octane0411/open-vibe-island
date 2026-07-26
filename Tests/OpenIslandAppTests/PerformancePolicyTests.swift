@@ -74,7 +74,7 @@ struct PerformancePolicyTests {
     }
 
     @Test
-    func inactiveSessionDotDoesNotRequireAnimationTimeline() {
+    func sessionDotDoesNotRequireSwiftUIAnimationTimeline() {
         #expect(IslandSessionStateIndicator.animatedDot.timelineInterval(
             presence: .inactive,
             isActionable: false
@@ -86,10 +86,30 @@ struct PerformancePolicyTests {
         #expect(IslandSessionStateIndicator.animatedDot.timelineInterval(
             presence: .running,
             isActionable: false
-        ) == 1.0 / 15.0)
+        ) == nil)
         #expect(IslandSessionStateIndicator.animatedDot.timelineInterval(
             presence: .inactive,
             isActionable: true
-        ) == 1.0 / 15.0)
+        ) == nil)
+    }
+
+    @Test
+    func activeSessionDotUsesCoreAnimationLayerAnimation() {
+        #expect(!IslandSessionStateIndicator.animatedDot.usesLayerAnimation(
+            presence: .inactive,
+            isActionable: false
+        ))
+        #expect(IslandSessionStateIndicator.animatedDot.usesLayerAnimation(
+            presence: .running,
+            isActionable: false
+        ))
+        #expect(IslandSessionStateIndicator.animatedDot.usesLayerAnimation(
+            presence: .inactive,
+            isActionable: true
+        ))
+        #expect(!IslandSessionStateIndicator.bar.usesLayerAnimation(
+            presence: .running,
+            isActionable: false
+        ))
     }
 }
