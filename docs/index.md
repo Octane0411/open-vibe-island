@@ -38,6 +38,7 @@ This index is the repository map for humans and coding agents. Read these files 
 - [docs/architecture/adr-001-orbit-agent-usage-context-surface.md](./architecture/adr-001-orbit-agent-usage-context-surface.md) for the active-agent-first architecture decision
 - [docs/orbit/plan-v3-glossary.md](./orbit/plan-v3-glossary.md) for Plan v3 domain language
 - [docs/orbit/plan-v3-design-critique.md](./orbit/plan-v3-design-critique.md) for the source-backed experience critique and priorities
+- [docs/orbit/phase0-approval-capability-matrix.md](./orbit/phase0-approval-capability-matrix.md) for the cross-agent approval capability, correlation-gap, and verification audit
 
 ## Refactoring Plans
 
