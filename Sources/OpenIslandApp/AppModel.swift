@@ -52,6 +52,11 @@ final class AppModel {
         }
     }
     @ObservationIgnored private var _cachedSessionBuckets: (primary: [AgentSession], overflow: [AgentSession])?
+    private(set) var receiptLedger = OrbitReceiptLedger()
+
+    var receipts: [OrbitReceipt] {
+        receiptLedger.entries
+    }
 
     /// Monotonic ticket assigned the first time a session ID shows up in the
     /// closed-island's right-slot surfaced set. Drives the grid's display
@@ -1288,11 +1293,19 @@ final class AppModel {
             return
         }
 
+        let receiptID = queueReceipt(
+            for: session,
+            action: approved ? .permissionAllowedOnce : .permissionDenied,
+            requestID: session.permissionRequest?.id,
+            scope: receiptScope(for: session),
+            summary: approved ? "permission decision queued" : "permission denial queued"
+        )
         send(
             .resolvePermission(sessionID: session.id, resolution: permissionResolution(for: approved)),
             userMessage: approved
                 ? "Approving permission for \(session.title)."
-                : "Denying permission for \(session.title)."
+                : "Denying permission for \(session.title).",
+            receiptID: receiptID
         )
     }
 
@@ -1301,9 +1314,17 @@ final class AppModel {
             return
         }
 
+        let receiptID = queueReceipt(
+            for: session,
+            action: .questionAnswered,
+            requestID: session.questionPrompt?.id,
+            scope: "question",
+            summary: "question answer queued"
+        )
         send(
             .answerQuestion(sessionID: session.id, response: QuestionPromptResponse(answer: answer)),
-            userMessage: "Sending answer \"\(answer)\" for \(session.title)."
+            userMessage: "Sending answer \"\(answer)\" for \(session.title).",
+            receiptID: receiptID
         )
     }
 
@@ -1364,6 +1385,13 @@ final class AppModel {
         }
 
         let resolution = permissionResolution(for: approved)
+        let receiptID = queueReceipt(
+            for: session,
+            action: approved ? .permissionAllowedOnce : .permissionDenied,
+            requestID: session.permissionRequest?.id,
+            scope: receiptScope(for: session),
+            summary: approved ? "permission decision queued" : "permission denial queued"
+        )
         dismissNotificationSurfaceIfPresent(for: sessionID)
         state.resolvePermission(sessionID: session.id, resolution: resolution)
         synchronizeSelection()
@@ -1373,7 +1401,8 @@ final class AppModel {
             .resolvePermission(sessionID: session.id, resolution: resolution),
             userMessage: approved
                 ? "Approving permission for \(session.title)."
-                : "Denying permission for \(session.title)."
+                : "Denying permission for \(session.title).",
+            receiptID: receiptID
         )
     }
 
@@ -1449,7 +1478,42 @@ final class AppModel {
     }
 
 
-    private func send(_ command: BridgeCommand, userMessage: String) {
+    private func queueReceipt(
+        for session: AgentSession,
+        action: OrbitReceipt.Action,
+        requestID: UUID?,
+        scope: String,
+        summary: String
+    ) -> UUID {
+        let receipt = OrbitReceipt(
+            sessionID: session.id,
+            requestID: requestID,
+            adapter: session.tool.rawValue,
+            action: action,
+            scope: scope,
+            status: .queued,
+            summary: summary
+        )
+        receiptLedger.append(receipt)
+        return receipt.id
+    }
+
+    private func receiptScope(for session: AgentSession) -> String {
+        if let toolName = session.permissionRequest?.toolName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !toolName.isEmpty {
+            return toolName
+        }
+        return "session"
+    }
+
+    private func updateReceipt(_ receiptID: UUID, status: OrbitReceipt.Status) {
+        guard let receipt = receiptLedger.entry(id: receiptID) else {
+            return
+        }
+        receiptLedger.append(receipt.with(status: status))
+    }
+
+    private func send(_ command: BridgeCommand, userMessage: String, receiptID: UUID? = nil) {
         lastActionMessage = userMessage
 
         Task { [weak self] in
@@ -1459,7 +1523,13 @@ final class AppModel {
 
             do {
                 try await self.bridgeClient.send(command)
+                if let receiptID {
+                    self.updateReceipt(receiptID, status: .sent)
+                }
             } catch {
+                if let receiptID {
+                    self.updateReceipt(receiptID, status: .failed)
+                }
                 self.lastActionMessage = "Failed to send bridge command: \(error.localizedDescription)"
             }
         }
