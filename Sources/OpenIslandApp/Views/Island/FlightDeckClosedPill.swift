@@ -84,6 +84,40 @@ struct FlightDeckClosedPill: View {
         FlightDeckPillBloom.resolve(activity: activity, mode: mode, rightSlot: rightSlot)
     }
 
+    // MARK: Wing labels (AB-338 · SPEC §4A A1/A2/A5)
+
+    /// The pill's ambient frame (idle / working / permission / question /
+    /// completion) — reuses the theme-agnostic `PouredPillAmbientState.resolve`
+    /// (the same fold the bloom uses) so the wing label reads the same frame the
+    /// glow does.
+    private var ambientState: PouredPillAmbientState {
+        PouredPillAmbientState.resolve(activity: activity, mode: mode, rightSlot: rightSlot)
+    }
+
+    private var isIdleAmbient: Bool {
+        if case .idle = ambientState { return true }
+        return false
+    }
+
+    /// The A1 idle resting caption (`STANDBY`) is shown **only** when the pill
+    /// would otherwise be a bare glyph — no activity label and no right-slot
+    /// content — and the spotlight is quiescent. When any real content is present
+    /// (a label, a count / agents / usage / attention slot) that wins.
+    private var isStandbyLabel: Bool {
+        label == nil && rightSlot == nil && isIdleAmbient
+    }
+
+    /// The label actually rendered in the wing. Falls back to the `STANDBY`
+    /// caption for the bare idle pill so the idle wing reads as a live-but-quiet
+    /// panel (SPEC §4A A1). Fed to the **unchanged** `V6ClosedPill.*OuterWidth`
+    /// math as the effective label, so `STANDBY`'s width is reserved by the
+    /// existing formula — never a new width path (the T12/AB-330 contract).
+    private var effectiveLabel: String? {
+        if let label { return label }
+        if isStandbyLabel { return LanguageManager.shared.t("island.flightDeck.pill.standby") }
+        return nil
+    }
+
     @ViewBuilder
     private var glyphOrPlaceholder: some View {
         if showsGlyph {
@@ -106,8 +140,9 @@ struct FlightDeckClosedPill: View {
     // MARK: External (fluid)
 
     private var externalBody: some View {
+        let effectiveLabel = self.effectiveLabel
         let width = V6ClosedPill.externalOuterWidth(
-            label: label,
+            label: effectiveLabel,
             rightSlot: rightSlot,
             minWidth: minWidth,
             height: height
@@ -119,10 +154,15 @@ struct FlightDeckClosedPill: View {
             HStack(spacing: 0) {
                 glyphOrPlaceholder
 
-                if let label {
-                    V6CenterLabelView(text: label)
-                        .padding(.leading, Self.innerGap)
-                        .transition(.opacity.combined(with: .move(edge: .leading)))
+                if let effectiveLabel {
+                    FlightDeckClosedPillLabel(
+                        text: effectiveLabel,
+                        ambient: ambientState,
+                        isStandby: isStandbyLabel,
+                        maxWidth: V6CenterLabelView.intrinsicWidth(of: effectiveLabel)
+                    )
+                    .padding(.leading, Self.innerGap)
+                    .transition(.opacity.combined(with: .move(edge: .leading)))
                 }
 
                 Spacer(minLength: Self.innerGap)
@@ -138,8 +178,9 @@ struct FlightDeckClosedPill: View {
     // MARK: MacBook (notch-lane label opt-in)
 
     private var macbookBody: some View {
+        let effectiveLabel = self.effectiveLabel
         let outer = V6ClosedPill.macbookOuterWidth(
-            label: label,
+            label: effectiveLabel,
             physicalNotchWidth: physicalNotchWidth,
             height: height
         )
@@ -150,10 +191,18 @@ struct FlightDeckClosedPill: View {
             HStack(spacing: 0) {
                 glyphOrPlaceholder
 
-                if let label {
-                    V6NotchLaneLabelView(text: label, maxWidth: V6ClosedPill.notchLaneLabelMaxWidth)
-                        .padding(.leading, Self.notchLaneLabelGap)
-                        .transition(.opacity.combined(with: .move(edge: .leading)))
+                if let effectiveLabel {
+                    FlightDeckClosedPillLabel(
+                        text: effectiveLabel,
+                        ambient: ambientState,
+                        isStandby: isStandbyLabel,
+                        maxWidth: V6NotchLaneLabelView.intrinsicWidth(
+                            of: effectiveLabel,
+                            cappedAt: V6ClosedPill.notchLaneLabelMaxWidth
+                        )
+                    )
+                    .padding(.leading, Self.notchLaneLabelGap)
+                    .transition(.opacity.combined(with: .move(edge: .leading)))
                 }
 
                 Spacer(minLength: 0)
@@ -174,10 +223,159 @@ struct FlightDeckClosedPill: View {
 
     private var pillLayoutKey: AnyHashable {
         AnyHashable([
-            AnyHashable(label ?? ""),
+            AnyHashable(effectiveLabel ?? ""),
             AnyHashable(rightSlot.map(FlightDeckRightSlotKey.init) ?? .none),
             AnyHashable(mode),
         ])
+    }
+}
+
+// MARK: - Wing label tone (AB-338 · SPEC §4A A2/A5)
+
+/// Splits the closed pill's resolved label into tone runs for the Flight Deck
+/// two-font/two-tone wing (SPEC §4A). The label arrives as one already-localized
+/// string from `IslandClosedLabelResolver`, so the split is keyed off the ambient
+/// frame that produced it (never re-parsing localized words) — a pure function
+/// `FlightDeckMotionTests` pins against the resolver's own output.
+///
+/// - **A2 working** — `Editing AppModel.swift` → **verb** nominal green
+///   (`#4AC99E`) + **object** bright paper (mockup `.narr2 .v` / `b`). The
+///   aggregate `3 working` instead reads **count** bright + qualifier dim.
+/// - **A5 completion** — `Done · the-automator` → the `Done ·` prefix in advisory
+///   blue (`#6392C4`) + the **workspace** bright paper (the shared `Done ·
+///   <workspace>` form).
+/// - Idle / permission / question labels carry no natural split and render as one
+///   plain run.
+enum FlightDeckPillLabelTone {
+    struct Segment: Equatable {
+        enum Role: Equatable {
+            /// Tinted nominal green (`#4AC99E`) — the A2 verb.
+            case verb
+            /// Bright paper — the A2 object / A5 workspace.
+            case object
+            /// Bright paper, one weight heavier — the aggregate `N working` count.
+            case count
+            /// Advisory blue (`#6392C4`) — the A5 `Done ·` outcome prefix.
+            case donePrefix
+            /// A run with no tonal split (idle / permission / question).
+            case plain
+        }
+
+        var text: String
+        var role: Role
+    }
+
+    static func segments(for text: String, ambient: PouredPillAmbientState) -> [Segment] {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return [] }
+
+        switch ambient {
+        case .working:
+            let parts = trimmed.split(separator: " ", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else {
+                return [Segment(text: trimmed, role: .object)]
+            }
+            if parts[0].allSatisfy(\.isNumber) {
+                // "3 working" — count bright/strong, qualifier dim.
+                return [
+                    Segment(text: parts[0], role: .count),
+                    Segment(text: " " + parts[1], role: .plain),
+                ]
+            }
+            // "Editing AppModel.swift" — verb green, object bright.
+            return [
+                Segment(text: parts[0], role: .verb),
+                Segment(text: " " + parts[1], role: .object),
+            ]
+
+        case .completed:
+            // "Done · the-automator" → "Done ·" advisory prefix, workspace bright.
+            if let range = trimmed.range(of: " · ") {
+                let prefix = String(trimmed[..<range.lowerBound]) + " ·"
+                let object = String(trimmed[range.upperBound...])
+                return [
+                    Segment(text: prefix, role: .donePrefix),
+                    Segment(text: " " + object, role: .object),
+                ]
+            }
+            return [Segment(text: trimmed, role: .object)]
+
+        case .idle, .permission, .question:
+            return [Segment(text: trimmed, role: .plain)]
+        }
+    }
+}
+
+/// The closed pill's wing label. Renders the STANDBY resting caption (mono caps,
+/// dim) for the bare idle pill, otherwise the two-tone narration composed from
+/// `FlightDeckPillLabelTone` — sans narration prose, verb tinted nominal green.
+/// Capped at `maxWidth` — the width the fluid layout already reserved via the
+/// **unchanged** `V6ClosedPill.*OuterWidth` math — so it never renders wider than
+/// the pill sized itself for (mirrors `PouredClosedPillLabel` / `V6NotchLaneLabelView`).
+private struct FlightDeckClosedPillLabel: View {
+    let text: String
+    let ambient: PouredPillAmbientState
+    let isStandby: Bool
+    let maxWidth: CGFloat
+    var lang: LanguageManager = .shared
+
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    private var increasesContrast: Bool { colorSchemeContrast == .increased }
+
+    @Environment(\.islandTokens) private var tokens
+
+    private static let size: CGFloat = 11.5
+
+    var body: some View {
+        let styled = content
+            .lineLimit(1)
+            .truncationMode(.tail)
+
+        ViewThatFits(in: .horizontal) {
+            styled.fixedSize(horizontal: true, vertical: false)
+            styled.frame(width: maxWidth, alignment: .leading)
+        }
+        .frame(maxWidth: maxWidth, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if isStandby {
+            // A1 idle caption: a mono placard, near-invisible dim (the "near-
+            // invisible idle" of §4A A1). CJK-neutral tracking / casing.
+            Text(FlightDeckText.caps(text, lang: lang))
+                .font(.system(size: Self.size, weight: .medium, design: .monospaced))
+                .tracking(FlightDeckText.tracking(1.0, lang: lang))
+                .foregroundStyle(tokens.colors.paper.opacity(
+                    tokens.colors.text(tokens.colors.tertiaryTextOpacity, increaseContrast: increasesContrast)
+                ))
+        } else {
+            // Sans narration (SPEC §2); per-run tint comes from the tone split.
+            composed
+                .font(.system(size: Self.size, weight: .medium, design: .default))
+        }
+    }
+
+    private var composed: Text {
+        let segments = FlightDeckPillLabelTone.segments(for: text, ambient: ambient)
+        return segments.reduce(Text(verbatim: "")) { accumulated, segment in
+            var piece = Text(verbatim: segment.text)
+            if segment.role == .count { piece = piece.fontWeight(.semibold) }
+            return accumulated + piece.foregroundStyle(color(for: segment.role))
+        }
+    }
+
+    private func color(for role: FlightDeckPillLabelTone.Segment.Role) -> Color {
+        switch role {
+        case .verb:       return tokens.colors.statusRunning
+        case .object:     return tokens.colors.paper
+        case .count:      return tokens.colors.paper
+        case .donePrefix: return tokens.colors.statusCompleted
+        case .plain:
+            return tokens.colors.paper.opacity(
+                tokens.colors.text(tokens.colors.secondaryTextOpacity, increaseContrast: increasesContrast)
+            )
+        }
     }
 }
 
@@ -235,12 +433,25 @@ struct FlightDeckRightSlotView: View {
 
     var body: some View {
         switch content {
-        case .count, .attentionCount, .taskCounter, .usage:
-            // AB-322: the attention / task-counter / usage kinds degrade to this
-            // theme's existing count badge until its own redesign ticket gives
-            // them a rendering. Spelled out rather than `default:` so a future
-            // case breaks the build here instead of quietly becoming a number.
+        case .count, .taskCounter:
+            // AB-322: `.count` is the neutral badge; the `.taskCounter` engine
+            // cluster is still owned by T20 (AB-339), so it degrades to the count
+            // badge here. Spelled out rather than `default:` so a future case
+            // breaks the build here instead of quietly becoming a number.
             countBadge
+        case .attentionCount(let count, let kind):
+            // AB-338 · SPEC §4A A3/A4: the `.seg` attention segment — a red
+            // `⚠ ACK ×N` (permission, 1.0s pulse) / amber `? ANSWER ×N`
+            // (question, 1.2s pulse).
+            FlightDeckAttentionSegment(count: count, kind: kind, lang: lang)
+                .accessibilityLabel(content.fallbackBadgeAccessibilityLabel(lang))
+        case .usage(let percent, let window, _):
+            // AB-338 · SPEC §4A: the worst-window usage mini-tape (`7D 92%`).
+            // Arrives only at ≥90 per the shared T04 rule (see the divergence
+            // note in `FlightDeckUsageMiniTape`), so in practice this is the red
+            // crit readout; the tint is still computed from the value truthfully.
+            FlightDeckUsageMiniTape(percent: percent, windowLabel: window, lang: lang)
+                .accessibilityLabel(content.fallbackBadgeAccessibilityLabel(lang))
         case .agents(let cells):
             FlightDeckAgentsGridBody(cells: cells)
                 .accessibilityElement(children: .ignore)
@@ -255,6 +466,139 @@ struct FlightDeckRightSlotView: View {
             .fixedSize(horizontal: true, vertical: false)
             .foregroundStyle(tokens.colors.paper.opacity(0.72))
             .accessibilityLabel(content.fallbackBadgeAccessibilityLabel(lang))
+    }
+}
+
+// MARK: - Attention segment (AB-338 · SPEC §4A A3/A4 · mockup `.seg warn/caution`)
+
+/// The pure phase → placard / glyph / cadence / tint mapping for the closed
+/// pill's attention segment. Permission is the loud red **WARNING** tier
+/// (`⚠ ACK`, 1.0s), question the amber **CAUTION** tier (`? ANSWER`, 1.2s) — the
+/// same two-tier semantics the row lanes and beacons resolve to, so the pill and
+/// the panel never disagree about which alarm is louder. Split out so
+/// `FlightDeckMotionTests` can pin the mapping without rendering a view.
+///
+/// The `ACK` / `ANSWER` placards are **Latin in every locale** — the EICAS-legend
+/// rule the STATUS codes already follow (AB-337): the localization keys exist in
+/// all three `.strings` files but carry Latin values, and the tracking is
+/// neutralized to `0` for CJK via `FlightDeckText.tracking`.
+struct FlightDeckAttentionSegmentSpec: Equatable {
+    let kind: IslandAttentionKind
+
+    /// The Latin EICAS placard key — `ACK` (permission) / `ANSWER` (question).
+    var placardKey: String {
+        kind == .permission ? "island.flightDeck.pill.ack" : "island.flightDeck.pill.answer"
+    }
+
+    /// The leading glyph — a warning triangle for a held permission, a question
+    /// mark for an open question.
+    var glyph: String {
+        kind == .permission ? "⚠" : "?"
+    }
+
+    /// The pulse cadence — the faster warning period (1.0s) for a permission, the
+    /// calmer caution period (1.2s) for a question.
+    var period: Double {
+        kind == .permission ? FlightDeckMotion.Attention.warningPeriod : FlightDeckMotion.Attention.cautionPeriod
+    }
+
+    /// The status tint — warning red (permission) / caution amber (question).
+    func tint(_ colors: IslandColorTokens) -> Color {
+        kind == .permission ? colors.statusWaitingForApproval : colors.statusWaitingForAnswer
+    }
+}
+
+/// A3/A4 attention segment: `⚠ ACK ×N` (permission, red) or `? ANSWER ×N`
+/// (question, amber). The whole segment pulses opacity `1.0 → 0.28` on the
+/// phase's EICAS cadence (1.0s / 1.2s) via a single `@State` toggle (the
+/// `FlightDeckWaitingLight` precedent). Under Reduce Motion it holds its lit peak
+/// — steady, still fully legible (§K / AC #4). The two kinds are distinct by
+/// **hue, glyph and placard**, never colour alone.
+private struct FlightDeckAttentionSegment: View {
+    let count: Int
+    let kind: IslandAttentionKind
+    var lang: LanguageManager = .shared
+
+    @Environment(\.islandTokens) private var tokens
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pulse = false
+
+    private var spec: FlightDeckAttentionSegmentSpec { .init(kind: kind) }
+    private var lit: Bool { reduceMotion || pulse }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Text(spec.glyph)
+                .font(.system(size: FlightDeckTypography.countSize, weight: .bold))
+            Text(FlightDeckText.caps(lang.t(spec.placardKey), lang: lang))
+                .font(.system(size: FlightDeckTypography.microLabelSize, weight: .bold, design: .monospaced))
+                .tracking(FlightDeckText.tracking(0.8, lang: lang))
+            Text("×\(count)")
+                .font(FlightDeckTypography.count)
+        }
+        .foregroundStyle(spec.tint(tokens.colors))
+        .opacity(lit ? FlightDeckMotion.Attention.opacityMax : FlightDeckMotion.Attention.opacityMin)
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
+        .onAppear { startPulse() }
+        .onChange(of: kind) { _, _ in startPulse() }
+    }
+
+    private func startPulse() {
+        guard !reduceMotion else {
+            pulse = false
+            return
+        }
+        pulse = false
+        withAnimation(.easeInOut(duration: spec.period / 2).repeatForever(autoreverses: true)) {
+            pulse = true
+        }
+    }
+}
+
+// MARK: - Usage mini-tape (AB-338 · SPEC §4A · mockup `7D 76%`)
+
+/// The worst-window usage mini-tape: a mono window label (`7D`), a compact
+/// `FlightDeckTapeGauge` mirrored at wing scale, and the tabular `92%` value in
+/// the shared usage tint.
+///
+/// **Deliberate divergence from the mockup.** The mockup's example is `7D 76%`
+/// in *amber* (its own 70% caution mark). The shared cross-theme rule
+/// (`IslandRightSlotResolver.usageAlertThreshold == 90`) only surfaces the pill's
+/// usage slot once the worst window is **critical (≥90)** — so in production this
+/// reads `7D 92%` in the **red crit** tint, never the mockup's amber 76%. The
+/// tint is still computed from the value (`FlightDeckUsageWindowGauge.usageColor`)
+/// so a fixture at any percent reads truthfully.
+private struct FlightDeckUsageMiniTape: View {
+    let percent: Int
+    let windowLabel: String
+    var lang: LanguageManager = .shared
+
+    @Environment(\.islandTokens) private var tokens
+
+    private var tint: Color { FlightDeckUsageWindowGauge.usageColor(for: Double(percent)) }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(FlightDeckText.caps(windowLabel, lang: lang))
+                .font(.system(size: FlightDeckTypography.microLabelSize, weight: .semibold, design: .monospaced))
+                .tracking(FlightDeckText.tracking(0.5, lang: lang))
+                .foregroundStyle(tokens.colors.paper.opacity(0.6))
+
+            FlightDeckTapeGauge(
+                fraction: Double(percent) / 100,
+                color: tint,
+                isCritical: percent >= 90,
+                trackHeight: 6
+            )
+            .frame(width: 16)
+
+            Text("\(percent)%")
+                .font(.system(size: FlightDeckTypography.countSize, weight: .bold, design: .monospaced))
+                .foregroundStyle(tint)
+        }
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 

@@ -103,4 +103,14 @@ final class ThemeSnapshotHarnessTests: XCTestCase {
             named: "flightdeck-duplicates-branch-chips-topbar"
         )
     }
+
+    // NOTE (AB-338): the tape gauges' three bands (NOM 34% / CAUT 78% / CRIT 92%)
+    // are driven by the `.meters` scenario and were verified by eye against a
+    // recorded render, but that scenario is deliberately *not* pinned as a
+    // committed golden here: `.meters` reuses the full five-fixture session list,
+    // whose live `HELD` count-up and the 5H window's minute-granular `RESET`
+    // countdown drift second-to-second — the same temporal instability that keeps
+    // the Poured `.list` baselines in the known-drift set. The tape geometry and
+    // colour bands are pinned deterministically by `FlightDeckThemeTests`
+    // (`tapeGaugePinsThresholdTicksAtSeventyAndNinety`, the cutoff/placard tests).
 }

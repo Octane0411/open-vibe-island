@@ -287,6 +287,11 @@
 "island.flightDeck.approval.deny" = "Deny";
 "island.flightDeck.question.kicker" = "Question";
 
+/* Island Panel - Flight Deck closed-pill wing labels + attention segment (AB-338) */
+"island.flightDeck.pill.standby" = "Standby";
+"island.flightDeck.pill.ack" = "ACK";
+"island.flightDeck.pill.answer" = "ANSWER";
+
 /* Island Panel - Flight Deck §4D row detail metagrid (AB-337) */
 "island.flightDeck.detail.agent" = "Agent";
 "island.flightDeck.detail.model" = "Model";

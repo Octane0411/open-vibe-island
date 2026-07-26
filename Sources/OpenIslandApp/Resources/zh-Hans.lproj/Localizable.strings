@@ -287,6 +287,12 @@
 "island.flightDeck.approval.deny" = "拒绝";
 "island.flightDeck.question.kicker" = "问题";
 
+/* Island Panel - Flight Deck closed-pill wing labels + attention segment (AB-338) */
+"island.flightDeck.pill.standby" = "待命";
+/* ACK / ANSWER stay Latin EICAS placards in every locale (see AB-337 STATUS codes). */
+"island.flightDeck.pill.ack" = "ACK";
+"island.flightDeck.pill.answer" = "ANSWER";
+
 /* Island Panel - Flight Deck §4D row detail metagrid (AB-337) */
 "island.flightDeck.detail.agent" = "代理";
 "island.flightDeck.detail.model" = "模型";

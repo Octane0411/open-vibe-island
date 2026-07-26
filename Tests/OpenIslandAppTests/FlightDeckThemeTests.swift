@@ -226,7 +226,7 @@ struct FlightDeckThemeTests {
         #expect(FlightDeckText.tracking(0.9, lang: zhHant) == 0)
     }
 
-    // MARK: - 12-tick gauge colour + placard bands (AB-312 AC #1)
+    // MARK: - Tape gauge colour + placard bands + threshold geometry (AB-338 AC #1)
 
     @Test
     func tickGaugeColoursBandOnTheExactUsageCutoffs() {
@@ -253,9 +253,14 @@ struct FlightDeckThemeTests {
     }
 
     @Test
-    func tickGaugeIsTwelveSegments() {
-        // The ticket pins a 12-tick segmented gauge.
-        #expect(FlightDeckTickGauge(fraction: 0.5, color: .green, isCritical: false).segments == 12)
+    func tapeGaugePinsThresholdTicksAtSeventyAndNinety() {
+        // AB-338 replaced the fixed 12-segment lane (retired
+        // `tickGaugeIsTwelveSegments`) with a continuous tape gauge whose two
+        // threshold ticks sit at fixed fractions of the track width regardless of
+        // fill: a hairline caution tick at 70% and a red critical tick at 90%.
+        #expect(FlightDeckTapeGauge.hairlineTickPosition == 0.70)
+        #expect(FlightDeckTapeGauge.criticalTickPosition == 0.90)
+        #expect(FlightDeckTapeGauge.thresholdTicks == [0.70, 0.90])
     }
 
     // MARK: - Theme name / descriptor localize (AC #1)
@@ -434,5 +439,180 @@ struct FlightDeckThemeTests {
         // The ground and the FD-local hairline base are different colours — the
         // recolor lives only in `FlightDeckSurfaces`.
         #expect(FlightDeckSurfaces.hairlineBase != colors.paper)
+    }
+
+    // MARK: - Closed-pill attention segment (AB-338 AC #2 · SPEC §4A A3/A4)
+
+    /// The `.seg` attention segment maps the two phases onto their EICAS placard,
+    /// glyph, cadence and tint: permission = red `⚠ ACK` on the faster 1.0s
+    /// warning cadence; question = amber `? ANSWER` on the calmer 1.2s caution
+    /// cadence. Permission is always the louder alarm.
+    @Test
+    func attentionSegmentMapsPhaseToPlacardGlyphCadenceAndTint() {
+        let colors = IslandThemeTokens.flightDeck.colors
+
+        let permission = FlightDeckAttentionSegmentSpec(kind: .permission)
+        #expect(permission.placardKey == "island.flightDeck.pill.ack")
+        #expect(permission.glyph == "⚠")
+        #expect(permission.period == FlightDeckMotion.Attention.warningPeriod)
+        #expect(permission.tint(colors) == colors.statusWaitingForApproval)
+
+        let question = FlightDeckAttentionSegmentSpec(kind: .question)
+        #expect(question.placardKey == "island.flightDeck.pill.answer")
+        #expect(question.glyph == "?")
+        #expect(question.period == FlightDeckMotion.Attention.cautionPeriod)
+        #expect(question.tint(colors) == colors.statusWaitingForAnswer)
+
+        // The two are distinct by hue, glyph and cadence — never colour alone.
+        #expect(permission.glyph != question.glyph)
+        #expect(permission.placardKey != question.placardKey)
+        #expect(permission.period < question.period)
+        #expect(permission.tint(colors) != question.tint(colors))
+    }
+
+    /// The `ACK` / `ANSWER` placards stay **Latin in every locale** — the
+    /// EICAS-legend rule the STATUS codes follow (AB-337). The keys exist in all
+    /// three `.strings` files but resolve to the same Latin value, and the
+    /// tracking neutralizes to `0` under CJK.
+    @Test
+    func attentionSegmentPlacardsStayLatinInEveryLocale() {
+        let originalLanguage = UserDefaults.standard.string(forKey: "appLanguage")
+        defer {
+            if let originalLanguage {
+                UserDefaults.standard.set(originalLanguage, forKey: "appLanguage")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "appLanguage")
+            }
+        }
+
+        for language in [LanguageManager.AppLanguage.en, .zhHans, .zhHant] {
+            let manager = LanguageManager()
+            manager.language = language
+            // Values stay Latin (never localized), and are non-empty (the key exists).
+            #expect(manager.t("island.flightDeck.pill.ack") == "ACK")
+            #expect(manager.t("island.flightDeck.pill.answer") == "ANSWER")
+            // CJK neutralizes the placard tracking to 0; Latin keeps it.
+            let expectedTracking: CGFloat = manager.usesCJKScript ? 0 : 0.8
+            #expect(FlightDeckText.tracking(0.8, lang: manager) == expectedTracking)
+        }
+    }
+
+    /// The A1 idle `STANDBY` resting caption resolves to a real translation in
+    /// every locale (Chinese `待命`), so the bare idle pill never shows a raw key.
+    @Test
+    func standbyPillCaptionLocalizesInEveryLanguage() {
+        let originalLanguage = UserDefaults.standard.string(forKey: "appLanguage")
+        defer {
+            if let originalLanguage {
+                UserDefaults.standard.set(originalLanguage, forKey: "appLanguage")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "appLanguage")
+            }
+        }
+
+        for language in [LanguageManager.AppLanguage.en, .zhHans, .zhHant] {
+            let manager = LanguageManager()
+            manager.language = language
+            let resolved = manager.t("island.flightDeck.pill.standby")
+            #expect(resolved != "island.flightDeck.pill.standby")
+            #expect(!resolved.isEmpty)
+        }
+    }
+
+    // MARK: - Closed-pill wing label tone (AB-338 AC #3 · SPEC §4A A2/A5)
+
+    /// The wing label tone-splits the resolver's own output: a working narration
+    /// into a green verb + bright object, the `N working` aggregate into a strong
+    /// count + dim qualifier, and a completion into an advisory `Done ·` prefix +
+    /// bright workspace. Non-splittable frames render as one run.
+    @Test
+    func wingLabelToneSplitsWorkingAndCompletion() {
+        typealias Seg = FlightDeckPillLabelTone.Segment
+
+        // A2 working — "Editing AppModel.swift" → verb green, object bright.
+        #expect(
+            FlightDeckPillLabelTone.segments(for: "Editing AppModel.swift", ambient: .working(manyWorking: false))
+                == [Seg(text: "Editing", role: .verb), Seg(text: " AppModel.swift", role: .object)]
+        )
+        // A2′ aggregate — "3 working" → count strong, qualifier dim.
+        #expect(
+            FlightDeckPillLabelTone.segments(for: "3 working", ambient: .working(manyWorking: true))
+                == [Seg(text: "3", role: .count), Seg(text: " working", role: .plain)]
+        )
+        // A5 completion — "Done · the-automator" → advisory prefix, bright workspace.
+        #expect(
+            FlightDeckPillLabelTone.segments(for: "Done · the-automator", ambient: .completed(.success))
+                == [Seg(text: "Done ·", role: .donePrefix), Seg(text: " the-automator", role: .object)]
+        )
+        // Idle / permission / question carry no split — one plain run.
+        #expect(
+            FlightDeckPillLabelTone.segments(for: "Approve swift build?", ambient: .permission)
+                == [Seg(text: "Approve swift build?", role: .plain)]
+        )
+        // A single-word working label with no object is still one object run.
+        #expect(
+            FlightDeckPillLabelTone.segments(for: "Working", ambient: .working(manyWorking: false))
+                == [Seg(text: "Working", role: .object)]
+        )
+        // Empty text yields no segments (the pill draws nothing).
+        #expect(FlightDeckPillLabelTone.segments(for: "   ", ambient: .idle).isEmpty)
+    }
+}
+
+// MARK: - Closed-pill width regression (AB-338 · the T12/AB-330 contract)
+
+/// AB-338 renders two *new* right-slot kinds in the Flight Deck idiom (the
+/// attention segment and the usage mini-tape) and adds the two-tone wing labels,
+/// but the shipped `V6ClosedPill.*OuterWidth` math must stay **byte-identical** —
+/// the closed↔opened morph frame (and every theme's pill silhouette) depends on
+/// it, and the FD variants must render *inside* the slot the fluid layout already
+/// reserved, never widen it. Mirrors `PouredClosedPillWidthRegressionTests` (the
+/// T12/AB-330 precedent) so a drift in the width math fails the build regardless
+/// of what the FD right-slot / wing views draw.
+@MainActor
+struct FlightDeckClosedPillWidthRegressionTests {
+    private static let height: CGFloat = 38
+    private static let tolerance: CGFloat = 0.001
+
+    private func external(_ label: String?, _ rightSlot: IslandRightSlotContent?) -> CGFloat {
+        V6ClosedPill.externalOuterWidth(label: label, rightSlot: rightSlot, minWidth: 70, height: Self.height)
+    }
+
+    private func macbook(_ label: String?, notch: CGFloat) -> CGFloat {
+        V6ClosedPill.macbookOuterWidth(label: label, physicalNotchWidth: notch, height: Self.height)
+    }
+
+    /// The four count-shaped kinds (`.count`, `.attentionCount`, `.taskCounter`,
+    /// `.usage`) share the badge width math, so the FD attention-segment and
+    /// usage-mini-tape renderings never move the external frame.
+    @Test
+    func externalOuterWidthGoldensAreUnchanged() {
+        #expect(abs(external(nil, nil) - 70) < Self.tolerance)
+        #expect(abs(external("Editing AppModel.swift", nil) - 238.6) < Self.tolerance)
+        #expect(abs(external(nil, .attentionCount(count: 1, kind: .permission)) - 82.4) < Self.tolerance)
+        #expect(abs(external(nil, .attentionCount(count: 12, kind: .question)) - 89.6) < Self.tolerance)
+        #expect(abs(external(nil, .usage(percent: 92, windowLabel: "7d", providerTitle: "Claude")) - 89.6) < Self.tolerance)
+        #expect(abs(external("Done · the-automator", nil) - 224) < Self.tolerance)
+    }
+
+    /// A permission and a question segment with the same count reserve the same
+    /// width — the two variants differ only in glyph / placard / hue, not geometry.
+    @Test
+    func attentionSegmentKindDoesNotChangeReservedWidth() {
+        #expect(
+            external("x", .attentionCount(count: 3, kind: .permission))
+                == external("x", .attentionCount(count: 3, kind: .question))
+        )
+    }
+
+    /// The A1 `STANDBY` caption is fed to the pill as its effective label, so its
+    /// reserved width is exactly the shipped label-path width — a new width path
+    /// is never introduced (the FD pill reuses the existing math).
+    @Test
+    func standbyCaptionReservesTheShippedLabelWidth() {
+        // "STANDBY" through the label path widens the bare idle pill past minWidth,
+        // and does so via the *same* `externalOuterWidth(label:)` every label uses.
+        #expect(external("STANDBY", nil) > external(nil, nil))
+        #expect(macbook("STANDBY", notch: 180) >= macbook(nil, notch: 180))
     }
 }
