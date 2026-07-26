@@ -217,6 +217,9 @@ enum ThemeSnapshotting {
                 completedStaleThreshold: prefs.completedStaleThreshold.seconds,
                 actionableSessionID: content.actionableSessionID,
                 usageProviders: content.usageProviders,
+                // Deterministic installed-agents set so Poured's empty-state
+                // reassurance pill renders identically every run (AB-331).
+                installedAgentNames: ["Claude", "Codex", "Gemini"],
                 lang: lang
             )
             .themedSnapshotEnvironment(theme: theme)
@@ -384,6 +387,7 @@ private struct SnapshotSessionListPanel: View {
     let completedStaleThreshold: TimeInterval
     let actionableSessionID: String?
     let usageProviders: [UsageProviderPresentation]?
+    let installedAgentNames: [String]
     let lang: LanguageManager
 
     @Environment(\.islandTheme) private var theme
@@ -416,10 +420,23 @@ private struct SnapshotSessionListPanel: View {
                     )
                     .padding(.top, profile == .notch ? 34 : 10)
                     .padding(.bottom, 4)
+
+                    // AB-331: exercise the theme's §I full-meter surface in the
+                    // `meters` snapshot (Poured returns the card; others `nil`).
+                    if let meterCard = theme.usageMeterCard(providers: usageProviders, lang: lang) {
+                        meterCard
+                            .padding(.horizontal, profile.sideInset)
+                            .padding(.bottom, 8)
+                    }
                 }
 
                 if sessions.isEmpty {
-                    theme.emptyState(lang: lang, hasRecentSessions: false, workspaceCount: 0)
+                    theme.emptyState(
+                        lang: lang,
+                        hasRecentSessions: false,
+                        workspaceCount: 0,
+                        installedAgentNames: installedAgentNames
+                    )
                         .frame(minHeight: 120)
                         .padding(.vertical, 12)
                 } else {

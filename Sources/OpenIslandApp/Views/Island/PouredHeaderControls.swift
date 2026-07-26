@@ -39,6 +39,13 @@ struct PouredHeaderControls: View {
         usesNotchAwareLayout ? Self.notchHeaderHorizontalPadding : Self.headerHorizontalPadding
     }
 
+    /// The usage ring is fitted to whichever header band this profile draws into:
+    /// the ~38pt notch band takes the mockup's 30pt ring, the ~24pt top-bar band
+    /// a smaller ring so it can't bleed past the height-capped header (AB-331).
+    private var headerRingDiameter: CGFloat {
+        usesNotchAwareLayout ? PouredUsageMetrics.headerRingNotch : PouredUsageMetrics.headerRingTopBar
+    }
+
     var body: some View {
         if usesNotchAwareLayout {
             GeometryReader { geometry in
@@ -108,7 +115,7 @@ struct PouredHeaderControls: View {
     @ViewBuilder
     private var openedUsageSummary: some View {
         if providers.isEmpty == false {
-            PouredUsageSummary(providers: providers)
+            PouredUsageSummary(providers: providers, lang: lang, ringDiameter: headerRingDiameter)
         } else {
             Color.clear
         }
@@ -142,7 +149,7 @@ struct PouredHeaderControls: View {
             Color.clear
                 .frame(maxWidth: .infinity)
         } else {
-            PouredUsageSummary(providers: providers)
+            PouredUsageSummary(providers: providers, lang: lang, ringDiameter: headerRingDiameter)
                 .frame(maxWidth: .infinity, alignment: alignment)
         }
     }

@@ -52,7 +52,9 @@ struct PouredSessionListScaffold: View {
                 }
             }
 
-            sessionPanelFooter
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                sessionPanelFooter(referenceDate: context.date)
+            }
         }
         .padding(.vertical, 2)
     }
@@ -93,8 +95,11 @@ struct PouredSessionListScaffold: View {
 
         return HStack(spacing: 8) {
             Text(lang.t("island.sessionList.title").uppercased())
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                .tracking(1.4)
+                // §2 `listOverviewTitle` role: SF Pro 10.5/650, tracking 0.16em
+                // uppercase — the mono chrome is retired (Font can't carry
+                // tracking, so it is applied here from the pinned spec).
+                .font(PouredType.Role.listOverviewTitle.font)
+                .tracking(PouredType.Role.listOverviewTitle.spec.trackingPoints)
                 .foregroundStyle(tokens.colors.paper.opacity(0.6))
 
             ViewThatFits(in: .horizontal) {
@@ -115,14 +120,56 @@ struct PouredSessionListScaffold: View {
         }
     }
 
-    private var sessionPanelFooter: some View {
-        Color.clear
-            .frame(height: 10)
+    /// The list footer (§C · mockup `.p-foot`): a leading `Grouped by <mode>`
+    /// caption (only while grouping is on) and a trailing `All quiet elsewhere ·
+    /// N idle` readout with a tabular count, over the retained top hairline.
+    /// Together they close the list with the same "quiet confidence" the empty
+    /// state carries.
+    private func sessionPanelFooter(referenceDate: Date) -> some View {
+        HStack(spacing: 8) {
+            if let groupedByText {
+                Text(groupedByText)
+                    .font(.system(size: 11))
+                    .foregroundStyle(tokens.colors.paper.opacity(tokens.colors.text(tokens.colors.tertiaryTextOpacity, increaseContrast: increasesContrast)))
+            }
+
+            Spacer(minLength: 0)
+
+            Text(lang.t("island.poured.footer.idle", idleSessionCount(referenceDate: referenceDate)))
+                .font(.system(size: 11).monospacedDigit())
+                .foregroundStyle(tokens.colors.paper.opacity(tokens.colors.text(tokens.colors.secondaryTextOpacity, increaseContrast: increasesContrast)))
+        }
+        .lineLimit(1)
+        .padding(.leading, sideInset)
+        .padding(.trailing, sideInset)
+        .padding(.vertical, 9)
+        .accessibilityElement(children: .combine)
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(.white.opacity(tokens.colors.hairline(increaseContrast: increasesContrast)))
                 .frame(height: 1)
         }
+    }
+
+    /// The leading footer caption naming the active grouping, or `nil` when the
+    /// list is ungrouped (nothing to say). Each mode is a whole localized phrase
+    /// so it reads naturally in every language (CJK does not case-fold a word
+    /// inserted mid-sentence).
+    private var groupedByText: String? {
+        switch group {
+        case .none:    return nil
+        case .state:   return lang.t("island.poured.footer.groupedByState")
+        case .agent:   return lang.t("island.poured.footer.groupedByAgent")
+        case .project: return lang.t("island.poured.footer.groupedByProject")
+        }
+    }
+
+    /// Idle sessions at `referenceDate` — the same stale/inactive bucket the
+    /// summary strip counts, surfaced in the footer's trailing readout.
+    private func idleSessionCount(referenceDate: Date) -> Int {
+        sessions.filter {
+            isIdleSessionOverviewItem($0, referenceDate: referenceDate, threshold: completedStaleThreshold)
+        }.count
     }
 
     private func sessionOverviewItems(referenceDate: Date) -> [PouredSessionOverviewItem] {
@@ -173,7 +220,12 @@ struct PouredSessionListScaffold: View {
     }
 
     private func sessionOverviewMetric(_ item: PouredSessionOverviewItem, compact: Bool) -> some View {
-        HStack(spacing: 4) {
+        let label = sessionOverviewMetricLabel(item, compact: compact)
+
+        // §2 splits the bucket into a bold tabular number (`summaryNumber`
+        // 12/700) and a proportional word (`summaryLabel` 11/400); the tinted
+        // dot carries the status colour, so the mono chrome is retired.
+        return HStack(spacing: 4) {
             if let tint = item.tint {
                 Circle()
                     .fill(tint)
@@ -181,22 +233,28 @@ struct PouredSessionListScaffold: View {
                     .accessibilityHidden(true)
             }
 
-            Text(sessionOverviewMetricTitle(item, compact: compact))
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                .foregroundStyle(
-                    item.tint == nil
-                        ? tokens.colors.paper.opacity(tokens.colors.text(tokens.colors.tertiaryTextOpacity, increaseContrast: increasesContrast))
-                        : tokens.colors.paper.opacity(tokens.colors.text(tokens.colors.secondaryTextOpacity, increaseContrast: increasesContrast))
-                )
+            HStack(spacing: 3) {
+                Text("\(item.count)")
+                    .font(PouredType.Role.summaryNumber.font)
+                    .foregroundStyle(tokens.colors.paper.opacity(tokens.colors.text(0.9, increaseContrast: increasesContrast)))
+
+                if !label.isEmpty {
+                    Text(label)
+                        .font(PouredType.Role.summaryLabel.font)
+                        .foregroundStyle(tokens.colors.paper.opacity(tokens.colors.text(tokens.colors.secondaryTextOpacity, increaseContrast: increasesContrast)))
+                }
+            }
         }
     }
 
-    private func sessionOverviewMetricTitle(_ item: PouredSessionOverviewItem, compact: Bool) -> String {
+    /// The bucket's word (without the count) for the current density: the
+    /// `total` bucket drops its word entirely in the compact strip, leaving just
+    /// the number.
+    private func sessionOverviewMetricLabel(_ item: PouredSessionOverviewItem, compact: Bool) -> String {
         if item.id == "total" {
-            return compact ? "\(item.count)" : "\(item.count) \(item.title)"
+            return compact ? "" : item.title
         }
-
-        return "\(item.count) \(compact ? item.compactTitle : item.title)"
+        return compact ? item.compactTitle : item.title
     }
 
     private func sessionSectionHeader(_ section: IslandSessionSection) -> some View {
@@ -206,11 +264,14 @@ struct PouredSessionListScaffold: View {
                 .frame(width: 7, height: 7)
                 .accessibilityHidden(true)
             Text(sessionSectionTitle(for: section).uppercased())
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                .tracking(0.4)
+                // §2 `sectionHeader` role: SF Pro 10.5/650, tracking 0.09em
+                // uppercase — mono retired, tracking from the pinned spec.
+                .font(PouredType.Role.sectionHeader.font)
+                .tracking(PouredType.Role.sectionHeader.spec.trackingPoints)
                 .foregroundStyle(sectionLabelColor(for: section))
             Text("\(section.sessions.count)")
-                .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                // Drop mono, keep the digits tabular so counts line up column-wise.
+                .font(.system(size: 10.5, weight: .medium).monospacedDigit())
                 .foregroundStyle(tokens.colors.paper.opacity(tokens.colors.text(tokens.colors.tertiaryTextOpacity, increaseContrast: increasesContrast)))
             Spacer(minLength: 0)
         }
@@ -227,16 +288,28 @@ struct PouredSessionListScaffold: View {
         }
     }
 
-    /// A faint top-lit wash so the section header reads as a lip in the glass
-    /// rather than a painted bar. Flattens to a single low-opacity fill under
-    /// Reduce Transparency.
+    /// A top-lit wash so the section header reads as a lip in the glass rather
+    /// than a painted bar. Flattens to a single low-opacity fill under Reduce
+    /// Transparency.
+    ///
+    /// Re-tuned (AB-331) against the T11 body gradient (§1d — lighter top,
+    /// darker toward the bottom): the old `0.05 → 0.012` linear never reached
+    /// zero, so a uniform milky film sat over the darkening body and read as
+    /// *mud*. This concentrates the light in a brighter top edge (`0.075`) and
+    /// falls all the way to `0` by the header's baseline, so the lower band
+    /// returns to the pure body gradient and the bright top edge reads as a
+    /// raised lip catching light.
     @ViewBuilder
     private var sectionHeaderWash: some View {
         if reduceTransparency {
-            Color.white.opacity(0.04)
+            Color.white.opacity(0.05)
         } else {
             LinearGradient(
-                colors: [.white.opacity(0.05), .white.opacity(0.012)],
+                stops: [
+                    .init(color: .white.opacity(0.075), location: 0.0),
+                    .init(color: .white.opacity(0.02), location: 0.5),
+                    .init(color: .white.opacity(0.0), location: 1.0),
+                ],
                 startPoint: .top,
                 endPoint: .bottom
             )

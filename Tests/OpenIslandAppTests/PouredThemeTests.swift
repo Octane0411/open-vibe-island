@@ -401,4 +401,198 @@ struct PouredThemeTests {
         #expect(PouredType.Role.sectionHeader.spec.fontWeight == .semibold)  // 650
         #expect(PouredType.Role.summaryNumber.spec.fontWeight == .bold)      // 700
     }
+
+    // MARK: - Usage threshold rule (SPEC §3.2 · §4I · AB-331)
+
+    /// The one usage rule: the band cut-offs are the app-wide `usageColor`
+    /// cut-offs (`>= 90` / `70..<90` / else), pinned at both boundaries plus the
+    /// exact 34 / 78 / 92 fixture points so the §I meters render fine / warn /
+    /// critical. Cut-offs are UNCHANGED from the shipped ring — only the colours
+    /// moved onto tokens (asserted below).
+    @Test
+    func usageThresholdBandsMatchTheUsageColorCutoffs() {
+        #expect(PouredUsageThreshold.threshold(for: 99) == .critical)
+        #expect(PouredUsageThreshold.threshold(for: 92) == .critical)   // fixture
+        #expect(PouredUsageThreshold.threshold(for: 90) == .critical)
+        #expect(PouredUsageThreshold.threshold(for: 89.9) == .warn)
+        #expect(PouredUsageThreshold.threshold(for: 78) == .warn)       // fixture
+        #expect(PouredUsageThreshold.threshold(for: 70) == .warn)
+        #expect(PouredUsageThreshold.threshold(for: 69.9) == .fine)
+        #expect(PouredUsageThreshold.threshold(for: 34) == .fine)       // fixture
+        #expect(PouredUsageThreshold.threshold(for: 0) == .fine)
+    }
+
+    /// Percent → **token** colour, the single rule the ring arc, the ring value
+    /// and the §I dial all share: `fine → statusCompleted`,
+    /// `warn → statusWaitingForAnswer`, `critical → statusFailed`. The retired
+    /// raw `.red/.orange/.green` the shipped `usageColor` returned are gone.
+    @Test
+    func usageThresholdColorsResolveToStatusTokens() {
+        let colors = IslandThemeTokens.poured.colors
+
+        #expect(PouredUsageThreshold.fine.color(colors) == colors.statusCompleted)
+        #expect(PouredUsageThreshold.warn.color(colors) == colors.statusWaitingForAnswer)
+        #expect(PouredUsageThreshold.critical.color(colors) == colors.statusFailed)
+
+        // Resolved from a percentage at each boundary — the arc/value colour the
+        // header ring and §I dial both paint.
+        #expect(PouredUsageThreshold.threshold(for: 89.9).color(colors) == colors.statusWaitingForAnswer)
+        #expect(PouredUsageThreshold.threshold(for: 90).color(colors) == colors.statusFailed)
+        #expect(PouredUsageThreshold.threshold(for: 69.9).color(colors) == colors.statusCompleted)
+        #expect(PouredUsageThreshold.threshold(for: 70).color(colors) == colors.statusWaitingForAnswer)
+
+        // The retired raw palette must not leak back in.
+        #expect(PouredUsageThreshold.critical.color(colors) != Color.red.opacity(0.95))
+        #expect(PouredUsageThreshold.warn.color(colors) != Color.orange.opacity(0.95))
+        #expect(PouredUsageThreshold.fine.color(colors) != Color.green.opacity(0.95))
+    }
+
+    /// State is never colour-alone: each band carries a word (localization key)
+    /// and a shape marker (`Fine ●` / `Warn ▲` / `Critical ●`). `warn`'s triangle
+    /// is what separates it from the two dot bands; the word separates the
+    /// same-shape `fine` / `critical`. Only `critical` is the danger band.
+    @Test
+    func usageThresholdCarriesWordAndShapeMarker() {
+        #expect(PouredUsageThreshold.fine.shapeMarker == "\u{25CF}")      // ●
+        #expect(PouredUsageThreshold.warn.shapeMarker == "\u{25B2}")      // ▲
+        #expect(PouredUsageThreshold.critical.shapeMarker == "\u{25CF}")  // ●
+        // The two dot bands are disambiguated by their word, not their shape.
+        #expect(PouredUsageThreshold.fine.shapeMarker == PouredUsageThreshold.critical.shapeMarker)
+        #expect(PouredUsageThreshold.fine.localizationKey != PouredUsageThreshold.critical.localizationKey)
+
+        #expect(PouredUsageThreshold.fine.localizationKey == "island.poured.usage.fine")
+        #expect(PouredUsageThreshold.warn.localizationKey == "island.poured.usage.warn")
+        #expect(PouredUsageThreshold.critical.localizationKey == "island.poured.usage.critical")
+
+        // Only the >= 90 band lights the danger glow.
+        #expect(PouredUsageThreshold.critical.isCritical == true)
+        #expect(PouredUsageThreshold.warn.isCritical == false)
+        #expect(PouredUsageThreshold.fine.isCritical == false)
+        #expect(PouredUsageThreshold.threshold(for: 92).isCritical == true)
+        #expect(PouredUsageThreshold.threshold(for: 78).isCritical == false)
+    }
+
+    /// The header ring is fitted to whichever header band the profile draws into
+    /// (the shared `.frame(height: closedNotchHeight)` can't grow): 30pt in the
+    /// ~38pt notch band, a smaller ring in the ~24pt top-bar band; the full §I
+    /// dial is 52pt. Pinned like the closed-pill dial metrics.
+    @Test
+    func usageRingAndDialSizesArePinned() {
+        #expect(PouredUsageMetrics.headerRingNotch == 30)
+        #expect(PouredUsageMetrics.headerRingTopBar == 22)
+        #expect(PouredUsageMetrics.meterDial == 52)
+        #expect(PouredUsageMetrics.headerRingLineWidth == 3.5)
+        #expect(PouredUsageMetrics.meterDialLineWidth == 6)
+
+        // The notch ring grew from the shipped 16pt; the top-bar ring stays
+        // within the ~24pt band it must not overflow.
+        #expect(PouredUsageMetrics.headerRingNotch > 16)
+        #expect(PouredUsageMetrics.headerRingTopBar < 24)
+    }
+
+    // MARK: - Usage meter strings localize (AB-331)
+
+    /// Every new §I usage string (the three threshold words, the card title, and
+    /// the two reset-countdown formats) resolves to a real translation — not the
+    /// bare key — in English and both Chinese scripts, and the reset formats
+    /// carry their `%@` countdown argument through.
+    @Test
+    func pouredUsageMeterStringsLocalizeInEveryLanguage() {
+        let originalLanguage = UserDefaults.standard.string(forKey: "appLanguage")
+        defer {
+            if let originalLanguage {
+                UserDefaults.standard.set(originalLanguage, forKey: "appLanguage")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "appLanguage")
+            }
+        }
+
+        let keys = [
+            "island.poured.usage.metersTitle",
+            "island.poured.usage.fine",
+            "island.poured.usage.warn",
+            "island.poured.usage.critical",
+            "island.poured.usage.resets",
+            "island.poured.usage.resetsIn",
+        ]
+
+        for language in [LanguageManager.AppLanguage.en, .zhHans, .zhHant] {
+            let manager = LanguageManager()
+            manager.language = language
+            for key in keys {
+                let resolved = manager.t(key)
+                #expect(resolved != key, "\(key) is unlocalized in \(language)")
+                #expect(!resolved.isEmpty)
+            }
+        }
+
+        // The localized reset formats interpolate the countdown, not the literal
+        // `%@` token.
+        let en = LanguageManager()
+        en.language = .en
+        #expect(en.t("island.poured.usage.resets", "2h 10m").contains("2h 10m"))
+        #expect(en.t("island.poured.usage.resetsIn", "3d 4h").contains("3d 4h"))
+    }
+
+    // MARK: - Scaffold footer + empty-state strings localize (AB-331)
+
+    /// The list-footer grouping captions, the trailing idle readout, and the
+    /// empty-state "Hooks installed for …" pill all resolve to real
+    /// translations in English and both Chinese scripts, and the count / joined
+    /// list interpolate through their `%lld` / `%@` arguments.
+    @Test
+    func pouredFooterAndEmptyStringsLocalizeInEveryLanguage() {
+        let originalLanguage = UserDefaults.standard.string(forKey: "appLanguage")
+        defer {
+            if let originalLanguage {
+                UserDefaults.standard.set(originalLanguage, forKey: "appLanguage")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "appLanguage")
+            }
+        }
+
+        let keys = [
+            "island.poured.footer.groupedByState",
+            "island.poured.footer.groupedByAgent",
+            "island.poured.footer.groupedByProject",
+            "island.poured.footer.idle",
+            "island.poured.empty.hooksInstalled",
+        ]
+
+        for language in [LanguageManager.AppLanguage.en, .zhHans, .zhHant] {
+            let manager = LanguageManager()
+            manager.language = language
+            for key in keys {
+                let resolved = manager.t(key)
+                #expect(resolved != key, "\(key) is unlocalized in \(language)")
+                #expect(!resolved.isEmpty)
+            }
+        }
+
+        let en = LanguageManager()
+        en.language = .en
+        // The idle count interpolates through `%lld`.
+        #expect(en.t("island.poured.footer.idle", 0).contains("0"))
+        #expect(en.t("island.poured.footer.idle", 3).contains("3"))
+        // The joined installed-agents list interpolates through `%@`.
+        #expect(en.t("island.poured.empty.hooksInstalled", "Claude, Codex").contains("Claude, Codex"))
+    }
+
+    // MARK: - §I meter-card hosting seam (AB-331)
+
+    /// The full §I meter card is hosted only by Poured, and only when there are
+    /// usage windows to show: `usageMeterCard` returns the card for Poured with
+    /// providers, `nil` for Poured with none, and `nil` for every other theme
+    /// (they carry no full-meter surface, so the `meters` preview keeps drawing
+    /// only their compact header ring).
+    @Test @MainActor
+    func usageMeterCardHostsOnlyForPouredWithProviders() {
+        let lang = LanguageManager()
+        let providers = AppearancePreviewFixtures.usageProviders(now: Date())
+        #expect(!providers.isEmpty)
+
+        #expect(PouredIslandTheme().usageMeterCard(providers: providers, lang: lang) != nil)
+        #expect(PouredIslandTheme().usageMeterCard(providers: [], lang: lang) == nil)
+        #expect(ClassicTheme().usageMeterCard(providers: providers, lang: lang) == nil)
+    }
 }

@@ -162,7 +162,19 @@ protocol IslandTheme: Sendable {
     /// ("no live sessions across N workspaces" vs. a cold "start an agent").
     /// The shipped themes ignore it (zero visual change); it exists as a seam
     /// for the redesign themes (AB-326).
-    func emptyState(lang: LanguageManager, hasRecentSessions: Bool, workspaceCount: Int) -> AnyView
+    ///
+    /// `installedAgentNames` are the human display names of the agents whose
+    /// managed hooks are installed (from `AppModel.installedAgentDisplayNames`),
+    /// so a theme can reassure the user that silence means "nothing to do", not
+    /// "broken" — Poured 2.0 draws them as a "Hooks installed for …" pill and
+    /// hides it when the list is empty (AB-331 · SPEC §3.6/§4J). The shipped
+    /// themes ignore it.
+    func emptyState(
+        lang: LanguageManager,
+        hasRecentSessions: Bool,
+        workspaceCount: Int,
+        installedAgentNames: [String]
+    ) -> AnyView
 
     /// Shown while the app is still probing terminals on a cold launch.
     /// (Scope: bootstrap placeholder.)
@@ -171,6 +183,19 @@ protocol IslandTheme: Sendable {
     /// The "install hooks" hint shown while no agent hooks are installed.
     /// (Scope: install hint.)
     func installHint(lang: LanguageManager, onTap: @escaping () -> Void) -> AnyView
+
+    /// The theme's **full** usage-meter surface — the §I "expanded usage view"
+    /// (Poured 2.0's 52pt conic dials with reset countdowns and threshold pills).
+    /// Distinct from the compact header ring drawn in `openedHeader`.
+    ///
+    /// Returns `nil` — the default every theme but Poured takes — when the theme
+    /// has no dedicated full-meter surface. Hosted by the Settings → Appearance
+    /// `meters` preview scenario (and its snapshot) as the standalone usage frame
+    /// the mockup §I shows; the live overlay has no usage-expanded opened sub-
+    /// state yet (that shared surface change is deferred to the conformance pass).
+    /// A protocol requirement (not extension-only) for the same dynamic-dispatch
+    /// reason as the AB-330 closed-pill seams.
+    func usageMeterCard(providers: [UsageProviderPresentation], lang: LanguageManager) -> AnyView?
 
     // MARK: Closed-pill ambient seams (AB-330)
 
@@ -230,6 +255,10 @@ extension IslandTheme {
         rightSlot: IslandRightSlotContent?,
         activity: IslandClosedPillActivity?
     ) -> Color? { nil }
+
+    /// Default: no dedicated full-meter surface. Every theme but Poured takes
+    /// this, so the `meters` preview keeps drawing only the compact header ring.
+    func usageMeterCard(providers: [UsageProviderPresentation], lang: LanguageManager) -> AnyView? { nil }
 }
 
 /// The closed-island agents-grid geometry a theme supplies. Expressed as plain

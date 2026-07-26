@@ -811,7 +811,8 @@ struct IslandPanelView: View {
                 theme.emptyState(
                     lang: lang,
                     hasRecentSessions: !model.recentSessions.isEmpty,
-                    workspaceCount: emptyStateWorkspaceCount
+                    workspaceCount: emptyStateWorkspaceCount,
+                    installedAgentNames: model.installedAgentDisplayNames
                 )
                     .padding(.horizontal, 18)
                     .padding(.top, 8)

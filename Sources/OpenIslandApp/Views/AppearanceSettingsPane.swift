@@ -352,6 +352,7 @@ struct AppearanceSettingsPane: View {
                 completedStaleThreshold: editingPreferences.completedStaleThreshold.seconds,
                 actionableSessionID: scenarioContent.actionableSessionID,
                 usageProviders: scenarioContent.usageProviders,
+                installedAgentNames: model.installedAgentDisplayNames,
                 lang: lang
             )
             .padding(.horizontal, tokens.metrics.openedShadowHorizontalInset)
@@ -1040,6 +1041,10 @@ private struct AppearanceSessionListPreview: View {
     /// opened header is drawn above the list, fed these fixture providers, so
     /// the usage meters render per theme. `nil` keeps the headerless list.
     let usageProviders: [UsageProviderPresentation]?
+    /// AB-331: agents whose hooks are installed, forwarded to the theme's empty
+    /// state so the Poured `empty` scenario shows its "Hooks installed for …"
+    /// reassurance pill (hidden when none are installed).
+    let installedAgentNames: [String]
     let lang: LanguageManager
 
     @Environment(\.islandTheme) private var theme
@@ -1088,13 +1093,28 @@ private struct AppearanceSessionListPreview: View {
                     )
                     .padding(.top, profile == .notch ? 34 : 10)
                     .padding(.bottom, 4)
+
+                    // AB-331: the theme's §I full-meter surface, hosted here (the
+                    // `meters` scenario is the app's analog of the mockup's
+                    // standalone §I frame). Only Poured returns a card; every
+                    // other theme's seam is `nil`, keeping the headerless list.
+                    if let meterCard = theme.usageMeterCard(providers: usageProviders, lang: lang) {
+                        meterCard
+                            .padding(.horizontal, sideInset)
+                            .padding(.bottom, 8)
+                    }
                 }
 
                 if sessions.isEmpty {
                     // Mirror the overlay: an empty session set routes to the
                     // theme's empty scaffold, not an empty list. Also exercises
-                    // the AB-326 `workspaceCount` seam in the preview.
-                    theme.emptyState(lang: lang, hasRecentSessions: false, workspaceCount: 0)
+                    // the AB-326 `workspaceCount` + AB-331 installed-agents seams.
+                    theme.emptyState(
+                        lang: lang,
+                        hasRecentSessions: false,
+                        workspaceCount: 0,
+                        installedAgentNames: installedAgentNames
+                    )
                         .frame(minHeight: 120)
                         .padding(.vertical, 12)
                 } else {

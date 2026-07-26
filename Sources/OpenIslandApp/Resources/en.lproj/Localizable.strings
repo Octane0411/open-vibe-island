@@ -283,6 +283,21 @@
 "island.flightDeck.approval.allow" = "Allow";
 "island.flightDeck.approval.deny" = "Deny";
 
+/* Island Panel - Poured Island 2.0 usage meters (AB-331) */
+"island.poured.usage.metersTitle" = "Usage · resets shown";
+"island.poured.usage.fine" = "Fine";
+"island.poured.usage.warn" = "Warn";
+"island.poured.usage.critical" = "Critical";
+"island.poured.usage.resets" = "resets %@";
+"island.poured.usage.resetsIn" = "resets in %@";
+
+/* Island Panel - Poured Island 2.0 list footer + empty state (AB-331) */
+"island.poured.footer.groupedByState" = "Grouped by state";
+"island.poured.footer.groupedByAgent" = "Grouped by agent";
+"island.poured.footer.groupedByProject" = "Grouped by project";
+"island.poured.footer.idle" = "All quiet elsewhere · %lld idle";
+"island.poured.empty.hooksInstalled" = "Hooks installed for %@";
+
 /* Island Panel - Annual theme (AB-316) */
 "island.annual.usage.healthy" = "Healthy";
 "island.annual.usage.elevated" = "Elevated";

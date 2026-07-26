@@ -183,6 +183,29 @@ final class AppModel {
             || hooks.geminiHooksInstalled
             || hooks.kimiHooksInstalled
     }
+
+    /// Human display names of the agents whose managed hooks are currently
+    /// installed, in a stable presentation order (Claude, Codex, Gemini, …).
+    ///
+    /// Drives Poured Island 2.0's empty-state "Hooks installed for …"
+    /// reassurance pill (AB-331 · SPEC §3.6/§4J): the pill lists these names and
+    /// is hidden entirely when the array is empty. Names are the short,
+    /// conversational forms the mockup uses ("Claude", not "Claude Code"), since
+    /// the pill is a calm reassurance, not the settings matrix.
+    var installedAgentDisplayNames: [String] {
+        var names: [String] = []
+        if claudeHooksInstalled { names.append("Claude") }
+        if codexHooksInstalled { names.append("Codex") }
+        if geminiHooksInstalled { names.append("Gemini") }
+        if cursorHooksInstalled { names.append("Cursor") }
+        if kimiHooksInstalled { names.append("Kimi") }
+        if qoderHooksInstalled { names.append("Qoder") }
+        if qwenCodeHooksInstalled { names.append("Qwen Code") }
+        if factoryHooksInstalled { names.append("Factory") }
+        if codebuddyHooksInstalled { names.append("CodeBuddy") }
+        if openCodePluginInstalled { names.append("OpenCode") }
+        return names
+    }
     func refreshCodexHookStatus() { hooks.refreshCodexHookStatus() }
     func refreshClaudeHookStatus() { hooks.refreshClaudeHookStatus() }
     func refreshOpenCodePluginStatus() { hooks.refreshOpenCodePluginStatus() }

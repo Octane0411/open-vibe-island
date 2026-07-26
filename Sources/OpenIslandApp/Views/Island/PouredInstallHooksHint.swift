@@ -36,7 +36,10 @@ struct PouredInstallHooksHint: View {
                     .foregroundStyle(tokens.colors.paper.opacity(0.9))
                     .accessibilityHidden(true)
                 Text(lang.t("island.hint.installHooks"))
-                    .font(.system(size: 12, weight: .medium))
+                    // Sourced from the §2 type table (`installHint` role, 12/500)
+                    // so the hint can't drift from the scale. Stays quiet — no
+                    // amber, no glow (a hint is not an attention state).
+                    .font(PouredType.Role.installHint.font)
                     .foregroundStyle(tokens.colors.paper.opacity(tokens.colors.text(0.88, increaseContrast: increasesContrast)))
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)

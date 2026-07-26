@@ -313,8 +313,14 @@ struct InstrumentTheme: IslandTheme {
 
     // MARK: Instrument empty / bootstrap / install states (AB-308)
 
-    func emptyState(lang: LanguageManager, hasRecentSessions: Bool, workspaceCount: Int) -> AnyView {
-        // Instrument ignores `workspaceCount` — its empty copy is unchanged.
+    func emptyState(
+        lang: LanguageManager,
+        hasRecentSessions: Bool,
+        workspaceCount: Int,
+        installedAgentNames: [String]
+    ) -> AnyView {
+        // Instrument ignores `workspaceCount` / `installedAgentNames` — its empty
+        // copy is unchanged.
         AnyView(InstrumentEmptyState(lang: lang, hasRecentSessions: hasRecentSessions))
     }
 

@@ -297,9 +297,20 @@ struct PouredIslandTheme: IslandTheme {
 
     // MARK: Glass empty / bootstrap / install states (AB-301)
 
-    func emptyState(lang: LanguageManager, hasRecentSessions: Bool, workspaceCount: Int) -> AnyView {
-        // Poured ignores `workspaceCount` — its empty copy is unchanged.
-        AnyView(PouredEmptyState(lang: lang, hasRecentSessions: hasRecentSessions))
+    func emptyState(
+        lang: LanguageManager,
+        hasRecentSessions: Bool,
+        workspaceCount: Int,
+        installedAgentNames: [String]
+    ) -> AnyView {
+        // Poured ignores `workspaceCount` (that is Halo's seam) but surfaces the
+        // installed-agents list as the §4J "Hooks installed for …" reassurance
+        // pill; the pill hides itself when the list is empty.
+        AnyView(PouredEmptyState(
+            lang: lang,
+            hasRecentSessions: hasRecentSessions,
+            installedAgentNames: installedAgentNames
+        ))
     }
 
     func bootstrapPlaceholder(lang: LanguageManager) -> AnyView {
@@ -308,5 +319,14 @@ struct PouredIslandTheme: IslandTheme {
 
     func installHint(lang: LanguageManager, onTap: @escaping () -> Void) -> AnyView {
         AnyView(PouredInstallHooksHint(lang: lang, onTap: onTap))
+    }
+
+    /// Poured's §I full-meter surface: the 52pt conic dials with reset
+    /// countdowns and word+shape threshold pills. Hosted by the `meters` preview
+    /// scenario (see the protocol seam); the compact header ring stays in
+    /// `openedHeader`.
+    func usageMeterCard(providers: [UsageProviderPresentation], lang: LanguageManager) -> AnyView? {
+        guard !providers.isEmpty else { return nil }
+        return AnyView(PouredUsageMeterCard(providers: providers, lang: lang))
     }
 }
