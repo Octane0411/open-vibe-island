@@ -407,7 +407,8 @@ final class CodexAppServerCoordinator {
             processedDuration: existing?.processedDuration,
             currentTurnStartedAt: existing?.currentTurnStartedAt,
             activeGoalStartedAt: existing?.activeGoalStartedAt,
-            activePlanStartedAt: existing?.activePlanStartedAt
+            activePlanStartedAt: existing?.activePlanStartedAt,
+            isPlanMode: existing?.isPlanMode
         )
     }
 

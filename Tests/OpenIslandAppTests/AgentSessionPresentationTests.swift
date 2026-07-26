@@ -386,7 +386,8 @@ struct AgentSessionPresentationTests {
                 processedDuration: priorProcessedDuration,
                 currentTurnStartedAt: turnStart,
                 activeGoalStartedAt: goalStart,
-                activePlanStartedAt: planStart
+                activePlanStartedAt: planStart,
+                isPlanMode: true
             )
         )
 
@@ -400,6 +401,30 @@ struct AgentSessionPresentationTests {
             session.spotlightElapsedTimers[2].elapsed(at: referenceDate),
             includingSecondsWhenHours: true
         ) == "1h 43m 37s")
+    }
+
+    @Test
+    func cachedChecklistTimestampWithoutPlanModeIsHidden() {
+        let referenceDate = Date(timeIntervalSince1970: 100_000)
+        let turnStart = referenceDate.addingTimeInterval(-120)
+        let session = AgentSession(
+            id: "session-1",
+            title: "Continue normal work",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Thinking.",
+            updatedAt: referenceDate,
+            codexMetadata: CodexSessionMetadata(
+                currentTurnStartedAt: turnStart,
+                activePlanStartedAt: referenceDate.addingTimeInterval(-28_000)
+            )
+        )
+
+        #expect(session.spotlightElapsedTimers == [
+            SpotlightElapsedTimer(kind: .thinking, startedAt: turnStart),
+        ])
     }
 
     @Test

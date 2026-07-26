@@ -446,7 +446,8 @@ extension AgentSession {
         if let goalStartedAt = codexMetadata?.activeGoalStartedAt {
             timers.append(SpotlightElapsedTimer(kind: .goal, startedAt: goalStartedAt))
         }
-        if let planStartedAt = codexMetadata?.activePlanStartedAt {
+        if codexMetadata?.isPlanMode == true,
+           let planStartedAt = codexMetadata?.activePlanStartedAt {
             timers.append(SpotlightElapsedTimer(kind: .plan, startedAt: planStartedAt))
         }
         if let turnStartedAt = codexMetadata?.currentTurnStartedAt {

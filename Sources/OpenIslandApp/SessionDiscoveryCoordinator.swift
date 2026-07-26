@@ -370,7 +370,8 @@ final class SessionDiscoveryCoordinator {
             processedDuration: discovered.processedDuration ?? existing.processedDuration,
             currentTurnStartedAt: discovered.currentTurnStartedAt ?? existing.currentTurnStartedAt,
             activeGoalStartedAt: discovered.activeGoalStartedAt ?? existing.activeGoalStartedAt,
-            activePlanStartedAt: discovered.activePlanStartedAt ?? existing.activePlanStartedAt
+            activePlanStartedAt: discovered.activePlanStartedAt ?? existing.activePlanStartedAt,
+            isPlanMode: discovered.isPlanMode ?? existing.isPlanMode
         )
         return merged.isEmpty ? nil : merged
     }
@@ -481,7 +482,8 @@ final class SessionDiscoveryCoordinator {
                 cachedProcessedDuration: session.codexMetadata?.processedDuration,
                 cachedCurrentTurnStartedAt: session.codexMetadata?.currentTurnStartedAt,
                 cachedActiveGoalStartedAt: session.codexMetadata?.activeGoalStartedAt,
-                cachedActivePlanStartedAt: session.codexMetadata?.activePlanStartedAt
+                cachedActivePlanStartedAt: session.codexMetadata?.activePlanStartedAt,
+                cachedIsPlanMode: session.codexMetadata?.isPlanMode
             )
         }
 

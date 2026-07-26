@@ -249,7 +249,8 @@ private enum DebugSessionFactory {
                 processedDuration: 14 * 60 + 11,
                 currentTurnStartedAt: now.addingTimeInterval(-(3_600 + 43 * 60 + 37)),
                 activeGoalStartedAt: now.addingTimeInterval(-(26 * 3_600)),
-                activePlanStartedAt: now.addingTimeInterval(-(22 * 60))
+                activePlanStartedAt: now.addingTimeInterval(-(22 * 60)),
+                isPlanMode: true
             )
         )
         session.isCodexAppSession = true

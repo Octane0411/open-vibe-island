@@ -2040,7 +2040,8 @@ public final class BridgeServer: @unchecked Sendable {
             processedDuration: update.processedDuration ?? existing?.processedDuration,
             currentTurnStartedAt: update.currentTurnStartedAt ?? existing?.currentTurnStartedAt,
             activeGoalStartedAt: update.activeGoalStartedAt ?? existing?.activeGoalStartedAt,
-            activePlanStartedAt: update.activePlanStartedAt ?? existing?.activePlanStartedAt
+            activePlanStartedAt: update.activePlanStartedAt ?? existing?.activePlanStartedAt,
+            isPlanMode: update.isPlanMode ?? existing?.isPlanMode
         )
     }
 

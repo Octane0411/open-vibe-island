@@ -13,7 +13,8 @@ struct CodexSessionTrackingTests {
             cachedProcessedDuration: 900,
             cachedCurrentTurnStartedAt: Date(timeIntervalSince1970: 1_000),
             cachedActiveGoalStartedAt: Date(timeIntervalSince1970: 100),
-            cachedActivePlanStartedAt: Date(timeIntervalSince1970: 500)
+            cachedActivePlanStartedAt: Date(timeIntervalSince1970: 500),
+            cachedIsPlanMode: true
         )
 
         var updatedInitialPrompt = original
@@ -34,12 +35,16 @@ struct CodexSessionTrackingTests {
         var updatedPlanStart = original
         updatedPlanStart.cachedActivePlanStartedAt = Date(timeIntervalSince1970: 600)
 
+        var updatedPlanMode = original
+        updatedPlanMode.cachedIsPlanMode = false
+
         #expect(original != updatedInitialPrompt)
         #expect(original != updatedLastPrompt)
         #expect(original != updatedProcessedDuration)
         #expect(original != updatedTurnStart)
         #expect(original != updatedGoalStart)
         #expect(original != updatedPlanStart)
+        #expect(original != updatedPlanMode)
     }
 
     @Test
@@ -77,7 +82,8 @@ struct CodexSessionTrackingTests {
                     processedDuration: 900,
                     currentTurnStartedAt: Date(timeIntervalSince1970: 990),
                     activeGoalStartedAt: Date(timeIntervalSince1970: 100),
-                    activePlanStartedAt: Date(timeIntervalSince1970: 500)
+                    activePlanStartedAt: Date(timeIntervalSince1970: 500),
+                    isPlanMode: true
                 )
             )
         ]
@@ -496,12 +502,8 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
-    func codexRolloutReducerTracksActivePlanAndIgnoresInjectedGoalPrompt() {
-        var snapshot = CodexRolloutSnapshot(
-            lastUserPrompt: "Keep routing the board.",
-            currentTurnStartedAt: iso8601Date("2026-04-03T08:00:00.000Z")
-        )
-        let planStart = iso8601Date("2026-04-03T08:01:00.000Z")
+    func codexRolloutReducerDoesNotTreatOrdinaryChecklistAsPlanMode() {
+        var snapshot = CodexRolloutSnapshot()
 
         CodexRolloutReducer.apply(
             line: rolloutLine(
@@ -510,13 +512,39 @@ struct CodexSessionTrackingTests {
                 payload: [
                     "type": "function_call",
                     "name": "update_plan",
-                    "arguments": #"{"plan":[{"step":"Route USB","status":"in_progress"},{"step":"Run DRC","status":"pending"}]}"#,
+                    "arguments": #"{"plan":[{"step":"Route USB","status":"in_progress"}]}"#,
+                ]
+            ),
+            to: &snapshot
+        )
+
+        #expect(snapshot.activePlanStartedAt == nil)
+    }
+
+    @Test
+    func codexRolloutReducerTracksPlanModeAndIgnoresInjectedGoalPrompt() {
+        var snapshot = CodexRolloutSnapshot(
+            lastUserPrompt: "Keep routing the board.",
+            currentTurnStartedAt: iso8601Date("2026-04-03T08:00:00.000Z"),
+            activePlanStartedAt: iso8601Date("2026-04-02T01:00:00.000Z")
+        )
+        let planStart = iso8601Date("2026-04-03T08:01:00.000Z")
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-03T08:01:00.000Z",
+                type: "turn_context",
+                payload: [
+                    "collaboration_mode": [
+                        "mode": "plan",
+                    ],
                 ]
             ),
             to: &snapshot
         )
 
         #expect(snapshot.activePlanStartedAt == planStart)
+        #expect(snapshot.isPlanMode)
 
         CodexRolloutReducer.apply(
             line: rolloutLine(
@@ -555,7 +583,23 @@ struct CodexSessionTrackingTests {
             to: &snapshot
         )
 
+        #expect(snapshot.activePlanStartedAt == planStart)
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-03T08:04:00.000Z",
+                type: "turn_context",
+                payload: [
+                    "collaboration_mode": [
+                        "mode": "default",
+                    ],
+                ]
+            ),
+            to: &snapshot
+        )
+
         #expect(snapshot.activePlanStartedAt == nil)
+        #expect(!snapshot.isPlanMode)
     }
 
     @Test
