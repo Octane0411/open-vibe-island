@@ -54,7 +54,7 @@ final class LanguageManager: @unchecked Sendable {
     private static let defaultsKey = "appLanguage"
 
     init() {
-        let saved = UserDefaults.standard.string(forKey: Self.defaultsKey) ?? "system"
+        let saved = UserDefaults.standard.string(forKey: Self.defaultsKey) ?? AppLanguage.en.rawValue
         let lang = AppLanguage(rawValue: saved) ?? .system
         self.language = lang
         self.bundle = Self.resolveBundle(for: lang)
