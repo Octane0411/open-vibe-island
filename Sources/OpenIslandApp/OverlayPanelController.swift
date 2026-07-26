@@ -692,6 +692,15 @@ final class OverlayPanelController {
 private final class NotchPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    /// The notch is physically inside the screen frame, above the menu-bar
+    /// content area. AppKit's default constraint can push borderless panels
+    /// below the menu bar, turning the island into a detached strip. Orbit's
+    /// resolver already supplies the validated screen-frame origin, so preserve
+    /// it exactly and let the transparent panel own the top-edge space.
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        frameRect
+    }
 }
 
 // MARK: - NotchHostingView
