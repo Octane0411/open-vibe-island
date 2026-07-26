@@ -7,7 +7,7 @@ The repository harness exists to make a round of work mechanically checkable. Th
 ## Commands
 
 - `scripts/harness.sh` runs the baseline checks. With no arguments it runs `docs`, `test`, and `build`.
-- `scripts/harness.sh ci` is the non-GUI path used by CI.
+- `scripts/harness.sh ci` is the non-GUI local check preset.
 - `scripts/harness.sh smoke` launches the macOS app in harness mode, loads a deterministic debug scenario, captures local artifacts, and auto-exits after a short timeout.
 - `scripts/harness.sh smoke-all` runs the full debug-scenario suite and validates each artifact set.
 - `scripts/check-docs.sh` enforces the minimum doc map and required links.
@@ -112,7 +112,7 @@ rows' relative-age badges (`spotlightAgeBadge`, and each row's
 raw `Date` does. Verified by re-recording seconds later and diffing the PNG
 hashes (identical).
 
-### Environment fingerprint (keeps CI green)
+### Environment fingerprint
 
 A golden recorded on one macOS build is **not** guaranteed byte-identical on
 another (font smoothing, Core Text, GPU). Each `__Snapshots__/<TestFile>/`
@@ -126,9 +126,8 @@ failed:
 - Only the byte-exact pixel pin is relaxed across the environment boundary —
   strict pins are preserved on a matching machine.
 
-CI runs on the pinned `macos-26` image (`.github/workflows/ci.yml`). The
-committed goldens were recorded on a different local build, so the snapshot
-tests **skip the pixel comparison on CI by design** while still exercising the
+When a local environment fingerprint differs from the recorded one, the
+snapshot tests skip the byte-exact pixel comparison while still exercising the
 render path. Re-record on the environment whose pixels you intend to pin, and
 review golden diffs there.
 
@@ -136,13 +135,15 @@ review golden diffs there.
 
 Every meaningful round should leave behind:
 
-- passing `scripts/harness.sh ci`
+- a passing local `scripts/harness.sh ci` run when the full non-GUI suite is
+  relevant to the change
 - any additional targeted verification for the changed subsystem
 - a short summary of remaining gaps, especially when a GUI-only path was not exercised
 
 ## Current Gaps
 
-- CI does not run the GUI smoke step yet because the current baseline avoids depending on a window-server-backed runner path.
+- The full local check preset does not run the GUI smoke step because the
+  current baseline avoids depending on a window-server-backed runner path.
 - The harness captures milestone timings and log summaries, but it does not yet provide a queryable log/metrics/trace stack.
 - The current accessibility assertions are still scenario-specific rather than full golden snapshots.
 - We do not yet have execution-plan lifecycle automation beyond the directory conventions defined in [docs/exec-plans/README.md](./exec-plans/README.md).

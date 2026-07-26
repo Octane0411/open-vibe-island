@@ -23,7 +23,7 @@ Or open it in Xcode and hit **Run**:
 open Package.swift
 ```
 
-Run the full check suite the same way CI does — lint, docs, tests, and build:
+Run the full local check suite — lint, docs, tests, and build:
 
 ```bash
 zsh scripts/harness.sh ci
