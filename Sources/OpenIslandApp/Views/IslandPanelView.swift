@@ -108,6 +108,7 @@ struct IslandPanelView: View {
     @State private var showingQuitConfirmation = false
     @State private var keepsOpenedSurfaceMounted = false
     @State private var openedSurfaceMountGeneration: UInt64 = 0
+    @Namespace private var surfaceMorph
 
     private var isOpened: Bool {
         model.notchStatus == .opened
@@ -212,11 +213,25 @@ struct IslandPanelView: View {
             ZStack(alignment: .top) {
                 if shouldRenderOpenedSurface {
                     openedSurface(width: openedWidth, height: openedHeight)
+                        .matchedGeometryEffect(
+                            id: "orbit-surface-shell",
+                            in: surfaceMorph,
+                            properties: .frame,
+                            anchor: .top,
+                            isSource: usesOpenedVisualState
+                        )
                         .opacity(usesOpenedVisualState ? 1 : 0)
                         .allowsHitTesting(usesOpenedVisualState)
                 }
 
                 v6ClosedSurface()
+                    .matchedGeometryEffect(
+                        id: "orbit-surface-shell",
+                        in: surfaceMorph,
+                        properties: .frame,
+                        anchor: .top,
+                        isSource: !usesOpenedVisualState
+                    )
                     .opacity(usesOpenedVisualState ? 0 : 1)
                     .allowsHitTesting(!usesOpenedVisualState)
             }
@@ -303,11 +318,12 @@ struct IslandPanelView: View {
                 .fill(V6Palette.ink)
                 .frame(width: surfaceWidth, height: surfaceHeight)
 
-            if model.orbitStarfieldEnabled {
-                OrbitSurfaceBackdrop(density: model.orbitStarDensity)
-                    .clipShape(surfaceShape)
-                    .frame(width: surfaceWidth, height: surfaceHeight)
-            }
+            OrbitSurfaceBackdrop(
+                density: model.orbitStarDensity,
+                showStars: model.orbitStarfieldEnabled
+            )
+            .clipShape(surfaceShape)
+            .frame(width: surfaceWidth, height: surfaceHeight)
 
             VStack(spacing: 0) {
                 openedHeaderContent

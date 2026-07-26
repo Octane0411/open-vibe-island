@@ -22,6 +22,7 @@ enum OrbitStarDensity: String, CaseIterable, Identifiable {
 
 struct OrbitSurfaceBackdrop: View {
     let density: OrbitStarDensity
+    var showStars = false
 
     var body: some View {
         ZStack {
@@ -40,7 +41,9 @@ struct OrbitSurfaceBackdrop: View {
                 startRadius: 4,
                 endRadius: 260
             )
-            OrbitStarfield(count: density.starCount)
+            if showStars {
+                OrbitStarfield(count: density.starCount)
+            }
         }
         .allowsHitTesting(false)
     }
