@@ -62,6 +62,47 @@ enum PouredPillMotion {
         static let ringOpacity: Double = 0.22
     }
 
+    // MARK: E · permission hero — `heropulse` (glow colour = `PouredPalette.attention`)
+
+    /// The opened-panel permission hero's amber "event frame" glow + border
+    /// (`SPEC-poured-island` §4E · mockup `.amber-hero` / `@keyframes heropulse`).
+    /// Distinct from `Permission` above, which governs the *closed pill's*
+    /// `attnpulse`; this is the loud, slow breath of the full hero card.
+    ///
+    /// Geometry only, per this table's contract — the tint (`PouredPalette.attention`,
+    /// or the `#4aa3df` Codex blue for the terminal-approval variant) is supplied
+    /// at the view site. Consumed off the shared `PulseClock` like every other
+    /// Poured glow; `period` is pinned here as the mockup's design intent (the
+    /// clock itself runs one shared sinusoid).
+    enum Hero {
+        /// `heropulse` cycle length (mockup `animation:heropulse 2.4s`).
+        static let period: TimeInterval = 2.4
+
+        /// Inset border opacity (mockup `inset 0 0 0 1px rgba(255,177,77,.28)`),
+        /// the resting value the pulse breathes around.
+        static let borderOpacity: Double = 0.28
+        static let borderWidth: CGFloat = 1
+
+        /// The wide ambient "event" bloom (mockup `0 0 42px -6px rgba(255,177,77,.4)`).
+        /// Always present — it is what makes the frame read as an event — and it
+        /// breathes a little between `…Min`/`…Max` off the clock.
+        static let ambientRadius: CGFloat = 42
+        static let ambientOpacityMin: Double = 0.34
+        static let ambientOpacityMax: Double = 0.6
+
+        /// The two breathing shadow layers retuned from the shipped `PouredAmberGlow`
+        /// (`r10+8·pulse` / `r20+10·pulse`), now blooming in `attention` rather
+        /// than `statusWarning`.
+        static let innerRadiusBase: CGFloat = 10
+        static let innerRadiusPulse: CGFloat = 8
+        static let innerOpacityBase: Double = 0.34
+        static let innerOpacityPulse: Double = 0.26
+        static let outerRadiusBase: CGFloat = 20
+        static let outerRadiusPulse: CGFloat = 10
+        static let outerOpacityBase: Double = 0.18
+        static let outerOpacityPulse: Double = 0.16
+    }
+
     // MARK: A4 · question — static gold glow + breathing glyph (colour = `statusWaitingForAnswer`)
 
     enum Question {

@@ -7,7 +7,11 @@ import OpenIslandCore
 @Observable
 final class OverlayUICoordinator {
 
-    private static let notificationSurfaceAutoCollapseDelay: TimeInterval = 10
+    /// The delay before a notification-opened overlay auto-collapses. Internal
+    /// (not `private`) so the Poured permission hero's E4 notification footer can
+    /// print the honest countdown ("Auto-collapses in 10s") rather than a
+    /// hard-coded mockup guess (AB-333 · SPEC §4E E4).
+    static let notificationSurfaceAutoCollapseDelay: TimeInterval = 10
 
     var notchStatus: NotchStatus = .closed
     var notchOpenReason: NotchOpenReason?

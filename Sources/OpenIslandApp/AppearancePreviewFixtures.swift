@@ -229,6 +229,52 @@ enum AppearancePreviewFixtures {
         )
     }
 
+    /// A clean success completion — `outcome: .success` — mirroring the mockup
+    /// §H card: `the-automator` on `docs/agents-md`, a rich `<strong>` + inline
+    /// `code` result and a `43m` run length (`firstSeenAt` sits 43 minutes before
+    /// `updatedAt`). Finished 2 minutes ago so it stays inside the 5-minute
+    /// non-stale window and the completion card expands (the mockup's "12m" is
+    /// illustrative; the acceptance criterion is a *tabular* finished-ago). Pins
+    /// the Poured §4H Success badge + tabular duration that `completedInterrupted`
+    /// / `completedFailed` can't.
+    static func completedSuccess(now: Date) -> AgentSession {
+        // -150s: 2 minutes ago, mid "2m" age bucket (safely off a 60s boundary
+        // per the snapshot harness's determinism contract) and inside the 5-minute
+        // non-stale window so the card expands.
+        let finishedAt = now.addingTimeInterval(-150)
+        return AgentSession(
+            id: "fixture-completed-success",
+            title: "Claude · the-automator",
+            tool: .claudeCode,
+            origin: .demo,
+            attachmentState: .attached,
+            phase: .completed,
+            outcome: .success,
+            summary: "Documented the new bridge-auth flow.",
+            updatedAt: finishedAt,
+            firstSeenAt: finishedAt.addingTimeInterval(-43 * 60),
+            jumpTarget: JumpTarget(
+                terminalApp: "Ghostty",
+                workspaceName: "the-automator",
+                paneTitle: "claude ~/the-automator",
+                terminalSessionID: "fixture-completed-success"
+            ),
+            claudeMetadata: ClaudeSessionMetadata(
+                initialUserPrompt: "Document the bridge-auth flow in AGENTS.md and CLAUDE.md.",
+                lastUserPrompt: "Document the bridge-auth flow in AGENTS.md and CLAUDE.md.",
+                lastAssistantMessage: """
+                Updated **AGENTS.md** and **CLAUDE.md** to document the new bridge-auth flow. \
+                Added a "Working agreement" note about fail-open hooks and refreshed the support \
+                matrix to include `OpenCode` and `Kimi`.
+
+                - 2 files changed
+                - Support matrix now matches README
+                """,
+                worktreeBranch: "docs/agents-md"
+            )
+        )
+    }
+
     // MARK: - Duplicate-workspace trio (AB-326 item 3)
 
     /// Three sessions that all collide on workspace `the-automator`, exercising
@@ -671,6 +717,7 @@ enum AppearancePreviewScenario: String, CaseIterable, Identifiable, Sendable {
     case codexApproval
     case questionMulti
     case subagents
+    case completedSuccess
     case completedVariants
     case duplicates
     case meters
@@ -746,6 +793,13 @@ extension AppearancePreviewFixtures {
             )
         case .subagents:
             let session = subagentsAndTasks(now: now)
+            return AppearancePreviewScenarioContent(
+                sessions: [session],
+                actionableSessionID: session.id,
+                usageProviders: nil
+            )
+        case .completedSuccess:
+            let session = completedSuccess(now: now)
             return AppearancePreviewScenarioContent(
                 sessions: [session],
                 actionableSessionID: session.id,

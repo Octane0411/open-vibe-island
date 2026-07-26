@@ -81,6 +81,7 @@
 "settings.appearance.previewScenario.codexApproval" = "Codex 終端機審批";
 "settings.appearance.previewScenario.questionMulti" = "提問 · 多項";
 "settings.appearance.previewScenario.subagents" = "子代理與任務";
+"settings.appearance.previewScenario.completedSuccess" = "完成 · 成功";
 "settings.appearance.previewScenario.completedVariants" = "完成狀態變體";
 "settings.appearance.previewScenario.duplicates" = "重複工作區";
 "settings.appearance.previewScenario.meters" = "用量計量";
@@ -396,6 +397,9 @@
 "approval.diffUpdated" = "已更新";
 "approval.diffMoreLines" = "……還有 %lld 行";
 "approval.respondInTerminal" = "前往終端處理";
+"approval.jumpToCodex" = "前往 Codex 批准";
+"approval.codexApprovesInApp" = "Codex 在應用程式內批准。開啟面板以在那裡允許或拒絕。";
+"approval.autoCollapseCountdown" = "%lld 秒後自動收合 · 停留可暫停";
 
 /* Island Panel - Subagents & Tasks */
 "subagents.title" = "子代理 (%lld)";
@@ -435,6 +439,10 @@
 "completion.done" = "完成";
 "completion.interrupted" = "已中斷";
 "completion.failed" = "失敗";
+"poured.completion.success" = "成功";
+"poured.completion.duration" = "耗時 %@";
+"poured.completion.finishedAgo" = "%@前完成";
+"poured.completion.dismiss" = "關閉";
 "completion.replyPlaceholder" = "回覆 %@…";
 
 /* Island Panel - Badges */
