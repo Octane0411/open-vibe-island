@@ -16,6 +16,46 @@ struct IslandSpecularEdge: Equatable, Sendable {
     var sheenHeight: CGFloat
 }
 
+/// One stop of a surface body gradient, expressed as data so a theme can
+/// declare a multi-stop vertical fill and the surface view can apply it. Mirrors
+/// `IslandShadowToken`'s shape — a base colour, an `opacity` folded into it, and
+/// a `resolvedColor` convenience — plus the `location` along the 0→1 axis.
+///
+/// A theme carries `nil` for its body gradient (see `IslandMaterialTokens`) to
+/// keep the flat single-ink fill Classic ships; a non-`nil` list paints inner
+/// luminance (lighter top → darker bottom) so the slab reads as elevated glass.
+struct IslandGradientStop: Equatable, Sendable {
+    /// Base stop colour, before `opacity` is applied.
+    var color: Color
+
+    /// Opacity applied to `color`.
+    var opacity: Double
+
+    /// Position of the stop along the gradient's start→end axis (`0`…`1`).
+    var location: CGFloat
+
+    /// `color` with `opacity` folded in — the value handed to `Gradient.Stop`.
+    var resolvedColor: Color {
+        color.opacity(opacity)
+    }
+}
+
+/// A faint inner inset stroke painted just inside a frosted surface's edge,
+/// expressed as data so a theme can declare one and the surface view can apply
+/// it. The stroke colour is white (matching the specular light-catch family);
+/// only its `opacity` and `width` vary. `nil` on a theme means "no inner
+/// hairline" — the un-edged look Classic ships.
+///
+/// A dedicated `Equatable`/`Sendable` struct rather than a bare tuple so the
+/// enclosing `IslandMaterialTokens` keeps synthesising `Equatable`.
+struct IslandHairlineToken: Equatable, Sendable {
+    /// Opacity of the white inner stroke.
+    var opacity: Double
+
+    /// Line width of the inner stroke, in points.
+    var width: CGFloat
+}
+
 /// Material half of the island theme token layer (AB-300).
 ///
 /// The opened surface's vibrancy was hardcoded in `OpenedSurfaceMaterial.swift`
@@ -46,6 +86,28 @@ struct IslandMaterialTokens: Equatable, Sendable {
 
     /// Specular top edge, or `nil` for a flat, unlit surface (Classic).
     var specularTopEdge: IslandSpecularEdge?
+
+    // MARK: - Poured 2.0 liquid-glass layers (AB-329)
+    //
+    // All three are optional and default to `nil` so the memberwise
+    // initializer keeps the four flat themes' `static let` call sites compiling
+    // unchanged — `nil` reproduces exactly today's rendering
+    // (`OpenedSurfaceBackground` byte-identical). Only Poured opts in.
+
+    /// A multi-stop vertical body gradient painted **instead of** the flat
+    /// `surfaceInk.opacity(tintOpacity)` fill, so elevation is carried by inner
+    /// luminance (lighter top → darker bottom) rather than a flat panel. `nil`
+    /// keeps the flat ink tint.
+    var bodyGradient: [IslandGradientStop]? = nil
+
+    /// A crisp 1pt hard specular line painted at the very top edge **in addition
+    /// to** the soft `specularTopEdge` sheen — the `sheenHeight` field is read as
+    /// the line's thickness (1pt). `nil` keeps only the soft sheen (or nothing).
+    var specularHardEdge: IslandSpecularEdge? = nil
+
+    /// A faint white inner inset stroke just inside the surface edge. `nil`
+    /// leaves the surface un-edged.
+    var innerHairline: IslandHairlineToken? = nil
 }
 
 // MARK: - Classic
@@ -68,8 +130,10 @@ extension IslandMaterialTokens {
 extension IslandMaterialTokens {
     /// Poured Island's frosted slab: the same always-dark HUD family, but a
     /// lighter ink tint so more of the heavy blur reads through as glass, plus
-    /// a bright specular top edge so hierarchy is carried by light rather than
-    /// by chrome.
+    /// three light-carried layers (AB-329) so hierarchy comes from light rather
+    /// than chrome — a 3-stop body gradient (inner luminance, lighter top →
+    /// darker bottom), the soft 26pt specular sheen, a crisp 1pt hard specular
+    /// top line, and a faint 0.5pt inner hairline.
     static let poured = IslandMaterialTokens(
         material: .hudWindow,
         blendingMode: .behindWindow,
@@ -79,6 +143,32 @@ extension IslandMaterialTokens {
             color: .white,
             opacity: 0.5,
             sheenHeight: 26
+        ),
+        bodyGradient: [
+            IslandGradientStop(
+                color: Color(red: 26 / 255.0, green: 31 / 255.0, blue: 44 / 255.0),
+                opacity: 0.86,
+                location: 0.0
+            ),
+            IslandGradientStop(
+                color: Color(red: 13 / 255.0, green: 17 / 255.0, blue: 26 / 255.0),
+                opacity: 0.94,
+                location: 0.62
+            ),
+            IslandGradientStop(
+                color: Color(red: 9 / 255.0, green: 12 / 255.0, blue: 20 / 255.0),
+                opacity: 0.96,
+                location: 1.0
+            ),
+        ],
+        specularHardEdge: IslandSpecularEdge(
+            color: .white,
+            opacity: 0.14,
+            sheenHeight: 1
+        ),
+        innerHairline: IslandHairlineToken(
+            opacity: 0.05,
+            width: 0.5
         )
     )
 }

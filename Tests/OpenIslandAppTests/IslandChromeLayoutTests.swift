@@ -65,18 +65,19 @@ struct IslandChromeLayoutTests {
 
     // MARK: - 1. Poured opened layout
 
-    /// The headline number from the ticket: Poured declares a 28pt opened
-    /// horizontal inset, so its 540pt opened surface needs a 596pt window —
-    /// *not* the 576pt Classic's 18pt inset would produce, and not a 560pt
-    /// surface inside a 596pt window, which is what the pre-AB-320 mismatch
-    /// actually drew.
+    /// Since AB-329 Poured's *closed*-pill glow inset (40) exceeds its opened
+    /// shadow inset (28), so `reservedInsets` — the per-axis `max(opened, closed)`
+    /// — sizes the always-opened-size window from the larger closed inset: a
+    /// 540pt opened surface now needs a 620pt window, wrapped in 40pt per side,
+    /// the surface still centred. (Before the closed-glow growth it was a 596pt
+    /// window at 28pt per side, sized by the opened inset.)
     @Test
-    func pouredOpenedWindowWrapsA540SurfaceInTwentyEightPointsPerSide() {
+    func pouredOpenedWindowWrapsA540SurfaceInFortyPointsPerSide() {
         let metrics = IslandMetricsTokens.poured
         let reserved = IslandChromeLayout.reservedInsets(for: metrics)
 
-        #expect(reserved.horizontal == 28)
-        #expect(reserved.bottom == 34)
+        #expect(reserved.horizontal == 40)
+        #expect(reserved.bottom == 44)
 
         let window = IslandChromeLayout.windowSize(
             preferredContentWidth: 540,
@@ -85,13 +86,13 @@ struct IslandChromeLayoutTests {
             availableWidth: Self.roomyWidth
         )
 
-        #expect(window.width == 596)
-        #expect(window.height == Self.contentHeight + 34)
+        #expect(window.width == 620)
+        #expect(window.height == Self.contentHeight + 44)
 
         let surface = IslandChromeLayout.surfaceRect(inWindowOfSize: window, metrics: metrics)
         #expect(surface.width == 540)
-        #expect(surface.minX == 28)
-        #expect(window.width - surface.maxX == 28)
+        #expect(surface.minX == 40)
+        #expect(window.width - surface.maxX == 40)
         #expect(surface.height == Self.contentHeight)
     }
 
@@ -324,12 +325,13 @@ struct IslandChromeLayoutTests {
     // MARK: - 4. Screen-width clamp
 
     /// The three regimes, with the exact numbers for Poured (reserved
-    /// horizontal 28, preferred content 540):
+    /// horizontal 40 — the closed-glow inset dominates the opened 28 since
+    /// AB-329 — preferred content 540):
     ///
     /// | available | content | insets | window |
     /// |-----------|---------|--------|--------|
-    /// | 1512      | 540     | 28     | 596    |
-    /// | 500       | 444     | 28     | 500    |
+    /// | 1512      | 540     | 40     | 620    |
+    /// | 500       | 420     | 40     | 500    |
     /// | 400       | 360     | 20     | 400    |
     ///
     /// Reserving comes first, so the *window* fits on screen before the content
@@ -339,8 +341,8 @@ struct IslandChromeLayoutTests {
     func clampRegimesTrimContentThenInsets() {
         let metrics = IslandMetricsTokens.poured
         let fixtures: [(available: CGFloat, content: CGFloat, inset: CGFloat, window: CGFloat)] = [
-            (1_512, 540, 28, 596),
-            (500, 444, 28, 500),
+            (1_512, 540, 40, 620),
+            (500, 420, 40, 500),
             (400, 360, 20, 400),
         ]
 
@@ -364,7 +366,7 @@ struct IslandChromeLayoutTests {
             // Round trip: the window carries enough information to recover the
             // insets it was built with, trimmed cases included.
             let insets = IslandChromeLayout.insets(forWindowWidth: window.width, metrics: metrics)
-            #expect(insets == IslandChromeInsets(horizontal: fixture.inset, bottom: 34), "insets @\(fixture.available)")
+            #expect(insets == IslandChromeInsets(horizontal: fixture.inset, bottom: 44), "insets @\(fixture.available)")
 
             // …and the surface the view derives from those insets is the
             // clamped content width, inset symmetrically.

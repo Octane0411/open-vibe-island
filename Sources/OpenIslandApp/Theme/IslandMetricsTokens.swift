@@ -200,9 +200,16 @@ extension IslandMetricsTokens {
 
 extension IslandMetricsTokens {
     /// Poured Island's chrome: slightly larger opened radii, a concave notch
-    /// fillet, and a deeper/softer drop shadow. The shadow insets grow to
-    /// match so the larger blur is never clipped inside the overlay window —
-    /// these flow into `OverlayPanelController`'s panel sizing.
+    /// fillet, and a deeper/softer drop shadow. The opened shadow insets (28/34)
+    /// grow so the larger opened blur is never clipped inside the overlay window.
+    ///
+    /// The **closed** shadow insets (40/44) now *exceed* the opened ones (AB-329):
+    /// Poured 2.0's closed-pill attention state blooms an amber glow (`A3`, radius
+    /// up to 34 + spread) that bleeds well outside the pill silhouette. Since the
+    /// overlay window is always held at opened size, `IslandChromeLayout`'s
+    /// per-axis `max(opened, closed)` reservation sizes the window from these
+    /// larger closed insets so that bloom is contained rather than clipped. All
+    /// four flow into `OverlayPanelController`'s panel sizing.
     static let poured = IslandMetricsTokens(
         openedTopRadius: 26,
         openedBottomRadius: 26,
@@ -214,8 +221,8 @@ extension IslandMetricsTokens {
         ),
         openedShadowHorizontalInset: 28,
         openedShadowBottomInset: 34,
-        closedShadowHorizontalInset: 16,
-        closedShadowBottomInset: 18,
+        closedShadowHorizontalInset: 40,
+        closedShadowBottomInset: 44,
         closedHoverScale: 1.03,
         filletRadius: 12
     )
