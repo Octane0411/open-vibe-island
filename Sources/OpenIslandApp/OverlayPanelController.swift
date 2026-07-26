@@ -692,6 +692,89 @@ final class OverlayPanelController {
 private final class NotchPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .scrollWheel,
+           ImmediateWheelScrollPolicy.shouldHandleImmediately(
+               phase: event.phase,
+               momentumPhase: event.momentumPhase
+           ),
+           scrollImmediately(with: event) {
+            return
+        }
+        super.sendEvent(event)
+    }
+
+    private func scrollImmediately(with event: NSEvent) -> Bool {
+        guard abs(event.scrollingDeltaY) >= abs(event.scrollingDeltaX),
+              let contentView else {
+            return false
+        }
+
+        let contentPoint = contentView.convert(event.locationInWindow, from: nil)
+        var hitView = contentView.hitTest(contentPoint)
+        var foundScrollView = false
+        while let view = hitView {
+            if let scrollView = view as? NSScrollView {
+                foundScrollView = true
+                if scrollImmediately(scrollView, with: event) {
+                    return true
+                }
+            }
+            hitView = view.superview
+        }
+        // Consume an event that reached a scroll view but is already at the
+        // outer boundary, avoiding the slow elastic animation.
+        return foundScrollView
+    }
+
+    private func scrollImmediately(_ scrollView: NSScrollView, with event: NSEvent) -> Bool {
+        let clipView = scrollView.contentView
+        guard let documentView = scrollView.documentView else {
+            return false
+        }
+
+        let documentHeight = documentView.bounds.height
+        let viewportHeight = clipView.bounds.height
+        let maximumOriginY = max(0, documentHeight - viewportHeight)
+        guard maximumOriginY > 0 else {
+            return false
+        }
+
+        let targetOriginY = ImmediateWheelScrollPolicy.targetVerticalOrigin(
+            currentOriginY: clipView.bounds.origin.y,
+            scrollingDeltaY: event.scrollingDeltaY,
+            hasPreciseScrollingDeltas: event.hasPreciseScrollingDeltas,
+            maximumOriginY: maximumOriginY
+        )
+        guard targetOriginY != clipView.bounds.origin.y else { return false }
+
+        clipView.scroll(to: CGPoint(x: clipView.bounds.origin.x, y: targetOriginY))
+        scrollView.reflectScrolledClipView(clipView)
+        return true
+    }
+}
+
+enum ImmediateWheelScrollPolicy {
+    private static let lineScrollMultiplier: CGFloat = 18
+
+    static func shouldHandleImmediately(
+        phase: NSEvent.Phase,
+        momentumPhase: NSEvent.Phase
+    ) -> Bool {
+        phase.isEmpty && momentumPhase.isEmpty
+    }
+
+    static func targetVerticalOrigin(
+        currentOriginY: CGFloat,
+        scrollingDeltaY: CGFloat,
+        hasPreciseScrollingDeltas: Bool,
+        maximumOriginY: CGFloat
+    ) -> CGFloat {
+        let multiplier = hasPreciseScrollingDeltas ? 1 : lineScrollMultiplier
+        let proposedOriginY = currentOriginY - (scrollingDeltaY * multiplier)
+        return min(max(0, proposedOriginY), maximumOriginY)
+    }
 }
 
 // MARK: - NotchHostingView
