@@ -4,7 +4,7 @@ import Testing
 
 struct OverlayPanelControllerTests {
     @Test
-    func standaloneMouseWheelUsesShortSmoothAnimation() {
+    func standaloneMouseWheelUsesSingle60HzFrameDriver() {
         #expect(SmoothWheelScrollPolicy.shouldHandle(
             phase: [],
             momentumPhase: []
@@ -17,7 +17,30 @@ struct OverlayPanelControllerTests {
             phase: [],
             momentumPhase: .changed
         ))
-        #expect(SmoothWheelScrollPolicy.animationDuration == 0.06)
+        #expect(SmoothWheelScrollPolicy.preferredFramesPerSecond == 60)
+    }
+
+    @Test
+    func smoothWheelFramesAdvanceMonotonicallyAndSettleOnTarget() {
+        var originY: CGFloat = 20
+        let targetY: CGFloat = 92
+        var frameOrigins: [CGFloat] = []
+
+        for _ in 0..<12 {
+            originY = SmoothWheelScrollPolicy.nextVerticalOrigin(
+                currentY: originY,
+                targetY: targetY,
+                frameDuration: 1.0 / 60.0
+            )
+            frameOrigins.append(originY)
+        }
+
+        #expect(frameOrigins.allSatisfy { $0 >= 20 && $0 <= targetY })
+        #expect(zip(frameOrigins, frameOrigins.dropFirst()).allSatisfy { pair in
+            pair.0 <= pair.1
+        })
+        #expect(frameOrigins.first != targetY)
+        #expect(frameOrigins.last == targetY)
     }
 
     @Test
