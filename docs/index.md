@@ -22,6 +22,7 @@ This index is the repository map for humans and coding agents. Read these files 
 ## Harness And Planning
 
 - [docs/exec-plans/README.md](./exec-plans/README.md) for the active and completed execution-plan convention
+- [Orbit Plan v3](./exec-plans/active/2026-07-26-orbit-plan-v3.html) for the active agent-state, usage-visibility, and context-headroom execution contract
 - [docs/references/README.md](./references/README.md) for pinned reference material and external behavior baselines
 
 ## Superpowers Plans
@@ -34,6 +35,9 @@ This index is the repository map for humans and coding agents. Read these files 
 - [docs/app-ghostty-codex-chain.md](./app-ghostty-codex-chain.md) for terminal environment findings across the current supported chain
 - [docs/orbit/consolidation-plan.md](./orbit/consolidation-plan.md) for the Orbit clean-room consolidation architecture and verification boundaries
 - [docs/orbit/reference-intake.md](./orbit/reference-intake.md) for Orbit reference provenance, licensing, and clean-room intake constraints
+- [docs/architecture/adr-001-orbit-agent-usage-context-surface.md](./architecture/adr-001-orbit-agent-usage-context-surface.md) for the active-agent-first architecture decision
+- [docs/orbit/plan-v3-glossary.md](./orbit/plan-v3-glossary.md) for Plan v3 domain language
+- [docs/orbit/plan-v3-design-critique.md](./orbit/plan-v3-design-critique.md) for the source-backed experience critique and priorities
 
 ## Refactoring Plans
 

@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Orbit Plan v3 — Unified Agent Attention and Approvals</title>
+<style>
+:root {
+  --ink: #06080d; --panel: #0d111a; --panel2: #121827; --fog: #aab6ca;
+  --text: #f4f7fb; --muted: #9aa8bc; --line: rgba(255,255,255,.11);
+  --cyan: #77d9ff; --mint: #80edc2; --amber: #ffc66d; --red: #ff7a8a;
+  --violet: #bca8ff; --radius: 22px; --shadow: 0 24px 80px rgba(0,0,0,.45);
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: radial-gradient(circle at 50% -10%, #162139 0, var(--ink) 38rem); color: var(--text); font: 15px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, sans-serif; }
+a { color: var(--cyan); }
+.wrap { width: min(1180px, calc(100% - 32px)); margin: auto; }
+.hero { padding: 64px 0 34px; }
+.eyebrow { color: var(--cyan); letter-spacing: .16em; text-transform: uppercase; font-size: 12px; font-weight: 700; }
+h1 { margin: 10px 0 14px; font-size: clamp(40px, 7vw, 78px); line-height: .98; letter-spacing: -.055em; max-width: 980px; }
+.lede { max-width: 820px; color: var(--fog); font-size: 19px; }
+.goal { margin: 28px 0; padding: 22px 24px; border: 1px solid rgba(119,217,255,.32); border-radius: var(--radius); background: linear-gradient(135deg, rgba(119,217,255,.10), rgba(188,168,255,.07)); box-shadow: var(--shadow); }
+.goal strong { color: var(--cyan); }
+.tags { display: flex; flex-wrap: wrap; gap: 8px; }
+.tag { border: 1px solid var(--line); background: rgba(255,255,255,.045); color: var(--fog); border-radius: 999px; padding: 5px 10px; font-size: 12px; }
+.layout { display: block; }
+nav { position: sticky; top: 10px; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 18px; padding: 10px 12px; background: rgba(13,17,26,.94); backdrop-filter: blur(18px); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 12px 40px rgba(0,0,0,.3); }
+nav strong { flex: 0 0 auto; margin: 0 8px 0 2px; }
+nav a { flex: 0 0 auto; color: var(--muted); text-decoration: none; padding: 7px 9px; border-radius: 8px; font-size: 12px; }
+nav a:hover, nav a:focus-visible { color: var(--text); background: rgba(255,255,255,.06); outline: none; }
+main { min-width: 0; width: min(980px, 100%); margin: 0 auto; }
+section { padding: 34px 0 44px; border-top: 1px solid var(--line); scroll-margin-top: 88px; }
+h2 { font-size: 30px; letter-spacing: -.035em; margin: 0 0 16px; }
+h3 { margin-top: 26px; color: #eef3fa; }
+p, li { color: var(--fog); }
+strong { color: var(--text); }
+.grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; }
+.grid3 { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 14px; }
+.card { background: linear-gradient(180deg, rgba(18,24,39,.94), rgba(11,15,24,.94)); border: 1px solid var(--line); border-radius: 16px; padding: 18px; }
+.card h3, .card h4 { margin: 0 0 8px; }
+.good { border-color: rgba(128,237,194,.28); }
+.warn { border-color: rgba(255,198,109,.30); }
+.danger { border-color: rgba(255,122,138,.30); }
+.number { font-size: 28px; font-weight: 750; color: var(--cyan); }
+.flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; padding: 4px 0 12px; counter-reset: flow-step; }
+.flow-step { display: block; min-width: 0; counter-increment: flow-step; }
+.node { display: block; height: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; color: var(--text); background: var(--panel2); text-align: center; }
+.flow-step .node::before { content: counter(flow-step) ". "; color: var(--cyan); font-weight: 800; }
+.arrow { display: none; }
+.notch { margin: 20px auto; width: min(720px,100%); border-radius: 0 0 34px 34px; background: #030408; border: 1px solid rgba(255,255,255,.12); padding: 16px 24px 22px; box-shadow: var(--shadow); }
+.notch-top { width: 190px; height: 22px; margin: -17px auto 16px; border-radius: 0 0 14px 14px; background: #000; }
+.primary-row { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; }
+.agent { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; background: rgba(119,217,255,.14); color: var(--cyan); }
+.state { font-weight: 720; }
+.task { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.metric { text-align: right; color: var(--mint); font-size: 12px; }
+.metric small { color: var(--muted); display:block; }
+table { width: 100%; border-collapse: separate; border-spacing: 0; overflow: hidden; margin-top: 20px; border: 1px solid var(--line); border-radius: 12px; font-size: 14px; }
+th, td { text-align: left; padding: 13px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--text); background: rgba(255,255,255,.05); }
+td { color: var(--fog); }
+tbody tr:last-child td { border-bottom: 0; }
+code { color: #d8e7ff; background: rgba(255,255,255,.06); padding: .12em .35em; border-radius: 5px; }
+pre { overflow:auto; background:#05070b; border:1px solid var(--line); border-radius:14px; padding:16px; color:#c9d8ee; }
+.phase { position: relative; padding-left: 48px; margin: 20px 0 30px; }
+.phase::before { content: attr(data-phase); position:absolute; left:0; top:0; width:32px; height:32px; display:grid; place-items:center; border-radius:50%; color:#05070b; background:var(--cyan); font-weight:800; }
+.checks { list-style: none; padding: 0; }
+.checks li { padding-left: 28px; position: relative; margin: 8px 0; }
+.checks li::before { content: "□"; position:absolute; left:2px; color:var(--mint); font-size:17px; }
+.truth { display:inline-block; border-radius:999px; padding:2px 8px; font-size:11px; font-weight:700; }
+.live { background:rgba(128,237,194,.13); color:var(--mint); }
+.inferred { background:rgba(119,217,255,.13); color:var(--cyan); }
+.stale { background:rgba(255,198,109,.13); color:var(--amber); }
+.unavailable { background:rgba(255,255,255,.07); color:var(--muted); }
+footer { padding: 38px 0 70px; color: var(--muted); }
+.approval-demo { margin: 22px 0; padding: 22px; border: 1px solid rgba(255,198,109,.42); border-radius: 18px; background: linear-gradient(145deg, rgba(255,198,109,.12), rgba(255,122,138,.06)); box-shadow: var(--shadow); }
+.approval-demo-head { display: flex; justify-content: space-between; gap: 16px; align-items: start; }
+.approval-demo h3 { margin: 0 0 5px; }
+.approval-meta { color: var(--muted); font-size: 13px; }
+.approval-scope { margin: 16px 0; padding: 13px 14px; border-radius: 12px; background: rgba(0,0,0,.24); color: var(--fog); }
+.approval-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.approval-actions span { min-width: 120px; padding: 10px 16px; border-radius: 10px; text-align: center; font-weight: 700; }
+.deny { border: 1px solid rgba(255,122,138,.5); color: #ffd7dc; }
+.allow { background: var(--mint); color: #06100d; }
+#approvals { margin: 8px -24px; padding: 38px 24px 46px; border: 1px solid rgba(255,198,109,.25); border-radius: 24px; background: rgba(255,198,109,.025); }
+@media (max-width: 840px) { nav { position:relative; } .grid,.grid3 { grid-template-columns:1fr; } #approvals { margin-inline: 0; padding-inline: 16px; } }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior:auto!important; transition:none!important; animation:none!important; } }
+@media (prefers-reduced-transparency: reduce) { nav { backdrop-filter:none; background:var(--panel); } }
+:focus-visible { outline: 3px solid var(--cyan); outline-offset: 3px; }
+</style>
+</head>
+<body>
+<header class="hero wrap">
+  <div class="eyebrow">Orbit Development · Active Execution Contract</div>
+  <h1>Plan v3: Unified Agent Attention, Approvals & Headroom</h1>
+  <p class="lede">A source-backed plan for one calm native macOS companion that unifies cross-agent approvals and denials, active work, provider usage, and context evidence through a Vibe Island-quality notch experience built on Open Island’s GPLv3 foundation.</p>
+  <div class="goal"><strong>Active goal</strong><br>Design, implement, and verify a polished notch flow in which users can safely approve or deny requests across supported agents, identify the active task and required action, and understand trustworthy usage and context headroom within two seconds—without exposing sensitive content or replacing each agent’s enforcement authority.</div>
+  <div class="tags"><span class="tag">Status: Approved for phased implementation</span><span class="tag">Date: 2026-07-26</span><span class="tag">Local-first</span><span class="tag">GPLv3 clean-room</span><span class="tag">No production changes in this planning round</span></div>
+</header>
+<div class="wrap layout">
+<nav aria-label="Plan sections">
+  <strong>Plan map</strong>
+  <a href="#definition">1. Product definition</a><a href="#inventory">2. Current inventory</a><a href="#decisions">3. Decisions</a><a href="#experience">4. Experience model</a><a href="#approvals">5. Approval broker</a><a href="#contracts">6. Data contracts</a><a href="#architecture">7. Architecture</a><a href="#safety">8. Safety</a><a href="#accessibility">9. Accessibility</a><a href="#phases">10. Build phases</a><a href="#tests">11. Test matrix</a><a href="#rollback">12. Recovery</a><a href="#gates">13. Acceptance gates</a><a href="#non-goals">14. Non-goals</a><a href="#sources">15. Sources</a>
+</nav>
+<main>
+<section id="definition"><h2>1. Product definition</h2>
+<div class="grid">
+<div class="card good"><h3>Implementation base</h3><p><strong>Open Island GPLv3</strong> supplies the preserved code history, native SwiftUI/AppKit app, hooks, session discovery, approval/question round trips, terminal jump-back, usage snapshots, settings, and deterministic harness.</p></div>
+<div class="card"><h3>Interaction target</h3><p><strong>Vibe Island</strong> defines observable goals for notch fit, morph continuity, hierarchy, timing, density, and polish. Orbit independently implements those goals with its own identity.</p></div>
+<div class="card"><h3>Usage capability</h3><p><strong>CodexBar-style visibility</strong> means provider-neutral allowance, pressure, reset, freshness, and availability—not copied assets or assumptions that every provider exposes the same fields.</p></div>
+<div class="card"><h3>Context capability</h3><p><strong>Headroom-style evidence</strong> means metadata-only context budgets, retained/omitted token estimates, compaction events, confidence, and redaction boundaries. It does not mean fabricated cost savings.</p></div>
+</div>
+<h3>North-star user outcome</h3><p>A developer glances at the notch and knows: <strong>who is working, on what, whether attention is needed, how constrained usage is, and how healthy context is</strong>. Expansion reveals evidence and safe actions, not a miniature analytics dashboard.</p>
+</section>
+<section id="inventory"><h2>2. Current-state inventory</h2>
+<div class="grid3">
+<div class="card"><div class="number">8+</div><h3>Agent families</h3><p>Claude Code, Codex, OpenCode, Gemini CLI, Kimi CLI, Qoder, Qwen Code, Factory, CodeBuddy, plus Cursor session support in code.</p></div>
+<div class="card"><div class="number">7</div><h3>Terminal targets</h3><p>Terminal.app, Ghostty, cmux, Kaku, WezTerm, iTerm2, and tmux, with Warp fallback planned.</p></div>
+<div class="card"><div class="number">6</div><h3>Deterministic captures</h3><p>Closed, session list, approval, question, completion, and long completion already have runtime fixtures.</p></div>
+</div>
+<table><thead><tr><th>Existing asset</th><th>Use in Plan v3</th><th>Gap</th></tr></thead><tbody>
+<tr><td><code>IslandPanelView</code> and panel controller</td><td>One top-anchored compact/expanded shell</td><td>Needs explicit primary-session hierarchy and progressive disclosure</td></tr>
+<tr><td>Session registries and discovery coordinator</td><td>Agent identity, task, phase, provenance</td><td>Needs normalized truth/freshness projection</td></tr>
+<tr><td>Claude/Codex usage snapshots</td><td>First usage adapters</td><td>Needs provider-neutral contract and unavailable states</td></tr>
+<tr><td><code>OrbitContextBudgeter</code></td><td>Metadata-only retained/omitted token evidence</td><td>Needs event identity, confidence, freshness, and presentation model</td></tr>
+<tr><td><code>OrbitReceiptLedger</code></td><td>Bounded action audit trail</td><td>Needs completion/context evidence actions without content leakage</td></tr>
+<tr><td>Approval/question/completion cards</td><td>Trust-critical action/result surfaces</td><td>Needs scope, requester, evidence, unread lifecycle, accessibility</td></tr>
+<tr><td>Harness and overlay captures</td><td>Regression and visual acceptance</td><td>Needs error, stale/unavailable usage, reduced-effects, VoiceOver fixtures</td></tr>
+</tbody></table>
+</section>
+<section id="decisions"><h2>3. Resolved product decisions</h2>
+<div class="card good"><h3>Workflow routing decision</h3><p>Using the Ask Matt decision tree and source-backed planning workflow, this is classified as an existing-codebase, multi-phase build: inspect current behavior → resolve decisions against the docs → write a durable plan/ADR/glossary → implement bounded slices → verify after every slice. A throwaway prototype is optional only if motion cannot be settled in the deterministic harness.</p></div>
+<ul class="checks">
+<li><strong>Active agent first.</strong> The compact pill answers “what needs attention?” before showing metrics.</li>
+<li><strong>Secondary usage/context signal.</strong> Show at most one compact pressure indicator; reveal detail when expanded.</li>
+<li><strong>One primary session.</strong> Secondary sessions live behind deliberate disclosure.</li>
+<li><strong>Deterministic priority.</strong> Approval/question → error → active work → unread completion → idle.</li>
+<li><strong>Truth before completeness.</strong> Every metric is <span class="truth live">live</span> <span class="truth inferred">inferred</span> <span class="truth stale">stale</span> or <span class="truth unavailable">unavailable</span>.</li>
+<li><strong>Evidence, not marketing.</strong> Report estimated tokens retained/omitted and confidence. Dollars require authoritative counts and versioned pricing.</li>
+<li><strong>Fail open.</strong> Missing metrics or Orbit failure never changes the originating agent.</li>
+</ul>
+</section>
+<section id="experience"><h2>4. Experience and state model</h2>
+<div class="flow" aria-label="State flow"><span class="flow-step"><span class="node">Compact idle</span></span><span class="flow-step"><span class="node">Hover / focus</span></span><span class="flow-step"><span class="node">Active work</span></span><span class="flow-step"><span class="node">Approval / question</span></span><span class="flow-step"><span class="node">Completion / error</span></span><span class="flow-step"><span class="node">Unread result</span></span><span class="flow-step"><span class="node">Graceful collapse</span></span></div>
+<div class="notch" role="img" aria-label="Conceptual expanded Orbit notch with active agent and secondary usage metric">
+<div class="notch-top"></div><div class="primary-row"><div class="agent">C</div><div><div class="state">Codex · Working</div><div class="task">Implementing Orbit usage normalization tests</div></div><div class="metric">42% left<small>live · resets 3h</small></div></div>
+<hr style="border:0;border-top:1px solid var(--line);margin:16px 0"><div class="primary-row"><div class="agent" style="color:var(--violet);background:rgba(188,168,255,.12)">H</div><div><div class="state">Context healthy</div><div class="task">18.4k retained · 6.2k omitted</div></div><div class="metric" style="color:var(--violet)">25% saved<small>estimated · local</small></div></div>
+</div>
+<table><thead><tr><th>State</th><th>Compact behavior</th><th>Expanded behavior</th><th>Auto behavior</th></tr></thead><tbody>
+<tr><td>Idle</td><td>Quiet identity/count; no false zero metrics</td><td>Recent sessions and last trustworthy usage</td><td>No auto expansion</td></tr>
+<tr><td>Working</td><td>Agent + explicit verb + short task</td><td>Primary session, current activity, provenance</td><td>No auto expansion</td></tr>
+<tr><td>Approval/question</td><td>High-contrast attention state</td><td>Requester, reason, target, effects, safe actions</td><td>May auto-expand; pointer/focus protects card</td></tr>
+<tr><td>Error/disconnected</td><td>Explicit error verb, not color alone</td><td>What failed, what remains known, smallest recovery</td><td>No destructive retry</td></tr>
+<tr><td>Completion</td><td>Compact unread result</td><td>Verified outcome, evidence, jump-back/reply</td><td>Temporary card then unread compact state</td></tr>
+<tr><td>Stale/unavailable metric</td><td>Hide or neutral indicator</td><td>Last update and why unavailable</td><td>Agent continues unchanged</td></tr>
+</tbody></table>
+<h3>Motion contract</h3><ul><li>Top-anchored matched geometry remains the shell primitive.</li><li>Ordinary state changes: 160–240 ms. Open/close spring: 280–420 ms.</li><li>Animations are interruptible; priority changes win immediately.</li><li>No auto-collapse while pointer or keyboard focus is inside.</li><li>Reduce Motion uses opacity and minimal interpolation; Reduce Transparency removes blur/star interference.</li></ul>
+</section>
+<section id="approvals"><h2>5. Unified approval and denial broker</h2>
+<div class="card good"><h3>Core decision</h3><p><strong>Orbit owns normalization, prioritization, presentation, user decision capture, delivery status, and immutable receipts. The originating adapter and agent retain enforcement authority.</strong> Orbit never invents broader permission semantics than the source supports and never treats a displayed decision as enforced until the adapter acknowledges it.</p></div>
+<div class="approval-demo" aria-label="Conceptual unified approval card"><div class="approval-demo-head"><div><h3>Codex requests file-write access</h3><div class="approval-meta">Orbit · session orbit-plan-v3 · expires in 48s</div></div><span class="truth live">live</span></div><div class="approval-scope"><strong>Scope:</strong> one write to <code>docs/orbit/…</code><br><strong>Effect:</strong> modifies one documentation file; no shell, network, or credential access.</div><div class="approval-actions"><span class="deny">Deny</span><span class="allow">Allow once</span></div></div>
+<div class="flow" aria-label="Approval decision flow"><span class="flow-step"><span class="node">Agent request</span></span><span class="flow-step"><span class="node">Origin adapter</span></span><span class="flow-step"><span class="node">Orbit inbox</span></span><span class="flow-step"><span class="node">Allow once / Deny</span></span><span class="flow-step"><span class="node">Adapter acknowledgement</span></span><span class="flow-step"><span class="node">Receipt</span></span></div>
+<h3>Existing foundation to preserve</h3><p>Plan v3 extends, rather than replaces, <code>AgentEvent.PermissionRequested</code>, <code>PermissionRequest</code>, <code>PermissionResolution</code>, <code>BridgeCommand.resolvePermission</code>, and the existing pending Codex, Claude, and OpenCode interaction paths in <code>BridgeServer</code>. Provider-specific semantics stay at each adapter boundary.</p>
+<div class="grid">
+<div class="card"><h3>Unified inbox</h3><p>Multiple simultaneous requests are sorted by creation time, expiry, risk, and active-session relevance. One request is primary; the rest remain visible and cannot be overwritten by a newer event.</p></div>
+<div class="card"><h3>Least privilege</h3><p><strong>Allow once</strong> is the primary positive action. Session or time-bounded grants appear only when the source explicitly supports them. Orbit never promotes a one-time request to global permission.</p></div>
+<div class="card"><h3>Safe denial</h3><p>Deny is always available, keyboard reachable, and explicit. Timeout, cancellation, stale correlation, missing source, or delivery failure never becomes allow.</p></div>
+<div class="card"><h3>Verified outcome</h3><p>The UI distinguishes decision captured, delivered, acknowledged, rejected, expired, and source unavailable. Duplicate clicks are idempotent and stale buttons cannot resolve a reused request.</p></div>
+</div>
+<h3>Required request content</h3><ul class="checks"><li>Originating agent, adapter, project, and session</li><li>Requested capability and redacted target/resource</li><li>Scope and duration: once, session, or bounded time</li><li>Reason and concise consequence summary</li><li>Creation time, expiry, truth state, and correlation ID</li><li>Exact provider limitations when Orbit cannot respond natively</li></ul>
+<h3>T3 Code disposition</h3><p><strong>Optional adapter investigation only.</strong> Orbit may integrate with T3 Code if a public, documented hook, extension API, IPC protocol, CLI callback, or event surface and compatible license are verified. No undocumented reverse engineering, T3-specific dependency, or compatibility claim is allowed. Orbit's native broker must work without T3 Code.</p>
+</section>
+<section id="contracts"><h2>6. Data contracts</h2>
+<h3>Provider-neutral approval request</h3>
+<pre><code>struct OrbitApprovalRequest {
+  id: UUID
+  correlationID: String
+  sessionID: String
+  agentID: String
+  adapterID: String
+  projectLabel: String?
+  capability: String
+  redactedTarget: String?
+  scope: once | session | until(Date)
+  reason: String
+  consequenceSummary: String
+  createdAt: Date
+  expiresAt: Date?
+  truth: live | inferred | stale | unavailable
+}</code></pre>
+<h3>Decision and delivery</h3>
+<pre><code>struct OrbitApprovalDecision {
+  requestID: UUID
+  decisionID: UUID
+  outcome: allow | deny | timeout | cancel
+  scope: once | session | until(Date)
+  decidedAt: Date
+  origin: orbitUser | adapter | timeout
+  delivery: captured | delivered | acknowledged | rejected | expired
+  receiptID: UUID
+}</code></pre>
+<p><strong>Rule:</strong> request and decision IDs are immutable; adapter delivery is idempotent; acknowledgement is recorded separately from user intent; receipts contain only allowlisted metadata.</p>
+<h3>Provider-neutral usage snapshot</h3>
+<pre><code>struct OrbitUsageSnapshot {
+  providerID: String
+  accountScope: String?          // redacted display label only
+  observedAt: Date
+  period: session | daily | weekly | monthly | unknown
+  usedFraction: Double?
+  remainingFraction: Double?
+  resetAt: Date?
+  inputTokens: Int?
+  outputTokens: Int?
+  estimatedCost: Decimal?
+  currency: String?
+  truth: live | inferred | stale | unavailable
+  source: hook | localFile | providerAPI | process | unavailable
+}</code></pre>
+<p><strong>Rule:</strong> optional fields remain absent. No adapter converts missing data to zero. Orbit does not collect or display provider credentials.</p>
+<h3>Context evidence event</h3>
+<pre><code>struct OrbitContextEvidence {
+  eventID: UUID
+  sessionID: String
+  observedAt: Date
+  inputTokens: Int
+  retainedTokens: Int
+  omittedTokens: Int
+  decision: withinBudget | needsCompaction | redactionRequired
+  confidence: measured | estimated | unavailable
+  provenanceID: String
+  containsContent: false
+}</code></pre>
+<h3>Presentation projection</h3><p>A pure projector combines session phase, provenance, usage pressure, context pressure, unread completion, and truth state into one <code>OrbitPrimarySurfaceState</code>. Views do not independently decide priority.</p>
+</section>
+<section id="architecture"><h2>7. Architecture and ownership</h2>
+<div class="grid">
+<div class="card"><h3>Layer 1 · Existing adapters</h3><p>Hooks, pending approval interactions, transcript registries, process discovery, terminal targeting, and usage monitors. Adapters translate source semantics and retain enforcement authority.</p></div>
+<div class="card"><h3>Layer 2 · Normalization</h3><p>Approval request/decision contracts, <code>OrbitUsageSnapshot</code>, context evidence, provenance, truth/freshness, and attention arbitration. Pure logic lives in OpenIslandCore where possible.</p></div>
+<div class="card"><h3>Layer 3 · AppModel projection</h3><p>One state owner exposes a stable primary surface, secondary metrics, actions, and accessibility labels.</p></div>
+<div class="card"><h3>Layer 4 · Native surface</h3><p>One panel controller and one SwiftUI shell render compact, expanded, notification, reduced-motion, and degraded states.</p></div>
+</div>
+<h3>Ownership invariants</h3><ul><li>One app, one process, one panel controller, one AppModel state owner.</li><li>Orbit owns the approval inbox and audit trail, but not provider enforcement or hidden policy.</li><li>Adapters never add independent windows, routers, agent loops, credential stores, or global approval policy.</li><li>Actions round-trip through the originating adapter only and require acknowledgement.</li><li>Usage/context polling is bounded, cached, cancelable, and invisible when unsupported.</li><li>Reference projects remain segregated by license and provenance.</li></ul>
+</section>
+<section id="safety"><h2>8. Threat and trust model</h2>
+<div class="grid">
+<div class="card danger"><h3>Protected assets</h3><p>Credentials, provider tokens, prompts, transcripts, commands, file contents, private paths/endpoints, terminal automation authority, approval decisions, and local usage history.</p></div>
+<div class="card warn"><h3>Trust boundaries</h3><p>Agent hooks → local socket; transcripts/configs → registries; provider data → usage adapter; AppModel → UI; UI action → originating adapter; deterministic fixtures → screenshots.</p></div>
+</div>
+<table><thead><tr><th>Threat</th><th>Required control</th><th>Verification</th></tr></thead><tbody>
+<tr><td>Secret leakage in receipts/captures</td><td>Metadata allowlist, redaction, content-free fixtures</td><td>Secret-pattern scan and screenshot review</td></tr>
+<tr><td>False quota or savings precision</td><td>Optional fields, truth labels, pricing-version requirement</td><td>Unavailable/stale/inferred unit cases</td></tr>
+<tr><td>Wrong-session approval</td><td>Session/request identity and originating adapter round trip</td><td>Mismatch and stale-request tests</td></tr>
+<tr><td>Duplicate/replayed decision</td><td>Immutable decision ID, idempotency key, terminal request state</td><td>Double-click and replay tests</td></tr>
+<tr><td>Silent permission escalation</td><td>Source-supported scopes only; default allow-once; no global promotion</td><td>Cross-adapter scope matrix</td></tr>
+<tr><td>Timeout or adapter failure</td><td>Expire/deny safely; distinguish captured from acknowledged</td><td>Timeout, rejection, disconnect tests</td></tr>
+<tr><td>Malicious hook payload</td><td>Bounded decode, validation, length caps, no shell interpolation</td><td>Malformed/oversized fixture tests</td></tr>
+<tr><td>Polling resource drain</td><td>Timed cache, bounded cadence, cancellation, no concurrent duplicate work</td><td>Idle CPU/memory and task-lifecycle tests</td></tr>
+<tr><td>Proprietary reference contamination</td><td>Source/license ledger and independent implementation</td><td>Diff and provenance review</td></tr>
+</tbody></table>
+<p><strong>Never present in UI, receipts, logs, HTML, screenshots, or fixtures:</strong> passwords, API keys, access tokens, auth headers, raw prompts, full transcripts, raw commands, file contents, payment data, or private endpoints.</p>
+</section>
+<section id="accessibility"><h2>9. Accessibility contract</h2>
+<div class="grid3"><div class="card"><h3>Perceivable</h3><p>4.5:1 text contrast, 3:1 large/non-text contrast, explicit labels and symbols, no color-only state.</p></div><div class="card"><h3>Operable</h3><p>Keyboard parity, logical focus, visible focus, Escape semantics, 44×44 point targets or equivalent hit regions.</p></div><div class="card"><h3>Robust</h3><p>VoiceOver name/role/value for agent, task, state, metric truth/freshness, scope, and action result.</p></div></div>
+<ul class="checks"><li>Reduce Motion fixture and runtime capture</li><li>Reduce Transparency fixture and runtime capture</li><li>200% content-size/zoom resilience where supported</li><li>VoiceOver reading-order snapshot</li><li>Focus remains stable when live state updates</li><li>Unresolved approvals cannot disappear through Escape or timed collapse</li></ul>
+</section>
+<section id="phases"><h2>10. Phased implementation plan</h2>
+<div class="phase" data-phase="0"><h3>Approval contract audit and fixtures</h3><p><strong>Files:</strong> <code>AgentEvent.swift</code>, <code>BridgeTransport.swift</code>, <code>BridgeServer.swift</code>, adapter-specific hook handlers, debug scenarios, focused tests.</p><ul><li>Inventory Codex, Claude, OpenCode, and other supported-agent request and response semantics.</li><li>Write failing tests for correlation, idempotency, timeout/default-deny, stale request, adapter rejection, and scope preservation.</li><li>Define the normalized request/decision model without breaking provider-specific paths.</li><li>Add simultaneous-inbox, expired, rejected, and source-unavailable fixtures.</li></ul><p><strong>Exit:</strong> capability matrix exists and RED tests demonstrate missing unified behavior; no view changes.</p></div>
+<div class="phase" data-phase="1"><h3>Approval normalization and response broker</h3><p><strong>Files:</strong> OpenIslandCore approval contracts/projector, bridge routing, receipt actions, focused tests.</p><ul><li>Normalize requests while retaining source payload ownership at the adapter.</li><li>Implement one decision per immutable request with idempotent delivery.</li><li>Track captured, delivered, acknowledged, rejected, expired, and unavailable states.</li><li>Emit content-free immutable receipts.</li></ul><p><strong>Exit:</strong> supported adapters acknowledge correct decisions and all failure paths fail closed.</p></div>
+<div class="phase" data-phase="2"><h3>Primary surface and approval inbox projection</h3><p><strong>Files:</strong> OpenIslandCore projector, AppModel types/projections, tests.</p><ul><li>Implement one pure deterministic arbitration function.</li><li>Project one primary request and an ordered pending count without losing secondary requests.</li><li>Project active agent, task, explicit state verb, provenance, and unread result.</li><li>Keep session registries unchanged.</li></ul><p><strong>Exit:</strong> priority, multi-request, and degraded-state tests green.</p></div>
+<div class="phase" data-phase="3"><h3>Usage normalization</h3><p><strong>Files:</strong> usage domain model, Claude/Codex adapter wrappers, AppModel projection, tests.</p><ul><li>Normalize existing snapshots without credentials.</li><li>Implement freshness and pressure policy.</li><li>Render unavailable rather than zero.</li></ul><p><strong>Exit:</strong> both current providers and unsupported-provider fixture pass.</p></div>
+<div class="phase" data-phase="4"><h3>Context headroom evidence</h3><p><strong>Files:</strong> extend OrbitContextBudget report/event, receipt action vocabulary, projections, tests.</p><ul><li>Add event/provenance/confidence without content.</li><li>Expose retained/omitted tokens and decision.</li><li>Do not calculate money unless authoritative pricing is added later.</li></ul><p><strong>Exit:</strong> deterministic savings evidence and redaction-required paths pass.</p></div>
+<div class="phase" data-phase="5"><h3>Compact pill hierarchy</h3><p><strong>Files:</strong> closed-pill presentation and focused view tests.</p><ul><li>Agent state first; one secondary pressure signal.</li><li>Explicit verbs and non-color symbols.</li><li>External display and physical-notch geometry preserved.</li></ul><p><strong>Exit:</strong> idle/running/attention/error/unread captures approved.</p></div>
+<div class="phase" data-phase="6"><h3>Expanded active-agent surface</h3><p><strong>Files:</strong> IslandPanelView decomposition into narrow components, approval/completion rows, usage/context strips.</p><ul><li>One primary session; secondary sessions disclosed.</li><li>Approval scope and completion evidence redesigned.</li><li>Separate destructive power control from routine controls.</li></ul><p><strong>Exit:</strong> approval, question, completion, error, stale, unavailable captures approved.</p></div>
+<div class="phase" data-phase="7"><h3>Motion, accessibility, performance</h3><p><strong>Files:</strong> motion policy, accessibility labels/actions, harness, focused performance tests.</p><ul><li>Interruptible transitions and hover/focus protection.</li><li>Reduced-effects variants.</li><li>VoiceOver and keyboard QA.</li><li>Bounded refresh and idle-resource audit.</li></ul><p><strong>Exit:</strong> accessibility and performance gates green.</p></div>
+<div class="phase" data-phase="8"><h3>Full-story verification and review</h3><p>Run build, focused tests, full suite, docs, localization, security scan, deterministic runtime scenarios, artifact count, visual critique, and clean-worktree check. Commit each coherent slice separately.</p><p><strong>Exit:</strong> all acceptance gates below have real evidence.</p></div>
+</section>
+<section id="tests"><h2>11. Verification matrix</h2>
+<table><thead><tr><th>Story</th><th>Unit/integration proof</th><th>Runtime capture</th><th>Failure case</th></tr></thead><tbody>
+<tr><td>Idle → working</td><td>Priority projector and state verb</td><td>closed, running</td><td>Missing task/provenance</td></tr>
+<tr><td>Approval/denial</td><td>Correlation, scope, idempotency, adapter acknowledgement, receipt</td><td>single, multiple, expired, rejected</td><td>Stale/mismatched/replayed request defaults safe</td></tr>
+<tr><td>Question</td><td>Answer round trip</td><td>question</td><td>Source becomes unavailable</td></tr>
+<tr><td>Completion</td><td>Unread lifecycle and evidence metadata</td><td>completion, long completion</td><td>Unverified or empty result</td></tr>
+<tr><td>Error</td><td>Priority and recovery projection</td><td>error</td><td>Repeated blind retry prohibited</td></tr>
+<tr><td>Usage</td><td>Normalize Claude/Codex/unsupported</td><td>live, stale, unavailable</td><td>Missing fields never become zero</td></tr>
+<tr><td>Context</td><td>Budget, redaction, confidence</td><td>healthy, pressure, unavailable</td><td>Sensitive segment blocks claim</td></tr>
+<tr><td>Accessibility</td><td>Labels, focus, actions</td><td>reduced motion/transparency</td><td>Live update must not steal focus</td></tr>
+<tr><td>Terminal return</td><td>Existing precision targeting tests</td><td>jump-back dogfood</td><td>Ambiguous owner shows degraded state</td></tr>
+</tbody></table>
+<h3>Required command families</h3><ul><li>Focused Swift tests for each changed domain.</li><li>Full <code>swift test</code> and app build under the repository’s configured Xcode.</li><li><code>scripts/check-docs.sh</code>, localization checks, security-sensitive tests, and <code>git diff --check</code>.</li><li>Deterministic harness scenarios with PNG, accessibility tree, and report per scenario.</li><li>Manual installed-dev-app checks only when bundle, LaunchServices, Automation, or Accessibility behavior matters.</li></ul>
+</section>
+<section id="rollback"><h2>12. Rollback and failure recovery</h2>
+<ul><li>Every phase is one focused branch/commit slice and can be reverted independently.</li><li>New projections sit above existing registries; if normalization fails, existing session behavior remains available.</li><li>Usage/context adapters are feature-gated and read-only. Disable the adapter rather than the agent integration.</li><li>Unsupported or failed sources render <strong>unavailable</strong>; no retry loop or credential prompt is introduced.</li><li>Preserve current compact/expanded fixtures as baseline comparisons until Plan v3 captures pass.</li><li>If performance regresses, disable decorative effects first, then lower refresh cadence; never disable approval correctness.</li><li>Never use destructive Git reset to recover; revert the focused commit or restore the feature flag.</li></ul>
+</section>
+<section id="gates"><h2>13. Acceptance gates</h2>
+<ul class="checks">
+<li>A user identifies active agent, task, state, and required action within two seconds.</li>
+<li>Priority order is deterministic and covered by tests.</li>
+<li>Compact pill shows no more than one secondary usage/context pressure signal.</li>
+<li>Expanded surface shows usage and context with truth, freshness, and provenance.</li>
+<li>Unavailable data never appears as zero and stale data is visibly stale.</li>
+<li>Context savings are token evidence with confidence; no unsupported dollar claim.</li>
+<li>Approval shows requester, reason, scope, effects, and one-time semantics.</li>
+<li>Allow/deny decisions are correlated, idempotent, delivered only to the origin adapter, and visibly acknowledged or rejected.</li>
+<li>Multiple requests remain independently resolvable; timeout, cancellation, disconnect, and stale state never allow.</li>
+<li>Completion persists as unread until reviewed or dismissed.</li>
+<li>Keyboard, VoiceOver, Reduce Motion, Reduce Transparency, contrast, and focus gates pass.</li>
+<li>No secrets or content leak into receipts, logs, fixtures, HTML, or screenshots.</li>
+<li>Existing supported agents and terminal jump-back tests remain green.</li>
+<li>Idle CPU/memory and refresh cadence remain within the existing all-day background budget.</li>
+<li>Full build/tests/docs/localization/runtime scenarios pass with real artifacts.</li>
+<li>Final defect-first and design critique find no unresolved critical issue.</li>
+</ul>
+</section>
+<section id="non-goals"><h2>14. Explicit non-goals</h2>
+<div class="grid"><div class="card danger"><h3>Not in Plan v3</h3><ul><li>Austin Router UI or subcommands</li><li>Slash-command palette</li><li>Skills/plugins/tools browser</li><li>New agent loop, shell, router, or provider-independent enforcement authority</li><li>Undocumented T3 Code integration or hard dependency</li><li>Provider credential storage or billing reconciliation</li><li>M4/M1 infrastructure or self-hosted Drive</li><li>Signing, notarization, deployment, or release</li></ul></div><div class="card"><h3>Clean-room limits</h3><ul><li>No Vibe Island code, assets, branding, binaries, or undocumented internals</li><li>No assumption that CodexBar/Headroom/T3 Code licenses permit direct reuse beyond documented intake</li><li>No removal of GPLv3 notices or upstream attribution</li><li>No claim of production readiness from local tests alone</li></ul></div></div>
+</section>
+<section id="sources"><h2>15. Durable sources and supporting documents</h2>
+<ul><li><a href="../../orbit/reference-intake.md">Reference intake and license boundaries</a></li><li><a href="../../orbit/consolidation-plan.md">Orbit consolidation plan</a></li><li><a href="../../architecture/adr-001-orbit-agent-usage-context-surface.md">ADR-001: active-agent-first surface</a></li><li><a href="../../orbit/plan-v3-glossary.md">Plan v3 glossary</a></li><li><a href="../../orbit/plan-v3-design-critique.md">Plan v3 design critique</a></li><li><a href="../../product.md">Product scope and supported integrations</a></li><li><a href="../../quality.md">Verification contract</a></li><li><a href="../README.md">Execution-plan convention</a></li></ul>
+<p><strong>Execution rule:</strong> begin at Phase 0. Do not skip directly to visual polish. Each phase must end with focused verification and a reversible checkpoint before the next phase starts.</p>
+</section>
+</main></div>
+<footer class="wrap">Orbit Plan v3 · Local execution artifact · No analytics · No embedded credentials · Clean-room GPLv3 development</footer>
+</body></html>

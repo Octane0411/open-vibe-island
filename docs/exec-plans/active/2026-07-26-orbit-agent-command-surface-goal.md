@@ -1,9 +1,13 @@
 # Orbit Agent Command Surface Goal
 
-**Status:** Active
+**Status:** Superseded by [Orbit Plan v3](./2026-07-26-orbit-plan-v3.html)
 **Date:** 2026-07-26
 **Branch:** `feat/orbit-gpl-fork`
 **Canonical repository:** `/Users/austinwise/Documents/Codex/2026-07-25/orbit-gpl-fork`
+
+> This document is retained as historical context only. Its slash-command,
+> router-surface, and skill/plugin/tool discovery scope is not approved for
+> implementation. Orbit Plan v3 is the active execution contract.
 
 ## Austin Router Directive
 
