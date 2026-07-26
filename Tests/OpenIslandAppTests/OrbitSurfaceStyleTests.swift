@@ -3,6 +3,11 @@ import Testing
 
 struct OrbitSurfaceStyleTests {
     @Test
+    func polarQuietKeepsDecorationOffByDefault() {
+        #expect(OrbitSurfaceStyle.defaultStarfieldEnabled == false)
+    }
+
+    @Test
     func starDensityIsOrderedAndBounded() {
         #expect(OrbitStarDensity.sparse.starCount < OrbitStarDensity.balanced.starCount)
         #expect(OrbitStarDensity.balanced.starCount < OrbitStarDensity.vivid.starCount)

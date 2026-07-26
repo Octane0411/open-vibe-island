@@ -1,5 +1,9 @@
 import SwiftUI
 
+enum OrbitSurfaceStyle {
+    static let defaultStarfieldEnabled = false
+}
+
 enum OrbitStarDensity: String, CaseIterable, Identifiable {
     case sparse
     case balanced
@@ -23,15 +27,15 @@ struct OrbitSurfaceBackdrop: View {
         ZStack {
             LinearGradient(
                 colors: [
-                    Color(red: 0.025, green: 0.045, blue: 0.085),
-                    Color(red: 0.035, green: 0.035, blue: 0.065),
+                    Color(red: 0.035, green: 0.037, blue: 0.045),
+                    Color(red: 0.075, green: 0.080, blue: 0.092),
                     V6Palette.ink
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
             RadialGradient(
-                colors: [Color(red: 0.16, green: 0.27, blue: 0.52).opacity(0.24), .clear],
+                colors: [Color.white.opacity(0.055), .clear],
                 center: .topTrailing,
                 startRadius: 4,
                 endRadius: 260

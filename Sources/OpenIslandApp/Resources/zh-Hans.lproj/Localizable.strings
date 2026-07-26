@@ -65,8 +65,8 @@
 "settings.appearance.centerLabel.sessionName" = "会话名";
 "settings.appearance.centerLabel.off" = "关闭";
 "settings.appearance.notchPart.title" = "刘海";
-"settings.appearance.starfield.title" = "午夜轨道";
-"settings.appearance.starfield.note" = "为展开的界面添加安静的星空背景，不影响交互。";
+"settings.appearance.starfield.title" = "极地静谧";
+"settings.appearance.starfield.note" = "默认使用墨色、雾感和一个清晰信号，星空保持可选。";
 "settings.appearance.starfield.enabled" = "显示星空";
 "settings.appearance.starfield.density" = "密度";
 "settings.appearance.starfield.sparse" = "稀疏";

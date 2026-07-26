@@ -326,7 +326,7 @@ final class AppModel {
         }
     }
 
-    var orbitStarfieldEnabled: Bool = true {
+    var orbitStarfieldEnabled: Bool = OrbitSurfaceStyle.defaultStarfieldEnabled {
         didSet {
             guard orbitStarfieldEnabled != oldValue else { return }
             UserDefaults.standard.set(orbitStarfieldEnabled, forKey: Self.orbitStarfieldEnabledDefaultsKey)
@@ -616,7 +616,7 @@ final class AppModel {
             Self.hapticFeedbackEnabledDefaultsKey: false,
             Self.completionReplyEnabledDefaultsKey: false,
             Self.suppressFrontmostNotificationsDefaultsKey: true,
-            Self.orbitStarfieldEnabledDefaultsKey: true,
+            Self.orbitStarfieldEnabledDefaultsKey: OrbitSurfaceStyle.defaultStarfieldEnabled,
             Self.orbitStarDensityDefaultsKey: OrbitStarDensity.balanced.rawValue,
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
