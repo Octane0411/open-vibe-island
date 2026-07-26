@@ -9,7 +9,7 @@ final class OverlayPanelController {
     private static let preferredTopBarOpenedPanelWidth: CGFloat = 520
     private static let preferredNotificationPanelWidth: CGFloat = 620
     private static let openedContentWidthPadding: CGFloat = 0
-    private static let openedContentBottomPadding: CGFloat = 0
+    private static let openedContentBottomPadding: CGFloat = 12
     /// Must match `IslandPanelView.maxSessionListHeight` — the AutoHeightScrollView cap.
     private static let maxSessionListHeight: CGFloat = 560
     private static let maxVisibleSessionRows: Int = 6
