@@ -292,6 +292,52 @@ enum FlightDeckApprovalFormat {
     /// Every readable point size the alarm / completion surfaces draw, for the
     /// ≥10pt-floor assertion (AC #7).
     static let readableTextSizes: [CGFloat] = [13.2, 12.5, 11.5, 11, 10.5, 10]
+
+    // MARK: - Annunciator beacon (AB-334)
+
+    /// Beacon-lamp pulse periods, seconds. EICAS retiming (AB-334): the red
+    /// **WARNING** lamp on a held permission throbs faster (a 1.0s alarm cadence)
+    /// than the amber **CAUTION** lamp on a question (a calmer 1.2s), so the two
+    /// annunciators are distinguishable by rhythm as well as colour.
+    static let permissionBeaconPeriod: Double = 1.0
+    static let questionBeaconPeriod: Double = 1.2
+
+    /// The annunciator beacon-lamp brightness (AB-334). A smooth triangle breathe
+    /// off wall-clock time at the lamp's own `period` (each lamp is retimed
+    /// independently, which the shared fixed-period `PulseClock` can't express), so
+    /// the lamp swells from a dim floor to fully lit and back once per period.
+    /// Reduce Motion pins it to steady full brightness — a lit lamp, never dark.
+    static func beaconLevel(now: Date, period: Double, reduceMotion: Bool) -> Double {
+        let litLevel = 1.0
+        guard !reduceMotion, period > 0 else { return litLevel }
+        let cyclePosition = now.timeIntervalSinceReferenceDate
+            .truncatingRemainder(dividingBy: period) / period            // 0 … 1
+        let phase = cyclePosition < 0 ? cyclePosition + 1 : cyclePosition // guard negatives
+        let triangle = phase < 0.5 ? phase * 2 : (1 - phase) * 2          // 0 → 1 → 0
+        return 0.4 + triangle * 0.6                                       // 0.40 … 1.0
+    }
+
+    // MARK: - HELD count-up (AB-334)
+
+    /// Longest elapsed span the `HELD` readout will show before it is treated as
+    /// implausible and hidden (a stale `updatedAt` from a long-idle registry row).
+    static let heldReadoutCeiling: TimeInterval = 24 * 60 * 60
+
+    /// The `HELD` count-up shown on the permission annunciator (AB-334): how long
+    /// the agent has been blocked, formatted `0m 08s`.
+    ///
+    /// Honesty note: there is no dedicated "request arrived at" field on the
+    /// session, so this approximates the held time as `now − session.updatedAt` —
+    /// `updatedAt` is stamped by the very hook event that raised the permission
+    /// request, which is the best proxy available. Returns `nil` (readout hidden)
+    /// when the approximation is negative (clock skew) or implausibly large
+    /// (> `heldReadoutCeiling`, i.e. a stale row rather than a live hold).
+    static func heldReadout(now: Date, since updatedAt: Date) -> String? {
+        let elapsed = now.timeIntervalSince(updatedAt)
+        guard elapsed >= 0, elapsed <= heldReadoutCeiling else { return nil }
+        let total = Int(elapsed)
+        return String(format: "%dm %02ds", total / 60, total % 60)
+    }
 }
 
 // MARK: - Row content
@@ -1128,12 +1174,18 @@ private struct FlightDeckActionableRowContent: View {
         case .waitingForApproval:
             FlightDeckApprovalCard(session: session, lang: lang, actions: actions, pulseClock: pulseClock)
         case .waitingForAnswer:
-            StructuredQuestionPromptView(
-                prompt: session.questionPrompt,
-                lang: lang,
-                keyboardCoordinator: keyboardCoordinator,
-                onAnswer: { actions.answer?($0) }
-            )
+            // AB-334: the question is an amber MASTER CAUTION — the shared
+            // `StructuredQuestionPromptView` interior is *wrapped* (an annunciator
+            // header lit above it), never modified.
+            VStack(alignment: .leading, spacing: 10) {
+                FlightDeckQuestionAnnunciator(lang: lang, pulseClock: pulseClock)
+                StructuredQuestionPromptView(
+                    prompt: session.questionPrompt,
+                    lang: lang,
+                    keyboardCoordinator: keyboardCoordinator,
+                    onAnswer: { actions.answer?($0) }
+                )
+            }
         case .completed:
             completionBody
         case .running:
@@ -1389,6 +1441,137 @@ private struct FlightDeckActionableRowContent: View {
     }
 }
 
+// MARK: - Flight Deck annunciator header (AB-334)
+
+/// The shared annunciator-header grammar both actionable alarms wear: a pulsing
+/// beacon lamp, a filled placard chip, a kicker, and an optional right-aligned
+/// slot (the permission card fills it with `HELD`; the question leaves it empty).
+///
+/// The permission card lights it **red** (`MASTER WARNING` · `PERMISSION
+/// REQUIRED`, 1.0s beacon); the question lights it **amber** (`MASTER CAUTION` ·
+/// `QUESTION`, 1.2s beacon). Splitting the grammar into one component keeps the
+/// two annunciators identical in structure and lets the question wrap the shared
+/// `StructuredQuestionPromptView` interior without touching it (AB-334).
+private struct FlightDeckAnnunciatorHeader<Trailing: View>: View {
+    let tint: Color
+    let placard: String
+    let kicker: String
+    let beaconPeriod: Double
+    let pulseClock: PulseClock?
+    let lang: LanguageManager
+    @ViewBuilder let trailing: () -> Trailing
+
+    @Environment(\.islandTokens) private var tokens
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    private var increasesContrast: Bool { colorSchemeContrast == .increased }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            FlightDeckAnnunciatorBeacon(color: tint, period: beaconPeriod, pulseClock: pulseClock)
+
+            Text(FlightDeckText.caps(placard, lang: lang))
+                .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                .tracking(FlightDeckText.tracking(1.2, lang: lang))
+                .foregroundStyle(tokens.colors.surfaceInk)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(FlightDeckChamferedRectangle(chamfer: 3).fill(tint))
+                .accessibilityHidden(true)
+
+            Text(FlightDeckText.caps(kicker, lang: lang))
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .tracking(FlightDeckText.tracking(0.6, lang: lang))
+                .foregroundStyle(tint.opacity(increasesContrast ? 1 : 0.92))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+
+            Spacer(minLength: 0)
+
+            trailing()
+        }
+    }
+}
+
+/// A single annunciator beacon lamp: a small chamfered square in the alarm tint
+/// that breathes at its own `period` (AB-334). It rides the shared 15fps
+/// `PulseClock` for invalidation but derives its brightness from wall-clock time
+/// at `period`, so the red (1.0s) and amber (1.2s) lamps can be retimed
+/// independently — something the shared clock's single fixed period can't do.
+/// Reduce Motion (or a missing clock) draws it steady-lit.
+private struct FlightDeckAnnunciatorBeacon: View {
+    let color: Color
+    let period: Double
+    let pulseClock: PulseClock?
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    static let side: CGFloat = 11
+    static let chamfer: CGFloat = 3
+
+    var body: some View {
+        if let pulseClock, !reduceMotion {
+            FlightDeckPulsingBeacon(color: color, period: period, pulseClock: pulseClock)
+        } else {
+            lamp(opacity: FlightDeckApprovalFormat.beaconLevel(now: .now, period: period, reduceMotion: true))
+        }
+    }
+
+    func lamp(opacity: Double) -> some View {
+        FlightDeckChamferedRectangle(chamfer: Self.chamfer)
+            .fill(color)
+            .frame(width: Self.side, height: Self.side)
+            .opacity(opacity)
+            .accessibilityHidden(true)
+    }
+}
+
+/// The animating beacon leaf. Isolated so Observation's per-view tracking
+/// invalidates only the lamp on each 15fps tick (AB-228 pattern), and so Reduce
+/// Motion never even acquires the clock — its steady sibling is drawn instead.
+private struct FlightDeckPulsingBeacon: View {
+    let color: Color
+    let period: Double
+    let pulseClock: PulseClock
+
+    var body: some View {
+        // Touch `phase` so Observation re-runs this leaf on every shared 15fps
+        // tick; the actual brightness is a pure function of wall-clock time at this
+        // lamp's own `period` (the shared clock's fixed period can't be retimed).
+        _ = pulseClock.phase
+        return FlightDeckChamferedRectangle(chamfer: FlightDeckAnnunciatorBeacon.chamfer)
+            .fill(color)
+            .frame(width: FlightDeckAnnunciatorBeacon.side, height: FlightDeckAnnunciatorBeacon.side)
+            .opacity(FlightDeckApprovalFormat.beaconLevel(now: .now, period: period, reduceMotion: false))
+            .onAppear { pulseClock.acquire() }
+            .onDisappear { pulseClock.release() }
+            .accessibilityHidden(true)
+    }
+}
+
+/// The amber **MASTER CAUTION** annunciator that heads the question phase
+/// (AB-334): it wraps — never modifies — the shared `StructuredQuestionPromptView`
+/// interior. `MASTER CAUTION` placard + `QUESTION` kicker, tinted the caution
+/// amber (`statusWaitingForAnswer`), 1.2s beacon.
+private struct FlightDeckQuestionAnnunciator: View {
+    let lang: LanguageManager
+    let pulseClock: PulseClock?
+
+    @Environment(\.islandTokens) private var tokens
+
+    var body: some View {
+        FlightDeckAnnunciatorHeader(
+            tint: tokens.colors.statusWaitingForAnswer,
+            placard: lang.t("island.flightDeck.approval.masterCaution"),
+            kicker: lang.t("island.flightDeck.question.kicker"),
+            beaconPeriod: FlightDeckApprovalFormat.questionBeaconPeriod,
+            pulseClock: pulseClock,
+            lang: lang
+        ) {
+            EmptyView()
+        }
+    }
+}
+
 // MARK: - Flight Deck approval card (AB-314)
 
 /// The permission request rendered as the Flight Deck **MASTER CAUTION** —
@@ -1425,13 +1608,11 @@ private struct FlightDeckApprovalCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            masterCautionHeader
+            annunciatorHeader
 
             // Command preview in a chamfered mono box + affected-path line.
             VStack(alignment: .leading, spacing: 6) {
-                Text(commandPreviewText)
-                    .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(tokens.colors.paper.opacity(contrastText(0.86)))
+                commandContent
                     .fixedSize(horizontal: false, vertical: true)
 
                 if let path = affectedPath {
@@ -1494,35 +1675,92 @@ private struct FlightDeckApprovalCard: View {
         .accessibilityElement(children: .contain)
     }
 
-    /// The stenciled alarm header: a filled `MASTER CAUTION` placard chip beside a
-    /// `PERMISSION REQUIRED` kicker, both uppercase + letterspaced on Latin and
-    /// neutralized (uncased, untracked) on CJK. A caution triangle rides the front
-    /// so the alarm survives a grayscale screenshot.
-    private var masterCautionHeader: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(alarm)
-                .accessibilityHidden(true)
-
-            Text(FlightDeckText.caps(lang.t("island.flightDeck.approval.masterCaution"), lang: lang))
-                .font(.system(size: 10.5, weight: .bold, design: .monospaced))
-                .tracking(FlightDeckText.tracking(1.2, lang: lang))
-                .foregroundStyle(tokens.colors.surfaceInk)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(FlightDeckChamferedRectangle(chamfer: 3).fill(alarm))
-                .accessibilityHidden(true)
-
-            Text(FlightDeckText.caps(lang.t("island.flightDeck.approval.permissionRequired"), lang: lang))
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .tracking(FlightDeckText.tracking(0.6, lang: lang))
-                .foregroundStyle(alarm.opacity(increasesContrast ? 1 : 0.92))
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-
-            Spacer(minLength: 0)
+    /// The red **MASTER WARNING** annunciator (AB-334): the pulsing red beacon lamp
+    /// (1.0s), a filled `MASTER WARNING` placard chip, the `PERMISSION REQUIRED`
+    /// kicker, and a right-aligned `HELD` count-up. EICAS nomenclature — a blocked
+    /// permission is a red *WARNING*, not the amber *CAUTION* the question phase
+    /// carries. The placard/kicker neutralize (uncased, untracked) on CJK via
+    /// `FlightDeckText`.
+    private var annunciatorHeader: some View {
+        FlightDeckAnnunciatorHeader(
+            tint: alarm,
+            placard: lang.t("island.flightDeck.approval.masterWarning"),
+            kicker: lang.t("island.flightDeck.approval.permissionRequired"),
+            beaconPeriod: FlightDeckApprovalFormat.permissionBeaconPeriod,
+            pulseClock: pulseClock,
+            lang: lang
+        ) {
+            heldReadout
         }
+    }
+
+    /// The `HELD 0m 08s` count-up: how long the agent has been blocked on this
+    /// request. A dedicated ≤1s `TimelineView` ticks only this readout (not the
+    /// whole card), the digits are tabular mono, and the block hides itself when
+    /// the elapsed approximation is implausible (see `FlightDeckApprovalFormat`).
+    @ViewBuilder
+    private var heldReadout: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            if let elapsed = FlightDeckApprovalFormat.heldReadout(
+                now: context.date,
+                since: session.updatedAt
+            ) {
+                HStack(spacing: 5) {
+                    Text(FlightDeckText.caps(lang.t("island.flightDeck.approval.held"), lang: lang))
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .tracking(FlightDeckText.tracking(1.2, lang: lang))
+                        .foregroundStyle(tokens.colors.paper.opacity(contrastText(tokens.colors.tertiaryTextOpacity)))
+                    Text(elapsed)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced).monospacedDigit())
+                        .foregroundStyle(tokens.colors.paper.opacity(contrastText(0.86)))
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
+    }
+
+    /// The command awaiting approval, syntax-highlighted through the shipped
+    /// `ShellCommandTokenizer` (T10 / AB-328) via an FD-local kind→tone table:
+    /// command = paper/600, subcommand + strings = nominal green, flags + paths =
+    /// dim paper, everything else inherits the block ink. Falls back to a plain
+    /// mono summary line when there is no command preview to tokenize.
+    private var commandContent: some View {
+        commandText
+            .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+    }
+
+    private var commandText: Text {
+        if let preview = session.currentCommandPreviewText?.flightDeckTrimmed, !preview.isEmpty {
+            let highlighted = ShellCommandTokenizer.attributed(
+                preview,
+                palette: commandSyntaxPalette,
+                weights: [.command: .semibold],
+                baseFont: .system(size: 11.5, weight: .regular, design: .monospaced)
+            )
+            return Text("$ ")
+                .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                .foregroundColor(tokens.colors.paper.opacity(contrastText(0.4)))
+                + Text(highlighted)
+        }
+        let fallback = (session.permissionRequest?.summary ?? session.summary).flightDeckTrimmed
+        return Text(fallback)
+            .foregroundColor(tokens.colors.paper.opacity(contrastText(0.86)))
+    }
+
+    /// The FD-local kind→tone table (AC #6). No new hexes are invented — every tone
+    /// is an existing Flight Deck token: paper for the command, the nominal green
+    /// for subcommands + strings, dim paper for flags + paths.
+    private var commandSyntaxPalette: [ShellCommandTokenizer.Kind: Color] {
+        let paper = tokens.colors.paper
+        let dim = paper.opacity(contrastText(0.5))
+        return [
+            .command: paper.opacity(contrastText(0.92)),
+            .subcommand: tokens.colors.statusRunning,
+            .string: tokens.colors.statusRunning,
+            .flag: dim,
+            .path: dim,
+            .plain: paper.opacity(contrastText(0.86)),
+        ]
     }
 
     /// Under Reduce Transparency (a no-op for this opaque theme, but guarded) and
@@ -1597,13 +1835,6 @@ private struct FlightDeckApprovalCard: View {
             return nil
         }
         return path
-    }
-
-    private var commandPreviewText: String {
-        if let preview = session.currentCommandPreviewText?.flightDeckTrimmed, !preview.isEmpty {
-            return "$ \(preview)"
-        }
-        return (session.permissionRequest?.summary ?? session.summary).flightDeckTrimmed
     }
 
     private var permissionDiffResult: PermissionDiffResult? {

@@ -280,9 +280,12 @@
 
 /* Island Panel - Flight Deck theme actionable surfaces (AB-314) */
 "island.flightDeck.approval.masterCaution" = "Master Caution";
+"island.flightDeck.approval.masterWarning" = "Master Warning";
 "island.flightDeck.approval.permissionRequired" = "Permission Required";
+"island.flightDeck.approval.held" = "Held";
 "island.flightDeck.approval.allow" = "Allow";
 "island.flightDeck.approval.deny" = "Deny";
+"island.flightDeck.question.kicker" = "Question";
 
 /* Island Panel - Poured Island 2.0 usage meters (AB-331) */
 "island.poured.usage.metersTitle" = "Usage · resets shown";

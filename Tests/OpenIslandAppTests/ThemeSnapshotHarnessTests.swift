@@ -46,4 +46,32 @@ final class ThemeSnapshotHarnessTests: XCTestCase {
             named: "poured-session-list-baseline-topbar"
         )
     }
+
+    // MARK: - Flight Deck actionable annunciators (AB-334)
+
+    /// Flight Deck · permission command · the red **MASTER WARNING** annunciator
+    /// (placard + `PERMISSION REQUIRED` kicker + `HELD` count-up), the
+    /// syntax-highlighted command box, and the ⌘Y / ⌘⇧Y / ⌘N ACK switches. The
+    /// beacon draws steady-lit here (no `PulseClock` is supplied to the harness).
+    /// English only — the harness pins the language (see ``ThemeSnapshotting``).
+    func testFlightDeckPermissionMasterWarningNotch() throws {
+        try ThemeSnapshotting.assertSnapshot(
+            theme: FlightDeckTheme(),
+            slot: .sessionList(scenario: .permissionCommand),
+            profile: .notch,
+            named: "flightdeck-permission-master-warning-notch"
+        )
+    }
+
+    /// Flight Deck · multi-question · the amber **MASTER CAUTION** annunciator
+    /// (placard + `QUESTION` kicker + steady amber beacon) wrapping the shared
+    /// `StructuredQuestionPromptView` interior. English only.
+    func testFlightDeckQuestionMasterCautionNotch() throws {
+        try ThemeSnapshotting.assertSnapshot(
+            theme: FlightDeckTheme(),
+            slot: .sessionList(scenario: .questionMulti),
+            profile: .notch,
+            named: "flightdeck-question-master-caution-notch"
+        )
+    }
 }

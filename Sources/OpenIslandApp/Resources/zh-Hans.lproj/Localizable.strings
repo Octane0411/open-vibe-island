@@ -280,9 +280,12 @@
 
 /* Island Panel - Flight Deck theme actionable surfaces (AB-314) */
 "island.flightDeck.approval.masterCaution" = "主警戒";
+"island.flightDeck.approval.masterWarning" = "主警告";
 "island.flightDeck.approval.permissionRequired" = "需要授权";
+"island.flightDeck.approval.held" = "已挂起";
 "island.flightDeck.approval.allow" = "允许";
 "island.flightDeck.approval.deny" = "拒绝";
+"island.flightDeck.question.kicker" = "问题";
 
 /* Island Panel - Poured Island 2.0 usage meters (AB-331) */
 "island.poured.usage.metersTitle" = "用量 · 显示重置时间";

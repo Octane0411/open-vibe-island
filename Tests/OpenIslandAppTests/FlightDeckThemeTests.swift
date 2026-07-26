@@ -268,9 +268,14 @@ struct FlightDeckThemeTests {
 
         let keys = [
             "island.flightDeck.approval.masterCaution",
+            // AB-334: the red WARNING nomenclature + the amber question annunciator
+            // strings + the HELD count-up label all localize alongside the originals.
+            "island.flightDeck.approval.masterWarning",
             "island.flightDeck.approval.permissionRequired",
+            "island.flightDeck.approval.held",
             "island.flightDeck.approval.allow",
             "island.flightDeck.approval.deny",
+            "island.flightDeck.question.kicker",
         ]
 
         for language in [LanguageManager.AppLanguage.en, .zhHans, .zhHant] {
@@ -281,6 +286,39 @@ struct FlightDeckThemeTests {
                 #expect(resolved != key, "\(key) is unlocalized in \(language)")
                 #expect(!resolved.isEmpty)
             }
+        }
+    }
+
+    /// AB-334 AC #1: the new `masterWarning` key resolves to the exact EICAS
+    /// nomenclature in every locale, and stays distinct from the amber
+    /// `masterCaution` placard it must never be confused with.
+    @Test
+    func masterWarningResolvesToTheExpectedNomenclatureInEveryLanguage() {
+        let originalLanguage = UserDefaults.standard.string(forKey: "appLanguage")
+        defer {
+            if let originalLanguage {
+                UserDefaults.standard.set(originalLanguage, forKey: "appLanguage")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "appLanguage")
+            }
+        }
+
+        let expected: [LanguageManager.AppLanguage: String] = [
+            .en: "Master Warning",
+            .zhHans: "主警告",
+            .zhHant: "主警告",
+        ]
+
+        for (language, warning) in expected {
+            let manager = LanguageManager()
+            manager.language = language
+            #expect(manager.t("island.flightDeck.approval.masterWarning") == warning)
+            // Red WARNING and amber CAUTION are different avionics categories — the
+            // placards must never collide.
+            #expect(
+                manager.t("island.flightDeck.approval.masterWarning")
+                    != manager.t("island.flightDeck.approval.masterCaution")
+            )
         }
     }
 }
