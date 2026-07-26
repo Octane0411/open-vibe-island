@@ -372,17 +372,20 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
     private let fileManager: FileManager
     private let maxAge: TimeInterval
     private let maxFiles: Int
+    private let maxBytes: Int64
 
     public init(
         rootURL: URL = CodexRolloutDiscovery.defaultRootURL,
         fileManager: FileManager = .default,
         maxAge: TimeInterval = 86_400,
-        maxFiles: Int = 40
+        maxFiles: Int = 40,
+        maxBytes: Int64 = 64 * 1_024 * 1_024
     ) {
         self.rootURL = rootURL
         self.fileManager = fileManager
         self.maxAge = maxAge
         self.maxFiles = maxFiles
+        self.maxBytes = maxBytes
     }
 
     public func discoverRecentSessions(now: Date = .now) -> [CodexTrackedSessionRecord] {
@@ -405,9 +408,17 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             }
 
             guard let resourceValues = try? fileURL.resourceValues(
-                forKeys: [.contentModificationDateKey, .isRegularFileKey]
+                forKeys: [.contentModificationDateKey, .isRegularFileKey, .fileSizeKey]
             ),
             resourceValues.isRegularFile == true else {
+                continue
+            }
+
+            // Rollout discovery is a recovery fallback. Do not let one
+            // pathological long-lived transcript block startup before the
+            // app-server and bridge can expose live Desktop sessions.
+            if let fileSize = resourceValues.fileSize,
+               Int64(fileSize) > maxBytes {
                 continue
             }
 

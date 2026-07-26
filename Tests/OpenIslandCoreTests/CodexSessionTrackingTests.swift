@@ -1278,6 +1278,32 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutDiscoverySkipsOversizedRolloutsBeforeOpeningThem() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-oversized-\(UUID().uuidString)", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/04/02", isDirectory: true)
+        let rolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-oversized.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        try String(repeating: "x", count: 2_048)
+            .write(to: rolloutURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: rolloutURL.path)
+
+        let discovery = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10,
+            maxBytes: 1_024
+        )
+
+        #expect(discovery.discoverRecentSessions(now: now).isEmpty)
+    }
+
+    @Test
     func codexRolloutDiscoveryHandlesTrailingLineWithoutNewline() throws {
         // A rollout written by Codex while the process is mid-flush
         // can land on disk without a trailing newline. The streamed
