@@ -263,7 +263,6 @@ final class OverlayUICoordinator {
         let validSelectionIDs = Set(overlayDisplayOptions.map(\.id))
         if !validSelectionIDs.contains(overlayDisplaySelectionID) {
             overlayDisplaySelectionID = OverlayDisplayOption.automaticID
-            return
         }
 
         refreshOverlayPlacement()
