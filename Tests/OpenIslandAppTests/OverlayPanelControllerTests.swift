@@ -4,6 +4,45 @@ import Testing
 
 struct OverlayPanelControllerTests {
     @Test
+    func standaloneMouseWheelUsesShortSmoothAnimation() {
+        #expect(SmoothWheelScrollPolicy.shouldHandle(
+            phase: [],
+            momentumPhase: []
+        ))
+        #expect(!SmoothWheelScrollPolicy.shouldHandle(
+            phase: .changed,
+            momentumPhase: []
+        ))
+        #expect(!SmoothWheelScrollPolicy.shouldHandle(
+            phase: [],
+            momentumPhase: .changed
+        ))
+        #expect(SmoothWheelScrollPolicy.animationDuration == 0.06)
+    }
+
+    @Test
+    func smoothWheelTargetAccumulatesAndClampsDeltas() {
+        #expect(SmoothWheelScrollPolicy.targetVerticalOrigin(
+            currentTargetY: 20,
+            scrollingDeltaY: -3,
+            hasPreciseScrollingDeltas: false,
+            maximumOriginY: 200
+        ) == 92)
+        #expect(SmoothWheelScrollPolicy.targetVerticalOrigin(
+            currentTargetY: 20,
+            scrollingDeltaY: -190,
+            hasPreciseScrollingDeltas: true,
+            maximumOriginY: 200
+        ) == 200)
+        #expect(SmoothWheelScrollPolicy.targetVerticalOrigin(
+            currentTargetY: 20,
+            scrollingDeltaY: 190,
+            hasPreciseScrollingDeltas: true,
+            maximumOriginY: 200
+        ) == 0)
+    }
+
+    @Test
     func closedSurfaceRectCentersOnNotch() {
         let notchRect = NSRect(x: 200, y: 900, width: 200, height: 38)
         let closedWidth: CGFloat = 320

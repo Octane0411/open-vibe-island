@@ -692,6 +692,109 @@ final class OverlayPanelController {
 private final class NotchPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    private var smoothScrollTargets: [ObjectIdentifier: CGFloat] = [:]
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .scrollWheel,
+           SmoothWheelScrollPolicy.shouldHandle(
+               phase: event.phase,
+               momentumPhase: event.momentumPhase
+           ),
+           scrollSmoothly(with: event) {
+            return
+        }
+        super.sendEvent(event)
+    }
+
+    private func scrollSmoothly(with event: NSEvent) -> Bool {
+        guard abs(event.scrollingDeltaY) >= abs(event.scrollingDeltaX),
+              let contentView else {
+            return false
+        }
+
+        let contentPoint = contentView.convert(event.locationInWindow, from: nil)
+        var hitView = contentView.hitTest(contentPoint)
+        var foundScrollView = false
+        while let view = hitView {
+            if let scrollView = view as? NSScrollView {
+                foundScrollView = true
+                if scrollSmoothly(scrollView, with: event) {
+                    return true
+                }
+            }
+            hitView = view.superview
+        }
+
+        // Avoid a slow elastic bounce when a standalone wheel event reaches
+        // the outer boundary of the session list.
+        return foundScrollView
+    }
+
+    private func scrollSmoothly(_ scrollView: NSScrollView, with event: NSEvent) -> Bool {
+        let clipView = scrollView.contentView
+        guard let documentView = scrollView.documentView else {
+            return false
+        }
+
+        let maximumOriginY = max(0, documentView.bounds.height - clipView.bounds.height)
+        guard maximumOriginY > 0 else {
+            return false
+        }
+
+        let key = ObjectIdentifier(scrollView)
+        let currentTargetY = smoothScrollTargets[key] ?? clipView.bounds.origin.y
+        let targetOriginY = SmoothWheelScrollPolicy.targetVerticalOrigin(
+            currentTargetY: currentTargetY,
+            scrollingDeltaY: event.scrollingDeltaY,
+            hasPreciseScrollingDeltas: event.hasPreciseScrollingDeltas,
+            maximumOriginY: maximumOriginY
+        )
+        guard targetOriginY != currentTargetY else {
+            return false
+        }
+
+        smoothScrollTargets[key] = targetOriginY
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = SmoothWheelScrollPolicy.animationDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            clipView.animator().setBoundsOrigin(
+                CGPoint(x: clipView.bounds.origin.x, y: targetOriginY)
+            )
+        } completionHandler: { [weak self, weak scrollView] in
+            guard let self else { return }
+            if self.smoothScrollTargets[key] == targetOriginY {
+                self.smoothScrollTargets.removeValue(forKey: key)
+            }
+            if let scrollView {
+                scrollView.reflectScrolledClipView(scrollView.contentView)
+            }
+        }
+        return true
+    }
+}
+
+enum SmoothWheelScrollPolicy {
+    static let animationDuration: TimeInterval = 0.06
+    private static let lineScrollMultiplier: CGFloat = 24
+
+    static func shouldHandle(
+        phase: NSEvent.Phase,
+        momentumPhase: NSEvent.Phase
+    ) -> Bool {
+        phase.isEmpty && momentumPhase.isEmpty
+    }
+
+    static func targetVerticalOrigin(
+        currentTargetY: CGFloat,
+        scrollingDeltaY: CGFloat,
+        hasPreciseScrollingDeltas: Bool,
+        maximumOriginY: CGFloat
+    ) -> CGFloat {
+        let multiplier = hasPreciseScrollingDeltas ? 1 : lineScrollMultiplier
+        let proposedOriginY = currentTargetY - (scrollingDeltaY * multiplier)
+        return min(max(0, proposedOriginY), maximumOriginY)
+    }
 }
 
 // MARK: - NotchHostingView
