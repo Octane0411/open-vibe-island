@@ -3,7 +3,7 @@
 **Status:** Superseded by [Orbit Plan v3](./2026-07-26-orbit-plan-v3.html)
 **Date:** 2026-07-26
 **Branch:** `feat/orbit-gpl-fork`
-**Canonical repository:** `/Users/austinwise/Documents/Codex/2026-07-25/orbit-gpl-fork`
+**Canonical repository:** `<repository-root>`
 
 > This document is retained as historical context only. Its slash-command,
 > router-surface, and skill/plugin/tool discovery scope is not approved for

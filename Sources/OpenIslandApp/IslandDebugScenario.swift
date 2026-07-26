@@ -234,7 +234,7 @@ private enum DebugSessionFactory {
                 terminalApp: "Ghostty",
                 workspaceName: "open-island",
                 paneTitle: "codex ~/Personal/open-island",
-                workingDirectory: "/Users/wangruobing/Personal/open-island",
+                workingDirectory: "/Users/example/Personal/open-island",
                 terminalSessionID: "ghostty-running"
             ),
             codexMetadata: CodexSessionMetadata(
@@ -261,7 +261,7 @@ private enum DebugSessionFactory {
                 terminalApp: "Ghostty",
                 workspaceName: "open-agent-sdk",
                 paneTitle: "codex ~/Personal/open-agent-sdk",
-                workingDirectory: "/Users/wangruobing/Personal/open-agent-sdk",
+                workingDirectory: "/Users/example/Personal/open-agent-sdk",
                 terminalSessionID: "ghostty-recent"
             ),
             codexMetadata: CodexSessionMetadata(
@@ -294,7 +294,7 @@ private enum DebugSessionFactory {
                 terminalApp: "Ghostty",
                 workspaceName: workspace,
                 paneTitle: "codex ~/Personal/\(workspace)",
-                workingDirectory: "/Users/wangruobing/Personal/\(workspace)",
+                workingDirectory: "/Users/example/Personal/\(workspace)",
                 terminalSessionID: "ghostty-\(id)"
             ),
             codexMetadata: CodexSessionMetadata(
@@ -326,7 +326,7 @@ private enum DebugSessionFactory {
                 terminalApp: "Ghostty",
                 workspaceName: "open-island",
                 paneTitle: "codex ~/Personal/open-island",
-                workingDirectory: "/Users/wangruobing/Personal/open-island",
+                workingDirectory: "/Users/example/Personal/open-island",
                 terminalSessionID: "ghostty-approval"
             ),
             codexMetadata: CodexSessionMetadata(
@@ -334,7 +334,7 @@ private enum DebugSessionFactory {
                 lastUserPrompt: "I want to bring askUserQuestion and permission approval into our island too.",
                 lastAssistantMessage: "The DEV page is ready to rewrite. File changes need approval.",
                 currentTool: "exec_command",
-                currentCommandPreview: "head -5000 /Users/wangruobing/Personal/claude-research/extracts/claude-bun-2.1.81-v3/islands/000_cli.js.txt"
+                currentCommandPreview: "head -5000 /Users/example/Personal/claude-research/extracts/claude-bun-2.1.81-v3/islands/000_cli.js.txt"
             )
         )
     }
@@ -368,7 +368,7 @@ private enum DebugSessionFactory {
                 terminalApp: "Ghostty",
                 workspaceName: "open-island",
                 paneTitle: "codex ~/Personal/open-island",
-                workingDirectory: "/Users/wangruobing/Personal/open-island",
+                workingDirectory: "/Users/example/Personal/open-island",
                 terminalSessionID: "ghostty-question"
             ),
             codexMetadata: CodexSessionMetadata(
@@ -393,7 +393,7 @@ private enum DebugSessionFactory {
                 terminalApp: "Ghostty",
                 workspaceName: "open-island",
                 paneTitle: "codex ~/Personal/open-island",
-                workingDirectory: "/Users/wangruobing/Personal/open-island",
+                workingDirectory: "/Users/example/Personal/open-island",
                 terminalSessionID: "ghostty-completion"
             ),
             codexMetadata: CodexSessionMetadata(
@@ -418,14 +418,14 @@ private enum DebugSessionFactory {
                 terminalApp: "Ghostty",
                 workspaceName: "open-island",
                 paneTitle: "codex ~/Personal/open-island",
-                workingDirectory: "/Users/wangruobing/Personal/open-island",
+                workingDirectory: "/Users/example/Personal/open-island",
                 terminalSessionID: "ghostty-completion-long"
             ),
             codexMetadata: CodexSessionMetadata(
                 initialUserPrompt: "Commit this README too, then paste the result here.",
                 lastUserPrompt: "Also confirm the current worktree and verification status.",
                 lastAssistantMessage: """
-[README.md](/Users/wangruobing/Personal/open-island/README.md) changes were committed separately as `f196316`, with message `docs: update readme tagline`.
+[README.md](/Users/example/Personal/open-island/README.md) changes were committed separately as `f196316`, with message `docs: update readme tagline`.
 
 This pass did not run tests because it only changed copy. The worktree is clean, and `main` is currently `ahead 6` of `origin/main`.
 
