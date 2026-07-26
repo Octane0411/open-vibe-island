@@ -1302,6 +1302,53 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutWatcherDoesNotReplayContentWhenCachedTargetMetadataChanges() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-rollout-resync-\(UUID().uuidString)", isDirectory: true)
+        let rolloutURL = rootURL.appendingPathComponent("rollout.jsonl")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try Data().write(to: rolloutURL)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        try appendRolloutLine(
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:44.894Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": "Inspect the README.",
+                ]
+            ),
+            to: rolloutURL
+        )
+
+        let watcher = CodexRolloutWatcher(pollInterval: 0.05)
+        let resyncRecorder = WatchTargetResyncRecorder(
+            watcher: watcher,
+            target: CodexRolloutWatchTarget(
+                sessionID: "codex-session-resync",
+                transcriptPath: rolloutURL.path
+            )
+        )
+        watcher.eventHandler = { event in
+            Task {
+                await resyncRecorder.recordAndResync(for: event)
+            }
+        }
+        watcher.sync(targets: [
+            CodexRolloutWatchTarget(
+                sessionID: "codex-session-resync",
+                transcriptPath: rolloutURL.path
+            ),
+        ])
+
+        try await Task.sleep(for: .milliseconds(250))
+        watcher.stop()
+
+        #expect(await resyncRecorder.metadataEventCount == 1)
+    }
+
+    @Test
     func codexRolloutWatcherBootstrapsPromptMetadataFromHeadWhenTailMissesIt() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("open-island-rollout-head-bootstrap-\(UUID().uuidString)", isDirectory: true)
@@ -1886,6 +1933,33 @@ private actor ChangeRecorder {
 
     func recordChange() {
         count += 1
+    }
+}
+
+private actor WatchTargetResyncRecorder {
+    private let watcher: CodexRolloutWatcher
+    private var target: CodexRolloutWatchTarget
+    private(set) var metadataEventCount = 0
+
+    init(watcher: CodexRolloutWatcher, target: CodexRolloutWatchTarget) {
+        self.watcher = watcher
+        self.target = target
+    }
+
+    func recordAndResync(for event: AgentEvent) {
+        guard let metadata = event.trackedMetadataUpdate?.codexMetadata else {
+            return
+        }
+
+        metadataEventCount += 1
+        target.cachedInitialUserPrompt = metadata.initialUserPrompt
+        target.cachedLastUserPrompt = metadata.lastUserPrompt
+        target.cachedProcessedDuration = metadata.processedDuration
+        target.cachedCurrentTurnStartedAt = metadata.currentTurnStartedAt
+        target.cachedActiveGoalStartedAt = metadata.activeGoalStartedAt
+        target.cachedActivePlanStartedAt = metadata.activePlanStartedAt
+        target.cachedIsPlanMode = metadata.isPlanMode
+        watcher.sync(targets: [target])
     }
 }
 

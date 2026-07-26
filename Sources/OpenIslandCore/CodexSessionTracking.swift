@@ -1796,6 +1796,32 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
         var pendingScannedByteCount = 0
         var snapshot = CodexRolloutSnapshot()
         var shouldTrimLeadingPartialLine = false
+
+        mutating func updateTarget(_ updatedTarget: CodexRolloutWatchTarget) {
+            target = updatedTarget
+
+            if let initialUserPrompt = updatedTarget.cachedInitialUserPrompt {
+                snapshot.initialUserPrompt = initialUserPrompt
+            }
+            if let lastUserPrompt = updatedTarget.cachedLastUserPrompt {
+                snapshot.lastUserPrompt = lastUserPrompt
+            }
+            if let processedDuration = updatedTarget.cachedProcessedDuration {
+                snapshot.processedDuration = processedDuration
+            }
+            if let currentTurnStartedAt = updatedTarget.cachedCurrentTurnStartedAt {
+                snapshot.currentTurnStartedAt = currentTurnStartedAt
+            }
+            if let activeGoalStartedAt = updatedTarget.cachedActiveGoalStartedAt {
+                snapshot.activeGoalStartedAt = activeGoalStartedAt
+            }
+            if let activePlanStartedAt = updatedTarget.cachedActivePlanStartedAt {
+                snapshot.activePlanStartedAt = activePlanStartedAt
+            }
+            if let isPlanMode = updatedTarget.cachedIsPlanMode {
+                snapshot.isPlanMode = isPlanMode
+            }
+        }
     }
 
     public var eventHandler: (@Sendable (AgentEvent) -> Void)?
@@ -1844,10 +1870,12 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
                 return
             }
 
-            if pair.value.target == updatedTarget {
-                partialResult[pair.key] = pair.value
-            } else {
+            if pair.value.target.transcriptPath != updatedTarget.transcriptPath {
                 partialResult[pair.key] = makeObservation(for: updatedTarget)
+            } else {
+                var observation = pair.value
+                observation.updateTarget(updatedTarget)
+                partialResult[pair.key] = observation
             }
         }
 
