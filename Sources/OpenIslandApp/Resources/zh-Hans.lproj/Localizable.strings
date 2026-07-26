@@ -1,6 +1,6 @@
 /* Common */
-"app.name" = "Open Island";
-"app.name.oss" = "Open Island OSS";
+"app.name" = "Orbit";
+"app.name.oss" = "Orbit OSS";
 "app.description" = "macOS AI 编程代理伴侣";
 
 /* Settings - Tab Labels */
@@ -34,8 +34,8 @@
 "settings.general.uninstall" = "卸载";
 "settings.general.uninstallConfirmTitle" = "确认卸载 Hooks？";
 "settings.general.uninstallConfirmAction" = "卸载";
-"settings.general.uninstallConfirmMessage.claude" = "这将从 Claude Code 中移除 Open Island 的 hooks。你可以随时重新安装。";
-"settings.general.uninstallConfirmMessage.codex" = "这将从 Codex 中移除 Open Island 的 hooks。你可以随时重新安装。";
+"settings.general.uninstallConfirmMessage.claude" = "这将从 Claude Code 中移除 Orbit 的 hooks。你可以随时重新安装。";
+"settings.general.uninstallConfirmMessage.codex" = "这将从 Codex 中移除 Orbit 的 hooks。你可以随时重新安装。";
 "settings.general.uninstallConfirmMessage.claudeUsage" = "这将移除 Claude 用量桥接。你可以随时重新安装。";
 "settings.general.cancel" = "取消";
 "settings.general.language" = "语言";
@@ -68,7 +68,7 @@
 "settings.appearance.sessionListPart.title" = "会话列表";
 "settings.appearance.sessionPreview" = "预览";
 "settings.appearance.profile.title" = "显示器配置";
-"settings.appearance.profile.note" = "选择正在配置的屏幕类型。Open Island 会在悬浮窗切换屏幕时自动应用对应配置。";
+"settings.appearance.profile.note" = "选择正在配置的屏幕类型。Orbit 会在悬浮窗切换屏幕时自动应用对应配置。";
 "settings.appearance.profile.external.title" = "外接屏";
 "settings.appearance.profile.external.note" = "没有 MacBook 刘海外圆角的顶部栏布局。";
 "settings.appearance.profile.macbook.title" = "MacBook 刘海屏";
@@ -146,10 +146,10 @@
 "setup.usageBridgeDesc" = "在本地追踪 Claude API 用量";
 "setup.optional" = "可选";
 "setup.permissionsTitle" = "辅助功能";
-"setup.permissionsDesc" = "Open Island 可能需要辅助功能权限来检测终端窗口。请在「系统设置 → 隐私与安全性 → 辅助功能」中授权。";
+"setup.permissionsDesc" = "Orbit 可能需要辅助功能权限来检测终端窗口。请在「系统设置 → 隐私与安全性 → 辅助功能」中授权。";
 "setup.installAll" = "全部安装";
-"setup.banner.noHooks.title" = "开始使用 Open Island";
-"setup.banner.noHooks.message" = "在下方为你使用的 Agent 安装 hook，Open Island 就会开始监听对应会话。";
+"setup.banner.noHooks.title" = "开始使用 Orbit";
+"setup.banner.noHooks.message" = "在下方为你使用的 Agent 安装 hook，Orbit 就会开始监听对应会话。";
 "setup.revealConfigLocation" = "在 Finder 中显示配置";
 "setup.section.diagnostics" = "Hooks 诊断";
 "setup.diagnostics.notRun" = "尚未运行健康检查。";
@@ -165,8 +165,8 @@
 /* Settings - About */
 "settings.about.version" = "版本 %@";
 "settings.about.checkForUpdates" = "检查更新…";
-"settings.about.quitApp" = "退出 Open Island";
-"island.quit.confirmTitle" = "退出 Open Island？";
+"settings.about.quitApp" = "退出 Orbit";
+"island.quit.confirmTitle" = "退出 Orbit？";
 "island.quit.confirmAction" = "退出";
 "island.quit.confirmMessage" = "确定要退出吗？";
 
@@ -175,7 +175,7 @@
 
 /* Island Panel - Bootstrap */
 "island.checkingTerminals" = "正在检查打开的终端会话";
-"island.terminalOwnership" = "Open Island 将在确认终端归属后显示实时代理";
+"island.terminalOwnership" = "Orbit 将在确认终端归属后显示实时代理";
 "island.noTerminals" = "没有打开的终端会话";
 "island.startAgent" = "在终端中启动编码代理";
 "island.recentSessions" = "最近的会话将保留在这里，直到终端重新打开";
@@ -224,4 +224,4 @@
 "completion.replyPlaceholder" = "回复 %@…";
 
 /* Window Titles */
-"window.settings" = "Open Island 设置";
+"window.settings" = "Orbit 设置";

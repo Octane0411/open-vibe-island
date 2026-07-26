@@ -1,6 +1,6 @@
 /* Common */
-"app.name" = "Open Island";
-"app.name.oss" = "Open Island OSS";
+"app.name" = "Orbit";
+"app.name.oss" = "Orbit OSS";
 "app.description" = "macOS companion for AI coding agents";
 
 /* Settings - Tab Labels */
@@ -34,8 +34,8 @@
 "settings.general.uninstall" = "Uninstall";
 "settings.general.uninstallConfirmTitle" = "Uninstall Hooks?";
 "settings.general.uninstallConfirmAction" = "Uninstall";
-"settings.general.uninstallConfirmMessage.claude" = "This will remove Open Island hooks from Claude Code. You can reinstall them at any time.";
-"settings.general.uninstallConfirmMessage.codex" = "This will remove Open Island hooks from Codex. You can reinstall them at any time.";
+"settings.general.uninstallConfirmMessage.claude" = "This will remove Orbit hooks from Claude Code. You can reinstall them at any time.";
+"settings.general.uninstallConfirmMessage.codex" = "This will remove Orbit hooks from Codex. You can reinstall them at any time.";
 "settings.general.uninstallConfirmMessage.claudeUsage" = "This will remove the Claude usage bridge. You can reinstall it at any time.";
 "settings.general.cancel" = "Cancel";
 "settings.general.language" = "Language";
@@ -68,7 +68,7 @@
 "settings.appearance.sessionListPart.title" = "Session list";
 "settings.appearance.sessionPreview" = "Preview";
 "settings.appearance.profile.title" = "Display profile";
-"settings.appearance.profile.note" = "Choose which screen type you are configuring. Open Island applies the matching profile automatically when the overlay moves.";
+"settings.appearance.profile.note" = "Choose which screen type you are configuring. Orbit applies the matching profile automatically when the overlay moves.";
 "settings.appearance.profile.external.title" = "External display";
 "settings.appearance.profile.external.note" = "Top-bar fallback without the MacBook notch corners.";
 "settings.appearance.profile.macbook.title" = "MacBook notch";
@@ -146,10 +146,10 @@
 "setup.usageBridgeDesc" = "Tracks Claude API usage locally";
 "setup.optional" = "Optional";
 "setup.permissionsTitle" = "Accessibility";
-"setup.permissionsDesc" = "Open Island may need Accessibility permission to detect terminal windows. Grant it in System Settings → Privacy & Security → Accessibility.";
+"setup.permissionsDesc" = "Orbit may need Accessibility permission to detect terminal windows. Grant it in System Settings → Privacy & Security → Accessibility.";
 "setup.installAll" = "Install All";
-"setup.banner.noHooks.title" = "Get started with Open Island";
-"setup.banner.noHooks.message" = "Install hooks for the agents you use below — Open Island will start monitoring those sessions.";
+"setup.banner.noHooks.title" = "Get started with Orbit";
+"setup.banner.noHooks.message" = "Install hooks for the agents you use below — Orbit will start monitoring those sessions.";
 "setup.revealConfigLocation" = "Reveal config in Finder";
 "setup.section.diagnostics" = "Hook Diagnostics";
 "setup.diagnostics.notRun" = "Health check not yet run.";
@@ -175,7 +175,7 @@
 
 /* Island Panel - Bootstrap */
 "island.checkingTerminals" = "Checking open terminal sessions";
-"island.terminalOwnership" = "Open Island will show live agents after terminal ownership is confirmed";
+"island.terminalOwnership" = "Orbit will show live agents after terminal ownership is confirmed";
 "island.noTerminals" = "No open terminal sessions";
 "island.startAgent" = "Start a coding agent in your terminal";
 "island.recentSessions" = "Recent sessions are kept here until the terminal is open again";
@@ -224,4 +224,4 @@
 "completion.replyPlaceholder" = "Reply to %@…";
 
 /* Window Titles */
-"window.settings" = "Open Island Settings";
+"window.settings" = "Orbit Settings";
