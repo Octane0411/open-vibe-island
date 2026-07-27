@@ -92,20 +92,20 @@ public struct SessionState: Equatable, Sendable {
 
             let keepsPendingApproval = payload.phase == .running
                 && session.phase == .waitingForApproval
-                && session.permissionRequest != nil
+                && !session.permissionRequests.isEmpty
             let keepsPendingQuestion = payload.phase == .running
                 && session.phase == .waitingForAnswer
-                && session.questionPrompt != nil
+                && !session.questionPrompts.isEmpty
             let preservesActionableState = keepsPendingApproval || keepsPendingQuestion
 
             if !preservesActionableState {
                 session.phase = payload.phase
                 session.summary = payload.summary
                 if payload.phase != .waitingForApproval {
-                    session.permissionRequest = nil
+                    session.permissionRequests.removeAll()
                 }
                 if payload.phase != .waitingForAnswer {
-                    session.questionPrompt = nil
+                    session.questionPrompts.removeAll()
                 }
             }
 
@@ -117,10 +117,11 @@ public struct SessionState: Equatable, Sendable {
                 return
             }
 
+            if !session.permissionRequests.contains(where: { $0.id == payload.request.id }) {
+                session.permissionRequests.append(payload.request)
+            }
             session.phase = .waitingForApproval
-            session.summary = payload.request.summary
-            session.permissionRequest = payload.request
-            session.questionPrompt = nil
+            session.summary = session.permissionRequests.first?.summary ?? payload.request.summary
             session.updatedAt = payload.timestamp
             upsert(session)
 
@@ -129,10 +130,13 @@ public struct SessionState: Equatable, Sendable {
                 return
             }
 
-            session.phase = .waitingForAnswer
-            session.summary = payload.prompt.title
-            session.questionPrompt = payload.prompt
-            session.permissionRequest = nil
+            if !session.questionPrompts.contains(where: { $0.id == payload.prompt.id }) {
+                session.questionPrompts.append(payload.prompt)
+            }
+            if session.permissionRequests.isEmpty {
+                session.phase = .waitingForAnswer
+                session.summary = session.questionPrompts.first?.title ?? payload.prompt.title
+            }
             session.updatedAt = payload.timestamp
             upsert(session)
 
@@ -143,8 +147,8 @@ public struct SessionState: Equatable, Sendable {
 
             session.phase = .completed
             session.summary = payload.summary
-            session.permissionRequest = nil
-            session.questionPrompt = nil
+            session.permissionRequests.removeAll()
+            session.questionPrompts.removeAll()
             session.updatedAt = payload.timestamp
             if payload.isSessionEnd == true {
                 session.isSessionEnded = true
@@ -211,14 +215,14 @@ public struct SessionState: Equatable, Sendable {
                 return
             }
 
-            guard session.phase == .waitingForApproval || session.phase == .waitingForAnswer else {
+            guard session.permissionRequests.count + session.questionPrompts.count == 1 else {
                 return
             }
 
+            session.permissionRequests.removeAll()
+            session.questionPrompts.removeAll()
             session.phase = .running
             session.summary = payload.summary
-            session.permissionRequest = nil
-            session.questionPrompt = nil
             session.updatedAt = payload.timestamp
             upsert(session)
         }
@@ -229,12 +233,42 @@ public struct SessionState: Equatable, Sendable {
         resolution: PermissionResolution,
         at timestamp: Date = .now
     ) {
+        guard let session = sessionsByID[sessionID],
+              session.permissionRequests.count == 1,
+              let requestID = session.permissionRequests.first?.id else {
+            return
+        }
+        resolvePermission(sessionID: sessionID, requestID: requestID, resolution: resolution, at: timestamp)
+    }
+
+    public mutating func resolvePermission(
+        sessionID: String,
+        requestID: UUID,
+        resolution: PermissionResolution,
+        at timestamp: Date = .now
+    ) {
         guard var session = sessionsByID[sessionID] else {
             return
         }
 
-        session.permissionRequest = nil
+        guard let requestIndex = session.permissionRequests.firstIndex(where: { $0.id == requestID }) else {
+            return
+        }
+        session.permissionRequests.remove(at: requestIndex)
         session.updatedAt = timestamp
+
+        if let nextPermission = session.permissionRequests.first {
+            session.phase = .waitingForApproval
+            session.summary = nextPermission.summary
+            upsert(session)
+            return
+        }
+        if let nextQuestion = session.questionPrompts.first {
+            session.phase = .waitingForAnswer
+            session.summary = nextQuestion.title
+            upsert(session)
+            return
+        }
 
         if resolution.isApproved {
             session.phase = .running
@@ -250,9 +284,9 @@ public struct SessionState: Equatable, Sendable {
             session.phase = .completed
             switch session.tool {
             case .claudeCode, .geminiCLI, .qoder, .qwenCode, .factory, .codebuddy, .kimiCLI:
-                session.summary = "Permission denied in Open Island."
+                session.summary = "Permission denied in Orbit."
             case .openCode:
-                session.summary = "Permission denied in Open Island."
+                session.summary = "Permission denied in Orbit."
             default:
                 session.summary = "Permission denied. Review the session in the terminal."
             }
@@ -266,15 +300,41 @@ public struct SessionState: Equatable, Sendable {
         response: QuestionPromptResponse,
         at timestamp: Date = .now
     ) {
+        guard let session = sessionsByID[sessionID],
+              session.questionPrompts.count == 1,
+              let requestID = session.questionPrompts.first?.id else {
+            return
+        }
+        answerQuestion(sessionID: sessionID, requestID: requestID, response: response, at: timestamp)
+    }
+
+    public mutating func answerQuestion(
+        sessionID: String,
+        requestID: UUID,
+        response: QuestionPromptResponse,
+        at timestamp: Date = .now
+    ) {
         guard var session = sessionsByID[sessionID] else {
             return
         }
 
-        session.questionPrompt = nil
-        session.phase = .running
+        guard let promptIndex = session.questionPrompts.firstIndex(where: { $0.id == requestID }) else {
+            return
+        }
+        session.questionPrompts.remove(at: promptIndex)
         let summary = response.displaySummary
-        session.summary = summary.isEmpty ? "Answered the question." : "Answered: \(summary)"
         session.updatedAt = timestamp
+
+        if let nextPermission = session.permissionRequests.first {
+            session.phase = .waitingForApproval
+            session.summary = nextPermission.summary
+        } else if let nextQuestion = session.questionPrompts.first {
+            session.phase = .waitingForAnswer
+            session.summary = nextQuestion.title
+        } else {
+            session.phase = .running
+            session.summary = summary.isEmpty ? "Answered the question." : "Answered: \(summary)"
+        }
         upsert(session)
     }
 

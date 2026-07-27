@@ -1426,7 +1426,7 @@ final class AppModel {
             summary: approved ? "permission decision queued" : "permission denial queued"
         )
         dismissNotificationSurfaceIfPresent(for: sessionID)
-        state.resolvePermission(sessionID: session.id, resolution: resolution)
+        state.resolvePermission(sessionID: session.id, requestID: request.id, resolution: resolution)
         synchronizeSelection()
         refreshOverlayPlacementIfVisible()
 
@@ -1465,7 +1465,7 @@ final class AppModel {
         }
 
         dismissNotificationSurfaceIfPresent(for: sessionID)
-        state.resolvePermission(sessionID: session.id, resolution: resolution)
+        state.resolvePermission(sessionID: session.id, requestID: request.id, resolution: resolution)
         synchronizeSelection()
         refreshOverlayPlacementIfVisible()
 
@@ -1492,7 +1492,7 @@ final class AppModel {
         }
 
         dismissNotificationSurfaceIfPresent(for: sessionID)
-        state.answerQuestion(sessionID: session.id, response: answer)
+        state.answerQuestion(sessionID: session.id, requestID: prompt.id, response: answer)
         synchronizeSelection()
         refreshOverlayPlacementIfVisible()
 

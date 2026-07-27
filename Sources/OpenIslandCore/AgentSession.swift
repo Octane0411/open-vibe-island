@@ -365,8 +365,16 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     /// persisted so the closed-island's right-slot grid can keep a stable
     /// display order regardless of how the panel list is sorted.
     public var firstSeenAt: Date
-    public var permissionRequest: PermissionRequest?
-    public var questionPrompt: QuestionPrompt?
+    public var permissionRequests: [PermissionRequest]
+    public var questionPrompts: [QuestionPrompt]
+    public var permissionRequest: PermissionRequest? {
+        get { permissionRequests.first }
+        set { permissionRequests = newValue.map { [$0] } ?? [] }
+    }
+    public var questionPrompt: QuestionPrompt? {
+        get { questionPrompts.first }
+        set { questionPrompts = newValue.map { [$0] } ?? [] }
+    }
     public var jumpTarget: JumpTarget?
     public var codexMetadata: CodexSessionMetadata?
     public var claudeMetadata: ClaudeSessionMetadata?
@@ -413,6 +421,8 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         firstSeenAt: Date? = nil,
         permissionRequest: PermissionRequest? = nil,
         questionPrompt: QuestionPrompt? = nil,
+        permissionRequests: [PermissionRequest] = [],
+        questionPrompts: [QuestionPrompt] = [],
         jumpTarget: JumpTarget? = nil,
         codexMetadata: CodexSessionMetadata? = nil,
         claudeMetadata: ClaudeSessionMetadata? = nil,
@@ -429,8 +439,12 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         self.summary = summary
         self.updatedAt = updatedAt
         self.firstSeenAt = firstSeenAt ?? updatedAt
-        self.permissionRequest = permissionRequest
-        self.questionPrompt = questionPrompt
+        self.permissionRequests = permissionRequests.isEmpty
+            ? permissionRequest.map { [$0] } ?? []
+            : permissionRequests
+        self.questionPrompts = questionPrompts.isEmpty
+            ? questionPrompt.map { [$0] } ?? []
+            : questionPrompts
         self.jumpTarget = jumpTarget
         self.codexMetadata = codexMetadata
         self.claudeMetadata = claudeMetadata
@@ -449,6 +463,8 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         case summary
         case updatedAt
         case firstSeenAt
+        case permissionRequests
+        case questionPrompts
         case permissionRequest
         case questionPrompt
         case jumpTarget
@@ -470,8 +486,12 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         summary = try container.decode(String.self, forKey: .summary)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         firstSeenAt = try container.decodeIfPresent(Date.self, forKey: .firstSeenAt) ?? updatedAt
-        permissionRequest = try container.decodeIfPresent(PermissionRequest.self, forKey: .permissionRequest)
-        questionPrompt = try container.decodeIfPresent(QuestionPrompt.self, forKey: .questionPrompt)
+        permissionRequests = try container.decodeIfPresent([PermissionRequest].self, forKey: .permissionRequests)
+            ?? container.decodeIfPresent(PermissionRequest.self, forKey: .permissionRequest).map { [$0] }
+            ?? []
+        questionPrompts = try container.decodeIfPresent([QuestionPrompt].self, forKey: .questionPrompts)
+            ?? container.decodeIfPresent(QuestionPrompt.self, forKey: .questionPrompt).map { [$0] }
+            ?? []
         jumpTarget = try container.decodeIfPresent(JumpTarget.self, forKey: .jumpTarget)
         codexMetadata = try container.decodeIfPresent(CodexSessionMetadata.self, forKey: .codexMetadata)
         claudeMetadata = try container.decodeIfPresent(ClaudeSessionMetadata.self, forKey: .claudeMetadata)
@@ -491,6 +511,8 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         try container.encode(summary, forKey: .summary)
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encode(firstSeenAt, forKey: .firstSeenAt)
+        try container.encode(permissionRequests, forKey: .permissionRequests)
+        try container.encode(questionPrompts, forKey: .questionPrompts)
         try container.encodeIfPresent(permissionRequest, forKey: .permissionRequest)
         try container.encodeIfPresent(questionPrompt, forKey: .questionPrompt)
         try container.encodeIfPresent(jumpTarget, forKey: .jumpTarget)
