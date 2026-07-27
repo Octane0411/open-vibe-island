@@ -35,17 +35,22 @@ enum SpotlightElapsedTimerKind: String, Equatable, Identifiable {
 
 struct SpotlightElapsedTimer: Equatable, Identifiable {
     let kind: SpotlightElapsedTimerKind
-    let startedAt: Date
+    let duration: CodexActiveDuration
 
     var id: SpotlightElapsedTimerKind { kind }
 
     init(kind: SpotlightElapsedTimerKind, startedAt: Date) {
         self.kind = kind
-        self.startedAt = startedAt
+        self.duration = CodexActiveDuration(runningSince: startedAt)
+    }
+
+    init(kind: SpotlightElapsedTimerKind, duration: CodexActiveDuration) {
+        self.kind = kind
+        self.duration = duration
     }
 
     func elapsed(at referenceDate: Date) -> TimeInterval {
-        max(0, referenceDate.timeIntervalSince(startedAt))
+        duration.elapsed(at: referenceDate)
     }
 }
 
@@ -443,14 +448,26 @@ extension AgentSession {
         }
 
         var timers: [SpotlightElapsedTimer] = []
-        if let goalStartedAt = codexMetadata?.activeGoalStartedAt {
+        if let goalDuration = codexMetadata?.activeGoalTimer {
+            timers.append(SpotlightElapsedTimer(kind: .goal, duration: goalDuration))
+        } else if let goalStartedAt = codexMetadata?.activeGoalStartedAt {
             timers.append(SpotlightElapsedTimer(kind: .goal, startedAt: goalStartedAt))
         }
-        if codexMetadata?.isPlanMode == true,
-           let planStartedAt = codexMetadata?.activePlanStartedAt {
-            timers.append(SpotlightElapsedTimer(kind: .plan, startedAt: planStartedAt))
+        if codexMetadata?.isPlanMode == true {
+            if let planDuration = codexMetadata?.activePlanTimer {
+                timers.append(SpotlightElapsedTimer(kind: .plan, duration: planDuration))
+            } else if let planStartedAt = codexMetadata?.activePlanStartedAt {
+                timers.append(SpotlightElapsedTimer(kind: .plan, startedAt: planStartedAt))
+            }
         }
-        if let turnStartedAt = codexMetadata?.currentTurnStartedAt {
+        if let turnDuration = codexMetadata?.currentTurnTimer {
+            timers.append(
+                SpotlightElapsedTimer(
+                    kind: .thinking,
+                    duration: turnDuration
+                )
+            )
+        } else if let turnStartedAt = codexMetadata?.currentTurnStartedAt {
             timers.append(
                 SpotlightElapsedTimer(
                     kind: .thinking,

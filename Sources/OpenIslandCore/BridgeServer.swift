@@ -2041,6 +2041,9 @@ public final class BridgeServer: @unchecked Sendable {
             currentTurnStartedAt: update.currentTurnStartedAt ?? existing?.currentTurnStartedAt,
             activeGoalStartedAt: update.activeGoalStartedAt ?? existing?.activeGoalStartedAt,
             activePlanStartedAt: update.activePlanStartedAt ?? existing?.activePlanStartedAt,
+            activeGoalTimer: update.activeGoalTimer ?? existing?.activeGoalTimer,
+            currentTurnTimer: update.currentTurnTimer ?? existing?.currentTurnTimer,
+            activePlanTimer: update.activePlanTimer ?? existing?.activePlanTimer,
             isPlanMode: update.isPlanMode ?? existing?.isPlanMode
         )
     }

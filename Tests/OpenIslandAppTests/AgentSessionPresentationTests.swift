@@ -404,6 +404,47 @@ struct AgentSessionPresentationTests {
     }
 
     @Test
+    func runningCodexSessionPrefersAccumulatedActiveDurationsOverWallClockStarts() {
+        let referenceDate = Date(timeIntervalSince1970: 300_000)
+        let liveSegmentStart = referenceDate.addingTimeInterval(-5)
+        let session = AgentSession(
+            id: "session-1",
+            title: "Build the production board",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Thinking.",
+            updatedAt: referenceDate,
+            codexMetadata: CodexSessionMetadata(
+                currentTurnStartedAt: referenceDate.addingTimeInterval(-(12 * 3_600)),
+                activeGoalStartedAt: referenceDate.addingTimeInterval(-(2 * 86_400 + 9 * 3_600)),
+                activePlanStartedAt: referenceDate.addingTimeInterval(-(7 * 3_600)),
+                activeGoalTimer: CodexActiveDuration(
+                    accumulatedDuration: 1 * 86_400 + 22 * 3_600 + 45 * 60,
+                    runningSince: liveSegmentStart
+                ),
+                currentTurnTimer: CodexActiveDuration(
+                    accumulatedDuration: 15 * 60 + 30,
+                    runningSince: liveSegmentStart
+                ),
+                activePlanTimer: CodexActiveDuration(
+                    accumulatedDuration: 22 * 60,
+                    runningSince: liveSegmentStart
+                ),
+                isPlanMode: true
+            )
+        )
+
+        let timers = session.spotlightElapsedTimers
+        let expectedGoalDuration: TimeInterval = 168_305
+        #expect(timers.map(\.kind) == [.goal, .plan, .thinking])
+        #expect(timers[0].elapsed(at: referenceDate) == expectedGoalDuration)
+        #expect(timers[1].elapsed(at: referenceDate) == 22 * 60 + 5)
+        #expect(timers[2].elapsed(at: referenceDate) == 15 * 60 + 35)
+    }
+
+    @Test
     func cachedChecklistTimestampWithoutPlanModeIsHidden() {
         let referenceDate = Date(timeIntervalSince1970: 100_000)
         let turnStart = referenceDate.addingTimeInterval(-120)

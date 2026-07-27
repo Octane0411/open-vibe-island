@@ -37,6 +37,61 @@ func codexExtractCompleteJSONLLines(
     return lines
 }
 
+public struct CodexActiveDuration: Equatable, Codable, Sendable {
+    public var accumulatedDuration: TimeInterval
+    public var runningSince: Date?
+
+    public init(
+        accumulatedDuration: TimeInterval = 0,
+        runningSince: Date? = nil
+    ) {
+        self.accumulatedDuration = max(0, accumulatedDuration)
+        self.runningSince = runningSince
+    }
+
+    public func elapsed(at referenceDate: Date) -> TimeInterval {
+        let liveDuration = runningSince.map {
+            max(0, referenceDate.timeIntervalSince($0))
+        } ?? 0
+        return max(0, accumulatedDuration + liveDuration)
+    }
+
+    mutating func start(at timestamp: Date?) {
+        guard runningSince == nil, let timestamp else {
+            return
+        }
+        runningSince = timestamp
+    }
+
+    mutating func stop(at timestamp: Date?) {
+        guard let timestamp, runningSince != nil else {
+            return
+        }
+        accumulatedDuration = elapsed(at: timestamp)
+        runningSince = nil
+    }
+
+    mutating func rebase(
+        to authoritativeDuration: TimeInterval,
+        at timestamp: Date,
+        isRunning: Bool
+    ) {
+        accumulatedDuration = max(0, authoritativeDuration)
+        runningSince = isRunning ? timestamp : nil
+    }
+
+    mutating func applyRunningCorrection(
+        _ correction: TimeInterval,
+        at timestamp: Date
+    ) {
+        guard runningSince != nil else {
+            return
+        }
+        accumulatedDuration = max(0, elapsed(at: timestamp) + correction)
+        runningSince = timestamp
+    }
+}
+
 public struct CodexSessionMetadata: Equatable, Codable, Sendable {
     public var transcriptPath: String?
     public var initialUserPrompt: String?
@@ -51,6 +106,9 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
     public var currentTurnStartedAt: Date?
     public var activeGoalStartedAt: Date?
     public var activePlanStartedAt: Date?
+    public var activeGoalTimer: CodexActiveDuration?
+    public var currentTurnTimer: CodexActiveDuration?
+    public var activePlanTimer: CodexActiveDuration?
     public var isPlanMode: Bool?
 
     public init(
@@ -67,6 +125,9 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
         currentTurnStartedAt: Date? = nil,
         activeGoalStartedAt: Date? = nil,
         activePlanStartedAt: Date? = nil,
+        activeGoalTimer: CodexActiveDuration? = nil,
+        currentTurnTimer: CodexActiveDuration? = nil,
+        activePlanTimer: CodexActiveDuration? = nil,
         isPlanMode: Bool? = nil
     ) {
         self.transcriptPath = transcriptPath
@@ -82,6 +143,9 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
         self.currentTurnStartedAt = currentTurnStartedAt
         self.activeGoalStartedAt = activeGoalStartedAt
         self.activePlanStartedAt = activePlanStartedAt
+        self.activeGoalTimer = activeGoalTimer
+        self.currentTurnTimer = currentTurnTimer
+        self.activePlanTimer = activePlanTimer
         self.isPlanMode = isPlanMode
     }
 
@@ -99,6 +163,9 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
             && currentTurnStartedAt == nil
             && activeGoalStartedAt == nil
             && activePlanStartedAt == nil
+            && activeGoalTimer == nil
+            && currentTurnTimer == nil
+            && activePlanTimer == nil
             && isPlanMode == nil
     }
 }
@@ -614,6 +681,9 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             currentTurnStartedAt: snapshot.currentTurnStartedAt,
             activeGoalStartedAt: snapshot.activeGoalStartedAt,
             activePlanStartedAt: snapshot.activePlanStartedAt,
+            activeGoalTimer: snapshot.activeGoalTimer,
+            currentTurnTimer: snapshot.currentTurnTimer,
+            activePlanTimer: snapshot.activePlanTimer,
             isPlanMode: snapshot.isPlanMode
         )
 
@@ -694,6 +764,9 @@ public struct CodexRolloutWatchTarget: Equatable, Sendable {
     public var cachedCurrentTurnStartedAt: Date?
     public var cachedActiveGoalStartedAt: Date?
     public var cachedActivePlanStartedAt: Date?
+    public var cachedActiveGoalTimer: CodexActiveDuration?
+    public var cachedCurrentTurnTimer: CodexActiveDuration?
+    public var cachedActivePlanTimer: CodexActiveDuration?
     public var cachedIsPlanMode: Bool?
 
     public init(
@@ -706,6 +779,9 @@ public struct CodexRolloutWatchTarget: Equatable, Sendable {
         cachedCurrentTurnStartedAt: Date? = nil,
         cachedActiveGoalStartedAt: Date? = nil,
         cachedActivePlanStartedAt: Date? = nil,
+        cachedActiveGoalTimer: CodexActiveDuration? = nil,
+        cachedCurrentTurnTimer: CodexActiveDuration? = nil,
+        cachedActivePlanTimer: CodexActiveDuration? = nil,
         cachedIsPlanMode: Bool? = nil
     ) {
         self.sessionID = sessionID
@@ -717,6 +793,9 @@ public struct CodexRolloutWatchTarget: Equatable, Sendable {
         self.cachedCurrentTurnStartedAt = cachedCurrentTurnStartedAt
         self.cachedActiveGoalStartedAt = cachedActiveGoalStartedAt
         self.cachedActivePlanStartedAt = cachedActivePlanStartedAt
+        self.cachedActiveGoalTimer = cachedActiveGoalTimer
+        self.cachedCurrentTurnTimer = cachedCurrentTurnTimer
+        self.cachedActivePlanTimer = cachedActivePlanTimer
         self.cachedIsPlanMode = cachedIsPlanMode
     }
 
@@ -730,6 +809,9 @@ public struct CodexRolloutWatchTarget: Equatable, Sendable {
             && lhs.cachedCurrentTurnStartedAt == rhs.cachedCurrentTurnStartedAt
             && lhs.cachedActiveGoalStartedAt == rhs.cachedActiveGoalStartedAt
             && lhs.cachedActivePlanStartedAt == rhs.cachedActivePlanStartedAt
+            && lhs.cachedActiveGoalTimer == rhs.cachedActiveGoalTimer
+            && lhs.cachedCurrentTurnTimer == rhs.cachedCurrentTurnTimer
+            && lhs.cachedActivePlanTimer == rhs.cachedActivePlanTimer
             && lhs.cachedIsPlanMode == rhs.cachedIsPlanMode
     }
 }
@@ -750,6 +832,9 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
     public var currentTurnStartedAt: Date?
     public var activeGoalStartedAt: Date?
     public var activePlanStartedAt: Date?
+    public var activeGoalTimer: CodexActiveDuration?
+    public var currentTurnTimer: CodexActiveDuration?
+    public var activePlanTimer: CodexActiveDuration?
     public var isPlanMode: Bool
     public var isCompleted: Bool
     public var isInterrupted: Bool
@@ -770,6 +855,9 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
         currentTurnStartedAt: Date? = nil,
         activeGoalStartedAt: Date? = nil,
         activePlanStartedAt: Date? = nil,
+        activeGoalTimer: CodexActiveDuration? = nil,
+        currentTurnTimer: CodexActiveDuration? = nil,
+        activePlanTimer: CodexActiveDuration? = nil,
         isPlanMode: Bool = false,
         isCompleted: Bool = false,
         isInterrupted: Bool = false
@@ -789,6 +877,9 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
         self.currentTurnStartedAt = currentTurnStartedAt
         self.activeGoalStartedAt = activeGoalStartedAt
         self.activePlanStartedAt = activePlanStartedAt
+        self.activeGoalTimer = activeGoalTimer
+        self.currentTurnTimer = currentTurnTimer
+        self.activePlanTimer = activePlanTimer
         self.isPlanMode = isPlanMode
         self.isCompleted = isCompleted
         self.isInterrupted = isInterrupted
@@ -808,6 +899,9 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
             currentTurnStartedAt: currentTurnStartedAt,
             activeGoalStartedAt: activeGoalStartedAt,
             activePlanStartedAt: activePlanStartedAt,
+            activeGoalTimer: activeGoalTimer,
+            currentTurnTimer: currentTurnTimer,
+            activePlanTimer: activePlanTimer,
             isPlanMode: isPlanMode
         )
     }
@@ -863,6 +957,9 @@ public enum CodexRolloutReducer {
                 currentTurnStartedAt: $0.currentTurnStartedAt,
                 activeGoalStartedAt: $0.activeGoalStartedAt,
                 activePlanStartedAt: $0.activePlanStartedAt,
+                activeGoalTimer: $0.activeGoalTimer,
+                currentTurnTimer: $0.currentTurnTimer,
+                activePlanTimer: $0.activePlanTimer,
                 isPlanMode: $0.isPlanMode
             )
         }
@@ -880,6 +977,9 @@ public enum CodexRolloutReducer {
             currentTurnStartedAt: newSnapshot.currentTurnStartedAt,
             activeGoalStartedAt: newSnapshot.activeGoalStartedAt,
             activePlanStartedAt: newSnapshot.activePlanStartedAt,
+            activeGoalTimer: newSnapshot.activeGoalTimer,
+            currentTurnTimer: newSnapshot.currentTurnTimer,
+            activePlanTimer: newSnapshot.activePlanTimer,
             isPlanMode: newSnapshot.isPlanMode
         )
 
@@ -937,11 +1037,23 @@ public enum CodexRolloutReducer {
     ) {
         switch payload["type"] as? String {
         case "task_started", "turn_started":
+            let startsNewTurn = snapshot.isCompleted || snapshot.currentTurnStartedAt == nil
             snapshot.phase = .running
             snapshot.isCompleted = false
             snapshot.isInterrupted = false
             snapshot.summary = snapshot.summary ?? "Codex started a new turn."
             snapshot.currentTurnStartedAt = snapshot.currentTurnStartedAt ?? timestamp
+            startActiveTimers(
+                at: timestamp,
+                resetCurrentTurn: startsNewTurn,
+                in: &snapshot
+            )
+        case "thread_goal_updated":
+            applyGoalSnapshot(
+                payload["goal"],
+                eventTimestamp: timestamp,
+                to: &snapshot
+            )
         case "user_message":
             guard let message = cleanedUserPrompt(payload["message"] as? String) else {
                 break
@@ -1100,8 +1212,15 @@ public enum CodexRolloutReducer {
             if snapshot.isPlanMode {
                 if !wasPlanMode {
                     snapshot.activePlanStartedAt = timestamp ?? snapshot.activePlanStartedAt
+                    snapshot.activePlanTimer = CodexActiveDuration(
+                        runningSince: snapshot.currentTurnTimer?.runningSince != nil
+                            ? timestamp
+                            : nil
+                    )
                 }
             } else {
+                snapshot.activePlanTimer?.stop(at: timestamp)
+                snapshot.activePlanTimer = nil
                 snapshot.activePlanStartedAt = nil
             }
         }
@@ -1182,6 +1301,109 @@ public enum CodexRolloutReducer {
         }
     }
 
+    private static func startActiveTimers(
+        at timestamp: Date?,
+        resetCurrentTurn: Bool,
+        in snapshot: inout CodexRolloutSnapshot
+    ) {
+        if resetCurrentTurn || snapshot.currentTurnTimer == nil {
+            snapshot.currentTurnTimer = CodexActiveDuration(runningSince: timestamp)
+        } else {
+            snapshot.currentTurnTimer?.start(at: timestamp)
+        }
+
+        if snapshot.activeGoalStartedAt != nil {
+            if snapshot.activeGoalTimer == nil {
+                snapshot.activeGoalTimer = CodexActiveDuration(runningSince: timestamp)
+            } else {
+                snapshot.activeGoalTimer?.start(at: timestamp)
+            }
+        }
+
+        if snapshot.isPlanMode {
+            if snapshot.activePlanTimer == nil {
+                snapshot.activePlanTimer = CodexActiveDuration(runningSince: timestamp)
+            } else {
+                snapshot.activePlanTimer?.start(at: timestamp)
+            }
+        }
+    }
+
+    private static func applyGoalOutput(
+        _ output: Any?,
+        eventTimestamp: Date?,
+        to snapshot: inout CodexRolloutSnapshot
+    ) {
+        let object: [String: Any]?
+        if let dictionary = output as? [String: Any] {
+            object = dictionary
+        } else if let string = output as? String,
+                  let data = string.data(using: .utf8),
+                  let decoded = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            object = decoded
+        } else {
+            object = nil
+        }
+
+        guard let goal = object?["goal"] as? [String: Any] else {
+            return
+        }
+        applyGoalSnapshot(goal, eventTimestamp: eventTimestamp, to: &snapshot)
+    }
+
+    private static func applyGoalSnapshot(
+        _ rawGoal: Any?,
+        eventTimestamp: Date?,
+        to snapshot: inout CodexRolloutSnapshot
+    ) {
+        guard let goal = rawGoal as? [String: Any],
+              let status = (goal["status"] as? String)?.lowercased(),
+              let authoritativeDuration = number(from: goal["timeUsedSeconds"]),
+              let authoritativeAt = epochDate(from: goal["updatedAt"]) ?? eventTimestamp else {
+            return
+        }
+
+        let previousGoalTimer = snapshot.activeGoalTimer
+        if let predictedDuration = previousGoalTimer?.elapsed(at: authoritativeAt) {
+            let correction = authoritativeDuration - predictedDuration
+            snapshot.currentTurnTimer?.applyRunningCorrection(
+                correction,
+                at: authoritativeAt
+            )
+            snapshot.activePlanTimer?.applyRunningCorrection(
+                correction,
+                at: authoritativeAt
+            )
+        }
+
+        let isActive = status == "active"
+        let isComplete = status == "complete"
+        let isProcessing = snapshot.currentTurnTimer?.runningSince != nil
+            || (snapshot.phase == .running && snapshot.currentTurnStartedAt != nil)
+        var goalTimer = previousGoalTimer ?? CodexActiveDuration()
+        goalTimer.rebase(
+            to: authoritativeDuration,
+            at: authoritativeAt,
+            isRunning: isActive && isProcessing
+        )
+        snapshot.activeGoalTimer = goalTimer
+
+        if !isComplete {
+            snapshot.activeGoalStartedAt = epochDate(from: goal["createdAt"])
+                ?? snapshot.activeGoalStartedAt
+                ?? eventTimestamp
+        } else {
+            snapshot.activeGoalStartedAt = nil
+        }
+    }
+
+    private static func epochDate(from value: Any?) -> Date? {
+        guard let seconds = number(from: value) else {
+            return nil
+        }
+        return Date(timeIntervalSince1970: seconds)
+    }
+
     private static func applyResponseItem(
         _ payload: [String: Any],
         timestamp: Date?,
@@ -1256,6 +1478,11 @@ public enum CodexRolloutReducer {
         case "compaction", "compaction_summary", "context_compaction":
             applyToolActivity("context_compaction", preview: nil, to: &snapshot)
         case "function_call_output", "custom_tool_call_output", "tool_search_output":
+            applyGoalOutput(
+                payload["output"],
+                eventTimestamp: timestamp,
+                to: &snapshot
+            )
             applyThinking(to: &snapshot)
         default:
             return
@@ -1340,6 +1567,11 @@ public enum CodexRolloutReducer {
         snapshot.lastUserPrompt = message
         if startsNewProcessingSegment || snapshot.currentTurnStartedAt == nil {
             snapshot.currentTurnStartedAt = timestamp ?? snapshot.currentTurnStartedAt
+            startActiveTimers(
+                at: timestamp,
+                resetCurrentTurn: true,
+                in: &snapshot
+            )
         }
         snapshot.currentTool = nil
         snapshot.currentCommandPreview = nil
@@ -1362,7 +1594,12 @@ public enum CodexRolloutReducer {
             return
         }
 
-        snapshot.processedDuration += max(0, timestamp.timeIntervalSince(startedAt))
+        let segmentDuration = snapshot.currentTurnTimer?.elapsed(at: timestamp)
+            ?? max(0, timestamp.timeIntervalSince(startedAt))
+        snapshot.processedDuration += segmentDuration
+        snapshot.currentTurnTimer?.stop(at: timestamp)
+        snapshot.activeGoalTimer?.stop(at: timestamp)
+        snapshot.activePlanTimer?.stop(at: timestamp)
         snapshot.currentTurnStartedAt = nil
     }
 
@@ -1375,12 +1612,21 @@ public enum CodexRolloutReducer {
         switch toolName {
         case "create_goal":
             snapshot.activeGoalStartedAt = timestamp ?? snapshot.activeGoalStartedAt
+            snapshot.activeGoalTimer = CodexActiveDuration(
+                runningSince: snapshot.currentTurnTimer?.runningSince != nil
+                    ? timestamp
+                    : nil
+            )
         case "update_goal":
-            guard let status = goalStatus(from: arguments),
-                  status == "complete" else {
+            guard let status = goalStatus(from: arguments) else {
                 return
             }
-            snapshot.activeGoalStartedAt = nil
+            if status == "complete" {
+                snapshot.activeGoalTimer?.stop(at: timestamp)
+                snapshot.activeGoalStartedAt = nil
+            } else if status == "blocked" {
+                snapshot.activeGoalTimer?.stop(at: timestamp)
+            }
         default:
             break
         }
@@ -1818,6 +2064,15 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
             if let activePlanStartedAt = updatedTarget.cachedActivePlanStartedAt {
                 snapshot.activePlanStartedAt = activePlanStartedAt
             }
+            if let activeGoalTimer = updatedTarget.cachedActiveGoalTimer {
+                snapshot.activeGoalTimer = activeGoalTimer
+            }
+            if let currentTurnTimer = updatedTarget.cachedCurrentTurnTimer {
+                snapshot.currentTurnTimer = currentTurnTimer
+            }
+            if let activePlanTimer = updatedTarget.cachedActivePlanTimer {
+                snapshot.activePlanTimer = activePlanTimer
+            }
             if let isPlanMode = updatedTarget.cachedIsPlanMode {
                 snapshot.isPlanMode = isPlanMode
             }
@@ -1830,6 +2085,7 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
     private let pollInterval: TimeInterval
     private let initialReadLimit: UInt64
     private let initialPromptBootstrapLimit: UInt64
+    private let activeTimerBackfillReadLimit: UInt64
     private let queue = DispatchQueue(label: "app.openisland.codex.rollout-watcher")
     private var timer: DispatchSourceTimer?
     private var observations: [String: Observation] = [:]
@@ -1837,11 +2093,13 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
     public init(
         pollInterval: TimeInterval = 3.0,
         initialReadLimit: UInt64 = 128 * 1_024,
-        initialPromptBootstrapLimit: UInt64 = 4 * 1_024 * 1_024
+        initialPromptBootstrapLimit: UInt64 = 4 * 1_024 * 1_024,
+        activeTimerBackfillReadLimit: UInt64 = 128 * 1_024 * 1_024
     ) {
         self.pollInterval = pollInterval
         self.initialReadLimit = initialReadLimit
         self.initialPromptBootstrapLimit = initialPromptBootstrapLimit
+        self.activeTimerBackfillReadLimit = activeTimerBackfillReadLimit
     }
 
     deinit {
@@ -1999,6 +2257,9 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
                 currentTurnStartedAt: target.cachedCurrentTurnStartedAt,
                 activeGoalStartedAt: target.cachedActiveGoalStartedAt,
                 activePlanStartedAt: target.cachedActivePlanStartedAt,
+                activeGoalTimer: target.cachedActiveGoalTimer,
+                currentTurnTimer: target.cachedCurrentTurnTimer,
+                activePlanTimer: target.cachedActivePlanTimer,
                 isPlanMode: target.cachedIsPlanMode ?? false
             )
         } else if target.bootstrapPrompts {
@@ -2010,13 +2271,24 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
             bootstrapSnapshot = CodexRolloutSnapshot()
         }
 
+        let readLimit = needsActiveTimerBackfill(for: target)
+            ? max(initialReadLimit, activeTimerBackfillReadLimit)
+            : initialReadLimit
+        let startOffset = fileSize > readLimit ? fileSize - readLimit : 0
+
         return Observation(
             target: target,
-            offset: fileSize - initialReadLimit,
+            offset: startOffset,
             pendingBuffer: Data(),
             snapshot: bootstrapSnapshot,
-            shouldTrimLeadingPartialLine: true
+            shouldTrimLeadingPartialLine: startOffset > 0
         )
+    }
+
+    private func needsActiveTimerBackfill(for target: CodexRolloutWatchTarget) -> Bool {
+        (target.cachedActiveGoalStartedAt != nil && target.cachedActiveGoalTimer == nil)
+            || (target.cachedCurrentTurnStartedAt != nil && target.cachedCurrentTurnTimer == nil)
+            || (target.cachedActivePlanStartedAt != nil && target.cachedActivePlanTimer == nil)
     }
 
     private func bootstrapPromptSnapshot(
@@ -2044,6 +2316,9 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
             currentTurnStartedAt: tailSnapshot?.currentTurnStartedAt,
             activeGoalStartedAt: tailSnapshot?.activeGoalStartedAt,
             activePlanStartedAt: tailSnapshot?.activePlanStartedAt,
+            activeGoalTimer: tailSnapshot?.activeGoalTimer,
+            currentTurnTimer: tailSnapshot?.currentTurnTimer,
+            activePlanTimer: tailSnapshot?.activePlanTimer,
             isPlanMode: tailSnapshot?.isPlanMode ?? false
         )
     }

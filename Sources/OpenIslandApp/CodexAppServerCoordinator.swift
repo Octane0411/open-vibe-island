@@ -408,6 +408,9 @@ final class CodexAppServerCoordinator {
             currentTurnStartedAt: existing?.currentTurnStartedAt,
             activeGoalStartedAt: existing?.activeGoalStartedAt,
             activePlanStartedAt: existing?.activePlanStartedAt,
+            activeGoalTimer: existing?.activeGoalTimer,
+            currentTurnTimer: existing?.currentTurnTimer,
+            activePlanTimer: existing?.activePlanTimer,
             isPlanMode: existing?.isPlanMode
         )
     }

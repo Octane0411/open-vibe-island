@@ -35,6 +35,24 @@ struct CodexSessionTrackingTests {
         var updatedPlanStart = original
         updatedPlanStart.cachedActivePlanStartedAt = Date(timeIntervalSince1970: 600)
 
+        var updatedGoalTimer = original
+        updatedGoalTimer.cachedActiveGoalTimer = CodexActiveDuration(
+            accumulatedDuration: 3_600,
+            runningSince: Date(timeIntervalSince1970: 700)
+        )
+
+        var updatedTurnTimer = original
+        updatedTurnTimer.cachedCurrentTurnTimer = CodexActiveDuration(
+            accumulatedDuration: 90,
+            runningSince: Date(timeIntervalSince1970: 800)
+        )
+
+        var updatedPlanTimer = original
+        updatedPlanTimer.cachedActivePlanTimer = CodexActiveDuration(
+            accumulatedDuration: 30,
+            runningSince: Date(timeIntervalSince1970: 900)
+        )
+
         var updatedPlanMode = original
         updatedPlanMode.cachedIsPlanMode = false
 
@@ -44,6 +62,9 @@ struct CodexSessionTrackingTests {
         #expect(original != updatedTurnStart)
         #expect(original != updatedGoalStart)
         #expect(original != updatedPlanStart)
+        #expect(original != updatedGoalTimer)
+        #expect(original != updatedTurnTimer)
+        #expect(original != updatedPlanTimer)
         #expect(original != updatedPlanMode)
     }
 
@@ -83,6 +104,18 @@ struct CodexSessionTrackingTests {
                     currentTurnStartedAt: Date(timeIntervalSince1970: 990),
                     activeGoalStartedAt: Date(timeIntervalSince1970: 100),
                     activePlanStartedAt: Date(timeIntervalSince1970: 500),
+                    activeGoalTimer: CodexActiveDuration(
+                        accumulatedDuration: 3_600,
+                        runningSince: Date(timeIntervalSince1970: 995)
+                    ),
+                    currentTurnTimer: CodexActiveDuration(
+                        accumulatedDuration: 90,
+                        runningSince: Date(timeIntervalSince1970: 995)
+                    ),
+                    activePlanTimer: CodexActiveDuration(
+                        accumulatedDuration: 30,
+                        runningSince: Date(timeIntervalSince1970: 995)
+                    ),
                     isPlanMode: true
                 )
             )
@@ -499,6 +532,64 @@ struct CodexSessionTrackingTests {
         #expect(snapshot.activeGoalStartedAt == goalStart)
         #expect(snapshot.currentTurnStartedAt == secondTurnStart)
         #expect(snapshot.metadata.processedDuration == 255.5)
+    }
+
+    @Test
+    func codexRolloutReducerRebasesRunningTimersFromAuthoritativeGoalDuration() {
+        var snapshot = CodexRolloutSnapshot(phase: .completed, isCompleted: true)
+        let goalCreatedAt = iso8601Date("2026-04-01T08:00:00.000Z")
+        let turnStartedAt = iso8601Date("2026-04-03T08:00:00.000Z")
+        let authoritativeUpdateAt = iso8601Date("2026-04-03T12:00:00.000Z")
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-03T08:00:00.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "thread_goal_updated",
+                    "goal": [
+                        "status": "active",
+                        "timeUsedSeconds": 3_600,
+                        "createdAt": goalCreatedAt.timeIntervalSince1970,
+                        "updatedAt": turnStartedAt.timeIntervalSince1970,
+                    ],
+                ]
+            ),
+            to: &snapshot
+        )
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-03T08:00:00.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "task_started",
+                    "started_at": turnStartedAt.timeIntervalSince1970,
+                ]
+            ),
+            to: &snapshot
+        )
+
+        let goalOutput = """
+        {"goal":{"status":"active","timeUsedSeconds":4200,"createdAt":\(Int(goalCreatedAt.timeIntervalSince1970)),"updatedAt":\(Int(authoritativeUpdateAt.timeIntervalSince1970))}}
+        """
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-03T12:00:01.000Z",
+                type: "response_item",
+                payload: [
+                    "type": "function_call_output",
+                    "call_id": "call-get-goal",
+                    "output": goalOutput,
+                ]
+            ),
+            to: &snapshot
+        )
+
+        #expect(snapshot.activeGoalStartedAt == goalCreatedAt)
+        #expect(snapshot.activeGoalTimer?.elapsed(at: authoritativeUpdateAt) == 4_200)
+        #expect(snapshot.currentTurnTimer?.elapsed(at: authoritativeUpdateAt) == 600)
+        #expect(snapshot.metadata.activeGoalTimer == snapshot.activeGoalTimer)
+        #expect(snapshot.metadata.currentTurnTimer == snapshot.currentTurnTimer)
     }
 
     @Test
@@ -1534,6 +1625,97 @@ struct CodexSessionTrackingTests {
         let events = await recorder.snapshot()
         #expect(events.contains(where: { $0.trackedActivityUpdate?.summary == "Tail bootstrap kept the watcher responsive." }))
         #expect(!events.contains(where: { $0.trackedActivityUpdate?.summary == oldMessage }))
+    }
+
+    @Test
+    func codexRolloutWatcherBackfillsActiveTimersForLegacyCachedSession() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-rollout-timer-backfill-\(UUID().uuidString)", isDirectory: true)
+        let rolloutURL = rootURL.appendingPathComponent("rollout.jsonl")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        let goalCreatedAt = iso8601Date("2026-04-01T08:00:00.000Z")
+        let turnStartedAt = iso8601Date("2026-04-03T08:00:00.000Z")
+        let authoritativeUpdateAt = iso8601Date("2026-04-03T08:10:00.000Z")
+        let goalOutput = """
+        {"goal":{"status":"active","timeUsedSeconds":4200,"createdAt":\(Int(goalCreatedAt.timeIntervalSince1970)),"updatedAt":\(Int(authoritativeUpdateAt.timeIntervalSince1970))}}
+        """
+        let lines = [
+            rolloutLine(
+                timestamp: "2026-04-03T08:00:00.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "thread_goal_updated",
+                    "goal": [
+                        "status": "active",
+                        "timeUsedSeconds": 3_600,
+                        "createdAt": goalCreatedAt.timeIntervalSince1970,
+                        "updatedAt": turnStartedAt.timeIntervalSince1970,
+                    ],
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-03T08:00:00.000Z",
+                type: "event_msg",
+                payload: ["type": "task_started"]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-03T08:10:00.000Z",
+                type: "response_item",
+                payload: [
+                    "type": "function_call_output",
+                    "call_id": "call-get-goal",
+                    "output": goalOutput,
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-03T08:10:01.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": String(repeating: "tail-filler-", count: 80),
+                ]
+            ),
+        ]
+        try lines.joined(separator: "\n")
+            .appending("\n")
+            .write(to: rolloutURL, atomically: true, encoding: .utf8)
+
+        let recorder = EventRecorder()
+        let watcher = CodexRolloutWatcher(
+            pollInterval: 0.05,
+            initialReadLimit: 160,
+            activeTimerBackfillReadLimit: 65_536
+        )
+        watcher.eventHandler = { event in
+            Task {
+                await recorder.append(event)
+            }
+        }
+        watcher.sync(targets: [
+            CodexRolloutWatchTarget(
+                sessionID: "codex-session-timer-backfill",
+                transcriptPath: rolloutURL.path,
+                cachedInitialUserPrompt: "Keep working.",
+                cachedLastUserPrompt: "Keep working.",
+                cachedCurrentTurnStartedAt: turnStartedAt,
+                cachedActiveGoalStartedAt: goalCreatedAt
+            )
+        ])
+
+        try await Task.sleep(for: .milliseconds(200))
+        watcher.stop()
+
+        let events = await recorder.snapshot()
+        let metadata = events.compactMap(\.trackedMetadataUpdate?.codexMetadata).last
+        #expect(metadata?.activeGoalTimer?.accumulatedDuration == 4_200)
+        #expect(metadata?.activeGoalTimer?.runningSince == authoritativeUpdateAt)
+        #expect(metadata?.currentTurnTimer?.accumulatedDuration == 600)
+        #expect(metadata?.currentTurnTimer?.runningSince == authoritativeUpdateAt)
     }
 
     @Test
