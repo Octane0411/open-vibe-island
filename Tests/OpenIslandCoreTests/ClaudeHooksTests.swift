@@ -435,6 +435,102 @@ struct ClaudeHooksTests {
     }
 
     @Test
+    func claudeConcurrentPermissionRequestsResolveIndependentlyByRequestID() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
+
+        let sessionID = "claude-concurrent-permissions"
+        let firstInput: ClaudeHookJSONValue = .object(["command": .string("swift test")])
+        let secondInput: ClaudeHookJSONValue = .object(["command": .string("swift build")])
+        let firstPayload = ClaudeHookPayload(
+            cwd: "/tmp/worktree",
+            hookEventName: .permissionRequest,
+            sessionID: sessionID,
+            toolName: "Bash",
+            toolInput: firstInput,
+            toolUseID: "tool-use-first"
+        )
+        let secondPayload = ClaudeHookPayload(
+            cwd: "/tmp/worktree",
+            hookEventName: .permissionRequest,
+            sessionID: sessionID,
+            toolName: "Bash",
+            toolInput: secondInput,
+            toolUseID: "tool-use-second"
+        )
+
+        var iterator = stream.makeAsyncIterator()
+
+        async let firstResponseTask = sendOnGCDThread(.processClaudeHook(firstPayload), socketURL: socketURL)
+        let firstEvent = try await nextMatchingEvent(from: &iterator, maxEvents: 8) { event in
+            if case .permissionRequested = event { return true }
+            return false
+        }
+        let firstRequestID: UUID
+        if case let .permissionRequested(payload) = firstEvent {
+            firstRequestID = payload.request.id
+            #expect(payload.request.toolUseID == "tool-use-first")
+        } else {
+            Issue.record("Expected the first Claude permission request")
+            return
+        }
+
+        async let secondResponseTask = sendOnGCDThread(.processClaudeHook(secondPayload), socketURL: socketURL)
+        let secondEvent = try await nextMatchingEvent(from: &iterator, maxEvents: 8) { event in
+            if case .permissionRequested = event { return true }
+            return false
+        }
+        let secondRequestID: UUID
+        if case let .permissionRequested(payload) = secondEvent {
+            secondRequestID = payload.request.id
+            #expect(payload.request.toolUseID == "tool-use-second")
+        } else {
+            Issue.record("Expected the second Claude permission request")
+            return
+        }
+
+        #expect(firstRequestID != secondRequestID)
+
+        // A legacy session-only command is ambiguous and must not consume either request.
+        try await observer.send(.resolvePermission(sessionID: sessionID, resolution: .allowOnce()))
+
+        try await observer.send(
+            .resolvePermissionRequest(
+                sessionID: sessionID,
+                requestID: secondRequestID,
+                resolution: .allowOnce()
+            )
+        )
+        let secondResponse = try await secondResponseTask
+        guard case let .some(.claudeHookDirective(.permissionRequest(.allow(updatedSecondInput, _)))) = secondResponse else {
+            Issue.record("Expected the second permission to be allowed independently")
+            return
+        }
+        #expect(updatedSecondInput == secondInput)
+
+        try await observer.send(
+            .resolvePermissionRequest(
+                sessionID: sessionID,
+                requestID: firstRequestID,
+                resolution: .deny(message: "Denied first request.", interrupt: false)
+            )
+        )
+        let firstResponse = try await firstResponseTask
+        guard case let .some(.claudeHookDirective(.permissionRequest(.deny(message, _)))) = firstResponse else {
+            Issue.record("Expected the first permission to be denied independently")
+            return
+        }
+        #expect(message == "Denied first request.")
+    }
+
+    @Test
     func claudeAskUserQuestionReturnsUpdatedAnswers() async throws {
         let socketURL = BridgeSocketLocation.uniqueTestURL()
         let server = BridgeServer(socketURL: socketURL)

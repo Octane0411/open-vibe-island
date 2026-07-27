@@ -1311,19 +1311,24 @@ final class AppModel {
     }
 
     func approveFocusedPermission(_ approved: Bool) {
-        guard let session = focusedSession else {
+        guard let session = focusedSession,
+              let request = session.permissionRequest else {
             return
         }
 
         let receiptID = queueReceipt(
             for: session,
             action: approved ? .permissionAllowedOnce : .permissionDenied,
-            requestID: session.permissionRequest?.id,
+            requestID: request.id,
             scope: receiptScope(for: session),
             summary: approved ? "permission decision queued" : "permission denial queued"
         )
         send(
-            .resolvePermission(sessionID: session.id, resolution: permissionResolution(for: approved)),
+            .resolvePermissionRequest(
+                sessionID: session.id,
+                requestID: request.id,
+                resolution: permissionResolution(for: approved)
+            ),
             userMessage: approved
                 ? "Approving permission for \(session.title)."
                 : "Denying permission for \(session.title).",
@@ -1332,19 +1337,24 @@ final class AppModel {
     }
 
     func answerFocusedQuestion(_ answer: String) {
-        guard let session = focusedSession else {
+        guard let session = focusedSession,
+              let prompt = session.questionPrompt else {
             return
         }
 
         let receiptID = queueReceipt(
             for: session,
             action: .questionAnswered,
-            requestID: session.questionPrompt?.id,
+            requestID: prompt.id,
             scope: "question",
             summary: "question answer queued"
         )
         send(
-            .answerQuestion(sessionID: session.id, response: QuestionPromptResponse(answer: answer)),
+            .answerQuestionRequest(
+                sessionID: session.id,
+                requestID: prompt.id,
+                response: QuestionPromptResponse(answer: answer)
+            ),
             userMessage: "Sending answer \"\(answer)\" for \(session.title).",
             receiptID: receiptID
         )
@@ -1402,7 +1412,8 @@ final class AppModel {
     }
 
     func approvePermission(for sessionID: String, approved: Bool) {
-        guard let session = state.session(id: sessionID) else {
+        guard let session = state.session(id: sessionID),
+              let request = session.permissionRequest else {
             return
         }
 
@@ -1410,7 +1421,7 @@ final class AppModel {
         let receiptID = queueReceipt(
             for: session,
             action: approved ? .permissionAllowedOnce : .permissionDenied,
-            requestID: session.permissionRequest?.id,
+            requestID: request.id,
             scope: receiptScope(for: session),
             summary: approved ? "permission decision queued" : "permission denial queued"
         )
@@ -1420,7 +1431,11 @@ final class AppModel {
         refreshOverlayPlacementIfVisible()
 
         send(
-            .resolvePermission(sessionID: session.id, resolution: resolution),
+            .resolvePermissionRequest(
+                sessionID: session.id,
+                requestID: request.id,
+                resolution: resolution
+            ),
             userMessage: approved
                 ? "Approving permission for \(session.title)."
                 : "Denying permission for \(session.title).",
@@ -1429,7 +1444,8 @@ final class AppModel {
     }
 
     func approvePermission(for sessionID: String, action: ApprovalAction) {
-        guard let session = state.session(id: sessionID) else {
+        guard let session = state.session(id: sessionID),
+              let request = session.permissionRequest else {
             return
         }
 
@@ -1438,7 +1454,7 @@ final class AppModel {
 
         switch action {
         case .deny:
-            resolution = .deny(message: "Permission denied in Open Island.", interrupt: false)
+            resolution = .deny(message: "Permission denied in Orbit.", interrupt: false)
             message = "Denying permission for \(session.title)."
         case .allowOnce:
             resolution = .allowOnce()
@@ -1454,7 +1470,11 @@ final class AppModel {
         refreshOverlayPlacementIfVisible()
 
         send(
-            .resolvePermission(sessionID: session.id, resolution: resolution),
+            .resolvePermissionRequest(
+                sessionID: session.id,
+                requestID: request.id,
+                resolution: resolution
+            ),
             userMessage: message
         )
     }
@@ -1466,7 +1486,8 @@ final class AppModel {
     }
 
     func answerQuestion(for sessionID: String, answer: QuestionPromptResponse) {
-        guard let session = state.session(id: sessionID) else {
+        guard let session = state.session(id: sessionID),
+              let prompt = session.questionPrompt else {
             return
         }
 
@@ -1476,7 +1497,11 @@ final class AppModel {
         refreshOverlayPlacementIfVisible()
 
         send(
-            .answerQuestion(sessionID: session.id, response: answer),
+            .answerQuestionRequest(
+                sessionID: session.id,
+                requestID: prompt.id,
+                response: answer
+            ),
             userMessage: "Sending answer for \(session.title)."
         )
     }
