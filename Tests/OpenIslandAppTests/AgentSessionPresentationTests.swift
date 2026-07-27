@@ -205,7 +205,7 @@ struct AgentSessionPresentationTests {
             ),
             claudeMetadata: ClaudeSessionMetadata(
                 initialUserPrompt: "Refactor the checkout flow.",
-                customTitle: "checkout-flow"
+                customTitle: "  checkout-flow  "
             )
         )
 
