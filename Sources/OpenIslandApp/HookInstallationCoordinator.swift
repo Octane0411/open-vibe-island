@@ -217,11 +217,11 @@ final class HookInstallationCoordinator {
         }
 
         if status.managedStatusLineNeedsRepair {
-            return "Open Island detected a missing managed Claude status line script and will repair it automatically."
+            return "Orbit detected a missing managed Claude status line script and will repair it automatically."
         }
 
         if status.hasConflictingStatusLine {
-            return "Open Island will not overwrite an existing Claude status line automatically."
+            return "Orbit will not overwrite an existing Claude status line automatically."
         }
 
         return "Install a managed Claude status line to cache 5h and 7d usage locally."

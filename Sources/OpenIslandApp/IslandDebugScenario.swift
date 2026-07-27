@@ -223,7 +223,7 @@ private enum DebugSessionFactory {
     static func runningSession(now: Date) -> AgentSession {
         AgentSession(
             id: "session-running",
-            title: "Codex · open-island",
+            title: "Codex · orbit",
             tool: .codex,
             origin: .demo,
             attachmentState: .attached,
@@ -232,9 +232,9 @@ private enum DebugSessionFactory {
             updatedAt: now.addingTimeInterval(-45),
             jumpTarget: JumpTarget(
                 terminalApp: "Ghostty",
-                workspaceName: "open-island",
-                paneTitle: "codex ~/Personal/open-island",
-                workingDirectory: "/Users/example/Personal/open-island",
+                workspaceName: "orbit",
+                paneTitle: "codex ~/Personal/orbit",
+                workingDirectory: "/Users/example/Personal/orbit",
                 terminalSessionID: "ghostty-running"
             ),
             codexMetadata: CodexSessionMetadata(
@@ -308,7 +308,7 @@ private enum DebugSessionFactory {
     static func approvalSession(now: Date) -> AgentSession {
         AgentSession(
             id: "session-approval",
-            title: "Codex · open-island",
+            title: "Codex · orbit",
             tool: .codex,
             origin: .demo,
             attachmentState: .attached,
@@ -324,9 +324,9 @@ private enum DebugSessionFactory {
             ),
             jumpTarget: JumpTarget(
                 terminalApp: "Ghostty",
-                workspaceName: "open-island",
-                paneTitle: "codex ~/Personal/open-island",
-                workingDirectory: "/Users/example/Personal/open-island",
+                workspaceName: "orbit",
+                paneTitle: "codex ~/Personal/orbit",
+                workingDirectory: "/Users/example/Personal/orbit",
                 terminalSessionID: "ghostty-approval"
             ),
             codexMetadata: CodexSessionMetadata(
@@ -342,7 +342,7 @@ private enum DebugSessionFactory {
     static func questionSession(now: Date) -> AgentSession {
         AgentSession(
             id: "session-question",
-            title: "Codex · open-island",
+            title: "Codex · orbit",
             tool: .codex,
             origin: .demo,
             attachmentState: .attached,
@@ -366,9 +366,9 @@ private enum DebugSessionFactory {
             ),
             jumpTarget: JumpTarget(
                 terminalApp: "Ghostty",
-                workspaceName: "open-island",
-                paneTitle: "codex ~/Personal/open-island",
-                workingDirectory: "/Users/example/Personal/open-island",
+                workspaceName: "orbit",
+                paneTitle: "codex ~/Personal/orbit",
+                workingDirectory: "/Users/example/Personal/orbit",
                 terminalSessionID: "ghostty-question"
             ),
             codexMetadata: CodexSessionMetadata(
@@ -382,7 +382,7 @@ private enum DebugSessionFactory {
     static func completionSession(now: Date) -> AgentSession {
         AgentSession(
             id: "session-completion",
-            title: "Codex · open-island",
+            title: "Codex · orbit",
             tool: .codex,
             origin: .demo,
             attachmentState: .attached,
@@ -391,9 +391,9 @@ private enum DebugSessionFactory {
             updatedAt: now.addingTimeInterval(-15),
             jumpTarget: JumpTarget(
                 terminalApp: "Ghostty",
-                workspaceName: "open-island",
-                paneTitle: "codex ~/Personal/open-island",
-                workingDirectory: "/Users/example/Personal/open-island",
+                workspaceName: "orbit",
+                paneTitle: "codex ~/Personal/orbit",
+                workingDirectory: "/Users/example/Personal/orbit",
                 terminalSessionID: "ghostty-completion"
             ),
             codexMetadata: CodexSessionMetadata(
@@ -407,7 +407,7 @@ private enum DebugSessionFactory {
     static func longCompletionSession(now: Date) -> AgentSession {
         AgentSession(
             id: "session-completion-long",
-            title: "Codex · open-island",
+            title: "Codex · orbit",
             tool: .codex,
             origin: .demo,
             attachmentState: .attached,
@@ -416,16 +416,16 @@ private enum DebugSessionFactory {
             updatedAt: now.addingTimeInterval(-45),
             jumpTarget: JumpTarget(
                 terminalApp: "Ghostty",
-                workspaceName: "open-island",
-                paneTitle: "codex ~/Personal/open-island",
-                workingDirectory: "/Users/example/Personal/open-island",
+                workspaceName: "orbit",
+                paneTitle: "codex ~/Personal/orbit",
+                workingDirectory: "/Users/example/Personal/orbit",
                 terminalSessionID: "ghostty-completion-long"
             ),
             codexMetadata: CodexSessionMetadata(
                 initialUserPrompt: "Commit this README too, then paste the result here.",
                 lastUserPrompt: "Also confirm the current worktree and verification status.",
                 lastAssistantMessage: """
-[README.md](/Users/example/Personal/open-island/README.md) changes were committed separately as `f196316`, with message `docs: update readme tagline`.
+[README.md](/Users/example/Personal/orbit/README.md) changes were committed separately as `f196316`, with message `docs: update readme tagline`.
 
 This pass did not run tests because it only changed copy. The worktree is clean, and `main` is currently `ahead 6` of `origin/main`.
 

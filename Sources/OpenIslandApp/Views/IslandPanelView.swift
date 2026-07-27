@@ -436,28 +436,37 @@ struct IslandPanelView: View {
         .accessibilityLabel(accessibilityLabel ?? systemName)
     }
 
+    private var hasActionableFocus: Bool {
+        guard let phase = model.focusedSession?.phase else { return false }
+        return phase == .waitingForApproval || phase == .waitingForAnswer
+    }
+
     private var openedContent: some View {
         VStack(spacing: 8) {
-            hermesEvidenceStrip
-                .padding(.horizontal, 18)
-                .padding(.top, 8)
-
-            if !model.hasAnyInstalledAgent {
-                installHooksHint
-                    .padding(.horizontal, 18)
-                    .padding(.top, 8)
-            }
-
-            if model.shouldShowSessionBootstrapPlaceholder {
-                sessionBootstrapPlaceholder
-                    .padding(.horizontal, 18)
-                    .padding(.top, 8)
-            } else if model.islandListSessions.isEmpty {
-                emptyState
-                    .padding(.horizontal, 18)
-                    .padding(.top, 8)
-            } else {
+            if hasActionableFocus {
                 sessionList
+            } else {
+                hermesEvidenceStrip
+                    .padding(.horizontal, 18)
+                    .padding(.top, 8)
+
+                if !model.hasAnyInstalledAgent {
+                    installHooksHint
+                        .padding(.horizontal, 18)
+                        .padding(.top, 8)
+                }
+
+                if model.shouldShowSessionBootstrapPlaceholder {
+                    sessionBootstrapPlaceholder
+                        .padding(.horizontal, 18)
+                        .padding(.top, 8)
+                } else if model.islandListSessions.isEmpty {
+                    emptyState
+                        .padding(.horizontal, 18)
+                        .padding(.top, 8)
+                } else {
+                    sessionList
+                }
             }
         }
         .padding(.bottom, 0)

@@ -10,7 +10,7 @@ final class OpenIslandAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         ProcessInfo.processInfo.disableAutomaticTermination(
-            "Open Island should remain active while monitoring local agent sessions."
+            "Orbit should remain active while monitoring local agent sessions."
         )
         ProcessInfo.processInfo.disableSuddenTermination()
         NSApp.setActivationPolicy(model.showDockIcon ? .regular : .accessory)

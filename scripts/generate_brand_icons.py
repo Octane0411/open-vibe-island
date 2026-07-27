@@ -20,15 +20,15 @@ INTERNAL_BADGE_DIR = BRAND_ROOT / "Internal" / "badge"
 ICNS_PATH = BRAND_ROOT / "OpenIsland.icns"
 SVG_MASTER_PATH = BRAND_ROOT / "scout-app-icon-master.svg"
 
-SCOUT_PATTERN = [
-    "..B..B..",
-    "..BBBB..",
-    ".BHHHHB.",
-    "BBHEHEBB",
-    ".BHHHHB.",
-    "..BBBB..",
+ORBIT_PATTERN = [
+    "...BB...",
+    ".BB..BB.",
+    "BB....BB",
+    "B......B",
+    "B......B",
     ".B....B.",
-    "........",
+    "..BBBB..",
+    "......BB",
 ]
 
 APP_ICON_SPECS = [
@@ -187,7 +187,7 @@ def draw_mark(
 ) -> None:
     ox, oy = origin
 
-    for row_index, row in enumerate(SCOUT_PATTERN):
+    for row_index, row in enumerate(ORBIT_PATTERN):
         for column_index, char in enumerate(row):
             if char == ".":
                 continue
@@ -223,7 +223,7 @@ def render_app_icon(size: int) -> Image.Image:
         "E": rgba("#1A1C20"),
     }
 
-    draw_mark_shadow(draw, (origin_x, origin_y), cell, SCOUT_PATTERN, 60)
+    draw_mark_shadow(draw, (origin_x, origin_y), cell, ORBIT_PATTERN, 60)
     draw_mark(draw, (origin_x, origin_y), cell, palette, include_punctuation=False)
     return image
 
@@ -239,7 +239,7 @@ def render_color_mark(size: int) -> Image.Image:
         "P": rgba("#6E9FFF"),
     }
     origin = (0, 0)
-    for row_index, row in enumerate(SCOUT_PATTERN):
+    for row_index, row in enumerate(ORBIT_PATTERN):
         for column_index, char in enumerate(row):
             if char == ".":
                 continue
@@ -256,7 +256,7 @@ def render_template_mark(size: int) -> Image.Image:
     draw = ImageDraw.Draw(image)
     cell = size / 8
     fill = rgba("#000000")
-    for row_index, row in enumerate(SCOUT_PATTERN):
+    for row_index, row in enumerate(ORBIT_PATTERN):
         for column_index, char in enumerate(row):
             if char == ".":
                 continue
@@ -363,7 +363,7 @@ def write_svg_master(path: Path) -> None:
     mark_height = 8 * cell
     origin_x = (1024 - mark_width) // 2 - 24  # centered within face area
     origin_y = (1024 - mark_height) // 2 - 12
-    for row_index, row in enumerate(SCOUT_PATTERN):
+    for row_index, row in enumerate(ORBIT_PATTERN):
         for column_index, char in enumerate(row):
             if char == ".":
                 continue

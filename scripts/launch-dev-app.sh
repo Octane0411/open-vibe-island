@@ -13,7 +13,7 @@ done
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 brand_script="$repo_root/scripts/generate_brand_icons.py"
 brand_icon="$repo_root/Assets/Brand/OpenIsland.icns"
-bundle_dir="$HOME/Applications/Open Island Dev.app"
+bundle_dir="$HOME/Applications/Orbit Dev.app"
 plist_path="$bundle_dir/Contents/Info.plist"
 bundle_binary="$bundle_dir/Contents/MacOS/OpenIslandApp"
 
@@ -28,7 +28,14 @@ app_binary="$build_root/OpenIslandApp"
 hooks_binary="$build_root/OpenIslandHooks"
 setup_binary="$build_root/OpenIslandSetup"
 
-python3 "$brand_script"
+if env -u PYTHONPATH python3 -c 'import PIL.Image' >/dev/null 2>&1; then
+  env -u PYTHONPATH python3 "$brand_script"
+elif command -v uv >/dev/null 2>&1; then
+  env -u PYTHONPATH uv run --with pillow "$brand_script"
+else
+  echo "Pillow is required to generate the Orbit icon." >&2
+  exit 1
+fi
 if [ "$skip_setup" = false ]; then
   "$setup_binary" install --hooks-binary "$hooks_binary"
 fi
@@ -36,14 +43,14 @@ fi
 mkdir -p "$bundle_dir/Contents/MacOS" "$bundle_dir/Contents/Helpers" "$bundle_dir/Contents/Resources" "$bundle_dir/Contents/Frameworks"
 
 # Kill any running instance before copying so the binary isn't locked.
-osascript -e 'tell application "Open Island Dev" to quit' 2>/dev/null || true
-pkill -9 -f "Open Island Dev" 2>/dev/null || true
+osascript -e 'tell application "Orbit Dev" to quit' 2>/dev/null || true
+pkill -9 -f "Orbit Dev" 2>/dev/null || true
 sleep 2
 
 command cp "$app_binary" "$bundle_binary"
 command cp "$hooks_binary" "$bundle_dir/Contents/Helpers/OpenIslandHooks"
 command cp "$setup_binary" "$bundle_dir/Contents/Helpers/OpenIslandSetup"
-command cp "$brand_icon" "$bundle_dir/Contents/Resources/OpenIsland.icns"
+command cp "$brand_icon" "$bundle_dir/Contents/Resources/Orbit.icns"
 chmod +x "$bundle_binary" "$bundle_dir/Contents/Helpers/OpenIslandHooks" "$bundle_dir/Contents/Helpers/OpenIslandSetup"
 
 # Add rpath so the binary can find Sparkle.framework in Contents/Frameworks/.
@@ -74,13 +81,15 @@ cat > "$plist_path" <<EOF
     <key>CFBundleExecutable</key>
     <string>OpenIslandApp</string>
     <key>CFBundleIdentifier</key>
-    <string>app.openisland.dev</string>
+    <string>app.orbit.dev</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleIconFile</key>
-    <string>OpenIsland</string>
+    <string>Orbit</string>
     <key>CFBundleName</key>
-    <string>Open Island Dev</string>
+    <string>Orbit Dev</string>
+    <key>CFBundleDisplayName</key>
+    <string>Orbit Dev</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -90,15 +99,12 @@ cat > "$plist_path" <<EOF
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Open Island needs automation access to focus Terminal and iTerm sessions for jump-back.</string>
+    <string>Orbit needs automation access to focus Terminal and iTerm sessions for jump-back.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
-    <key>SUFeedURL</key>
-    <string>https://raw.githubusercontent.com/Octane0411/open-vibe-island/main/appcast.xml</string>
-    <key>SUPublicEDKey</key>
-    <string>3IF8txq9RRNanzE2FNhyGRcwhslTucCcJHpTkpxcgBQ=</string>
+
 </dict>
 </plist>
 EOF
@@ -119,26 +125,11 @@ fi
 # Remove stale symlinks from previous runs.
 [ -L "$root_bundle" ] && rm -f "$root_bundle"
 
-# Detect a local stable signing identity so the dev bundle's cdhash
-# stays stable across rebuilds and macOS TCC grants (Accessibility,
-# Automation) persist. Without it we fall back to ad-hoc signing, which
-# changes the cdhash every build and silently invalidates any TCC
-# grants the developer had approved — extremely disruptive when
-# iterating on features that need AX permission. See
-# scripts/setup-dev-signing.sh for a one-time setup that creates this
-# identity locally with zero Apple Developer Program involvement.
-sign_identity="-"
-if security find-identity -p codesigning -v "$HOME/Library/Keychains/login.keychain-db" 2>/dev/null \
-       | grep -q '"Open Island Dev Local"'; then
-    sign_identity="Open Island Dev Local"
-else
-    echo
-    echo "⚠ Using ad-hoc signing. macOS TCC grants (Accessibility, Automation)"
-    echo "  will be invalidated on every rebuild. Run once to fix:"
-    echo "    zsh scripts/setup-dev-signing.sh"
-    echo
-fi
+# Strip copied Finder/resource-fork metadata before signing the assembled bundle.
+xattr -cr "$bundle_dir"
 
-codesign --force --deep --sign "$sign_identity" "$bundle_dir" 2>/dev/null || true
+# Orbit development bundles use ad-hoc signing only. Production signing,
+# notarization, and release publication are intentionally outside this script.
+codesign --force --deep --sign - "$bundle_dir"
 
 open -na "$bundle_dir"
