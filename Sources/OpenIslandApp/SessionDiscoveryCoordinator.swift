@@ -61,6 +61,9 @@ final class SessionDiscoveryCoordinator {
     private let claudeTranscriptDiscovery = ClaudeTranscriptDiscovery()
 
     @ObservationIgnored
+    private let claudeLiveSessionIndex = ClaudeLiveSessionIndex()
+
+    @ObservationIgnored
     private var codexSessionPersistenceTask: Task<Void, Never>?
 
     @ObservationIgnored
@@ -355,6 +358,7 @@ final class SessionDiscoveryCoordinator {
             agentID: discovered.agentID ?? existing.agentID,
             agentType: discovered.agentType ?? existing.agentType,
             worktreeBranch: discovered.worktreeBranch ?? existing.worktreeBranch,
+            customTitle: discovered.customTitle ?? existing.customTitle,
             activeSubagents: existing.activeSubagents.isEmpty ? discovered.activeSubagents : existing.activeSubagents
         )
         return merged.isEmpty ? nil : merged
@@ -407,6 +411,64 @@ final class SessionDiscoveryCoordinator {
             now: now
         ) {
             onAgentEvent?(event)
+        }
+    }
+
+    // MARK: - Claude live session names
+
+    @ObservationIgnored
+    private var lastClaudeSessionNameRefreshDate: Date = .distantPast
+
+    /// Picks up `/rename` names of running Claude Code sessions from the
+    /// live session index (`<config dir>/sessions/*.json`). Transcript
+    /// discovery only runs at startup, so without this a mid-session
+    /// rename would not appear until the next app launch. Throttled
+    /// internally; safe to call from the monitor loop.
+    func refreshClaudeSessionNamesIfNeeded() {
+        let now = Date.now
+        guard now.timeIntervalSince(lastClaudeSessionNameRefreshDate) >= 5 else { return }
+        lastClaudeSessionNameRefreshDate = now
+
+        guard state.sessions.contains(where: { $0.tool == .claudeCode && !$0.isSessionEnded }) else {
+            return
+        }
+
+        let index = claudeLiveSessionIndex
+        Task.detached(priority: .utility) { [weak self] in
+            let names = index.userAssignedSessionNames()
+            guard !names.isEmpty else { return }
+            await MainActor.run { [weak self] in
+                self?.applyClaudeLiveSessionNames(names)
+            }
+        }
+    }
+
+    private func applyClaudeLiveSessionNames(_ namesBySessionID: [String: String]) {
+        var didChange = false
+
+        for session in state.sessions {
+            guard session.tool == .claudeCode,
+                  let name = namesBySessionID[session.id],
+                  session.claudeMetadata?.customTitle != name else {
+                continue
+            }
+
+            var metadata = session.claudeMetadata ?? ClaudeSessionMetadata()
+            metadata.customTitle = name
+            onAgentEvent?(
+                .claudeSessionMetadataUpdated(
+                    ClaudeSessionMetadataUpdated(
+                        sessionID: session.id,
+                        claudeMetadata: metadata,
+                        timestamp: .now
+                    )
+                )
+            )
+            didChange = true
+        }
+
+        if didChange {
+            scheduleClaudeSessionPersistence()
         }
     }
 

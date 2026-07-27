@@ -118,6 +118,78 @@ struct ClaudeHooksTests {
     }
 
     @Test
+    func claudeTranscriptDiscoveryRecoversCustomTitleLastWins() throws {
+        // `/rename` appends `custom-title` records to the transcript;
+        // Claude Code treats them as last-wins per session id.
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-claude-discovery-title-\(UUID().uuidString)", isDirectory: true)
+        let workspaceDirectory = rootURL
+            .appendingPathComponent("projects", isDirectory: true)
+            .appendingPathComponent("-tmp-demo-repo", isDirectory: true)
+        let transcriptURL = workspaceDirectory.appendingPathComponent("session-renamed.jsonl")
+        let discovery = ClaudeTranscriptDiscovery(rootURL: rootURL.appendingPathComponent("projects", isDirectory: true))
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        try FileManager.default.createDirectory(at: workspaceDirectory, withIntermediateDirectories: true)
+        let transcript = """
+        {"cwd":"/tmp/demo-repo","sessionId":"session-renamed","type":"user","message":{"role":"user","content":"Refactor the checkout flow."},"timestamp":"2026-04-03T03:20:00Z"}
+        {"type":"custom-title","customTitle":"checkout-flow","sessionId":"session-renamed"}
+        {"cwd":"/tmp/demo-repo","sessionId":"session-renamed","type":"assistant","message":{"role":"assistant","model":"claude-sonnet-4-5","content":[{"type":"text","text":"Starting the refactor."}]},"timestamp":"2026-04-03T03:20:02Z"}
+        {"type":"custom-title","customTitle":"checkout-flow-v2","sessionId":"session-renamed"}
+        {"cwd":"/tmp/demo-repo","sessionId":"session-renamed","type":"assistant","message":{"role":"assistant","model":"claude-sonnet-4-5","content":[{"type":"text","text":"Done with the refactor."}]},"timestamp":"2026-04-03T03:20:06Z"}
+        """
+        try transcript.write(to: transcriptURL, atomically: true, encoding: .utf8)
+
+        let sessions = discovery.discoverRecentSessions(
+            now: ISO8601DateFormatter().date(from: "2026-04-03T03:20:10Z")!
+        )
+
+        #expect(sessions.count == 1)
+        let session = try #require(sessions.first)
+        #expect(session.id == "session-renamed")
+        #expect(session.claudeMetadata?.customTitle == "checkout-flow-v2")
+        // The derived title stays untouched — terminal attachment matching depends on it.
+        #expect(session.title == "Claude · demo-repo")
+        #expect(session.customSessionName == "checkout-flow-v2")
+    }
+
+    @Test
+    func claudeTranscriptDiscoveryIgnoresCustomTitleOfOtherSessions() throws {
+        // Forked/branched transcripts can contain custom-title records for
+        // other session ids; only the record matching this session applies.
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-claude-discovery-fork-\(UUID().uuidString)", isDirectory: true)
+        let workspaceDirectory = rootURL
+            .appendingPathComponent("projects", isDirectory: true)
+            .appendingPathComponent("-tmp-demo-repo", isDirectory: true)
+        let transcriptURL = workspaceDirectory.appendingPathComponent("session-plain.jsonl")
+        let discovery = ClaudeTranscriptDiscovery(rootURL: rootURL.appendingPathComponent("projects", isDirectory: true))
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        try FileManager.default.createDirectory(at: workspaceDirectory, withIntermediateDirectories: true)
+        let transcript = """
+        {"type":"custom-title","customTitle":"other-session-name","sessionId":"session-other"}
+        {"cwd":"/tmp/demo-repo","sessionId":"session-plain","type":"user","message":{"role":"user","content":"Just a regular session."},"timestamp":"2026-04-03T03:20:00Z"}
+        {"cwd":"/tmp/demo-repo","sessionId":"session-plain","type":"assistant","message":{"role":"assistant","model":"claude-sonnet-4-5","content":[{"type":"text","text":"On it."}]},"timestamp":"2026-04-03T03:20:02Z"}
+        """
+        try transcript.write(to: transcriptURL, atomically: true, encoding: .utf8)
+
+        let sessions = discovery.discoverRecentSessions(
+            now: ISO8601DateFormatter().date(from: "2026-04-03T03:20:10Z")!
+        )
+
+        let session = try #require(sessions.first)
+        #expect(session.id == "session-plain")
+        #expect(session.claudeMetadata?.customTitle == nil)
+    }
+
+    @Test
     func claudeTranscriptDiscoveryStreamsTranscriptsLargerThanReadChunk() throws {
         // Pins streaming behavior across read-chunk boundaries. The
         // pre-fix `parseSession` used `String(contentsOf:)` which on

@@ -57,6 +57,7 @@ public struct SessionState: Equatable, Sendable {
         switch event {
         case let .sessionStarted(payload):
             let preservedFirstSeenAt = sessionsByID[payload.sessionID]?.firstSeenAt
+            let preservedCustomTitle = sessionsByID[payload.sessionID]?.claudeMetadata?.customTitle
             var session = AgentSession(
                 id: payload.sessionID,
                 title: payload.title,
@@ -74,6 +75,13 @@ public struct SessionState: Equatable, Sendable {
                 openCodeMetadata: payload.openCodeMetadata?.isEmpty == true ? nil : payload.openCodeMetadata,
                 cursorMetadata: payload.cursorMetadata?.isEmpty == true ? nil : payload.cursorMetadata
             )
+            // A re-start of a known session (resume/clear/compact) carries no
+            // custom title in its hook payload — keep the one already tracked.
+            if session.claudeMetadata?.customTitle == nil, let preservedCustomTitle {
+                var metadata = session.claudeMetadata ?? ClaudeSessionMetadata()
+                metadata.customTitle = preservedCustomTitle
+                session.claudeMetadata = metadata
+            }
             session.isRemote = payload.isRemote
             session.isHookManaged = payload.origin == .live
             // Codex.app sessions use app-level liveness (NSRunningApplication)

@@ -540,6 +540,14 @@ public extension AgentSession {
         return false
     }
 
+    /// Name the user assigned to the session inside the agent itself
+    /// (e.g. Claude Code's `/rename`). UI surfaces prefer this over the
+    /// derived workspace title; `title` stays untouched because terminal
+    /// attachment matching depends on its derived form.
+    var customSessionName: String? {
+        claudeMetadata?.customTitle
+    }
+
     var currentToolName: String? {
         codexMetadata?.currentTool ?? claudeMetadata?.currentTool ?? openCodeMetadata?.currentTool ?? cursorMetadata?.currentTool
     }

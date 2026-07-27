@@ -88,6 +88,9 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
         var currentTool: String?
         var currentToolInputPreview: String?
         var pendingToolUses: [String: (name: String, preview: String?)] = [:]
+        // `/rename` appends `{"type":"custom-title","customTitle":…,"sessionId":…}`
+        // records; Claude Code applies them last-wins per session id.
+        var customTitlesBySessionID: [String: String] = [:]
 
         let processLine: (String) -> Void = { line in
             guard let data = line.data(using: .utf8),
@@ -156,6 +159,12 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
                       let summary = object["summary"] as? String,
                       !summary.isEmpty {
                 lastAssistantMessage = summary
+            } else if topLevelType == "custom-title",
+                      let customTitle = object["customTitle"] as? String,
+                      !customTitle.isEmpty,
+                      let titleSessionID = object["sessionId"] as? String,
+                      !titleSessionID.isEmpty {
+                customTitlesBySessionID[titleSessionID] = customTitle
             }
         }
 
@@ -188,7 +197,8 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
             lastAssistantMessage: lastAssistantMessage,
             currentTool: currentTool,
             currentToolInputPreview: currentToolInputPreview,
-            model: model
+            model: model,
+            customTitle: customTitlesBySessionID[sessionID]
         )
         let summary = lastAssistantMessage
             ?? lastUserPrompt

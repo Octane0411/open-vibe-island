@@ -2084,6 +2084,7 @@ public final class BridgeServer: @unchecked Sendable {
                 ? existing?.agentType
                 : update.agentType ?? existing?.agentType,
             worktreeBranch: update.worktreeBranch ?? existing?.worktreeBranch,
+            customTitle: update.customTitle ?? existing?.customTitle,
             activeSubagents: existing?.activeSubagents ?? [],
             activeTasks: existing?.activeTasks ?? []
         )

@@ -702,6 +702,9 @@ final class AppModel {
         monitoring.onCodexAppMaintenanceTick = { [weak self] in
             self?.discovery.maintainCodexAppSessionsIfNeeded()
         }
+        monitoring.onMaintenanceTick = { [weak self] in
+            self?.discovery.refreshClaudeSessionNamesIfNeeded()
+        }
         refreshOverlayDisplayConfiguration()
         hasFinishedInit = true
     }
@@ -867,6 +870,9 @@ final class AppModel {
         case .off:
             return nil
         case .sessionName:
+            if let customName = session.customSessionName, !customName.isEmpty {
+                return customName
+            }
             let workspace = session.jumpTarget?.workspaceName ?? ""
             if !workspace.isEmpty { return workspace }
             return session.title.isEmpty ? session.tool.displayName : session.title

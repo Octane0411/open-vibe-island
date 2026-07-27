@@ -336,6 +336,92 @@ struct SessionStateTests {
     }
 
     @Test
+    func preservesClaudeCustomTitleAcrossSessionRestart() {
+        // `/rename` names arrive via metadata updates; a later re-start of
+        // the same session (resume/clear/compact) carries no custom title
+        // in its hook payload and must not wipe the tracked one.
+        var state = SessionState()
+        let startedAt = Date(timeIntervalSince1970: 5_000)
+
+        state.apply(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: "claude-renamed",
+                    title: "Claude · open-island",
+                    tool: .claudeCode,
+                    origin: .live,
+                    summary: "Working",
+                    timestamp: startedAt
+                )
+            )
+        )
+
+        state.apply(
+            .claudeSessionMetadataUpdated(
+                ClaudeSessionMetadataUpdated(
+                    sessionID: "claude-renamed",
+                    claudeMetadata: ClaudeSessionMetadata(customTitle: "checkout-flow"),
+                    timestamp: startedAt.addingTimeInterval(5)
+                )
+            )
+        )
+        #expect(state.session(id: "claude-renamed")?.claudeMetadata?.customTitle == "checkout-flow")
+
+        state.apply(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: "claude-renamed",
+                    title: "Claude · open-island",
+                    tool: .claudeCode,
+                    origin: .live,
+                    summary: "Resumed",
+                    timestamp: startedAt.addingTimeInterval(10),
+                    claudeMetadata: ClaudeSessionMetadata(startupSource: .resume)
+                )
+            )
+        )
+
+        #expect(state.session(id: "claude-renamed")?.claudeMetadata?.customTitle == "checkout-flow")
+        #expect(state.session(id: "claude-renamed")?.claudeMetadata?.startupSource == .resume)
+    }
+
+    @Test
+    func sessionStartCustomTitleWinsOverPreservedOne() {
+        var state = SessionState()
+        let startedAt = Date(timeIntervalSince1970: 5_000)
+
+        state.apply(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: "claude-renamed",
+                    title: "Claude · open-island",
+                    tool: .claudeCode,
+                    origin: .live,
+                    summary: "Working",
+                    timestamp: startedAt,
+                    claudeMetadata: ClaudeSessionMetadata(customTitle: "old-name")
+                )
+            )
+        )
+
+        state.apply(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: "claude-renamed",
+                    title: "Claude · open-island",
+                    tool: .claudeCode,
+                    origin: .live,
+                    summary: "Restarted",
+                    timestamp: startedAt.addingTimeInterval(10),
+                    claudeMetadata: ClaudeSessionMetadata(customTitle: "new-name")
+                )
+            )
+        )
+
+        #expect(state.session(id: "claude-renamed")?.claudeMetadata?.customTitle == "new-name")
+    }
+
+    @Test
     func preservesLiveSessionOriginFromStartEvent() {
         var state = SessionState()
 

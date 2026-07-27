@@ -38,7 +38,8 @@ struct ClaudeSessionRegistryTests {
                     lastAssistantMessage: "Implementing the registry.",
                     currentTool: "Task",
                     currentToolInputPreview: "Implement ClaudeSessionRegistry",
-                    model: "sonnet"
+                    model: "sonnet",
+                    customTitle: "registry-hardening"
                 )
             ),
         ]
@@ -48,6 +49,7 @@ struct ClaudeSessionRegistryTests {
 
         #expect(reloaded == records)
         #expect(reloaded.first?.session.claudeMetadata?.transcriptPath == "/tmp/claude.jsonl")
+        #expect(reloaded.first?.session.claudeMetadata?.customTitle == "registry-hardening")
         #expect(reloaded.first?.session.jumpTarget?.terminalTTY == "/dev/ttys002")
     }
 

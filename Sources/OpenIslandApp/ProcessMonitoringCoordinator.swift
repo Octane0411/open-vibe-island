@@ -33,6 +33,11 @@ final class ProcessMonitoringCoordinator {
     @ObservationIgnored
     var onCodexAppMaintenanceTick: (() -> Void)?
 
+    /// Fires on every monitor tick regardless of which agents are running.
+    /// Callees are expected to throttle internally.
+    @ObservationIgnored
+    var onMaintenanceTick: (() -> Void)?
+
     @ObservationIgnored
     let activeAgentProcessDiscovery = ActiveAgentProcessDiscovery()
 
@@ -175,6 +180,8 @@ final class ProcessMonitoringCoordinator {
                     }
                     hadTrackedLiveSessions = hasTrackedLiveSessions
                 }
+
+                self.onMaintenanceTick?()
 
                 let wakeInterval = Self.monitoringWakeInterval(
                     isResolvingInitialLiveSessions: self.isResolvingInitialLiveSessions,

@@ -115,6 +115,11 @@ extension AgentSession {
     }
 
     var spotlightWorkspaceName: String {
+        if let customName = customSessionName?.trimmedForSurface,
+           !customName.isEmpty {
+            return customName
+        }
+
         if let workspaceName = jumpTarget?.workspaceName.trimmedForSurface,
            !workspaceName.isEmpty {
             return workspaceName
