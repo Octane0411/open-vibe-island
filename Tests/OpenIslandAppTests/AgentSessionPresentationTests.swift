@@ -214,6 +214,30 @@ struct AgentSessionPresentationTests {
     }
 
     @Test
+    func whitespaceOnlyCustomNameFallsBackToWorkspaceName() {
+        let session = AgentSession(
+            id: "session-1",
+            title: "Claude · open-island",
+            tool: .claudeCode,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Working",
+            updatedAt: Date(timeIntervalSince1970: 10_000),
+            jumpTarget: JumpTarget(
+                terminalApp: "Ghostty",
+                workspaceName: "open-island",
+                paneTitle: "claude ~/tmp/open-island",
+                workingDirectory: "/tmp/open-island",
+                terminalSessionID: "ghostty-1"
+            ),
+            claudeMetadata: ClaudeSessionMetadata(customTitle: "   ")
+        )
+
+        #expect(session.spotlightWorkspaceName == "open-island")
+    }
+
+    @Test
     func sessionWithoutCustomNameKeepsWorkspaceHeadline() {
         let session = AgentSession(
             id: "session-1",

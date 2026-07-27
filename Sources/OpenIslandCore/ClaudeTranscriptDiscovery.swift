@@ -98,7 +98,13 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
                 return
             }
 
-            if let value = object["sessionId"] as? String, !value.isEmpty {
+            let topLevelType = object["type"] as? String
+
+            // Custom-title records can reference other session ids (e.g.
+            // forked "(Branch)" sessions sharing one transcript) — they
+            // must not reassign the transcript's session identity.
+            if let value = object["sessionId"] as? String, !value.isEmpty,
+               topLevelType != "custom-title" {
                 sessionID = value
             }
 
@@ -110,8 +116,6 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
                let timestamp = ISO8601DateFormatter().date(from: timestampText) {
                 updatedAt = timestamp
             }
-
-            let topLevelType = object["type"] as? String
             let message = object["message"] as? [String: Any]
             let role = message?["role"] as? String
 

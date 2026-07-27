@@ -870,7 +870,9 @@ final class AppModel {
         case .off:
             return nil
         case .sessionName:
-            if let customName = session.customSessionName, !customName.isEmpty {
+            if let customName = session.customSessionName?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+                !customName.isEmpty {
                 return customName
             }
             let workspace = session.jumpTarget?.workspaceName ?? ""

@@ -190,6 +190,42 @@ struct ClaudeHooksTests {
     }
 
     @Test
+    func claudeTranscriptDiscoveryKeepsSessionIdentityWhenForeignCustomTitleAppearsLast() throws {
+        // A custom-title record for another session id as the final
+        // transcript line must not reassign the session's identity.
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-claude-discovery-fork-last-\(UUID().uuidString)", isDirectory: true)
+        let workspaceDirectory = rootURL
+            .appendingPathComponent("projects", isDirectory: true)
+            .appendingPathComponent("-tmp-demo-repo", isDirectory: true)
+        let transcriptURL = workspaceDirectory.appendingPathComponent("session-primary.jsonl")
+        let discovery = ClaudeTranscriptDiscovery(rootURL: rootURL.appendingPathComponent("projects", isDirectory: true))
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        try FileManager.default.createDirectory(at: workspaceDirectory, withIntermediateDirectories: true)
+        let transcript = """
+        {"cwd":"/tmp/demo-repo","sessionId":"session-primary","type":"user","message":{"role":"user","content":"Work on the primary session."},"timestamp":"2026-04-03T03:20:00Z"}
+        {"type":"custom-title","customTitle":"primary-name","sessionId":"session-primary"}
+        {"cwd":"/tmp/demo-repo","sessionId":"session-primary","type":"assistant","message":{"role":"assistant","model":"claude-sonnet-4-5","content":[{"type":"text","text":"Primary session reply."}]},"timestamp":"2026-04-03T03:20:02Z"}
+        {"type":"custom-title","customTitle":"branch-name","sessionId":"session-branch"}
+        """
+        try transcript.write(to: transcriptURL, atomically: true, encoding: .utf8)
+
+        let sessions = discovery.discoverRecentSessions(
+            now: ISO8601DateFormatter().date(from: "2026-04-03T03:20:10Z")!
+        )
+
+        let session = try #require(sessions.first)
+        #expect(session.id == "session-primary")
+        #expect(session.title == "Claude · demo-repo")
+        #expect(session.claudeMetadata?.customTitle == "primary-name")
+        #expect(session.claudeMetadata?.lastAssistantMessage == "Primary session reply.")
+    }
+
+    @Test
     func claudeTranscriptDiscoveryStreamsTranscriptsLargerThanReadChunk() throws {
         // Pins streaming behavior across read-chunk boundaries. The
         // pre-fix `parseSession` used `String(contentsOf:)` which on
