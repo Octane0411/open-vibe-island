@@ -438,6 +438,10 @@ struct IslandPanelView: View {
 
     private var openedContent: some View {
         VStack(spacing: 8) {
+            hermesEvidenceStrip
+                .padding(.horizontal, 18)
+                .padding(.top, 8)
+
             if !model.hasAnyInstalledAgent {
                 installHooksHint
                     .padding(.horizontal, 18)
@@ -457,6 +461,44 @@ struct IslandPanelView: View {
             }
         }
         .padding(.bottom, 0)
+    }
+
+    private var hermesEvidenceStrip: some View {
+        let snapshot = model.hermesGatewaySnapshot
+        let gatewayColor: Color = snapshot.gateway == .live ? .green : .orange
+        let sessionLabel = snapshot.sessions == .live
+            ? "\(snapshot.sessionItems.count) metadata sessions · live"
+            : "sessions \(snapshot.sessions.rawValue)"
+        let accessibilitySummary = "Orbit Hermes gateway \(snapshot.gateway.rawValue). Sessions \(snapshot.sessions.rawValue). Approvals and completions unavailable. \(snapshot.detail)"
+
+        return HStack(spacing: 8) {
+            Circle()
+                .fill(gatewayColor)
+                .frame(width: 6, height: 6)
+            Text("ORBIT / HERMES")
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .tracking(0.8)
+                .foregroundStyle(.white.opacity(0.88))
+            Text(sessionLabel)
+                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .foregroundStyle(.white.opacity(0.5))
+            Spacer(minLength: 6)
+            Text("approvals unavailable")
+                .font(.system(size: 9, weight: .medium, design: .rounded))
+                .foregroundStyle(.white.opacity(0.34))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.white.opacity(0.055))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(gatewayColor.opacity(0.28), lineWidth: 0.5)
+                )
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilitySummary)
     }
 
     /// Persistent hint at the top of the expanded island while no agent

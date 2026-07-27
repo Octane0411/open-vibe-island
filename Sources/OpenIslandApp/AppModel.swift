@@ -55,6 +55,11 @@ final class AppModel {
     }
     @ObservationIgnored private var _cachedSessionBuckets: (primary: [AgentSession], overflow: [AgentSession])?
     private(set) var receiptLedger = OrbitReceiptLedger()
+    var hermesGatewaySnapshot = HermesGatewaySnapshot(
+        gateway: .unavailable,
+        sessions: .unavailable,
+        detail: "Hermes gateway has not been checked yet."
+    )
 
     var receipts: [OrbitReceipt] {
         receiptLedger.entries
@@ -528,6 +533,12 @@ final class AppModel {
     private var bridgeReconnectTask: Task<Void, Never>?
 
     @ObservationIgnored
+    private var hermesGatewayTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private let hermesGatewayAdapter: HermesGatewayAdapter
+
+    @ObservationIgnored
     private var hasStarted = false
 
     @ObservationIgnored
@@ -607,10 +618,14 @@ final class AppModel {
         },
         isNotificationSessionAlreadyFrontmost: @escaping @Sendable (AgentSession) async -> Bool = { session in
             await ForegroundTerminalSessionProbe().matches(session: session)
-        }
+        },
+        hermesGatewayAdapter: HermesGatewayAdapter? = nil
     ) {
         self.terminalJumpAction = terminalJumpAction
         self.isNotificationSessionAlreadyFrontmost = isNotificationSessionAlreadyFrontmost
+        self.hermesGatewayAdapter = hermesGatewayAdapter ?? HermesGatewayAdapter(
+            bearerToken: ProcessInfo.processInfo.environment["ORBIT_HERMES_GATEWAY_TOKEN"]
+        )
         UserDefaults.standard.register(defaults: [
             Self.showDockIconDefaultsKey: true,
             Self.hapticFeedbackEnabledDefaultsKey: false,
@@ -1123,6 +1138,7 @@ final class AppModel {
                 hooks.startCodexUsageMonitoringIfNeeded()
             }
             updateChecker.startIfNeeded()
+            startHermesGatewayMonitoring()
 
         } else {
             isResolvingInitialLiveSessions = false
@@ -1150,6 +1166,25 @@ final class AppModel {
             lastActionMessage = "Failed to start local bridge: \(error.localizedDescription)"
             harnessRuntimeMonitor?.recordMilestone("bridgeStartFailed", message: lastActionMessage)
         }
+    }
+
+    private func startHermesGatewayMonitoring() {
+        hermesGatewayTask?.cancel()
+        hermesGatewayTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                hermesGatewaySnapshot = await hermesGatewayAdapter.fetchSnapshot()
+                do {
+                    try await Task.sleep(for: .seconds(15))
+                } catch {
+                    return
+                }
+            }
+        }
+    }
+
+    func refreshHermesGatewaySnapshot() async {
+        hermesGatewaySnapshot = await hermesGatewayAdapter.fetchSnapshot()
     }
 
     // MARK: - Bridge observer connection
