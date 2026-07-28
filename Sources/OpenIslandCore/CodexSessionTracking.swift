@@ -908,6 +908,40 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
 }
 
 public enum CodexRolloutReducer {
+    static func isActiveGoalContinuationPrompt(_ value: String?) -> Bool {
+        guard let prompt = value?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            return false
+        }
+        return prompt.hasPrefix(#"<codex_internal_context source="goal">"#)
+    }
+
+    static func indicatesActiveGoalContinuation(line: String) -> Bool {
+        guard let object = jsonObject(for: line),
+              let payload = object["payload"] as? [String: Any] else {
+            return false
+        }
+
+        switch object["type"] as? String {
+        case "response_item":
+            guard payload["type"] as? String == "message",
+                  payload["role"] as? String == "user",
+                  let content = payload["content"] as? [[String: Any]] else {
+                return false
+            }
+            return content.contains { item in
+                item["type"] as? String == "input_text"
+                    && isActiveGoalContinuationPrompt(item["text"] as? String)
+            }
+        case "event_msg":
+            guard payload["type"] as? String == "user_message" else {
+                return false
+            }
+            return isActiveGoalContinuationPrompt(payload["message"] as? String)
+        default:
+            return false
+        }
+    }
+
     public static func snapshot(for lines: [String]) -> CodexRolloutSnapshot {
         var snapshot = CodexRolloutSnapshot()
         lines.forEach { apply(line: $0, to: &snapshot) }
@@ -2271,7 +2305,12 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
             bootstrapSnapshot = CodexRolloutSnapshot()
         }
 
-        let readLimit = needsActiveTimerBackfill(for: target)
+        let readLimit = (needsActiveTimerBackfill(for: target)
+            || needsGoalContinuationBackfill(
+                for: target,
+                fileHandle: fileHandle,
+                fileSize: fileSize
+            ))
             ? max(initialReadLimit, activeTimerBackfillReadLimit)
             : initialReadLimit
         let startOffset = fileSize > readLimit ? fileSize - readLimit : 0
@@ -2289,6 +2328,45 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
         (target.cachedActiveGoalStartedAt != nil && target.cachedActiveGoalTimer == nil)
             || (target.cachedCurrentTurnStartedAt != nil && target.cachedCurrentTurnTimer == nil)
             || (target.cachedActivePlanStartedAt != nil && target.cachedActivePlanTimer == nil)
+    }
+
+    private func needsGoalContinuationBackfill(
+        for target: CodexRolloutWatchTarget,
+        fileHandle: FileHandle,
+        fileSize: UInt64
+    ) -> Bool {
+        guard target.cachedActiveGoalStartedAt == nil,
+              target.cachedActiveGoalTimer == nil else {
+            return false
+        }
+        if CodexRolloutReducer.isActiveGoalContinuationPrompt(target.cachedLastUserPrompt) {
+            return true
+        }
+
+        let readLimit = min(fileSize, initialReadLimit)
+        guard readLimit > 0 else {
+            return false
+        }
+
+        let startOffset = fileSize - readLimit
+        do {
+            try fileHandle.seek(toOffset: startOffset)
+            var buffer = try fileHandle.read(upToCount: Int(readLimit)) ?? Data()
+            if startOffset > 0 {
+                trimLeadingPartialLine(from: &buffer)
+            }
+            if buffer.last != UInt8(ascii: "\n") {
+                buffer.append(UInt8(ascii: "\n"))
+            }
+
+            var scannedByteCount = 0
+            return codexExtractCompleteJSONLLines(
+                from: &buffer,
+                scannedByteCount: &scannedByteCount
+            ).contains(where: CodexRolloutReducer.indicatesActiveGoalContinuation)
+        } catch {
+            return false
+        }
     }
 
     private func bootstrapPromptSnapshot(

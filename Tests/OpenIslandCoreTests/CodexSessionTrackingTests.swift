@@ -1719,6 +1719,99 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutWatcherRestoresGoalFromContinuationWhenLegacyCacheHasNoGoalFields() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-rollout-goal-continuation-\(UUID().uuidString)", isDirectory: true)
+        let rolloutURL = rootURL.appendingPathComponent("rollout.jsonl")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        let goalCreatedAt = iso8601Date("2026-04-01T08:00:00.000Z")
+        let goalUpdatedAt = iso8601Date("2026-04-03T07:59:00.000Z")
+        let turnStartedAt = iso8601Date("2026-04-03T08:00:00.000Z")
+        let lines = [
+            rolloutLine(
+                timestamp: "2026-04-03T07:59:00.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "thread_goal_updated",
+                    "goal": [
+                        "status": "active",
+                        "timeUsedSeconds": 172_740,
+                        "createdAt": goalCreatedAt.timeIntervalSince1970,
+                        "updatedAt": goalUpdatedAt.timeIntervalSince1970,
+                    ],
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-03T08:00:00.000Z",
+                type: "response_item",
+                payload: [
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        [
+                            "type": "input_text",
+                            "text": """
+                            <codex_internal_context source="goal">
+                            Continue working toward the active thread goal.
+
+                            <objective>
+                            Finish the board
+                            </objective>
+                            """,
+                        ],
+                    ],
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-03T08:00:00.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "task_started",
+                    "started_at": turnStartedAt.timeIntervalSince1970,
+                ]
+            ),
+        ]
+        try lines.joined(separator: "\n")
+            .appending("\n")
+            .write(to: rolloutURL, atomically: true, encoding: .utf8)
+
+        let recorder = EventRecorder()
+        let watcher = CodexRolloutWatcher(
+            pollInterval: 0.05,
+            initialReadLimit: 512,
+            activeTimerBackfillReadLimit: 65_536
+        )
+        watcher.eventHandler = { event in
+            Task {
+                await recorder.append(event)
+            }
+        }
+        watcher.sync(targets: [
+            CodexRolloutWatchTarget(
+                sessionID: "codex-session-goal-continuation",
+                transcriptPath: rolloutURL.path,
+                cachedInitialUserPrompt: "Start the board.",
+                cachedLastUserPrompt: "Keep routing the board."
+            )
+        ])
+
+        try await Task.sleep(for: .milliseconds(200))
+        watcher.stop()
+
+        let events = await recorder.snapshot()
+        let metadata = events.compactMap(\.trackedMetadataUpdate?.codexMetadata).last
+        #expect(metadata?.lastUserPrompt == "Keep routing the board.")
+        #expect(metadata?.activeGoalStartedAt == goalCreatedAt)
+        #expect(metadata?.activeGoalTimer?.accumulatedDuration == 172_740)
+        #expect(metadata?.activeGoalTimer?.runningSince == turnStartedAt)
+    }
+
+    @Test
     func codexRolloutDiscoveryFindsRecentSessionsFromLocalRollouts() throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("open-island-discovery-\(UUID().uuidString)", isDirectory: true)
