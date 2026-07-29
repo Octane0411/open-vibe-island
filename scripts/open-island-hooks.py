@@ -267,6 +267,10 @@ def main():
             command = {"type": "processOpenCodeHook", "openCodeHook": payload}
             timeout = 86400 if payload.get("hook_event_name") == "PermissionRequest" else 45
             encoder = encode_opencode_stdout
+        elif source in ("gemini", "antigravity"):
+            command = {"type": "processAntigravityHook", "antigravityHook": payload}
+            timeout = 45
+            encoder = lambda resp: None
         else:
             command = {"type": "processCodexHook", "codexHook": payload}
             timeout = 45
