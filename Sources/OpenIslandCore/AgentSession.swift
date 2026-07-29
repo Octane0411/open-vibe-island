@@ -4,6 +4,7 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
     case claudeCode
     case codex
     case geminiCLI
+    case antigravityCLI
     case openCode
     case qoder
     case qwenCode
@@ -20,6 +21,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "Codex"
         case .geminiCLI:
             "Gemini CLI"
+        case .antigravityCLI:
+            "Antigravity CLI"
         case .openCode:
             "OpenCode"
         case .qoder:
@@ -45,6 +48,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "CODEX"
         case .geminiCLI:
             "GEMINI"
+        case .antigravityCLI:
+            "ANTIGRAVITY"
         case .openCode:
             "OPENCODE"
         case .qoder:

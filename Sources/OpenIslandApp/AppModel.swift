@@ -132,6 +132,11 @@ final class AppModel {
     var geminiHookStatus: GeminiHookInstallationStatus? { hooks.geminiHookStatus }
     var geminiHookStatusTitle: String { hooks.geminiHookStatusTitle }
     var geminiHookStatusSummary: String { hooks.geminiHookStatusSummary }
+    var antigravityHooksInstalled: Bool { hooks.antigravityHooksInstalled }
+    var isAntigravityHookSetupBusy: Bool { hooks.isAntigravityHookSetupBusy }
+    var antigravityHookStatus: AntigravityHookInstallationStatus? { hooks.antigravityHookStatus }
+    var antigravityHookStatusTitle: String { hooks.antigravityHookStatusTitle }
+    var antigravityHookStatusSummary: String { hooks.antigravityHookStatusSummary }
     var kimiHooksInstalled: Bool { hooks.kimiHooksInstalled }
     var isKimiHookSetupBusy: Bool { hooks.isKimiHookSetupBusy }
     var kimiHookStatus: KimiHookInstallationStatus? { hooks.kimiHookStatus }
@@ -190,6 +195,9 @@ final class AppModel {
     func refreshGeminiHookStatus() { hooks.refreshGeminiHookStatus() }
     func installGeminiHooks() { hooks.installGeminiHooks() }
     func uninstallGeminiHooks() { hooks.uninstallGeminiHooks() }
+    func refreshAntigravityHookStatus() { hooks.refreshAntigravityHookStatus() }
+    func installAntigravityHooks() { hooks.installAntigravityHooks() }
+    func uninstallAntigravityHooks() { hooks.uninstallAntigravityHooks() }
     func refreshKimiHookStatus() { hooks.refreshKimiHookStatus() }
     func installKimiHooks() { hooks.installKimiHooks() }
     func uninstallKimiHooks() { hooks.uninstallKimiHooks() }

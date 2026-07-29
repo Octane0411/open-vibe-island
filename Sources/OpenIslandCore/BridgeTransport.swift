@@ -89,6 +89,7 @@ public enum BridgeCommand: Equatable, Codable, Sendable {
     case processOpenCodeHook(OpenCodeHookPayload)
     case processCursorHook(CursorHookPayload)
     case processGeminiHook(GeminiHookPayload)
+    case processAntigravityHook(AntigravityHookPayload)
 
     private enum CodingKeys: String, CodingKey {
         case type

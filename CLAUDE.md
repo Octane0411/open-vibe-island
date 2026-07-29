@@ -80,6 +80,6 @@ The project is past MVP and welcomes new ideas and creative directions, but the 
 - `Sources/OpenIslandCore/SessionState.swift` — pure reducer
 - `Sources/OpenIslandCore/AgentEvent.swift` — event enum driving all transitions
 - `Sources/OpenIslandCore/BridgeTransport.swift` + `BridgeServer.swift` — socket protocol & dispatch
-- `Sources/OpenIslandCore/{Claude,Codex,Gemini,Kimi,Cursor}Hooks.swift` etc. — per-agent hook payload models
+- `Sources/OpenIslandCore/{Claude,Codex,Antigravity,Kimi,Cursor}Hooks.swift` etc. — per-agent hook payload models
 - `Sources/OpenIslandHooks/main.swift` — hook CLI entry
 - `docs/product.md`, `docs/architecture.md`, `AGENTS.md` — design / working-agreement docs

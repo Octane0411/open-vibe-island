@@ -208,6 +208,8 @@ extension AgentSession {
             return "Codex"
         case .geminiCLI:
             return "Gemini"
+        case .antigravityCLI:
+            return "Antigravity"
         case .openCode:
             return "OpenCode"
         case .qoder:

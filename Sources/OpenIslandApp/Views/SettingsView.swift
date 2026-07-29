@@ -417,6 +417,7 @@ struct SetupSettingsPane: View {
     @State private var confirmingUninstallCodebuddy = false
     @State private var confirmingUninstallCursor = false
     @State private var confirmingUninstallGemini = false
+    @State private var confirmingUninstallAntigravity = false
     @State private var confirmingUninstallKimi = false
     @State private var confirmingUninstallClaudeUsage = false
 
@@ -570,20 +571,20 @@ struct SetupSettingsPane: View {
                 }
 
                 hookRow(
-                    name: "Gemini CLI",
-                    installed: model.geminiHooksInstalled,
-                    busy: model.isGeminiHookSetupBusy,
-                    configLocationURL: geminiHookConfigURL,
-                    installAction: { model.installGeminiHooks() },
-                    uninstallAction: { confirmingUninstallGemini = true }
+                    name: "Antigravity CLI",
+                    installed: model.antigravityHooksInstalled,
+                    busy: model.isAntigravityHookSetupBusy,
+                    configLocationURL: antigravityHookConfigURL,
+                    installAction: { model.installAntigravityHooks() },
+                    uninstallAction: { confirmingUninstallAntigravity = true }
                 )
-                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallGemini) {
+                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallAntigravity) {
                     Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
-                        model.uninstallGeminiHooks()
+                        model.uninstallAntigravityHooks()
                     }
                     Button(lang.t("settings.general.cancel"), role: .cancel) {}
                 } message: {
-                    Text("This will remove Open Island hooks from ~/.gemini/settings.json.")
+                    Text("This will remove Open Island hooks from ~/.antigravity/settings.json.")
                 }
 
                 hookRow(
@@ -677,6 +678,7 @@ struct SetupSettingsPane: View {
                     if !model.factoryHooksInstalled { model.installFactoryHooks() }
                     if !model.codebuddyHooksInstalled { model.installCodebuddyHooks() }
                     if !model.cursorHooksInstalled { model.installCursorHooks() }
+                    if !model.antigravityHooksInstalled { model.installAntigravityHooks() }
                     if !model.geminiHooksInstalled { model.installGeminiHooks() }
                     if !model.kimiHooksInstalled { model.installKimiHooks() }
                     if !model.claudeUsageInstalled { model.installClaudeUsageBridge() }
@@ -699,24 +701,16 @@ struct SetupSettingsPane: View {
                         Text(ClaudeConfigDirectory.resolved().path)
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
                     }
                 } icon: {
                     Image(systemName: "folder")
                 }
                 Spacer()
-                if ClaudeConfigDirectory.customDirectory != nil {
-                    Button(lang.t("setup.claudeConfigDir.reset")) {
-                        model.updateClaudeConfigDirectory(to: nil)
-                    }
-                    .font(.caption)
-                }
-                Button(lang.t("setup.claudeConfigDir.choose")) {
+                Button(lang.t("setup.claudeConfigDir.change")) {
                     let panel = NSOpenPanel()
-                    panel.canChooseDirectories = true
                     panel.canChooseFiles = false
-                    panel.canCreateDirectories = true
+                    panel.canChooseDirectories = true
+                    panel.allowsMultipleSelection = false
                     panel.showsHiddenFiles = true
                     panel.prompt = lang.t("setup.claudeConfigDir.choose")
                     if panel.runModal() == .OK, let url = panel.url {
@@ -740,7 +734,7 @@ struct SetupSettingsPane: View {
     private var allReady: Bool {
         model.claudeHooksInstalled && model.codexHooksInstalled && model.openCodePluginInstalled
             && model.qoderHooksInstalled && model.qwenCodeHooksInstalled && model.factoryHooksInstalled && model.codebuddyHooksInstalled
-            && model.cursorHooksInstalled && model.geminiHooksInstalled && model.kimiHooksInstalled && model.claudeUsageInstalled
+            && model.cursorHooksInstalled && model.antigravityHooksInstalled && model.kimiHooksInstalled && model.claudeUsageInstalled
     }
 
     @ViewBuilder
@@ -774,9 +768,12 @@ struct SetupSettingsPane: View {
         return model.codexHookStatus?.configURL ?? model.codexHookStatus?.hooksURL
     }
 
+    private var antigravityHookConfigURL: URL {
+        model.antigravityHookStatus?.settingsURL ?? AntigravityHookInstallationManager.defaultAntigravityDirectory().appendingPathComponent("settings.json")
+    }
+
     private var geminiHookConfigURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".gemini/settings.json")
+        antigravityHookConfigURL
     }
 
     private var hasErrors: Bool {

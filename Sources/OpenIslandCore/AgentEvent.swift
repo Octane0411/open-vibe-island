@@ -12,6 +12,7 @@ public struct SessionStarted: Equatable, Codable, Sendable {
     public var codexMetadata: CodexSessionMetadata?
     public var claudeMetadata: ClaudeSessionMetadata?
     public var geminiMetadata: GeminiSessionMetadata?
+    public var antigravityMetadata: AntigravitySessionMetadata?
     public var openCodeMetadata: OpenCodeSessionMetadata?
     public var cursorMetadata: CursorSessionMetadata?
     public var isRemote: Bool
@@ -28,6 +29,7 @@ public struct SessionStarted: Equatable, Codable, Sendable {
         codexMetadata: CodexSessionMetadata? = nil,
         claudeMetadata: ClaudeSessionMetadata? = nil,
         geminiMetadata: GeminiSessionMetadata? = nil,
+        antigravityMetadata: AntigravitySessionMetadata? = nil,
         openCodeMetadata: OpenCodeSessionMetadata? = nil,
         cursorMetadata: CursorSessionMetadata? = nil,
         isRemote: Bool = false
@@ -43,6 +45,7 @@ public struct SessionStarted: Equatable, Codable, Sendable {
         self.codexMetadata = codexMetadata
         self.claudeMetadata = claudeMetadata
         self.geminiMetadata = geminiMetadata
+        self.antigravityMetadata = antigravityMetadata ?? geminiMetadata
         self.openCodeMetadata = openCodeMetadata
         self.cursorMetadata = cursorMetadata
         self.isRemote = isRemote
@@ -174,21 +177,23 @@ public struct ClaudeSessionMetadataUpdated: Equatable, Codable, Sendable {
     }
 }
 
-public struct GeminiSessionMetadataUpdated: Equatable, Codable, Sendable {
+public struct AntigravitySessionMetadataUpdated: Equatable, Codable, Sendable {
     public var sessionID: String
-    public var geminiMetadata: GeminiSessionMetadata
+    public var antigravityMetadata: AntigravitySessionMetadata
     public var timestamp: Date
 
     public init(
         sessionID: String,
-        geminiMetadata: GeminiSessionMetadata,
+        antigravityMetadata: AntigravitySessionMetadata,
         timestamp: Date
     ) {
         self.sessionID = sessionID
-        self.geminiMetadata = geminiMetadata
+        self.antigravityMetadata = antigravityMetadata
         self.timestamp = timestamp
     }
 }
+
+public typealias GeminiSessionMetadataUpdated = AntigravitySessionMetadataUpdated
 
 public struct OpenCodeSessionMetadataUpdated: Equatable, Codable, Sendable {
     public var sessionID: String
@@ -248,6 +253,7 @@ public enum AgentEvent: Equatable, Codable, Sendable {
     case sessionMetadataUpdated(SessionMetadataUpdated)
     case claudeSessionMetadataUpdated(ClaudeSessionMetadataUpdated)
     case geminiSessionMetadataUpdated(GeminiSessionMetadataUpdated)
+    case antigravitySessionMetadataUpdated(AntigravitySessionMetadataUpdated)
     case openCodeSessionMetadataUpdated(OpenCodeSessionMetadataUpdated)
     case cursorSessionMetadataUpdated(CursorSessionMetadataUpdated)
     case actionableStateResolved(ActionableStateResolved)

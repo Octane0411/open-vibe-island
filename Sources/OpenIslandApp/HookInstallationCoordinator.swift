@@ -20,7 +20,11 @@ final class HookInstallationCoordinator {
     var codebuddyHookStatus: ClaudeHookInstallationStatus?
     var openCodePluginStatus: OpenCodePluginInstallationStatus?
     var cursorHookStatus: CursorHookInstallationStatus?
-    var geminiHookStatus: GeminiHookInstallationStatus?
+    var geminiHookStatus: GeminiHookInstallationStatus? {
+        get { antigravityHookStatus }
+        set { antigravityHookStatus = newValue }
+    }
+    var antigravityHookStatus: AntigravityHookInstallationStatus?
     var kimiHookStatus: KimiHookInstallationStatus?
     var claudeStatusLineStatus: ClaudeStatusLineInstallationStatus?
     var claudeUsageSnapshot: ClaudeUsageSnapshot?
@@ -34,7 +38,11 @@ final class HookInstallationCoordinator {
     var isCodebuddyHookSetupBusy = false
     var isOpenCodeSetupBusy = false
     var isCursorHookSetupBusy = false
-    var isGeminiHookSetupBusy = false
+    var isGeminiHookSetupBusy: Bool {
+        get { isAntigravityHookSetupBusy }
+        set { isAntigravityHookSetupBusy = newValue }
+    }
+    var isAntigravityHookSetupBusy = false
     var isKimiHookSetupBusy = false
     var isClaudeUsageSetupBusy = false
 
@@ -80,7 +88,11 @@ final class HookInstallationCoordinator {
     private let cursorHookInstallationManager = CursorHookInstallationManager()
 
     @ObservationIgnored
-    private let geminiHookInstallationManager = GeminiHookInstallationManager()
+    private let antigravityHookInstallationManager = AntigravityHookInstallationManager()
+
+    private var geminiHookInstallationManager: AntigravityHookInstallationManager {
+        antigravityHookInstallationManager
+    }
 
     @ObservationIgnored
     private let kimiHookInstallationManager = KimiHookInstallationManager()
@@ -138,7 +150,11 @@ final class HookInstallationCoordinator {
     }
 
     var geminiHooksInstalled: Bool {
-        geminiHookStatus?.managedHooksPresent == true
+        antigravityHooksInstalled
+    }
+
+    var antigravityHooksInstalled: Bool {
+        antigravityHookStatus?.managedHooksPresent == true
     }
 
     var kimiHooksInstalled: Bool {
@@ -334,20 +350,28 @@ final class HookInstallationCoordinator {
     }
 
     var geminiHookStatusTitle: String {
-        guard let status = geminiHookStatus else { return "Gemini hooks loading" }
-        return status.managedHooksPresent ? "Gemini hooks installed" : "Gemini hooks not installed"
+        antigravityHookStatusTitle
+    }
+
+    var antigravityHookStatusTitle: String {
+        guard let status = antigravityHookStatus else { return "Antigravity hooks loading" }
+        return status.managedHooksPresent ? "Antigravity hooks installed" : "Antigravity hooks not installed"
     }
 
     var geminiHookStatusSummary: String {
-        guard let status = geminiHookStatus else {
-            return "Reading ~/.gemini/settings.json."
+        antigravityHookStatusSummary
+    }
+
+    var antigravityHookStatusSummary: String {
+        guard let status = antigravityHookStatus else {
+            return "Reading ~/.antigravity/settings.json."
         }
 
         if hooksBinaryURL == nil {
             return "Build OpenIslandHooks before installing."
         }
 
-        return status.managedHooksPresent ? "managed hooks present" : "no managed Gemini hooks"
+        return status.managedHooksPresent ? "managed hooks present" : "no managed Antigravity hooks"
     }
 
     var kimiHookStatusTitle: String {
@@ -719,14 +743,18 @@ final class HookInstallationCoordinator {
     }
 
     func refreshGeminiHookStatus() {
+        refreshAntigravityHookStatus()
+    }
+
+    func refreshAntigravityHookStatus() {
         Task { [weak self] in
             guard let self else { return }
 
             do {
-                let status = try self.geminiHookInstallationManager.status(hooksBinaryURL: self.hooksBinaryURL)
-                self.geminiHookStatus = status
+                let status = try self.antigravityHookInstallationManager.status(hooksBinaryURL: self.hooksBinaryURL)
+                self.antigravityHookStatus = status
             } catch {
-                self.onStatusMessage?("Failed to read Gemini hook status: \(error.localizedDescription)")
+                self.onStatusMessage?("Failed to read Antigravity hook status: \(error.localizedDescription)")
             }
         }
     }
@@ -1016,18 +1044,26 @@ final class HookInstallationCoordinator {
     }
 
     func installGeminiHooks() {
+        installAntigravityHooks()
+    }
+
+    func installAntigravityHooks() {
         guard let hooksBinaryURL else {
             onStatusMessage?("Could not find a local OpenIslandHooks binary. Build the package first.")
             return
         }
 
-        updateGeminiHooks(userMessage: "Installing Gemini hooks.", intent: .installed) { manager in
+        updateAntigravityHooks(userMessage: "Installing Antigravity hooks.", intent: .installed) { manager in
             try manager.install(hooksBinaryURL: hooksBinaryURL)
         }
     }
 
     func uninstallGeminiHooks() {
-        updateGeminiHooks(userMessage: "Removing Gemini hooks.", intent: .uninstalled) { manager in
+        uninstallAntigravityHooks()
+    }
+
+    func uninstallAntigravityHooks() {
+        updateAntigravityHooks(userMessage: "Removing Antigravity hooks.", intent: .uninstalled) { manager in
             try manager.uninstall()
         }
     }
@@ -1210,25 +1246,33 @@ final class HookInstallationCoordinator {
         intent: AgentHookIntent,
         operation: @escaping (GeminiHookInstallationManager) throws -> GeminiHookInstallationStatus
     ) {
-        isGeminiHookSetupBusy = true
+        updateAntigravityHooks(userMessage: userMessage, intent: intent, operation: operation)
+    }
+
+    private func updateAntigravityHooks(
+        userMessage: String,
+        intent: AgentHookIntent,
+        operation: @escaping (AntigravityHookInstallationManager) throws -> AntigravityHookInstallationStatus
+    ) {
+        isAntigravityHookSetupBusy = true
         onStatusMessage?(userMessage)
 
         Task { [weak self] in
             guard let self else { return }
 
-            defer { self.isGeminiHookSetupBusy = false }
+            defer { self.isAntigravityHookSetupBusy = false }
 
             do {
-                let status = try operation(self.geminiHookInstallationManager)
-                self.geminiHookStatus = status
-                self.intentStore.setIntent(intent, for: .gemini)
+                let status = try operation(self.antigravityHookInstallationManager)
+                self.antigravityHookStatus = status
+                self.intentStore.setIntent(intent, for: .antigravity)
                 if status.managedHooksPresent {
-                    self.onStatusMessage?("Gemini hooks are installed and ready.")
+                    self.onStatusMessage?("Antigravity hooks are installed and ready.")
                 } else {
-                    self.onStatusMessage?("Gemini hooks are not installed.")
+                    self.onStatusMessage?("Antigravity hooks are not installed.")
                 }
             } catch {
-                self.onStatusMessage?("Gemini hook update failed: \(error.localizedDescription)")
+                self.onStatusMessage?("Antigravity hook update failed: \(error.localizedDescription)")
             }
         }
     }

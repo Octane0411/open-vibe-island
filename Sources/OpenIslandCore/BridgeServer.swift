@@ -467,7 +467,10 @@ public final class BridgeServer: @unchecked Sendable {
             handleCursorHook(payload, from: clientID)
 
         case let .processGeminiHook(payload):
-            handleGeminiHook(payload, from: clientID)
+            handleAntigravityHook(payload, from: clientID)
+
+        case let .processAntigravityHook(payload):
+            handleAntigravityHook(payload, from: clientID)
         }
     }
 
@@ -1298,7 +1301,7 @@ public final class BridgeServer: @unchecked Sendable {
         }
     }
 
-    private func handleGeminiHook(_ payload: GeminiHookPayload, from clientID: UUID) {
+    private func handleAntigravityHook(_ payload: AntigravityHookPayload, from clientID: UUID) {
         switch payload.hookEventName {
         case .sessionStart:
             emit(
@@ -1306,22 +1309,22 @@ public final class BridgeServer: @unchecked Sendable {
                     SessionStarted(
                         sessionID: payload.sessionID,
                         title: payload.sessionTitle,
-                        tool: .geminiCLI,
+                        tool: .antigravityCLI,
                         origin: .live,
                         initialPhase: .completed,
                         summary: payload.implicitSummary,
                         timestamp: .now,
                         jumpTarget: payload.defaultJumpTarget,
-                        geminiMetadata: payload.defaultGeminiMetadata.isEmpty ? nil : payload.defaultGeminiMetadata
+                        antigravityMetadata: payload.defaultAntigravityMetadata.isEmpty ? nil : payload.defaultAntigravityMetadata
                     )
                 )
             )
             send(.response(.acknowledged), to: clientID)
 
         case .beforeAgent:
-            ensureGeminiSessionExists(for: payload)
-            synchronizeGeminiJumpTarget(for: payload)
-            synchronizeGeminiMetadata(for: payload)
+            ensureAntigravitySessionExists(for: payload)
+            synchronizeAntigravityJumpTarget(for: payload)
+            synchronizeAntigravityMetadata(for: payload)
             emit(
                 .activityUpdated(
                     SessionActivityUpdated(
@@ -1335,9 +1338,9 @@ public final class BridgeServer: @unchecked Sendable {
             send(.response(.acknowledged), to: clientID)
 
         case .afterAgent:
-            ensureGeminiSessionExists(for: payload)
-            synchronizeGeminiJumpTarget(for: payload)
-            synchronizeGeminiMetadata(for: payload)
+            ensureAntigravitySessionExists(for: payload)
+            synchronizeAntigravityJumpTarget(for: payload)
+            synchronizeAntigravityMetadata(for: payload)
             emit(
                 .sessionCompleted(
                     SessionCompleted(
@@ -1350,14 +1353,14 @@ public final class BridgeServer: @unchecked Sendable {
             send(.response(.acknowledged), to: clientID)
 
         case .sessionEnd:
-            ensureGeminiSessionExists(for: payload)
-            synchronizeGeminiJumpTarget(for: payload)
-            synchronizeGeminiMetadata(for: payload)
+            ensureAntigravitySessionExists(for: payload)
+            synchronizeAntigravityJumpTarget(for: payload)
+            synchronizeAntigravityMetadata(for: payload)
             emit(
                 .sessionCompleted(
                     SessionCompleted(
                         sessionID: payload.sessionID,
-                        summary: payload.reason.map { "Gemini CLI session ended: \($0)." } ?? payload.implicitSummary,
+                        summary: payload.reason.map { "Antigravity CLI session ended: \($0)." } ?? payload.implicitSummary,
                         timestamp: .now,
                         isInterrupt: true,
                         isSessionEnd: true
@@ -1367,9 +1370,9 @@ public final class BridgeServer: @unchecked Sendable {
             send(.response(.acknowledged), to: clientID)
 
         case .notification:
-            ensureGeminiSessionExists(for: payload)
-            synchronizeGeminiJumpTarget(for: payload)
-            synchronizeGeminiMetadata(for: payload)
+            ensureAntigravitySessionExists(for: payload)
+            synchronizeAntigravityJumpTarget(for: payload)
+            synchronizeAntigravityMetadata(for: payload)
 
             let currentPhase = localState.session(id: payload.sessionID)?.phase ?? .completed
             emit(
@@ -1387,7 +1390,11 @@ public final class BridgeServer: @unchecked Sendable {
         }
     }
 
-    private func ensureGeminiSessionExists(for payload: GeminiHookPayload) {
+    private func handleGeminiHook(_ payload: GeminiHookPayload, from clientID: UUID) {
+        handleAntigravityHook(payload, from: clientID)
+    }
+
+    private func ensureAntigravitySessionExists(for payload: AntigravityHookPayload) {
         guard !hasSession(id: payload.sessionID) else {
             return
         }
@@ -1397,19 +1404,23 @@ public final class BridgeServer: @unchecked Sendable {
                 SessionStarted(
                     sessionID: payload.sessionID,
                     title: payload.sessionTitle,
-                    tool: .geminiCLI,
+                    tool: .antigravityCLI,
                     origin: .live,
                     initialPhase: .completed,
                     summary: payload.hookEventName == .notification ? payload.notificationSummary : payload.implicitSummary,
                     timestamp: .now,
                     jumpTarget: payload.defaultJumpTarget,
-                    geminiMetadata: payload.defaultGeminiMetadata.isEmpty ? nil : payload.defaultGeminiMetadata
+                    antigravityMetadata: payload.defaultAntigravityMetadata.isEmpty ? nil : payload.defaultAntigravityMetadata
                 )
             )
         )
     }
 
-    private func synchronizeGeminiJumpTarget(for payload: GeminiHookPayload) {
+    private func ensureGeminiSessionExists(for payload: GeminiHookPayload) {
+        ensureAntigravitySessionExists(for: payload)
+    }
+
+    private func synchronizeAntigravityJumpTarget(for payload: AntigravityHookPayload) {
         guard let existingSession = localState.session(id: payload.sessionID) else {
             return
         }
@@ -1434,36 +1445,45 @@ public final class BridgeServer: @unchecked Sendable {
         )
     }
 
-    private func synchronizeGeminiMetadata(for payload: GeminiHookPayload) {
+    private func synchronizeGeminiJumpTarget(for payload: GeminiHookPayload) {
+        synchronizeAntigravityJumpTarget(for: payload)
+    }
+
+    private func synchronizeAntigravityMetadata(for payload: AntigravityHookPayload) {
         guard let existingSession = localState.session(id: payload.sessionID) else {
             return
         }
 
-        let update = payload.defaultGeminiMetadata
-        let merged = GeminiSessionMetadata(
-            transcriptPath: update.transcriptPath ?? existingSession.geminiMetadata?.transcriptPath,
-            initialUserPrompt: existingSession.geminiMetadata?.initialUserPrompt ?? update.initialUserPrompt ?? update.lastUserPrompt,
-            lastUserPrompt: update.lastUserPrompt ?? existingSession.geminiMetadata?.lastUserPrompt,
-            lastAssistantMessage: update.lastAssistantMessage ?? existingSession.geminiMetadata?.lastAssistantMessage,
-            lastAssistantMessageBody: update.lastAssistantMessageBody ?? existingSession.geminiMetadata?.lastAssistantMessageBody
+        let update = payload.defaultAntigravityMetadata
+        let existingMeta = existingSession.antigravityMetadata ?? existingSession.geminiMetadata
+        let merged = AntigravitySessionMetadata(
+            transcriptPath: update.transcriptPath ?? existingMeta?.transcriptPath,
+            initialUserPrompt: existingMeta?.initialUserPrompt ?? update.initialUserPrompt ?? update.lastUserPrompt,
+            lastUserPrompt: update.lastUserPrompt ?? existingMeta?.lastUserPrompt,
+            lastAssistantMessage: update.lastAssistantMessage ?? existingMeta?.lastAssistantMessage,
+            lastAssistantMessageBody: update.lastAssistantMessageBody ?? existingMeta?.lastAssistantMessageBody
         )
         guard !merged.isEmpty else {
             return
         }
 
-        guard existingSession.geminiMetadata != merged else {
+        guard existingMeta != merged else {
             return
         }
 
         emit(
-            .geminiSessionMetadataUpdated(
-                GeminiSessionMetadataUpdated(
+            .antigravitySessionMetadataUpdated(
+                AntigravitySessionMetadataUpdated(
                     sessionID: payload.sessionID,
-                    geminiMetadata: merged,
+                    antigravityMetadata: merged,
                     timestamp: .now
                 )
             )
         )
+    }
+
+    private func synchronizeGeminiMetadata(for payload: GeminiHookPayload) {
+        synchronizeAntigravityMetadata(for: payload)
     }
 
     private func clearStaleCursorInteractionIfNeeded(for sessionID: String) {

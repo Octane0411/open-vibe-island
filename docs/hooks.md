@@ -254,20 +254,20 @@ Setting `interrupt: true` terminates the current agent turn immediately.
 
 ---
 
-## Gemini CLI Hooks (`--source gemini`)
+## Antigravity CLI Hooks (`--source antigravity`)
 
-**Payload type**: `GeminiHookPayload`  
-**Source**: [`Sources/OpenIslandCore/GeminiHooks.swift`](../Sources/OpenIslandCore/GeminiHooks.swift)
+**Payload type**: `AntigravityHookPayload`  
+**Source**: [`Sources/OpenIslandCore/AntigravityHooks.swift`](../Sources/OpenIslandCore/AntigravityHooks.swift)
 
 ### Events
 
 | `hook_event_name` | When it fires | Current OpenIsland behavior |
 |---|---|---|
-| `SessionStart` | Session starts or resumes | Creates or restores the Gemini session, title, jump target, and transcript metadata |
-| `BeforeAgent` | Gemini starts handling a prompt / turn | Marks the session running, updates prompt text, refreshes terminal metadata |
-| `AfterAgent` | Gemini finishes a turn | Marks the turn completed and emits a completion card |
-| `SessionEnd` | Gemini reports the session ended | Marks the hook-managed session ended and removes it from active visibility |
-| `Notification` | Gemini emits a notification message | Updates the session summary / activity text without blocking the agent |
+| `SessionStart` | Session starts or resumes | Creates or restores the Antigravity session, title, jump target, and transcript metadata |
+| `BeforeAgent` | Antigravity starts handling a prompt / turn | Marks the session running, updates prompt text, refreshes terminal metadata |
+| `AfterAgent` | Antigravity finishes a turn | Marks the turn completed and emits a completion card |
+| `SessionEnd` | Antigravity reports the session ended | Marks the hook-managed session ended and removes it from active visibility |
+| `Notification` | Antigravity emits a notification message | Updates the session summary / activity text without blocking the agent |
 
 ### Common payload fields
 
@@ -276,16 +276,16 @@ Setting `interrupt: true` terminates the current agent turn immediately.
 | `cwd` | `cwd` | Working directory |
 | `hook_event_name` | `hookEventName` | Event type |
 | `session_id` | `sessionID` | Session identifier |
-| `transcript_path` | `transcriptPath` | Gemini transcript file path |
+| `transcript_path` | `transcriptPath` | Antigravity transcript file path |
 | `timestamp` | `timestamp` | Hook timestamp |
 | `prompt` | `prompt` | User prompt text |
-| `prompt_response` | `promptResponse` | Gemini response text |
+| `prompt_response` | `promptResponse` | Antigravity response text |
 | `source` | `source` | Session start source |
 | `reason` | `reason` | Session-end reason |
 | `notification_type` | `notificationType` | Notification category |
 | `message` | `message` | Notification message |
 | `details` | `details` | Structured notification payload |
-| `stop_hook_active` | `stopHookActive` | Whether Gemini stop hook support is active |
+| `stop_hook_active` | `stopHookActive` | Whether Antigravity stop hook support is active |
 | `terminal_app` | `terminalApp` | Terminal name |
 | `terminal_session_id` | `terminalSessionID` | Terminal session identifier |
 | `terminal_tty` | `terminalTTY` | TTY device path |
@@ -293,17 +293,16 @@ Setting `interrupt: true` terminates the current agent turn immediately.
 
 ### Current feature coverage
 
-- Session lifecycle ingestion for Gemini CLI via `OpenIslandHooks --source gemini`
-- Session list and island visibility updates from Gemini hook events
+- Session lifecycle ingestion for Antigravity CLI via `OpenIslandHooks --source antigravity`
+- Session list and island visibility updates from Antigravity hook events
 - Prompt / response metadata capture for completion cards and session details
 - Terminal jump metadata enrichment for Terminal.app, iTerm2, Ghostty, and other supported terminals
-- Process-assisted liveness matching so active Gemini CLI sessions can stay visible even when hook traffic is sparse
+- Process-assisted liveness matching so active Antigravity CLI sessions (`antigravity` / `agy`) stay visible even when hook traffic is sparse
 
 ### Current limitations
 
-- Gemini hooks are currently treated as fire-and-forget. OpenIsland does not send Gemini-specific approval or modification directives back to stdout.
-- Gemini hook payloads sometimes include a duplicated copy of the final response body, often with whitespace-only differences. OpenIsland applies a best-effort compatibility pass before rendering completion content, but the result is not guaranteed to be perfect for every response shape.
-- Gemini support is currently limited to the hook events and UI/session behaviors listed above. It does not yet match the richer permission / interaction flows available for Claude Code or OpenCode.
+- Antigravity hooks are currently treated as fire-and-forget. OpenIsland does not send Antigravity-specific approval or modification directives back to stdout.
+- Antigravity support is currently limited to the hook events and UI/session behaviors listed above.
 
 ---
 
@@ -315,7 +314,7 @@ Setting `interrupt: true` terminates the current agent turn immediately.
 | Codex | All other managed events | **45 seconds** |
 | Claude Code | `PermissionRequest` | **24 hours** (awaits human approval) |
 | Claude Code | All other events | **45 seconds** |
-| Gemini CLI | All events | Bridge default |
+| Antigravity CLI | All events | Bridge default |
 
 ---
 

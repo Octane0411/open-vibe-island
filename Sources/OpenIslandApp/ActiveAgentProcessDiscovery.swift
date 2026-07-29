@@ -182,15 +182,15 @@ struct ActiveAgentProcessDiscovery {
                 continue
             }
 
-            if isGeminiProcess(command: process.command) {
-                let claimKey = "gemini:\(process.pid)"
+            if isAntigravityProcess(command: process.command) {
+                let claimKey = "antigravity:\(process.pid)"
                 guard claimedKeys.insert(claimKey).inserted else {
                     continue
                 }
 
                 let lsofOutput = lsofOutput(pid: process.pid)
                 snapshots.append(ProcessSnapshot(
-                    tool: .geminiCLI,
+                    tool: .antigravityCLI,
                     sessionID: nil,
                     workingDirectory: lsofOutput.flatMap(workingDirectory(from:)),
                     terminalTTY: process.terminalTTY,
@@ -739,17 +739,29 @@ struct ActiveAgentProcessDiscovery {
         return false
     }
 
-    private func isGeminiProcess(command: String) -> Bool {
+    private func isAntigravityProcess(command: String) -> Bool {
         let lowered = command.lowercased()
         guard let firstToken = lowered.split(separator: " ").first.map(String.init) else {
             return false
         }
 
-        return firstToken == "gemini"
+        return firstToken == "antigravity"
+            || firstToken == "agy"
+            || firstToken.hasSuffix("/antigravity")
+            || firstToken.hasSuffix("/agy")
+            || lowered.contains("/bin/antigravity")
+            || lowered.contains("/bin/agy")
+            || lowered.contains("antigravity-cli")
+            || lowered.contains("antigravity_cli")
+            || firstToken == "gemini"
             || firstToken.hasSuffix("/gemini")
             || lowered.contains("/bin/gemini")
             || lowered.contains("/google/gemini-cli")
             || lowered.contains("/@google/gemini-cli")
+    }
+
+    private func isGeminiProcess(command: String) -> Bool {
+        isAntigravityProcess(command: command)
     }
 
     /// Matches the `kimi` CLI (Moonshot) entry-point. `kimi-info` / `kimi-mcp` /
