@@ -170,9 +170,37 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
     }
 }
 
+public enum CodexRuntimeSurface: String, Codable, Sendable {
+    case desktopApp = "desktop-app"
+    case external
+    case unknown
+
+    public static func classify(
+        source: CodexThreadSource?,
+        originator: String? = nil
+    ) -> CodexRuntimeSurface {
+        let normalizedOriginator = originator?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        if normalizedOriginator == "codex desktop" {
+            return .desktopApp
+        }
+
+        switch source {
+        case .appServer:
+            return .desktopApp
+        case .cli, .vscode, .codexExec:
+            return .external
+        case .unknown, nil:
+            return .unknown
+        }
+    }
+}
+
 public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
     public var sessionID: String
     public var title: String
+    public var runtimeSurface: CodexRuntimeSurface
     public var origin: SessionOrigin?
     public var attachmentState: SessionAttachmentState
     public var summary: String
@@ -184,6 +212,7 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
     public init(
         sessionID: String,
         title: String,
+        runtimeSurface: CodexRuntimeSurface = .unknown,
         origin: SessionOrigin? = nil,
         attachmentState: SessionAttachmentState = .stale,
         summary: String,
@@ -194,6 +223,7 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
     ) {
         self.sessionID = sessionID
         self.title = title
+        self.runtimeSurface = runtimeSurface
         self.origin = origin
         self.attachmentState = attachmentState
         self.summary = summary
@@ -207,6 +237,7 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
         self.init(
             sessionID: session.id,
             title: session.title,
+            runtimeSurface: session.codexRuntimeSurface,
             origin: session.origin,
             attachmentState: session.attachmentState,
             summary: session.summary,
@@ -218,7 +249,7 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
     }
 
     public var session: AgentSession {
-        var session = AgentSession(
+        AgentSession(
             id: sessionID,
             title: title,
             tool: .codex,
@@ -228,18 +259,15 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
             summary: summary,
             updatedAt: updatedAt,
             jumpTarget: jumpTarget,
-            codexMetadata: codexMetadata
+            codexMetadata: codexMetadata,
+            codexRuntimeSurface: runtimeSurface
         )
-        // Re-derive the Codex.app flag from the persisted terminalApp so
-        // restarted sessions continue to use app-level liveness rather than
-        // falling back to CLI subprocess matching (which would kill them).
-        session.isCodexAppSession = jumpTarget?.terminalApp == "Codex.app"
-        return session
     }
 
     private enum CodingKeys: String, CodingKey {
         case sessionID
         case title
+        case runtimeSurface
         case origin
         case attachmentState
         case summary
@@ -253,6 +281,10 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         sessionID = try container.decode(String.self, forKey: .sessionID)
         title = try container.decode(String.self, forKey: .title)
+        runtimeSurface = try container.decodeIfPresent(
+            CodexRuntimeSurface.self,
+            forKey: .runtimeSurface
+        ) ?? .unknown
         origin = try container.decodeIfPresent(SessionOrigin.self, forKey: .origin)
         attachmentState = try container.decodeIfPresent(SessionAttachmentState.self, forKey: .attachmentState) ?? .stale
         summary = try container.decode(String.self, forKey: .summary)
@@ -266,6 +298,7 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(sessionID, forKey: .sessionID)
         try container.encode(title, forKey: .title)
+        try container.encode(runtimeSurface, forKey: .runtimeSurface)
         try container.encodeIfPresent(origin, forKey: .origin)
         try container.encode(attachmentState, forKey: .attachmentState)
         try container.encode(summary, forKey: .summary)
@@ -484,6 +517,7 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         var cwd: String
         var timestamp: Date?
         var isInternalSubagent: Bool
+        var runtimeSurface: CodexRuntimeSurface
 
         var workspaceName: String {
             let workspace = URL(fileURLWithPath: cwd).lastPathComponent
@@ -690,6 +724,7 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         return CodexTrackedSessionRecord(
             sessionID: sessionMeta.sessionID,
             title: sessionMeta.sessionTitle,
+            runtimeSurface: sessionMeta.runtimeSurface,
             origin: .live,
             attachmentState: .stale,
             summary: summary,
@@ -705,24 +740,39 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
     /// subagent. Only the initial chunk is needed because `session_meta` is
     /// written at the beginning of every rollout.
     public static func isInternalSubagentTranscript(atPath path: String?) -> Bool {
+        sessionMeta(atPath: path, fileManager: .default)?.isInternalSubagent ?? false
+    }
+
+    /// Resolves runtime ownership from the rollout header at an exact cached
+    /// transcript path. This is intentionally separate from discovery so
+    /// legacy cache entries can be migrated before exclusion is calculated.
+    public func runtimeSurface(atTranscriptPath path: String?) -> CodexRuntimeSurface? {
+        Self.sessionMeta(atPath: path, fileManager: fileManager)?.runtimeSurface
+    }
+
+    private static func sessionMeta(
+        atPath path: String?,
+        fileManager: FileManager
+    ) -> SessionMeta? {
         guard let path, !path.isEmpty,
+              fileManager.fileExists(atPath: path),
               let fileHandle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else {
-            return false
+            return nil
         }
         defer { try? fileHandle.close() }
 
         guard let data = try? fileHandle.read(upToCount: streamingChunkSize),
               !data.isEmpty else {
-            return false
+            return nil
         }
 
         let contents = String(decoding: data, as: UTF8.self)
         for line in contents.split(separator: "\n", omittingEmptySubsequences: true) {
             if let sessionMeta = parseSessionMeta(fromLine: String(line)) {
-                return sessionMeta.isInternalSubagent
+                return sessionMeta
             }
         }
-        return false
+        return nil
     }
 
     private static func parseSessionMeta(fromLine line: String) -> SessionMeta? {
@@ -739,13 +789,19 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             return nil
         }
 
+        let source = (payload["source"] as? String)
+            .flatMap(CodexThreadSource.init(rawValue:))
         return SessionMeta(
             sessionID: sessionID,
             cwd: cwd,
             timestamp: codexRolloutParseTimestamp(
                 (payload["timestamp"] as? String) ?? (object["timestamp"] as? String)
             ),
-            isInternalSubagent: (payload["source"] as? [String: Any])?["subagent"] != nil
+            isInternalSubagent: (payload["source"] as? [String: Any])?["subagent"] != nil,
+            runtimeSurface: CodexRuntimeSurface.classify(
+                source: source,
+                originator: payload["originator"] as? String
+            )
         )
     }
 
