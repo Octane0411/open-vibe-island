@@ -57,8 +57,8 @@ extension AgentSession {
         // Base: vertical padding (22) + headline (~17) + divider rounding.
         var height: CGFloat = 40
         guard presence != .inactive else { return height }
-        if spotlightPromptLineText != nil { height += 17 }
-        if spotlightActivityLineText != nil { height += 20 }
+        if spotlightPromptLineText != nil { height += 32 }
+        if spotlightActivityLineText != nil { height += 30 }
         if let subagents = claudeMetadata?.activeSubagents, !subagents.isEmpty {
             height += 18
             height += CGFloat(subagents.count) * 18  // each subagent row (spacing 4 + text 14)
@@ -77,18 +77,6 @@ private let openAnimation = Animation.spring(response: 0.42, dampingFraction: 0.
 private let closeAnimation = Animation.smooth(duration: 0.3)
 private let popAnimation = Animation.spring(response: 0.3, dampingFraction: 0.5)
 private let openedSurfaceUnmountDelay: TimeInterval = 0.36
-
-private struct ConditionalDrawingGroup: ViewModifier {
-    let enabled: Bool
-
-    func body(content: Content) -> some View {
-        if enabled {
-            content.drawingGroup()
-        } else {
-            content
-        }
-    }
-}
 
 // MARK: - Main island view
 
@@ -582,7 +570,6 @@ struct IslandPanelView: View {
                     stateIndicator: model.islandSessionStateIndicator,
                     completedStaleThreshold: model.completedStaleThreshold.seconds,
                     isActionable: true,
-                    useDrawingGroup: model.notchStatus == .opened,
                     isInteractive: model.notchStatus == .opened,
                     presentation: .notification,
                     sideInset: sessionListSideInset,
@@ -624,7 +611,6 @@ struct IslandPanelView: View {
                                 stateIndicator: model.islandSessionStateIndicator,
                                 completedStaleThreshold: model.completedStaleThreshold.seconds,
                                 isActionable: session.phase.requiresAttention || session.id == actionableSessionID,
-                                useDrawingGroup: model.notchStatus == .opened,
                                 isInteractive: model.notchStatus == .opened,
                                 sideInset: sessionListSideInset,
                                 lang: model.lang,
@@ -661,8 +647,8 @@ struct IslandPanelView: View {
 
     @ViewBuilder
     private func sessionRowsContent(referenceDate: Date) -> some View {
-        ForEach(model.islandSessionSections) { section in
-            VStack(alignment: .leading, spacing: 0) {
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(model.islandSessionSections) { section in
                 if model.islandSessionGroup != .none {
                     sessionSectionHeader(section)
                 }
@@ -674,7 +660,6 @@ struct IslandPanelView: View {
                         stateIndicator: model.islandSessionStateIndicator,
                         completedStaleThreshold: model.completedStaleThreshold.seconds,
                         isActionable: session.phase.requiresAttention || session.id == actionableSessionID,
-                        useDrawingGroup: model.notchStatus == .opened,
                         isInteractive: model.notchStatus == .opened,
                         sideInset: sessionListSideInset,
                         lang: model.lang,
@@ -874,7 +859,8 @@ struct IslandPanelView: View {
                     UsageWindowPresentation(
                         id: "claude-5h",
                         label: "5h",
-                        usedPercentage: fiveHour.usedPercentage,
+                        displayPercentage: fiveHour.usedPercentage,
+                        severityPercentage: fiveHour.usedPercentage,
                         resetsAt: fiveHour.resetsAt
                     )
                 )
@@ -885,7 +871,8 @@ struct IslandPanelView: View {
                     UsageWindowPresentation(
                         id: "claude-7d",
                         label: "7d",
-                        usedPercentage: sevenDay.usedPercentage,
+                        displayPercentage: sevenDay.usedPercentage,
+                        severityPercentage: sevenDay.usedPercentage,
                         resetsAt: sevenDay.resetsAt
                     )
                 )
@@ -909,7 +896,8 @@ struct IslandPanelView: View {
                 UsageWindowPresentation(
                     id: "codex-\(window.key)",
                     label: window.label,
-                    usedPercentage: window.usedPercentage,
+                    displayPercentage: window.leftPercentage,
+                    severityPercentage: window.usedPercentage,
                     resetsAt: window.resetsAt
                 )
             }
@@ -1056,7 +1044,7 @@ struct IslandPanelView: View {
 
     private func usageHelpText(for provider: UsageProviderPresentation) -> String {
         provider.windows.map { window in
-            var parts = ["\(window.label) \(window.roundedUsedPercentage)%"]
+            var parts = ["\(window.label) \(window.roundedDisplayPercentage)%"]
             if let resetsAt = window.resetsAt,
                let remaining = remainingDurationString(until: resetsAt) {
                 parts.append(remaining)
@@ -1110,14 +1098,14 @@ struct IslandPanelView: View {
     }
 }
 
-private struct UsageProviderPresentation: Identifiable {
+struct UsageProviderPresentation: Identifiable {
     let id: String
     let title: String
     let windows: [UsageWindowPresentation]
 
     var peakWindow: UsageWindowPresentation? {
         windows.max { lhs, rhs in
-            lhs.usedPercentage < rhs.usedPercentage
+            lhs.severityPercentage < rhs.severityPercentage
         }
     }
 
@@ -1126,11 +1114,11 @@ private struct UsageProviderPresentation: Identifiable {
     }
 
     var peakUsedPercentage: Double {
-        peakWindow?.usedPercentage ?? 0
+        peakWindow?.severityPercentage ?? 0
     }
 
     var peakUsagePercentage: Int {
-        peakWindow?.roundedUsedPercentage ?? 0
+        peakWindow?.roundedDisplayPercentage ?? 0
     }
 
     var shortTitle: String {
@@ -1145,14 +1133,15 @@ private struct UsageProviderPresentation: Identifiable {
     }
 }
 
-private struct UsageWindowPresentation: Identifiable {
+struct UsageWindowPresentation: Identifiable {
     let id: String
     let label: String
-    let usedPercentage: Double
+    let displayPercentage: Double
+    let severityPercentage: Double
     let resetsAt: Date?
 
-    var roundedUsedPercentage: Int {
-        Int(usedPercentage.rounded())
+    var roundedDisplayPercentage: Int {
+        Int(displayPercentage.rounded())
     }
 }
 
@@ -1184,7 +1173,6 @@ private struct IslandSessionRow: View {
     var stateIndicator: IslandSessionStateIndicator = .animatedDot
     var completedStaleThreshold: TimeInterval = AgentSession.staleCompletedDisplayThreshold
     var isActionable: Bool = false
-    var useDrawingGroup: Bool = true
     var isInteractive: Bool = true
     var presentation: IslandSessionRowPresentation = .list
     var sideInset: CGFloat = 16
@@ -1244,7 +1232,6 @@ private struct IslandSessionRow: View {
             }
         }
         .opacity(isStaleCompleted ? 0.7 : 1)
-        .modifier(ConditionalDrawingGroup(enabled: useDrawingGroup && !isActionable))
         .contentShape(Rectangle())
         .animation(.easeInOut(duration: 0.15), value: isHighlighted)
         .onTapGesture(perform: handlePrimaryTap)
@@ -1260,30 +1247,30 @@ private struct IslandSessionRow: View {
     }
 
     private func rowSummary(presence: IslandSessionPresence, showsDetail: Bool) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            if showsLeadingStatusIndicator {
-                statusIndicator(for: presence)
-                    .frame(width: 20, alignment: .top)
-            }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 10) {
+                if showsLeadingStatusIndicator {
+                    statusIndicator(for: presence)
+                        .frame(width: 20, alignment: .top)
+                }
 
-            VStack(alignment: .leading, spacing: 3) {
                 Text(summaryHeadlineText)
                     .font(summaryTitleFont)
                     .foregroundStyle(titleColor(for: presence))
                     .lineLimit(1)
                     .truncationMode(.tail)
+                    .layoutPriority(2)
 
-                if showsDetail,
-                   let promptLine = summaryPromptLineText {
-                    Text(promptLine)
-                        .font(.system(size: 11.2, weight: .medium))
-                        .foregroundStyle(summaryPromptColor(for: presence))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                Spacer(minLength: 8)
+
+                HStack(spacing: 6) {
+                    detailToggleButton(isOpen: showsDetail)
+                    if let onDismiss {
+                        DismissButton(action: onDismiss)
+                    }
                 }
+                .layoutPriority(0)
             }
-
-            Spacer(minLength: 10)
 
             HStack(spacing: 6) {
                 agentBadge
@@ -1291,16 +1278,31 @@ private struct IslandSessionRow: View {
                     sideBadge("SSH")
                 }
                 if let terminalBadge = session.spotlightTerminalBadge {
-                    sideBadge(terminalBadge)
+                    ViewThatFits(in: .horizontal) {
+                        sideBadge(terminalBadge)
+                        if let compactBadge = session.spotlightCompactTerminalBadge,
+                           compactBadge != terminalBadge {
+                            sideBadge(compactBadge)
+                        }
+                    }
                 }
+                Spacer(minLength: 4)
                 Text(session.spotlightAgeBadge)
                     .font(.system(size: 10.5, weight: .medium, design: .monospaced))
                     .foregroundStyle(summaryAgeColor(for: presence))
                     .frame(minWidth: 30, alignment: .trailing)
-                detailToggleButton(isOpen: showsDetail)
-                if let onDismiss {
-                    DismissButton(action: onDismiss)
-                }
+            }
+            .padding(.leading, showsLeadingStatusIndicator ? 30 : 0)
+
+            if showsDetail,
+               let promptLine = summaryPromptLineText {
+                Text(promptLine)
+                    .font(.system(size: 11.2, weight: .medium))
+                    .foregroundStyle(summaryPromptColor(for: presence))
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, showsLeadingStatusIndicator ? 30 : 0)
             }
         }
         .padding(.leading, rowLeadingInset)
@@ -1413,6 +1415,8 @@ private struct IslandSessionRow: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(.white.opacity(presentation == .notification ? 0.045 : 0.06), in: Capsule())
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
     }
 
     private var summaryPromptLineText: String? {
@@ -1428,21 +1432,10 @@ private struct IslandSessionRow: View {
 
     private var summaryHeadlineText: String {
         if presentation == .notification, session.phase == .completed {
-            return notificationWorkspaceHeadlineText
+            return session.completionNotificationHeadlineText
         }
 
         return session.spotlightHeadlineText
-    }
-
-    private var notificationWorkspaceHeadlineText: String {
-        let workspace = session.spotlightWorkspaceName.trimmedForNotificationCard
-        let title = workspace.isEmpty ? session.tool.displayName : workspace
-        guard let branch = session.spotlightWorktreeBranch?.trimmedForNotificationCard,
-              !branch.isEmpty else {
-            return title
-        }
-
-        return "\(title) (\(branch))"
     }
 
     private var notificationCompletedPromptLineText: String? {
@@ -1586,7 +1579,8 @@ private struct IslandSessionRow: View {
         if session.phase == .completed {
             return isActionable && completionHasExpandedBody
         }
-        return session.phase == .running && runningDetailText != nil
+        return session.phase == .running
+            && (!session.spotlightElapsedTimers.isEmpty || runningDetailText != nil)
     }
 
     private var completionHasExpandedBody: Bool {
@@ -1604,29 +1598,67 @@ private struct IslandSessionRow: View {
         }
     }
 
+    @ViewBuilder
     private var runningDetailBody: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if let runningDetailText {
-                Text(runningDetailText)
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.82))
-                    .lineLimit(3)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(Color.white.opacity(0.045))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .strokeBorder(.white.opacity(0.06))
-                    )
+        if !session.spotlightElapsedTimers.isEmpty {
+            TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                HStack(spacing: 7) {
+                    ForEach(session.spotlightElapsedTimers) { timer in
+                        elapsedTimerChip(timer, at: timeline.date)
+                    }
+                }
             }
+            .padding(.vertical, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else if let runningDetailText {
+            Text(runningDetailText)
+                .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.82))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.white.opacity(0.045))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(.white.opacity(0.10))
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 2)
         }
-        .padding(.vertical, 2)
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func elapsedTimerChip(
+        _ timer: SpotlightElapsedTimer,
+        at referenceDate: Date
+    ) -> some View {
+        HStack(spacing: 5) {
+            Text(lang.t(timer.kind.localizationKey))
+                .fontWeight(.semibold)
+            Text(
+                AgentSession.compactElapsedDuration(
+                    timer.elapsed(at: referenceDate),
+                    includingSecondsWhenHours: timer.kind == .thinking
+                )
+            )
+                .foregroundStyle(.white.opacity(0.62))
+        }
+        .font(.system(size: 11.5, design: .monospaced))
+        .foregroundStyle(.white.opacity(0.84))
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.white.opacity(0.045))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .strokeBorder(.white.opacity(0.10))
+        )
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     // MARK: - Approval action area
@@ -1816,6 +1848,10 @@ private struct IslandSessionRow: View {
     }
 
     private var runningDetailText: String? {
+        guard session.tool != .codex else {
+            return nil
+        }
+
         if let preview = session.currentCommandPreviewText?.trimmedForNotificationCard,
            !preview.isEmpty {
             return "$ \(preview)"
@@ -1868,11 +1904,8 @@ private struct IslandSessionRow: View {
         let tint = statusTint(for: presence)
         switch stateIndicator {
         case .animatedDot:
-            if let interval = stateIndicator.timelineInterval(presence: presence, isActionable: isActionable) {
-                TimelineView(.periodic(from: .now, by: interval)) { context in
-                    let pulse = (sin(context.date.timeIntervalSinceReferenceDate * 3.2) + 1) / 2
-                    statusDot(tint: tint, presence: presence, pulse: pulse)
-                }
+            if stateIndicator.usesLayerAnimation(presence: presence, isActionable: isActionable) {
+                PulsingStatusDot(tint: tint)
                 .frame(width: 10, height: 24, alignment: .top)
             } else {
                 statusDot(tint: tint, presence: presence, pulse: 0)

@@ -61,6 +61,8 @@ public struct CodexUsageSnapshot: Equatable, Codable, Sendable {
 
 public enum CodexUsageLoader {
     public static let defaultRootURL = CodexRolloutDiscovery.defaultRootURL
+    private static let primaryLimitID = "codex"
+    private static let primaryPreferenceWindow: TimeInterval = 24 * 60 * 60
 
     private struct Candidate {
         var fileURL: URL
@@ -108,37 +110,85 @@ public enum CodexUsageLoader {
             return lhs.modifiedAt > rhs.modifiedAt
         }
 
+        let preferredCandidateCutoff = sortedCandidates.first?.modifiedAt.addingTimeInterval(-primaryPreferenceWindow)
+        var newestFallback: CodexUsageSnapshot?
         for candidate in sortedCandidates {
+            if newestFallback != nil,
+               let preferredCandidateCutoff,
+               candidate.modifiedAt < preferredCandidateCutoff {
+                break
+            }
+
             if let snapshot = loadLatestSnapshot(
                 from: candidate.fileURL,
                 modifiedAt: candidate.modifiedAt
             ) {
-                return snapshot
+                if snapshot.limitID == primaryLimitID {
+                    return snapshot
+                }
+
+                newestFallback = newestFallback ?? snapshot
             }
         }
 
-        return nil
+        return newestFallback
     }
 
     private static func loadLatestSnapshot(from fileURL: URL, modifiedAt: Date) -> CodexUsageSnapshot? {
-        guard let contents = try? String(contentsOf: fileURL, encoding: .utf8) else {
+        guard let fileHandle = try? FileHandle(forReadingFrom: fileURL) else {
             return nil
         }
+        defer { try? fileHandle.close() }
 
-        var latestSnapshot: CodexUsageSnapshot?
-        contents.enumerateLines { line, _ in
-            guard let snapshot = snapshot(
-                from: line,
-                filePath: fileURL.path,
-                fallbackTimestamp: modifiedAt
-            ) else {
-                return
+        do {
+            let chunkSize: UInt64 = 1_024 * 1_024
+            var offset = try fileHandle.seekToEnd()
+            var newerLinePrefix = Data()
+            var newestFallbackSnapshot: CodexUsageSnapshot?
+
+            while offset > 0 {
+                let readStart = offset > chunkSize ? offset - chunkSize : 0
+                try fileHandle.seek(toOffset: readStart)
+                var data = try fileHandle.read(upToCount: Int(offset - readStart)) ?? Data()
+                data.append(newerLinePrefix)
+
+                let completeLineData: Data
+                if readStart > 0 {
+                    guard let firstNewline = data.firstIndex(of: UInt8(ascii: "\n")) else {
+                        newerLinePrefix = data
+                        offset = readStart
+                        continue
+                    }
+                    newerLinePrefix = Data(data[..<firstNewline])
+                    completeLineData = Data(data[data.index(after: firstNewline)...])
+                } else {
+                    completeLineData = data
+                }
+
+                if let contents = String(data: completeLineData, encoding: .utf8) {
+                    for line in contents.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
+                        guard let snapshot = snapshot(
+                            from: String(line),
+                            filePath: fileURL.path,
+                            fallbackTimestamp: modifiedAt
+                        ) else {
+                            continue
+                        }
+
+                        if snapshot.limitID == primaryLimitID {
+                            return snapshot
+                        }
+                        newestFallbackSnapshot = newestFallbackSnapshot ?? snapshot
+                    }
+                }
+
+                offset = readStart
             }
 
-            latestSnapshot = snapshot
+            return newestFallbackSnapshot
+        } catch {
+            return nil
         }
-
-        return latestSnapshot
     }
 
     private static func snapshot(

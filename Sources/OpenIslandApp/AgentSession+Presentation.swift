@@ -14,6 +14,46 @@ enum IslandSessionPresence: Equatable {
     case inactive
 }
 
+enum SpotlightElapsedTimerKind: String, Equatable, Identifiable {
+    case goal
+    case plan
+    case thinking
+
+    var id: String { rawValue }
+
+    var localizationKey: String {
+        switch self {
+        case .goal:
+            "session.timer.goal"
+        case .plan:
+            "session.timer.plan"
+        case .thinking:
+            "session.timer.thinking"
+        }
+    }
+}
+
+struct SpotlightElapsedTimer: Equatable, Identifiable {
+    let kind: SpotlightElapsedTimerKind
+    let duration: CodexActiveDuration
+
+    var id: SpotlightElapsedTimerKind { kind }
+
+    init(kind: SpotlightElapsedTimerKind, startedAt: Date) {
+        self.kind = kind
+        self.duration = CodexActiveDuration(runningSince: startedAt)
+    }
+
+    init(kind: SpotlightElapsedTimerKind, duration: CodexActiveDuration) {
+        self.kind = kind
+        self.duration = duration
+    }
+
+    func elapsed(at referenceDate: Date) -> TimeInterval {
+        duration.elapsed(at: referenceDate)
+    }
+}
+
 extension AgentSession {
     private static let collapsedDetailAgeThreshold: TimeInterval = 20 * 60
     private static let islandActivityThreshold: TimeInterval = 20 * 60
@@ -111,7 +151,106 @@ extension AgentSession {
     }
 
     var spotlightTerminalBadge: String? {
-        jumpTarget?.terminalApp
+        if tool == .codex,
+           isCodexAppSession || jumpTarget?.terminalApp == "Codex.app" {
+            return spotlightCodexConfigurationBadge
+        }
+
+        return jumpTarget?.terminalApp
+    }
+
+    var spotlightCompactTerminalBadge: String? {
+        guard tool == .codex,
+              isCodexAppSession || jumpTarget?.terminalApp == "Codex.app",
+              let metadata = codexMetadata else {
+            return nil
+        }
+
+        let parts = [
+            metadata.model.flatMap(Self.shortCodexModelName),
+            metadata.reasoningEffort.flatMap(Self.shortCodexEffortName),
+            metadata.serviceTier.flatMap(Self.shortCodexServiceTierName),
+        ].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private var spotlightCodexConfigurationBadge: String? {
+        guard let metadata = codexMetadata else {
+            return nil
+        }
+
+        let parts = [
+            metadata.model.flatMap(Self.compactCodexModelName),
+            metadata.reasoningEffort.flatMap(Self.compactCodexEffortName),
+            metadata.serviceTier.flatMap(Self.compactCodexServiceTierName),
+        ].compactMap { $0 }
+
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private static func compactCodexModelName(_ value: String) -> String? {
+        let trimmed = value.trimmedForSurface
+        guard !trimmed.isEmpty else { return nil }
+
+        let components = trimmed.split(separator: "-").map(String.init)
+        let visibleComponents = components.first?.lowercased() == "gpt"
+            ? Array(components.dropFirst())
+            : components
+        guard !visibleComponents.isEmpty else { return trimmed }
+
+        return visibleComponents.map { component in
+            component.allSatisfy { $0.isNumber || $0 == "." }
+                ? component
+                : component.capitalized
+        }.joined(separator: " ")
+    }
+
+    private static func compactCodexEffortName(_ value: String) -> String? {
+        let trimmed = value.trimmedForSurface
+        guard !trimmed.isEmpty else { return nil }
+
+        switch trimmed.lowercased() {
+        case "xhigh": return "XHigh"
+        default: return trimmed.capitalized
+        }
+    }
+
+    private static func compactCodexServiceTierName(_ value: String) -> String? {
+        let trimmed = value.trimmedForSurface
+        guard !trimmed.isEmpty else { return nil }
+
+        switch trimmed.lowercased() {
+        case "default", "standard": return "Standard"
+        case "fast": return "Fast"
+        case "priority": return "Priority"
+        default: return trimmed.capitalized
+        }
+    }
+
+    private static func shortCodexModelName(_ value: String) -> String? {
+        guard let compact = compactCodexModelName(value) else { return nil }
+        return compact.split(separator: " ").first.map(String.init)
+    }
+
+    private static func shortCodexEffortName(_ value: String) -> String? {
+        guard let compact = compactCodexEffortName(value) else { return nil }
+        switch compact.lowercased() {
+        case "xhigh": return "XH"
+        case "high": return "H"
+        case "medium": return "M"
+        case "low": return "L"
+        default: return compact
+        }
+    }
+
+    private static func shortCodexServiceTierName(_ value: String) -> String? {
+        guard let compact = compactCodexServiceTierName(value) else { return nil }
+        switch compact.lowercased() {
+        case "priority": return "P"
+        case "fast": return "F"
+        case "standard": return "Std"
+        default: return compact
+        }
     }
 
     var spotlightWorkspaceName: String {
@@ -168,10 +307,15 @@ extension AgentSession {
     }
 
     var spotlightHeadlineText: String {
-        var headline = spotlightWorkspaceName
+        let codexThreadTitle = spotlightCodexAppThreadTitle
+        var headline = codexThreadTitle ?? spotlightWorkspaceName
 
         if let branch = spotlightWorktreeBranch {
             headline += " (\(branch))"
+        }
+
+        if codexThreadTitle != nil {
+            return headline
         }
 
         guard let prompt = spotlightHeadlinePromptText else {
@@ -179,6 +323,36 @@ extension AgentSession {
         }
 
         return "\(headline) · \(prompt)"
+    }
+
+    var completionNotificationHeadlineText: String {
+        var headline = spotlightCodexAppThreadTitle ?? spotlightWorkspaceName
+        if headline.isEmpty {
+            headline = tool.displayName
+        }
+        if let branch = spotlightWorktreeBranch?.trimmedForSurface,
+           !branch.isEmpty {
+            headline += " (\(branch))"
+        }
+        return headline
+    }
+
+    private var spotlightCodexAppThreadTitle: String? {
+        guard tool == .codex,
+              isCodexAppSession || jumpTarget?.terminalApp == "Codex.app" else {
+            return nil
+        }
+
+        let candidate = title.trimmedForSurface
+        let workspaceName = spotlightWorkspaceName
+        guard !candidate.isEmpty,
+              candidate != workspaceName,
+              candidate != "Codex",
+              candidate != "Codex · \(workspaceName)" else {
+            return nil
+        }
+
+        return candidate
     }
 
     var spotlightHeadlinePromptText: String? {
@@ -266,6 +440,70 @@ extension AgentSession {
 
             return jumpTarget != nil ? "Ready" : "Completed"
         }
+    }
+
+    var spotlightElapsedTimers: [SpotlightElapsedTimer] {
+        guard tool == .codex, phase == .running else {
+            return []
+        }
+
+        var timers: [SpotlightElapsedTimer] = []
+        if let goalDuration = codexMetadata?.activeGoalTimer {
+            timers.append(SpotlightElapsedTimer(kind: .goal, duration: goalDuration))
+        } else if let goalStartedAt = codexMetadata?.activeGoalStartedAt {
+            timers.append(SpotlightElapsedTimer(kind: .goal, startedAt: goalStartedAt))
+        }
+        if codexMetadata?.isPlanMode == true {
+            if let planDuration = codexMetadata?.activePlanTimer {
+                timers.append(SpotlightElapsedTimer(kind: .plan, duration: planDuration))
+            } else if let planStartedAt = codexMetadata?.activePlanStartedAt {
+                timers.append(SpotlightElapsedTimer(kind: .plan, startedAt: planStartedAt))
+            }
+        }
+        if let turnDuration = codexMetadata?.currentTurnTimer {
+            timers.append(
+                SpotlightElapsedTimer(
+                    kind: .thinking,
+                    duration: turnDuration
+                )
+            )
+        } else if let turnStartedAt = codexMetadata?.currentTurnStartedAt {
+            timers.append(
+                SpotlightElapsedTimer(
+                    kind: .thinking,
+                    startedAt: turnStartedAt
+                )
+            )
+        }
+        return timers
+    }
+
+    static func compactElapsedDuration(since startedAt: Date, at referenceDate: Date) -> String {
+        compactElapsedDuration(referenceDate.timeIntervalSince(startedAt))
+    }
+
+    static func compactElapsedDuration(
+        _ duration: TimeInterval,
+        includingSecondsWhenHours: Bool = false
+    ) -> String {
+        let elapsed = max(0, Int(duration))
+        if elapsed < 60 {
+            return "\(elapsed)s"
+        }
+
+        if elapsed < 3_600 {
+            return "\(elapsed / 60)m \(elapsed % 60)s"
+        }
+
+        if elapsed < 86_400 {
+            let hoursAndMinutes = "\(elapsed / 3_600)h \((elapsed % 3_600) / 60)m"
+            if includingSecondsWhenHours {
+                return "\(hoursAndMinutes) \(elapsed % 60)s"
+            }
+            return hoursAndMinutes
+        }
+
+        return "\(elapsed / 86_400)d \((elapsed % 86_400) / 3_600)h"
     }
 
     var spotlightActivityTone: SpotlightActivityTone {

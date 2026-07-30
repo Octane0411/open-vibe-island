@@ -24,7 +24,11 @@ final class HookInstallationCoordinator {
     var kimiHookStatus: KimiHookInstallationStatus?
     var claudeStatusLineStatus: ClaudeStatusLineInstallationStatus?
     var claudeUsageSnapshot: ClaudeUsageSnapshot?
-    var codexUsageSnapshot: CodexUsageSnapshot?
+    var codexUsageSnapshot: CodexUsageSnapshot? {
+        didSet {
+            onCodexUsageSnapshotChanged?(codexUsageSnapshot)
+        }
+    }
     var hooksBinaryURL: URL?
     var isCodexSetupBusy = false
     var isClaudeHookSetupBusy = false
@@ -95,6 +99,15 @@ final class HookInstallationCoordinator {
 
     @ObservationIgnored
     private var codexUsageMonitorTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var codexUsageRefreshTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var lastCodexUsageRefreshDate: Date = .distantPast
+
+    @ObservationIgnored
+    var onCodexUsageSnapshotChanged: ((CodexUsageSnapshot?) -> Void)?
 
     @ObservationIgnored
     private var relativeTimestampFormatter: RelativeDateTimeFormatter {
@@ -771,19 +784,35 @@ final class HookInstallationCoordinator {
         }
     }
 
-    func refreshCodexUsageState() {
-        Task { [weak self] in
+    func refreshCodexUsageState(minimumInterval: TimeInterval = 0) {
+        let now = Date.now
+        guard codexUsageRefreshTask == nil,
+              now.timeIntervalSince(lastCodexUsageRefreshDate) >= minimumInterval else { return }
+        lastCodexUsageRefreshDate = now
+
+        codexUsageRefreshTask = Task { [weak self] in
             guard let self else { return }
+            defer { self.codexUsageRefreshTask = nil }
 
             do {
                 let snapshot = try await Task.detached(priority: .utility) {
                     try CodexUsageLoader.load()
                 }.value
-                self.codexUsageSnapshot = snapshot
+                self.updateCodexUsageSnapshot(snapshot)
             } catch {
                 self.onStatusMessage?("Failed to read Codex usage state: \(error.localizedDescription)")
             }
         }
+    }
+
+    func updateCodexUsageSnapshot(_ snapshot: CodexUsageSnapshot?) {
+        if let currentCapturedAt = codexUsageSnapshot?.capturedAt,
+           let newCapturedAt = snapshot?.capturedAt,
+           newCapturedAt < currentCapturedAt {
+            return
+        }
+
+        codexUsageSnapshot = snapshot
     }
 
     // MARK: - Intent-aware helpers

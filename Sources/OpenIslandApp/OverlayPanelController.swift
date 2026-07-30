@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import QuartzCore
 import SwiftUI
 import OpenIslandCore
 
@@ -689,9 +690,204 @@ final class OverlayPanelController {
 
 // MARK: - NotchPanel
 
+private final class SmoothWheelScrollState {
+    weak var scrollView: NSScrollView?
+    var targetY: CGFloat
+
+    init(scrollView: NSScrollView, targetY: CGFloat) {
+        self.scrollView = scrollView
+        self.targetY = targetY
+    }
+}
+
 private final class NotchPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    private var smoothScrollStates: [ObjectIdentifier: SmoothWheelScrollState] = [:]
+    private var smoothScrollDisplayLink: CADisplayLink?
+    private var smoothScrollLastTimestamp: CFTimeInterval?
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .scrollWheel,
+           SmoothWheelScrollPolicy.shouldHandle(
+               phase: event.phase,
+               momentumPhase: event.momentumPhase
+           ),
+           scrollSmoothly(with: event) {
+            return
+        }
+        super.sendEvent(event)
+    }
+
+    override func close() {
+        stopSmoothScrollDisplayLink()
+        super.close()
+    }
+
+    private func scrollSmoothly(with event: NSEvent) -> Bool {
+        guard abs(event.scrollingDeltaY) >= abs(event.scrollingDeltaX),
+              let contentView else {
+            return false
+        }
+
+        let contentPoint = contentView.convert(event.locationInWindow, from: nil)
+        var hitView = contentView.hitTest(contentPoint)
+        var foundScrollView = false
+        while let view = hitView {
+            if let scrollView = view as? NSScrollView {
+                foundScrollView = true
+                if scrollSmoothly(scrollView, with: event) {
+                    return true
+                }
+            }
+            hitView = view.superview
+        }
+
+        // Avoid a slow elastic bounce when a standalone wheel event reaches
+        // the outer boundary of the session list.
+        return foundScrollView
+    }
+
+    private func scrollSmoothly(_ scrollView: NSScrollView, with event: NSEvent) -> Bool {
+        let clipView = scrollView.contentView
+        guard let documentView = scrollView.documentView else {
+            return false
+        }
+
+        let maximumOriginY = max(0, documentView.bounds.height - clipView.bounds.height)
+        guard maximumOriginY > 0 else {
+            return false
+        }
+
+        let key = ObjectIdentifier(scrollView)
+        let currentTargetY = smoothScrollStates[key]?.targetY ?? clipView.bounds.origin.y
+        let targetOriginY = SmoothWheelScrollPolicy.targetVerticalOrigin(
+            currentTargetY: currentTargetY,
+            scrollingDeltaY: event.scrollingDeltaY,
+            hasPreciseScrollingDeltas: event.hasPreciseScrollingDeltas,
+            maximumOriginY: maximumOriginY
+        )
+        guard targetOriginY != currentTargetY else {
+            return false
+        }
+
+        if let state = smoothScrollStates[key] {
+            state.targetY = targetOriginY
+        } else {
+            smoothScrollStates[key] = SmoothWheelScrollState(
+                scrollView: scrollView,
+                targetY: targetOriginY
+            )
+        }
+        startSmoothScrollDisplayLink(for: scrollView)
+        return true
+    }
+
+    private func startSmoothScrollDisplayLink(for scrollView: NSScrollView) {
+        guard smoothScrollDisplayLink == nil else { return }
+
+        let displayLink = scrollView.displayLink(
+            target: self,
+            selector: #selector(advanceSmoothScroll(_:))
+        )
+        let frameRate = Float(SmoothWheelScrollPolicy.preferredFramesPerSecond)
+        displayLink.preferredFrameRateRange = CAFrameRateRange(
+            minimum: frameRate,
+            maximum: frameRate,
+            preferred: frameRate
+        )
+        displayLink.add(to: .main, forMode: .common)
+        smoothScrollDisplayLink = displayLink
+        smoothScrollLastTimestamp = nil
+    }
+
+    @objc
+    private func advanceSmoothScroll(_ displayLink: CADisplayLink) {
+        let timestamp = displayLink.targetTimestamp
+        let frameDuration = smoothScrollLastTimestamp.map { timestamp - $0 }
+            ?? (1.0 / Double(SmoothWheelScrollPolicy.preferredFramesPerSecond))
+        smoothScrollLastTimestamp = timestamp
+
+        var completedKeys: [ObjectIdentifier] = []
+        for (key, state) in smoothScrollStates {
+            guard let scrollView = state.scrollView,
+                  let documentView = scrollView.documentView else {
+                completedKeys.append(key)
+                continue
+            }
+
+            let clipView = scrollView.contentView
+            let maximumOriginY = max(0, documentView.bounds.height - clipView.bounds.height)
+            state.targetY = min(max(0, state.targetY), maximumOriginY)
+
+            let nextOriginY = SmoothWheelScrollPolicy.nextVerticalOrigin(
+                currentY: clipView.bounds.origin.y,
+                targetY: state.targetY,
+                frameDuration: frameDuration
+            )
+            clipView.scroll(to: CGPoint(x: clipView.bounds.origin.x, y: nextOriginY))
+            scrollView.reflectScrolledClipView(clipView)
+
+            if nextOriginY == state.targetY {
+                completedKeys.append(key)
+            }
+        }
+
+        for key in completedKeys {
+            smoothScrollStates.removeValue(forKey: key)
+        }
+        if smoothScrollStates.isEmpty {
+            stopSmoothScrollDisplayLink()
+        }
+    }
+
+    private func stopSmoothScrollDisplayLink() {
+        smoothScrollDisplayLink?.invalidate()
+        smoothScrollDisplayLink = nil
+        smoothScrollLastTimestamp = nil
+    }
+}
+
+enum SmoothWheelScrollPolicy {
+    static let preferredFramesPerSecond: Int = 60
+    private static let lineScrollMultiplier: CGFloat = 24
+    private static let responseTime: TimeInterval = 0.02
+    private static let snapDistance: CGFloat = 0.5
+
+    static func shouldHandle(
+        phase: NSEvent.Phase,
+        momentumPhase: NSEvent.Phase
+    ) -> Bool {
+        phase.isEmpty && momentumPhase.isEmpty
+    }
+
+    static func targetVerticalOrigin(
+        currentTargetY: CGFloat,
+        scrollingDeltaY: CGFloat,
+        hasPreciseScrollingDeltas: Bool,
+        maximumOriginY: CGFloat
+    ) -> CGFloat {
+        let multiplier = hasPreciseScrollingDeltas ? 1 : lineScrollMultiplier
+        let proposedOriginY = currentTargetY - (scrollingDeltaY * multiplier)
+        return min(max(0, proposedOriginY), maximumOriginY)
+    }
+
+    static func nextVerticalOrigin(
+        currentY: CGFloat,
+        targetY: CGFloat,
+        frameDuration: TimeInterval
+    ) -> CGFloat {
+        let remaining = targetY - currentY
+        guard abs(remaining) > snapDistance else {
+            return targetY
+        }
+
+        let clampedDuration = min(max(frameDuration, 1.0 / 240.0), 1.0 / 30.0)
+        let progress = CGFloat(1 - exp(-clampedDuration / responseTime))
+        let nextY = currentY + (remaining * progress)
+        return abs(targetY - nextY) <= snapDistance ? targetY : nextY
+    }
 }
 
 // MARK: - NotchHostingView

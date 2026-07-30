@@ -112,6 +112,17 @@ public struct SessionState: Equatable, Sendable {
             session.updatedAt = payload.timestamp
             upsert(session)
 
+        case let .sessionTitleUpdated(payload):
+            guard var session = sessionsByID[payload.sessionID] else {
+                return
+            }
+
+            session.title = payload.title
+            if session.phase != .completed {
+                session.updatedAt = payload.timestamp
+            }
+            upsert(session)
+
         case let .permissionRequested(payload):
             guard var session = sessionsByID[payload.sessionID] else {
                 return
@@ -157,7 +168,9 @@ public struct SessionState: Equatable, Sendable {
             }
 
             session.jumpTarget = payload.jumpTarget
-            session.updatedAt = payload.timestamp
+            if session.phase != .completed {
+                session.updatedAt = payload.timestamp
+            }
             Self.refreshCodexAppClassification(for: &session)
             upsert(session)
 
@@ -167,7 +180,9 @@ public struct SessionState: Equatable, Sendable {
             }
 
             session.codexMetadata = payload.codexMetadata.isEmpty ? nil : payload.codexMetadata
-            session.updatedAt = payload.timestamp
+            if session.phase != .completed {
+                session.updatedAt = payload.timestamp
+            }
             upsert(session)
 
         case let .claudeSessionMetadataUpdated(payload):
@@ -435,10 +450,12 @@ public struct SessionState: Equatable, Sendable {
         upsert(session)
     }
 
-    public mutating func removeInvisibleSessions() -> Bool {
+    public mutating func removeInvisibleSessions(
+        preservingSessionIDs: Set<String> = []
+    ) -> Bool {
         let before = sessionsByID.count
         sessionsByID = sessionsByID.filter { _, session in
-            session.isVisibleInIsland
+            session.isVisibleInIsland || preservingSessionIDs.contains(session.id)
         }
         return sessionsByID.count != before
     }

@@ -2033,7 +2033,18 @@ public final class BridgeServer: @unchecked Sendable {
                 existing: existing?.currentCommandPreview,
                 update: update.currentCommandPreview,
                 hookEventName: hookEventName
-            )
+            ),
+            model: update.model ?? existing?.model,
+            reasoningEffort: update.reasoningEffort ?? existing?.reasoningEffort,
+            serviceTier: update.serviceTier ?? existing?.serviceTier,
+            processedDuration: update.processedDuration ?? existing?.processedDuration,
+            currentTurnStartedAt: update.currentTurnStartedAt ?? existing?.currentTurnStartedAt,
+            activeGoalStartedAt: update.activeGoalStartedAt ?? existing?.activeGoalStartedAt,
+            activePlanStartedAt: update.activePlanStartedAt ?? existing?.activePlanStartedAt,
+            activeGoalTimer: update.activeGoalTimer ?? existing?.activeGoalTimer,
+            currentTurnTimer: update.currentTurnTimer ?? existing?.currentTurnTimer,
+            activePlanTimer: update.activePlanTimer ?? existing?.activePlanTimer,
+            isPlanMode: update.isPlanMode ?? existing?.isPlanMode
         )
     }
 

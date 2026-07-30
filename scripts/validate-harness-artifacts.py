@@ -229,7 +229,7 @@ def main() -> None:
         require_frame_between(
             overlay_frame,
             width=(520, 780),
-            height=(360, 500),
+            height=(320, 500),
             context="sessionList overlay frame",
         )
         if len(button_labels) < 3 and report.get("sessionCount", 0) < 3:

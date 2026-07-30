@@ -68,6 +68,22 @@ public struct SessionActivityUpdated: Equatable, Codable, Sendable {
     }
 }
 
+public struct SessionTitleUpdated: Equatable, Codable, Sendable {
+    public var sessionID: String
+    public var title: String
+    public var timestamp: Date
+
+    public init(
+        sessionID: String,
+        title: String,
+        timestamp: Date
+    ) {
+        self.sessionID = sessionID
+        self.title = title
+        self.timestamp = timestamp
+    }
+}
+
 public struct PermissionRequested: Equatable, Codable, Sendable {
     public var sessionID: String
     public var request: PermissionRequest
@@ -241,6 +257,7 @@ public struct ActionableStateResolved: Equatable, Codable, Sendable {
 public enum AgentEvent: Equatable, Codable, Sendable {
     case sessionStarted(SessionStarted)
     case activityUpdated(SessionActivityUpdated)
+    case sessionTitleUpdated(SessionTitleUpdated)
     case permissionRequested(PermissionRequested)
     case questionAsked(QuestionAsked)
     case sessionCompleted(SessionCompleted)
@@ -256,6 +273,7 @@ public enum AgentEvent: Equatable, Codable, Sendable {
         case type
         case sessionStarted
         case activityUpdated
+        case sessionTitleUpdated
         case permissionRequested
         case questionAsked
         case sessionCompleted
@@ -271,6 +289,7 @@ public enum AgentEvent: Equatable, Codable, Sendable {
     private enum EventType: String, Codable {
         case sessionStarted
         case activityUpdated
+        case sessionTitleUpdated
         case permissionRequested
         case questionAsked
         case sessionCompleted
@@ -292,6 +311,8 @@ public enum AgentEvent: Equatable, Codable, Sendable {
             self = .sessionStarted(try container.decode(SessionStarted.self, forKey: .sessionStarted))
         case .activityUpdated:
             self = .activityUpdated(try container.decode(SessionActivityUpdated.self, forKey: .activityUpdated))
+        case .sessionTitleUpdated:
+            self = .sessionTitleUpdated(try container.decode(SessionTitleUpdated.self, forKey: .sessionTitleUpdated))
         case .permissionRequested:
             self = .permissionRequested(try container.decode(PermissionRequested.self, forKey: .permissionRequested))
         case .questionAsked:
@@ -335,6 +356,9 @@ public enum AgentEvent: Equatable, Codable, Sendable {
         case let .activityUpdated(payload):
             try container.encode(EventType.activityUpdated, forKey: .type)
             try container.encode(payload, forKey: .activityUpdated)
+        case let .sessionTitleUpdated(payload):
+            try container.encode(EventType.sessionTitleUpdated, forKey: .type)
+            try container.encode(payload, forKey: .sessionTitleUpdated)
         case let .permissionRequested(payload):
             try container.encode(EventType.permissionRequested, forKey: .type)
             try container.encode(payload, forKey: .permissionRequested)

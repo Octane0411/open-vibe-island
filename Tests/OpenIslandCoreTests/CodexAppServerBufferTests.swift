@@ -12,6 +12,25 @@ import Testing
 ///    than letting `readBuffer` grow without bound.
 struct CodexAppServerBufferTests {
     @Test
+    func threadListDecodesCurrentDataEnvelope() async throws {
+        let client = CodexAppServerClient()
+        client.requestTimeoutSeconds = 1
+        let pipe = Pipe()
+        client.stdin = pipe.fileHandleForWriting
+
+        let request = Task { try await client.listThreads(limit: 10) }
+        try await Task.sleep(for: .milliseconds(20))
+        client.handleIncomingData(Data("""
+        {"jsonrpc":"2.0","id":1,"result":{"data":[{"id":"thread-1","cwd":"/tmp/project","name":"Real task name","preview":"Prompt","modelProvider":"openai","createdAt":1,"updatedAt":2,"ephemeral":false,"path":"/tmp/rollout.jsonl","status":{"type":"notLoaded"},"source":"app-server","turns":[]}]}}
+
+        """.utf8))
+
+        let threads = try await request.value
+        #expect(threads.map(\.id) == ["thread-1"])
+        #expect(threads.first?.name == "Real task name")
+    }
+
+    @Test
     func multiLineBurstIsFullyDrainedAndAllLinesParsed() {
         let client = CodexAppServerClient()
 

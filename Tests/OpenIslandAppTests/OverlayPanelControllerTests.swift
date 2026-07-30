@@ -4,6 +4,68 @@ import Testing
 
 struct OverlayPanelControllerTests {
     @Test
+    func standaloneMouseWheelUsesSingle60HzFrameDriver() {
+        #expect(SmoothWheelScrollPolicy.shouldHandle(
+            phase: [],
+            momentumPhase: []
+        ))
+        #expect(!SmoothWheelScrollPolicy.shouldHandle(
+            phase: .changed,
+            momentumPhase: []
+        ))
+        #expect(!SmoothWheelScrollPolicy.shouldHandle(
+            phase: [],
+            momentumPhase: .changed
+        ))
+        #expect(SmoothWheelScrollPolicy.preferredFramesPerSecond == 60)
+    }
+
+    @Test
+    func smoothWheelFramesAdvanceMonotonicallyAndSettleOnTarget() {
+        var originY: CGFloat = 20
+        let targetY: CGFloat = 92
+        var frameOrigins: [CGFloat] = []
+
+        for _ in 0..<12 {
+            originY = SmoothWheelScrollPolicy.nextVerticalOrigin(
+                currentY: originY,
+                targetY: targetY,
+                frameDuration: 1.0 / 60.0
+            )
+            frameOrigins.append(originY)
+        }
+
+        #expect(frameOrigins.allSatisfy { $0 >= 20 && $0 <= targetY })
+        #expect(zip(frameOrigins, frameOrigins.dropFirst()).allSatisfy { pair in
+            pair.0 <= pair.1
+        })
+        #expect(frameOrigins.first != targetY)
+        #expect(frameOrigins.last == targetY)
+    }
+
+    @Test
+    func smoothWheelTargetAccumulatesAndClampsDeltas() {
+        #expect(SmoothWheelScrollPolicy.targetVerticalOrigin(
+            currentTargetY: 20,
+            scrollingDeltaY: -3,
+            hasPreciseScrollingDeltas: false,
+            maximumOriginY: 200
+        ) == 92)
+        #expect(SmoothWheelScrollPolicy.targetVerticalOrigin(
+            currentTargetY: 20,
+            scrollingDeltaY: -190,
+            hasPreciseScrollingDeltas: true,
+            maximumOriginY: 200
+        ) == 200)
+        #expect(SmoothWheelScrollPolicy.targetVerticalOrigin(
+            currentTargetY: 20,
+            scrollingDeltaY: 190,
+            hasPreciseScrollingDeltas: true,
+            maximumOriginY: 200
+        ) == 0)
+    }
+
+    @Test
     func closedSurfaceRectCentersOnNotch() {
         let notchRect = NSRect(x: 200, y: 900, width: 200, height: 38)
         let closedWidth: CGFloat = 320

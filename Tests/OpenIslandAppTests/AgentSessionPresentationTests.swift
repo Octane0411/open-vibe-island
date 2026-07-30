@@ -214,6 +214,84 @@ struct AgentSessionPresentationTests {
     }
 
     @Test
+    func codexAppHeadlinePrefersThreadTitleOverPromptMetadata() {
+        let session = AgentSession(
+            id: "codex-thread-1",
+            title: "Fix Open Island task titles",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Working",
+            updatedAt: Date(timeIntervalSince1970: 10_000),
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "repo",
+                paneTitle: "Fix Open Island task titles",
+                workingDirectory: "/tmp/repo",
+                codexThreadID: "codex-thread-1"
+            ),
+            codexMetadata: CodexSessionMetadata(
+                initialUserPrompt: "<recommended_plugins> Here is a list of plugins...",
+                lastUserPrompt: "Fix the Open Island task title.",
+                model: "gpt-5.6-sol",
+                reasoningEffort: "xhigh",
+                serviceTier: "fast"
+            )
+        )
+
+        #expect(session.spotlightHeadlineText == "Fix Open Island task titles")
+        #expect(session.spotlightPromptLineText == "You: Fix the Open Island task title.")
+        #expect(session.spotlightTerminalBadge == "5.6 Sol · XHigh · Fast")
+        #expect(session.spotlightCompactTerminalBadge == "5.6 · XH · F")
+    }
+
+    @Test
+    func completedCodexAppNotificationPrefersThreadTitleOverWorkspace() {
+        var session = AgentSession(
+            id: "codex-thread-1",
+            title: "查找 VibeIsland 项目",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .completed,
+            summary: "Finished.",
+            updatedAt: Date(timeIntervalSince1970: 10_000),
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "git",
+                paneTitle: "查找 VibeIsland 项目",
+                workingDirectory: "/tmp/git",
+                codexThreadID: "codex-thread-1"
+            )
+        )
+        session.isCodexAppSession = true
+
+        #expect(session.completionNotificationHeadlineText == "查找 VibeIsland 项目")
+    }
+
+    @Test
+    func codexAppHidesRedundantTerminalBadgeUntilConfigurationIsKnown() {
+        let session = AgentSession(
+            id: "codex-thread-1",
+            title: "Fix Open Island task titles",
+            tool: .codex,
+            phase: .running,
+            summary: "Working",
+            updatedAt: .now,
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "repo",
+                paneTitle: "Fix Open Island task titles",
+                workingDirectory: "/tmp/repo",
+                codexThreadID: "codex-thread-1"
+            )
+        )
+
+        #expect(session.spotlightTerminalBadge == nil)
+    }
+
+    @Test
     func detachedSessionHeadlineShowsInitialPrompt() {
         let session = AgentSession(
             id: "session-1",
@@ -285,6 +363,131 @@ struct AgentSessionPresentationTests {
         #expect(session.spotlightPromptLineText == "You: Align the Codex statuses.")
         #expect(session.spotlightActivityLineText == "Thinking")
         #expect(session.displayCurrentToolName == nil)
+    }
+
+    @Test
+    func runningCodexSessionShowsGoalPlanAndCurrentTurnTimers() {
+        let referenceDate = Date(timeIntervalSince1970: 100_000)
+        let goalStart = referenceDate.addingTimeInterval(-(2 * 86_400 + 3 * 3_600))
+        let planStart = referenceDate.addingTimeInterval(-(22 * 60))
+        let turnStart = referenceDate.addingTimeInterval(-(3_600 + 43 * 60 + 37))
+        let priorProcessedDuration: TimeInterval = 14 * 60 + 11
+        let session = AgentSession(
+            id: "session-1",
+            title: "Build the production board",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Thinking.",
+            updatedAt: referenceDate,
+            codexMetadata: CodexSessionMetadata(
+                lastUserPrompt: "Finish the current layout pass.",
+                processedDuration: priorProcessedDuration,
+                currentTurnStartedAt: turnStart,
+                activeGoalStartedAt: goalStart,
+                activePlanStartedAt: planStart,
+                isPlanMode: true
+            )
+        )
+
+        #expect(session.spotlightElapsedTimers == [
+            SpotlightElapsedTimer(kind: .goal, startedAt: goalStart),
+            SpotlightElapsedTimer(kind: .plan, startedAt: planStart),
+            SpotlightElapsedTimer(kind: .thinking, startedAt: turnStart),
+        ])
+        #expect(AgentSession.compactElapsedDuration(since: goalStart, at: referenceDate) == "2d 3h")
+        #expect(AgentSession.compactElapsedDuration(
+            session.spotlightElapsedTimers[2].elapsed(at: referenceDate),
+            includingSecondsWhenHours: true
+        ) == "1h 43m 37s")
+    }
+
+    @Test
+    func runningCodexSessionPrefersAccumulatedActiveDurationsOverWallClockStarts() {
+        let referenceDate = Date(timeIntervalSince1970: 300_000)
+        let liveSegmentStart = referenceDate.addingTimeInterval(-5)
+        let session = AgentSession(
+            id: "session-1",
+            title: "Build the production board",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Thinking.",
+            updatedAt: referenceDate,
+            codexMetadata: CodexSessionMetadata(
+                currentTurnStartedAt: referenceDate.addingTimeInterval(-(12 * 3_600)),
+                activeGoalStartedAt: referenceDate.addingTimeInterval(-(2 * 86_400 + 9 * 3_600)),
+                activePlanStartedAt: referenceDate.addingTimeInterval(-(7 * 3_600)),
+                activeGoalTimer: CodexActiveDuration(
+                    accumulatedDuration: 1 * 86_400 + 22 * 3_600 + 45 * 60,
+                    runningSince: liveSegmentStart
+                ),
+                currentTurnTimer: CodexActiveDuration(
+                    accumulatedDuration: 15 * 60 + 30,
+                    runningSince: liveSegmentStart
+                ),
+                activePlanTimer: CodexActiveDuration(
+                    accumulatedDuration: 22 * 60,
+                    runningSince: liveSegmentStart
+                ),
+                isPlanMode: true
+            )
+        )
+
+        let timers = session.spotlightElapsedTimers
+        let expectedGoalDuration: TimeInterval = 168_305
+        #expect(timers.map(\.kind) == [.goal, .plan, .thinking])
+        #expect(timers[0].elapsed(at: referenceDate) == expectedGoalDuration)
+        #expect(timers[1].elapsed(at: referenceDate) == 22 * 60 + 5)
+        #expect(timers[2].elapsed(at: referenceDate) == 15 * 60 + 35)
+    }
+
+    @Test
+    func cachedChecklistTimestampWithoutPlanModeIsHidden() {
+        let referenceDate = Date(timeIntervalSince1970: 100_000)
+        let turnStart = referenceDate.addingTimeInterval(-120)
+        let session = AgentSession(
+            id: "session-1",
+            title: "Continue normal work",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Thinking.",
+            updatedAt: referenceDate,
+            codexMetadata: CodexSessionMetadata(
+                currentTurnStartedAt: turnStart,
+                activePlanStartedAt: referenceDate.addingTimeInterval(-28_000)
+            )
+        )
+
+        #expect(session.spotlightElapsedTimers == [
+            SpotlightElapsedTimer(kind: .thinking, startedAt: turnStart),
+        ])
+    }
+
+    @Test
+    func completedCodexSessionHidesElapsedTimers() {
+        let referenceDate = Date(timeIntervalSince1970: 100_000)
+        let session = AgentSession(
+            id: "session-1",
+            title: "Completed task",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .completed,
+            summary: "Done",
+            updatedAt: referenceDate,
+            codexMetadata: CodexSessionMetadata(
+                currentTurnStartedAt: referenceDate.addingTimeInterval(-60),
+                activeGoalStartedAt: referenceDate.addingTimeInterval(-3_600),
+                activePlanStartedAt: referenceDate.addingTimeInterval(-600)
+            )
+        )
+
+        #expect(session.spotlightElapsedTimers.isEmpty)
     }
 
     @Test

@@ -4,6 +4,71 @@ import Testing
 
 struct CodexSessionTrackingTests {
     @Test
+    func codexRolloutWatchTargetEqualityIncludesCachedPromptsAndTimers() {
+        let original = CodexRolloutWatchTarget(
+            sessionID: "codex-session-1",
+            transcriptPath: "/tmp/rollout.jsonl",
+            cachedInitialUserPrompt: "Original prompt",
+            cachedLastUserPrompt: "Original follow-up",
+            cachedProcessedDuration: 900,
+            cachedCurrentTurnStartedAt: Date(timeIntervalSince1970: 1_000),
+            cachedActiveGoalStartedAt: Date(timeIntervalSince1970: 100),
+            cachedActivePlanStartedAt: Date(timeIntervalSince1970: 500),
+            cachedIsPlanMode: true
+        )
+
+        var updatedInitialPrompt = original
+        updatedInitialPrompt.cachedInitialUserPrompt = "Renamed conversation"
+
+        var updatedLastPrompt = original
+        updatedLastPrompt.cachedLastUserPrompt = "Latest follow-up"
+
+        var updatedProcessedDuration = original
+        updatedProcessedDuration.cachedProcessedDuration = 1_200
+
+        var updatedTurnStart = original
+        updatedTurnStart.cachedCurrentTurnStartedAt = Date(timeIntervalSince1970: 2_000)
+
+        var updatedGoalStart = original
+        updatedGoalStart.cachedActiveGoalStartedAt = Date(timeIntervalSince1970: 200)
+
+        var updatedPlanStart = original
+        updatedPlanStart.cachedActivePlanStartedAt = Date(timeIntervalSince1970: 600)
+
+        var updatedGoalTimer = original
+        updatedGoalTimer.cachedActiveGoalTimer = CodexActiveDuration(
+            accumulatedDuration: 3_600,
+            runningSince: Date(timeIntervalSince1970: 700)
+        )
+
+        var updatedTurnTimer = original
+        updatedTurnTimer.cachedCurrentTurnTimer = CodexActiveDuration(
+            accumulatedDuration: 90,
+            runningSince: Date(timeIntervalSince1970: 800)
+        )
+
+        var updatedPlanTimer = original
+        updatedPlanTimer.cachedActivePlanTimer = CodexActiveDuration(
+            accumulatedDuration: 30,
+            runningSince: Date(timeIntervalSince1970: 900)
+        )
+
+        var updatedPlanMode = original
+        updatedPlanMode.cachedIsPlanMode = false
+
+        #expect(original != updatedInitialPrompt)
+        #expect(original != updatedLastPrompt)
+        #expect(original != updatedProcessedDuration)
+        #expect(original != updatedTurnStart)
+        #expect(original != updatedGoalStart)
+        #expect(original != updatedPlanStart)
+        #expect(original != updatedGoalTimer)
+        #expect(original != updatedTurnTimer)
+        #expect(original != updatedPlanTimer)
+        #expect(original != updatedPlanMode)
+    }
+
+    @Test
     func codexSessionStoreRoundTripsTrackedSessions() throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("open-island-tracking-\(UUID().uuidString)", isDirectory: true)
@@ -34,7 +99,24 @@ struct CodexSessionTrackingTests {
                     lastUserPrompt: "Check the rollout watcher state.",
                     lastAssistantMessage: "Inspecting rollout watcher.",
                     currentTool: "exec_command",
-                    currentCommandPreview: "git status -sb"
+                    currentCommandPreview: "git status -sb",
+                    processedDuration: 900,
+                    currentTurnStartedAt: Date(timeIntervalSince1970: 990),
+                    activeGoalStartedAt: Date(timeIntervalSince1970: 100),
+                    activePlanStartedAt: Date(timeIntervalSince1970: 500),
+                    activeGoalTimer: CodexActiveDuration(
+                        accumulatedDuration: 3_600,
+                        runningSince: Date(timeIntervalSince1970: 995)
+                    ),
+                    currentTurnTimer: CodexActiveDuration(
+                        accumulatedDuration: 90,
+                        runningSince: Date(timeIntervalSince1970: 995)
+                    ),
+                    activePlanTimer: CodexActiveDuration(
+                        accumulatedDuration: 30,
+                        runningSince: Date(timeIntervalSince1970: 995)
+                    ),
+                    isPlanMode: true
                 )
             )
         ]
@@ -144,7 +226,30 @@ struct CodexSessionTrackingTests {
 
         #expect(records.count == 1)
         #expect(records.first?.attachmentState == .stale)
+        #expect(records.first?.runtimeSurface == .unknown)
         #expect(records.first?.session.attachmentState == .stale)
+    }
+
+    @Test
+    func unknownRuntimeSurfaceSurvivesSessionRoundTrip() {
+        let record = CodexTrackedSessionRecord(
+            sessionID: "codex-session-unknown",
+            title: "Codex · unknown",
+            runtimeSurface: .unknown,
+            origin: .live,
+            attachmentState: .stale,
+            summary: "Ownership has not been classified yet.",
+            phase: .completed,
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            codexMetadata: CodexSessionMetadata(
+                transcriptPath: "/tmp/rollout-unknown.jsonl"
+            )
+        )
+
+        let reencoded = CodexTrackedSessionRecord(session: record.session)
+
+        #expect(record.session.codexRuntimeSurface == .unknown)
+        #expect(reencoded.runtimeSurface == .unknown)
     }
 
     @Test
@@ -346,6 +451,269 @@ struct CodexSessionTrackingTests {
         #expect(snapshot.currentTool == "tool_search")
         #expect(snapshot.currentCommandPreview == "search docs")
         #expect(snapshot.summary == "Running tool search.")
+    }
+
+    @Test
+    func codexRolloutReducerTracksCurrentTurnAndActiveGoalStarts() {
+        var snapshot = CodexRolloutSnapshot()
+        let firstTurnStart = iso8601Date("2026-04-02T04:03:44.500Z")
+        let goalStart = iso8601Date("2026-04-02T04:04:00.000Z")
+        let secondTurnStart = iso8601Date("2026-04-03T08:00:00.000Z")
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-02T04:03:44.500Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": "Start the production goal.",
+                ]
+            ),
+            to: &snapshot
+        )
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-02T04:03:44.600Z",
+                type: "response_item",
+                payload: [
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        [
+                            "type": "input_text",
+                            "text": "Start the production goal.",
+                        ],
+                    ],
+                ]
+            ),
+            to: &snapshot
+        )
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-02T04:04:00.000Z",
+                type: "response_item",
+                payload: [
+                    "type": "function_call",
+                    "name": "create_goal",
+                    "arguments": #"{"objective":"Finish the board"}"#,
+                    "call_id": "call-create-goal",
+                ]
+            ),
+            to: &snapshot
+        )
+
+        #expect(snapshot.currentTurnStartedAt == firstTurnStart)
+        #expect(snapshot.activeGoalStartedAt == goalStart)
+        #expect(snapshot.metadata.currentTurnStartedAt == firstTurnStart)
+        #expect(snapshot.metadata.activeGoalStartedAt == goalStart)
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-02T04:08:00.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "turn_complete",
+                    "last_agent_message": "Finished the first turn.",
+                ]
+            ),
+            to: &snapshot
+        )
+
+        #expect(snapshot.currentTurnStartedAt == nil)
+        #expect(snapshot.processedDuration == 255.5)
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-03T08:00:00.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": "Continue the next conversation turn.",
+                ]
+            ),
+            to: &snapshot
+        )
+
+        #expect(snapshot.currentTurnStartedAt == secondTurnStart)
+        #expect(snapshot.activeGoalStartedAt == goalStart)
+        #expect(snapshot.processedDuration == 255.5)
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-03T08:05:00.000Z",
+                type: "response_item",
+                payload: [
+                    "type": "function_call",
+                    "name": "update_goal",
+                    "arguments": #"{"status":"blocked"}"#,
+                    "call_id": "call-block-goal",
+                ]
+            ),
+            to: &snapshot
+        )
+
+        #expect(snapshot.activeGoalStartedAt == goalStart)
+        #expect(snapshot.currentTurnStartedAt == secondTurnStart)
+        #expect(snapshot.metadata.processedDuration == 255.5)
+    }
+
+    @Test
+    func codexRolloutReducerRebasesRunningTimersFromAuthoritativeGoalDuration() {
+        var snapshot = CodexRolloutSnapshot(phase: .completed, isCompleted: true)
+        let goalCreatedAt = iso8601Date("2026-04-01T08:00:00.000Z")
+        let turnStartedAt = iso8601Date("2026-04-03T08:00:00.000Z")
+        let authoritativeUpdateAt = iso8601Date("2026-04-03T12:00:00.000Z")
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-03T08:00:00.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "thread_goal_updated",
+                    "goal": [
+                        "status": "active",
+                        "timeUsedSeconds": 3_600,
+                        "createdAt": goalCreatedAt.timeIntervalSince1970,
+                        "updatedAt": turnStartedAt.timeIntervalSince1970,
+                    ],
+                ]
+            ),
+            to: &snapshot
+        )
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-03T08:00:00.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "task_started",
+                    "started_at": turnStartedAt.timeIntervalSince1970,
+                ]
+            ),
+            to: &snapshot
+        )
+
+        let goalOutput = """
+        {"goal":{"status":"active","timeUsedSeconds":4200,"createdAt":\(Int(goalCreatedAt.timeIntervalSince1970)),"updatedAt":\(Int(authoritativeUpdateAt.timeIntervalSince1970))}}
+        """
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-03T12:00:01.000Z",
+                type: "response_item",
+                payload: [
+                    "type": "function_call_output",
+                    "call_id": "call-get-goal",
+                    "output": goalOutput,
+                ]
+            ),
+            to: &snapshot
+        )
+
+        #expect(snapshot.activeGoalStartedAt == goalCreatedAt)
+        #expect(snapshot.activeGoalTimer?.elapsed(at: authoritativeUpdateAt) == 4_200)
+        #expect(snapshot.currentTurnTimer?.elapsed(at: authoritativeUpdateAt) == 600)
+        #expect(snapshot.metadata.activeGoalTimer == snapshot.activeGoalTimer)
+        #expect(snapshot.metadata.currentTurnTimer == snapshot.currentTurnTimer)
+    }
+
+    @Test
+    func codexRolloutReducerDoesNotTreatOrdinaryChecklistAsPlanMode() {
+        var snapshot = CodexRolloutSnapshot()
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-03T08:01:00.000Z",
+                type: "response_item",
+                payload: [
+                    "type": "function_call",
+                    "name": "update_plan",
+                    "arguments": #"{"plan":[{"step":"Route USB","status":"in_progress"}]}"#,
+                ]
+            ),
+            to: &snapshot
+        )
+
+        #expect(snapshot.activePlanStartedAt == nil)
+    }
+
+    @Test
+    func codexRolloutReducerTracksPlanModeAndIgnoresInjectedGoalPrompt() {
+        var snapshot = CodexRolloutSnapshot(
+            lastUserPrompt: "Keep routing the board.",
+            currentTurnStartedAt: iso8601Date("2026-04-03T08:00:00.000Z"),
+            activePlanStartedAt: iso8601Date("2026-04-02T01:00:00.000Z")
+        )
+        let planStart = iso8601Date("2026-04-03T08:01:00.000Z")
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-03T08:01:00.000Z",
+                type: "turn_context",
+                payload: [
+                    "collaboration_mode": [
+                        "mode": "plan",
+                    ],
+                ]
+            ),
+            to: &snapshot
+        )
+
+        #expect(snapshot.activePlanStartedAt == planStart)
+        #expect(snapshot.isPlanMode)
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-03T08:02:00.000Z",
+                type: "response_item",
+                payload: [
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        [
+                            "type": "input_text",
+                            "text": """
+                            <codex_internal_context source="goal">
+                            Continue working toward the active thread goal.
+                            </codex_internal_context>
+                            """,
+                        ],
+                    ],
+                ]
+            ),
+            to: &snapshot
+        )
+
+        #expect(snapshot.lastUserPrompt == "Keep routing the board.")
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-03T08:03:00.000Z",
+                type: "response_item",
+                payload: [
+                    "type": "function_call",
+                    "name": "update_plan",
+                    "arguments": #"{"plan":[{"step":"Route USB","status":"completed"},{"step":"Run DRC","status":"completed"}]}"#,
+                ]
+            ),
+            to: &snapshot
+        )
+
+        #expect(snapshot.activePlanStartedAt == planStart)
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-03T08:04:00.000Z",
+                type: "turn_context",
+                payload: [
+                    "collaboration_mode": [
+                        "mode": "default",
+                    ],
+                ]
+            ),
+            to: &snapshot
+        )
+
+        #expect(snapshot.activePlanStartedAt == nil)
+        #expect(!snapshot.isPlanMode)
     }
 
     @Test
@@ -780,6 +1148,133 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutReducerStripsLeadingInjectedBlocksFromEventMessages() {
+        let snapshot = CodexRolloutReducer.snapshot(for: [
+            rolloutLine(
+                timestamp: "2026-07-22T14:37:28.346Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": """
+                    <recommended_plugins>
+                    Here is a list of plugins that are available but not installed.
+                    </recommended_plugins>
+                    <environment_context>
+                      <cwd>/tmp/repo</cwd>
+                    </environment_context>
+                    Fix the Open Island task title.
+                    """,
+                ]
+            ),
+        ])
+
+        #expect(snapshot.initialUserPrompt == "Fix the Open Island task title.")
+        #expect(snapshot.lastUserPrompt == "Fix the Open Island task title.")
+    }
+
+    @Test
+    func codexRolloutReducerStripsAttachedFileManifestFromEventMessages() {
+        let snapshot = CodexRolloutReducer.snapshot(for: [
+            rolloutLine(
+                timestamp: "2026-07-22T14:37:28.346Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": """
+                    # Files mentioned by the user:
+
+                    ## screenshot.png: /tmp/screenshot.png
+
+                    ## My request for Codex:
+                    这个名字也不对
+                    """,
+                ]
+            ),
+        ])
+
+        #expect(snapshot.initialUserPrompt == "这个名字也不对")
+        #expect(snapshot.lastUserPrompt == "这个名字也不对")
+    }
+
+    @Test
+    func codexRolloutWatcherReportsNewFileContentEvenWithoutAgentEvents() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-rollout-content-\(UUID().uuidString)", isDirectory: true)
+        let rolloutURL = rootURL.appendingPathComponent("rollout.jsonl")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try Data().write(to: rolloutURL)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let recorder = ChangeRecorder()
+        let watcher = CodexRolloutWatcher(pollInterval: 0.05)
+        watcher.contentChangeHandler = {
+            Task { await recorder.recordChange() }
+        }
+        watcher.sync(targets: [
+            CodexRolloutWatchTarget(
+                sessionID: "codex-session-usage",
+                transcriptPath: rolloutURL.path
+            ),
+        ])
+
+        try appendRolloutLine(
+            rolloutLine(
+                timestamp: "2026-07-22T14:37:28.346Z",
+                type: "event_msg",
+                payload: [
+                    "type": "token_count",
+                    "rate_limits": [
+                        "limit_id": "codex",
+                        "primary": [
+                            "used_percent": 22.0,
+                            "window_minutes": 10_080,
+                        ],
+                    ],
+                ]
+            ),
+            to: rolloutURL
+        )
+
+        try await Task.sleep(for: .milliseconds(200))
+        watcher.stop()
+
+        #expect(await recorder.count == 1)
+    }
+
+    @Test
+    func codexRolloutReducerTracksModelEffortAndServiceTier() {
+        let snapshot = CodexRolloutReducer.snapshot(for: [
+            rolloutLine(
+                timestamp: "2026-07-22T14:37:28.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "thread_settings_applied",
+                    "thread_settings": [
+                        "model": "gpt-5.6-sol",
+                        "reasoning_effort": "xhigh",
+                        "service_tier": "fast",
+                    ],
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-07-22T14:37:29.000Z",
+                type: "turn_context",
+                payload: [
+                    "model": "gpt-5.6-sol",
+                    "effort": "high",
+                ]
+            ),
+        ])
+
+        #expect(snapshot.model == "gpt-5.6-sol")
+        #expect(snapshot.reasoningEffort == "high")
+        #expect(snapshot.serviceTier == "fast")
+        #expect(snapshot.metadata.model == "gpt-5.6-sol")
+        #expect(snapshot.metadata.reasoningEffort == "high")
+        #expect(snapshot.metadata.serviceTier == "fast")
+    }
+
+    @Test
     func codexRolloutReducerTracksMessageResponsePromptsWithoutInjectedBlocks() {
         let snapshot = CodexRolloutReducer.snapshot(for: [
             rolloutLine(
@@ -918,6 +1413,53 @@ struct CodexSessionTrackingTests {
         #expect(events.contains(where: { $0.trackedMetadataUpdate?.codexMetadata.currentTool == "exec_command" }))
         #expect(events.contains(where: { $0.trackedMetadataUpdate?.codexMetadata.currentCommandPreview == "git status -sb" }))
         #expect(events.contains(where: { $0.trackedSessionCompletion?.summary == "Finished the rollout tracking slice." }))
+    }
+
+    @Test
+    func codexRolloutWatcherDoesNotReplayContentWhenCachedTargetMetadataChanges() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-rollout-resync-\(UUID().uuidString)", isDirectory: true)
+        let rolloutURL = rootURL.appendingPathComponent("rollout.jsonl")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try Data().write(to: rolloutURL)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        try appendRolloutLine(
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:44.894Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": "Inspect the README.",
+                ]
+            ),
+            to: rolloutURL
+        )
+
+        let watcher = CodexRolloutWatcher(pollInterval: 0.05)
+        let resyncRecorder = WatchTargetResyncRecorder(
+            watcher: watcher,
+            target: CodexRolloutWatchTarget(
+                sessionID: "codex-session-resync",
+                transcriptPath: rolloutURL.path
+            )
+        )
+        watcher.eventHandler = { event in
+            Task {
+                await resyncRecorder.recordAndResync(for: event)
+            }
+        }
+        watcher.sync(targets: [
+            CodexRolloutWatchTarget(
+                sessionID: "codex-session-resync",
+                transcriptPath: rolloutURL.path
+            ),
+        ])
+
+        try await Task.sleep(for: .milliseconds(250))
+        watcher.stop()
+
+        #expect(await resyncRecorder.metadataEventCount == 1)
     }
 
     @Test
@@ -1109,6 +1651,190 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutWatcherBackfillsActiveTimersForLegacyCachedSession() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-rollout-timer-backfill-\(UUID().uuidString)", isDirectory: true)
+        let rolloutURL = rootURL.appendingPathComponent("rollout.jsonl")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        let goalCreatedAt = iso8601Date("2026-04-01T08:00:00.000Z")
+        let turnStartedAt = iso8601Date("2026-04-03T08:00:00.000Z")
+        let authoritativeUpdateAt = iso8601Date("2026-04-03T08:10:00.000Z")
+        let goalOutput = """
+        {"goal":{"status":"active","timeUsedSeconds":4200,"createdAt":\(Int(goalCreatedAt.timeIntervalSince1970)),"updatedAt":\(Int(authoritativeUpdateAt.timeIntervalSince1970))}}
+        """
+        let lines = [
+            rolloutLine(
+                timestamp: "2026-04-03T08:00:00.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "thread_goal_updated",
+                    "goal": [
+                        "status": "active",
+                        "timeUsedSeconds": 3_600,
+                        "createdAt": goalCreatedAt.timeIntervalSince1970,
+                        "updatedAt": turnStartedAt.timeIntervalSince1970,
+                    ],
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-03T08:00:00.000Z",
+                type: "event_msg",
+                payload: ["type": "task_started"]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-03T08:10:00.000Z",
+                type: "response_item",
+                payload: [
+                    "type": "function_call_output",
+                    "call_id": "call-get-goal",
+                    "output": goalOutput,
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-03T08:10:01.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": String(repeating: "tail-filler-", count: 80),
+                ]
+            ),
+        ]
+        try lines.joined(separator: "\n")
+            .appending("\n")
+            .write(to: rolloutURL, atomically: true, encoding: .utf8)
+
+        let recorder = EventRecorder()
+        let watcher = CodexRolloutWatcher(
+            pollInterval: 0.05,
+            initialReadLimit: 160,
+            activeTimerBackfillReadLimit: 65_536
+        )
+        watcher.eventHandler = { event in
+            Task {
+                await recorder.append(event)
+            }
+        }
+        watcher.sync(targets: [
+            CodexRolloutWatchTarget(
+                sessionID: "codex-session-timer-backfill",
+                transcriptPath: rolloutURL.path,
+                cachedInitialUserPrompt: "Keep working.",
+                cachedLastUserPrompt: "Keep working.",
+                cachedCurrentTurnStartedAt: turnStartedAt,
+                cachedActiveGoalStartedAt: goalCreatedAt
+            )
+        ])
+
+        try await Task.sleep(for: .milliseconds(200))
+        watcher.stop()
+
+        let events = await recorder.snapshot()
+        let metadata = events.compactMap(\.trackedMetadataUpdate?.codexMetadata).last
+        #expect(metadata?.activeGoalTimer?.accumulatedDuration == 4_200)
+        #expect(metadata?.activeGoalTimer?.runningSince == authoritativeUpdateAt)
+        #expect(metadata?.currentTurnTimer?.accumulatedDuration == 600)
+        #expect(metadata?.currentTurnTimer?.runningSince == authoritativeUpdateAt)
+    }
+
+    @Test
+    func codexRolloutWatcherRestoresGoalFromContinuationWhenLegacyCacheHasNoGoalFields() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-rollout-goal-continuation-\(UUID().uuidString)", isDirectory: true)
+        let rolloutURL = rootURL.appendingPathComponent("rollout.jsonl")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        let goalCreatedAt = iso8601Date("2026-04-01T08:00:00.000Z")
+        let goalUpdatedAt = iso8601Date("2026-04-03T07:59:00.000Z")
+        let turnStartedAt = iso8601Date("2026-04-03T08:00:00.000Z")
+        let lines = [
+            rolloutLine(
+                timestamp: "2026-04-03T07:59:00.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "thread_goal_updated",
+                    "goal": [
+                        "status": "active",
+                        "timeUsedSeconds": 172_740,
+                        "createdAt": goalCreatedAt.timeIntervalSince1970,
+                        "updatedAt": goalUpdatedAt.timeIntervalSince1970,
+                    ],
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-03T08:00:00.000Z",
+                type: "response_item",
+                payload: [
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        [
+                            "type": "input_text",
+                            "text": """
+                            <codex_internal_context source="goal">
+                            Continue working toward the active thread goal.
+
+                            <objective>
+                            Finish the board
+                            </objective>
+                            """,
+                        ],
+                    ],
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-03T08:00:00.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "task_started",
+                    "started_at": turnStartedAt.timeIntervalSince1970,
+                ]
+            ),
+        ]
+        try lines.joined(separator: "\n")
+            .appending("\n")
+            .write(to: rolloutURL, atomically: true, encoding: .utf8)
+
+        let recorder = EventRecorder()
+        let watcher = CodexRolloutWatcher(
+            pollInterval: 0.05,
+            initialReadLimit: 512,
+            activeTimerBackfillReadLimit: 65_536
+        )
+        watcher.eventHandler = { event in
+            Task {
+                await recorder.append(event)
+            }
+        }
+        watcher.sync(targets: [
+            CodexRolloutWatchTarget(
+                sessionID: "codex-session-goal-continuation",
+                transcriptPath: rolloutURL.path,
+                cachedInitialUserPrompt: "Start the board.",
+                cachedLastUserPrompt: "Keep routing the board."
+            )
+        ])
+
+        try await Task.sleep(for: .milliseconds(200))
+        watcher.stop()
+
+        let events = await recorder.snapshot()
+        let metadata = events.compactMap(\.trackedMetadataUpdate?.codexMetadata).last
+        #expect(metadata?.lastUserPrompt == "Keep routing the board.")
+        #expect(metadata?.activeGoalStartedAt == goalCreatedAt)
+        #expect(metadata?.activeGoalTimer?.accumulatedDuration == 172_740)
+        #expect(metadata?.activeGoalTimer?.runningSince == turnStartedAt)
+    }
+
+    @Test
     func codexRolloutDiscoveryFindsRecentSessionsFromLocalRollouts() throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("open-island-discovery-\(UUID().uuidString)", isDirectory: true)
@@ -1198,6 +1924,175 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutDiscoveryClassifiesDesktopOriginatorSeparatelyFromCLI() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-runtime-\(UUID().uuidString)", isDirectory: true)
+        let desktopURL = rootURL.appendingPathComponent("rollout-desktop.jsonl")
+        let cliURL = rootURL.appendingPathComponent("rollout-cli.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        try sessionMetaLine(
+            sessionID: "desktop-thread",
+            timestamp: "2026-04-02T04:03:44.000Z",
+            cwd: "/tmp/desktop-project",
+            originator: "Codex Desktop",
+            source: "vscode"
+        )
+        .appending("\n")
+        .write(to: desktopURL, atomically: true, encoding: .utf8)
+
+        try sessionMetaLine(
+            sessionID: "cli-thread",
+            timestamp: "2026-04-02T04:03:44.000Z",
+            cwd: "/tmp/cli-project"
+        )
+        .appending("\n")
+        .write(to: cliURL, atomically: true, encoding: .utf8)
+
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: desktopURL.path)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: cliURL.path)
+
+        let records = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            maxAge: 86_400,
+            maxFiles: 10,
+            persistedThreadTitles: { _ in [:] }
+        ).discoverRecentSessions(now: now)
+        let recordsByID = Dictionary(uniqueKeysWithValues: records.map { ($0.sessionID, $0) })
+
+        #expect(recordsByID["desktop-thread"]?.runtimeSurface == .desktopApp)
+        #expect(recordsByID["cli-thread"]?.runtimeSurface == .external)
+    }
+
+    @Test
+    func codexRolloutDiscoveryUsesPersistedTaskTitle() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-title-\(UUID().uuidString)", isDirectory: true)
+        let rolloutURL = rootURL.appendingPathComponent("rollout-title.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        try [
+            sessionMetaLine(
+                sessionID: "codex-session-title",
+                timestamp: "2026-04-02T04:03:44.000Z",
+                cwd: "/tmp/JLC-GPS"
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: ["type": "user_message", "message": "Build an AI car." ]
+            ),
+        ]
+        .joined(separator: "\n")
+        .appending("\n")
+        .write(to: rolloutURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: rolloutURL.path)
+
+        let discovery = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            maxAge: 86_400,
+            maxFiles: 10,
+            persistedThreadTitles: { threadIDs in
+                threadIDs.contains("codex-session-title")
+                    ? ["codex-session-title": "调研AI智能小车方案"]
+                    : [:]
+            }
+        )
+
+        let records = discovery.discoverRecentSessions(now: now)
+
+        #expect(records.first?.title == "调研AI智能小车方案")
+    }
+
+    @Test
+    func codexRolloutDiscoverySkipsInternalSubagentThreads() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-subagents-\(UUID().uuidString)", isDirectory: true)
+        let now = Date(timeIntervalSince1970: 1_774_536_000)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let parentID = "codex-parent-thread"
+        let parentURL = rootURL.appendingPathComponent("rollout-parent.jsonl")
+        try sessionMetaLine(
+            sessionID: parentID,
+            timestamp: "2026-03-27T12:00:00.000Z",
+            cwd: "/tmp/project"
+        ).appending("\n").write(to: parentURL, atomically: true, encoding: .utf8)
+
+        for index in 1...3 {
+            let childURL = rootURL.appendingPathComponent("rollout-child-\(index).jsonl")
+            let childMeta = rolloutLine(
+                timestamp: "2026-03-27T12:00:0\(index).000Z",
+                type: "session_meta",
+                payload: [
+                    "id": "codex-child-\(index)",
+                    "timestamp": "2026-03-27T12:00:0\(index).000Z",
+                    "cwd": "/tmp/project",
+                    "source": [
+                        "subagent": [
+                            "thread_spawn": [
+                                "parent_thread_id": parentID,
+                                "depth": 1,
+                                "agent_path": "/root/audit-\(index)",
+                            ],
+                        ],
+                    ],
+                ]
+            )
+            try childMeta.appending("\n").write(to: childURL, atomically: true, encoding: .utf8)
+        }
+
+        for case let fileURL as URL in FileManager.default.enumerator(
+            at: rootURL,
+            includingPropertiesForKeys: nil
+        )! {
+            try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: fileURL.path)
+        }
+
+        let records = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            maxAge: 86_400,
+            maxFiles: 10
+        ).discoverRecentSessions(now: now)
+
+        #expect(records.map(\.sessionID) == [parentID])
+    }
+
+    @Test
+    func codexRolloutDiscoverySkipsAlreadyTrackedTranscriptPaths() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-exclusions-\(UUID().uuidString)", isDirectory: true)
+        let trackedURL = rootURL.appendingPathComponent("rollout-tracked.jsonl")
+        let newURL = rootURL.appendingPathComponent("rollout-new.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        try sessionMetaLine(
+            sessionID: "tracked",
+            timestamp: "2026-04-02T04:03:44.000Z",
+            cwd: "/tmp/tracked"
+        ).appending("\n").write(to: trackedURL, atomically: true, encoding: .utf8)
+        try sessionMetaLine(
+            sessionID: "new",
+            timestamp: "2026-04-02T04:03:44.000Z",
+            cwd: "/tmp/new"
+        ).appending("\n").write(to: newURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: trackedURL.path)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: newURL.path)
+
+        let records = CodexRolloutDiscovery(rootURL: rootURL, maxAge: 86_400, maxFiles: 10)
+            .discoverRecentSessions(now: now, excludingTranscriptPaths: [trackedURL.path])
+
+        #expect(records.map(\.sessionID) == ["new"])
+    }
+
+    @Test
     func codexRolloutDiscoveryStreamsRolloutsLargerThanReadChunk() throws {
         // Pins streaming behavior across read-chunk boundaries. The
         // discovery path used to slurp the whole rollout via
@@ -1278,6 +2173,35 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func jsonlExtractionHandlesLargePartialLineIncrementally() {
+        var buffer = Data()
+        var scannedByteCount = 0
+        let chunk = Data(repeating: UInt8(ascii: "x"), count: 64 * 1_024)
+        let clock = ContinuousClock()
+        let start = clock.now
+
+        for _ in 0..<512 {
+            buffer.append(chunk)
+            #expect(codexExtractCompleteJSONLLines(
+                from: &buffer,
+                scannedByteCount: &scannedByteCount
+            ).isEmpty)
+            #expect(scannedByteCount == buffer.count)
+        }
+
+        buffer.append(UInt8(ascii: "\n"))
+        let lines = codexExtractCompleteJSONLLines(
+            from: &buffer,
+            scannedByteCount: &scannedByteCount
+        )
+
+        #expect(lines.count == 1)
+        #expect(lines.first?.utf8.count == 32 * 1_024 * 1_024)
+        #expect(buffer.isEmpty)
+        #expect(clock.now - start < .seconds(3))
+    }
+
+    @Test
     func codexRolloutDiscoveryHandlesTrailingLineWithoutNewline() throws {
         // A rollout written by Codex while the process is mid-flush
         // can land on disk without a trailing newline. The streamed
@@ -1345,6 +2269,41 @@ private actor EventRecorder {
     }
 }
 
+private actor ChangeRecorder {
+    private(set) var count = 0
+
+    func recordChange() {
+        count += 1
+    }
+}
+
+private actor WatchTargetResyncRecorder {
+    private let watcher: CodexRolloutWatcher
+    private var target: CodexRolloutWatchTarget
+    private(set) var metadataEventCount = 0
+
+    init(watcher: CodexRolloutWatcher, target: CodexRolloutWatchTarget) {
+        self.watcher = watcher
+        self.target = target
+    }
+
+    func recordAndResync(for event: AgentEvent) {
+        guard let metadata = event.trackedMetadataUpdate?.codexMetadata else {
+            return
+        }
+
+        metadataEventCount += 1
+        target.cachedInitialUserPrompt = metadata.initialUserPrompt
+        target.cachedLastUserPrompt = metadata.lastUserPrompt
+        target.cachedProcessedDuration = metadata.processedDuration
+        target.cachedCurrentTurnStartedAt = metadata.currentTurnStartedAt
+        target.cachedActiveGoalStartedAt = metadata.activeGoalStartedAt
+        target.cachedActivePlanStartedAt = metadata.activePlanStartedAt
+        target.cachedIsPlanMode = metadata.isPlanMode
+        watcher.sync(targets: [target])
+    }
+}
+
 private func appendRolloutLine(_ line: String, to fileURL: URL) throws {
     guard let data = "\(line)\n".data(using: .utf8) else {
         return
@@ -1373,10 +2332,18 @@ private func rolloutLine(
     return String(decoding: data, as: UTF8.self)
 }
 
+private func iso8601Date(_ value: String) -> Date {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.date(from: value)!
+}
+
 private func sessionMetaLine(
     sessionID: String,
     timestamp: String,
-    cwd: String
+    cwd: String,
+    originator: String = "codex-tui",
+    source: String = "cli"
 ) -> String {
     rolloutLine(
         timestamp: timestamp,
@@ -1385,8 +2352,8 @@ private func sessionMetaLine(
             "id": sessionID,
             "timestamp": timestamp,
             "cwd": cwd,
-            "originator": "codex-tui",
-            "source": "cli",
+            "originator": originator,
+            "source": source,
         ]
     )
 }

@@ -142,6 +142,7 @@ struct AgentsGridRightSlotTests {
     func cellStateReflectsSessionPhase() {
         let model = AppModel()
         model.islandRightSlot = .agents
+        model.showIdleSessions = true
         let now = Date(timeIntervalSince1970: 300_000)
 
         let running  = makeSession(id: "r", firstSeenAt: now,                         updatedAt: now, phase: .running)
