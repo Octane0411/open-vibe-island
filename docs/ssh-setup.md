@@ -121,6 +121,12 @@ Replace `501` with your local UID (`id -u`). Codex may require a manual
 trust review before running the hooks: open `/hooks` inside Codex CLI and
 approve the Open Island entries.
 
+> **Important:** Codex silently skips hooks that have not been approved yet.
+> If you start an SSH task before running the trust review, no events reach
+> Open Island. After approving the entries, restart any Codex SSH remote
+> session that was already running so the remote app-server reloads the
+> trusted hook state.
+
 ### 5. Verify
 
 1. Make sure Open Island is running on your Mac
@@ -136,6 +142,13 @@ StreamLocalBindUnlink yes
 ```
 
 Without this, reconnecting after a dropped SSH session will fail with "Address already in use" because the old socket file is still on disk.
+
+> **Note:** the forwarded socket is re-created by the most recent SSH
+> connection that carries the `RemoteForward`. Closing that connection can
+> remove the socket path even while an older Codex SSH remote session is still
+> connected, leaving its forward orphaned. Keep one stable tunnel session
+> open, or disconnect and reconnect the Codex SSH remote session, so hooks can
+> always reach the local app.
 
 ## Mac-to-Mac Setup (Different UIDs)
 
