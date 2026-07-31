@@ -3,8 +3,8 @@
 # Open Island — remote SSH setup
 #
 # Deploys the Python hook client to a remote server and configures
-# Claude Code to use it.  Also prints the SSH config snippet needed
-# for Unix socket forwarding.
+# Claude Code and Codex to use it.  Also prints the SSH config snippet
+# needed for Unix socket forwarding.
 #
 # Usage:
 #   ./scripts/remote-setup.sh user@host
@@ -12,7 +12,7 @@
 # Prerequisites:
 #   - SSH access to the remote host
 #   - Python 3.6+ on the remote host
-#   - Claude Code installed on the remote host
+#   - Claude Code and/or Codex installed on the remote host
 
 set -euo pipefail
 
@@ -96,7 +96,83 @@ print('Updated ' + settings_path)
 \"" <<< "$HOOKS_JSON"
 
 echo ""
+echo "==> Configuring Codex hooks on $REMOTE ..."
+# Codex hooks.json uses the same forwarded socket; the remote hook client
+# marks payloads as remote so the app keeps the session alive.
+CODEX_HOOK_CMD="OPEN_ISLAND_SOCKET_PATH=/tmp/$SOCKET_NAME python3 ~/.local/bin/open-island-hooks.py --source codex"
+CODEX_HOOKS_JSON=$(cat <<ENDJSON
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [{"type": "command", "command": "$CODEX_HOOK_CMD", "timeout": 45}]
+      }
+    ],
+    "UserPromptSubmit": [
+      {"hooks": [{"type": "command", "command": "$CODEX_HOOK_CMD", "timeout": 45}]}
+    ],
+    "PermissionRequest": [
+      {"hooks": [{"type": "command", "command": "$CODEX_HOOK_CMD", "timeout": 3600}]}
+    ],
+    "Stop": [
+      {"hooks": [{"type": "command", "command": "$CODEX_HOOK_CMD", "timeout": 45}]}
+    ]
+  }
+}
+ENDJSON
+)
+
+# Merge into existing hooks.json on remote (or create new), preserving
+# user-authored hook groups for the same events.
+ssh "$REMOTE" "python3 -c \"
+import json, os, sys
+
+hooks_path = os.path.expanduser('~/.codex/hooks.json')
+os.makedirs(os.path.dirname(hooks_path), exist_ok=True)
+
+existing = {}
+if os.path.exists(hooks_path):
+    with open(hooks_path) as f:
+        existing = json.load(f)
+
+new_hooks = json.loads(sys.stdin.read())
+
+if 'hooks' not in existing:
+    existing['hooks'] = {}
+
+def existing_commands(event):
+    commands = set()
+    for group in existing['hooks'].get(event, []):
+        for hook in group.get('hooks', []):
+            if isinstance(hook, dict) and hook.get('command'):
+                commands.add(hook['command'])
+    return commands
+
+for event, groups in new_hooks['hooks'].items():
+    cur = existing['hooks'].get(event, [])
+    known = existing_commands(event)
+    for group in groups:
+        commands = [h.get('command') for h in group.get('hooks', []) if isinstance(h, dict)]
+        if commands and all(c in known for c in commands):
+            continue
+        cur.append(group)
+        for c in commands:
+            known.add(c)
+    existing['hooks'][event] = cur
+
+with open(hooks_path, 'w') as f:
+    json.dump(existing, f, indent=2)
+    f.write('\n')
+
+print('Updated ' + hooks_path)
+\"" <<< "$CODEX_HOOKS_JSON"
+
+echo ""
 echo "==> Done!"
+echo ""
+echo "Codex may require a manual trust review before running the hooks:"
+echo "open \`/hooks\` inside Codex CLI and approve the Open Island entries."
 echo ""
 echo "IMPORTANT: Ensure the remote sshd has 'StreamLocalBindUnlink yes' in"
 echo "/etc/ssh/sshd_config — otherwise reconnecting will fail with"

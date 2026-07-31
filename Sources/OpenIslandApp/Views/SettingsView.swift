@@ -1114,7 +1114,7 @@ struct RemoteConnectionSection: View {
                     }
                 }
 
-                Text("Monitor Claude Code running on remote servers via SSH.")
+                Text("Monitor Claude Code and Codex running on remote servers via SSH.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
