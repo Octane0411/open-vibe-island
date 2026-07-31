@@ -40,7 +40,14 @@ This will:
 1. Copy `open-island-hooks.py` to the remote server (`~/.local/bin/`)
 2. Configure Claude Code hooks in `~/.claude/settings.json` on the remote
 3. Configure Codex hooks in `~/.codex/hooks.json` on the remote
-4. Print the SSH config snippet you need
+4. Enable `[features].hooks = true` in `~/.codex/config.toml` on the remote
+5. Print the SSH config snippet you need
+
+The script detects the remote user's UID and maps the forwarded socket
+accordingly, so it works when the local and remote UIDs differ (for example,
+macOS on the Mac and a Linux remote server). Re-running the script replaces
+the Open Island hook entries it manages without duplicating them, and leaves
+any user-authored hooks untouched.
 
 ## Manual setup
 

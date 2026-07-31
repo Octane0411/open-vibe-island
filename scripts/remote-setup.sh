@@ -19,7 +19,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HOOK_SCRIPT="$SCRIPT_DIR/open-island-hooks.py"
 REMOTE_BIN_DIR=".local/bin"
-REMOTE_HOOK_PATH="\$HOME/$REMOTE_BIN_DIR/open-island-hooks.py"
 
 if [ $# -lt 1 ]; then
     echo "Usage: $0 user@host"
@@ -28,7 +27,16 @@ fi
 
 REMOTE="$1"
 LOCAL_UID=$(id -u)
-SOCKET_NAME="open-island-${LOCAL_UID}.sock"
+LOCAL_SOCKET_NAME="open-island-${LOCAL_UID}.sock"
+
+# Resolve the remote UID so the forwarded socket name can be mapped when the
+# two machines have different UIDs (e.g. macOS vs. Linux remote servers).
+REMOTE_UID="$(ssh "$REMOTE" "id -u" 2>/dev/null | tr -d '\r' | awk 'NR==1{print $1}')"
+if ! [[ "$REMOTE_UID" =~ ^[0-9]+$ ]]; then
+    echo "Failed to resolve numeric remote UID from '$REMOTE' (got: '$REMOTE_UID')." >&2
+    exit 1
+fi
+REMOTE_SOCKET_NAME="open-island-${REMOTE_UID}.sock"
 
 echo "==> Deploying open-island-hooks.py to $REMOTE ..."
 ssh "$REMOTE" "mkdir -p ~/$REMOTE_BIN_DIR"
@@ -37,136 +45,177 @@ ssh "$REMOTE" "chmod +x ~/$REMOTE_BIN_DIR/open-island-hooks.py"
 
 echo ""
 echo "==> Configuring Claude Code hooks on $REMOTE ..."
-# Build the hooks JSON fragment.
-# Use the *local* UID in the socket path so the remote hook connects to the
-# forwarded socket created by the local Open Island app.  The heredoc is
-# unquoted so that $SOCKET_NAME is expanded.
-HOOK_CMD="OPEN_ISLAND_SOCKET_PATH=/tmp/$SOCKET_NAME python3 ~/.local/bin/open-island-hooks.py --source claude"
-HOOK_ENTRY="{\"matcher\": \"\", \"hooks\": [{\"type\": \"command\", \"command\": \"$HOOK_CMD\"}]}"
-HOOKS_JSON=$(cat <<ENDJSON
-{
-  "hooks": {
-    "PreToolUse": [$HOOK_ENTRY],
-    "PostToolUse": [$HOOK_ENTRY],
-    "Notification": [$HOOK_ENTRY],
-    "SessionStart": [$HOOK_ENTRY],
-    "SessionEnd": [$HOOK_ENTRY],
-    "Stop": [$HOOK_ENTRY],
-    "UserPromptSubmit": [$HOOK_ENTRY],
-    "PermissionRequest": [$HOOK_ENTRY],
-    "SubagentStart": [$HOOK_ENTRY],
-    "SubagentStop": [$HOOK_ENTRY]
-  }
-}
-ENDJSON
+ssh "$REMOTE" "OPEN_ISLAND_REMOTE_SOCKET=/tmp/$REMOTE_SOCKET_NAME python3 -" <<'PY'
+import json
+import os
+from pathlib import Path
+
+socket_path = os.environ["OPEN_ISLAND_REMOTE_SOCKET"]
+hook_cmd = (
+    f"OPEN_ISLAND_SOCKET_PATH={socket_path} "
+    "python3 ~/.local/bin/open-island-hooks.py --source claude"
 )
 
-# Merge into existing settings.json on remote (or create new)
-ssh "$REMOTE" "python3 -c \"
-import json, os, sys
-
-settings_path = os.path.expanduser('~/.claude/settings.json')
-os.makedirs(os.path.dirname(settings_path), exist_ok=True)
+settings_path = Path.home() / ".claude" / "settings.json"
+settings_path.parent.mkdir(parents=True, exist_ok=True)
 
 existing = {}
-if os.path.exists(settings_path):
-    with open(settings_path) as f:
-        existing = json.load(f)
+if settings_path.exists():
+    existing = json.loads(settings_path.read_text())
 
-new_hooks = json.loads(sys.stdin.read())
+if "hooks" not in existing or not isinstance(existing["hooks"], dict):
+    existing["hooks"] = {}
 
-# Merge per-event instead of replacing the entire hooks dict, so
-# user's custom hooks for other events are preserved.
-if 'hooks' not in existing:
-    existing['hooks'] = {}
-for event, entries in new_hooks['hooks'].items():
-    cur = existing['hooks'].get(event, [])
-    # Avoid duplicating the same command
-    existing_cmds = {e.get('command') for e in cur if isinstance(e, dict)}
-    for entry in entries:
-        if entry.get('command') not in existing_cmds:
-            cur.append(entry)
-    existing['hooks'][event] = cur
 
-with open(settings_path, 'w') as f:
-    json.dump(existing, f, indent=2)
-    f.write('\n')
+def group_has_open_island(group):
+    nested = group.get("hooks")
+    if not isinstance(nested, list):
+        return False
+    return any(
+        isinstance(hook, dict)
+        and "open-island-hooks.py" in (hook.get("command") or "")
+        for hook in nested
+    )
 
-print('Updated ' + settings_path)
-\"" <<< "$HOOKS_JSON"
+
+entry = {
+    "matcher": "",
+    "hooks": [{"type": "command", "command": hook_cmd}],
+}
+events = [
+    "PreToolUse",
+    "PostToolUse",
+    "Notification",
+    "SessionStart",
+    "SessionEnd",
+    "Stop",
+    "UserPromptSubmit",
+    "PermissionRequest",
+    "SubagentStart",
+    "SubagentStop",
+]
+for event in events:
+    cur = existing["hooks"].get(event, [])
+    if not isinstance(cur, list):
+        cur = []
+    # Remove any previously managed Open Island group (idempotent re-runs),
+    # then append the current entry; user-authored hooks are preserved.
+    cleaned = [g for g in cur if not (isinstance(g, dict) and group_has_open_island(g))]
+    cleaned.append(entry)
+    existing["hooks"][event] = cleaned
+
+settings_path.write_text(json.dumps(existing, indent=2) + "\n")
+print("Updated " + str(settings_path))
+PY
 
 echo ""
 echo "==> Configuring Codex hooks on $REMOTE ..."
-# Codex hooks.json uses the same forwarded socket; the remote hook client
-# marks payloads as remote so the app keeps the session alive.
-CODEX_HOOK_CMD="OPEN_ISLAND_SOCKET_PATH=/tmp/$SOCKET_NAME python3 ~/.local/bin/open-island-hooks.py --source codex"
-CODEX_HOOKS_JSON=$(cat <<ENDJSON
-{
-  "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "startup|resume",
-        "hooks": [{"type": "command", "command": "$CODEX_HOOK_CMD", "timeout": 45}]
-      }
-    ],
-    "UserPromptSubmit": [
-      {"hooks": [{"type": "command", "command": "$CODEX_HOOK_CMD", "timeout": 45}]}
-    ],
-    "PermissionRequest": [
-      {"hooks": [{"type": "command", "command": "$CODEX_HOOK_CMD", "timeout": 3600}]}
-    ],
-    "Stop": [
-      {"hooks": [{"type": "command", "command": "$CODEX_HOOK_CMD", "timeout": 45}]}
-    ]
-  }
-}
-ENDJSON
+ssh "$REMOTE" "OPEN_ISLAND_REMOTE_SOCKET=/tmp/$REMOTE_SOCKET_NAME python3 -" <<'PY'
+import json
+import os
+from pathlib import Path
+
+socket_path = os.environ["OPEN_ISLAND_REMOTE_SOCKET"]
+hook_cmd = (
+    f"OPEN_ISLAND_SOCKET_PATH={socket_path} "
+    "python3 ~/.local/bin/open-island-hooks.py --source codex"
 )
 
-# Merge into existing hooks.json on remote (or create new), preserving
-# user-authored hook groups for the same events.
-ssh "$REMOTE" "python3 -c \"
-import json, os, sys
+hooks_path = Path.home() / ".codex" / "hooks.json"
+hooks_path.parent.mkdir(parents=True, exist_ok=True)
 
-hooks_path = os.path.expanduser('~/.codex/hooks.json')
-os.makedirs(os.path.dirname(hooks_path), exist_ok=True)
+root = {}
+if hooks_path.exists():
+    root = json.loads(hooks_path.read_text())
 
-existing = {}
-if os.path.exists(hooks_path):
-    with open(hooks_path) as f:
-        existing = json.load(f)
+hooks = root.get("hooks")
+if not isinstance(hooks, dict):
+    hooks = {}
 
-new_hooks = json.loads(sys.stdin.read())
 
-if 'hooks' not in existing:
-    existing['hooks'] = {}
+def group_has_open_island(group):
+    nested = group.get("hooks")
+    if not isinstance(nested, list):
+        return False
+    return any(
+        isinstance(hook, dict)
+        and "open-island-hooks.py" in (hook.get("command") or "")
+        for hook in nested
+    )
 
-def existing_commands(event):
-    commands = set()
-    for group in existing['hooks'].get(event, []):
-        for hook in group.get('hooks', []):
-            if isinstance(hook, dict) and hook.get('command'):
-                commands.add(hook['command'])
-    return commands
 
-for event, groups in new_hooks['hooks'].items():
-    cur = existing['hooks'].get(event, [])
-    known = existing_commands(event)
-    for group in groups:
-        commands = [h.get('command') for h in group.get('hooks', []) if isinstance(h, dict)]
-        if commands and all(c in known for c in commands):
+event_specs = {
+    "SessionStart": {"matcher": "startup|resume", "timeout": 45},
+    "UserPromptSubmit": {"matcher": None, "timeout": 45},
+    "PermissionRequest": {"matcher": None, "timeout": 3600},
+    "Stop": {"matcher": None, "timeout": 45},
+}
+for event, spec in event_specs.items():
+    cur = hooks.get(event, [])
+    if not isinstance(cur, list):
+        cur = []
+    # Replace previously managed Open Island groups instead of duplicating
+    # them on re-runs; user-authored hook groups are preserved.
+    cleaned = [g for g in cur if not (isinstance(g, dict) and group_has_open_island(g))]
+    group = {
+        "hooks": [{"type": "command", "command": hook_cmd, "timeout": spec["timeout"]}]
+    }
+    if spec["matcher"]:
+        group["matcher"] = spec["matcher"]
+    cleaned.append(group)
+    hooks[event] = cleaned
+
+root["hooks"] = hooks
+hooks_path.write_text(json.dumps(root, indent=2) + "\n")
+print("Updated " + str(hooks_path))
+PY
+
+echo ""
+echo "==> Enabling Codex hooks feature flag on $REMOTE ..."
+ssh "$REMOTE" "python3 -" <<'PY'
+from pathlib import Path
+
+config_path = Path.home() / ".codex" / "config.toml"
+config_path.parent.mkdir(parents=True, exist_ok=True)
+text = config_path.read_text() if config_path.exists() else ""
+lines = text.splitlines()
+out = []
+in_features = False
+has_features = False
+hooks_seen = False
+
+for line in lines:
+    stripped = line.strip()
+    if stripped == "[features]":
+        in_features = True
+        has_features = True
+        out.append(line)
+        continue
+    if in_features and stripped.startswith("[") and stripped.endswith("]"):
+        if not hooks_seen:
+            out.append("hooks = true")
+        in_features = False
+        out.append(line)
+        continue
+    if in_features:
+        key = stripped.split("=", 1)[0].strip() if "=" in stripped else ""
+        if key == "hooks":
+            out.append("hooks = true")
+            hooks_seen = True
             continue
-        cur.append(group)
-        for c in commands:
-            known.add(c)
-    existing['hooks'][event] = cur
+    out.append(line)
 
-with open(hooks_path, 'w') as f:
-    json.dump(existing, f, indent=2)
-    f.write('\n')
+if not has_features:
+    if out and out[-1] != "":
+        out.append("")
+    out.append("[features]")
+    out.append("hooks = true")
+elif in_features and not hooks_seen:
+    out.append("hooks = true")
 
-print('Updated ' + hooks_path)
-\"" <<< "$CODEX_HOOKS_JSON"
+config_path.write_text("\n".join(out) + "\n")
+print("Updated " + str(config_path))
+PY
 
 echo ""
 echo "==> Done!"
@@ -181,9 +230,15 @@ echo ""
 echo "Add the following to your ~/.ssh/config to enable socket forwarding:"
 echo ""
 echo "  Host ${REMOTE##*@}"
-echo "      RemoteForward /tmp/$SOCKET_NAME /tmp/$SOCKET_NAME"
+echo "      RemoteForward /tmp/$REMOTE_SOCKET_NAME /tmp/$LOCAL_SOCKET_NAME"
 echo ""
 echo "Or connect with:"
 echo ""
-echo "  ssh -R /tmp/$SOCKET_NAME:/tmp/$SOCKET_NAME $REMOTE"
+echo "  ssh -R /tmp/$REMOTE_SOCKET_NAME:/tmp/$LOCAL_SOCKET_NAME $REMOTE"
 echo ""
+if [ "$REMOTE_SOCKET_NAME" != "$LOCAL_SOCKET_NAME" ]; then
+    echo "Note: local UID ($LOCAL_UID) differs from remote UID ($REMOTE_UID);"
+    echo "the socket names above map the remote socket to your local Open Island socket."
+    echo "If you previously configured forwarding with a non-mapped path, update it."
+    echo ""
+fi
