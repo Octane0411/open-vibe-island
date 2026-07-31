@@ -122,7 +122,12 @@ def enrich_payload(payload, env):
 # Bridge socket communication
 # ---------------------------------------------------------------------------
 
-def send_command(envelope_json, timeout):
+def env_flag(env, name):
+    """Return whether an environment flag is enabled."""
+    return (env.get(name) or "").lower() in ("1", "true", "yes", "on")
+
+
+def send_command(envelope_json, timeout, wait_response=True):
     """Connect to bridge socket, send JSON line, return parsed response."""
     path = socket_path()
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -130,6 +135,8 @@ def send_command(envelope_json, timeout):
     try:
         sock.connect(path)
         sock.sendall(envelope_json.encode("utf-8") + b"\n")
+        if not wait_response:
+            return None
 
         buf = b""
         while True:
@@ -205,6 +212,16 @@ def encode_codex_stdout(response):
         output = {"decision": "block", "reason": directive.get("reason", "")}
         return json.dumps(output, sort_keys=True) + "\n"
 
+    if dtype == "permissionRequest":
+        output = {
+            "continue": True,
+            "hookSpecificOutput": {
+                "hookEventName": "PermissionRequest",
+                "decision": directive.get("decision", {}),
+            },
+        }
+        return json.dumps(output, sort_keys=True) + "\n"
+
     return None
 
 
@@ -269,12 +286,17 @@ def main():
             encoder = encode_opencode_stdout
         else:
             command = {"type": "processCodexHook", "codexHook": payload}
-            timeout = 45
+            timeout = 3600 if payload.get("hook_event_name") == "PermissionRequest" else 45
             encoder = encode_codex_stdout
+
+        notify_only = env_flag(env, "OPEN_ISLAND_NOTIFY_ONLY")
+        if notify_only:
+            payload["open_island_notify_only"] = True
+            timeout = int(env.get("OPEN_ISLAND_NOTIFY_TIMEOUT", "2"))
 
         envelope = json.dumps({"type": "command", "command": command})
 
-        response = send_command(envelope, timeout)
+        response = send_command(envelope, timeout, wait_response=not notify_only)
         if response is None:
             return
 

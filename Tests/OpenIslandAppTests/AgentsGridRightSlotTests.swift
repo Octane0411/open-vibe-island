@@ -111,7 +111,7 @@ struct AgentsGridRightSlotTests {
     func moreThanNineSessionsFoldIntoOverflow() {
         let model = AppModel()
         model.islandRightSlot = .agents
-        let now = Date(timeIntervalSince1970: 200_000)
+        let now = Date.now
 
         var sessions: [AgentSession] = []
         for i in 0..<12 {
@@ -142,7 +142,7 @@ struct AgentsGridRightSlotTests {
     func cellStateReflectsSessionPhase() {
         let model = AppModel()
         model.islandRightSlot = .agents
-        let now = Date(timeIntervalSince1970: 300_000)
+        let now = Date.now
 
         let running  = makeSession(id: "r", firstSeenAt: now,                         updatedAt: now, phase: .running)
         let waitingA = makeSession(

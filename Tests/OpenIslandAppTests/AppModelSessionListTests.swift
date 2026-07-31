@@ -92,7 +92,7 @@ struct AppModelSessionListTests {
 
     @Test
     func islandListDeduplicatesSessionsSharingTheSameLiveGhosttyTerminal() {
-        let now = Date(timeIntervalSince1970: 2_000)
+        let now = Date.now
         let model = AppModel()
 
         var runningLive = AgentSession(
@@ -165,7 +165,7 @@ struct AppModelSessionListTests {
 
     @Test
     func islandListKeepsDistinctCodexAppThreadsInTheSameWorkspace() {
-        let now = Date(timeIntervalSince1970: 2_000)
+        let now = Date.now
         let model = AppModel()
 
         var firstThread = AgentSession(
@@ -263,7 +263,7 @@ struct AppModelSessionListTests {
     }
 
     @Test
-    func freshCompletedSessionsSortAheadOfV8StaleCompletedSessions() {
+    func islandListHidesStaleCompletedSessions() {
         let now = Date()
         let model = AppModel()
 
@@ -307,7 +307,8 @@ struct AppModelSessionListTests {
 
         model.state = SessionState(sessions: [staleCompleted, freshCompleted])
 
-        #expect(model.islandListSessions.map(\.id) == ["fresh-completed", "stale-completed"])
+        #expect(model.islandListSessions.map(\.id) == ["fresh-completed"])
+        #expect(model.recentSessions.map(\.id).contains("stale-completed"))
     }
 
     @Test
