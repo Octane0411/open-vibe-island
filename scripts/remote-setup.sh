@@ -29,9 +29,13 @@ REMOTE="$1"
 LOCAL_UID=$(id -u)
 LOCAL_SOCKET_NAME="open-island-${LOCAL_UID}.sock"
 
+# Deploy without forwarding: running the setup script must not steal the
+# RemoteForward socket from an already-connected Open Island/Codex session.
+SSH_NO_FORWARD=(-o RemoteForward=none)
+
 # Resolve the remote UID so the forwarded socket name can be mapped when the
 # two machines have different UIDs (e.g. macOS vs. Linux remote servers).
-REMOTE_UID="$(ssh "$REMOTE" "id -u" 2>/dev/null | tr -d '\r' | awk 'NR==1{print $1}')"
+REMOTE_UID="$(ssh "${SSH_NO_FORWARD[@]}" "$REMOTE" "id -u" 2>/dev/null | tr -d '\r' | awk 'NR==1{print $1}')"
 if ! [[ "$REMOTE_UID" =~ ^[0-9]+$ ]]; then
     echo "Failed to resolve numeric remote UID from '$REMOTE' (got: '$REMOTE_UID')." >&2
     exit 1
@@ -39,13 +43,13 @@ fi
 REMOTE_SOCKET_NAME="open-island-${REMOTE_UID}.sock"
 
 echo "==> Deploying open-island-hooks.py to $REMOTE ..."
-ssh "$REMOTE" "mkdir -p ~/$REMOTE_BIN_DIR"
-scp "$HOOK_SCRIPT" "$REMOTE:~/$REMOTE_BIN_DIR/open-island-hooks.py"
-ssh "$REMOTE" "chmod +x ~/$REMOTE_BIN_DIR/open-island-hooks.py"
+ssh "${SSH_NO_FORWARD[@]}" "$REMOTE" "mkdir -p ~/$REMOTE_BIN_DIR"
+scp "${SSH_NO_FORWARD[@]}" "$HOOK_SCRIPT" "$REMOTE:~/$REMOTE_BIN_DIR/open-island-hooks.py"
+ssh "${SSH_NO_FORWARD[@]}" "$REMOTE" "chmod +x ~/$REMOTE_BIN_DIR/open-island-hooks.py"
 
 echo ""
 echo "==> Configuring Claude Code hooks on $REMOTE ..."
-ssh "$REMOTE" "OPEN_ISLAND_REMOTE_SOCKET=/tmp/$REMOTE_SOCKET_NAME python3 -" <<'PY'
+ssh "${SSH_NO_FORWARD[@]}" "$REMOTE" "OPEN_ISLAND_REMOTE_SOCKET=/tmp/$REMOTE_SOCKET_NAME python3 -" <<'PY'
 import json
 import os
 from pathlib import Path
@@ -110,7 +114,7 @@ PY
 
 echo ""
 echo "==> Configuring Codex hooks on $REMOTE ..."
-ssh "$REMOTE" "OPEN_ISLAND_REMOTE_SOCKET=/tmp/$REMOTE_SOCKET_NAME python3 -" <<'PY'
+ssh "${SSH_NO_FORWARD[@]}" "$REMOTE" "OPEN_ISLAND_REMOTE_SOCKET=/tmp/$REMOTE_SOCKET_NAME python3 -" <<'PY'
 import json
 import os
 from pathlib import Path
@@ -185,7 +189,7 @@ PY
 
 echo ""
 echo "==> Enabling Codex hooks feature flag on $REMOTE ..."
-ssh "$REMOTE" "python3 -" <<'PY'
+ssh "${SSH_NO_FORWARD[@]}" "$REMOTE" "python3 -" <<'PY'
 from pathlib import Path
 
 config_path = Path.home() / ".codex" / "config.toml"
