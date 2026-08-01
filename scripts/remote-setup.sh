@@ -31,7 +31,7 @@ LOCAL_SOCKET_NAME="open-island-${LOCAL_UID}.sock"
 
 # Deploy without forwarding: running the setup script must not steal the
 # RemoteForward socket from an already-connected Open Island/Codex session.
-SSH_NO_FORWARD=(-o RemoteForward=none)
+SSH_NO_FORWARD=(-o ClearAllForwardings=yes)
 
 # Resolve the remote UID so the forwarded socket name can be mapped when the
 # two machines have different UIDs (e.g. macOS vs. Linux remote servers).
