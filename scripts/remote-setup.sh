@@ -35,7 +35,7 @@ SSH_NO_FORWARD=(-o RemoteForward=none)
 
 # Resolve the remote UID so the forwarded socket name can be mapped when the
 # two machines have different UIDs (e.g. macOS vs. Linux remote servers).
-REMOTE_UID="$(ssh "${SSH_NO_FORWARD[@]}" "$REMOTE" "id -u" 2>/dev/null | tr -d '\r' | awk 'NR==1{print $1}')"
+REMOTE_UID="$(ssh "${SSH_NO_FORWARD[@]}" "$REMOTE" "id -u" | tr -d '\r' | awk 'NR==1{print $1}')"
 if ! [[ "$REMOTE_UID" =~ ^[0-9]+$ ]]; then
     echo "Failed to resolve numeric remote UID from '$REMOTE' (got: '$REMOTE_UID')." >&2
     exit 1
@@ -191,6 +191,73 @@ echo ""
 echo "==> Enabling Codex hooks feature flag on $REMOTE ..."
 ssh "${SSH_NO_FORWARD[@]}" "$REMOTE" "python3 -" <<'PY'
 from pathlib import Path
+import re
+
+
+def strip_toml_comment(line):
+    """Return the line without its trailing # comment (TOML strings kept)."""
+    in_str = None
+    escaped = False
+    for i, ch in enumerate(line):
+        if in_str:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == in_str:
+                in_str = None
+        elif ch in ('"', "'"):
+            in_str = ch
+        elif ch == "#":
+            return line[:i]
+    return line
+
+
+_TOML_KEY = r"(?:[A-Za-z0-9_-]+|\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*')"
+_TABLE_HEADER_RE = re.compile(
+    r"\[\[?\s*" + _TOML_KEY + r"(?:\s*\.\s*" + _TOML_KEY + r")*\s*\]\]?"
+)
+
+
+def table_header(line):
+    """Return (is_array_of_tables, name) for a real TOML table header, else None.
+
+    Bracketed rows inside multi-line arrays (e.g. ``[1, 2]`` or ``["a"]``) are
+    not headers, so they cannot be mistaken for section boundaries.
+    """
+    s = strip_toml_comment(line).strip()
+    if not (s.startswith("[") and s.endswith("]")):
+        return None
+    if _TABLE_HEADER_RE.fullmatch(s) is None:
+        return None
+    inner = s[1:-1].strip()
+    is_aot = inner.startswith("[")
+    if is_aot:
+        inner = inner[1:].strip()
+    return (is_aot, inner)
+
+
+def bracket_depth_delta(line):
+    """Net change in TOML array nesting caused by this line."""
+    depth = 0
+    in_str = None
+    escaped = False
+    for ch in line:
+        if in_str:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == in_str:
+                in_str = None
+        elif ch in ('"', "'"):
+            in_str = ch
+        elif ch == "[":
+            depth += 1
+        elif ch == "]":
+            depth -= 1
+    return depth
+
 
 config_path = Path.home() / ".codex" / "config.toml"
 config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -200,16 +267,19 @@ out = []
 in_features = False
 has_features = False
 hooks_seen = False
+array_depth = 0
 
 for line in lines:
     stripped = line.strip()
-    if stripped == "[features]":
-        in_features = True
-        has_features = True
-        out.append(line)
-        continue
-    if in_features and stripped.startswith("[") and stripped.endswith("]"):
-        if not hooks_seen:
+    header = table_header(stripped)
+    if array_depth == 0 and header is not None:
+        is_aot, name = header
+        if not is_aot and name == "features":
+            in_features = True
+            has_features = True
+            out.append(line)
+            continue
+        if in_features and not hooks_seen:
             out.append("hooks = true")
         in_features = False
         out.append(line)
@@ -221,6 +291,7 @@ for line in lines:
             hooks_seen = True
             continue
     out.append(line)
+    array_depth += bracket_depth_delta(line)
 
 if not has_features:
     if out and out[-1] != "":
