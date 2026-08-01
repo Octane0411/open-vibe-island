@@ -57,9 +57,7 @@ struct TerminalJumpServiceTests {
     func testGhosttyJumpIntegrationMatchesFocusedTerminalForLiveSurfaces() throws {
         let terminals = try liveGhosttyTerminals()
         if terminals.isEmpty {
-            // Runtime skip is not available in the Swift.org toolchain's
-            // Testing module; treat "no live terminals" as nothing to verify.
-            return
+            try Test.cancel("No live Ghostty terminals; nothing to verify.")
         }
 
         let service = TerminalJumpService()
