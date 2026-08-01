@@ -269,7 +269,7 @@ def main():
             encoder = encode_opencode_stdout
         else:
             command = {"type": "processCodexHook", "codexHook": payload}
-            timeout = 45
+            timeout = 86400 if payload.get("hook_event_name") == "PermissionRequest" else 45
             encoder = encode_codex_stdout
 
         envelope = json.dumps({"type": "command", "command": command})
