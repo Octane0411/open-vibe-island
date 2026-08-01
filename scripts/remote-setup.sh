@@ -148,6 +148,8 @@ event_specs = {
     "SessionStart": {"matcher": "startup|resume", "timeout": 45},
     "UserPromptSubmit": {"matcher": None, "timeout": 45},
     "PermissionRequest": {"matcher": None, "timeout": 3600},
+    "PreToolUse": {"matcher": None, "timeout": 5, "notify": True},
+    "PostToolUse": {"matcher": None, "timeout": 5, "notify": True},
     "Stop": {"matcher": None, "timeout": 45},
 }
 for event, spec in event_specs.items():
@@ -157,6 +159,17 @@ for event, spec in event_specs.items():
     # Replace previously managed Open Island groups instead of duplicating
     # them on re-runs; user-authored hook groups are preserved.
     cleaned = [g for g in cur if not (isinstance(g, dict) and group_has_open_island(g))]
+    if spec.get("notify"):
+        hook_cmd = (
+            f"OPEN_ISLAND_SOCKET_PATH={socket_path} "
+            "OPEN_ISLAND_NOTIFY_ONLY=1 OPEN_ISLAND_NOTIFY_TIMEOUT=2 "
+            "python3 ~/.local/bin/open-island-hooks.py --source codex"
+        )
+    else:
+        hook_cmd = (
+            f"OPEN_ISLAND_SOCKET_PATH={socket_path} "
+            "python3 ~/.local/bin/open-island-hooks.py --source codex"
+        )
     group = {
         "hooks": [{"type": "command", "command": hook_cmd, "timeout": spec["timeout"]}]
     }
