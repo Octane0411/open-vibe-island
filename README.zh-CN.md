@@ -50,7 +50,7 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 
 ## 支持的 Agents 和终端
 
-**10 个 Agents**：Claude Code、Codex、Cursor、Gemini CLI、Kimi CLI、OpenCode、Qoder、Qwen Code、Factory、CodeBuddy
+**11 个 Agents**：Claude Code、Codex、Cursor、Gemini CLI、Grok Build、Kimi CLI、OpenCode、Qoder、Qwen Code、Factory、CodeBuddy
 
 **15+ 终端和 IDE**：Terminal.app、Ghostty、iTerm2、WezTerm、Zellij、tmux、cmux、Kaku、VS Code、Cursor、Windsurf、Trae、Zed、JetBrains 全家桶（IDEA、WebStorm、PyCharm、GoLand、CLion、RubyMine、PhpStorm、Rider、RustRover）
 
@@ -72,6 +72,7 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 | **Cursor** | 已支持 | Hook 集成，通过 `~/.cursor/hooks.json` 配置，会话追踪，工作区跳转 |
 | **Gemini CLI** | 已支持 | Hook 集成，通过 `~/.gemini/settings.json` 配置，会话追踪，fire-and-forget 事件 |
 | **Kimi CLI** | 已支持 | Hook 集成，通过 `~/.kimi/config.toml` 的 `[[hooks]]` 数组配置，会话追踪，复用 Claude payload 协议 |
+| **Grok Build** | 已支持 | Hook 集成，写入 `~/.grok/hooks/open-island.json`，会话追踪与终端跳回（camelCase payload） |
 
 ### 终端和 IDE
 
@@ -281,6 +282,14 @@ AI coding 正在成为日常开发流程的一部分，但围绕它的控制层�
   swift run OpenIslandSetup installKimi    # 把受管 [[hooks]] 条目写入 ~/.kimi/config.toml
   swift run OpenIslandSetup statusKimi     # 查看受管 hooks 是否已安装
   swift run OpenIslandSetup uninstallKimi  # 移除受管条目，保留用户自定义的 [[hooks]]
+  ```
+
+- **Grok Build** — 基于 hook 的集成，写入 `~/.grok/hooks/open-island.json`（xAI Grok CLI / TUI）。Grok 使用 camelCase 字段（`sessionId`、`hookEventName`、`toolResult`），事件名同时接受 PascalCase 与 snake_case。Open Island 通过独立的 `--source grok` 路径完成解码与会话生命周期映射（可见性、活动状态、turn 完成、终端跳回）。受管安装注册完整支持的生命周期事件集合；工具事件为观察模式（尚未实现 PreToolUse 拦截）。仅当所有必需事件均挂载 Open Island 命令时，Settings 才显示已安装（Vibe Island 的 hooks 不计入）。可在设置窗口安装，或通过 CLI：
+
+  ```sh
+  swift run OpenIslandSetup installGrok    # 写入 ~/.grok/hooks/open-island.json
+  swift run OpenIslandSetup statusGrok     # 查看受管 hooks 是否已安装
+  swift run OpenIslandSetup uninstallGrok  # 移除 open-island.json 与 manifest
   ```
 
 ### 终端支持

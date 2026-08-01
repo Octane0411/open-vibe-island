@@ -510,6 +510,43 @@ final class ProcessMonitoringCoordinator {
             }
         }
 
+        // Grok sessions are hook-managed. Process discovery sees a `grok`
+        // binary but cannot recover Grok's session UUID from ps/lsof.
+        // Prefer TTY / CWD matches when unique; otherwise use a conservative
+        // fallback (same idea as Kimi): while any Grok process is alive, keep
+        // non-ended Grok sessions in the alive set so the hook-managed
+        // processNotSeenCount path does not kill them after ~6s.
+        // Explicit SessionEnd still wins — ended sessions are skipped here and
+        // ignored by SessionState.markProcessLiveness once isSessionEnded.
+        let grokProcesses = activeProcesses.filter { $0.tool == .grokBuild }
+        let trackedGrokSessions = sessions.filter {
+            $0.tool == .grokBuild && !$0.isDemoSession && !$0.isSessionEnded
+        }
+        var claimedGrokSessionIDs: Set<String> = []
+        var hasUnmatchedGrokProcess = false
+
+        for process in grokProcesses {
+            switch uniqueTrackedGrokSession(
+                for: process,
+                sessions: trackedGrokSessions,
+                claimedSessionIDs: claimedGrokSessionIDs
+            ) {
+            case .matched(let matched):
+                aliveIDs.insert(matched.id)
+                claimedGrokSessionIDs.insert(matched.id)
+            case .ambiguous:
+                hasUnmatchedGrokProcess = true
+            case .rejectedConflict:
+                break
+            }
+        }
+
+        if hasUnmatchedGrokProcess || (!grokProcesses.isEmpty && claimedGrokSessionIDs.isEmpty) {
+            for session in trackedGrokSessions where !claimedGrokSessionIDs.contains(session.id) {
+                aliveIDs.insert(session.id)
+            }
+        }
+
         // Cursor sessions: prefer concrete cursor-agent processes when they
         // are visible (Cursor CLI / integrated terminal), then fall back to
         // app-level liveness for IDE-only hook sessions where there is no
@@ -607,6 +644,59 @@ final class ProcessMonitoringCoordinator {
         case matched(AgentSession)
         case ambiguous
         case rejectedConflict
+    }
+
+    /// Same matching strategy as OpenCode: unique TTY (+ optional CWD check),
+    /// then unique CWD. No blind single-session attach without a signal.
+    private func uniqueTrackedGrokSession(
+        for process: ActiveProcessSnapshot,
+        sessions: [AgentSession],
+        claimedSessionIDs: Set<String>
+    ) -> OpenCodeMatchResult {
+        let unclaimedSessions = sessions.filter { !claimedSessionIDs.contains($0.id) }
+        guard !unclaimedSessions.isEmpty else {
+            return .ambiguous
+        }
+
+        if let terminalTTY = normalizedTTYForMatching(process.terminalTTY) {
+            let candidates = unclaimedSessions.filter {
+                normalizedTTYForMatching($0.jumpTarget?.terminalTTY) == terminalTTY
+            }
+            if candidates.count == 1 {
+                let candidate = candidates[0]
+                if let processCWD = normalizedPathForMatching(process.workingDirectory),
+                   let sessionCWD = normalizedPathForMatching(candidate.jumpTarget?.workingDirectory),
+                   processCWD != sessionCWD {
+                    return .rejectedConflict
+                }
+                return .matched(candidate)
+            }
+            if !candidates.isEmpty {
+                if let processCWD = normalizedPathForMatching(process.workingDirectory) {
+                    let cwdCandidates = candidates.filter {
+                        normalizedPathForMatching($0.jumpTarget?.workingDirectory) == processCWD
+                    }
+                    if cwdCandidates.count == 1 {
+                        return .matched(cwdCandidates[0])
+                    }
+                }
+                return .ambiguous
+            }
+        }
+
+        if let processCWD = normalizedPathForMatching(process.workingDirectory) {
+            let workspaceMatches = unclaimedSessions.filter {
+                normalizedPathForMatching($0.jumpTarget?.workingDirectory) == processCWD
+            }
+            if workspaceMatches.count == 1 {
+                return .matched(workspaceMatches[0])
+            }
+            if !workspaceMatches.isEmpty {
+                return .ambiguous
+            }
+        }
+
+        return .ambiguous
     }
 
     private func uniqueTrackedOpenCodeSession(
@@ -1479,6 +1569,8 @@ final class ProcessMonitoringCoordinator {
             return "Cursor \(session.id.prefix(8))"
         case .kimiCLI:
             return "Kimi \(session.id.prefix(8))"
+        case .grokBuild:
+            return "Grok \(session.id.prefix(8))"
         }
     }
 }

@@ -477,6 +477,9 @@ public final class BridgeServer: @unchecked Sendable {
 
         case let .processGeminiHook(payload):
             handleGeminiHook(payload, from: clientID)
+
+        case let .processGrokHook(payload):
+            handleGrokHook(payload, from: clientID)
         }
     }
 
@@ -1307,6 +1310,183 @@ public final class BridgeServer: @unchecked Sendable {
             )
             send(.response(.acknowledged), to: clientID)
         }
+    }
+
+    private func handleGrokHook(_ payload: GrokHookPayload, from clientID: UUID) {
+        // SessionStart always re-opens; every other event ignores ended sessions
+        // so late hooks cannot rewrite phase/summary after SessionEnd.
+        if payload.hookEventName != .sessionStart,
+           localState.session(id: payload.sessionID)?.isSessionEnded == true {
+            send(.response(.acknowledged), to: clientID)
+            return
+        }
+
+        switch payload.hookEventName {
+        case .sessionStart:
+            emit(
+                .sessionStarted(
+                    SessionStarted(
+                        sessionID: payload.sessionID,
+                        title: payload.sessionTitle,
+                        tool: .grokBuild,
+                        origin: .live,
+                        initialPhase: .completed,
+                        summary: payload.implicitSummary,
+                        timestamp: .now,
+                        jumpTarget: payload.defaultJumpTarget
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .userPromptSubmit:
+            ensureGrokSessionExists(for: payload)
+            synchronizeGrokJumpTarget(for: payload)
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitSummary,
+                        phase: .running,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .preToolUse:
+            ensureGrokSessionExists(for: payload)
+            synchronizeGrokJumpTarget(for: payload)
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitSummary,
+                        phase: .running,
+                        timestamp: .now
+                    )
+                )
+            )
+            // Fire-and-forget: Grok fails open without a decision on stdout.
+            send(.response(.acknowledged), to: clientID)
+
+        case .postToolUse, .subagentStart, .subagentStop, .preCompact, .postCompact, .notification, .permissionDenied:
+            ensureGrokSessionExists(for: payload)
+            synchronizeGrokJumpTarget(for: payload)
+            let currentPhase = localState.session(id: payload.sessionID)?.phase ?? .running
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitSummary,
+                        phase: currentPhase == .completed ? .completed : .running,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .postToolUseFailure, .stopFailure:
+            ensureGrokSessionExists(for: payload)
+            synchronizeGrokJumpTarget(for: payload)
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitSummary,
+                        phase: .completed,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .stop:
+            ensureGrokSessionExists(for: payload)
+            synchronizeGrokJumpTarget(for: payload)
+            // Ignore observe-only session-end Stop fires (reason != end_turn).
+            if payload.isGenuineTurnStop {
+                emit(
+                    .sessionCompleted(
+                        SessionCompleted(
+                            sessionID: payload.sessionID,
+                            summary: payload.implicitSummary,
+                            timestamp: .now
+                        )
+                    )
+                )
+            }
+            send(.response(.acknowledged), to: clientID)
+
+        case .sessionEnd:
+            ensureGrokSessionExists(for: payload)
+            synchronizeGrokJumpTarget(for: payload)
+            emit(
+                .sessionCompleted(
+                    SessionCompleted(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitSummary,
+                        timestamp: .now,
+                        isInterrupt: true,
+                        isSessionEnd: true
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+        }
+    }
+
+    /// Ensures a Grok session row exists for non-`SessionStart` events.
+    ///
+    /// Policy: if a session with this ID already exists — including after
+    /// `SessionEnd` — do **not** recreate it from tool/prompt/stop events.
+    /// Only `SessionStart` (which always emits `sessionStarted`) may re-open
+    /// an ended session. This prevents late hooks or process-liveness churn
+    /// from resurrecting terminated sessions.
+    private func ensureGrokSessionExists(for payload: GrokHookPayload) {
+        if localState.session(id: payload.sessionID) != nil {
+            return
+        }
+
+        emit(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: payload.sessionID,
+                    title: payload.sessionTitle,
+                    tool: .grokBuild,
+                    origin: .live,
+                    initialPhase: .completed,
+                    summary: payload.implicitSummary,
+                    timestamp: .now,
+                    jumpTarget: payload.defaultJumpTarget
+                )
+            )
+        )
+    }
+
+    private func synchronizeGrokJumpTarget(for payload: GrokHookPayload) {
+        guard let existingSession = localState.session(id: payload.sessionID) else {
+            return
+        }
+
+        let jumpTarget = Self.mergeJumpTargetPreservingExistingResolvedFields(
+            incoming: payload.defaultJumpTarget,
+            existing: existingSession.jumpTarget
+        )
+
+        guard existingSession.jumpTarget != jumpTarget else {
+            return
+        }
+
+        emit(
+            .jumpTargetUpdated(
+                JumpTargetUpdated(
+                    sessionID: payload.sessionID,
+                    jumpTarget: jumpTarget,
+                    timestamp: .now
+                )
+            )
+        )
     }
 
     private func handleGeminiHook(_ payload: GeminiHookPayload, from clientID: UUID) {
@@ -2299,6 +2479,11 @@ public final class BridgeServer: @unchecked Sendable {
                 taskCreationCount: pendingTaskCreations.count
             )
         }
+    }
+
+    /// Test-only accessor for the bridge's local session state after hook events.
+    func sessionStateSnapshotForTests() -> SessionState {
+        queue.sync { localState }
     }
 
     /// Clears all active subagents from the session.

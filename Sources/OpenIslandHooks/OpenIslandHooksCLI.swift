@@ -18,12 +18,13 @@ struct OpenIslandHooksCLI {
         case cursor
         case gemini
         case kimi
+        case grok
 
         var isClaudeFormat: Bool {
             switch self {
             case .claude, .qoder, .qwen, .factory, .droid, .codebuddy, .kimi:
                 return true
-            case .codex, .cursor, .gemini:
+            case .codex, .cursor, .gemini, .grok:
                 return false
             }
         }
@@ -107,6 +108,12 @@ struct OpenIslandHooksCLI {
                     .withRuntimeContext(environment: ProcessInfo.processInfo.environment)
 
                 _ = try? client.send(.processGeminiHook(payload), timeout: 45)
+            case .grok:
+                let payload = try decoder
+                    .decode(GrokHookPayload.self, from: input)
+                    .withRuntimeContext(environment: ProcessInfo.processInfo.environment)
+
+                _ = try? client.send(.processGrokHook(payload), timeout: 45)
             }
         } catch {
             // Hooks should fail open so the CLI continues working even if the bridge is unavailable.

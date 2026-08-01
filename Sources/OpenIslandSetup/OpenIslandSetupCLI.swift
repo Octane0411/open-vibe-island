@@ -28,12 +28,16 @@ private struct SetupCommand {
         case installKimi
         case uninstallKimi
         case statusKimi
+        case installGrok
+        case uninstallGrok
+        case statusGrok
     }
 
     let action: Action
     let codexDirectory: URL
     let claudeDirectory: URL
     let kimiDirectory: URL
+    let grokDirectory: URL
     let hooksBinary: URL?
 
     init(arguments: [String]) throws {
@@ -48,6 +52,7 @@ private struct SetupCommand {
         var codexDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex", isDirectory: true)
         var claudeDirectory = ClaudeConfigDirectory.resolved()
         var kimiDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".kimi", isDirectory: true)
+        var grokDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".grok", isDirectory: true)
 
         var index = 1
         while index < arguments.count {
@@ -80,6 +85,13 @@ private struct SetupCommand {
                 }
                 kimiDirectory = URL(fileURLWithPath: arguments[index]).standardizedFileURL
 
+            case "--grok-dir":
+                index += 1
+                guard index < arguments.count else {
+                    throw SetupError.missingValue("--grok-dir")
+                }
+                grokDirectory = URL(fileURLWithPath: arguments[index]).standardizedFileURL
+
             default:
                 throw SetupError.unexpectedArgument(arguments[index])
             }
@@ -87,13 +99,14 @@ private struct SetupCommand {
             index += 1
         }
 
-        if (action == .install || action == .installClaude || action == .installKimi), hooksBinary == nil {
+        if (action == .install || action == .installClaude || action == .installKimi || action == .installGrok), hooksBinary == nil {
             hooksBinary = HooksBinaryLocator.locate()
         }
 
         self.codexDirectory = codexDirectory
         self.claudeDirectory = claudeDirectory
         self.kimiDirectory = kimiDirectory
+        self.grokDirectory = grokDirectory
         self.hooksBinary = hooksBinary
     }
 
@@ -117,6 +130,12 @@ private struct SetupCommand {
             try uninstallKimi()
         case .statusKimi:
             try statusKimi()
+        case .installGrok:
+            try installGrok()
+        case .uninstallGrok:
+            try uninstallGrok()
+        case .statusGrok:
+            try statusGrok()
         }
     }
 
@@ -252,6 +271,49 @@ private struct SetupCommand {
             print("Manifest: missing")
         }
     }
+
+    private func installGrok() throws {
+        guard let hooksBinary else {
+            throw SetupError.usage
+        }
+
+        let manager = GrokHookInstallationManager(grokDirectory: grokDirectory)
+        let status = try manager.install(hooksBinaryURL: hooksBinary)
+
+        print("Installed Open Island Grok hooks.")
+        print("Grok dir: \(status.grokDirectory.path)")
+        print("Hooks file: \(status.hooksURL.path)")
+        print("Hooks binary: \(hooksBinary.path)")
+    }
+
+    private func uninstallGrok() throws {
+        let manager = GrokHookInstallationManager(grokDirectory: grokDirectory)
+        let status = try manager.uninstall()
+
+        print("Removed Open Island Grok hooks.")
+        print("Grok dir: \(status.grokDirectory.path)")
+        if FileManager.default.fileExists(atPath: status.hooksURL.path) {
+            print("Note: hooks file still present.")
+        }
+    }
+
+    private func statusGrok() throws {
+        let manager = GrokHookInstallationManager(grokDirectory: grokDirectory)
+        let status = try manager.status(hooksBinaryURL: hooksBinary)
+
+        print("Grok dir: \(status.grokDirectory.path)")
+        print("Hooks file: \(status.hooksURL.path)")
+        print("Managed hooks present: \(status.managedHooksPresent ? "yes" : "no")")
+        if let hooksBinary {
+            print("Hooks binary: \(hooksBinary.path)")
+        }
+        if let manifest = status.manifest {
+            print("Manifest: present")
+            print("Hook command: \(manifest.hookCommand)")
+        } else {
+            print("Manifest: missing")
+        }
+    }
 }
 
 private enum SetupError: Error, LocalizedError {
@@ -273,6 +335,9 @@ private enum SetupError: Error, LocalizedError {
               swift run OpenIslandSetup installKimi [--hooks-binary /abs/path/to/OpenIslandHooks] [--kimi-dir /abs/path/to/.kimi]
               swift run OpenIslandSetup uninstallKimi [--kimi-dir /abs/path/to/.kimi]
               swift run OpenIslandSetup statusKimi [--hooks-binary /abs/path/to/OpenIslandHooks] [--kimi-dir /abs/path/to/.kimi]
+              swift run OpenIslandSetup installGrok [--hooks-binary /abs/path/to/OpenIslandHooks] [--grok-dir /abs/path/to/.grok]
+              swift run OpenIslandSetup uninstallGrok [--grok-dir /abs/path/to/.grok]
+              swift run OpenIslandSetup statusGrok [--hooks-binary /abs/path/to/OpenIslandHooks] [--grok-dir /abs/path/to/.grok]
             """
         case let .missingValue(flag):
             "Missing value for \(flag)"

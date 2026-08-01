@@ -50,7 +50,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 
 ## Supported Agents & Terminals
 
-**10 agents**: Claude Code, Codex, Cursor, Gemini CLI, Kimi CLI, OpenCode, Qoder, Qwen Code, Factory, CodeBuddy
+**11 agents**: Claude Code, Codex, Cursor, Gemini CLI, Grok Build, Kimi CLI, OpenCode, Qoder, Qwen Code, Factory, CodeBuddy
 
 **15+ terminals & IDEs**: Terminal.app, Ghostty, iTerm2, WezTerm, Zellij, tmux, cmux, Kaku, VS Code, Cursor, Windsurf, Trae, Zed, JetBrains IDEs (IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover)
 
@@ -73,6 +73,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 | **Cursor** | Supported | Hook integration via `~/.cursor/hooks.json`, session tracking, workspace jump-back |
 | **Gemini CLI** | Supported | Hook integration via `~/.gemini/settings.json`, session tracking, fire-and-forget events |
 | **Kimi CLI** | Supported | Hook integration via `~/.kimi/config.toml` `[[hooks]]`, session tracking, permission flow (reuses Claude payload) |
+| **Grok Build** | Supported | Hook integration via `~/.grok/hooks/open-island.json`, session tracking, terminal jump-back (camelCase payload) |
 
 ### Terminals & IDEs
 
@@ -279,6 +280,14 @@ Developers who already live in the terminal and want a better way to work with c
   swift run OpenIslandSetup installKimi    # write [[hooks]] entries into ~/.kimi/config.toml
   swift run OpenIslandSetup statusKimi     # report whether managed hooks are present
   swift run OpenIslandSetup uninstallKimi  # remove managed entries, preserve user-authored [[hooks]]
+  ```
+
+- **Grok Build** — Hook-based integration via `~/.grok/hooks/open-island.json` (xAI Grok CLI / TUI). Grok emits camelCase hook envelopes (`sessionId`, `hookEventName`, `toolResult`) and accepts PascalCase or snake_case event names. Open Island uses a dedicated `--source grok` path for decode + lifecycle mapping (session visibility, activity, turn completion, terminal jump-back). Managed install registers the full supported lifecycle event set; tool events are observation-only (no PreToolUse blocking yet). Settings reports installed only when every required event is present with an Open Island command (Vibe Island hooks do not count). Manage installation from the Settings window, or via CLI:
+
+  ```sh
+  swift run OpenIslandSetup installGrok    # write ~/.grok/hooks/open-island.json
+  swift run OpenIslandSetup statusGrok     # report whether managed hooks are present
+  swift run OpenIslandSetup uninstallGrok  # remove managed open-island.json + manifest
   ```
 
 ### Terminal Support
