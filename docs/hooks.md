@@ -4,7 +4,7 @@ OpenIsland receives hook events from AI agents (Codex / Claude Code / Gemini CLI
 
 ## Architecture
 
-```
+```text
 Agent (Codex / Claude Code / Gemini CLI / Grok Build / …)
   │  stdin: JSON payload
   ▼

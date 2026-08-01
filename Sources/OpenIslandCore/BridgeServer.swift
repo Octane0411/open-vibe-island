@@ -1370,7 +1370,7 @@ public final class BridgeServer: @unchecked Sendable {
             // Fire-and-forget: Grok fails open without a decision on stdout.
             send(.response(.acknowledged), to: clientID)
 
-        case .postToolUse, .subagentStart, .subagentStop, .preCompact, .postCompact, .notification, .permissionDenied:
+        case .postToolUse, .subagentStart, .subagentStop, .preCompact, .postCompact, .notification:
             ensureGrokSessionExists(for: payload)
             synchronizeGrokJumpTarget(for: payload)
             let currentPhase = localState.session(id: payload.sessionID)?.phase ?? .running
@@ -1386,7 +1386,7 @@ public final class BridgeServer: @unchecked Sendable {
             )
             send(.response(.acknowledged), to: clientID)
 
-        case .postToolUseFailure, .stopFailure:
+        case .permissionDenied, .postToolUseFailure, .stopFailure:
             ensureGrokSessionExists(for: payload)
             synchronizeGrokJumpTarget(for: payload)
             emit(

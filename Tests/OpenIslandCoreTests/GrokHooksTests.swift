@@ -106,14 +106,21 @@ struct GrokHooksTests {
     // MARK: - Installer
 
     @Test
+    func requiredEventSpecsCoverEveryHookEventName() {
+        let registered = Set(GrokHookInstaller.requiredEventNames)
+        let declared = Set(GrokHookEventName.allCases.map(\.rawValue))
+        #expect(registered == declared)
+    }
+
+    @Test
     func managedInstallEmitsCompleteRequiredEventSet() throws {
         let mutation = try GrokHookInstaller.installHooksJSON(hookCommand: openIslandCommand)
         #expect(mutation.changed)
         #expect(mutation.managedHooksPresent)
 
         let data = try #require(mutation.contents)
-        let object = try JSONSerialization.jsonObject(with: data) as! [String: Any]
-        let hooks = object["hooks"] as! [String: Any]
+        let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let hooks = try #require(object["hooks"] as? [String: Any])
         let installedKeys = Set(hooks.keys)
         let expectedKeys = Set(GrokHookInstaller.requiredEventNames)
 
@@ -236,6 +243,16 @@ struct GrokHooksTests {
             try manager.uninstall()
         }
         #expect(FileManager.default.fileExists(atPath: manager.hooksURL.path))
+
+        // Corrupt manifest must not block status or reinstall.
+        try manager.install(hooksBinaryURL: fakeHooks)
+        try Data("{not-json".utf8).write(to: manager.manifestURL)
+        let statusDespiteCorruptManifest = try manager.status(hooksBinaryURL: fakeHooks)
+        #expect(statusDespiteCorruptManifest.managedHooksPresent)
+        #expect(statusDespiteCorruptManifest.manifest == nil)
+        let reinstalled = try manager.install(hooksBinaryURL: fakeHooks)
+        #expect(reinstalled.manifest?.hookCommand != nil)
+        #expect(reinstalled.managedHooksPresent)
     }
 
     // MARK: - Bridge lifecycle
@@ -358,6 +375,48 @@ struct GrokHooksTests {
         )
 
         let session = try #require(server.sessionStateSnapshotForTests().session(id: "grok-tool-fail"))
+        #expect(session.phase == .completed)
+        #expect(session.isSessionEnded == false)
+    }
+
+    @Test
+    func permissionDeniedCompletesTurn() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processGrokHook(
+                GrokHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .sessionStart,
+                    sessionID: "grok-perm-denied"
+                )
+            )
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processGrokHook(
+                GrokHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .userPromptSubmit,
+                    sessionID: "grok-perm-denied",
+                    prompt: "run something"
+                )
+            )
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processGrokHook(
+                GrokHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .permissionDenied,
+                    sessionID: "grok-perm-denied",
+                    toolName: "run_terminal_command"
+                )
+            )
+        )
+
+        let session = try #require(server.sessionStateSnapshotForTests().session(id: "grok-perm-denied"))
         #expect(session.phase == .completed)
         #expect(session.isSessionEnded == false)
     }

@@ -113,7 +113,11 @@ struct OpenIslandHooksCLI {
                     .decode(GrokHookPayload.self, from: input)
                     .withRuntimeContext(environment: ProcessInfo.processInfo.environment)
 
-                _ = try? client.send(.processGrokHook(payload), timeout: 45)
+                // Client timeout slightly under managed hook timeout (45s) so
+                // the hook can exit fail-open before Grok kills it.
+                if (try? client.send(.processGrokHook(payload), timeout: 40)) == nil {
+                    logStderr("bridge unavailable for grok hook (\(payload.hookEventName.rawValue))")
+                }
             }
         } catch {
             // Hooks should fail open so the CLI continues working even if the bridge is unavailable.

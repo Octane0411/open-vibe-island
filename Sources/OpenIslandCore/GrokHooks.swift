@@ -326,11 +326,11 @@ public extension GrokHookPayload {
             payload.terminalApp = inferTerminalApp(from: environment)
         }
 
-        if payload.terminalApp == "cmux", payload.terminalSessionID == nil {
+        if isCmuxTerminalApp(payload.terminalApp), payload.terminalSessionID == nil {
             payload.terminalSessionID = environment["CMUX_SURFACE_ID"]
         }
 
-        if payload.terminalApp?.lowercased() == "zellij", payload.terminalSessionID == nil {
+        if isZellijTerminalApp(payload.terminalApp), payload.terminalSessionID == nil {
             let paneID = environment["ZELLIJ_PANE_ID"] ?? ""
             let sessionName = environment["ZELLIJ_SESSION_NAME"] ?? ""
             if !paneID.isEmpty {

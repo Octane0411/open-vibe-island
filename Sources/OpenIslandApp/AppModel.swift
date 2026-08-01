@@ -1113,6 +1113,9 @@ final class AppModel {
             hooks.refreshCCForkHookStatuses()
             hooks.refreshOpenCodePluginStatus()
             hooks.refreshCursorHookStatus()
+            hooks.refreshGeminiHookStatus()
+            hooks.refreshKimiHookStatus()
+            hooks.refreshGrokHookStatus()
             hooks.refreshClaudeUsageState()
             hooks.startClaudeUsageMonitoringIfNeeded()
             if showCodexUsage {

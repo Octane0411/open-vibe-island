@@ -58,7 +58,8 @@ public final class GrokHookInstallationManager: @unchecked Sendable {
     public func status(hooksBinaryURL: URL? = nil) throws -> GrokHookInstallationStatus {
         let resolvedBinaryURL = resolvedHooksBinaryURL(explicitURL: hooksBinaryURL)
         let hooksData = try? Data(contentsOf: hooksURL)
-        let manifest = try loadManifest(at: manifestURL)
+        // Corrupt/partial manifests must not block status reads — treat as absent.
+        let manifest = loadManifest(at: manifestURL)
         let managedCommand = manifest?.hookCommand
             ?? resolvedBinaryURL.map { GrokHookInstaller.hookCommand(for: $0.path) }
 
@@ -101,14 +102,10 @@ public final class GrokHookInstallationManager: @unchecked Sendable {
             }
         }
 
-        let previousManifest = try loadManifest(at: manifestURL)
+        // Rewrite manifest whenever the command changes or the previous
+        // file was missing/corrupt (loadManifest returns nil in both cases).
+        let previousManifest = loadManifest(at: manifestURL)
         if previousManifest?.hookCommand != command {
-            let manifest = GrokHookInstallerManifest(hookCommand: command)
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            try encoder.encode(manifest).write(to: manifestURL, options: .atomic)
-        } else if !fileManager.fileExists(atPath: manifestURL.path) {
             let manifest = GrokHookInstallerManifest(hookCommand: command)
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
@@ -137,12 +134,16 @@ public final class GrokHookInstallationManager: @unchecked Sendable {
         return try status()
     }
 
-    private func loadManifest(at url: URL) throws -> GrokHookInstallerManifest? {
-        guard fileManager.fileExists(atPath: url.path) else { return nil }
-        let data = try Data(contentsOf: url)
+    /// Returns nil when the file is missing or unreadable/corrupt so status
+    /// and reinstall can still proceed.
+    private func loadManifest(at url: URL) -> GrokHookInstallerManifest? {
+        guard fileManager.fileExists(atPath: url.path),
+              let data = try? Data(contentsOf: url) else {
+            return nil
+        }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(GrokHookInstallerManifest.self, from: data)
+        return try? decoder.decode(GrokHookInstallerManifest.self, from: data)
     }
 
     private func resolvedHooksBinaryURL(explicitURL: URL?) -> URL? {
