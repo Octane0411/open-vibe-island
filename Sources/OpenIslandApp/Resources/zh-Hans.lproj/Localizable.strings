@@ -225,3 +225,11 @@
 
 /* Window Titles */
 "window.settings" = "Open Island 设置";
+
+"settings.appearance.agentGridSort.title" = "代理网格顺序";
+"settings.appearance.agentGridSort.note" = "选择会话在收起状态网格中的排列方式。";
+"settings.appearance.agentGridSort.statusPriority" = "状态优先";
+"settings.appearance.agentGridSort.recentActivity" = "最近活动";
+"settings.appearance.agentGridSort.newestSession" = "最新会话";
+"settings.appearance.agentGridSort.agent" = "按代理";
+"settings.appearance.agentGridSort.stable" = "固定顺序";

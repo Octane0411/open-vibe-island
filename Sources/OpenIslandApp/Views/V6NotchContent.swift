@@ -2,9 +2,10 @@ import SwiftUI
 import OpenIslandCore
 
 /// Per-cell state for the closed-island agents grid. Drives tile rendering:
-/// running = full color, idle = dim, waiting = opacity pulse.
+/// running = full, done = 40%, idle = 20%, waiting = opacity pulse.
 enum AgentGridCellState: Equatable {
     case running
+    case done
     case idle
     case waiting
 }
@@ -146,9 +147,13 @@ private struct AgentsGridTileView: View {
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .fill(color)
                     .frame(width: size, height: size)
+            case .done:
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .fill(color.opacity(0.40))
+                    .frame(width: size, height: size)
             case .idle:
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .fill(color.opacity(0.22))
+                    .fill(color.opacity(0.20))
                     .frame(width: size, height: size)
             case .waiting:
                 AgentsGridWaitingTile(color: color, size: size, radius: radius)
@@ -178,7 +183,7 @@ private struct AgentsGridWaitingTile: View {
             .frame(width: size, height: size)
             .opacity(pulse ? 1.0 : 0.35)
             .onAppear {
-                withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
+                withAnimation(.easeInOut(duration: 0.45).repeatForever(autoreverses: true)) {
                     pulse = true
                 }
             }

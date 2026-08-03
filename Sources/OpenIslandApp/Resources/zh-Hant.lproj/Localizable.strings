@@ -224,3 +224,11 @@
 
 /* Window Titles */
 "window.settings" = "Open Island 設定";
+
+"settings.appearance.agentGridSort.title" = "代理網格順序";
+"settings.appearance.agentGridSort.note" = "選擇工作階段在收合狀態網格中的排列方式。";
+"settings.appearance.agentGridSort.statusPriority" = "狀態優先";
+"settings.appearance.agentGridSort.recentActivity" = "最近活動";
+"settings.appearance.agentGridSort.newestSession" = "最新工作階段";
+"settings.appearance.agentGridSort.agent" = "依代理";
+"settings.appearance.agentGridSort.stable" = "固定順序";

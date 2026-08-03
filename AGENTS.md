@@ -99,3 +99,13 @@ Unless the user says otherwise, the agent should finish each completed round in 
 2. verify
 3. summarize
 4. commit
+
+## Patch Log
+
+### 2026-07-23 — Distinguish completed agent-grid tiles
+- **File(s)**: `AppModel.swift`, `V6NotchContent.swift`, `AgentsGridRightSlotTests.swift`
+- **Symptom**: Recent Done and stale Idle sessions looked identical, while Waiting pulsed too slowly.
+- **Root cause**: Grid cells collapsed every completed session into `.idle` before rendering.
+- **Fix**: Render recent Done at 40%, stale Idle at 20%, and shorten the Waiting pulse leg to 0.45 seconds.
+- **Verification**: `swift test --filter AgentsGridRightSlotTests`
+- **Follow-up**: permanent

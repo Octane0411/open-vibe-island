@@ -13,12 +13,14 @@ struct AppModelSessionListTests {
             "appearance.island.v8.sessionSort",
             "appearance.island.v8.completedStaleThreshold",
             "appearance.island.v8.notch.rightSlot",
+            "appearance.island.v8.notch.agentGridSort",
             "appearance.island.v8.notch.centerLabel",
             "appearance.island.v8.notch.stateIndicator",
             "appearance.island.v8.notch.sessionGroup",
             "appearance.island.v8.notch.sessionSort",
             "appearance.island.v8.notch.completedStaleThreshold",
             "appearance.island.v8.topBar.rightSlot",
+            "appearance.island.v8.topBar.agentGridSort",
             "appearance.island.v8.topBar.centerLabel",
             "appearance.island.v8.topBar.stateIndicator",
             "appearance.island.v8.topBar.sessionGroup",
@@ -371,12 +373,14 @@ struct AppModelSessionListTests {
     func islandAppearancePreferencesPersistPerDisplayProfile() {
         let model = AppModel()
         model.updateAppearancePreferences(for: .notch) {
+            $0.agentGridSort = .stable
             $0.usageDisplay = .hidden
             $0.sessionGroup = .state
             $0.sessionStateIndicator = .bar
             $0.completedStaleThreshold = .twoMinutes
         }
         model.updateAppearancePreferences(for: .topBar) {
+            $0.agentGridSort = .agent
             $0.usageDisplay = .compact
             $0.sessionGroup = .project
             $0.sessionStateIndicator = .tint
@@ -384,12 +388,14 @@ struct AppModelSessionListTests {
         }
 
         model.overlayPlacementDiagnostics = placementDiagnostics(mode: .notch)
+        #expect(model.islandAgentGridSort == .stable)
         #expect(model.islandUsageDisplay == .hidden)
         #expect(model.islandSessionGroup == .state)
         #expect(model.islandSessionStateIndicator == .bar)
         #expect(model.completedStaleThreshold == .twoMinutes)
 
         model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+        #expect(model.islandAgentGridSort == .agent)
         #expect(model.islandUsageDisplay == .compact)
         #expect(model.islandSessionGroup == .project)
         #expect(model.islandSessionStateIndicator == .tint)
@@ -397,14 +403,33 @@ struct AppModelSessionListTests {
 
         let reloaded = AppModel()
         reloaded.overlayPlacementDiagnostics = placementDiagnostics(mode: .notch)
+        #expect(reloaded.islandAgentGridSort == .stable)
         #expect(reloaded.islandUsageDisplay == .hidden)
         #expect(reloaded.islandSessionGroup == .state)
         #expect(reloaded.islandSessionStateIndicator == .bar)
         reloaded.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+        #expect(reloaded.islandAgentGridSort == .agent)
         #expect(reloaded.islandUsageDisplay == .compact)
         #expect(reloaded.islandSessionGroup == .project)
         #expect(reloaded.islandSessionStateIndicator == .tint)
         #expect(reloaded.completedStaleThreshold == .never)
+
+        let defaults = UserDefaults.standard
+        let notchSortKey = "appearance.island.v8.notch.agentGridSort"
+        let topBarSortKey = "appearance.island.v8.topBar.agentGridSort"
+        defaults.removeObject(forKey: notchSortKey)
+        defaults.removeObject(forKey: topBarSortKey)
+
+        let missingValues = AppModel()
+        #expect(missingValues.appearancePreferences(for: .notch).agentGridSort == .statusPriority)
+        #expect(missingValues.appearancePreferences(for: .topBar).agentGridSort == .statusPriority)
+
+        defaults.set("unknown-grid-sort", forKey: notchSortKey)
+        defaults.set("unknown-grid-sort", forKey: topBarSortKey)
+
+        let invalidValues = AppModel()
+        #expect(invalidValues.appearancePreferences(for: .notch).agentGridSort == .statusPriority)
+        #expect(invalidValues.appearancePreferences(for: .topBar).agentGridSort == .statusPriority)
     }
 
     @Test
@@ -487,6 +512,197 @@ struct AppModelSessionListTests {
         #expect(model.liveSessionCount == 0)
         #expect(model.state.session(id: "recovered-session")?.attachmentState == .stale)
         #expect(model.shouldShowSessionBootstrapPlaceholder)
+    }
+
+    @Test
+    func olderRolloutMetadataThenRunningActivityDoesNotReopenCompletedSession() {
+        let completedAt = Date(timeIntervalSince1970: 2_000)
+        let olderSnapshotAt = completedAt.addingTimeInterval(-1)
+        let model = AppModel()
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "completed-session",
+                    title: "Codex · open-island",
+                    tool: .codex,
+                    origin: .live,
+                    attachmentState: .attached,
+                    phase: .completed,
+                    summary: "Previous turn completed.",
+                    updatedAt: completedAt
+                ),
+            ]
+        )
+
+        let events = CodexRolloutReducer.events(
+            from: CodexRolloutSnapshot(
+                summary: "Previous turn completed.",
+                phase: .completed,
+                updatedAt: completedAt,
+                lastUserPrompt: "Finish the previous turn.",
+                isCompleted: true
+            ),
+            to: CodexRolloutSnapshot(
+                summary: "Stale running snapshot.",
+                phase: .running,
+                updatedAt: olderSnapshotAt,
+                lastUserPrompt: "Stale prompt from the rollout tail."
+            ),
+            sessionID: "completed-session",
+            transcriptPath: "/tmp/completed-session.jsonl"
+        )
+        guard events.count == 2,
+              case let .sessionMetadataUpdated(metadata) = events[0],
+              case let .activityUpdated(activity) = events[1] else {
+            Issue.record("Expected rollout metadata followed by running activity")
+            return
+        }
+        #expect(metadata.timestamp == olderSnapshotAt)
+        #expect(activity.timestamp == olderSnapshotAt)
+
+        for event in events {
+            model.applyTrackedEvent(
+                event,
+                updateLastActionMessage: false,
+                ingress: .rollout
+            )
+        }
+
+        #expect(model.state.session(id: "completed-session")?.phase == .completed)
+        #expect(model.state.session(id: "completed-session")?.updatedAt == completedAt)
+    }
+
+    @Test
+    func staleRolloutMetadataDoesNotReplaceNewerSessionMetadata() {
+        let newerAt = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "running-session",
+                    title: "Codex · open-island",
+                    tool: .codex,
+                    origin: .live,
+                    attachmentState: .attached,
+                    phase: .running,
+                    summary: "Newer activity.",
+                    updatedAt: newerAt,
+                    codexMetadata: CodexSessionMetadata(lastUserPrompt: "Newest prompt")
+                ),
+            ]
+        )
+
+        model.applyTrackedEvent(
+            .sessionMetadataUpdated(
+                SessionMetadataUpdated(
+                    sessionID: "running-session",
+                    codexMetadata: CodexSessionMetadata(lastUserPrompt: "Stale prompt"),
+                    timestamp: newerAt.addingTimeInterval(-1)
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .rollout
+        )
+
+        let session = model.state.session(id: "running-session")
+        #expect(session?.codexMetadata?.lastUserPrompt == "Newest prompt")
+        #expect(session?.updatedAt == newerAt)
+    }
+
+    @Test
+    func staleRolloutActivityDoesNotReplaceNewerRunningSessionData() {
+        let newerAt = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "running-session",
+                    title: "Codex · open-island",
+                    tool: .codex,
+                    origin: .live,
+                    attachmentState: .attached,
+                    phase: .running,
+                    summary: "Newer activity.",
+                    updatedAt: newerAt
+                ),
+            ]
+        )
+
+        model.applyTrackedEvent(
+            .activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: "running-session",
+                    summary: "Stale activity.",
+                    phase: .waitingForAnswer,
+                    timestamp: newerAt.addingTimeInterval(-1)
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .rollout
+        )
+
+        let session = model.state.session(id: "running-session")
+        #expect(session?.phase == .running)
+        #expect(session?.summary == "Newer activity.")
+        #expect(session?.updatedAt == newerAt)
+    }
+
+    @Test
+    func newerRolloutMetadataThenEqualTimestampRunningActivityReopensCompletedSession() {
+        let completedAt = Date(timeIntervalSince1970: 2_000)
+        let nextTurnAt = completedAt.addingTimeInterval(1)
+        let model = AppModel()
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "completed-session",
+                    title: "Codex · open-island",
+                    tool: .codex,
+                    origin: .live,
+                    attachmentState: .attached,
+                    phase: .completed,
+                    summary: "Previous turn completed.",
+                    updatedAt: completedAt
+                ),
+            ]
+        )
+
+        let events = CodexRolloutReducer.events(
+            from: CodexRolloutSnapshot(
+                summary: "Previous turn completed.",
+                phase: .completed,
+                updatedAt: completedAt,
+                lastUserPrompt: "Finish the previous turn.",
+                isCompleted: true
+            ),
+            to: CodexRolloutSnapshot(
+                summary: "Prompt: Start the next turn.",
+                phase: .running,
+                updatedAt: nextTurnAt,
+                lastUserPrompt: "Start the next turn."
+            ),
+            sessionID: "completed-session",
+            transcriptPath: "/tmp/completed-session.jsonl"
+        )
+        guard events.count == 2,
+              case let .sessionMetadataUpdated(metadata) = events[0],
+              case let .activityUpdated(activity) = events[1] else {
+            Issue.record("Expected rollout metadata followed by running activity")
+            return
+        }
+        #expect(metadata.timestamp == activity.timestamp)
+        #expect(activity.timestamp == nextTurnAt)
+
+        for event in events {
+            model.applyTrackedEvent(
+                event,
+                updateLastActionMessage: false,
+                ingress: .rollout
+            )
+        }
+
+        #expect(model.state.session(id: "completed-session")?.phase == .running)
+        #expect(model.state.session(id: "completed-session")?.updatedAt == nextTurnAt)
     }
 
     @Test
