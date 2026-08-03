@@ -72,6 +72,7 @@ The `CodexHookPayload` model and `BridgeServer` can parse richer events (`PreToo
 | `model` | `model` | Model name |
 | `permission_mode` | `permissionMode` | `default` / `acceptEdits` / `plan` / `dontAsk` / `bypassPermissions` |
 | `transcript_path` | `transcriptPath` | JSONL transcript file path |
+| `remote` | `remote` | `true` when the Python hook client marks an SSH remote session |
 | `terminal_app` | `terminalApp` | Terminal name (`Terminal`, `Ghostty`, `iTerm`, …) |
 | `terminal_session_id` | `terminalSessionID` | Terminal session identifier |
 | `terminal_tty` | `terminalTTY` | TTY device path |

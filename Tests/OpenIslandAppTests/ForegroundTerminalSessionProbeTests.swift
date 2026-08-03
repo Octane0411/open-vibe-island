@@ -1,8 +1,9 @@
-import XCTest
+import Testing
 @testable import OpenIslandApp
 import OpenIslandCore
 
-final class ForegroundTerminalSessionProbeTests: XCTestCase {
+struct ForegroundTerminalSessionProbeTests {
+    @Test
     func testMatchesGhosttyFrontmostTerminalBySessionID() async {
         let probe = ForegroundTerminalSessionProbe(
             frontmostBundleIdentifierProvider: { "com.mitchellh.ghostty" },
@@ -18,9 +19,10 @@ final class ForegroundTerminalSessionProbeTests: XCTestCase {
             )
         )
 
-        XCTAssertTrue(matches)
+        #expect(matches)
     }
 
+    @Test
     func testMatchesTerminalFrontmostTabByTTY() async {
         let probe = ForegroundTerminalSessionProbe(
             frontmostBundleIdentifierProvider: { "com.apple.Terminal" },
@@ -36,9 +38,10 @@ final class ForegroundTerminalSessionProbeTests: XCTestCase {
             )
         )
 
-        XCTAssertTrue(matches)
+        #expect(matches)
     }
 
+    @Test
     func testMatchesITermFrontmostSessionByTTYFallback() async {
         let probe = ForegroundTerminalSessionProbe(
             frontmostBundleIdentifierProvider: { "com.googlecode.iterm2" },
@@ -55,9 +58,10 @@ final class ForegroundTerminalSessionProbeTests: XCTestCase {
             )
         )
 
-        XCTAssertTrue(matches)
+        #expect(matches)
     }
 
+    @Test
     func testReturnsFalseForUnsupportedFrontmostApp() async {
         let probe = ForegroundTerminalSessionProbe(
             frontmostBundleIdentifierProvider: { "com.example.Editor" },
@@ -73,6 +77,6 @@ final class ForegroundTerminalSessionProbeTests: XCTestCase {
             )
         )
 
-        XCTAssertFalse(matches)
+        #expect(!matches)
     }
 }

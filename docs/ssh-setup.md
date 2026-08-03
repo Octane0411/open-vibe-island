@@ -1,6 +1,6 @@
-# SSH Remote Claude Code Setup
+# SSH Remote Setup (Claude Code & Codex)
 
-Connect Open Island to Claude Code running on a remote server over SSH.
+Connect Open Island to Claude Code and Codex running on a remote server over SSH.
 
 ## How it works
 
@@ -14,7 +14,8 @@ macOS (local)                         Remote server
                                    │  hooks.py          │
                                    │        ▲           │
                                    │        │           │
-                                   │  Claude Code       │
+                                   │  Claude Code /     │
+                                   │  Codex             │
                                    └────────────────────┘
 ```
 
@@ -25,7 +26,7 @@ SSH's `RemoteForward` tunnels the Unix socket from your Mac to the remote server
 - Open Island running on your Mac
 - SSH access to the remote server
 - Python 3.6+ on the remote server
-- Claude Code installed on the remote server
+- Claude Code and/or Codex installed on the remote server
 
 ## Quick setup
 
@@ -38,7 +39,15 @@ Run the automated setup script:
 This will:
 1. Copy `open-island-hooks.py` to the remote server (`~/.local/bin/`)
 2. Configure Claude Code hooks in `~/.claude/settings.json` on the remote
-3. Print the SSH config snippet you need
+3. Configure Codex hooks in `~/.codex/hooks.json` on the remote
+4. Enable `[features].hooks = true` in `~/.codex/config.toml` on the remote
+5. Print the SSH config snippet you need
+
+The script detects the remote user's UID and maps the forwarded socket
+accordingly, so it works when the local and remote UIDs differ (for example,
+macOS on the Mac and a Linux remote server). Re-running the script replaces
+the Open Island hook entries it manages without duplicating them, and leaves
+any user-authored hooks untouched.
 
 ## Manual setup
 
@@ -89,11 +98,47 @@ Or connect directly with:
 ssh -R /tmp/open-island-$(id -u).sock:/tmp/open-island-$(id -u).sock user@myserver
 ```
 
-### 4. Verify
+### 4. Configure Codex hooks on the remote
+
+Edit `~/.codex/hooks.json` on the remote server:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [{ "type": "command", "command": "OPEN_ISLAND_SOCKET_PATH=/tmp/open-island-501.sock python3 ~/.local/bin/open-island-hooks.py --source codex", "timeout": 45 }]
+      }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "OPEN_ISLAND_SOCKET_PATH=/tmp/open-island-501.sock python3 ~/.local/bin/open-island-hooks.py --source codex", "timeout": 45 }] }
+    ],
+    "PermissionRequest": [
+      { "hooks": [{ "type": "command", "command": "OPEN_ISLAND_SOCKET_PATH=/tmp/open-island-501.sock python3 ~/.local/bin/open-island-hooks.py --source codex", "timeout": 3600 }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "OPEN_ISLAND_SOCKET_PATH=/tmp/open-island-501.sock python3 ~/.local/bin/open-island-hooks.py --source codex", "timeout": 45 }] }
+    ]
+  }
+}
+```
+
+Replace `501` with your local UID (`id -u`). Codex may require a manual
+trust review before running the hooks: open `/hooks` inside Codex CLI and
+approve the Open Island entries.
+
+> **Important:** Codex silently skips hooks that have not been approved yet.
+> If you start an SSH task before running the trust review, no events reach
+> Open Island. After approving the entries, restart any Codex SSH remote
+> session that was already running so the remote app-server reloads the
+> trusted hook state.
+
+### 5. Verify
 
 1. Make sure Open Island is running on your Mac
 2. SSH to the remote with socket forwarding enabled
-3. Run Claude Code on the remote — sessions should appear in the Open Island overlay
+3. Run Claude Code or Codex on the remote — sessions should appear in the Open Island overlay
 
 ## Important: sshd configuration
 
@@ -104,6 +149,13 @@ StreamLocalBindUnlink yes
 ```
 
 Without this, reconnecting after a dropped SSH session will fail with "Address already in use" because the old socket file is still on disk.
+
+> **Note:** the forwarded socket is re-created by the most recent SSH
+> connection that carries the `RemoteForward`. Closing that connection can
+> remove the socket path even while an older Codex SSH remote session is still
+> connected, leaving its forward orphaned. Keep one stable tunnel session
+> open, or disconnect and reconnect the Codex SSH remote session, so hooks can
+> always reach the local app.
 
 ## Mac-to-Mac Setup (Different UIDs)
 

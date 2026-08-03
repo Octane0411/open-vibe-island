@@ -1,22 +1,19 @@
-import XCTest
+import Foundation
+import Testing
 import OpenIslandCore
 
-final class OpenCodeSessionRegistryTests: XCTestCase {
-    var tempFileURL: URL!
-
-    override func setUp() {
-        super.setUp()
-        tempFileURL = FileManager.default.temporaryDirectory
+struct OpenCodeSessionRegistryTests {
+    private func makeTempFileURL() -> URL {
+        FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("json")
     }
 
-    override func tearDown() {
-        try? FileManager.default.removeItem(at: tempFileURL)
-        super.tearDown()
-    }
-
+    @Test
     func testSaveAndLoad() throws {
+        let tempFileURL = makeTempFileURL()
+        defer { try? FileManager.default.removeItem(at: tempFileURL) }
+
         let registry = OpenCodeSessionRegistry(fileURL: tempFileURL)
         let records = [
             OpenCodeTrackedSessionRecord(
@@ -37,14 +34,18 @@ final class OpenCodeSessionRegistryTests: XCTestCase {
         try registry.save(records)
         let loaded = try registry.load()
 
-        XCTAssertEqual(loaded.count, 1)
-        XCTAssertEqual(loaded[0].sessionID, "opencode-1")
-        XCTAssertEqual(loaded[0].openCodeMetadata?.initialUserPrompt, "Hello")
+        #expect(loaded.count == 1)
+        #expect(loaded[0].sessionID == "opencode-1")
+        #expect(loaded[0].openCodeMetadata?.initialUserPrompt == "Hello")
     }
 
+    @Test
     func testLoadEmpty() throws {
+        let tempFileURL = makeTempFileURL()
+        defer { try? FileManager.default.removeItem(at: tempFileURL) }
+
         let registry = OpenCodeSessionRegistry(fileURL: tempFileURL)
         let loaded = try registry.load()
-        XCTAssertEqual(loaded.count, 0)
+        #expect(loaded.count == 0)
     }
 }
