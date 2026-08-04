@@ -89,11 +89,50 @@ Or connect directly with:
 ssh -R /tmp/open-island-$(id -u).sock:/tmp/open-island-$(id -u).sock user@myserver
 ```
 
-### 4. Verify
+### 4. Configure Codex hooks on the remote (optional)
+
+Codex reads hooks from `~/.codex/hooks.json` on the remote server. Use the
+notify-only mode for `PreToolUse` / `PostToolUse` so tool calls post a
+"Running: ..." activity without blocking the remote agent while it waits for
+an approval round-trip to your Mac:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [{ "type": "command", "command": "OPEN_ISLAND_SOCKET_PATH=/tmp/open-island-501.sock python3 ~/.local/bin/open-island-hooks.py --source codex", "timeout": 45 }]
+      }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "OPEN_ISLAND_SOCKET_PATH=/tmp/open-island-501.sock python3 ~/.local/bin/open-island-hooks.py --source codex", "timeout": 45 }] }
+    ],
+    "PermissionRequest": [
+      { "hooks": [{ "type": "command", "command": "OPEN_ISLAND_SOCKET_PATH=/tmp/open-island-501.sock python3 ~/.local/bin/open-island-hooks.py --source codex", "timeout": 3600 }] }
+    ],
+    "PreToolUse": [
+      { "hooks": [{ "type": "command", "command": "OPEN_ISLAND_SOCKET_PATH=/tmp/open-island-501.sock OPEN_ISLAND_NOTIFY_ONLY=1 OPEN_ISLAND_NOTIFY_TIMEOUT=2 python3 ~/.local/bin/open-island-hooks.py --source codex", "timeout": 5 }] }
+    ],
+    "PostToolUse": [
+      { "hooks": [{ "type": "command", "command": "OPEN_ISLAND_SOCKET_PATH=/tmp/open-island-501.sock OPEN_ISLAND_NOTIFY_ONLY=1 OPEN_ISLAND_NOTIFY_TIMEOUT=2 python3 ~/.local/bin/open-island-hooks.py --source codex", "timeout": 5 }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "OPEN_ISLAND_SOCKET_PATH=/tmp/open-island-501.sock python3 ~/.local/bin/open-island-hooks.py --source codex", "timeout": 45 }] }
+    ]
+  }
+}
+```
+
+Replace `501` with your local UID (or the mapped remote UID described below).
+`PermissionRequest` still waits (up to an hour) for an Allow/Deny decision in
+Open Island; the notify-only entries return within a couple of seconds.
+
+### 5. Verify
 
 1. Make sure Open Island is running on your Mac
 2. SSH to the remote with socket forwarding enabled
-3. Run Claude Code on the remote — sessions should appear in the Open Island overlay
+3. Run Claude Code or Codex on the remote — sessions should appear in the Open Island overlay
 
 ## Important: sshd configuration
 

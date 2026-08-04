@@ -346,6 +346,17 @@ extension AgentSession {
             && referenceDate.timeIntervalSince(islandActivityDate) >= threshold
     }
 
+    /// Sessions that are completed and stale for the island surface. Used to
+    /// hide long-finished sessions (for example remote Codex sessions that
+    /// never receive a SessionEnd hook) from the main island list.
+    func isHiddenIdleIslandSession(
+        at referenceDate: Date,
+        threshold: TimeInterval = Self.staleCompletedDisplayThreshold
+    ) -> Bool {
+        phase == .completed
+            && isStaleCompletedForIsland(at: referenceDate, threshold: threshold)
+    }
+
     private var spotlightRunningActivityText: String? {
         guard let currentTool = currentToolName?.trimmedForSurface,
               !currentTool.isEmpty else {

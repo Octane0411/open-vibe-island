@@ -184,6 +184,35 @@ struct AgentSessionPresentationTests {
     }
 
     @Test
+    func completedStaleSessionsAreHiddenIdleButRunningSessionsAreNot() {
+        let referenceDate = Date(timeIntervalSince1970: 10_000)
+
+        let completed = AgentSession(
+            id: "session-completed",
+            title: "Codex · remote",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .completed,
+            summary: "Done",
+            updatedAt: referenceDate.addingTimeInterval(-301)
+        )
+        #expect(completed.isHiddenIdleIslandSession(at: referenceDate))
+
+        let running = AgentSession(
+            id: "session-running",
+            title: "Codex · remote",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Working",
+            updatedAt: referenceDate.addingTimeInterval(-3_600)
+        )
+        #expect(!running.isHiddenIdleIslandSession(at: referenceDate))
+    }
+
+    @Test
     func liveHeadlineUsesLatestPromptForAttachedSession() {
         let session = AgentSession(
             id: "session-1",

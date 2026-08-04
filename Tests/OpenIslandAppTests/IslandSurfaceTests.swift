@@ -59,7 +59,7 @@ struct IslandSurfaceTests {
     }
 
     @Test
-    func actionableSurfaceDoesNotMatchRunningState() {
+    func actionableSurfaceMatchesRunningState() {
         let session = AgentSession(
             id: "session-1",
             title: "Codex · repo",
@@ -71,7 +71,21 @@ struct IslandSurfaceTests {
         )
 
         let surface = IslandSurface.sessionList(actionableSessionID: "session-1")
-        #expect(!surface.matchesCurrentState(of: session))
+        #expect(surface.matchesCurrentState(of: session))
+    }
+
+    @Test
+    func runningActivityEventsRouteToActionableSurface() {
+        let event = AgentEvent.activityUpdated(
+            SessionActivityUpdated(
+                sessionID: "session-1",
+                summary: "Running: git status",
+                phase: .running,
+                timestamp: .now
+            )
+        )
+
+        #expect(IslandSurface.notificationSurface(for: event) == .sessionList(actionableSessionID: "session-1"))
     }
 
     @Test
