@@ -90,11 +90,10 @@ final class HookInstallationCoordinator {
         ClaudeStatusLineInstallationManager()
     }
 
+    /// Poll loops per usage provider, keyed so a provider switched off in
+    /// Settings can be stopped without touching the others.
     @ObservationIgnored
-    private var claudeUsageMonitorTask: Task<Void, Never>?
-
-    @ObservationIgnored
-    private var codexUsageMonitorTask: Task<Void, Never>?
+    private var usageMonitorTasks: [UsageProvider: Task<Void, Never>] = [:]
 
     @ObservationIgnored
     private var relativeTimestampFormatter: RelativeDateTimeFormatter {
@@ -228,20 +227,27 @@ final class HookInstallationCoordinator {
     }
 
     var claudeUsageSummaryText: String? {
-        guard let snapshot = claudeUsageSnapshot else {
+        usageSummaryText(for: claudeUsageSnapshot)
+    }
+
+    /// Renders any provider's snapshot as `5h 12% · 7d 40% · updated 2m ago`.
+    func usageSummaryText(
+        for snapshot: (any UsageSnapshotSummarizing)?,
+        extraComponents: [String] = []
+    ) -> String? {
+        guard let snapshot else {
             return nil
         }
 
-        var components: [String] = []
-        if let fiveHour = snapshot.fiveHour {
-            components.append("5h \(fiveHour.roundedUsedPercentage)%")
+        var components = snapshot.liveWindowSummaries(at: .now).map { window in
+            "\(window.label) \(window.roundedUsedPercentage)%"
         }
-        if let sevenDay = snapshot.sevenDay {
-            components.append("7d \(sevenDay.roundedUsedPercentage)%")
+        components.append(contentsOf: extraComponents)
+
+        if let summarizedAt = snapshot.summarizedAt {
+            components.append("updated \(relativeTimestampFormatter.localizedString(for: summarizedAt, relativeTo: .now))")
         }
-        if let cachedAt = snapshot.cachedAt {
-            components.append("updated \(relativeTimestampFormatter.localizedString(for: cachedAt, relativeTo: .now))")
-        }
+
         return components.isEmpty ? nil : components.joined(separator: " · ")
     }
 
@@ -262,23 +268,10 @@ final class HookInstallationCoordinator {
     }
 
     var codexUsageSummaryText: String? {
-        guard let snapshot = codexUsageSnapshot else {
-            return nil
-        }
-
-        var components = snapshot.windows.map { window in
-            "\(window.label) \(window.roundedUsedPercentage)%"
-        }
-
-        if let planType = snapshot.planType {
-            components.append("plan \(planType)")
-        }
-
-        if let capturedAt = snapshot.capturedAt {
-            components.append("updated \(relativeTimestampFormatter.localizedString(for: capturedAt, relativeTo: .now))")
-        }
-
-        return components.isEmpty ? nil : components.joined(separator: " · ")
+        usageSummaryText(
+            for: codexUsageSnapshot,
+            extraComponents: codexUsageSnapshot?.planType.map { ["plan \($0)"] } ?? []
+        )
     }
 
     var openCodePluginStatusTitle: String {
@@ -1069,29 +1062,35 @@ final class HookInstallationCoordinator {
 
     // MARK: - Monitoring
 
-    func startClaudeUsageMonitoringIfNeeded() {
-        guard claudeUsageMonitorTask == nil else { return }
+    /// Starts (or keeps) the poll loop for a usage provider, refreshing once
+    /// immediately so the pill fills in without waiting out the interval.
+    func startUsageMonitoring(for provider: UsageProvider) {
+        guard usageMonitorTasks[provider] == nil else { return }
 
-        claudeUsageMonitorTask = Task { @MainActor [weak self] in
+        refreshUsageState(for: provider)
+
+        usageMonitorTasks[provider] = Task { @MainActor [weak self] in
             guard let self else { return }
 
             while !Task.isCancelled {
-                self.refreshClaudeUsageState()
-                try? await Task.sleep(for: .seconds(5))
+                try? await Task.sleep(for: provider.pollInterval)
+                guard !Task.isCancelled else { return }
+                self.refreshUsageState(for: provider)
             }
         }
     }
 
-    func startCodexUsageMonitoringIfNeeded() {
-        guard codexUsageMonitorTask == nil else { return }
+    func stopUsageMonitoring(for provider: UsageProvider) {
+        usageMonitorTasks.removeValue(forKey: provider)?.cancel()
+    }
 
-        codexUsageMonitorTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-
-            while !Task.isCancelled {
-                self.refreshCodexUsageState()
-                try? await Task.sleep(for: .seconds(120))
-            }
+    /// Re-reads one provider's usage cache.
+    func refreshUsageState(for provider: UsageProvider) {
+        switch provider {
+        case .claude:
+            refreshClaudeUsageState()
+        case .codex:
+            refreshCodexUsageState()
         }
     }
 

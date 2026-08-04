@@ -20,7 +20,6 @@ final class AppModel {
     private static let hapticFeedbackEnabledDefaultsKey = "app.hapticFeedbackEnabled"
     private static let islandRightSlotDefaultsKey = "appearance.island.v6.rightSlot"
     private static let islandCenterLabelDefaultsKey = "appearance.island.v6.centerLabel"
-    private static let showCodexUsageDefaultsKey = "app.showCodexUsage"
     private static let completionReplyEnabledDefaultsKey = "feature.completionReply.enabled"
     private static let suppressFrontmostNotificationsDefaultsKey = "app.suppressFrontmostNotifications"
     private static let legacyIslandSessionStateIndicatorDefaultsKey = "appearance.island.v8.stateIndicator"
@@ -246,11 +245,92 @@ final class AppModel {
             UserDefaults.standard.set(hapticFeedbackEnabled, forKey: Self.hapticFeedbackEnabledDefaultsKey)
         }
     }
-    var showCodexUsage: Bool = false {
-        didSet {
-            guard hasFinishedInit, showCodexUsage != oldValue else { return }
-            UserDefaults.standard.set(showCodexUsage, forKey: Self.showCodexUsageDefaultsKey)
+    /// Opt-in state for usage providers that carry a Settings toggle. Providers
+    /// without one (`optInDefaultsKey == nil`) are gated by their install state
+    /// and are always considered enabled.
+    private(set) var usageProviderOptIn: [UsageProvider: Bool] = [:]
+
+    /// Usage windows for every enabled provider that currently has data, in
+    /// registry order. The island pill and Settings summaries both read this
+    /// instead of reaching for a specific provider's snapshot.
+    var usageProviderStatuses: [UsageProviderStatus] {
+        usageProviderStatuses(at: .now)
+    }
+
+    func usageProviderStatuses(at referenceDate: Date) -> [UsageProviderStatus] {
+        UsageProvider.allCases.compactMap { provider in
+            guard isUsageProviderEnabled(provider),
+                  let snapshot = usageSnapshot(for: provider) else {
+                return nil
+            }
+
+            // A cache that has outlived its window describes usage that has
+            // already reset, so it must not keep driving the pill.
+            let windows = snapshot.liveWindowSummaries(at: referenceDate)
+            guard !windows.isEmpty else {
+                return nil
+            }
+
+            return UsageProviderStatus(
+                provider: provider,
+                windows: windows,
+                capturedAt: snapshot.summarizedAt
+            )
         }
+    }
+
+    /// The one place that binds a provider to the cache it reads.
+    func usageSnapshot(for provider: UsageProvider) -> (any UsageSnapshotSummarizing)? {
+        switch provider {
+        case .claude:
+            claudeUsageSnapshot
+        case .codex:
+            codexUsageSnapshot
+        }
+    }
+
+    func isUsageProviderEnabled(_ provider: UsageProvider) -> Bool {
+        guard provider.optInDefaultsKey != nil else {
+            return true
+        }
+
+        return usageProviderOptIn[provider] ?? false
+    }
+
+    func setUsageProvider(_ provider: UsageProvider, enabled: Bool) {
+        guard let key = provider.optInDefaultsKey,
+              isUsageProviderEnabled(provider) != enabled else {
+            return
+        }
+
+        usageProviderOptIn[provider] = enabled
+        UserDefaults.standard.set(enabled, forKey: key)
+
+        // Toggling used to only persist, so a provider switched on mid-session
+        // stayed blank until the next launch.
+        if enabled {
+            hooks.startUsageMonitoring(for: provider)
+        } else {
+            hooks.stopUsageMonitoring(for: provider)
+        }
+    }
+
+    private static func loadUsageProviderOptIn() -> [UsageProvider: Bool] {
+        var optIn: [UsageProvider: Bool] = [:]
+
+        for provider in UsageProvider.optional {
+            guard let key = provider.optInDefaultsKey else { continue }
+
+            if UserDefaults.standard.object(forKey: key) != nil {
+                optIn[provider] = UserDefaults.standard.bool(forKey: key)
+            } else if let probeURL = provider.installationProbeURL {
+                optIn[provider] = FileManager.default.fileExists(atPath: probeURL.path)
+            } else {
+                optIn[provider] = false
+            }
+        }
+
+        return optIn
     }
     var completionReplyEnabled: Bool = false {
         didSet {
@@ -601,13 +681,7 @@ final class AppModel {
         showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
         hapticFeedbackEnabled = UserDefaults.standard.bool(forKey: Self.hapticFeedbackEnabledDefaultsKey)
         suppressFrontmostNotifications = UserDefaults.standard.bool(forKey: Self.suppressFrontmostNotificationsDefaultsKey)
-        if UserDefaults.standard.object(forKey: Self.showCodexUsageDefaultsKey) != nil {
-            showCodexUsage = UserDefaults.standard.bool(forKey: Self.showCodexUsageDefaultsKey)
-        } else {
-            showCodexUsage = FileManager.default.fileExists(
-                atPath: CodexRolloutDiscovery.defaultRootURL.path
-            )
-        }
+        usageProviderOptIn = Self.loadUsageProviderOptIn()
         completionReplyEnabled = UserDefaults.standard.bool(forKey: Self.completionReplyEnabledDefaultsKey)
         launchAtLoginEnabled = LaunchAtLoginService.shared.isEnabled
         appearanceSettingsProfile = IslandAppearanceDisplayProfile(
@@ -1089,11 +1163,8 @@ final class AppModel {
             hooks.refreshCCForkHookStatuses()
             hooks.refreshOpenCodePluginStatus()
             hooks.refreshCursorHookStatus()
-            hooks.refreshClaudeUsageState()
-            hooks.startClaudeUsageMonitoringIfNeeded()
-            if showCodexUsage {
-                hooks.refreshCodexUsageState()
-                hooks.startCodexUsageMonitoringIfNeeded()
+            for provider in UsageProvider.allCases where isUsageProviderEnabled(provider) {
+                hooks.startUsageMonitoring(for: provider)
             }
             updateChecker.startIfNeeded()
 
