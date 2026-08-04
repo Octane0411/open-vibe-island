@@ -330,26 +330,21 @@ public extension GeminiHookPayload {
     }
 
     private func inferTerminalApp(from environment: [String: String]) -> String? {
-        if environment["ITERM_SESSION_ID"] != nil || environment["LC_TERMINAL"] == "iTerm2" {
-            return "iTerm"
-        }
-
+        // Multiplexers run inside a host terminal but expose their own pane
+        // context. Detect them first so the captured jumpTarget points at
+        // the multiplexer pane instead of the outer terminal.
         if environment["CMUX_WORKSPACE_ID"] != nil || environment["CMUX_SOCKET_PATH"] != nil {
             return "cmux"
         }
-
         if environment["ZELLIJ"] != nil {
             return "Zellij"
         }
 
-        if environment["GHOSTTY_RESOURCES_DIR"] != nil {
-            return "Ghostty"
-        }
-
-        if environment["WARP_IS_LOCAL_SHELL_SESSION"] != nil {
-            return "Warp"
-        }
-
+        // TERM_PROGRAM is the only authoritative terminal signal. Each
+        // terminal sets it explicitly when it execs the user's shell, so
+        // unlike per-app env vars (GHOSTTY_RESOURCES_DIR,
+        // WARP_IS_LOCAL_SHELL_SESSION, ITERM_SESSION_ID, ...) it cannot
+        // leak across apps via macOS GUI app environment inheritance.
         let termProgram = environment["TERM_PROGRAM"]?.lowercased()
         switch termProgram {
         case .some("apple_terminal"):
@@ -365,6 +360,14 @@ public extension GeminiHookPayload {
         case .some("kaku"):
             return "Kaku"
         case .some("vscode"):
+            // Cursor also sets TERM_PROGRAM=vscode; check Cursor-specific
+            // env vars to avoid misidentifying it as VS Code.
+            if environment["CURSOR_TRACE_ID"] != nil
+                || environment["GIT_ASKPASS"]?.lowercased().contains("/cursor.app/") == true
+                || environment["VSCODE_GIT_ASKPASS_NODE"]?.lowercased().contains("/cursor.app/") == true
+            {
+                return "Cursor"
+            }
             return "VS Code"
         case .some("vscode-insiders"):
             return "VS Code Insiders"
@@ -374,6 +377,18 @@ public extension GeminiHookPayload {
             return "Trae"
         default:
             break
+        }
+
+        // Fallbacks for terminals that don't set TERM_PROGRAM. Vulnerable to
+        // GUI inheritance leaks; only consulted when TERM_PROGRAM is empty.
+        if environment["ITERM_SESSION_ID"] != nil || environment["LC_TERMINAL"] == "iTerm2" {
+            return "iTerm"
+        }
+        if environment["WARP_IS_LOCAL_SHELL_SESSION"] != nil {
+            return "Warp"
+        }
+        if environment["GHOSTTY_RESOURCES_DIR"] != nil {
+            return "Ghostty"
         }
 
         if let terminalEmulator = environment["TERMINAL_EMULATOR"]?.lowercased(),
