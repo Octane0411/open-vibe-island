@@ -116,4 +116,68 @@ struct OverlayPanelControllerTests {
         let height = NSScreen.computeIslandClosedHeight(safeAreaInsetsTop: 0, topStatusBarHeight: 24)
         #expect(height == 24)
     }
+
+    // MARK: - Display selection reconciliation (reconnect survival)
+
+    private static func makeOption(_ id: String, _ title: String) -> OverlayDisplayOption {
+        OverlayDisplayOption(id: id, title: title, subtitle: "")
+    }
+
+    @Test
+    func automaticSelectionLeavesConnectedOptionsUntouched() {
+        let connected = [Self.makeOption("built-in", "Built-in Display")]
+        let state = OverlayDisplayResolver.reconcileDisplaySelection(
+            selectionID: OverlayDisplayOption.automaticID,
+            rememberedName: nil,
+            connectedOptions: connected
+        )
+        #expect(state.isPreferredDisplayConnected)
+        #expect(state.options == connected)
+    }
+
+    @Test
+    func connectedPreferredSelectionLeavesOptionsUntouched() {
+        let connected = [
+            Self.makeOption("built-in", "Built-in Display"),
+            Self.makeOption("EXT-UUID", "L34A650U")
+        ]
+        let state = OverlayDisplayResolver.reconcileDisplaySelection(
+            selectionID: "EXT-UUID",
+            rememberedName: "L34A650U",
+            connectedOptions: connected
+        )
+        #expect(state.isPreferredDisplayConnected)
+        #expect(state.options == connected)
+    }
+
+    @Test
+    func disconnectedPreferredSelectionIsKeptAsRememberedOption() {
+        // The external monitor is unplugged: it must NOT be dropped/reset, so the
+        // preference survives and the island can route back on reconnect.
+        let connected = [Self.makeOption("built-in", "Built-in Display")]
+        let state = OverlayDisplayResolver.reconcileDisplaySelection(
+            selectionID: "EXT-UUID",
+            rememberedName: "L34A650U",
+            connectedOptions: connected
+        )
+        #expect(!state.isPreferredDisplayConnected)
+        #expect(state.options.count == 2)
+
+        let remembered = state.options.last
+        #expect(remembered?.id == "EXT-UUID")
+        #expect(remembered?.title == "L34A650U")
+        #expect(remembered?.isConnected == false)
+    }
+
+    @Test
+    func disconnectedPreferredSelectionFallsBackToIDWhenNameUnknown() {
+        let state = OverlayDisplayResolver.reconcileDisplaySelection(
+            selectionID: "EXT-UUID",
+            rememberedName: nil,
+            connectedOptions: []
+        )
+        #expect(!state.isPreferredDisplayConnected)
+        #expect(state.options.last?.title == "EXT-UUID")
+        #expect(state.options.last?.isConnected == false)
+    }
 }
