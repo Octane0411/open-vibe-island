@@ -90,7 +90,6 @@ def main() -> None:
 
     draw.text((70, 174), "All your coding agents.", font=font(54, bold=True), fill="#FFFFFF")
     draw.text((70, 236), "One island.", font=font(62, bold=True), fill="#F1EAD9")
-    draw.ellipse((393, 266, 407, 280), fill="#68D983")
 
     draw.text(
         (74, 326),
