@@ -88,6 +88,9 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
         var currentTool: String?
         var currentToolInputPreview: String?
         var pendingToolUses: [String: (name: String, preview: String?)] = [:]
+        // `/rename` appends `{"type":"custom-title","customTitle":…,"sessionId":…}`
+        // records; Claude Code applies them last-wins per session id.
+        var customTitlesBySessionID: [String: String] = [:]
 
         let processLine: (String) -> Void = { line in
             guard let data = line.data(using: .utf8),
@@ -95,7 +98,13 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
                 return
             }
 
-            if let value = object["sessionId"] as? String, !value.isEmpty {
+            let topLevelType = object["type"] as? String
+
+            // Custom-title records can reference other session ids (e.g.
+            // forked "(Branch)" sessions sharing one transcript) — they
+            // must not reassign the transcript's session identity.
+            if let value = object["sessionId"] as? String, !value.isEmpty,
+               topLevelType != "custom-title" {
                 sessionID = value
             }
 
@@ -107,8 +116,6 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
                let timestamp = ISO8601DateFormatter().date(from: timestampText) {
                 updatedAt = timestamp
             }
-
-            let topLevelType = object["type"] as? String
             let message = object["message"] as? [String: Any]
             let role = message?["role"] as? String
 
@@ -156,6 +163,12 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
                       let summary = object["summary"] as? String,
                       !summary.isEmpty {
                 lastAssistantMessage = summary
+            } else if topLevelType == "custom-title",
+                      let customTitle = object["customTitle"] as? String,
+                      !customTitle.isEmpty,
+                      let titleSessionID = object["sessionId"] as? String,
+                      !titleSessionID.isEmpty {
+                customTitlesBySessionID[titleSessionID] = customTitle
             }
         }
 
@@ -188,7 +201,8 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
             lastAssistantMessage: lastAssistantMessage,
             currentTool: currentTool,
             currentToolInputPreview: currentToolInputPreview,
-            model: model
+            model: model,
+            customTitle: customTitlesBySessionID[sessionID]
         )
         let summary = lastAssistantMessage
             ?? lastUserPrompt

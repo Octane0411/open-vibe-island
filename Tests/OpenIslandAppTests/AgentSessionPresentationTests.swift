@@ -184,6 +184,86 @@ struct AgentSessionPresentationTests {
     }
 
     @Test
+    func customSessionNameWinsOverWorkspaceNameInHeadline() {
+        // A Claude Code `/rename` name replaces the workspace name on all
+        // spotlight surfaces (Philipp's request from the Slack thread).
+        let session = AgentSession(
+            id: "session-1",
+            title: "Claude · open-island",
+            tool: .claudeCode,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Working",
+            updatedAt: Date(timeIntervalSince1970: 10_000),
+            jumpTarget: JumpTarget(
+                terminalApp: "Ghostty",
+                workspaceName: "open-island",
+                paneTitle: "claude ~/tmp/open-island",
+                workingDirectory: "/tmp/open-island",
+                terminalSessionID: "ghostty-1"
+            ),
+            claudeMetadata: ClaudeSessionMetadata(
+                initialUserPrompt: "Refactor the checkout flow.",
+                customTitle: "  checkout-flow  "
+            )
+        )
+
+        #expect(session.spotlightWorkspaceName == "checkout-flow")
+        #expect(session.spotlightHeadlineText == "checkout-flow · Refactor the checkout flow.")
+    }
+
+    @Test
+    func whitespaceOnlyCustomNameFallsBackToWorkspaceName() {
+        let session = AgentSession(
+            id: "session-1",
+            title: "Claude · open-island",
+            tool: .claudeCode,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Working",
+            updatedAt: Date(timeIntervalSince1970: 10_000),
+            jumpTarget: JumpTarget(
+                terminalApp: "Ghostty",
+                workspaceName: "open-island",
+                paneTitle: "claude ~/tmp/open-island",
+                workingDirectory: "/tmp/open-island",
+                terminalSessionID: "ghostty-1"
+            ),
+            claudeMetadata: ClaudeSessionMetadata(customTitle: "   ")
+        )
+
+        #expect(session.spotlightWorkspaceName == "open-island")
+    }
+
+    @Test
+    func sessionWithoutCustomNameKeepsWorkspaceHeadline() {
+        let session = AgentSession(
+            id: "session-1",
+            title: "Claude · open-island",
+            tool: .claudeCode,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Working",
+            updatedAt: Date(timeIntervalSince1970: 10_000),
+            jumpTarget: JumpTarget(
+                terminalApp: "Ghostty",
+                workspaceName: "open-island",
+                paneTitle: "claude ~/tmp/open-island",
+                workingDirectory: "/tmp/open-island",
+                terminalSessionID: "ghostty-1"
+            ),
+            claudeMetadata: ClaudeSessionMetadata(
+                initialUserPrompt: "Refactor the checkout flow."
+            )
+        )
+
+        #expect(session.spotlightWorkspaceName == "open-island")
+    }
+
+    @Test
     func liveHeadlineUsesLatestPromptForAttachedSession() {
         let session = AgentSession(
             id: "session-1",
