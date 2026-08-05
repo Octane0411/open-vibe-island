@@ -72,7 +72,8 @@ public struct SessionState: Equatable, Sendable {
                 claudeMetadata: payload.claudeMetadata?.isEmpty == true ? nil : payload.claudeMetadata,
                 geminiMetadata: payload.geminiMetadata?.isEmpty == true ? nil : payload.geminiMetadata,
                 openCodeMetadata: payload.openCodeMetadata?.isEmpty == true ? nil : payload.openCodeMetadata,
-                cursorMetadata: payload.cursorMetadata?.isEmpty == true ? nil : payload.cursorMetadata
+                cursorMetadata: payload.cursorMetadata?.isEmpty == true ? nil : payload.cursorMetadata,
+                piMetadata: payload.piMetadata?.isEmpty == true ? nil : payload.piMetadata
             )
             session.isRemote = payload.isRemote
             session.isHookManaged = payload.origin == .live
@@ -82,6 +83,9 @@ public struct SessionState: Equatable, Sendable {
             Self.refreshCodexAppClassification(for: &session)
             session.isSessionEnded = false
             session.isProcessAlive = true
+            if payload.tool == .pi || payload.tool == .ohMyPi {
+                session.lastHeartbeatAt = payload.timestamp
+            }
             session.processNotSeenCount = 0
             upsert(session)
 
@@ -204,6 +208,35 @@ public struct SessionState: Equatable, Sendable {
 
             session.cursorMetadata = payload.cursorMetadata.isEmpty ? nil : payload.cursorMetadata
             session.updatedAt = payload.timestamp
+            upsert(session)
+
+        case let .piSessionMetadataUpdated(payload):
+            guard var session = sessionsByID[payload.sessionID] else {
+                return
+            }
+
+            session.piMetadata = payload.piMetadata.isEmpty ? nil : payload.piMetadata
+            session.updatedAt = payload.timestamp
+            upsert(session)
+
+        case let .sessionHeartbeat(payload) where sessionsByID[payload.sessionID] == nil:
+            guard let recoverySession = payload.recoverySession else {
+                return
+            }
+            apply(.sessionStarted(recoverySession))
+            apply(event)
+
+        case let .sessionHeartbeat(payload):
+            guard var session = sessionsByID[payload.sessionID],
+                  (session.tool == .pi || session.tool == .ohMyPi),
+                  !session.isSessionEnded else {
+                return
+            }
+
+            session.isHookManaged = true
+            session.isProcessAlive = true
+            session.processNotSeenCount = 0
+            session.lastHeartbeatAt = payload.timestamp
             upsert(session)
 
         case let .actionableStateResolved(payload):
@@ -331,9 +364,24 @@ public struct SessionState: Equatable, Sendable {
 
     /// Mark a single session as alive (e.g. when a hook event is received).
     /// Does not affect other sessions' processNotSeenCount.
-    public mutating func markSingleSessionAlive(sessionID: String) {
+    public mutating func markSingleSessionAlive(
+        sessionID: String,
+        at timestamp: Date = .now
+    ) {
         guard var session = sessionsByID[sessionID] else { return }
-        guard !session.isProcessAlive || session.processNotSeenCount != 0 else { return }
+
+        if session.tool == .pi || session.tool == .ohMyPi {
+            guard !session.isSessionEnded else { return }
+            session.isHookManaged = true
+            session.lastHeartbeatAt = timestamp
+        }
+
+        guard !session.isProcessAlive
+            || session.processNotSeenCount != 0
+            || session.tool == .pi
+            || session.tool == .ohMyPi else {
+            return
+        }
         session.isProcessAlive = true
         session.processNotSeenCount = 0
         upsert(session)
@@ -380,6 +428,12 @@ public struct SessionState: Equatable, Sendable {
                     continue
                 }
 
+                // Pi and Oh My Pi have no reliable process-to-session mapping.
+                // Their extension heartbeat owns liveness and expiry.
+                if session.tool == .pi || session.tool == .ohMyPi {
+                    continue
+                }
+
                 // Codex.app sessions are handled by the app-level liveness branch
                 // above.  Other Codex hook sessions, such as VS Code / Claude
                 // plugin sessions, must still age out when their CLI process is
@@ -421,9 +475,31 @@ public struct SessionState: Equatable, Sendable {
         return changed
     }
 
-    /// Remove sessions that are no longer visible in the island.
-    /// Returns `true` if any sessions were removed.
+    /// Ends heartbeat-managed Pi sessions whose extension stopped reporting.
+    /// Returns the IDs that transitioned to ended.
     @discardableResult
+    public mutating func expireStalePiHeartbeats(before deadline: Date) -> Set<String> {
+        var expired: Set<String> = []
+
+        for (id, var session) in sessionsByID {
+            guard session.tool == .pi || session.tool == .ohMyPi,
+                  session.isHookManaged,
+                  !session.isSessionEnded,
+                  let lastHeartbeatAt = session.lastHeartbeatAt,
+                  lastHeartbeatAt < deadline else {
+                continue
+            }
+
+            session.isSessionEnded = true
+            session.isProcessAlive = false
+            session.phase = .completed
+            upsert(session)
+            expired.insert(id)
+        }
+
+        return expired
+    }
+
     /// Manually mark a session as completed and ended.
     /// Intended for remote sessions whose SSH tunnel dropped without a
     /// SessionEnd hook.
@@ -435,6 +511,9 @@ public struct SessionState: Equatable, Sendable {
         upsert(session)
     }
 
+    /// Remove sessions that are no longer visible in the island.
+    /// Returns `true` if any sessions were removed.
+    @discardableResult
     public mutating func removeInvisibleSessions() -> Bool {
         let before = sessionsByID.count
         sessionsByID = sessionsByID.filter { _, session in

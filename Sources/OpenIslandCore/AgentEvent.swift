@@ -14,6 +14,7 @@ public struct SessionStarted: Equatable, Codable, Sendable {
     public var geminiMetadata: GeminiSessionMetadata?
     public var openCodeMetadata: OpenCodeSessionMetadata?
     public var cursorMetadata: CursorSessionMetadata?
+    public var piMetadata: PiSessionMetadata?
     public var isRemote: Bool
 
     public init(
@@ -30,6 +31,7 @@ public struct SessionStarted: Equatable, Codable, Sendable {
         geminiMetadata: GeminiSessionMetadata? = nil,
         openCodeMetadata: OpenCodeSessionMetadata? = nil,
         cursorMetadata: CursorSessionMetadata? = nil,
+        piMetadata: PiSessionMetadata? = nil,
         isRemote: Bool = false
     ) {
         self.sessionID = sessionID
@@ -45,6 +47,7 @@ public struct SessionStarted: Equatable, Codable, Sendable {
         self.geminiMetadata = geminiMetadata
         self.openCodeMetadata = openCodeMetadata
         self.cursorMetadata = cursorMetadata
+        self.piMetadata = piMetadata
         self.isRemote = isRemote
     }
 }
@@ -222,6 +225,38 @@ public struct CursorSessionMetadataUpdated: Equatable, Codable, Sendable {
     }
 }
 
+public struct PiSessionMetadataUpdated: Equatable, Codable, Sendable {
+    public var sessionID: String
+    public var piMetadata: PiSessionMetadata
+    public var timestamp: Date
+
+    public init(
+        sessionID: String,
+        piMetadata: PiSessionMetadata,
+        timestamp: Date
+    ) {
+        self.sessionID = sessionID
+        self.piMetadata = piMetadata
+        self.timestamp = timestamp
+    }
+}
+public struct SessionHeartbeat: Equatable, Codable, Sendable {
+    public var sessionID: String
+    public var timestamp: Date
+    public var recoverySession: SessionStarted?
+
+    public init(
+        sessionID: String,
+        timestamp: Date,
+        recoverySession: SessionStarted? = nil
+    ) {
+        self.sessionID = sessionID
+        self.timestamp = timestamp
+        self.recoverySession = recoverySession
+    }
+}
+
+
 public struct ActionableStateResolved: Equatable, Codable, Sendable {
     public var sessionID: String
     public var summary: String
@@ -250,6 +285,8 @@ public enum AgentEvent: Equatable, Codable, Sendable {
     case geminiSessionMetadataUpdated(GeminiSessionMetadataUpdated)
     case openCodeSessionMetadataUpdated(OpenCodeSessionMetadataUpdated)
     case cursorSessionMetadataUpdated(CursorSessionMetadataUpdated)
+    case piSessionMetadataUpdated(PiSessionMetadataUpdated)
+    case sessionHeartbeat(SessionHeartbeat)
     case actionableStateResolved(ActionableStateResolved)
 
     private enum CodingKeys: String, CodingKey {
@@ -265,6 +302,8 @@ public enum AgentEvent: Equatable, Codable, Sendable {
         case geminiSessionMetadataUpdated
         case openCodeSessionMetadataUpdated
         case cursorSessionMetadataUpdated
+        case piSessionMetadataUpdated
+        case sessionHeartbeat
         case actionableStateResolved
     }
 
@@ -280,6 +319,8 @@ public enum AgentEvent: Equatable, Codable, Sendable {
         case geminiSessionMetadataUpdated
         case openCodeSessionMetadataUpdated
         case cursorSessionMetadataUpdated
+        case piSessionMetadataUpdated
+        case sessionHeartbeat
         case actionableStateResolved
     }
 
@@ -317,6 +358,14 @@ public enum AgentEvent: Equatable, Codable, Sendable {
         case .cursorSessionMetadataUpdated:
             self = .cursorSessionMetadataUpdated(
                 try container.decode(CursorSessionMetadataUpdated.self, forKey: .cursorSessionMetadataUpdated)
+            )
+        case .piSessionMetadataUpdated:
+            self = .piSessionMetadataUpdated(
+                try container.decode(PiSessionMetadataUpdated.self, forKey: .piSessionMetadataUpdated)
+            )
+        case .sessionHeartbeat:
+            self = .sessionHeartbeat(
+                try container.decode(SessionHeartbeat.self, forKey: .sessionHeartbeat)
             )
         case .actionableStateResolved:
             self = .actionableStateResolved(
@@ -362,6 +411,12 @@ public enum AgentEvent: Equatable, Codable, Sendable {
         case let .cursorSessionMetadataUpdated(payload):
             try container.encode(EventType.cursorSessionMetadataUpdated, forKey: .type)
             try container.encode(payload, forKey: .cursorSessionMetadataUpdated)
+        case let .piSessionMetadataUpdated(payload):
+            try container.encode(EventType.piSessionMetadataUpdated, forKey: .type)
+            try container.encode(payload, forKey: .piSessionMetadataUpdated)
+        case let .sessionHeartbeat(payload):
+            try container.encode(EventType.sessionHeartbeat, forKey: .type)
+            try container.encode(payload, forKey: .sessionHeartbeat)
         case let .actionableStateResolved(payload):
             try container.encode(EventType.actionableStateResolved, forKey: .type)
             try container.encode(payload, forKey: .actionableStateResolved)

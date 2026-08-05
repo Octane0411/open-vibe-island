@@ -56,6 +56,7 @@ final class ProcessMonitoringCoordinator {
     private static let codexAppStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let claudeDesktopStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let conductorStalenessTimeout: TimeInterval = 600  // 10 minutes
+    private static let piHeartbeatTimeout: TimeInterval = 45
 
     static func monitoringPollInterval(
         isResolvingInitialLiveSessions: Bool,
@@ -176,6 +177,8 @@ final class ProcessMonitoringCoordinator {
                     }
                     hadTrackedLiveSessions = hasTrackedLiveSessions
                 }
+
+                self.expireStalePiHeartbeatSessions()
 
                 let wakeInterval = Self.monitoringWakeInterval(
                     isResolvingInitialLiveSessions: self.isResolvingInitialLiveSessions,
@@ -324,6 +327,19 @@ final class ProcessMonitoringCoordinator {
         onPersistenceNeeded?()
     }
 
+    private func expireStalePiHeartbeatSessions(now: Date = .now) {
+        var local = state
+        let expired = local.expireStalePiHeartbeats(
+            before: now.addingTimeInterval(-Self.piHeartbeatTimeout)
+        )
+        guard !expired.isEmpty else { return }
+
+        _ = local.removeInvisibleSessions()
+        state = local
+        onSessionsReconciled?()
+        onPersistenceNeeded?()
+    }
+
     // MARK: - Event helpers
 
     func markSessionAttached(for event: AgentEvent) {
@@ -365,6 +381,10 @@ final class ProcessMonitoringCoordinator {
         case let .openCodeSessionMetadataUpdated(payload):
             payload.sessionID
         case let .cursorSessionMetadataUpdated(payload):
+            payload.sessionID
+        case let .piSessionMetadataUpdated(payload):
+            payload.sessionID
+        case let .sessionHeartbeat(payload):
             payload.sessionID
         case let .actionableStateResolved(payload):
             payload.sessionID
@@ -1571,6 +1591,10 @@ final class ProcessMonitoringCoordinator {
             return "Kimi \(session.id.prefix(8))"
         case .grokBuild:
             return "Grok \(session.id.prefix(8))"
+        case .pi:
+            return "Pi \(session.id.prefix(8))"
+        case .ohMyPi:
+            return "Oh My Pi \(session.id.prefix(8))"
         }
     }
 }

@@ -16,6 +16,8 @@ final class SessionDiscoveryCoordinator {
         var openCodeRecordsNeedPrune: Bool
         var cursorRecords: [CursorTrackedSessionRecord]
         var cursorRecordsNeedPrune: Bool
+        var piRecords: [PiTrackedSessionRecord]
+        var piRecordsNeedPrune: Bool
         var discoveredCodexRecords: [CodexTrackedSessionRecord]
         var discoveredClaudeSessions: [AgentSession]
         var hooksBinaryURL: URL?
@@ -52,6 +54,9 @@ final class SessionDiscoveryCoordinator {
     private let cursorSessionRegistry = CursorSessionRegistry()
 
     @ObservationIgnored
+    private let piSessionRegistry = PiSessionRegistry()
+
+    @ObservationIgnored
     let codexRolloutWatcher = CodexRolloutWatcher()
 
     @ObservationIgnored
@@ -71,6 +76,9 @@ final class SessionDiscoveryCoordinator {
 
     @ObservationIgnored
     private var cursorSessionPersistenceTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var piSessionPersistenceTask: Task<Void, Never>?
 
     private var state: SessionState {
         get { stateAccessor?() ?? SessionState() }
@@ -98,6 +106,11 @@ final class SessionDiscoveryCoordinator {
         let allCursor = (try? cursorSessionRegistry.load()) ?? []
         let cursorRecords = allCursor.filter { $0.updatedAt >= cutoff && $0.shouldRestoreToLiveState }
 
+        let allPi = (try? piSessionRegistry.load()) ?? []
+        let piRecords = allPi.filter {
+            $0.updatedAt >= cutoff && ($0.tool == .pi || $0.tool == .ohMyPi)
+        }
+
         let discoveredCodex = codexRolloutDiscovery.discoverRecentSessions()
         let discoveredClaude = claudeTranscriptDiscovery.discoverRecentSessions()
 
@@ -110,6 +123,8 @@ final class SessionDiscoveryCoordinator {
             openCodeRecordsNeedPrune: openCodeRecords != allOpenCode,
             cursorRecords: cursorRecords,
             cursorRecordsNeedPrune: cursorRecords != allCursor,
+            piRecords: piRecords,
+            piRecordsNeedPrune: piRecords != allPi,
             discoveredCodexRecords: discoveredCodex,
             discoveredClaudeSessions: discoveredClaude,
             hooksBinaryURL: HooksBinaryLocator.locate(
@@ -133,6 +148,9 @@ final class SessionDiscoveryCoordinator {
         }
         if payload.cursorRecordsNeedPrune {
             try? cursorSessionRegistry.save(payload.cursorRecords)
+        }
+        if payload.piRecordsNeedPrune {
+            try? piSessionRegistry.save(payload.piRecords)
         }
 
         // Restore persisted Codex sessions.
@@ -160,6 +178,12 @@ final class SessionDiscoveryCoordinator {
             let restoredSessions = payload.cursorRecords.map(\.restorableSession)
             state = SessionState(sessions: mergeDiscoveredSessions(restoredSessions))
             onStatusMessage?("Restored \(payload.cursorRecords.count) recent Cursor session(s) from local registry.")
+        }
+
+        if !payload.piRecords.isEmpty {
+            let restoredSessions = payload.piRecords.map(\.restorableSession)
+            state = SessionState(sessions: mergeDiscoveredSessions(restoredSessions))
+            onStatusMessage?("Restored \(payload.piRecords.count) recent Pi session(s) from local registry.")
         }
 
         // Merge discovered Codex sessions.
@@ -234,6 +258,7 @@ final class SessionDiscoveryCoordinator {
         merged.claudeMetadata = mergeClaudeMetadata(existing.claudeMetadata, discovered.claudeMetadata)
         merged.openCodeMetadata = mergeOpenCodeMetadata(existing.openCodeMetadata, discovered.openCodeMetadata)
         merged.cursorMetadata = mergeCursorMetadata(existing.cursorMetadata, discovered.cursorMetadata)
+        merged.piMetadata = mergePiMetadata(existing.piMetadata, discovered.piMetadata)
         // Once a session is identified as a Codex.app session by any source
         // (hook or rediscovery), preserve that flag so liveness uses the
         // app-level check instead of subprocess polling.
@@ -261,6 +286,28 @@ final class SessionDiscoveryCoordinator {
             currentTool: discovered.currentTool ?? existing.currentTool,
             currentToolInputPreview: discovered.currentToolInputPreview ?? existing.currentToolInputPreview,
             model: discovered.model ?? existing.model
+        )
+        return merged.isEmpty ? nil : merged
+    }
+
+    private func mergePiMetadata(
+        _ existing: PiSessionMetadata?,
+        _ discovered: PiSessionMetadata?
+    ) -> PiSessionMetadata? {
+        guard let existing else {
+            return discovered?.isEmpty == true ? nil : discovered
+        }
+        guard let discovered else {
+            return existing.isEmpty ? nil : existing
+        }
+        let merged = PiSessionMetadata(
+            initialUserPrompt: existing.initialUserPrompt ?? discovered.initialUserPrompt ?? discovered.lastUserPrompt,
+            lastUserPrompt: discovered.lastUserPrompt ?? existing.lastUserPrompt,
+            lastAssistantMessage: discovered.lastAssistantMessage ?? existing.lastAssistantMessage,
+            currentTool: discovered.currentTool ?? existing.currentTool,
+            currentToolInputPreview: discovered.currentToolInputPreview ?? existing.currentToolInputPreview,
+            model: discovered.model ?? existing.model,
+            transcriptPath: discovered.transcriptPath ?? existing.transcriptPath
         )
         return merged.isEmpty ? nil : merged
     }
@@ -559,6 +606,22 @@ final class SessionDiscoveryCoordinator {
         let registry = cursorSessionRegistry
 
         cursorSessionPersistenceTask = Self.persistenceTask {
+            try registry.save(records)
+        }
+    }
+
+    func schedulePiSessionPersistence() {
+        piSessionPersistenceTask?.cancel()
+        let records = state.sessions
+            .filter {
+                ($0.tool == .pi || $0.tool == .ohMyPi)
+                    && $0.isTrackedLiveSession
+                    && !$0.isSessionEnded
+                    && $0.updatedAt >= Date.now.addingTimeInterval(-86_400)
+            }
+            .map(PiTrackedSessionRecord.init(session:))
+        let registry = piSessionRegistry
+        piSessionPersistenceTask = Self.persistenceTask {
             try registry.save(records)
         }
     }

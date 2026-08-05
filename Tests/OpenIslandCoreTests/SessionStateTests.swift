@@ -182,6 +182,114 @@ struct SessionStateTests {
     }
 
     @Test
+    func piHeartbeatOwnsLivenessWithoutChangingTurnPresentation() {
+        let startedAt = Date(timeIntervalSince1970: 1_000)
+        let heartbeatAt = startedAt.addingTimeInterval(15)
+        var state = SessionState()
+        state.apply(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: "pi-heartbeat",
+                    title: "Pi · demo",
+                    tool: .pi,
+                    origin: .live,
+                    initialPhase: .completed,
+                    summary: "Ready",
+                    timestamp: startedAt
+                )
+            )
+        )
+
+        state.apply(
+            .sessionHeartbeat(
+                SessionHeartbeat(
+                    sessionID: "pi-heartbeat",
+                    timestamp: heartbeatAt
+                )
+            )
+        )
+        state.markProcessLiveness(aliveSessionIDs: [])
+        state.markProcessLiveness(aliveSessionIDs: [])
+
+        let liveSession = state.session(id: "pi-heartbeat")
+        #expect(liveSession?.isSessionEnded == false)
+        #expect(liveSession?.phase == .completed)
+        #expect(liveSession?.summary == "Ready")
+        #expect(liveSession?.updatedAt == startedAt)
+        #expect(liveSession?.lastHeartbeatAt == heartbeatAt)
+
+        #expect(state.expireStalePiHeartbeats(before: heartbeatAt).isEmpty)
+        #expect(state.expireStalePiHeartbeats(
+            before: heartbeatAt.addingTimeInterval(1)
+        ) == ["pi-heartbeat"])
+        #expect(state.session(id: "pi-heartbeat")?.isVisibleInIsland == false)
+
+        let removedExpiredSession = state.removeInvisibleSessions()
+        #expect(removedExpiredSession)
+        let recoveryAt = heartbeatAt.addingTimeInterval(2)
+        state.apply(
+            .sessionHeartbeat(
+                SessionHeartbeat(
+                    sessionID: "pi-heartbeat",
+                    timestamp: recoveryAt,
+                    recoverySession: SessionStarted(
+                        sessionID: "pi-heartbeat",
+                        title: "Pi · demo",
+                        tool: .pi,
+                        origin: .live,
+                        initialPhase: .completed,
+                        summary: "Ready",
+                        timestamp: recoveryAt
+                    )
+                )
+            )
+        )
+        #expect(state.session(id: "pi-heartbeat")?.isVisibleInIsland == true)
+        #expect(state.session(id: "pi-heartbeat")?.lastHeartbeatAt == recoveryAt)
+    }
+
+    @Test
+    func explicitPiSessionEndRejectsLateHeartbeat() {
+        let startedAt = Date(timeIntervalSince1970: 2_000)
+        var state = SessionState()
+        state.apply(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: "pi-ended",
+                    title: "Pi · demo",
+                    tool: .pi,
+                    origin: .live,
+                    summary: "Running",
+                    timestamp: startedAt
+                )
+            )
+        )
+        state.apply(
+            .sessionCompleted(
+                SessionCompleted(
+                    sessionID: "pi-ended",
+                    summary: "Pi session ended.",
+                    timestamp: startedAt.addingTimeInterval(1),
+                    isSessionEnd: true
+                )
+            )
+        )
+        state.apply(
+            .sessionHeartbeat(
+                SessionHeartbeat(
+                    sessionID: "pi-ended",
+                    timestamp: startedAt.addingTimeInterval(2)
+                )
+            )
+        )
+
+        #expect(state.session(id: "pi-ended")?.isSessionEnded == true)
+        #expect(state.session(id: "pi-ended")?.isVisibleInIsland == false)
+        #expect(state.session(id: "pi-ended")?.lastHeartbeatAt == startedAt)
+    }
+
+
+    @Test
     func resolvesUserActionsAndKeepsSessionsSortedByRecency() {
         let startedAt = Date(timeIntervalSince1970: 2_000)
         var state = SessionState(
@@ -1484,6 +1592,92 @@ struct SessionStateTests {
         let legacyUpdated = ISO8601DateFormatter().date(from: "2026-01-01T00:00:00Z")
         #expect(legacy.session.firstSeenAt == legacyUpdated)
     }
+
+    @Test
+    func piHookPayloadDecodesExtensionEnvelopeAndClipsMetadata() throws {
+        let longPrompt = String(repeating: "x", count: 180)
+        let data = try JSONSerialization.data(withJSONObject: [
+            "hook_event_name": "UserPromptSubmit",
+            "agent": "oh-my-pi",
+            "session_id": "omp-session-1",
+            "cwd": "/tmp/open-island",
+            "prompt": longPrompt,
+            "model": "gpt-5.6",
+            "transcript_path": "/tmp/session.jsonl",
+            "terminal_app": "Ghostty",
+            "terminal_tty": "/dev/ttys002",
+        ])
+
+        let payload = try JSONDecoder().decode(PiHookPayload.self, from: data)
+
+        #expect(payload.agent == .ohMyPi)
+        #expect(payload.hookEventName == .userPromptSubmit)
+        #expect(payload.defaultJumpTarget.terminalApp == "Ghostty")
+        #expect(payload.defaultPiMetadata.lastUserPrompt?.count == 110)
+        #expect(payload.defaultPiMetadata.model == "gpt-5.6")
+    }
+
+    @Test
+    func piBridgeLifecycleEmitsTypedSessionMetadataAndCompletion() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
+
+        let start = PiHookPayload(
+            hookEventName: .sessionStart,
+            agent: .pi,
+            sessionID: "pi-session-1",
+            cwd: "/tmp/open-island",
+            model: "claude-sonnet-4",
+            terminalApp: "Ghostty",
+            terminalTTY: "/dev/ttys003"
+        )
+        let startResponse = try BridgeCommandClient(socketURL: socketURL).send(.processPiHook(start))
+
+        var iterator = stream.makeAsyncIterator()
+        let startedEvent = try await nextEvent(from: &iterator)
+        #expect(startResponse == .acknowledged)
+        #expect(startedEvent.isSessionStarted)
+        #expect(startedEvent.startedSession?.tool == .pi)
+        #expect(startedEvent.startedSession?.piMetadata?.model == "claude-sonnet-4")
+        #expect(startedEvent.startedSession?.initialPhase == .completed)
+
+        let heartbeat = PiHookPayload(
+            hookEventName: .heartbeat,
+            agent: .pi,
+            sessionID: "pi-session-1",
+            cwd: "/tmp/open-island"
+        )
+        let heartbeatResponse = try BridgeCommandClient(socketURL: socketURL).send(.processPiHook(heartbeat))
+        let heartbeatEvent = try await nextEvent(from: &iterator)
+        #expect(heartbeatResponse == .acknowledged)
+        #expect(heartbeatEvent.sessionHeartbeat?.sessionID == "pi-session-1")
+
+
+        let stop = PiHookPayload(
+            hookEventName: .stop,
+            agent: .pi,
+            sessionID: "pi-session-1",
+            cwd: "/tmp/open-island",
+            lastAssistantMessage: "Implemented Pi integration.",
+            model: "claude-sonnet-4",
+            terminalApp: "Ghostty",
+            terminalTTY: "/dev/ttys003"
+        )
+        let stopResponse = try BridgeCommandClient(socketURL: socketURL).send(.processPiHook(stop))
+        let metadataEvent = try await nextEvent(from: &iterator)
+        let completedEvent = try await nextEvent(from: &iterator)
+
+        #expect(stopResponse == .acknowledged)
+        #expect(metadataEvent.piMetadataUpdate?.piMetadata.lastAssistantMessage == "Implemented Pi integration.")
+        #expect(completedEvent.sessionCompleted?.summary == "Implemented Pi integration.")
+    }
 }
 
 private enum SessionStateTestError: Error {
@@ -1506,6 +1700,14 @@ private extension AgentEvent {
             true
         } else {
             false
+        }
+    }
+
+    var startedSession: SessionStarted? {
+        if case let .sessionStarted(payload) = self {
+            payload
+        } else {
+            nil
         }
     }
 
@@ -1551,6 +1753,22 @@ private extension AgentEvent {
 
     var cursorMetadataUpdate: CursorSessionMetadataUpdated? {
         if case let .cursorSessionMetadataUpdated(payload) = self {
+            payload
+        } else {
+            nil
+        }
+    }
+
+    var piMetadataUpdate: PiSessionMetadataUpdated? {
+        if case let .piSessionMetadataUpdated(payload) = self {
+            payload
+        } else {
+            nil
+        }
+    }
+
+    var sessionHeartbeat: SessionHeartbeat? {
+        if case let .sessionHeartbeat(payload) = self {
             payload
         } else {
             nil
