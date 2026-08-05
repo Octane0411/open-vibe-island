@@ -186,6 +186,12 @@ public struct PermissionRequest: Equatable, Identifiable, Codable, Sendable {
     public var toolUseID: String?
     public var suggestedUpdates: [ClaudePermissionUpdate]
     public var requiresTerminalApproval: Bool
+    /// The `agent_id` of the subagent whose hook originated this request.
+    /// `nil` for ordinary parent-origin requests. Set by the bridge when a
+    /// subagent's `PermissionRequest` is surfaced on the parent session.
+    public var originatingAgentID: String?
+    /// The `agent_type` of the originating subagent, for human display.
+    public var originatingAgentType: String?
 
     public init(
         id: UUID = UUID(),
@@ -197,7 +203,9 @@ public struct PermissionRequest: Equatable, Identifiable, Codable, Sendable {
         toolName: String? = nil,
         toolUseID: String? = nil,
         suggestedUpdates: [ClaudePermissionUpdate] = [],
-        requiresTerminalApproval: Bool = false
+        requiresTerminalApproval: Bool = false,
+        originatingAgentID: String? = nil,
+        originatingAgentType: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -209,6 +217,8 @@ public struct PermissionRequest: Equatable, Identifiable, Codable, Sendable {
         self.toolUseID = toolUseID
         self.suggestedUpdates = suggestedUpdates
         self.requiresTerminalApproval = requiresTerminalApproval
+        self.originatingAgentID = originatingAgentID
+        self.originatingAgentType = originatingAgentType
     }
 }
 
