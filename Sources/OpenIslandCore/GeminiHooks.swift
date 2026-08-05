@@ -225,7 +225,8 @@ public extension GeminiHookPayload {
         }
 
         let useLocator: Bool
-        if isCmuxTerminalApp(payload.terminalApp) || isZellijTerminalApp(payload.terminalApp) {
+        if isCmuxTerminalApp(payload.terminalApp) || isZellijTerminalApp(payload.terminalApp)
+            || isHerdrTerminalApp(payload.terminalApp) {
             useLocator = false
         } else if let terminalApp = payload.terminalApp, isGhosttyTerminalApp(terminalApp) {
             switch payload.hookEventName {
@@ -257,7 +258,7 @@ public extension GeminiHookPayload {
     }
 
     private static let noLocatorTerminalApps: Set<String> = [
-        "cmux", "kaku", "wezterm", "zellij",
+        "cmux", "kaku", "wezterm", "zellij", "herdr",
         "vs code", "vs code insiders", "cursor", "windsurf", "trae",
         "intellij idea", "webstorm", "pycharm", "goland", "clion",
         "rubymine", "phpstorm", "rider", "rustrover"
@@ -329,6 +330,10 @@ public extension GeminiHookPayload {
         terminalApp?.lowercased() == "zellij"
     }
 
+    private func isHerdrTerminalApp(_ terminalApp: String?) -> Bool {
+        terminalApp?.lowercased() == "herdr"
+    }
+
     private func inferTerminalApp(from environment: [String: String]) -> String? {
         if environment["ITERM_SESSION_ID"] != nil || environment["LC_TERMINAL"] == "iTerm2" {
             return "iTerm"
@@ -340,6 +345,10 @@ public extension GeminiHookPayload {
 
         if environment["ZELLIJ"] != nil {
             return "Zellij"
+        }
+
+        if environment["HERDR_ENV"] != nil {
+            return "Herdr"
         }
 
         if environment["GHOSTTY_RESOURCES_DIR"] != nil {

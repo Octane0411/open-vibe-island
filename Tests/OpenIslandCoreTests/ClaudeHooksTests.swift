@@ -303,6 +303,52 @@ struct ClaudeHooksTests {
     }
 
     @Test
+    func claudeInferTerminalAppRecognizesHerdrViaEnvVar() {
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: ["HERDR_ENV": "1", "HERDR_PANE_ID": "w2:p1"],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+        )
+
+        #expect(payload.terminalApp == "Herdr")
+    }
+
+    @Test
+    func claudeHerdrEncodesPaneAndSocketWithPipeSeparator() {
+        // herdr pane ids contain a colon (e.g. "w2:p1"), so the encoding must
+        // use "|" instead of Zellij's ":" and carry the session socket.
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: [
+                "HERDR_ENV": "1",
+                "HERDR_PANE_ID": "w2:p1",
+                "HERDR_SOCKET_PATH": "/Users/x/.config/herdr/sessions/main/herdr.sock",
+            ],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+        )
+
+        #expect(payload.terminalApp == "Herdr")
+        #expect(payload.terminalSessionID == "w2:p1|/Users/x/.config/herdr/sessions/main/herdr.sock")
+    }
+
+    @Test
+    func claudeHerdrEncodesPaneOnlyWhenSocketMissing() {
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: ["HERDR_ENV": "1", "HERDR_PANE_ID": "w2:p1"],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+        )
+
+        #expect(payload.terminalSessionID == "w2:p1")
+    }
+
+    @Test
     func claudeDefaultJumpTargetUsesUnknownSentinelForUnrecognizedTerminal() {
         let payload = ClaudeHookPayload(
             cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"

@@ -52,7 +52,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 
 **10 agents**: Claude Code, Codex, Cursor, Gemini CLI, Kimi CLI, OpenCode, Qoder, Qwen Code, Factory, CodeBuddy
 
-**15+ terminals & IDEs**: Terminal.app, Ghostty, iTerm2, WezTerm, Zellij, tmux, cmux, Kaku, VS Code, Cursor, Windsurf, Trae, JetBrains IDEs (IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover)
+**15+ terminals & IDEs**: Terminal.app, Ghostty, iTerm2, WezTerm, Zellij, herdr, tmux, cmux, Kaku, VS Code, Cursor, Windsurf, Trae, JetBrains IDEs (IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover)
 
 <details>
 <summary>Full compatibility table</summary>
@@ -86,6 +86,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 | **iTerm2** | Full | Jump-back with session ID / TTY matching |
 | **tmux** (multiplexer) | Full | Jump-back with session/window/pane targeting |
 | **Zellij** | Full | Jump-back via CLI pane/tab targeting |
+| **herdr** (multiplexer) | Full | Jump-back via `herdr agent focus` pane targeting |
 | **VS Code** | Workspace | Activate workspace via `code` CLI |
 | **Cursor** | Workspace | Activate workspace via `cursor` CLI |
 | **Windsurf** | Workspace | Activate workspace via `windsurf` CLI |
@@ -281,7 +282,7 @@ Developers who already live in the terminal and want a better way to work with c
 
 ### Terminal Support
 
-- **Terminal.app**, **Ghostty**, **cmux**, **Kaku**, **WezTerm**, **iTerm2**, and **Zellij** — Full jump-back support with session attachment matching (cmux via Unix socket API, Kaku/WezTerm/Zellij via CLI pane targeting, iTerm2 via AppleScript session/TTY probe)
+- **Terminal.app**, **Ghostty**, **cmux**, **Kaku**, **WezTerm**, **iTerm2**, **Zellij**, and **herdr** — Full jump-back support with session attachment matching (cmux via Unix socket API, Kaku/WezTerm/Zellij via CLI pane targeting, herdr via `herdr agent focus`, iTerm2 via AppleScript session/TTY probe)
 - **VS Code**, **VS Code Insiders**, **Cursor**, **Windsurf**, **Trae** — Workspace-level jump via respective CLI (`code -r`, `cursor -r`, etc.)
 - **JetBrains IDEs** (IntelliJ IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover) — Workspace-level jump via IDE CLI launcher
 - **Warp** — Precision tab jump via SQLite pane lookup, pid-based sibling-tab disambiguation, and AX menu click

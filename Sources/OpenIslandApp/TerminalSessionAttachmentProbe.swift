@@ -731,10 +731,11 @@ struct TerminalSessionAttachmentProbe {
             terminalSessionID: snapshot.sessionID
         )
 
-        // Zellij runs inside Ghostty but has its own jump-back mechanism
-        // via pane IDs. Don't overwrite Zellij's terminal info with
-        // Ghostty's session ID, as it would break Zellij pane targeting.
-        if jumpTarget.terminalApp.lowercased() == "zellij" {
+        // Zellij and herdr run inside Ghostty but have their own jump-back
+        // mechanism via pane IDs. Don't overwrite their terminal info with
+        // Ghostty's session ID, as it would break pane targeting.
+        let multiplexerApp = jumpTarget.terminalApp.lowercased()
+        if multiplexerApp == "zellij" || multiplexerApp == "herdr" {
             return nil
         }
 
