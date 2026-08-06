@@ -148,20 +148,24 @@ struct PiIntegrationTests {
     }
 
     @Test
-    func sessionRegistryRestoreSkipsDemoHookManagedGrace() {
+    func sessionRegistryRestoreSkipsDemoHookManagedGrace() throws {
         let restoredAt = Date(timeIntervalSince1970: 88_000)
-        var demo = AgentSession(
-            id: "pi-demo",
-            title: "Pi demo",
-            tool: .pi,
-            origin: .demo,
-            attachmentState: .attached,
-            phase: .completed,
-            summary: "Demo",
-            updatedAt: restoredAt.addingTimeInterval(-10),
-            firstSeenAt: restoredAt.addingTimeInterval(-20)
+        let startedAt = restoredAt.addingTimeInterval(-10)
+        var state = SessionState()
+        state.apply(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: "pi-demo",
+                    title: "Pi demo",
+                    tool: .pi,
+                    origin: .demo,
+                    initialPhase: .completed,
+                    summary: "Demo",
+                    timestamp: startedAt
+                )
+            )
         )
-        demo.isHookManaged = false
+        let demo = try #require(state.session(id: "pi-demo"))
 
         let restored = PiTrackedSessionRecord(session: demo).restorableSession(at: restoredAt)
         #expect(restored.attachmentState == .stale)
