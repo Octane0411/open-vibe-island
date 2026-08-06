@@ -1199,7 +1199,10 @@ struct TerminalJumpService {
             return exact
         }
 
-        return Self.knownApps.first(where: isInstalled(descriptor:))
+        // Fail closed when the reported host is unknown. Falling back to the
+        // first installed known app made multi-terminal setups always jump to
+        // whichever terminal happened to appear first in `knownApps` (#511).
+        return nil
     }
 
     private func normalizeTerminalAppName(_ preferredName: String) -> String {

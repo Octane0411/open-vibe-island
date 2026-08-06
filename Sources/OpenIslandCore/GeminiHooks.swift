@@ -365,7 +365,8 @@ public extension GeminiHookPayload {
         case .some("kaku"):
             return "Kaku"
         case .some("vscode"):
-            return "VS Code"
+            // Cursor also sets TERM_PROGRAM=vscode; disambiguate like Claude hooks (#511).
+            return TerminalAppInference.resolveVSCodeFamilyHost(from: environment)
         case .some("vscode-insiders"):
             return "VS Code Insiders"
         case .some("windsurf"):

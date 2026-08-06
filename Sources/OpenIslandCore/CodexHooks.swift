@@ -711,7 +711,8 @@ public extension CodexHookPayload {
             case "kaku":
                 return "Kaku"
             case "vscode":
-                return "VS Code"
+                // Cursor also sets TERM_PROGRAM=vscode; disambiguate like Claude hooks (#511).
+                return TerminalAppInference.resolveVSCodeFamilyHost(from: environment)
             case "vscode-insiders":
                 return "VS Code Insiders"
             case "windsurf":

@@ -357,6 +357,42 @@ struct TerminalJumpServiceTests {
         )
     }
 
+    /// #511: unmatched host names (not just the "Unknown" sentinel) must not
+    /// silently activate the first installed known terminal.
+    @Test
+    func unrecognizedTerminalAppNameFallsBackToFinderInsteadOfFirstInstalled() throws {
+        let openedArguments = OpenedArgumentsBox()
+        let service = TerminalJumpService(
+            applicationResolver: { bundleIdentifier in
+                bundleIdentifier == "com.googlecode.iterm2" ? URL(fileURLWithPath: "/Applications/iTerm.app") : nil
+            },
+            appRunningChecker: { _ in false },
+            openAction: { arguments in
+                openedArguments.values.append(arguments)
+            },
+            appleScriptRunner: { _ in "" }
+        )
+
+        let result = try service.jump(
+            to: JumpTarget(
+                terminalApp: "SomeWeirdTerminal",
+                workspaceName: "my-project",
+                paneTitle: "",
+                workingDirectory: "/tmp"
+            )
+        )
+
+        #expect(openedArguments.values == [["/tmp"]])
+        #expect(
+            !openedArguments.values.contains(where: { $0.contains("-b") }),
+            "must not open -b for an unmatched terminal host"
+        )
+        #expect(
+            result.contains("Finder"),
+            "Expected Finder fallback, got: \(result)"
+        )
+    }
+
     @Test
     func traeJumpActivatesRunningTraeCNApp() throws {
         let openedArguments = OpenedArgumentsBox()
