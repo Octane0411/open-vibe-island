@@ -9,6 +9,7 @@ public struct PiTrackedSessionRecord: Equatable, Codable, Sendable {
     public var summary: String
     public var phase: SessionPhase
     public var updatedAt: Date
+    public var firstSeenAt: Date?
     public var jumpTarget: JumpTarget?
     public var piMetadata: PiSessionMetadata?
 
@@ -21,6 +22,7 @@ public struct PiTrackedSessionRecord: Equatable, Codable, Sendable {
         summary = session.summary
         phase = session.phase
         updatedAt = session.updatedAt
+        firstSeenAt = session.firstSeenAt
         jumpTarget = session.jumpTarget
         piMetadata = session.piMetadata
     }
@@ -35,14 +37,21 @@ public struct PiTrackedSessionRecord: Equatable, Codable, Sendable {
             phase: phase,
             summary: summary,
             updatedAt: updatedAt,
+            firstSeenAt: firstSeenAt,
             jumpTarget: jumpTarget,
             piMetadata: piMetadata
         )
     }
 
-    public var restorableSession: AgentSession {
+    public func restorableSession(at restoredAt: Date) -> AgentSession {
         var restored = session
         restored.attachmentState = .stale
+
+        if restored.origin != .demo {
+            restored.isHookManaged = true
+            restored.heartbeatReconnectStartedAt = restoredAt
+        }
+
         return restored
     }
 }

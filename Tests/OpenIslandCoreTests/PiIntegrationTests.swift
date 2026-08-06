@@ -69,6 +69,7 @@ struct PiIntegrationTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let registry = PiSessionRegistry(fileURL: root.appendingPathComponent("sessions.json"))
         let timestamp = Date(timeIntervalSince1970: 12_345)
+        let firstSeenAt = Date(timeIntervalSince1970: 12_000)
         let sessions = [AgentTool.pi, .ohMyPi].map { tool in
             AgentSession(
                 id: "\(tool.rawValue)-session",
@@ -79,7 +80,7 @@ struct PiIntegrationTests {
                 phase: .running,
                 summary: "Working",
                 updatedAt: timestamp,
-                firstSeenAt: timestamp,
+                firstSeenAt: firstSeenAt,
                 jumpTarget: JumpTarget(
                     terminalApp: "Ghostty",
                     workspaceName: "open-island",
@@ -96,10 +97,98 @@ struct PiIntegrationTests {
         }
 
         try registry.save(sessions.map(PiTrackedSessionRecord.init(session:)))
-        let restored = try registry.load().map(\.restorableSession)
+        let loaded = try registry.load()
+        let restoredAt = timestamp
+        let restored = loaded.map { $0.restorableSession(at: restoredAt) }
 
         #expect(restored.map(\.tool) == [.pi, .ohMyPi])
         #expect(restored.allSatisfy { $0.piMetadata?.model == "gpt-5.6" })
         #expect(restored.allSatisfy { $0.jumpTarget?.terminalApp == "Ghostty" })
+        #expect(loaded.allSatisfy { $0.firstSeenAt == firstSeenAt })
+        #expect(restored.allSatisfy { $0.firstSeenAt == firstSeenAt })
+        #expect(restored.allSatisfy { $0.updatedAt == timestamp })
+        #expect(restored.allSatisfy { $0.isHookManaged })
+        #expect(restored.allSatisfy { $0.isProcessAlive == false })
+        #expect(restored.allSatisfy { $0.lastHeartbeatAt == nil })
+        #expect(restored.allSatisfy { $0.heartbeatReconnectStartedAt == restoredAt })
+        #expect(restored.allSatisfy { $0.attachmentState == .stale })
+        #expect(restored.allSatisfy { $0.phase == .running })
+    }
+
+    @Test
+    func sessionRegistryDecodesLegacyRecordsWithoutFirstSeenAt() throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let legacyJSON = Data(
+            """
+            {
+              "sessionID": "pi-legacy",
+              "title": "Pi",
+              "tool": "pi",
+              "attachmentState": "attached",
+              "summary": "Working",
+              "phase": "running",
+              "updatedAt": "2026-01-01T00:00:00Z"
+            }
+            """.utf8
+        )
+
+        let record = try decoder.decode(PiTrackedSessionRecord.self, from: legacyJSON)
+        #expect(record.firstSeenAt == nil)
+
+        let restoredAt = Date(timeIntervalSince1970: 99_000)
+        let restored = record.restorableSession(at: restoredAt)
+        let legacyUpdated = ISO8601DateFormatter().date(from: "2026-01-01T00:00:00Z")
+        #expect(restored.firstSeenAt == legacyUpdated)
+        #expect(restored.updatedAt == legacyUpdated)
+        #expect(restored.isHookManaged)
+        #expect(restored.heartbeatReconnectStartedAt == restoredAt)
+        #expect(restored.lastHeartbeatAt == nil)
+        #expect(restored.isProcessAlive == false)
+    }
+
+    @Test
+    func sessionRegistryRestoreSkipsDemoHookManagedGrace() {
+        let restoredAt = Date(timeIntervalSince1970: 88_000)
+        var demo = AgentSession(
+            id: "pi-demo",
+            title: "Pi demo",
+            tool: .pi,
+            origin: .demo,
+            attachmentState: .attached,
+            phase: .completed,
+            summary: "Demo",
+            updatedAt: restoredAt.addingTimeInterval(-10),
+            firstSeenAt: restoredAt.addingTimeInterval(-20)
+        )
+        demo.isHookManaged = false
+
+        let restored = PiTrackedSessionRecord(session: demo).restorableSession(at: restoredAt)
+        #expect(restored.attachmentState == .stale)
+        #expect(restored.isHookManaged == false)
+        #expect(restored.heartbeatReconnectStartedAt == nil)
+        #expect(restored.lastHeartbeatAt == nil)
+    }
+
+    @Test
+    func sessionRegistryRestoreTreatsNilOriginAsLive() {
+        let restoredAt = Date(timeIntervalSince1970: 77_000)
+        let legacy = AgentSession(
+            id: "omp-legacy",
+            title: "OMP legacy",
+            tool: .ohMyPi,
+            origin: nil,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Working",
+            updatedAt: restoredAt.addingTimeInterval(-3_600),
+            firstSeenAt: restoredAt.addingTimeInterval(-7_200)
+        )
+
+        let restored = PiTrackedSessionRecord(session: legacy).restorableSession(at: restoredAt)
+        #expect(restored.isHookManaged)
+        #expect(restored.heartbeatReconnectStartedAt == restoredAt)
+        #expect(restored.lastHeartbeatAt == nil)
+        #expect(restored.updatedAt == restoredAt.addingTimeInterval(-3_600))
     }
 }

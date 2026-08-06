@@ -424,6 +424,11 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     /// Runtime-only: persistence caches presentation data, not liveness facts.
     public var lastHeartbeatAt: Date?
 
+    /// Startup-only grace anchor for a restored Pi/OMP session that is waiting
+    /// for its extension to resume heartbeat delivery.
+    /// Runtime-only: never persisted, and cleared on the first real liveness signal.
+    public var heartbeatReconnectStartedAt: Date?
+
     public init(
         id: String,
         title: String,

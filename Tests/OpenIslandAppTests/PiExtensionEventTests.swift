@@ -42,11 +42,14 @@ struct PiExtensionEventTests {
         let output = stdout.fileHandleForReading.readDataToEndOfFile()
         let errorOutput = stderr.fileHandleForReading.readDataToEndOfFile()
         guard process.terminationStatus == 0 else {
+            let errorDescription =
+                String(bytes: errorOutput, encoding: .utf8)
+                ?? "Pi extension event harness produced non-UTF-8 stderr."
             throw NSError(
                 domain: "PiExtensionEventTests",
                 code: Int(process.terminationStatus),
                 userInfo: [
-                    NSLocalizedDescriptionKey: String(decoding: errorOutput, as: UTF8.self),
+                    NSLocalizedDescriptionKey: errorDescription,
                 ]
             )
         }
@@ -73,6 +76,62 @@ struct PiExtensionEventTests {
         #expect(!registered.contains("tool_call"))
         #expect(!registered.contains("tool_result"))
     }
+
+    @Test(arguments: ["abc", "0", "-1", "1.5", "999999999999999999999"])
+    func rejectsIllegalHeartbeatIntervalWithoutStorm(interval: String) throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-pi-heartbeat-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let socketURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("oi-hb-\(UUID().uuidString.prefix(8)).sock")
+        defer { try? FileManager.default.removeItem(at: socketURL) }
+
+        let sourceURL = try #require(
+            Bundle.appResources.url(forResource: "open-island-pi", withExtension: "ts")
+        )
+        let manager = PiExtensionInstallationManager(agent: .pi, agentDirectory: root)
+        let installed = try manager.install(extensionSourceData: Data(contentsOf: sourceURL))
+        let harnessURL = root.appendingPathComponent("heartbeat-harness.mjs")
+        try Data(Self.illegalHeartbeatHarness.utf8).write(to: harnessURL)
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = [
+            "node",
+            harnessURL.path,
+            installed.extensionURL.path,
+            socketURL.path,
+            interval,
+        ]
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+        try process.run()
+        process.waitUntilExit()
+
+        let output = stdout.fileHandleForReading.readDataToEndOfFile()
+        let errorOutput = stderr.fileHandleForReading.readDataToEndOfFile()
+        guard process.terminationStatus == 0 else {
+            let errorDescription =
+                String(bytes: errorOutput, encoding: .utf8)
+                ?? "Pi extension event harness produced non-UTF-8 stderr."
+            throw NSError(
+                domain: "PiExtensionEventTests",
+                code: Int(process.terminationStatus),
+                userInfo: [
+                    NSLocalizedDescriptionKey: errorDescription,
+                ]
+            )
+        }
+
+        let result = try #require(
+            try JSONSerialization.jsonObject(with: output) as? [String: Any]
+        )
+        #expect(result["heartbeatCount"] as? Int == 0)
+    }
+
 
     private static let nodeHarness = #"""
     import { createServer } from "node:net";
@@ -158,5 +217,57 @@ struct PiExtensionEventTests {
       heartbeatCountAfterShutdown,
       shutdownWasAwaitable,
     }));
+    """#
+
+    private static let illegalHeartbeatHarness = #"""
+    import { createServer } from "node:net";
+    import { unlink } from "node:fs/promises";
+    import { pathToFileURL } from "node:url";
+
+    const [extensionPath, socketPath, interval] = process.argv.slice(2);
+    process.env.OPEN_ISLAND_SOCKET_PATH = socketPath;
+    process.env.OPEN_ISLAND_HEARTBEAT_INTERVAL_MS = interval;
+    await unlink(socketPath).catch(() => {});
+
+    const commands = [];
+    const server = createServer((socket) => {
+      let buffer = "";
+      socket.on("data", (chunk) => { buffer += chunk; });
+      socket.on("end", () => {
+        for (const line of buffer.trim().split("\n")) {
+          if (line) commands.push(JSON.parse(line).command.piHook.hook_event_name);
+        }
+      });
+    });
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(socketPath, resolve);
+    });
+
+    const extension = await import(`${pathToFileURL(extensionPath).href}?test=${Date.now()}`);
+    const handlers = new Map();
+    extension.default({
+      on(name, handler) {
+        if (handlers.has(name)) throw new Error(`duplicate handler: ${name}`);
+        handlers.set(name, handler);
+      },
+    });
+
+    const context = {
+      cwd: "/tmp/open-island",
+      sessionManager: {
+        getSessionId: () => "heartbeat-interval",
+        getSessionFile: () => "/tmp/open-island/session.jsonl",
+      },
+    };
+    handlers.get("session_start")?.({}, context);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    const heartbeatCount = commands.filter((name) => name === "Heartbeat").length;
+    const shutdownResult = handlers.get("session_shutdown")?.({ reason: "quit" }, context);
+    if (shutdownResult instanceof Promise) await shutdownResult;
+    await new Promise((resolve) => server.close(resolve));
+    await unlink(socketPath).catch(() => {});
+
+    console.log(JSON.stringify({ heartbeatCount }));
     """#
 }

@@ -181,7 +181,10 @@ final class SessionDiscoveryCoordinator {
         }
 
         if !payload.piRecords.isEmpty {
-            let restoredSessions = payload.piRecords.map(\.restorableSession)
+            let restoredAt = Date.now
+            let restoredSessions = payload.piRecords.map {
+                $0.restorableSession(at: restoredAt)
+            }
             state = SessionState(sessions: mergeDiscoveredSessions(restoredSessions))
             onStatusMessage?("Restored \(payload.piRecords.count) recent Pi session(s) from local registry.")
         }

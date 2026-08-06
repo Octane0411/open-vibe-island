@@ -85,6 +85,7 @@ public struct SessionState: Equatable, Sendable {
             session.isProcessAlive = true
             if payload.tool == .pi || payload.tool == .ohMyPi {
                 session.lastHeartbeatAt = payload.timestamp
+                session.heartbeatReconnectStartedAt = nil
             }
             session.processNotSeenCount = 0
             upsert(session)
@@ -237,6 +238,7 @@ public struct SessionState: Equatable, Sendable {
             session.isProcessAlive = true
             session.processNotSeenCount = 0
             session.lastHeartbeatAt = payload.timestamp
+            session.heartbeatReconnectStartedAt = nil
             upsert(session)
 
         case let .actionableStateResolved(payload):
@@ -374,6 +376,7 @@ public struct SessionState: Equatable, Sendable {
             guard !session.isSessionEnded else { return }
             session.isHookManaged = true
             session.lastHeartbeatAt = timestamp
+            session.heartbeatReconnectStartedAt = nil
         }
 
         guard !session.isProcessAlive
@@ -484,15 +487,23 @@ public struct SessionState: Equatable, Sendable {
         for (id, var session) in sessionsByID {
             guard session.tool == .pi || session.tool == .ohMyPi,
                   session.isHookManaged,
-                  !session.isSessionEnded,
-                  let lastHeartbeatAt = session.lastHeartbeatAt,
-                  lastHeartbeatAt < deadline else {
+                  !session.isSessionEnded else {
+                continue
+            }
+
+            let livenessAnchor =
+                session.lastHeartbeatAt
+                ?? session.heartbeatReconnectStartedAt
+
+            guard let livenessAnchor,
+                  livenessAnchor < deadline else {
                 continue
             }
 
             session.isSessionEnded = true
             session.isProcessAlive = false
             session.phase = .completed
+            session.heartbeatReconnectStartedAt = nil
             upsert(session)
             expired.insert(id)
         }

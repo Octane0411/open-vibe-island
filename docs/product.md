@@ -45,6 +45,7 @@ CLI coding agents are powerful, but they pull attention away from the editor and
 | **WezTerm** | Full Support | Jump-back via CLI pane targeting |
 | **iTerm2** | Full Support | Jump-back with session ID / TTY matching |
 | **tmux** (multiplexer) | Full Support | Jump-back with session/window/pane targeting |
+| **Otty** | Full Support | Jump-back with TTY targeting via AppleScript |
 | **Warp** | Planned | Fallback detection only |
 
 ## Features

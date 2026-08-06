@@ -332,6 +332,56 @@ struct ActiveAgentProcessDiscoveryTests {
         )))
     }
 
+    @Test
+    func discoverRecognizesOttyParentForPiAndOhMyPi() {
+        let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
+            if executablePath == "/bin/ps" {
+                return """
+                  101 301 ttys001 /opt/homebrew/bin/pi
+                  102 302 ttys002 /opt/homebrew/bin/omp
+                  301 900 ttys001 -/opt/homebrew/bin/fish
+                  302 901 ttys002 -/opt/homebrew/bin/fish
+                  900 1 ?? /Applications/Otty.app/Contents/MacOS/Otty
+                  901 1 ?? /Applications/Otty.app/Contents/MacOS/Otty
+                """
+            }
+            guard executablePath == "/usr/sbin/lsof",
+                  let pid = arguments.dropFirst(2).first else {
+                return nil
+            }
+            return """
+            fcwd
+            n/tmp/\(pid == "101" ? "pi-otty" : "omp-otty")
+            """
+        }
+
+        let snapshots = discovery.discover()
+
+        #expect(snapshots.contains(.init(
+            tool: .pi,
+            sessionID: nil,
+            workingDirectory: "/tmp/pi-otty",
+            terminalTTY: "/dev/ttys001",
+            terminalApp: "Otty"
+        )))
+        #expect(snapshots.contains(.init(
+            tool: .ohMyPi,
+            sessionID: nil,
+            workingDirectory: "/tmp/omp-otty",
+            terminalTTY: "/dev/ttys002",
+            terminalApp: "Otty"
+        )))
+    }
+
+    @MainActor
+    @Test
+    func supportedTerminalAppNormalizesOttyAliases() {
+        let coordinator = ProcessMonitoringCoordinator()
+        #expect(coordinator.supportedTerminalApp(for: "otty") == "Otty")
+        #expect(coordinator.supportedTerminalApp(for: "Otty") == "Otty")
+        #expect(coordinator.supportedTerminalApp(for: " OTTY ") == "Otty")
+    }
+
     @MainActor
     @Test
     func genericPiProcessesDoNotKeepUnrelatedSessionsAlive() {

@@ -288,6 +288,126 @@ struct SessionStateTests {
         #expect(state.session(id: "pi-ended")?.lastHeartbeatAt == startedAt)
     }
 
+    @Test(arguments: [AgentTool.pi, .ohMyPi])
+    func restoredPiSessionUsesReconnectGraceUntilHeartbeat(tool: AgentTool) {
+        let restoredAt = Date(timeIntervalSince1970: 50_000)
+        let updatedAt = restoredAt.addingTimeInterval(-3_600)
+        let firstSeenAt = restoredAt.addingTimeInterval(-7_200)
+        let record = PiTrackedSessionRecord(
+            session: AgentSession(
+                id: "\(tool.rawValue)-restored",
+                title: tool.displayName,
+                tool: tool,
+                origin: .live,
+                attachmentState: .attached,
+                phase: .running,
+                summary: "Still working",
+                updatedAt: updatedAt,
+                firstSeenAt: firstSeenAt
+            )
+        )
+        let restored = record.restorableSession(at: restoredAt)
+        #expect(restored.isHookManaged)
+        #expect(restored.isProcessAlive == false)
+        #expect(restored.lastHeartbeatAt == nil)
+        #expect(restored.heartbeatReconnectStartedAt == restoredAt)
+        #expect(restored.attachmentState == .stale)
+        #expect(restored.phase == .running)
+        #expect(restored.firstSeenAt == firstSeenAt)
+
+        var state = SessionState(sessions: [restored])
+
+        // Within the reconnect window, stale updatedAt must not expire the session.
+        // Production passes `now - 45s` as the deadline; at restoredAt + 45s that is
+        // still equal to the reconnect anchor and therefore not expired.
+        #expect(state.expireStalePiHeartbeats(before: restoredAt).isEmpty)
+        #expect(state.session(id: restored.id)?.isVisibleInIsland == true)
+        #expect(state.session(id: restored.id)?.phase == .running)
+        #expect(state.session(id: restored.id)?.summary == "Still working")
+
+        let heartbeatAt = restoredAt.addingTimeInterval(12)
+        state.apply(
+            .sessionHeartbeat(
+                SessionHeartbeat(
+                    sessionID: restored.id,
+                    timestamp: heartbeatAt
+                )
+            )
+        )
+
+        let live = state.session(id: restored.id)
+        #expect(live?.lastHeartbeatAt == heartbeatAt)
+        #expect(live?.heartbeatReconnectStartedAt == nil)
+        #expect(live?.isHookManaged == true)
+        #expect(live?.isProcessAlive == true)
+        #expect(live?.phase == .running)
+        #expect(live?.summary == "Still working")
+        #expect(live?.updatedAt == updatedAt)
+
+        #expect(state.expireStalePiHeartbeats(before: heartbeatAt).isEmpty)
+        #expect(state.expireStalePiHeartbeats(
+            before: heartbeatAt.addingTimeInterval(1)
+        ) == [restored.id])
+    }
+
+    @Test
+    func restoredPiSessionExpiresAfterReconnectGraceWithoutHeartbeat() {
+        let restoredAt = Date(timeIntervalSince1970: 60_000)
+        let restored = PiTrackedSessionRecord(
+            session: AgentSession(
+                id: "pi-stale-restore",
+                title: "Pi",
+                tool: .pi,
+                origin: .live,
+                phase: .running,
+                summary: "Orphaned",
+                updatedAt: restoredAt.addingTimeInterval(-120)
+            )
+        ).restorableSession(at: restoredAt)
+
+        var state = SessionState(sessions: [restored])
+        #expect(state.expireStalePiHeartbeats(before: restoredAt).isEmpty)
+
+        #expect(state.expireStalePiHeartbeats(
+            before: restoredAt.addingTimeInterval(1)
+        ) == ["pi-stale-restore"])
+
+        let ended = state.session(id: "pi-stale-restore")
+        #expect(ended?.isSessionEnded == true)
+        #expect(ended?.isProcessAlive == false)
+        #expect(ended?.phase == .completed)
+        #expect(ended?.heartbeatReconnectStartedAt == nil)
+        #expect(ended?.isVisibleInIsland == false)
+    }
+
+    @Test
+    func markSingleSessionAliveClearsPiReconnectGrace() {
+        let restoredAt = Date(timeIntervalSince1970: 70_000)
+        let hookAt = restoredAt.addingTimeInterval(5)
+        let restored = PiTrackedSessionRecord(
+            session: AgentSession(
+                id: "omp-hook-alive",
+                title: "OMP",
+                tool: .ohMyPi,
+                origin: .live,
+                phase: .completed,
+                summary: "Ready",
+                updatedAt: restoredAt.addingTimeInterval(-30)
+            )
+        ).restorableSession(at: restoredAt)
+
+        var state = SessionState(sessions: [restored])
+        state.markSingleSessionAlive(sessionID: "omp-hook-alive", at: hookAt)
+
+        let live = state.session(id: "omp-hook-alive")
+        #expect(live?.lastHeartbeatAt == hookAt)
+        #expect(live?.heartbeatReconnectStartedAt == nil)
+        #expect(live?.isHookManaged == true)
+        #expect(live?.isProcessAlive == true)
+        #expect(live?.phase == .completed)
+    }
+
+
 
     @Test
     func resolvesUserActionsAndKeepsSessionsSortedByRecency() {

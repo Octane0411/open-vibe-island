@@ -9,9 +9,26 @@ const SESSION_PREFIX = AGENT_SOURCE === "oh-my-pi" ? "omp" : "pi";
 const SOCKET_PATH =
   process.env.OPEN_ISLAND_SOCKET_PATH ||
   `${process.env.HOME || homedir()}/Library/Application Support/OpenIsland/bridge.sock`;
-const HEARTBEAT_INTERVAL_MS = Number.parseInt(
-  process.env.OPEN_ISLAND_HEARTBEAT_INTERVAL_MS || "15000",
-  10,
+const DEFAULT_HEARTBEAT_INTERVAL_MS = 15_000;
+const MAX_TIMER_INTERVAL_MS = 2_147_483_647;
+
+function heartbeatIntervalFromEnvironment(value: string | undefined): number {
+  if (value === undefined) return DEFAULT_HEARTBEAT_INTERVAL_MS;
+
+  const parsed = Number(value);
+  if (
+    !Number.isSafeInteger(parsed)
+    || parsed <= 0
+    || parsed > MAX_TIMER_INTERVAL_MS
+  ) {
+    return DEFAULT_HEARTBEAT_INTERVAL_MS;
+  }
+
+  return parsed;
+}
+
+const HEARTBEAT_INTERVAL_MS = heartbeatIntervalFromEnvironment(
+  process.env.OPEN_ISLAND_HEARTBEAT_INTERVAL_MS,
 );
 
 interface SessionManagerLike {
