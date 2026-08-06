@@ -394,11 +394,17 @@ final class AppModel {
         for profile: IslandAppearanceDisplayProfile,
         _ update: (inout IslandAppearancePreferences) -> Void
     ) {
+        // Copy → mutate → assign so `@Observable` + `didSet` always see a full
+        // writeback (inout on a tracked property is not reliable across observers).
         switch profile {
         case .notch:
-            update(&notchAppearancePreferences)
+            var preferences = notchAppearancePreferences
+            update(&preferences)
+            notchAppearancePreferences = preferences
         case .topBar:
-            update(&topBarAppearancePreferences)
+            var preferences = topBarAppearancePreferences
+            update(&preferences)
+            topBarAppearancePreferences = preferences
         }
     }
 
@@ -411,7 +417,21 @@ final class AppModel {
             oldValue.completedStaleThreshold != newValue.completedStaleThreshold {
             _cachedSessionBuckets = nil
         }
-        refreshOverlayPlacementIfVisible()
+
+        // Session list presentation prefs only affect the open list layout —
+        // not closed-island geometry. Repositioning here can establish or flip
+        // `overlayPlacementDiagnostics` mid-update, which changes
+        // `activeAppearanceProfile` and makes later convenience-setter reads
+        // hit a different profile than the one just written.
+        let affectsOverlayChrome =
+            oldValue.rightSlot != newValue.rightSlot
+            || oldValue.centerLabel != newValue.centerLabel
+            || oldValue.usageDisplay != newValue.usageDisplay
+            || oldValue.sessionStateIndicator != newValue.sessionStateIndicator
+
+        if affectsOverlayChrome {
+            refreshOverlayPlacementIfVisible()
+        }
     }
 
     private func persistAppearancePreferences(

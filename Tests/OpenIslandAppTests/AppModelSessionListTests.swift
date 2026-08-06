@@ -310,6 +310,27 @@ struct AppModelSessionListTests {
         #expect(model.islandListSessions.map(\.id) == ["fresh-completed", "stale-completed"])
     }
 
+    /// Convenience setters must write and read the same active appearance
+    /// profile. A regression used to flip `overlayPlacementDiagnostics` (and
+    /// thus `activeAppearanceProfile`) mid-update when list prefs triggered a
+    /// full overlay reposition, so later gets hit defaults on the other profile.
+    @Test
+    func appearancePreferenceSettersStickOnActiveProfile() {
+        let model = AppModel()
+        let profileBefore = model.activeAppearanceProfile
+
+        model.islandSessionGroup = .state
+        model.islandSessionSort = .lastUpdate
+        model.completedStaleThreshold = .fiveMinutes
+
+        #expect(model.activeAppearanceProfile == profileBefore)
+        #expect(model.islandSessionGroup == .state)
+        #expect(model.islandSessionSort == .lastUpdate)
+        #expect(model.completedStaleThreshold == .fiveMinutes)
+        #expect(model.appearancePreferences(for: profileBefore).sessionGroup == .state)
+        #expect(model.appearancePreferences(for: profileBefore).sessionSort == .lastUpdate)
+    }
+
     @Test
     func islandSessionSectionsGroupStaleCompletedIntoIdle() {
         let now = Date()

@@ -6,6 +6,17 @@ import OpenIslandCore
 
 @MainActor
 struct AgentsGridRightSlotTests {
+    init() {
+        // Appearance right-slot is persisted per display profile. Clear both so
+        // suite order / prior tests cannot leave `.agents` (or `.count`) sticky
+        // across instances via UserDefaults.
+        [
+            "appearance.island.v6.rightSlot",
+            "appearance.island.v8.notch.rightSlot",
+            "appearance.island.v8.topBar.rightSlot",
+        ].forEach(UserDefaults.standard.removeObject(forKey:))
+    }
+
     /// At bulk first observation (e.g. app launch) ties are broken by
     /// session.firstSeenAt so historical order is preserved.
     @Test
