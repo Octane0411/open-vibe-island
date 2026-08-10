@@ -78,10 +78,12 @@ enum IslandSessionStateIndicator: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
+    /// Returns no SwiftUI timeline because active dots animate in Core Animation.
     func timelineInterval(presence: IslandSessionPresence, isActionable: Bool) -> TimeInterval? {
         nil
     }
 
+    /// Whether this state needs the isolated Core Animation pulse view.
     func usesLayerAnimation(presence: IslandSessionPresence, isActionable: Bool) -> Bool {
         self == .animatedDot && (presence == .running || isActionable)
     }

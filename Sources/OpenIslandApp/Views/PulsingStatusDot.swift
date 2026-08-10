@@ -18,6 +18,7 @@ struct PulsingStatusDot: NSViewRepresentable {
         nsView.update(tint: NSColor(tint))
     }
 
+    /// Hosts the animating layers without invalidating the enclosing SwiftUI row.
     final class LayerView: NSView {
         private let dotLayer = CAShapeLayer()
         private var tintColor = NSColor.white
@@ -38,6 +39,7 @@ struct PulsingStatusDot: NSViewRepresentable {
             fatalError("init(coder:) has not been implemented")
         }
 
+        /// Updates the visible tint while preserving an existing pulse animation.
         func update(tint: NSColor) {
             tintColor = tint
             updateColors()
