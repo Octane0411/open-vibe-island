@@ -4,6 +4,44 @@ import Testing
 
 struct OverlayPanelControllerTests {
     @Test
+    func standaloneWheelEventsUseImmediateScrolling() {
+        #expect(ImmediateWheelScrollPolicy.shouldHandleImmediately(
+            phase: [],
+            momentumPhase: []
+        ))
+        #expect(!ImmediateWheelScrollPolicy.shouldHandleImmediately(
+            phase: .changed,
+            momentumPhase: []
+        ))
+        #expect(!ImmediateWheelScrollPolicy.shouldHandleImmediately(
+            phase: [],
+            momentumPhase: .changed
+        ))
+    }
+
+    @Test
+    func immediateWheelScrollingScalesLinesAndClampsPreciseDeltas() {
+        #expect(ImmediateWheelScrollPolicy.targetVerticalOrigin(
+            currentOriginY: 20,
+            scrollingDeltaY: -3,
+            hasPreciseScrollingDeltas: false,
+            maximumOriginY: 200
+        ) == 74)
+        #expect(ImmediateWheelScrollPolicy.targetVerticalOrigin(
+            currentOriginY: 20,
+            scrollingDeltaY: -190,
+            hasPreciseScrollingDeltas: true,
+            maximumOriginY: 200
+        ) == 200)
+        #expect(ImmediateWheelScrollPolicy.targetVerticalOrigin(
+            currentOriginY: 20,
+            scrollingDeltaY: 190,
+            hasPreciseScrollingDeltas: true,
+            maximumOriginY: 200
+        ) == 0)
+    }
+
+    @Test
     func closedSurfaceRectCentersOnNotch() {
         let notchRect = NSRect(x: 200, y: 900, width: 200, height: 38)
         let closedWidth: CGFloat = 320
