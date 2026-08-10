@@ -377,6 +377,11 @@ final class AppModel {
         set { updateAppearancePreferences(for: activeAppearanceProfile) { $0.completedStaleThreshold = newValue } }
     }
 
+    var showIdleSessions: Bool {
+        get { appearancePreferences(for: activeAppearanceProfile).showIdleSessions }
+        set { updateAppearancePreferences(for: activeAppearanceProfile) { $0.showIdleSessions = newValue } }
+    }
+
     @ObservationIgnored
     var openSettingsWindow: (() -> Void)?
 
@@ -408,7 +413,8 @@ final class AppModel {
     ) {
         if oldValue.sessionGroup != newValue.sessionGroup ||
             oldValue.sessionSort != newValue.sessionSort ||
-            oldValue.completedStaleThreshold != newValue.completedStaleThreshold {
+            oldValue.completedStaleThreshold != newValue.completedStaleThreshold ||
+            oldValue.showIdleSessions != newValue.showIdleSessions {
             _cachedSessionBuckets = nil
         }
         refreshOverlayPlacementIfVisible()
@@ -426,6 +432,7 @@ final class AppModel {
         defaults.set(preferences.sessionGroup.rawValue, forKey: Self.appearanceDefaultsKey(profile, "sessionGroup"))
         defaults.set(preferences.sessionSort.rawValue, forKey: Self.appearanceDefaultsKey(profile, "sessionSort"))
         defaults.set(preferences.completedStaleThreshold.rawValue, forKey: Self.appearanceDefaultsKey(profile, "completedStaleThreshold"))
+        defaults.set(preferences.showIdleSessions, forKey: Self.appearanceDefaultsKey(profile, "showIdleSessions"))
     }
 
     // MARK: - Watch Notification
@@ -576,7 +583,8 @@ final class AppModel {
                 rawValue: defaults.string(forKey: appearanceDefaultsKey(profile, "completedStaleThreshold"))
                     ?? defaults.string(forKey: legacyCompletedStaleThresholdDefaultsKey)
                     ?? ""
-            ) ?? .fiveMinutes
+            ) ?? .fiveMinutes,
+            showIdleSessions: defaults.bool(forKey: appearanceDefaultsKey(profile, "showIdleSessions"))
         )
     }
 
@@ -711,7 +719,7 @@ final class AppModel {
     }
 
     var allSessions: [AgentSession] {
-        state.sessions
+        visibleIslandSessions(from: state.sessions)
     }
 
     /// Measured by SwiftUI GeometryReader in notification mode. Used by panel controller for sizing.
@@ -739,7 +747,7 @@ final class AppModel {
     }
 
     var islandSessionSections: [IslandSessionSection] {
-        let sessions = sortIslandSessions(surfacedSessions)
+        let sessions = sortIslandSessions(visibleIslandSessions(from: surfacedSessions))
         switch islandSessionGroup {
         case .none:
             return [
@@ -774,15 +782,27 @@ final class AppModel {
     }
 
     var liveSessionCount: Int {
-        surfacedSessions.count
+        islandListSessions.count
     }
 
     var liveAttentionCount: Int {
-        surfacedSessions.filter { $0.phase.requiresAttention }.count
+        islandListSessions.filter { $0.phase.requiresAttention }.count
     }
 
     var liveRunningCount: Int {
-        surfacedSessions.filter { $0.phase == .running }.count
+        islandListSessions.filter { $0.phase == .running }.count
+    }
+
+    private func visibleIslandSessions(from sessions: [AgentSession], now: Date = .now) -> [AgentSession] {
+        guard !showIdleSessions else { return sessions }
+        return sessions.filter { session in
+            guard session.phase == .completed else { return true }
+            let isIdle = session.isStaleCompletedForIsland(
+                at: now,
+                threshold: completedStaleThreshold.seconds
+            ) || session.islandPresence(at: now) == .inactive
+            return !isIdle
+        }
     }
 
     private func sortIslandSessions(_ sessions: [AgentSession]) -> [AgentSession] {
@@ -842,7 +862,7 @@ final class AppModel {
     /// running; everything else is idle. Completed sessions are absorbed
     /// directly into idle so the pill never stops on a tick glyph.
     var islandClosedMode: UnifiedBars.Mode {
-        let sessions = surfacedSessions
+        let sessions = visibleIslandSessions(from: surfacedSessions)
         if sessions.contains(where: { $0.phase.requiresAttention }) { return .waiting }
         if sessions.contains(where: { $0.phase == .running })       { return .running }
         return .idle
@@ -852,9 +872,10 @@ final class AppModel {
     /// sessions first, then the most recent running one, then whatever's
     /// first.
     var islandClosedSpotlight: AgentSession? {
-        surfacedSessions.first(where: { $0.phase.requiresAttention })
-            ?? surfacedSessions.first(where: { $0.phase == .running })
-            ?? surfacedSessions.first
+        let sessions = visibleIslandSessions(from: surfacedSessions)
+        return sessions.first(where: { $0.phase.requiresAttention })
+            ?? sessions.first(where: { $0.phase == .running })
+            ?? sessions.first
     }
 
     /// Text to show in the closed island's center label. Respects the
@@ -883,7 +904,7 @@ final class AppModel {
     /// preference and current live state. Returns nil when the preference
     /// is `.none` or there's nothing meaningful to show.
     func islandClosedRightSlotContent() -> IslandRightSlotContent? {
-        let sessions = surfacedSessions
+        let sessions = visibleIslandSessions(from: surfacedSessions)
         switch islandRightSlot {
         case .none:
             return nil

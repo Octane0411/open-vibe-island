@@ -93,7 +93,10 @@
 "settings.appearance.sessionSort.note" = "Choose the default order inside the expanded list.";
 "settings.appearance.sessionSort.attention" = "Attention";
 "settings.appearance.sessionSort.lastUpdate" = "Last update";
-"settings.appearance.staleThreshold.title" = "06 · Done timeout";
+"settings.appearance.showIdle.title" = "06 · Idle sessions";
+"settings.appearance.showIdle.note" = "When off, idle sessions are removed from the list and overview counts.";
+"settings.appearance.showIdle.option" = "Show idle sessions";
+"settings.appearance.staleThreshold.title" = "07 · Done timeout";
 "settings.appearance.staleThreshold.note" = "Completed sessions move to the low-priority idle presentation after this time.";
 "settings.appearance.staleThreshold.twoMinutes" = "2 min";
 "settings.appearance.staleThreshold.fiveMinutes" = "5 min";
