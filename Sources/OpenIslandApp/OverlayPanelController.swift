@@ -755,9 +755,14 @@ private final class NotchPanel: NSPanel {
     }
 }
 
+/// Converts discrete wheel input into immediate bounded scroll positions.
+///
+/// Trackpad gestures and momentum continue through AppKit so their native
+/// deceleration remains intact.
 enum ImmediateWheelScrollPolicy {
     private static let lineScrollMultiplier: CGFloat = 18
 
+    /// Returns whether an event is a discrete wheel step rather than a gesture.
     static func shouldHandleImmediately(
         phase: NSEvent.Phase,
         momentumPhase: NSEvent.Phase
@@ -765,6 +770,7 @@ enum ImmediateWheelScrollPolicy {
         phase.isEmpty && momentumPhase.isEmpty
     }
 
+    /// Clamps a wheel delta to the scroll view's valid vertical range.
     static func targetVerticalOrigin(
         currentOriginY: CGFloat,
         scrollingDeltaY: CGFloat,
