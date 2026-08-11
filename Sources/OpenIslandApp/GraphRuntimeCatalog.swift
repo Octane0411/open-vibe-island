@@ -43,6 +43,29 @@ enum GraphRuntimeTransport:
     case openAICompatible = "openai_compatible"
 }
 
+enum GraphRuntimeInputModality: String, Codable, Sendable {
+    case text
+    case image
+    case video
+}
+
+enum GraphRuntimeThinkingMode: String, Codable, Sendable {
+    case adaptive
+    case disabled
+    case alwaysOn = "always_on"
+}
+
+struct GraphRuntimeTokenPricing:
+    Equatable,
+    Codable,
+    Sendable
+{
+    let input: Double
+    let output: Double
+    let cacheRead: Double
+    let cacheWrite: Double?
+}
+
 struct GraphRuntimeModel:
     Identifiable,
     Equatable,
@@ -52,7 +75,32 @@ struct GraphRuntimeModel:
     let id: String
     let name: String
     let providerID: GraphRuntimeProviderKind
+    let contextWindow: Int?
+    let pricingUSDPerMillionTokens: GraphRuntimeTokenPricing?
+    let inputModalities: [GraphRuntimeInputModality]
+    let thinking: [GraphRuntimeThinkingMode]
     let details: String?
+
+    init(
+        id: String,
+        name: String,
+        providerID: GraphRuntimeProviderKind,
+        contextWindow: Int? = nil,
+        pricingUSDPerMillionTokens: GraphRuntimeTokenPricing? = nil,
+        inputModalities: [GraphRuntimeInputModality] = [],
+        thinking: [GraphRuntimeThinkingMode] = [],
+        details: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.providerID = providerID
+        self.contextWindow = contextWindow
+        self.pricingUSDPerMillionTokens =
+            pricingUSDPerMillionTokens
+        self.inputModalities = inputModalities
+        self.thinking = thinking
+        self.details = details
+    }
 }
 
 struct GraphRuntimeAgentProfile:
@@ -68,6 +116,17 @@ struct GraphRuntimeAgentProfile:
     let details: String?
 }
 
+struct GraphRuntimeRegionalEndpoint:
+    Equatable,
+    Codable,
+    Sendable
+{
+    let region: String
+    let openAIBaseURL: String
+    let anthropicBaseURL: String
+    let docsRoot: String
+}
+
 struct GraphRuntimeProvider:
     Identifiable,
     Equatable,
@@ -77,6 +136,7 @@ struct GraphRuntimeProvider:
     let id: GraphRuntimeProviderKind
     let transport: GraphRuntimeTransport
     let endpoint: String?
+    let regionalEndpoints: [GraphRuntimeRegionalEndpoint]
     let adapterKind: String
     let operation: String
     let requiredCapabilities: [String]
@@ -85,6 +145,30 @@ struct GraphRuntimeProvider:
     let supportsAgentProfiles: Bool
 
     var displayName: String { id.displayName }
+
+    init(
+        id: GraphRuntimeProviderKind,
+        transport: GraphRuntimeTransport,
+        endpoint: String?,
+        regionalEndpoints: [GraphRuntimeRegionalEndpoint] = [],
+        adapterKind: String,
+        operation: String,
+        requiredCapabilities: [String],
+        executableNames: [String],
+        supportsModelDiscovery: Bool,
+        supportsAgentProfiles: Bool
+    ) {
+        self.id = id
+        self.transport = transport
+        self.endpoint = endpoint
+        self.regionalEndpoints = regionalEndpoints
+        self.adapterKind = adapterKind
+        self.operation = operation
+        self.requiredCapabilities = requiredCapabilities
+        self.executableNames = executableNames
+        self.supportsModelDiscovery = supportsModelDiscovery
+        self.supportsAgentProfiles = supportsAgentProfiles
+    }
 }
 
 struct GraphRuntimeCatalogSnapshot:
@@ -267,29 +351,52 @@ struct GraphRuntimeCatalogDiscovery:
     GraphRuntimeCatalogDiscovering,
     Sendable
 {
-    /// Built-in MiniMax catalogued models. MiniMax exposes a hosted
-    /// OpenAI-compatible chat-completions endpoint, so these are
-    /// declared statically rather than discovered at runtime.
+    /// Built-in MiniMax model metadata.
     static let minimaxModels: [GraphRuntimeModel] = [
         GraphRuntimeModel(
             id: "minimax:MiniMax-M3",
             name: "MiniMax-M3",
             providerID: .minimax,
-            details: "1,000,000 token context window"
+            contextWindow: 1_000_000,
+            pricingUSDPerMillionTokens: GraphRuntimeTokenPricing(
+                input: 0.6,
+                output: 2.4,
+                cacheRead: 0.12,
+                cacheWrite: nil
+            ),
+            inputModalities: [.text, .image, .video],
+            thinking: [.adaptive, .disabled]
         ),
         GraphRuntimeModel(
             id: "minimax:MiniMax-M2.7",
             name: "MiniMax-M2.7",
             providerID: .minimax,
-            details: "204,800 token context window"
+            contextWindow: 204_800,
+            pricingUSDPerMillionTokens: GraphRuntimeTokenPricing(
+                input: 0.3,
+                output: 1.2,
+                cacheRead: 0.06,
+                cacheWrite: 0.375
+            ),
+            inputModalities: [.text],
+            thinking: [.alwaysOn]
         ),
     ]
 
-    /// Default MiniMax OpenAI-compatible endpoint (global region).
-    /// The China region is selected by overriding the endpoint to
-    /// https://api.minimaxi.com/v1.
-    static let minimaxDefaultEndpoint =
-        "https://api.minimax.io/v1"
+    static let minimaxRegionalEndpoints = [
+        GraphRuntimeRegionalEndpoint(
+            region: "global_en",
+            openAIBaseURL: "https://api.minimax.io/v1",
+            anthropicBaseURL: "https://api.minimax.io/anthropic",
+            docsRoot: "https://platform.minimax.io/docs"
+        ),
+        GraphRuntimeRegionalEndpoint(
+            region: "cn_zh",
+            openAIBaseURL: "https://api.minimaxi.com/v1",
+            anthropicBaseURL: "https://api.minimaxi.com/anthropic",
+            docsRoot: "https://platform.minimaxi.com/docs"
+        ),
+    ]
 
     var environment: [String: String]
     var isExecutableFile: @Sendable (String) -> Bool
@@ -338,8 +445,6 @@ struct GraphRuntimeCatalogDiscovery:
             )
         }
 
-        // MiniMax ships a hosted OpenAI-compatible endpoint with a fixed
-        // model catalog, so it is declared statically rather than probed.
         models.append(contentsOf: Self.minimaxModels)
 
         return GraphRuntimeCatalogSnapshot(
@@ -492,16 +597,11 @@ struct GraphRuntimeCatalogDiscovery:
             supportsModelDiscovery: true,
             supportsAgentProfiles: false
         ),
-        // MiniMax exposes a hosted OpenAI-compatible chat-completions
-        // API. The global endpoint (https://api.minimax.io/v1) is used as
-        // the default base URL; callers authenticating with the standard
-        // OpenAI-compatible API key send the MiniMax-M3 / MiniMax-M2.7
-        // model id. The China region uses https://api.minimaxi.com/v1 and
-        // is selected by overriding the endpoint.
         GraphRuntimeProvider(
             id: .minimax,
             transport: .openAICompatible,
-            endpoint: minimaxDefaultEndpoint,
+            endpoint: minimaxRegionalEndpoints.first?.openAIBaseURL,
+            regionalEndpoints: minimaxRegionalEndpoints,
             adapterKind: "openai_compatible",
             operation: "chat_completion",
             requiredCapabilities: ["agent", "model-inference"],

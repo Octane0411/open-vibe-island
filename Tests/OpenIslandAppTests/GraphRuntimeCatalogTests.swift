@@ -217,6 +217,23 @@ final class GraphRuntimeCatalogTests: XCTestCase {
             "https://api.minimax.io/v1"
         )
         XCTAssertEqual(
+            minimax.regionalEndpoints,
+            [
+                GraphRuntimeRegionalEndpoint(
+                    region: "global_en",
+                    openAIBaseURL: "https://api.minimax.io/v1",
+                    anthropicBaseURL: "https://api.minimax.io/anthropic",
+                    docsRoot: "https://platform.minimax.io/docs"
+                ),
+                GraphRuntimeRegionalEndpoint(
+                    region: "cn_zh",
+                    openAIBaseURL: "https://api.minimaxi.com/v1",
+                    anthropicBaseURL: "https://api.minimaxi.com/anthropic",
+                    docsRoot: "https://platform.minimaxi.com/docs"
+                ),
+            ]
+        )
+        XCTAssertEqual(
             minimax.requiredCapabilities,
             ["agent", "model-inference"]
         )
@@ -226,20 +243,48 @@ final class GraphRuntimeCatalogTests: XCTestCase {
         XCTAssertEqual(minimax.displayName, "MiniMax")
     }
 
-    func testMiniMaxCataloguedModelsCoverCurrentModelIds() {
-        let modelNames = GraphRuntimeCatalogDiscovery
-            .minimaxModels
-            .map(\.name)
-            .sorted()
-
-        XCTAssertEqual(
-            modelNames,
-            ["MiniMax-M2.7", "MiniMax-M3"]
+    func testMiniMaxCataloguedModelsExposeCurrentMetadata()
+        throws
+    {
+        let models = GraphRuntimeCatalogDiscovery.minimaxModels
+        let primary = try XCTUnwrap(
+            models.first { $0.name == "MiniMax-M3" }
+        )
+        let secondary = try XCTUnwrap(
+            models.first { $0.name == "MiniMax-M2.7" }
         )
 
-        for model in GraphRuntimeCatalogDiscovery.minimaxModels {
-            XCTAssertEqual(model.providerID, .minimax)
-        }
+        XCTAssertEqual(
+            models.map(\.name).sorted(),
+            ["MiniMax-M2.7", "MiniMax-M3"]
+        )
+        XCTAssertEqual(primary.providerID, .minimax)
+        XCTAssertEqual(primary.contextWindow, 1_000_000)
+        XCTAssertEqual(
+            primary.pricingUSDPerMillionTokens,
+            GraphRuntimeTokenPricing(
+                input: 0.6,
+                output: 2.4,
+                cacheRead: 0.12,
+                cacheWrite: nil
+            )
+        )
+        XCTAssertEqual(primary.inputModalities, [.text, .image, .video])
+        XCTAssertEqual(primary.thinking, [.adaptive, .disabled])
+
+        XCTAssertEqual(secondary.providerID, .minimax)
+        XCTAssertEqual(secondary.contextWindow, 204_800)
+        XCTAssertEqual(
+            secondary.pricingUSDPerMillionTokens,
+            GraphRuntimeTokenPricing(
+                input: 0.3,
+                output: 1.2,
+                cacheRead: 0.06,
+                cacheWrite: 0.375
+            )
+        )
+        XCTAssertEqual(secondary.inputModalities, [.text])
+        XCTAssertEqual(secondary.thinking, [.alwaysOn])
     }
 
     func testMiniMaxBindingProducesOpenAICompatibleSpecification()
