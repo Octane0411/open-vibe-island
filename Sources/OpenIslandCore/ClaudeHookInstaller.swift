@@ -117,6 +117,7 @@ public enum ClaudeHookInstaller {
         var rootObject = try loadRootObject(from: existingData)
         var hooksObject = rootObject["hooks"] as? [String: Any] ?? [:]
         var mutated = false
+        var ownHooksPresent = false
 
         for spec in eventSpecs {
             let existingGroups = hooksObject[spec.name] as? [Any] ?? []
@@ -124,6 +125,10 @@ public enum ClaudeHookInstaller {
 
             if cleanedGroups.count != existingGroups.count || containsManagedHook(in: existingGroups, managedCommand: managedCommand) {
                 mutated = true
+            }
+
+            if containsOwnManagedHook(in: existingGroups, managedCommand: managedCommand) {
+                ownHooksPresent = true
             }
 
             if cleanedGroups.isEmpty {
@@ -143,7 +148,7 @@ public enum ClaudeHookInstaller {
         return ClaudeHookFileMutation(
             contents: contents,
             changed: mutated || contents != existingData,
-            managedHooksPresent: mutated,
+            managedHooksPresent: ownHooksPresent,
             hasClaudeIslandHooks: containsClaudeIslandHook(in: hooksObject)
         )
     }
@@ -230,6 +235,23 @@ public enum ClaudeHookInstaller {
         }
     }
 
+    private static func containsOwnManagedHook(in groups: [Any], managedCommand: String?) -> Bool {
+        groups.contains { item in
+            guard let group = item as? [String: Any],
+                  let hooks = group["hooks"] as? [Any] else {
+                return false
+            }
+
+            return hooks.contains { hook in
+                guard let hook = hook as? [String: Any] else {
+                    return false
+                }
+
+                return isOwnManagedHook(hook, managedCommand: managedCommand)
+            }
+        }
+    }
+
     private static func containsClaudeIslandHook(in hooksObject: [String: Any]) -> Bool {
         hooksObject.values.contains { value in
             let groups = value as? [Any] ?? []
@@ -275,6 +297,10 @@ public enum ClaudeHookInstaller {
         return group
     }
 
+    /// Whether a hook entry should be dropped when we (re)write our own hooks.
+    /// Deliberately broad: it also covers the closed-source Vibe Island bridge
+    /// so a user migrating from that app doesn't end up with two islands
+    /// reacting to every event.
     private static func isManagedHook(_ hook: [String: Any], managedCommand: String?) -> Bool {
         guard let command = hook["command"] as? String else {
             return false
@@ -285,6 +311,30 @@ public enum ClaudeHookInstaller {
         }
 
         return isLegacyOpenIslandHookCommand(command)
+    }
+
+    /// Whether a hook entry is *ours* — the command we installed, or our hook
+    /// CLI under its current or pre-rename name.
+    ///
+    /// This is the question "are Open Island's hooks installed?", and it must
+    /// stay narrower than ``isManagedHook(_:managedCommand:)``. Answering it
+    /// with the broad predicate made a leftover `vibe-island-bridge` entry from
+    /// the closed-source app read as a successful install, which reported
+    /// "hooks installed" in Settings and suppressed the startup repair in
+    /// `shouldAutoInstall` — so no hook of ours ever ran.
+    private static func isOwnManagedHook(_ hook: [String: Any], managedCommand: String?) -> Bool {
+        guard let command = hook["command"] as? String else {
+            return false
+        }
+
+        if let managedCommand, command == managedCommand {
+            return true
+        }
+
+        // Path-independent fallback: the app bundle may have moved since
+        // install, which invalidates the recorded command but not ownership.
+        let normalized = command.lowercased()
+        return normalized.contains("openislandhooks") || normalized.contains("vibeislandhooks")
     }
 
     private static func isManagedHookForInstall(_ hook: [String: Any], replacingCommand: String) -> Bool {
