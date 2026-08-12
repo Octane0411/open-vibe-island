@@ -152,6 +152,35 @@ final class TerminalJumpServiceTests: XCTestCase {
         XCTAssertEqual(openedArguments.values, [["-b", "com.todesktop.230313mzl4w4u92"]])
     }
 
+    func testTabbyJumpActivatesRunningAppByBundleIdentifier() throws {
+        let openedArguments = OpenedArgumentsBox()
+        let service = TerminalJumpService(
+            applicationResolver: { bundleIdentifier in
+                bundleIdentifier == "org.tabby" ? URL(fileURLWithPath: "/Applications/Tabby.app") : nil
+            },
+            appRunningChecker: { bundleIdentifier in
+                bundleIdentifier == "org.tabby"
+            },
+            openAction: { arguments in
+                openedArguments.values.append(arguments)
+            },
+            appleScriptRunner: { _ in "" }
+        )
+
+        let result = try service.jump(
+            to: JumpTarget(
+                terminalApp: "Tabby",
+                workspaceName: "open-island",
+                paneTitle: "Claude open-island",
+                workingDirectory: "/Users/test/open-island",
+                terminalTTY: "/dev/ttys002"
+            )
+        )
+
+        XCTAssertEqual(result, "Activated Tabby. Exact pane targeting could not find the live terminal.")
+        XCTAssertEqual(openedArguments.values, [["-b", "org.tabby"]])
+    }
+
     func testCursorJumpFallsBackToWorkspaceWhenAppNotRunning() throws {
         let openedArguments = OpenedArgumentsBox()
         let service = TerminalJumpService(

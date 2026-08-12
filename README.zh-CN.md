@@ -52,7 +52,7 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 
 **10 个 Agents**：Claude Code、Codex、Cursor、Gemini CLI、Kimi CLI、OpenCode、Qoder、Qwen Code、Factory、CodeBuddy
 
-**15+ 终端和 IDE**：Terminal.app、Ghostty、iTerm2、WezTerm、Zellij、tmux、cmux、Kaku、VS Code、Cursor、Windsurf、Trae、JetBrains 全家桶（IDEA、WebStorm、PyCharm、GoLand、CLion、RubyMine、PhpStorm、Rider、RustRover）
+**15+ 终端和 IDE**：Terminal.app、Ghostty、iTerm2、WezTerm、Zellij、tmux、cmux、Kaku、Tabby、VS Code、Cursor、Windsurf、Trae、JetBrains 全家桶（IDEA、WebStorm、PyCharm、GoLand、CLion、RubyMine、PhpStorm、Rider、RustRover）
 
 <details>
 <summary>完整兼容列表</summary>
@@ -85,6 +85,7 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 | **iTerm2** | 完整 | Jump-back，session ID / TTY 匹配 |
 | **tmux**（终端复用器） | 完整 | Jump-back，session/window/pane 定位 |
 | **Zellij** | 完整 | Jump-back，CLI pane/tab 定位 |
+| **Tabby** | 完整 | Jump-back，应用激活 |
 | **VS Code** | 工作区 | 通过 `code` CLI 激活工作区 |
 | **Cursor** | 工作区 | 通过 `cursor` CLI 激活工作区 |
 | **Windsurf** | 工作区 | 通过 `windsurf` CLI 激活工作区 |
@@ -284,6 +285,7 @@ AI coding 正在成为日常开发流程的一部分，但围绕它的控制层�
 ### 终端支持
 
 - **Terminal.app**、**Ghostty**、**cmux**、**Kaku**、**WezTerm**、**iTerm2** 和 **Zellij** — 完整的 jump-back 支持，带会话附着匹配（cmux 通过 Unix socket API，Kaku/WezTerm/Zellij 通过 CLI pane 定位，iTerm2 通过 AppleScript session/TTY 探针）
+- **Tabby** — Jump-back，应用激活（将 Tabby 置前；暂无 pane 级定位）
 - **VS Code**、**VS Code Insiders**、**Cursor**、**Windsurf**、**Trae** — 工作区级跳转，通过对应 CLI（`code -r`、`cursor -r` 等）
 - **JetBrains 全家桶**（IntelliJ IDEA、WebStorm、PyCharm、GoLand、CLion、RubyMine、PhpStorm、Rider、RustRover） — 工作区级跳转，通过 IDE CLI launcher
 - **Warp** — 通过 SQLite pane 查找、pid 进程树消歧和 AX 菜单点击实现精准 tab 跳转

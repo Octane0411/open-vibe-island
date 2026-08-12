@@ -1051,7 +1051,7 @@ public extension ClaudeHookPayload {
     }
 
     private static let noLocatorTerminalApps: Set<String> = [
-        "cmux", "kaku", "wezterm", "zellij",
+        "cmux", "kaku", "tabby", "wezterm", "zellij",
         "vs code", "vs code insiders", "cursor", "windsurf", "trae",
         "intellij idea", "webstorm", "pycharm", "goland", "clion",
         "rubymine", "phpstorm", "rider", "rustrover",
@@ -1219,6 +1219,8 @@ public extension ClaudeHookPayload {
                 return "Kaku"
             case "wezterm":
                 return "WezTerm"
+            case "tabby":
+                return "Tabby"
             case "vscode":
                 // Cursor also sets TERM_PROGRAM=vscode; check its unique
                 // env var first.

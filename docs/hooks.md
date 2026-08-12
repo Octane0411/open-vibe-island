@@ -331,6 +331,7 @@ The hook process infers the terminal type from environment variables at runtime:
 | `WARP_IS_LOCAL_SHELL_SESSION` | `Warp` |
 | `TERM_PROGRAM=Apple_Terminal` | `Terminal` |
 | `TERM_PROGRAM=WezTerm` | `WezTerm` |
+| `TERM_PROGRAM=Tabby` | `Tabby` |
 
 For iTerm, Terminal, and Ghostty the process additionally runs an AppleScript query to obtain the session ID, TTY, and window title — used to power the "jump back to terminal" feature. The `cmux` terminal uses `CMUX_SURFACE_ID` instead of AppleScript.
 

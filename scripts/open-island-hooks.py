@@ -50,6 +50,8 @@ def infer_terminal_app(env):
         return "Kaku"
     if tp == "wezterm":
         return "WezTerm"
+    if tp == "tabby":
+        return "Tabby"
     return None
 
 

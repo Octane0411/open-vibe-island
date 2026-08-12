@@ -18,6 +18,7 @@ Package.resolved
 
 # Local tooling artifacts
 .claude/
+.codegraph/
 .playwright-mcp/
 output/
 

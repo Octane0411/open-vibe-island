@@ -87,6 +87,26 @@ struct CodexHooksTests {
     }
 
     @Test
+    func codexInferTerminalAppRecognizesTabbyViaTermProgram() {
+        let payload = CodexHookPayload(
+            cwd: "/Users/u/demo",
+            hookEventName: .sessionStart,
+            model: "gpt-4o",
+            permissionMode: .default,
+            sessionID: "s1",
+            transcriptPath: nil
+        ).withRuntimeContext(
+            environment: ["TERM_PROGRAM": "Tabby"],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) },
+            warpPaneResolver: { _ in nil }
+        )
+
+        #expect(payload.terminalApp == "Tabby")
+        #expect(payload.warpPaneUUID == nil)
+    }
+
+    @Test
     func codexPermissionRequestPayloadAcceptsDescriptionOnlyToolInput() throws {
         let data = """
         {

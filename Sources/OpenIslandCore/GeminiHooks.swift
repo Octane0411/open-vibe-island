@@ -257,7 +257,7 @@ public extension GeminiHookPayload {
     }
 
     private static let noLocatorTerminalApps: Set<String> = [
-        "cmux", "kaku", "wezterm", "zellij",
+        "cmux", "kaku", "tabby", "wezterm", "zellij",
         "vs code", "vs code insiders", "cursor", "windsurf", "trae",
         "intellij idea", "webstorm", "pycharm", "goland", "clion",
         "rubymine", "phpstorm", "rider", "rustrover"
@@ -364,6 +364,8 @@ public extension GeminiHookPayload {
             return "WezTerm"
         case .some("kaku"):
             return "Kaku"
+        case .some("tabby"):
+            return "Tabby"
         case .some("vscode"):
             return "VS Code"
         case .some("vscode-insiders"):
