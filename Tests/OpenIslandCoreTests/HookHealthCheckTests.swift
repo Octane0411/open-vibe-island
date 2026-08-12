@@ -27,11 +27,16 @@ struct HookHealthCheckTests {
         return (claudeDirectory, hooksBinaryURL)
     }
 
+    /// A unique, unused scratch directory. Not created here — the fixture
+    /// helpers create what they need under it, and each test removes the whole
+    /// tree in a `defer`.
     private func temporaryRoot() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("open-island-health-\(UUID().uuidString)", isDirectory: true)
     }
 
+    /// Whether the report carries a `hooksMissing` issue, ignoring its path.
+    /// Several tests assert only on presence or absence.
     private func reportsHooksMissing(_ report: HookHealthReport) -> Bool {
         report.issues.contains(where: { issue in
             if case .hooksMissing = issue { return true }
@@ -39,6 +44,9 @@ struct HookHealthCheckTests {
         })
     }
 
+    /// The regression this PR fixes: a leftover hook from the closed-source app
+    /// occupies the config, ours are gone, and the user did ask for ours. That
+    /// has to surface as a repairable error rather than a clean bill of health.
     @Test
     func claudeHealthReportsHooksMissingWhenUserAskedForThemAndOnlyForeignHooksRemain() throws {
         let root = temporaryRoot()
@@ -83,6 +91,7 @@ struct HookHealthCheckTests {
         #expect(report.isHealthy)
     }
 
+    /// The healthy case, guarding against a check that fires unconditionally.
     @Test
     func claudeHealthDoesNotReportHooksMissingWhenOurHooksArePresent() throws {
         let root = temporaryRoot()
@@ -130,6 +139,8 @@ struct HookHealthCheckTests {
         #expect(!reportsHooksMissing(report))
     }
 
+    /// Codex reaches the same conclusion through a different config file, so it
+    /// gets its own case rather than relying on the Claude path's coverage.
     @Test
     func codexHealthReportsHooksMissingWhenUserAskedForThem() throws {
         let root = temporaryRoot()

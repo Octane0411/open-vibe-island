@@ -42,6 +42,9 @@ public struct CodexHookFileMutation: Equatable, Sendable {
     /// this — never ``changed`` — to answer "are our hooks installed?".
     public var ownHooksPresent: Bool
 
+    /// - Parameter ownHooksPresent: Defaults to `false` so existing callers that
+    ///   only describe a write keep compiling; the uninstall path, which is the
+    ///   one asked about installed state, always passes it explicitly.
     public init(
         contents: Data?,
         changed: Bool,

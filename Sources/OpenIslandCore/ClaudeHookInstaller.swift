@@ -235,6 +235,8 @@ public enum ClaudeHookInstaller {
         }
     }
 
+    /// Whether any hook in `groups` is one of ours.
+    /// The ownership counterpart to ``containsManagedHook(in:managedCommand:)``.
     private static func containsOwnManagedHook(in groups: [Any], managedCommand: String?) -> Bool {
         groups.contains { item in
             guard let group = item as? [String: Any],
