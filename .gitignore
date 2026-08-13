@@ -27,3 +27,7 @@ output/
 *.tmp
 .worktrees/
 .air/
+
+# Python
+__pycache__/
+*.pyc
