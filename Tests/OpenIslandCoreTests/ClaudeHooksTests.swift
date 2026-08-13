@@ -304,15 +304,20 @@ struct ClaudeHooksTests {
 
     @Test
     func claudeInferTerminalAppRecognizesTabbyViaTermProgram() {
+        var locatorCalls = 0
         let payload = ClaudeHookPayload(
             cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
         ).withRuntimeContext(
             environment: ["TERM_PROGRAM": "Tabby"],
             currentTTYProvider: { nil },
-            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+            terminalLocatorProvider: { _ in
+                locatorCalls += 1
+                return (sessionID: nil, tty: nil, title: nil)
+            }
         )
 
         #expect(payload.terminalApp == "Tabby")
+        #expect(locatorCalls == 0)
     }
 
     @Test

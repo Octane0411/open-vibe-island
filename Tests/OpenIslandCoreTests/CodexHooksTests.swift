@@ -88,6 +88,7 @@ struct CodexHooksTests {
 
     @Test
     func codexInferTerminalAppRecognizesTabbyViaTermProgram() {
+        var locatorCalls = 0
         let payload = CodexHookPayload(
             cwd: "/Users/u/demo",
             hookEventName: .sessionStart,
@@ -98,12 +99,16 @@ struct CodexHooksTests {
         ).withRuntimeContext(
             environment: ["TERM_PROGRAM": "Tabby"],
             currentTTYProvider: { nil },
-            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) },
+            terminalLocatorProvider: { _ in
+                locatorCalls += 1
+                return (sessionID: nil, tty: nil, title: nil)
+            },
             warpPaneResolver: { _ in nil }
         )
 
         #expect(payload.terminalApp == "Tabby")
         #expect(payload.warpPaneUUID == nil)
+        #expect(locatorCalls == 0)
     }
 
     @Test
