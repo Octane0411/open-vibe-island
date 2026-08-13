@@ -18,6 +18,7 @@ Package.resolved
 
 # Local tooling artifacts
 .claude/
+.codegraph/
 .playwright-mcp/
 output/
 
@@ -26,3 +27,7 @@ output/
 *.tmp
 .worktrees/
 .air/
+
+# Python
+__pycache__/
+*.pyc

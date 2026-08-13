@@ -33,12 +33,10 @@ def socket_path():
 # ---------------------------------------------------------------------------
 
 def infer_terminal_app(env):
-    if env.get("ITERM_SESSION_ID") or env.get("LC_TERMINAL") == "iTerm2":
-        return "iTerm"
+    # Multiplexers run inside a host terminal; detect them before TERM_PROGRAM
+    # so the jump target points at the multiplexer pane.
     if env.get("CMUX_WORKSPACE_ID") or env.get("CMUX_SOCKET_PATH"):
         return "cmux"
-    if env.get("GHOSTTY_RESOURCES_DIR"):
-        return "Ghostty"
     tp = (env.get("TERM_PROGRAM") or "").lower()
     if tp == "apple_terminal":
         return "Terminal"
@@ -50,6 +48,14 @@ def infer_terminal_app(env):
         return "Kaku"
     if tp == "wezterm":
         return "WezTerm"
+    if tp == "tabby":
+        return "Tabby"
+    # Fallback for terminals that don't set TERM_PROGRAM; these per-app vars
+    # can leak across apps, so only consult them once TERM_PROGRAM is empty.
+    if env.get("ITERM_SESSION_ID") or env.get("LC_TERMINAL") == "iTerm2":
+        return "iTerm"
+    if env.get("GHOSTTY_RESOURCES_DIR"):
+        return "Ghostty"
     return None
 
 

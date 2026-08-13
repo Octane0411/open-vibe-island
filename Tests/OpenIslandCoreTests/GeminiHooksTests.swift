@@ -228,6 +228,24 @@ struct GeminiHooksTests {
     }
 
     @Test
+    func geminiInferTerminalAppRecognizesTabbyViaTermProgram() {
+        var locatorCalls = 0
+        let payload = GeminiHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: ["TERM_PROGRAM": "Tabby"],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in
+                locatorCalls += 1
+                return (sessionID: nil, tty: nil, title: nil)
+            }
+        )
+
+        #expect(payload.terminalApp == "Tabby")
+        #expect(locatorCalls == 0)
+    }
+
+    @Test
     func geminiCompletionMessageUsesLastBodySegmentAndDropsRepeatedTail() {
         let response = """
         I'll review the integration guide and summarize the migration plan.

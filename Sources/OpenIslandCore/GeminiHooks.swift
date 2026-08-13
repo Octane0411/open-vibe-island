@@ -257,7 +257,7 @@ public extension GeminiHookPayload {
     }
 
     private static let noLocatorTerminalApps: Set<String> = [
-        "cmux", "kaku", "wezterm", "zellij",
+        "cmux", "kaku", "tabby", "wezterm", "zellij",
         "vs code", "vs code insiders", "cursor", "windsurf", "trae",
         "intellij idea", "webstorm", "pycharm", "goland", "clion",
         "rubymine", "phpstorm", "rider", "rustrover"
@@ -330,24 +330,15 @@ public extension GeminiHookPayload {
     }
 
     private func inferTerminalApp(from environment: [String: String]) -> String? {
-        if environment["ITERM_SESSION_ID"] != nil || environment["LC_TERMINAL"] == "iTerm2" {
-            return "iTerm"
-        }
-
+        // Multiplexers run inside a host terminal but expose their own pane
+        // context. Detect them before TERM_PROGRAM so the captured jump target
+        // points at the multiplexer pane instead of the outer terminal.
         if environment["CMUX_WORKSPACE_ID"] != nil || environment["CMUX_SOCKET_PATH"] != nil {
             return "cmux"
         }
 
         if environment["ZELLIJ"] != nil {
             return "Zellij"
-        }
-
-        if environment["GHOSTTY_RESOURCES_DIR"] != nil {
-            return "Ghostty"
-        }
-
-        if environment["WARP_IS_LOCAL_SHELL_SESSION"] != nil {
-            return "Warp"
         }
 
         let termProgram = environment["TERM_PROGRAM"]?.lowercased()
@@ -364,6 +355,8 @@ public extension GeminiHookPayload {
             return "WezTerm"
         case .some("kaku"):
             return "Kaku"
+        case .some("tabby"):
+            return "Tabby"
         case .some("vscode"):
             return "VS Code"
         case .some("vscode-insiders"):
@@ -374,6 +367,19 @@ public extension GeminiHookPayload {
             return "Trae"
         default:
             break
+        }
+
+        // Fallback for terminals that don't set TERM_PROGRAM. These per-app
+        // variables can leak across apps via macOS GUI env inheritance, so only
+        // consult them after TERM_PROGRAM yielded nothing.
+        if environment["ITERM_SESSION_ID"] != nil || environment["LC_TERMINAL"] == "iTerm2" {
+            return "iTerm"
+        }
+        if environment["GHOSTTY_RESOURCES_DIR"] != nil {
+            return "Ghostty"
+        }
+        if environment["WARP_IS_LOCAL_SHELL_SESSION"] != nil {
+            return "Warp"
         }
 
         if let terminalEmulator = environment["TERMINAL_EMULATOR"]?.lowercased(),

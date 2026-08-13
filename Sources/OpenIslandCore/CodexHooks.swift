@@ -638,7 +638,7 @@ public extension CodexHookPayload {
     }
 
     private static let noLocatorTerminalApps: Set<String> = [
-        "cmux", "codex.app", "kaku", "wezterm", "zellij",
+        "cmux", "codex.app", "kaku", "tabby", "wezterm", "zellij",
         "vs code", "vs code insiders", "cursor", "windsurf", "trae",
         "intellij idea", "webstorm", "pycharm", "goland", "clion",
         "rubymine", "phpstorm", "rider", "rustrover",
@@ -710,6 +710,8 @@ public extension CodexHookPayload {
                 return "WezTerm"
             case "kaku":
                 return "Kaku"
+            case "tabby":
+                return "Tabby"
             case "vscode":
                 return "VS Code"
             case "vscode-insiders":

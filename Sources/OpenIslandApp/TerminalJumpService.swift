@@ -64,6 +64,11 @@ struct TerminalJumpService {
             aliases: ["terminal", "apple_terminal"]
         ),
         TerminalAppDescriptor(
+            displayName: "Tabby",
+            bundleIdentifier: "org.tabby",
+            aliases: ["tabby"]
+        ),
+        TerminalAppDescriptor(
             displayName: "Warp",
             bundleIdentifier: "dev.warp.Warp-Stable",
             aliases: ["warp", "warpterminal"]
