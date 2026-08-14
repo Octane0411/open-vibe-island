@@ -92,6 +92,9 @@ struct UnifiedBars: View {
         }
 
         func update(mode: Mode, tint: NSColor, idleAnimated: Bool) {
+            guard self.mode != mode
+                || !tintColor.isEqual(tint)
+                || self.idleAnimated != idleAnimated else { return }
             self.mode = mode
             tintColor = tint
             self.idleAnimated = idleAnimated

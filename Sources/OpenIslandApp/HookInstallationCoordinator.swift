@@ -812,6 +812,7 @@ final class HookInstallationCoordinator {
         let delay = max(0, minimumInterval - elapsed)
         claudeUsageFileRefreshTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            defer { self.claudeUsageFileRefreshTask = nil }
             if delay > 0 {
                 do {
                     try await Task.sleep(for: .milliseconds(Int(delay * 1_000)))
@@ -819,7 +820,6 @@ final class HookInstallationCoordinator {
                     return
                 }
             }
-            self.claudeUsageFileRefreshTask = nil
             self.lastClaudeUsageFileRefreshDate = .now
             self.refreshClaudeUsageSnapshot()
         }

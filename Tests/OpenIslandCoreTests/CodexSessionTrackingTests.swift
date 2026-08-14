@@ -854,7 +854,7 @@ struct CodexSessionTrackingTests {
         }
 
         let recorder = EventRecorder()
-        let watcher = CodexRolloutWatcher(pollInterval: 5)
+        let watcher = CodexRolloutWatcher(fallbackPollInterval: 5)
         watcher.eventHandler = { event in
             Task {
                 await recorder.append(event)
@@ -1026,7 +1026,7 @@ struct CodexSessionTrackingTests {
 
         let recorder = EventRecorder()
         let watcher = CodexRolloutWatcher(
-            pollInterval: 5,
+            fallbackPollInterval: 5,
             initialReadLimit: 512,
             initialPromptBootstrapLimit: 4_096
         )
@@ -1092,7 +1092,7 @@ struct CodexSessionTrackingTests {
             .write(to: rolloutURL, atomically: true, encoding: .utf8)
 
         let recorder = EventRecorder()
-        let watcher = CodexRolloutWatcher(pollInterval: 5, initialReadLimit: 160)
+        let watcher = CodexRolloutWatcher(fallbackPollInterval: 5, initialReadLimit: 160)
         watcher.eventHandler = { event in
             Task {
                 await recorder.append(event)
@@ -1263,6 +1263,42 @@ struct CodexSessionTrackingTests {
         #expect(discovery.lastScanDiagnostics.parsedFileCount == 1)
         #expect(discovery.lastScanDiagnostics.cacheHitCount == 0)
         #expect(updatedRecords.first?.summary == "Updated state.")
+    }
+
+    @Test
+    func codexRolloutDiscoveryDoesNotCacheMissingSessionMetadata() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-negative-cache-\(UUID().uuidString)", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/04/02", isDirectory: true)
+        let rolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-missing-meta.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        try rolloutLine(
+            timestamp: "2026-04-02T04:03:45.000Z",
+            type: "event_msg",
+            payload: ["type": "agent_message", "message": "No session metadata."]
+        )
+        .appending("\n")
+        .write(to: rolloutURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: rolloutURL.path)
+
+        let discovery = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10
+        )
+
+        #expect(discovery.discoverRecentSessions(now: now).isEmpty)
+        #expect(discovery.lastScanDiagnostics.parsedFileCount == 1)
+        #expect(discovery.lastScanDiagnostics.cacheHitCount == 0)
+
+        #expect(discovery.discoverRecentSessions(now: now).isEmpty)
+        #expect(discovery.lastScanDiagnostics.parsedFileCount == 1)
+        #expect(discovery.lastScanDiagnostics.cacheHitCount == 0)
     }
 
     @Test

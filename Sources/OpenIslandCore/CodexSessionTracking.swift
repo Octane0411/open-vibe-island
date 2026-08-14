@@ -362,7 +362,7 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         var sessionMeta: SessionMeta?
         var fileSize: Int
         var modifiedAt: Date
-        var record: CodexTrackedSessionRecord?
+        var record: CodexTrackedSessionRecord
     }
 
     private struct SessionMeta {
@@ -609,12 +609,17 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             }
         }
 
-        let record = makeRecord(
+        guard let record = makeRecord(
             fileURL: fileURL,
             modifiedAt: modifiedAt,
             snapshot: recordSnapshot,
             sessionMeta: recordMeta
-        )
+        ) else {
+            stateLock.withLock {
+                parseStates[path] = nil
+            }
+            return nil
+        }
 
         stateLock.lock()
         parseStates[path] = ParseState(
@@ -1561,13 +1566,26 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
     private var observations: [String: Observation] = [:]
 
     public init(
-        pollInterval: TimeInterval = CodexRolloutWatcher.defaultFallbackPollInterval,
+        fallbackPollInterval: TimeInterval = CodexRolloutWatcher.defaultFallbackPollInterval,
         initialReadLimit: UInt64 = 128 * 1_024,
         initialPromptBootstrapLimit: UInt64 = 4 * 1_024 * 1_024
     ) {
-        fallbackPollInterval = pollInterval
+        self.fallbackPollInterval = fallbackPollInterval
         self.initialReadLimit = initialReadLimit
         self.initialPromptBootstrapLimit = initialPromptBootstrapLimit
+    }
+
+    @available(*, deprecated, renamed: "init(fallbackPollInterval:initialReadLimit:initialPromptBootstrapLimit:)")
+    public convenience init(
+        pollInterval: TimeInterval,
+        initialReadLimit: UInt64 = 128 * 1_024,
+        initialPromptBootstrapLimit: UInt64 = 4 * 1_024 * 1_024
+    ) {
+        self.init(
+            fallbackPollInterval: pollInterval,
+            initialReadLimit: initialReadLimit,
+            initialPromptBootstrapLimit: initialPromptBootstrapLimit
+        )
     }
 
     deinit {
