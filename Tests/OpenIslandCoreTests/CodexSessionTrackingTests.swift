@@ -1236,13 +1236,13 @@ struct CodexSessionTrackingTests {
             maxAge: 86_400,
             maxFiles: 10
         )
-        let readCounter = LockedCounter()
-        discovery.onRecordRead = { _ in readCounter.increment() }
+        _ = discovery.discoverRecentSessions(now: now)
+        #expect(discovery.lastScanDiagnostics.parsedFileCount == 1)
+        #expect(discovery.lastScanDiagnostics.cacheHitCount == 0)
 
         _ = discovery.discoverRecentSessions(now: now)
-        _ = discovery.discoverRecentSessions(now: now)
-
-        #expect(readCounter.value == 1)
+        #expect(discovery.lastScanDiagnostics.parsedFileCount == 0)
+        #expect(discovery.lastScanDiagnostics.cacheHitCount == 1)
 
         try appendRolloutLine(
             rolloutLine(
@@ -1260,7 +1260,8 @@ struct CodexSessionTrackingTests {
 
         let updatedRecords = discovery.discoverRecentSessions(now: updatedNow)
 
-        #expect(readCounter.value == 2)
+        #expect(discovery.lastScanDiagnostics.parsedFileCount == 1)
+        #expect(discovery.lastScanDiagnostics.cacheHitCount == 0)
         #expect(updatedRecords.first?.summary == "Updated state.")
     }
 
@@ -1392,6 +1393,285 @@ struct CodexSessionTrackingTests {
         #expect(records.first?.sessionID == "codex-session-trailing")
         #expect(records.first?.codexMetadata?.lastAssistantMessage == "Final line without newline.")
     }
+
+    @Test
+    func codexRolloutDiscoveryFoldsAppendedLinesIncrementally() throws {
+        // Pins the incremental re-scan path: a second discovery pass over a
+        // grown rollout must only fold the appended bytes, and a trailing
+        // partial line from the first pass must fold exactly once when a
+        // later append completes it. If the cached offset drifted into the
+        // partial line, the completed line would be parsed from mid-line
+        // garbage and the final assistant message would be lost.
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-incr-\(UUID().uuidString)", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/04/02", isDirectory: true)
+        let rolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-incremental.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let completedLine = rolloutLine(
+            timestamp: "2026-04-02T04:03:46.000Z",
+            type: "event_msg",
+            payload: [
+                "type": "agent_message",
+                "message": "Message completed across two scans.",
+            ]
+        )
+        let splitIndex = completedLine.index(completedLine.startIndex, offsetBy: completedLine.count / 2)
+
+        let firstChunk = [
+            sessionMetaLine(
+                sessionID: "codex-session-incremental",
+                timestamp: "2026-04-02T04:03:44.000Z",
+                cwd: "/Users/wangruobing/Personal/open-island"
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": "Start the incremental scan.",
+                ]
+            ),
+        ].joined(separator: "\n").appending("\n").appending(String(completedLine[..<splitIndex]))
+
+        try firstChunk.write(to: rolloutURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: rolloutURL.path)
+
+        let discovery = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10
+        )
+
+        let firstPass = discovery.discoverRecentSessions(now: now)
+        #expect(firstPass.count == 1)
+        #expect(firstPass.first?.codexMetadata?.lastUserPrompt == "Start the incremental scan.")
+
+        let secondChunk = String(completedLine[splitIndex...]).appending("\n").appending(
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:47.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": "Appended after the first scan.",
+                ]
+            )
+        ).appending("\n")
+
+        let appendHandle = try FileHandle(forWritingTo: rolloutURL)
+        try appendHandle.seekToEnd()
+        try appendHandle.write(contentsOf: Data(secondChunk.utf8))
+        try appendHandle.close()
+        let later = now.addingTimeInterval(30)
+        try FileManager.default.setAttributes([.modificationDate: later], ofItemAtPath: rolloutURL.path)
+
+        let secondPass = discovery.discoverRecentSessions(now: later)
+        let freshPass = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10
+        ).discoverRecentSessions(now: later)
+
+        #expect(secondPass.count == 1)
+        #expect(secondPass.first?.sessionID == "codex-session-incremental")
+        #expect(secondPass.first?.codexMetadata?.lastAssistantMessage == "Message completed across two scans.")
+        #expect(secondPass.first?.codexMetadata?.lastUserPrompt == "Appended after the first scan.")
+        #expect(secondPass.first == freshPass.first)
+    }
+
+    @Test
+    func codexRolloutDiscoveryReparsesTruncatedRollouts() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-trunc-\(UUID().uuidString)", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/04/02", isDirectory: true)
+        let rolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-truncated.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let longLines = [
+            sessionMetaLine(
+                sessionID: "codex-session-truncated",
+                timestamp: "2026-04-02T04:03:44.000Z",
+                cwd: "/Users/wangruobing/Personal/open-island"
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": "Original content before truncation, padded to outsize the rewrite. \(String(repeating: "x", count: 512))",
+                ]
+            ),
+        ]
+        try longLines.joined(separator: "\n").appending("\n").write(to: rolloutURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: rolloutURL.path)
+
+        let discovery = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10
+        )
+        _ = discovery.discoverRecentSessions(now: now)
+
+        let rewrittenLines = [
+            sessionMetaLine(
+                sessionID: "codex-session-truncated",
+                timestamp: "2026-04-02T04:03:44.000Z",
+                cwd: "/Users/wangruobing/Personal/open-island"
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:48.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": "Rewritten after truncation.",
+                ]
+            ),
+        ]
+        try rewrittenLines.joined(separator: "\n").appending("\n").write(to: rolloutURL, atomically: true, encoding: .utf8)
+        let later = now.addingTimeInterval(30)
+        try FileManager.default.setAttributes([.modificationDate: later], ofItemAtPath: rolloutURL.path)
+
+        let records = discovery.discoverRecentSessions(now: later)
+
+        #expect(records.count == 1)
+        #expect(records.first?.codexMetadata?.lastAssistantMessage == "Rewritten after truncation.")
+    }
+
+    @Test
+    func codexRolloutDiscoveryReparsesSameSizeRewrites() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-rewrite-\(UUID().uuidString)", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/04/02", isDirectory: true)
+        let rolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-rewritten.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let originalBody = [
+            sessionMetaLine(
+                sessionID: "codex-session-rewritten",
+                timestamp: "2026-04-02T04:03:44.000Z",
+                cwd: "/Users/wangruobing/Personal/open-island"
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": "Original same-size content.",
+                ]
+            ),
+        ].joined(separator: "\n").appending("\n")
+        let replacementBody = originalBody.replacingOccurrences(
+            of: "Original same-size content.",
+            with: "Replaced same-size content."
+        )
+        #expect(originalBody.utf8.count == replacementBody.utf8.count)
+
+        try originalBody.write(to: rolloutURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: rolloutURL.path)
+
+        let discovery = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10
+        )
+        let originalRecords = discovery.discoverRecentSessions(now: now)
+        #expect(originalRecords.first?.codexMetadata?.lastAssistantMessage == "Original same-size content.")
+
+        try replacementBody.write(to: rolloutURL, atomically: true, encoding: .utf8)
+        let later = now.addingTimeInterval(30)
+        try FileManager.default.setAttributes([.modificationDate: later], ofItemAtPath: rolloutURL.path)
+
+        let rewrittenRecords = discovery.discoverRecentSessions(now: later)
+
+        #expect(rewrittenRecords.count == 1)
+        #expect(rewrittenRecords.first?.codexMetadata?.lastAssistantMessage == "Replaced same-size content.")
+    }
+
+    @Test
+    func codexRolloutDiscoveryReadsOnlyAppendedBytesAfterWarmup() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-read-volume-\(UUID().uuidString)", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/04/02", isDirectory: true)
+        let rolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-read-volume.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        var initialLines = [
+            sessionMetaLine(
+                sessionID: "codex-session-read-volume",
+                timestamp: "2026-04-02T04:03:44.000Z",
+                cwd: "/Users/wangruobing/Personal/open-island"
+            ),
+        ]
+        let padding = String(repeating: "x", count: 512)
+        for index in 0..<200 {
+            initialLines.append(rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": "padding \(index) \(padding)",
+                ]
+            ))
+        }
+        let initialBody = initialLines.joined(separator: "\n").appending("\n")
+        try initialBody.write(to: rolloutURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: rolloutURL.path)
+
+        let discovery = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10
+        )
+
+        _ = discovery.discoverRecentSessions(now: now)
+        #expect(discovery.lastScanDiagnostics.bytesRead == initialBody.utf8.count)
+        #expect(discovery.lastScanDiagnostics.parsedFileCount == 1)
+        #expect(discovery.lastScanDiagnostics.cacheHitCount == 0)
+
+        _ = discovery.discoverRecentSessions(now: now)
+        #expect(discovery.lastScanDiagnostics.bytesRead == 0)
+        #expect(discovery.lastScanDiagnostics.parsedFileCount == 0)
+        #expect(discovery.lastScanDiagnostics.cacheHitCount == 1)
+
+        let appendedLine = rolloutLine(
+            timestamp: "2026-04-02T04:03:46.000Z",
+            type: "event_msg",
+            payload: [
+                "type": "user_message",
+                "message": "Only this appended line should be read.",
+            ]
+        ).appending("\n")
+        let appendHandle = try FileHandle(forWritingTo: rolloutURL)
+        try appendHandle.seekToEnd()
+        try appendHandle.write(contentsOf: Data(appendedLine.utf8))
+        try appendHandle.close()
+        let later = now.addingTimeInterval(30)
+        try FileManager.default.setAttributes([.modificationDate: later], ofItemAtPath: rolloutURL.path)
+
+        let appendedRecords = discovery.discoverRecentSessions(now: later)
+
+        #expect(discovery.lastScanDiagnostics.bytesRead == appendedLine.utf8.count)
+        #expect(discovery.lastScanDiagnostics.parsedFileCount == 1)
+        #expect(discovery.lastScanDiagnostics.cacheHitCount == 0)
+        #expect(appendedRecords.first?.codexMetadata?.lastUserPrompt == "Only this appended line should be read.")
+    }
 }
 
 private final class MissingTranscriptFileManager: FileManager, @unchecked Sendable {
@@ -1409,19 +1689,6 @@ private actor EventRecorder {
 
     func snapshot() -> [AgentEvent] {
         events
-    }
-}
-
-private final class LockedCounter: @unchecked Sendable {
-    private let lock = NSLock()
-    private var count = 0
-
-    var value: Int {
-        lock.withLock { count }
-    }
-
-    func increment() {
-        lock.withLock { count += 1 }
     }
 }
 
