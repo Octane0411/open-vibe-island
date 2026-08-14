@@ -339,7 +339,7 @@ public enum CodexAppSessionReconciler {
     }
 }
 
-struct CodexRolloutDiscoveryDiagnostics: Equatable, Sendable {
+struct CodexRolloutDiscoveryDiagnostics: Codable, Equatable, Sendable {
     var bytesRead = 0
     var parsedFileCount = 0
     var cacheHitCount = 0
@@ -1688,15 +1688,24 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
     }
 
     private func handleFileEventLocked(_ sessionID: String) {
-        guard let observation = observations[sessionID],
+        guard var observation = observations[sessionID],
               let source = observation.fileSource else { return }
         let event = source.data
+        let requiresRearm = event.contains(.rename)
+            || event.contains(.delete)
+            || event.contains(.revoke)
+
+        if requiresRearm {
+            observation.offset = 0
+            observation.pendingBuffer.removeAll(keepingCapacity: false)
+            observation.snapshot = CodexRolloutSnapshot()
+            observation.shouldTrimLeadingPartialLine = false
+            observations[sessionID] = observation
+        }
 
         refreshSessionLocked(sessionID)
 
-        guard event.contains(.rename)
-            || event.contains(.delete)
-            || event.contains(.revoke) else { return }
+        guard requiresRearm else { return }
 
         guard var refreshedObservation = observations[sessionID] else { return }
         source.cancel()

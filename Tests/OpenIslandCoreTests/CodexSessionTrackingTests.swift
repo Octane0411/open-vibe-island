@@ -926,6 +926,102 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutWatcherResetsStateWhenTranscriptIsAtomicallyReplaced() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-rollout-replacement-\(UUID().uuidString)", isDirectory: true)
+        let rolloutURL = rootURL.appendingPathComponent("rollout.jsonl")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        let originalPrompt = "Original rollout prompt."
+        let originalBody = rolloutLine(
+            timestamp: "2026-04-02T04:03:44.000Z",
+            type: "event_msg",
+            payload: [
+                "type": "user_message",
+                "message": originalPrompt,
+            ]
+        ).appending("\n")
+        try originalBody.write(to: rolloutURL, atomically: true, encoding: .utf8)
+
+        let recorder = EventRecorder()
+        let watcher = CodexRolloutWatcher(fallbackPollInterval: 5)
+        watcher.eventHandler = { event in
+            Task {
+                await recorder.append(event)
+            }
+        }
+        watcher.sync(targets: [
+            CodexRolloutWatchTarget(
+                sessionID: "codex-session-replacement",
+                transcriptPath: rolloutURL.path
+            )
+        ])
+
+        let initialEvents = try await waitForEvents(from: recorder) { events in
+            events.contains(where: {
+                $0.trackedMetadataUpdate?.codexMetadata.initialUserPrompt == originalPrompt
+            })
+        }
+        #expect(initialEvents.contains(where: {
+            $0.trackedMetadataUpdate?.codexMetadata.initialUserPrompt == originalPrompt
+        }))
+        let initialEventCount = initialEvents.count
+
+        let replacementPrompt = "Replacement rollout prompt."
+        let replacementBody = [
+            rolloutLine(
+                timestamp: "2026-04-02T04:04:00.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": replacementPrompt,
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:04:01.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": "Replacement padding \(String(repeating: "x", count: 512))",
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:04:02.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": "Replacement rollout completed.",
+                ]
+            ),
+        ].joined(separator: "\n").appending("\n")
+        #expect(replacementBody.utf8.count > originalBody.utf8.count)
+
+        try replacementBody.write(to: rolloutURL, atomically: true, encoding: .utf8)
+        let allEvents = try await waitForEvents(from: recorder) { events in
+            events.dropFirst(initialEventCount).contains(where: {
+                let metadata = $0.trackedMetadataUpdate?.codexMetadata
+                return metadata?.initialUserPrompt == replacementPrompt
+                    && metadata?.lastAssistantMessage == "Replacement rollout completed."
+            })
+        }
+        watcher.stop()
+
+        let replacementEvents = Array(allEvents.dropFirst(initialEventCount))
+        #expect(replacementEvents.contains(where: {
+            let metadata = $0.trackedMetadataUpdate?.codexMetadata
+            return metadata?.initialUserPrompt == replacementPrompt
+                && metadata?.lastAssistantMessage == "Replacement rollout completed."
+        }))
+        #expect(!replacementEvents.contains(where: {
+            $0.trackedMetadataUpdate?.codexMetadata.initialUserPrompt == originalPrompt
+        }))
+    }
+
+    @Test
     func codexRolloutWatcherBootstrapsPromptMetadataFromHeadWhenTailMissesIt() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("open-island-rollout-head-bootstrap-\(UUID().uuidString)", isDirectory: true)
@@ -1726,6 +1822,23 @@ private actor EventRecorder {
     func snapshot() -> [AgentEvent] {
         events
     }
+}
+
+private func waitForEvents(
+    from recorder: EventRecorder,
+    timeout: Duration = .seconds(2),
+    until condition: ([AgentEvent]) -> Bool
+) async throws -> [AgentEvent] {
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: timeout)
+    var events = await recorder.snapshot()
+
+    while !condition(events), clock.now < deadline {
+        try await Task.sleep(for: .milliseconds(20))
+        events = await recorder.snapshot()
+    }
+
+    return events
 }
 
 private func appendRolloutLine(_ line: String, to fileURL: URL) throws {
