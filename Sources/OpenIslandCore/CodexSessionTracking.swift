@@ -1071,6 +1071,14 @@ public enum CodexRolloutReducer {
     ) {
         switch payload["type"] as? String {
         case "task_started", "turn_started":
+            // Codex may emit a replacement task-start event immediately after
+            // an interrupted turn, before any new user message. That event
+            // belongs to the cancelled execution and must not revive its
+            // running state or restart the elapsed timer. A real follow-up
+            // is represented by `user_message`, which starts a fresh segment.
+            guard !snapshot.isInterrupted else {
+                return
+            }
             let startsNewTurn = snapshot.isCompleted || snapshot.currentTurnStartedAt == nil
             snapshot.phase = .running
             snapshot.isCompleted = false

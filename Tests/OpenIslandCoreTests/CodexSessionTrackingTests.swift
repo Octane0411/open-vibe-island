@@ -535,6 +535,74 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutReducerDoesNotRestartCancelledTurnWithoutNewUserMessage() {
+        var snapshot = CodexRolloutSnapshot()
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-03T08:00:00.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": "Find the cancelled task.",
+                ]
+            ),
+            to: &snapshot
+        )
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-03T08:00:01.000Z",
+                type: "event_msg",
+                payload: ["type": "task_started"]
+            ),
+            to: &snapshot
+        )
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-03T08:00:20.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "turn_aborted",
+                    "reason": "interrupted",
+                ]
+            ),
+            to: &snapshot
+        )
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-03T08:00:24.000Z",
+                type: "event_msg",
+                payload: ["type": "task_started"]
+            ),
+            to: &snapshot
+        )
+
+        #expect(snapshot.phase == .completed)
+        #expect(snapshot.isCompleted)
+        #expect(snapshot.isInterrupted)
+        #expect(snapshot.currentTurnStartedAt == nil)
+        #expect(snapshot.processedDuration == 20)
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-04-03T08:00:30.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": "Start a new request after cancelling.",
+                ]
+            ),
+            to: &snapshot
+        )
+
+        #expect(snapshot.phase == .running)
+        #expect(!snapshot.isCompleted)
+        #expect(!snapshot.isInterrupted)
+        #expect(snapshot.currentTurnStartedAt == iso8601Date("2026-04-03T08:00:30.000Z"))
+        #expect(snapshot.processedDuration == 20)
+    }
+
+    @Test
     func codexRolloutReducerRebasesRunningTimersFromAuthoritativeGoalDuration() {
         var snapshot = CodexRolloutSnapshot(phase: .completed, isCompleted: true)
         let goalCreatedAt = iso8601Date("2026-04-01T08:00:00.000Z")
