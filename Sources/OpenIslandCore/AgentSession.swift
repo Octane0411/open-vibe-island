@@ -374,6 +374,10 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     public var openCodeMetadata: OpenCodeSessionMetadata?
     public var cursorMetadata: CursorSessionMetadata?
 
+    /// Authoritative runtime ownership for Codex sessions. Rollout
+    /// `session_meta` establishes this value; app-server `source` does not.
+    public var codexRuntimeSurface: CodexRuntimeSurface = .unknown
+
     /// Whether this session originates from a remote (SSH) connection.
     public var isRemote: Bool = false
 
@@ -386,7 +390,10 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     /// rather than the Codex CLI.  When `true`, liveness is determined by
     /// whether Codex.app is running (`NSRunningApplication`), not by
     /// matching individual CLI subprocess PIDs.
-    public var isCodexAppSession: Bool = false
+    public var isCodexAppSession: Bool {
+        get { codexRuntimeSurface == .desktopApp }
+        set { codexRuntimeSurface = newValue ? .desktopApp : .external }
+    }
 
     /// Whether the agent session has ended (received `SessionEnd` hook).
     /// Only meaningful for hook-managed sessions.
@@ -415,6 +422,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         questionPrompt: QuestionPrompt? = nil,
         jumpTarget: JumpTarget? = nil,
         codexMetadata: CodexSessionMetadata? = nil,
+        codexRuntimeSurface: CodexRuntimeSurface = .unknown,
         claudeMetadata: ClaudeSessionMetadata? = nil,
         geminiMetadata: GeminiSessionMetadata? = nil,
         openCodeMetadata: OpenCodeSessionMetadata? = nil,
@@ -433,6 +441,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         self.questionPrompt = questionPrompt
         self.jumpTarget = jumpTarget
         self.codexMetadata = codexMetadata
+        self.codexRuntimeSurface = codexRuntimeSurface
         self.claudeMetadata = claudeMetadata
         self.geminiMetadata = geminiMetadata
         self.openCodeMetadata = openCodeMetadata
@@ -453,6 +462,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         case questionPrompt
         case jumpTarget
         case codexMetadata
+        case codexRuntimeSurface
         case claudeMetadata
         case geminiMetadata
         case openCodeMetadata
@@ -474,6 +484,10 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         questionPrompt = try container.decodeIfPresent(QuestionPrompt.self, forKey: .questionPrompt)
         jumpTarget = try container.decodeIfPresent(JumpTarget.self, forKey: .jumpTarget)
         codexMetadata = try container.decodeIfPresent(CodexSessionMetadata.self, forKey: .codexMetadata)
+        codexRuntimeSurface = try container.decodeIfPresent(
+            CodexRuntimeSurface.self,
+            forKey: .codexRuntimeSurface
+        ) ?? .unknown
         claudeMetadata = try container.decodeIfPresent(ClaudeSessionMetadata.self, forKey: .claudeMetadata)
         geminiMetadata = try container.decodeIfPresent(GeminiSessionMetadata.self, forKey: .geminiMetadata)
         openCodeMetadata = try container.decodeIfPresent(OpenCodeSessionMetadata.self, forKey: .openCodeMetadata)
@@ -495,6 +509,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         try container.encodeIfPresent(questionPrompt, forKey: .questionPrompt)
         try container.encodeIfPresent(jumpTarget, forKey: .jumpTarget)
         try container.encodeIfPresent(codexMetadata, forKey: .codexMetadata)
+        try container.encode(codexRuntimeSurface, forKey: .codexRuntimeSurface)
         try container.encodeIfPresent(claudeMetadata, forKey: .claudeMetadata)
         try container.encodeIfPresent(geminiMetadata, forKey: .geminiMetadata)
         try container.encodeIfPresent(openCodeMetadata, forKey: .openCodeMetadata)

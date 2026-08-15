@@ -226,7 +226,30 @@ struct CodexSessionTrackingTests {
 
         #expect(records.count == 1)
         #expect(records.first?.attachmentState == .stale)
+        #expect(records.first?.runtimeSurface == .unknown)
         #expect(records.first?.session.attachmentState == .stale)
+    }
+
+    @Test
+    func unknownRuntimeSurfaceSurvivesSessionRoundTrip() {
+        let record = CodexTrackedSessionRecord(
+            sessionID: "codex-session-unknown",
+            title: "Codex · unknown",
+            runtimeSurface: .unknown,
+            origin: .live,
+            attachmentState: .stale,
+            summary: "Ownership has not been classified yet.",
+            phase: .completed,
+            updatedAt: Date(timeIntervalSince1970: 1_000),
+            codexMetadata: CodexSessionMetadata(
+                transcriptPath: "/tmp/rollout-unknown.jsonl"
+            )
+        )
+
+        let reencoded = CodexTrackedSessionRecord(session: record.session)
+
+        #expect(record.session.codexRuntimeSurface == .unknown)
+        #expect(reencoded.runtimeSurface == .unknown)
     }
 
     @Test
@@ -1969,6 +1992,49 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutDiscoveryClassifiesDesktopOriginatorSeparatelyFromCLI() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-runtime-\(UUID().uuidString)", isDirectory: true)
+        let desktopURL = rootURL.appendingPathComponent("rollout-desktop.jsonl")
+        let cliURL = rootURL.appendingPathComponent("rollout-cli.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        try sessionMetaLine(
+            sessionID: "desktop-thread",
+            timestamp: "2026-04-02T04:03:44.000Z",
+            cwd: "/tmp/desktop-project",
+            originator: "Codex Desktop",
+            source: "vscode"
+        )
+        .appending("\n")
+        .write(to: desktopURL, atomically: true, encoding: .utf8)
+
+        try sessionMetaLine(
+            sessionID: "cli-thread",
+            timestamp: "2026-04-02T04:03:44.000Z",
+            cwd: "/tmp/cli-project"
+        )
+        .appending("\n")
+        .write(to: cliURL, atomically: true, encoding: .utf8)
+
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: desktopURL.path)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: cliURL.path)
+
+        let records = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            maxAge: 86_400,
+            maxFiles: 10,
+            persistedThreadTitles: { _ in [:] }
+        ).discoverRecentSessions(now: now)
+        let recordsByID = Dictionary(uniqueKeysWithValues: records.map { ($0.sessionID, $0) })
+
+        #expect(recordsByID["desktop-thread"]?.runtimeSurface == .desktopApp)
+        #expect(recordsByID["cli-thread"]?.runtimeSurface == .external)
+    }
+
+    @Test
     func codexRolloutDiscoveryUsesPersistedTaskTitle() throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("open-island-discovery-title-\(UUID().uuidString)", isDirectory: true)
@@ -2343,7 +2409,9 @@ private func iso8601Date(_ value: String) -> Date {
 private func sessionMetaLine(
     sessionID: String,
     timestamp: String,
-    cwd: String
+    cwd: String,
+    originator: String = "codex-tui",
+    source: String = "cli"
 ) -> String {
     rolloutLine(
         timestamp: timestamp,
@@ -2352,8 +2420,8 @@ private func sessionMetaLine(
             "id": sessionID,
             "timestamp": timestamp,
             "cwd": cwd,
-            "originator": "codex-tui",
-            "source": "cli",
+            "originator": originator,
+            "source": source,
         ]
     )
 }

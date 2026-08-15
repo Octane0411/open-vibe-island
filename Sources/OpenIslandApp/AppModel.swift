@@ -695,8 +695,11 @@ final class AppModel {
         codexAppServer.onStatusMessage = { [weak self] message in
             self?.lastActionMessage = message
         }
-        codexAppServer.isSessionTracked = { [weak self] id in
-            self?.state.session(id: id) != nil
+        codexAppServer.trackedRuntimeSurface = { [weak self] id in
+            self?.state.session(id: id)?.codexRuntimeSurface
+        }
+        codexAppServer.onRolloutRediscoveryNeeded = { [weak self] in
+            self?.discovery.rediscoverCodexAppSessionsIfNeeded()
         }
         codexAppServer.existingCodexMetadata = { [weak self] id in
             self?.state.session(id: id)?.codexMetadata

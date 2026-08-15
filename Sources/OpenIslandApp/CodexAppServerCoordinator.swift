@@ -31,11 +31,17 @@ final class CodexAppServerCoordinator {
     @ObservationIgnored
     var onStatusMessage: ((String) -> Void)?
 
-    /// Returns `true` if a session with the given id is already tracked.
-    /// Used to avoid re-emitting `sessionStarted` (which rebuilds the
-    /// session and wipes richer state from hooks/rediscovery).
+    /// Returns rollout-established ownership for an already-tracked session.
+    /// App-server `source` is not authoritative: Codex Desktop currently
+    /// reports real threads as `vscode`, the same value used by IDE clients.
     @ObservationIgnored
-    var isSessionTracked: ((String) -> Bool)?
+    var trackedRuntimeSurface: ((String) -> CodexRuntimeSurface?) = { _ in nil }
+
+    /// Requests a rollout re-scan when app-server observes a thread that has
+    /// not yet been imported. Rollout `session_meta` owns runtime
+    /// classification, so app-server never guesses from the ambiguous source.
+    @ObservationIgnored
+    var onRolloutRediscoveryNeeded: (() -> Void)?
 
     /// Existing metadata is merged with configuration refreshes so a title or
     /// model sync never erases prompt/tool state gathered from rollout hooks.
@@ -144,10 +150,7 @@ final class CodexAppServerCoordinator {
         guard let client else { return }
         do {
             let threads = try await client.listThreads(limit: 100)
-            let created = syncThreads(threads)
-            if created > 0 {
-                onStatusMessage?("Synced \(created) new Codex thread(s) from app-server.")
-            }
+            syncThreads(threads)
         } catch {
             onStatusMessage?("Failed to list loaded Codex threads: \(error.localizedDescription)")
         }
@@ -156,25 +159,22 @@ final class CodexAppServerCoordinator {
     /// Applies a `thread/list` snapshot. Internal so the exact current
     /// app-server envelope and not-loaded project-session behavior can be
     /// pinned by regression tests.
-    @discardableResult
-    func syncThreads(_ threads: [CodexThread]) -> Int {
-        var created = 0
+    func syncThreads(_ threads: [CodexThread]) {
+        var observedUntrackedThread = false
         for thread in threads where !thread.ephemeral {
-            if isSessionTracked?(thread.id) == true {
-                emitTitleUpdated(sessionID: thread.id, title: preferredTitle(for: thread))
-                emitJumpTargetUpdated(for: thread)
-                emitConfigurationUpdated(for: thread)
+            if let runtimeSurface = trackedRuntimeSurface(thread.id) {
+                enrichTrackedThread(thread, runtimeSurface: runtimeSurface)
+                if runtimeSurface == .unknown {
+                    observedUntrackedThread = true
+                }
                 continue
             }
 
-            // A newly spawned app-server labels history-only threads as
-            // notLoaded. Do not import the whole history into the island; only
-            // enrich those that rollout discovery already tracks.
-            guard thread.status.type != .notLoaded else { continue }
-            emitSessionStarted(from: thread)
-            created += 1
+            observedUntrackedThread = true
         }
-        return created
+        if observedUntrackedThread {
+            onRolloutRediscoveryNeeded?()
+        }
     }
 
     // MARK: - Notification handling
@@ -183,13 +183,14 @@ final class CodexAppServerCoordinator {
         switch notification {
         case .threadStarted(let thread):
             guard !thread.ephemeral else { return }
-            if isSessionTracked?(thread.id) == true {
-                emitTitleUpdated(sessionID: thread.id, title: preferredTitle(for: thread))
-                emitJumpTargetUpdated(for: thread)
-                emitConfigurationUpdated(for: thread)
+            if let runtimeSurface = trackedRuntimeSurface(thread.id) {
+                enrichTrackedThread(thread, runtimeSurface: runtimeSurface)
+                if runtimeSurface == .unknown {
+                    onRolloutRediscoveryNeeded?()
+                }
                 return
             }
-            emitSessionStarted(from: thread)
+            onRolloutRediscoveryNeeded?()
 
         case .threadStatusChanged(let threadId, let status):
             switch status.type {
@@ -305,41 +306,15 @@ final class CodexAppServerCoordinator {
 
     // MARK: - Helpers
 
-    private func emitSessionStarted(from thread: CodexThread) {
-        let workspaceName = URL(fileURLWithPath: thread.cwd).lastPathComponent
-        let title = preferredTitle(for: thread) ?? workspaceName
-        let summary = thread.preview.isEmpty ? "Codex session." : String(thread.preview.prefix(120))
-
-        let phase: SessionPhase
-        switch thread.status.type {
-        case .active: phase = .running
-        case .idle: phase = .completed
-        case .notLoaded, .systemError: phase = .completed
+    private func enrichTrackedThread(
+        _ thread: CodexThread,
+        runtimeSurface: CodexRuntimeSurface
+    ) {
+        emitTitleUpdated(sessionID: thread.id, title: preferredTitle(for: thread))
+        if runtimeSurface == .desktopApp {
+            emitJumpTargetUpdated(for: thread)
         }
-
-        onEvent?(.sessionStarted(
-            SessionStarted(
-                sessionID: thread.id,
-                title: title,
-                tool: .codex,
-                origin: .live,
-                initialPhase: phase,
-                summary: summary,
-                timestamp: .now,
-                jumpTarget: JumpTarget(
-                    terminalApp: "Codex.app",
-                    workspaceName: workspaceName,
-                    paneTitle: title,
-                    workingDirectory: thread.cwd,
-                    codexThreadID: thread.id
-                ),
-                codexMetadata: mergedMetadata(
-                    sessionID: thread.id,
-                    transcriptPath: thread.path,
-                    initialUserPrompt: thread.preview.isEmpty ? nil : thread.preview
-                )
-            )
-        ))
+        emitConfigurationUpdated(for: thread)
     }
 
     private func emitConfigurationUpdated(for thread: CodexThread) {
