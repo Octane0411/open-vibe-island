@@ -417,6 +417,7 @@ struct SetupSettingsPane: View {
     @State private var confirmingUninstallCodebuddy = false
     @State private var confirmingUninstallCursor = false
     @State private var confirmingUninstallGemini = false
+    @State private var confirmingUninstallAntigravity = false
     @State private var confirmingUninstallKimi = false
     @State private var confirmingUninstallClaudeUsage = false
 
@@ -587,6 +588,23 @@ struct SetupSettingsPane: View {
                 }
 
                 hookRow(
+                    name: "Antigravity",
+                    installed: model.antigravityHooksInstalled,
+                    busy: model.isAntigravityHookSetupBusy,
+                    configLocationURL: model.antigravityHookStatus?.hooksURL,
+                    installAction: { model.installAntigravityHooks() },
+                    uninstallAction: { confirmingUninstallAntigravity = true }
+                )
+                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallAntigravity) {
+                    Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
+                        model.uninstallAntigravityHooks()
+                    }
+                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
+                } message: {
+                    Text("This will remove only the Open Island task monitor from ~/.gemini/config/hooks.json.")
+                }
+
+                hookRow(
                     name: "Kimi CLI",
                     installed: model.kimiHooksInstalled,
                     busy: model.isKimiHookSetupBusy,
@@ -678,6 +696,7 @@ struct SetupSettingsPane: View {
                     if !model.codebuddyHooksInstalled { model.installCodebuddyHooks() }
                     if !model.cursorHooksInstalled { model.installCursorHooks() }
                     if !model.geminiHooksInstalled { model.installGeminiHooks() }
+                    if !model.antigravityHooksInstalled { model.installAntigravityHooks() }
                     if !model.kimiHooksInstalled { model.installKimiHooks() }
                     if !model.claudeUsageInstalled { model.installClaudeUsageBridge() }
                 }
@@ -740,7 +759,8 @@ struct SetupSettingsPane: View {
     private var allReady: Bool {
         model.claudeHooksInstalled && model.codexHooksInstalled && model.openCodePluginInstalled
             && model.qoderHooksInstalled && model.qwenCodeHooksInstalled && model.factoryHooksInstalled && model.codebuddyHooksInstalled
-            && model.cursorHooksInstalled && model.geminiHooksInstalled && model.kimiHooksInstalled && model.claudeUsageInstalled
+            && model.cursorHooksInstalled && model.geminiHooksInstalled && model.antigravityHooksInstalled
+            && model.kimiHooksInstalled && model.claudeUsageInstalled
     }
 
     @ViewBuilder

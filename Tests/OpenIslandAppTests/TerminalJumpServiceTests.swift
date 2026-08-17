@@ -179,6 +179,34 @@ final class TerminalJumpServiceTests: XCTestCase {
         XCTAssertTrue(openedArguments.values.isEmpty)
     }
 
+    func testAntigravityJumpActivatesAgentManager() throws {
+        let openedArguments = OpenedArgumentsBox()
+        let service = TerminalJumpService(
+            applicationResolver: { bundleIdentifier in
+                bundleIdentifier == "com.google.antigravity"
+                    ? URL(fileURLWithPath: "/Applications/Antigravity.app")
+                    : nil
+            },
+            appRunningChecker: { $0 == "com.google.antigravity" },
+            openAction: { arguments in
+                openedArguments.values.append(arguments)
+            },
+            appleScriptRunner: { _ in "" }
+        )
+
+        let result = try service.jump(
+            to: JumpTarget(
+                terminalApp: "Antigravity",
+                workspaceName: "worktree",
+                paneTitle: "Antigravity abc123",
+                workingDirectory: "/Users/test/worktree"
+            )
+        )
+
+        XCTAssertEqual(result, "Activated Antigravity.")
+        XCTAssertEqual(openedArguments.values, [["-b", "com.google.antigravity"]])
+    }
+
     func testWarpJumpReturnsImmediatelyWhenAlreadyOnTargetPane() throws {
         let openedArguments = OpenedArgumentsBox()
         let keystroker = KeystrokeInjectorSpy()

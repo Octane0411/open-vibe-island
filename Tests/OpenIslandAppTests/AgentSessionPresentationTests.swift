@@ -103,6 +103,7 @@ struct AgentSessionPresentationTests {
         let expectedNames: [(AgentTool, String)] = [
             (.claudeCode, "Claude"),
             (.codex, "Codex"),
+            (.antigravity, "Antigravity"),
             (.geminiCLI, "Gemini"),
             (.openCode, "OpenCode"),
             (.qoder, "Qoder"),

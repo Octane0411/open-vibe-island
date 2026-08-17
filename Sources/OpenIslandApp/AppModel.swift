@@ -132,6 +132,11 @@ final class AppModel {
     var geminiHookStatus: GeminiHookInstallationStatus? { hooks.geminiHookStatus }
     var geminiHookStatusTitle: String { hooks.geminiHookStatusTitle }
     var geminiHookStatusSummary: String { hooks.geminiHookStatusSummary }
+    var antigravityHooksInstalled: Bool { hooks.antigravityHooksInstalled }
+    var isAntigravityHookSetupBusy: Bool { hooks.isAntigravityHookSetupBusy }
+    var antigravityHookStatus: AntigravityHookInstallationStatus? { hooks.antigravityHookStatus }
+    var antigravityHookStatusTitle: String { hooks.antigravityHookStatusTitle }
+    var antigravityHookStatusSummary: String { hooks.antigravityHookStatusSummary }
     var kimiHooksInstalled: Bool { hooks.kimiHooksInstalled }
     var isKimiHookSetupBusy: Bool { hooks.isKimiHookSetupBusy }
     var kimiHookStatus: KimiHookInstallationStatus? { hooks.kimiHookStatus }
@@ -162,6 +167,7 @@ final class AppModel {
             || hooks.codebuddyHooksInstalled
             || hooks.openCodePluginInstalled
             || hooks.geminiHooksInstalled
+            || hooks.antigravityHooksInstalled
             || hooks.kimiHooksInstalled
     }
     func refreshCodexHookStatus() { hooks.refreshCodexHookStatus() }
@@ -190,6 +196,9 @@ final class AppModel {
     func refreshGeminiHookStatus() { hooks.refreshGeminiHookStatus() }
     func installGeminiHooks() { hooks.installGeminiHooks() }
     func uninstallGeminiHooks() { hooks.uninstallGeminiHooks() }
+    func refreshAntigravityHookStatus() { hooks.refreshAntigravityHookStatus() }
+    func installAntigravityHooks() { hooks.installAntigravityHooks() }
+    func uninstallAntigravityHooks() { hooks.uninstallAntigravityHooks() }
     func refreshKimiHookStatus() { hooks.refreshKimiHookStatus() }
     func installKimiHooks() { hooks.installKimiHooks() }
     func uninstallKimiHooks() { hooks.uninstallKimiHooks() }
@@ -1648,6 +1657,7 @@ final class AppModel {
                 if self.hooks.shouldAutoInstall(.openCode) { self.installOpenCodePlugin() }
                 if self.hooks.shouldAutoInstall(.cursor) { self.installCursorHooks() }
                 if self.hooks.shouldAutoInstall(.gemini) { self.installGeminiHooks() }
+                if self.hooks.shouldAutoInstall(.antigravity) { self.installAntigravityHooks() }
                 if self.hooks.shouldAutoInstall(.kimi) { self.installKimiHooks() }
                 if self.hooks.shouldAutoInstall(.claudeUsageBridge) { self.installClaudeUsageBridge() }
 

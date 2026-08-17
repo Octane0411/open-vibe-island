@@ -3,6 +3,7 @@ import Foundation
 public enum AgentTool: String, CaseIterable, Codable, Sendable {
     case claudeCode
     case codex
+    case antigravity
     case geminiCLI
     case openCode
     case qoder
@@ -18,6 +19,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "Claude Code"
         case .codex:
             "Codex"
+        case .antigravity:
+            "Antigravity"
         case .geminiCLI:
             "Gemini CLI"
         case .openCode:
@@ -43,6 +46,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "CLAUDE"
         case .codex:
             "CODEX"
+        case .antigravity:
+            "ANTIGRAVITY"
         case .geminiCLI:
             "GEMINI"
         case .openCode:
@@ -79,6 +84,7 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
         switch self {
         case .claudeCode: "#d97742"
         case .codex:      "#4aa3df"
+        case .antigravity: "#7c5cff"
         case .cursor:     "#7a5cff"
         case .geminiCLI:  "#42e86b"
         case .openCode:   "#ffb547"
@@ -508,7 +514,7 @@ public extension AgentSession {
     }
 
     var isTrackedLiveSession: Bool {
-        !isDemoSession && (tool == .codex || tool == .claudeCode || tool == .geminiCLI || tool == .openCode || tool == .qoder || tool == .qwenCode || tool == .factory || tool == .codebuddy || tool == .cursor || tool == .kimiCLI)
+        !isDemoSession && (tool == .codex || tool == .claudeCode || tool == .antigravity || tool == .geminiCLI || tool == .openCode || tool == .qoder || tool == .qwenCode || tool == .factory || tool == .codebuddy || tool == .cursor || tool == .kimiCLI)
     }
 
     var isTrackedLiveCodexSession: Bool {

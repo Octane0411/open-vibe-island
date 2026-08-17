@@ -468,6 +468,9 @@ public final class BridgeServer: @unchecked Sendable {
 
         case let .processGeminiHook(payload):
             handleGeminiHook(payload, from: clientID)
+
+        case let .processAntigravityHook(payload):
+            handleAntigravityHook(payload, from: clientID)
         }
     }
 
@@ -1385,6 +1388,73 @@ public final class BridgeServer: @unchecked Sendable {
 
             send(.response(.acknowledged), to: clientID)
         }
+    }
+
+    private func handleAntigravityHook(_ payload: AntigravityHookPayload, from clientID: UUID) {
+        guard let hookEventName = payload.hookEventName else {
+            send(.response(.acknowledged), to: clientID)
+            return
+        }
+
+        ensureAntigravitySessionExists(for: payload)
+
+        switch hookEventName {
+        case .preInvocation:
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.conversationID,
+                        summary: payload.runningSummary,
+                        phase: .running,
+                        timestamp: .now
+                    )
+                )
+            )
+
+        case .stop:
+            if payload.fullyIdle != true {
+                emit(
+                    .activityUpdated(
+                        SessionActivityUpdated(
+                            sessionID: payload.conversationID,
+                            summary: "Antigravity still has background tasks in \(payload.workspaceName).",
+                            phase: .running,
+                            timestamp: .now
+                        )
+                    )
+                )
+            } else {
+                emit(
+                    .sessionCompleted(
+                        SessionCompleted(
+                            sessionID: payload.conversationID,
+                            summary: payload.stoppedSummary,
+                            timestamp: .now
+                        )
+                    )
+                )
+            }
+        }
+
+        send(.response(.acknowledged), to: clientID)
+    }
+
+    private func ensureAntigravitySessionExists(for payload: AntigravityHookPayload) {
+        guard !hasSession(id: payload.conversationID) else { return }
+        emit(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: payload.conversationID,
+                    title: payload.sessionTitle,
+                    tool: .antigravity,
+                    origin: .live,
+                    initialPhase: .running,
+                    summary: payload.runningSummary,
+                    timestamp: .now,
+                    jumpTarget: payload.defaultJumpTarget
+                )
+            )
+        )
     }
 
     private func ensureGeminiSessionExists(for payload: GeminiHookPayload) {

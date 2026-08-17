@@ -84,6 +84,11 @@ struct TerminalJumpService {
             aliases: ["claude.app"]
         ),
         TerminalAppDescriptor(
+            displayName: "Antigravity",
+            bundleIdentifier: "com.google.antigravity",
+            aliases: ["antigravity", "antigravity.app"]
+        ),
+        TerminalAppDescriptor(
             displayName: "Kaku",
             bundleIdentifier: "fun.tw93.kaku",
             aliases: ["kaku"]
@@ -348,6 +353,11 @@ struct TerminalJumpService {
                 // per-session deep link, so just bring the app forward.
                 try openAction(["-b", "com.anthropic.claudefordesktop"])
                 return "Activated Claude."
+            case "com.google.antigravity":
+                // Antigravity does not currently publish a per-conversation
+                // deep link, so return to its Agent Manager surface.
+                try openAction(["-b", "com.google.antigravity"])
+                return "Activated Antigravity."
             case "com.googlecode.iterm2":
                 if try jumpToITermSession(target) {
                     return "Focused the matching iTerm session."

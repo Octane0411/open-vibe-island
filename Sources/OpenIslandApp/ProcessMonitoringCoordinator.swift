@@ -53,6 +53,7 @@ final class ProcessMonitoringCoordinator {
     private static let activePollInterval: TimeInterval = 60
     private static let idlePollInterval: TimeInterval = 300
     private static let cursorStalenessTimeout: TimeInterval = 600  // 10 minutes
+    private static let antigravityStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let codexAppStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let claudeDesktopStalenessTimeout: TimeInterval = 600  // 10 minutes
 
@@ -506,6 +507,22 @@ final class ProcessMonitoringCoordinator {
         if hasKimiProcess {
             for session in sessions where session.tool == .kimiCLI && !session.isDemoSession {
                 aliveIDs.insert(session.id)
+            }
+        }
+
+        // Antigravity 2.0 is a standalone desktop manager. Its JSON hooks
+        // expose conversation IDs, but there is no corresponding child PID
+        // to match. Keep hook-managed conversations alive while the app is
+        // running, then let completed cards expire after a short window.
+        let isAntigravityRunning = Self.isAntigravityRunning()
+        if isAntigravityRunning {
+            for session in sessions where session.tool == .antigravity && !session.isDemoSession {
+                if session.isSessionEnded { continue }
+                let isStale = session.phase == .completed
+                    && session.updatedAt.addingTimeInterval(Self.antigravityStalenessTimeout) < Date.now
+                if !isStale {
+                    aliveIDs.insert(session.id)
+                }
             }
         }
 
@@ -1294,6 +1311,12 @@ final class ProcessMonitoringCoordinator {
         }
     }
 
+    static func isAntigravityRunning() -> Bool {
+        NSWorkspace.shared.runningApplications.contains { app in
+            app.bundleIdentifier == "com.google.antigravity"
+        }
+    }
+
     private func processIdentityKey(_ process: ActiveProcessSnapshot) -> String {
         [
             process.sessionID,
@@ -1377,6 +1400,8 @@ final class ProcessMonitoringCoordinator {
             return "VS Code Insiders"
         case "cursor":
             return "Cursor"
+        case "antigravity", "antigravity.app":
+            return "Antigravity"
         case "windsurf":
             return "Windsurf"
         case "trae":
@@ -1426,6 +1451,8 @@ final class ProcessMonitoringCoordinator {
             return "Claude \(session.id.prefix(8))"
         case .geminiCLI:
             return "Gemini \(session.id.prefix(8))"
+        case .antigravity:
+            return "Antigravity \(session.id.prefix(8))"
         case .openCode:
             return "OpenCode \(session.id.prefix(8))"
         case .qoder:
