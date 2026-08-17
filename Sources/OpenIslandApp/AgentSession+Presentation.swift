@@ -168,7 +168,8 @@ extension AgentSession {
     }
 
     var spotlightHeadlineText: String {
-        var headline = spotlightWorkspaceName
+        let workspaceName = spotlightWorkspaceName
+        var headline = workspaceName
 
         if let branch = spotlightWorktreeBranch {
             headline += " (\(branch))"
@@ -176,6 +177,10 @@ extension AgentSession {
 
         guard let prompt = spotlightHeadlinePromptText else {
             return headline
+        }
+
+        guard workspaceName != "/" else {
+            return prompt
         }
 
         return "\(headline) · \(prompt)"

@@ -791,7 +791,11 @@ struct CodexSessionTrackingTests {
                     "content": [
                         [
                             "type": "input_text",
-                            "text": "# AGENTS.md instructions for /tmp/repo\n\n<INSTRUCTIONS>\nRepository guide\n</INSTRUCTIONS>",
+                            "text": "<recommended_plugins>\nHere is a list of plugins that are available but not installed.\n</recommended_plugins>",
+                        ],
+                        [
+                            "type": "input_text",
+                            "text": "# AGENTS.md instructions\n\n<INSTRUCTIONS>\nRepository guide\n</INSTRUCTIONS>",
                         ],
                         [
                             "type": "input_text",
@@ -809,9 +813,25 @@ struct CodexSessionTrackingTests {
                     "content": [
                         [
                             "type": "input_text",
-                            "text": "读一下这篇论文 https://arxiv.org/html/2603.28052v1，然后对比一下 autoresearch 的实现。",
+                            "text": "# Chrome tabs:\n- Current URL: https://arxiv.org/html/2603.28052v1\n\n## My request for Codex:\n读一下这篇论文 https://arxiv.org/html/2603.28052v1，然后对比一下 autoresearch 的实现。",
+                        ],
+                        [
+                            "type": "input_text",
+                            "text": "<image name=[Image #1] path=\"/tmp/paper.png\">",
+                        ],
+                        [
+                            "type": "input_text",
+                            "text": "</image>",
                         ],
                     ],
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T14:37:28.500Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": "# Files mentioned by the user:\n\n## paper.png: /tmp/paper.png\n\n## My request for Codex:\n读一下这篇论文 https://arxiv.org/html/2603.28052v1，然后对比一下 autoresearch 的实现。",
                 ]
             ),
             rolloutLine(
