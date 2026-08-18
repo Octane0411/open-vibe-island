@@ -238,17 +238,24 @@ struct V6ClosedPill: View {
     // label) and the right-slot content so they never touch at small widths.
     private static let innerGap: CGFloat = 6
 
+    var resolvedWidth: CGFloat {
+        switch layout {
+        case .external:
+            let glyphWidth: CGFloat = 24
+            let labelWidth = label.map { V6CenterLabelView.intrinsicWidth(of: $0) } ?? 0
+            let rightWidth = rightSlot.map { V6RightSlotView.intrinsicWidth(of: $0) } ?? 0
+            let labelBlock = label == nil ? 0 : 6 + labelWidth
+            let rightBlock = rightSlot == nil ? 0 : Self.innerGap + rightWidth
+            return max(minWidth, pad * 2 + glyphWidth + labelBlock + rightBlock)
+        case .macbook:
+            return 44 + physicalNotchWidth + 44
+        }
+    }
+
     // MARK: External (fluid)
 
     private var externalBody: some View {
         let glyphW: CGFloat = 24
-        let labelW = label.map { V6CenterLabelView.intrinsicWidth(of: $0) } ?? 0
-        let rightW = rightSlot.map { V6RightSlotView.intrinsicWidth(of: $0) } ?? 0
-
-        let labelBlock = (label == nil ? 0 : 6 + labelW)
-        let rightBlock = (rightSlot == nil ? 0 : Self.innerGap + rightW)
-        let intrinsic = pad * 2 + glyphW + labelBlock + rightBlock
-        let width = max(minWidth, intrinsic)
 
         return ZStack {
             V6ClosedPillShape()
@@ -273,7 +280,7 @@ struct V6ClosedPill: View {
             }
             .padding(.horizontal, pad)
         }
-        .frame(width: width, height: height)
+        .frame(width: resolvedWidth, height: height)
         .animation(
             .timingCurve(0.4, 0, 0.2, 1, duration: 0.45),
             value: AnyHashable([
@@ -287,9 +294,6 @@ struct V6ClosedPill: View {
     // MARK: MacBook (outer width locked)
 
     private var macbookBody: some View {
-        let halfReserve: CGFloat = 44
-        let outer = halfReserve + physicalNotchWidth + halfReserve
-
         return ZStack {
             V6ClosedPillShape()
                 .fill(V6Palette.ink)
@@ -306,7 +310,7 @@ struct V6ClosedPill: View {
             }
             .padding(.horizontal, pad)
         }
-        .frame(width: outer, height: height)
+        .frame(width: resolvedWidth, height: height)
     }
 }
 

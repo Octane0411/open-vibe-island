@@ -56,4 +56,26 @@ struct AgentsGridLayoutTests {
         #expect(rows[0].count == 3)
         #expect(rows[1].count == 2)
     }
+
+    @Test
+    func closedPillReportsItsRenderedWidthForPanelMorphing() {
+        let macbookPill = V6ClosedPill(
+            mode: .idle,
+            label: nil,
+            rightSlot: nil,
+            layout: .macbook,
+            height: 32,
+            physicalNotchWidth: 224
+        )
+        let externalPill = V6ClosedPill(
+            mode: .idle,
+            label: nil,
+            rightSlot: nil,
+            layout: .external,
+            height: 32
+        )
+
+        #expect(macbookPill.resolvedWidth == 312)
+        #expect(externalPill.resolvedWidth == 70)
+    }
 }
