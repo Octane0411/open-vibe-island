@@ -31,7 +31,7 @@ public final class KimiHookInstallationManager: @unchecked Sendable {
     private let fileManager: FileManager
 
     public init(
-        kimiDirectory: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".kimi", isDirectory: true),
+        kimiDirectory: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".kimi-code", isDirectory: true),
         managedHooksBinaryURL: URL = ManagedHooksBinary.defaultURL(),
         fileManager: FileManager = .default
     ) {

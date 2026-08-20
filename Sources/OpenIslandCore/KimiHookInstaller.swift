@@ -25,7 +25,7 @@ public struct KimiHookFileMutation: Equatable, Sendable, Codable {
 }
 
 /// Installs/uninstalls Open Island's managed `[[hooks]]` entries in
-/// `~/.kimi/config.toml`.
+/// `~/.kimi-code/config.toml` (Kimi Code CLI's config directory).
 ///
 /// Kimi CLI's hook protocol is byte-compatible with Claude Code (same stdin
 /// JSON fields, same exit-code semantics), so the runtime side reuses

@@ -600,7 +600,7 @@ struct SetupSettingsPane: View {
                     }
                     Button(lang.t("settings.general.cancel"), role: .cancel) {}
                 } message: {
-                    Text("This will remove Open Island hooks from ~/.kimi/config.toml.")
+                    Text("This will remove Open Island hooks from ~/.kimi-code/config.toml.")
                 }
             }
 

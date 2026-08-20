@@ -71,7 +71,7 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 | **CodeBuddy** | 已支持 | Claude Code 分支——相同 hook 格式，配置位于 `~/.codebuddy/settings.json` |
 | **Cursor** | 已支持 | Hook 集成，通过 `~/.cursor/hooks.json` 配置，会话追踪，工作区跳转 |
 | **Gemini CLI** | 已支持 | Hook 集成，通过 `~/.gemini/settings.json` 配置，会话追踪，fire-and-forget 事件 |
-| **Kimi CLI** | 已支持 | Hook 集成，通过 `~/.kimi/config.toml` 的 `[[hooks]]` 数组配置，会话追踪，复用 Claude payload 协议 |
+| **Kimi CLI** | 已支持 | Hook 集成，通过 `~/.kimi-code/config.toml` 的 `[[hooks]]` 数组配置，会话追踪，复用 Claude payload 协议 |
 
 ### 终端和 IDE
 
@@ -273,10 +273,10 @@ AI coding 正在成为日常开发流程的一部分，但围绕它的控制层�
 - **CodeBuddy** — Claude Code 分支。相同 hook 格式和事件，配置位于 `~/.codebuddy/settings.json`。使用 `--source codebuddy` 调用 hooks binary。
 - **Cursor** — 基于 hook 的集成，通过 `~/.cursor/hooks.json` 配置。接收 `beforeSubmitPrompt`、`beforeShellExecution`、`beforeMCPExecution`、`beforeReadFile`、`afterFileEdit` 和 `stop` 事件。跨应用启动持久化会话。通过 `cursor -r` 跳回工作区。使用 `--source cursor` 调用 hooks binary。
 - **Gemini CLI** — 基于 hook 的集成，通过 `~/.gemini/settings.json` 配置。接收 `SessionStart`、`PreToolUse`、`PostToolUse`、`Stop` 和 `UserPromptSubmit` 事件。Fire-and-forget（无 block/deny）。使用 `--source gemini` 调用 hooks binary。
-- **Kimi CLI** — 基于 hook 的集成，通过 `~/.kimi/config.toml` 的 `[[hooks]]` 数组配置（Moonshot AI）。Kimi 的 hook payload 与 Claude Code 字段兼容，Open Island 复用 Claude 解码路径，仅新增了 TOML installer。订阅 `SessionStart`、`UserPromptSubmit`、`Stop`、`Notification`、`PreToolUse`、`PostToolUse`。需要 Kimi CLI Hooks Beta。使用 `--source kimi` 调用 hooks binary。可以从设置窗口管理安装，或通过 CLI：
+- **Kimi CLI** — 基于 hook 的集成，通过 `~/.kimi-code/config.toml` 的 `[[hooks]]` 数组配置（Moonshot AI）。Kimi 的 hook payload 与 Claude Code 字段兼容，Open Island 复用 Claude 解码路径，仅新增了 TOML installer。订阅 `SessionStart`、`UserPromptSubmit`、`Stop`、`Notification`、`PreToolUse`、`PostToolUse`。已对 Kimi Code CLI 0.37.2 验证。使用 `--source kimi` 调用 hooks binary。可以从设置窗口管理安装，或通过 CLI：
 
   ```sh
-  swift run OpenIslandSetup installKimi    # 把受管 [[hooks]] 条目写入 ~/.kimi/config.toml
+  swift run OpenIslandSetup installKimi    # 把受管 [[hooks]] 条目写入 ~/.kimi-code/config.toml
   swift run OpenIslandSetup statusKimi     # 查看受管 hooks 是否已安装
   swift run OpenIslandSetup uninstallKimi  # 移除受管条目，保留用户自定义的 [[hooks]]
   ```

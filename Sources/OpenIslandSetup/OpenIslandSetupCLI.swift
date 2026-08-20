@@ -47,7 +47,7 @@ private struct SetupCommand {
         var hooksBinary: URL?
         var codexDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex", isDirectory: true)
         var claudeDirectory = ClaudeConfigDirectory.resolved()
-        var kimiDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".kimi", isDirectory: true)
+        var kimiDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".kimi-code", isDirectory: true)
 
         var index = 1
         while index < arguments.count {
@@ -270,9 +270,9 @@ private enum SetupError: Error, LocalizedError {
               swift run OpenIslandSetup installClaude [--hooks-binary /abs/path/to/OpenIslandHooks] [--claude-dir /abs/path/to/.claude]
               swift run OpenIslandSetup uninstallClaude [--claude-dir /abs/path/to/.claude]
               swift run OpenIslandSetup statusClaude [--hooks-binary /abs/path/to/OpenIslandHooks] [--claude-dir /abs/path/to/.claude]
-              swift run OpenIslandSetup installKimi [--hooks-binary /abs/path/to/OpenIslandHooks] [--kimi-dir /abs/path/to/.kimi]
-              swift run OpenIslandSetup uninstallKimi [--kimi-dir /abs/path/to/.kimi]
-              swift run OpenIslandSetup statusKimi [--hooks-binary /abs/path/to/OpenIslandHooks] [--kimi-dir /abs/path/to/.kimi]
+              swift run OpenIslandSetup installKimi [--hooks-binary /abs/path/to/OpenIslandHooks] [--kimi-dir /abs/path/to/.kimi-code]
+              swift run OpenIslandSetup uninstallKimi [--kimi-dir /abs/path/to/.kimi-code]
+              swift run OpenIslandSetup statusKimi [--hooks-binary /abs/path/to/OpenIslandHooks] [--kimi-dir /abs/path/to/.kimi-code]
             """
         case let .missingValue(flag):
             "Missing value for \(flag)"

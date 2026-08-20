@@ -300,6 +300,86 @@ struct KimiHooksTests {
     }
 
     @Test
+    func managerDefaultsToKimiCodeConfigDirectory() {
+        let manager = KimiHookInstallationManager()
+        #expect(manager.kimiDirectory.lastPathComponent == ".kimi-code")
+    }
+
+    @Test
+    func managerInstallStatusUninstallRoundTripPreservesUserHooks() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("kimi-hooks-tests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let kimiDir = root.appendingPathComponent(".kimi-code", isDirectory: true)
+        try FileManager.default.createDirectory(at: kimiDir, withIntermediateDirectories: true)
+        let sourceBinary = root.appendingPathComponent("OpenIslandHooks-source")
+        try "#!/bin/sh\nexit 0\n".write(to: sourceBinary, atomically: true, encoding: .utf8)
+
+        let userToml = """
+        default_model = "kimi-code/kimi-for-coding"
+
+        [[hooks]]
+        event = "PostToolUse"
+        command = "user-hook"
+
+        """
+        let configURL = kimiDir.appendingPathComponent("config.toml")
+        try userToml.write(to: configURL, atomically: true, encoding: .utf8)
+
+        let manager = KimiHookInstallationManager(
+            kimiDirectory: kimiDir,
+            managedHooksBinaryURL: root.appendingPathComponent("managed/OpenIslandHooks")
+        )
+
+        let installed = try manager.install(hooksBinaryURL: sourceBinary)
+        #expect(installed.managedHooksPresent)
+        #expect(installed.hooksBinaryURL != nil)
+
+        let installedContents = try String(contentsOf: configURL, encoding: .utf8)
+        #expect(installedContents.contains("user-hook"))
+        #expect(installedContents.contains("default_model"))
+
+        // Reinstall must not duplicate or rewrite managed blocks.
+        _ = try manager.install(hooksBinaryURL: sourceBinary)
+        let reinstalledContents = try String(contentsOf: configURL, encoding: .utf8)
+        #expect(reinstalledContents == installedContents)
+
+        let uninstalled = try manager.uninstall()
+        #expect(uninstalled.managedHooksPresent == false)
+        let remaining = try String(contentsOf: configURL, encoding: .utf8)
+        #expect(remaining.contains("user-hook"))
+        #expect(remaining.contains("default_model"))
+        #expect(remaining.contains(KimiHookInstaller.markerComment) == false)
+        let manifestURL = kimiDir.appendingPathComponent(KimiHookInstallerManifest.fileName)
+        #expect(FileManager.default.fileExists(atPath: manifestURL.path) == false)
+    }
+
+    @Test
+    func managerUninstallDeletesConfigThatOnlyHadManagedHooks() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("kimi-hooks-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let sourceBinary = root.appendingPathComponent("OpenIslandHooks-source")
+        try "#!/bin/sh\nexit 0\n".write(to: sourceBinary, atomically: true, encoding: .utf8)
+
+        let kimiDir = root.appendingPathComponent(".kimi-code", isDirectory: true)
+        let manager = KimiHookInstallationManager(
+            kimiDirectory: kimiDir,
+            managedHooksBinaryURL: root.appendingPathComponent("managed/OpenIslandHooks")
+        )
+
+        _ = try manager.install(hooksBinaryURL: sourceBinary)
+        let configURL = kimiDir.appendingPathComponent("config.toml")
+        #expect(FileManager.default.fileExists(atPath: configURL.path))
+
+        _ = try manager.uninstall()
+        #expect(FileManager.default.fileExists(atPath: configURL.path) == false)
+    }
+
+    @Test
     func resolvedAgentToolMapsKimiSource() {
         var payload = ClaudeHookPayload(
             cwd: "/tmp",

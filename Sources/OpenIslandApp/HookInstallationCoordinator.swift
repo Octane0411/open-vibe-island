@@ -364,7 +364,7 @@ final class HookInstallationCoordinator {
 
     var kimiHookStatusSummary: String {
         guard kimiHookStatus != nil else {
-            return "Reading ~/.kimi/config.toml."
+            return "Reading ~/.kimi-code/config.toml."
         }
 
         if kimiHooksInstalled {
