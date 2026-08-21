@@ -22,7 +22,8 @@ final class OpenIslandAppDelegate: NSObject, NSApplicationDelegate {
             harnessRuntimeMonitor.recordLog(model.lastActionMessage)
 
             model.ignoresPointerExitDuringHarness = harnessLaunchConfiguration.scenario != nil
-            model.disablesOverlayEventMonitoringDuringHarness = harnessLaunchConfiguration.scenario != nil
+            model.disablesOverlayEventMonitoringDuringHarness =
+                harnessLaunchConfiguration.disablesOverlayEventMonitoring
             model.startIfNeeded(
                 startBridge: harnessLaunchConfiguration.shouldStartBridge,
                 shouldPerformBootAnimation: harnessLaunchConfiguration.shouldPerformBootAnimation,

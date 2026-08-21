@@ -8,12 +8,26 @@ struct HarnessLaunchConfigurationTests {
         let configuration = HarnessLaunchConfiguration(environment: [:])
 
         #expect(configuration.scenario == nil)
+        #expect(!configuration.disablesOverlayEventMonitoring)
         #expect(!configuration.presentOverlay)
         #expect(configuration.shouldStartBridge)
         #expect(configuration.shouldPerformBootAnimation)
         #expect(configuration.captureDelay == nil)
         #expect(configuration.autoExitAfter == nil)
         #expect(configuration.artifactDirectoryURL == nil)
+    }
+
+    @Test
+    func closedScenarioKeepsOverlayEventMonitoringEnabled() {
+        let closed = HarnessLaunchConfiguration(
+            environment: ["OPEN_ISLAND_HARNESS_SCENARIO": "closed"]
+        )
+        let opened = HarnessLaunchConfiguration(
+            environment: ["OPEN_ISLAND_HARNESS_SCENARIO": "sessionList"]
+        )
+
+        #expect(!closed.disablesOverlayEventMonitoring)
+        #expect(opened.disablesOverlayEventMonitoring)
     }
 
     @Test

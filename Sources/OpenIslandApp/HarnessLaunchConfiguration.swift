@@ -2,6 +2,7 @@ import Foundation
 
 struct HarnessLaunchConfiguration {
     let scenario: IslandDebugScenario?
+    var disablesOverlayEventMonitoring: Bool { scenario != nil && scenario != .closed }
     let presentOverlay: Bool
     let shouldStartBridge: Bool
     let shouldPerformBootAnimation: Bool
