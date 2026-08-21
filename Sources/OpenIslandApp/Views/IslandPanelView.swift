@@ -307,6 +307,10 @@ struct IslandPanelView: View {
                 width: usesOpenedVisualState ? openedWidth : closedPill.resolvedWidth,
                 height: usesOpenedVisualState ? openedHeight : closedNotchHeight
             )
+            .animation(
+                .timingCurve(0.4, 0, 0.2, 1, duration: 0.45),
+                value: closedPill.resolvedWidth
+            )
     }
 
     private var transitionSurfaceShape: OpenedIslandSurfaceShape {
