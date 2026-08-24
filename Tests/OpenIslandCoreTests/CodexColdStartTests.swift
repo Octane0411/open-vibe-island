@@ -31,6 +31,22 @@ struct CodexColdStartTests {
         var sessionsAfterFirst: Int
     }
 
+    /// A representative slice of the corpus rather than all of it.
+    ///
+    /// Decode coverage across every Codex version belongs to
+    /// `CodexFixtureCorpusTests`, which walks the whole corpus once. What these
+    /// tests check — idempotent restore, spawned threads withheld, every
+    /// restored session carrying a workspace — is pipeline behaviour and does
+    /// not vary by version. Keeping the slice small matters because the decode
+    /// is synchronous: on a CI runner with few cores it occupies cooperative
+    /// threads that concurrent async tests need to make progress.
+    static let sample: [(url: URL, lines: [String])] = {
+        let all = CodexFixtureCorpusTests.cachedLines
+        // Take from both ends so the slice spans old and new formats and
+        // includes the edge buckets, which sort last.
+        return Array(all.prefix(4)) + Array(all.suffix(6))
+    }()
+
     static let restore: Restore = {
         let pipeline = CodexIngestionPipeline(mode: .live)
         var started = 0
@@ -38,7 +54,7 @@ struct CodexColdStartTests {
 
         func pass() -> Int {
             var count = 0
-            for (url, lines) in CodexFixtureCorpusTests.cachedLines {
+            for (url, lines) in sample {
                 let reading = pipeline.rollout.read(lines: lines, transcriptPath: url.path)
                 guard let observation = reading.observation, !reading.isSubagent else { continue }
                 for event in pipeline.projector.project(observation) {
@@ -48,7 +64,7 @@ struct CodexColdStartTests {
             return count
         }
 
-        for (url, lines) in CodexFixtureCorpusTests.cachedLines {
+        for (url, lines) in sample {
             if pipeline.rollout.read(lines: lines, transcriptPath: url.path).isSubagent {
                 subagent += 1
             }
@@ -61,7 +77,7 @@ struct CodexColdStartTests {
             pipeline: pipeline,
             started: started,
             subagentFixtures: subagent,
-            fixtureCount: CodexFixtureCorpusTests.cachedLines.count,
+            fixtureCount: sample.count,
             secondPassStarts: second,
             sessionsAfterFirst: afterFirst
         )
