@@ -69,6 +69,12 @@ public final class BridgeServer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "app.openisland.bridge.server")
     private let queueKey = DispatchSpecificKey<Void>()
 
+    /// The rewritten Codex ingestion layer. Runs in shadow mode by default:
+    /// it observes everything the legacy path observes and records where the
+    /// two disagree, without affecting what the user sees. See
+    /// `CodexIngestionPipeline.Mode`.
+    public let codexPipeline = CodexIngestionPipeline(mode: .shadow)
+
     private var listeners: [Listener] = []
     private var clients: [UUID: ClientConnection] = [:]
     private var pendingApprovals: [String: PendingApproval] = [:]
@@ -488,6 +494,14 @@ public final class BridgeServer: @unchecked Sendable {
            (payload.transcriptPath ?? "").isEmpty {
             send(.response(.acknowledged), to: clientID)
             return
+        }
+
+        // Feed the rewritten pipeline in parallel. In shadow mode this returns
+        // nothing and only accumulates comparison data; when the mode is
+        // switched to live it becomes the path that drives the UI.
+        let shadowEvents = codexPipeline.ingest(hook: payload)
+        for event in shadowEvents {
+            emit(event)
         }
 
         switch payload.hookEventName {
