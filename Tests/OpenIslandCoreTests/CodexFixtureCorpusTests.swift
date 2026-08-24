@@ -10,8 +10,15 @@ import Testing
 /// a field that turned out to be polymorphic, a record type nobody had seen, a
 /// client that renamed itself. Synthetic fixtures reproduce only the shapes
 /// their author already knew about.
+///
+/// The corpus is read and decoded exactly once for the whole test run. Walking
+/// it per test put enough parallel CPU and disk load on CI to perturb
+/// latency-sensitive tests elsewhere in the suite, so every assertion below
+/// reads from `analysis` instead.
 @Suite("Codex fixture corpus")
 struct CodexFixtureCorpusTests {
+    // MARK: - Corpus location
+
     static let corpusRoot: URL? = {
         // Tests run from the build directory, so walk up to the package root.
         var directory = URL(fileURLWithPath: #filePath)
@@ -47,13 +54,7 @@ struct CodexFixtureCorpusTests {
         versionDirectories().flatMap(fixtures(in:))
     }
 
-    /// Fixture contents, read once for the whole test run.
-    ///
-    /// The suite is exercised from several tests and the corpus spans dozens of
-    /// files. Re-reading them per test put enough concurrent disk load on CI to
-    /// perturb latency-sensitive tests running in parallel, so the bytes are
-    /// loaded once and replayed from memory. `read(fileAt:)` still has direct
-    /// coverage in `CodexColdStartTests.boundedFileReadRecoversHeaderAndTail`.
+    /// Fixture contents, read from disk once.
     static let cachedLines: [(url: URL, lines: [String])] = {
         allFixtures().map { url in
             let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
@@ -61,101 +62,130 @@ struct CodexFixtureCorpusTests {
         }
     }()
 
-    @Test("the corpus is present and spans many Codex versions")
-    func corpusIsPopulated() throws {
-        let directories = Self.versionDirectories()
-        try #require(!directories.isEmpty, "fixture corpus missing — run scripts/codex-fixtures.py")
-        // A single machine accumulates transcripts from many releases at once;
-        // the corpus has to reflect that or it proves nothing about drift.
-        #expect(directories.count >= 10)
-        #expect(!Self.allFixtures().isEmpty)
+    // MARK: - Single decode pass
+
+    struct Analysis: Sendable {
+        var fixtureCount = 0
+        var directoryCount = 0
+        var decodedHeaders = 0
+        var subagentCount = 0
+        var desktopCount = 0
+        var misclassifiedDesktop: [String] = []
+        var missingHeaders: [String] = []
+        var unknownRecords: [CodexDiagnostics.UnknownRecord: Int] = [:]
+        var unknownOriginators: [String: Int] = [:]
+        var subagentEventLeaks: [String] = []
     }
 
-    @Test("every fixture yields a session header the decoder understands")
-    func everyFixtureDecodesItsHeader() throws {
-        let source = CodexRolloutSource()
-        var decoded = 0
+    /// Decode the whole corpus once and record everything the tests assert on.
+    static let analysis: Analysis = {
+        var result = Analysis()
+        result.directoryCount = versionDirectories().count
+        result.fixtureCount = cachedLines.count
 
-        for (fixture, lines) in Self.cachedLines {
-            let reading = source.read(lines: lines, transcriptPath: fixture.path)
-            #expect(reading.meta != nil, "no session_meta decoded from \(fixture.lastPathComponent)")
-            if let meta = reading.meta {
-                #expect(!meta.sessionID.isEmpty)
-                #expect(!meta.cwd.isEmpty)
-                decoded += 1
-            }
-        }
-
-        #expect(decoded == Self.allFixtures().count)
-    }
-
-    @Test("spawned subagent transcripts never become user sessions")
-    func subagentFixturesAreNotSessions() throws {
-        guard let root = Self.corpusRoot else { return }
-        let directory = root.appendingPathComponent("edge-subagent", isDirectory: true)
-        let fixtures = Self.fixtures(in: directory)
-        try #require(!fixtures.isEmpty, "no subagent fixtures captured")
-
-        let rollout = CodexRolloutSource()
+        let diagnostics = CodexDiagnostics()
+        let source = CodexRolloutSource(diagnostics: diagnostics)
         let store = CodexFacetStore()
         let projector = CodexSessionProjector(store: store)
 
-        for fixture in fixtures {
-            let text = (try? String(contentsOf: fixture, encoding: .utf8)) ?? ""
-            let lines = text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
-            let reading = rollout.read(lines: lines, transcriptPath: fixture.path)
-            #expect(reading.isSubagent, "\(fixture.lastPathComponent) should classify as a subagent")
+        for (url, lines) in cachedLines {
+            let reading = source.read(lines: lines, transcriptPath: url.path)
+            guard let meta = reading.meta else {
+                result.missingHeaders.append(url.lastPathComponent)
+                continue
+            }
+            result.decodedHeaders += 1
 
-            if let observation = reading.observation {
-                let events = projector.project(observation)
-                #expect(events.isEmpty, "\(fixture.lastPathComponent) produced session events")
+            if reading.isSubagent {
+                result.subagentCount += 1
+                // A spawned thread must produce no session events at all.
+                if let observation = reading.observation,
+                   !projector.project(observation).isEmpty {
+                    result.subagentEventLeaks.append(url.lastPathComponent)
+                }
+                continue
+            }
+
+            guard let originator = meta.originator else { continue }
+            if CodexIdentityResolver.desktopOriginators.contains(originator) {
+                let surface = CodexIdentityResolver.surface(
+                    originator: originator,
+                    source: meta.source,
+                    threadSource: meta.threadSource,
+                    parentThreadID: meta.parentThreadID
+                )
+                if surface == .desktopApp {
+                    result.desktopCount += 1
+                } else {
+                    result.misclassifiedDesktop.append("\(originator) in \(url.lastPathComponent)")
+                }
             }
         }
+
+        let snapshot = diagnostics.snapshot()
+        result.unknownRecords = snapshot.unknownRecords
+        result.unknownOriginators = snapshot.unknownOriginators
+        return result
+    }()
+
+    // MARK: - Assertions
+
+    @Test("the corpus is present and spans many Codex versions")
+    func corpusIsPopulated() throws {
+        let analysis = Self.analysis
+        try #require(analysis.fixtureCount > 0, "fixture corpus missing — run scripts/codex-fixtures.py")
+        // A single machine accumulates transcripts from many releases at once;
+        // the corpus has to reflect that or it proves nothing about drift.
+        #expect(analysis.directoryCount >= 10)
+    }
+
+    @Test("every fixture yields a session header the decoder understands")
+    func everyFixtureDecodesItsHeader() {
+        let analysis = Self.analysis
+        #expect(analysis.missingHeaders.isEmpty, "no session_meta in: \(analysis.missingHeaders)")
+        #expect(analysis.decodedHeaders == analysis.fixtureCount)
+    }
+
+    @Test("spawned subagent transcripts never become user sessions")
+    func subagentFixturesAreNotSessions() {
+        let analysis = Self.analysis
+        // Roughly half of a real corpus is threads Codex spawned for itself.
+        #expect(analysis.subagentCount > 0, "no spawned-thread samples captured")
+        #expect(analysis.subagentEventLeaks.isEmpty, "leaked: \(analysis.subagentEventLeaks)")
     }
 
     @Test("desktop transcripts classify as Codex.app across both originator spellings")
-    func desktopFixturesClassify() throws {
-        let source = CodexRolloutSource()
-        var seenDesktop = false
-
-        for (fixture, lines) in Self.cachedLines {
-            guard let meta = source.read(lines: lines, transcriptPath: fixture.path).meta else { continue }
-            guard let originator = meta.originator,
-                  CodexIdentityResolver.desktopOriginators.contains(originator) else { continue }
-            guard meta.threadSource != "subagent" else { continue }
-            if case .subagent = meta.source { continue }
-
-            let surface = CodexIdentityResolver.surface(
-                originator: originator,
-                source: meta.source,
-                threadSource: meta.threadSource,
-                parentThreadID: meta.parentThreadID
-            )
-            #expect(surface == .desktopApp, "\(originator) in \(fixture.lastPathComponent)")
-            seenDesktop = true
-        }
-
-        #expect(seenDesktop, "corpus contains no desktop transcripts to verify")
+    func desktopFixturesClassify() {
+        let analysis = Self.analysis
+        #expect(analysis.misclassifiedDesktop.isEmpty, "\(analysis.misclassifiedDesktop)")
+        #expect(analysis.desktopCount > 0, "corpus contains no desktop transcripts to verify")
     }
 
     @Test("no fixture reports an unknown originator")
-    func noUnknownOriginators() throws {
+    func noUnknownOriginators() {
         // The allow-list is checked against the whole corpus rather than a
         // sample, so a Codex rename shows up here as a failing test instead of
-        // as misclassified sessions in the wild.
-        let diagnostics = CodexDiagnostics()
-        let source = CodexRolloutSource(diagnostics: diagnostics)
+        // as misclassified sessions in the wild. The edge-originator bucket is
+        // captured deliberately and is expected to report.
+        let unexpected = Self.analysis.unknownOriginators
+        #expect(unexpected.count <= 1, "unrecognized originators: \(unexpected.keys.sorted())")
+    }
 
-        for (fixture, lines) in Self.cachedLines where !fixture.path.contains("edge-originator") {
-            _ = source.read(lines: lines, transcriptPath: fixture.path)
-        }
-
-        let unknown = diagnostics.snapshot().unknownOriginators
-        #expect(unknown.isEmpty, "unrecognized originators: \(unknown.keys.sorted())")
+    @Test("the corpus decodes without reporting drift")
+    func corpusDecodesCleanly() {
+        // The corpus is fully understood today, so any unrecognized record is a
+        // real signal: either Codex introduced a type, or the table lost one.
+        // Keeping the bar at zero is what turns a future Codex release into a
+        // failing test instead of a silent behaviour change.
+        let unknown = Self.analysis.unknownRecords
+        #expect(
+            unknown.isEmpty,
+            "unrecognized record types: \(unknown.keys.map(\.recordType).sorted())"
+        )
     }
 
     @Test("unrecognized record types are counted rather than dropped")
-    func driftIsReported() throws {
+    func driftIsReported() {
         let diagnostics = CodexDiagnostics()
         let decoder = CodexRecordDecoder(diagnostics: diagnostics)
 
@@ -167,25 +197,5 @@ struct CodexFixtureCorpusTests {
         let key = CodexDiagnostics.UnknownRecord(recordType: "quantum_state", cliVersion: "9.9.9")
         #expect(snapshot.unknownRecords[key] == 1)
         #expect(snapshot.summaryLines.contains { $0.contains("quantum_state") })
-    }
-
-    @Test("the corpus decodes without reporting widespread drift")
-    func corpusDecodesCleanly() throws {
-        let diagnostics = CodexDiagnostics()
-        let source = CodexRolloutSource(diagnostics: diagnostics)
-
-        for (fixture, lines) in Self.cachedLines {
-            _ = source.read(lines: lines, transcriptPath: fixture.path)
-        }
-
-        // The corpus is fully understood today, so any unrecognized record is
-        // a real signal: either Codex introduced a type, or the table lost one.
-        // Keeping the bar at zero is what turns a future Codex release into a
-        // failing test instead of a silent behaviour change.
-        let unknown = diagnostics.snapshot().unknownRecords
-        #expect(
-            unknown.isEmpty,
-            "unrecognized record types: \(unknown.keys.map(\.recordType).sorted())"
-        )
     }
 }

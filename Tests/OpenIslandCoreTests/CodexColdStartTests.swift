@@ -17,68 +17,105 @@ struct CodexColdStartTests {
         CodexFixtureCorpusTests.allFixtures()
     }
 
-    /// Replay a cached fixture instead of re-reading it from disk.
-    private func ingestCached(_ pipeline: CodexIngestionPipeline) -> Int {
-        var started = 0
-        for (url, lines) in CodexFixtureCorpusTests.cachedLines {
-            let reading = pipeline.rollout.read(lines: lines, transcriptPath: url.path)
-            guard let observation = reading.observation, !reading.isSubagent else { continue }
-            for event in pipeline.projector.project(observation) {
-                if case .sessionStarted = event { started += 1 }
-            }
-        }
-        return started
+    /// One cold-start restore of the whole corpus, shared by the tests below.
+    ///
+    /// Restoring per test meant decoding the corpus several times over; that
+    /// much parallel work was enough to disturb latency-sensitive tests
+    /// elsewhere in the run.
+    struct Restore: Sendable {
+        var pipeline: CodexIngestionPipeline
+        var started: Int
+        var subagentFixtures: Int
+        var fixtureCount: Int
+        var secondPassStarts: Int
+        var sessionsAfterFirst: Int
     }
 
-    @Test("restoring the corpus produces sessions only for real conversations")
-    func coldStartSkipsSpawnedThreads() throws {
-        let fixtures = corpusFixtures()
-        try #require(!fixtures.isEmpty, "fixture corpus missing")
-
+    static let restore: Restore = {
         let pipeline = CodexIngestionPipeline(mode: .live)
         var started = 0
-        var subagentFixtures = 0
+        var subagent = 0
 
-        for (url, lines) in CodexFixtureCorpusTests.cachedLines {
-            let reading = pipeline.rollout.read(lines: lines, transcriptPath: url.path)
-            if reading.isSubagent { subagentFixtures += 1; continue }
-            guard let observation = reading.observation else { continue }
-            for event in pipeline.projector.project(observation) {
-                if case .sessionStarted = event { started += 1 }
+        func pass() -> Int {
+            var count = 0
+            for (url, lines) in CodexFixtureCorpusTests.cachedLines {
+                let reading = pipeline.rollout.read(lines: lines, transcriptPath: url.path)
+                guard let observation = reading.observation, !reading.isSubagent else { continue }
+                for event in pipeline.projector.project(observation) {
+                    if case .sessionStarted = event { count += 1 }
+                }
             }
+            return count
         }
 
+        for (url, lines) in CodexFixtureCorpusTests.cachedLines {
+            if pipeline.rollout.read(lines: lines, transcriptPath: url.path).isSubagent {
+                subagent += 1
+            }
+        }
+        started = pass()
+        let afterFirst = pipeline.store.allSessions().count
+        let second = pass()
+
+        return Restore(
+            pipeline: pipeline,
+            started: started,
+            subagentFixtures: subagent,
+            fixtureCount: CodexFixtureCorpusTests.cachedLines.count,
+            secondPassStarts: second,
+            sessionsAfterFirst: afterFirst
+        )
+    }()
+
+    @Test("restoring the corpus produces sessions only for real conversations")
+    func coldStartSkipsSpawnedThreads() {
+        let restore = Self.restore
         // Roughly half of a real corpus is threads Codex spawned for itself.
-        #expect(subagentFixtures > 0, "corpus has no spawned-thread samples")
-        #expect(started > 0, "no sessions restored at all")
+        #expect(restore.subagentFixtures > 0, "corpus has no spawned-thread samples")
+        #expect(restore.started > 0, "no sessions restored at all")
         #expect(
-            started + subagentFixtures <= fixtures.count,
+            restore.started + restore.subagentFixtures <= restore.fixtureCount,
             "spawned threads leaked into the session list"
         )
     }
 
+    @Test("restoring the whole corpus twice is idempotent")
+    func restoreIsIdempotent() {
+        let restore = Self.restore
+        // A rescan must not duplicate or resurrect anything.
+        #expect(restore.pipeline.store.allSessions().count == restore.sessionsAfterFirst)
+        #expect(restore.secondPassStarts == 0)
+    }
+
+    @Test("no restored session is left without a workspace")
+    func restoredSessionsHaveWorkspaces() {
+        for session in Self.restore.pipeline.store.allSessions() where session.isUserVisible {
+            #expect(
+                session.workspace != nil,
+                "session \(session.sessionKey) restored without a workspace"
+            )
+        }
+    }
+
     @Test("cold-start values are provisional and yield to live sources")
     func coldStartValuesAreProvisional() throws {
-        let fixtures = corpusFixtures()
-        let userFixture = try #require(fixtures.first { url in
-            let source = CodexRolloutSource()
-            let reading = source.read(fileAt: url)
-            return !reading.isSubagent && reading.meta != nil
-        })
-
+        // A small hand-built transcript keeps this independent of the corpus.
+        let lines = [
+            #"{"type":"session_meta","timestamp":"2026-08-24T00:00:00Z","payload":{"id":"aaaa","cwd":"/Users/dev/work/island","originator":"codex-tui","cli_version":"9.9.9","source":"cli"}}"#
+        ]
         let pipeline = CodexIngestionPipeline(mode: .live)
-        _ = pipeline.ingest(rolloutFile: userFixture)
+        let reading = pipeline.rollout.read(lines: lines, transcriptPath: "/tmp/x.jsonl")
+        let observation = try #require(reading.observation)
+        _ = pipeline.projector.project(observation)
 
-        let source = CodexRolloutSource()
-        let sessionID = try #require(source.read(fileAt: userFixture).meta?.sessionID)
-        let restored = try #require(pipeline.store.session(for: sessionID))
+        let restored = try #require(pipeline.store.session(for: "aaaa"))
         #expect(restored.workspace?.isProvisional == true)
 
         // The first live source replaces whatever replay guessed.
         pipeline.store.enterLiveMode()
         pipeline.store.apply(
             CodexObservation(
-                ref: .sessionID(sessionID),
+                ref: .sessionID("aaaa"),
                 source: .hook,
                 seq: 1,
                 observedAt: .now,
@@ -86,28 +123,12 @@ struct CodexColdStartTests {
                     workspace: CodexWorkspace(workingDirectory: "/Users/dev/live")
                 )
             ),
-            sessionKey: sessionID
+            sessionKey: "aaaa"
         )
 
-        let updated = try #require(pipeline.store.session(for: sessionID))
+        let updated = try #require(pipeline.store.session(for: "aaaa"))
         #expect(updated.workspace?.value.workingDirectory == "/Users/dev/live")
         #expect(updated.workspace?.isProvisional == false)
-    }
-
-    @Test("restoring the whole corpus twice is idempotent")
-    func restoreIsIdempotent() throws {
-        let fixtures = corpusFixtures()
-        try #require(!fixtures.isEmpty)
-
-        let pipeline = CodexIngestionPipeline(mode: .live)
-        _ = ingestCached(pipeline)
-        let afterFirst = pipeline.store.allSessions().count
-
-        // A rescan must not duplicate or resurrect anything.
-        let secondPassStarts = ingestCached(pipeline)
-
-        #expect(pipeline.store.allSessions().count == afterFirst)
-        #expect(secondPassStarts == 0)
     }
 
     @Test("bounded reads still recover the header and recent activity")
@@ -159,19 +180,4 @@ struct CodexColdStartTests {
         #expect(reading.meta?.originator == "codex-tui")
     }
 
-    @Test("no restored session is left without a workspace")
-    func restoredSessionsHaveWorkspaces() throws {
-        let fixtures = corpusFixtures()
-        try #require(!fixtures.isEmpty)
-
-        let pipeline = CodexIngestionPipeline(mode: .live)
-        _ = ingestCached(pipeline)
-
-        for session in pipeline.store.allSessions() where session.isUserVisible {
-            #expect(
-                session.workspace != nil,
-                "session \(session.sessionKey) restored without a workspace"
-            )
-        }
-    }
 }
