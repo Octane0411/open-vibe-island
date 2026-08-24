@@ -116,6 +116,8 @@ public enum CodexRecordTable {
         "thread_rolled_back": .threadBookkeeping,
         "item_completed": .threadBookkeeping,
         "context_compacted": .threadBookkeeping,
+        "entered_review_mode": .threadBookkeeping,
+        "exited_review_mode": .threadBookkeeping,
         "compaction": .threadBookkeeping,
         "image_generation_call": .toolCallBegin,
     ]

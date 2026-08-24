@@ -668,6 +668,7 @@ struct SetupSettingsPane: View {
             }
 
             hookDiagnosticsSection
+            codexIngestionSection
 
             RemoteConnectionSection(model: model)
 
@@ -799,6 +800,30 @@ struct SetupSettingsPane: View {
         let claude = model.claudeHealthReport?.notices.isEmpty == false
         let codex = model.codexHealthReport?.notices.isEmpty == false
         return claude || codex
+    }
+
+    /// Unrecognized Codex record types and rejected facet writes.
+    ///
+    /// Hidden entirely when there is nothing to report — this is a signal for
+    /// the maintainer when Codex drifts, not a permanent fixture.
+    @ViewBuilder
+    private var codexIngestionSection: some View {
+        let snapshot = model.codexIngestionDiagnostics
+        if !snapshot.isEmpty {
+            Section("Codex ingestion") {
+                ForEach(snapshot.summaryLines.prefix(8), id: \.self) { line in
+                    Text(line)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+                if snapshot.summaryLines.count > 8 {
+                    Text("+ \(snapshot.summaryLines.count - 8) more")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
     }
 
     @ViewBuilder

@@ -512,6 +512,14 @@ final class AppModel {
     @ObservationIgnored
     private let bridgeServer = BridgeServer()
 
+    /// Format-drift and arbitration counters from the Codex ingestion layer.
+    /// Surfaced in settings so a Codex release that changes the transcript
+    /// vocabulary is visible the day it lands, rather than months later as a
+    /// batch of unexplained bug reports.
+    var codexIngestionDiagnostics: CodexDiagnostics.Snapshot {
+        bridgeServer.codexPipeline.diagnostics.snapshot()
+    }
+
     @ObservationIgnored
     private var bridgeClient = LocalBridgeClient()
 

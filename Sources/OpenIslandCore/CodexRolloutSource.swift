@@ -148,16 +148,80 @@ public final class CodexRolloutSource: @unchecked Sendable {
         )
     }
 
-    /// Convenience for reading a transcript file whole. Intended for cold start;
-    /// live updates should fold only the bytes appended since the last read.
+    /// How much of each end of a transcript cold start reads.
+    ///
+    /// Transcripts grow without bound — a real corpus runs to gigabytes — but
+    /// everything cold start needs sits at the two ends: `session_meta` and the
+    /// opening prompt are in the first records, recent activity is in the last.
+    /// Reading whole files instead took roughly seven minutes over one user's
+    /// history; bounded reads bring the same restore down to seconds.
+    public static let headReadLimit = 64 * 1024
+    public static let tailReadLimit = 128 * 1024
+    /// `session_meta` is a single line, but not a small one — it can embed the
+    /// full system instructions and run past a hundred kilobytes. When the
+    /// header does not fit the normal head read, the read grows until it does
+    /// rather than abandoning the transcript.
+    public static let headReadCeiling = 4 * 1024 * 1024
+
+    /// Read a transcript for cold-start restore, touching only its two ends.
+    ///
+    /// Live updates should not come through here — they fold only the bytes
+    /// appended since the previous read.
     public func read(fileAt url: URL, at timestamp: Date = .now) -> Reading {
-        guard let contents = try? String(contentsOf: url, encoding: .utf8) else {
+        guard let handle = try? FileHandle(forReadingFrom: url) else {
             return Reading()
         }
-        return read(
-            lines: contents.split(separator: "\n", omittingEmptySubsequences: true).map(String.init),
-            transcriptPath: url.path,
-            at: timestamp
-        )
+        defer { try? handle.close() }
+
+        let size = (try? handle.seekToEnd()) ?? 0
+        let head = Self.headReadLimit
+        let tail = Self.tailReadLimit
+
+        var lines: [String] = []
+        if size <= UInt64(head + tail) {
+            try? handle.seek(toOffset: 0)
+            let data = (try? handle.readToEnd()) ?? Data()
+            lines = Self.lines(from: data, dropFirstPartial: false)
+        } else {
+            var headLimit = head
+            var headLines = Self.readHead(handle, limit: headLimit)
+            // Grow the head read until the header is inside it. A transcript
+            // whose first line alone exceeds the ceiling is left unread rather
+            // than pulled entirely into memory.
+            while !Self.containsSessionMeta(headLines), headLimit < Self.headReadCeiling {
+                headLimit = min(headLimit * 4, Self.headReadCeiling)
+                headLines = Self.readHead(handle, limit: headLimit)
+            }
+            lines = headLines
+
+            try? handle.seek(toOffset: size - UInt64(tail))
+            let tailData = (try? handle.read(upToCount: tail)) ?? Data()
+            // The tail almost certainly starts mid-record; that fragment is not
+            // valid JSON and would otherwise be counted as drift.
+            lines.append(contentsOf: Self.lines(from: tailData, dropFirstPartial: true))
+        }
+
+        return read(lines: lines, transcriptPath: url.path, at: timestamp)
+    }
+
+    static func readHead(_ handle: FileHandle, limit: Int) -> [String] {
+        try? handle.seek(toOffset: 0)
+        let data = (try? handle.read(upToCount: limit)) ?? Data()
+        return lines(from: data, dropFirstPartial: false)
+    }
+
+    static func containsSessionMeta(_ lines: [String]) -> Bool {
+        lines.contains { $0.contains("\"session_meta\"") }
+    }
+
+    static func lines(from data: Data, dropFirstPartial: Bool) -> [String] {
+        guard let text = String(data: data, encoding: .utf8) else {
+            return []
+        }
+        var result = text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+        if dropFirstPartial, !result.isEmpty {
+            result.removeFirst()
+        }
+        return result
     }
 }

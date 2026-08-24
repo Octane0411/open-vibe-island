@@ -182,15 +182,24 @@ public final class CodexSessionProjector: @unchecked Sendable {
     private func makeJumpTarget(facets: CodexSessionFacets) -> JumpTarget? {
         let placement = facets.placement?.value
 
-        // A desktop thread has no terminal to return to — the jump activates
-        // Codex.app and selects the thread by id. This is why placement alone
-        // cannot gate session creation: Codex.app sessions would never have it,
-        // and would never appear.
+        // Terminal identity comes from a hook when one has fired. At cold
+        // start none has, so it is derived from the surface instead:
+        //
+        // - a desktop thread has no terminal at all; the jump activates
+        //   Codex.app and selects the thread by id
+        // - anything else ran in *some* terminal we cannot yet name, so it
+        //   takes the house "Unknown" sentinel and jumps by folder, the same
+        //   convention transcript-restored Claude sessions use
+        //
+        // Guessing "Codex.app" for everything — as the previous implementation
+        // did — is what mislabelled CLI sessions as desktop ones.
         let terminalApp: String
         if facets.isDesktopApp {
             terminalApp = "Codex.app"
         } else if let app = placement?.terminalApp, !app.isEmpty {
             terminalApp = app
+        } else if facets.workspace != nil {
+            terminalApp = "Unknown"
         } else {
             return nil
         }
