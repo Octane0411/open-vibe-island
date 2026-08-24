@@ -47,14 +47,34 @@ struct CodexColdStartTests {
         return Array(all.prefix(4)) + Array(all.suffix(6))
     }()
 
-    static let restore: Restore = {
+    /// Async and yielding for the same reason the corpus analysis is: running
+    /// this decode straight through monopolizes the cooperative thread pool
+    /// that concurrent async tests depend on.
+    private static let cache = RestoreCache()
+
+    static func restore() async -> Restore {
+        await cache.value()
+    }
+
+    actor RestoreCache {
+        private var stored: Restore?
+
+        func value() async -> Restore {
+            if let stored { return stored }
+            let computed = await Self.compute()
+            stored = computed
+            return computed
+        }
+
+        private static func compute() async -> Restore {
         let pipeline = CodexIngestionPipeline(mode: .live)
         var started = 0
         var subagent = 0
 
-        func pass() -> Int {
+        func pass() async -> Int {
             var count = 0
             for (url, lines) in sample {
+                await Task.yield()
                 let reading = pipeline.rollout.read(lines: lines, transcriptPath: url.path)
                 guard let observation = reading.observation, !reading.isSubagent else { continue }
                 for event in pipeline.projector.project(observation) {
@@ -65,13 +85,14 @@ struct CodexColdStartTests {
         }
 
         for (url, lines) in sample {
+            await Task.yield()
             if pipeline.rollout.read(lines: lines, transcriptPath: url.path).isSubagent {
                 subagent += 1
             }
         }
-        started = pass()
+        started = await pass()
         let afterFirst = pipeline.store.allSessions().count
-        let second = pass()
+        let second = await pass()
 
         return Restore(
             pipeline: pipeline,
@@ -81,11 +102,12 @@ struct CodexColdStartTests {
             secondPassStarts: second,
             sessionsAfterFirst: afterFirst
         )
-    }()
+        }
+    }
 
     @Test("restoring the corpus produces sessions only for real conversations")
-    func coldStartSkipsSpawnedThreads() {
-        let restore = Self.restore
+    func coldStartSkipsSpawnedThreads() async {
+        let restore = await Self.restore()
         // Roughly half of a real corpus is threads Codex spawned for itself.
         #expect(restore.subagentFixtures > 0, "corpus has no spawned-thread samples")
         #expect(restore.started > 0, "no sessions restored at all")
@@ -96,16 +118,16 @@ struct CodexColdStartTests {
     }
 
     @Test("restoring the whole corpus twice is idempotent")
-    func restoreIsIdempotent() {
-        let restore = Self.restore
+    func restoreIsIdempotent() async {
+        let restore = await Self.restore()
         // A rescan must not duplicate or resurrect anything.
         #expect(restore.pipeline.store.allSessions().count == restore.sessionsAfterFirst)
         #expect(restore.secondPassStarts == 0)
     }
 
     @Test("no restored session is left without a workspace")
-    func restoredSessionsHaveWorkspaces() {
-        for session in Self.restore.pipeline.store.allSessions() where session.isUserVisible {
+    func restoredSessionsHaveWorkspaces() async {
+        for session in await Self.restore().pipeline.store.allSessions() where session.isUserVisible {
             #expect(
                 session.workspace != nil,
                 "session \(session.sessionKey) restored without a workspace"

@@ -78,61 +78,89 @@ struct CodexFixtureCorpusTests {
     }
 
     /// Decode the whole corpus once and record everything the tests assert on.
-    static let analysis: Analysis = {
-        var result = Analysis()
-        result.directoryCount = versionDirectories().count
-        result.fixtureCount = cachedLines.count
+    ///
+    /// Async, and yielding between fixtures, on purpose. Swift Testing runs
+    /// tests on the cooperative thread pool, and decoding the corpus is
+    /// synchronous CPU work — run straight through, it monopolizes those
+    /// threads. `CodexAppServerClient` implements its request timeout as a Task
+    /// awaiting `Task.sleep`, so a starved pool delays that sleep and makes an
+    /// unrelated timeout test fail on runners with few cores. Yielding keeps the
+    /// pool responsive without giving up any corpus coverage.
+    private static let cache = AnalysisCache()
 
-        let diagnostics = CodexDiagnostics()
-        let source = CodexRolloutSource(diagnostics: diagnostics)
-        let store = CodexFacetStore()
-        let projector = CodexSessionProjector(store: store)
+    static func analysis() async -> Analysis {
+        await cache.value()
+    }
 
-        for (url, lines) in cachedLines {
-            let reading = source.read(lines: lines, transcriptPath: url.path)
-            guard let meta = reading.meta else {
-                result.missingHeaders.append(url.lastPathComponent)
-                continue
-            }
-            result.decodedHeaders += 1
+    actor AnalysisCache {
+        private var stored: Analysis?
 
-            if reading.isSubagent {
-                result.subagentCount += 1
-                // A spawned thread must produce no session events at all.
-                if let observation = reading.observation,
-                   !projector.project(observation).isEmpty {
-                    result.subagentEventLeaks.append(url.lastPathComponent)
-                }
-                continue
-            }
-
-            guard let originator = meta.originator else { continue }
-            if CodexIdentityResolver.desktopOriginators.contains(originator) {
-                let surface = CodexIdentityResolver.surface(
-                    originator: originator,
-                    source: meta.source,
-                    threadSource: meta.threadSource,
-                    parentThreadID: meta.parentThreadID
-                )
-                if surface == .desktopApp {
-                    result.desktopCount += 1
-                } else {
-                    result.misclassifiedDesktop.append("\(originator) in \(url.lastPathComponent)")
-                }
-            }
+        func value() async -> Analysis {
+            if let stored { return stored }
+            let computed = await Self.compute()
+            stored = computed
+            return computed
         }
 
-        let snapshot = diagnostics.snapshot()
-        result.unknownRecords = snapshot.unknownRecords
-        result.unknownOriginators = snapshot.unknownOriginators
-        return result
-    }()
+        private static func compute() async -> Analysis {
+            var result = Analysis()
+            result.directoryCount = versionDirectories().count
+            result.fixtureCount = cachedLines.count
+
+            let diagnostics = CodexDiagnostics()
+            let source = CodexRolloutSource(diagnostics: diagnostics)
+            let store = CodexFacetStore()
+            let projector = CodexSessionProjector(store: store)
+
+            for (url, lines) in cachedLines {
+                // Hand the pool back between files so concurrent async tests
+                // keep making progress.
+                await Task.yield()
+                let reading = source.read(lines: lines, transcriptPath: url.path)
+                guard let meta = reading.meta else {
+                    result.missingHeaders.append(url.lastPathComponent)
+                    continue
+                }
+                result.decodedHeaders += 1
+
+                if reading.isSubagent {
+                    result.subagentCount += 1
+                    // A spawned thread must produce no session events at all.
+                    if let observation = reading.observation,
+                       !projector.project(observation).isEmpty {
+                        result.subagentEventLeaks.append(url.lastPathComponent)
+                    }
+                    continue
+                }
+
+                guard let originator = meta.originator else { continue }
+                if CodexIdentityResolver.desktopOriginators.contains(originator) {
+                    let surface = CodexIdentityResolver.surface(
+                        originator: originator,
+                        source: meta.source,
+                        threadSource: meta.threadSource,
+                        parentThreadID: meta.parentThreadID
+                    )
+                    if surface == .desktopApp {
+                        result.desktopCount += 1
+                    } else {
+                        result.misclassifiedDesktop.append("\(originator) in \(url.lastPathComponent)")
+                    }
+                }
+            }
+
+            let snapshot = diagnostics.snapshot()
+            result.unknownRecords = snapshot.unknownRecords
+            result.unknownOriginators = snapshot.unknownOriginators
+            return result
+        }
+    }
 
     // MARK: - Assertions
 
     @Test("the corpus is present and spans many Codex versions")
-    func corpusIsPopulated() throws {
-        let analysis = Self.analysis
+    func corpusIsPopulated() async throws {
+        let analysis = await Self.analysis()
         try #require(analysis.fixtureCount > 0, "fixture corpus missing — run scripts/codex-fixtures.py")
         // A single machine accumulates transcripts from many releases at once;
         // the corpus has to reflect that or it proves nothing about drift.
@@ -140,44 +168,44 @@ struct CodexFixtureCorpusTests {
     }
 
     @Test("every fixture yields a session header the decoder understands")
-    func everyFixtureDecodesItsHeader() {
-        let analysis = Self.analysis
+    func everyFixtureDecodesItsHeader() async {
+        let analysis = await Self.analysis()
         #expect(analysis.missingHeaders.isEmpty, "no session_meta in: \(analysis.missingHeaders)")
         #expect(analysis.decodedHeaders == analysis.fixtureCount)
     }
 
     @Test("spawned subagent transcripts never become user sessions")
-    func subagentFixturesAreNotSessions() {
-        let analysis = Self.analysis
+    func subagentFixturesAreNotSessions() async {
+        let analysis = await Self.analysis()
         // Roughly half of a real corpus is threads Codex spawned for itself.
         #expect(analysis.subagentCount > 0, "no spawned-thread samples captured")
         #expect(analysis.subagentEventLeaks.isEmpty, "leaked: \(analysis.subagentEventLeaks)")
     }
 
     @Test("desktop transcripts classify as Codex.app across both originator spellings")
-    func desktopFixturesClassify() {
-        let analysis = Self.analysis
+    func desktopFixturesClassify() async {
+        let analysis = await Self.analysis()
         #expect(analysis.misclassifiedDesktop.isEmpty, "\(analysis.misclassifiedDesktop)")
         #expect(analysis.desktopCount > 0, "corpus contains no desktop transcripts to verify")
     }
 
     @Test("no fixture reports an unknown originator")
-    func noUnknownOriginators() {
+    func noUnknownOriginators() async {
         // The allow-list is checked against the whole corpus rather than a
         // sample, so a Codex rename shows up here as a failing test instead of
         // as misclassified sessions in the wild. The edge-originator bucket is
         // captured deliberately and is expected to report.
-        let unexpected = Self.analysis.unknownOriginators
+        let unexpected = await Self.analysis().unknownOriginators
         #expect(unexpected.count <= 1, "unrecognized originators: \(unexpected.keys.sorted())")
     }
 
     @Test("the corpus decodes without reporting drift")
-    func corpusDecodesCleanly() {
+    func corpusDecodesCleanly() async {
         // The corpus is fully understood today, so any unrecognized record is a
         // real signal: either Codex introduced a type, or the table lost one.
         // Keeping the bar at zero is what turns a future Codex release into a
         // failing test instead of a silent behaviour change.
-        let unknown = Self.analysis.unknownRecords
+        let unknown = await Self.analysis().unknownRecords
         #expect(
             unknown.isEmpty,
             "unrecognized record types: \(unknown.keys.map(\.recordType).sorted())"
