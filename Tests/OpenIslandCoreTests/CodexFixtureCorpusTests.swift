@@ -47,6 +47,20 @@ struct CodexFixtureCorpusTests {
         versionDirectories().flatMap(fixtures(in:))
     }
 
+    /// Fixture contents, read once for the whole test run.
+    ///
+    /// The suite is exercised from several tests and the corpus spans dozens of
+    /// files. Re-reading them per test put enough concurrent disk load on CI to
+    /// perturb latency-sensitive tests running in parallel, so the bytes are
+    /// loaded once and replayed from memory. `read(fileAt:)` still has direct
+    /// coverage in `CodexColdStartTests.boundedFileReadRecoversHeaderAndTail`.
+    static let cachedLines: [(url: URL, lines: [String])] = {
+        allFixtures().map { url in
+            let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+            return (url, text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init))
+        }
+    }()
+
     @Test("the corpus is present and spans many Codex versions")
     func corpusIsPopulated() throws {
         let directories = Self.versionDirectories()
@@ -62,8 +76,8 @@ struct CodexFixtureCorpusTests {
         let source = CodexRolloutSource()
         var decoded = 0
 
-        for fixture in Self.allFixtures() {
-            let reading = source.read(fileAt: fixture)
+        for (fixture, lines) in Self.cachedLines {
+            let reading = source.read(lines: lines, transcriptPath: fixture.path)
             #expect(reading.meta != nil, "no session_meta decoded from \(fixture.lastPathComponent)")
             if let meta = reading.meta {
                 #expect(!meta.sessionID.isEmpty)
@@ -87,7 +101,9 @@ struct CodexFixtureCorpusTests {
         let projector = CodexSessionProjector(store: store)
 
         for fixture in fixtures {
-            let reading = rollout.read(fileAt: fixture)
+            let text = (try? String(contentsOf: fixture, encoding: .utf8)) ?? ""
+            let lines = text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+            let reading = rollout.read(lines: lines, transcriptPath: fixture.path)
             #expect(reading.isSubagent, "\(fixture.lastPathComponent) should classify as a subagent")
 
             if let observation = reading.observation {
@@ -102,8 +118,8 @@ struct CodexFixtureCorpusTests {
         let source = CodexRolloutSource()
         var seenDesktop = false
 
-        for fixture in Self.allFixtures() {
-            guard let meta = source.read(fileAt: fixture).meta else { continue }
+        for (fixture, lines) in Self.cachedLines {
+            guard let meta = source.read(lines: lines, transcriptPath: fixture.path).meta else { continue }
             guard let originator = meta.originator,
                   CodexIdentityResolver.desktopOriginators.contains(originator) else { continue }
             guard meta.threadSource != "subagent" else { continue }
@@ -130,8 +146,8 @@ struct CodexFixtureCorpusTests {
         let diagnostics = CodexDiagnostics()
         let source = CodexRolloutSource(diagnostics: diagnostics)
 
-        for fixture in Self.allFixtures() where !fixture.path.contains("edge-originator") {
-            _ = source.read(fileAt: fixture)
+        for (fixture, lines) in Self.cachedLines where !fixture.path.contains("edge-originator") {
+            _ = source.read(lines: lines, transcriptPath: fixture.path)
         }
 
         let unknown = diagnostics.snapshot().unknownOriginators
@@ -158,8 +174,8 @@ struct CodexFixtureCorpusTests {
         let diagnostics = CodexDiagnostics()
         let source = CodexRolloutSource(diagnostics: diagnostics)
 
-        for fixture in Self.allFixtures() {
-            _ = source.read(fileAt: fixture)
+        for (fixture, lines) in Self.cachedLines {
+            _ = source.read(lines: lines, transcriptPath: fixture.path)
         }
 
         // The corpus is fully understood today, so any unrecognized record is
