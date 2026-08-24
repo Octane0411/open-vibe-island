@@ -35,6 +35,7 @@ public struct CodexFacetSlot<Value: Equatable & Sendable>: Equatable, Sendable {
 public struct CodexSessionFacets: Equatable, Sendable {
     public var sessionKey: String
     public var surface: CodexFacetSlot<CodexSurface>?
+    public var workspace: CodexFacetSlot<CodexWorkspace>?
     public var placement: CodexFacetSlot<CodexPlacement>?
     public var lifecycle: CodexFacetSlot<CodexLifecycle>?
     public var actionable: CodexFacetSlot<CodexActionable>?
@@ -225,6 +226,9 @@ public final class CodexFacetStore: @unchecked Sendable {
 
         if let surface = patch.surface {
             write(.surface, &facets.surface, surface)
+        }
+        if let workspace = patch.workspace {
+            write(.workspace, &facets.workspace, workspace)
         }
         if let placement = patch.placement {
             write(.placement, &facets.placement, placement)

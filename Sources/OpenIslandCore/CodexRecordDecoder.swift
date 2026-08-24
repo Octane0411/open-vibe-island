@@ -44,7 +44,13 @@ public struct CodexSessionMeta: Equatable, Sendable {
     public var originator: String?
     public var cliVersion: String?
     public var source: CodexMetaSource
+    /// Recent releases state this directly — `"user"` for a conversation a
+    /// person started, `"subagent"` for one Codex spawned. Simpler and more
+    /// reliable than reaching into the nested `source` object, though both are
+    /// checked because older transcripts omit it.
     public var threadSource: String?
+    /// Present on spawned threads, alongside the nested copy inside `source`.
+    public var parentThreadID: String?
 
     public init(
         sessionID: String,
@@ -53,7 +59,8 @@ public struct CodexSessionMeta: Equatable, Sendable {
         originator: String? = nil,
         cliVersion: String? = nil,
         source: CodexMetaSource = .unknown,
-        threadSource: String? = nil
+        threadSource: String? = nil,
+        parentThreadID: String? = nil
     ) {
         self.sessionID = sessionID
         self.cwd = cwd
@@ -62,6 +69,7 @@ public struct CodexSessionMeta: Equatable, Sendable {
         self.cliVersion = cliVersion
         self.source = source
         self.threadSource = threadSource
+        self.parentThreadID = parentThreadID
     }
 }
 
@@ -112,9 +120,19 @@ public struct CodexRecordDecoder: Sendable {
             return nil
         }
 
-        // `response_item` messages carry `role` instead of a payload `type`.
-        let payloadType = (payload["type"] as? String)
-            ?? (payload["role"] as? String).map { $0 == "assistant" ? "agent_message" : "user_message" }
+        // A `response_item` message is typed `"message"` and distinguishes
+        // speaker by `role`, so the generic type has to fall through to it —
+        // this is the single most common record in a transcript.
+        let declaredType = payload["type"] as? String
+        let roleType = (payload["role"] as? String).map {
+            $0 == "assistant" ? "agent_message" : "user_message"
+        }
+        let payloadType: String?
+        if declaredType == nil || declaredType == "message" {
+            payloadType = roleType ?? declaredType
+        } else {
+            payloadType = declaredType
+        }
 
         guard let payloadType else {
             return nil
@@ -170,7 +188,8 @@ public struct CodexRecordDecoder: Sendable {
             originator: payload["originator"] as? String,
             cliVersion: payload["cli_version"] as? String,
             source: CodexMetaSource(json: payload["source"]),
-            threadSource: payload["thread_source"] as? String
+            threadSource: payload["thread_source"] as? String,
+            parentThreadID: payload["parent_thread_id"] as? String
         )
     }
 

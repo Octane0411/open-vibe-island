@@ -112,8 +112,24 @@ public enum CodexSurface: Equatable, Sendable {
 
 // MARK: - Facets
 
-/// Terminal placement — everything needed to jump back to where the session
-/// lives. Only hooks can observe this; the app-server and the rollout
+/// Where the session's work lives on disk.
+///
+/// Kept separate from `CodexPlacement` because the two have different
+/// witnesses: `session_meta.cwd` is written by Codex itself and is the
+/// definitive record of the working directory, while only a hook can say which
+/// terminal the session is attached to. Folding them together would force one
+/// authority ranking onto two independently observable things — and would leave
+/// Codex.app sessions, which have no terminal at all, with no workspace either.
+public struct CodexWorkspace: Equatable, Sendable {
+    public var workingDirectory: String
+
+    public init(workingDirectory: String) {
+        self.workingDirectory = workingDirectory
+    }
+}
+
+/// Terminal identity — everything needed to return to the pane a session is
+/// running in. Only hooks can observe this; the app-server and the rollout
 /// transcript have no idea which terminal invoked Codex.
 public struct CodexPlacement: Equatable, Sendable {
     public var terminalApp: String?
@@ -121,27 +137,24 @@ public struct CodexPlacement: Equatable, Sendable {
     public var terminalTTY: String?
     public var terminalTitle: String?
     public var warpPaneUUID: String?
-    public var workingDirectory: String?
 
     public init(
         terminalApp: String? = nil,
         terminalSessionID: String? = nil,
         terminalTTY: String? = nil,
         terminalTitle: String? = nil,
-        warpPaneUUID: String? = nil,
-        workingDirectory: String? = nil
+        warpPaneUUID: String? = nil
     ) {
         self.terminalApp = terminalApp
         self.terminalSessionID = terminalSessionID
         self.terminalTTY = terminalTTY
         self.terminalTitle = terminalTitle
         self.warpPaneUUID = warpPaneUUID
-        self.workingDirectory = workingDirectory
     }
 
     public var isEmpty: Bool {
         terminalApp == nil && terminalSessionID == nil && terminalTTY == nil
-            && terminalTitle == nil && warpPaneUUID == nil && workingDirectory == nil
+            && terminalTitle == nil && warpPaneUUID == nil
     }
 }
 
@@ -248,6 +261,7 @@ public struct CodexLiveness: Equatable, Sendable {
 /// leaves the rest alone.
 public struct CodexFacetPatch: Equatable, Sendable {
     public var surface: CodexSurface?
+    public var workspace: CodexWorkspace?
     public var placement: CodexPlacement?
     public var lifecycle: CodexLifecycle?
     public var actionable: CodexActionable?
@@ -256,6 +270,7 @@ public struct CodexFacetPatch: Equatable, Sendable {
 
     public init(
         surface: CodexSurface? = nil,
+        workspace: CodexWorkspace? = nil,
         placement: CodexPlacement? = nil,
         lifecycle: CodexLifecycle? = nil,
         actionable: CodexActionable? = nil,
@@ -263,6 +278,7 @@ public struct CodexFacetPatch: Equatable, Sendable {
         liveness: CodexLiveness? = nil
     ) {
         self.surface = surface
+        self.workspace = workspace
         self.placement = placement
         self.lifecycle = lifecycle
         self.actionable = actionable
@@ -271,7 +287,7 @@ public struct CodexFacetPatch: Equatable, Sendable {
     }
 
     public var isEmpty: Bool {
-        surface == nil && placement == nil && lifecycle == nil
+        surface == nil && workspace == nil && placement == nil && lifecycle == nil
             && actionable == nil && narrative == nil && liveness == nil
     }
 }

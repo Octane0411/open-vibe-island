@@ -57,7 +57,8 @@ public final class CodexSessionProjector: @unchecked Sendable {
             return events
         }
 
-        if change.accepted.contains(.placement), let jumpTarget = makeJumpTarget(facets: facets) {
+        if !change.accepted.isDisjoint(with: [.placement, .workspace, .surface]),
+           let jumpTarget = makeJumpTarget(facets: facets) {
             events.append(.jumpTargetUpdated(JumpTargetUpdated(
                 sessionID: sessionKey,
                 jumpTarget: jumpTarget,
@@ -179,32 +180,34 @@ public final class CodexSessionProjector: @unchecked Sendable {
     }
 
     private func makeJumpTarget(facets: CodexSessionFacets) -> JumpTarget? {
-        guard let placement = facets.placement?.value else { return nil }
+        let placement = facets.placement?.value
 
-        // Desktop threads have no terminal to return to — the jump activates
-        // Codex.app itself and selects the thread by id.
+        // A desktop thread has no terminal to return to — the jump activates
+        // Codex.app and selects the thread by id. This is why placement alone
+        // cannot gate session creation: Codex.app sessions would never have it,
+        // and would never appear.
         let terminalApp: String
         if facets.isDesktopApp {
             terminalApp = "Codex.app"
-        } else if let app = placement.terminalApp, !app.isEmpty {
+        } else if let app = placement?.terminalApp, !app.isEmpty {
             terminalApp = app
         } else {
             return nil
         }
 
-        let cwd = placement.workingDirectory
+        let cwd = facets.workspace?.value.workingDirectory
         let workspaceName = cwd.map { WorkspaceNameResolver.workspaceName(for: $0) } ?? terminalApp
 
         return JumpTarget(
             terminalApp: terminalApp,
             workspaceName: workspaceName,
-            paneTitle: placement.terminalTitle ?? workspaceName,
+            paneTitle: placement?.terminalTitle ?? workspaceName,
             workingDirectory: cwd,
-            terminalSessionID: placement.terminalSessionID,
-            terminalTTY: placement.terminalTTY,
+            terminalSessionID: placement?.terminalSessionID,
+            terminalTTY: placement?.terminalTTY,
             tmuxTarget: nil,
             tmuxSocketPath: nil,
-            warpPaneUUID: placement.warpPaneUUID,
+            warpPaneUUID: placement?.warpPaneUUID,
             codexThreadID: facets.isDesktopApp ? facets.sessionKey : nil
         )
     }

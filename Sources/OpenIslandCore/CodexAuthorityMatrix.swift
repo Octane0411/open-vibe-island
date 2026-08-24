@@ -1,6 +1,6 @@
 import Foundation
 
-/// The six orthogonal dimensions of Codex session state.
+/// The orthogonal dimensions of Codex session state.
 ///
 /// Splitting the session this way is what makes arbitration tractable. A scalar
 /// priority over sources cannot work, because no source dominates: the
@@ -10,6 +10,7 @@ import Foundation
 /// actually observe the truth, and stay out of the way everywhere else.
 public enum CodexFacet: String, CaseIterable, Sendable {
     case surface
+    case workspace
     case placement
     case lifecycle
     case actionable
@@ -31,8 +32,9 @@ public enum CodexAuthorityMatrix {
     ///
     /// - `surface` — only `session_meta` carries `originator`/`source`, so the
     ///   rollout wins; the app-server's `thread.source` is a weaker echo.
-    /// - `placement` — hooks alone see the terminal. Process observation can
-    ///   contribute a working directory and nothing more.
+    /// - `workspace` — the transcript header records the working directory
+    ///   authoritatively; hooks and process observation echo it.
+    /// - `placement` — hooks alone see the terminal.
     /// - `lifecycle` — the app-server reports turn boundaries directly; hooks
     ///   infer them from tool-use edges. The rollout is always behind.
     /// - `actionable` — approvals moved into the hook system entirely.
@@ -46,8 +48,16 @@ public enum CodexAuthorityMatrix {
         switch facet {
         case .surface:
             [.rollout, .appServer]
+        case .workspace:
+            // `session_meta.cwd` is the definitive record of where a session
+            // was started. Hooks repeat it and process observation can infer
+            // it, but neither is more trustworthy than the header Codex wrote.
+            [.rollout, .hook, .process]
         case .placement:
-            [.hook, .process]
+            // Terminal identity — which app, which tty, which pane. Only hooks
+            // observe this; the app-server and the transcript have no idea what
+            // invoked Codex.
+            [.hook]
         case .lifecycle:
             [.appServer, .hook]
         case .actionable:

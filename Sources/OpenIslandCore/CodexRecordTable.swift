@@ -33,6 +33,8 @@ public enum CodexRecordKind: String, Equatable, Sendable, CaseIterable {
     case turnContext
     /// Codex's snapshot of workspace state.
     case worldState
+    /// Thread-level bookkeeping: goal edits, settings, rollbacks, compaction.
+    case threadBookkeeping
     /// Metadata about communication between agents.
     case interAgentMetadata
 }
@@ -55,6 +57,7 @@ public enum CodexRecordTable {
         "turn_context": .turnContext,
         "world_state": .worldState,
         "inter_agent_communication_metadata": .interAgentMetadata,
+        "compacted": .threadBookkeeping,
     ]
 
     /// `payload.type` values inside `event_msg` and `response_item` records.
@@ -105,6 +108,16 @@ public enum CodexRecordTable {
         // Accounting and multi-agent
         "token_count": .tokenCount,
         "sub_agent_activity": .subAgentActivity,
+
+        // Thread bookkeeping — recognized so it does not register as drift,
+        // but carrying no facet this layer is allowed to write.
+        "thread_goal_updated": .threadBookkeeping,
+        "thread_settings_applied": .threadBookkeeping,
+        "thread_rolled_back": .threadBookkeeping,
+        "item_completed": .threadBookkeeping,
+        "context_compacted": .threadBookkeeping,
+        "compaction": .threadBookkeeping,
+        "image_generation_call": .toolCallBegin,
     ]
 
     /// Record types that once carried approvals and questions.

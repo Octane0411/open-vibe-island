@@ -43,10 +43,20 @@ public enum CodexIdentityResolver {
     public static func surface(
         originator: String?,
         source: CodexMetaSource?,
+        threadSource: String? = nil,
+        parentThreadID: String? = nil,
         diagnostics: CodexDiagnostics? = nil
     ) -> CodexSurface {
-        if case let .subagent(parentThreadID, kind) = source {
-            return .subagent(parentThreadID: parentThreadID, kind: kind)
+        // Newer releases label spawned threads outright; older ones only nest
+        // the fact inside `source`. Both are checked, cheapest first.
+        if threadSource == "subagent" {
+            if case let .subagent(nestedParent, kind) = source {
+                return .subagent(parentThreadID: nestedParent ?? parentThreadID, kind: kind)
+            }
+            return .subagent(parentThreadID: parentThreadID, kind: nil)
+        }
+        if case let .subagent(nestedParent, kind) = source {
+            return .subagent(parentThreadID: nestedParent ?? parentThreadID, kind: kind)
         }
 
         guard let originator, !originator.isEmpty else {
