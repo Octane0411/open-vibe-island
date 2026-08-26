@@ -13,7 +13,7 @@ import Foundation
 /// on it.
 public final class CodexIngestionPipeline: @unchecked Sendable {
     /// How the pipeline participates while the rewrite is being validated.
-    public enum Mode: String, Sendable {
+    public enum Mode: String, Sendable, CaseIterable {
         /// Legacy path drives the UI; this pipeline runs alongside and only
         /// records divergence.
         case shadow
@@ -37,6 +37,19 @@ public final class CodexIngestionPipeline: @unchecked Sendable {
     /// survives app restarts and can be read without opening Settings.
     private let logURL: URL?
 
+    /// Mode override from the environment, for trying the rewritten path
+    /// without a rebuild: `OPEN_ISLAND_CODEX_PIPELINE=live|shadow|off`.
+    /// Unset or unrecognized leaves the caller's choice alone.
+    public static func modeFromEnvironment(
+        _ environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> Mode? {
+        guard let raw = environment["OPEN_ISLAND_CODEX_PIPELINE"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !raw.isEmpty else {
+            return nil
+        }
+        return Mode(rawValue: raw)
+    }
+
     public init(mode: Mode = .shadow, logURL: URL? = nil) {
         self.logURL = logURL
         let diagnostics = CodexDiagnostics()
@@ -47,7 +60,7 @@ public final class CodexIngestionPipeline: @unchecked Sendable {
         self.hooks = CodexHookSource()
         self.appServer = CodexAppServerSource()
         self.rollout = CodexRolloutSource(diagnostics: diagnostics)
-        self.mode = mode
+        self.mode = Self.modeFromEnvironment() ?? mode
     }
 
     public var currentMode: Mode {

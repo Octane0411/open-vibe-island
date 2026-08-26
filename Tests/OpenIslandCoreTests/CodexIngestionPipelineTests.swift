@@ -176,6 +176,18 @@ struct CodexIngestionPipelineTests {
         #expect(report[0].contains("candidat"))
     }
 
+    @Test("the environment can override the pipeline mode")
+    func environmentOverridesMode() {
+        // Lets the rewritten path be tried on a real machine without a rebuild,
+        // and switched back the same way.
+        #expect(CodexIngestionPipeline.modeFromEnvironment(["OPEN_ISLAND_CODEX_PIPELINE": "live"]) == .live)
+        #expect(CodexIngestionPipeline.modeFromEnvironment(["OPEN_ISLAND_CODEX_PIPELINE": "SHADOW"]) == .shadow)
+        #expect(CodexIngestionPipeline.modeFromEnvironment(["OPEN_ISLAND_CODEX_PIPELINE": "off"]) == .off)
+        // Anything unrecognized leaves the caller's choice in place.
+        #expect(CodexIngestionPipeline.modeFromEnvironment(["OPEN_ISLAND_CODEX_PIPELINE": "bogus"]) == nil)
+        #expect(CodexIngestionPipeline.modeFromEnvironment([:]) == nil)
+    }
+
     @Test("identical event streams report no divergence")
     func matchingStreamsAgree() {
         let pipeline = CodexIngestionPipeline(mode: .shadow)
