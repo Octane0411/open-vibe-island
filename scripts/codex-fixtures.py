@@ -5,8 +5,10 @@ The Codex transcript format drifts between releases, and a single machine keeps
 files written by many versions at once, so regression tests need real samples
 per version rather than one hand-written example.
 
-Nothing user-authored may ship into the repository. Redaction is therefore an
-**allow-list**: a string value survives only if its key is one the decoder
+The output is never committed — `Tests/Fixtures/codex-rollouts/` is ignored by
+git, and the suites that consume it skip themselves when it is absent. Redaction
+still matters because the files sit in a working tree and travel in backups, so
+it is an **allow-list**: a string value survives only if its key is one the decoder
 actually reads *and* the value matches the shape that key is expected to have.
 Everything else — prompts, model output, tool arguments, encrypted blobs, URLs,
 absolute paths, and any field a future Codex release invents — is replaced with

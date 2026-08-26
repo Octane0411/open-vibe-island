@@ -15,8 +15,22 @@ import Testing
 /// it per test put enough parallel CPU and disk load on CI to perturb
 /// latency-sensitive tests elsewhere in the suite, so every assertion below
 /// reads from `analysis` instead.
-@Suite("Codex fixture corpus")
+///
+/// The fixtures are generated from the maintainer's own session history and
+/// are deliberately not committed — they are ignored by git and exist only on
+/// machines where `scripts/codex-fixtures.py` has been run. The whole suite is
+/// skipped, not failed, when they are absent, so CI stays green without them
+/// and local runs get the extra coverage.
+/// Whether the locally generated corpus exists. Lives outside the suite because
+/// a `@Suite` trait cannot reference a member of the type it decorates — the
+/// macro expansion becomes circular.
+func codexCorpusIsAvailable() -> Bool {
+    !CodexFixtureCorpusTests.allFixtures().isEmpty
+}
+
+@Suite("Codex fixture corpus", .enabled(if: codexCorpusIsAvailable()))
 struct CodexFixtureCorpusTests {
+
     // MARK: - Corpus location
 
     static let corpusRoot: URL? = {
@@ -158,10 +172,9 @@ struct CodexFixtureCorpusTests {
 
     // MARK: - Assertions
 
-    @Test("the corpus is present and spans many Codex versions")
-    func corpusIsPopulated() async throws {
+    @Test("the corpus spans many Codex versions")
+    func corpusIsPopulated() async {
         let analysis = await Self.analysis()
-        try #require(analysis.fixtureCount > 0, "fixture corpus missing — run scripts/codex-fixtures.py")
         // A single machine accumulates transcripts from many releases at once;
         // the corpus has to reflect that or it proves nothing about drift.
         #expect(analysis.directoryCount >= 10)

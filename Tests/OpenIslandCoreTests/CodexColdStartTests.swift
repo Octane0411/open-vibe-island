@@ -11,7 +11,7 @@ import Testing
 /// Serialized because these drive the whole corpus through the pipeline; run
 /// concurrently they put enough load on a CI runner to perturb latency-sensitive
 /// tests elsewhere in the suite.
-@Suite("Codex cold start", .serialized)
+@Suite("Codex cold start", .serialized, .enabled(if: codexCorpusIsAvailable()))
 struct CodexColdStartTests {
     private func corpusFixtures() -> [URL] {
         CodexFixtureCorpusTests.allFixtures()
@@ -125,6 +125,30 @@ struct CodexColdStartTests {
         #expect(restore.secondPassStarts == 0)
     }
 
+    @Test("bounded reads still recover the header and recent activity")
+    func boundedFileReadRecoversHeaderAndTail() throws {
+        // The only test that goes through the file path rather than cached
+        // lines, so the head/tail read logic keeps direct coverage.
+        let fixtures = corpusFixtures()
+        let fixture = try #require(fixtures.first)
+
+        let source = CodexRolloutSource()
+        let bounded = source.read(fileAt: fixture)
+
+        let text = try String(contentsOf: fixture, encoding: .utf8)
+        let whole = source.read(
+            lines: text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init),
+            transcriptPath: fixture.path
+        )
+
+        // Identity and classification must survive the truncation — they live
+        // in the header, which the head read always reaches.
+        #expect(bounded.meta?.sessionID == whole.meta?.sessionID)
+        #expect(bounded.meta?.originator == whole.meta?.originator)
+        #expect(bounded.meta?.cliVersion == whole.meta?.cliVersion)
+        #expect(bounded.isSubagent == whole.isSubagent)
+    }
+
     @Test("no restored session is left without a workspace")
     func restoredSessionsHaveWorkspaces() async {
         for session in await Self.restore().pipeline.store.allSessions() where session.isUserVisible {
@@ -134,7 +158,13 @@ struct CodexColdStartTests {
             )
         }
     }
+}
 
+/// Cold-start behaviour that needs no corpus — hand-built transcripts and a
+/// temporary file — so it runs everywhere, including CI where the fixtures are
+/// absent.
+@Suite("Codex cold start (self-contained)")
+struct CodexColdStartSelfContainedTests {
     @Test("cold-start values are provisional and yield to live sources")
     func coldStartValuesAreProvisional() throws {
         // A small hand-built transcript keeps this independent of the corpus.
@@ -169,30 +199,6 @@ struct CodexColdStartTests {
         #expect(updated.workspace?.isProvisional == false)
     }
 
-    @Test("bounded reads still recover the header and recent activity")
-    func boundedFileReadRecoversHeaderAndTail() throws {
-        // The only test that goes through the file path rather than cached
-        // lines, so the head/tail read logic keeps direct coverage.
-        let fixtures = corpusFixtures()
-        let fixture = try #require(fixtures.first)
-
-        let source = CodexRolloutSource()
-        let bounded = source.read(fileAt: fixture)
-
-        let text = try String(contentsOf: fixture, encoding: .utf8)
-        let whole = source.read(
-            lines: text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init),
-            transcriptPath: fixture.path
-        )
-
-        // Identity and classification must survive the truncation — they live
-        // in the header, which the head read always reaches.
-        #expect(bounded.meta?.sessionID == whole.meta?.sessionID)
-        #expect(bounded.meta?.originator == whole.meta?.originator)
-        #expect(bounded.meta?.cliVersion == whole.meta?.cliVersion)
-        #expect(bounded.isSubagent == whole.isSubagent)
-    }
-
     @Test("a header larger than the head read is still recovered")
     func oversizedHeaderRecovered() throws {
         // `session_meta` can embed full system instructions and run well past
@@ -217,5 +223,4 @@ struct CodexColdStartTests {
         #expect(reading.meta?.sessionID == "11111111-2222-3333-4444-555555555555")
         #expect(reading.meta?.originator == "codex-tui")
     }
-
 }
