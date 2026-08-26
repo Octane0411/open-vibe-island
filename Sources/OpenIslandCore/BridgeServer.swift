@@ -73,7 +73,10 @@ public final class BridgeServer: @unchecked Sendable {
     /// it observes everything the legacy path observes and records where the
     /// two disagree, without affecting what the user sees. See
     /// `CodexIngestionPipeline.Mode`.
-    public let codexPipeline = CodexIngestionPipeline(mode: .shadow)
+    public let codexPipeline = CodexIngestionPipeline(
+        mode: .shadow,
+        logURL: CodexSessionStore.defaultDirectoryURL.appendingPathComponent("codex-shadow.log")
+    )
 
     private var listeners: [Listener] = []
     private var clients: [UUID: ClientConnection] = [:]

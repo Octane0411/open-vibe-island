@@ -33,8 +33,12 @@ public final class CodexIngestionPipeline: @unchecked Sendable {
     private let lock = NSLock()
     private var mode: Mode
     private var divergences: [String] = []
+    /// Where divergences are also appended, one per line, so a shadow run
+    /// survives app restarts and can be read without opening Settings.
+    private let logURL: URL?
 
-    public init(mode: Mode = .shadow) {
+    public init(mode: Mode = .shadow, logURL: URL? = nil) {
+        self.logURL = logURL
         let diagnostics = CodexDiagnostics()
         let store = CodexFacetStore(diagnostics: diagnostics)
         self.diagnostics = diagnostics
@@ -80,14 +84,42 @@ public final class CodexIngestionPipeline: @unchecked Sendable {
         guard legacySessionIDs != visible else { return }
         let onlyLegacy = legacySessionIDs.subtracting(visible).count
         let onlyCandidate = visible.subtracting(legacySessionIDs).count
+        record(
+            "cold-start: legacy \(legacySessionIDs.count) sessions, candidate \(visible.count) visible "
+            + "(\(withheld) withheld as spawned); only-legacy \(onlyLegacy), only-candidate \(onlyCandidate)"
+        )
+    }
+
+    private func record(_ line: String) {
         lock.lock()
+        // Bounded in memory so a systematic mismatch cannot grow without limit;
+        // the file keeps everything.
         if divergences.count < 500 {
-            divergences.append(
-                "cold-start: legacy \(legacySessionIDs.count) sessions, candidate \(visible.count) visible "
-                + "(\(withheld) withheld as spawned); only-legacy \(onlyLegacy), only-candidate \(onlyCandidate)"
-            )
+            divergences.append(line)
         }
         lock.unlock()
+        appendToLog(line)
+    }
+
+    private func appendToLog(_ line: String) {
+        guard let logURL else { return }
+        let stamp = ISO8601DateFormatter().string(from: .now)
+        guard let data = "\(stamp) \(line)\n".data(using: .utf8) else { return }
+        do {
+            try FileManager.default.createDirectory(
+                at: logURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            if let handle = try? FileHandle(forWritingTo: logURL) {
+                defer { try? handle.close() }
+                try handle.seekToEnd()
+                try handle.write(contentsOf: data)
+            } else {
+                try data.write(to: logURL)
+            }
+        } catch {
+            // Logging is best-effort; the in-memory report still works.
+        }
     }
 
     // MARK: - Ingestion
@@ -153,12 +185,7 @@ public final class CodexIngestionPipeline: @unchecked Sendable {
         if !missing.isEmpty { line += "missing: \(missing.joined(separator: ", ")) " }
         if !extra.isEmpty { line += "extra: \(extra.joined(separator: ", "))" }
 
-        lock.lock()
-        // Bounded so a systematic mismatch cannot grow without limit.
-        if divergences.count < 500 {
-            divergences.append(line.trimmingCharacters(in: .whitespaces))
-        }
-        lock.unlock()
+        record(line.trimmingCharacters(in: .whitespaces))
     }
 
     public func divergenceReport() -> [String] {
