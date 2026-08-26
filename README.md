@@ -93,6 +93,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 | **Zed** | Workspace | Detect integrated terminal; activate app / open project folder |
 | **JetBrains IDEs** | Workspace | IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover |
 | **Warp** | Full | Precision tab jump via SQLite pane lookup + AX menu click |
+| **Conductor** | App | Detect via environment (`CONDUCTOR_SESSION_ID`); activate the Conductor app |
 
 ### Other Features
 
@@ -286,6 +287,7 @@ Developers who already live in the terminal and want a better way to work with c
 - **VS Code**, **VS Code Insiders**, **Cursor**, **Windsurf**, **Trae**, **Zed** — Workspace-level jump via respective CLI / app activation (`code -r`, `cursor -r`, Zed app, etc.)
 - **JetBrains IDEs** (IntelliJ IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover) — Workspace-level jump via IDE CLI launcher
 - **Warp** — Precision tab jump via SQLite pane lookup, pid-based sibling-tab disambiguation, and AX menu click
+- **Conductor** (conductor.build) — App-level jump: Conductor runs each agent as a headless, TTY-less subprocess, so its sessions are recognized via Conductor's environment (`CONDUCTOR_SESSION_ID` / `__CFBundleIdentifier`) rather than a terminal, and jump-back brings the Conductor app forward
 
 ### UI & Display
 

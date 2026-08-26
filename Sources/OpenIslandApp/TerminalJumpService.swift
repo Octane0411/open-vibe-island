@@ -127,6 +127,11 @@ struct TerminalJumpService {
             alternateBundleIdentifiers: ["dev.zed.Zed-Preview"]
         ),
         TerminalAppDescriptor(
+            displayName: "Conductor",
+            bundleIdentifier: "com.conductor.app",
+            aliases: ["conductor"]
+        ),
+        TerminalAppDescriptor(
             displayName: "IntelliJ IDEA",
             bundleIdentifier: "com.jetbrains.intellij",
             aliases: ["intellij", "idea"]
@@ -354,6 +359,12 @@ struct TerminalJumpService {
                 // per-session deep link, so just bring the app forward.
                 try openAction(["-b", "com.anthropic.claudefordesktop"])
                 return "Activated Claude."
+            case "com.conductor.app":
+                // Conductor hosts each agent inside its own window; there is no
+                // per-session deep link, so bring the app forward (same
+                // rationale as Claude.app above).
+                try openAction(["-b", "com.conductor.app"])
+                return "Activated Conductor."
             case "com.googlecode.iterm2":
                 if try jumpToITermSession(target) {
                     return "Focused the matching iTerm session."

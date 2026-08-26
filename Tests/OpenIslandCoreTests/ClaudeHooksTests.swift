@@ -358,6 +358,41 @@ struct ClaudeHooksTests {
         #expect(payload.terminalApp == "Zed")
     }
 
+    /// Verifies a Conductor (conductor.build) session is tagged `Conductor`
+    /// via the authoritative `CONDUCTOR_SESSION_ID` signal. Conductor runs the
+    /// agent as a TTY-less subprocess of its own runtime, so process discovery
+    /// never sees a terminal and TERM_PROGRAM is unset — without this tag the
+    /// session would show as "Unknown".
+    @Test
+    func claudeInferTerminalAppRecognizesConductorViaSessionID() {
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: ["CONDUCTOR_SESSION_ID": "6f3ff1a1-dfc3-49b2-9f6d-dfd9f83e25db"],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+        )
+
+        #expect(payload.terminalApp == "Conductor")
+        #expect(payload.defaultJumpTarget.terminalApp == "Conductor")
+    }
+
+    /// Verifies the `__CFBundleIdentifier=com.conductor.app` fallback also tags
+    /// the session `Conductor` — the hook binary inherits that bundle id when
+    /// launched as a subprocess of Conductor.app.
+    @Test
+    func claudeInferTerminalAppRecognizesConductorViaBundleIdentifier() {
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: ["__CFBundleIdentifier": "com.conductor.app"],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+        )
+
+        #expect(payload.terminalApp == "Conductor")
+    }
+
     /// Verifies a Claude Desktop session is tagged `Claude.app` via the
     /// authoritative `CLAUDE_CODE_ENTRYPOINT=claude-desktop` signal. The
     /// desktop subprocess is TTY-less and invisible to process discovery, so

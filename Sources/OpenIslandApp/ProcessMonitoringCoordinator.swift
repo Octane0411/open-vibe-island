@@ -1402,6 +1402,9 @@ final class ProcessMonitoringCoordinator {
             return "Rider"
         case "rustrover":
             return "RustRover"
+        // Orchestrators / embedded-terminal hosts
+        case "conductor":
+            return "Conductor"
         default:
             return nil
         }

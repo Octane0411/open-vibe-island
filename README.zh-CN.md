@@ -92,6 +92,7 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 | **Zed** | 工作区 | 识别集成终端；激活应用 / 打开项目目录 |
 | **JetBrains 全家桶** | 工作区 | IDEA、WebStorm、PyCharm、GoLand、CLion、RubyMine、PhpStorm、Rider、RustRover |
 | **Warp** | 完整支持 | 通过 SQLite pane 查找 + AX 菜单点击精准跳转到目标 tab |
+| **Conductor** | 应用 | 通过环境变量识别（`CONDUCTOR_SESSION_ID`）；激活 Conductor 应用 |
 
 ### 其他功能
 
@@ -288,6 +289,7 @@ AI coding 正在成为日常开发流程的一部分，但围绕它的控制层�
 - **VS Code**、**VS Code Insiders**、**Cursor**、**Windsurf**、**Trae**、**Zed** — 工作区级跳转，通过对应 CLI / 激活应用（`code -r`、`cursor -r`、Zed 等）
 - **JetBrains 全家桶**（IntelliJ IDEA、WebStorm、PyCharm、GoLand、CLion、RubyMine、PhpStorm、Rider、RustRover） — 工作区级跳转，通过 IDE CLI launcher
 - **Warp** — 通过 SQLite pane 查找、pid 进程树消歧和 AX 菜单点击实现精准 tab 跳转
+- **Conductor**（conductor.build） — 应用级跳转：Conductor 将每个 agent 作为无 TTY 的子进程运行，因此其会话通过 Conductor 的环境变量（`CONDUCTOR_SESSION_ID` / `__CFBundleIdentifier`）识别，而非终端；jump-back 会将 Conductor 应用带到前台
 
 ### UI 与显示
 

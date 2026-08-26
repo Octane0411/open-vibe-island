@@ -522,6 +522,15 @@ struct ActiveAgentProcessDiscovery {
             || lowered.hasSuffix("/zed") {
             return "Zed"
         }
+        // Conductor (conductor.build) runs each agent as a headless subprocess
+        // of its own runtime; walking up the process tree the ancestors are the
+        // conductor-runtime sidecar (under …/com.conductor.app/) and the
+        // Conductor.app bundle — neither is a terminal, so the session would
+        // otherwise show as "Unknown".
+        if lowered.contains("/conductor.app/contents/macos/")
+            || lowered.contains("/com.conductor.app/") {
+            return "Conductor"
+        }
         if lowered.contains("/qoder.app/") {
             return "Qoder"
         }
