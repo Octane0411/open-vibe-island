@@ -572,6 +572,21 @@ public final class BridgeServer: @unchecked Sendable {
             synchronizeJumpTarget(for: payload)
             synchronizeCodexMetadata(for: payload)
 
+            // Codex fires this hook whatever the user's approval mode is. Only
+            // hold it — and only show a card — when the user has asked to be
+            // asked. Anything else is answered at once, so auto-approve stays
+            // automatic and plan mode stays inert (#559, #638).
+            switch CodexApprovalRouting.route(mode: payload.permissionMode, toolName: payload.toolName) {
+            case .autoAllow:
+                send(.response(.codexHookDirective(.permissionRequest(.allow))), to: clientID)
+                return
+            case let .autoDeny(message):
+                send(.response(.codexHookDirective(.permissionRequest(.deny(message: message)))), to: clientID)
+                return
+            case .askUser:
+                break
+            }
+
             emit(
                 .permissionRequested(
                     PermissionRequested(
