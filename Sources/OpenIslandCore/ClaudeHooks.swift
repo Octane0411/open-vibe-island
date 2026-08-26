@@ -1188,15 +1188,9 @@ public extension ClaudeHookPayload {
             return "Claude.app"
         }
 
-        // Conductor (conductor.build) runs Claude Code as a headless, TTY-less
-        // subprocess of its own runtime, so process discovery never sees a
-        // terminal and TERM_PROGRAM is unset — the session would otherwise show
-        // as "Unknown". Conductor stamps its own identifiers into the agent
-        // environment; CONDUCTOR_SESSION_ID (which equals the Claude Code
-        // --session-id) is authoritative, with the CONDUCTOR_WORKSPACE_ID and
-        // __CFBundleIdentifier signals as corroborating fallbacks. Checked
-        // BEFORE TERM_PROGRAM for the same env-inheritance-leak reason as
-        // Claude.app above.
+        // Conductor (conductor.build) runs the agent as a TTY-less subprocess,
+        // so there is no terminal and TERM_PROGRAM is unset; it stamps its own
+        // env identifiers instead. Checked before TERM_PROGRAM like Claude.app.
         if environment["CONDUCTOR_SESSION_ID"] != nil
             || environment["CONDUCTOR_WORKSPACE_ID"] != nil
             || environment["__CFBundleIdentifier"]?.lowercased() == "com.conductor.app" {

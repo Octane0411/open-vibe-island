@@ -360,9 +360,7 @@ struct TerminalJumpService {
                 try openAction(["-b", "com.anthropic.claudefordesktop"])
                 return "Activated Claude."
             case "com.conductor.app":
-                // Conductor hosts each agent inside its own window; there is no
-                // per-session deep link, so bring the app forward (same
-                // rationale as Claude.app above).
+                // No per-session deep link; bring the app forward, like Claude.app.
                 try openAction(["-b", "com.conductor.app"])
                 return "Activated Conductor."
             case "com.googlecode.iterm2":

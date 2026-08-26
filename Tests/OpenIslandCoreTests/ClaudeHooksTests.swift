@@ -358,11 +358,6 @@ struct ClaudeHooksTests {
         #expect(payload.terminalApp == "Zed")
     }
 
-    /// Verifies a Conductor (conductor.build) session is tagged `Conductor`
-    /// via the authoritative `CONDUCTOR_SESSION_ID` signal. Conductor runs the
-    /// agent as a TTY-less subprocess of its own runtime, so process discovery
-    /// never sees a terminal and TERM_PROGRAM is unset — without this tag the
-    /// session would show as "Unknown".
     @Test
     func claudeInferTerminalAppRecognizesConductorViaSessionID() {
         let payload = ClaudeHookPayload(
@@ -377,9 +372,6 @@ struct ClaudeHooksTests {
         #expect(payload.defaultJumpTarget.terminalApp == "Conductor")
     }
 
-    /// Verifies the `__CFBundleIdentifier=com.conductor.app` fallback also tags
-    /// the session `Conductor` — the hook binary inherits that bundle id when
-    /// launched as a subprocess of Conductor.app.
     @Test
     func claudeInferTerminalAppRecognizesConductorViaBundleIdentifier() {
         let payload = ClaudeHookPayload(
