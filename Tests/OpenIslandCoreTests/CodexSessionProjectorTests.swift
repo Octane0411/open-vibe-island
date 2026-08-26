@@ -200,6 +200,57 @@ struct CodexSessionProjectorTests {
         #expect(!events.contains { if case .activityUpdated = $0 { return true }; return false })
     }
 
+    @Test("a finished turn surfaces the island; only a real ending marks the session over")
+    func finishedTurnSurfacesWithoutEndingSession() {
+        // IslandSurface pops the island only for sessionCompleted, and the
+        // watch relay only pushes for it. A finished turn reported as an
+        // activity update silently drops both.
+        let (_, projector) = makeStack()
+
+        _ = projector.project(observation(.hook, seq: 1, CodexFacetPatch(
+            workspace: CodexWorkspace(workingDirectory: "/Users/dev/work/island"),
+            placement: CodexPlacement(terminalApp: "Ghostty")
+        )))
+
+        let turnDone = projector.project(observation(.hook, seq: 2, CodexFacetPatch(
+            lifecycle: CodexLifecycle(phase: .completed)
+        )))
+        guard case let .sessionCompleted(completed) = turnDone.last else {
+            Issue.record("a finished turn must surface, got \(String(describing: turnDone.last))")
+            return
+        }
+        #expect(completed.isSessionEnd == false, "a turn ending is not the session ending")
+
+        let sessionOver = projector.project(observation(.hook, seq: 3, CodexFacetPatch(
+            liveness: CodexLiveness(state: .ended(reason: .sessionEnd))
+        )))
+        guard case let .ended(ending) = sessionOver.last.map({ event -> CodexLiveness.State in
+            if case let .sessionCompleted(p) = event, p.isSessionEnd == true {
+                return .ended(reason: .sessionEnd)
+            }
+            return .alive
+        }) else {
+            Issue.record("session end must mark the session over, got \(String(describing: sessionOver.last))")
+            return
+        }
+        #expect(ending == .sessionEnd)
+    }
+
+    @Test("a running turn is still an activity update")
+    func runningTurnIsActivity() {
+        let (_, projector) = makeStack()
+        _ = projector.project(observation(.hook, seq: 1, CodexFacetPatch(
+            workspace: CodexWorkspace(workingDirectory: "/Users/dev/work/island"),
+            placement: CodexPlacement(terminalApp: "Ghostty"),
+            lifecycle: CodexLifecycle(phase: .completed)
+        )))
+
+        let running = projector.project(observation(.hook, seq: 2, CodexFacetPatch(
+            lifecycle: CodexLifecycle(phase: .running)
+        )))
+        #expect(running.contains { if case .activityUpdated = $0 { return true }; return false })
+    }
+
     // MARK: - Approvals
 
     @Test("a hook permission request surfaces as an approval")

@@ -113,12 +113,28 @@ public final class CodexSessionProjector: @unchecked Sendable {
         }
 
         if change.accepted.contains(.lifecycle), let lifecycle = facets.lifecycle?.value {
-            events.append(.activityUpdated(SessionActivityUpdated(
-                sessionID: sessionKey,
-                summary: summaryText(facets: facets),
-                phase: lifecycle.phase,
-                timestamp: timestamp
-            )))
+            if lifecycle.phase == .completed {
+                // A finished turn is a `sessionCompleted` with `isSessionEnd`
+                // false — not an activity update. The distinction is not
+                // cosmetic: `IslandSurface` only pops the island for
+                // `sessionCompleted`, and `WatchNotificationRelay` only pushes
+                // to the watch for it. Reporting a finished turn as activity
+                // silently drops both.
+                events.append(.sessionCompleted(SessionCompleted(
+                    sessionID: sessionKey,
+                    summary: summaryText(facets: facets),
+                    timestamp: timestamp,
+                    isInterrupt: false,
+                    isSessionEnd: false
+                )))
+            } else {
+                events.append(.activityUpdated(SessionActivityUpdated(
+                    sessionID: sessionKey,
+                    summary: summaryText(facets: facets),
+                    phase: lifecycle.phase,
+                    timestamp: timestamp
+                )))
+            }
         }
 
         return events
