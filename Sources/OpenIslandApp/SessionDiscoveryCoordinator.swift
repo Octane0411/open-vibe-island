@@ -26,6 +26,25 @@ final class SessionDiscoveryCoordinator {
 
     @ObservationIgnored
     var onStatusMessage: ((String) -> Void)?
+    /// The rewritten Codex ingestion layer, fed every transcript the legacy
+    /// discovery finds so the two can be compared at the session level. The
+    /// startup scan runs off the main actor and receives it as a parameter
+    /// instead; the pipeline itself is thread-safe.
+    var codexPipeline: CodexIngestionPipeline?
+
+    /// Fold discovered transcripts into the rewritten pipeline and record how
+    /// its idea of the session list differs from the legacy one.
+    nonisolated private func shadowCodexDiscovery(
+        _ records: [CodexTrackedSessionRecord],
+        into pipeline: CodexIngestionPipeline?
+    ) {
+        guard let pipeline, !records.isEmpty else { return }
+        for record in records {
+            guard let path = record.codexMetadata?.transcriptPath else { continue }
+            _ = pipeline.ingest(rolloutFile: URL(fileURLWithPath: path))
+        }
+        pipeline.recordColdStartComparison(legacySessionIDs: Set(records.map(\.sessionID)))
+    }
 
     @ObservationIgnored
     var stateAccessor: (() -> SessionState)?
@@ -83,7 +102,9 @@ final class SessionDiscoveryCoordinator {
     // MARK: - Startup discovery
 
     /// Performs all startup file I/O off the main thread and returns the raw results.
-    nonisolated func loadStartupDiscoveryPayload() -> StartupDiscoveryPayload {
+    nonisolated func loadStartupDiscoveryPayload(
+        codexPipeline: CodexIngestionPipeline? = nil
+    ) -> StartupDiscoveryPayload {
         let cutoff = Date.now.addingTimeInterval(-86_400)
 
         let allCodex = (try? codexSessionStore.load()) ?? []
@@ -99,6 +120,7 @@ final class SessionDiscoveryCoordinator {
         let cursorRecords = allCursor.filter { $0.updatedAt >= cutoff && $0.shouldRestoreToLiveState }
 
         let discoveredCodex = codexRolloutDiscovery.discoverRecentSessions()
+        shadowCodexDiscovery(discoveredCodex, into: codexPipeline)
         let discoveredClaude = claudeTranscriptDiscovery.discoverRecentSessions()
 
         return StartupDiscoveryPayload(
@@ -432,6 +454,7 @@ final class SessionDiscoveryCoordinator {
     }
 
     private func applyCodexAppRediscovery(_ records: [CodexTrackedSessionRecord]) {
+        shadowCodexDiscovery(records, into: codexPipeline)
         let existingIDs = Set(state.sessions.filter { $0.tool == .codex }.map(\.id))
         let existingPaths = Set(state.sessions.compactMap(\.codexMetadata?.transcriptPath))
 

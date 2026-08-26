@@ -32,12 +32,14 @@ public enum CodexAuthorityMatrix {
     ///
     /// - `surface` — only `session_meta` carries `originator`/`source`, so the
     ///   rollout wins; the app-server's `thread.source` is a weaker echo.
-    /// - `workspace` — the transcript header records the working directory
-    ///   authoritatively; hooks and process observation echo it.
+    /// - `workspace` — the transcript header and the app-server both carry
+    ///   the Codex-authored working directory; hooks and process observation
+    ///   echo it.
     /// - `placement` — hooks alone see the terminal.
     /// - `lifecycle` — the app-server reports turn boundaries directly; hooks
     ///   infer them from tool-use edges. The rollout is always behind.
-    /// - `actionable` — approvals moved into the hook system entirely.
+    /// - `actionable` — hooks carry the request itself; the app-server can
+    ///   only say a thread is waiting, which is worth a placeholder card.
     /// - `narrative` — a user-assigned thread name beats a prompt scraped from
     ///   the transcript.
     /// - `liveness` — `thread/closed` is definitive; a live process is good
@@ -50,9 +52,10 @@ public enum CodexAuthorityMatrix {
             [.rollout, .appServer]
         case .workspace:
             // `session_meta.cwd` is the definitive record of where a session
-            // was started. Hooks repeat it and process observation can infer
-            // it, but neither is more trustworthy than the header Codex wrote.
-            [.rollout, .hook, .process]
+            // was started, and the app-server's thread listing carries the
+            // same Codex-authored value. Hooks repeat it and process
+            // observation can infer it, but neither outranks what Codex wrote.
+            [.rollout, .appServer, .hook, .process]
         case .placement:
             // Terminal identity — which app, which tty, which pane. Only hooks
             // observe this; the app-server and the transcript have no idea what
@@ -61,7 +64,11 @@ public enum CodexAuthorityMatrix {
         case .lifecycle:
             [.appServer, .hook]
         case .actionable:
-            [.hook]
+            // Hooks carry the real request — tool, input, affected path. The
+            // app-server only reports that a thread is *waiting*, so its card
+            // is a placeholder that a hook's card should replace, never the
+            // other way round.
+            [.hook, .appServer]
         case .narrative:
             [.appServer, .rollout, .hook]
         case .liveness:

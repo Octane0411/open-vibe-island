@@ -133,6 +133,30 @@ struct CodexHookEventsTests {
         #expect(observation.patch.actionable == .cleared)
     }
 
+    // MARK: - Approval routing in the hook source
+
+    @Test("a user who opted out of approvals gets no card from the hook source")
+    func bypassProducesNoCard() {
+        let source = CodexHookSource()
+        let observation = source.observe(payload(
+            .permissionRequest,
+            extra: ["permission_mode": "bypassPermissions", "tool_name": "shell"]
+        ))
+        #expect(observation.patch.actionable == nil)
+        #expect(observation.patch.lifecycle?.phase == .running)
+    }
+
+    @Test("default mode still raises the card")
+    func defaultModeRaisesCard() {
+        let source = CodexHookSource()
+        let observation = source.observe(payload(.permissionRequest, extra: ["tool_name": "shell"]))
+        guard case .permission = observation.patch.actionable else {
+            Issue.record("expected a permission card")
+            return
+        }
+        #expect(observation.patch.lifecycle?.phase == .waitingForApproval)
+    }
+
     // MARK: - Installer
 
     @Test("the managed install registers every lifecycle event")

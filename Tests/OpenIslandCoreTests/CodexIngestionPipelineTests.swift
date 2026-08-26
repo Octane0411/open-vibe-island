@@ -35,22 +35,24 @@ struct CodexIngestionPipelineTests {
         )
     }
 
-    @Test("shadow mode observes without emitting")
-    func shadowModeEmitsNothing() {
+    @Test("shadow mode returns candidates but does not drive the UI")
+    func shadowModeReturnsCandidates() {
         let pipeline = CodexIngestionPipeline(mode: .shadow)
 
         let events = pipeline.ingest(hook: hookPayload(event: .sessionStart))
 
-        // Nothing reaches the UI …
-        #expect(events.isEmpty)
-        // … but the state was still assembled, which is what makes the shadow
-        // run worth doing.
+        // The candidate events are returned so the caller can compare them
+        // against the legacy path …
+        #expect(!events.isEmpty)
         #expect(pipeline.store.session(for: "S1") != nil)
+        // … and the caller is told not to apply them.
+        #expect(!pipeline.drivesUI)
     }
 
     @Test("live mode drives the session list")
     func liveModeEmits() {
         let pipeline = CodexIngestionPipeline(mode: .live)
+        #expect(pipeline.drivesUI)
 
         let events = pipeline.ingest(hook: hookPayload(event: .sessionStart))
 

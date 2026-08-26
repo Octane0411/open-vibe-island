@@ -679,6 +679,31 @@ final class AppModel {
         codexAppServer.onEvent = { [weak self] event in
             self?.applyTrackedEvent(event, ingress: .bridge)
         }
+        // Run the rewritten Codex pipeline on every app-server notification.
+        // In shadow mode that only records where it disagrees with the legacy
+        // path; in live mode its events replace the legacy ones.
+        codexAppServer.suppressLegacyEvents = bridgeServer.codexPipeline.drivesUI
+        codexAppServer.onNotificationObserved = { [weak self] notification, legacy in
+            guard let self else { return }
+            let pipeline = self.bridgeServer.codexPipeline
+            let candidate = pipeline.ingest(appServer: notification)
+            if pipeline.drivesUI {
+                candidate.forEach { self.applyTrackedEvent($0, ingress: .bridge) }
+            } else {
+                pipeline.recordDivergence(legacy: legacy, candidate: candidate)
+            }
+        }
+        codexAppServer.onLoadedThreadObserved = { [weak self] thread, legacy in
+            guard let self else { return }
+            let pipeline = self.bridgeServer.codexPipeline
+            let candidate = pipeline.ingest(loadedThread: thread)
+            if pipeline.drivesUI {
+                candidate.forEach { self.applyTrackedEvent($0, ingress: .bridge) }
+            } else {
+                pipeline.recordDivergence(legacy: legacy, candidate: candidate)
+            }
+        }
+        discovery.codexPipeline = bridgeServer.codexPipeline
         codexAppServer.onStatusMessage = { [weak self] message in
             self?.lastActionMessage = message
         }
@@ -1083,9 +1108,10 @@ final class AppModel {
         if loadRuntimeState {
             isResolvingInitialLiveSessions = true
 
+            let codexPipeline = bridgeServer.codexPipeline
             Task.detached(priority: .userInitiated) { [weak self] in
                 guard let self else { return }
-                let payload = self.discovery.loadStartupDiscoveryPayload()
+                let payload = self.discovery.loadStartupDiscoveryPayload(codexPipeline: codexPipeline)
                 await MainActor.run {
                     self.applyStartupDiscoveryPayload(payload)
                 }

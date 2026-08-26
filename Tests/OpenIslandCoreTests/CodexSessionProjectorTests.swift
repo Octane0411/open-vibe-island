@@ -231,8 +231,8 @@ struct CodexSessionProjectorTests {
         #expect(payload.request.toolUseID == "t-1")
     }
 
-    @Test("no other source can raise an approval")
-    func onlyHooksRaiseApprovals() {
+    @Test("neither the transcript nor process observation can raise an approval")
+    func transcriptAndProcessCannotRaiseApprovals() {
         let (_, projector) = makeStack()
 
         _ = projector.project(observation(.hook, seq: 1, CodexFacetPatch(
@@ -245,7 +245,9 @@ struct CodexSessionProjectorTests {
             primaryActionTitle: "Allow", secondaryActionTitle: "Deny",
             toolName: nil, toolUseID: nil
         )
-        for source in [CodexSource.rollout, .appServer, .process] {
+        // The app-server is allowed a placeholder (it can see a thread is
+        // waiting); the transcript and the process table cannot know at all.
+        for source in [CodexSource.rollout, .process] {
             let events = projector.project(observation(source, seq: 10, CodexFacetPatch(
                 actionable: .permission(request)
             )))

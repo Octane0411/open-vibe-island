@@ -58,10 +58,36 @@ public final class CodexIngestionPipeline: @unchecked Sendable {
         lock.unlock()
     }
 
-    /// Events the caller should apply, which is nothing at all unless this
-    /// pipeline is the one driving the UI.
-    private func emitted(_ events: [AgentEvent]) -> [AgentEvent] {
-        currentMode == .live ? events : []
+    /// Whether the caller should apply what `ingest` returns.
+    ///
+    /// `ingest` always returns the events this pipeline *would* emit — that is
+    /// what makes a shadow run comparable. The caller applies them only when
+    /// this is the path driving the UI; otherwise it applies the legacy
+    /// events and hands both lists to `recordDivergence`.
+    public var drivesUI: Bool {
+        currentMode == .live
+    }
+
+    /// Compare legacy and candidate cold-start results at the session level.
+    ///
+    /// Cold start builds sessions directly rather than emitting events, so
+    /// the event-level comparison does not apply. What matters there is which
+    /// sessions each path would show — spawned threads leaking in was the
+    /// headline defect.
+    public func recordColdStartComparison(legacySessionIDs: Set<String>) {
+        let visible = Set(store.allSessions().filter(\.isUserVisible).map(\.sessionKey))
+        let withheld = store.allSessions().filter { !$0.isUserVisible }.count
+        guard legacySessionIDs != visible else { return }
+        let onlyLegacy = legacySessionIDs.subtracting(visible).count
+        let onlyCandidate = visible.subtracting(legacySessionIDs).count
+        lock.lock()
+        if divergences.count < 500 {
+            divergences.append(
+                "cold-start: legacy \(legacySessionIDs.count) sessions, candidate \(visible.count) visible "
+                + "(\(withheld) withheld as spawned); only-legacy \(onlyLegacy), only-candidate \(onlyCandidate)"
+            )
+        }
+        lock.unlock()
     }
 
     // MARK: - Ingestion
@@ -71,7 +97,7 @@ public final class CodexIngestionPipeline: @unchecked Sendable {
         // A hook delivery proves a live source exists, so cold-start replay is
         // over and provisional values become replaceable.
         store.enterLiveMode()
-        return emitted(projector.project(hooks.observe(payload, at: timestamp)))
+        return projector.project(hooks.observe(payload, at: timestamp))
     }
 
     public func ingest(
@@ -83,13 +109,13 @@ public final class CodexIngestionPipeline: @unchecked Sendable {
         guard let observation = appServer.observe(notification, at: timestamp) else {
             return []
         }
-        return emitted(projector.project(observation))
+        return projector.project(observation)
     }
 
     public func ingest(loadedThread thread: CodexThread, at timestamp: Date = .now) -> [AgentEvent] {
         guard currentMode != .off else { return [] }
         store.enterLiveMode()
-        return emitted(projector.project(appServer.observeLoadedThread(thread, at: timestamp)))
+        return projector.project(appServer.observeLoadedThread(thread, at: timestamp))
     }
 
     /// Fold a transcript during cold start. Returns no events for transcripts
@@ -98,7 +124,7 @@ public final class CodexIngestionPipeline: @unchecked Sendable {
         guard currentMode != .off else { return [] }
         let reading = rollout.read(fileAt: url, at: timestamp)
         guard let observation = reading.observation, !reading.isSubagent else { return [] }
-        return emitted(projector.project(observation))
+        return projector.project(observation)
     }
 
     // MARK: - Shadow comparison

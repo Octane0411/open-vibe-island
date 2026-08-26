@@ -81,6 +81,10 @@ public final class BridgeServer: @unchecked Sendable {
     /// Running subagent count per Codex session. Hooks report start/stop
     /// boundaries; the island shows a total.
     private var codexActiveSubagents: [String: Int] = [:]
+    /// While a Codex hook is being handled, legacy emits are collected here
+    /// instead of applied. Once the handler finishes, whichever path drives
+    /// the UI is applied and the other is compared against it.
+    private var codexShadowCapture: [AgentEvent]?
     private var pendingClaudeToolContexts: [String: PendingClaudeToolContext] = [:]
     private var pendingClaudeInteractions: [String: PendingClaudeInteraction] = [:]
     private var pendingOpenCodeInteractions: [String: PendingOpenCodeInteraction] = [:]
@@ -499,13 +503,14 @@ public final class BridgeServer: @unchecked Sendable {
             return
         }
 
-        // Feed the rewritten pipeline in parallel. In shadow mode this returns
-        // nothing and only accumulates comparison data; when the mode is
-        // switched to live it becomes the path that drives the UI.
-        let shadowEvents = codexPipeline.ingest(hook: payload)
-        for event in shadowEvents {
-            emit(event)
-        }
+        // Run the rewritten pipeline alongside the legacy handler below. The
+        // legacy switch keeps its protocol duties either way — acknowledging
+        // the hook, registering pending approvals — but its state events are
+        // captured rather than applied. Whichever path drives the UI is then
+        // applied, and the other is compared against it.
+        let candidate = codexPipeline.ingest(hook: payload)
+        codexShadowCapture = []
+        defer { flushCodexShadow(candidate: candidate) }
 
         switch payload.hookEventName {
         case .sessionStart:
@@ -2776,8 +2781,25 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func emit(_ event: AgentEvent) {
+        if codexShadowCapture != nil {
+            codexShadowCapture?.append(event)
+            return
+        }
         localState.apply(event)
         broadcast([.event(event)])
+    }
+
+    /// Resolve a captured Codex hook: apply the events from whichever path is
+    /// in charge, and record how the other one differed.
+    private func flushCodexShadow(candidate: [AgentEvent]) {
+        guard let legacy = codexShadowCapture else { return }
+        codexShadowCapture = nil
+        if codexPipeline.drivesUI {
+            candidate.forEach(emit)
+        } else {
+            legacy.forEach(emit)
+            codexPipeline.recordDivergence(legacy: legacy, candidate: candidate)
+        }
     }
 
     private func hasSession(id: String) -> Bool {

@@ -85,17 +85,26 @@ public final class CodexHookSource: @unchecked Sendable {
             )
 
         case .permissionRequest:
-            patch.lifecycle = CodexLifecycle(phase: .waitingForApproval, turnID: payload.turnID)
             patch.liveness = CodexLiveness(state: .alive)
-            patch.actionable = .permission(PermissionRequest(
-                title: payload.permissionRequestTitle,
-                summary: payload.permissionRequestSummary,
-                affectedPath: payload.permissionRequestAffectedPath,
-                primaryActionTitle: "Allow",
-                secondaryActionTitle: "Deny",
-                toolName: payload.toolName,
-                toolUseID: payload.toolUseID
-            ))
+            // Same routing the bridge applies before it answers the hook: a
+            // user who opted out of being asked must not get a card here
+            // either, or the two paths would disagree on the one thing a
+            // person notices most.
+            switch CodexApprovalRouting.route(mode: payload.permissionMode, toolName: payload.toolName) {
+            case .askUser:
+                patch.lifecycle = CodexLifecycle(phase: .waitingForApproval, turnID: payload.turnID)
+                patch.actionable = .permission(PermissionRequest(
+                    title: payload.permissionRequestTitle,
+                    summary: payload.permissionRequestSummary,
+                    affectedPath: payload.permissionRequestAffectedPath,
+                    primaryActionTitle: "Allow",
+                    secondaryActionTitle: "Deny",
+                    toolName: payload.toolName,
+                    toolUseID: payload.toolUseID
+                ))
+            case .autoAllow, .autoDeny:
+                patch.lifecycle = CodexLifecycle(phase: .running, turnID: payload.turnID)
+            }
             patch.narrative = CodexNarrative(
                 currentTool: payload.toolName,
                 currentCommandPreview: payload.commandPreview,

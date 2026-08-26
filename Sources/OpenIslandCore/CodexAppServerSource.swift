@@ -35,20 +35,35 @@ public final class CodexAppServerSource: @unchecked Sendable {
     ) -> CodexObservation? {
         switch notification {
         case let .threadStarted(thread):
-            var patch = CodexFacetPatch()
-            patch.lifecycle = CodexLifecycle(phase: .running)
-            patch.liveness = CodexLiveness(state: .alive)
-            // A desktop thread has no terminal; placement is synthesized by the
-            // projector from the surface instead.
-            patch.surface = .desktopApp
-            if let name = thread.name, !name.isEmpty {
-                patch.narrative = CodexNarrative(title: name)
-            }
-            return make(ref: .threadID(thread.id), patch: patch, at: timestamp)
+            return make(ref: .threadID(thread.id), patch: Self.threadPatch(thread), at: timestamp)
 
         case let .threadStatusChanged(threadId, status):
             var patch = CodexFacetPatch()
-            patch.lifecycle = CodexLifecycle(phase: Self.phase(for: status.type))
+            switch status.type {
+            case .active:
+                patch.lifecycle = CodexLifecycle(phase: .running)
+                // The app-server knows the thread is waiting but not on what.
+                // A placeholder card is still better than nothing; a hook's
+                // card, which carries the actual request, outranks it.
+                if status.isWaitingOnApproval {
+                    patch.actionable = .permission(PermissionRequest(
+                        title: "Approval Required",
+                        summary: "Codex is waiting for approval.",
+                        affectedPath: ""
+                    ))
+                } else if status.isWaitingOnUserInput {
+                    patch.actionable = .question(QuestionPrompt(
+                        title: "Codex is waiting for input.",
+                        options: []
+                    ))
+                }
+            case .idle, .systemError:
+                // Idle is "between turns"; systemError is a turn that died.
+                // Neither ends the thread — only `thread/closed` does.
+                patch.lifecycle = CodexLifecycle(phase: .completed)
+            case .notLoaded:
+                return nil
+            }
             patch.liveness = CodexLiveness(state: .alive)
             return make(ref: .threadID(threadId), patch: patch, at: timestamp)
 
@@ -91,14 +106,27 @@ public final class CodexAppServerSource: @unchecked Sendable {
         _ thread: CodexThread,
         at timestamp: Date = .now
     ) -> CodexObservation {
+        make(ref: .threadID(thread.id), patch: Self.threadPatch(thread), at: timestamp)
+    }
+
+    /// Everything a thread listing tells us. A desktop thread has no terminal,
+    /// so placement is never set; the projector derives the jump from the
+    /// surface and the workspace instead.
+    static func threadPatch(_ thread: CodexThread) -> CodexFacetPatch {
         var patch = CodexFacetPatch()
         patch.surface = .desktopApp
-        patch.lifecycle = CodexLifecycle(phase: .running)
+        patch.workspace = CodexWorkspace(workingDirectory: thread.cwd)
+        patch.lifecycle = CodexLifecycle(phase: thread.status.type == .active ? .running : .completed)
         patch.liveness = CodexLiveness(state: .alive)
+        var narrative = CodexNarrative(transcriptPath: thread.path)
         if let name = thread.name, !name.isEmpty {
-            patch.narrative = CodexNarrative(title: name)
+            narrative.title = name
         }
-        return make(ref: .threadID(thread.id), patch: patch, at: timestamp)
+        if !thread.preview.isEmpty {
+            narrative.initialUserPrompt = thread.preview
+        }
+        patch.narrative = narrative
+        return patch
     }
 
     private func make(
@@ -115,12 +143,4 @@ public final class CodexAppServerSource: @unchecked Sendable {
         )
     }
 
-    static func phase(for status: CodexThreadStatusType) -> SessionPhase {
-        switch status {
-        case .active: .running
-        case .idle: .completed
-        case .systemError: .completed
-        case .notLoaded: .completed
-        }
-    }
 }

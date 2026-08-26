@@ -20,6 +20,23 @@ final class CodexAppServerCoordinator {
     /// Callback to emit AgentEvents into AppModel.
     @ObservationIgnored
     var onEvent: ((AgentEvent) -> Void)?
+    /// Called once per notification with the events the legacy path produced
+    /// for it, so the caller can run the rewritten pipeline on the same input
+    /// and compare — or, when that pipeline drives the UI, apply its events
+    /// instead.
+    var onNotificationObserved: ((CodexAppServerNotification, [AgentEvent]) -> Void)?
+    var onLoadedThreadObserved: ((CodexThread, [AgentEvent]) -> Void)?
+    /// When the rewritten pipeline drives the UI, legacy events are still
+    /// produced for comparison but must not be applied.
+    var suppressLegacyEvents = false
+    private var legacyBuffer: [AgentEvent] = []
+
+    private func deliver(_ event: AgentEvent) {
+        legacyBuffer.append(event)
+        if !suppressLegacyEvents {
+            deliver(event)
+        }
+    }
 
     /// Callback to log status messages.
     @ObservationIgnored
@@ -102,7 +119,9 @@ final class CodexAppServerCoordinator {
                 // rebuilds the AgentSession and would wipe richer state
                 // already accumulated from hooks or rediscovery.
                 if isSessionTracked?(thread.id) == true { continue }
+                legacyBuffer = []
                 emitSessionStarted(from: thread)
+                onLoadedThreadObserved?(thread, legacyBuffer)
                 created += 1
             }
             if created > 0 {
@@ -116,6 +135,8 @@ final class CodexAppServerCoordinator {
     // MARK: - Notification handling
 
     private func handleNotification(_ notification: CodexAppServerNotification) {
+        legacyBuffer = []
+        defer { onNotificationObserved?(notification, legacyBuffer) }
         switch notification {
         case .threadStarted(let thread):
             guard !thread.ephemeral else { return }
@@ -126,7 +147,7 @@ final class CodexAppServerCoordinator {
             switch status.type {
             case .active:
                 if status.isWaitingOnApproval {
-                    onEvent?(.permissionRequested(
+                    deliver(.permissionRequested(
                         PermissionRequested(
                             sessionID: threadId,
                             request: PermissionRequest(
@@ -138,7 +159,7 @@ final class CodexAppServerCoordinator {
                         )
                     ))
                 } else if status.isWaitingOnUserInput {
-                    onEvent?(.questionAsked(
+                    deliver(.questionAsked(
                         QuestionAsked(
                             sessionID: threadId,
                             prompt: QuestionPrompt(
@@ -149,7 +170,7 @@ final class CodexAppServerCoordinator {
                         )
                     ))
                 } else {
-                    onEvent?(.activityUpdated(
+                    deliver(.activityUpdated(
                         SessionActivityUpdated(
                             sessionID: threadId,
                             summary: "Codex is working…",
@@ -161,7 +182,7 @@ final class CodexAppServerCoordinator {
             case .idle:
                 // Idle means "between turns" in the same thread — the thread
                 // is still open.  Only `thread/closed` truly ends a session.
-                onEvent?(.activityUpdated(
+                deliver(.activityUpdated(
                     SessionActivityUpdated(
                         sessionID: threadId,
                         summary: "Idle.",
@@ -173,7 +194,7 @@ final class CodexAppServerCoordinator {
                 // Quota limits and other hard failures can leave the thread in
                 // systemError without a turn/completed notification. Mark the
                 // turn as finished so the island does not stay stuck running.
-                onEvent?(.activityUpdated(
+                deliver(.activityUpdated(
                     SessionActivityUpdated(
                         sessionID: threadId,
                         summary: "Turn failed.",
@@ -186,7 +207,7 @@ final class CodexAppServerCoordinator {
             }
 
         case .threadClosed(let threadId):
-            onEvent?(.sessionCompleted(
+            deliver(.sessionCompleted(
                 SessionCompleted(
                     sessionID: threadId,
                     summary: "Codex thread closed.",
@@ -203,7 +224,7 @@ final class CodexAppServerCoordinator {
             break
 
         case .turnStarted(let threadId, _):
-            onEvent?(.activityUpdated(
+            deliver(.activityUpdated(
                 SessionActivityUpdated(
                     sessionID: threadId,
                     summary: "Codex is working…",
@@ -224,7 +245,7 @@ final class CodexAppServerCoordinator {
             case .failed: summary = "Turn failed."
             case .inProgress: summary = "Turn in progress."
             }
-            onEvent?(.activityUpdated(
+            deliver(.activityUpdated(
                 SessionActivityUpdated(
                     sessionID: threadId,
                     summary: summary,
@@ -252,7 +273,7 @@ final class CodexAppServerCoordinator {
         case .notLoaded, .systemError: phase = .completed
         }
 
-        onEvent?(.sessionStarted(
+        deliver(.sessionStarted(
             SessionStarted(
                 sessionID: thread.id,
                 title: title,
