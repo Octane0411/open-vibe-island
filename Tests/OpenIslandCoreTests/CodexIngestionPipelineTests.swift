@@ -97,6 +97,72 @@ struct CodexIngestionPipelineTests {
         })
     }
 
+    @Test("a persisted record restores its terminal identity")
+    func restoredRecordKeepsTerminal() {
+        let pipeline = CodexIngestionPipeline(mode: .live)
+        let record = CodexTrackedSessionRecord(
+            sessionID: "S1",
+            title: "Fix login",
+            origin: .live,
+            attachmentState: .stale,
+            summary: "",
+            phase: .completed,
+            updatedAt: .now,
+            jumpTarget: JumpTarget(
+                terminalApp: "Ghostty",
+                workspaceName: "island",
+                paneTitle: "island",
+                workingDirectory: "/Users/dev/work/island",
+                terminalSessionID: "term-7",
+                terminalTTY: "/dev/ttys004"
+            ),
+            codexMetadata: CodexSessionMetadata(transcriptPath: "/tmp/r.jsonl")
+        )
+
+        let events = pipeline.ingest(restored: record)
+
+        guard case let .sessionStarted(started) = events.first else {
+            Issue.record("expected sessionStarted, got \(events)")
+            return
+        }
+        #expect(started.title == "Fix login")
+        #expect(started.jumpTarget?.terminalApp == "Ghostty")
+        #expect(started.jumpTarget?.terminalTTY == "/dev/ttys004")
+        #expect(started.initialPhase == .completed)
+        // Remembered data must not end cold-start replay.
+        #expect(pipeline.store.currentMode == .replaying)
+    }
+
+    @Test("a transcript read after a persisted record cannot downgrade its terminal")
+    func rolloutCannotDowngradeRestoredTerminal() {
+        let pipeline = CodexIngestionPipeline(mode: .live)
+        let record = CodexTrackedSessionRecord(
+            sessionID: "aaaa",
+            title: "Fix login",
+            origin: .live,
+            attachmentState: .stale,
+            summary: "",
+            phase: .completed,
+            updatedAt: .now,
+            jumpTarget: JumpTarget(
+                terminalApp: "Ghostty", workspaceName: "island", paneTitle: "island",
+                workingDirectory: "/Users/dev/work/island"
+            )
+        )
+        _ = pipeline.ingest(restored: record)
+
+        // The transcript for the same session, as cold start would read it.
+        let lines = [
+            #"{"type":"session_meta","timestamp":"2026-08-24T00:00:00Z","payload":{"id":"aaaa","cwd":"/Users/dev/work/island","originator":"codex-tui","cli_version":"9.9.9","source":"cli"}}"#
+        ]
+        let reading = pipeline.rollout.read(lines: lines, transcriptPath: "/tmp/x.jsonl")
+        if let observation = reading.observation {
+            _ = pipeline.projector.project(observation)
+        }
+
+        #expect(pipeline.store.session(for: "aaaa")?.placement?.value.terminalApp == "Ghostty")
+    }
+
     @Test("identical event streams report no divergence")
     func matchingStreamsAgree() {
         let pipeline = CodexIngestionPipeline(mode: .shadow)

@@ -118,6 +118,13 @@ public final class CodexIngestionPipeline: @unchecked Sendable {
         return projector.project(appServer.observeLoadedThread(thread, at: timestamp))
     }
 
+    /// Rehydrate a session persisted by the previous run. Does not end replay
+    /// mode — this is remembered data, not a live source.
+    public func ingest(restored record: CodexTrackedSessionRecord, at timestamp: Date = .now) -> [AgentEvent] {
+        guard currentMode != .off else { return [] }
+        return projector.project(hooks.observeRestored(record, at: timestamp))
+    }
+
     /// Fold a transcript during cold start. Returns no events for transcripts
     /// belonging to threads Codex spawned for itself.
     public func ingest(rolloutFile url: URL, at timestamp: Date = .now) -> [AgentEvent] {

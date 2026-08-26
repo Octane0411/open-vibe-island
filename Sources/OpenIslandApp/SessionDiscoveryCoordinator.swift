@@ -119,6 +119,13 @@ final class SessionDiscoveryCoordinator {
         let allCursor = (try? cursorSessionRegistry.load()) ?? []
         let cursorRecords = allCursor.filter { $0.updatedAt >= cutoff && $0.shouldRestoreToLiveState }
 
+        // Persisted records go in first: they carry the terminal identity that
+        // transcripts cannot, and a later rollout read must not downgrade it.
+        if let codexPipeline {
+            for record in codexRecords {
+                _ = codexPipeline.ingest(restored: record)
+            }
+        }
         let discoveredCodex = codexRolloutDiscovery.discoverRecentSessions()
         shadowCodexDiscovery(discoveredCodex, into: codexPipeline)
         let discoveredClaude = claudeTranscriptDiscovery.discoverRecentSessions()

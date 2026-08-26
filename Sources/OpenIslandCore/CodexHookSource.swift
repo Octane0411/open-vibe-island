@@ -41,6 +41,61 @@ public final class CodexHookSource: @unchecked Sendable {
         lock.unlock()
     }
 
+    /// Rehydrate a session the previous run persisted.
+    ///
+    /// `session-terminals.json` holds what hooks told us last time — above
+    /// all the terminal identity, which no other source can supply and which
+    /// cold start would otherwise lose. It is attributed to the hook source
+    /// because that is where it came from; a live hook for the same session
+    /// arrives with a later sequence and supersedes it.
+    public func observeRestored(
+        _ record: CodexTrackedSessionRecord,
+        at timestamp: Date = .now
+    ) -> CodexObservation {
+        var patch = CodexFacetPatch()
+        let jump = record.jumpTarget
+
+        if let cwd = jump?.workingDirectory, !cwd.isEmpty {
+            patch.workspace = CodexWorkspace(workingDirectory: cwd)
+        }
+        if let jump {
+            if jump.terminalApp == "Codex.app" {
+                patch.surface = .desktopApp
+            } else if !jump.terminalApp.isEmpty {
+                patch.placement = CodexPlacement(
+                    terminalApp: jump.terminalApp,
+                    terminalSessionID: jump.terminalSessionID,
+                    terminalTTY: jump.terminalTTY,
+                    terminalTitle: jump.paneTitle,
+                    warpPaneUUID: jump.warpPaneUUID
+                )
+            }
+        }
+        patch.lifecycle = CodexLifecycle(phase: record.phase)
+        if let metadata = record.codexMetadata {
+            patch.narrative = CodexNarrative(
+                title: record.title.isEmpty ? nil : record.title,
+                initialUserPrompt: metadata.initialUserPrompt,
+                lastUserPrompt: metadata.lastUserPrompt,
+                lastAssistantMessage: metadata.lastAssistantMessage,
+                currentTool: metadata.currentTool,
+                currentCommandPreview: metadata.currentCommandPreview,
+                transcriptPath: metadata.transcriptPath,
+                activeSubagentCount: metadata.activeSubagentCount
+            )
+        } else if !record.title.isEmpty {
+            patch.narrative = CodexNarrative(title: record.title)
+        }
+
+        return CodexObservation(
+            ref: .sessionID(record.sessionID),
+            source: .hook,
+            seq: allocateSeq(),
+            observedAt: record.updatedAt,
+            patch: patch
+        )
+    }
+
     /// Convert one hook payload into an observation.
     ///
     /// Every hook carries terminal identity and working directory, so placement
