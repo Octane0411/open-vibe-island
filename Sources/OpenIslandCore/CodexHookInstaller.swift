@@ -77,13 +77,21 @@ public enum CodexHookInstaller {
     private static let currentFeatureKey = CodexHooksFeatureFlagKey.current.rawValue
     private static let legacyFeatureKey = CodexHooksFeatureFlagKey.legacy.rawValue
 
-    // Keep the managed Codex install aligned with the original app's low-noise footprint.
-    // The bridge still understands richer hook events, but we do not install them by default
-    // because per-command Bash hooks produce a large amount of terminal log spam.
+    // Per-command hooks (PreToolUse / PostToolUse) are deliberately left out:
+    // Codex echoes each invocation into the terminal, and a busy session
+    // produces a wall of it. Everything below fires a handful of times per
+    // session at most, so it carries no such cost — and the lifecycle events
+    // are what let the island tell "turn finished" from "session ended" and
+    // show subagent activity at all.
     private static let eventSpecs: [(name: String, matcher: String?, timeout: Int)] = [
         ("SessionStart", "startup|resume", managedTimeout),
+        ("SessionEnd", nil, managedTimeout),
         ("UserPromptSubmit", nil, managedTimeout),
+        ("TurnStart", nil, managedTimeout),
         ("PermissionRequest", nil, managedInteractiveTimeout),
+        ("SubagentStart", nil, managedTimeout),
+        ("SubagentStop", nil, managedTimeout),
+        ("PreCompact", nil, managedTimeout),
         ("Stop", nil, managedTimeout),
     ]
 

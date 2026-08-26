@@ -78,6 +78,9 @@ public final class BridgeServer: @unchecked Sendable {
     private var listeners: [Listener] = []
     private var clients: [UUID: ClientConnection] = [:]
     private var pendingApprovals: [String: PendingApproval] = [:]
+    /// Running subagent count per Codex session. Hooks report start/stop
+    /// boundaries; the island shows a total.
+    private var codexActiveSubagents: [String: Int] = [:]
     private var pendingClaudeToolContexts: [String: PendingClaudeToolContext] = [:]
     private var pendingClaudeInteractions: [String: PendingClaudeInteraction] = [:]
     private var pendingOpenCodeInteractions: [String: PendingOpenCodeInteraction] = [:]
@@ -641,6 +644,83 @@ public final class BridgeServer: @unchecked Sendable {
                     SessionCompleted(
                         sessionID: payload.sessionID,
                         summary: summary,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .sessionEnd:
+            // The session is over — not merely a turn. Stop is a turn boundary
+            // and must never be read as this; keeping them apart is what stops
+            // a session from showing as running after the user has quit.
+            ensureSessionExists(for: payload)
+            codexActiveSubagents.removeValue(forKey: payload.sessionID)
+            emit(
+                .sessionCompleted(
+                    SessionCompleted(
+                        sessionID: payload.sessionID,
+                        summary: payload.reason.map { "Session ended: \($0)" } ?? "Codex session ended.",
+                        timestamp: .now,
+                        isInterrupt: false,
+                        isSessionEnd: true
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .turnStart:
+            ensureSessionExists(for: payload)
+            synchronizeJumpTarget(for: payload)
+            synchronizeCodexMetadata(for: payload)
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitStartSummary,
+                        phase: .running,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .subagentStart, .subagentStop:
+            ensureSessionExists(for: payload)
+            synchronizeJumpTarget(for: payload)
+            let delta = payload.hookEventName == .subagentStart ? 1 : -1
+            let count = max(0, (codexActiveSubagents[payload.sessionID] ?? 0) + delta)
+            codexActiveSubagents[payload.sessionID] = count
+            if let existing = localState.session(id: payload.sessionID) {
+                var metadata = mergedCodexMetadata(
+                    existing: existing.codexMetadata,
+                    update: payload.defaultCodexMetadata,
+                    hookEventName: payload.hookEventName
+                )
+                metadata.activeSubagentCount = count
+                if existing.codexMetadata != metadata {
+                    emit(
+                        .sessionMetadataUpdated(
+                            SessionMetadataUpdated(
+                                sessionID: payload.sessionID,
+                                codexMetadata: metadata,
+                                timestamp: .now
+                            )
+                        )
+                    )
+                }
+            }
+            send(.response(.acknowledged), to: clientID)
+
+        case .preCompact:
+            ensureSessionExists(for: payload)
+            synchronizeJumpTarget(for: payload)
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitStartSummary,
+                        phase: .running,
                         timestamp: .now
                     )
                 )
@@ -2073,7 +2153,8 @@ public final class BridgeServer: @unchecked Sendable {
                 existing: existing?.currentCommandPreview,
                 update: update.currentCommandPreview,
                 hookEventName: hookEventName
-            )
+            ),
+            activeSubagentCount: update.activeSubagentCount ?? existing?.activeSubagentCount
         )
     }
 
@@ -2087,7 +2168,8 @@ public final class BridgeServer: @unchecked Sendable {
         }
 
         switch hookEventName {
-        case .userPromptSubmit, .postToolUse, .stop:
+        case .userPromptSubmit, .postToolUse, .stop,
+             .sessionEnd, .subagentStart, .subagentStop, .turnStart, .preCompact:
             return nil
         case .sessionStart, .preToolUse, .permissionRequest:
             return existing
@@ -2497,7 +2579,8 @@ public final class BridgeServer: @unchecked Sendable {
         }
 
         switch hookEventName {
-        case .userPromptSubmit, .postToolUse, .stop:
+        case .userPromptSubmit, .postToolUse, .stop,
+             .sessionEnd, .subagentStart, .subagentStop, .turnStart, .preCompact:
             return nil
         case .sessionStart, .preToolUse, .permissionRequest:
             return existing
@@ -2521,7 +2604,8 @@ public final class BridgeServer: @unchecked Sendable {
             response = .codexHookDirective(
                 .permissionRequest(.deny(message: message ?? "Permission denied in Open Island."))
             )
-        case (.sessionStart, _), (.postToolUse, _), (.userPromptSubmit, _), (.stop, _):
+        case (.sessionStart, _), (.postToolUse, _), (.userPromptSubmit, _), (.stop, _),
+             (.sessionEnd, _), (.subagentStart, _), (.subagentStop, _), (.turnStart, _), (.preCompact, _):
             assertionFailure("Unexpected Codex hook waiting for permission.")
             response = .acknowledged
         }

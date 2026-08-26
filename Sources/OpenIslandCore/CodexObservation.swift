@@ -189,6 +189,10 @@ public struct CodexNarrative: Equatable, Sendable {
     public var currentTool: String?
     public var currentCommandPreview: String?
     public var transcriptPath: String?
+    /// Absolute count, not a delta — the source that observes subagent
+    /// boundaries keeps the running total, so the store can merge it like any
+    /// other narrative field.
+    public var activeSubagentCount: Int?
 
     public init(
         title: String? = nil,
@@ -197,7 +201,8 @@ public struct CodexNarrative: Equatable, Sendable {
         lastAssistantMessage: String? = nil,
         currentTool: String? = nil,
         currentCommandPreview: String? = nil,
-        transcriptPath: String? = nil
+        transcriptPath: String? = nil,
+        activeSubagentCount: Int? = nil
     ) {
         self.title = title
         self.initialUserPrompt = initialUserPrompt
@@ -206,12 +211,14 @@ public struct CodexNarrative: Equatable, Sendable {
         self.currentTool = currentTool
         self.currentCommandPreview = currentCommandPreview
         self.transcriptPath = transcriptPath
+        self.activeSubagentCount = activeSubagentCount
     }
 
     public var isEmpty: Bool {
         title == nil && initialUserPrompt == nil && lastUserPrompt == nil
             && lastAssistantMessage == nil && currentTool == nil
             && currentCommandPreview == nil && transcriptPath == nil
+            && activeSubagentCount == nil
     }
 
     /// Merge another narrative over this one, keeping existing values where the
@@ -225,7 +232,8 @@ public struct CodexNarrative: Equatable, Sendable {
             lastAssistantMessage: other.lastAssistantMessage ?? lastAssistantMessage,
             currentTool: other.currentTool ?? currentTool,
             currentCommandPreview: other.currentCommandPreview ?? currentCommandPreview,
-            transcriptPath: other.transcriptPath ?? transcriptPath
+            transcriptPath: other.transcriptPath ?? transcriptPath,
+            activeSubagentCount: other.activeSubagentCount ?? activeSubagentCount
         )
     }
 }
@@ -244,6 +252,10 @@ public struct CodexLiveness: Equatable, Sendable {
         case processExited
         /// A `Stop` hook fired and no further activity followed.
         case stopHook
+        /// A `SessionEnd` hook fired — the strongest signal a terminal session
+        /// can give, and the one that actually means "ended" rather than
+        /// "finished a turn".
+        case sessionEnd
         /// Codex.app moved the rollout into `archived_sessions/`.
         case archived
     }

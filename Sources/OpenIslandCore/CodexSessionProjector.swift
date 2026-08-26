@@ -229,7 +229,8 @@ public final class CodexSessionProjector: @unchecked Sendable {
             lastUserPrompt: narrative.lastUserPrompt,
             lastAssistantMessage: narrative.lastAssistantMessage,
             currentTool: narrative.currentTool,
-            currentCommandPreview: narrative.currentCommandPreview
+            currentCommandPreview: narrative.currentCommandPreview,
+            activeSubagentCount: narrative.activeSubagentCount
         )
         return metadata.isEmpty ? nil : metadata
     }

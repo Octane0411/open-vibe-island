@@ -8,6 +8,9 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
     public var lastAssistantMessage: String?
     public var currentTool: String?
     public var currentCommandPreview: String?
+    /// Subagents Codex currently has running for this session. Optional so
+    /// records persisted before the field existed decode unchanged.
+    public var activeSubagentCount: Int?
 
     public init(
         transcriptPath: String? = nil,
@@ -15,7 +18,8 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
         lastUserPrompt: String? = nil,
         lastAssistantMessage: String? = nil,
         currentTool: String? = nil,
-        currentCommandPreview: String? = nil
+        currentCommandPreview: String? = nil,
+        activeSubagentCount: Int? = nil
     ) {
         self.transcriptPath = transcriptPath
         self.initialUserPrompt = initialUserPrompt
@@ -23,6 +27,7 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
         self.lastAssistantMessage = lastAssistantMessage
         self.currentTool = currentTool
         self.currentCommandPreview = currentCommandPreview
+        self.activeSubagentCount = activeSubagentCount
     }
 
     public var isEmpty: Bool {
@@ -32,6 +37,7 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
             && lastAssistantMessage == nil
             && currentTool == nil
             && currentCommandPreview == nil
+            && activeSubagentCount == nil
     }
 }
 

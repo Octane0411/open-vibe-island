@@ -13,6 +13,10 @@ import Foundation
 public final class CodexHookSource: @unchecked Sendable {
     private let lock = NSLock()
     private var nextSeq: UInt64 = 0
+    /// Running subagent count per session. Hooks report boundaries, not
+    /// totals, and the facet store merges narrative by "latest wins" — so the
+    /// source has to keep the tally and emit an absolute number.
+    private var activeSubagents: [String: Int] = [:]
 
     public init() {}
 
@@ -21,6 +25,20 @@ public final class CodexHookSource: @unchecked Sendable {
         defer { lock.unlock() }
         nextSeq += 1
         return nextSeq
+    }
+
+    private func adjustSubagents(for sessionID: String, by delta: Int) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        let next = max(0, (activeSubagents[sessionID] ?? 0) + delta)
+        activeSubagents[sessionID] = next
+        return next
+    }
+
+    private func clearSubagents(for sessionID: String) {
+        lock.lock()
+        activeSubagents.removeValue(forKey: sessionID)
+        lock.unlock()
     }
 
     /// Convert one hook payload into an observation.
@@ -103,8 +121,51 @@ public final class CodexHookSource: @unchecked Sendable {
                 transcriptPath: payload.transcriptPath
             )
             // A finished turn is not a finished session — Codex stays resident
-            // and may start another. Liveness is left to the app-server and to
-            // process observation.
+            // and may start another. SessionEnd is the signal for that.
+
+        case .sessionEnd:
+            // The one hook that means the session is over, as opposed to a
+            // turn. Carries a reason (user exit, error, …) for the record.
+            patch.lifecycle = CodexLifecycle(phase: .completed, turnID: payload.turnID)
+            patch.liveness = CodexLiveness(state: .ended(reason: .sessionEnd))
+            patch.actionable = .cleared
+            patch.narrative = CodexNarrative(
+                lastAssistantMessage: payload.reason.map { "Session ended: \($0)" },
+                transcriptPath: payload.transcriptPath,
+                activeSubagentCount: 0
+            )
+            clearSubagents(for: payload.sessionID)
+
+        case .turnStart:
+            patch.lifecycle = CodexLifecycle(phase: .running, turnID: payload.turnID)
+            patch.liveness = CodexLiveness(state: .alive)
+            patch.actionable = .cleared
+
+        case .subagentStart:
+            let count = adjustSubagents(for: payload.sessionID, by: 1)
+            patch.lifecycle = CodexLifecycle(phase: .running, turnID: payload.turnID)
+            patch.liveness = CodexLiveness(state: .alive)
+            patch.narrative = CodexNarrative(
+                transcriptPath: payload.transcriptPath,
+                activeSubagentCount: count
+            )
+
+        case .subagentStop:
+            let count = adjustSubagents(for: payload.sessionID, by: -1)
+            patch.liveness = CodexLiveness(state: .alive)
+            patch.narrative = CodexNarrative(
+                transcriptPath: payload.transcriptPath,
+                activeSubagentCount: count
+            )
+
+        case .preCompact:
+            patch.lifecycle = CodexLifecycle(phase: .running, turnID: payload.turnID)
+            patch.liveness = CodexLiveness(state: .alive)
+            patch.narrative = CodexNarrative(
+                currentTool: "Compacting context",
+                currentCommandPreview: payload.trigger,
+                transcriptPath: payload.transcriptPath
+            )
         }
 
         return CodexObservation(
