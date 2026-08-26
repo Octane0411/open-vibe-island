@@ -510,9 +510,18 @@ final class AppModel {
     private var hasStarted = false
 
     @ObservationIgnored
-    private let bridgeServer = BridgeServer(
-        codexShadowLogURL: CodexSessionStore.defaultDirectoryURL.appendingPathComponent("codex-shadow.log")
-    )
+    private let bridgeServer = BridgeServer(codexShadowLogURL: AppModel.codexShadowLogURL)
+
+    /// The shadow log lives next to the session registries — except under a
+    /// test runner, where an AppModel built by a test must not write into the
+    /// user's Application Support directory.
+    private static var codexShadowLogURL: URL? {
+        let process = ProcessInfo.processInfo.processName
+        if process.contains("xctest") || process.contains("swiftpm-testing-helper") {
+            return nil
+        }
+        return CodexSessionStore.defaultDirectoryURL.appendingPathComponent("codex-shadow.log")
+    }
 
     /// Format-drift and arbitration counters from the Codex ingestion layer.
     /// Surfaced in settings so a Codex release that changes the transcript

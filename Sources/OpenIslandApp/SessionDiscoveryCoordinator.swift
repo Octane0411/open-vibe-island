@@ -36,7 +36,8 @@ final class SessionDiscoveryCoordinator {
     /// its idea of the session list differs from the legacy one.
     nonisolated private func shadowCodexDiscovery(
         _ records: [CodexTrackedSessionRecord],
-        into pipeline: CodexIngestionPipeline?
+        into pipeline: CodexIngestionPipeline?,
+        comparingAgainst legacyVisible: Set<String>? = nil
     ) {
         guard let pipeline, !records.isEmpty else { return }
         // Codex.app moves a thread's transcript into archived_sessions/ when
@@ -49,7 +50,13 @@ final class SessionDiscoveryCoordinator {
             guard let path = record.codexMetadata?.transcriptPath else { continue }
             _ = pipeline.ingest(rolloutFile: URL(fileURLWithPath: path))
         }
-        pipeline.recordColdStartComparison(legacySessionIDs: Set(records.map(\.sessionID)))
+        // The legacy path shows persisted records *and* discovered transcripts;
+        // comparing against only one of them reported a phantom mismatch. The
+        // periodic rescan passes nothing and records no line — it would
+        // otherwise restate the same comparison every ten seconds.
+        if let legacyVisible {
+            pipeline.recordColdStartComparison(legacySessionIDs: legacyVisible)
+        }
     }
 
     @ObservationIgnored
@@ -133,7 +140,11 @@ final class SessionDiscoveryCoordinator {
             }
         }
         let discoveredCodex = codexRolloutDiscovery.discoverRecentSessions()
-        shadowCodexDiscovery(discoveredCodex, into: codexPipeline)
+        shadowCodexDiscovery(
+            discoveredCodex,
+            into: codexPipeline,
+            comparingAgainst: Set(codexRecords.map(\.sessionID)).union(discoveredCodex.map(\.sessionID))
+        )
         let discoveredClaude = claudeTranscriptDiscovery.discoverRecentSessions()
 
         return StartupDiscoveryPayload(
