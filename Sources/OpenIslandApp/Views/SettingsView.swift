@@ -809,8 +809,9 @@ struct SetupSettingsPane: View {
     @ViewBuilder
     private var codexIngestionSection: some View {
         let snapshot = model.codexIngestionDiagnostics
-        if !snapshot.isEmpty {
-            Section("Codex ingestion") {
+        let divergences = model.codexShadowDivergences
+        if !snapshot.isEmpty || !divergences.isEmpty {
+            Section("Codex ingestion · \(model.codexPipelineMode.rawValue)") {
                 ForEach(snapshot.summaryLines.prefix(8), id: \.self) { line in
                     Text(line)
                         .font(.caption)
@@ -821,6 +822,17 @@ struct SetupSettingsPane: View {
                     Text("+ \(snapshot.summaryLines.count - 8) more")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
+                }
+                if !divergences.isEmpty {
+                    Text("Shadow divergences: \(divergences.count)")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                    ForEach(Array(divergences.suffix(6).enumerated()), id: \.offset) { _, line in
+                        Text(line)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
                 }
             }
         }

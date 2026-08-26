@@ -520,6 +520,17 @@ final class AppModel {
         bridgeServer.codexPipeline.diagnostics.snapshot()
     }
 
+    /// Where the rewritten Codex pipeline disagreed with the legacy path
+    /// while running in shadow. Empty is the goal; a stable non-empty report
+    /// is the input to deciding what the switch to live would change.
+    var codexShadowDivergences: [String] {
+        bridgeServer.codexPipeline.divergenceReport()
+    }
+
+    var codexPipelineMode: CodexIngestionPipeline.Mode {
+        bridgeServer.codexPipeline.currentMode
+    }
+
     @ObservationIgnored
     private var bridgeClient = LocalBridgeClient()
 
