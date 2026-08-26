@@ -82,11 +82,17 @@ public final class CodexIngestionPipeline: @unchecked Sendable {
         let visible = Set(store.allSessions().filter(\.isUserVisible).map(\.sessionKey))
         let withheld = store.allSessions().filter { !$0.isUserVisible }.count
         guard legacySessionIDs != visible else { return }
-        let onlyLegacy = legacySessionIDs.subtracting(visible).count
-        let onlyCandidate = visible.subtracting(legacySessionIDs).count
+        let onlyLegacy = legacySessionIDs.subtracting(visible)
+        let onlyCandidate = visible.subtracting(legacySessionIDs)
+        // Name a few of the odd ones out so the log can be acted on directly.
+        func sample(_ ids: Set<String>) -> String {
+            let shown = ids.sorted().prefix(3).map { String($0.prefix(8)) }
+            return shown.isEmpty ? "" : " [\(shown.joined(separator: ","))\(ids.count > 3 ? ",…" : "")]"
+        }
         record(
             "cold-start: legacy \(legacySessionIDs.count) sessions, candidate \(visible.count) visible "
-            + "(\(withheld) withheld as spawned); only-legacy \(onlyLegacy), only-candidate \(onlyCandidate)"
+            + "(\(withheld) withheld as spawned); only-legacy \(onlyLegacy.count)\(sample(onlyLegacy)), "
+            + "only-candidate \(onlyCandidate.count)\(sample(onlyCandidate))"
         )
     }
 

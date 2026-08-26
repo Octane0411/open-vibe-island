@@ -39,7 +39,13 @@ final class SessionDiscoveryCoordinator {
         into pipeline: CodexIngestionPipeline?
     ) {
         guard let pipeline, !records.isEmpty else { return }
-        for record in records {
+        // Codex.app moves a thread's transcript into archived_sessions/ when
+        // the user archives it. That is an identity signal, not a liveness
+        // one — the thread is simply no longer part of the active list — so
+        // archived transcripts are left out of cold start rather than restored
+        // and then marked ended.
+        let archived = CodexArchivedSessionIndex.archivedSessionIDs()
+        for record in records where !archived.contains(record.sessionID) {
             guard let path = record.codexMetadata?.transcriptPath else { continue }
             _ = pipeline.ingest(rolloutFile: URL(fileURLWithPath: path))
         }

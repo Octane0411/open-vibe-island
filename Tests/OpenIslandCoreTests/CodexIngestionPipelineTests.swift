@@ -163,6 +163,19 @@ struct CodexIngestionPipelineTests {
         #expect(pipeline.store.session(for: "aaaa")?.placement?.value.terminalApp == "Ghostty")
     }
 
+    @Test("a cold-start mismatch names the sessions that differ")
+    func coldStartComparisonNamesIDs() {
+        let pipeline = CodexIngestionPipeline(mode: .shadow)
+        _ = pipeline.ingest(hook: hookPayload(event: .sessionStart, sessionID: "candidate-only-1"))
+
+        pipeline.recordColdStartComparison(legacySessionIDs: ["legacy-only-1"])
+
+        let report = pipeline.divergenceReport()
+        #expect(report.count == 1)
+        #expect(report[0].contains("legacy-o"))
+        #expect(report[0].contains("candidat"))
+    }
+
     @Test("identical event streams report no divergence")
     func matchingStreamsAgree() {
         let pipeline = CodexIngestionPipeline(mode: .shadow)

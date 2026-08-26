@@ -73,10 +73,7 @@ public final class BridgeServer: @unchecked Sendable {
     /// it observes everything the legacy path observes and records where the
     /// two disagree, without affecting what the user sees. See
     /// `CodexIngestionPipeline.Mode`.
-    public let codexPipeline = CodexIngestionPipeline(
-        mode: .shadow,
-        logURL: CodexSessionStore.defaultDirectoryURL.appendingPathComponent("codex-shadow.log")
-    )
+    public let codexPipeline: CodexIngestionPipeline
 
     private var listeners: [Listener] = []
     private var clients: [UUID: ClientConnection] = [:]
@@ -107,8 +104,12 @@ public final class BridgeServer: @unchecked Sendable {
     private var localState = SessionState()
 
     public init(
-        socketURL: URL = BridgeSocketLocation.defaultURL
+        socketURL: URL = BridgeSocketLocation.defaultURL,
+        codexShadowLogURL: URL? = nil
     ) {
+        // The shadow log is opt-in so that tests, which build a BridgeServer
+        // freely, never write into the user's Application Support directory.
+        codexPipeline = CodexIngestionPipeline(mode: .shadow, logURL: codexShadowLogURL)
         self.socketURL = socketURL
         queue.setSpecific(key: queueKey, value: ())
     }

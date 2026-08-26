@@ -510,7 +510,9 @@ final class AppModel {
     private var hasStarted = false
 
     @ObservationIgnored
-    private let bridgeServer = BridgeServer()
+    private let bridgeServer = BridgeServer(
+        codexShadowLogURL: CodexSessionStore.defaultDirectoryURL.appendingPathComponent("codex-shadow.log")
+    )
 
     /// Format-drift and arbitration counters from the Codex ingestion layer.
     /// Surfaced in settings so a Codex release that changes the transcript

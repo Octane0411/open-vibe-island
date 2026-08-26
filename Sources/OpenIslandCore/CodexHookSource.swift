@@ -131,8 +131,24 @@ public final class CodexHookSource: @unchecked Sendable {
             )
 
         case .preToolUse:
-            patch.lifecycle = CodexLifecycle(phase: .running, turnID: payload.turnID)
+            // PreToolUse is not installed by default; a user who registers it
+            // has opted into per-command gating ("Full Control", #364). So it
+            // raises a card regardless of Codex's own approval mode — the mode
+            // routing applies to PermissionRequest only. This mirrors the
+            // legacy bridge exactly, which matters: the bridge holds the hook
+            // until a card is answered, so a path that showed no card would
+            // leave it waiting on a decision that never comes.
+            patch.lifecycle = CodexLifecycle(phase: .waitingForApproval, turnID: payload.turnID)
             patch.liveness = CodexLiveness(state: .alive)
+            patch.actionable = .permission(PermissionRequest(
+                title: payload.permissionRequestTitle,
+                summary: payload.permissionRequestSummary,
+                affectedPath: payload.permissionRequestAffectedPath,
+                primaryActionTitle: "Allow",
+                secondaryActionTitle: "Deny",
+                toolName: payload.toolName,
+                toolUseID: payload.toolUseID
+            ))
             patch.narrative = CodexNarrative(
                 currentTool: payload.toolName,
                 currentCommandPreview: payload.commandPreview,

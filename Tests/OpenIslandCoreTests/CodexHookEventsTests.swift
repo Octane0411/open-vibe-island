@@ -146,6 +146,22 @@ struct CodexHookEventsTests {
         #expect(observation.patch.lifecycle?.phase == .running)
     }
 
+    @Test("PreToolUse gates regardless of mode — installing it is the opt-in")
+    func preToolUseGatesEvenInDontAsk() {
+        // Full Control (#364): a user who registers PreToolUse wants every
+        // command gated, whatever Codex's own approval setting says.
+        let source = CodexHookSource()
+        let observation = source.observe(payload(
+            .preToolUse,
+            extra: ["permission_mode": "dontAsk", "tool_name": "shell"]
+        ))
+        guard case .permission = observation.patch.actionable else {
+            Issue.record("PreToolUse in dontAsk mode should still raise a card")
+            return
+        }
+        #expect(observation.patch.lifecycle?.phase == .waitingForApproval)
+    }
+
     @Test("default mode still raises the card")
     func defaultModeRaisesCard() {
         let source = CodexHookSource()
