@@ -14,8 +14,22 @@ import Foundation
 public final class CodexAppServerSource: @unchecked Sendable {
     private let lock = NSLock()
     private var nextSeq: UInt64 = 0
+    /// Threads Codex.app spawned for its own purposes — generating a
+    /// conversation title, for instance. They are announced like any other
+    /// thread and then produce turns, so the id has to be remembered or the
+    /// later notifications look like a real session finishing.
+    private var ephemeralThreads: Set<String> = []
 
     public init() {}
+
+    private func noteEphemeral(_ id: String) {
+        lock.lock(); ephemeralThreads.insert(id); lock.unlock()
+    }
+
+    private func isEphemeral(_ id: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return ephemeralThreads.contains(id)
+    }
 
     private func allocateSeq() -> UInt64 {
         lock.lock()
@@ -33,8 +47,18 @@ public final class CodexAppServerSource: @unchecked Sendable {
         _ notification: CodexAppServerNotification,
         at timestamp: Date = .now
     ) -> CodexObservation? {
+        // Anything about a thread already known to be internal is dropped,
+        // whatever the notification says.
+        if let id = Self.threadID(of: notification), isEphemeral(id) {
+            return nil
+        }
+
         switch notification {
         case let .threadStarted(thread):
+            guard !thread.ephemeral else {
+                noteEphemeral(thread.id)
+                return nil
+            }
             return make(ref: .threadID(thread.id), patch: Self.threadPatch(thread), at: timestamp)
 
         case let .threadStatusChanged(threadId, status):
@@ -105,8 +129,24 @@ public final class CodexAppServerSource: @unchecked Sendable {
     public func observeLoadedThread(
         _ thread: CodexThread,
         at timestamp: Date = .now
-    ) -> CodexObservation {
-        make(ref: .threadID(thread.id), patch: Self.threadPatch(thread), at: timestamp)
+    ) -> CodexObservation? {
+        guard !thread.ephemeral else {
+            noteEphemeral(thread.id)
+            return nil
+        }
+        return make(ref: .threadID(thread.id), patch: Self.threadPatch(thread), at: timestamp)
+    }
+
+    static func threadID(of notification: CodexAppServerNotification) -> String? {
+        switch notification {
+        case let .threadStarted(thread): thread.id
+        case let .threadStatusChanged(threadId, _): threadId
+        case let .threadClosed(threadId): threadId
+        case let .threadNameUpdated(threadId, _): threadId
+        case let .turnStarted(threadId, _): threadId
+        case let .turnCompleted(threadId, _): threadId
+        case .unknown: nil
+        }
     }
 
     /// Everything a thread listing tells us. A desktop thread has no terminal,

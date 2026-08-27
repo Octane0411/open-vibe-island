@@ -166,7 +166,10 @@ public final class CodexIngestionPipeline: @unchecked Sendable {
     public func ingest(loadedThread thread: CodexThread, at timestamp: Date = .now) -> [AgentEvent] {
         guard currentMode != .off else { return [] }
         store.enterLiveMode()
-        return projector.project(appServer.observeLoadedThread(thread, at: timestamp))
+        guard let observation = appServer.observeLoadedThread(thread, at: timestamp) else {
+            return []
+        }
+        return projector.project(observation)
     }
 
     /// Rehydrate a session persisted by the previous run. Does not end replay

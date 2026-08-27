@@ -34,6 +34,43 @@ public final class CodexRolloutSource: @unchecked Sendable {
         return nextSeq
     }
 
+    /// Blocks Codex injects into the transcript as if the user had typed them.
+    ///
+    /// The first "user" message is usually not the user's — Codex prepends
+    /// environment context, skill instructions, plugin catalogues. Taking it
+    /// as the session title is what puts `<recommended_plugins> Here is a
+    /// list…` in the session list. The list is deliberately prefix-based and
+    /// open-ended: Codex adds new block kinds between releases, and a title
+    /// that opens with an XML-ish tag on its own line is never something a
+    /// person typed.
+    static func isInjectedBlock(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return true }
+
+        let knownPrefixes = [
+            "# AGENTS.md instructions for ",
+            "<environment_context>",
+            "<permissions instructions>",
+            "<collaboration_mode>",
+            "<skills_instructions>",
+            "<recommended_plugins>",
+            "<user_instructions>",
+            "<system-reminder>",
+        ]
+        if knownPrefixes.contains(where: { trimmed.hasPrefix($0) }) {
+            return true
+        }
+
+        // Catch-all for blocks Codex has not invented yet: an opening tag
+        // alone on the first line, e.g. `<something_context>\n…`.
+        guard trimmed.hasPrefix("<") else { return false }
+        let firstLine = trimmed.prefix(while: { !$0.isNewline })
+        guard firstLine.hasSuffix(">"), firstLine.count <= 64 else { return false }
+        let inner = firstLine.dropFirst().dropLast()
+        return !inner.isEmpty
+            && inner.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" }
+    }
+
     /// What a pass over a transcript learned.
     public struct Reading: Equatable, Sendable {
         public var observation: CodexObservation?
@@ -83,6 +120,9 @@ public final class CodexRolloutSource: @unchecked Sendable {
 
             case .userMessage:
                 guard let text = record.text, !text.isEmpty else { continue }
+                // Injected context is not something the user said, so it must
+                // never become the title or the "last message" preview.
+                guard !Self.isInjectedBlock(text) else { continue }
                 if !sawInitialPrompt {
                     narrative.initialUserPrompt = text
                     sawInitialPrompt = true

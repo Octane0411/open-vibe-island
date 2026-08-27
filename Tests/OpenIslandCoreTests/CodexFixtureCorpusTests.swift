@@ -225,6 +225,42 @@ struct CodexFixtureCorpusTests {
         )
     }
 
+    @Test("injected context never becomes a session title")
+    func injectedBlocksAreNotTitles() {
+        // Codex prepends blocks to the transcript as if the user typed them.
+        // Taking the first one as the title is what put
+        // "<recommended_plugins> Here is a list…" in the session list.
+        for injected in [
+            "<recommended_plugins>\nHere is a list of plugins…",
+            "<environment_context>\ncwd: /tmp",
+            "<skills_instructions>\nuse skills",
+            "<user_instructions>\nbe brief",
+            "# AGENTS.md instructions for /repo",
+            "<some_future_block>\ninvented later",
+        ] {
+            #expect(CodexRolloutSource.isInjectedBlock(injected), "not filtered: \(injected.prefix(30))")
+        }
+        // Real user text survives, including text that merely contains a tag.
+        for real in [
+            "fix the login bug",
+            "为什么 <div> 没有渲染出来",
+            "compare <a> and <b> tags",
+        ] {
+            #expect(!CodexRolloutSource.isInjectedBlock(real), "wrongly filtered: \(real)")
+        }
+    }
+
+    @Test("a transcript opening with injected context titles from the real prompt")
+    func titleSkipsInjectedOpening() {
+        let lines = [
+            #"{"type":"session_meta","timestamp":"2026-08-27T00:00:00Z","payload":{"id":"aaaa","cwd":"/Users/dev/work/personal","originator":"codex_work_desktop","cli_version":"0.148.0","source":"vscode","thread_source":"user"}}"#,
+            #"{"type":"event_msg","payload":{"type":"user_message","message":"<recommended_plugins> Here is a list of plugins."}}"#,
+            #"{"type":"event_msg","payload":{"type":"user_message","message":"这个仓库在哪里体现 RSI"}}"#,
+        ]
+        let reading = CodexRolloutSource().read(lines: lines, transcriptPath: "/tmp/r.jsonl")
+        #expect(reading.observation?.patch.narrative?.initialUserPrompt == "这个仓库在哪里体现 RSI")
+    }
+
     @Test("unrecognized record types are counted rather than dropped")
     func driftIsReported() {
         let diagnostics = CodexDiagnostics()
