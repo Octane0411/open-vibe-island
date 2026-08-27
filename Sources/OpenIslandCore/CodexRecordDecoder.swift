@@ -123,13 +123,22 @@ public struct CodexRecordDecoder: Sendable {
         // A `response_item` message is typed `"message"` and distinguishes
         // speaker by `role`, so the generic type has to fall through to it —
         // this is the single most common record in a transcript.
+        //
+        // Only `user` and `assistant` are conversation. `developer` carries
+        // the harness's own instructions ("You are a helpful assistant…",
+        // multi-agent setup, desktop app context) and outnumbers real user
+        // messages in a live transcript; treating it as something the user
+        // said puts a system prompt in the session list.
         let declaredType = payload["type"] as? String
-        let roleType = (payload["role"] as? String).map {
-            $0 == "assistant" ? "agent_message" : "user_message"
+        let roleType: String? = switch payload["role"] as? String {
+        case "assistant": "agent_message"
+        case "user": "user_message"
+        default: nil
         }
         let payloadType: String?
         if declaredType == nil || declaredType == "message" {
-            payloadType = roleType ?? declaredType
+            guard let resolved = roleType else { return nil }
+            payloadType = resolved
         } else {
             payloadType = declaredType
         }

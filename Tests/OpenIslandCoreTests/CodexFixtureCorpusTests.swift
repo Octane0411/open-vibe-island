@@ -287,6 +287,34 @@ struct CodexFixtureCorpusTests {
         #expect(!record.summary.contains("recommended_plugins"))
     }
 
+    @Test("harness instructions are not treated as things the user said")
+    func developerRoleIsNotUserText() {
+        // `developer` messages carry the harness's own setup — "You are a
+        // helpful assistant…", multi-agent wiring, desktop app context — and
+        // outnumber real user messages in a live transcript. Mapping every
+        // non-assistant role to "user" put a system prompt in the list.
+        let decoder = CodexRecordDecoder()
+        let developer = #"{"type":"response_item","payload":{"type":"message","role":"developer","content":[{"text":"You are a helpful assistant. You will be presented…"}]}}"#
+        #expect(decoder.decode(line: developer) == nil)
+
+        let user = #"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"text":"格雷GTO 开局前期发展"}]}}"#
+        #expect(decoder.decode(line: user)?.kind == .userMessage)
+
+        let assistant = #"{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"text":"我先确认一下"}]}}"#
+        #expect(decoder.decode(line: assistant)?.kind == .assistantMessage)
+    }
+
+    @Test("a transcript whose only user text is a developer prompt yields no prompt")
+    func developerOnlyTranscriptHasNoPrompt() {
+        let lines = [
+            #"{"type":"session_meta","timestamp":"2026-08-27T00:00:00Z","payload":{"id":"bbbb","cwd":"/Users/dev/.codex/.chatgpt-projects/g-p-abc","originator":"codex_work_desktop","cli_version":"0.148.0","source":"vscode","thread_source":"user"}}"#,
+            #"{"type":"response_item","payload":{"type":"message","role":"developer","content":[{"text":"You are a helpful assistant. You will be presented with a conversation."}]}}"#,
+        ]
+        let reading = CodexRolloutSource().read(lines: lines, transcriptPath: "/tmp/r.jsonl")
+        #expect(reading.observation?.patch.narrative?.initialUserPrompt == nil)
+        #expect(reading.observation?.patch.narrative?.lastUserPrompt == nil)
+    }
+
     @Test("unrecognized record types are counted rather than dropped")
     func driftIsReported() {
         let diagnostics = CodexDiagnostics()
