@@ -102,12 +102,17 @@ public final class CodexSessionProjector: @unchecked Sendable {
         // a row the user just watched disappear.
         if change.accepted.contains(.liveness), let liveness = facets.liveness?.value,
            case let .ended(reason) = liveness.state {
+            // Every end reason ends the session, archiving included:
+            // `CodexAppSessionReconciler` marks an archived thread
+            // `isSessionEnd: true`, and disagreeing here would leave archived
+            // sessions lingering as merely completed.
+            _ = reason
             events.append(.sessionCompleted(SessionCompleted(
                 sessionID: sessionKey,
                 summary: summaryText(facets: facets),
                 timestamp: timestamp,
                 isInterrupt: false,
-                isSessionEnd: reason != .archived
+                isSessionEnd: true
             )))
             return events
         }

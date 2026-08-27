@@ -63,12 +63,18 @@ final class CodexAppServerCoordinator {
         guard let bundleURL = NSWorkspace.shared.urlForApplication(
             withBundleIdentifier: "com.openai.codex"
         ) else {
+            // Silence here reads as "Codex.app is not running" when it may
+            // simply be installed somewhere LaunchServices does not know
+            // about — and desktop sessions then quietly lose their only
+            // real-time source.
+            onStatusMessage?("Codex.app not found; desktop sessions will fall back to transcript discovery.")
             return
         }
         let codexPath = bundleURL
             .appendingPathComponent("Contents/Resources/codex")
             .path
         guard FileManager.default.isExecutableFile(atPath: codexPath) else {
+            onStatusMessage?("Codex.app has no bundled app-server; desktop sessions will fall back to transcript discovery.")
             return
         }
 
