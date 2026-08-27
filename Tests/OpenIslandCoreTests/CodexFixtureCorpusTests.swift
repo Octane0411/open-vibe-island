@@ -261,6 +261,32 @@ struct CodexFixtureCorpusTests {
         #expect(reading.observation?.patch.narrative?.initialUserPrompt == "这个仓库在哪里体现 RSI")
     }
 
+    @Test("the legacy reducer filters the same injected blocks and keeps the cwd")
+    func legacyDiscoveryMatchesOnTitleAndWorkspace() throws {
+        // These two showed up together in the session list as
+        // "/ · <recommended_plugins> Here…": the event_msg path had no
+        // injected-block filter at all, and makeRecord dropped the working
+        // directory so the workspace name resolved to "/".
+        let transcript = """
+        {"type":"session_meta","timestamp":"2026-08-27T00:00:00Z","payload":{"id":"11111111-2222-3333-4444-555555555555","cwd":"/Users/dev/work/personal","originator":"codex_work_desktop","cli_version":"0.148.0","source":"vscode","thread_source":"user"}}
+        {"type":"event_msg","payload":{"type":"user_message","message":"<recommended_plugins> Here is a list of plugins."}}
+        {"type":"event_msg","payload":{"type":"user_message","message":"这个仓库在哪里体现 RSI"}}
+        """
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("rollout-2026-08-27T00-00-00-11111111-2222-3333-4444-555555555555.jsonl")
+        try (transcript + "\n").write(to: url, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let discovery = CodexRolloutDiscovery(rootURL: url.deletingLastPathComponent())
+        let record = try #require(discovery.discoverRecentSessions().first)
+
+        #expect(record.codexMetadata?.initialUserPrompt == "这个仓库在哪里体现 RSI")
+        #expect(record.jumpTarget?.workingDirectory == "/Users/dev/work/personal")
+        #expect(record.jumpTarget?.workspaceName == "personal")
+        // The row renders the summary; it must not be injected context either.
+        #expect(!record.summary.contains("recommended_plugins"))
+    }
+
     @Test("unrecognized record types are counted rather than dropped")
     func driftIsReported() {
         let diagnostics = CodexDiagnostics()

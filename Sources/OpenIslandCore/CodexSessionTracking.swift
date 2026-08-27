@@ -648,6 +648,17 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             currentCommandPreview: snapshot.currentCommandPreview
         )
 
+        // Without a jump target the working directory is lost, and callers that
+        // derive a workspace name from it end up showing "/" for every
+        // discovered session.
+        let jumpTarget = JumpTarget(
+            terminalApp: "Codex.app",
+            workspaceName: sessionMeta.workspaceName,
+            paneTitle: sessionMeta.sessionTitle,
+            workingDirectory: sessionMeta.cwd,
+            codexThreadID: sessionMeta.sessionID
+        )
+
         return CodexTrackedSessionRecord(
             sessionID: sessionMeta.sessionID,
             title: sessionMeta.sessionTitle,
@@ -656,6 +667,7 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             summary: summary,
             phase: snapshot.phase,
             updatedAt: updatedAt,
+            jumpTarget: jumpTarget,
             codexMetadata: metadata
         )
     }
@@ -866,7 +878,9 @@ public enum CodexRolloutReducer {
             snapshot.isInterrupted = false
             snapshot.summary = snapshot.summary ?? "Codex started a new turn."
         case "user_message":
-            guard let message = clipped(payload["message"] as? String), !message.isEmpty else {
+            guard let raw = payload["message"] as? String,
+                  !isInjectedPromptBlock(raw),
+                  let message = clipped(raw), !message.isEmpty else {
                 break
             }
 
@@ -1498,12 +1512,12 @@ public enum CodexRolloutReducer {
         return clipped(segments.joined(separator: " "))
     }
 
-    private static func isInjectedPromptBlock(_ text: String) -> Bool {
-        text.hasPrefix("# AGENTS.md instructions for ")
-            || text.hasPrefix("<environment_context>")
-            || text.hasPrefix("<permissions instructions>")
-            || text.hasPrefix("<collaboration_mode>")
-            || text.hasPrefix("<skills_instructions>")
+    /// Delegates to the one implementation, so both the legacy reducer and the
+    /// rewritten source recognise the same blocks. Keeping two lists is how
+    /// `<recommended_plugins>` — added by a later Codex release — ended up
+    /// filtered on one path and shown as a session summary on the other.
+    static func isInjectedPromptBlock(_ text: String) -> Bool {
+        CodexRolloutSource.isInjectedBlock(text)
     }
 
     private static func clipped(_ value: String?, limit: Int = 110) -> String? {
