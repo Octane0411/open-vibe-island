@@ -113,13 +113,13 @@ public final class CodexSessionProjector: @unchecked Sendable {
         }
 
         if change.accepted.contains(.lifecycle), let lifecycle = facets.lifecycle?.value {
-            if lifecycle.phase == .completed {
-                // A finished turn is a `sessionCompleted` with `isSessionEnd`
-                // false — not an activity update. The distinction is not
-                // cosmetic: `IslandSurface` only pops the island for
-                // `sessionCompleted`, and `WatchNotificationRelay` only pushes
-                // to the watch for it. Reporting a finished turn as activity
-                // silently drops both.
+            if lifecycle.phase == .completed, lifecycle.announcesCompletion {
+                // The agent finished answering: `sessionCompleted` with
+                // `isSessionEnd` false. The distinction from an activity
+                // update is not cosmetic — `IslandSurface` only pops the
+                // island for `sessionCompleted` and `WatchNotificationRelay`
+                // only pushes to the watch for it — which is exactly why a
+                // merely-idle thread must not take this branch.
                 events.append(.sessionCompleted(SessionCompleted(
                     sessionID: sessionKey,
                     summary: summaryText(facets: facets),

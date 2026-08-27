@@ -200,6 +200,25 @@ struct CodexSessionProjectorTests {
         #expect(!events.contains { if case .activityUpdated = $0 { return true }; return false })
     }
 
+    @Test("an idle thread does not tell the user the agent is done")
+    func idleThreadDoesNotAnnounce() {
+        // Codex.app reports a thread idle, and reports turns completed, while
+        // it is still visibly working. Announcing those told the user their
+        // agent had finished right after the model's first reply.
+        let (_, projector) = makeStack()
+        _ = projector.project(observation(.hook, seq: 1, CodexFacetPatch(
+            workspace: CodexWorkspace(workingDirectory: "/Users/dev/work/island"),
+            placement: CodexPlacement(terminalApp: "Ghostty")
+        )))
+
+        let events = projector.project(observation(.appServer, seq: 2, CodexFacetPatch(
+            lifecycle: CodexLifecycle(phase: .completed)
+        )))
+
+        #expect(!events.contains { if case .sessionCompleted = $0 { return true }; return false })
+        #expect(events.contains { if case .activityUpdated = $0 { return true }; return false })
+    }
+
     @Test("a finished turn surfaces the island; only a real ending marks the session over")
     func finishedTurnSurfacesWithoutEndingSession() {
         // IslandSurface pops the island only for sessionCompleted, and the
@@ -213,7 +232,7 @@ struct CodexSessionProjectorTests {
         )))
 
         let turnDone = projector.project(observation(.hook, seq: 2, CodexFacetPatch(
-            lifecycle: CodexLifecycle(phase: .completed)
+            lifecycle: CodexLifecycle(phase: .completed, announcesCompletion: true)
         )))
         guard case let .sessionCompleted(completed) = turnDone.last else {
             Issue.record("a finished turn must surface, got \(String(describing: turnDone.last))")

@@ -79,6 +79,9 @@ struct CodexHookEventsTests {
 
         let stop = source.observe(payload(.stop))
         #expect(stop.patch.lifecycle?.phase == .completed)
+        // Stop is the agent finishing its answer — the one thing worth
+        // interrupting the user for.
+        #expect(stop.patch.lifecycle?.announcesCompletion == true)
         #expect(stop.patch.liveness == nil, "Stop must not decide liveness")
 
         let end = source.observe(payload(.sessionEnd, extra: ["reason": "user_exit"]))

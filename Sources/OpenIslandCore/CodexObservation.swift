@@ -164,10 +164,19 @@ public struct CodexPlacement: Equatable, Sendable {
 public struct CodexLifecycle: Equatable, Sendable {
     public var phase: SessionPhase
     public var turnID: String?
+    /// Whether reaching `.completed` means the agent has finished answering
+    /// the user, as opposed to simply not running a turn at this instant.
+    ///
+    /// Only the former is worth interrupting someone for. Codex.app reports a
+    /// thread as idle, and reports turns as completed, at moments while it is
+    /// still visibly working — surfacing those told the user their agent was
+    /// done after the model's first reply.
+    public var announcesCompletion: Bool
 
-    public init(phase: SessionPhase, turnID: String? = nil) {
+    public init(phase: SessionPhase, turnID: String? = nil, announcesCompletion: Bool = false) {
         self.phase = phase
         self.turnID = turnID
+        self.announcesCompletion = announcesCompletion
     }
 }
 

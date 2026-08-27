@@ -194,7 +194,13 @@ public final class CodexHookSource: @unchecked Sendable {
             )
 
         case .stop:
-            patch.lifecycle = CodexLifecycle(phase: .completed, turnID: payload.turnID)
+            // The agent finished answering. This is the one signal the user
+            // should be interrupted for.
+            patch.lifecycle = CodexLifecycle(
+                phase: .completed,
+                turnID: payload.turnID,
+                announcesCompletion: true
+            )
             patch.actionable = .cleared
             patch.narrative = CodexNarrative(
                 lastAssistantMessage: payload.lastAssistantMessage ?? payload.assistantMessagePreview,
@@ -206,7 +212,11 @@ public final class CodexHookSource: @unchecked Sendable {
         case .sessionEnd:
             // The one hook that means the session is over, as opposed to a
             // turn. Carries a reason (user exit, error, …) for the record.
-            patch.lifecycle = CodexLifecycle(phase: .completed, turnID: payload.turnID)
+            patch.lifecycle = CodexLifecycle(
+                phase: .completed,
+                turnID: payload.turnID,
+                announcesCompletion: true
+            )
             patch.liveness = CodexLiveness(state: .ended(reason: .sessionEnd))
             patch.actionable = .cleared
             patch.narrative = CodexNarrative(
