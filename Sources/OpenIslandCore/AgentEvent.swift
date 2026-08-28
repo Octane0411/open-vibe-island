@@ -54,17 +54,23 @@ public struct SessionActivityUpdated: Equatable, Codable, Sendable {
     public var summary: String
     public var phase: SessionPhase
     public var timestamp: Date
+    /// When `true`, this activity update represents a subagent finishing its
+    /// work (e.g. Claude Code's `SubagentStop` hook). Used by the notification
+    /// system to optionally surface subagent completions to the user.
+    public var isSubagentCompletion: Bool
 
     public init(
         sessionID: String,
         summary: String,
         phase: SessionPhase,
-        timestamp: Date
+        timestamp: Date,
+        isSubagentCompletion: Bool = false
     ) {
         self.sessionID = sessionID
         self.summary = summary
         self.phase = phase
         self.timestamp = timestamp
+        self.isSubagentCompletion = isSubagentCompletion
     }
 }
 
@@ -110,19 +116,22 @@ public struct SessionCompleted: Equatable, Codable, Sendable {
     /// turn-level completion (`Stop`/`StopFailure`) where the CLI is still
     /// running and waiting for the next user prompt.
     public var isSessionEnd: Bool?
+    public var isSubagentCompletion: Bool?
 
     public init(
         sessionID: String,
         summary: String,
         timestamp: Date,
         isInterrupt: Bool? = nil,
-        isSessionEnd: Bool? = nil
+        isSessionEnd: Bool? = nil,
+        isSubagentCompletion: Bool? = nil
     ) {
         self.sessionID = sessionID
         self.summary = summary
         self.timestamp = timestamp
         self.isInterrupt = isInterrupt
         self.isSessionEnd = isSessionEnd
+        self.isSubagentCompletion = isSubagentCompletion
     }
 }
 
