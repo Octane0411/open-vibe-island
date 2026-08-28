@@ -167,6 +167,20 @@ struct SettingsView: View {
     }
 }
 
+// MARK: - Menu bar mode note
+
+/// Caption shown under settings that have no effect while the menu bar
+/// status item is the active presentation (closed pill / hover are gone).
+struct MenuBarNotApplicableNote: View {
+    let lang: LanguageManager
+
+    var body: some View {
+        Text(lang.t("settings.menuBarMode.notApplicable"))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+    }
+}
+
 // MARK: - General
 
 struct GeneralSettingsPane: View {
@@ -193,6 +207,10 @@ struct GeneralSettingsPane: View {
                             .disabled(!option.isAvailable)
                     }
                 }
+                .disabled(model.menuBarStatusItemEnabled)
+                if model.menuBarStatusItemEnabled {
+                    MenuBarNotApplicableNote(lang: lang)
+                }
             }
 
             Section(lang.t("settings.general.language")) {
@@ -209,9 +227,17 @@ struct GeneralSettingsPane: View {
 
             Section(lang.t("settings.general.behavior")) {
                 Toggle(lang.t("settings.general.autoCollapse"), isOn: .constant(true))
+                    .disabled(model.menuBarStatusItemEnabled)
+                if model.menuBarStatusItemEnabled {
+                    MenuBarNotApplicableNote(lang: lang)
+                }
                 Toggle(lang.t("settings.general.showDockIcon"), isOn: Binding(
                     get: { model.showDockIcon },
                     set: { model.showDockIcon = $0 }
+                ))
+                Toggle(lang.t("settings.general.menuBarIcon"), isOn: Binding(
+                    get: { model.menuBarStatusItemEnabled },
+                    set: { model.menuBarStatusItemEnabled = $0 }
                 ))
                 Toggle(lang.t("settings.general.hapticFeedback"), isOn: Binding(
                     get: { model.hapticFeedbackEnabled },
@@ -253,6 +279,10 @@ struct DisplaySettingsPane: View {
                             .tag(option.id)
                             .disabled(!option.isAvailable)
                     }
+                }
+                .disabled(model.menuBarStatusItemEnabled)
+                if model.menuBarStatusItemEnabled {
+                    MenuBarNotApplicableNote(lang: lang)
                 }
             }
 

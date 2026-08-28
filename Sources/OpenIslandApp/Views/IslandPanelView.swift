@@ -16,6 +16,13 @@ private struct ContentHeightKey: PreferenceKey {
     }
 }
 
+private struct MenuBarContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 /// Auto-height container: renders content directly (auto-sizing).
 /// When content exceeds maxHeight, wraps in ScrollView at fixed maxHeight.
 private struct AutoHeightScrollView<Content: View>: View {
@@ -144,7 +151,9 @@ struct IslandPanelView: View {
     }
 
     private var usesNotchAwareOpenedHeader: Bool {
-        model.overlayPlacementDiagnostics?.mode == .notch
+        // Menu bar mode drops a flat panel under the icon — never notch-shaped.
+        if model.menuBarStatusItemEnabled { return false }
+        return model.overlayPlacementDiagnostics?.mode == .notch
             || targetOverlayScreen?.safeAreaInsets.top ?? 0 > 0
     }
 
@@ -152,6 +161,8 @@ struct IslandPanelView: View {
     /// The central black rectangle is otherwise aligned with the physical
     /// notch, so center content is only useful here.
     private var isExternalDisplayPlacement: Bool {
+        // Menu bar mode is always treated as flat / non-notch placement.
+        if model.menuBarStatusItemEnabled { return true }
         if let mode = model.overlayPlacementDiagnostics?.mode {
             return mode == .topBar
         }
@@ -212,13 +223,19 @@ struct IslandPanelView: View {
             ZStack(alignment: .top) {
                 if shouldRenderOpenedSurface {
                     openedSurface(width: openedWidth, height: openedHeight)
-                        .opacity(usesOpenedVisualState ? 1 : 0)
+                        // In menu bar mode the panel is hidden while closed and
+                        // the status item is the closed state, so show the
+                        // opened surface immediately — no closed→opened
+                        // crossfade that would flash the pill content.
+                        .opacity(usesOpenedVisualState || model.menuBarStatusItemEnabled ? 1 : 0)
                         .allowsHitTesting(usesOpenedVisualState)
                 }
 
-                v6ClosedSurface()
-                    .opacity(usesOpenedVisualState ? 0 : 1)
-                    .allowsHitTesting(!usesOpenedVisualState)
+                if !model.menuBarStatusItemEnabled {
+                    v6ClosedSurface()
+                        .opacity(usesOpenedVisualState ? 0 : 1)
+                        .allowsHitTesting(!usesOpenedVisualState)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .top)
         }
@@ -363,8 +380,16 @@ struct IslandPanelView: View {
             }
         } else {
             HStack(spacing: 12) {
-                openedUsageSummary
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                if model.menuBarStatusItemEnabled {
+                    // Menu bar mode: the session overview lives here, sharing
+                    // the row with the buttons (the standalone list header is
+                    // hidden), so there's no empty band above the list.
+                    sessionOverviewHeaderContent(referenceDate: .now)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    openedUsageSummary
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
 
                 openedHeaderButtons
             }
@@ -551,6 +576,27 @@ struct IslandPanelView: View {
                             model.measuredNotificationContentHeight = height
                         }
                     }
+            } else if model.menuBarStatusItemEnabled {
+                // Menu bar mode: hug the content (no greedy ScrollView, no
+                // duplicate header) so the dropped-down panel sizes to fit.
+                VStack(spacing: 0) {
+                    AutoHeightScrollView(maxHeight: Self.maxSessionListHeight) {
+                        sessionRowsContent(referenceDate: referenceDate)
+                    }
+                    sessionPanelFooter
+                }
+                .padding(.vertical, 2)
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(
+                            key: MenuBarContentHeightKey.self,
+                            value: geo.size.height
+                        )
+                    }
+                )
+                .onPreferenceChange(MenuBarContentHeightKey.self) { height in
+                    if height > 0 { model.measuredMenuBarContentHeight = height }
+                }
             } else {
                 VStack(spacing: 0) {
                     sessionPanelHeader(referenceDate: referenceDate)
@@ -690,7 +736,10 @@ struct IslandPanelView: View {
         }
     }
 
-    private func sessionPanelHeader(referenceDate: Date) -> some View {
+    /// Title ("SESSIONS") + state overview counts. Shared by the standalone
+    /// list header and, in menu bar mode, the top control strip (so the
+    /// overview and the sound/settings/quit buttons share one row).
+    private func sessionOverviewHeaderContent(referenceDate: Date) -> some View {
         let overview = sessionOverviewItems(referenceDate: referenceDate)
 
         return HStack(spacing: 8) {
@@ -703,7 +752,12 @@ struct IslandPanelView: View {
                 sessionOverviewView(overview, compact: false)
                 sessionOverviewView(overview, compact: true)
             }
+        }
+    }
 
+    private func sessionPanelHeader(referenceDate: Date) -> some View {
+        HStack(spacing: 8) {
+            sessionOverviewHeaderContent(referenceDate: referenceDate)
             Spacer(minLength: 0)
         }
         .padding(.leading, sessionListSideInset)
