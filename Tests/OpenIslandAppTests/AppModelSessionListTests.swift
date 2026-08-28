@@ -24,6 +24,8 @@ struct AppModelSessionListTests {
             "appearance.island.v8.topBar.sessionGroup",
             "appearance.island.v8.topBar.sessionSort",
             "appearance.island.v8.topBar.completedStaleThreshold",
+            "appearance.island.v8.notch.showIdleSessions",
+            "appearance.island.v8.topBar.showIdleSessions",
             "app.suppressFrontmostNotifications",
             "feature.completionReply.enabled",
             "overlay.sound.muted",
@@ -358,6 +360,57 @@ struct AppModelSessionListTests {
 
         #expect(model.islandSessionSections.map(\.id) == ["state-done"])
         #expect(model.islandSessionSections.first?.sessions.first?.id == "old-done")
+    }
+
+    @Test
+    func idleSessionsAreHiddenByDefaultAndCanBeEnabledPerDisplayProfile() {
+        let now = Date()
+        let model = AppModel()
+        var running = listSession(id: "running", phase: .running, updatedAt: now)
+        var idle = listSession(id: "idle", phase: .completed, updatedAt: now.addingTimeInterval(-360))
+        running.isProcessAlive = true
+        idle.isProcessAlive = true
+        model.state = SessionState(sessions: [idle, running])
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+        model.islandRightSlot = .count
+
+        #expect(model.islandListSessions.map(\.id) == ["running"])
+        #expect(model.islandClosedSpotlight?.id == "running")
+        if case let .count(count)? = model.islandClosedRightSlotContent() {
+            #expect(count == 1)
+        } else {
+            Issue.record("Expected a closed-island count with idle sessions filtered out")
+        }
+
+        model.updateAppearancePreferences(for: .topBar) { $0.showIdleSessions = true }
+        #expect(model.showIdleSessions)
+        #expect(Set(model.islandListSessions.map(\.id)) == Set(["running", "idle"]))
+        if case let .count(count)? = model.islandClosedRightSlotContent() {
+            #expect(count == 2)
+        } else {
+            Issue.record("Expected a closed-island count with idle sessions enabled")
+        }
+
+        let reloaded = AppModel()
+        reloaded.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+        #expect(reloaded.showIdleSessions)
+    }
+
+    @Test
+    func appearancePreferencesRoundTripAsCodable() throws {
+        let preferences = IslandAppearancePreferences(
+            rightSlot: .agents,
+            centerLabel: .sessionName,
+            usageDisplay: .hidden,
+            sessionStateIndicator: .glyph,
+            sessionGroup: .project,
+            sessionSort: .lastUpdate,
+            completedStaleThreshold: .tenMinutes,
+            showIdleSessions: true
+        )
+
+        let encoded = try JSONEncoder().encode(preferences)
+        #expect(try JSONDecoder().decode(IslandAppearancePreferences.self, from: encoded) == preferences)
     }
 
     @Test
