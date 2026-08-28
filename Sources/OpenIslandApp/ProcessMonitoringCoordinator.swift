@@ -55,6 +55,7 @@ final class ProcessMonitoringCoordinator {
     private static let cursorStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let codexAppStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let claudeDesktopStalenessTimeout: TimeInterval = 600  // 10 minutes
+    private static let conductorStalenessTimeout: TimeInterval = 600  // 10 minutes
 
     static func monitoringPollInterval(
         isResolvingInitialLiveSessions: Bool,
@@ -562,6 +563,31 @@ final class ProcessMonitoringCoordinator {
                 if session.isSessionEnded { continue }
                 let isStale = session.phase == .completed
                     && session.updatedAt.addingTimeInterval(Self.claudeDesktopStalenessTimeout) < Date.now
+                if !isStale {
+                    aliveIDs.insert(session.id)
+                }
+            }
+        }
+
+        // Conductor sessions: Conductor (conductor.build) runs Claude Code as a
+        // headless, TTY-less subprocess of its own runtime, so ps/lsof discovery
+        // never sees it — exactly like the Claude Desktop case above (#510).
+        // Without an app-level fallback, SessionState.markProcessLiveness would
+        // evict these sessions two polls after they appear.  Keep them alive
+        // while Conductor is running, but let completed sessions expire after a
+        // staleness window (Conductor has no per-session "closed" signal beyond
+        // the SessionEnd hook — mirrors the Claude Desktop handling above).  The
+        // session is identified by the "Conductor" terminalApp tag stamped by
+        // the hook.
+        let isConductorRunning = Self.isConductorAppRunning()
+        if isConductorRunning {
+            for session in sessions
+            where session.tool == .claudeCode
+                && !session.isDemoSession
+                && session.jumpTarget?.terminalApp == "Conductor" {
+                if session.isSessionEnded { continue }
+                let isStale = session.phase == .completed
+                    && session.updatedAt.addingTimeInterval(Self.conductorStalenessTimeout) < Date.now
                 if !isStale {
                     aliveIDs.insert(session.id)
                 }
@@ -1291,6 +1317,15 @@ final class ProcessMonitoringCoordinator {
     static func isClaudeDesktopAppRunning() -> Bool {
         NSWorkspace.shared.runningApplications.contains { app in
             app.bundleIdentifier == "com.anthropic.claudefordesktop"
+        }
+    }
+
+    /// Check whether the Conductor app is currently running.  Uses
+    /// `NSWorkspace.shared.runningApplications` for the same reason as
+    /// ``isClaudeDesktopAppRunning()``.
+    static func isConductorAppRunning() -> Bool {
+        NSWorkspace.shared.runningApplications.contains { app in
+            app.bundleIdentifier == "com.conductor.app"
         }
     }
 

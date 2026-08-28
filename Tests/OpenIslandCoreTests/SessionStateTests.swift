@@ -138,6 +138,49 @@ struct SessionStateTests {
         #expect(state.session(id: "desktop-1")?.isVisibleInIsland == false)
     }
 
+    /// Regression for the Conductor host support: Conductor runs Claude Code as
+    /// a headless, TTY-less subprocess, so ps/lsof discovery never sees it —
+    /// exactly the #510 situation. ProcessMonitoringCoordinator therefore keeps
+    /// a "Conductor"-tagged session's ID in `aliveSessionIDs` while Conductor is
+    /// running; this pins the liveness contract that fallback relies on: the
+    /// session stays visible while reported alive and is only evicted after two
+    /// consecutive misses (e.g. Conductor quit).
+    @Test
+    func hookManagedConductorSessionLivenessFollowsReportedAliveSet() {
+        var session = AgentSession(
+            id: "conductor-1",
+            title: "Claude · demo",
+            tool: .claudeCode,
+            phase: .running,
+            summary: "Working",
+            updatedAt: Date(timeIntervalSince1970: 1_000)
+        )
+        session.isHookManaged = true
+        session.isProcessAlive = true
+        session.jumpTarget = JumpTarget(
+            terminalApp: "Conductor",
+            workspaceName: "demo",
+            paneTitle: "Claude"
+        )
+        var state = SessionState(sessions: [session])
+
+        // Reported alive (Conductor running): stays visible across polls.
+        state.markProcessLiveness(aliveSessionIDs: ["conductor-1"])
+        state.markProcessLiveness(aliveSessionIDs: ["conductor-1"])
+        #expect(state.session(id: "conductor-1")?.isSessionEnded == false)
+        #expect(state.session(id: "conductor-1")?.isVisibleInIsland == true)
+
+        // First miss (e.g. Conductor just quit): debounced, not yet evicted.
+        state.markProcessLiveness(aliveSessionIDs: [])
+        #expect(state.session(id: "conductor-1")?.isSessionEnded == false)
+        #expect(state.session(id: "conductor-1")?.isVisibleInIsland == true)
+
+        // Second consecutive miss: session ends and leaves the island.
+        state.markProcessLiveness(aliveSessionIDs: [])
+        #expect(state.session(id: "conductor-1")?.isSessionEnded == true)
+        #expect(state.session(id: "conductor-1")?.isVisibleInIsland == false)
+    }
+
     @Test
     func resolvesUserActionsAndKeepsSessionsSortedByRecency() {
         let startedAt = Date(timeIntervalSince1970: 2_000)
