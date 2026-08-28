@@ -145,6 +145,8 @@
 "setup.usageBridgeReady" = "Installed";
 "setup.usageBridgeDesc" = "Tracks Claude API usage locally";
 "setup.optional" = "Optional";
+"setup.codexBrokerPermissionRequests" = "Route Codex approvals through Open Island";
+"setup.codexBrokerPermissionRequestsDesc" = "Optional. When off, Codex keeps its native approval behavior and Open Island installs only lifecycle hooks.";
 "setup.permissionsTitle" = "Accessibility";
 "setup.permissionsDesc" = "Open Island may need Accessibility permission to detect terminal windows. Grant it in System Settings → Privacy & Security → Accessibility.";
 "setup.installAll" = "Install All";

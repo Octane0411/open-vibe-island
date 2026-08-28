@@ -52,7 +52,9 @@ This is meant for per-process launches. Do not set it globally unless you want O
 
 ### Default managed installation
 
-The managed Codex hook installer (`CodexHookInstaller`) installs `SessionStart`, `UserPromptSubmit`, `PermissionRequest`, and `Stop` by default. This keeps the lifecycle hooks low-noise while still allowing OpenIsland to broker Codex's first-class approval requests. Per-command `PreToolUse` / `PostToolUse` hooks remain opt-in because they can add terminal log noise.
+The managed Codex hook installer (`CodexHookInstaller`) installs `SessionStart`, `UserPromptSubmit`, and `Stop` by default. This keeps the lifecycle hooks low-noise and leaves Codex's native approval behavior intact.
+
+`PermissionRequest` is opt-in. Enable **Route Codex approvals through Open Island** in Settings when you explicitly want OpenIsland to broker Codex approvals. When that setting is off, repair/install removes older managed `PermissionRequest` entries left by previous OpenIsland versions while preserving user-authored hooks.
 
 The installer chooses the Codex hook feature flag that the local Codex CLI advertises. Newer Codex builds use `[features].hooks = true`; older builds use the legacy `[features].codex_hooks = true`. Status checks recognize both keys, and managed installs migrate between them when the local Codex version changes.
 
@@ -97,7 +99,7 @@ The app can block a command by writing this to stdout:
 
 #### `PermissionRequest`
 
-The managed `PermissionRequest` hook has a 1-hour timeout so the user can approve or deny from the UI.
+When the opt-in `PermissionRequest` hook is installed, it has a 1-hour timeout so the user can approve or deny from the UI.
 
 Allow:
 
@@ -311,7 +313,7 @@ Setting `interrupt: true` terminates the current agent turn immediately.
 
 | Source | Event | Timeout |
 |---|---|---|
-| Codex | `PermissionRequest` | **1 hour** (awaits human approval) |
+| Codex | Opt-in `PermissionRequest` | **1 hour** (awaits human approval) |
 | Codex | All other managed events | **45 seconds** |
 | Claude Code | `PermissionRequest` | **24 hours** (awaits human approval) |
 | Claude Code | All other events | **45 seconds** |

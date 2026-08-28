@@ -145,6 +145,8 @@
 "setup.usageBridgeReady" = "已安装";
 "setup.usageBridgeDesc" = "在本地追踪 Claude API 用量";
 "setup.optional" = "可选";
+"setup.codexBrokerPermissionRequests" = "通过 Open Island 处理 Codex 审批";
+"setup.codexBrokerPermissionRequestsDesc" = "可选。关闭时，Codex 保持原生审批行为，Open Island 只安装生命周期 hooks。";
 "setup.permissionsTitle" = "辅助功能";
 "setup.permissionsDesc" = "Open Island 可能需要辅助功能权限来检测终端窗口。请在「系统设置 → 隐私与安全性 → 辅助功能」中授权。";
 "setup.installAll" = "全部安装";
