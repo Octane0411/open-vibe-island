@@ -7,6 +7,14 @@ public enum CodexHookEventName: String, Codable, Sendable {
     case postToolUse = "PostToolUse"
     case userPromptSubmit = "UserPromptSubmit"
     case stop = "Stop"
+    /// The session itself ended, with a reason. Distinct from `Stop`, which
+    /// only closes a turn — conflating the two is one way sessions were left
+    /// showing as running after the user had quit.
+    case sessionEnd = "SessionEnd"
+    case subagentStart = "SubagentStart"
+    case subagentStop = "SubagentStop"
+    case turnStart = "TurnStart"
+    case preCompact = "PreCompact"
 }
 
 public enum CodexPermissionMode: String, Codable, Sendable {
@@ -141,6 +149,13 @@ public struct CodexHookPayload: Equatable, Codable, Sendable {
     public var prompt: String?
     public var stopHookActive: Bool?
     public var lastAssistantMessage: String?
+    /// Present on SubagentStart / SubagentStop.
+    public var agentID: String?
+    public var agentType: String?
+    /// Present on PreCompact: what triggered the compaction.
+    public var trigger: String?
+    /// Present on SessionEnd: why the session ended.
+    public var reason: String?
 
     private enum CodingKeys: String, CodingKey {
         case cwd
@@ -163,6 +178,10 @@ public struct CodexHookPayload: Equatable, Codable, Sendable {
         case prompt
         case stopHookActive = "stop_hook_active"
         case lastAssistantMessage = "last_assistant_message"
+        case agentID = "agent_id"
+        case agentType = "agent_type"
+        case trigger
+        case reason
     }
 
     public init(
@@ -185,7 +204,11 @@ public struct CodexHookPayload: Equatable, Codable, Sendable {
         toolResponse: CodexHookJSONValue? = nil,
         prompt: String? = nil,
         stopHookActive: Bool? = nil,
-        lastAssistantMessage: String? = nil
+        lastAssistantMessage: String? = nil,
+        agentID: String? = nil,
+        agentType: String? = nil,
+        trigger: String? = nil,
+        reason: String? = nil
     ) {
         self.cwd = cwd
         self.hookEventName = hookEventName
@@ -207,6 +230,10 @@ public struct CodexHookPayload: Equatable, Codable, Sendable {
         self.prompt = prompt
         self.stopHookActive = stopHookActive
         self.lastAssistantMessage = lastAssistantMessage
+        self.agentID = agentID
+        self.agentType = agentType
+        self.trigger = trigger
+        self.reason = reason
     }
 
     public init(from decoder: any Decoder) throws {
@@ -231,6 +258,10 @@ public struct CodexHookPayload: Equatable, Codable, Sendable {
         prompt = try container.decodeIfPresent(String.self, forKey: .prompt)
         stopHookActive = try container.decodeIfPresent(Bool.self, forKey: .stopHookActive)
         lastAssistantMessage = try container.decodeIfPresent(String.self, forKey: .lastAssistantMessage)
+        agentID = try container.decodeIfPresent(String.self, forKey: .agentID)
+        agentType = try container.decodeIfPresent(String.self, forKey: .agentType)
+        trigger = try container.decodeIfPresent(String.self, forKey: .trigger)
+        reason = try container.decodeIfPresent(String.self, forKey: .reason)
     }
 }
 
@@ -426,6 +457,16 @@ public extension CodexHookPayload {
             return "Codex received a new prompt in \(workspaceName)."
         case .stop:
             return "Codex completed a turn in \(workspaceName)."
+        case .sessionEnd:
+            return "Codex session ended in \(workspaceName)."
+        case .subagentStart:
+            return "Codex started a subagent in \(workspaceName)."
+        case .subagentStop:
+            return "A Codex subagent finished in \(workspaceName)."
+        case .turnStart:
+            return "Codex started a turn in \(workspaceName)."
+        case .preCompact:
+            return "Codex is compacting context in \(workspaceName)."
         }
     }
 

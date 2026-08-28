@@ -510,7 +510,37 @@ final class AppModel {
     private var hasStarted = false
 
     @ObservationIgnored
-    private let bridgeServer = BridgeServer()
+    private let bridgeServer = BridgeServer(codexShadowLogURL: AppModel.codexShadowLogURL)
+
+    /// The shadow log lives next to the session registries — except under a
+    /// test runner, where an AppModel built by a test must not write into the
+    /// user's Application Support directory.
+    private static var codexShadowLogURL: URL? {
+        let process = ProcessInfo.processInfo.processName
+        if process.contains("xctest") || process.contains("swiftpm-testing-helper") {
+            return nil
+        }
+        return CodexSessionStore.defaultDirectoryURL.appendingPathComponent("codex-shadow.log")
+    }
+
+    /// Format-drift and arbitration counters from the Codex ingestion layer.
+    /// Surfaced in settings so a Codex release that changes the transcript
+    /// vocabulary is visible the day it lands, rather than months later as a
+    /// batch of unexplained bug reports.
+    var codexIngestionDiagnostics: CodexDiagnostics.Snapshot {
+        bridgeServer.codexPipeline.diagnostics.snapshot()
+    }
+
+    /// Where the rewritten Codex pipeline disagreed with the legacy path
+    /// while running in shadow. Empty is the goal; a stable non-empty report
+    /// is the input to deciding what the switch to live would change.
+    var codexShadowDivergences: [String] {
+        bridgeServer.codexPipeline.divergenceReport()
+    }
+
+    var codexPipelineMode: CodexIngestionPipeline.Mode {
+        bridgeServer.codexPipeline.currentMode
+    }
 
     @ObservationIgnored
     private var bridgeClient = LocalBridgeClient()
@@ -671,6 +701,31 @@ final class AppModel {
         codexAppServer.onEvent = { [weak self] event in
             self?.applyTrackedEvent(event, ingress: .bridge)
         }
+        // Run the rewritten Codex pipeline on every app-server notification.
+        // In shadow mode that only records where it disagrees with the legacy
+        // path; in live mode its events replace the legacy ones.
+        codexAppServer.suppressLegacyEvents = bridgeServer.codexPipeline.drivesUI
+        codexAppServer.onNotificationObserved = { [weak self] notification, legacy in
+            guard let self else { return }
+            let pipeline = self.bridgeServer.codexPipeline
+            let candidate = pipeline.ingest(appServer: notification)
+            if pipeline.drivesUI {
+                candidate.forEach { self.applyTrackedEvent($0, ingress: .bridge) }
+            } else {
+                pipeline.recordDivergence(legacy: legacy, candidate: candidate)
+            }
+        }
+        codexAppServer.onLoadedThreadObserved = { [weak self] thread, legacy in
+            guard let self else { return }
+            let pipeline = self.bridgeServer.codexPipeline
+            let candidate = pipeline.ingest(loadedThread: thread)
+            if pipeline.drivesUI {
+                candidate.forEach { self.applyTrackedEvent($0, ingress: .bridge) }
+            } else {
+                pipeline.recordDivergence(legacy: legacy, candidate: candidate)
+            }
+        }
+        discovery.codexPipeline = bridgeServer.codexPipeline
         codexAppServer.onStatusMessage = { [weak self] message in
             self?.lastActionMessage = message
         }
@@ -1075,9 +1130,10 @@ final class AppModel {
         if loadRuntimeState {
             isResolvingInitialLiveSessions = true
 
+            let codexPipeline = bridgeServer.codexPipeline
             Task.detached(priority: .userInitiated) { [weak self] in
                 guard let self else { return }
-                let payload = self.discovery.loadStartupDiscoveryPayload()
+                let payload = self.discovery.loadStartupDiscoveryPayload(codexPipeline: codexPipeline)
                 await MainActor.run {
                     self.applyStartupDiscoveryPayload(payload)
                 }

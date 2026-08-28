@@ -8,6 +8,9 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
     public var lastAssistantMessage: String?
     public var currentTool: String?
     public var currentCommandPreview: String?
+    /// Subagents Codex currently has running for this session. Optional so
+    /// records persisted before the field existed decode unchanged.
+    public var activeSubagentCount: Int?
 
     public init(
         transcriptPath: String? = nil,
@@ -15,7 +18,8 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
         lastUserPrompt: String? = nil,
         lastAssistantMessage: String? = nil,
         currentTool: String? = nil,
-        currentCommandPreview: String? = nil
+        currentCommandPreview: String? = nil,
+        activeSubagentCount: Int? = nil
     ) {
         self.transcriptPath = transcriptPath
         self.initialUserPrompt = initialUserPrompt
@@ -23,6 +27,7 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
         self.lastAssistantMessage = lastAssistantMessage
         self.currentTool = currentTool
         self.currentCommandPreview = currentCommandPreview
+        self.activeSubagentCount = activeSubagentCount
     }
 
     public var isEmpty: Bool {
@@ -32,6 +37,7 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
             && lastAssistantMessage == nil
             && currentTool == nil
             && currentCommandPreview == nil
+            && activeSubagentCount == nil
     }
 }
 
@@ -315,17 +321,37 @@ public enum CodexAppSessionReconciler {
             return nil
         }
         guard fileManager.fileExists(atPath: transcriptPath) else {
-            return .activityUpdated(
-                SessionActivityUpdated(
-                    sessionID: session.id,
-                    summary: "Turn stalled.",
-                    phase: .completed,
-                    timestamp: now
-                )
-            )
+            return stalledTurn(session, now: now)
+        }
+
+        // A turn that is genuinely running keeps appending to its transcript —
+        // reasoning, tool calls, output. A file that has not been written to in
+        // this long while the session still claims to be running means the turn
+        // is over and we missed the ending, so the row would otherwise sit at
+        // "running" forever. The same happens to a session Codex opened and
+        // never used: its transcript holds only `session_meta`.
+        let modifiedAt = (try? fileManager.attributesOfItem(atPath: transcriptPath)[.modificationDate] as? Date)
+            ?? nil
+        if let modifiedAt, now.timeIntervalSince(modifiedAt) > stalledTranscriptTimeout {
+            return stalledTurn(session, now: now)
         }
 
         return nil
+    }
+
+    /// How long a running session's transcript may go untouched before the turn
+    /// is treated as over. Generous: a long turn still writes as it works.
+    static let stalledTranscriptTimeout: TimeInterval = 30 * 60
+
+    private static func stalledTurn(_ session: AgentSession, now: Date) -> AgentEvent {
+        .activityUpdated(
+            SessionActivityUpdated(
+                sessionID: session.id,
+                summary: "Turn stalled.",
+                phase: .completed,
+                timestamp: now
+            )
+        )
     }
 
     private static func isArchivedTranscriptPath(_ transcriptPath: String?) -> Bool {
@@ -642,6 +668,17 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             currentCommandPreview: snapshot.currentCommandPreview
         )
 
+        // Without a jump target the working directory is lost, and callers that
+        // derive a workspace name from it end up showing "/" for every
+        // discovered session.
+        let jumpTarget = JumpTarget(
+            terminalApp: "Codex.app",
+            workspaceName: sessionMeta.workspaceName,
+            paneTitle: sessionMeta.sessionTitle,
+            workingDirectory: sessionMeta.cwd,
+            codexThreadID: sessionMeta.sessionID
+        )
+
         return CodexTrackedSessionRecord(
             sessionID: sessionMeta.sessionID,
             title: sessionMeta.sessionTitle,
@@ -650,6 +687,7 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             summary: summary,
             phase: snapshot.phase,
             updatedAt: updatedAt,
+            jumpTarget: jumpTarget,
             codexMetadata: metadata
         )
     }
@@ -860,7 +898,9 @@ public enum CodexRolloutReducer {
             snapshot.isInterrupted = false
             snapshot.summary = snapshot.summary ?? "Codex started a new turn."
         case "user_message":
-            guard let message = clipped(payload["message"] as? String), !message.isEmpty else {
+            guard let raw = payload["message"] as? String,
+                  !isInjectedPromptBlock(raw),
+                  let message = clipped(raw), !message.isEmpty else {
                 break
             }
 
@@ -1492,12 +1532,12 @@ public enum CodexRolloutReducer {
         return clipped(segments.joined(separator: " "))
     }
 
-    private static func isInjectedPromptBlock(_ text: String) -> Bool {
-        text.hasPrefix("# AGENTS.md instructions for ")
-            || text.hasPrefix("<environment_context>")
-            || text.hasPrefix("<permissions instructions>")
-            || text.hasPrefix("<collaboration_mode>")
-            || text.hasPrefix("<skills_instructions>")
+    /// Delegates to the one implementation, so both the legacy reducer and the
+    /// rewritten source recognise the same blocks. Keeping two lists is how
+    /// `<recommended_plugins>` — added by a later Codex release — ended up
+    /// filtered on one path and shown as a session summary on the other.
+    static func isInjectedPromptBlock(_ text: String) -> Bool {
+        CodexRolloutSource.isInjectedBlock(text)
     }
 
     private static func clipped(_ value: String?, limit: Int = 110) -> String? {

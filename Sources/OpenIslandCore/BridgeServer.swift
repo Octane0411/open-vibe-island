@@ -69,9 +69,22 @@ public final class BridgeServer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "app.openisland.bridge.server")
     private let queueKey = DispatchSpecificKey<Void>()
 
+    /// The rewritten Codex ingestion layer. Runs in shadow mode by default:
+    /// it observes everything the legacy path observes and records where the
+    /// two disagree, without affecting what the user sees. See
+    /// `CodexIngestionPipeline.Mode`.
+    public let codexPipeline: CodexIngestionPipeline
+
     private var listeners: [Listener] = []
     private var clients: [UUID: ClientConnection] = [:]
     private var pendingApprovals: [String: PendingApproval] = [:]
+    /// Running subagent count per Codex session. Hooks report start/stop
+    /// boundaries; the island shows a total.
+    private var codexActiveSubagents: [String: Int] = [:]
+    /// While a Codex hook is being handled, legacy emits are collected here
+    /// instead of applied. Once the handler finishes, whichever path drives
+    /// the UI is applied and the other is compared against it.
+    private var codexShadowCapture: [AgentEvent]?
     private var pendingClaudeToolContexts: [String: PendingClaudeToolContext] = [:]
     private var pendingClaudeInteractions: [String: PendingClaudeInteraction] = [:]
     private var pendingOpenCodeInteractions: [String: PendingOpenCodeInteraction] = [:]
@@ -91,8 +104,12 @@ public final class BridgeServer: @unchecked Sendable {
     private var localState = SessionState()
 
     public init(
-        socketURL: URL = BridgeSocketLocation.defaultURL
+        socketURL: URL = BridgeSocketLocation.defaultURL,
+        codexShadowLogURL: URL? = nil
     ) {
+        // The shadow log is opt-in so that tests, which build a BridgeServer
+        // freely, never write into the user's Application Support directory.
+        codexPipeline = CodexIngestionPipeline(mode: .shadow, logURL: codexShadowLogURL)
         self.socketURL = socketURL
         queue.setSpecific(key: queueKey, value: ())
     }
@@ -490,6 +507,15 @@ public final class BridgeServer: @unchecked Sendable {
             return
         }
 
+        // Run the rewritten pipeline alongside the legacy handler below. The
+        // legacy switch keeps its protocol duties either way — acknowledging
+        // the hook, registering pending approvals — but its state events are
+        // captured rather than applied. Whichever path drives the UI is then
+        // applied, and the other is compared against it.
+        let candidate = codexPipeline.ingest(hook: payload)
+        codexShadowCapture = []
+        defer { flushCodexShadow(candidate: candidate) }
+
         switch payload.hookEventName {
         case .sessionStart:
             let event = AgentEvent.sessionStarted(
@@ -558,6 +584,21 @@ public final class BridgeServer: @unchecked Sendable {
             synchronizeJumpTarget(for: payload)
             synchronizeCodexMetadata(for: payload)
 
+            // Codex fires this hook whatever the user's approval mode is. Only
+            // hold it — and only show a card — when the user has asked to be
+            // asked. Anything else is answered at once, so auto-approve stays
+            // automatic and plan mode stays inert (#559, #638).
+            switch CodexApprovalRouting.route(mode: payload.permissionMode, toolName: payload.toolName) {
+            case .autoAllow:
+                send(.response(.codexHookDirective(.permissionRequest(.allow))), to: clientID)
+                return
+            case let .autoDeny(message):
+                send(.response(.codexHookDirective(.permissionRequest(.deny(message: message)))), to: clientID)
+                return
+            case .askUser:
+                break
+            }
+
             emit(
                 .permissionRequested(
                     PermissionRequested(
@@ -612,6 +653,83 @@ public final class BridgeServer: @unchecked Sendable {
                     SessionCompleted(
                         sessionID: payload.sessionID,
                         summary: summary,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .sessionEnd:
+            // The session is over — not merely a turn. Stop is a turn boundary
+            // and must never be read as this; keeping them apart is what stops
+            // a session from showing as running after the user has quit.
+            ensureSessionExists(for: payload)
+            codexActiveSubagents.removeValue(forKey: payload.sessionID)
+            emit(
+                .sessionCompleted(
+                    SessionCompleted(
+                        sessionID: payload.sessionID,
+                        summary: payload.reason.map { "Session ended: \($0)" } ?? "Codex session ended.",
+                        timestamp: .now,
+                        isInterrupt: false,
+                        isSessionEnd: true
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .turnStart:
+            ensureSessionExists(for: payload)
+            synchronizeJumpTarget(for: payload)
+            synchronizeCodexMetadata(for: payload)
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitStartSummary,
+                        phase: .running,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .subagentStart, .subagentStop:
+            ensureSessionExists(for: payload)
+            synchronizeJumpTarget(for: payload)
+            let delta = payload.hookEventName == .subagentStart ? 1 : -1
+            let count = max(0, (codexActiveSubagents[payload.sessionID] ?? 0) + delta)
+            codexActiveSubagents[payload.sessionID] = count
+            if let existing = localState.session(id: payload.sessionID) {
+                var metadata = mergedCodexMetadata(
+                    existing: existing.codexMetadata,
+                    update: payload.defaultCodexMetadata,
+                    hookEventName: payload.hookEventName
+                )
+                metadata.activeSubagentCount = count
+                if existing.codexMetadata != metadata {
+                    emit(
+                        .sessionMetadataUpdated(
+                            SessionMetadataUpdated(
+                                sessionID: payload.sessionID,
+                                codexMetadata: metadata,
+                                timestamp: .now
+                            )
+                        )
+                    )
+                }
+            }
+            send(.response(.acknowledged), to: clientID)
+
+        case .preCompact:
+            ensureSessionExists(for: payload)
+            synchronizeJumpTarget(for: payload)
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitStartSummary,
+                        phase: .running,
                         timestamp: .now
                     )
                 )
@@ -2044,7 +2162,8 @@ public final class BridgeServer: @unchecked Sendable {
                 existing: existing?.currentCommandPreview,
                 update: update.currentCommandPreview,
                 hookEventName: hookEventName
-            )
+            ),
+            activeSubagentCount: update.activeSubagentCount ?? existing?.activeSubagentCount
         )
     }
 
@@ -2058,7 +2177,8 @@ public final class BridgeServer: @unchecked Sendable {
         }
 
         switch hookEventName {
-        case .userPromptSubmit, .postToolUse, .stop:
+        case .userPromptSubmit, .postToolUse, .stop,
+             .sessionEnd, .subagentStart, .subagentStop, .turnStart, .preCompact:
             return nil
         case .sessionStart, .preToolUse, .permissionRequest:
             return existing
@@ -2468,7 +2588,8 @@ public final class BridgeServer: @unchecked Sendable {
         }
 
         switch hookEventName {
-        case .userPromptSubmit, .postToolUse, .stop:
+        case .userPromptSubmit, .postToolUse, .stop,
+             .sessionEnd, .subagentStart, .subagentStop, .turnStart, .preCompact:
             return nil
         case .sessionStart, .preToolUse, .permissionRequest:
             return existing
@@ -2492,7 +2613,8 @@ public final class BridgeServer: @unchecked Sendable {
             response = .codexHookDirective(
                 .permissionRequest(.deny(message: message ?? "Permission denied in Open Island."))
             )
-        case (.sessionStart, _), (.postToolUse, _), (.userPromptSubmit, _), (.stop, _):
+        case (.sessionStart, _), (.postToolUse, _), (.userPromptSubmit, _), (.stop, _),
+             (.sessionEnd, _), (.subagentStart, _), (.subagentStop, _), (.turnStart, _), (.preCompact, _):
             assertionFailure("Unexpected Codex hook waiting for permission.")
             response = .acknowledged
         }
@@ -2663,8 +2785,25 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func emit(_ event: AgentEvent) {
+        if codexShadowCapture != nil {
+            codexShadowCapture?.append(event)
+            return
+        }
         localState.apply(event)
         broadcast([.event(event)])
+    }
+
+    /// Resolve a captured Codex hook: apply the events from whichever path is
+    /// in charge, and record how the other one differed.
+    private func flushCodexShadow(candidate: [AgentEvent]) {
+        guard let legacy = codexShadowCapture else { return }
+        codexShadowCapture = nil
+        if codexPipeline.drivesUI {
+            candidate.forEach(emit)
+        } else {
+            legacy.forEach(emit)
+            codexPipeline.recordDivergence(legacy: legacy, candidate: candidate)
+        }
     }
 
     private func hasSession(id: String) -> Bool {

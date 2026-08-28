@@ -26,6 +26,38 @@ final class SessionDiscoveryCoordinator {
 
     @ObservationIgnored
     var onStatusMessage: ((String) -> Void)?
+    /// The rewritten Codex ingestion layer, fed every transcript the legacy
+    /// discovery finds so the two can be compared at the session level. The
+    /// startup scan runs off the main actor and receives it as a parameter
+    /// instead; the pipeline itself is thread-safe.
+    var codexPipeline: CodexIngestionPipeline?
+
+    /// Fold discovered transcripts into the rewritten pipeline and record how
+    /// its idea of the session list differs from the legacy one.
+    nonisolated private func shadowCodexDiscovery(
+        _ records: [CodexTrackedSessionRecord],
+        into pipeline: CodexIngestionPipeline?,
+        comparingAgainst legacyVisible: Set<String>? = nil
+    ) {
+        guard let pipeline, !records.isEmpty else { return }
+        // Codex.app moves a thread's transcript into archived_sessions/ when
+        // the user archives it. That is an identity signal, not a liveness
+        // one — the thread is simply no longer part of the active list — so
+        // archived transcripts are left out of cold start rather than restored
+        // and then marked ended.
+        let archived = CodexArchivedSessionIndex.archivedSessionIDs()
+        for record in records where !archived.contains(record.sessionID) {
+            guard let path = record.codexMetadata?.transcriptPath else { continue }
+            _ = pipeline.ingest(rolloutFile: URL(fileURLWithPath: path))
+        }
+        // The legacy path shows persisted records *and* discovered transcripts;
+        // comparing against only one of them reported a phantom mismatch. The
+        // periodic rescan passes nothing and records no line — it would
+        // otherwise restate the same comparison every ten seconds.
+        if let legacyVisible {
+            pipeline.recordColdStartComparison(legacySessionIDs: legacyVisible)
+        }
+    }
 
     @ObservationIgnored
     var stateAccessor: (() -> SessionState)?
@@ -83,7 +115,9 @@ final class SessionDiscoveryCoordinator {
     // MARK: - Startup discovery
 
     /// Performs all startup file I/O off the main thread and returns the raw results.
-    nonisolated func loadStartupDiscoveryPayload() -> StartupDiscoveryPayload {
+    nonisolated func loadStartupDiscoveryPayload(
+        codexPipeline: CodexIngestionPipeline? = nil
+    ) -> StartupDiscoveryPayload {
         let cutoff = Date.now.addingTimeInterval(-86_400)
 
         let allCodex = (try? codexSessionStore.load()) ?? []
@@ -98,7 +132,19 @@ final class SessionDiscoveryCoordinator {
         let allCursor = (try? cursorSessionRegistry.load()) ?? []
         let cursorRecords = allCursor.filter { $0.updatedAt >= cutoff && $0.shouldRestoreToLiveState }
 
+        // Persisted records go in first: they carry the terminal identity that
+        // transcripts cannot, and a later rollout read must not downgrade it.
+        if let codexPipeline {
+            for record in codexRecords {
+                _ = codexPipeline.ingest(restored: record)
+            }
+        }
         let discoveredCodex = codexRolloutDiscovery.discoverRecentSessions()
+        shadowCodexDiscovery(
+            discoveredCodex,
+            into: codexPipeline,
+            comparingAgainst: Set(codexRecords.map(\.sessionID)).union(discoveredCodex.map(\.sessionID))
+        )
         let discoveredClaude = claudeTranscriptDiscovery.discoverRecentSessions()
 
         return StartupDiscoveryPayload(
@@ -432,6 +478,7 @@ final class SessionDiscoveryCoordinator {
     }
 
     private func applyCodexAppRediscovery(_ records: [CodexTrackedSessionRecord]) {
+        shadowCodexDiscovery(records, into: codexPipeline)
         let existingIDs = Set(state.sessions.filter { $0.tool == .codex }.map(\.id))
         let existingPaths = Set(state.sessions.compactMap(\.codexMetadata?.transcriptPath))
 

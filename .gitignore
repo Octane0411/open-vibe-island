@@ -26,3 +26,8 @@ output/
 *.tmp
 .worktrees/
 .air/
+
+# Codex transcript fixtures are generated locally from the maintainer's own
+# session history and never committed. Regenerate with:
+#   python3 scripts/codex-fixtures.py --source ~/.codex/sessions --out Tests/Fixtures/codex-rollouts
+Tests/Fixtures/codex-rollouts/
