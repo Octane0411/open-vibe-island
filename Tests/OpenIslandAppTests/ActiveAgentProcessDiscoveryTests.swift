@@ -215,6 +215,88 @@ struct ActiveAgentProcessDiscoveryTests {
         #expect(snapshots.first?.sessionID == "6f7b9f8a-2bd0-48b4-a497-9801dd191d03")
     }
 
+    @Test
+    func lsofSuccessOutputIsCachedWithinTTL() {
+        let state = DiscoveryTestState(now: Date(timeIntervalSince1970: 1_000))
+        let discovery = ActiveAgentProcessDiscovery(
+            commandRunner: { executablePath, arguments in
+                if executablePath == "/bin/ps" {
+                    return """
+                      102 301 ttys002 /Users/test/.local/bin/claude
+                      301 900 ttys002 -/opt/homebrew/bin/fish
+                      900 1 ?? /Applications/Ghostty.app/Contents/MacOS/ghostty
+                    """
+                }
+
+                guard executablePath == "/usr/sbin/lsof",
+                      arguments.dropFirst(2).first == "102" else {
+                    return nil
+                }
+
+                state.incrementLSOFLookups()
+                return """
+                fcwd
+                n/tmp/open-island
+                """
+            },
+            dateProvider: { state.now },
+            lsofCacheTTL: 10
+        )
+
+        _ = discovery.discover()
+        _ = discovery.discover()
+        #expect(state.lsofLookups == 1)
+
+        state.advance(by: 11)
+        _ = discovery.discover()
+        #expect(state.lsofLookups == 2)
+    }
+
+    @Test
+    func lsofFailureOutputIsNotCached() {
+        let state = DiscoveryTestState(now: Date(timeIntervalSince1970: 1_000))
+        let discovery = ActiveAgentProcessDiscovery(
+            commandRunner: { executablePath, arguments in
+                if executablePath == "/bin/ps" {
+                    return """
+                      102 301 ttys002 /Users/test/.local/bin/claude
+                      301 900 ttys002 -/opt/homebrew/bin/fish
+                      900 1 ?? /Applications/Ghostty.app/Contents/MacOS/ghostty
+                    """
+                }
+
+                guard executablePath == "/usr/sbin/lsof",
+                      arguments.dropFirst(2).first == "102" else {
+                    return nil
+                }
+
+                let lsofLookups = state.incrementLSOFLookups()
+                guard lsofLookups > 1 else {
+                    return nil
+                }
+
+                return """
+                fcwd
+                n/tmp/open-island
+                """
+            },
+            dateProvider: { state.now },
+            lsofCacheTTL: 10
+        )
+
+        #expect(discovery.discover().isEmpty)
+        #expect(discovery.discover() == [
+            .init(
+                tool: .claudeCode,
+                sessionID: nil,
+                workingDirectory: "/tmp/open-island",
+                terminalTTY: "/dev/ttys002",
+                terminalApp: "Ghostty"
+            ),
+        ])
+        #expect(state.lsofLookups == 2)
+    }
+
     /// VS Code forks (Cursor, Windsurf, Trae, Qoder) bundle Electron's "Code
     /// Helper" inside their .app bundles. Their helper paths therefore contain
     /// both "/<fork>.app/" and "/code helper", and Open Island used to match
@@ -290,5 +372,41 @@ struct ActiveAgentProcessDiscoveryTests {
         #expect(openCodeSnapshots.count == 1)
         #expect(openCodeSnapshots.first?.workingDirectory == "/tmp/open-island")
         #expect(openCodeSnapshots.first?.terminalTTY == nil)
+    }
+}
+
+private final class DiscoveryTestState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedNow: Date
+    private var storedLSOFLookups = 0
+
+    init(now: Date) {
+        self.storedNow = now
+    }
+
+    var now: Date {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedNow
+    }
+
+    var lsofLookups: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedLSOFLookups
+    }
+
+    func advance(by interval: TimeInterval) {
+        lock.lock()
+        storedNow = storedNow.addingTimeInterval(interval)
+        lock.unlock()
+    }
+
+    @discardableResult
+    func incrementLSOFLookups() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        storedLSOFLookups += 1
+        return storedLSOFLookups
     }
 }
