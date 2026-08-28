@@ -315,6 +315,71 @@ struct CodexFixtureCorpusTests {
         #expect(reading.observation?.patch.narrative?.lastUserPrompt == nil)
     }
 
+    @Test("a running session whose transcript went quiet stops claiming to run")
+    func stalledRunningSessionIsRecovered() throws {
+        // Seen in the wild: a Codex.app session opened and never used. Its
+        // transcript holds only session_meta, so the file exists and the
+        // vanished-transcript rescue never fires — the row sat at "running"
+        // for 27 hours and inflated the running count.
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("codex-stall-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let transcript = dir.appendingPathComponent("rollout-empty.jsonl")
+        try #"{"type":"session_meta","payload":{"id":"s1","cwd":"/tmp"}}"#.write(
+            to: transcript, atomically: true, encoding: .utf8
+        )
+        let old = Date().addingTimeInterval(-CodexAppSessionReconciler.stalledTranscriptTimeout - 60)
+        try FileManager.default.setAttributes([.modificationDate: old], ofItemAtPath: transcript.path)
+
+        var session = AgentSession(
+            id: "s1", title: "Codex · personal", tool: .codex, origin: .live,
+            attachmentState: .detached, phase: .running, summary: "",
+            updatedAt: old,
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app", workspaceName: "personal", paneTitle: "personal"
+            ),
+            codexMetadata: CodexSessionMetadata(transcriptPath: transcript.path)
+        )
+        session.isCodexAppSession = true
+
+        let events = CodexAppSessionReconciler.reconciliationEvents(
+            for: [session], archivedSessionIDs: []
+        )
+        guard case let .activityUpdated(update)? = events.first else {
+            Issue.record("a stalled session should be recovered, got \(events)")
+            return
+        }
+        #expect(update.phase == .completed)
+    }
+
+    @Test("a running session still writing its transcript is left alone")
+    func activeSessionIsNotRecovered() throws {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("codex-live-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let transcript = dir.appendingPathComponent("rollout-live.jsonl")
+        try #"{"type":"session_meta","payload":{"id":"s2","cwd":"/tmp"}}"#.write(
+            to: transcript, atomically: true, encoding: .utf8
+        )
+
+        var session = AgentSession(
+            id: "s2", title: "Codex · personal", tool: .codex, origin: .live,
+            attachmentState: .attached, phase: .running, summary: "",
+            updatedAt: .now,
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app", workspaceName: "personal", paneTitle: "personal"
+            ),
+            codexMetadata: CodexSessionMetadata(transcriptPath: transcript.path)
+        )
+        session.isCodexAppSession = true
+
+        #expect(CodexAppSessionReconciler.reconciliationEvents(
+            for: [session], archivedSessionIDs: []
+        ).isEmpty)
+    }
+
     @Test("unrecognized record types are counted rather than dropped")
     func driftIsReported() {
         let diagnostics = CodexDiagnostics()

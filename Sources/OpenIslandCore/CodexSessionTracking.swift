@@ -321,17 +321,37 @@ public enum CodexAppSessionReconciler {
             return nil
         }
         guard fileManager.fileExists(atPath: transcriptPath) else {
-            return .activityUpdated(
-                SessionActivityUpdated(
-                    sessionID: session.id,
-                    summary: "Turn stalled.",
-                    phase: .completed,
-                    timestamp: now
-                )
-            )
+            return stalledTurn(session, now: now)
+        }
+
+        // A turn that is genuinely running keeps appending to its transcript —
+        // reasoning, tool calls, output. A file that has not been written to in
+        // this long while the session still claims to be running means the turn
+        // is over and we missed the ending, so the row would otherwise sit at
+        // "running" forever. The same happens to a session Codex opened and
+        // never used: its transcript holds only `session_meta`.
+        let modifiedAt = (try? fileManager.attributesOfItem(atPath: transcriptPath)[.modificationDate] as? Date)
+            ?? nil
+        if let modifiedAt, now.timeIntervalSince(modifiedAt) > stalledTranscriptTimeout {
+            return stalledTurn(session, now: now)
         }
 
         return nil
+    }
+
+    /// How long a running session's transcript may go untouched before the turn
+    /// is treated as over. Generous: a long turn still writes as it works.
+    static let stalledTranscriptTimeout: TimeInterval = 30 * 60
+
+    private static func stalledTurn(_ session: AgentSession, now: Date) -> AgentEvent {
+        .activityUpdated(
+            SessionActivityUpdated(
+                sessionID: session.id,
+                summary: "Turn stalled.",
+                phase: .completed,
+                timestamp: now
+            )
+        )
     }
 
     private static func isArchivedTranscriptPath(_ transcriptPath: String?) -> Bool {
