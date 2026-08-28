@@ -1191,8 +1191,8 @@ public extension ClaudeHookPayload {
         // Conductor (conductor.build) runs the agent as a TTY-less subprocess,
         // so there is no terminal and TERM_PROGRAM is unset; it stamps its own
         // env identifiers instead. Checked before TERM_PROGRAM like Claude.app.
-        if environment["CONDUCTOR_SESSION_ID"] != nil
-            || environment["CONDUCTOR_WORKSPACE_ID"] != nil
+        if environment["CONDUCTOR_SESSION_ID"]?.isEmpty == false
+            || environment["CONDUCTOR_WORKSPACE_ID"]?.isEmpty == false
             || environment["__CFBundleIdentifier"]?.lowercased() == "com.conductor.app" {
             return "Conductor"
         }

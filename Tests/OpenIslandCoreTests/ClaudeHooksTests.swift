@@ -385,6 +385,22 @@ struct ClaudeHooksTests {
         #expect(payload.terminalApp == "Conductor")
     }
 
+    /// An empty Conductor marker (e.g. `CONDUCTOR_WORKSPACE_ID=""`) must not be
+    /// treated as a valid identifier — otherwise any process carrying an empty
+    /// marker would be misclassified as Conductor.
+    @Test
+    func claudeInferTerminalAppIgnoresEmptyConductorMarkers() {
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: ["CONDUCTOR_SESSION_ID": "", "CONDUCTOR_WORKSPACE_ID": ""],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+        )
+
+        #expect(payload.terminalApp != "Conductor")
+    }
+
     /// Verifies a Claude Desktop session is tagged `Claude.app` via the
     /// authoritative `CLAUDE_CODE_ENTRYPOINT=claude-desktop` signal. The
     /// desktop subprocess is TTY-less and invisible to process discovery, so
