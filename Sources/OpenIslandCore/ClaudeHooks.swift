@@ -261,6 +261,10 @@ public struct ClaudeSessionMetadata: Equatable, Codable, Sendable {
     public var worktreeBranch: String?
     public var activeSubagents: [ClaudeSubagentInfo]
     public var activeTasks: [ClaudeTaskInfo]
+    /// Claude Code's auto-generated short title for the session (the
+    /// `aiTitle`/`summary` line at the top of the transcript JSONL).
+    /// Used as the primary label in the island session list when present.
+    public var aiTitle: String?
 
     public init(
         transcriptPath: String? = nil,
@@ -276,7 +280,8 @@ public struct ClaudeSessionMetadata: Equatable, Codable, Sendable {
         agentType: String? = nil,
         worktreeBranch: String? = nil,
         activeSubagents: [ClaudeSubagentInfo] = [],
-        activeTasks: [ClaudeTaskInfo] = []
+        activeTasks: [ClaudeTaskInfo] = [],
+        aiTitle: String? = nil
     ) {
         self.transcriptPath = transcriptPath
         self.initialUserPrompt = initialUserPrompt
@@ -292,6 +297,7 @@ public struct ClaudeSessionMetadata: Equatable, Codable, Sendable {
         self.worktreeBranch = worktreeBranch
         self.activeSubagents = activeSubagents
         self.activeTasks = activeTasks
+        self.aiTitle = aiTitle
     }
 
     public var isEmpty: Bool {
@@ -309,6 +315,7 @@ public struct ClaudeSessionMetadata: Equatable, Codable, Sendable {
             && worktreeBranch == nil
             && activeSubagents.isEmpty
             && activeTasks.isEmpty
+            && aiTitle == nil
     }
 }
 
