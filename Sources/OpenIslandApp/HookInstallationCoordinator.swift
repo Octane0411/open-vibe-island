@@ -1051,13 +1051,10 @@ final class HookInstallationCoordinator {
 
     func installClaudeUsageBridge() {
         updateClaudeUsageBridge(userMessage: "Installing Claude usage bridge.", intent: .installed) { manager in
-            do {
-                return try manager.install()
-            } catch ClaudeStatusLineInstallationError.existingStatusLineConflict {
-                // User already has a custom statusLine (e.g. claude-hud). Install as a
-                // wrapper so their script keeps running and we still get rate_limits.
-                return try manager.installAsWrapper()
-            }
+            // Managed install, auto-wrapping any existing custom statusLine
+            // (e.g. claude-hud) so the user's script keeps running and we still
+            // capture rate_limits. Shared with the OpenIslandSetup CLI.
+            try manager.installPreservingExisting()
         }
     }
 
