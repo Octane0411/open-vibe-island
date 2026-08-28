@@ -440,6 +440,63 @@ struct SessionStateTests {
         #expect(state.runningCount == 2)
     }
 
+    /// Models a transcript-discovered Claude Code session — `.completed`
+    /// phase, no hook management, no live process — which is exactly the
+    /// shape `ClaudeTranscriptDiscovery` produces and which `isVisibleInIsland`
+    /// rejects (#424).
+    private static func transcriptDiscoveredSession(updatedAt: Date) -> AgentSession {
+        AgentSession(
+            id: "transcript-\(updatedAt.timeIntervalSince1970)",
+            title: "Claude · workspace",
+            tool: .claudeCode,
+            attachmentState: .stale,
+            phase: .completed,
+            summary: "From transcript",
+            updatedAt: updatedAt
+        )
+    }
+
+    @Test
+    func removeInvisibleSessionsKeepsRecentlyUpdatedInvisibleSession() {
+        let now = Date()
+        var state = SessionState(
+            sessions: [Self.transcriptDiscoveredSession(updatedAt: now.addingTimeInterval(-2))]
+        )
+
+        let mutated = state.removeInvisibleSessions(graceWindow: 10, now: now)
+
+        #expect(mutated == false)
+        #expect(state.sessions.count == 1)
+    }
+
+    @Test
+    func removeInvisibleSessionsDropsStaleInvisibleSession() {
+        let now = Date()
+        var state = SessionState(
+            sessions: [Self.transcriptDiscoveredSession(updatedAt: now.addingTimeInterval(-30))]
+        )
+
+        let mutated = state.removeInvisibleSessions(graceWindow: 10, now: now)
+
+        #expect(mutated == true)
+        #expect(state.sessions.isEmpty)
+    }
+
+    @Test
+    func removeInvisibleSessionsBackwardsCompatibleDefaultZero() {
+        let now = Date()
+        var state = SessionState(
+            sessions: [Self.transcriptDiscoveredSession(updatedAt: now.addingTimeInterval(-2))]
+        )
+
+        // No grace window → original behaviour: invisible sessions are
+        // dropped immediately regardless of recency.
+        let mutated = state.removeInvisibleSessions()
+
+        #expect(mutated == true)
+        #expect(state.sessions.isEmpty)
+    }
+
     @Test
     func bridgeEnvelopeRoundTripsThroughLineCodec() throws {
         let envelope = BridgeEnvelope.event(
