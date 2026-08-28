@@ -56,10 +56,29 @@ public struct SessionState: Equatable, Sendable {
     public mutating func apply(_ event: AgentEvent) {
         switch event {
         case let .sessionStarted(payload):
-            let preservedFirstSeenAt = sessionsByID[payload.sessionID]?.firstSeenAt
+            let existingSession = sessionsByID[payload.sessionID]
+            let preservedFirstSeenAt = existingSession?.firstSeenAt
+            var codexMetadata = payload.codexMetadata
+            if payload.tool == .codex,
+               let existingCodexMetadata = existingSession?.codexMetadata {
+                var preservedMetadata = codexMetadata ?? CodexSessionMetadata()
+                preservedMetadata.transcriptPath = preservedMetadata.transcriptPath ?? existingCodexMetadata.transcriptPath
+                preservedMetadata.threadName = preservedMetadata.threadName ?? existingCodexMetadata.threadName
+                preservedMetadata.initialUserPrompt = preservedMetadata.initialUserPrompt ?? existingCodexMetadata.initialUserPrompt
+                preservedMetadata.lastUserPrompt = preservedMetadata.lastUserPrompt ?? existingCodexMetadata.lastUserPrompt
+                preservedMetadata.lastAssistantMessage = preservedMetadata.lastAssistantMessage ?? existingCodexMetadata.lastAssistantMessage
+                preservedMetadata.currentTool = preservedMetadata.currentTool ?? existingCodexMetadata.currentTool
+                preservedMetadata.currentCommandPreview = preservedMetadata.currentCommandPreview ?? existingCodexMetadata.currentCommandPreview
+                codexMetadata = preservedMetadata
+            }
+            let title = payload.tool == .codex
+                && payload.codexMetadata?.threadName == nil
+                && existingSession?.codexMetadata?.threadName != nil
+                ? existingSession?.title ?? payload.title
+                : payload.title
             var session = AgentSession(
                 id: payload.sessionID,
-                title: payload.title,
+                title: title,
                 tool: payload.tool,
                 origin: payload.origin,
                 attachmentState: .attached,
@@ -68,7 +87,7 @@ public struct SessionState: Equatable, Sendable {
                 updatedAt: payload.timestamp,
                 firstSeenAt: preservedFirstSeenAt,
                 jumpTarget: payload.jumpTarget,
-                codexMetadata: payload.codexMetadata?.isEmpty == true ? nil : payload.codexMetadata,
+                codexMetadata: codexMetadata?.isEmpty == true ? nil : codexMetadata,
                 claudeMetadata: payload.claudeMetadata?.isEmpty == true ? nil : payload.claudeMetadata,
                 geminiMetadata: payload.geminiMetadata?.isEmpty == true ? nil : payload.geminiMetadata,
                 openCodeMetadata: payload.openCodeMetadata?.isEmpty == true ? nil : payload.openCodeMetadata,
@@ -166,7 +185,9 @@ public struct SessionState: Equatable, Sendable {
                 return
             }
 
-            session.codexMetadata = payload.codexMetadata.isEmpty ? nil : payload.codexMetadata
+            var metadata = payload.codexMetadata
+            metadata.threadName = metadata.threadName ?? session.codexMetadata?.threadName
+            session.codexMetadata = metadata.isEmpty ? nil : metadata
             session.updatedAt = payload.timestamp
             upsert(session)
 

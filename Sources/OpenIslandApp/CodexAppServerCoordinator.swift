@@ -21,6 +21,11 @@ final class CodexAppServerCoordinator {
     @ObservationIgnored
     var onEvent: ((AgentEvent) -> Void)?
 
+    /// Delivers Codex's generated thread name without rebuilding the session
+    /// and clobbering its live phase, prompt, or attachment state.
+    @ObservationIgnored
+    var onThreadNameUpdated: ((String, String) -> Void)?
+
     /// Callback to log status messages.
     @ObservationIgnored
     var onStatusMessage: ((String) -> Void)?
@@ -40,6 +45,9 @@ final class CodexAppServerCoordinator {
     /// already connected or a connection attempt is in progress.
     func ensureConnected() {
         guard !isConnected, connectTask == nil else { return }
+        guard !NSRunningApplication.runningApplications(
+            withBundleIdentifier: "com.openai.codex"
+        ).isEmpty else { return }
 
         // Resolve the Codex.app bundle location dynamically — users may
         // have installed Codex outside `/Applications` (e.g. ~/Applications).
@@ -101,7 +109,10 @@ final class CodexAppServerCoordinator {
                 // Skip threads already tracked — re-emitting sessionStarted
                 // rebuilds the AgentSession and would wipe richer state
                 // already accumulated from hooks or rediscovery.
-                if isSessionTracked?(thread.id) == true { continue }
+                if isSessionTracked?(thread.id) == true {
+                    emitThreadNameIfPresent(from: thread)
+                    continue
+                }
                 emitSessionStarted(from: thread)
                 created += 1
             }
@@ -115,11 +126,14 @@ final class CodexAppServerCoordinator {
 
     // MARK: - Notification handling
 
-    private func handleNotification(_ notification: CodexAppServerNotification) {
+    func handleNotification(_ notification: CodexAppServerNotification) {
         switch notification {
         case .threadStarted(let thread):
             guard !thread.ephemeral else { return }
-            guard isSessionTracked?(thread.id) != true else { return }
+            guard isSessionTracked?(thread.id) != true else {
+                emitThreadNameIfPresent(from: thread)
+                return
+            }
             emitSessionStarted(from: thread)
 
         case .threadStatusChanged(let threadId, let status):
@@ -195,12 +209,8 @@ final class CodexAppServerCoordinator {
                 )
             ))
 
-        case .threadNameUpdated:
-            // Title updates don't have a dedicated AgentEvent and we can't
-            // safely overwrite phase/summary here (would clobber running or
-            // waiting-for-approval state).  Skip for now — the title is
-            // populated at sessionStarted time which is usually enough.
-            break
+        case .threadNameUpdated(let threadId, let name):
+            emitThreadName(threadId: threadId, name: name)
 
         case .turnStarted(let threadId, _):
             onEvent?(.activityUpdated(
@@ -240,9 +250,23 @@ final class CodexAppServerCoordinator {
 
     // MARK: - Helpers
 
+    private func emitThreadNameIfPresent(from thread: CodexThread) {
+        emitThreadName(threadId: thread.id, name: thread.name)
+    }
+
+    private func emitThreadName(threadId: String, name: String?) {
+        guard let name else { return }
+        let threadName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !threadName.isEmpty else { return }
+        onThreadNameUpdated?(threadId, threadName)
+    }
+
     private func emitSessionStarted(from thread: CodexThread) {
         let workspaceName = URL(fileURLWithPath: thread.cwd).lastPathComponent
-        let title = thread.name ?? workspaceName
+        let trimmedThreadName = thread.name?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let threadName = trimmedThreadName.flatMap { $0.isEmpty ? nil : $0 }
+        let title = "Codex · \(threadName ?? workspaceName)"
         let summary = thread.preview.isEmpty ? "Codex session." : String(thread.preview.prefix(120))
 
         let phase: SessionPhase
@@ -270,6 +294,7 @@ final class CodexAppServerCoordinator {
                 ),
                 codexMetadata: CodexSessionMetadata(
                     transcriptPath: thread.path,
+                    threadName: threadName,
                     initialUserPrompt: thread.preview.isEmpty ? nil : thread.preview
                 )
             )

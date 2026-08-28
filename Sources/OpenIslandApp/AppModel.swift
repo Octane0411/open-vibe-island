@@ -671,6 +671,9 @@ final class AppModel {
         codexAppServer.onEvent = { [weak self] event in
             self?.applyTrackedEvent(event, ingress: .bridge)
         }
+        codexAppServer.onThreadNameUpdated = { [weak self] sessionID, threadName in
+            self?.discovery.applyCodexThreadNames([sessionID: threadName])
+        }
         codexAppServer.onStatusMessage = { [weak self] message in
             self?.lastActionMessage = message
         }
@@ -1074,6 +1077,11 @@ final class AppModel {
 
         if loadRuntimeState {
             isResolvingInitialLiveSessions = true
+
+            // Thread names and live app-server events should not wait for the
+            // potentially expensive transcript discovery pass to finish.
+            discovery.startCodexThreadNameMonitoringIfNeeded()
+            codexAppServer.ensureConnected()
 
             Task.detached(priority: .userInitiated) { [weak self] in
                 guard let self else { return }

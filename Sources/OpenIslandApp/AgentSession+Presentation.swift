@@ -132,6 +132,16 @@ extension AgentSession {
         return HexEscapedUTF8.decodeIfNeeded(trimmedTitle)
     }
 
+    var spotlightSessionName: String {
+        if tool == .codex,
+           let threadName = codexMetadata?.threadName?.trimmedForSurface,
+           !threadName.isEmpty {
+            return threadName
+        }
+
+        return spotlightWorkspaceName
+    }
+
     var spotlightWorktreeBranch: String? {
         // This is a SwiftUI computed property read on every layout
         // pass. It MUST stay free of filesystem IO. Calling
@@ -169,7 +179,7 @@ extension AgentSession {
     }
 
     var spotlightHeadlineText: String {
-        var headline = spotlightWorkspaceName
+        var headline = spotlightSessionName
 
         if let branch = spotlightWorktreeBranch {
             headline += " (\(branch))"

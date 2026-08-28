@@ -5,6 +5,119 @@ import Testing
 
 /// Regression coverage for core session lifecycle and visibility behavior.
 struct SessionStateTests {
+    @Test
+    func codexMetadataUpdatesPreserveIndexedThreadName() {
+        let startedAt = Date(timeIntervalSince1970: 1_000)
+        var state = SessionState()
+
+        state.apply(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: "codex-named",
+                    title: "Codex · Open-Vibe-Island Fork",
+                    tool: .codex,
+                    origin: .live,
+                    summary: "Working",
+                    timestamp: startedAt,
+                    codexMetadata: CodexSessionMetadata(
+                        transcriptPath: "/tmp/codex.jsonl",
+                        threadName: "Open-Vibe-Island Fork",
+                        initialUserPrompt: "Fix the title."
+                    )
+                )
+            )
+        )
+
+        state.apply(
+            .sessionMetadataUpdated(
+                SessionMetadataUpdated(
+                    sessionID: "codex-named",
+                    codexMetadata: CodexSessionMetadata(
+                        transcriptPath: "/tmp/codex.jsonl",
+                        initialUserPrompt: "Fix the title.",
+                        lastUserPrompt: "Keep the generated name."
+                    ),
+                    timestamp: startedAt.addingTimeInterval(5)
+                )
+            )
+        )
+
+        #expect(state.session(id: "codex-named")?.codexMetadata?.threadName == "Open-Vibe-Island Fork")
+        #expect(state.session(id: "codex-named")?.codexMetadata?.lastUserPrompt == "Keep the generated name.")
+
+        state.apply(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: "codex-named",
+                    title: "Codex · had",
+                    tool: .codex,
+                    origin: .live,
+                    summary: "Resumed from a hook",
+                    timestamp: startedAt.addingTimeInterval(10),
+                    codexMetadata: CodexSessionMetadata(
+                        transcriptPath: "/tmp/codex.jsonl",
+                        initialUserPrompt: "Fix the title."
+                    )
+                )
+            )
+        )
+
+        #expect(state.session(id: "codex-named")?.title == "Codex · Open-Vibe-Island Fork")
+        #expect(state.session(id: "codex-named")?.codexMetadata?.threadName == "Open-Vibe-Island Fork")
+    }
+
+    @Test
+    func codexSessionRestartPreservesMetadataMissingFromHookPayload() {
+        let startedAt = Date(timeIntervalSince1970: 1_000)
+        var state = SessionState()
+
+        state.apply(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: "codex-restart",
+                    title: "Codex · Open-Vibe-Island Fork",
+                    tool: .codex,
+                    origin: .live,
+                    summary: "Working",
+                    timestamp: startedAt,
+                    codexMetadata: CodexSessionMetadata(
+                        transcriptPath: "/tmp/codex-restart.jsonl",
+                        threadName: "Open-Vibe-Island Fork",
+                        initialUserPrompt: "Fix the title.",
+                        lastUserPrompt: "Inspect the session index.",
+                        lastAssistantMessage: "I found the index entry.",
+                        currentTool: "functions.exec",
+                        currentCommandPreview: "swift test"
+                    )
+                )
+            )
+        )
+
+        state.apply(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: "codex-restart",
+                    title: "Codex · had",
+                    tool: .codex,
+                    origin: .live,
+                    summary: "Resumed from a hook",
+                    timestamp: startedAt.addingTimeInterval(10),
+                    codexMetadata: CodexSessionMetadata(lastUserPrompt: "Continue the fix.")
+                )
+            )
+        )
+
+        let metadata = state.session(id: "codex-restart")?.codexMetadata
+        #expect(state.session(id: "codex-restart")?.title == "Codex · Open-Vibe-Island Fork")
+        #expect(metadata?.transcriptPath == "/tmp/codex-restart.jsonl")
+        #expect(metadata?.threadName == "Open-Vibe-Island Fork")
+        #expect(metadata?.initialUserPrompt == "Fix the title.")
+        #expect(metadata?.lastUserPrompt == "Continue the fix.")
+        #expect(metadata?.lastAssistantMessage == "I found the index entry.")
+        #expect(metadata?.currentTool == "functions.exec")
+        #expect(metadata?.currentCommandPreview == "swift test")
+    }
+
     /// Completed Codex CLI sessions outside Codex.app should age out even while Codex.app is running.
     @Test
     func completedCodexCLISessionEndsEvenWhenCodexAppIsRunning() {

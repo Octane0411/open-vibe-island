@@ -202,6 +202,7 @@ struct AgentSessionPresentationTests {
                 terminalSessionID: "ghostty-1"
             ),
             codexMetadata: CodexSessionMetadata(
+                threadName: "Open-Vibe-Island Fork",
                 initialUserPrompt: "Start by fixing the island hover behavior.",
                 lastUserPrompt: "Now make the overlay height fit the content.",
                 lastAssistantMessage: "Updating the layout logic."
@@ -209,8 +210,34 @@ struct AgentSessionPresentationTests {
         )
 
         // Headline uses initial prompt (session topic), prompt line uses latest
-        #expect(session.spotlightHeadlineText == "worktree · Start by fixing the island hover behavior.")
+        #expect(session.spotlightHeadlineText == "Open-Vibe-Island Fork · Start by fixing the island hover behavior.")
         #expect(session.spotlightPromptLineText == "You: Now make the overlay height fit the content.")
+    }
+
+    @Test
+    func claudeHeadlineStillUsesWorkspaceName() {
+        let session = AgentSession(
+            id: "claude-session",
+            title: "Claude · worktree",
+            tool: .claudeCode,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Working",
+            updatedAt: Date(timeIntervalSince1970: 10_000),
+            jumpTarget: JumpTarget(
+                terminalApp: "Ghostty",
+                workspaceName: "worktree",
+                paneTitle: "claude ~/tmp/worktree",
+                workingDirectory: "/tmp/worktree",
+                terminalSessionID: "ghostty-claude"
+            ),
+            claudeMetadata: ClaudeSessionMetadata(
+                initialUserPrompt: "Keep the Claude title unchanged."
+            )
+        )
+
+        #expect(session.spotlightHeadlineText == "worktree · Keep the Claude title unchanged.")
     }
 
     @Test
