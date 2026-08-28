@@ -238,12 +238,16 @@ struct TerminalJumpTargetResolver {
         var assignments: [String: TmuxPaneSnapshot] = [:]
 
         for snapshot in snapshots {
-            // TTY match
-            if let session = sessions.first(where: {
+            // TTY match — assign to ALL sessions sharing this TTY (e.g. hook-managed
+            // session + synthetic discovery session in the same pane).
+            let ttyMatches = sessions.filter {
                 assignments[$0.id] == nil
                     && nonEmptyValue($0.jumpTarget?.terminalTTY) == snapshot.tty
-            }) {
-                assignments[session.id] = snapshot
+            }
+            if !ttyMatches.isEmpty {
+                for session in ttyMatches {
+                    assignments[session.id] = snapshot
+                }
                 continue
             }
 
