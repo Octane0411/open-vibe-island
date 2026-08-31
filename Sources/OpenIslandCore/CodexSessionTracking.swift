@@ -257,6 +257,15 @@ public enum CodexArchivedSessionIndex: Sendable {
 }
 
 public enum CodexAppSessionReconciler {
+    /// How long a `.running` Codex.app session's rollout file may stay quiet
+    /// before the session is demoted to `.completed`. Turns that end on a
+    /// reasoning event never flush `turn_complete`, so without this timeout
+    /// such sessions pin at `.running` forever — inflating the session list,
+    /// the `×N` badge, and any "agents are busy" derived state. `waiting`
+    /// phases are never reaped: a quiet file while waiting on the user is
+    /// expected. A later rollout write revives the session.
+    public static let runningStallTimeout: TimeInterval = 600
+
     public static func reconciliationEvents(
         for sessions: [AgentSession],
         archivedSessionIDs: Set<String>,
@@ -320,12 +329,35 @@ public enum CodexAppSessionReconciler {
                     sessionID: session.id,
                     summary: "Turn stalled.",
                     phase: .completed,
-                    timestamp: now
+                    timestamp: now,
+                    isStallReap: true
+                )
+            )
+        }
+
+        // File exists but has been quiet past the stall timeout. The
+        // timestamp preserves the file's real last-write time so the reaped
+        // session goes straight into the idle bucket instead of flashing
+        // "just done" first.
+        if let modifiedAt = Self.fileModificationDate(transcriptPath, fileManager: fileManager),
+           now.timeIntervalSince(modifiedAt) >= Self.runningStallTimeout {
+            return .activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: session.id,
+                    summary: "Turn stalled.",
+                    phase: .completed,
+                    timestamp: modifiedAt,
+                    isStallReap: true
                 )
             )
         }
 
         return nil
+    }
+
+    private static func fileModificationDate(_ path: String, fileManager: FileManager) -> Date? {
+        let attributes = try? fileManager.attributesOfItem(atPath: path)
+        return attributes?[.modificationDate] as? Date
     }
 
     private static func isArchivedTranscriptPath(_ transcriptPath: String?) -> Bool {

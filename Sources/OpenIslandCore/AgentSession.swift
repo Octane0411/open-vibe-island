@@ -401,6 +401,14 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     /// is considered gone. This prevents flicker from momentary `ps` gaps.
     public var processNotSeenCount: Int = 0
 
+    /// True when `.completed` was inferred by the stall reaper (a Codex.app
+    /// session whose rollout file went quiet) rather than a real turn
+    /// completion. Transient by design — never persisted — so a later rollout
+    /// write can revive the session back to `.running`. Without this flag the
+    /// "bridge completion is authoritative" guard would treat any subsequent
+    /// rollout `activityUpdated(running)` event as a stale race and drop it.
+    public var isStallReaped: Bool = false
+
     public init(
         id: String,
         title: String,

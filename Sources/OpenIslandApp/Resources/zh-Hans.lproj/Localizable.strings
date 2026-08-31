@@ -196,6 +196,7 @@
 "island.section.inProgress" = "进行中";
 "island.section.justDone" = "刚完成";
 "island.section.idle" = "空闲";
+"island.idleFold.title" = "%1$lld 个空闲 · 最近活跃 %2$@";
 "island.showAll" = "显示全部 %lld 个会话";
 "island.collapseList" = "收起列表";
 "island.usageWaiting" = "等待用量数据";

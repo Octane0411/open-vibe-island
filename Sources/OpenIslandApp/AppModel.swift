@@ -738,35 +738,60 @@ final class AppModel {
         islandSessionSections.flatMap(\.sessions)
     }
 
+    /// Section id for the collapsed idle row appended to every grouping mode.
+    /// Sessions beyond the completed-stale threshold fold into it instead of
+    /// occupying full rows (see `islandSessionSections`).
+    static let idleFoldSectionID = "idle-fold"
+
     var islandSessionSections: [IslandSessionSection] {
-        let sessions = sortIslandSessions(surfacedSessions)
+        let now = Date.now
+        let threshold = completedStaleThreshold.seconds
+        // `.never` keeps every completed session as a full row.
+        let isFoldable: (AgentSession) -> Bool = { session in
+            session.isStaleCompletedForIsland(at: now, threshold: threshold)
+        }
+        let visibleSessions = sortIslandSessions(surfacedSessions.filter { !isFoldable($0) })
+        let foldedSessions = sortIslandSessions(surfacedSessions.filter(isFoldable))
+
+        var sections: [IslandSessionSection] = []
         switch islandSessionGroup {
         case .none:
-            return [
+            sections = [
                 IslandSessionSection(
                     id: "all",
                     title: "island.section.sessions",
-                    sessions: sessions
+                    sessions: visibleSessions
                 )
             ]
         case .state:
-            return stateGroupedSections(for: sessions)
+            sections = stateGroupedSections(for: visibleSessions)
         case .agent:
-            return AgentTool.allCases.compactMap { tool in
-                let list = sessions.filter { $0.tool == tool }
+            sections = AgentTool.allCases.compactMap { tool in
+                let list = visibleSessions.filter { $0.tool == tool }
                 guard !list.isEmpty else { return nil }
                 return IslandSessionSection(id: "agent-\(tool.rawValue)", title: tool.displayName, sessions: list)
             }
         case .project:
-            let names = Set(sessions.map(projectGroupName(for:))).sorted {
+            let names = Set(visibleSessions.map(projectGroupName(for:))).sorted {
                 $0.localizedStandardCompare($1) == .orderedAscending
             }
-            return names.compactMap { name in
-                let list = sessions.filter { projectGroupName(for: $0) == name }
+            sections = names.compactMap { name in
+                let list = visibleSessions.filter { projectGroupName(for: $0) == name }
                 guard !list.isEmpty else { return nil }
                 return IslandSessionSection(id: "project-\(name)", title: name, sessions: list)
             }
         }
+
+        if !foldedSessions.isEmpty {
+            sections.append(
+                IslandSessionSection(
+                    id: Self.idleFoldSectionID,
+                    title: "island.idleFold.title",
+                    sessions: foldedSessions
+                )
+            )
+        }
+        return sections
     }
 
     var recentSessionCount: Int {
@@ -800,6 +825,8 @@ final class AppModel {
     }
 
     private func stateGroupedSections(for sessions: [AgentSession]) -> [IslandSessionSection] {
+        // Stale-completed sessions are intentionally absent here: they fold
+        // into the collapsed idle row appended by `islandSessionSections`.
         let definitions: [(id: String, title: String, include: (AgentSession) -> Bool)] = [
             ("approval", "island.section.needsApproval", { $0.phase == .waitingForApproval }),
             ("answer", "island.section.needsAnswer", { $0.phase == .waitingForAnswer }),
@@ -807,10 +834,6 @@ final class AppModel {
             ("done", "island.section.justDone", { [completedStaleThreshold] session in
                 session.phase == .completed
                     && !session.isStaleCompletedForIsland(at: .now, threshold: completedStaleThreshold.seconds)
-            }),
-            ("idle", "island.section.idle", { [completedStaleThreshold] session in
-                session.phase == .completed
-                    && session.isStaleCompletedForIsland(at: .now, threshold: completedStaleThreshold.seconds)
             }),
         ]
 
@@ -888,7 +911,10 @@ final class AppModel {
         case .none:
             return nil
         case .count:
-            let n = sessions.count
+            // The badge answers "how many agents need me right now": running
+            // plus waiting states. Idle/folded sessions carry no signal, and
+            // an all-idle island shows no badge at all.
+            let n = sessions.filter { $0.phase == .running || $0.phase.requiresAttention }.count
             guard n > 0 else { return nil }
             return .count(n)
         case .agents:
@@ -1491,10 +1517,14 @@ final class AppModel {
         // back to running. The bridge's sessionCompleted is authoritative; the
         // rollout watcher may have read the JSONL before task_complete was
         // flushed, producing a stale activityUpdated(phase: .running).
+        // Exception: stall-reaped sessions — their completion was inferred
+        // from a quiet rollout file, so a later append IS genuine activity
+        // and must revive the session.
         if ingress == .rollout,
            case let .activityUpdated(payload) = event,
            payload.phase == .running,
-           state.session(id: payload.sessionID)?.phase == .completed {
+           state.session(id: payload.sessionID)?.phase == .completed,
+           state.session(id: payload.sessionID)?.isStallReaped != true {
             return
         }
 

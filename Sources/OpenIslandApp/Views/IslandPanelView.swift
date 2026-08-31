@@ -108,6 +108,7 @@ struct IslandPanelView: View {
     @State private var showingQuitConfirmation = false
     @State private var keepsOpenedSurfaceMounted = false
     @State private var openedSurfaceMountGeneration: UInt64 = 0
+    @State private var isIdleFoldExpanded = false
 
     private var isOpened: Bool {
         model.notchStatus == .opened
@@ -612,29 +613,17 @@ struct IslandPanelView: View {
                 }
             } else {
                 ForEach(model.islandSessionSections) { section in
-                    VStack(alignment: .leading, spacing: 0) {
-                        if model.islandSessionGroup != .none {
-                            sessionSectionHeader(section)
-                        }
+                    if section.id == AppModel.idleFoldSectionID {
+                        idleFoldSection(section, referenceDate: referenceDate)
+                    } else {
+                        VStack(alignment: .leading, spacing: 0) {
+                            if model.islandSessionGroup != .none {
+                                sessionSectionHeader(section)
+                            }
 
-                        ForEach(section.sessions) { session in
-                            IslandSessionRow(
-                                session: session,
-                                referenceDate: referenceDate,
-                                stateIndicator: model.islandSessionStateIndicator,
-                                completedStaleThreshold: model.completedStaleThreshold.seconds,
-                                isActionable: session.phase.requiresAttention || session.id == actionableSessionID,
-                                useDrawingGroup: model.notchStatus == .opened,
-                                isInteractive: model.notchStatus == .opened,
-                                sideInset: sessionListSideInset,
-                                lang: model.lang,
-                                onApprove: { model.approvePermission(for: session.id, action: $0) },
-                                onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
-                                onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
-                                    ? { model.replyToSession(session, text: $0) } : nil,
-                                onJump: { model.jumpToSession(session) },
-                                onDismiss: session.isRemote ? { model.dismissSession(session.id) } : nil
-                            )
+                            ForEach(section.sessions) { session in
+                                sessionRow(session, referenceDate: referenceDate)
+                            }
                         }
                     }
                 }
@@ -662,32 +651,102 @@ struct IslandPanelView: View {
     @ViewBuilder
     private func sessionRowsContent(referenceDate: Date) -> some View {
         ForEach(model.islandSessionSections) { section in
-            VStack(alignment: .leading, spacing: 0) {
-                if model.islandSessionGroup != .none {
-                    sessionSectionHeader(section)
-                }
+            if section.id == AppModel.idleFoldSectionID {
+                idleFoldSection(section, referenceDate: referenceDate)
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    if model.islandSessionGroup != .none {
+                        sessionSectionHeader(section)
+                    }
 
-                ForEach(section.sessions) { session in
-                    IslandSessionRow(
-                        session: session,
-                        referenceDate: referenceDate,
-                        stateIndicator: model.islandSessionStateIndicator,
-                        completedStaleThreshold: model.completedStaleThreshold.seconds,
-                        isActionable: session.phase.requiresAttention || session.id == actionableSessionID,
-                        useDrawingGroup: model.notchStatus == .opened,
-                        isInteractive: model.notchStatus == .opened,
-                        sideInset: sessionListSideInset,
-                        lang: model.lang,
-                        onApprove: { model.approvePermission(for: session.id, action: $0) },
-                        onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
-                        onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
-                            ? { model.replyToSession(session, text: $0) } : nil,
-                        onJump: { model.jumpToSession(session) },
-                        onDismiss: session.isRemote ? { model.dismissSession(session.id) } : nil
-                    )
+                    ForEach(section.sessions) { session in
+                        sessionRow(session, referenceDate: referenceDate)
+                    }
                 }
             }
         }
+    }
+
+    private func sessionRow(_ session: AgentSession, referenceDate: Date) -> IslandSessionRow {
+        IslandSessionRow(
+            session: session,
+            referenceDate: referenceDate,
+            stateIndicator: model.islandSessionStateIndicator,
+            completedStaleThreshold: model.completedStaleThreshold.seconds,
+            isActionable: session.phase.requiresAttention || session.id == actionableSessionID,
+            useDrawingGroup: model.notchStatus == .opened,
+            isInteractive: model.notchStatus == .opened,
+            sideInset: sessionListSideInset,
+            lang: model.lang,
+            onApprove: { model.approvePermission(for: session.id, action: $0) },
+            onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
+            onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
+                ? { model.replyToSession(session, text: $0) } : nil,
+            onJump: { model.jumpToSession(session) },
+            onDismiss: session.isRemote ? { model.dismissSession(session.id) } : nil
+        )
+    }
+
+    /// Collapsed idle row: completed sessions past the stale threshold fold
+    /// into a single line so the active sessions own the list. Click to
+    /// expand back into full rows (jump-to-terminal preserved).
+    private func idleFoldSection(_ section: IslandSessionSection, referenceDate: Date) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(openAnimation) {
+                    isIdleFoldExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(IslandDesignPalette.Status.idle)
+                        .frame(width: 7, height: 7)
+                    Text(idleFoldTitle(for: section))
+                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                        .tracking(0.4)
+                        .foregroundStyle(V6Palette.paper.opacity(0.48))
+                    Spacer(minLength: 0)
+                    Image(systemName: isIdleFoldExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(V6Palette.paper.opacity(0.36))
+                }
+                .padding(.leading, sessionListSideInset)
+                .padding(.trailing, sessionListSideInset)
+                .padding(.top, 10)
+                .padding(.bottom, 7)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isIdleFoldExpanded {
+                ForEach(section.sessions) { session in
+                    sessionRow(session, referenceDate: referenceDate)
+                }
+            }
+        }
+        .background(Color.white.opacity(0.008))
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(.white.opacity(0.055))
+                .frame(height: 1)
+        }
+    }
+
+    private func idleFoldTitle(for section: IslandSessionSection) -> String {
+        let newestActivity = section.sessions.map(\.islandActivityDate).max() ?? .now
+        return lang.t(
+            "island.idleFold.title",
+            section.sessions.count,
+            idleFoldAgeLabel(newestActivity)
+        )
+    }
+
+    private func idleFoldAgeLabel(_ date: Date) -> String {
+        let age = max(0, Int(Date.now.timeIntervalSince(date)))
+        if age < 60 { return "<1m" }
+        if age < 3_600 { return "\(max(1, age / 60))m" }
+        if age < 86_400 { return "\(max(1, age / 3_600))h" }
+        return "\(max(1, age / 86_400))d"
     }
 
     private func sessionPanelHeader(referenceDate: Date) -> some View {
