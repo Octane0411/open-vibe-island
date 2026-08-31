@@ -161,7 +161,7 @@ struct IslandPanelView: View {
     }
 
     private var openedHeaderButtonsWidth: CGFloat {
-        (Self.headerControlButtonSize * 3) + (Self.headerControlSpacing * 2)
+        (Self.headerControlButtonSize * 4) + (Self.headerControlSpacing * 3)
     }
 
     private var openedHeaderHorizontalPadding: CGFloat {
@@ -375,6 +375,16 @@ struct IslandPanelView: View {
         }
     }
 
+    /// Coffee-cup header button tint: orange latched while the manual
+    /// toggle is on (matching the muted-speaker active idiom), running-blue
+    /// while an agent task is holding the assertion automatically, resting
+    /// white otherwise.
+    private var keepAwakeButtonTint: Color {
+        if model.isManualKeepAwakeEnabled { return .orange.opacity(0.92) }
+        if model.isKeepAwakeActive { return IslandDesignPalette.Status.running }
+        return .white.opacity(0.62)
+    }
+
     private var openedHeaderButtons: some View {
         HStack(spacing: Self.headerControlSpacing) {
             headerIconButton(
@@ -382,6 +392,14 @@ struct IslandPanelView: View {
                 tint: model.isSoundMuted ? .orange.opacity(0.92) : .white.opacity(0.62)
             ) {
                 model.toggleSoundMuted()
+            }
+
+            headerIconButton(
+                systemName: model.isKeepAwakeActive ? "cup.and.saucer.fill" : "cup.and.saucer",
+                tint: keepAwakeButtonTint,
+                accessibilityLabel: model.lang.t("island.keepAwake.accessibilityLabel")
+            ) {
+                model.toggleManualKeepAwake()
             }
 
             headerIconButton(systemName: "gearshape.fill", tint: .white.opacity(0.62)) {

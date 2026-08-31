@@ -28,6 +28,8 @@
 "settings.general.suppressFrontmostNotifications" = "前台会话不弹出通知";
 "settings.general.showCodexUsage" = "显示 Codex 用量";
 "settings.general.completionReply" = "在完成卡片中回复";
+"settings.general.keepAwakeWhileAgentsBusy" = "Agent 运行时保持 Mac 唤醒";
+"settings.general.keepAwakeWhileAgentsBusyCaption" = "任务运行期间阻止系统空闲休眠。屏幕仍会正常熄灭；合盖仍会休眠。";
 "settings.general.cliHooks" = "CLI Hooks";
 "settings.general.activated" = "已激活";
 "settings.general.install" = "安装";
@@ -169,6 +171,7 @@
 "island.quit.confirmTitle" = "退出 Open Island？";
 "island.quit.confirmAction" = "退出";
 "island.quit.confirmMessage" = "确定要退出吗？";
+"island.keepAwake.accessibilityLabel" = "保持 Mac 唤醒";
 
 /* Settings - Update */
 "settings.update.available" = "v%@ 可更新 — 点击更新";

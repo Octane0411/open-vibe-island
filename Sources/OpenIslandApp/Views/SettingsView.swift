@@ -207,7 +207,7 @@ struct GeneralSettingsPane: View {
                 }
             }
 
-            Section(lang.t("settings.general.behavior")) {
+            Section {
                 Toggle(lang.t("settings.general.autoCollapse"), isOn: .constant(true))
                 Toggle(lang.t("settings.general.showDockIcon"), isOn: Binding(
                     get: { model.showDockIcon },
@@ -225,6 +225,16 @@ struct GeneralSettingsPane: View {
                     get: { model.suppressFrontmostNotifications },
                     set: { model.suppressFrontmostNotifications = $0 }
                 ))
+                Toggle(lang.t("settings.general.keepAwakeWhileAgentsBusy"), isOn: Binding(
+                    get: { model.keepAwakeWhileAgentsBusy },
+                    set: { model.keepAwakeWhileAgentsBusy = $0 }
+                ))
+            } header: {
+                Text(lang.t("settings.general.behavior"))
+            } footer: {
+                Text(lang.t("settings.general.keepAwakeWhileAgentsBusyCaption"))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
 
         }
