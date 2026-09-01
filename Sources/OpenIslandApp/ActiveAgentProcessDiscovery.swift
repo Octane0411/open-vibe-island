@@ -232,6 +232,23 @@ struct ActiveAgentProcessDiscovery {
                 ))
                 continue
             }
+
+            if isAntigravityProcess(command: process.command) {
+                let claimKey = "antigravity:\(process.pid)"
+                guard claimedKeys.insert(claimKey).inserted else {
+                    continue
+                }
+
+                let lsofOutput = lsofOutput(pid: process.pid)
+                snapshots.append(ProcessSnapshot(
+                    tool: .antigravity,
+                    sessionID: nil,
+                    workingDirectory: lsofOutput.flatMap(workingDirectory(from:)),
+                    terminalTTY: process.terminalTTY,
+                    terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+                ))
+                continue
+            }
         }
 
         return snapshots
@@ -810,6 +827,19 @@ struct ActiveAgentProcessDiscovery {
         }
 
         return binaryName == "zcode.cjs" || lowered.contains("/zcode.cjs ")
+    }
+
+    /// Matches the Antigravity CLI (`agy`). Antigravity sessions are
+    /// discovered passively from `~/.gemini/antigravity-cli`; a live `agy`
+    /// process keeps its matched session visible.
+    private func isAntigravityProcess(command: String) -> Bool {
+        let lowered = command.lowercased()
+        guard let firstToken = lowered.split(separator: " ").first.map(String.init) else {
+            return false
+        }
+
+        let binaryName = (firstToken as NSString).lastPathComponent
+        return binaryName == "agy"
     }
 
     /// Returns `true` when the given `ps` command string belongs to a Claude Code process.

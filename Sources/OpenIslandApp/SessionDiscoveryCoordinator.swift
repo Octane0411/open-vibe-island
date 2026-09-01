@@ -16,6 +16,8 @@ final class SessionDiscoveryCoordinator {
         var openCodeRecordsNeedPrune: Bool
         var cursorRecords: [CursorTrackedSessionRecord]
         var cursorRecordsNeedPrune: Bool
+        var antigravityRecords: [AntigravityTrackedSessionRecord]
+        var antigravityRecordsNeedPrune: Bool
         var discoveredCodexRecords: [CodexTrackedSessionRecord]
         var discoveredClaudeSessions: [AgentSession]
         var hooksBinaryURL: URL?
@@ -52,6 +54,15 @@ final class SessionDiscoveryCoordinator {
     private let cursorSessionRegistry = CursorSessionRegistry()
 
     @ObservationIgnored
+    private let antigravitySessionRegistry = AntigravitySessionRegistry()
+
+    @ObservationIgnored
+    private let antigravitySessionDiscovery = AntigravitySessionDiscovery()
+
+    @ObservationIgnored
+    private var lastAntigravityRediscoverDate = Date.distantPast
+
+    @ObservationIgnored
     let codexRolloutWatcher = CodexRolloutWatcher()
 
     @ObservationIgnored
@@ -71,6 +82,9 @@ final class SessionDiscoveryCoordinator {
 
     @ObservationIgnored
     private var cursorSessionPersistenceTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var antigravityPersistenceTask: Task<Void, Never>?
 
     private var state: SessionState {
         get { stateAccessor?() ?? SessionState() }
@@ -98,6 +112,9 @@ final class SessionDiscoveryCoordinator {
         let allCursor = (try? cursorSessionRegistry.load()) ?? []
         let cursorRecords = allCursor.filter { $0.updatedAt >= cutoff && $0.shouldRestoreToLiveState }
 
+        let allAntigravity = (try? antigravitySessionRegistry.load()) ?? []
+        let antigravityRecords = allAntigravity.filter { $0.updatedAt >= cutoff }
+
         let discoveredCodex = codexRolloutDiscovery.discoverRecentSessions()
         let discoveredClaude = claudeTranscriptDiscovery.discoverRecentSessions()
 
@@ -110,6 +127,8 @@ final class SessionDiscoveryCoordinator {
             openCodeRecordsNeedPrune: openCodeRecords != allOpenCode,
             cursorRecords: cursorRecords,
             cursorRecordsNeedPrune: cursorRecords != allCursor,
+            antigravityRecords: antigravityRecords,
+            antigravityRecordsNeedPrune: antigravityRecords != allAntigravity,
             discoveredCodexRecords: discoveredCodex,
             discoveredClaudeSessions: discoveredClaude,
             hooksBinaryURL: HooksBinaryLocator.locate(
@@ -133,6 +152,9 @@ final class SessionDiscoveryCoordinator {
         }
         if payload.cursorRecordsNeedPrune {
             try? cursorSessionRegistry.save(payload.cursorRecords)
+        }
+        if payload.antigravityRecordsNeedPrune {
+            try? antigravitySessionRegistry.save(payload.antigravityRecords)
         }
 
         // Restore persisted Codex sessions.
@@ -160,6 +182,13 @@ final class SessionDiscoveryCoordinator {
             let restoredSessions = payload.cursorRecords.map(\.restorableSession)
             state = SessionState(sessions: mergeDiscoveredSessions(restoredSessions))
             onStatusMessage?("Restored \(payload.cursorRecords.count) recent Cursor session(s) from local registry.")
+        }
+
+        // Restore persisted Antigravity sessions.
+        if !payload.antigravityRecords.isEmpty {
+            let restoredSessions = payload.antigravityRecords.map(\.restorableSession)
+            state = SessionState(sessions: mergeDiscoveredSessions(restoredSessions))
+            onStatusMessage?("Restored \(payload.antigravityRecords.count) recent Antigravity session(s) from local registry.")
         }
 
         // Merge discovered Codex sessions.
@@ -468,6 +497,54 @@ final class SessionDiscoveryCoordinator {
         refreshCodexRolloutTracking()
         scheduleCodexSessionPersistence()
         onStatusMessage?("Discovered \(newRecords.count) new Codex.app session(s) via rollout re-scan.")
+    }
+
+    // MARK: - Antigravity passive rediscovery
+
+    /// Re-scans `~/.gemini/antigravity-cli` for recently active
+    /// conversations. Throttled to at most once per 20 seconds; the scan
+    /// itself runs off the main thread.
+    func maintainAntigravitySessionsIfNeeded() {
+        let now = Date.now
+        guard now.timeIntervalSince(lastAntigravityRediscoverDate) >= 20 else { return }
+        lastAntigravityRediscoverDate = now
+
+        let discovery = antigravitySessionDiscovery
+        Task.detached(priority: .utility) { [weak self] in
+            let discovered = discovery.discover()
+            guard !discovered.isEmpty else { return }
+            await MainActor.run { [weak self] in
+                self?.applyAntigravityRediscovery(discovered)
+            }
+        }
+    }
+
+    private func applyAntigravityRediscovery(_ discoveredSessions: [AgentSession]) {
+        let merged = mergeDiscoveredSessions(discoveredSessions)
+        let changed = merged != state.sessions
+        state = SessionState(sessions: merged)
+
+        let records = state.sessions
+            .filter { $0.tool == .antigravity && !$0.isDemoSession }
+            .map(AntigravityTrackedSessionRecord.init)
+        try? antigravitySessionRegistry.save(records)
+
+        if changed {
+            onStateChanged?()
+        }
+    }
+
+    func scheduleAntigravitySessionPersistence() {
+        antigravityPersistenceTask?.cancel()
+
+        let records = state.sessions
+            .filter { $0.tool == .antigravity && !$0.isDemoSession }
+            .map(AntigravityTrackedSessionRecord.init(session:))
+        let registry = antigravitySessionRegistry
+
+        antigravityPersistenceTask = Self.persistenceTask {
+            try registry.save(records)
+        }
     }
 
     // MARK: - Persistence scheduling

@@ -875,6 +875,9 @@ final class HookInstallationCoordinator {
         case .gemini: return !geminiHooksInstalled
         case .kimi: return !kimiHooksInstalled
         case .zcode: return !zcodeHooksInstalled
+        // Antigravity is passively discovered; Open Island manages no
+        // hooks for it, so there is never anything to auto-install.
+        case .antigravity: return false
         case .claudeUsageBridge: return !claudeUsageInstalled
         }
     }
@@ -900,6 +903,8 @@ final class HookInstallationCoordinator {
             case .gemini: return geminiHooksInstalled
             case .kimi: return kimiHooksInstalled
             case .zcode: return zcodeHooksInstalled
+            // No managed hooks → never observed as installed.
+            case .antigravity: return false
             case .claudeUsageBridge: return claudeUsageInstalled
             }
         }

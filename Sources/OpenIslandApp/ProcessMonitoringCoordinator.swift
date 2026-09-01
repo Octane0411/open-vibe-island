@@ -551,6 +551,27 @@ final class ProcessMonitoringCoordinator {
             }
         }
 
+        // Antigravity sessions are discovered passively from
+        // `~/.gemini/antigravity-cli` (conversation DB mtimes + prompt
+        // history). A live `agy` process keeps its workspace-matched
+        // session alive; without a process the session relies on the
+        // discovery-time phase (recent activity → running, quiet →
+        // completed) and disappears once it ages out of the registry.
+        let antigravityProcesses = activeProcesses.filter { $0.tool == .antigravity }
+        let trackedAntigravitySessions = sessions.filter { $0.tool == .antigravity && !$0.isDemoSession }
+        var claimedAntigravitySessionIDs: Set<String> = []
+        for process in antigravityProcesses {
+            guard let matched = uniqueTrackedAntigravitySession(
+                for: process,
+                sessions: trackedAntigravitySessions,
+                claimedSessionIDs: claimedAntigravitySessionIDs
+            ) else {
+                continue
+            }
+            aliveIDs.insert(matched.id)
+            claimedAntigravitySessionIDs.insert(matched.id)
+        }
+
         // Cursor sessions: prefer concrete cursor-agent processes when they
         // are visible (Cursor CLI / integrated terminal), then fall back to
         // app-level liveness for IDE-only hook sessions where there is no
@@ -719,6 +740,32 @@ final class ProcessMonitoringCoordinator {
     /// the hook runs, so unlike Gemini there is no stable transcript path to
     /// match on — sessions are keyed by workspace directory and freshness.
     private func uniqueTrackedZcodeSession(
+        for process: ActiveProcessSnapshot,
+        sessions: [AgentSession],
+        claimedSessionIDs: Set<String>
+    ) -> AgentSession? {
+        let unclaimedSessions = sessions.filter { !claimedSessionIDs.contains($0.id) }
+        guard !unclaimedSessions.isEmpty else {
+            return nil
+        }
+
+        if let processWorkingDirectory = process.workingDirectory {
+            let workspaceMatches = unclaimedSessions.filter {
+                $0.jumpTarget?.workingDirectory == processWorkingDirectory
+            }
+            if !workspaceMatches.isEmpty {
+                return workspaceMatches.max { $0.updatedAt < $1.updatedAt }
+            }
+            return nil
+        }
+
+        return unclaimedSessions.count == 1 ? unclaimedSessions[0] : nil
+    }
+
+    /// Antigravity process matching keys off the workspace directory
+    /// recorded in the session's jump target, preferring the most recently
+    /// updated candidate when several conversations share a workspace.
+    private func uniqueTrackedAntigravitySession(
         for process: ActiveProcessSnapshot,
         sessions: [AgentSession],
         claimedSessionIDs: Set<String>
@@ -1521,6 +1568,8 @@ final class ProcessMonitoringCoordinator {
             return "Kimi \(session.id.prefix(8))"
         case .zcode:
             return "ZCode \(session.id.prefix(8))"
+        case .antigravity:
+            return "Antigravity \(session.id.prefix(8))"
         }
     }
 }

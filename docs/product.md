@@ -32,6 +32,7 @@ CLI coding agents are powerful, but they pull attention away from the editor and
 | **Gemini CLI** | Supported | Hook integration (`SessionStart`, `BeforeAgent`, `AfterAgent`, `SessionEnd`, `Notification`), session tracking, terminal jump metadata, completion-card compatibility handling |
 | **Kimi CLI** | Supported | Hook integration via `~/.kimi/config.toml` `[[hooks]]` (Moonshot AI). Kimi's hook payload is byte-compatible with Claude Code, so runtime reuses the Claude decode path; a dedicated TOML installer preserves user-authored hooks |
 | **ZCode** | Supported | Hook integration via `~/.zcode/cli/config.json` `hooks.events` (Z.AI). Claude-compatible payload — reuses the Claude decode path with `--source zcode`; dedicated installer sets `hooks.enabled` and restores it on uninstall. Desktop-app (ZCode.app) sessions are tagged via `__CFBundleIdentifier` and stay alive while the app runs |
+| **Antigravity CLI** | Supported (passive) | Antigravity (`agy`) shares the `~/.gemini` root with Gemini CLI but uses its own Claude-style hooks vocabulary, which is not yet verified against a logged-in CLI. Sessions are discovered passively from `~/.gemini/antigravity-cli` (conversation DB mtimes, prompt history, summaries DB); a live `agy` process keeps the workspace-matched session alive. No config files are written |
 
 ## Supported Terminals
 

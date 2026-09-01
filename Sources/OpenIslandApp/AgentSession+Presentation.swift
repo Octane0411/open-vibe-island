@@ -225,6 +225,8 @@ extension AgentSession {
             return "Kimi"
         case .zcode:
             return "ZCode"
+        case .antigravity:
+            return "Antigravity"
         }
     }
 
