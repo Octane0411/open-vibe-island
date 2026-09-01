@@ -691,6 +691,67 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexAppSessionReconcilerReapsQuietRunningSessions() throws {
+        let quietDate = Date.now.addingTimeInterval(-CodexAppSessionReconciler.runningStallTimeout - 120)
+        let events = try stalledReapEvents(phase: .running, modifiedAt: quietDate)
+
+        #expect(events.count == 1)
+        let payload = events.first?.trackedActivityUpdate
+        #expect(payload?.phase == .completed)
+        #expect(payload?.summary == "Turn stalled.")
+        #expect(payload?.isStallReap == true)
+        // The reap preserves the file's real last-write time so the session
+        // folds into the idle bucket instead of flashing "just done".
+        #expect(abs((payload?.timestamp ?? .distantFuture).timeIntervalSince(quietDate)) < 1)
+    }
+
+    @Test
+    func codexAppSessionReconcilerKeepsRunningSessionsWithFreshRollouts() throws {
+        let events = try stalledReapEvents(phase: .running, modifiedAt: .now.addingTimeInterval(-30))
+        #expect(events.isEmpty)
+    }
+
+    @Test
+    func codexAppSessionReconcilerNeverReapsWaitingSessions() throws {
+        // A quiet file while waiting on the user is expected — approval and
+        // question states must survive an arbitrarily long wait.
+        let quietDate = Date.now.addingTimeInterval(-CodexAppSessionReconciler.runningStallTimeout - 3_600)
+        #expect(try stalledReapEvents(phase: .waitingForApproval, modifiedAt: quietDate).isEmpty)
+        #expect(try stalledReapEvents(phase: .waitingForAnswer, modifiedAt: quietDate).isEmpty)
+    }
+
+    /// Builds a Codex.app session backed by a temp rollout file with the
+    /// given modification date and runs the stall reconciler over it.
+    private func stalledReapEvents(phase: SessionPhase, modifiedAt: Date) throws -> [AgentEvent] {
+        let rolloutURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("rollout-stall-\(UUID().uuidString).jsonl")
+        try Data("{}".utf8).write(to: rolloutURL)
+        try FileManager.default.setAttributes([.modificationDate: modifiedAt], ofItemAtPath: rolloutURL.path)
+        defer { try? FileManager.default.removeItem(at: rolloutURL) }
+
+        var session = AgentSession(
+            id: "codex-session-stall",
+            title: "Codex · demo",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: phase,
+            summary: "Thinking.",
+            updatedAt: .now,
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "demo",
+                paneTitle: "Codex",
+                workingDirectory: "/tmp/demo",
+                codexThreadID: "codex-session-stall"
+            )
+        )
+        session.codexMetadata = CodexSessionMetadata(transcriptPath: rolloutURL.path)
+
+        return CodexAppSessionReconciler.stalledRunningEvents(for: [session])
+    }
+
+    @Test
     func codexRolloutReducerMarksPrimaryRateLimitWhileAwaitingAgentResponse() {
         let initialSnapshot = CodexRolloutReducer.snapshot(for: [
             rolloutLine(

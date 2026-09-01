@@ -196,6 +196,7 @@
 "island.section.inProgress" = "In progress";
 "island.section.justDone" = "Just done";
 "island.section.idle" = "Idle";
+"island.idleFold.title" = "%1$lld idle · last active %2$@";
 "island.showAll" = "Show all %lld sessions";
 "island.collapseList" = "Collapse list";
 "island.usageWaiting" = "Usage waiting";

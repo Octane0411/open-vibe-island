@@ -90,6 +90,14 @@ public struct SessionState: Equatable, Sendable {
                 return
             }
 
+            // A stall reap marks the completion as inferred (revivable);
+            // any later running activity supersedes that inference.
+            if payload.isStallReap == true {
+                session.isStallReaped = true
+            } else if payload.phase == .running {
+                session.isStallReaped = false
+            }
+
             let keepsPendingApproval = payload.phase == .running
                 && session.phase == .waitingForApproval
                 && session.permissionRequest != nil
@@ -146,6 +154,7 @@ public struct SessionState: Equatable, Sendable {
             session.permissionRequest = nil
             session.questionPrompt = nil
             session.updatedAt = payload.timestamp
+            session.isStallReaped = false
             if payload.isSessionEnd == true {
                 session.isSessionEnded = true
             }

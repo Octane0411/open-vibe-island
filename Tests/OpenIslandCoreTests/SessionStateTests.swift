@@ -5,6 +5,77 @@ import Testing
 
 /// Regression coverage for core session lifecycle and visibility behavior.
 struct SessionStateTests {
+    /// Stall-reap completions are revivable: the flag stays set until real
+    /// running activity or a genuine completion supersedes the inference.
+    @Test
+    func stallReapFlagIsSetAndClearedBySubsequentEvents() {
+        let startedAt = Date(timeIntervalSince1970: 5_000)
+        var state = SessionState()
+        state.apply(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: "codex-stalled",
+                    title: "Codex · demo",
+                    tool: .codex,
+                    origin: .live,
+                    summary: "Thinking.",
+                    timestamp: startedAt
+                )
+            )
+        )
+
+        state.apply(
+            .activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: "codex-stalled",
+                    summary: "Turn stalled.",
+                    phase: .completed,
+                    timestamp: startedAt.addingTimeInterval(600),
+                    isStallReap: true
+                )
+            )
+        )
+        #expect(state.session(id: "codex-stalled")?.phase == .completed)
+        #expect(state.session(id: "codex-stalled")?.isStallReaped == true)
+
+        // Rollout activity resumes → the inferred completion is superseded.
+        state.apply(
+            .activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: "codex-stalled",
+                    summary: "Working again.",
+                    phase: .running,
+                    timestamp: startedAt.addingTimeInterval(700)
+                )
+            )
+        )
+        #expect(state.session(id: "codex-stalled")?.phase == .running)
+        #expect(state.session(id: "codex-stalled")?.isStallReaped == false)
+
+        // A real turn completion clears any lingering reap inference.
+        state.apply(
+            .activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: "codex-stalled",
+                    summary: "Turn stalled.",
+                    phase: .completed,
+                    timestamp: startedAt.addingTimeInterval(1_400),
+                    isStallReap: true
+                )
+            )
+        )
+        state.apply(
+            .sessionCompleted(
+                SessionCompleted(
+                    sessionID: "codex-stalled",
+                    summary: "Turn finished for real.",
+                    timestamp: startedAt.addingTimeInterval(1_500)
+                )
+            )
+        )
+        #expect(state.session(id: "codex-stalled")?.isStallReaped == false)
+    }
+
     /// Completed Codex CLI sessions outside Codex.app should age out even while Codex.app is running.
     @Test
     func completedCodexCLISessionEndsEvenWhenCodexAppIsRunning() {

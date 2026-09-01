@@ -338,8 +338,148 @@ struct AppModelSessionListTests {
         model.state = SessionState(sessions: [stale, done, approval])
         model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
 
-        #expect(model.islandSessionSections.map(\.id) == ["state-approval", "state-done", "state-idle"])
+        #expect(model.islandSessionSections.map(\.id) == ["state-approval", "state-done", AppModel.idleFoldSectionID])
         #expect(model.islandSessionSections.map(\.sessions.first?.id) == ["approval", "done", "stale"])
+    }
+
+    @Test
+    func islandSectionsFoldStaleCompletedSessionsInDefaultGrouping() {
+        let now = Date()
+        let model = AppModel()
+
+        var running = listSession(id: "running", phase: .running, updatedAt: now)
+        running.isProcessAlive = true
+        var stale = listSession(id: "stale", phase: .completed, updatedAt: now.addingTimeInterval(-3_600))
+        stale.isProcessAlive = true
+
+        model.state = SessionState(sessions: [running, stale])
+
+        let sections = model.islandSessionSections
+        #expect(sections.map(\.id) == ["all", AppModel.idleFoldSectionID])
+        #expect(sections.first?.sessions.map(\.id) == ["running"])
+        #expect(sections.last?.sessions.map(\.id) == ["stale"])
+        // Folded sessions stay in islandListSessions so the overview totals
+        // (总运行/完成/空闲) keep counting them.
+        #expect(model.islandListSessions.map(\.id) == ["running", "stale"])
+    }
+
+    @Test
+    func stallReapedSessionsFoldImmediatelyEvenWithLargerStaleThreshold() {
+        let now = Date()
+        let model = AppModel()
+        // A 20-min stale threshold exceeds the 10-min stall timeout: a
+        // just-reaped session (quiet for ~11 min) would otherwise sit in
+        // "Just done" for up to 10 minutes before folding.
+        model.updateAppearancePreferences(for: .topBar) {
+            $0.sessionGroup = .state
+            $0.completedStaleThreshold = .twentyMinutes
+        }
+
+        var reaped = listSession(id: "reaped", phase: .completed, updatedAt: now.addingTimeInterval(-660))
+        reaped.isProcessAlive = true
+        reaped.isStallReaped = true
+        var freshDone = listSession(id: "fresh-done", phase: .completed, updatedAt: now.addingTimeInterval(-60))
+        freshDone.isProcessAlive = true
+
+        model.state = SessionState(sessions: [reaped, freshDone])
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+
+        #expect(model.islandSessionSections.map(\.id) == ["state-done", AppModel.idleFoldSectionID])
+        #expect(model.islandSessionSections.first?.sessions.first?.id == "fresh-done")
+        #expect(model.islandSessionSections.last?.sessions.first?.id == "reaped")
+    }
+
+    @Test
+    func stallReapedSessionsStayFullRowsWhenStaleThresholdIsNever() {
+        let now = Date()
+        let model = AppModel()
+        model.updateAppearancePreferences(for: .topBar) {
+            $0.completedStaleThreshold = .never
+        }
+
+        var reaped = listSession(id: "reaped", phase: .completed, updatedAt: now.addingTimeInterval(-660))
+        reaped.isProcessAlive = true
+        reaped.isStallReaped = true
+
+        model.state = SessionState(sessions: [reaped])
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+
+        // `.never` is an explicit user preference for no folding — it wins
+        // over the reaped-session fast path.
+        #expect(model.islandSessionSections.map(\.id) == ["all"])
+        #expect(model.islandSessionSections.first?.sessions.first?.id == "reaped")
+    }
+
+    @Test
+    func closedIslandCountBadgeCountsActiveSessionsOnly() {
+        let now = Date()
+        let model = AppModel()
+        model.updateAppearancePreferences(for: .topBar) {
+            $0.rightSlot = .count
+        }
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+
+        var running = listSession(id: "running", phase: .running, updatedAt: now)
+        running.isProcessAlive = true
+        var staleIdle = listSession(id: "idle", phase: .completed, updatedAt: now.addingTimeInterval(-3_600))
+        staleIdle.isProcessAlive = true
+
+        model.state = SessionState(sessions: [running, staleIdle])
+        #expect(model.islandClosedRightSlotContent() == .count(1))
+
+        // All sessions idle → the badge disappears entirely.
+        var finished = listSession(id: "running", phase: .completed, updatedAt: now.addingTimeInterval(-60))
+        finished.isProcessAlive = true
+        model.state = SessionState(sessions: [finished, staleIdle])
+        #expect(model.islandClosedRightSlotContent() == nil)
+    }
+
+    @Test
+    func stallReapedSessionsReviveFromSubsequentRolloutRunningEvents() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+
+        var reaped = listSession(id: "reaped", phase: .completed, updatedAt: now.addingTimeInterval(-3_600))
+        reaped.isProcessAlive = true
+        reaped.isStallReaped = true
+        model.state = SessionState(sessions: [reaped])
+
+        model.applyTrackedEvent(
+            .activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: "reaped",
+                    summary: "Working again.",
+                    phase: .running,
+                    timestamp: now
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .rollout
+        )
+
+        #expect(model.state.session(id: "reaped")?.phase == .running)
+        #expect(model.state.session(id: "reaped")?.isStallReaped == false)
+
+        // Control: a genuine completion still wins over stale rollout
+        // running events (the original anti-flapping guard).
+        var genuinelyDone = listSession(id: "done", phase: .completed, updatedAt: now.addingTimeInterval(-60))
+        genuinelyDone.isProcessAlive = true
+        model.state = SessionState(sessions: [genuinelyDone])
+
+        model.applyTrackedEvent(
+            .activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: "done",
+                    summary: "Stale watcher race.",
+                    phase: .running,
+                    timestamp: now.addingTimeInterval(1)
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .rollout
+        )
+
+        #expect(model.state.session(id: "done")?.phase == .completed)
     }
 
     @Test

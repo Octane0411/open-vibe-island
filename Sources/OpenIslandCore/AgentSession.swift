@@ -133,6 +133,13 @@ public enum SessionPhase: String, Codable, Sendable, CaseIterable {
             false
         }
     }
+
+    /// Running, or paused mid-turn waiting on the user (approval / answer).
+    /// Drives the ×N badge, spotlight detail lines, and prompt-headline
+    /// preference — anywhere the question is "is this turn still live".
+    public var isActiveTurn: Bool {
+        self == .running || requiresAttention
+    }
 }
 
 public struct JumpTarget: Equatable, Codable, Sendable {
@@ -400,6 +407,14 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     /// Reset to 0 when the process is found. When >= 2 (~6 seconds), the session
     /// is considered gone. This prevents flicker from momentary `ps` gaps.
     public var processNotSeenCount: Int = 0
+
+    /// True when `.completed` was inferred by the stall reaper (a Codex.app
+    /// session whose rollout file went quiet) rather than a real turn
+    /// completion. Transient by design — never persisted — so a later rollout
+    /// write can revive the session back to `.running`. Without this flag the
+    /// "bridge completion is authoritative" guard would treat any subsequent
+    /// rollout `activityUpdated(running)` event as a stale race and drop it.
+    public var isStallReaped: Bool = false
 
     public init(
         id: String,

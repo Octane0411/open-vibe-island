@@ -54,17 +54,24 @@ public struct SessionActivityUpdated: Equatable, Codable, Sendable {
     public var summary: String
     public var phase: SessionPhase
     public var timestamp: Date
+    /// True when `.completed` was inferred from a quiet rollout file by the
+    /// stall reaper rather than observed as a real turn completion. Lets the
+    /// session state mark the completion as revivable by later rollout
+    /// activity.
+    public var isStallReap: Bool?
 
     public init(
         sessionID: String,
         summary: String,
         phase: SessionPhase,
-        timestamp: Date
+        timestamp: Date,
+        isStallReap: Bool? = nil
     ) {
         self.sessionID = sessionID
         self.summary = summary
         self.phase = phase
         self.timestamp = timestamp
+        self.isStallReap = isStallReap
     }
 }
 

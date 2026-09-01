@@ -83,6 +83,29 @@ REMOVAL:
 
 The "2 consecutive polls" requirement prevents flicker from momentary `ps` gaps.
 
+### Codex.app Deviation: App-Level Liveness + Stall Reaping
+
+Codex.app threads have no per-session subprocess visible to `ps`, so their
+liveness is app-level (Codex.app running). Two rules keep that exemption
+honest:
+
+- **Stall reaping** (`CodexAppSessionReconciler.runningStallTimeout`, 10 min):
+  a `.running` Codex.app session whose rollout file has been quiet past the
+  timeout is demoted to `.completed` *silently* (an `activityUpdated` event
+  produces no notification card or sound) and keeps the file's real
+  last-write time as its activity date, so it goes straight into the idle
+  fold. Turns that end on a reasoning event never flush `turn_complete`;
+  without this rule they pin at `.running` forever. `waiting` phases are
+  never reaped — a quiet file while waiting on the user is expected.
+- **Revival**: reaped completions are marked (`AgentSession.isStallReaped`,
+  transient, never persisted), so a later rollout append may demote them
+  back to `.running` — the "bridge completion is authoritative" guard lets
+  rollout running-events through for reaped sessions only.
+
+Completed Codex.app sessions stay resident while their rollout is inside the
+24h discovery window (`ProcessMonitoringCoordinator.codexAppCompletedRetention`)
+and fold into the collapsed idle row instead of occupying full list rows.
+
 ### State Model Changes
 
 **Remove:**
