@@ -28,6 +28,8 @@
 "settings.general.suppressFrontmostNotifications" = "Suppress notifications for focused sessions";
 "settings.general.showCodexUsage" = "Show Codex usage";
 "settings.general.completionReply" = "Reply from completion card";
+"settings.general.keepAwakeWhileAgentsBusy" = "Keep Mac awake while agents are working";
+"settings.general.keepAwakeWhileAgentsBusyCaption" = "Prevents idle system sleep while a task is running. The display can still turn off, and closing the lid still sleeps the Mac.";
 "settings.general.cliHooks" = "CLI Hooks";
 "settings.general.activated" = "Activated";
 "settings.general.install" = "Install";
@@ -169,6 +171,7 @@
 "island.quit.confirmTitle" = "Quit Open Island?";
 "island.quit.confirmAction" = "Quit";
 "island.quit.confirmMessage" = "Are you sure you want to quit?";
+"island.keepAwake.accessibilityLabel" = "Keep Mac awake";
 
 /* Settings - Update */
 "settings.update.available" = "v%@ Available — Update";

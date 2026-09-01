@@ -49,6 +49,7 @@ final class AppModel {
             _cachedSessionBuckets = nil
             pruneAgentsGridObservationTicketsIfNeeded()
             bridgeServer.updateStateSnapshot(state)
+            syncSleepPrevention()
         }
     }
     @ObservationIgnored private var _cachedSessionBuckets: (primary: [AgentSession], overflow: [AgentSession])?
@@ -497,6 +498,54 @@ final class AppModel {
         watchRelay = nil
     }
 
+    // MARK: - Keep Awake
+
+    private static let keepAwakeWhileAgentsBusyDefaultsKey = "app.keepAwakeWhileAgentsBusy"
+
+    /// Automatic trigger: hold the keep-awake assertion while any live
+    /// session is running a task. Waiting-for-approval/answer does not
+    /// count — nothing progresses until the user is back anyway.
+    var keepAwakeWhileAgentsBusy = true {
+        didSet {
+            guard hasFinishedInit, keepAwakeWhileAgentsBusy != oldValue else { return }
+            UserDefaults.standard.set(keepAwakeWhileAgentsBusy, forKey: Self.keepAwakeWhileAgentsBusyDefaultsKey)
+            syncSleepPrevention()
+        }
+    }
+
+    /// Manual trigger: the coffee-cup toggle in the island header.
+    /// Deliberately not persisted — a latched keep-awake must not survive
+    /// relaunch, or a forgotten cup keeps the Mac awake forever.
+    var isManualKeepAwakeEnabled = false {
+        didSet {
+            guard isManualKeepAwakeEnabled != oldValue else { return }
+            syncSleepPrevention()
+            lastActionMessage = isManualKeepAwakeEnabled
+                ? "Keep awake enabled — the Mac will not idle-sleep."
+                : "Keep awake disabled."
+        }
+    }
+
+    let sleepPrevention = SleepPreventionService()
+
+    /// True when the power assertion should currently be held. The manual
+    /// latch wins over the automatic setting by construction (OR).
+    var isKeepAwakeActive: Bool {
+        isManualKeepAwakeEnabled || (keepAwakeWhileAgentsBusy && state.liveRunningCount > 0)
+    }
+
+    func toggleManualKeepAwake() {
+        isManualKeepAwakeEnabled.toggle()
+    }
+
+    private func syncSleepPrevention() {
+        if isKeepAwakeActive {
+            sleepPrevention.start(reason: "Open Island: agent task running or manual keep-awake")
+        } else {
+            sleepPrevention.stop()
+        }
+    }
+
     var ignoresPointerExitDuringHarness = false
     var disablesOverlayEventMonitoringDuringHarness = false
 
@@ -595,6 +644,7 @@ final class AppModel {
             Self.hapticFeedbackEnabledDefaultsKey: false,
             Self.completionReplyEnabledDefaultsKey: false,
             Self.suppressFrontmostNotificationsDefaultsKey: true,
+            Self.keepAwakeWhileAgentsBusyDefaultsKey: true,
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
@@ -619,6 +669,7 @@ final class AppModel {
         if watchNotificationEnabled {
             startWatchRelay()
         }
+        keepAwakeWhileAgentsBusy = UserDefaults.standard.bool(forKey: Self.keepAwakeWhileAgentsBusyDefaultsKey)
 
         overlay.appModel = self
         overlay.restoreDisplayPreference()
@@ -703,6 +754,7 @@ final class AppModel {
             self?.discovery.maintainCodexAppSessionsIfNeeded()
         }
         refreshOverlayDisplayConfiguration()
+        syncSleepPrevention()
         hasFinishedInit = true
     }
 
