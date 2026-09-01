@@ -420,6 +420,11 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             .appendingPathComponent(".codex/sessions", isDirectory: true)
     }
 
+    /// Scan window shared with the app layer: completed Codex.app sessions
+    /// stay resident (folded) for the same duration their rollouts remain
+    /// discoverable. Change this and both move together.
+    public static let defaultMaxAge: TimeInterval = 86_400
+
     private let rootURL: URL
     private let fileManager: FileManager
     private let maxAge: TimeInterval
@@ -437,7 +442,7 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
     public init(
         rootURL: URL = CodexRolloutDiscovery.defaultRootURL,
         fileManager: FileManager = .default,
-        maxAge: TimeInterval = 86_400,
+        maxAge: TimeInterval = CodexRolloutDiscovery.defaultMaxAge,
         maxFiles: Int = 40
     ) {
         self.rootURL = rootURL

@@ -133,6 +133,13 @@ public enum SessionPhase: String, Codable, Sendable, CaseIterable {
             false
         }
     }
+
+    /// Running, or paused mid-turn waiting on the user (approval / answer).
+    /// Drives the ×N badge, spotlight detail lines, and prompt-headline
+    /// preference — anywhere the question is "is this turn still live".
+    public var isActiveTurn: Bool {
+        self == .running || requiresAttention
+    }
 }
 
 public struct JumpTarget: Equatable, Codable, Sendable {

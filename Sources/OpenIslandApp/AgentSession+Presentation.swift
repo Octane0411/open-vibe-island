@@ -292,7 +292,7 @@ extension AgentSession {
     }
 
     func spotlightShowsDetailLines(at referenceDate: Date) -> Bool {
-        if phase == .running || phase.requiresAttention {
+        if phase.isActiveTurn {
             return true
         }
 
@@ -304,8 +304,13 @@ extension AgentSession {
     }
 
     var spotlightAgeBadge: String {
-        let age = max(0, Int(Date.now.timeIntervalSince(islandActivityDate)))
+        Self.islandAgeBadge(since: islandActivityDate)
+    }
 
+    /// Compact age badge ("<1m", "5m", "3h", "2d") shared by the session
+    /// row spotlight and the collapsed idle-fold row.
+    static func islandAgeBadge(since date: Date, now: Date = .now) -> String {
+        let age = max(0, Int(now.timeIntervalSince(date)))
         if age < 60 {
             return "<1m"
         }
@@ -437,7 +442,7 @@ extension AgentSession {
     }
 
     private var prefersLivePromptHeadline: Bool {
-        isProcessAlive || phase == .running || phase.requiresAttention
+        isProcessAlive || phase.isActiveTurn
     }
 }
 

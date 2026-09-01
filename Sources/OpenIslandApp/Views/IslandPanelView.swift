@@ -613,19 +613,7 @@ struct IslandPanelView: View {
                 }
             } else {
                 ForEach(model.islandSessionSections) { section in
-                    if section.id == AppModel.idleFoldSectionID {
-                        idleFoldSection(section, referenceDate: referenceDate)
-                    } else {
-                        VStack(alignment: .leading, spacing: 0) {
-                            if model.islandSessionGroup != .none {
-                                sessionSectionHeader(section)
-                            }
-
-                            ForEach(section.sessions) { session in
-                                sessionRow(session, referenceDate: referenceDate)
-                            }
-                        }
-                    }
+                    sectionBody(section, referenceDate: referenceDate)
                 }
             }
 
@@ -651,17 +639,22 @@ struct IslandPanelView: View {
     @ViewBuilder
     private func sessionRowsContent(referenceDate: Date) -> some View {
         ForEach(model.islandSessionSections) { section in
-            if section.id == AppModel.idleFoldSectionID {
-                idleFoldSection(section, referenceDate: referenceDate)
-            } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    if model.islandSessionGroup != .none {
-                        sessionSectionHeader(section)
-                    }
+            sectionBody(section, referenceDate: referenceDate)
+        }
+    }
 
-                    ForEach(section.sessions) { session in
-                        sessionRow(session, referenceDate: referenceDate)
-                    }
+    @ViewBuilder
+    private func sectionBody(_ section: IslandSessionSection, referenceDate: Date) -> some View {
+        if section.id == AppModel.idleFoldSectionID {
+            idleFoldSection(section, referenceDate: referenceDate)
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                if model.islandSessionGroup != .none {
+                    sessionSectionHeader(section)
+                }
+
+                ForEach(section.sessions) { session in
+                    sessionRow(session, referenceDate: referenceDate)
                 }
             }
         }
@@ -737,16 +730,8 @@ struct IslandPanelView: View {
         return lang.t(
             "island.idleFold.title",
             section.sessions.count,
-            idleFoldAgeLabel(newestActivity)
+            AgentSession.islandAgeBadge(since: newestActivity)
         )
-    }
-
-    private func idleFoldAgeLabel(_ date: Date) -> String {
-        let age = max(0, Int(Date.now.timeIntervalSince(date)))
-        if age < 60 { return "<1m" }
-        if age < 3_600 { return "\(max(1, age / 60))m" }
-        if age < 86_400 { return "\(max(1, age / 3_600))h" }
-        return "\(max(1, age / 86_400))d"
     }
 
     private func sessionPanelHeader(referenceDate: Date) -> some View {
@@ -879,7 +864,6 @@ struct IslandPanelView: View {
 
     private func sectionTint(for section: IslandSessionSection) -> Color {
         guard let first = section.sessions.first else { return IslandDesignPalette.Status.idle }
-        if section.id == "state-idle" { return IslandDesignPalette.Status.idle }
         return IslandDesignPalette.Status.tint(for: first.phase)
     }
 

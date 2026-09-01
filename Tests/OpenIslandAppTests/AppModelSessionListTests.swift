@@ -364,6 +364,53 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func stallReapedSessionsFoldImmediatelyEvenWithLargerStaleThreshold() {
+        let now = Date()
+        let model = AppModel()
+        // A 20-min stale threshold exceeds the 10-min stall timeout: a
+        // just-reaped session (quiet for ~11 min) would otherwise sit in
+        // "Just done" for up to 10 minutes before folding.
+        model.updateAppearancePreferences(for: .topBar) {
+            $0.sessionGroup = .state
+            $0.completedStaleThreshold = .twentyMinutes
+        }
+
+        var reaped = listSession(id: "reaped", phase: .completed, updatedAt: now.addingTimeInterval(-660))
+        reaped.isProcessAlive = true
+        reaped.isStallReaped = true
+        var freshDone = listSession(id: "fresh-done", phase: .completed, updatedAt: now.addingTimeInterval(-60))
+        freshDone.isProcessAlive = true
+
+        model.state = SessionState(sessions: [reaped, freshDone])
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+
+        #expect(model.islandSessionSections.map(\.id) == ["state-done", AppModel.idleFoldSectionID])
+        #expect(model.islandSessionSections.first?.sessions.first?.id == "fresh-done")
+        #expect(model.islandSessionSections.last?.sessions.first?.id == "reaped")
+    }
+
+    @Test
+    func stallReapedSessionsStayFullRowsWhenStaleThresholdIsNever() {
+        let now = Date()
+        let model = AppModel()
+        model.updateAppearancePreferences(for: .topBar) {
+            $0.completedStaleThreshold = .never
+        }
+
+        var reaped = listSession(id: "reaped", phase: .completed, updatedAt: now.addingTimeInterval(-660))
+        reaped.isProcessAlive = true
+        reaped.isStallReaped = true
+
+        model.state = SessionState(sessions: [reaped])
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+
+        // `.never` is an explicit user preference for no folding — it wins
+        // over the reaped-session fast path.
+        #expect(model.islandSessionSections.map(\.id) == ["all"])
+        #expect(model.islandSessionSections.first?.sessions.first?.id == "reaped")
+    }
+
+    @Test
     func closedIslandCountBadgeCountsActiveSessionsOnly() {
         let now = Date()
         let model = AppModel()

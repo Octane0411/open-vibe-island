@@ -749,6 +749,10 @@ final class AppModel {
         // `.never` keeps every completed session as a full row.
         let isFoldable: (AgentSession) -> Bool = { session in
             session.isStaleCompletedForIsland(at: now, threshold: threshold)
+                // Stall reaps carry their pre-timeout last-write time; fold
+                // them straight away even when the user's threshold exceeds
+                // the stall timeout, so they never flash through "Just done".
+                || (threshold.isFinite && session.phase == .completed && session.isStallReaped)
         }
         let visibleSessions = sortIslandSessions(surfacedSessions.filter { !isFoldable($0) })
         let foldedSessions = sortIslandSessions(surfacedSessions.filter(isFoldable))
@@ -914,7 +918,7 @@ final class AppModel {
             // The badge answers "how many agents need me right now": running
             // plus waiting states. Idle/folded sessions carry no signal, and
             // an all-idle island shows no badge at all.
-            let n = sessions.filter { $0.phase == .running || $0.phase.requiresAttention }.count
+            let n = sessions.filter(\.phase.isActiveTurn).count
             guard n > 0 else { return nil }
             return .count(n)
         case .agents:

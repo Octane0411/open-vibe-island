@@ -54,12 +54,12 @@ final class ProcessMonitoringCoordinator {
     private static let idlePollInterval: TimeInterval = 300
     private static let cursorStalenessTimeout: TimeInterval = 600  // 10 minutes
     /// Completed Codex.app sessions stay resident while their rollout is
-    /// still inside the discovery window (`CodexRolloutDiscovery.maxAge`)
-    /// so they fold into the idle row instead of churning between eviction
-    /// and rediscovery. Running sessions get no timeout here — they are
-    /// demoted by `CodexAppSessionReconciler.runningStallTimeout` once the
-    /// rollout file goes quiet.
-    private static let codexAppCompletedRetention: TimeInterval = 86_400
+    /// still inside the discovery window so they fold into the idle row
+    /// instead of churning between eviction and rediscovery. Running
+    /// sessions get no timeout here — they are demoted by
+    /// `CodexAppSessionReconciler.runningStallTimeout` once the rollout
+    /// file goes quiet.
+    private static let codexAppCompletedRetention: TimeInterval = CodexRolloutDiscovery.defaultMaxAge
     private static let claudeDesktopStalenessTimeout: TimeInterval = 600  // 10 minutes
 
     static func monitoringPollInterval(
