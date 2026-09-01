@@ -22,6 +22,7 @@ final class HookInstallationCoordinator {
     var cursorHookStatus: CursorHookInstallationStatus?
     var geminiHookStatus: GeminiHookInstallationStatus?
     var kimiHookStatus: KimiHookInstallationStatus?
+    var zcodeHookStatus: ZCodeHookInstallationStatus?
     var claudeStatusLineStatus: ClaudeStatusLineInstallationStatus?
     var claudeUsageSnapshot: ClaudeUsageSnapshot?
     var codexUsageSnapshot: CodexUsageSnapshot?
@@ -36,6 +37,7 @@ final class HookInstallationCoordinator {
     var isCursorHookSetupBusy = false
     var isGeminiHookSetupBusy = false
     var isKimiHookSetupBusy = false
+    var isZcodeHookSetupBusy = false
     var isClaudeUsageSetupBusy = false
 
     @ObservationIgnored
@@ -84,6 +86,9 @@ final class HookInstallationCoordinator {
 
     @ObservationIgnored
     private let kimiHookInstallationManager = KimiHookInstallationManager()
+
+    @ObservationIgnored
+    private let zcodeHookInstallationManager = ZCodeHookInstallationManager()
 
     /// Computed so it always reflects the latest `ClaudeConfigDirectory` setting.
     private var claudeStatusLineInstallationManager: ClaudeStatusLineInstallationManager {
@@ -143,6 +148,10 @@ final class HookInstallationCoordinator {
 
     var kimiHooksInstalled: Bool {
         kimiHookStatus?.managedHooksPresent == true
+    }
+
+    var zcodeHooksInstalled: Bool {
+        zcodeHookStatus?.managedHooksPresent == true
     }
 
     var claudeUsageInstalled: Bool {
@@ -376,6 +385,34 @@ final class HookInstallationCoordinator {
         }
 
         return "no managed Kimi hooks"
+    }
+
+    var zcodeHookStatusTitle: String {
+        if zcodeHooksInstalled {
+            return "ZCode hooks installed"
+        }
+
+        if hooksBinaryURL == nil {
+            return "Hook binary not found"
+        }
+
+        return "ZCode hooks not installed"
+    }
+
+    var zcodeHookStatusSummary: String {
+        guard zcodeHookStatus != nil else {
+            return "Reading ~/.zcode/cli/config.json."
+        }
+
+        if zcodeHooksInstalled {
+            return "managed hooks present"
+        }
+
+        if hooksBinaryURL == nil {
+            return "Build OpenIslandHooks before installing."
+        }
+
+        return "no managed ZCode hooks"
     }
 
     var codexHookStatusTitle: String {
@@ -689,6 +726,16 @@ final class HookInstallationCoordinator {
                     self.onStatusMessage?("Failed to read Kimi hook status: \(error.localizedDescription)")
                 }
             }
+
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    let status = try self.zcodeHookInstallationManager.status(hooksBinaryURL: self.hooksBinaryURL)
+                    self.zcodeHookStatus = status
+                } catch {
+                    self.onStatusMessage?("Failed to read ZCode hook status: \(error.localizedDescription)")
+                }
+            }
         }
     }
 
@@ -740,6 +787,19 @@ final class HookInstallationCoordinator {
                 self.kimiHookStatus = status
             } catch {
                 self.onStatusMessage?("Failed to read Kimi hook status: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func refreshZcodeHookStatus() {
+        Task { [weak self] in
+            guard let self else { return }
+
+            do {
+                let status = try self.zcodeHookInstallationManager.status(hooksBinaryURL: self.hooksBinaryURL)
+                self.zcodeHookStatus = status
+            } catch {
+                self.onStatusMessage?("Failed to read ZCode hook status: \(error.localizedDescription)")
             }
         }
     }
@@ -814,6 +874,7 @@ final class HookInstallationCoordinator {
         case .openCode: return !openCodePluginInstalled
         case .gemini: return !geminiHooksInstalled
         case .kimi: return !kimiHooksInstalled
+        case .zcode: return !zcodeHooksInstalled
         case .claudeUsageBridge: return !claudeUsageInstalled
         }
     }
@@ -838,6 +899,7 @@ final class HookInstallationCoordinator {
             case .openCode: return openCodePluginInstalled
             case .gemini: return geminiHooksInstalled
             case .kimi: return kimiHooksInstalled
+            case .zcode: return zcodeHooksInstalled
             case .claudeUsageBridge: return claudeUsageInstalled
             }
         }
@@ -1045,6 +1107,23 @@ final class HookInstallationCoordinator {
 
     func uninstallKimiHooks() {
         updateKimiHooks(userMessage: "Removing Kimi hooks.", intent: .uninstalled) { manager in
+            try manager.uninstall()
+        }
+    }
+
+    func installZcodeHooks() {
+        guard let hooksBinaryURL else {
+            onStatusMessage?("Could not find a local OpenIslandHooks binary. Build the package first.")
+            return
+        }
+
+        updateZcodeHooks(userMessage: "Installing ZCode hooks.", intent: .installed) { manager in
+            try manager.install(hooksBinaryURL: hooksBinaryURL)
+        }
+    }
+
+    func uninstallZcodeHooks() {
+        updateZcodeHooks(userMessage: "Removing ZCode hooks.", intent: .uninstalled) { manager in
             try manager.uninstall()
         }
     }
@@ -1257,6 +1336,34 @@ final class HookInstallationCoordinator {
                 }
             } catch {
                 self.onStatusMessage?("Kimi hook update failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func updateZcodeHooks(
+        userMessage: String,
+        intent: AgentHookIntent,
+        operation: @escaping (ZCodeHookInstallationManager) throws -> ZCodeHookInstallationStatus
+    ) {
+        isZcodeHookSetupBusy = true
+        onStatusMessage?(userMessage)
+
+        Task { [weak self] in
+            guard let self else { return }
+
+            defer { self.isZcodeHookSetupBusy = false }
+
+            do {
+                let status = try operation(self.zcodeHookInstallationManager)
+                self.zcodeHookStatus = status
+                self.intentStore.setIntent(intent, for: .zcode)
+                if status.managedHooksPresent {
+                    self.onStatusMessage?("ZCode hooks are installed. Sessions started afterwards will report to the island.")
+                } else {
+                    self.onStatusMessage?("ZCode hooks are not installed.")
+                }
+            } catch {
+                self.onStatusMessage?("ZCode hook update failed: \(error.localizedDescription)")
             }
         }
     }

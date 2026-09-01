@@ -31,6 +31,7 @@ CLI coding agents are powerful, but they pull attention away from the editor and
 | **CodeBuddy** | Supported | Claude Code fork — same hook format, config at `~/.codebuddy/settings.json` |
 | **Gemini CLI** | Supported | Hook integration (`SessionStart`, `BeforeAgent`, `AfterAgent`, `SessionEnd`, `Notification`), session tracking, terminal jump metadata, completion-card compatibility handling |
 | **Kimi CLI** | Supported | Hook integration via `~/.kimi/config.toml` `[[hooks]]` (Moonshot AI). Kimi's hook payload is byte-compatible with Claude Code, so runtime reuses the Claude decode path; a dedicated TOML installer preserves user-authored hooks |
+| **ZCode** | Supported | Hook integration via `~/.zcode/cli/config.json` `hooks.events` (Z.AI). Claude-compatible payload — reuses the Claude decode path with `--source zcode`; dedicated installer sets `hooks.enabled` and restores it on uninstall. Desktop-app (ZCode.app) sessions are tagged via `__CFBundleIdentifier` and stay alive while the app runs |
 
 ## Supported Terminals
 

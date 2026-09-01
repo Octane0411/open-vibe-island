@@ -215,6 +215,23 @@ struct ActiveAgentProcessDiscovery {
                 ))
                 continue
             }
+
+            if isZcodeProcess(command: process.command) {
+                let claimKey = "zcode:\(process.pid)"
+                guard claimedKeys.insert(claimKey).inserted else {
+                    continue
+                }
+
+                let lsofOutput = lsofOutput(pid: process.pid)
+                snapshots.append(ProcessSnapshot(
+                    tool: .zcode,
+                    sessionID: nil,
+                    workingDirectory: lsofOutput.flatMap(workingDirectory(from:)),
+                    terminalTTY: process.terminalTTY,
+                    terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+                ))
+                continue
+            }
         }
 
         return snapshots
@@ -774,6 +791,25 @@ struct ActiveAgentProcessDiscovery {
         }
 
         return firstToken == "kimi" || firstToken.hasSuffix("/kimi")
+    }
+
+    /// Matches the ZCode CLI entry-point. ZCode's Node runtime rewrites its
+    /// process title to `zcode-cli`, so terminal sessions show that as the
+    /// command; direct `node .../zcode.cjs` invocations keep the script path.
+    /// App-driven `zcode-cli` processes have no TTY and are filtered out
+    /// earlier — those sessions arrive via hooks instead.
+    private func isZcodeProcess(command: String) -> Bool {
+        let lowered = command.lowercased()
+        guard let firstToken = lowered.split(separator: " ").first.map(String.init) else {
+            return false
+        }
+
+        let binaryName = (firstToken as NSString).lastPathComponent
+        if binaryName == "zcode-cli" {
+            return true
+        }
+
+        return binaryName == "zcode.cjs" || lowered.contains("/zcode.cjs ")
     }
 
     /// Returns `true` when the given `ps` command string belongs to a Claude Code process.

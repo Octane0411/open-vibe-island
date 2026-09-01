@@ -61,6 +61,7 @@ final class ProcessMonitoringCoordinator {
     /// file goes quiet.
     private static let codexAppCompletedRetention: TimeInterval = CodexRolloutDiscovery.defaultMaxAge
     private static let claudeDesktopStalenessTimeout: TimeInterval = 600  // 10 minutes
+    private static let zcodeAppStalenessTimeout: TimeInterval = 600  // 10 minutes
 
     static func monitoringPollInterval(
         isResolvingInitialLiveSessions: Bool,
@@ -515,6 +516,41 @@ final class ProcessMonitoringCoordinator {
             }
         }
 
+        // ZCode sessions come in two shapes. Terminal sessions run behind a
+        // TTY-attached `zcode-cli` process; hook transcripts are temporary
+        // files, so process matching keys off the workspace directory and
+        // recency. App sessions are TTY-less subprocesses of ZCode.app (same
+        // shape as Claude Desktop's local agent mode): they stay alive while
+        // ZCode.app is running and completed ones expire after a staleness
+        // window.
+        let zcodeProcesses = activeProcesses.filter { $0.tool == .zcode }
+        let trackedZcodeSessions = sessions.filter { $0.tool == .zcode && !$0.isDemoSession }
+        var claimedZcodeSessionIDs: Set<String> = []
+        for process in zcodeProcesses {
+            guard let matched = uniqueTrackedZcodeSession(
+                for: process,
+                sessions: trackedZcodeSessions,
+                claimedSessionIDs: claimedZcodeSessionIDs
+            ) else {
+                continue
+            }
+            aliveIDs.insert(matched.id)
+            claimedZcodeSessionIDs.insert(matched.id)
+        }
+
+        if Self.isZcodeDesktopAppRunning() {
+            for session in trackedZcodeSessions
+            where !claimedZcodeSessionIDs.contains(session.id)
+                && session.jumpTarget?.terminalApp == "ZCode.app" {
+                if session.isSessionEnded { continue }
+                let isStale = session.phase == .completed
+                    && session.updatedAt.addingTimeInterval(Self.zcodeAppStalenessTimeout) < Date.now
+                if !isStale {
+                    aliveIDs.insert(session.id)
+                }
+            }
+        }
+
         // Cursor sessions: prefer concrete cursor-agent processes when they
         // are visible (Cursor CLI / integrated terminal), then fall back to
         // app-level liveness for IDE-only hook sessions where there is no
@@ -677,6 +713,32 @@ final class ProcessMonitoringCoordinator {
             }
             return lhsDate < rhsDate
         }
+    }
+
+    /// ZCode hook transcripts are temporary files that disappear right after
+    /// the hook runs, so unlike Gemini there is no stable transcript path to
+    /// match on — sessions are keyed by workspace directory and freshness.
+    private func uniqueTrackedZcodeSession(
+        for process: ActiveProcessSnapshot,
+        sessions: [AgentSession],
+        claimedSessionIDs: Set<String>
+    ) -> AgentSession? {
+        let unclaimedSessions = sessions.filter { !claimedSessionIDs.contains($0.id) }
+        guard !unclaimedSessions.isEmpty else {
+            return nil
+        }
+
+        if let processWorkingDirectory = process.workingDirectory {
+            let workspaceMatches = unclaimedSessions.filter {
+                $0.jumpTarget?.workingDirectory == processWorkingDirectory
+            }
+            if !workspaceMatches.isEmpty {
+                return workspaceMatches.max { $0.updatedAt < $1.updatedAt }
+            }
+            return nil
+        }
+
+        return unclaimedSessions.count == 1 ? unclaimedSessions[0] : nil
     }
 
     private func modificationDate(atPath path: String?) -> Date? {
@@ -1300,6 +1362,15 @@ final class ProcessMonitoringCoordinator {
         }
     }
 
+    /// Check whether the ZCode desktop app is currently running, using
+    /// `NSWorkspace.shared.runningApplications` for the same reason as
+    /// ``isCodexDesktopAppRunning()``.
+    static func isZcodeDesktopAppRunning() -> Bool {
+        NSWorkspace.shared.runningApplications.contains { app in
+            app.bundleIdentifier == "dev.zcode.app"
+        }
+    }
+
     private func processIdentityKey(_ process: ActiveProcessSnapshot) -> String {
         [
             process.sessionID,
@@ -1448,6 +1519,8 @@ final class ProcessMonitoringCoordinator {
             return "Cursor \(session.id.prefix(8))"
         case .kimiCLI:
             return "Kimi \(session.id.prefix(8))"
+        case .zcode:
+            return "ZCode \(session.id.prefix(8))"
         }
     }
 }
