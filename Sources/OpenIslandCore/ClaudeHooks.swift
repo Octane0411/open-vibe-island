@@ -892,6 +892,8 @@ public extension ClaudeHookPayload {
             return .codebuddy
         case "kimi":
             return .kimiCLI
+        case "zcode":
+            return .zcode
         default:
             return .claudeCode
         }
@@ -1055,6 +1057,7 @@ public extension ClaudeHookPayload {
         "vs code", "vs code insiders", "cursor", "windsurf", "trae",
         "intellij idea", "webstorm", "pycharm", "goland", "clion",
         "rubymine", "phpstorm", "rider", "rustrover",
+        "zcode.app",
     ]
 
     private func shouldUseFocusedTerminalLocator(for terminalApp: String) -> Bool {
@@ -1186,6 +1189,16 @@ public extension ClaudeHookPayload {
         if environment["CLAUDE_CODE_ENTRYPOINT"] == "claude-desktop"
             || environment["__CFBundleIdentifier"]?.lowercased() == "com.anthropic.claudefordesktop" {
             return "Claude.app"
+        }
+
+        // ZCode desktop app — same shape as Claude.app's local agent mode:
+        // ZCode.app drives TTY-less zcode-cli subprocesses that process
+        // discovery never sees, so without this tag the hook-managed
+        // liveness fallback would evict the session within a couple of
+        // polls. __CFBundleIdentifier is the only authoritative signal;
+        // checked before TERM_PROGRAM for the same GUI-leak rationale.
+        if environment["__CFBundleIdentifier"]?.lowercased() == "dev.zcode.app" {
+            return "ZCode.app"
         }
 
         // TERM_PROGRAM is the only authoritative terminal signal. Each

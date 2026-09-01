@@ -223,6 +223,8 @@ extension AgentSession {
             return "Cursor"
         case .kimiCLI:
             return "Kimi"
+        case .zcode:
+            return "ZCode"
         }
     }
 

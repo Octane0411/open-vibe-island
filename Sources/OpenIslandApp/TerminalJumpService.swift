@@ -84,6 +84,11 @@ struct TerminalJumpService {
             aliases: ["claude.app"]
         ),
         TerminalAppDescriptor(
+            displayName: "ZCode.app",
+            bundleIdentifier: "dev.zcode.app",
+            aliases: ["zcode.app"]
+        ),
+        TerminalAppDescriptor(
             displayName: "Kaku",
             bundleIdentifier: "fun.tw93.kaku",
             aliases: ["kaku"]

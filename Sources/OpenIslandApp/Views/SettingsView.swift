@@ -432,6 +432,7 @@ struct SetupSettingsPane: View {
     @State private var confirmingUninstallCursor = false
     @State private var confirmingUninstallGemini = false
     @State private var confirmingUninstallKimi = false
+    @State private var confirmingUninstallZcode = false
     @State private var confirmingUninstallClaudeUsage = false
 
     private var lang: LanguageManager { model.lang }
@@ -616,6 +617,23 @@ struct SetupSettingsPane: View {
                 } message: {
                     Text("This will remove Open Island hooks from ~/.kimi/config.toml.")
                 }
+
+                hookRow(
+                    name: "ZCode",
+                    installed: model.zcodeHooksInstalled,
+                    busy: model.isZcodeHookSetupBusy,
+                    configLocationURL: model.zcodeHookStatus?.configURL,
+                    installAction: { model.installZcodeHooks() },
+                    uninstallAction: { confirmingUninstallZcode = true }
+                )
+                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallZcode) {
+                    Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
+                        model.uninstallZcodeHooks()
+                    }
+                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
+                } message: {
+                    Text("This will remove Open Island hooks from ~/.zcode/cli/config.json. ZCode reads hook config when a session starts, so running sessions are unaffected.")
+                }
             }
 
             Section {
@@ -693,6 +711,7 @@ struct SetupSettingsPane: View {
                     if !model.cursorHooksInstalled { model.installCursorHooks() }
                     if !model.geminiHooksInstalled { model.installGeminiHooks() }
                     if !model.kimiHooksInstalled { model.installKimiHooks() }
+                    if !model.zcodeHooksInstalled { model.installZcodeHooks() }
                     if !model.claudeUsageInstalled { model.installClaudeUsageBridge() }
                 }
                 .disabled(model.hooksBinaryURL == nil || allReady)
@@ -754,7 +773,7 @@ struct SetupSettingsPane: View {
     private var allReady: Bool {
         model.claudeHooksInstalled && model.codexHooksInstalled && model.openCodePluginInstalled
             && model.qoderHooksInstalled && model.qwenCodeHooksInstalled && model.factoryHooksInstalled && model.codebuddyHooksInstalled
-            && model.cursorHooksInstalled && model.geminiHooksInstalled && model.kimiHooksInstalled && model.claudeUsageInstalled
+            && model.cursorHooksInstalled && model.geminiHooksInstalled && model.kimiHooksInstalled && model.zcodeHooksInstalled && model.claudeUsageInstalled
     }
 
     @ViewBuilder

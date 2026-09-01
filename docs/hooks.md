@@ -307,6 +307,61 @@ Setting `interrupt: true` terminates the current agent turn immediately.
 
 ---
 
+## ZCode Hooks (`--source zcode`)
+
+**Payload type**: `ClaudeHookPayload` (shared decode path, like the Claude Code forks)  
+**Source**: [`Sources/OpenIslandCore/ZCodeHookInstaller.swift`](../Sources/OpenIslandCore/ZCodeHookInstaller.swift)
+
+ZCode (Z.AI) publishes Claude-Code-compatible hooks: the stdin JSON carries the
+snake_case Claude fields (`hook_event_name`, `session_id`, `transcript_path`,
+`cwd`, `prompt`, `tool_name`, `tool_input`, `stop_hook_active`, ...) alongside
+ZCode's own camelCase aliases. Open Island therefore reuses the Claude decode
+path and only implements a dedicated installer.
+
+### Configuration file
+
+ZCode reads hooks from `~/.zcode/cli/config.json` — not from a Claude-style
+`settings.json`. Hook groups nest under `hooks.events.<Event>` and the whole
+hook system must be switched on with `hooks.enabled: true`:
+
+```json
+{
+  "hooks": {
+    "enabled": true,
+    "events": {
+      "SessionStart": [
+        { "hooks": [ { "type": "command", "command": "'<hooks-binary>' --source zcode", "timeoutMs": 45000, "enabled": true } ] }
+      ]
+    }
+  }
+}
+```
+
+### Managed installation
+
+`ZCodeHookInstallationManager` installs `SessionStart`, `UserPromptSubmit`,
+`PermissionRequest` (1 hour), and `Stop` into `~/.zcode/cli/config.json` and
+sets `hooks.enabled = true`. The manifest
+(`~/.zcode/cli/open-island-zcode-install.json`) records the pre-install
+`hooks.enabled` value so uninstall restores the user's original state.
+Per-tool events (`PreToolUse` / `PostToolUse` / `PostToolUseFailure`) stay
+opt-in to keep the footprint low-noise.
+
+ZCode snapshots hook configuration when a session starts, so installs and
+uninstalls apply to sessions launched afterwards; running sessions are
+unaffected.
+
+### Desktop app sessions
+
+When ZCode.app (bundle `dev.zcode.app`) drives the CLI, hooks run as TTY-less
+subprocesses. The hook runtime tags those payloads `terminal_app: "ZCode.app"`
+via `__CFBundleIdentifier`, and liveness follows the desktop app instead of a
+terminal process (same model as Claude Desktop's local agent mode). Jump-back
+activates ZCode.app; sessions started in a real terminal keep full terminal
+jump targeting.
+
+---
+
 ## Timeout Policy
 
 | Source | Event | Timeout |
@@ -316,6 +371,8 @@ Setting `interrupt: true` terminates the current agent turn immediately.
 | Claude Code | `PermissionRequest` | **24 hours** (awaits human approval) |
 | Claude Code | All other events | **45 seconds** |
 | Gemini CLI | All events | Bridge default |
+| ZCode | `PermissionRequest` | **1 hour** (awaits human approval) |
+| ZCode | All other managed events | **45 seconds** |
 
 ---
 
