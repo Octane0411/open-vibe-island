@@ -62,6 +62,7 @@ final class AppModel {
     /// accumulation over time is bounded in practice.
     @ObservationIgnored private var _agentsGridObservedSequence: [String: Int] = [:]
     @ObservationIgnored private var _agentsGridNextTicket: Int = 0
+    @ObservationIgnored private var antigravityMaintenanceTask: Task<Void, Never>?
     var selectedSessionID: String?
     let hooks = HookInstallationCoordinator()
     let overlay = OverlayUICoordinator()
@@ -750,6 +751,7 @@ final class AppModel {
             self?.discovery.scheduleClaudeSessionPersistence()
             self?.discovery.scheduleOpenCodeSessionPersistence()
             self?.discovery.scheduleCursorSessionPersistence()
+            self?.discovery.scheduleAntigravitySessionPersistence()
         }
         monitoring.onCodexAppRunningChanged = { [weak self] isRunning in
             guard let self else { return }
@@ -1186,6 +1188,7 @@ final class AppModel {
                 hooks.refreshCodexUsageState()
                 hooks.startCodexUsageMonitoringIfNeeded()
             }
+            startAntigravitySessionMaintenanceIfNeeded()
             updateChecker.startIfNeeded()
 
         } else {
@@ -1708,6 +1711,20 @@ final class AppModel {
     }
 
     /// Applies startup discovery results on the main thread after background I/O completes.
+    /// Passively rediscovers Antigravity CLI sessions on a slow cadence.
+    /// Antigravity has no hook stream, so this periodic scan is what keeps
+    /// conversation rows (titles, prompts, completion state) fresh.
+    func startAntigravitySessionMaintenanceIfNeeded() {
+        guard antigravityMaintenanceTask == nil else { return }
+
+        antigravityMaintenanceTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                self?.discovery.maintainAntigravitySessionsIfNeeded()
+                try? await Task.sleep(for: .seconds(20))
+            }
+        }
+    }
+
     private func applyStartupDiscoveryPayload(_ payload: SessionDiscoveryCoordinator.StartupDiscoveryPayload) {
         discovery.applyStartupDiscoveryPayload(payload)
 

@@ -393,6 +393,30 @@ For iTerm, Terminal, and Ghostty the process additionally runs an AppleScript qu
 
 ---
 
+## Antigravity CLI (passive discovery — no hooks)
+
+Antigravity (`agy`) shares the `~/.gemini` root directory with Gemini CLI but
+nothing else: its settings live in `~/.gemini/antigravity-cli/settings.json`
+and its hooks are Claude-style (`PreToolUse` / `PostToolUse` / `Stop` in a
+dedicated `hooks.json`), not Gemini CLI's `SessionStart` / `BeforeAgent` /
+`AfterAgent` / `SessionEnd` vocabulary. Because that hook schema is not yet
+verified against a logged-in CLI, Open Island does **not** write any
+Antigravity configuration. Instead it discovers sessions passively:
+
+| Source | Used for |
+|---|---|
+| `~/.gemini/antigravity-cli/conversations/<uuid>.db` | Conversation existence and activity (file mtime) |
+| `~/.gemini/antigravity-cli/history.jsonl` | Latest prompt text, timestamp, and workspace per conversation |
+| `~/.gemini/antigravity-cli/conversation_summaries.db` | Optional titles and workspace URIs |
+| `ps` (process matching on `agy`) | Liveness — a live process keeps the workspace-matched session visible |
+
+Sessions whose activity went quiet for more than 10 minutes are marked
+completed; sessions older than 24 hours stop being reported. The
+`presence/<uuid>.lock` files are deliberately ignored for liveness because
+stale locks linger after the CLI exits.
+
+---
+
 ## Related source files
 
 | File | Responsibility |
