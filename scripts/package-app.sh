@@ -76,6 +76,9 @@ chmod +x \
 
 # Add rpath so the binary can find Sparkle.framework in Contents/Frameworks/.
 install_name_tool -add_rpath @loader_path/../Frameworks "$bundle_dir/Contents/MacOS/OpenIslandApp" 2>/dev/null || true
+# install_name_tool invalidates the linker's ad-hoc signature, and arm64 kills
+# the process at launch without one — re-sign before the smoke test runs.
+codesign --force --sign - "$bundle_dir/Contents/MacOS/OpenIslandApp"
 
 cat > "$bundle_dir/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
