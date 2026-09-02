@@ -4,9 +4,11 @@ set -euo pipefail
 
 
 skip_setup=false
+regenerate_icons=false
 for arg in "$@"; do
   case "$arg" in
     --skip-setup) skip_setup=true ;;
+    --regenerate-icons) regenerate_icons=true ;;
   esac
 done
 
@@ -28,7 +30,18 @@ app_binary="$build_root/OpenIslandApp"
 hooks_binary="$build_root/OpenIslandHooks"
 setup_binary="$build_root/OpenIslandSetup"
 
-python3 "$brand_script"
+# Brand assets are generated artifacts that live in git. Rendering them on
+# every launch rewrote 14 tracked PNGs whenever the local Pillow encoded them
+# differently from the committed bytes, dirtying the worktree and leaking icon
+# churn into unrelated commits. Use the committed .icns; pass
+# --regenerate-icons only when deliberately changing the brand source, and
+# commit the result.
+if [ "$regenerate_icons" = true ]; then
+  python3 "$brand_script"
+elif [ ! -f "$brand_icon" ]; then
+  echo "Missing $brand_icon — run: python3 scripts/generate_brand_icons.py" >&2
+  exit 1
+fi
 if [ "$skip_setup" = false ]; then
   "$setup_binary" install --hooks-binary "$hooks_binary"
 fi
