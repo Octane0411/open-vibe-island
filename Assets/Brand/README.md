@@ -7,10 +7,12 @@ Structure:
 - `Source/` keeps raw brand source assets that should not be treated as generated runtime output.
 - `AppIcon.appiconset/`, `OpenIsland.iconset/`, and `OpenIsland.icns` are generated packaging assets.
 - `Internal/` contains small derived assets for in-app surfaces.
+- `docs/images/social-preview.png` is the 1280 x 640 GitHub social preview.
 
 Generation workflow:
 
 - regenerate everything with `python3 scripts/generate_brand_icons.py`
+- regenerate the GitHub social preview with `python3 scripts/generate_social_preview.py`
 - the script outputs:
   - `AppIcon.appiconset/` for future asset-catalog use
   - `OpenIsland.iconset/` and `OpenIsland.icns` for manual macOS bundle packaging
