@@ -64,6 +64,14 @@ public enum ZCodeHookInstallerError: Error, LocalizedError {
 /// `hooks.events`, and requires `hooks.enabled` to be `true` — unlike
 /// Claude's `settings.json` where groups sit directly under `hooks`.
 ///
+/// Hook entries are written with ZCode's `process` type (bare executable
+/// path + `args` array). Earlier installs used the `command` type with a
+/// shell-quoted path; ZCode does not evaluate `command` entries through a
+/// shell unless the entry opts in via `shell`, so the quotes corrupted
+/// argv and hook execution failed. `isManagedHook` still recognizes the
+/// legacy form so existing installs keep uninstalling cleanly, and the
+/// manager re-installs (migrating) whenever only legacy entries remain.
+///
 /// The installer keeps the footprint low-noise: only lifecycle events are
 /// installed (SessionStart, UserPromptSubmit, Stop, PermissionRequest);
 /// per-tool events are left to the user. ZCode snapshots hook config at
@@ -72,6 +80,9 @@ public enum ZCodeHookInstaller {
     public static let managedTimeoutMs = 45_000
     public static let managedInteractiveTimeoutMs = 60 * 60 * 1000
 
+    /// Arguments passed to the hooks binary for every managed entry.
+    public static let managedHookArguments = ["--source", "zcode"]
+
     private static let eventSpecs: [(name: String, matcher: String?, timeoutMs: Int)] = [
         ("SessionStart", nil, managedTimeoutMs),
         ("UserPromptSubmit", nil, managedTimeoutMs),
@@ -79,8 +90,12 @@ public enum ZCodeHookInstaller {
         ("PermissionRequest", "*", managedInteractiveTimeoutMs),
     ]
 
-    public static func hookCommand(for binaryPath: String) -> String {
-        "\(shellQuote(binaryPath)) --source zcode"
+    /// The `command` value of a managed `process`-type entry: the bare
+    /// executable path. Unlike the legacy shell-quoted `command`-type form,
+    /// no quoting is applied — the path and arguments travel as separate
+    /// JSON fields, which is what ZCode executes without a shell.
+    public static func processCommand(for binaryPath: String) -> String {
+        binaryPath
     }
 
     public static func installConfigJSON(
@@ -204,8 +219,9 @@ public enum ZCodeHookInstaller {
 
     private static func managedGroup(matcher: String?, timeoutMs: Int, hookCommand: String) -> [String: Any] {
         let hook: [String: Any] = [
-            "type": "command",
+            "type": "process",
             "command": hookCommand,
+            "args": managedHookArguments,
             "enabled": true,
             "timeoutMs": timeoutMs,
         ]
@@ -265,6 +281,33 @@ public enum ZCodeHookInstaller {
         }
     }
 
+    /// Returns `true` when every managed lifecycle event carries at least one
+    /// current-format (`process`-type) managed entry. Legacy installs that
+    /// only hold `command`-type entries report `false` so the manager can
+    /// re-install (migrate) them.
+    public static func containsCurrentFormatHooks(existingData: Data?, hookCommand: String) -> Bool {
+        let rootObject = (try? loadRootObject(from: existingData)) ?? [:]
+        let eventsObject = ((rootObject["hooks"] as? [String: Any])?["events"] as? [String: Any]) ?? [:]
+
+        return eventSpecs.allSatisfy { spec in
+            let groups = eventsObject[spec.name] as? [Any] ?? []
+            return groups.contains { item in
+                guard let group = item as? [String: Any] else {
+                    return false
+                }
+                let hooks = group["hooks"] as? [Any] ?? []
+                return hooks.contains { hook in
+                    guard let hook = hook as? [String: Any],
+                          isManagedHook(hook, managedCommand: hookCommand),
+                          hook["type"] as? String == "process" else {
+                        return false
+                    }
+                    return true
+                }
+            }
+        }
+    }
+
     private static func isManagedHook(_ hook: [String: Any], managedCommand: String?) -> Bool {
         let command = hook["command"] as? String ?? ""
         let arguments = (hook["args"] as? [Any])?.compactMap { $0 as? String } ?? []
@@ -282,12 +325,5 @@ public enum ZCodeHookInstaller {
             || normalized.contains("vibeislandhooks")
             || normalized.contains("open-island-bridge")
             || normalized.contains("vibe-island-bridge")
-    }
-
-    private static func shellQuote(_ string: String) -> String {
-        guard !string.isEmpty else {
-            return "''"
-        }
-        return "'\(string.replacingOccurrences(of: "'", with: "'\\''"))'"
     }
 }

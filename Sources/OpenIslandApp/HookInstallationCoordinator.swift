@@ -151,7 +151,10 @@ final class HookInstallationCoordinator {
     }
 
     var zcodeHooksInstalled: Bool {
-        zcodeHookStatus?.managedHooksPresent == true
+        // Current format only: a legacy `command`-type install (whose
+        // shell-quoted path ZCode cannot execute) counts as not installed so
+        // startup auto-install rewrites it as `process`-type entries.
+        zcodeHookStatus?.currentFormatHooksPresent == true
     }
 
     var claudeUsageInstalled: Bool {

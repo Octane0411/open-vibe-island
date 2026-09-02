@@ -5,7 +5,13 @@ public struct ZCodeHookInstallationStatus: Equatable, Sendable {
     public var configURL: URL
     public var manifestURL: URL
     public var hooksBinaryURL: URL?
+    /// Managed entries exist in `config.json` in any format (current
+    /// `process`-type or legacy `command`-type).
     public var managedHooksPresent: Bool
+    /// Managed entries exist in the current `process`-type format for every
+    /// lifecycle event. `false` with `managedHooksPresent == true` means a
+    /// legacy install that the manager should re-install (migrate).
+    public var currentFormatHooksPresent: Bool
     public var manifest: ZCodeHookInstallerManifest?
 
     public init(
@@ -14,6 +20,7 @@ public struct ZCodeHookInstallationStatus: Equatable, Sendable {
         manifestURL: URL,
         hooksBinaryURL: URL?,
         managedHooksPresent: Bool,
+        currentFormatHooksPresent: Bool = false,
         manifest: ZCodeHookInstallerManifest?
     ) {
         self.zcodeDirectory = zcodeDirectory
@@ -21,6 +28,7 @@ public struct ZCodeHookInstallationStatus: Equatable, Sendable {
         self.manifestURL = manifestURL
         self.hooksBinaryURL = hooksBinaryURL
         self.managedHooksPresent = managedHooksPresent
+        self.currentFormatHooksPresent = currentFormatHooksPresent
         self.manifest = manifest
     }
 }
@@ -61,12 +69,16 @@ public final class ZCodeHookInstallationManager: @unchecked Sendable {
 
         let configData = try? Data(contentsOf: configURL)
         let manifest = try loadManifest(at: manifestURL)
-        let managedCommand = manifest?.hookCommand ?? resolvedHooksBinaryURL.map { ZCodeHookInstaller.hookCommand(for: $0.path) }
+        let managedCommand = manifest?.hookCommand ?? resolvedHooksBinaryURL.map { ZCodeHookInstaller.processCommand(for: $0.path) }
         let uninstallMutation = try ZCodeHookInstaller.uninstallConfigJSON(
             existingData: configData,
             managedCommand: managedCommand,
             hooksEnabledBeforeInstall: manifest?.hooksEnabledBeforeInstall
         )
+        // Format detection runs against the binary this machine would
+        // install, not the manifest's recorded command: a legacy manifest
+        // (quoted command-type string) must not mask a pending migration.
+        let currentCommand = resolvedHooksBinaryURL.map { ZCodeHookInstaller.processCommand(for: $0.path) }
 
         return ZCodeHookInstallationStatus(
             zcodeDirectory: zcodeDirectory,
@@ -74,6 +86,9 @@ public final class ZCodeHookInstallationManager: @unchecked Sendable {
             manifestURL: manifestURL,
             hooksBinaryURL: resolvedHooksBinaryURL,
             managedHooksPresent: uninstallMutation.managedHooksPresent,
+            currentFormatHooksPresent: currentCommand.map {
+                ZCodeHookInstaller.containsCurrentFormatHooks(existingData: configData, hookCommand: $0)
+            } ?? false,
             manifest: manifest
         )
     }
@@ -90,7 +105,7 @@ public final class ZCodeHookInstallationManager: @unchecked Sendable {
             to: managedHooksBinaryURL,
             fileManager: fileManager
         )
-        let command = ZCodeHookInstaller.hookCommand(for: installedHooksBinaryURL.path)
+        let command = ZCodeHookInstaller.processCommand(for: installedHooksBinaryURL.path)
         let mutation = try ZCodeHookInstaller.installConfigJSON(
             existingData: existingConfig,
             hookCommand: command

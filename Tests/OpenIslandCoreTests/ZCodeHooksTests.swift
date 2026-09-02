@@ -3,7 +3,7 @@ import Testing
 @testable import OpenIslandCore
 
 struct ZCodeHooksTests {
-    private let command = ZCodeHookInstaller.hookCommand(for: "/opt/open-island/OpenIslandHooks")
+    private let command = ZCodeHookInstaller.processCommand(for: "/opt/open-island/OpenIslandHooks")
 
     private func hookEntry(in json: [String: Any], event: String) -> [String: Any]? {
         guard let hooks = json["hooks"] as? [String: Any],
@@ -12,7 +12,11 @@ struct ZCodeHooksTests {
             return nil
         }
         return groups.flatMap { $0["hooks"] as? [[String: Any]] ?? [] }
-            .first { ($0["command"] as? String)?.contains("--source zcode") == true }
+            .first { entry in
+                let arguments = (entry["args"] as? [Any])?.compactMap { $0 as? String } ?? []
+                return ((entry["command"] as? String ?? "") + " " + arguments.joined(separator: " "))
+                    .contains("--source zcode")
+            }
     }
 
     private func decodedRoot(_ data: Data?) throws -> [String: Any] {
@@ -34,7 +38,9 @@ struct ZCodeHooksTests {
 
         for event in ["SessionStart", "UserPromptSubmit", "Stop", "PermissionRequest"] {
             let entry = try #require(hookEntry(in: root, event: event))
-            #expect(entry["type"] as? String == "command")
+            #expect(entry["type"] as? String == "process")
+            #expect(entry["command"] as? String == command)
+            #expect(entry["args"] as? [String] == ["--source", "zcode"])
             #expect(entry["enabled"] as? Bool == true)
             #expect(entry["timeoutMs"] != nil)
         }
@@ -107,6 +113,7 @@ struct ZCodeHooksTests {
         let root = try decodedRoot(mutation.contents)
 
         let stopEntry = try #require(hookEntry(in: root, event: "Stop"))
+        #expect(stopEntry["type"] as? String == "process")
         #expect(stopEntry["command"] as? String == command)
 
         let groups = try #require(
@@ -222,6 +229,42 @@ struct ZCodeHooksTests {
     }
 
     @Test
+    func currentFormatDetectionDistinguishesLegacyInstalls() throws {
+        // A legacy install (shell-quoted command-type entries, as written
+        // before the process-type migration) is managed but not current.
+        let legacyCommand = "'/opt/open-island/OpenIslandHooks' --source zcode"
+        let legacyConfig: [String: Any] = [
+            "hooks": [
+                "enabled": true,
+                "events": [
+                    "SessionStart": [["hooks": [["type": "command", "command": legacyCommand]]]],
+                    "UserPromptSubmit": [["hooks": [["type": "command", "command": legacyCommand]]]],
+                    "Stop": [["hooks": [["type": "command", "command": legacyCommand]]]],
+                    "PermissionRequest": [["matcher": "*", "hooks": [["type": "command", "command": legacyCommand]]]],
+                ],
+            ],
+        ]
+        let legacyData = try JSONSerialization.data(withJSONObject: legacyConfig)
+        #expect(!ZCodeHookInstaller.containsCurrentFormatHooks(existingData: legacyData, hookCommand: command))
+
+        // Re-installing over the legacy config migrates every event to the
+        // process type and reports the current format.
+        let mutation = try ZCodeHookInstaller.installConfigJSON(existingData: legacyData, hookCommand: command)
+        #expect(ZCodeHookInstaller.containsCurrentFormatHooks(existingData: mutation.contents, hookCommand: command))
+        #expect(!ZCodeHookInstaller.containsCurrentFormatHooks(existingData: nil, hookCommand: command))
+
+        // Uninstalling removes even the legacy entries (marker-based
+        // detection), leaving no current-format hooks behind.
+        let uninstall = try ZCodeHookInstaller.uninstallConfigJSON(
+            existingData: legacyData,
+            managedCommand: command,
+            hooksEnabledBeforeInstall: nil
+        )
+        #expect(uninstall.managedHooksPresent)
+        #expect(!ZCodeHookInstaller.containsCurrentFormatHooks(existingData: uninstall.contents, hookCommand: command))
+    }
+
+    @Test
     func uninstallOnConfigWithoutHooksIsNoop() throws {
         let existing = Data("{\"plugins\": {}}".utf8)
         let uninstall = try ZCodeHookInstaller.uninstallConfigJSON(
@@ -255,6 +298,7 @@ struct ZCodeHooksTests {
 
         let afterInstall = try manager.install(hooksBinaryURL: sourceBinaryURL)
         #expect(afterInstall.managedHooksPresent)
+        #expect(afterInstall.currentFormatHooksPresent)
         #expect(afterInstall.manifest != nil)
         #expect(afterInstall.manifest?.hooksEnabledBeforeInstall == nil)
 
@@ -264,6 +308,7 @@ struct ZCodeHooksTests {
 
         let afterUninstall = try manager.uninstall()
         #expect(!afterUninstall.managedHooksPresent)
+        #expect(!afterUninstall.currentFormatHooksPresent)
         #expect(afterUninstall.manifest == nil)
     }
 
