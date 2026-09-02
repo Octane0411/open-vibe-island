@@ -322,7 +322,11 @@ path and only implements a dedicated installer.
 
 ZCode reads hooks from `~/.zcode/cli/config.json` — not from a Claude-style
 `settings.json`. Hook groups nest under `hooks.events.<Event>` and the whole
-hook system must be switched on with `hooks.enabled: true`:
+hook system must be switched on with `hooks.enabled: true`. Entries use
+ZCode's `process` type (bare executable path + `args` array) because ZCode
+does not evaluate `command` entries through a shell unless the entry opts in
+via `shell` — a shell-quoted `command` string corrupts argv and the hook
+never runs:
 
 ```json
 {
@@ -330,7 +334,7 @@ hook system must be switched on with `hooks.enabled: true`:
     "enabled": true,
     "events": {
       "SessionStart": [
-        { "hooks": [ { "type": "command", "command": "'<hooks-binary>' --source zcode", "timeoutMs": 45000, "enabled": true } ] }
+        { "hooks": [ { "type": "process", "command": "<hooks-binary>", "args": ["--source", "zcode"], "timeoutMs": 45000, "enabled": true } ] }
       ]
     }
   }
@@ -347,6 +351,11 @@ sets `hooks.enabled = true`. The manifest
 Per-tool events (`PreToolUse` / `PostToolUse` / `PostToolUseFailure`) stay
 opt-in to keep the footprint low-noise.
 
+Legacy installs that still hold `command`-type entries (shell-quoted path)
+are treated as not installed: startup auto-install and the Settings pane
+rewrite them as `process` entries, and uninstall still recognizes the legacy
+form via marker matching.
+
 ZCode snapshots hook configuration when a session starts, so installs and
 uninstalls apply to sessions launched afterwards; running sessions are
 unaffected.
@@ -359,6 +368,17 @@ via `__CFBundleIdentifier`, and liveness follows the desktop app instead of a
 terminal process (same model as Claude Desktop's local agent mode). Jump-back
 activates ZCode.app; sessions started in a real terminal keep full terminal
 jump targeting.
+
+**Known limitation (verified 2026-09-02, ZCode CLI 0.16.5 / app 3.10.2):**
+ZCode.app sessions do not execute hooks from `~/.zcode/cli/config.json` —
+only terminal CLI sessions load user-config hooks. A live probe (fresh
+app session, real prompt, `process`-type entries) produced no hook
+executions and no Open Island session. The app surfaces its own
+workspace-hook mechanism (project `zcode.json` / `.zcode/config.json` with
+an in-app trust review) instead. Until Open Island adopts that mechanism,
+ZCode coverage via hooks is terminal-session-only; ZCode.app windows remain
+covered by process discovery only while their CLI has a TTY (which app
+sessions do not).
 
 ---
 
