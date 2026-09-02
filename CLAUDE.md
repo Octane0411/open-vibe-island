@@ -48,6 +48,20 @@ For Xcode: open `Package.swift`.
 - After changes: run the matching verification (`swift build` / `swift test` / manual). If no check exists, say so in the summary and still commit.
 - Never `git reset --hard`, force-push, or overwrite user changes without explicit approval. If unexpected state appears, inspect — don't bulldoze.
 
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues on this fork repo via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-role triage vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
 ## Scope guardrails
 
 Current support matrix (agents / terminals / IDEs) lives in `README.md` — that's the single source of truth, keep it accurate at release time.
