@@ -223,6 +223,9 @@ final class OverlayPanelController {
 
     // MARK: - Mouse event monitoring
 
+    /// Registers the mouse monitors that drive hover-open, auto-collapse,
+    /// and click-outside dismissal. Skipped during deterministic harness
+    /// runs; a no-op while monitors are already active.
     private func startEventMonitoring() {
         if model?.disablesOverlayEventMonitoringDuringHarness == true {
             return
@@ -830,6 +833,10 @@ final class NotchEventMonitors {
 
     var isActive: Bool { globalMoveMonitor != nil }
 
+    /// Registers throttled mouse-move monitors plus click monitors for both
+    /// event destinations. The click handler receives `isLocalEvent: true`
+    /// from the local monitor (event delivered to this app) and `false` from
+    /// the global monitor (event delivered to another app, observe-only).
     func start(
         mouseMoveHandler: @MainActor @escaping @Sendable (NSPoint) -> Void,
         mouseDownHandler: @MainActor @escaping @Sendable (NSPoint, _ isLocalEvent: Bool) -> Void
