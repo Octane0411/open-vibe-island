@@ -13,6 +13,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case watch
     case shortcuts
     case lab
+    case customCLI
     case about
 
     var id: String { rawValue }
@@ -27,6 +28,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .watch:      "Watch"
         case .shortcuts:  lang.t("settings.tab.shortcuts")
         case .lab:        lang.t("settings.tab.lab")
+        case .customCLI:  lang.t("settings.tab.customCLI")
         case .about:      lang.t("settings.tab.about")
         }
     }
@@ -41,6 +43,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .watch:      "applewatch"
         case .shortcuts:  "keyboard.fill"
         case .lab:        "flask.fill"
+        case .customCLI:  "terminal.fill"
         case .about:      "info.circle.fill"
         }
     }
@@ -55,6 +58,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .watch:      .cyan
         case .shortcuts:  .gray
         case .lab:        .pink
+        case .customCLI:  .green
         case .about:      .blue
         }
     }
@@ -62,7 +66,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var section: SettingsSection {
         switch self {
         case .general, .setup, .display, .sound, .appearance, .watch: .system
-        case .shortcuts, .lab:                                        .advanced
+        case .shortcuts, .lab, .customCLI:                          .advanced
         case .about:                                                  .app
         }
     }
@@ -152,6 +156,8 @@ struct SettingsView: View {
                 PlaceholderSettingsPane(model: model, titleKey: "settings.tab.shortcuts", subtitleKey: "settings.shortcuts.comingSoon")
             case .lab:
                 PlaceholderSettingsPane(model: model, titleKey: "settings.tab.lab", subtitleKey: "settings.lab.comingSoon")
+            case .customCLI:
+                CustomCLISettingsPane(model: model)
             case .about:
                 AboutSettingsPane(model: model)
             }
