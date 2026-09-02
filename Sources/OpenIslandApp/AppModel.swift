@@ -248,10 +248,12 @@ final class AppModel {
             UserDefaults.standard.set(hapticFeedbackEnabled, forKey: Self.hapticFeedbackEnabledDefaultsKey)
         }
     }
-    /// Prefer keeping the island open until the user acts on pending
-    /// approval / question surfaces (Settings → Behavior). Default on so
-    /// accidental clicks outside the notch do not dismiss unread decisions.
-    var keepNotchOpenUntilDecision: Bool = true {
+    /// Keep the island open until the user acts on a pending approval /
+    /// question surface (Settings → General). Opt-in: permission and
+    /// question cards never auto-collapse, so with this on the only way to
+    /// get rid of one is to answer it — clicking into the terminal to type
+    /// the answer no longer dismisses the card.
+    var keepNotchOpenUntilDecision: Bool = false {
         didSet {
             guard hasFinishedInit, keepNotchOpenUntilDecision != oldValue else { return }
             UserDefaults.standard.set(keepNotchOpenUntilDecision, forKey: Self.keepNotchOpenUntilDecisionDefaultsKey)
@@ -604,7 +606,7 @@ final class AppModel {
         UserDefaults.standard.register(defaults: [
             Self.showDockIconDefaultsKey: true,
             Self.hapticFeedbackEnabledDefaultsKey: false,
-            Self.keepNotchOpenUntilDecisionDefaultsKey: true,
+            Self.keepNotchOpenUntilDecisionDefaultsKey: false,
             Self.completionReplyEnabledDefaultsKey: false,
             Self.suppressFrontmostNotificationsDefaultsKey: true,
         ])
@@ -1234,7 +1236,9 @@ final class AppModel {
     var shouldBlockDismissWhileAwaitingDecision: Bool {
         guard keepNotchOpenUntilDecision else { return false }
         guard notchStatus == .opened else { return false }
-        return state.sessions.contains { session in
+        // Only sessions the island actually shows can pin it open; a hidden
+        // subagent waiting on its parent must not block dismissal.
+        return surfacedSessions.contains { session in
             session.phase.requiresAttention
         }
     }
