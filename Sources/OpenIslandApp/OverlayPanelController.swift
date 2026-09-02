@@ -697,6 +697,22 @@ final class OverlayPanelController {
 private final class NotchPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    /// A hover- or notification-opened island is ordered front without
+    /// becoming key. AppKit treats the first click on a non-key window as a
+    /// "make key" click and drops it unless the hit view accepts first mouse.
+    /// `NotchHostingView` does, but the session list lives in a SwiftUI
+    /// `ScrollView`, whose backing `NSScrollView` subviews don't — so the
+    /// first click on a session row was swallowed and only the second one
+    /// reached `onTapGesture`. Become key before AppKit inspects the click so
+    /// it is delivered on the first press, matching click-opened islands
+    /// (presented with `makeKeyAndOrderFront`).
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown, !isKeyWindow, !ignoresMouseEvents {
+            makeKey()
+        }
+        super.sendEvent(event)
+    }
 }
 
 // MARK: - NotchHostingView
