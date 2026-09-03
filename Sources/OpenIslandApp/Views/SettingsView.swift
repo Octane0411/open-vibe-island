@@ -425,6 +425,7 @@ struct SetupSettingsPane: View {
     @State private var confirmingUninstallCursor = false
     @State private var confirmingUninstallGemini = false
     @State private var confirmingUninstallKimi = false
+    @State private var confirmingUninstallGrok = false
     @State private var confirmingUninstallClaudeUsage = false
 
     private var lang: LanguageManager { model.lang }
@@ -609,6 +610,24 @@ struct SetupSettingsPane: View {
                 } message: {
                     Text("This will remove Open Island hooks from ~/.kimi/config.toml.")
                 }
+
+                hookRow(
+                    name: "Grok Build",
+                    installed: model.grokHooksInstalled,
+                    busy: model.isGrokHookSetupBusy,
+                    requiresBinary: true,
+                    configLocationURL: model.grokHookStatus?.hooksURL,
+                    installAction: { model.installGrokHooks() },
+                    uninstallAction: { confirmingUninstallGrok = true }
+                )
+                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallGrok) {
+                    Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
+                        model.uninstallGrokHooks()
+                    }
+                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
+                } message: {
+                    Text("This will remove Open Island hooks from ~/.grok/hooks/open-island.json.")
+                }
             }
 
             Section {
@@ -686,6 +705,7 @@ struct SetupSettingsPane: View {
                     if !model.cursorHooksInstalled { model.installCursorHooks() }
                     if !model.geminiHooksInstalled { model.installGeminiHooks() }
                     if !model.kimiHooksInstalled { model.installKimiHooks() }
+                    if !model.grokHooksInstalled { model.installGrokHooks() }
                     if !model.claudeUsageInstalled { model.installClaudeUsageBridge() }
                 }
                 .disabled(model.hooksBinaryURL == nil || allReady)
@@ -747,7 +767,8 @@ struct SetupSettingsPane: View {
     private var allReady: Bool {
         model.claudeHooksInstalled && model.codexHooksInstalled && model.openCodePluginInstalled
             && model.qoderHooksInstalled && model.qwenCodeHooksInstalled && model.factoryHooksInstalled && model.codebuddyHooksInstalled
-            && model.cursorHooksInstalled && model.geminiHooksInstalled && model.kimiHooksInstalled && model.claudeUsageInstalled
+            && model.cursorHooksInstalled && model.geminiHooksInstalled && model.kimiHooksInstalled
+            && model.grokHooksInstalled && model.claudeUsageInstalled
     }
 
     @ViewBuilder

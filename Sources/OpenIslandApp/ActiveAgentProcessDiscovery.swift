@@ -215,6 +215,23 @@ struct ActiveAgentProcessDiscovery {
                 ))
                 continue
             }
+
+            if isGrokProcess(command: process.command) {
+                let claimKey = "grok:\(process.pid)"
+                guard claimedKeys.insert(claimKey).inserted else {
+                    continue
+                }
+
+                let lsofOutput = lsofOutput(pid: process.pid)
+                snapshots.append(ProcessSnapshot(
+                    tool: .grokBuild,
+                    sessionID: nil,
+                    workingDirectory: lsofOutput.flatMap(workingDirectory(from:)),
+                    terminalTTY: process.terminalTTY,
+                    terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+                ))
+                continue
+            }
         }
 
         return snapshots
@@ -780,6 +797,23 @@ struct ActiveAgentProcessDiscovery {
         }
 
         return firstToken == "kimi" || firstToken.hasSuffix("/kimi")
+    }
+
+    /// Matches the Grok Build / Grok CLI entry-point (`grok` under `~/.grok/bin`
+    /// or on PATH). Avoids matching incidental paths that merely contain the
+    /// substring "grok".
+    private func isGrokProcess(command: String) -> Bool {
+        let lowered = command.lowercased()
+        guard let firstToken = lowered.split(separator: " ").first.map(String.init) else {
+            return false
+        }
+
+        let binaryName = (firstToken as NSString).lastPathComponent
+        guard binaryName == "grok" else {
+            return false
+        }
+
+        return firstToken == "grok" || firstToken.hasSuffix("/grok")
     }
 
     /// Returns `true` when the given `ps` command string belongs to a Claude Code process.

@@ -1,14 +1,14 @@
 # Hook System
 
-OpenIsland receives hook events from AI agents (Codex / Claude Code / Gemini CLI) via the `OpenIslandHooks` CLI. The CLI forwards payloads to the app over a Unix socket and, when necessary, writes a directive back to stdout so the agent can act on it (e.g. block a tool call).
+OpenIsland receives hook events from AI agents (Codex / Claude Code / Gemini CLI / Grok Build / …) via the `OpenIslandHooks` CLI. The CLI forwards payloads to the app over a Unix socket and, when necessary, writes a directive back to stdout so the agent can act on it (e.g. block a tool call).
 
 ## Architecture
 
-```
-Agent (Codex / Claude Code / Gemini CLI)
+```text
+Agent (Codex / Claude Code / Gemini CLI / Grok Build / …)
   │  stdin: JSON payload
   ▼
-OpenIslandHooks CLI  (--source codex | --source claude | --source gemini)
+OpenIslandHooks CLI  (--source codex | --source claude | --source gemini | --source grok | …)
   │  Unix socket
   ▼
 BridgeServer → AppModel → UI
@@ -36,7 +36,7 @@ This is meant for per-process launches. Do not set it globally unless you want O
 
 ## Codex Hooks (`--source codex`)
 
-**Payload type**: `CodexHookPayload`  
+**Payload type**: `CodexHookPayload`
 **Source**: [`Sources/OpenIslandCore/CodexHooks.swift`](../Sources/OpenIslandCore/CodexHooks.swift)
 
 ### Events
@@ -134,7 +134,7 @@ All other Codex events require no stdout response.
 
 ## Claude Code Hooks (`--source claude`)
 
-**Payload type**: `ClaudeHookPayload`  
+**Payload type**: `ClaudeHookPayload`
 **Source**: [`Sources/OpenIslandCore/ClaudeHooks.swift`](../Sources/OpenIslandCore/ClaudeHooks.swift)
 
 ### Events
@@ -256,7 +256,7 @@ Setting `interrupt: true` terminates the current agent turn immediately.
 
 ## Gemini CLI Hooks (`--source gemini`)
 
-**Payload type**: `GeminiHookPayload`  
+**Payload type**: `GeminiHookPayload`
 **Source**: [`Sources/OpenIslandCore/GeminiHooks.swift`](../Sources/OpenIslandCore/GeminiHooks.swift)
 
 ### Events
@@ -316,6 +316,64 @@ Setting `interrupt: true` terminates the current agent turn immediately.
 | Claude Code | `PermissionRequest` | **24 hours** (awaits human approval) |
 | Claude Code | All other events | **45 seconds** |
 | Gemini CLI | All events | Bridge default |
+| Grok Build | All managed events | **45 seconds** |
+
+---
+
+## Grok Build Hooks (`--source grok`)
+
+**Payload type**: `GrokHookPayload`
+**Source**: [`Sources/OpenIslandCore/GrokHooks.swift`](../Sources/OpenIslandCore/GrokHooks.swift)
+
+Grok Build (Grok CLI / Grok TUI) discovers hooks from `~/.grok/hooks/*.json`. Open Island writes a dedicated managed file at `~/.grok/hooks/open-island.json`.
+
+### Events (managed install)
+
+All of the following are registered in `~/.grok/hooks/open-island.json` by the managed installer:
+
+| Event | Matcher | Current OpenIsland behavior |
+|---|---|---|
+| `SessionStart` | — | Creates / re-opens the Grok session, title, and jump target |
+| `SessionEnd` | — | Marks the hook-managed session ended (`isSessionEnd`) |
+| `UserPromptSubmit` | — | Marks the session running and updates summary |
+| `Stop` | — | Completion when `reason == "end_turn"`; if `reason` is omitted, treat as turn completion; non-`end_turn` reasons are observe-only |
+| `StopFailure` | — | Activity update, phase `.completed` (session not ended) |
+| `StopCancelled` | — | Turn completion flagged `isInterrupt` — fires *instead of* `Stop` on a user interrupt (Ctrl+C / Esc), a declined or cancelled permission prompt, `--max-turns`, or a no-progress bail-out; summary is `lastAssistantMessage` when present, else derived from `reason` |
+| `Notification` | `*` | Activity update; `notificationType == "idle_prompt"` settles a still-running session as completed (Grok's backstop for turns that reported no Stop-family event) and leaves an already-completed session untouched |
+| `PreToolUse` | `*` | Activity update, **fire-and-forget** (no deny directive; fail-open) |
+| `PostToolUse` | `*` | Activity update |
+| `PostToolUseFailure` | `*` | Activity update, phase `.completed` |
+| `SubagentStart` / `SubagentStop` | — | Activity updates |
+| `PermissionDenied` | — | Activity update; session stays running. Fires for both a user **Reject** (a `StopCancelled` with `permission_rejected` follows and settles the turn) and a configured **PolicyDeny** rule (the model is told the tool was skipped and keeps working) |
+| `PreCompact` / `PostCompact` | — | Activity updates |
+
+Managed status is **healthy only when every event above** is present with an Open Island Grok command. A Vibe Island-only command does **not** count as installed.
+
+### Lifecycle / liveness notes
+
+- Non-`SessionStart` events on an **already ended** session are acknowledged and ignored (no resurrection).
+- Process discovery cannot recover Grok session UUIDs. While a `grok` process is alive, Open Island keeps non-ended Grok sessions in the process-alive set (TTY/CWD match when unique; otherwise a conservative “any Grok process” fallback similar to Kimi). Explicit `SessionEnd` still ends the session.
+
+### Wire format notes
+
+- Stdin JSON uses **camelCase** keys (`sessionId`, `hookEventName`, `toolName`, `toolResult`).
+- `hookEventName` may arrive as PascalCase (`PreToolUse`), snake_case (`pre_tool_use`) or camelCase (`preToolUse`); all are accepted.
+- Envelopes may carry `promptId`; it is decoded as `promptID` but not acted on yet (reserved for ignoring stale-prompt reports).
+- `StopCancelled` carries `reason` (`user_interrupt`, `permission_rejected`, `permission_cancelled`, `max_turns`, `no_progress`, `unknown`), `cancelledBy` (`user` / `runtime` / `unknown`) and optional `cancelTrigger` / `reasonDetails` / `lastAssistantMessage`.
+- PreToolUse decision format (not used by the managed install yet): `{"decision":"allow"}` / `{"decision":"deny","reason":"..."}`.
+- Sessions also land under `~/.grok/sessions/<url-encoded-cwd>/<session-id>/` for offline discovery (not yet scanned by Open Island).
+
+### Install / uninstall
+
+```bash
+swift run OpenIslandSetup installGrok
+swift run OpenIslandSetup statusGrok
+swift run OpenIslandSetup uninstallGrok
+```
+
+Or use **Settings → Setup → Grok Build** in the app.
+
+> If commercial Vibe Island is also installed, both may write under `~/.grok/hooks/`. Prefer one controller at a time.
 
 ---
 
@@ -340,9 +398,11 @@ For iTerm, Terminal, and Ghostty the process additionally runs an AppleScript qu
 
 | File | Responsibility |
 |---|---|
-| [`Sources/OpenIslandHooks/main.swift`](../Sources/OpenIslandHooks/main.swift) | Hook CLI entry point — routes to Codex, Claude, or Gemini path |
+| [`Sources/OpenIslandHooks/OpenIslandHooksCLI.swift`](../Sources/OpenIslandHooks/OpenIslandHooksCLI.swift) | Hook CLI entry point — routes to Codex, Claude, Gemini, Grok, … |
 | [`Sources/OpenIslandCore/CodexHooks.swift`](../Sources/OpenIslandCore/CodexHooks.swift) | Codex payload model, output encoder, terminal detection |
 | [`Sources/OpenIslandCore/ClaudeHooks.swift`](../Sources/OpenIslandCore/ClaudeHooks.swift) | Claude Code payload model, directive types, output encoder |
 | [`Sources/OpenIslandCore/GeminiHooks.swift`](../Sources/OpenIslandCore/GeminiHooks.swift) | Gemini CLI payload model, terminal detection, metadata helpers |
+| [`Sources/OpenIslandCore/GrokHooks.swift`](../Sources/OpenIslandCore/GrokHooks.swift) | Grok Build payload model, terminal detection, lifecycle summaries |
+| [`Sources/OpenIslandCore/GrokHookInstaller.swift`](../Sources/OpenIslandCore/GrokHookInstaller.swift) | Writes `~/.grok/hooks/open-island.json` |
 | [`Sources/OpenIslandCore/BridgeServer.swift`](../Sources/OpenIslandCore/BridgeServer.swift) | Unix socket server — handles incoming hook payloads |
 | [`Sources/OpenIslandCore/BridgeTransport.swift`](../Sources/OpenIslandCore/BridgeTransport.swift) | Protocol codec and envelope types |
