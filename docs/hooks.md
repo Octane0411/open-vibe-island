@@ -343,7 +343,7 @@ All of the following are registered in `~/.grok/hooks/open-island.json` by the m
 | `PostToolUse` | `*` | Activity update |
 | `PostToolUseFailure` | `*` | Activity update, phase `.completed` |
 | `SubagentStart` / `SubagentStop` | — | Activity updates |
-| `PermissionDenied` | — | Activity update |
+| `PermissionDenied` | — | Activity update, phase `.completed` (session not ended) |
 | `PreCompact` / `PostCompact` | — | Activity updates |
 
 Managed status is **healthy only when every event above** is present with an Open Island Grok command. A Vibe Island-only command does **not** count as installed.
