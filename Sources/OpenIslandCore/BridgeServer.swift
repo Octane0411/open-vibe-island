@@ -1418,6 +1418,25 @@ public final class BridgeServer: @unchecked Sendable {
             }
             send(.response(.acknowledged), to: clientID)
 
+        case .stopCancelled:
+            // Fires *instead of* Stop when a turn ends without completing
+            // (user interrupt, declined permission, --max-turns, no-progress
+            // bail-out). Settle the turn like a genuine Stop but flag it as an
+            // interrupt so the island does not surface it as actionable.
+            ensureGrokSessionExists(for: payload)
+            synchronizeGrokJumpTarget(for: payload)
+            emit(
+                .sessionCompleted(
+                    SessionCompleted(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitSummary,
+                        timestamp: .now,
+                        isInterrupt: true
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
         case .sessionEnd:
             ensureGrokSessionExists(for: payload)
             synchronizeGrokJumpTarget(for: payload)

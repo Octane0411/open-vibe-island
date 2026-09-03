@@ -338,6 +338,7 @@ All of the following are registered in `~/.grok/hooks/open-island.json` by the m
 | `UserPromptSubmit` | — | Marks the session running and updates summary |
 | `Stop` | — | Completion when `reason == "end_turn"`; if `reason` is omitted, treat as turn completion; non-`end_turn` reasons are observe-only |
 | `StopFailure` | — | Activity update, phase `.completed` (session not ended) |
+| `StopCancelled` | — | Turn completion flagged `isInterrupt` — fires *instead of* `Stop` on a user interrupt (Ctrl+C / Esc), a declined or cancelled permission prompt, `--max-turns`, or a no-progress bail-out; summary is `lastAssistantMessage` when present, else derived from `reason` |
 | `Notification` | `*` | Activity update |
 | `PreToolUse` | `*` | Activity update, **fire-and-forget** (no deny directive; fail-open) |
 | `PostToolUse` | `*` | Activity update |
@@ -356,7 +357,8 @@ Managed status is **healthy only when every event above** is present with an Ope
 ### Wire format notes
 
 - Stdin JSON uses **camelCase** keys (`sessionId`, `hookEventName`, `toolName`, `toolResult`).
-- `hookEventName` may arrive as PascalCase (`PreToolUse`) or snake_case (`pre_tool_use`); both are accepted.
+- `hookEventName` may arrive as PascalCase (`PreToolUse`), snake_case (`pre_tool_use`) or camelCase (`preToolUse`); all are accepted.
+- `StopCancelled` carries `reason` (`user_interrupt`, `permission_rejected`, `permission_cancelled`, `max_turns`, `no_progress`, `unknown`), `cancelledBy` (`user` / `runtime` / `unknown`) and optional `cancelTrigger` / `reasonDetails` / `lastAssistantMessage`.
 - PreToolUse decision format (not used by the managed install yet): `{"decision":"allow"}` / `{"decision":"deny","reason":"..."}`.
 - Sessions also land under `~/.grok/sessions/<url-encoded-cwd>/<session-id>/` for offline discovery (not yet scanned by Open Island).
 

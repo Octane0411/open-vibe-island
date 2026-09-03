@@ -57,6 +57,7 @@ public enum GrokHookInstaller {
         ("UserPromptSubmit", nil, managedTimeout),
         ("Stop", nil, managedTimeout),
         ("StopFailure", nil, managedTimeout),
+        ("StopCancelled", nil, managedTimeout),
         ("Notification", "*", managedTimeout),
         ("PreToolUse", "*", managedTimeout),
         ("PostToolUse", "*", managedTimeout),

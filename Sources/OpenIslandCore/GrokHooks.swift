@@ -14,6 +14,7 @@ public enum GrokHookEventName: String, Codable, Sendable, CaseIterable {
     case postToolUseFailure = "PostToolUseFailure"
     case stop = "Stop"
     case stopFailure = "StopFailure"
+    case stopCancelled = "StopCancelled"
     case notification = "Notification"
     case subagentStart = "SubagentStart"
     case subagentStop = "SubagentStop"
@@ -42,6 +43,7 @@ public enum GrokHookEventName: String, Codable, Sendable, CaseIterable {
         case "posttoolusefailure": self = .postToolUseFailure
         case "stop": self = .stop
         case "stopfailure": self = .stopFailure
+        case "stopcancelled": self = .stopCancelled
         case "notification": self = .notification
         case "subagentstart": self = .subagentStart
         case "subagentstop", "subagentend": self = .subagentStop
@@ -72,6 +74,9 @@ public struct GrokHookPayload: Equatable, Codable, Sendable {
     public var lastAssistantMessage: String?
     public var stopHookActive: Bool?
     public var reason: String?
+    public var cancelledBy: String?
+    public var cancelTrigger: String?
+    public var reasonDetails: String?
     public var source: String?
     public var message: String?
     public var notificationType: String?
@@ -99,6 +104,9 @@ public struct GrokHookPayload: Equatable, Codable, Sendable {
         case lastAssistantMessage
         case stopHookActive
         case reason
+        case cancelledBy
+        case cancelTrigger
+        case reasonDetails
         case source
         case message
         case notificationType
@@ -127,6 +135,9 @@ public struct GrokHookPayload: Equatable, Codable, Sendable {
         lastAssistantMessage: String? = nil,
         stopHookActive: Bool? = nil,
         reason: String? = nil,
+        cancelledBy: String? = nil,
+        cancelTrigger: String? = nil,
+        reasonDetails: String? = nil,
         source: String? = nil,
         message: String? = nil,
         notificationType: String? = nil,
@@ -153,6 +164,9 @@ public struct GrokHookPayload: Equatable, Codable, Sendable {
         self.lastAssistantMessage = lastAssistantMessage
         self.stopHookActive = stopHookActive
         self.reason = reason
+        self.cancelledBy = cancelledBy
+        self.cancelTrigger = cancelTrigger
+        self.reasonDetails = reasonDetails
         self.source = source
         self.message = message
         self.notificationType = notificationType
@@ -184,6 +198,9 @@ public struct GrokHookPayload: Equatable, Codable, Sendable {
         lastAssistantMessage = try container.decodeIfPresent(String.self, forKey: .lastAssistantMessage)
         stopHookActive = try container.decodeIfPresent(Bool.self, forKey: .stopHookActive)
         reason = try container.decodeIfPresent(String.self, forKey: .reason)
+        cancelledBy = try container.decodeIfPresent(String.self, forKey: .cancelledBy)
+        cancelTrigger = try container.decodeIfPresent(String.self, forKey: .cancelTrigger)
+        reasonDetails = try container.decodeIfPresent(String.self, forKey: .reasonDetails)
         source = try container.decodeIfPresent(String.self, forKey: .source)
         message = try container.decodeIfPresent(String.self, forKey: .message)
         notificationType = try container.decodeIfPresent(String.self, forKey: .notificationType)
@@ -246,6 +263,8 @@ public extension GrokHookPayload {
         case .stopFailure:
             return error.map { "Grok turn failed: \($0)" }
                 ?? "Grok failed to finish a turn in \(workspaceName)."
+        case .stopCancelled:
+            return lastAssistantMessagePreview ?? stopCancelledFallbackSummary
         case .notification:
             return notificationSummary
         case .subagentStart:
@@ -272,6 +291,25 @@ public extension GrokHookPayload {
 
     var notificationSummary: String {
         clipped(message) ?? "Grok sent a notification."
+    }
+
+    /// Fallback summary for `StopCancelled` when Grok did not attach a partial
+    /// assistant message. Keyed on the upstream `reason` values
+    /// (`user_interrupt`, `permission_rejected`, `permission_cancelled`,
+    /// `max_turns`, `no_progress`, `unknown`).
+    var stopCancelledFallbackSummary: String {
+        switch reason {
+        case "user_interrupt":
+            return "Grok turn interrupted in \(workspaceName)."
+        case "permission_rejected", "permission_cancelled":
+            return "Grok turn stopped: permission not granted in \(workspaceName)."
+        case "max_turns":
+            return "Grok turn stopped: max turns reached in \(workspaceName)."
+        case "no_progress":
+            return "Grok turn stopped: no progress in \(workspaceName)."
+        default:
+            return "Grok turn cancelled in \(workspaceName)."
+        }
     }
 
     var toolInputPreview: String? {

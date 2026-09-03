@@ -106,6 +106,42 @@ struct GrokHooksTests {
     // MARK: - Installer
 
     @Test
+    func stopCancelledPayloadDecodesCancellationFields() throws {
+        for raw in ["StopCancelled", "stop_cancelled", "stopCancelled"] {
+            let json = """
+            {
+              "hookEventName": "\(raw)",
+              "sessionId": "grok-cancelled",
+              "cwd": "/tmp/worktree",
+              "reason": "user_interrupt",
+              "cancelledBy": "user",
+              "cancelTrigger": "ctrl_c",
+              "reasonDetails": "Interrupted by user",
+              "lastAssistantMessage": "Partial answer."
+            }
+            """.data(using: .utf8)!
+
+            let payload = try JSONDecoder().decode(GrokHookPayload.self, from: json)
+            #expect(payload.hookEventName == .stopCancelled, "raw \(raw)")
+            #expect(payload.reason == "user_interrupt")
+            #expect(payload.cancelledBy == "user")
+            #expect(payload.cancelTrigger == "ctrl_c")
+            #expect(payload.reasonDetails == "Interrupted by user")
+            #expect(payload.implicitSummary == "Partial answer.")
+            #expect(!payload.isGenuineTurnStop)
+        }
+
+        let bare = GrokHookPayload(
+            cwd: "/tmp/worktree",
+            hookEventName: .stopCancelled,
+            sessionID: "grok-cancelled",
+            reason: "max_turns",
+            cancelledBy: "runtime"
+        )
+        #expect(bare.implicitSummary == "Grok turn stopped: max turns reached in worktree.")
+    }
+
+    @Test
     func requiredEventSpecsCoverEveryHookEventName() {
         let registered = Set(GrokHookInstaller.requiredEventNames)
         let declared = Set(GrokHookEventName.allCases.map(\.rawValue))
@@ -343,6 +379,74 @@ struct GrokHooksTests {
 
         let session = try #require(server.sessionStateSnapshotForTests().session(id: "grok-non-turn-stop"))
         #expect(session.phase == .running)
+        #expect(session.isSessionEnded == false)
+    }
+
+    @Test
+    func stopCancelledCompletesTurnAsInterrupt() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
+
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processGrokHook(
+                GrokHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .sessionStart,
+                    sessionID: "grok-stop-cancelled"
+                )
+            )
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processGrokHook(
+                GrokHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .userPromptSubmit,
+                    sessionID: "grok-stop-cancelled",
+                    prompt: "refactor everything"
+                )
+            )
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processGrokHook(
+                GrokHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .stopCancelled,
+                    sessionID: "grok-stop-cancelled",
+                    lastAssistantMessage: "Partial answer.",
+                    reason: "user_interrupt",
+                    cancelledBy: "user",
+                    cancelTrigger: "ctrl_c"
+                )
+            )
+        )
+
+        var iterator = stream.makeAsyncIterator()
+        let event = try await nextMatchingGrokEvent(from: &iterator, maxEvents: 8) { event in
+            if case .sessionCompleted = event {
+                return true
+            }
+            return false
+        }
+
+        guard case let .sessionCompleted(payload) = event else {
+            Issue.record("Expected Grok StopCancelled session completion")
+            return
+        }
+
+        #expect(payload.sessionID == "grok-stop-cancelled")
+        #expect(payload.summary == "Partial answer.")
+        #expect(payload.isInterrupt == true)
+        #expect(payload.isSessionEnd != true)
+
+        let session = try #require(server.sessionStateSnapshotForTests().session(id: "grok-stop-cancelled"))
+        #expect(session.phase == .completed)
         #expect(session.isSessionEnded == false)
     }
 
