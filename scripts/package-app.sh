@@ -40,8 +40,22 @@ hooks_binary="$build_bin_dir/OpenIslandHooks"
 setup_binary="$build_bin_dir/OpenIslandSetup"
 brand_icon="$repo_root/Assets/Brand/OpenIsland.icns"
 
-python3 "$brand_script"
-python3 "$dmg_bg_script"
+# Package the committed brand assets instead of re-rendering them: the icon
+# generator rewrites tracked PNGs whenever the local Pillow encodes them
+# differently, and the DMG background depends on whichever fonts the machine
+# has (see scripts/launch-dev-app.sh). Opt in when the brand source changed.
+dmg_background="$repo_root/Assets/Brand/dmg-background.png"
+if [[ "${OPEN_ISLAND_REGENERATE_BRAND_ASSETS:-false}" == "true" ]]; then
+    python3 "$brand_script"
+    python3 "$dmg_bg_script"
+else
+    for asset in "$brand_icon" "$dmg_background"; do
+        if [[ ! -f "$asset" ]]; then
+            echo "Missing $asset — run scripts/generate_brand_icons.py and scripts/generate_dmg_background.py, or set OPEN_ISLAND_REGENERATE_BRAND_ASSETS=true" >&2
+            exit 1
+        fi
+    done
+fi
 
 rm -rf "$bundle_dir" "$zip_path" "$dmg_path"
 mkdir -p "$bundle_dir/Contents/MacOS" "$bundle_dir/Contents/Helpers" "$bundle_dir/Contents/Resources" "$bundle_dir/Contents/Frameworks"

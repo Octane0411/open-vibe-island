@@ -10,7 +10,9 @@ Structure:
 
 Generation workflow:
 
-- regenerate everything with `python3 scripts/generate_brand_icons.py`
+- the generated assets are committed; `scripts/launch-dev-app.sh` and `scripts/package-app.sh` package the committed `OpenIsland.icns` (and `dmg-background.png`) as-is and do not re-render anything
+- regenerate everything with `python3 scripts/generate_brand_icons.py` (or `zsh scripts/launch-dev-app.sh --regenerate-icons`, or `OPEN_ISLAND_REGENERATE_BRAND_ASSETS=true zsh scripts/package-app.sh`, which also re-renders `dmg-background.png`) only when you deliberately change the brand source, then commit the result
+- PNG bytes differ between Pillow versions even when every pixel is identical, so regenerating on another machine produces a 14-file diff; do not commit that unless the artwork itself changed
 - the script outputs:
   - `AppIcon.appiconset/` for future asset-catalog use
   - `OpenIsland.iconset/` and `OpenIsland.icns` for manual macOS bundle packaging
