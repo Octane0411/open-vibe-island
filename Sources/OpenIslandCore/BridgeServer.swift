@@ -2113,14 +2113,19 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func synchronizePiJumpTarget(for payload: PiHookPayload) {
-        guard let existingSession = localState.session(id: payload.sessionID) else { return }
-        var jumpTarget = payload.defaultJumpTarget
-        if jumpTarget.terminalSessionID == nil,
-           let existingID = existingSession.jumpTarget?.terminalSessionID,
-           !existingID.isEmpty {
-            jumpTarget.terminalSessionID = existingID
+        guard let existingSession = localState.session(id: payload.sessionID) else {
+            return
         }
-        guard existingSession.jumpTarget != jumpTarget else { return }
+
+        let jumpTarget = Self.mergeJumpTargetPreservingExistingResolvedFields(
+            incoming: payload.defaultJumpTarget,
+            existing: existingSession.jumpTarget
+        )
+
+        guard existingSession.jumpTarget != jumpTarget else {
+            return
+        }
+
         emit(
             .jumpTargetUpdated(
                 JumpTargetUpdated(
@@ -2139,16 +2144,10 @@ public final class BridgeServer: @unchecked Sendable {
         let clearsTool = payload.hookEventName == .postToolUse
             || payload.hookEventName == .stop
             || payload.hookEventName == .sessionEnd
-        let merged = PiSessionMetadata(
-            initialUserPrompt: existing?.initialUserPrompt ?? update.initialUserPrompt ?? update.lastUserPrompt,
-            lastUserPrompt: update.lastUserPrompt ?? existing?.lastUserPrompt,
-            lastAssistantMessage: update.lastAssistantMessage ?? existing?.lastAssistantMessage,
-            currentTool: clearsTool ? nil : (update.currentTool ?? existing?.currentTool),
-            currentToolInputPreview: clearsTool
-                ? nil
-                : (update.currentToolInputPreview ?? existing?.currentToolInputPreview),
-            model: update.model ?? existing?.model,
-            transcriptPath: update.transcriptPath ?? existing?.transcriptPath
+        let merged = PiSessionMetadata.merged(
+            existing: existing,
+            update: update,
+            clearsCurrentTool: clearsTool
         )
         guard !merged.isEmpty, existing != merged else { return }
         emit(

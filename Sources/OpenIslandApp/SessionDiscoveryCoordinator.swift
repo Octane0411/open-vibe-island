@@ -303,15 +303,7 @@ final class SessionDiscoveryCoordinator {
         guard let discovered else {
             return existing.isEmpty ? nil : existing
         }
-        let merged = PiSessionMetadata(
-            initialUserPrompt: existing.initialUserPrompt ?? discovered.initialUserPrompt ?? discovered.lastUserPrompt,
-            lastUserPrompt: discovered.lastUserPrompt ?? existing.lastUserPrompt,
-            lastAssistantMessage: discovered.lastAssistantMessage ?? existing.lastAssistantMessage,
-            currentTool: discovered.currentTool ?? existing.currentTool,
-            currentToolInputPreview: discovered.currentToolInputPreview ?? existing.currentToolInputPreview,
-            model: discovered.model ?? existing.model,
-            transcriptPath: discovered.transcriptPath ?? existing.transcriptPath
-        )
+        let merged = PiSessionMetadata.merged(existing: existing, update: discovered)
         return merged.isEmpty ? nil : merged
     }
 

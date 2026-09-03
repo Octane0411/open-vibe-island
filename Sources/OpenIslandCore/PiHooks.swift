@@ -124,6 +124,31 @@ public struct PiSessionMetadata: Equatable, Codable, Sendable {
             && model == nil
             && transcriptPath == nil
     }
+
+    /// Field-level merge shared by the live bridge path and registry restore.
+    ///
+    /// `initialUserPrompt` is anchored on first sight and never overwritten;
+    /// every other field prefers the incoming value and falls back to what
+    /// was already known. `clearsCurrentTool` drops the active tool and its
+    /// input preview instead of carrying them forward (PostToolUse / Stop /
+    /// SessionEnd).
+    public static func merged(
+        existing: PiSessionMetadata?,
+        update: PiSessionMetadata,
+        clearsCurrentTool: Bool = false
+    ) -> PiSessionMetadata {
+        PiSessionMetadata(
+            initialUserPrompt: existing?.initialUserPrompt ?? update.initialUserPrompt ?? update.lastUserPrompt,
+            lastUserPrompt: update.lastUserPrompt ?? existing?.lastUserPrompt,
+            lastAssistantMessage: update.lastAssistantMessage ?? existing?.lastAssistantMessage,
+            currentTool: clearsCurrentTool ? nil : (update.currentTool ?? existing?.currentTool),
+            currentToolInputPreview: clearsCurrentTool
+                ? nil
+                : (update.currentToolInputPreview ?? existing?.currentToolInputPreview),
+            model: update.model ?? existing?.model,
+            transcriptPath: update.transcriptPath ?? existing?.transcriptPath
+        )
+    }
 }
 
 public extension PiHookPayload {
