@@ -2482,8 +2482,13 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     /// Test-only accessor for the bridge's local session state after hook events.
+    /// Reuses the `queueKey` guard from `stop()` so a caller already on the
+    /// bridge queue reads directly instead of deadlocking in `queue.sync`.
     func sessionStateSnapshotForTests() -> SessionState {
-        queue.sync { localState }
+        if DispatchQueue.getSpecific(key: queueKey) != nil {
+            return localState
+        }
+        return queue.sync { localState }
     }
 
     /// Clears all active subagents from the session.
