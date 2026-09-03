@@ -64,11 +64,6 @@ struct TerminalJumpService {
             aliases: ["terminal", "apple_terminal"]
         ),
         TerminalAppDescriptor(
-            displayName: "Otty",
-            bundleIdentifier: "io.appmakes.otty",
-            aliases: ["otty"]
-        ),
-        TerminalAppDescriptor(
             displayName: "Warp",
             bundleIdentifier: "dev.warp.Warp-Stable",
             aliases: ["warp", "warpterminal"]
@@ -287,10 +282,6 @@ struct TerminalJumpService {
                     if try jumpToTerminalTab(target) {
                         return "Focused the matching tmux pane in Terminal."
                     }
-                case "io.appmakes.otty":
-                    if try jumpToOttyTab(target) {
-                        return "Focused the matching tmux pane in Otty."
-                    }
                 default:
                     break
                 }
@@ -387,10 +378,6 @@ struct TerminalJumpService {
             case "com.apple.Terminal":
                 if try jumpToTerminalTab(target) {
                     return "Focused the matching Terminal tab."
-                }
-            case "io.appmakes.otty":
-                if try jumpToOttyTab(target) {
-                    return "Focused the matching Otty tab."
                 }
             case "dev.warp.Warp-Stable":
                 return try jumpToWarpPane(target)
@@ -967,26 +954,6 @@ struct TerminalJumpService {
                     if "\(escapeAppleScript(target.paneTitle))" is not "" and (custom title of aTab as text) contains "\(escapeAppleScript(target.paneTitle))" then
                         set selected of aTab to true
                         set frontmost of aWindow to true
-                        return "matched"
-                    end if
-                end repeat
-            end repeat
-        end tell
-        return ""
-        """
-
-        return try runAppleScript(script) == "matched"
-    }
-
-    private func jumpToOttyTab(_ target: JumpTarget) throws -> Bool {
-        let script = """
-        tell application "Otty"
-            if not (it is running) then return ""
-            activate
-            repeat with aWindow in windows
-                repeat with aTab in tabs of aWindow
-                    if "\(escapeAppleScript(target.terminalTTY))" is not "" and (tty of aTab as text) is "\(escapeAppleScript(target.terminalTTY))" then
-                        set selected of aTab to true
                         return "matched"
                     end if
                 end repeat

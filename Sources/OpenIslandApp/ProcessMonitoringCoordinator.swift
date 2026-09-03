@@ -1515,8 +1515,6 @@ final class ProcessMonitoringCoordinator {
             return "WezTerm"
         case "zellij":
             return "Zellij"
-        case "otty":
-            return "Otty"
         // VS Code family
         case "vscode", "code", "visual studio code":
             return "VS Code"

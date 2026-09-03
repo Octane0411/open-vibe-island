@@ -534,10 +534,6 @@ struct ActiveAgentProcessDiscovery {
             return "Warp"
         }
 
-        if lowered.contains("/otty.app/contents/macos/otty") {
-            return "Otty"
-        }
-
         if lowered.hasSuffix("/zellij") {
             return "Zellij"
         }
