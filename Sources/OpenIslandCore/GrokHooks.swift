@@ -353,6 +353,15 @@ public extension GrokHookPayload {
     ///   → observe-only; do not emit sessionCompleted for the turn.
     /// - `reason` omitted → treat as genuine turn completion for older Grok
     ///   builds that do not populate the field (fail-open toward visibility).
+    /// `StopCancelled` reports who ended the turn. Anything the user did
+    /// (Ctrl+C, declining a permission) is an interrupt; `"runtime"` means
+    /// Grok itself bailed out (`max_turns`, `no_progress`) and the user has
+    /// not seen it yet. Missing/unknown values are treated as user-initiated.
+    public var isUserInitiatedCancellation: Bool {
+        guard hookEventName == .stopCancelled else { return false }
+        return cancelledBy != "runtime"
+    }
+
     var isGenuineTurnStop: Bool {
         guard hookEventName == .stop else { return false }
         if let reason {

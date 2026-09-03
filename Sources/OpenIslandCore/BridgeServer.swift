@@ -1458,8 +1458,10 @@ public final class BridgeServer: @unchecked Sendable {
         case .stopCancelled:
             // Fires *instead of* Stop when a turn ends without completing
             // (user interrupt, declined permission, --max-turns, no-progress
-            // bail-out). Settle the turn like a genuine Stop but flag it as an
-            // interrupt so the island does not surface it as actionable.
+            // bail-out). Settle the turn like a genuine Stop. A cancellation
+            // the user caused is flagged as an interrupt so the island does
+            // not pop for something they just did; a runtime bail-out
+            // (`cancelledBy == "runtime"`, e.g. max turns) is worth surfacing.
             ensureGrokSessionExists(for: payload)
             synchronizeGrokJumpTarget(for: payload)
             emit(
@@ -1468,7 +1470,7 @@ public final class BridgeServer: @unchecked Sendable {
                         sessionID: payload.sessionID,
                         summary: payload.implicitSummary,
                         timestamp: .now,
-                        isInterrupt: true
+                        isInterrupt: payload.isUserInitiatedCancellation
                     )
                 )
             )

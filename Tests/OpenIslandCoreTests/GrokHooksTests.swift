@@ -141,6 +141,17 @@ struct GrokHooksTests {
             cancelledBy: "runtime"
         )
         #expect(bare.implicitSummary == "Grok turn stopped: max turns reached in worktree.")
+        #expect(bare.isUserInitiatedCancellation == false)
+
+        let interrupted = GrokHookPayload(
+            cwd: "/tmp/worktree",
+            hookEventName: .stopCancelled,
+            sessionID: "grok-cancelled",
+            reason: "user_interrupt",
+            cancelledBy: "user"
+        )
+        #expect(interrupted.isUserInitiatedCancellation)
+        #expect(!GrokHookPayload(cwd: "/tmp", hookEventName: .stop, sessionID: "s", reason: "end_turn").isUserInitiatedCancellation)
     }
 
     @Test
