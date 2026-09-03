@@ -32,6 +32,7 @@ The smoke path is intentionally aimed at the repository executable, not `~/Appli
 - `OPEN_ISLAND_HARNESS_START_BRIDGE` skips live socket setup when disabled
 - `OPEN_ISLAND_HARNESS_BOOT_ANIMATION` disables the normal boot animation for deterministic runs
 - `OPEN_ISLAND_HARNESS_CAPTURE_DELAY_SECONDS` controls when artifact capture runs after launch
+- `OPEN_ISLAND_HARNESS_INTERACTIVE=1` enables pointer interaction for manual harness runs
 - `OPEN_ISLAND_HARNESS_AUTO_EXIT_SECONDS` terminates the app automatically after the selected duration
 - `OPEN_ISLAND_HARNESS_ARTIFACT_DIR` selects the output directory for `report.json`, `timeline.json`, `runtime.log`, PNG captures, and `.ax.json` accessibility snapshots
 

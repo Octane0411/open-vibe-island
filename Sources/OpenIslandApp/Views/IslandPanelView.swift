@@ -207,19 +207,30 @@ struct IslandPanelView: View {
         let outerBottomPadding: CGFloat = 0
         let openedWidth = max(0, layoutWidth - outerHorizontalPadding)
         let openedHeight = max(closedNotchHeight, layoutHeight - outerBottomPadding)
+        let resolvedClosedPill = closedPill
 
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
-                transitioningSurface(openedWidth: openedWidth, openedHeight: openedHeight)
+                transitioningSurface(
+                    openedWidth: openedWidth,
+                    openedHeight: openedHeight,
+                    closedPill: resolvedClosedPill
+                )
 
                 if shouldRenderOpenedSurface {
                     openedSurfaceContent(width: openedWidth, height: openedHeight)
+                        .frame(
+                            width: usesOpenedVisualState ? openedWidth : resolvedClosedPill.resolvedWidth,
+                            height: usesOpenedVisualState ? openedHeight : closedNotchHeight,
+                            alignment: .top
+                        )
+                        .clipShape(transitionSurfaceShape)
                         .opacity(usesOpenedVisualState ? 1 : 0)
                         .transition(.opacity.animation(.easeOut(duration: 0.18).delay(0.12)))
                         .allowsHitTesting(usesOpenedVisualState)
                 }
 
-                v6ClosedSurface()
+                v6ClosedSurface(resolvedClosedPill)
                     .opacity(usesOpenedVisualState ? 0 : 1)
                     .allowsHitTesting(!usesOpenedVisualState)
             }
@@ -287,8 +298,8 @@ struct IslandPanelView: View {
     }
 
     @ViewBuilder
-    private func v6ClosedSurface() -> some View {
-        closedPill
+    private func v6ClosedSurface(_ pill: V6ClosedPill) -> some View {
+        pill
         .scaleEffect(isPopping ? 1.04 : 1, anchor: .top)
         .animation(popAnimation, value: isPopping)
     }
@@ -296,7 +307,11 @@ struct IslandPanelView: View {
     // MARK: - Opened surface
 
     @ViewBuilder
-    private func transitioningSurface(openedWidth: CGFloat, openedHeight: CGFloat) -> some View {
+    private func transitioningSurface(
+        openedWidth: CGFloat,
+        openedHeight: CGFloat,
+        closedPill: V6ClosedPill
+    ) -> some View {
         let shape = transitionSurfaceShape
         shape
             .fill(V6Palette.ink)
@@ -333,7 +348,6 @@ struct IslandPanelView: View {
                 .clipped()
         }
         .frame(width: openedWidth, height: openedHeight, alignment: .top)
-        .clipShape(OpenedIslandSurfaceShape(topProfile: usesNotchAwareOpenedHeader ? .notch : .topBar))
     }
 
     // MARK: - Closed state
