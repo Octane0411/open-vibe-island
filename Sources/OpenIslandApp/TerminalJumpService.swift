@@ -486,7 +486,37 @@ struct TerminalJumpService {
         guard let cli = Self.vscodeFamilyCLI[bundleIdentifier] else {
             return false
         }
+
+        // Prefer the launcher shipped inside the app bundle. A GUI-launched app
+        // inherits the LaunchServices PATH (/usr/bin:/bin:/usr/sbin:/sbin),
+        // which contains neither /usr/local/bin nor Homebrew, so resolving the
+        // CLI by bare name fails for most installs and the jump silently
+        // degrades to plain app activation.
+        if let bundledCLI = bundledVSCodeFamilyCLIPath(for: bundleIdentifier, cli: cli),
+           processRunner(bundledCLI, ["-r", workspacePath]) {
+            return true
+        }
+
         return processRunner(cli, ["-r", workspacePath])
+    }
+
+    /// Path to a VS Code family editor's `Contents/Resources/app/bin/<cli>`
+    /// launcher, when the app is installed and ships one.
+    private func bundledVSCodeFamilyCLIPath(for bundleIdentifier: String, cli: String) -> String? {
+        guard let appURL = applicationResolver(bundleIdentifier) else {
+            return nil
+        }
+
+        let cliPath = appURL
+            .appendingPathComponent("Contents/Resources/app/bin")
+            .appendingPathComponent(cli)
+            .path
+
+        guard FileManager.default.isExecutableFile(atPath: cliPath) else {
+            return nil
+        }
+
+        return cliPath
     }
 
     // MARK: - JetBrains IDE family

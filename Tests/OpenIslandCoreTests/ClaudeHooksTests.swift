@@ -345,6 +345,43 @@ struct ClaudeHooksTests {
         #expect(payload.defaultJumpTarget.terminalApp == "Zed")
     }
 
+    /// Regression: Cursor builds that export no `CURSOR_TRACE_ID` fell through
+    /// to the plain "VS Code" branch, so the jump targeted
+    /// `com.microsoft.VSCode` and failed on machines without upstream VS Code.
+    @Test
+    func claudeInferTerminalAppRecognizesCursorWithoutTraceMarker() {
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: [
+                "TERM_PROGRAM": "vscode",
+                "__CFBundleIdentifier": "com.todesktop.230313mzl4w4u92",
+                "VSCODE_GIT_ASKPASS_MAIN": "/Applications/Cursor.app/Contents/Resources/app/extensions/git/dist/askpass-main.js",
+            ],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+        )
+
+        #expect(payload.terminalApp == "Cursor")
+        #expect(payload.defaultJumpTarget.terminalApp == "Cursor")
+    }
+
+    @Test
+    func claudeInferTerminalAppKeepsUpstreamVSCodeWhenNoForkSignalIsPresent() {
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: [
+                "TERM_PROGRAM": "vscode",
+                "__CFBundleIdentifier": "com.microsoft.VSCode",
+            ],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+        )
+
+        #expect(payload.terminalApp == "VS Code")
+    }
+
     @Test
     func claudeInferTerminalAppRecognizesZedViaBundleIdentifier() {
         let payload = ClaudeHookPayload(
