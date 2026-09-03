@@ -65,7 +65,12 @@ struct ForegroundTerminalSessionProbe {
     }
 
     func matches(session: AgentSession) async -> Bool {
-        await matches(jumpTarget: session.jumpTarget)
+        if session.tool == .cursor,
+           let frontmost = frontmostBundleIdentifierProvider(),
+           TerminalJumpService.bundleIdentifiers(forTerminalAppName: "Cursor").contains(frontmost) {
+            return true
+        }
+        return await matches(jumpTarget: session.jumpTarget)
     }
 
     func matches(jumpTarget: JumpTarget?) async -> Bool {
@@ -107,7 +112,8 @@ struct ForegroundTerminalSessionProbe {
             return false
 
         default:
-            return false
+            let knownBundleIDs = TerminalJumpService.bundleIdentifiers(forTerminalAppName: jumpTarget.terminalApp)
+            return knownBundleIDs.contains(frontmostBundleIdentifier)
         }
     }
 
