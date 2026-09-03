@@ -1,26 +1,24 @@
 # Hook System
 
-OpenIsland receives hook events from AI agents (Codex / Claude Code / Gemini CLI / Grok Build / …) via the `OpenIslandHooks` CLI. The CLI forwards payloads to the app over a Unix socket and, when necessary, writes a directive back to stdout so the agent can act on it (e.g. block a tool call).
+OpenIsland receives lifecycle events from managed hook CLIs and runtime extensions. Codex, Claude-family agents, Gemini CLI, Grok Build, and Kimi CLI invoke `OpenIslandHooks`; Pi and Oh My Pi load a TypeScript extension. Both paths forward typed payloads to the app over its Unix socket. Hook sources that support blocking can receive directives on stdout; Pi-family extensions are fire-and-forget.
 
 ## Architecture
 
 ```text
-Agent (Codex / Claude Code / Gemini CLI / Grok Build / …)
-  │  stdin: JSON payload
-  ▼
-OpenIslandHooks CLI  (--source codex | --source claude | --source gemini | --source grok | …)
-  │  Unix socket
-  ▼
-BridgeServer → AppModel → UI
-  │  BridgeResponse
-  ▼
-OpenIslandHooks CLI
-  │  stdout: JSON directive (only when a response is needed)
-  ▼
-Agent
-```
+Managed hook agent                     Pi / Oh My Pi
+  │ stdin: JSON payload                  │ runtime ExtensionAPI events
+  ▼                                      ▼
+OpenIslandHooks CLI                   open-island.ts
+  │                                      │
+  └──────────── Unix socket ──────────────┘
+                         │
+                         ▼
+              BridgeServer → AppModel → UI
 
-**Fail-open principle**: if the bridge is unavailable the hook process exits silently without writing to stdout, so the agent continues running unaffected.
+```
+Blocking hook sources receive a `BridgeResponse` through `OpenIslandHooks` stdout. Pi-family extension events do not block the agent.
+
+**Fail-open principle**: if the bridge is unavailable, managed hook processes exit without writing to stdout and Pi-family extensions ignore socket errors, so the agent continues running unchanged.
 
 ## Skip Hooks For Delegated Control
 
@@ -307,6 +305,40 @@ Setting `interrupt: true` terminates the current agent turn immediately.
 
 ---
 
+## Pi and Oh My Pi Extensions
+
+**Payload type**: `PiHookPayload`
+
+**Sources**: [`Sources/OpenIslandCore/PiHooks.swift`](../Sources/OpenIslandCore/PiHooks.swift), [`Sources/OpenIslandApp/Resources/open-island-pi.ts`](../Sources/OpenIslandApp/Resources/open-island-pi.ts)
+
+Open Island installs one bundled extension per runtime:
+
+- Pi: `~/.pi/agent/extensions/open-island.ts`
+- Oh My Pi: `~/.omp/agent/extensions/open-island.ts`
+
+The setup UI installs, refreshes, reveals, and uninstalls each extension independently. The installer writes only `open-island.ts` plus its Open Island ownership manifest; uninstall leaves other user extensions untouched.
+
+### Event coverage
+
+| Open Island event | Pi event | Oh My Pi event | Behavior |
+|---|---|---|---|
+| `SessionStart` | `session_start` | `session_start` | Creates the typed Pi/OMP session with model, transcript, working-directory, and terminal metadata |
+| `UserPromptSubmit` | `before_agent_start` | `before_agent_start` | Updates the latest user prompt and marks the session running |
+| `PreToolUse` | `tool_execution_start` | `tool_execution_start` | Shows the active tool and a clipped input preview |
+| `PostToolUse` | `tool_execution_end` | `tool_execution_end` | Clears the active tool and records tool completion |
+| `Stop` | `agent_settled` | `session_stop` | Marks the current turn completed and records the latest assistant text |
+| `Heartbeat` | 15-second session timer | 15-second session timer | Refreshes only per-session liveness; it does not change turn phase, summary, tool, or message metadata |
+| `SessionEnd` | `session_shutdown` | `session_shutdown` | Ends the tracked session immediately; reload shutdowns stop the timer without ending the session |
+
+Jump-back metadata (terminal app, terminal session ID, TTY) is read from the agent process environment at event time; the extension does not forward terminal variables into child shell commands. When a prompt starts it sets `OPEN_ISLAND_ACTIVE=1` in the agent process environment, so commands the agent spawns can tell that Open Island is tracking the session. If the socket is unavailable, connection errors are ignored and agent execution continues. Pi and Oh My Pi liveness is keyed by `session_id`: heartbeat keeps or restores that specific session, a 45-second heartbeat timeout hides it after an abnormal exit, and generic process polling does not keep Pi/OMP sessions alive.
+
+### Current limitations
+
+- Pi and Oh My Pi extension events are fire-and-forget. Open Island does not block, approve, deny, or rewrite tool calls through these integrations.
+- Runtime event objects are intentionally decoded defensively because Pi and Oh My Pi expose overlapping lifecycle concepts with some different event names.
+
+---
+
 ## Timeout Policy
 
 | Source | Event | Timeout |
@@ -317,6 +349,7 @@ Setting `interrupt: true` terminates the current agent turn immediately.
 | Claude Code | All other events | **45 seconds** |
 | Gemini CLI | All events | Bridge default |
 | Grok Build | All managed events | **45 seconds** |
+| Pi / Oh My Pi | Heartbeat liveness | **45 seconds** |
 
 ---
 
@@ -404,5 +437,9 @@ For iTerm, Terminal, and Ghostty the process additionally runs an AppleScript qu
 | [`Sources/OpenIslandCore/GeminiHooks.swift`](../Sources/OpenIslandCore/GeminiHooks.swift) | Gemini CLI payload model, terminal detection, metadata helpers |
 | [`Sources/OpenIslandCore/GrokHooks.swift`](../Sources/OpenIslandCore/GrokHooks.swift) | Grok Build payload model, terminal detection, lifecycle summaries |
 | [`Sources/OpenIslandCore/GrokHookInstaller.swift`](../Sources/OpenIslandCore/GrokHookInstaller.swift) | Writes `~/.grok/hooks/open-island.json` |
+| [`Sources/OpenIslandCore/PiHooks.swift`](../Sources/OpenIslandCore/PiHooks.swift) | Pi/OMP payload model and session metadata helpers |
+| [`Sources/OpenIslandCore/PiExtensionInstallationManager.swift`](../Sources/OpenIslandCore/PiExtensionInstallationManager.swift) | Installs and removes the runtime-specific TypeScript extension |
+| [`Sources/OpenIslandCore/PiSessionRegistry.swift`](../Sources/OpenIslandCore/PiSessionRegistry.swift) | Persists recent Pi and OMP sessions |
+| [`Sources/OpenIslandApp/Resources/open-island-pi.ts`](../Sources/OpenIslandApp/Resources/open-island-pi.ts) | Shared Pi/OMP runtime extension |
 | [`Sources/OpenIslandCore/BridgeServer.swift`](../Sources/OpenIslandCore/BridgeServer.swift) | Unix socket server — handles incoming hook payloads |
 | [`Sources/OpenIslandCore/BridgeTransport.swift`](../Sources/OpenIslandCore/BridgeTransport.swift) | Protocol codec and envelope types |

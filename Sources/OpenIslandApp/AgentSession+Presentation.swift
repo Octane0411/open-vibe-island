@@ -230,6 +230,10 @@ extension AgentSession {
             return "Kimi"
         case .grokBuild:
             return "Grok"
+        case .pi:
+            return "Pi"
+        case .ohMyPi:
+            return "Oh My Pi"
         }
     }
 

@@ -50,7 +50,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 
 ## Supported Agents & Terminals
 
-**11 agents**: Claude Code, Codex, Cursor, Gemini CLI, Grok Build, Kimi CLI, OpenCode, Qoder, Qwen Code, Factory, CodeBuddy
+**13 agents**: Claude Code, Codex, Cursor, Gemini CLI, Grok Build, Kimi CLI, OpenCode, Pi, Oh My Pi, Qoder, Qwen Code, Factory, CodeBuddy
 
 **15+ terminals & IDEs**: Terminal.app, Ghostty, iTerm2, WezTerm, Zellij, tmux, cmux, Kaku, VS Code, Cursor, Windsurf, Trae, Zed, JetBrains IDEs (IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover)
 
@@ -74,6 +74,8 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 | **Gemini CLI** | Supported | Hook integration via `~/.gemini/settings.json`, session tracking, fire-and-forget events |
 | **Kimi CLI** | Supported | Hook integration via `~/.kimi/config.toml` `[[hooks]]`, session tracking, permission flow (reuses Claude payload) |
 | **Grok Build** | Supported | Hook integration via `~/.grok/hooks/open-island.json`, session tracking, terminal jump-back, fire-and-forget events (no permission round-trip yet; camelCase payload) |
+| **Pi** | Supported | TypeScript extension at `~/.pi/agent/extensions/open-island.ts`; session, prompt, tool, completion, process-discovery, persistence, and terminal jump tracking |
+| **Oh My Pi (OMP)** | Supported | TypeScript extension at `~/.omp/agent/extensions/open-island.ts`; the same lifecycle coverage adapted to OMP event aliases |
 
 ### Terminals & IDEs
 

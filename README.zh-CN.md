@@ -50,7 +50,7 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 
 ## 支持的 Agents 和终端
 
-**11 个 Agents**：Claude Code、Codex、Cursor、Gemini CLI、Grok Build、Kimi CLI、OpenCode、Qoder、Qwen Code、Factory、CodeBuddy
+**13 个 Agents**：Claude Code、Codex、Cursor、Gemini CLI、Grok Build、Kimi CLI、OpenCode、Pi、Oh My Pi、Qoder、Qwen Code、Factory、CodeBuddy
 
 **15+ 终端和 IDE**：Terminal.app、Ghostty、iTerm2、WezTerm、Zellij、tmux、cmux、Kaku、VS Code、Cursor、Windsurf、Trae、Zed、JetBrains 全家桶（IDEA、WebStorm、PyCharm、GoLand、CLion、RubyMine、PhpStorm、Rider、RustRover）
 
@@ -73,6 +73,8 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 | **Gemini CLI** | 已支持 | Hook 集成，通过 `~/.gemini/settings.json` 配置，会话追踪，fire-and-forget 事件 |
 | **Kimi CLI** | 已支持 | Hook 集成，通过 `~/.kimi/config.toml` 的 `[[hooks]]` 数组配置，会话追踪，复用 Claude payload 协议 |
 | **Grok Build** | 已支持 | Hook 集成，写入 `~/.grok/hooks/open-island.json`，会话追踪与终端跳回，fire-and-forget 事件（暂无权限拦截；camelCase payload） |
+| **Pi** | 已支持 | TypeScript 扩展，位于 `~/.pi/agent/extensions/open-island.ts`，会话/提示词/工具/完成事件追踪，进程检测，会话持久化，终端跳转 |
+| **Oh My Pi (OMP)** | 已支持 | TypeScript 扩展，位于 `~/.omp/agent/extensions/open-island.ts`，同等生命周期覆盖，适配 OMP 事件别名 |
 
 ### 终端和 IDE
 

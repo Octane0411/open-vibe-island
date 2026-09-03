@@ -232,6 +232,23 @@ struct ActiveAgentProcessDiscovery {
                 ))
                 continue
             }
+
+            if let piAgent = piAgentVariant(command: process.command) {
+                let claimKey = "\(piAgent.rawValue):\(process.pid)"
+                guard claimedKeys.insert(claimKey).inserted else {
+                    continue
+                }
+
+                let lsofOutput = lsofOutput(pid: process.pid)
+                snapshots.append(ProcessSnapshot(
+                    tool: piAgent.tool,
+                    sessionID: nil,
+                    workingDirectory: lsofOutput.flatMap(workingDirectory(from:)),
+                    terminalTTY: process.terminalTTY,
+                    terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+                ))
+                continue
+            }
         }
 
         return snapshots
@@ -814,6 +831,30 @@ struct ActiveAgentProcessDiscovery {
         }
 
         return firstToken == "grok" || firstToken.hasSuffix("/grok")
+    }
+
+    private func piAgentVariant(command: String) -> PiAgentVariant? {
+        let lowered = command.lowercased()
+        guard let firstToken = lowered.split(separator: " ").first.map(String.init) else {
+            return nil
+        }
+        let binaryName = (firstToken as NSString).lastPathComponent
+
+        if binaryName == "omp"
+            || lowered.contains("/@oh-my-pi/pi-coding-agent/")
+            || lowered.contains("/node_modules/@oh-my-pi/pi-coding-agent/")
+        {
+            return .ohMyPi
+        }
+
+        if binaryName == "pi"
+            || lowered.contains("/@earendil-works/pi-coding-agent/")
+            || lowered.contains("/node_modules/@earendil-works/pi-coding-agent/")
+        {
+            return .pi
+        }
+
+        return nil
     }
 
     /// Returns `true` when the given `ps` command string belongs to a Claude Code process.

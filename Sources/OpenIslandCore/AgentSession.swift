@@ -12,6 +12,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
     case cursor
     case kimiCLI
     case grokBuild
+    case pi
+    case ohMyPi
 
     public var displayName: String {
         switch self {
@@ -37,6 +39,10 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "Kimi CLI"
         case .grokBuild:
             "Grok"
+        case .pi:
+            "Pi"
+        case .ohMyPi:
+            "Oh My Pi"
         }
     }
 
@@ -64,6 +70,10 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "KIMI"
         case .grokBuild:
             "GROK"
+        case .pi:
+            "PI"
+        case .ohMyPi:
+            "OMP"
         }
     }
 
@@ -93,6 +103,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
         case .codebuddy:  "#fca5a5"
         case .kimiCLI:    "#fde047"
         case .grokBuild:  "#22d3ee"
+        case .pi:         "#a3e635"
+        case .ohMyPi:     "#f472b6"
         }
     }
 }
@@ -379,6 +391,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     public var geminiMetadata: GeminiSessionMetadata?
     public var openCodeMetadata: OpenCodeSessionMetadata?
     public var cursorMetadata: CursorSessionMetadata?
+    public var piMetadata: PiSessionMetadata?
 
     /// Whether this session originates from a remote (SSH) connection.
     public var isRemote: Bool = false
@@ -407,6 +420,15 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     /// is considered gone. This prevents flicker from momentary `ps` gaps.
     public var processNotSeenCount: Int = 0
 
+    /// Last liveness signal received from a session-scoped extension heartbeat.
+    /// Runtime-only: persistence caches presentation data, not liveness facts.
+    public var lastHeartbeatAt: Date?
+
+    /// Startup-only grace anchor for a restored Pi/OMP session that is waiting
+    /// for its extension to resume heartbeat delivery.
+    /// Runtime-only: never persisted, and cleared on the first real liveness signal.
+    public var heartbeatReconnectStartedAt: Date?
+
     public init(
         id: String,
         title: String,
@@ -424,7 +446,8 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         claudeMetadata: ClaudeSessionMetadata? = nil,
         geminiMetadata: GeminiSessionMetadata? = nil,
         openCodeMetadata: OpenCodeSessionMetadata? = nil,
-        cursorMetadata: CursorSessionMetadata? = nil
+        cursorMetadata: CursorSessionMetadata? = nil,
+        piMetadata: PiSessionMetadata? = nil
     ) {
         self.id = id
         self.title = title
@@ -443,6 +466,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         self.geminiMetadata = geminiMetadata
         self.openCodeMetadata = openCodeMetadata
         self.cursorMetadata = cursorMetadata
+        self.piMetadata = piMetadata
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -463,6 +487,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         case geminiMetadata
         case openCodeMetadata
         case cursorMetadata
+        case piMetadata
     }
 
     public init(from decoder: any Decoder) throws {
@@ -484,6 +509,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         geminiMetadata = try container.decodeIfPresent(GeminiSessionMetadata.self, forKey: .geminiMetadata)
         openCodeMetadata = try container.decodeIfPresent(OpenCodeSessionMetadata.self, forKey: .openCodeMetadata)
         cursorMetadata = try container.decodeIfPresent(CursorSessionMetadata.self, forKey: .cursorMetadata)
+        piMetadata = try container.decodeIfPresent(PiSessionMetadata.self, forKey: .piMetadata)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -505,6 +531,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         try container.encodeIfPresent(geminiMetadata, forKey: .geminiMetadata)
         try container.encodeIfPresent(openCodeMetadata, forKey: .openCodeMetadata)
         try container.encodeIfPresent(cursorMetadata, forKey: .cursorMetadata)
+        try container.encodeIfPresent(piMetadata, forKey: .piMetadata)
     }
 }
 
@@ -514,7 +541,7 @@ public extension AgentSession {
     }
 
     var isTrackedLiveSession: Bool {
-        !isDemoSession && (tool == .codex || tool == .claudeCode || tool == .geminiCLI || tool == .openCode || tool == .qoder || tool == .qwenCode || tool == .factory || tool == .codebuddy || tool == .cursor || tool == .kimiCLI || tool == .grokBuild)
+        !isDemoSession
     }
 
     var isTrackedLiveCodexSession: Bool {
@@ -547,11 +574,11 @@ public extension AgentSession {
     }
 
     var currentToolName: String? {
-        codexMetadata?.currentTool ?? claudeMetadata?.currentTool ?? openCodeMetadata?.currentTool ?? cursorMetadata?.currentTool
+        codexMetadata?.currentTool ?? claudeMetadata?.currentTool ?? openCodeMetadata?.currentTool ?? cursorMetadata?.currentTool ?? piMetadata?.currentTool
     }
 
     var lastAssistantMessageText: String? {
-        codexMetadata?.lastAssistantMessage ?? claudeMetadata?.lastAssistantMessage ?? geminiMetadata?.lastAssistantMessage ?? openCodeMetadata?.lastAssistantMessage ?? cursorMetadata?.lastAssistantMessage
+        codexMetadata?.lastAssistantMessage ?? claudeMetadata?.lastAssistantMessage ?? geminiMetadata?.lastAssistantMessage ?? openCodeMetadata?.lastAssistantMessage ?? cursorMetadata?.lastAssistantMessage ?? piMetadata?.lastAssistantMessage
     }
 
     var completionAssistantMessageText: String? {
@@ -569,19 +596,19 @@ public extension AgentSession {
     }
 
     var trackingTranscriptPath: String? {
-        codexMetadata?.transcriptPath ?? claudeMetadata?.transcriptPath ?? geminiMetadata?.transcriptPath
+        codexMetadata?.transcriptPath ?? claudeMetadata?.transcriptPath ?? geminiMetadata?.transcriptPath ?? piMetadata?.transcriptPath
     }
 
     var latestUserPromptText: String? {
-        codexMetadata?.lastUserPrompt ?? claudeMetadata?.lastUserPrompt ?? geminiMetadata?.lastUserPrompt ?? openCodeMetadata?.lastUserPrompt ?? cursorMetadata?.lastUserPrompt
+        codexMetadata?.lastUserPrompt ?? claudeMetadata?.lastUserPrompt ?? geminiMetadata?.lastUserPrompt ?? openCodeMetadata?.lastUserPrompt ?? cursorMetadata?.lastUserPrompt ?? piMetadata?.lastUserPrompt
     }
 
     var initialUserPromptText: String? {
-        codexMetadata?.initialUserPrompt ?? claudeMetadata?.initialUserPrompt ?? geminiMetadata?.initialUserPrompt ?? openCodeMetadata?.initialUserPrompt ?? cursorMetadata?.initialUserPrompt
+        codexMetadata?.initialUserPrompt ?? claudeMetadata?.initialUserPrompt ?? geminiMetadata?.initialUserPrompt ?? openCodeMetadata?.initialUserPrompt ?? cursorMetadata?.initialUserPrompt ?? piMetadata?.initialUserPrompt
     }
 
     var currentCommandPreviewText: String? {
-        codexMetadata?.currentCommandPreview ?? claudeMetadata?.currentToolInputPreview ?? openCodeMetadata?.currentToolInputPreview ?? cursorMetadata?.currentToolInputPreview
+        codexMetadata?.currentCommandPreview ?? claudeMetadata?.currentToolInputPreview ?? openCodeMetadata?.currentToolInputPreview ?? cursorMetadata?.currentToolInputPreview ?? piMetadata?.currentToolInputPreview
     }
 }
 

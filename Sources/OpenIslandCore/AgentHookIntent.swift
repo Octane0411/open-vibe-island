@@ -28,5 +28,7 @@ public enum AgentIdentifier: String, Codable, Sendable, CaseIterable {
     case gemini
     case kimi
     case grok
+    case pi
+    case ohMyPi
     case claudeUsageBridge
 }

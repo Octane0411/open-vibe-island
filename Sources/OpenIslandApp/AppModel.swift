@@ -144,6 +144,12 @@ final class AppModel {
     var grokHookStatus: GrokHookInstallationStatus? { hooks.grokHookStatus }
     var grokHookStatusTitle: String { hooks.grokHookStatusTitle }
     var grokHookStatusSummary: String { hooks.grokHookStatusSummary }
+    var piExtensionInstalled: Bool { hooks.piExtensionInstalled }
+    var ohMyPiExtensionInstalled: Bool { hooks.ohMyPiExtensionInstalled }
+    var isPiSetupBusy: Bool { hooks.isPiSetupBusy }
+    var isOhMyPiSetupBusy: Bool { hooks.isOhMyPiSetupBusy }
+    var piExtensionStatus: PiExtensionInstallationStatus? { hooks.piExtensionStatus }
+    var ohMyPiExtensionStatus: PiExtensionInstallationStatus? { hooks.ohMyPiExtensionStatus }
     var codexHookStatusTitle: String { hooks.codexHookStatusTitle }
     var codexHookStatusSummary: String { hooks.codexHookStatusSummary }
 
@@ -171,6 +177,8 @@ final class AppModel {
             || hooks.geminiHooksInstalled
             || hooks.kimiHooksInstalled
             || hooks.grokHooksInstalled
+            || hooks.piExtensionInstalled
+            || hooks.ohMyPiExtensionInstalled
     }
     func refreshCodexHookStatus() { hooks.refreshCodexHookStatus() }
     func refreshClaudeHookStatus() { hooks.refreshClaudeHookStatus() }
@@ -204,6 +212,11 @@ final class AppModel {
     func refreshGrokHookStatus() { hooks.refreshGrokHookStatus() }
     func installGrokHooks() { hooks.installGrokHooks() }
     func uninstallGrokHooks() { hooks.uninstallGrokHooks() }
+    func refreshPiExtensionStatuses() { hooks.refreshPiExtensionStatuses() }
+    func installPiExtension() { hooks.installPiExtension() }
+    func uninstallPiExtension() { hooks.uninstallPiExtension() }
+    func installOhMyPiExtension() { hooks.installOhMyPiExtension() }
+    func uninstallOhMyPiExtension() { hooks.uninstallOhMyPiExtension() }
     func installClaudeUsageBridge() { hooks.installClaudeUsageBridge() }
     func uninstallClaudeUsageBridge() { hooks.uninstallClaudeUsageBridge() }
     func updateClaudeConfigDirectory(to newDirectory: URL?) { hooks.updateClaudeConfigDirectory(to: newDirectory) }
@@ -714,6 +727,7 @@ final class AppModel {
             self?.discovery.scheduleClaudeSessionPersistence()
             self?.discovery.scheduleOpenCodeSessionPersistence()
             self?.discovery.scheduleCursorSessionPersistence()
+            self?.discovery.schedulePiSessionPersistence()
         }
         monitoring.onCodexAppRunningChanged = { [weak self] isRunning in
             guard let self else { return }
@@ -1112,6 +1126,7 @@ final class AppModel {
             hooks.refreshClaudeHookStatus()
             hooks.refreshCCForkHookStatuses()
             hooks.refreshOpenCodePluginStatus()
+            hooks.refreshPiExtensionStatuses()
             hooks.refreshCursorHookStatus()
             hooks.refreshGrokHookStatus()
             hooks.refreshClaudeUsageState()
@@ -1515,6 +1530,11 @@ final class AppModel {
         updateLastActionMessage: Bool = true,
         ingress: TrackedEventIngress = .bridge
     ) {
+        if case .sessionHeartbeat = event {
+            state.apply(event)
+            return
+        }
+
         // Snapshot whether this session was already completed before applying
         // the event. Used to suppress duplicate/stale completion notifications
         // (e.g. rollout watcher re-discovering an old completion on startup,
@@ -1548,6 +1568,7 @@ final class AppModel {
         discovery.scheduleClaudeSessionPersistence()
         discovery.scheduleOpenCodeSessionPersistence()
         discovery.scheduleCursorSessionPersistence()
+        discovery.schedulePiSessionPersistence()
 
         // Push relevant events to the Watch/iPhone via the relay
         if let relay = watchRelay {
@@ -1564,6 +1585,8 @@ final class AppModel {
                 case let .geminiSessionMetadataUpdated(p): return p.sessionID
                 case let .openCodeSessionMetadataUpdated(p): return p.sessionID
                 case let .cursorSessionMetadataUpdated(p): return p.sessionID
+                case let .piSessionMetadataUpdated(p): return p.sessionID
+                case let .sessionHeartbeat(p): return p.sessionID
                 case let .actionableStateResolved(p): return p.sessionID
                 }
             }()
@@ -1658,41 +1681,50 @@ final class AppModel {
         hooks.updateHooksBinaryIfNeeded()
 
         // Auto-install missing hooks and usage bridge, then run health checks.
-        if payload.hooksBinaryURL != nil {
-            Task { @MainActor [weak self] in
-                guard let self else { return }
+        let hooksBinaryLocated = payload.hooksBinaryURL != nil
+        Task { @MainActor [weak self] in
+            guard let self else { return }
 
-                // Wait for all status reads to complete before checking install state.
-                await self.hooks.refreshAllHookStatusAndWait()
+            // Wait for all status reads to complete before checking install state.
+            await self.hooks.refreshAllHookStatusAndWait()
 
-                // Reconcile persisted intent with what is actually on disk. For
-                // legacy users this records existing hooks as `.installed` and
-                // marks first-launch as complete so onboarding does not appear
-                // on upgrade. Must run after status reads and before any
-                // install decision.
-                self.hooks.migrateIntentStoreIfNeeded()
+            // Reconcile persisted intent with what is actually on disk. For
+            // legacy users this records existing hooks as `.installed` and
+            // marks first-launch as complete so onboarding does not appear
+            // on upgrade. Must run after status reads and before any
+            // install decision.
+            self.hooks.migrateIntentStoreIfNeeded()
 
-                // Install only hooks the user has not explicitly opted out of.
-                // `shouldAutoInstall` skips `.uninstalled` agents and agents
-                // whose hooks are already present — it is the single checkpoint
-                // that fixes #324.
-                if self.hooks.shouldAutoInstall(.claudeCode) { self.installClaudeHooks() }
-                if self.hooks.shouldAutoInstall(.codex) { self.installCodexHooks() }
-                if self.hooks.shouldAutoInstall(.qoder) { self.installQoderHooks() }
-                if self.hooks.shouldAutoInstall(.qwenCode) { self.installQwenCodeHooks() }
-                if self.hooks.shouldAutoInstall(.factory) { self.installFactoryHooks() }
-                if self.hooks.shouldAutoInstall(.codebuddy) { self.installCodebuddyHooks() }
-                if self.hooks.shouldAutoInstall(.openCode) { self.installOpenCodePlugin() }
-                if self.hooks.shouldAutoInstall(.cursor) { self.installCursorHooks() }
-                if self.hooks.shouldAutoInstall(.gemini) { self.installGeminiHooks() }
-                if self.hooks.shouldAutoInstall(.kimi) { self.installKimiHooks() }
-                if self.hooks.shouldAutoInstall(.grok) { self.installGrokHooks() }
-                if self.hooks.shouldAutoInstall(.claudeUsageBridge) { self.installClaudeUsageBridge() }
+            // Pi and Oh My Pi load a runtime extension that talks to the
+            // bridge socket directly, so they do not depend on the hooks
+            // binary and are installed whether or not it was located.
+            if self.hooks.shouldAutoInstall(.pi) { self.installPiExtension() }
+            if self.hooks.shouldAutoInstall(.ohMyPi) { self.installOhMyPiExtension() }
 
-                // Run health checks after install to detect stale paths, conflicts, etc.
-                try? await Task.sleep(for: .milliseconds(500))
-                await self.hooks.repairHooksIfNeeded()
-            }
+            // Everything below writes the hooks binary path into agent
+            // config, so it only runs once the binary has been located.
+            guard hooksBinaryLocated else { return }
+
+            // Install only hooks the user has not explicitly opted out of.
+            // `shouldAutoInstall` skips `.uninstalled` agents and agents
+            // whose hooks are already present — it is the single checkpoint
+            // that fixes #324.
+            if self.hooks.shouldAutoInstall(.claudeCode) { self.installClaudeHooks() }
+            if self.hooks.shouldAutoInstall(.codex) { self.installCodexHooks() }
+            if self.hooks.shouldAutoInstall(.qoder) { self.installQoderHooks() }
+            if self.hooks.shouldAutoInstall(.qwenCode) { self.installQwenCodeHooks() }
+            if self.hooks.shouldAutoInstall(.factory) { self.installFactoryHooks() }
+            if self.hooks.shouldAutoInstall(.codebuddy) { self.installCodebuddyHooks() }
+            if self.hooks.shouldAutoInstall(.openCode) { self.installOpenCodePlugin() }
+            if self.hooks.shouldAutoInstall(.cursor) { self.installCursorHooks() }
+            if self.hooks.shouldAutoInstall(.gemini) { self.installGeminiHooks() }
+            if self.hooks.shouldAutoInstall(.kimi) { self.installKimiHooks() }
+            if self.hooks.shouldAutoInstall(.grok) { self.installGrokHooks() }
+            if self.hooks.shouldAutoInstall(.claudeUsageBridge) { self.installClaudeUsageBridge() }
+
+            // Run health checks after install to detect stale paths, conflicts, etc.
+            try? await Task.sleep(for: .milliseconds(500))
+            await self.hooks.repairHooksIfNeeded()
         }
 
         // Reconcile attachments and start monitoring (requires sessions to be loaded).
@@ -1842,6 +1874,13 @@ final class AppModel {
             }
 
             return payload.cursorMetadata.lastAssistantMessage ?? "Cursor session metadata updated."
+        case let .piSessionMetadataUpdated(payload):
+            if let currentTool = payload.piMetadata.currentTool {
+                return "\(state.session(id: payload.sessionID)?.tool.displayName ?? "Pi") is running \(currentTool)."
+            }
+            return payload.piMetadata.lastAssistantMessage ?? "Pi session metadata updated."
+        case let .sessionHeartbeat(payload):
+            return "Heartbeat received for session \(payload.sessionID)."
         case let .actionableStateResolved(payload):
             return "Actionable state resolved for session \(payload.sessionID)."
         }
