@@ -3,6 +3,14 @@ import Testing
 @testable import OpenIslandApp
 @testable import OpenIslandCore
 
+// The harnesses below import the installed `open-island.ts` as-is, which
+// relies on Node's built-in type stripping. Skip (rather than fail) when
+// node is missing or too old so an unsupported Node on the CI runner does
+// not turn into a red build.
+@Suite(.enabled(
+    if: PiExtensionNodeRuntime.isAvailable,
+    "Requires node >= 22.6 on PATH to load the TypeScript extension"
+))
 struct PiExtensionEventTests {
     @Test(arguments: [PiAgentVariant.pi, .ohMyPi])
     func emitsCanonicalLifecycleAndHeartbeat(agent: PiAgentVariant) throws {
@@ -25,8 +33,7 @@ struct PiExtensionEventTests {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = [
-            "node",
+        process.arguments = ["node"] + PiExtensionNodeRuntime.launchArguments + [
             harnessURL.path,
             installed.extensionURL.path,
             socketURL.path,
@@ -97,8 +104,7 @@ struct PiExtensionEventTests {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = [
-            "node",
+        process.arguments = ["node"] + PiExtensionNodeRuntime.launchArguments + [
             harnessURL.path,
             installed.extensionURL.path,
             socketURL.path,
@@ -270,4 +276,89 @@ struct PiExtensionEventTests {
 
     console.log(JSON.stringify({ heartbeatCount }));
     """#
+}
+
+/// Locates `node` on PATH once and works out whether it can load the
+/// TypeScript extension directly.
+///
+/// Type stripping shipped behind `--experimental-strip-types` in Node 22.6,
+/// and is on by default since 22.18 and 23.6 (and every later major).
+/// Anything older cannot import `.ts` at all, so the suite is skipped.
+enum PiExtensionNodeRuntime {
+    struct Capability: Equatable, Sendable {
+        var major: Int
+        var minor: Int
+        var launchArguments: [String]
+    }
+
+    static let capability: Capability? = detect()
+
+    static var isAvailable: Bool { capability != nil }
+
+    /// Extra arguments to place before the script path when launching node.
+    static var launchArguments: [String] { capability?.launchArguments ?? [] }
+
+    /// Returns `nil` when a Node of this version cannot load `.ts` modules.
+    static func launchArguments(forNodeMajor major: Int, minor: Int) -> [String]? {
+        switch major {
+        case ..<22:
+            return nil
+        case 22 where minor < 6:
+            return nil
+        case 22 where minor < 18, 23 where minor < 6:
+            return ["--experimental-strip-types"]
+        default:
+            return []
+        }
+    }
+
+    private static func detect() -> Capability? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["node", "--version"]
+        let stdout = Pipe()
+        process.standardOutput = stdout
+        process.standardError = Pipe()
+        do {
+            try process.run()
+        } catch {
+            return nil
+        }
+        let output = stdout.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0,
+              let text = String(data: output, encoding: .utf8) else {
+            return nil
+        }
+
+        // `node --version` prints e.g. "v22.18.0".
+        let components = text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .drop(while: { $0 == "v" })
+            .split(separator: ".")
+        guard components.count >= 2,
+              let major = Int(components[0]),
+              let minor = Int(components[1]),
+              let arguments = launchArguments(forNodeMajor: major, minor: minor) else {
+            return nil
+        }
+        return Capability(major: major, minor: minor, launchArguments: arguments)
+    }
+}
+
+struct PiExtensionNodeRuntimeTests {
+    @Test(arguments: [
+        (20, 19, nil),
+        (22, 5, nil),
+        (22, 6, ["--experimental-strip-types"]),
+        (22, 17, ["--experimental-strip-types"]),
+        (22, 18, []),
+        (23, 5, ["--experimental-strip-types"]),
+        (23, 6, []),
+        (24, 0, []),
+        (26, 0, []),
+    ] as [(Int, Int, [String]?)])
+    func launchArgumentsFollowTypeStrippingAvailability(major: Int, minor: Int, expected: [String]?) {
+        #expect(PiExtensionNodeRuntime.launchArguments(forNodeMajor: major, minor: minor) == expected)
+    }
 }
