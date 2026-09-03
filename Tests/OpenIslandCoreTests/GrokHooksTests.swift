@@ -617,7 +617,7 @@ struct GrokHooksTests {
     }
 
     @Test
-    func permissionDeniedCompletesTurn() async throws {
+    func permissionDeniedKeepsSessionRunningUntilStopCancelled() async throws {
         let socketURL = BridgeSocketLocation.uniqueTestURL()
         let server = BridgeServer(socketURL: socketURL)
         try server.start()
@@ -653,9 +653,27 @@ struct GrokHooksTests {
             )
         )
 
-        let session = try #require(server.sessionStateSnapshotForTests().session(id: "grok-perm-denied"))
-        #expect(session.phase == .completed)
-        #expect(session.isSessionEnded == false)
+        // A policy deny leaves the model working, so the turn stays running.
+        let afterDeny = try #require(server.sessionStateSnapshotForTests().session(id: "grok-perm-denied"))
+        #expect(afterDeny.phase == .running)
+        #expect(afterDeny.isSessionEnded == false)
+
+        // A user Reject is followed by StopCancelled, which settles the turn.
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processGrokHook(
+                GrokHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .stopCancelled,
+                    sessionID: "grok-perm-denied",
+                    reason: "permission_rejected",
+                    cancelledBy: "user"
+                )
+            )
+        )
+
+        let afterCancel = try #require(server.sessionStateSnapshotForTests().session(id: "grok-perm-denied"))
+        #expect(afterCancel.phase == .completed)
+        #expect(afterCancel.isSessionEnded == false)
     }
 
     @Test

@@ -1370,7 +1370,11 @@ public final class BridgeServer: @unchecked Sendable {
             // Fire-and-forget: Grok fails open without a decision on stdout.
             send(.response(.acknowledged), to: clientID)
 
-        case .postToolUse, .subagentStart, .subagentStop, .preCompact, .postCompact:
+        // PermissionDenied fires for both a user Reject (a StopCancelled with
+        // permission_rejected follows) and a configured PolicyDeny rule (the
+        // model is told the tool was skipped and keeps working), so it must
+        // not settle the turn on its own.
+        case .postToolUse, .subagentStart, .subagentStop, .preCompact, .postCompact, .permissionDenied:
             ensureGrokSessionExists(for: payload)
             synchronizeGrokJumpTarget(for: payload)
             let currentPhase = localState.session(id: payload.sessionID)?.phase ?? .running
@@ -1419,7 +1423,7 @@ public final class BridgeServer: @unchecked Sendable {
             }
             send(.response(.acknowledged), to: clientID)
 
-        case .permissionDenied, .postToolUseFailure, .stopFailure:
+        case .postToolUseFailure, .stopFailure:
             ensureGrokSessionExists(for: payload)
             synchronizeGrokJumpTarget(for: payload)
             emit(
