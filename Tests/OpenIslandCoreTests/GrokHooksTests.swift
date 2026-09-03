@@ -451,6 +451,139 @@ struct GrokHooksTests {
     }
 
     @Test
+    func idlePromptNotificationSettlesRunningSession() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processGrokHook(
+                GrokHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .sessionStart,
+                    sessionID: "grok-idle-prompt"
+                )
+            )
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processGrokHook(
+                GrokHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .userPromptSubmit,
+                    sessionID: "grok-idle-prompt",
+                    prompt: "do the thing"
+                )
+            )
+        )
+        // No Stop-family event arrives; idle_prompt is the backstop.
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processGrokHook(
+                GrokHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .notification,
+                    sessionID: "grok-idle-prompt",
+                    message: "Grok is waiting for input",
+                    notificationType: "idle_prompt"
+                )
+            )
+        )
+
+        let session = try #require(server.sessionStateSnapshotForTests().session(id: "grok-idle-prompt"))
+        #expect(session.phase == .completed)
+        #expect(session.summary == "Grok is waiting for input")
+        #expect(session.isSessionEnded == false)
+    }
+
+    @Test
+    func idlePromptNotificationPreservesCompletedStopSummary() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processGrokHook(
+                GrokHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .sessionStart,
+                    sessionID: "grok-idle-after-stop"
+                )
+            )
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processGrokHook(
+                GrokHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .stop,
+                    sessionID: "grok-idle-after-stop",
+                    lastAssistantMessage: "All done.",
+                    reason: "end_turn"
+                )
+            )
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processGrokHook(
+                GrokHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .notification,
+                    sessionID: "grok-idle-after-stop",
+                    message: "Grok is waiting for input",
+                    notificationType: "idle_prompt"
+                )
+            )
+        )
+
+        let session = try #require(server.sessionStateSnapshotForTests().session(id: "grok-idle-after-stop"))
+        #expect(session.phase == .completed)
+        #expect(session.summary == "All done.")
+    }
+
+    @Test
+    func nonIdleNotificationKeepsSessionRunning() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processGrokHook(
+                GrokHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .sessionStart,
+                    sessionID: "grok-permission-prompt"
+                )
+            )
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processGrokHook(
+                GrokHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .userPromptSubmit,
+                    sessionID: "grok-permission-prompt",
+                    prompt: "do the thing"
+                )
+            )
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processGrokHook(
+                GrokHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .notification,
+                    sessionID: "grok-permission-prompt",
+                    message: "Grok needs permission to run npm test",
+                    notificationType: "permission_prompt"
+                )
+            )
+        )
+
+        let session = try #require(server.sessionStateSnapshotForTests().session(id: "grok-permission-prompt"))
+        #expect(session.phase == .running)
+        #expect(session.summary == "Grok needs permission to run npm test")
+        #expect(session.isSessionEnded == false)
+    }
+
+    @Test
     func postToolUseFailureDoesNotLeaveSessionRunning() async throws {
         let socketURL = BridgeSocketLocation.uniqueTestURL()
         let server = BridgeServer(socketURL: socketURL)

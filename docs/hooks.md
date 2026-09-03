@@ -339,7 +339,7 @@ All of the following are registered in `~/.grok/hooks/open-island.json` by the m
 | `Stop` | — | Completion when `reason == "end_turn"`; if `reason` is omitted, treat as turn completion; non-`end_turn` reasons are observe-only |
 | `StopFailure` | — | Activity update, phase `.completed` (session not ended) |
 | `StopCancelled` | — | Turn completion flagged `isInterrupt` — fires *instead of* `Stop` on a user interrupt (Ctrl+C / Esc), a declined or cancelled permission prompt, `--max-turns`, or a no-progress bail-out; summary is `lastAssistantMessage` when present, else derived from `reason` |
-| `Notification` | `*` | Activity update |
+| `Notification` | `*` | Activity update; `notificationType == "idle_prompt"` settles a still-running session as completed (Grok's backstop for turns that reported no Stop-family event) and leaves an already-completed session untouched |
 | `PreToolUse` | `*` | Activity update, **fire-and-forget** (no deny directive; fail-open) |
 | `PostToolUse` | `*` | Activity update |
 | `PostToolUseFailure` | `*` | Activity update, phase `.completed` |

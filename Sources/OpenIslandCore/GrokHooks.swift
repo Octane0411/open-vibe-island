@@ -290,7 +290,20 @@ public extension GrokHookPayload {
     }
 
     var notificationSummary: String {
-        clipped(message) ?? "Grok sent a notification."
+        if isIdlePromptNotification {
+            return clipped(message) ?? "Grok is idle in \(workspaceName)."
+        }
+        return clipped(message) ?? "Grok sent a notification."
+    }
+
+    /// True for `Notification` events with `notificationType == "idle_prompt"`.
+    ///
+    /// Grok fires `idle_prompt` after any turn end followed by sustained
+    /// idleness; the upstream guide names it as the backstop for turns that
+    /// reported none of the Stop-family events.
+    var isIdlePromptNotification: Bool {
+        hookEventName == .notification
+            && notificationType?.lowercased() == "idle_prompt"
     }
 
     /// Fallback summary for `StopCancelled` when Grok did not attach a partial

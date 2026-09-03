@@ -1370,7 +1370,7 @@ public final class BridgeServer: @unchecked Sendable {
             // Fire-and-forget: Grok fails open without a decision on stdout.
             send(.response(.acknowledged), to: clientID)
 
-        case .postToolUse, .subagentStart, .subagentStop, .preCompact, .postCompact, .notification:
+        case .postToolUse, .subagentStart, .subagentStop, .preCompact, .postCompact:
             ensureGrokSessionExists(for: payload)
             synchronizeGrokJumpTarget(for: payload)
             let currentPhase = localState.session(id: payload.sessionID)?.phase ?? .running
@@ -1384,6 +1384,39 @@ public final class BridgeServer: @unchecked Sendable {
                     )
                 )
             )
+            send(.response(.acknowledged), to: clientID)
+
+        case .notification:
+            ensureGrokSessionExists(for: payload)
+            synchronizeGrokJumpTarget(for: payload)
+            let currentPhase = localState.session(id: payload.sessionID)?.phase ?? .running
+            if payload.isIdlePromptNotification {
+                // `idle_prompt` is Grok's backstop for turns that reported none
+                // of the Stop-family events: settle a still-running session.
+                // Once already completed, leave the Stop summary untouched.
+                if currentPhase != .completed {
+                    emit(
+                        .sessionCompleted(
+                            SessionCompleted(
+                                sessionID: payload.sessionID,
+                                summary: payload.implicitSummary,
+                                timestamp: .now
+                            )
+                        )
+                    )
+                }
+            } else {
+                emit(
+                    .activityUpdated(
+                        SessionActivityUpdated(
+                            sessionID: payload.sessionID,
+                            summary: payload.implicitSummary,
+                            phase: currentPhase == .completed ? .completed : .running,
+                            timestamp: .now
+                        )
+                    )
+                )
+            }
             send(.response(.acknowledged), to: clientID)
 
         case .permissionDenied, .postToolUseFailure, .stopFailure:
