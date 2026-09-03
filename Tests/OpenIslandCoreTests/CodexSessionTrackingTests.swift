@@ -4,6 +4,11 @@ import Testing
 
 struct CodexSessionTrackingTests {
     @Test
+    func codexRolloutWatcherUsesCoarseFallbackAfterFileEvents() {
+        #expect(CodexRolloutWatcher.defaultFallbackPollInterval == 60)
+    }
+
+    @Test
     func codexSessionStoreRoundTripsTrackedSessions() throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("open-island-tracking-\(UUID().uuidString)", isDirectory: true)
@@ -869,7 +874,7 @@ struct CodexSessionTrackingTests {
         }
 
         let recorder = EventRecorder()
-        let watcher = CodexRolloutWatcher(pollInterval: 0.05)
+        let watcher = CodexRolloutWatcher(fallbackPollInterval: 5)
         watcher.eventHandler = { event in
             Task {
                 await recorder.append(event)
@@ -938,6 +943,102 @@ struct CodexSessionTrackingTests {
         #expect(events.contains(where: { $0.trackedMetadataUpdate?.codexMetadata.currentTool == "exec_command" }))
         #expect(events.contains(where: { $0.trackedMetadataUpdate?.codexMetadata.currentCommandPreview == "git status -sb" }))
         #expect(events.contains(where: { $0.trackedSessionCompletion?.summary == "Finished the rollout tracking slice." }))
+    }
+
+    @Test
+    func codexRolloutWatcherResetsStateWhenTranscriptIsAtomicallyReplaced() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-rollout-replacement-\(UUID().uuidString)", isDirectory: true)
+        let rolloutURL = rootURL.appendingPathComponent("rollout.jsonl")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        let originalPrompt = "Original rollout prompt."
+        let originalBody = rolloutLine(
+            timestamp: "2026-04-02T04:03:44.000Z",
+            type: "event_msg",
+            payload: [
+                "type": "user_message",
+                "message": originalPrompt,
+            ]
+        ).appending("\n")
+        try originalBody.write(to: rolloutURL, atomically: true, encoding: .utf8)
+
+        let recorder = EventRecorder()
+        let watcher = CodexRolloutWatcher(fallbackPollInterval: 5)
+        watcher.eventHandler = { event in
+            Task {
+                await recorder.append(event)
+            }
+        }
+        watcher.sync(targets: [
+            CodexRolloutWatchTarget(
+                sessionID: "codex-session-replacement",
+                transcriptPath: rolloutURL.path
+            )
+        ])
+
+        let initialEvents = try await waitForEvents(from: recorder) { events in
+            events.contains(where: {
+                $0.trackedMetadataUpdate?.codexMetadata.initialUserPrompt == originalPrompt
+            })
+        }
+        #expect(initialEvents.contains(where: {
+            $0.trackedMetadataUpdate?.codexMetadata.initialUserPrompt == originalPrompt
+        }))
+        let initialEventCount = initialEvents.count
+
+        let replacementPrompt = "Replacement rollout prompt."
+        let replacementBody = [
+            rolloutLine(
+                timestamp: "2026-04-02T04:04:00.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": replacementPrompt,
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:04:01.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": "Replacement padding \(String(repeating: "x", count: 512))",
+                ]
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:04:02.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "agent_message",
+                    "message": "Replacement rollout completed.",
+                ]
+            ),
+        ].joined(separator: "\n").appending("\n")
+        #expect(replacementBody.utf8.count > originalBody.utf8.count)
+
+        try replacementBody.write(to: rolloutURL, atomically: true, encoding: .utf8)
+        let allEvents = try await waitForEvents(from: recorder) { events in
+            events.dropFirst(initialEventCount).contains(where: {
+                let metadata = $0.trackedMetadataUpdate?.codexMetadata
+                return metadata?.initialUserPrompt == replacementPrompt
+                    && metadata?.lastAssistantMessage == "Replacement rollout completed."
+            })
+        }
+        watcher.stop()
+
+        let replacementEvents = Array(allEvents.dropFirst(initialEventCount))
+        #expect(replacementEvents.contains(where: {
+            let metadata = $0.trackedMetadataUpdate?.codexMetadata
+            return metadata?.initialUserPrompt == replacementPrompt
+                && metadata?.lastAssistantMessage == "Replacement rollout completed."
+        }))
+        #expect(!replacementEvents.contains(where: {
+            $0.trackedMetadataUpdate?.codexMetadata.initialUserPrompt == originalPrompt
+        }))
     }
 
     @Test
@@ -1041,7 +1142,7 @@ struct CodexSessionTrackingTests {
 
         let recorder = EventRecorder()
         let watcher = CodexRolloutWatcher(
-            pollInterval: 0.05,
+            fallbackPollInterval: 5,
             initialReadLimit: 512,
             initialPromptBootstrapLimit: 4_096
         )
@@ -1107,7 +1208,7 @@ struct CodexSessionTrackingTests {
             .write(to: rolloutURL, atomically: true, encoding: .utf8)
 
         let recorder = EventRecorder()
-        let watcher = CodexRolloutWatcher(pollInterval: 0.05, initialReadLimit: 160)
+        let watcher = CodexRolloutWatcher(fallbackPollInterval: 5, initialReadLimit: 160)
         watcher.eventHandler = { event in
             Task {
                 await recorder.append(event)
@@ -1215,6 +1316,105 @@ struct CodexSessionTrackingTests {
         #expect(records.first?.codexMetadata?.currentCommandPreview == nil)
         #expect(records.first?.origin == .live)
         #expect(records.first?.attachmentState == .stale)
+    }
+
+    @Test
+    func codexRolloutDiscoveryDoesNotReparseUnchangedFiles() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-cache-\(UUID().uuidString)", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/04/02", isDirectory: true)
+        let rolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-cache.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        try [
+            sessionMetaLine(
+                sessionID: "codex-session-cache",
+                timestamp: "2026-04-02T04:03:44.000Z",
+                cwd: "/tmp/open-island"
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: ["type": "agent_message", "message": "Initial state."]
+            ),
+        ]
+        .joined(separator: "\n")
+        .appending("\n")
+        .write(to: rolloutURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: rolloutURL.path)
+
+        let discovery = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10
+        )
+        _ = discovery.discoverRecentSessions(now: now)
+        #expect(discovery.lastScanDiagnostics.parsedFileCount == 1)
+        #expect(discovery.lastScanDiagnostics.cacheHitCount == 0)
+
+        _ = discovery.discoverRecentSessions(now: now)
+        #expect(discovery.lastScanDiagnostics.parsedFileCount == 0)
+        #expect(discovery.lastScanDiagnostics.cacheHitCount == 1)
+
+        try appendRolloutLine(
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:46.000Z",
+                type: "event_msg",
+                payload: ["type": "agent_message", "message": "Updated state."]
+            ),
+            to: rolloutURL
+        )
+        let updatedNow = now.addingTimeInterval(1)
+        try FileManager.default.setAttributes(
+            [.modificationDate: updatedNow],
+            ofItemAtPath: rolloutURL.path
+        )
+
+        let updatedRecords = discovery.discoverRecentSessions(now: updatedNow)
+
+        #expect(discovery.lastScanDiagnostics.parsedFileCount == 1)
+        #expect(discovery.lastScanDiagnostics.cacheHitCount == 0)
+        #expect(updatedRecords.first?.summary == "Updated state.")
+    }
+
+    @Test
+    func codexRolloutDiscoveryDoesNotCacheMissingSessionMetadata() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-negative-cache-\(UUID().uuidString)", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/04/02", isDirectory: true)
+        let rolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-missing-meta.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        try rolloutLine(
+            timestamp: "2026-04-02T04:03:45.000Z",
+            type: "event_msg",
+            payload: ["type": "agent_message", "message": "No session metadata."]
+        )
+        .appending("\n")
+        .write(to: rolloutURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: rolloutURL.path)
+
+        let discovery = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10
+        )
+
+        #expect(discovery.discoverRecentSessions(now: now).isEmpty)
+        #expect(discovery.lastScanDiagnostics.parsedFileCount == 1)
+        #expect(discovery.lastScanDiagnostics.cacheHitCount == 0)
+
+        #expect(discovery.discoverRecentSessions(now: now).isEmpty)
+        #expect(discovery.lastScanDiagnostics.parsedFileCount == 1)
+        #expect(discovery.lastScanDiagnostics.cacheHitCount == 0)
     }
 
     @Test
@@ -1642,6 +1842,23 @@ private actor EventRecorder {
     func snapshot() -> [AgentEvent] {
         events
     }
+}
+
+private func waitForEvents(
+    from recorder: EventRecorder,
+    timeout: Duration = .seconds(2),
+    until condition: ([AgentEvent]) -> Bool
+) async throws -> [AgentEvent] {
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: timeout)
+    var events = await recorder.snapshot()
+
+    while !condition(events), clock.now < deadline {
+        try await Task.sleep(for: .milliseconds(20))
+        events = await recorder.snapshot()
+    }
+
+    return events
 }
 
 private func appendRolloutLine(_ line: String, to fileURL: URL) throws {

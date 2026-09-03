@@ -33,6 +33,10 @@ final class CodexAppServerCoordinator {
 
     private(set) var isConnected = false
 
+    var hasLiveConnection: Bool {
+        isConnected && client?.isRunning == true
+    }
+
     // MARK: - Public API
 
     /// Ensure a connection exists.  Called from the monitoring loop when
