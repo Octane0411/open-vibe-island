@@ -205,19 +205,29 @@ public extension GeminiHookPayload {
         withRuntimeContext(
             environment: environment,
             currentTTYProvider: { currentTTY() },
-            terminalLocatorProvider: { terminalLocator(for: $0) }
+            terminalLocatorProvider: { terminalLocator(for: $0) },
+            embeddedHostResolver: { EmbeddedTerminalResolver.resolveCurrentHostContext() }
         )
     }
 
     func withRuntimeContext(
         environment: [String: String],
         currentTTYProvider: () -> String?,
-        terminalLocatorProvider: (String) -> (sessionID: String?, tty: String?, title: String?)
+        terminalLocatorProvider: (String) -> (sessionID: String?, tty: String?, title: String?),
+        embeddedHostResolver: () -> EmbeddedTerminalResolver.HostContext? = {
+            EmbeddedTerminalResolver.resolveCurrentHostContext()
+        }
     ) -> GeminiHookPayload {
         var payload = self
 
         if payload.terminalApp == nil {
             payload.terminalApp = inferTerminalApp(from: environment)
+        }
+
+        // Process-tree fallback for hosts the env vars don't reach. See
+        // ClaudeHookPayload.withRuntimeContext.
+        if payload.terminalApp == nil, let host = embeddedHostResolver() {
+            payload.terminalApp = host.host.displayName
         }
 
         if payload.terminalTTY == nil {
