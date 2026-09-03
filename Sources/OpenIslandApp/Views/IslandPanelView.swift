@@ -1072,7 +1072,7 @@ struct IslandPanelView: View {
                         .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.42))
 
-                    Text("\(window.roundedUsedPercentage)%")
+                    Text(usagePercentageText(for: window, layout: layout))
                         .font(.system(size: 11.5, weight: .bold, design: .monospaced))
                         .foregroundStyle(usageColor(for: window.usedPercentage))
 
@@ -1096,9 +1096,21 @@ struct IslandPanelView: View {
         .help(usageHelpText(for: provider))
     }
 
+    /// Percentage rendered inside a window's chip. Colour is derived
+    /// separately from `window.usedPercentage`, so it keeps meaning "nearly
+    /// spent" even while this flips to headroom.
+    private func usagePercentageText(for window: UsageWindowPresentation, layout: UsageChipLayout) -> String {
+        guard model.usageShowsRemaining else {
+            return "\(window.roundedUsedPercentage)%"
+        }
+
+        let percentage = "\(window.roundedRemainingPercentage)%"
+        return layout.usesShortTitle ? percentage : "\(percentage) left"
+    }
+
     private func usageHelpText(for provider: UsageProviderPresentation) -> String {
         provider.windows.map { window in
-            var parts = ["\(window.label) \(window.roundedUsedPercentage)%"]
+            var parts = [usageWindowSummary(for: window)]
             if let resetsAt = window.resetsAt,
                let remaining = remainingDurationString(until: resetsAt) {
                 parts.append(remaining)
@@ -1106,6 +1118,20 @@ struct IslandPanelView: View {
             return parts.joined(separator: " ")
         }
         .joined(separator: " · ")
+    }
+
+    /// The compact chip has no room to say which direction it counts, so the
+    /// tooltip always spells it out: "5h 84% left" against a bare "5h 16%".
+    private func usageWindowSummary(for window: UsageWindowPresentation) -> String {
+        guard model.usageShowsRemaining else {
+            return "\(window.label) \(window.roundedUsedPercentage)%"
+        }
+
+        return lang.t(
+            "island.usageWindowRemaining",
+            window.label,
+            window.roundedRemainingPercentage
+        )
     }
 
     private func headerPill(_ title: String, tint: Color) -> some View {
@@ -1154,7 +1180,7 @@ struct IslandPanelView: View {
 
 /// One rung of the usage-chip detail ladder. `adaptiveUsageSummaryView` walks
 /// these from richest to sparsest and renders the first that fits the lane.
-private struct UsageChipLayout {
+private struct UsageChipLayout: Sendable, Codable {
     let usesShortTitle: Bool
     let showsAllWindows: Bool
     let showsRemaining: Bool
@@ -1179,10 +1205,6 @@ private struct UsageProviderPresentation: Identifiable {
         peakWindow?.usedPercentage ?? 0
     }
 
-    var peakUsagePercentage: Int {
-        peakWindow?.roundedUsedPercentage ?? 0
-    }
-
     var shortTitle: String {
         switch id {
         case "claude":
@@ -1203,6 +1225,12 @@ private struct UsageWindowPresentation: Identifiable {
 
     var roundedUsedPercentage: Int {
         Int(usedPercentage.rounded())
+    }
+
+    /// Headroom left in the window. Clamped because providers occasionally
+    /// report over 100% once a window is exhausted.
+    var roundedRemainingPercentage: Int {
+        Int(min(100, max(0, 100 - usedPercentage)).rounded())
     }
 }
 

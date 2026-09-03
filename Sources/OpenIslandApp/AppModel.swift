@@ -24,6 +24,7 @@ final class AppModel {
     private static let islandRightSlotDefaultsKey = "appearance.island.v6.rightSlot"
     private static let islandCenterLabelDefaultsKey = "appearance.island.v6.centerLabel"
     private static let showCodexUsageDefaultsKey = "app.showCodexUsage"
+    private static let usageShowsRemainingDefaultsKey = "app.usageShowsRemaining"
     private static let completionReplyEnabledDefaultsKey = "feature.completionReply.enabled"
     private static let suppressFrontmostNotificationsDefaultsKey = "app.suppressFrontmostNotifications"
     private static let legacyIslandSessionStateIndicatorDefaultsKey = "appearance.island.v8.stateIndicator"
@@ -285,6 +286,13 @@ final class AppModel {
         didSet {
             guard hasFinishedInit, showCodexUsage != oldValue else { return }
             UserDefaults.standard.set(showCodexUsage, forKey: Self.showCodexUsageDefaultsKey)
+        }
+    }
+    /// Renders usage windows as headroom left rather than quota consumed.
+    var usageShowsRemaining: Bool = false {
+        didSet {
+            guard hasFinishedInit, usageShowsRemaining != oldValue else { return }
+            UserDefaults.standard.set(usageShowsRemaining, forKey: Self.usageShowsRemainingDefaultsKey)
         }
     }
     var completionReplyEnabled: Bool = false {
@@ -645,6 +653,7 @@ final class AppModel {
                 atPath: CodexRolloutDiscovery.defaultRootURL.path
             )
         }
+        usageShowsRemaining = UserDefaults.standard.bool(forKey: Self.usageShowsRemainingDefaultsKey)
         completionReplyEnabled = UserDefaults.standard.bool(forKey: Self.completionReplyEnabledDefaultsKey)
         launchAtLoginEnabled = LaunchAtLoginService.shared.isEnabled
         appearanceSettingsProfile = IslandAppearanceDisplayProfile(
