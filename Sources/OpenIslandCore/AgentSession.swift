@@ -541,7 +541,7 @@ public extension AgentSession {
     }
 
     var isTrackedLiveSession: Bool {
-        !isDemoSession && AgentTool.allCases.contains(tool)
+        !isDemoSession
     }
 
     var isTrackedLiveCodexSession: Bool {

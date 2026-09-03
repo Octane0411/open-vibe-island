@@ -1267,7 +1267,7 @@ final class HookInstallationCoordinator {
                 self.intentStore.setIntent(install ? .installed : .uninstalled, for: agent)
                 self.onStatusMessage?(
                     updated.isInstalled
-                        ? "\(name) extension is installed. Restart \(name) to activate."
+                        ? "\(name) extension is installed. Restart \(name) or run /reload to activate."
                         : "\(name) extension removed."
                 )
             } catch {

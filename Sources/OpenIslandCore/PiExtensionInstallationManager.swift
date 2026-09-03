@@ -19,7 +19,7 @@ public struct PiExtensionInstallerManifest: Equatable, Codable, Sendable {
     }
 }
 
-public struct PiExtensionInstallationStatus: Equatable, Sendable {
+public struct PiExtensionInstallationStatus: Equatable, Codable, Sendable {
     public var agent: PiAgentVariant
     public var agentDirectory: URL
     public var extensionsDirectory: URL

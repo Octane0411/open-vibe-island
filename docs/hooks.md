@@ -330,7 +330,7 @@ The setup UI installs, refreshes, reveals, and uninstalls each extension indepen
 | `Heartbeat` | 15-second session timer | 15-second session timer | Refreshes only per-session liveness; it does not change turn phase, summary, tool, or message metadata |
 | `SessionEnd` | `session_shutdown` | `session_shutdown` | Ends the tracked session immediately; reload shutdowns stop the timer without ending the session |
 
-The extension also exports the parent terminal environment into child shell commands so Open Island can preserve precise jump-back metadata. If the socket is unavailable, connection errors are ignored and agent execution continues. Pi and Oh My Pi liveness is keyed by `session_id`: heartbeat keeps or restores that specific session, a 45-second heartbeat timeout hides it after an abnormal exit, and generic process polling does not keep Pi/OMP sessions alive.
+Jump-back metadata (terminal app, terminal session ID, TTY) is read from the agent process environment at event time; the extension does not forward terminal variables into child shell commands. When a prompt starts it sets `OPEN_ISLAND_ACTIVE=1` in the agent process environment, so commands the agent spawns can tell that Open Island is tracking the session. If the socket is unavailable, connection errors are ignored and agent execution continues. Pi and Oh My Pi liveness is keyed by `session_id`: heartbeat keeps or restores that specific session, a 45-second heartbeat timeout hides it after an abnormal exit, and generic process polling does not keep Pi/OMP sessions alive.
 
 ### Current limitations
 
