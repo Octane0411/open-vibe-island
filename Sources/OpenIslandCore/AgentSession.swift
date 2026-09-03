@@ -103,7 +103,7 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
         case .codebuddy:  "#fca5a5"
         case .kimiCLI:    "#fde047"
         case .grokBuild:  "#22d3ee"
-        case .pi:         "#22d3ee"
+        case .pi:         "#a3e635"
         case .ohMyPi:     "#f472b6"
         }
     }
