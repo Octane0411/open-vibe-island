@@ -358,6 +358,7 @@ Managed status is **healthy only when every event above** is present with an Ope
 
 - Stdin JSON uses **camelCase** keys (`sessionId`, `hookEventName`, `toolName`, `toolResult`).
 - `hookEventName` may arrive as PascalCase (`PreToolUse`), snake_case (`pre_tool_use`) or camelCase (`preToolUse`); all are accepted.
+- Envelopes may carry `promptId`; it is decoded as `promptID` but not acted on yet (reserved for ignoring stale-prompt reports).
 - `StopCancelled` carries `reason` (`user_interrupt`, `permission_rejected`, `permission_cancelled`, `max_turns`, `no_progress`, `unknown`), `cancelledBy` (`user` / `runtime` / `unknown`) and optional `cancelTrigger` / `reasonDetails` / `lastAssistantMessage`.
 - PreToolUse decision format (not used by the managed install yet): `{"decision":"allow"}` / `{"decision":"deny","reason":"..."}`.
 - Sessions also land under `~/.grok/sessions/<url-encoded-cwd>/<session-id>/` for offline discovery (not yet scanned by Open Island).

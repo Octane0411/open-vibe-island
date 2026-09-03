@@ -117,7 +117,8 @@ struct GrokHooksTests {
               "cancelledBy": "user",
               "cancelTrigger": "ctrl_c",
               "reasonDetails": "Interrupted by user",
-              "lastAssistantMessage": "Partial answer."
+              "lastAssistantMessage": "Partial answer.",
+              "promptId": "prompt-7"
             }
             """.data(using: .utf8)!
 
@@ -127,6 +128,7 @@ struct GrokHooksTests {
             #expect(payload.cancelledBy == "user")
             #expect(payload.cancelTrigger == "ctrl_c")
             #expect(payload.reasonDetails == "Interrupted by user")
+            #expect(payload.promptID == "prompt-7")
             #expect(payload.implicitSummary == "Partial answer.")
             #expect(!payload.isGenuineTurnStop)
         }

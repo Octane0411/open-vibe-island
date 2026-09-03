@@ -66,6 +66,9 @@ public struct GrokHookPayload: Equatable, Codable, Sendable {
     public var workspaceRoot: String?
     public var permissionMode: String?
     public var timestamp: String?
+    /// Envelope-level prompt identifier (`promptId`). Decoded so a later
+    /// change can ignore stale-prompt reports; no behaviour depends on it yet.
+    public var promptID: String?
     public var toolName: String?
     public var toolInput: CodexHookJSONValue?
     public var toolUseID: String?
@@ -96,6 +99,7 @@ public struct GrokHookPayload: Equatable, Codable, Sendable {
         case workspaceRoot
         case permissionMode
         case timestamp
+        case promptID = "promptId"
         case toolName
         case toolInput
         case toolUseID = "toolUseId"
@@ -127,6 +131,7 @@ public struct GrokHookPayload: Equatable, Codable, Sendable {
         workspaceRoot: String? = nil,
         permissionMode: String? = nil,
         timestamp: String? = nil,
+        promptID: String? = nil,
         toolName: String? = nil,
         toolInput: CodexHookJSONValue? = nil,
         toolUseID: String? = nil,
@@ -156,6 +161,7 @@ public struct GrokHookPayload: Equatable, Codable, Sendable {
         self.workspaceRoot = workspaceRoot
         self.permissionMode = permissionMode
         self.timestamp = timestamp
+        self.promptID = promptID
         self.toolName = toolName
         self.toolInput = toolInput
         self.toolUseID = toolUseID
@@ -190,6 +196,7 @@ public struct GrokHookPayload: Equatable, Codable, Sendable {
         workspaceRoot = try container.decodeIfPresent(String.self, forKey: .workspaceRoot)
         permissionMode = try container.decodeIfPresent(String.self, forKey: .permissionMode)
         timestamp = try container.decodeIfPresent(String.self, forKey: .timestamp)
+        promptID = try container.decodeIfPresent(String.self, forKey: .promptID)
         toolName = try container.decodeIfPresent(String.self, forKey: .toolName)
         toolInput = try container.decodeIfPresent(CodexHookJSONValue.self, forKey: .toolInput)
         toolUseID = try container.decodeIfPresent(String.self, forKey: .toolUseID)
