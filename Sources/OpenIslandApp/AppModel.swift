@@ -591,7 +591,7 @@ final class AppModel {
             usageDisplay: IslandUsageDisplay(
                 rawValue: defaults.string(forKey: appearanceDefaultsKey(profile, "usageDisplay"))
                     ?? ""
-            ) ?? .compact,
+            ) ?? .detailed,
             sessionStateIndicator: IslandSessionStateIndicator(
                 rawValue: defaults.string(forKey: appearanceDefaultsKey(profile, "stateIndicator"))
                     ?? defaults.string(forKey: legacyIslandSessionStateIndicatorDefaultsKey)

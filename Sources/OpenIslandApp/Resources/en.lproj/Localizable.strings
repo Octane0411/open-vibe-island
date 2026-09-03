@@ -75,9 +75,10 @@
 "settings.appearance.profile.macbook.title" = "MacBook notch";
 "settings.appearance.profile.macbook.note" = "Built-in notch surface with notch-aware geometry.";
 "settings.appearance.usageDisplay.title" = "02 · Usage";
-"settings.appearance.usageDisplay.note" = "Controls whether the opened island shows compact agent usage.";
+"settings.appearance.usageDisplay.note" = "Controls how much agent usage the opened island shows.";
 "settings.appearance.usageDisplay.hidden" = "Hidden";
 "settings.appearance.usageDisplay.compact" = "Compact";
+"settings.appearance.usageDisplay.detailed" = "Detailed";
 "settings.appearance.stateIndicator.title" = "03 · Session state";
 "settings.appearance.stateIndicator.note" = "How rows show running, waiting, and completed state.";
 "settings.appearance.stateIndicator.animatedDot" = "Animated dot";
