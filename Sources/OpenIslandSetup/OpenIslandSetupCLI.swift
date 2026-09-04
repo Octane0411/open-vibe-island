@@ -31,6 +31,9 @@ private struct SetupCommand {
         case installGrok
         case uninstallGrok
         case statusGrok
+        case installHermes
+        case uninstallHermes
+        case statusHermes
     }
 
     let action: Action
@@ -38,6 +41,7 @@ private struct SetupCommand {
     let claudeDirectory: URL
     let kimiDirectory: URL
     let grokDirectory: URL
+    let hermesDirectory: URL
     let hooksBinary: URL?
 
     init(arguments: [String]) throws {
@@ -53,6 +57,7 @@ private struct SetupCommand {
         var claudeDirectory = ClaudeConfigDirectory.resolved()
         var kimiDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".kimi", isDirectory: true)
         var grokDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".grok", isDirectory: true)
+        var hermesDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".hermes", isDirectory: true)
 
         var index = 1
         while index < arguments.count {
@@ -92,6 +97,13 @@ private struct SetupCommand {
                 }
                 grokDirectory = URL(fileURLWithPath: arguments[index]).standardizedFileURL
 
+            case "--hermes-dir":
+                index += 1
+                guard index < arguments.count else {
+                    throw SetupError.missingValue("--hermes-dir")
+                }
+                hermesDirectory = URL(fileURLWithPath: arguments[index]).standardizedFileURL
+
             default:
                 throw SetupError.unexpectedArgument(arguments[index])
             }
@@ -99,7 +111,7 @@ private struct SetupCommand {
             index += 1
         }
 
-        if (action == .install || action == .installClaude || action == .installKimi || action == .installGrok), hooksBinary == nil {
+        if (action == .install || action == .installClaude || action == .installKimi || action == .installGrok || action == .installHermes), hooksBinary == nil {
             hooksBinary = HooksBinaryLocator.locate()
         }
 
@@ -107,6 +119,7 @@ private struct SetupCommand {
         self.claudeDirectory = claudeDirectory
         self.kimiDirectory = kimiDirectory
         self.grokDirectory = grokDirectory
+        self.hermesDirectory = hermesDirectory
         self.hooksBinary = hooksBinary
     }
 
@@ -136,6 +149,12 @@ private struct SetupCommand {
             try uninstallGrok()
         case .statusGrok:
             try statusGrok()
+        case .installHermes:
+            try installHermes()
+        case .uninstallHermes:
+            try uninstallHermes()
+        case .statusHermes:
+            try statusHermes()
         }
     }
 
@@ -307,6 +326,47 @@ private struct SetupCommand {
         if let hooksBinary {
             print("Hooks binary: \(hooksBinary.path)")
         }
+        if let manifest = status.manifest {
+            print("Manifest: present")
+            print("Hook command: \(manifest.hookCommand)")
+        } else {
+            print("Manifest: missing")
+        }
+    }
+
+    private func installHermes() throws {
+        guard let hooksBinary else {
+            throw SetupError.usage
+        }
+
+        let manager = HermesHookInstallationManager(hermesDirectory: hermesDirectory)
+        let status = try manager.install(hooksBinaryURL: hooksBinary)
+
+        print("Installed Open Island Hermes hooks.")
+        print("Hermes dir: \(status.hermesDirectory.path)")
+        print("Config: \(status.configURL.path)")
+        print("Hooks binary: \(hooksBinary.path)")
+    }
+
+    private func uninstallHermes() throws {
+        let manager = HermesHookInstallationManager(hermesDirectory: hermesDirectory)
+        let status = try manager.uninstall()
+
+        print("Removed Open Island Hermes hooks.")
+        print("Hermes dir: \(status.hermesDirectory.path)")
+        print("Config: \(status.configURL.path)")
+        if status.managedHooksPresent {
+            print("Note: managed hooks still present.")
+        }
+    }
+
+    private func statusHermes() throws {
+        let manager = HermesHookInstallationManager(hermesDirectory: hermesDirectory)
+        let status = try manager.status(hooksBinaryURL: hooksBinary)
+
+        print("Hermes dir: \(status.hermesDirectory.path)")
+        print("Config: \(status.configURL.path)")
+        print("Managed hooks present: \(status.managedHooksPresent ? "yes" : "no")")
         if let manifest = status.manifest {
             print("Manifest: present")
             print("Hook command: \(manifest.hookCommand)")

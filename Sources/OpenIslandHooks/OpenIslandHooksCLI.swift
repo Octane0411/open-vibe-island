@@ -19,12 +19,13 @@ struct OpenIslandHooksCLI {
         case gemini
         case kimi
         case grok
+        case hermes
 
         var isClaudeFormat: Bool {
             switch self {
             case .claude, .qoder, .qwen, .factory, .droid, .codebuddy, .kimi:
                 return true
-            case .codex, .cursor, .gemini, .grok:
+            case .codex, .cursor, .gemini, .grok, .hermes:
                 return false
             }
         }
@@ -118,6 +119,14 @@ struct OpenIslandHooksCLI {
                 if (try? client.send(.processGrokHook(payload), timeout: 40)) == nil {
                     logStderr("bridge unavailable for grok hook (\(payload.hookEventName.rawValue))")
                 }
+            case .hermes:
+                let payload = try decoder
+                    .decode(HermesHookPayload.self, from: input)
+                    .withRuntimeContext(environment: ProcessInfo.processInfo.environment)
+
+                // Fire-and-forget: Hermes shell hooks treat any stdout as a
+                // directive response, so never write back (Gemini semantics).
+                _ = try? client.send(.processHermesHook(payload), timeout: 45)
             }
         } catch {
             // Hooks should fail open so the CLI continues working even if the bridge is unavailable.

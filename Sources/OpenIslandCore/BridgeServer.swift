@@ -482,6 +482,8 @@ public final class BridgeServer: @unchecked Sendable {
             handleGrokHook(payload, from: clientID)
         case let .processPiHook(payload):
             handlePiHook(payload, from: clientID)
+        case let .processHermesHook(payload):
+            handleHermesHook(payload, from: clientID)
         }
     }
 
@@ -1752,6 +1754,136 @@ public final class BridgeServer: @unchecked Sendable {
 
             send(.response(.acknowledged), to: clientID)
         }
+    }
+
+    private func handleHermesHook(_ payload: HermesHookPayload, from clientID: UUID) {
+        ensureHermesSessionExists(for: payload)
+
+        switch payload.hookEventName {
+        case .onSessionStart:
+            // ensureHermesSessionExists already created the session with the
+            // start summary; mark it running for the first turn.
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitSummary,
+                        phase: .running,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .postLLMCall:
+            emit(
+                .hermesSessionMetadataUpdated(
+                    HermesSessionMetadataUpdated(
+                        sessionID: payload.sessionID,
+                        hermesMetadata: payload.defaultHermesMetadata,
+                        timestamp: .now
+                    )
+                )
+            )
+            emit(
+                .sessionCompleted(
+                    SessionCompleted(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitSummary,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .subagentStop:
+            emit(
+                .sessionCompleted(
+                    SessionCompleted(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitSummary,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .onSessionEnd:
+            emit(
+                .sessionCompleted(
+                    SessionCompleted(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitSummary,
+                        timestamp: .now,
+                        isSessionEnd: true
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .preToolCall:
+            // Human-in-the-loop: the clarify tool blocks the turn until the
+            // user answers, so surface it as an interactive question card.
+            if let prompt = payload.hitlQuestionPrompt {
+                emit(
+                    .questionAsked(
+                        QuestionAsked(
+                            sessionID: payload.sessionID,
+                            prompt: prompt,
+                            timestamp: .now
+                        )
+                    )
+                )
+            } else {
+                emit(
+                    .activityUpdated(
+                        SessionActivityUpdated(
+                            sessionID: payload.sessionID,
+                            summary: payload.implicitSummary,
+                            phase: .running,
+                            timestamp: .now
+                        )
+                    )
+                )
+            }
+            send(.response(.acknowledged), to: clientID)
+
+        case .preApprovalRequest:
+            if let request = payload.hitlPermissionRequest {
+                emit(
+                    .permissionRequested(
+                        PermissionRequested(
+                            sessionID: payload.sessionID,
+                            request: request,
+                            timestamp: .now
+                        )
+                    )
+                )
+            }
+            send(.response(.acknowledged), to: clientID)
+        }
+    }
+
+    private func ensureHermesSessionExists(for payload: HermesHookPayload) {
+        guard !hasSession(id: payload.sessionID) else {
+            return
+        }
+
+        emit(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: payload.sessionID,
+                    title: payload.sessionTitle,
+                    tool: .hermes,
+                    origin: .live,
+                    initialPhase: .running,
+                    summary: payload.implicitSummary,
+                    timestamp: .now,
+                    jumpTarget: payload.defaultJumpTarget,
+                    hermesMetadata: payload.defaultHermesMetadata
+                )
+            )
+        )
     }
 
     private func ensureGeminiSessionExists(for payload: GeminiHookPayload) {

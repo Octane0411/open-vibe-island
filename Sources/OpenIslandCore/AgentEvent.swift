@@ -15,6 +15,7 @@ public struct SessionStarted: Equatable, Codable, Sendable {
     public var openCodeMetadata: OpenCodeSessionMetadata?
     public var cursorMetadata: CursorSessionMetadata?
     public var piMetadata: PiSessionMetadata?
+    public var hermesMetadata: HermesSessionMetadata?
     public var isRemote: Bool
 
     public init(
@@ -32,6 +33,7 @@ public struct SessionStarted: Equatable, Codable, Sendable {
         openCodeMetadata: OpenCodeSessionMetadata? = nil,
         cursorMetadata: CursorSessionMetadata? = nil,
         piMetadata: PiSessionMetadata? = nil,
+        hermesMetadata: HermesSessionMetadata? = nil,
         isRemote: Bool = false
     ) {
         self.sessionID = sessionID
@@ -48,6 +50,7 @@ public struct SessionStarted: Equatable, Codable, Sendable {
         self.openCodeMetadata = openCodeMetadata
         self.cursorMetadata = cursorMetadata
         self.piMetadata = piMetadata
+        self.hermesMetadata = hermesMetadata
         self.isRemote = isRemote
     }
 }
@@ -240,6 +243,22 @@ public struct PiSessionMetadataUpdated: Equatable, Codable, Sendable {
         self.timestamp = timestamp
     }
 }
+
+public struct HermesSessionMetadataUpdated: Equatable, Codable, Sendable {
+    public var sessionID: String
+    public var hermesMetadata: HermesSessionMetadata
+    public var timestamp: Date
+
+    public init(
+        sessionID: String,
+        hermesMetadata: HermesSessionMetadata,
+        timestamp: Date
+    ) {
+        self.sessionID = sessionID
+        self.hermesMetadata = hermesMetadata
+        self.timestamp = timestamp
+    }
+}
 public struct SessionHeartbeat: Equatable, Codable, Sendable {
     public var sessionID: String
     public var timestamp: Date
@@ -286,6 +305,7 @@ public enum AgentEvent: Equatable, Codable, Sendable {
     case openCodeSessionMetadataUpdated(OpenCodeSessionMetadataUpdated)
     case cursorSessionMetadataUpdated(CursorSessionMetadataUpdated)
     case piSessionMetadataUpdated(PiSessionMetadataUpdated)
+    case hermesSessionMetadataUpdated(HermesSessionMetadataUpdated)
     case sessionHeartbeat(SessionHeartbeat)
     case actionableStateResolved(ActionableStateResolved)
 
@@ -303,6 +323,7 @@ public enum AgentEvent: Equatable, Codable, Sendable {
         case openCodeSessionMetadataUpdated
         case cursorSessionMetadataUpdated
         case piSessionMetadataUpdated
+        case hermesSessionMetadataUpdated
         case sessionHeartbeat
         case actionableStateResolved
     }
@@ -320,6 +341,7 @@ public enum AgentEvent: Equatable, Codable, Sendable {
         case openCodeSessionMetadataUpdated
         case cursorSessionMetadataUpdated
         case piSessionMetadataUpdated
+        case hermesSessionMetadataUpdated
         case sessionHeartbeat
         case actionableStateResolved
     }
@@ -362,6 +384,10 @@ public enum AgentEvent: Equatable, Codable, Sendable {
         case .piSessionMetadataUpdated:
             self = .piSessionMetadataUpdated(
                 try container.decode(PiSessionMetadataUpdated.self, forKey: .piSessionMetadataUpdated)
+            )
+        case .hermesSessionMetadataUpdated:
+            self = .hermesSessionMetadataUpdated(
+                try container.decode(HermesSessionMetadataUpdated.self, forKey: .hermesSessionMetadataUpdated)
             )
         case .sessionHeartbeat:
             self = .sessionHeartbeat(
@@ -414,6 +440,9 @@ public enum AgentEvent: Equatable, Codable, Sendable {
         case let .piSessionMetadataUpdated(payload):
             try container.encode(EventType.piSessionMetadataUpdated, forKey: .type)
             try container.encode(payload, forKey: .piSessionMetadataUpdated)
+        case let .hermesSessionMetadataUpdated(payload):
+            try container.encode(EventType.hermesSessionMetadataUpdated, forKey: .type)
+            try container.encode(payload, forKey: .hermesSessionMetadataUpdated)
         case let .sessionHeartbeat(payload):
             try container.encode(EventType.sessionHeartbeat, forKey: .type)
             try container.encode(payload, forKey: .sessionHeartbeat)

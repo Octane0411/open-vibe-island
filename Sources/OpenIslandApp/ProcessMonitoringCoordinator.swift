@@ -384,6 +384,8 @@ final class ProcessMonitoringCoordinator {
             payload.sessionID
         case let .piSessionMetadataUpdated(payload):
             payload.sessionID
+        case let .hermesSessionMetadataUpdated(payload):
+            payload.sessionID
         case let .sessionHeartbeat(payload):
             payload.sessionID
         case let .actionableStateResolved(payload):
@@ -1595,6 +1597,8 @@ final class ProcessMonitoringCoordinator {
             return "Pi \(session.id.prefix(8))"
         case .ohMyPi:
             return "Oh My Pi \(session.id.prefix(8))"
+        case .hermes:
+            return "Hermes \(session.id.prefix(8))"
         }
     }
 }
