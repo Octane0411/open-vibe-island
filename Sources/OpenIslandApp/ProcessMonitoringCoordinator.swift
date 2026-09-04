@@ -1579,6 +1579,8 @@ final class ProcessMonitoringCoordinator {
             return "OpenCode \(session.id.prefix(8))"
         case .qoder:
             return "Qoder \(session.id.prefix(8))"
+        case .qoderCN:
+            return "QoderCN \(session.id.prefix(8))"
         case .qwenCode:
             return "Qwen Code \(session.id.prefix(8))"
         case .factory:

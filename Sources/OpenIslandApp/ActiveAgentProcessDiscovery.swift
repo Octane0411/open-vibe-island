@@ -565,6 +565,9 @@ struct ActiveAgentProcessDiscovery {
         if lowered.contains("/qoder.app/") {
             return "Qoder"
         }
+        if lowered.contains("/qoder cn.app/") {
+            return "QoderCN"
+        }
         if lowered.contains("/codebuddy.app/") {
             return "CodeBuddy"
         }

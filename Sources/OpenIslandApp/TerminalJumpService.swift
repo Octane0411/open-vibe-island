@@ -132,6 +132,11 @@ struct TerminalJumpService {
             aliases: ["conductor"]
         ),
         TerminalAppDescriptor(
+            displayName: "QoderCN",
+            bundleIdentifier: "com.qodercn.app",
+            aliases: ["qoder cn", "qodercn"]
+        ),
+        TerminalAppDescriptor(
             displayName: "IntelliJ IDEA",
             bundleIdentifier: "com.jetbrains.intellij",
             aliases: ["intellij", "idea"]
@@ -363,6 +368,10 @@ struct TerminalJumpService {
                 // No per-session deep link; bring the app forward, like Claude.app.
                 try openAction(["-b", "com.conductor.app"])
                 return "Activated Conductor."
+            case "com.qodercn.app":
+                // QoderCN ships no CLI launcher; bring the app forward, like Conductor.
+                try openAction(["-b", "com.qodercn.app"])
+                return "Activated QoderCN."
             case "com.googlecode.iterm2":
                 if try jumpToITermSession(target) {
                     return "Focused the matching iTerm session."
