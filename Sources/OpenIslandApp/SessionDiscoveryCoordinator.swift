@@ -256,7 +256,13 @@ final class SessionDiscoveryCoordinator {
 
         merged.origin = existing.origin ?? discovered.origin
         merged.attachmentState = mergeAttachmentState(existing.attachmentState, discovered.attachmentState)
-        merged.jumpTarget = existing.jumpTarget ?? discovered.jumpTarget
+        if existing.tool == .codex,
+           existing.jumpTarget?.terminalApp.caseInsensitiveCompare("Unknown") == .orderedSame,
+           discovered.jumpTarget?.terminalApp == "Codex.app" {
+            merged.jumpTarget = discovered.jumpTarget
+        } else {
+            merged.jumpTarget = existing.jumpTarget ?? discovered.jumpTarget
+        }
         merged.codexMetadata = mergeCodexMetadata(existing.codexMetadata, discovered.codexMetadata)
         merged.claudeMetadata = mergeClaudeMetadata(existing.claudeMetadata, discovered.claudeMetadata)
         merged.openCodeMetadata = mergeOpenCodeMetadata(existing.openCodeMetadata, discovered.openCodeMetadata)
@@ -266,6 +272,9 @@ final class SessionDiscoveryCoordinator {
         // (hook or rediscovery), preserve that flag so liveness uses the
         // app-level check instead of subprocess polling.
         merged.isCodexAppSession = existing.isCodexAppSession || discovered.isCodexAppSession
+        if discovered.isCodexAppSession && discovered.isProcessAlive {
+            merged.isProcessAlive = true
+        }
 
         return merged
     }
@@ -481,42 +490,39 @@ final class SessionDiscoveryCoordinator {
     }
 
     private func applyCodexAppRediscovery(_ records: [CodexTrackedSessionRecord]) {
-        let existingIDs = Set(state.sessions.filter { $0.tool == .codex }.map(\.id))
+        let existingCodexSessions = state.sessions.filter { $0.tool == .codex }
+        let existingByID = Dictionary(uniqueKeysWithValues: existingCodexSessions.map { ($0.id, $0) })
+        let existingIDs = Set(existingByID.keys)
         let existingPaths = Set(state.sessions.compactMap(\.codexMetadata?.transcriptPath))
 
-        let newRecords = records.filter { record in
-            !existingIDs.contains(record.sessionID)
-                && (record.codexMetadata?.transcriptPath).map { !existingPaths.contains($0) } ?? true
+        let recordsToMerge = records.filter { record in
+            if let existing = existingByID[record.sessionID] {
+                return existing.jumpTarget?.terminalApp.caseInsensitiveCompare("Unknown") == .orderedSame
+                    && record.jumpTarget?.terminalApp == "Codex.app"
+            }
+            return (record.codexMetadata?.transcriptPath).map { !existingPaths.contains($0) } ?? true
         }
-        guard !newRecords.isEmpty else { return }
+        guard !recordsToMerge.isEmpty else { return }
 
-        let newSessions = newRecords.map { record -> AgentSession in
+        let discoveredSessions = recordsToMerge.map { record -> AgentSession in
             var session = record.session
-            session.isCodexAppSession = true
-            session.isProcessAlive = true
-            // Prefer the discovered record's cwd (sourced from the rollout
-            // file's session_meta) over an empty fallback.
-            let cwd = record.jumpTarget?.workingDirectory ?? ""
-            if session.jumpTarget == nil {
-                session.jumpTarget = JumpTarget(
-                    terminalApp: "Codex.app",
-                    workspaceName: URL(fileURLWithPath: cwd).lastPathComponent,
-                    paneTitle: session.title,
-                    workingDirectory: cwd.isEmpty ? nil : cwd,
-                    codexThreadID: session.id
-                )
-            } else {
-                session.jumpTarget?.terminalApp = "Codex.app"
-                session.jumpTarget?.codexThreadID = session.id
+            if session.isCodexAppSession {
+                session.isProcessAlive = true
             }
             return session
         }
 
-        let merged = mergeDiscoveredSessions(newSessions)
+        let merged = mergeDiscoveredSessions(discoveredSessions)
         state = SessionState(sessions: merged)
         refreshCodexRolloutTracking()
         scheduleCodexSessionPersistence()
-        onStatusMessage?("Discovered \(newRecords.count) new Codex.app session(s) via rollout re-scan.")
+        let newCount = recordsToMerge.count { !existingIDs.contains($0.sessionID) }
+        let upgradedCount = recordsToMerge.count - newCount
+        if newCount > 0 {
+            onStatusMessage?("Discovered \(newCount) new Codex session(s) via rollout re-scan.")
+        } else if upgradedCount > 0 {
+            onStatusMessage?("Identified \(upgradedCount) Codex.app session(s) via rollout re-scan.")
+        }
     }
 
     // MARK: - Persistence scheduling

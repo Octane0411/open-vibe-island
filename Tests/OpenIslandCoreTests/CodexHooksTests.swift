@@ -86,6 +86,45 @@ struct CodexHooksTests {
         #expect(payload.warpPaneUUID == nil)
     }
 
+    @Test(arguments: ["Codex", "Codex Desktop", "codex_work_desktop"])
+    func codexWithRuntimeContextDetectsSanitizedCodexDesktopHost(originator: String) {
+        let payload = CodexHookPayload(
+            cwd: "/Users/u/project",
+            hookEventName: .sessionStart,
+            model: "gpt-5",
+            permissionMode: .default,
+            sessionID: "s1",
+            transcriptPath: nil
+        ).withRuntimeContext(
+            environment: ["CODEX_INTERNAL_ORIGINATOR_OVERRIDE": originator],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) },
+            warpPaneResolver: { _ in nil }
+        )
+
+        #expect(payload.terminalApp == "Codex.app")
+        #expect(payload.defaultJumpTarget.codexThreadID == "s1")
+    }
+
+    @Test
+    func codexWithRuntimeContextDoesNotTreatUnknownOriginatorAsDesktop() {
+        let payload = CodexHookPayload(
+            cwd: "/Users/u/project",
+            hookEventName: .sessionStart,
+            model: "gpt-5",
+            permissionMode: .default,
+            sessionID: "s1",
+            transcriptPath: nil
+        ).withRuntimeContext(
+            environment: ["CODEX_INTERNAL_ORIGINATOR_OVERRIDE": "third-party"],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) },
+            warpPaneResolver: { _ in nil }
+        )
+
+        #expect(payload.terminalApp == nil)
+    }
+
     @Test
     func codexPermissionRequestPayloadAcceptsDescriptionOnlyToolInput() throws {
         let data = """

@@ -1008,6 +1008,57 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func mergeDiscoveredCodexSessionsUpgradesUnknownDesktopJumpTarget() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        model.state = SessionState(sessions: [
+            AgentSession(
+                id: "desktop-session",
+                title: "Codex · project",
+                tool: .codex,
+                origin: .live,
+                attachmentState: .attached,
+                phase: .running,
+                summary: "Hook session",
+                updatedAt: now,
+                jumpTarget: JumpTarget(
+                    terminalApp: "Unknown",
+                    workspaceName: "project",
+                    paneTitle: "Codex desktop",
+                    workingDirectory: "/Users/u/project"
+                )
+            ),
+        ])
+
+        var discovered = AgentSession(
+            id: "desktop-session",
+            title: "Codex · project",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .stale,
+            phase: .running,
+            summary: "Rollout session",
+            updatedAt: now,
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "project",
+                paneTitle: "Codex · project",
+                workingDirectory: "/Users/u/project",
+                codexThreadID: "desktop-session"
+            )
+        )
+        discovered.isCodexAppSession = true
+        discovered.isProcessAlive = true
+
+        let merged = model.discovery.mergeDiscoveredSessions([discovered])
+
+        #expect(merged.first?.jumpTarget?.terminalApp == "Codex.app")
+        #expect(merged.first?.jumpTarget?.codexThreadID == "desktop-session")
+        #expect(merged.first?.isCodexAppSession == true)
+        #expect(merged.first?.isProcessAlive == true)
+    }
+
+    @Test
     func mergedWithSyntheticClaudeSessionsAddsGhosttyClaudeProcessWhenNoTrackedSessionExists() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
