@@ -688,7 +688,10 @@ public extension ClaudeHookPayload {
     }
 
     var sessionTitle: String {
-        "Claude · \(workspaceName)"
+        if hookSource == "qodercn" {
+            return "QoderCN · \(workspaceName)"
+        }
+        return "Claude · \(workspaceName)"
     }
 
     var defaultJumpTarget: JumpTarget {
@@ -871,6 +874,8 @@ public extension ClaudeHookPayload {
         let title: String
         if questions.count == 1, let firstQuestion = questions.first?.question {
             title = firstQuestion
+        } else if hookSource == "qodercn" {
+            title = "QoderCN has \(questions.count) questions for you."
         } else {
             title = "Claude has \(questions.count) questions for you."
         }
@@ -904,11 +909,11 @@ public extension ClaudeHookPayload {
         case "ExitPlanMode":
             return "Exit plan mode"
         case "AskUserQuestion":
-            return "Answer Claude's questions"
+            return hookSource == "qodercn" ? "Answer QoderCN's questions" : "Answer Claude's questions"
         case let toolName?:
             return "Allow \(toolName)"
         case nil:
-            return "Allow Claude tool"
+            return hookSource == "qodercn" ? "Allow QoderCN tool" : "Allow Claude tool"
         }
     }
 

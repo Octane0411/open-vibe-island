@@ -22,19 +22,26 @@ struct TerminalJumpService {
         let aliases: [String]
         let alternateBundleIdentifiers: [String]
         let preferredBundleIdentifiersByAlias: [String: String]
+        /// Whether this app can host an interactive terminal session. Apps
+        /// that wrap an agent without a terminal (Claude.app, Codex.app,
+        /// Conductor) are excluded from terminal-host fallbacks such as the
+        /// Zellij parent lookup.
+        let isTerminalHost: Bool
 
         init(
             displayName: String,
             bundleIdentifier: String,
             aliases: [String],
             alternateBundleIdentifiers: [String] = [],
-            preferredBundleIdentifiersByAlias: [String: String] = [:]
+            preferredBundleIdentifiersByAlias: [String: String] = [:],
+            isTerminalHost: Bool = true
         ) {
             self.displayName = displayName
             self.bundleIdentifier = bundleIdentifier
             self.aliases = aliases
             self.alternateBundleIdentifiers = alternateBundleIdentifiers
             self.preferredBundleIdentifiersByAlias = preferredBundleIdentifiersByAlias
+            self.isTerminalHost = isTerminalHost
         }
 
         var allBundleIdentifiers: [String] {
@@ -76,12 +83,14 @@ struct TerminalJumpService {
         TerminalAppDescriptor(
             displayName: "Codex.app",
             bundleIdentifier: "com.openai.codex",
-            aliases: ["codex.app"]
+            aliases: ["codex.app"],
+            isTerminalHost: false
         ),
         TerminalAppDescriptor(
             displayName: "Claude.app",
             bundleIdentifier: "com.anthropic.claudefordesktop",
-            aliases: ["claude.app"]
+            aliases: ["claude.app"],
+            isTerminalHost: false
         ),
         TerminalAppDescriptor(
             displayName: "Kaku",
@@ -129,7 +138,8 @@ struct TerminalJumpService {
         TerminalAppDescriptor(
             displayName: "Conductor",
             bundleIdentifier: "com.conductor.app",
-            aliases: ["conductor"]
+            aliases: ["conductor"],
+            isTerminalHost: false
         ),
         TerminalAppDescriptor(
             displayName: "QoderCN",
@@ -195,8 +205,9 @@ struct TerminalJumpService {
     private static let vscodeFamilyBundleIDs: Set<String> = Set(vscodeFamilyCLI.keys)
 
     /// Bundle identifiers of terminal emulators that commonly host Zellij,
-    /// derived from `knownApps` so it stays in sync automatically.
-    private static let zellijParentTerminals = knownApps.map(\.bundleIdentifier)
+    /// derived from `knownApps` so it stays in sync automatically. Standalone
+    /// agent apps without a terminal are excluded.
+    private static let zellijParentTerminals = knownApps.filter(\.isTerminalHost).map(\.bundleIdentifier)
 
     private static let ghosttyFocusSettleDelay = 0.08
     private static let ghosttyWindowActivationDelay = 0.04
