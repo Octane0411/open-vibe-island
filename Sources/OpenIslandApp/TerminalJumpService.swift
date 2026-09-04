@@ -22,19 +22,26 @@ struct TerminalJumpService {
         let aliases: [String]
         let alternateBundleIdentifiers: [String]
         let preferredBundleIdentifiersByAlias: [String: String]
+        /// Whether this app can host an interactive terminal session. Apps
+        /// that wrap an agent without a terminal (Claude.app, Codex.app,
+        /// Conductor) are excluded from terminal-host fallbacks such as the
+        /// Zellij parent lookup.
+        let isTerminalHost: Bool
 
         init(
             displayName: String,
             bundleIdentifier: String,
             aliases: [String],
             alternateBundleIdentifiers: [String] = [],
-            preferredBundleIdentifiersByAlias: [String: String] = [:]
+            preferredBundleIdentifiersByAlias: [String: String] = [:],
+            isTerminalHost: Bool = true
         ) {
             self.displayName = displayName
             self.bundleIdentifier = bundleIdentifier
             self.aliases = aliases
             self.alternateBundleIdentifiers = alternateBundleIdentifiers
             self.preferredBundleIdentifiersByAlias = preferredBundleIdentifiersByAlias
+            self.isTerminalHost = isTerminalHost
         }
 
         var allBundleIdentifiers: [String] {
@@ -76,12 +83,14 @@ struct TerminalJumpService {
         TerminalAppDescriptor(
             displayName: "Codex.app",
             bundleIdentifier: "com.openai.codex",
-            aliases: ["codex.app"]
+            aliases: ["codex.app"],
+            isTerminalHost: false
         ),
         TerminalAppDescriptor(
             displayName: "Claude.app",
             bundleIdentifier: "com.anthropic.claudefordesktop",
-            aliases: ["claude.app"]
+            aliases: ["claude.app"],
+            isTerminalHost: false
         ),
         TerminalAppDescriptor(
             displayName: "Kaku",
@@ -129,7 +138,19 @@ struct TerminalJumpService {
         TerminalAppDescriptor(
             displayName: "Conductor",
             bundleIdentifier: "com.conductor.app",
-            aliases: ["conductor"]
+            aliases: ["conductor"],
+            isTerminalHost: false
+        ),
+        TerminalAppDescriptor(
+            displayName: "Qoder",
+            bundleIdentifier: "com.qoder.app",
+            aliases: ["qoder"],
+            alternateBundleIdentifiers: ["com.qoder.qoder"]
+        ),
+        TerminalAppDescriptor(
+            displayName: "QoderCN",
+            bundleIdentifier: "com.qodercn.app",
+            aliases: ["qoder cn", "qodercn"]
         ),
         TerminalAppDescriptor(
             displayName: "IntelliJ IDEA",
@@ -190,8 +211,10 @@ struct TerminalJumpService {
     private static let vscodeFamilyBundleIDs: Set<String> = Set(vscodeFamilyCLI.keys)
 
     /// Bundle identifiers of terminal emulators that commonly host Zellij,
-    /// derived from `knownApps` so it stays in sync automatically.
-    private static let zellijParentTerminals = knownApps.map(\.bundleIdentifier)
+    /// derived from `knownApps` so it stays in sync automatically (alternate
+    /// bundle identifiers included, so renamed/forked installs are covered).
+    /// Standalone agent apps without a terminal are excluded.
+    private static let zellijParentTerminals = knownApps.filter(\.isTerminalHost).flatMap(\.allBundleIdentifiers)
 
     private static let ghosttyFocusSettleDelay = 0.08
     private static let ghosttyWindowActivationDelay = 0.04
@@ -363,6 +386,10 @@ struct TerminalJumpService {
                 // No per-session deep link; bring the app forward, like Claude.app.
                 try openAction(["-b", "com.conductor.app"])
                 return "Activated Conductor."
+            case "com.qodercn.app":
+                // QoderCN ships no CLI launcher; bring the app forward, like Conductor.
+                try openAction(["-b", "com.qodercn.app"])
+                return "Activated QoderCN."
             case "com.googlecode.iterm2":
                 if try jumpToITermSession(target) {
                     return "Focused the matching iTerm session."
@@ -480,6 +507,7 @@ struct TerminalJumpService {
         "com.trae.app": "trae",
         "cn.trae.app": "trae",
         "com.qoder.qoder": "qoder",
+        "com.qoder.app": "qoder",
     ]
 
     private func jumpToVSCodeFamilyWorkspace(_ workspacePath: String, bundleIdentifier: String) -> Bool {

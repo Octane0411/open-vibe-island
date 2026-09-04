@@ -218,6 +218,8 @@ extension AgentSession {
             return "OpenCode"
         case .qoder:
             return "Qoder"
+        case .qoderCN:
+            return "QoderCN"
         case .qwenCode:
             return "Qwen Code"
         case .factory:

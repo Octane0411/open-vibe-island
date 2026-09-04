@@ -6,6 +6,7 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
     case geminiCLI
     case openCode
     case qoder
+    case qoderCN
     case qwenCode
     case factory
     case codebuddy
@@ -27,6 +28,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "OpenCode"
         case .qoder:
             "Qoder"
+        case .qoderCN:
+            "QoderCN"
         case .qwenCode:
             "Qwen Code"
         case .factory:
@@ -58,6 +61,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "OPENCODE"
         case .qoder:
             "QODER"
+        case .qoderCN:
+            "QODERCN"
         case .qwenCode:
             "QWEN"
         case .factory:
@@ -79,7 +84,7 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
 
     public var isClaudeCodeFork: Bool {
         switch self {
-        case .claudeCode, .qoder, .qwenCode, .factory, .codebuddy, .kimiCLI:
+        case .claudeCode, .qoder, .qoderCN, .qwenCode, .factory, .codebuddy, .kimiCLI:
             true
         default:
             false
@@ -98,6 +103,7 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
         case .geminiCLI:  "#42e86b"
         case .openCode:   "#ffb547"
         case .qoder:      "#ff6b9f"
+        case .qoderCN:    "#ff4d6d"
         case .qwenCode:   "#c084fc"
         case .factory:    "#6e9fff"
         case .codebuddy:  "#fca5a5"
