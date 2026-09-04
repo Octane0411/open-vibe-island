@@ -491,17 +491,11 @@ final class SessionDiscoveryCoordinator {
 
     private func applyCodexAppRediscovery(_ records: [CodexTrackedSessionRecord]) {
         let existingCodexSessions = state.sessions.filter { $0.tool == .codex }
-        let existingByID = Dictionary(uniqueKeysWithValues: existingCodexSessions.map { ($0.id, $0) })
-        let existingIDs = Set(existingByID.keys)
-        let existingPaths = Set(state.sessions.compactMap(\.codexMetadata?.transcriptPath))
-
-        let recordsToMerge = records.filter { record in
-            if let existing = existingByID[record.sessionID] {
-                return existing.jumpTarget?.terminalApp.caseInsensitiveCompare("Unknown") == .orderedSame
-                    && record.jumpTarget?.terminalApp == "Codex.app"
-            }
-            return (record.codexMetadata?.transcriptPath).map { !existingPaths.contains($0) } ?? true
-        }
+        let existingIDs = Set(existingCodexSessions.map(\.id))
+        let recordsToMerge = codexAppRediscoveryRecords(
+            from: records,
+            existingSessions: state.sessions
+        )
         guard !recordsToMerge.isEmpty else { return }
 
         let discoveredSessions = recordsToMerge.map { record -> AgentSession in
@@ -522,6 +516,22 @@ final class SessionDiscoveryCoordinator {
             onStatusMessage?("Discovered \(newCount) new Codex session(s) via rollout re-scan.")
         } else if upgradedCount > 0 {
             onStatusMessage?("Identified \(upgradedCount) Codex.app session(s) via rollout re-scan.")
+        }
+    }
+
+    func codexAppRediscoveryRecords(
+        from records: [CodexTrackedSessionRecord],
+        existingSessions: [AgentSession]
+    ) -> [CodexTrackedSessionRecord] {
+        let existingCodexIDs = Set(existingSessions.lazy.filter { $0.tool == .codex }.map(\.id))
+        let existingPaths = Set(existingSessions.compactMap(\.codexMetadata?.transcriptPath))
+
+        return records.filter { record in
+            guard record.jumpTarget?.terminalApp == "Codex.app" else { return false }
+            if existingCodexIDs.contains(record.sessionID) {
+                return true
+            }
+            return (record.codexMetadata?.transcriptPath).map { !existingPaths.contains($0) } ?? true
         }
     }
 
