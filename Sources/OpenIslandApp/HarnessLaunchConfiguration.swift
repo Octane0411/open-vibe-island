@@ -2,6 +2,7 @@ import Foundation
 
 struct HarnessLaunchConfiguration {
     let scenario: IslandDebugScenario?
+    let disablesOverlayEventMonitoring: Bool
     let presentOverlay: Bool
     let shouldStartBridge: Bool
     let shouldPerformBootAnimation: Bool
@@ -11,6 +12,10 @@ struct HarnessLaunchConfiguration {
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment) {
         scenario = Self.scenarioValue(from: environment["OPEN_ISLAND_HARNESS_SCENARIO"])
+        disablesOverlayEventMonitoring = scenario != nil && !Self.boolValue(
+            environment["OPEN_ISLAND_HARNESS_INTERACTIVE"],
+            default: false
+        )
         presentOverlay = Self.boolValue(
             environment["OPEN_ISLAND_HARNESS_PRESENT_OVERLAY"],
             default: false
