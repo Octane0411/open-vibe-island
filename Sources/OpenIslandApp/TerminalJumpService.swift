@@ -211,9 +211,10 @@ struct TerminalJumpService {
     private static let vscodeFamilyBundleIDs: Set<String> = Set(vscodeFamilyCLI.keys)
 
     /// Bundle identifiers of terminal emulators that commonly host Zellij,
-    /// derived from `knownApps` so it stays in sync automatically. Standalone
-    /// agent apps without a terminal are excluded.
-    private static let zellijParentTerminals = knownApps.filter(\.isTerminalHost).map(\.bundleIdentifier)
+    /// derived from `knownApps` so it stays in sync automatically (alternate
+    /// bundle identifiers included, so renamed/forked installs are covered).
+    /// Standalone agent apps without a terminal are excluded.
+    private static let zellijParentTerminals = knownApps.filter(\.isTerminalHost).flatMap(\.allBundleIdentifiers)
 
     private static let ghosttyFocusSettleDelay = 0.08
     private static let ghosttyWindowActivationDelay = 0.04
@@ -506,6 +507,7 @@ struct TerminalJumpService {
         "com.trae.app": "trae",
         "cn.trae.app": "trae",
         "com.qoder.qoder": "qoder",
+        "com.qoder.app": "qoder",
     ]
 
     private func jumpToVSCodeFamilyWorkspace(_ workspacePath: String, bundleIdentifier: String) -> Bool {
