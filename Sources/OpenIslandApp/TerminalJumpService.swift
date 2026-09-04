@@ -480,6 +480,7 @@ struct TerminalJumpService {
         "com.trae.app": "trae",
         "cn.trae.app": "trae",
         "com.qoder.qoder": "qoder",
+        "com.qoder.app": "qoder",
     ]
 
     private func jumpToVSCodeFamilyWorkspace(_ workspacePath: String, bundleIdentifier: String) -> Bool {
