@@ -233,6 +233,23 @@ struct ActiveAgentProcessDiscovery {
                 continue
             }
 
+            if isHermesProcess(command: process.command) {
+                let claimKey = "hermes:\(process.pid)"
+                guard claimedKeys.insert(claimKey).inserted else {
+                    continue
+                }
+
+                let lsofOutput = lsofOutput(pid: process.pid)
+                snapshots.append(ProcessSnapshot(
+                    tool: .hermes,
+                    sessionID: nil,
+                    workingDirectory: lsofOutput.flatMap(workingDirectory(from:)),
+                    terminalTTY: process.terminalTTY,
+                    terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+                ))
+                continue
+            }
+
             if let piAgent = piAgentVariant(command: process.command) {
                 let claimKey = "\(piAgent.rawValue):\(process.pid)"
                 guard claimedKeys.insert(claimKey).inserted else {
@@ -831,6 +848,26 @@ struct ActiveAgentProcessDiscovery {
         }
 
         return firstToken == "grok" || firstToken.hasSuffix("/grok")
+    }
+
+    /// Matches the Hermes Agent gateway (`python -m tui_gateway.entry`) and the
+    /// Hermes TUI process (`node .../ui-tui/dist/entry.js`). Both run TTY-less
+    /// under iTerm2/Terminal, and ps/lsof cannot recover Hermes' session ID,
+    /// so the snapshot only anchors liveness — session identity comes from
+    /// the hook channel.
+    private func isHermesProcess(command: String) -> Bool {
+        let lowered = command.lowercased()
+        if lowered.contains("tui_gateway.entry") {
+            return true
+        }
+        guard lowered.contains("/ui-tui/dist/entry.js") else {
+            return false
+        }
+        guard let firstToken = lowered.split(separator: " ").first.map(String.init) else {
+            return false
+        }
+        let binaryName = (firstToken as NSString).lastPathComponent
+        return binaryName == "node"
     }
 
     private func piAgentVariant(command: String) -> PiAgentVariant? {

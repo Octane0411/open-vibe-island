@@ -569,6 +569,23 @@ final class ProcessMonitoringCoordinator {
             }
         }
 
+        // Hermes sessions are hook-managed. ps/lsof can see the Hermes TUI
+        // processes (node ui-tui/entry.js + python tui_gateway.entry) but
+        // cannot recover a Hermes session ID, so no unique per-session match
+        // is possible (same situation as Grok). While any Hermes process is
+        // alive, keep non-ended Hermes sessions in the alive set so the
+        // hook-managed processNotSeenCount path does not evict them two
+        // polls after their last hook event. Explicit SessionEnd still wins —
+        // ended sessions are skipped here and ignored by
+        // SessionState.markProcessLiveness once isSessionEnded.
+        let hasHermesProcess = activeProcesses.contains { $0.tool == .hermes }
+        if hasHermesProcess {
+            for session in sessions
+            where session.tool == .hermes && !session.isDemoSession && !session.isSessionEnded {
+                aliveIDs.insert(session.id)
+            }
+        }
+
         // Cursor sessions: prefer concrete cursor-agent processes when they
         // are visible (Cursor CLI / integrated terminal), then fall back to
         // app-level liveness for IDE-only hook sessions where there is no
