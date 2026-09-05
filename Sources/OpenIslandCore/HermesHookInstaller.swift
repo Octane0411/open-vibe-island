@@ -12,7 +12,7 @@ public struct HermesHookInstallationManifest: Equatable, Codable, Sendable {
     }
 }
 
-public struct HermesHookFileMutation: Equatable, Sendable {
+public struct HermesHookFileMutation: Codable, Equatable, Sendable {
     public var contents: Data?
     public var changed: Bool
     public var managedHooksPresent: Bool
@@ -150,6 +150,16 @@ public enum HermesHookInstaller {
                 continue
             }
 
+            guard isManagedEventMapping(trimmed) else {
+                // `post_llm_call: []` (or any other inline value) is a valid
+                // YAML node, not a block mapping to extend. Leave it verbatim
+                // and record it as present so no duplicate key is appended.
+                output.append(line)
+                eventsSeen.insert(event)
+                index += 1
+                continue
+            }
+
             let body = eventBody(blockLines, from: index + 1, eventIndent: eventIndent)
             let (foreignLines, _) = foreignEntryLines(body)
 
@@ -273,6 +283,14 @@ public enum HermesHookInstaller {
 
             let event = eventKey(of: trimmed)
             guard eventNames.contains(event) else {
+                output.append(line)
+                index += 1
+                continue
+            }
+
+            guard isManagedEventMapping(trimmed) else {
+                // Inline-valued event (e.g. `post_llm_call: []`) — nothing of
+                // ours can live inside it. Keep it verbatim.
                 output.append(line)
                 index += 1
                 continue
@@ -413,14 +431,38 @@ public enum HermesHookInstaller {
         !eventKey(of: trimmed).isEmpty
     }
 
-    /// Key of a mapping line like `post_llm_call:` or `post_llm_call: # note` —
-    /// the text before the first `:`, with any trailing comment removed.
+    /// Key of a mapping line like `post_llm_call:`, `post_llm_call: # note`,
+    /// or the quoted form `"post_llm_call":` — the text before the first `:`,
+    /// with any surrounding quotes and trailing comment removed.
     private static func eventKey(of trimmed: String) -> String {
         guard let colon = trimmed.firstIndex(of: ":") else { return "" }
-        let rawKey = String(trimmed[..<colon]).trimmingCharacters(in: .whitespaces)
+        var rawKey = String(trimmed[..<colon]).trimmingCharacters(in: .whitespaces)
         guard !rawKey.isEmpty, !rawKey.hasPrefix("#"), !rawKey.hasPrefix("- ") else { return "" }
-        guard !rawKey.hasPrefix("\""), !rawKey.hasPrefix("'") else { return "" }
+        if rawKey.count >= 2,
+           (rawKey.hasPrefix("\"") && rawKey.hasSuffix("\""))
+            || (rawKey.hasPrefix("'") && rawKey.hasSuffix("'")) {
+            rawKey = String(rawKey.dropFirst().dropLast())
+                .trimmingCharacters(in: .whitespaces)
+        }
         return rawKey
+    }
+
+    /// Whether `trimmed` is an event key line we may rewrite: the key matches
+    /// a managed event AND the line carries no inline value (`post_llm_call:
+    /// []` is a valid YAML sequence, not a block mapping to extend — rewriting
+    /// its body would corrupt the document, so the caller leaves that event
+    /// untouched and simply marks it as present).
+    private static func isManagedEventMapping(_ trimmed: String) -> Bool {
+        guard let event = eventKey(of: trimmed) as String?, eventNames.contains(event) else {
+            return false
+        }
+
+        var value = String(trimmed[trimmed.firstIndex(of: ":")!...].dropFirst())
+            .trimmingCharacters(in: .whitespaces)
+        if value.hasPrefix("#") {
+            value = ""
+        }
+        return value.isEmpty
     }
 
     /// Indent used by the block's own event keys: taken from the first
@@ -544,7 +586,7 @@ public enum HermesHookInstaller {
                 continue
             }
 
-            if trimmed.hasPrefix("- ") || trimmed.hasPrefix("-\t") {
+            if trimmed == "-" || trimmed.hasPrefix("- ") || trimmed.hasPrefix("-\t") {
                 flush()
             }
             currentEntry.append(line)
@@ -593,6 +635,10 @@ public enum HermesHookInstaller {
 
             let event = eventKey(of: trimmed)
             if eventNames.contains(event) {
+                guard isManagedEventMapping(trimmed) else {
+                    index += 1
+                    continue
+                }
                 let body = eventBody(blockLines, from: index + 1, eventIndent: eventIndent)
                 if foreignEntryLines(body).hasOpenIslandEntry {
                     return true
