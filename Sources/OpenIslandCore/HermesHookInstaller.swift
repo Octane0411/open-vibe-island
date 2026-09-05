@@ -69,7 +69,6 @@ public enum HermesHookInstaller {
     ]
 
     /// Indent of an event key directly under `hooks:`.
-    private static let blockEventIndent = 2
 
     public static func hookCommand(for binaryPath: String) -> String {
         "\(binaryPath) --source hermes"
@@ -128,6 +127,7 @@ public enum HermesHookInstaller {
         hookCommand: String
     ) -> String {
         let blockLines = splitLines(blockText)
+        let eventIndent = detectEventIndent(in: blockLines) ?? defaultEventIndent
         var output: [String] = []
         var eventsSeen = Set<String>()
 
@@ -137,25 +137,25 @@ public enum HermesHookInstaller {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             let indent = leadingIndent(of: line) ?? 0
 
-            guard indent == blockEventIndent, isEventKeyLine(trimmed) else {
+            guard indent == eventIndent, isEventKeyLine(trimmed) else {
                 output.append(line)
                 index += 1
                 continue
             }
 
-            let event = String(trimmed.dropLast())
+            let event = eventKey(of: trimmed)
             guard eventNames.contains(event) else {
                 output.append(line)
                 index += 1
                 continue
             }
 
-            let body = eventBody(blockLines, from: index + 1)
+            let body = eventBody(blockLines, from: index + 1, eventIndent: eventIndent)
             let (foreignLines, _) = foreignEntryLines(body)
 
             output.append(line)
             output.append(contentsOf: foreignLines)
-            output.append("    - command: \(shellQuote(hookCommand))")
+            output.append(eventEntry(command: hookCommand, indent: eventIndent))
 
             eventsSeen.insert(event)
             index += body.lineCount + 1
@@ -167,8 +167,8 @@ public enum HermesHookInstaller {
         // the plain append path below).
         if !eventsSeen.isEmpty {
             for event in eventNames where !eventsSeen.contains(event) {
-                output.append("  \(event):")
-                output.append("    - command: \(shellQuote(hookCommand))")
+                output.append("\(indentation(eventIndent))\(event):")
+                output.append(eventEntry(command: hookCommand, indent: eventIndent))
             }
             return normalizeTrailingNewline(output.joined(separator: "\n"))
         }
@@ -180,8 +180,8 @@ public enum HermesHookInstaller {
             lines.removeLast()
         }
         for event in eventNames {
-            lines.append("  \(event):")
-            lines.append("    - command: \(shellQuote(hookCommand))")
+            lines.append("\(indentation(eventIndent))\(event):")
+            lines.append(eventEntry(command: hookCommand, indent: eventIndent))
         }
         return normalizeTrailingNewline(lines.joined(separator: "\n"))
     }
@@ -255,6 +255,7 @@ public enum HermesHookInstaller {
         hookCommand: String?
     ) -> (rebuilt: String, removedAny: Bool) {
         let blockLines = splitLines(blockText)
+        let eventIndent = detectEventIndent(in: blockLines) ?? defaultEventIndent
         var output: [String] = []
         var removedAny = false
 
@@ -264,20 +265,20 @@ public enum HermesHookInstaller {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             let indent = leadingIndent(of: line) ?? 0
 
-            guard indent == blockEventIndent, isEventKeyLine(trimmed) else {
+            guard indent == eventIndent, isEventKeyLine(trimmed) else {
                 output.append(line)
                 index += 1
                 continue
             }
 
-            let event = String(trimmed.dropLast())
+            let event = eventKey(of: trimmed)
             guard eventNames.contains(event) else {
                 output.append(line)
                 index += 1
                 continue
             }
 
-            let body = eventBody(blockLines, from: index + 1)
+            let body = eventBody(blockLines, from: index + 1, eventIndent: eventIndent)
             let (keptLines, hasOpenIslandEntry) = foreignEntryLines(body, hookCommand: hookCommand)
 
             if hasOpenIslandEntry {
@@ -409,16 +410,74 @@ public enum HermesHookInstaller {
     }
 
     private static func isEventKeyLine(_ trimmed: String) -> Bool {
-        trimmed.hasSuffix(":") && !trimmed.hasPrefix("#") && !trimmed.hasPrefix("- ")
+        !eventKey(of: trimmed).isEmpty
+    }
+
+    /// Key of a mapping line like `post_llm_call:` or `post_llm_call: # note` —
+    /// the text before the first `:`, with any trailing comment removed.
+    private static func eventKey(of trimmed: String) -> String {
+        guard let colon = trimmed.firstIndex(of: ":") else { return "" }
+        let rawKey = String(trimmed[..<colon]).trimmingCharacters(in: .whitespaces)
+        guard !rawKey.isEmpty, !rawKey.hasPrefix("#"), !rawKey.hasPrefix("- ") else { return "" }
+        guard !rawKey.hasPrefix("\""), !rawKey.hasPrefix("'") else { return "" }
+        return rawKey
+    }
+
+    /// Indent used by the block's own event keys: taken from the first
+    /// event-key-shaped line deeper than the `hooks:` key itself, so YAML
+    /// files that indent with 4 spaces (or any other consistent amount) are
+    /// matched and extended in place instead of producing duplicate keys.
+    private static func detectEventIndent(in blockLines: [String]) -> Int? {
+        for line in blockLines {
+            let indent = leadingIndent(of: line) ?? 0
+            guard indent > 0 else { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard isEventKeyLine(trimmed) else { continue }
+            return indent
+        }
+        return nil
+    }
+
+    private static let defaultEventIndent = 2
+
+    private static func indentation(_ width: Int) -> String {
+        String(repeating: " ", count: width)
+    }
+
+    /// One managed list entry under an event key, at the block's own event
+    /// indent (key indent + 2). The managed command is `<binary> --source hermes`;
+    /// only the binary path takes a shell-level quote so that Hermes'
+    /// `shlex.split` yields the binary as `argv[0]` and `--source` / `hermes`
+    /// as separate arguments. The shell-quoted form is wrapped in a YAML
+    /// double-quoted scalar (single quotes inside stay literal, so the
+    /// shell layer survives the YAML round-trip).
+    private static func eventEntry(command: String, indent: Int) -> String {
+        let quoted = quotedManagedCommand(command)
+        return "\(indentation(indent + 2))- command: \(yamlQuote(quoted))"
+    }
+
+    /// Shell-quotes just the binary portion of a managed command, leaving
+    /// its arguments bare. The managed command's shape is
+    /// `<binary path> --source hermes` (see `hookCommand(for:)`), so the
+    /// split point is the known trailing flag — a binary path may itself
+    /// contain spaces, so splitting at the first space would be wrong.
+    private static func quotedManagedCommand(_ command: String) -> String {
+        let argumentsSuffix = " --source hermes"
+        guard command.hasSuffix(argumentsSuffix) else {
+            return shellQuote(command)
+        }
+        let binary = String(command.dropLast(argumentsSuffix.count))
+        return "\(shellQuote(binary)) --source hermes"
     }
 
     /// Body of an event: every line after the key until the next event key or
-    /// any other non-blank line at `blockEventIndent` or shallower. Returns the
+    /// any other non-blank line at `eventIndent` or shallower. Returns the
     /// body lines and how many of them (including the terminating blanks) were
     /// consumed.
     private static func eventBody(
         _ blockLines: [String],
-        from start: Int
+        from start: Int,
+        eventIndent: Int
     ) -> (lines: [String], lineCount: Int) {
         var body: [String] = []
         var index = start
@@ -433,7 +492,7 @@ public enum HermesHookInstaller {
                 continue
             }
 
-            if (leadingIndent(of: line) ?? 0) > blockEventIndent {
+            if (leadingIndent(of: line) ?? 0) > eventIndent {
                 body.append(line)
                 index += 1
                 continue
@@ -519,6 +578,7 @@ public enum HermesHookInstaller {
 
     private static func blockHasOpenIslandEntries(_ blockText: String) -> Bool {
         let blockLines = splitLines(blockText)
+        let eventIndent = detectEventIndent(in: blockLines) ?? defaultEventIndent
 
         var index = 0
         while index < blockLines.count {
@@ -526,14 +586,14 @@ public enum HermesHookInstaller {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             let indent = leadingIndent(of: line) ?? 0
 
-            guard indent == blockEventIndent, isEventKeyLine(trimmed) else {
+            guard indent == eventIndent, isEventKeyLine(trimmed) else {
                 index += 1
                 continue
             }
 
-            let event = String(trimmed.dropLast())
+            let event = eventKey(of: trimmed)
             if eventNames.contains(event) {
-                let body = eventBody(blockLines, from: index + 1)
+                let body = eventBody(blockLines, from: index + 1, eventIndent: eventIndent)
                 if foreignEntryLines(body).hasOpenIslandEntry {
                     return true
                 }
@@ -562,15 +622,27 @@ public enum HermesHookInstaller {
         return (key, value)
     }
 
+    /// Wraps an already shell-quoted command in a YAML single-quoted scalar.
+    /// YAML single-quote escaping doubles `'`; the shell layer's `'\''`
+    /// sequences survive inside the YAML scalar and are decoded by
+    /// `shlex.split` when Hermes runs the hook.
+    private static func yamlQuote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "''") + "'"
+    }
+
     private static func unquote(_ value: String) -> String {
-        if value.count >= 2, value.hasPrefix("'"), value.hasSuffix("'") {
-            return String(value.dropFirst().dropLast())
+        var text = value
+        if text.count >= 2, text.hasPrefix("'"), text.hasSuffix("'") {
+            text = String(text.dropFirst().dropLast())
+                .replacingOccurrences(of: "''", with: "'")
+        } else if text.count >= 2, text.hasPrefix("\""), text.hasSuffix("\"") {
+            text = String(text.dropFirst().dropLast())
+        }
+        if text.count >= 2, text.hasPrefix("'"), text.hasSuffix("'") {
+            text = String(text.dropFirst().dropLast())
                 .replacingOccurrences(of: "\\'", with: "'")
         }
-        if value.count >= 2, value.hasPrefix("\""), value.hasSuffix("\"") {
-            return String(value.dropFirst().dropLast())
-        }
-        return value
+        return text
     }
 
     // MARK: - Serialization
@@ -582,8 +654,8 @@ public enum HermesHookInstaller {
     private static func managedHooksBlock(hookCommand: String) -> String {
         var lines = ["hooks:"]
         for event in eventNames {
-            lines.append("  \(event):")
-            lines.append("    - command: \(shellQuote(hookCommand))")
+            lines.append("\(indentation(defaultEventIndent))\(event):")
+            lines.append(eventEntry(command: hookCommand, indent: defaultEventIndent))
         }
         return lines.joined(separator: "\n") + "\n"
     }

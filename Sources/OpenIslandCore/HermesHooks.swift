@@ -230,6 +230,9 @@ public extension HermesHookPayload {
                 header: questionObject["header"]?.stringValue ?? "",
                 options: resolvedOptions,
                 multiSelect: {
+                    if case let .boolean(value) = questionObject["multi_select"] {
+                        return value
+                    }
                     if case let .boolean(value) = questionObject["multiSelect"] {
                         return value
                     }
