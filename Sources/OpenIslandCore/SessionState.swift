@@ -73,7 +73,8 @@ public struct SessionState: Equatable, Sendable {
                 geminiMetadata: payload.geminiMetadata?.isEmpty == true ? nil : payload.geminiMetadata,
                 openCodeMetadata: payload.openCodeMetadata?.isEmpty == true ? nil : payload.openCodeMetadata,
                 cursorMetadata: payload.cursorMetadata?.isEmpty == true ? nil : payload.cursorMetadata,
-                piMetadata: payload.piMetadata?.isEmpty == true ? nil : payload.piMetadata
+                piMetadata: payload.piMetadata?.isEmpty == true ? nil : payload.piMetadata,
+                hermesMetadata: payload.hermesMetadata?.isEmpty == true ? nil : payload.hermesMetadata
             )
             session.isRemote = payload.isRemote
             session.isHookManaged = payload.origin == .live
@@ -190,6 +191,15 @@ public struct SessionState: Equatable, Sendable {
             }
 
             session.geminiMetadata = payload.geminiMetadata.isEmpty ? nil : payload.geminiMetadata
+            session.updatedAt = payload.timestamp
+            upsert(session)
+
+        case let .hermesSessionMetadataUpdated(payload):
+            guard var session = sessionsByID[payload.sessionID] else {
+                return
+            }
+
+            session.hermesMetadata = payload.hermesMetadata.isEmpty ? nil : payload.hermesMetadata
             session.updatedAt = payload.timestamp
             upsert(session)
 

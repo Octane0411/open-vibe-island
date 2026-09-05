@@ -50,7 +50,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 
 ## Supported Agents & Terminals
 
-**13 agents**: Claude Code, Codex, Cursor, Gemini CLI, Grok Build, Kimi CLI, OpenCode, Pi, Oh My Pi, Qoder, Qwen Code, Factory, CodeBuddy
+**14 agents**: Claude Code, Codex, Cursor, Gemini CLI, Grok Build, Kimi CLI, Hermes Agent, OpenCode, Pi, Oh My Pi, Qoder, Qwen Code, Factory, CodeBuddy
 
 **15+ terminals & IDEs**: Terminal.app, Ghostty, iTerm2, WezTerm, Zellij, tmux, cmux, Kaku, VS Code, Cursor, Windsurf, Trae, Zed, JetBrains IDEs (IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover)
 
@@ -74,6 +74,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 | **Gemini CLI** | Supported | Hook integration via `~/.gemini/settings.json`, session tracking, fire-and-forget events |
 | **Kimi CLI** | Supported | Hook integration via `~/.kimi/config.toml` `[[hooks]]`, session tracking, permission flow (reuses Claude payload) |
 | **Grok Build** | Supported | Hook integration via `~/.grok/hooks/open-island.json`, session tracking, terminal jump-back, fire-and-forget events (no permission round-trip yet; camelCase payload) |
+| **Hermes Agent** | Supported | Hook integration via `hooks:` block in `~/.hermes/config.yaml`, session tracking, turn completion cards, HITL question/approval cards (clarify / pre_approval_request), fire-and-forget |
 | **Pi** | Supported | TypeScript extension at `~/.pi/agent/extensions/open-island.ts`; session, prompt, tool, completion, process-discovery, persistence, and terminal jump tracking |
 | **Oh My Pi (OMP)** | Supported | TypeScript extension at `~/.omp/agent/extensions/open-island.ts`; the same lifecycle coverage adapted to OMP event aliases |
 
@@ -290,6 +291,14 @@ Developers who already live in the terminal and want a better way to work with c
   swift run OpenIslandSetup installGrok    # write ~/.grok/hooks/open-island.json
   swift run OpenIslandSetup statusGrok     # report whether managed hooks are present
   swift run OpenIslandSetup uninstallGrok  # remove managed open-island.json + manifest
+  ```
+
+- **Hermes Agent** — Hook-based integration via the `hooks:` block in `~/.hermes/config.yaml` (Hermes Agent CLI / gateway). Hermes runs shell hooks as subprocesses (`shlex.split`, `shell=False`) with a JSON payload on stdin. Open Island uses a dedicated `--source hermes` path for decode + lifecycle mapping: session visibility, turn completion cards from `post_llm_call` (`extra.user_message` / `extra.assistant_response`), and human-in-the-loop interception — a `pre_tool_call` on the `clarify` tool surfaces the question card (`.waitingForAnswer`) and `pre_approval_request` surfaces the approval card (`.waitingForApproval`). Managed install appends one entry per supported event and preserves user-authored hooks (with a per-`(event, command)` first-use consent, or `hooks_auto_accept: true`). Fire-and-forget: the hook never writes to stdout. Manage installation from the Settings window, or via CLI:
+
+  ```sh
+  swift run OpenIslandSetup installHermes    # write hooks block into ~/.hermes/config.yaml
+  swift run OpenIslandSetup statusHermes     # report whether managed hooks are present
+  swift run OpenIslandSetup uninstallHermes  # remove managed entries, preserve user-authored hooks
   ```
 
 ### Terminal Support

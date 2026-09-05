@@ -29,6 +29,7 @@ final class HookInstallationCoordinator {
     var geminiHookStatus: GeminiHookInstallationStatus?
     var kimiHookStatus: KimiHookInstallationStatus?
     var grokHookStatus: GrokHookInstallationStatus?
+    var hermesHookStatus: HermesHookInstallationStatus?
     var piExtensionStatus: PiExtensionInstallationStatus?
     var ohMyPiExtensionStatus: PiExtensionInstallationStatus?
     var claudeStatusLineStatus: ClaudeStatusLineInstallationStatus?
@@ -46,6 +47,7 @@ final class HookInstallationCoordinator {
     var isGeminiHookSetupBusy = false
     var isKimiHookSetupBusy = false
     var isGrokHookSetupBusy = false
+    var isHermesHookSetupBusy = false
     var isPiSetupBusy = false
     var isOhMyPiSetupBusy = false
     var isClaudeUsageSetupBusy = false
@@ -99,6 +101,9 @@ final class HookInstallationCoordinator {
 
     @ObservationIgnored
     private let grokHookInstallationManager = GrokHookInstallationManager()
+
+    @ObservationIgnored
+    private let hermesHookInstallationManager = HermesHookInstallationManager()
     private let piExtensionInstallationManager: PiExtensionInstallationManager
 
     @ObservationIgnored
@@ -166,6 +171,10 @@ final class HookInstallationCoordinator {
 
     var grokHooksInstalled: Bool {
         grokHookStatus?.managedHooksPresent == true
+    }
+
+    var hermesHooksInstalled: Bool {
+        hermesHookStatus?.managedHooksPresent == true
     }
 
     var piExtensionInstalled: Bool {
@@ -435,6 +444,34 @@ final class HookInstallationCoordinator {
         }
 
         return "no managed Grok hooks"
+    }
+
+    var hermesHookStatusTitle: String {
+        if hermesHooksInstalled {
+            return "Hermes hooks installed"
+        }
+
+        if hooksBinaryURL == nil {
+            return "Hook binary not found"
+        }
+
+        return "Hermes hooks not installed"
+    }
+
+    var hermesHookStatusSummary: String {
+        guard hermesHookStatus != nil else {
+            return "Reading ~/.hermes/config.yaml."
+        }
+
+        if hermesHooksInstalled {
+            return "managed hooks present"
+        }
+
+        if hooksBinaryURL == nil {
+            return "Build OpenIslandHooks before installing."
+        }
+
+        return "no managed Hermes hooks"
     }
 
     var codexHookStatusTitle: String {
@@ -764,6 +801,16 @@ final class HookInstallationCoordinator {
 
             group.addTask { @MainActor [weak self] in
                 guard let self else { return }
+                do {
+                    let status = try self.hermesHookInstallationManager.status(hooksBinaryURL: self.hooksBinaryURL)
+                    self.hermesHookStatus = status
+                } catch {
+                    self.onStatusMessage?("Failed to read Hermes hook status: \(error.localizedDescription)")
+                }
+            }
+
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
                 self.loadPiExtensionStatuses()
             }
         }
@@ -830,6 +877,19 @@ final class HookInstallationCoordinator {
                 self.grokHookStatus = status
             } catch {
                 self.onStatusMessage?("Failed to read Grok hook status: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func refreshHermesHookStatus() {
+        Task { [weak self] in
+            guard let self else { return }
+
+            do {
+                let status = try self.hermesHookInstallationManager.status(hooksBinaryURL: self.hooksBinaryURL)
+                self.hermesHookStatus = status
+            } catch {
+                self.onStatusMessage?("Failed to read Hermes hook status: \(error.localizedDescription)")
             }
         }
     }
@@ -934,6 +994,7 @@ final class HookInstallationCoordinator {
         case .grok: return !grokHooksInstalled
         case .pi: return !(piExtensionStatus?.isCurrent ?? false)
         case .ohMyPi: return !(ohMyPiExtensionStatus?.isCurrent ?? false)
+        case .hermes: return !hermesHooksInstalled
         case .claudeUsageBridge: return !claudeUsageInstalled
         }
     }
@@ -961,6 +1022,7 @@ final class HookInstallationCoordinator {
             case .grok: return grokHooksInstalled
             case .pi: return piExtensionInstalled
             case .ohMyPi: return ohMyPiExtensionInstalled
+            case .hermes: return hermesHooksInstalled
             case .claudeUsageBridge: return claudeUsageInstalled
             }
         }
@@ -1185,6 +1247,23 @@ final class HookInstallationCoordinator {
 
     func uninstallGrokHooks() {
         updateGrokHooks(userMessage: "Removing Grok hooks.", intent: .uninstalled) { manager in
+            try manager.uninstall()
+        }
+    }
+
+    func installHermesHooks() {
+        guard let hooksBinaryURL else {
+            onStatusMessage?("Could not find a local OpenIslandHooks binary. Build the package first.")
+            return
+        }
+
+        updateHermesHooks(userMessage: "Installing Hermes hooks.", intent: .installed) { manager in
+            try manager.install(hooksBinaryURL: hooksBinaryURL)
+        }
+    }
+
+    func uninstallHermesHooks() {
+        updateHermesHooks(userMessage: "Removing Hermes hooks.", intent: .uninstalled) { manager in
             try manager.uninstall()
         }
     }
@@ -1512,6 +1591,34 @@ final class HookInstallationCoordinator {
                 }
             } catch {
                 self.onStatusMessage?("Grok hook update failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func updateHermesHooks(
+        userMessage: String,
+        intent: AgentHookIntent,
+        operation: @escaping (HermesHookInstallationManager) throws -> HermesHookInstallationStatus
+    ) {
+        isHermesHookSetupBusy = true
+        onStatusMessage?(userMessage)
+
+        Task { [weak self] in
+            guard let self else { return }
+
+            defer { self.isHermesHookSetupBusy = false }
+
+            do {
+                let status = try operation(self.hermesHookInstallationManager)
+                self.hermesHookStatus = status
+                self.intentStore.setIntent(intent, for: .hermes)
+                if status.managedHooksPresent {
+                    self.onStatusMessage?("Hermes hooks are installed and ready.")
+                } else {
+                    self.onStatusMessage?("Hermes hooks are not installed.")
+                }
+            } catch {
+                self.onStatusMessage?("Hermes hook update failed: \(error.localizedDescription)")
             }
         }
     }
