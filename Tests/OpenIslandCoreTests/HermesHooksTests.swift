@@ -361,6 +361,26 @@ struct HermesHooksTests {
     }
 
     @Test
+    func installLeavesMappingValuedEventVerbatim() throws {
+        let existing = """
+        hooks:
+          post_llm_call:
+            command: '/usr/bin/echo mine'
+        """
+        let installed = try HermesHookInstaller.installConfigYAML(
+            existingData: Data(existing.utf8),
+            hookCommand: hookCommand
+        )
+        let text = String(decoding: installed.contents!, as: UTF8.self)
+
+        #expect(text.contains("command: '/usr/bin/echo mine'"))
+        // The mapping-valued event keeps its body; no list entry is mixed in
+        // under it.
+        #expect(!text.contains("echo mine'\n    - command:"))
+        #expect(text.contains("on_session_start:"))
+    }
+
+    @Test
     func installReplacesLegacyWholeCommandQuoteWithPathQuote() throws {
         // Pre-fix blocks quoted the whole command; a re-install migrates the
         // entry to the path-only quote form.

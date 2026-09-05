@@ -161,6 +161,18 @@ public enum HermesHookInstaller {
             }
 
             let body = eventBody(blockLines, from: index + 1, eventIndent: eventIndent)
+            guard isListBody(body) else {
+                // A mapping (or scalar) body — e.g. `command: ...` indented
+                // under the event — is not a hook-entry list. Mixing a
+                // `- command:` item into it would produce YAML Hermes cannot
+                // load, so the event is preserved verbatim and marked as
+                // present.
+                output.append(line)
+                output.append(contentsOf: body.lines)
+                eventsSeen.insert(event)
+                index += body.lineCount + 1
+                continue
+            }
             let (foreignLines, _) = foreignEntryLines(body)
 
             output.append(line)
@@ -481,6 +493,19 @@ public enum HermesHookInstaller {
     }
 
     private static let defaultEventIndent = 2
+
+    /// Whether an event body's first meaningful line is a YAML list item —
+    /// the only shape Open Island can safely extend with hook entries.
+    private static func isListBody(_ body: (lines: [String], lineCount: Int)) -> Bool {
+        for line in body.lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty {
+                continue
+            }
+            return trimmed == "-" || trimmed.hasPrefix("- ") || trimmed.hasPrefix("-\t")
+        }
+        return true
+    }
 
     private static func indentation(_ width: Int) -> String {
         String(repeating: " ", count: width)
