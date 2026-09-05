@@ -264,6 +264,63 @@ struct HermesHooksTests {
         #expect(!HermesHookInstaller.isOpenIslandHermesHookCommand("'/usr/bin/echo hi'"))
     }
 
+    // MARK: - YAML round-trip
+
+    @Test
+    func installQuotesOnlyTheBinaryPath() throws {
+        let raw = "/Applications/Open Island.app/Contents/Helpers/OpenIslandHooks --source hermes"
+        let installed = try HermesHookInstaller.installConfigYAML(
+            existingData: Data("model: gpt-5\n".utf8),
+            hookCommand: raw
+        )
+        let text = String(decoding: installed.contents!, as: UTF8.self)
+
+        // YAML layer keeps the shell layer literal: the shell quote around the
+        // binary survives, `--source hermes` stays outside it, and the space
+        // inside the path is escaped by the shell layer only.
+        #expect(text.contains("command: '''/Applications/Open Island.app/Contents/Helpers/OpenIslandHooks'' --source hermes'"))
+    }
+
+    @Test
+    func installExtendsNonStandardEventIndentWithoutDuplicateKeys() throws {
+        let existing = """
+        model: gpt-5
+        hooks:
+            post_llm_call:
+              - command: '/usr/bin/echo mine'
+        """
+        let installed = try HermesHookInstaller.installConfigYAML(
+            existingData: Data(existing.utf8),
+            hookCommand: hookCommand
+        )
+        let text = String(decoding: installed.contents!, as: UTF8.self)
+
+        #expect(text.contains("echo mine"))
+        #expect(text.components(separatedBy: "post_llm_call:").count - 1 == 1)
+        #expect(text.contains("    on_session_start:"))
+        #expect(!text.contains("\n  on_session_start:"))
+    }
+
+    @Test
+    func installReplacesLegacyWholeCommandQuoteWithPathQuote() throws {
+        // Pre-fix blocks quoted the whole command; a re-install migrates the
+        // entry to the path-only quote form.
+        let legacy = """
+        hooks:
+          post_llm_call:
+            - command: '/Applications/Open Island.app/Contents/Helpers/OpenIslandHooks --source hermes'
+        """
+        let installed = try HermesHookInstaller.installConfigYAML(
+            existingData: Data(legacy.utf8),
+            hookCommand: hookCommand
+        )
+        let text = String(decoding: installed.contents!, as: UTF8.self)
+
+        #expect(!text.contains("Helpers/OpenIslandHooks --source hermes' --source hermes"))
+        #expect(text.components(separatedBy: "post_llm_call:").count - 1 == 1)
+        #expect(text.contains("command: '''/usr/local/bin/OpenIslandHooks'' --source hermes'"))
+    }
+
     // MARK: - HITL
 
     @Test

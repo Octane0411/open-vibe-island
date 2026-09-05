@@ -435,22 +435,22 @@ Hermes Agent discovers shell hooks from the `hooks:` block in `~/.hermes/config.
 | `hook_event_name` | `hookEventName` | Event type (snake_case) |
 | `session_id` | `sessionID` | Session identifier |
 | `cwd` | `cwd` | Working directory |
-| `tool_name` | `toolName` | Tool name (`pre_tool_call` only; `null` otherwise) |
+| `tool_name` | `toolName` | Tool name (`pre_tool_call`; on `pre_approval_request` it is only a fallback for the approval summary when `extra.command` is absent) |
 | `tool_input` | `toolInput` | Tool arguments object (`pre_tool_call` only; `null` otherwise) |
-| `extra` | `extra` | Event-specific kwargs (`user_message`, `assistant_response`, `model`, `platform`, `child_role`, `duration_ms`, …) |
+| `extra` | `extra` | Event-specific kwargs (`user_message`, `assistant_response`, `model`, `platform`, `child_role`, `duration_ms`, `command`, `description`, `tool_call_id`, …) |
 
 `post_llm_call` completion cards read `extra.user_message` / `extra.assistant_response`; unknown `extra` keys are retained and ignored.
 
 ### Wire format notes
 
-- Hermes runs hooks with `shlex.split` + `shell=False`, so the managed command is written YAML-single-quoted: `command: '/path/OpenIslandHooks --source hermes'`. The quotes are part of the shell-token split, not a nested shell.
+- Hermes runs hooks with `shlex.split` + `shell=False`, so the managed command is quoted in two layers: the binary path takes a shell single quote (`'…/OpenIslandHooks'`), and the whole entry is wrapped in a YAML single-quoted scalar — `command: '''…/OpenIslandHooks'' --source hermes'`. After YAML decoding, `shlex.split` yields the binary as `argv[0]` and `--source hermes` as separate arguments; paths containing spaces or apostrophes survive both layers.
 - Hooks are fire-and-forget: the CLI never writes to stdout (any stdout would be parsed as a directive response). Hook failures log to stderr and fail open.
 - Because every managed event fires on both CLI and gateway sessions, the bridge timeout is the standard 45 s; there is no blocking/interactive path.
 
 ### HITL (human-in-the-loop)
 
-- `pre_tool_call` with `tool_name: "clarify"` decodes `tool_input.questions` (`question`, `header`, `options[].label/description`, `multiSelect`) into the standard question card. The notch shows the question and the session phase becomes `.waitingForAnswer`.
-- `pre_approval_request` surfaces the permission card (`toolName` + `toolInput` summary) with phase `.waitingForApproval`.
+- `pre_tool_call` with `tool_name: "clarify"` decodes `tool_input.questions` (`question`, `header`, `options[].label/description`, `multi_select`) into the standard question card. The notch shows the question and the session phase becomes `.waitingForAnswer`.
+- `pre_approval_request` carries its payload in `extra`: `command` (the command awaiting approval; `tool_name` is only a fallback for the summary when `command` is absent), `description` (card title), and `tool_call_id`. It does not use `tool_input`. The session phase becomes `.waitingForApproval`.
 
 ### Install / uninstall
 

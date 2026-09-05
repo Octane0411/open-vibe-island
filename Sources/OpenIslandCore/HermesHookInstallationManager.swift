@@ -1,6 +1,6 @@
 import Foundation
 
-public struct HermesHookInstallationStatus: Equatable, Sendable {
+public struct HermesHookInstallationStatus: Codable, Equatable, Sendable {
     public var hermesDirectory: URL
     public var configURL: URL
     public var manifestURL: URL
