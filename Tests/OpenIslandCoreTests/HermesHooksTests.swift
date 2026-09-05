@@ -302,6 +302,65 @@ struct HermesHooksTests {
     }
 
     @Test
+    func installExtendsQuotedEventKeyWithoutDuplicateKey() throws {
+        let existing = """
+        hooks:
+          \"post_llm_call\":
+            - command: '/usr/bin/echo mine'
+        """
+        let installed = try HermesHookInstaller.installConfigYAML(
+            existingData: Data(existing.utf8),
+            hookCommand: hookCommand
+        )
+        let text = String(decoding: installed.contents!, as: UTF8.self)
+
+        #expect(text.components(separatedBy: "post_llm_call").count - 1 == 1)
+        #expect(text.contains("echo mine"))
+        #expect(text.contains("on_session_start:"))
+    }
+
+    @Test
+    func installLeavesInlineValuedEventVerbatim() throws {
+        let existing = """
+        hooks:
+          post_llm_call: []
+        """
+        let installed = try HermesHookInstaller.installConfigYAML(
+            existingData: Data(existing.utf8),
+            hookCommand: hookCommand
+        )
+        let text = String(decoding: installed.contents!, as: UTF8.self)
+
+        #expect(text.contains("post_llm_call: []"))
+        #expect(!text.contains("post_llm_call:\n    - command:"))
+        #expect(text.contains("on_session_start:"))
+    }
+
+    @Test
+    func bareDashLineIsAnEntryBoundary() throws {
+        let existing = """
+        hooks:
+          post_llm_call:
+            -
+            - command: '/usr/bin/echo mine'
+        """
+        let installed = try HermesHookInstaller.installConfigYAML(
+            existingData: Data(existing.utf8),
+            hookCommand: hookCommand
+        )
+        let text = String(decoding: installed.contents!, as: UTF8.self)
+        #expect(text.contains("echo mine"))
+
+        let uninstalled = try HermesHookInstaller.uninstallConfigYAML(
+            existingData: installed.contents,
+            managedCommand: hookCommand
+        )
+        let uninstalledText = String(decoding: uninstalled.contents!, as: UTF8.self)
+        #expect(uninstalledText.contains("-\n"))
+        #expect(uninstalledText.contains("echo mine"))
+    }
+
+    @Test
     func installReplacesLegacyWholeCommandQuoteWithPathQuote() throws {
         // Pre-fix blocks quoted the whole command; a re-install migrates the
         // entry to the path-only quote form.
@@ -319,6 +378,57 @@ struct HermesHooksTests {
         #expect(!text.contains("Helpers/OpenIslandHooks --source hermes' --source hermes"))
         #expect(text.components(separatedBy: "post_llm_call:").count - 1 == 1)
         #expect(text.contains("command: '''/usr/local/bin/OpenIslandHooks'' --source hermes'"))
+    }
+
+    // MARK: - Realistic Application Support path (regression: paths with
+    // spaces must survive the YAML/shell double quoting so the hook runs).
+
+    @Test
+    func installHandlesApplicationSupportPathWithSpaces() throws {
+        let managedPath = "/Users/dev/Library/Application Support/OpenIsland/bin/OpenIslandHooks"
+        let installed = try HermesHookInstaller.installConfigYAML(
+            existingData: Data("model: gpt-5\n".utf8),
+            hookCommand: HermesHookInstaller.hookCommand(for: managedPath)
+        )
+        let text = String(decoding: installed.contents!, as: UTF8.self)
+        #expect(text.contains("--source hermes"))
+        #expect(text.contains(managedPath))
+        #expect(try HermesHookInstaller.configYAMLHasOpenIslandHooks(existingData: installed.contents))
+    }
+
+    @Test
+    func installIsIdempotentForApplicationSupportPathWithSpaces() throws {
+        let managedPath = "/Users/dev/Library/Application Support/OpenIsland/bin/OpenIslandHooks"
+        let command = HermesHookInstaller.hookCommand(for: managedPath)
+        let first = try HermesHookInstaller.installConfigYAML(
+            existingData: Data("model: gpt-5\n".utf8),
+            hookCommand: command
+        )
+        let second = try HermesHookInstaller.installConfigYAML(
+            existingData: first.contents,
+            hookCommand: command
+        )
+        #expect(!second.changed)
+    }
+
+    @Test
+    func uninstallRemovesApplicationSupportPathWithSpaces() throws {
+        let managedPath = "/Users/dev/Library/Application Support/OpenIsland/bin/OpenIslandHooks"
+        let command = HermesHookInstaller.hookCommand(for: managedPath)
+        let installed = try HermesHookInstaller.installConfigYAML(
+            existingData: Data("model: gpt-5\n".utf8),
+            hookCommand: command
+        )
+        let mutation = try HermesHookInstaller.uninstallConfigYAML(
+            existingData: installed.contents,
+            managedCommand: command
+        )
+
+        #expect(mutation.changed)
+        #expect(!mutation.managedHooksPresent)
+        let text = String(decoding: mutation.contents!, as: UTF8.self)
+        #expect(text == "model: gpt-5\n")
+        #expect(!text.contains("Application Support"))
     }
 
     // MARK: - HITL
