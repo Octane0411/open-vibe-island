@@ -25,7 +25,7 @@ enum TrackedEventIngress {
 
 /// What the closed island renders in the right slot. Chosen in the
 /// Personalization tab; the pill layout only varies by content width.
-enum IslandRightSlot: String, CaseIterable, Identifiable, Sendable {
+enum IslandRightSlot: String, CaseIterable, Identifiable, Codable, Sendable {
     case count   // "×N" badge
     case agents  // colored dot stack, one per active agent tool
     case none    // pill collapses — useful if you just want the bars
@@ -36,7 +36,7 @@ enum IslandRightSlot: String, CaseIterable, Identifiable, Sendable {
 /// What the closed island renders in the center label (external displays
 /// only — on MacBook the physical notch covers this space so we suppress
 /// the label regardless).
-enum IslandCenterLabel: String, CaseIterable, Identifiable, Sendable {
+enum IslandCenterLabel: String, CaseIterable, Identifiable, Codable, Sendable {
     case sessionName  // e.g. "open-island"
     case agentAction  // e.g. "Claude · editing"
     case off
@@ -46,14 +46,19 @@ enum IslandCenterLabel: String, CaseIterable, Identifiable, Sendable {
 
 // MARK: - v8 island preferences
 
-enum IslandAppearanceDisplayProfile: String, CaseIterable, Identifiable, Sendable {
+/// The display context that owns an independent island appearance preference.
+enum IslandAppearanceDisplayProfile: String, CaseIterable, Identifiable, Codable, Sendable {
     case notch
     case topBar
 
     var id: String { rawValue }
 }
 
-struct IslandAppearancePreferences: Equatable, Sendable {
+/// Persisted appearance choices for one island display profile.
+///
+/// All fields are codable so profile preferences can be stored or transferred
+/// as one stable value in addition to the current per-key defaults storage.
+struct IslandAppearancePreferences: Equatable, Codable, Sendable {
     var rightSlot: IslandRightSlot = .count
     var centerLabel: IslandCenterLabel = .agentAction
     var usageDisplay: IslandUsageDisplay = .compact
@@ -61,16 +66,19 @@ struct IslandAppearancePreferences: Equatable, Sendable {
     var sessionGroup: IslandSessionGroup = .none
     var sessionSort: IslandSessionSort = .attention
     var completedStaleThreshold: IslandCompletedStaleThreshold = .fiveMinutes
+    var showIdleSessions: Bool = false
 }
 
-enum IslandUsageDisplay: String, CaseIterable, Identifiable, Sendable {
+/// Controls whether the compact Codex usage indicator is visible.
+enum IslandUsageDisplay: String, CaseIterable, Identifiable, Codable, Sendable {
     case hidden
     case compact
 
     var id: String { rawValue }
 }
 
-enum IslandSessionStateIndicator: String, CaseIterable, Identifiable, Sendable {
+/// Selects the visual treatment for a session's state in the island.
+enum IslandSessionStateIndicator: String, CaseIterable, Identifiable, Codable, Sendable {
     case animatedDot
     case bar
     case glyph
@@ -84,7 +92,8 @@ enum IslandSessionStateIndicator: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-enum IslandSessionGroup: String, CaseIterable, Identifiable, Sendable {
+/// Defines how sessions are grouped in the expanded island list.
+enum IslandSessionGroup: String, CaseIterable, Identifiable, Codable, Sendable {
     case none
     case state
     case agent
@@ -93,14 +102,16 @@ enum IslandSessionGroup: String, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
 }
 
-enum IslandSessionSort: String, CaseIterable, Identifiable, Sendable {
+/// Defines the ordering of sessions within an island list group.
+enum IslandSessionSort: String, CaseIterable, Identifiable, Codable, Sendable {
     case attention
     case lastUpdate
 
     var id: String { rawValue }
 }
 
-enum IslandCompletedStaleThreshold: String, CaseIterable, Identifiable, Sendable {
+/// Defines when a completed session is treated as idle by the island.
+enum IslandCompletedStaleThreshold: String, CaseIterable, Identifiable, Codable, Sendable {
     case twoMinutes
     case fiveMinutes
     case tenMinutes
