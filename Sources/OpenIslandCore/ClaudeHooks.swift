@@ -949,7 +949,8 @@ public extension ClaudeHookPayload {
             environment: environment,
             currentTTYProvider: { currentTTY() },
             terminalLocatorProvider: { terminalLocator(for: $0) },
-            warpPaneResolver: Self.defaultWarpPaneResolver
+            warpPaneResolver: Self.defaultWarpPaneResolver,
+            embeddedHostResolver: { EmbeddedTerminalResolver.resolveCurrentHostContext() }
         )
     }
 
@@ -975,12 +976,24 @@ public extension ClaudeHookPayload {
         environment: [String: String],
         currentTTYProvider: () -> String?,
         terminalLocatorProvider: (String) -> (sessionID: String?, tty: String?, title: String?),
-        warpPaneResolver: (String) -> String? = Self.defaultWarpPaneResolver
+        warpPaneResolver: (String) -> String? = Self.defaultWarpPaneResolver,
+        embeddedHostResolver: () -> EmbeddedTerminalResolver.HostContext? = {
+            EmbeddedTerminalResolver.resolveCurrentHostContext()
+        }
     ) -> ClaudeHookPayload {
         var payload = self
 
         if payload.terminalApp == nil {
             payload.terminalApp = inferTerminalApp(from: environment)
+        }
+
+        // Process-tree fallback: env-based inference is authoritative when
+        // TERM_PROGRAM/TERMINAL_EMULATOR are set, but plugins like
+        // Obsidian's terminal don't set them. The process tree always
+        // does. Only fills in when nil so a present env var stays in
+        // charge — see #173.
+        if payload.terminalApp == nil, let host = embeddedHostResolver() {
+            payload.terminalApp = host.host.displayName
         }
 
         // Resolve Warp pane UUID from the live SQLite state.
