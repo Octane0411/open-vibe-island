@@ -32,7 +32,7 @@ final class OverlayPanelController {
     // text area vertical padding: 28  →  total ≈ 187
     private static let completionCardChromeHeight: CGFloat = 187
     private static let completionCardMinHeight: CGFloat = 210
-    private static let completionCardMaxHeight: CGFloat = 400
+    private static let completionCardMaxHeight: CGFloat = 560
 
     private var panel: NotchPanel?
     private var eventMonitors = NotchEventMonitors()
@@ -608,7 +608,7 @@ final class OverlayPanelController {
             options: [.usesLineFragmentOrigin, .usesFontLeading],
             attributes: [.font: font]
         )
-        let markdownHeight = min(260, ceil(textSize.height) + 20)
+        let markdownHeight = min(680, ceil(textSize.height) + 20)
         // Reply input: divider (1) + input bar padding+content (~52)
         let replyInputHeight: CGFloat = TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled) ? 53 : 0
         return headerHeight + 1 + markdownHeight + replyInputHeight

@@ -213,7 +213,7 @@ struct AgentSessionPresentationTests {
         )
 
         // Headline uses initial prompt (session topic), prompt line uses latest
-        #expect(session.spotlightHeadlineText == "worktree · Start by fixing the island hover behavior.")
+        #expect(session.spotlightHeadlineText == "Start by fixing the island hover behavior.")
         #expect(session.spotlightPromptLineText == "You: Now make the overlay height fit the content.")
     }
 
@@ -260,7 +260,7 @@ struct AgentSessionPresentationTests {
             )
         )
 
-        #expect(session.spotlightHeadlineText == "worktree · Start by fixing the island hover behavior.")
+        #expect(session.spotlightHeadlineText == "Start by fixing the island hover behavior.")
         #expect(session.spotlightPromptLineText == "You: Now make the overlay height fit the content.")
     }
 
@@ -290,7 +290,7 @@ struct AgentSessionPresentationTests {
             )
         )
 
-        #expect(session.spotlightHeadlineText == "worktree · Commit the README change.")
+        #expect(session.spotlightHeadlineText == "Commit the README change.")
         #expect(session.spotlightPromptLineText == "You: Also confirm the worktree status.")
         #expect(session.notificationHeaderPromptLineText == nil)
     }
@@ -378,5 +378,57 @@ struct AgentSessionPresentationTests {
         #expect(HookHealthReport.Agent.openCode.displayName == "OpenCode")
         #expect(Set(HookHealthReport.Agent.allCases.map(\.displayName)).count
             == HookHealthReport.Agent.allCases.count)
+    }
+
+    @Test
+    func hermesHeadlinePrefersInitialPromptOverWorkspaceName() {
+        let session = AgentSession(
+            id: "hermes-1",
+            title: "Hermes · binance-strategy-platform-agent",
+            tool: .hermes,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Working",
+            updatedAt: .now,
+            jumpTarget: JumpTarget(
+                terminalApp: "VS Code",
+                workspaceName: "binance-strategy-platform-agent",
+                paneTitle: "Hermes 20260905",
+                workingDirectory: "/Users/user/Codings/binance-strategy-platform-agent"
+            ),
+            hermesMetadata: HermesSessionMetadata(
+                initialUserPrompt: "为什么卡片标题显示的不是 session title？",
+                lastUserPrompt: "继续",
+                model: "GLM-5.3-Flash"
+            )
+        )
+
+        #expect(session.spotlightHeadlineText == "为什么卡片标题显示的不是 session title？")
+        #expect(session.spotlightPromptLineText == "You: 继续")
+        #expect(session.spotlightTerminalBadge == "VS Code · binance-strategy-platform-agent")
+    }
+
+    @Test
+    func hermesHeadlineFallsBackToWorkspaceWithoutPrompt() {
+        let session = AgentSession(
+            id: "hermes-2",
+            title: "Hermes · binance-strategy-platform-agent",
+            tool: .hermes,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Working",
+            updatedAt: .now,
+            jumpTarget: JumpTarget(
+                terminalApp: "VS Code",
+                workspaceName: "binance-strategy-platform-agent",
+                paneTitle: "Hermes 20260905",
+                workingDirectory: "/Users/user/Codings/binance-strategy-platform-agent"
+            )
+        )
+
+        #expect(session.spotlightHeadlineText == "binance-strategy-platform-agent")
+        #expect(session.spotlightTerminalBadge == "VS Code · binance-strategy-platform-agent")
     }
 }
