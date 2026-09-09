@@ -1816,6 +1816,22 @@ public final class BridgeServer: @unchecked Sendable {
             // almost immediately after they appear. Process monitoring owns
             // hook-managed session lifecycle, so this event is treated as a
             // normal completion, not a real session end.
+            //
+            // post_llm_call already emitted a sessionCompleted with the
+            // assistant response as the summary.  Re-emitting here would
+            // overwrite that summary with a generic "Hermes session ended"
+            // message, and — because the second sessionCompleted carries a
+            // later timestamp — the AppModel's wasAlreadyCompleted guard
+            // does not suppress the notification surface for it.  The user
+            // sees a second, redundant notch card pop for the same turn.
+            // Skip the redundant emit when the session is already completed;
+            // keep it as a fallback for turns where post_llm_call did not
+            // fire (e.g. interrupted or errored turns).
+            if localState.session(id: payload.sessionID)?.phase == .completed {
+                send(.response(.acknowledged), to: clientID)
+                return
+            }
+
             emit(
                 .sessionCompleted(
                     SessionCompleted(

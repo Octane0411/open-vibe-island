@@ -163,4 +163,55 @@ struct HermesHookEndToEndTests {
         #expect(session.isSessionEnded == false)
         #expect(session.phase == .completed)
     }
+
+    /// When post_llm_call already completed the turn, the subsequent
+    /// on_session_end must NOT re-emit sessionCompleted — otherwise the
+    /// assistant-response summary is overwritten with a generic
+    /// "Hermes session ended" message and the user sees a second,
+    /// redundant notification card for the same turn.
+    @Test
+    func onSessionEndDoesNotOverwritePostLLMCompletion() throws {
+        let binary = hookBinaryURL
+        guard FileManager.default.isExecutableFile(atPath: binary.path) else {
+            Issue.record("OpenIslandHooks binary not found at \(binary.path); build it first.")
+            return
+        }
+
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let sessionID = "e2e-hermes-noop-end"
+        let start = #"{"hook_event_name":"on_session_start","session_id":"\#(sessionID)","cwd":"/tmp/e2e"}"#
+        _ = runHook(start, socketPath: socketURL.path)
+        _ = try #require(waitForSession(sessionID, on: server), "session was not created")
+
+        // post_llm_call completes the turn and sets the assistant response
+        // as the summary.
+        let postLLM = """
+        {"hook_event_name":"post_llm_call","session_id":"\(sessionID)","cwd":"/tmp/e2e","extra":{"user_message":"fix it","assistant_response":"Done.","model":"glm-5.3","platform":"tui"}}
+        """
+        _ = runHook(postLLM, socketPath: socketURL.path)
+        let afterLLM = try #require(
+            waitForSessionPhase(sessionID, .completed, on: server),
+            "session was not completed by post_llm_call"
+        )
+        let llmTimestamp = afterLLM.updatedAt
+
+        // on_session_end arrives right after — it must be a no-op.
+        let end = #"{"hook_event_name":"on_session_end","session_id":"\#(sessionID)","cwd":"/tmp/e2e"}"#
+        _ = runHook(end, socketPath: socketURL.path)
+
+        // Give the server a beat to process the event.
+        Thread.sleep(forTimeInterval: 0.1)
+        let session = try #require(server.sessionStateSnapshotForTests().session(id: sessionID))
+        #expect(session.phase == .completed)
+        #expect(session.isSessionEnded == false)
+        // The summary from post_llm_call must be preserved, not overwritten
+        // with "Hermes session ended in /tmp/e2e."
+        #expect(session.summary.contains("Done."))
+        // updatedAt must not advance — on_session_end was a no-op.
+        #expect(session.updatedAt == llmTimestamp)
+    }
 }
