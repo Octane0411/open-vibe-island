@@ -1781,7 +1781,7 @@ public final class BridgeServer: @unchecked Sendable {
                     HermesSessionMetadataUpdated(
                         sessionID: payload.sessionID,
                         hermesMetadata: payload.defaultHermesMetadata,
-                        jumpTarget: payload.defaultJumpTarget,
+                        jumpTarget: nil,
                         timestamp: .now
                     )
                 )
@@ -1871,13 +1871,17 @@ public final class BridgeServer: @unchecked Sendable {
         case .preAPIRequest:
             // Carries the turn's user prompt at the moment the turn starts,
             // so the headline fills in immediately instead of waiting for
-            // the turn-ending post_llm_call.
+            // post_llm_call. Don't pass jumpTarget here: the session already
+            // has one from on_session_start, and withRuntimeContext runs the
+            // focused-terminal locator on every hook event — if the user
+            // switched focus since session start, passing the new target would
+            // overwrite the original and break the jump action.
             emit(
                 .hermesSessionMetadataUpdated(
                     HermesSessionMetadataUpdated(
                         sessionID: payload.sessionID,
                         hermesMetadata: payload.defaultHermesMetadata,
-                        jumpTarget: payload.defaultJumpTarget,
+                        jumpTarget: nil,
                         timestamp: .now
                     )
                 )

@@ -275,7 +275,16 @@ struct TerminalJumpService {
             // Use the full terminal-specific jump (AppleScript for Ghostty/iTerm,
             // CLI for WezTerm, etc.) to focus the correct window/tab.
             if let descriptor {
-                switch descriptor.bundleIdentifier {
+                let normalizedPreferredName = normalizeTerminalAppName(target.terminalApp)
+                let preferredBundleIdentifier = preferredBundleIdentifierForAlias(
+                    for: descriptor,
+                    normalizedPreferredName: normalizedPreferredName
+                )
+                let resolvedBundleIdentifier = resolveBundleIdentifier(
+                    for: descriptor,
+                    preferredBundleIdentifier: preferredBundleIdentifier
+                )
+                switch resolvedBundleIdentifier {
                 case "com.mitchellh.ghostty":
                     if try jumpToGhosttyTerminal(target) {
                         return "Focused the matching tmux pane in Ghostty."
@@ -292,7 +301,8 @@ struct TerminalJumpService {
                     // VS Code's integrated terminal runs inside tmux. After
                     // focusing the pane, also focus the VS Code workspace so
                     // the correct window comes to front (not just any VS Code
-                    // window).
+                    // window). Use the resolved (alias-specific) bundle ID so
+                    // "Trae CN" opens cn.trae.app, not com.trae.app.
                     if let workingDirectory = target.workingDirectory {
                         _ = jumpToVSCodeFamilyWorkspace(workingDirectory, bundleIdentifier: id)
                     }

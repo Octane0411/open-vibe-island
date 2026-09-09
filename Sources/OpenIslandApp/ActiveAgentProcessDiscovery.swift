@@ -71,7 +71,12 @@ struct ActiveAgentProcessDiscovery {
             // OpenCode is an exception: it can run inside IDE integrated terminals
             // that don't expose a TTY in `ps` output. Let OpenCode processes
             // through so the liveness fallback can keep their sessions alive.
-            if process.terminalTTY == nil && !isOpenCodeProcess(command: process.command) {
+            // Hermes TUI/gateway processes are also TTY-less, so without this
+            // exemption they would be filtered out and their hook-managed
+            // sessions could be evicted by the liveness polls.
+            if process.terminalTTY == nil
+                && !isOpenCodeProcess(command: process.command)
+                && !isHermesProcess(command: process.command) {
                 continue
             }
 
