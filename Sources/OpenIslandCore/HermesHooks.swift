@@ -29,6 +29,8 @@ public struct HermesHookPayload: Equatable, Codable, Sendable {
     public var terminalSessionID: String?
     public var terminalTTY: String?
     public var terminalTitle: String?
+    public var tmuxTarget: String?
+    public var tmuxSocketPath: String?
 
     private enum CodingKeys: String, CodingKey {
         case hookEventName = "hook_event_name"
@@ -41,6 +43,8 @@ public struct HermesHookPayload: Equatable, Codable, Sendable {
         case terminalSessionID = "terminal_session_id"
         case terminalTTY = "terminal_tty"
         case terminalTitle = "terminal_title"
+        case tmuxTarget = "tmux_target"
+        case tmuxSocketPath = "tmux_socket_path"
     }
 
     public init(
@@ -65,6 +69,8 @@ public struct HermesHookPayload: Equatable, Codable, Sendable {
         self.terminalSessionID = terminalSessionID
         self.terminalTTY = terminalTTY
         self.terminalTitle = terminalTitle
+        self.tmuxTarget = nil
+        self.tmuxSocketPath = nil
     }
 
     public init(from decoder: any Decoder) throws {
@@ -79,6 +85,8 @@ public struct HermesHookPayload: Equatable, Codable, Sendable {
         terminalSessionID = try container.decodeIfPresent(String.self, forKey: .terminalSessionID)
         terminalTTY = try container.decodeIfPresent(String.self, forKey: .terminalTTY)
         terminalTitle = try container.decodeIfPresent(String.self, forKey: .terminalTitle)
+        tmuxTarget = try container.decodeIfPresent(String.self, forKey: .tmuxTarget)
+        tmuxSocketPath = try container.decodeIfPresent(String.self, forKey: .tmuxSocketPath)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -93,6 +101,8 @@ public struct HermesHookPayload: Equatable, Codable, Sendable {
         try container.encodeIfPresent(terminalSessionID, forKey: .terminalSessionID)
         try container.encodeIfPresent(terminalTTY, forKey: .terminalTTY)
         try container.encodeIfPresent(terminalTitle, forKey: .terminalTitle)
+        try container.encodeIfPresent(tmuxTarget, forKey: .tmuxTarget)
+        try container.encodeIfPresent(tmuxSocketPath, forKey: .tmuxSocketPath)
     }
 
     public static func decode(_ data: Data) throws -> HermesHookPayload {
@@ -151,7 +161,9 @@ public extension HermesHookPayload {
             paneTitle: terminalTitle ?? "Hermes \(sessionID.prefix(8))",
             workingDirectory: cwd,
             terminalSessionID: terminalSessionID,
-            terminalTTY: terminalTTY
+            terminalTTY: terminalTTY,
+            tmuxTarget: tmuxTarget,
+            tmuxSocketPath: tmuxSocketPath
         )
     }
 
@@ -311,7 +323,52 @@ public extension HermesHookPayload {
         currentTTYProvider: @escaping () -> String?,
         terminalLocatorProvider: @escaping (String) -> (sessionID: String?, tty: String?, title: String?)
     ) -> HermesHookPayload {
+        withRuntimeContext(
+            environment: environment,
+            currentTTYProvider: currentTTYProvider,
+            terminalLocatorProvider: terminalLocatorProvider,
+            tmuxResolverProvider: { Self.tmuxResolver() }
+        )
+    }
+
+    func withRuntimeContext(
+        environment: [String: String],
+        currentTTYProvider: @escaping () -> String?,
+        terminalLocatorProvider: @escaping (String) -> (sessionID: String?, tty: String?, title: String?),
+        tmuxResolverProvider: @escaping () -> (any TmuxPaneResolverProtocol)?,
+        ancestorTTYProvider: @escaping ([Int]) -> [String] = { HermesHookPayload.ancestorTTYs(pids: $0) },
+        parentPIDProvider: @escaping () -> [Int] = { HermesHookPayload.ancestorPIDs() }
+    ) -> HermesHookPayload {
         var payload = self
+
+        // $TMUX is set only inside a tmux pane. When present, tmux is
+        // authoritative for the terminal identity and the env vars are leaked
+        // host context.
+        if environment["TMUX"] != nil,
+           let tmux = tmuxResolverProvider() {
+            // Inside tmux the inherited TERM_PROGRAM / ITERM_SESSION_ID point
+            // at whatever launched the tmux client, not the host terminal this
+            // session lives in. tmux is authoritative: resolve the pane and the
+            // host terminal from the tmux client instead of the leaked env.
+            // Hooks may run through pipelines whose direct TTY is a pipe-side
+            // pty rather than the pane, so try ancestor TTYs too.
+            if let pane = Self.resolvedTmuxPane(
+                resolver: tmux,
+                currentTTYProvider: currentTTYProvider,
+                ancestorTTYProvider: ancestorTTYProvider,
+                parentPIDProvider: parentPIDProvider
+            ) {
+                payload.tmuxTarget = pane.target
+                payload.tmuxSocketPath = tmux.socketPath
+                payload.terminalTTY = pane.tty
+                if let hostApp = tmux.hostTerminalApp() {
+                    payload.terminalApp = hostApp
+                }
+                payload.terminalSessionID = nil
+                payload.terminalTitle = nil
+                return payload
+            }
+        }
 
         if payload.terminalApp == nil {
             payload.terminalApp = inferTerminalApp(from: environment)
@@ -336,6 +393,93 @@ public extension HermesHookPayload {
         }
 
         return payload
+    }
+
+    static func tmuxResolver() -> (any TmuxPaneResolverProtocol)? {
+        TmuxPaneResolver()
+    }
+
+    struct ResolvedPane: Equatable, Sendable {
+        var target: String
+        var tty: String
+    }
+
+    /// Resolve the tmux pane for this hook process: try the direct TTY first,
+    /// then the TTYs of up to four ancestor processes, since hooks spawned
+    /// through pipelines report the pipeline's pty instead of the pane's.
+    static func resolvedTmuxPane(
+        resolver: any TmuxPaneResolverProtocol,
+        currentTTYProvider: () -> String?,
+        ancestorTTYProvider: ([Int]) -> [String] = { HermesHookPayload.ancestorTTYs(pids: $0) },
+        parentPIDProvider: () -> [Int] = { HermesHookPayload.ancestorPIDs() }
+    ) -> ResolvedPane? {
+        if let direct = currentTTYProvider(),
+           let pane = resolver.pane(forTTY: direct) {
+            return ResolvedPane(target: pane.target, tty: direct)
+        }
+
+        let ancestors = ancestorTTYProvider(parentPIDProvider())
+        for tty in ancestors {
+            if let pane = resolver.pane(forTTY: tty) {
+                return ResolvedPane(target: pane.target, tty: tty)
+            }
+        }
+
+        return nil
+    }
+
+    static func ancestorPIDs() -> [Int] {
+        var pids: [Int] = []
+        var pid = Int(getppid())
+        var visited: Set<Int> = []
+        while pid > 1, visited.insert(pid).inserted, pids.count < 4 {
+            pids.append(pid)
+            guard let parent = ProcessInfo.processInfo.parentPID(of: pid) else {
+                break
+            }
+            pid = parent
+        }
+        return pids
+    }
+
+    static func ancestorTTYs(pids: [Int]) -> [String] {
+        pids.compactMap { pid in
+            guard let raw = HermesHookPayload.processOutput(
+                executablePath: "/bin/ps",
+                arguments: ["-p", "\(pid)", "-o", "tty="]
+            ) else {
+                return nil
+            }
+            let tty = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !tty.isEmpty, tty != "??", tty != "-", tty != "?" else {
+                return nil
+            }
+            return tty.hasPrefix("/dev/") ? tty : "/dev/\(tty)"
+        }
+    }
+
+    private static func processOutput(executablePath: String, arguments: [String]) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executablePath)
+        process.arguments = arguments
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
+        }
+
+        guard process.terminationStatus == 0 else {
+            return nil
+        }
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8)
     }
 
     private static let noLocatorTerminalApps: Set<String> = [

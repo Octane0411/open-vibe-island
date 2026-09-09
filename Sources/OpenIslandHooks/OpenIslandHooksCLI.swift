@@ -124,6 +124,12 @@ struct OpenIslandHooksCLI {
                     .decode(HermesHookPayload.self, from: input)
                     .withRuntimeContext(environment: ProcessInfo.processInfo.environment)
 
+                if ProcessInfo.processInfo.environment["OPEN_ISLAND_HOOK_DEBUG"] == "1" {
+                    let data = try JSONEncoder().encode(payload)
+                    FileHandle.standardError.write(data)
+                    FileHandle.standardError.write(Data("\n".utf8))
+                }
+
                 // Fire-and-forget: Hermes shell hooks treat any stdout as a
                 // directive response, so never write back (Gemini semantics).
                 _ = try? client.send(.processHermesHook(payload), timeout: 45)
