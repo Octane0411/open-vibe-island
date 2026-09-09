@@ -299,13 +299,11 @@ struct TerminalJumpService {
                     }
                 case let id where Self.vscodeFamilyBundleIDs.contains(id):
                     // VS Code's integrated terminal runs inside tmux. After
-                    // focusing the pane, also focus the VS Code workspace so
-                    // the correct window comes to front (not just any VS Code
-                    // window). Use the resolved (alias-specific) bundle ID so
-                    // "Trae CN" opens cn.trae.app, not com.trae.app.
-                    if let workingDirectory = target.workingDirectory {
-                        _ = jumpToVSCodeFamilyWorkspace(workingDirectory, bundleIdentifier: id)
-                    }
+                    // focusing the pane via select-window/select-pane, just
+                    // activate the app to bring its window to front. Don't
+                    // use `code -r` here: it can reload the VS Code window and
+                    // trigger "Do you want to terminate the active terminal
+                    // session?" prompts when the workspace is already open.
                     try openAction(["-b", id])
                     return paneSelected
                         ? "Focused the matching tmux pane in \(descriptor.displayName)."
