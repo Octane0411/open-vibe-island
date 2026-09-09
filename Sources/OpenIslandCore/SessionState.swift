@@ -200,6 +200,9 @@ public struct SessionState: Equatable, Sendable {
             }
 
             session.hermesMetadata = payload.hermesMetadata.isEmpty ? nil : payload.hermesMetadata
+            if let jumpTarget = payload.jumpTarget {
+                session.jumpTarget = jumpTarget
+            }
             session.updatedAt = payload.timestamp
             upsert(session)
 

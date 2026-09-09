@@ -1781,6 +1781,7 @@ public final class BridgeServer: @unchecked Sendable {
                     HermesSessionMetadataUpdated(
                         sessionID: payload.sessionID,
                         hermesMetadata: payload.defaultHermesMetadata,
+                        jumpTarget: payload.defaultJumpTarget,
                         timestamp: .now
                     )
                 )
@@ -1809,13 +1810,18 @@ public final class BridgeServer: @unchecked Sendable {
             send(.response(.acknowledged), to: clientID)
 
         case .onSessionEnd:
+            // Hermes fires on_session_end at the end of every run_conversation
+            // call (every turn), not just when the session truly exits. Passing
+            // isSessionEnd here would evict the row and its completion card
+            // almost immediately after they appear. Process monitoring owns
+            // hook-managed session lifecycle, so this event is treated as a
+            // normal completion, not a real session end.
             emit(
                 .sessionCompleted(
                     SessionCompleted(
                         sessionID: payload.sessionID,
                         summary: payload.implicitSummary,
-                        timestamp: .now,
-                        isSessionEnd: true
+                        timestamp: .now
                     )
                 )
             )
@@ -1860,6 +1866,32 @@ public final class BridgeServer: @unchecked Sendable {
                     )
                 )
             }
+            send(.response(.acknowledged), to: clientID)
+
+        case .preAPIRequest:
+            // Carries the turn's user prompt at the moment the turn starts,
+            // so the headline fills in immediately instead of waiting for
+            // the turn-ending post_llm_call.
+            emit(
+                .hermesSessionMetadataUpdated(
+                    HermesSessionMetadataUpdated(
+                        sessionID: payload.sessionID,
+                        hermesMetadata: payload.defaultHermesMetadata,
+                        jumpTarget: payload.defaultJumpTarget,
+                        timestamp: .now
+                    )
+                )
+            )
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitSummary,
+                        phase: .running,
+                        timestamp: .now
+                    )
+                )
+            )
             send(.response(.acknowledged), to: clientID)
         }
     }

@@ -66,6 +66,7 @@ public enum HermesHookInstaller {
         "subagent_stop",
         "pre_tool_call",
         "pre_approval_request",
+        "pre_api_request",
     ]
 
     /// Indent of an event key directly under `hooks:`.

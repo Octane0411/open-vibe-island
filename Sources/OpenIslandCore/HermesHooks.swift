@@ -8,6 +8,7 @@ public enum HermesHookEventName: String, Codable, Sendable {
     case subagentStop = "subagent_stop"
     case preToolCall = "pre_tool_call"
     case preApprovalRequest = "pre_approval_request"
+    case preAPIRequest = "pre_api_request"
 }
 
 /// Payload Hermes pipes to a shell hook's stdin.
@@ -171,8 +172,8 @@ public extension HermesHookPayload {
         HermesSessionMetadata(
             initialUserPrompt: userMessage ?? userMessagePreview,
             lastUserPrompt: userMessage ?? userMessagePreview,
-            lastAssistantMessage: assistantResponsePreview ?? assistantResponse,
-            lastAssistantMessageBody: preserveNewlinesClipped(assistantResponse, limit: 8000),
+            lastAssistantMessage: preserveNewlinesFromStart(assistantResponse, limit: 20000) ?? assistantResponsePreview,
+            lastAssistantMessageBody: preserveNewlinesFromStart(assistantResponse, limit: 20000),
             platform: extraValue(forKey: "platform"),
             model: extraValue(forKey: "model")
         )
@@ -196,6 +197,9 @@ public extension HermesHookPayload {
                 : "Hermes is running \(toolName ?? "a tool") in \(workspaceName)."
         case .preApprovalRequest:
             return "Hermes is waiting for approval in \(workspaceName)."
+        case .preAPIRequest:
+            return userMessagePreview.map { "Hermes is working on: \($0)" }
+                ?? "Hermes started a turn in \(workspaceName)."
         }
     }
 
@@ -674,6 +678,21 @@ public extension HermesHookPayload {
 
         // For transcripts, the newest content is at the end.
         return String(value.suffix(limit))
+    }
+
+    /// Keeps the beginning of a long string (up to `limit` chars), preserving
+    /// newlines. Used for assistant responses shown in the completion card,
+    /// where the summary/overview at the start matters most to the user.
+    private func preserveNewlinesFromStart(_ value: String?, limit: Int) -> String? {
+        guard let value, !value.isEmpty else {
+            return nil
+        }
+
+        if value.count <= limit {
+            return value
+        }
+
+        return String(value.prefix(limit)) + "…"
     }
 
     private func clipped(_ value: String?, limit: Int = 110) -> String? {

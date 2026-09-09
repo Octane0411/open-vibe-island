@@ -134,4 +134,33 @@ struct HermesHookEndToEndTests {
         let hitl = try #require(waitForSessionPhase("e2e-hermes-hitl", .waitingForAnswer, on: server), "HITL session did not reach waitingForAnswer")
         #expect(hitl.tool == .hermes)
     }
+
+    /// on_session_end fires at the end of every Hermes turn (not just real
+    /// exit). It must NOT set isSessionEnded, or the completion card is evicted
+    /// immediately after it pops — the "flash and gone" regression.
+    @Test
+    func onSessionEndDoesNotEvictCompletionCard() throws {
+        let binary = hookBinaryURL
+        guard FileManager.default.isExecutableFile(atPath: binary.path) else {
+            Issue.record("OpenIslandHooks binary not found at \(binary.path); build it first.")
+            return
+        }
+
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let start = #"{"hook_event_name":"on_session_start","session_id":"e2e-hermes-end","cwd":"/tmp/e2e"}"#
+        _ = runHook(start, socketPath: socketURL.path)
+        _ = try #require(waitForSession("e2e-hermes-end", on: server), "session was not created")
+
+        let end = #"{"hook_event_name":"on_session_end","session_id":"e2e-hermes-end","cwd":"/tmp/e2e"}"#
+        _ = runHook(end, socketPath: socketURL.path)
+        _ = try #require(waitForSessionPhase("e2e-hermes-end", .completed, on: server), "session was not completed")
+
+        let session = try #require(server.sessionStateSnapshotForTests().session(id: "e2e-hermes-end"))
+        #expect(session.isSessionEnded == false)
+        #expect(session.phase == .completed)
+    }
 }

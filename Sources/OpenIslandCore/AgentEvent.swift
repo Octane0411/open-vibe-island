@@ -247,15 +247,18 @@ public struct PiSessionMetadataUpdated: Equatable, Codable, Sendable {
 public struct HermesSessionMetadataUpdated: Equatable, Codable, Sendable {
     public var sessionID: String
     public var hermesMetadata: HermesSessionMetadata
+    public var jumpTarget: JumpTarget?
     public var timestamp: Date
 
     public init(
         sessionID: String,
         hermesMetadata: HermesSessionMetadata,
+        jumpTarget: JumpTarget? = nil,
         timestamp: Date
     ) {
         self.sessionID = sessionID
         self.hermesMetadata = hermesMetadata
+        self.jumpTarget = jumpTarget
         self.timestamp = timestamp
     }
 }

@@ -101,6 +101,47 @@ struct HermesHooksTests {
         #expect(!metadata.isEmpty)
     }
 
+    @Test
+    func defaultMetadataKeepsLongAssistantResponseForCompletionCard() {
+        let longResponse = String(repeating: "PR body line.\n", count: 1200)
+        let payload = HermesHookPayload(
+            hookEventName: .postLLMCall,
+            sessionID: "s1",
+            cwd: "/work",
+            extra: .object([
+                "user_message": .string("ship it"),
+                "assistant_response": .string(longResponse),
+            ])
+        )
+
+        let metadata = payload.defaultHermesMetadata
+        #expect(metadata.lastAssistantMessage?.contains("PR body line.") == true)
+        #expect(metadata.lastAssistantMessage?.contains("\n") == true)
+        #expect(metadata.lastAssistantMessage?.count ?? 0 > 110)
+    }
+
+    @Test
+    func defaultMetadataKeepsBeginningOfOverlongResponse() {
+        // A response longer than the 20000-char cap must keep the BEGINNING
+        // (summary/overview), not the tail. The completion card shows the start.
+        let prefix = "完成。汇总：这是开头的内容，应该被保留。\n\n"
+        let longResponse = prefix + String(repeating: "填充内容一行。\n", count: 3500)
+        let payload = HermesHookPayload(
+            hookEventName: .postLLMCall,
+            sessionID: "s1",
+            cwd: "/work",
+            extra: .object([
+                "user_message": .string("ship it"),
+                "assistant_response": .string(longResponse),
+            ])
+        )
+
+        let metadata = payload.defaultHermesMetadata
+        #expect(metadata.lastAssistantMessage?.hasPrefix("完成。汇总") == true)
+        #expect(metadata.lastAssistantMessage?.contains("开头的内容") == true)
+        #expect(metadata.lastAssistantMessage?.hasSuffix("…") == true)
+    }
+
     // MARK: - Installer: fresh file
 
     @Test
