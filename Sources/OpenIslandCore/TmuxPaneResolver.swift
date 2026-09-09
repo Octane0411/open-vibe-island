@@ -43,7 +43,7 @@ public extension ProcessInfo {
 /// process chain instead of the environment.
 public protocol TmuxPaneResolverProtocol: Sendable {
     func pane(forTTY tty: String) -> TmuxPaneResolver.Pane?
-    func hostTerminalApp() -> String?
+    func hostTerminalApp(forSession session: String?) -> String?
     var socketPath: String? { get }
 }
 
@@ -118,13 +118,32 @@ public struct TmuxPaneResolver: TmuxPaneResolverProtocol {
         return nil
     }
 
-    /// Display name of the host terminal owning the tmux client, derived by
-    /// walking the client process chain for a recognized terminal bundle.
-    public func hostTerminalApp() -> String? {
-        guard let clientTTY = run(["list-clients", "-F", "#{client_tty}"])?
-            .split(separator: "\n")
-            .map({ $0.trimmingCharacters(in: .whitespaces) })
-            .first(where: { !$0.isEmpty }) else {
+    /// Display name of the host terminal owning the tmux client for the given
+    /// session, derived by walking the client process chain for a recognized
+    /// terminal bundle. When `session` is nil, falls back to the first client
+    /// (legacy behavior).
+    public func hostTerminalApp(forSession session: String? = nil) -> String? {
+        // Build the client list. When we know the session, filter to only
+        // clients attached to that session — there may be multiple tmux
+        // clients from different host terminals (e.g. VS Code + iTerm2)
+        // attached to different sessions, and picking the wrong one causes
+        // the jump action to activate the wrong terminal app.
+        var clientTTYs: [String] = []
+        if let session {
+            let output = run(["list-clients", "-t", session, "-F", "#{client_tty}"])?
+                .split(separator: "\n")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            clientTTYs = output ?? []
+        }
+        if clientTTYs.isEmpty {
+            clientTTYs = run(["list-clients", "-F", "#{client_tty}"])?
+                .split(separator: "\n")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty } ?? []
+        }
+
+        guard let clientTTY = clientTTYs.first else {
             return nil
         }
 

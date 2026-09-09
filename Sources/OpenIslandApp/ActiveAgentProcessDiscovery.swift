@@ -1020,7 +1020,8 @@ struct ActiveAgentProcessDiscovery {
         }
 
         // Find the terminal app hosting the tmux client connected to this pane
-        guard let hostTerminalApp = findTmuxClientTerminal(tmuxPath: tmuxPath, socketPath: socketPath, processesByPID: processesByPID) else {
+        let sessionName = tmuxTarget.split(separator: ":").first.map(String.init)
+        guard let hostTerminalApp = findTmuxClientTerminal(tmuxPath: tmuxPath, socketPath: socketPath, processesByPID: processesByPID, sessionName: sessionName) else {
             return nil
         }
 
@@ -1058,11 +1059,19 @@ struct ActiveAgentProcessDiscovery {
     private func findTmuxClientTerminal(
         tmuxPath: String,
         socketPath: String?,
-        processesByPID: [String: RunningProcess]
+        processesByPID: [String: RunningProcess],
+        sessionName: String? = nil
     ) -> String? {
+        // When we know the session, filter clients to that session — there may
+        // be multiple tmux clients from different host terminals attached to
+        // different sessions, and picking the wrong one resolves the wrong
+        // terminal app.
         var args: [String] = ["list-clients", "-F", "#{client_tty}"]
+        if let sessionName {
+            args = ["list-clients", "-t", sessionName, "-F", "#{client_tty}"]
+        }
 
-        if let socketPath = socketPath {
+        if let socketPath {
             args = ["-S", socketPath] + args
         }
 

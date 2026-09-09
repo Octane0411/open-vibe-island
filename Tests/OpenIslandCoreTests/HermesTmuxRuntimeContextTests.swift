@@ -142,7 +142,7 @@ private struct StubbedTmuxPaneResolver: TmuxPaneResolverProtocol {
         paneTarget.map { TmuxPaneResolver.Pane(target: $0) }
     }
 
-    func hostTerminalApp() -> String? {
+    func hostTerminalApp(forSession session: String? = nil) -> String? {
         hostApp
     }
 }
@@ -159,7 +159,7 @@ private struct AncestorStubbedTmuxPaneResolver: TmuxPaneResolverProtocol {
         paneTTys.contains(tty) ? TmuxPaneResolver.Pane(target: paneTarget) : nil
     }
 
-    func hostTerminalApp() -> String? {
+    func hostTerminalApp(forSession session: String? = nil) -> String? {
         hostApp
     }
 }

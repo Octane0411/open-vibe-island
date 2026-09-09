@@ -365,7 +365,11 @@ public extension HermesHookPayload {
                 payload.tmuxTarget = pane.target
                 payload.tmuxSocketPath = tmux.socketPath
                 payload.terminalTTY = pane.tty
-                if let hostApp = tmux.hostTerminalApp() {
+                // Extract session name from "session:window.pane" to find the
+                // correct tmux client — not just the first one, which may belong
+                // to a different host terminal (e.g. iTerm2 vs VS Code).
+                let sessionName = pane.target.split(separator: ":").first.map(String.init)
+                if let hostApp = tmux.hostTerminalApp(forSession: sessionName) {
                     payload.terminalApp = hostApp
                 }
                 payload.terminalSessionID = nil
