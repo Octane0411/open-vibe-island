@@ -623,7 +623,19 @@ public enum HermesHookInstaller {
     }
 
     private static func entryIsOpenIsland(_ entryLines: [String], hookCommand: String?) -> Bool {
-        for line in entryLines {
+        let command = entryCommand(entryLines)
+        guard let command else { return false }
+        if let hookCommand, command == hookCommand {
+            return true
+        }
+        return isOpenIslandHermesHookCommand(command)
+    }
+
+    /// Joins a `command:` scalar that an external tool folded onto
+    /// continuation lines (e.g. `command: '''…''\n    --source hermes'`)
+    /// before unquoting, so detection sees the full value.
+    private static func entryCommand(_ entryLines: [String]) -> String? {
+        for (offset, line) in entryLines.enumerated() {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             let rest = trimmed.hasPrefix("- ")
                 ? trimmed.dropFirst(2).trimmingCharacters(in: .whitespaces)
@@ -633,15 +645,16 @@ public enum HermesHookInstaller {
                 continue
             }
 
-            let command = unquote(kv.value)
-            if let hookCommand, command == hookCommand {
-                return true
+            var value = kv.value
+            for continuation in entryLines[(offset + 1)...] {
+                let cont = continuation.trimmingCharacters(in: .whitespaces)
+                let isListItem = cont == "-" || cont.hasPrefix("- ") || cont.hasPrefix("-\t")
+                guard !cont.isEmpty, !isListItem, !isEventKeyLine(cont) else { break }
+                value += " " + cont
             }
-            if isOpenIslandHermesHookCommand(command) {
-                return true
-            }
+            return unquote(value)
         }
-        return false
+        return nil
     }
 
     private static func blockHasOpenIslandEntries(_ blockText: String) -> Bool {
@@ -661,15 +674,18 @@ public enum HermesHookInstaller {
 
             let event = eventKey(of: trimmed)
             if eventNames.contains(event) {
-                guard isManagedEventMapping(trimmed) else {
-                    index += 1
-                    continue
-                }
+                // Inline command scalars (including externally folded ones)
+                // are not managed block mappings, but they can still BE the
+                // Open Island entry — scan the body instead of skipping.
                 let body = eventBody(blockLines, from: index + 1, eventIndent: eventIndent)
                 if foreignEntryLines(body).hasOpenIslandEntry {
                     return true
                 }
-                index += body.lineCount + 1
+                if isManagedEventMapping(trimmed) {
+                    index += body.lineCount + 1
+                } else {
+                    index += 1
+                }
             } else {
                 index += 1
             }

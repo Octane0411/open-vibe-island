@@ -472,6 +472,25 @@ struct HermesHooksTests {
         #expect(!second.changed)
     }
 
+    // MARK: - Externally folded command scalars (regression: an editor or
+    // YAML tool can wrap the command onto continuation lines; detection
+    // must still recognize the entry).
+
+    @Test
+    func detectsFoldedCommandScalar() throws {
+        let folded = """
+        hooks:
+          post_llm_call:
+            - command: '''/Users/user/Library/Application Support/OpenIsland/bin/OpenIslandHooks''
+                --source hermes'
+          pre_tool_call:
+            - command: '''/Users/user/Library/Application Support/OpenIsland/bin/OpenIslandHooks''
+                --source hermes'
+        model: gpt-5
+        """
+        #expect(try HermesHookInstaller.configYAMLHasOpenIslandHooks(existingData: Data(folded.utf8)))
+    }
+
     @Test
     func uninstallRemovesApplicationSupportPathWithSpaces() throws {
         let managedPath = "/Users/dev/Library/Application Support/OpenIsland/bin/OpenIslandHooks"
