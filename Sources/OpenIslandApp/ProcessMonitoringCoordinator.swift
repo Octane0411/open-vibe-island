@@ -56,6 +56,7 @@ final class ProcessMonitoringCoordinator {
     private static let codexAppStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let claudeDesktopStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let conductorStalenessTimeout: TimeInterval = 600  // 10 minutes
+    private static let hermesStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let piHeartbeatTimeout: TimeInterval = 45
 
     static func monitoringPollInterval(
@@ -578,11 +579,17 @@ final class ProcessMonitoringCoordinator {
         // polls after their last hook event. Explicit SessionEnd still wins —
         // ended sessions are skipped here and ignored by
         // SessionState.markProcessLiveness once isSessionEnded.
+        // Completed sessions expire after a staleness window (same as Codex,
+        // Cursor, Claude Desktop) so idle sessions don't accumulate forever.
         let hasHermesProcess = activeProcesses.contains { $0.tool == .hermes }
         if hasHermesProcess {
             for session in sessions
             where session.tool == .hermes && !session.isDemoSession && !session.isSessionEnded {
-                aliveIDs.insert(session.id)
+                let isStale = session.phase == .completed
+                    && session.updatedAt.addingTimeInterval(Self.hermesStalenessTimeout) < Date.now
+                if !isStale {
+                    aliveIDs.insert(session.id)
+                }
             }
         }
 
