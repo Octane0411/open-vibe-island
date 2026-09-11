@@ -73,7 +73,7 @@ final class ConnectionManager: ObservableObject {
     let discovery = BonjourDiscovery()
     var notificationManager: NotificationManager?
     private var sseClient: SSEClient?
-    private var resolvedURL: URL?
+    private var connectionEndpoint: NWEndpoint?
     private var resolutionObservation: Task<Void, Never>?
     private var credentials = WatchCredentialStore.load()
     private var savedToken: String? { credentials?.token }
@@ -237,7 +237,7 @@ final class ConnectionManager: ObservableObject {
         WatchCredentialStore.remove()
         savedMacName = nil
         pairedAt = nil
-        resolvedURL = nil
+        connectionEndpoint = nil
         connectedMacName = nil
         connectionError = nil
         recentEvents.removeAll()
@@ -248,29 +248,25 @@ final class ConnectionManager: ObservableObject {
 
     func pair(mac: DiscoveredMac, code: String) async throws {
         let pairing = try WatchPairingCode(code)
-        let url = try await resolveEndpoint(mac.endpoint)
-        try await completePairing(url: url, name: mac.name, pairing: pairing)
+        try await completePairing(endpoint: mac.endpoint, name: mac.name, pairing: pairing)
     }
 
     func pairManual(host: String, port: UInt16, code: String) async throws {
         let pairing = try WatchPairingCode(code)
-        var components = URLComponents()
-        components.scheme = "https"
-        components.host = host
-        components.port = Int(port)
-        guard port > 0, let url = components.url else { throw PairingError.resolutionFailed }
-        try await completePairing(url: url, name: host, pairing: pairing)
+        guard port > 0, let endpointPort = NWEndpoint.Port(rawValue: port) else { throw PairingError.resolutionFailed }
+        let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(host), port: endpointPort)
+        try await completePairing(endpoint: endpoint, name: host, pairing: pairing)
     }
 
-    private func completePairing(url: URL, name: String, pairing: WatchPairingCode) async throws {
+    private func completePairing(endpoint: NWEndpoint, name: String, pairing: WatchPairingCode) async throws {
         let body = try JSONEncoder().encode(WatchPairRequest(code: pairing.secret))
-        let response = try await WatchHTTPClient.request(baseURL: url, key: pairing.key, path: "pair", method: "POST", body: body)
+        let response = try await WatchHTTPClient.request(endpoint: endpoint, key: pairing.key, path: "pair", method: "POST", body: body)
         guard response.status == 200 else { throw PairingError.invalidCode }
         let reply = try JSONDecoder().decode(WatchPairResponse.self, from: response.body)
         let credentials = WatchCredentials(token: reply.token, key: pairing.key)
         try WatchCredentialStore.save(credentials)
         self.credentials = credentials
-        resolvedURL = url
+        connectionEndpoint = endpoint
         savedMacName = name
         pairedAt = Date()
         connectedMacName = name
@@ -282,13 +278,13 @@ final class ConnectionManager: ObservableObject {
     // MARK: - SSE Connection
 
     private func connectSSE() {
-        guard let url = resolvedURL, let credentials else {
-            Self.logger.warning("Cannot connect SSE: missing URL or token")
+        guard let endpoint = connectionEndpoint, let credentials else {
+            Self.logger.warning("Cannot connect SSE: missing endpoint or token")
             return
         }
 
         sseClient?.disconnect()
-        let client = SSEClient(baseURL: url, credentials: credentials)
+        let client = SSEClient(endpoint: endpoint, credentials: credentials)
         client.onEvent = { [weak self, weak client] eventType, data in
             guard let self, self.sseClient === client else { return }
             self.handleSSEEvent(eventType: eventType, data: data)
@@ -441,74 +437,12 @@ final class ConnectionManager: ObservableObject {
 
                 if let mac = macs.first(where: { $0.name == macName }) {
                     Self.logger.info("Auto-reconnecting to \(macName)")
-                    do {
-                        let url = try await self.resolveEndpoint(mac.endpoint)
-                        self.resolvedURL = url
-                        self.connectedMacName = macName
-                        self.state = .paired
-                        self.connectSSE()
-                        return
-                    } catch {
-                        Self.logger.warning("Failed to resolve endpoint: \(error.localizedDescription)")
-                    }
+                    self.connectionEndpoint = mac.endpoint
+                    self.connectedMacName = macName
+                    self.state = .paired
+                    self.connectSSE()
+                    return
                 }
-            }
-        }
-    }
-
-    // MARK: - Endpoint Resolution
-
-    /// Resolves a Bonjour NWEndpoint to an HTTP URL by briefly connecting to extract the IP and port.
-    private func resolveEndpoint(_ endpoint: NWEndpoint) async throws -> URL {
-        try await withCheckedThrowingContinuation { continuation in
-            var resumed = false
-            let connection = NWConnection(to: endpoint, using: .tcp)
-
-            connection.stateUpdateHandler = { state in
-                guard !resumed else { return }
-
-                switch state {
-                case .ready:
-                    defer { connection.cancel() }
-                    guard let remote = connection.currentPath?.remoteEndpoint,
-                          case let .hostPort(host, port) = remote else {
-                        resumed = true
-                        continuation.resume(throwing: PairingError.resolutionFailed)
-                        return
-                    }
-
-                    let hostString: String
-                    switch host {
-                    case let .ipv4(addr): hostString = "\(addr)"
-                    case let .ipv6(addr): hostString = "[\(addr)]"
-                    case let .name(name, _): hostString = name
-                    @unknown default: hostString = "\(host)"
-                    }
-
-                    guard let url = URL(string: "https://\(hostString):\(port.rawValue)") else {
-                        resumed = true
-                        continuation.resume(throwing: PairingError.resolutionFailed)
-                        return
-                    }
-                    resumed = true
-                    continuation.resume(returning: url)
-
-                case let .failed(error):
-                    connection.cancel()
-                    resumed = true
-                    continuation.resume(throwing: error)
-
-                default:
-                    break
-                }
-            }
-            let resolutionQueue = DispatchQueue(label: "app.openisland.resolve")
-            connection.start(queue: resolutionQueue)
-            resolutionQueue.asyncAfter(deadline: .now() + 10) {
-                guard !resumed else { return }
-                resumed = true
-                connection.cancel()
-                continuation.resume(throwing: PairingError.resolutionFailed)
             }
         }
     }
@@ -516,13 +450,13 @@ final class ConnectionManager: ObservableObject {
     // MARK: - Resolution (post action back to Mac)
 
     func postResolution(requestID: String, action: String) async throws {
-        guard let url = resolvedURL, let credentials else {
+        guard let endpoint = connectionEndpoint, let credentials else {
             throw PairingError.notConnected
         }
 
         let body = try JSONEncoder().encode(WatchResolutionRequest(requestID: requestID, action: action))
         let response = try await WatchHTTPClient.request(
-            baseURL: url, key: credentials.key, path: "resolution", method: "POST",
+            endpoint: endpoint, key: credentials.key, path: "resolution", method: "POST",
             token: credentials.token, body: body
         )
 

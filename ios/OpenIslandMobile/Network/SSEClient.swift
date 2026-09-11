@@ -1,8 +1,9 @@
 import Foundation
+import Network
 
 /// Receives bounded UTF-8 events through the same authenticated transport as pairing.
 final class SSEClient: @unchecked Sendable {
-    private let baseURL: URL
+    private let endpoint: NWEndpoint
     private let credentials: WatchCredentials
     private var stream: WatchHTTPStream?
     private var buffer = Data()
@@ -12,14 +13,14 @@ final class SSEClient: @unchecked Sendable {
     var onDisconnect: (@MainActor () -> Void)?
     var onUnauthorized: (@MainActor () -> Void)?
 
-    init(baseURL: URL, credentials: WatchCredentials) {
-        self.baseURL = baseURL
+    init(endpoint: NWEndpoint, credentials: WatchCredentials) {
+        self.endpoint = endpoint
         self.credentials = credentials
     }
 
     func connect() {
         do {
-            let stream = try WatchHTTPStream(baseURL: baseURL, key: credentials.key)
+            let stream = try WatchHTTPStream(endpoint: endpoint, key: credentials.key)
             self.stream = stream
             stream.start(path: "events", token: credentials.token, onResponse: { [weak self] status in
                 self?.accepted = status == 200

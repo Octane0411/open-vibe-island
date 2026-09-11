@@ -1,4 +1,5 @@
 import Foundation
+import Network
 
 public struct WatchHTTPResponse: Sendable {
     public let status: Int
@@ -11,6 +12,20 @@ public enum WatchHTTPClient {
         token: String? = nil, body: Data = Data()
     ) async throws -> WatchHTTPResponse {
         let stream = try WatchHTTPStream(baseURL: baseURL, key: key)
+        return try await request(stream: stream, path: path, method: method, token: token, body: body)
+    }
+
+    public static func request(
+        endpoint: NWEndpoint, key: Data, path: String, method: String = "GET",
+        token: String? = nil, body: Data = Data()
+    ) async throws -> WatchHTTPResponse {
+        let stream = try WatchHTTPStream(endpoint: endpoint, key: key)
+        return try await request(stream: stream, path: path, method: method, token: token, body: body)
+    }
+
+    private static func request(
+        stream: WatchHTTPStream, path: String, method: String, token: String?, body: Data
+    ) async throws -> WatchHTTPResponse {
         let collector = WatchResponseCollector(stream: stream)
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in

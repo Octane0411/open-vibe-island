@@ -13,14 +13,18 @@ public final class WatchHTTPStream: @unchecked Sendable {
     private var dataHandler: (@Sendable (Data) -> Void)?
     private var completionHandler: (@Sendable ((any Error)?) -> Void)?
 
-    public init(baseURL: URL, key: Data) throws {
+    public convenience init(baseURL: URL, key: Data) throws {
         guard baseURL.scheme == "https", let host = baseURL.host,
               let portNumber = baseURL.port, let port = NWEndpoint.Port(rawValue: UInt16(exactly: portNumber) ?? 0),
               portNumber > 0 else { throw WatchTransportError.invalidResponse }
-        connection = NWConnection(
-            host: NWEndpoint.Host(host.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))),
-            port: port, using: try WatchSecureTransport.parameters(key: key)
+        let endpoint = NWEndpoint.hostPort(
+            host: NWEndpoint.Host(host.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))), port: port
         )
+        try self.init(endpoint: endpoint, key: key)
+    }
+
+    public init(endpoint: NWEndpoint, key: Data) throws {
+        connection = NWConnection(to: endpoint, using: try WatchSecureTransport.parameters(key: key))
     }
 
     public func start(
