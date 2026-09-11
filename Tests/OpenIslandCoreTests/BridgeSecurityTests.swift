@@ -23,6 +23,16 @@ struct BridgeSecurityTests {
         #expect(!BridgeSocketSecurity.isCurrentUser(-1))
     }
 
+    @Test func createsMissingCustomSocketDirectoryPrivately() throws {
+        let directory = URL(fileURLWithPath: "/tmp/oi-security-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let descriptor = try BridgeSocketSecurity.listen(at: directory.appendingPathComponent("bridge.sock"))
+        defer { close(descriptor) }
+        var attributes = stat()
+        #expect(lstat(directory.path, &attributes) == 0)
+        #expect(attributes.st_mode & 0o777 == 0o700)
+    }
+
     @Test func socketCannotApproveEvenWhenRegisteredAsObserver() async throws {
         let url = BridgeSocketLocation.uniqueTestURL()
         let server = BridgeServer(socketURL: url)

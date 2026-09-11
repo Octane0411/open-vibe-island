@@ -28,11 +28,11 @@ enum BridgeSocketSecurity {
 
     private static func preparePath(_ url: URL) throws {
         let parent = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(
+            at: parent, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
         if url == BridgeSocketLocation.defaultURL {
-            try FileManager.default.createDirectory(
-                at: parent, withIntermediateDirectories: true,
-                attributes: [.posixPermissions: 0o700]
-            )
             var directory = stat()
             guard lstat(parent.path, &directory) == 0,
                   directory.st_uid == geteuid(),
