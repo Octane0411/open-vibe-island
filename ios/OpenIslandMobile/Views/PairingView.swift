@@ -135,14 +135,9 @@ struct PairingView: View {
                         .keyboardType(.decimalPad)
                     TextField("端口", text: $manualPort)
                         .keyboardType(.numberPad)
-                    TextField("4 位配对码", text: $manualCode)
-                        .keyboardType(.numberPad)
-                        .onChange(of: manualCode) { _, newValue in
-                            let filtered = String(newValue.filter(\.isNumber).prefix(4))
-                            if filtered != newValue {
-                                manualCode = filtered
-                            }
-                        }
+                    SecureField("粘贴配对密钥", text: $manualCode)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
                 } footer: {
                     Text("Bonjour 无法发现时（如热点、AP 隔离），可手动输入 Mac 的 IP 和端口。")
                 }
@@ -170,7 +165,7 @@ struct PairingView: View {
                                 .frame(maxWidth: .infinity)
                         }
                     }
-                    .disabled(manualHost.isEmpty || manualCode.count != 4 || isManualPairing)
+                    .disabled(manualHost.isEmpty || (try? WatchPairingCode(manualCode)) == nil || isManualPairing)
                 }
             }
             .navigationTitle("手动连接")
@@ -223,23 +218,16 @@ struct PairingView: View {
             }
 
             VStack(spacing: 12) {
-                Text("请输入 Mac 上显示的 4 位配对码")
+                Text("在 Mac 上点击“配对新设备”，复制密钥后粘贴到这里。密钥仅有效两分钟。")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
-                TextField("0000", text: $pairingCode)
-                    .keyboardType(.numberPad)
-                    .font(.system(size: 36, weight: .bold, design: .monospaced))
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 200)
+                SecureField("粘贴配对密钥", text: $pairingCode)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
                     .textFieldStyle(.roundedBorder)
-                    .onChange(of: pairingCode) { _, newValue in
-                        // Limit to 4 digits
-                        let filtered = String(newValue.filter(\.isNumber).prefix(4))
-                        if filtered != newValue {
-                            pairingCode = filtered
-                        }
-                    }
+                    .padding(.horizontal)
+
             }
 
             if let errorMessage {
@@ -260,7 +248,7 @@ struct PairingView: View {
                 }
             }
             .buttonStyle(.borderedProminent)
-            .disabled(pairingCode.count != 4 || isPairing)
+            .disabled((try? WatchPairingCode(pairingCode)) == nil || isPairing)
             .padding(.horizontal, 40)
 
             Button("选择其他 Mac") {

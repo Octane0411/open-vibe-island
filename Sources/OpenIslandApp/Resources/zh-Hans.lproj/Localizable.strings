@@ -226,3 +226,16 @@
 
 /* Window Titles */
 "window.settings" = "Open Island 设置";
+
+// Secure phone pairing
+"watch.title" = "手表";
+"watch.enabled" = "手表通知";
+"watch.networkDescription" = "通过加密连接与同一 Wi-Fi 网络上的 iPhone 通信，无需 SSH。";
+"watch.pairing" = "配对";
+"watch.pairNewDevice" = "配对新设备";
+"watch.copyKey" = "复制配对密钥";
+"watch.pairingInstructions" = "将密钥粘贴到 iPhone 应用中。密钥仅可使用一次，2 分钟后失效。仅与受信任的设备共享。";
+"watch.devices" = "设备";
+"watch.connected" = "iPhone 已连接";
+"watch.disconnected" = "没有已连接的设备";
+"watch.revoke" = "撤销所有配对";

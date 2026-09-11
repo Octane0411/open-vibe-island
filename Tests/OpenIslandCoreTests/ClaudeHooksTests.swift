@@ -507,7 +507,7 @@ struct ClaudeHooksTests {
             Issue.record("Expected a Claude permission request event")
         }
 
-        try await observer.send(.resolvePermission(sessionID: "claude-session-1", resolution: .allowOnce()))
+        server.performUserAction(.resolvePermission(sessionID: "claude-session-1", resolution: .allowOnce()))
 
         let response = try await responseTask
         guard case let .some(.claudeHookDirective(.permissionRequest(.allow(updatedInput, updatedPermissions)))) = response else {
@@ -589,7 +589,7 @@ struct ClaudeHooksTests {
             Issue.record("Expected a Claude AskUserQuestion event")
         }
 
-        try await observer.send(
+        server.performUserAction(
             .answerQuestion(
                 sessionID: "claude-session-question",
                 response: QuestionPromptResponse(

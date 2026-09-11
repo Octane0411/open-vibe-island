@@ -1,146 +1,62 @@
 import Foundation
-import os
 
-/// Parses and delivers Server-Sent Events from the macOS WatchHTTPEndpoint.
-final class SSEClient: NSObject, @unchecked Sendable {
-    private static let logger = Logger(subsystem: "app.openisland.mobile", category: "SSEClient")
-
+/// Receives bounded UTF-8 events through the same authenticated transport as pairing.
+final class SSEClient: @unchecked Sendable {
     private let baseURL: URL
-    private let token: String
-    private var task: URLSessionDataTask?
-    private var session: URLSession?
-    private var buffer = ""
+    private let credentials: WatchCredentials
+    private var stream: WatchHTTPStream?
+    private var buffer = Data()
+    private var accepted = false
 
-    /// Called on main queue when an SSE event is received.
     var onEvent: (@MainActor (String, Data) -> Void)?
-
-    /// Called on main queue when the connection is lost.
     var onDisconnect: (@MainActor () -> Void)?
-
-    /// Called on main queue when a 401 Unauthorized response is received.
     var onUnauthorized: (@MainActor () -> Void)?
 
-    init(baseURL: URL, token: String) {
+    init(baseURL: URL, credentials: WatchCredentials) {
         self.baseURL = baseURL
-        self.token = token
-        super.init()
+        self.credentials = credentials
     }
 
     func connect() {
-        disconnect()
-
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = .infinity
-        config.timeoutIntervalForResource = .infinity
-
-        let urlSession = URLSession(configuration: config, delegate: self, delegateQueue: nil)
-        self.session = urlSession
-
-        var request = URLRequest(url: baseURL.appendingPathComponent("events"))
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-
-        let task = urlSession.dataTask(with: request)
-        self.task = task
-        task.resume()
-
-        Self.logger.info("SSE connecting to \(self.baseURL.absoluteString)/events")
-    }
-
-    func disconnect() {
-        task?.cancel()
-        task = nil
-        session?.invalidateAndCancel()
-        session = nil
-        buffer = ""
-    }
-
-    // MARK: - SSE Parsing
-
-    private func processBuffer() {
-        // SSE format: "event: <type>\ndata: <json>\n\n"
-        while let range = buffer.range(of: "\n\n") {
-            let block = String(buffer[buffer.startIndex..<range.lowerBound])
-            buffer = String(buffer[range.upperBound...])
-
-            parseSSEBlock(block)
+        do {
+            let stream = try WatchHTTPStream(baseURL: baseURL, key: credentials.key)
+            self.stream = stream
+            stream.start(path: "events", token: credentials.token, onResponse: { [weak self] status in
+                self?.accepted = status == 200
+                if status == 401 {
+                    let handler = self?.onUnauthorized
+                    Task { @MainActor in handler?() }
+                }
+                if status != 200 { self?.stream?.cancel() }
+            }, onData: { [weak self] in self?.receive($0) }, onComplete: { [weak self] _ in
+                let handler = self?.onDisconnect
+                Task { @MainActor in handler?() }
+            })
+        } catch {
+            let handler = onDisconnect
+            Task { @MainActor in handler?() }
         }
     }
 
-    private func parseSSEBlock(_ block: String) {
-        var eventType: String?
-        var dataLines: [String] = []
+    func disconnect() { stream?.cancel() }
 
-        for line in block.components(separatedBy: "\n") {
-            if line.hasPrefix("event: ") {
-                eventType = String(line.dropFirst("event: ".count))
-            } else if line.hasPrefix("data: ") {
-                dataLines.append(String(line.dropFirst("data: ".count)))
-            } else if line == "data" {
-                // Bare "data" field per SSE spec = empty line in payload
-                dataLines.append("")
-            } else if line.hasPrefix(":") {
-                // Comment line (keepalive), ignore
-                continue
-            }
-        }
-
-        guard let eventType, !dataLines.isEmpty else {
-            return
-        }
-
-        // SSE spec: multiple data lines are joined with "\n"
-        let dataString = dataLines.joined(separator: "\n")
-        guard let data = dataString.data(using: .utf8) else {
-            return
-        }
-
-        Self.logger.info("SSE received event: \(eventType)")
-
-        let handler = self.onEvent
-        Task { @MainActor in
-            handler?(eventType, data)
+    private func receive(_ bytes: Data) {
+        guard accepted else { return }
+        buffer.append(bytes)
+        guard buffer.count <= 262_144 else { stream?.cancel(); return }
+        while let separator = buffer.range(of: Data("\n\n".utf8)) {
+            let block = Data(buffer[..<separator.lowerBound])
+            buffer.removeSubrange(..<separator.upperBound)
+            guard let text = String(data: block, encoding: .utf8) else { stream?.cancel(); return }
+            deliver(text)
         }
     }
-}
 
-// MARK: - URLSessionDataDelegate
-
-extension SSEClient: URLSessionDataDelegate {
-    func urlSession(
-        _ session: URLSession,
-        dataTask: URLSessionDataTask,
-        didReceive response: URLResponse,
-        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
-    ) {
-        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 401 {
-            Self.logger.warning("SSE received 401 Unauthorized")
-            let handler = self.onUnauthorized
-            Task { @MainActor in
-                handler?()
-            }
-            completionHandler(.cancel)
-            return
-        }
-        completionHandler(.allow)
-    }
-
-    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        guard let text = String(data: data, encoding: .utf8) else { return }
-        buffer += text
-        processBuffer()
-    }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if let error {
-            Self.logger.warning("SSE connection ended: \(error.localizedDescription)")
-        } else {
-            Self.logger.info("SSE connection completed")
-        }
-
-        let handler = self.onDisconnect
-        Task { @MainActor in
-            handler?()
-        }
+    private func deliver(_ block: String) {
+        let lines = block.components(separatedBy: "\n")
+        guard let type = lines.first(where: { $0.hasPrefix("event: ") })?.dropFirst(7) else { return }
+        let payload = lines.filter { $0.hasPrefix("data: ") }.map { String($0.dropFirst(6)) }.joined(separator: "\n")
+        let handler = onEvent
+        Task { @MainActor in handler?(String(type), Data(payload.utf8)) }
     }
 }
