@@ -29,7 +29,7 @@ run_step() {
             ;;
         build)
             echo "==> build"
-            swift build
+            swift build --disable-automatic-resolution
             ;;
         smoke)
             echo "==> smoke"
