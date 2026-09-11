@@ -52,7 +52,7 @@ final class AppModel {
             _cachedSessionBuckets = nil
             pruneAgentsGridObservationTicketsIfNeeded()
             bridgeServer.updateStateSnapshot(state)
-            watchRelay?.endpoint.setActiveSessionCount(state.sessions.count)
+            watchRelay?.endpoint.setActiveSessionCount(state.liveSessionCount)
         }
     }
     @ObservationIgnored private var _cachedSessionBuckets: (primary: [AgentSession], overflow: [AgentSession])?
@@ -485,7 +485,7 @@ final class AppModel {
 
     /// Current pairing code for display in the settings UI.
     var watchPairingCode: String {
-        watchRelay?.endpoint.currentCode() ?? "----"
+        watchRelay?.endpoint.currentCode() ?? ""
     }
 
     /// Number of currently connected iPhone SSE clients.
@@ -518,7 +518,7 @@ final class AppModel {
             }
         }
 
-        relay.endpoint.setActiveSessionCount(state.sessions.count)
+        relay.endpoint.setActiveSessionCount(state.liveSessionCount)
     }
 
     private func stopWatchRelay() {

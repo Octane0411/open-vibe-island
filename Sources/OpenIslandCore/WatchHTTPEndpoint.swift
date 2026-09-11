@@ -29,6 +29,7 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
 
     // Listener
     private var listener: NWListener?
+    private let listenerFactory: @Sendable (NWParameters) throws -> NWListener
 
     // Callbacks
     public var onResolution: WatchResolutionHandler?
@@ -44,7 +45,11 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
     }
     public var connectedDeviceCount: Int { queue.sync { sseConnections.count } }
 
-    public init() {}
+    public init() { listenerFactory = { try NWListener(using: $0) } }
+
+    init(listenerFactory: @escaping @Sendable (NWParameters) throws -> NWListener) {
+        self.listenerFactory = listenerFactory
+    }
 
     // MARK: - Lifecycle
 
@@ -111,7 +116,7 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
         do {
             guard running, listener == nil else { return }
             let params = try WatchSecureTransport.parameters(key: pairing.transportKey)
-            let listener = try NWListener(using: params)
+            let listener = try listenerFactory(params)
 
             // Bonjour advertising
             listener.service = NWListener.Service(
@@ -119,31 +124,36 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
                 type: Self.serviceType
             )
 
-            listener.stateUpdateHandler = { [weak self] state in
-                switch state {
-                case .ready:
-                    if let port = self?.listener?.port {
-                        Self.logger.info("WatchHTTPEndpoint listening on port \(port.rawValue)")
-                    }
-                case let .failed(error):
-                    Self.logger.error("WatchHTTPEndpoint listener failed: \(error.localizedDescription)")
-                    self?.listener?.cancel()
-                    self?.listener = nil
-                case .cancelled:
-                    Self.logger.info("WatchHTTPEndpoint listener cancelled")
-                default:
-                    break
-                }
-            }
-
+            observeListener(listener)
             listener.newConnectionHandler = { [weak self] connection in
                 self?.handleNewConnection(connection)
             }
 
-            listener.start(queue: queue)
             self.listener = listener
+            listener.start(queue: queue)
         } catch {
             Self.logger.error("Failed to create NWListener: \(error.localizedDescription)")
+            running = false
+            cancelConnections()
+        }
+    }
+
+    private func observeListener(_ listener: NWListener) {
+        listener.stateUpdateHandler = { [weak self, weak listener] state in
+            guard let self, let listener, self.listener === listener else { return }
+            switch state {
+            case .ready:
+                if let port = listener.port {
+                    Self.logger.info("WatchHTTPEndpoint listening on port \(port.rawValue)")
+                }
+            case let .failed(error):
+                Self.logger.error("WatchHTTPEndpoint listener failed: \(error.localizedDescription)")
+                self.running = false
+                self.cancelConnections()
+            case .cancelled:
+                Self.logger.info("WatchHTTPEndpoint listener cancelled")
+            default: break
+            }
         }
     }
 
@@ -204,16 +214,26 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
             return
         }
 
-        guard let token = pairing.pair(secret: request.code) else {
-            sendHTTPResponse(connection: connection, status: "403 Forbidden", body: #"{"error":"pairing closed or invalid key"}"#)
-            return
+        do {
+            let token = try pairing.pair(secret: request.code)
+            let response = try JSONEncoder().encode(WatchPairResponse(token: token))
+            sendHTTPResponse(connection: connection, status: "200 OK", body: String(decoding: response, as: UTF8.self))
+        } catch let failure as WatchPairingFailure {
+            sendPairingFailure(failure, connection: connection)
+        } catch {
+            sendHTTPResponse(connection: connection, status: "500 Internal Server Error", body: #"{"error":"pairing failed"}"#)
         }
+    }
 
-        let response = WatchPairResponse(token: token)
-        if let responseData = try? JSONEncoder().encode(response),
-           let responseString = String(data: responseData, encoding: .utf8) {
-            sendHTTPResponse(connection: connection, status: "200 OK", body: responseString)
+    private func sendPairingFailure(_ failure: WatchPairingFailure, connection: NWConnection) {
+        let status = switch failure {
+        case .invalidCode, .pairingClosed: "403 Forbidden"
+        case .codeExpired: "410 Gone"
+        case .attemptsExhausted: "429 Too Many Requests"
+        case .codeUsed: "409 Conflict"
         }
+        guard let data = try? JSONEncoder().encode(WatchPairingFailureResponse(error: failure)) else { return }
+        sendHTTPResponse(connection: connection, status: status, body: String(decoding: data, as: UTF8.self))
     }
 
     private func handleEventsSSE(headers: [String: String], connection: NWConnection) {

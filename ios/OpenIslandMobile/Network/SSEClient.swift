@@ -10,6 +10,7 @@ final class SSEClient: @unchecked Sendable {
     private var accepted = false
 
     var onEvent: (@MainActor (String, Data) -> Void)?
+    var onConnected: (@MainActor () -> Void)?
     var onDisconnect: (@MainActor () -> Void)?
     var onUnauthorized: (@MainActor () -> Void)?
 
@@ -24,6 +25,10 @@ final class SSEClient: @unchecked Sendable {
             self.stream = stream
             stream.start(path: "events", token: credentials.token, onResponse: { [weak self] status in
                 self?.accepted = status == 200
+                if status == 200 {
+                    let handler = self?.onConnected
+                    Task { @MainActor in handler?() }
+                }
                 if status == 401 {
                     let handler = self?.onUnauthorized
                     Task { @MainActor in handler?() }

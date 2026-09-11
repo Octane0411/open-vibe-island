@@ -15,7 +15,7 @@ struct WatchBonjourTransportTests {
     }
 }
 
-private final class BonjourTransportTestServer: @unchecked Sendable {
+final class BonjourTransportTestServer: @unchecked Sendable {
     let key = WatchSecureTransport.randomSecret()
     let ready = SecurityRecorder<Bool>()
     let requests = SecurityRecorder<String>()
@@ -23,8 +23,15 @@ private final class BonjourTransportTestServer: @unchecked Sendable {
     private let listener: NWListener
     private let queue = DispatchQueue(label: "open-island.test.bonjour")
     private var connections: [NWConnection] = []
+    private let reply: Data
+    private let closesAfterReply: Bool
 
-    init() throws {
+    init(
+        reply: Data = Data("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}".utf8),
+        closesAfterReply: Bool = true
+    ) throws {
+        self.reply = reply
+        self.closesAfterReply = closesAfterReply
         let name = "open-island-test-\(UUID().uuidString)"
         endpoint = .service(name: name, type: WatchSecureTransport.serviceType, domain: "local.", interface: nil)
         listener = try NWListener(using: WatchSecureTransport.parameters(key: key))
@@ -61,8 +68,9 @@ private final class BonjourTransportTestServer: @unchecked Sendable {
                 return
             }
             self.requests.append(String(decoding: bytes, as: UTF8.self))
-            let reply = Data("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}".utf8)
-            connection.send(content: reply, completion: .contentProcessed { _ in connection.cancel() })
+            connection.send(content: self.reply, completion: .contentProcessed { [weak self] _ in
+                if self?.closesAfterReply == true { connection.cancel() }
+            })
         }
     }
 }

@@ -32,7 +32,7 @@ public enum WatchSecureTransport {
     }
 }
 
-public struct WatchPairingCode: Sendable {
+public struct WatchPairingCode: Sendable, Codable {
     public let key: Data
     public let secret: String
 
@@ -53,6 +53,25 @@ public struct WatchPairingCode: Sendable {
     }
 
     public var text: String { "OI2.\(key.base64EncodedString()).\(secret)" }
+
+    public init(from decoder: any Decoder) throws {
+        try self.init(decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(text)
+    }
+}
+
+/// Pairing failures sent only after the client authenticates the encrypted transport.
+public enum WatchPairingFailure: String, Error, Codable, Sendable {
+    case invalidCode, pairingClosed, codeExpired, attemptsExhausted, codeUsed
+}
+
+public struct WatchPairingFailureResponse: Codable, Sendable {
+    public let error: WatchPairingFailure
+    public init(error: WatchPairingFailure) { self.error = error }
 }
 
 public enum WatchTransportError: Error, LocalizedError {

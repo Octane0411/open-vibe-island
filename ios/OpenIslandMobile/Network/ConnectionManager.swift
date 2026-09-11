@@ -261,10 +261,19 @@ final class ConnectionManager: ObservableObject {
     private func completePairing(endpoint: NWEndpoint, name: String, pairing: WatchPairingCode) async throws {
         let body = try JSONEncoder().encode(WatchPairRequest(code: pairing.secret))
         let response = try await WatchHTTPClient.request(endpoint: endpoint, key: pairing.key, path: "pair", method: "POST", body: body)
-        guard response.status == 200 else { throw PairingError.invalidCode }
+        guard response.status == 200 else {
+            if let failure = try? JSONDecoder().decode(WatchPairingFailureResponse.self, from: response.body) {
+                throw PairingError.rejected(failure.error)
+            }
+            throw PairingError.serverError(response.status)
+        }
         let reply = try JSONDecoder().decode(WatchPairResponse.self, from: response.body)
         let credentials = WatchCredentials(token: reply.token, key: pairing.key)
-        try WatchCredentialStore.save(credentials)
+        do {
+            try WatchCredentialStore.save(credentials)
+        } catch {
+            throw PairingError.credentialStorageFailed
+        }
         self.credentials = credentials
         connectionEndpoint = endpoint
         savedMacName = name
@@ -289,8 +298,23 @@ final class ConnectionManager: ObservableObject {
             guard let self, self.sseClient === client else { return }
             self.handleSSEEvent(eventType: eventType, data: data)
         }
+        observeSSELifecycle(client)
+        self.sseClient = client
+        state = .paired
+        client.connect()
+    }
+
+    private func observeSSELifecycle(_ client: SSEClient) {
+        client.onConnected = { [weak self, weak client] in
+            guard let self, self.sseClient === client else { return }
+            self.reconnectTask?.cancel()
+            self.reconnectTask = nil
+            self.state = .connected
+            self.connectionError = nil
+        }
         client.onDisconnect = { [weak self, weak client] in
             guard let self, self.sseClient === client else { return }
+            self.sseClient = nil
             self.handleSSEDisconnect()
         }
         client.onUnauthorized = { [weak self, weak client] in
@@ -299,11 +323,6 @@ final class ConnectionManager: ObservableObject {
             self.handleTokenExpired()
         }
 
-        self.sseClient = client
-        client.connect()
-        state = .connected
-        connectionError = nil
-        Self.logger.info("SSE connected")
     }
 
     private func handleSSEEvent(eventType: String, data: Data) {
@@ -496,6 +515,8 @@ enum PairingError: LocalizedError {
     case resolutionFailed
     case notConnected
     case tokenExpired
+    case rejected(WatchPairingFailure)
+    case credentialStorageFailed
 
     var errorDescription: String? {
         switch self {
@@ -506,6 +527,15 @@ enum PairingError: LocalizedError {
         case .resolutionFailed: return "无法解析 Mac 地址"
         case .notConnected: return "未连接到 Mac"
         case .tokenExpired: return "配对已过期，请重新配对"
+        case .credentialStorageFailed: return "配对密钥未能保存，刚才的密钥已使用。请在 Mac 上生成新的配对密钥后重试。"
+        case let .rejected(failure):
+            switch failure {
+            case .invalidCode: return "配对密钥错误，请检查是否复制完整"
+            case .pairingClosed: return "配对未开启，请在 Mac 上点击“配对新设备”"
+            case .codeExpired: return "配对密钥已过期，请在 Mac 上生成新的密钥"
+            case .attemptsExhausted: return "配对尝试次数已用尽，请在 Mac 上生成新的密钥"
+            case .codeUsed: return "配对密钥已使用，请在 Mac 上生成新的密钥"
+            }
         }
     }
 }

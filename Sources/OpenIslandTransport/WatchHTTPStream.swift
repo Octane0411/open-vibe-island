@@ -52,6 +52,13 @@ public final class WatchHTTPStream: @unchecked Sendable {
         queue.async { [self] in finish(CancellationError()) }
     }
 
+    /// A response deadline is distinct from cancellation requested by the caller.
+    func timeout(after interval: TimeInterval) {
+        queue.asyncAfter(deadline: .now() + interval) { [weak self] in
+            self?.finish(WatchTransportError.timedOut)
+        }
+    }
+
     private func connect(_ request: Data) {
         connection.stateUpdateHandler = { [weak self] state in
             guard let self, !self.finished else { return }
@@ -60,7 +67,8 @@ public final class WatchHTTPStream: @unchecked Sendable {
                 self.connection.send(content: request, completion: .contentProcessed { [weak self] error in
                     if let error { self?.finish(error) } else { self?.receive() }
                 })
-            case let .failed(error), let .waiting(error): self.finish(error)
+            case let .failed(error): self.finish(error)
+            case .waiting: break
             case .cancelled: self.finish(CancellationError())
             default: break
             }
@@ -87,7 +95,10 @@ public final class WatchHTTPStream: @unchecked Sendable {
         headerBuffer.append(data)
         guard headerBuffer.count <= 65_536 else { finish(WatchTransportError.oversizedMessage); return }
         guard let separator = headerBuffer.range(of: Data("\r\n\r\n".utf8)) else { return }
-        let header = String(decoding: headerBuffer[..<separator.lowerBound], as: UTF8.self)
+        guard let header = String(bytes: headerBuffer[..<separator.lowerBound], encoding: .utf8) else {
+            finish(WatchTransportError.invalidResponse)
+            return
+        }
         let parts = header.components(separatedBy: "\r\n").first?.split(separator: " ") ?? []
         guard parts.count >= 2, parts[0] == "HTTP/1.1", let status = Int(parts[1]),
               !header.lowercased().contains("transfer-encoding:") else {

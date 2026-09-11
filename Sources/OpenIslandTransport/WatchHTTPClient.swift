@@ -62,6 +62,6 @@ private final class WatchResponseCollector: @unchecked Sendable {
             else if let error { continuation.resume(throwing: error) }
             else { continuation.resume(returning: WatchHTTPResponse(status: status, body: data)) }
         })
-        DispatchQueue.global().asyncAfter(deadline: .now() + 15) { [weak stream] in stream?.cancel() }
+        stream.timeout(after: 15)
     }
 }

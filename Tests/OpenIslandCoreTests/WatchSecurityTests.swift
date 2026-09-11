@@ -5,22 +5,31 @@ import Testing
 import OpenIslandTransport
 
 struct WatchSecurityTests {
-    @Test func pairingIsExplicitExpiringLimitedAndSingleUse() throws {
+    @Test func pairingIsExplicitAndExpires() throws {
         var state = WatchPairingState()
         let now = Date(timeIntervalSince1970: 1_000)
         #expect(state.currentCode(now: now).isEmpty)
-        #expect(state.pair(secret: "0000", now: now) == nil)
+        #expect(throws: WatchPairingFailure.pairingClosed) { try state.pair(secret: "0000", now: now) }
         let expired = try WatchPairingCode(state.begin(now: now))
-        #expect(state.pair(secret: expired.secret, now: now.addingTimeInterval(120)) == nil)
+        #expect(throws: WatchPairingFailure.codeExpired) {
+            try state.pair(secret: expired.secret, now: now.addingTimeInterval(120))
+        }
         #expect(state.currentCode(now: now.addingTimeInterval(121)).isEmpty)
+    }
+
+    @Test func pairingIsLimitedSingleUseAndRevocable() throws {
+        var state = WatchPairingState()
+        let now = Date(timeIntervalSince1970: 1_000)
         let limited = try WatchPairingCode(state.begin(now: now))
-        for _ in 0..<5 { #expect(state.pair(secret: "wrong", now: now) == nil) }
-        #expect(state.pair(secret: limited.secret, now: now) == nil)
+        for _ in 0..<4 {
+            #expect(throws: WatchPairingFailure.invalidCode) { try state.pair(secret: "wrong", now: now) }
+        }
+        #expect(throws: WatchPairingFailure.attemptsExhausted) { try state.pair(secret: "wrong", now: now) }
+        #expect(throws: WatchPairingFailure.attemptsExhausted) { try state.pair(secret: limited.secret, now: now) }
         let valid = try WatchPairingCode(state.begin(now: now))
-        let pairedToken = state.pair(secret: valid.secret, now: now)
-        let token = try #require(pairedToken)
+        let token = try state.pair(secret: valid.secret, now: now)
         #expect(Data(base64Encoded: token)?.count == 32)
-        #expect(state.pair(secret: valid.secret, now: now) == nil)
+        #expect(throws: WatchPairingFailure.codeUsed) { try state.pair(secret: valid.secret, now: now) }
         state.revoke()
         #expect(state.tokens.isEmpty)
         #expect(state.transportKey != valid.key)
@@ -78,7 +87,8 @@ private func pair(_ endpoint: WatchHTTPEndpoint, url: URL, code: WatchPairingCod
     #expect(reply.status == 200)
     #expect(endpoint.currentCode().isEmpty)
     let replay = try await WatchHTTPClient.request(baseURL: url, key: code.key, path: "pair", method: "POST", body: body)
-    #expect(replay.status == 403)
+    #expect(replay.status == 409)
+    #expect(try JSONDecoder().decode(WatchPairingFailureResponse.self, from: replay.body).error == .codeUsed)
     return try JSONDecoder().decode(WatchPairResponse.self, from: reply.body).token
 }
 

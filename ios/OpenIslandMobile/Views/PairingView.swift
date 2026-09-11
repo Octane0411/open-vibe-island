@@ -142,7 +142,7 @@ struct PairingView: View {
                     Text("Bonjour 无法发现时（如热点、AP 隔离），可手动输入 Mac 的 IP 和端口。")
                 }
 
-                if let manualError {
+                if let manualError = formatError(for: manualCode) ?? manualError {
                     Section {
                         Text(manualError)
                             .foregroundStyle(.red)
@@ -230,7 +230,7 @@ struct PairingView: View {
 
             }
 
-            if let errorMessage {
+            if let errorMessage = formatError(for: pairingCode) ?? errorMessage {
                 Text(errorMessage)
                     .font(.subheadline)
                     .foregroundStyle(.red)
@@ -264,6 +264,11 @@ struct PairingView: View {
     }
 
     // MARK: - Pairing
+
+    private func formatError(for code: String) -> String? {
+        guard !code.isEmpty, (try? WatchPairingCode(code)) == nil else { return nil }
+        return "配对密钥格式不完整或无效，请从 Mac 复制完整密钥。"
+    }
 
     private func performPairing() {
         guard let mac = selectedMac else { return }
