@@ -130,6 +130,53 @@ struct HermesTmuxRuntimeContextTests {
         #expect(resolved.terminalTTY == "/dev/ttys014")
         #expect(resolved.terminalSessionID == nil)
     }
+
+    @Test
+    func tmuxPaneIDFastPathSkipsProcessChainProbing() {
+        let payload = HermesHookPayload(
+            hookEventName: .postLLMCall,
+            sessionID: "s5",
+            cwd: "/tmp/work",
+            extra: nil
+        )
+
+        var envWithPaneID = env
+        envWithPaneID["TMUX_PANE"] = "%240"
+
+        let resolved = payload.withRuntimeContext(
+            environment: envWithPaneID,
+            currentTTYProvider: {
+                Issue.record("TTY probing must be skipped when $TMUX_PANE resolves the pane")
+                return "/dev/ttys999"
+            },
+            terminalLocatorProvider: { _ in
+                Issue.record("AppleScript locator must not run for tmux sessions")
+                return (sessionID: "wrong", tty: "/dev/ttys999", title: "wrong")
+            },
+            tmuxResolverProvider: {
+                PaneIDStubbedTmuxPaneResolver(
+                    paneID: "%240",
+                    paneTarget: "binance-strategy-platform-agent:6.1",
+                    paneTTY: "/dev/ttys003",
+                    hostApp: "VS Code"
+                )
+            },
+            ancestorTTYProvider: { _ in
+                Issue.record("ancestor TTY probing must be skipped when $TMUX_PANE resolves the pane")
+                return []
+            },
+            parentPIDProvider: {
+                Issue.record("ancestor PID probing must be skipped when $TMUX_PANE resolves the pane")
+                return []
+            }
+        )
+
+        #expect(resolved.tmuxTarget == "binance-strategy-platform-agent:6.1")
+        #expect(resolved.terminalTTY == "/dev/ttys003")
+        #expect(resolved.terminalApp == "VS Code")
+        #expect(resolved.terminalSessionID == nil)
+        #expect(resolved.terminalTitle == nil)
+    }
 }
 
 /// Test double returning fixed pane/host results without touching tmux or ps.
@@ -157,6 +204,28 @@ private struct AncestorStubbedTmuxPaneResolver: TmuxPaneResolverProtocol {
 
     func pane(forTTY tty: String) -> TmuxPaneResolver.Pane? {
         paneTTys.contains(tty) ? TmuxPaneResolver.Pane(target: paneTarget) : nil
+    }
+
+    func hostTerminalApp(forSession session: String? = nil) -> String? {
+        hostApp
+    }
+}
+
+/// Stub that only answers the `$TMUX_PANE` fast path, to prove that no TTY or
+/// process-chain probing happens when the pane identifier is available.
+private struct PaneIDStubbedTmuxPaneResolver: TmuxPaneResolverProtocol {
+    let paneID: String
+    let paneTarget: String
+    let paneTTY: String
+    let hostApp: String?
+    let socketPath: String? = nil
+
+    func pane(forTTY tty: String) -> TmuxPaneResolver.Pane? {
+        nil
+    }
+
+    func pane(forPaneID paneID: String) -> TmuxPaneResolver.Pane? {
+        paneID == self.paneID ? TmuxPaneResolver.Pane(target: paneTarget, tty: paneTTY) : nil
     }
 
     func hostTerminalApp(forSession session: String? = nil) -> String? {

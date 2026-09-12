@@ -4,29 +4,10 @@ public extension ProcessInfo {
     /// Parent PID of the given process, via `ps`. Returns nil when the lookup
     /// fails or the process has exited.
     func parentPID(of pid: Int) -> Int? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/ps")
-        process.arguments = ["-p", "\(pid)", "-o", "ppid="]
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return nil
-        }
-
-        guard process.terminationStatus == 0 else {
-            return nil
-        }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let output = String(data: data, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-            !output.isEmpty else {
+        guard let output = SubprocessRunner.output(
+            executablePath: "/bin/ps",
+            arguments: ["-p", "\(pid)", "-o", "ppid="]
+        ) else {
             return nil
         }
 
@@ -43,15 +24,27 @@ public extension ProcessInfo {
 /// process chain instead of the environment.
 public protocol TmuxPaneResolverProtocol: Sendable {
     func pane(forTTY tty: String) -> TmuxPaneResolver.Pane?
+    func pane(forPaneID paneID: String) -> TmuxPaneResolver.Pane?
     func hostTerminalApp(forSession session: String?) -> String?
     var socketPath: String? { get }
+}
+
+public extension TmuxPaneResolverProtocol {
+    /// Pane named by a `$TMUX_PANE` identifier. Resolvers that only match by
+    /// TTY keep returning nil here; the caller falls back to TTY probing.
+    func pane(forPaneID paneID: String) -> TmuxPaneResolver.Pane? {
+        nil
+    }
 }
 
 public struct TmuxPaneResolver: TmuxPaneResolverProtocol {
     public struct Pane: Equatable, Sendable {
         public var target: String
-        public init(target: String) {
+        public var tty: String?
+
+        public init(target: String, tty: String? = nil) {
             self.target = target
+            self.tty = tty
         }
     }
 
@@ -118,6 +111,25 @@ public struct TmuxPaneResolver: TmuxPaneResolverProtocol {
         return nil
     }
 
+    /// Pane named by `$TMUX_PANE`, resolved with a single `display-message`
+    /// call that also returns the pane's TTY.
+    public func pane(forPaneID paneID: String) -> Pane? {
+        guard let output = run([
+            "display-message", "-p", "-t", paneID,
+            "#{session_name}:#{window_index}.#{pane_index}\t#{pane_tty}",
+        ]) else {
+            return nil
+        }
+
+        let fields = output
+            .split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        guard fields.count == 2, !fields[0].isEmpty, !fields[1].isEmpty else {
+            return nil
+        }
+        return Pane(target: fields[0], tty: fields[1])
+    }
+
     /// Display name of the host terminal owning the tmux client for the given
     /// session, derived by walking the client process chain for a recognized
     /// terminal bundle. When `session` is nil, falls back to the first client
@@ -159,33 +171,11 @@ public struct TmuxPaneResolver: TmuxPaneResolverProtocol {
     }
 
     private func run(_ arguments: [String]) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: tmuxPath)
         var args = arguments
         if let socketPath, !socketPath.isEmpty {
             args = ["-S", socketPath] + args
         }
-        process.arguments = args
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return nil
-        }
-
-        guard process.terminationStatus == 0 else { return nil }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let output = String(data: data, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines), !output.isEmpty else {
-            return nil
-        }
-        return output
+        return SubprocessRunner.output(executablePath: tmuxPath, arguments: args)
     }
 
     private func pidForTTY(_ tty: String) -> Int? {
@@ -216,28 +206,6 @@ public struct TmuxPaneResolver: TmuxPaneResolverProtocol {
     }
 
     private func runProcess(_ path: String, _ arguments: [String]) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: path)
-        process.arguments = arguments
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return nil
-        }
-
-        guard process.terminationStatus == 0 else { return nil }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let output = String(data: data, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines), !output.isEmpty else {
-            return nil
-        }
-        return output
+        SubprocessRunner.output(executablePath: path, arguments: arguments)
     }
 }

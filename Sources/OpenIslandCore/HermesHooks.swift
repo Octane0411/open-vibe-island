@@ -358,6 +358,7 @@ public extension HermesHookPayload {
             // pty rather than the pane, so try ancestor TTYs too.
             if let pane = Self.resolvedTmuxPane(
                 resolver: tmux,
+                tmuxPaneID: environment["TMUX_PANE"],
                 currentTTYProvider: currentTTYProvider,
                 ancestorTTYProvider: ancestorTTYProvider,
                 parentPIDProvider: parentPIDProvider
@@ -412,15 +413,24 @@ public extension HermesHookPayload {
         var tty: String
     }
 
-    /// Resolve the tmux pane for this hook process: try the direct TTY first,
-    /// then the TTYs of up to four ancestor processes, since hooks spawned
-    /// through pipelines report the pipeline's pty instead of the pane's.
+    /// Resolve the tmux pane for this hook process: `$TMUX_PANE` names the
+    /// pane directly, so a single tmux call resolves it without probing the
+    /// process chain. Without it, try the direct TTY first, then the TTYs of
+    /// up to four ancestor processes, since hooks spawned through pipelines
+    /// report the pipeline's pty instead of the pane's.
     static func resolvedTmuxPane(
         resolver: any TmuxPaneResolverProtocol,
+        tmuxPaneID: String? = nil,
         currentTTYProvider: () -> String?,
         ancestorTTYProvider: ([Int]) -> [String] = { HermesHookPayload.ancestorTTYs(pids: $0) },
         parentPIDProvider: () -> [Int] = { HermesHookPayload.ancestorPIDs() }
     ) -> ResolvedPane? {
+        if let tmuxPaneID, tmuxPaneID.hasPrefix("%"),
+           let pane = resolver.pane(forPaneID: tmuxPaneID),
+           let tty = pane.tty, !tty.isEmpty {
+            return ResolvedPane(target: pane.target, tty: tty)
+        }
+
         if let direct = currentTTYProvider(),
            let pane = resolver.pane(forTTY: direct) {
             return ResolvedPane(target: pane.target, tty: direct)
@@ -467,27 +477,11 @@ public extension HermesHookPayload {
     }
 
     private static func processOutput(executablePath: String, arguments: [String]) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executablePath)
-        process.arguments = arguments
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
+        guard let result = SubprocessRunner.run(executablePath: executablePath, arguments: arguments),
+              result.exitStatus == 0 else {
             return nil
         }
-
-        guard process.terminationStatus == 0 else {
-            return nil
-        }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8)
+        return result.standardOutput
     }
 
     private static let noLocatorTerminalApps: Set<String> = [
@@ -629,7 +623,11 @@ public extension HermesHookPayload {
     }
 
     private func osascriptValues(script: String) -> [String] {
-        guard let raw = commandOutput(executablePath: "/usr/bin/osascript", arguments: ["-e", script]) else {
+        guard let raw = commandOutput(
+            executablePath: "/usr/bin/osascript",
+            arguments: ["-e", script],
+            timeout: 3.0
+        ) else {
             return []
         }
 
@@ -639,34 +637,12 @@ public extension HermesHookPayload {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
     }
 
-    private func commandOutput(executablePath: String, arguments: [String]) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executablePath)
-        process.arguments = arguments
-
-        let outputPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = Pipe()
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return nil
-        }
-
-        guard process.terminationStatus == 0 else {
-            return nil
-        }
-
-        let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        guard let output = String(data: data, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-              !output.isEmpty else {
-            return nil
-        }
-
-        return output
+    private func commandOutput(
+        executablePath: String,
+        arguments: [String],
+        timeout: TimeInterval = SubprocessRunner.defaultTimeout
+    ) -> String? {
+        SubprocessRunner.output(executablePath: executablePath, arguments: arguments, timeout: timeout)
     }
 
     // MARK: - Text shaping
