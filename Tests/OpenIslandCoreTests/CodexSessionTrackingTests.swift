@@ -1218,6 +1218,49 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutDiscoveryIdentifiesDesktopOriginatorWithoutMisclassifyingCLI() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-desktop-origin-\(UUID().uuidString)", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/04/02", isDirectory: true)
+        let desktopURL = rolloutDirectoryURL.appendingPathComponent("rollout-desktop.jsonl")
+        let cliURL = rolloutDirectoryURL.appendingPathComponent("rollout-cli.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        try sessionMetaLine(
+            sessionID: "desktop-session",
+            timestamp: "2026-04-02T04:03:44.000Z",
+            cwd: "/Users/u/desktop-project",
+            originator: "Codex Desktop",
+            source: "vscode"
+        ).appending("\n").write(to: desktopURL, atomically: true, encoding: .utf8)
+        try sessionMetaLine(
+            sessionID: "cli-session",
+            timestamp: "2026-04-02T04:03:45.000Z",
+            cwd: "/Users/u/cli-project"
+        ).appending("\n").write(to: cliURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: desktopURL.path)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: cliURL.path)
+
+        let records = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10
+        ).discoverRecentSessions(now: now)
+
+        let desktop = records.first { $0.sessionID == "desktop-session" }
+        let cli = records.first { $0.sessionID == "cli-session" }
+        #expect(desktop?.jumpTarget?.terminalApp == "Codex.app")
+        #expect(desktop?.jumpTarget?.codexThreadID == "desktop-session")
+        #expect(desktop?.session.isCodexAppSession == true)
+        #expect(cli?.jumpTarget == nil)
+        #expect(cli?.session.isCodexAppSession == false)
+    }
+
+    @Test
     func codexRolloutDiscoveryStreamsRolloutsLargerThanReadChunk() throws {
         // Pins streaming behavior across read-chunk boundaries. The
         // discovery path used to slurp the whole rollout via
@@ -1675,7 +1718,9 @@ private func rolloutLine(
 private func sessionMetaLine(
     sessionID: String,
     timestamp: String,
-    cwd: String
+    cwd: String,
+    originator: String = "codex-tui",
+    source: String = "cli"
 ) -> String {
     rolloutLine(
         timestamp: timestamp,
@@ -1684,8 +1729,8 @@ private func sessionMetaLine(
             "id": sessionID,
             "timestamp": timestamp,
             "cwd": cwd,
-            "originator": "codex-tui",
-            "source": "cli",
+            "originator": originator,
+            "source": source,
         ]
     )
 }

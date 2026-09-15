@@ -3,6 +3,31 @@ import Testing
 @testable import OpenIslandCore
 
 struct CodexAppServerLifecycleTests {
+    @Test(arguments: ["data", "threads"])
+    func threadListDecodesCurrentAndLegacyResponseKeys(responseKey: String) throws {
+        let response = """
+        {
+          "\(responseKey)": [{
+            "id": "desktop-session",
+            "cwd": "/Users/u/project",
+            "preview": "Fix desktop detection",
+            "modelProvider": "openai",
+            "createdAt": 1,
+            "updatedAt": 2,
+            "ephemeral": false,
+            "status": { "type": "idle" },
+            "source": "vscode"
+          }]
+        }
+        """
+
+        let threads = try CodexAppServerClient.decodeThreadListResponse(Data(response.utf8))
+
+        #expect(threads.count == 1)
+        #expect(threads.first?.id == "desktop-session")
+        #expect(threads.first?.source == .vscode)
+    }
+
     @Test
     func outputHandlersUnregisterAtEndOfFile() async throws {
         let client = CodexAppServerClient()

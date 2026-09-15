@@ -690,6 +690,15 @@ public extension CodexHookPayload {
             return "Codex.app"
         }
 
+        // Newer Codex Desktop builds launch the agent through a sanitized
+        // code-mode host that strips __CFBundleIdentifier. The internal
+        // originator marker survives that boundary and is absent from normal
+        // Codex CLI sessions, so use it as the desktop fallback.
+        if let originator = environment["CODEX_INTERNAL_ORIGINATOR_OVERRIDE"]?.lowercased(),
+           ["codex", "codex desktop", "codex_work_desktop"].contains(originator) {
+            return "Codex.app"
+        }
+
         // TERM_PROGRAM is the only authoritative terminal signal. Each
         // terminal sets it explicitly when it execs the user's shell, so
         // unlike per-app env vars (GHOSTTY_RESOURCES_DIR,
