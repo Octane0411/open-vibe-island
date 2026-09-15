@@ -622,13 +622,22 @@ struct TerminalJumpService {
             sessionName = tmuxTarget
         }
 
-        // Find the client TTY so we can explicitly target it with switch-client.
-        let clientTTY = runTmuxCommand(tmuxPath: tmuxPath, socketArgs: socketArgs(),
-                                       args: ["list-clients", "-F", "#{client_tty}"])?
+        // Find the client TTY (and the session it is already attached to) so we
+        // can explicitly target it with switch-client.
+        let clientLine = runTmuxCommand(tmuxPath: tmuxPath, socketArgs: socketArgs(),
+                                        args: ["list-clients", "-F", "#{client_tty}\t#{client_session}"])?
             .components(separatedBy: "\n").first { !$0.isEmpty }
+        let clientFields = clientLine?.components(separatedBy: "\t") ?? []
+        let clientTTY = clientFields.first.flatMap { $0.isEmpty ? nil : $0 }
+        let clientSession = clientFields.count > 1 ? clientFields[1] : nil
 
         // Step 1: switch-client — point the client at the target session.
-        if let clientTTY = clientTTY {
+        // Skip it when the client is already attached to that session: a
+        // redundant switch-client makes terminals that mirror tmux state
+        // (e.g. iTerm2's tmux integration, `tmux -CC`) re-attach and rebuild
+        // every native window, which loses window placement/fullscreen.
+        // select-window / select-pane below are enough in that case.
+        if let clientTTY = clientTTY, clientSession != sessionName {
             _ = runTmuxCommand(tmuxPath: tmuxPath, socketArgs: socketArgs(),
                                args: ["switch-client", "-c", clientTTY, "-t", sessionName])
         }
