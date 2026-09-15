@@ -703,6 +703,11 @@ struct SetupSettingsPane: View {
                     get: { model.showCodexUsage },
                     set: { model.showCodexUsage = $0 }
                 ))
+
+                Toggle(lang.t("settings.general.usageShowsRemaining"), isOn: Binding(
+                    get: { model.usageShowsRemaining },
+                    set: { model.usageShowsRemaining = $0 }
+                ))
             } header: {
                 HStack(spacing: 4) {
                     Text(lang.t("setup.section.usage"))
