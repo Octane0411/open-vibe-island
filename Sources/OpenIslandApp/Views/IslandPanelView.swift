@@ -207,16 +207,30 @@ struct IslandPanelView: View {
         let outerBottomPadding: CGFloat = 0
         let openedWidth = max(0, layoutWidth - outerHorizontalPadding)
         let openedHeight = max(closedNotchHeight, layoutHeight - outerBottomPadding)
+        let resolvedClosedPill = closedPill
 
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
+                transitioningSurface(
+                    openedWidth: openedWidth,
+                    openedHeight: openedHeight,
+                    closedPill: resolvedClosedPill
+                )
+
                 if shouldRenderOpenedSurface {
-                    openedSurface(width: openedWidth, height: openedHeight)
+                    openedSurfaceContent(width: openedWidth, height: openedHeight)
+                        .frame(
+                            width: usesOpenedVisualState ? openedWidth : resolvedClosedPill.resolvedWidth,
+                            height: usesOpenedVisualState ? openedHeight : closedNotchHeight,
+                            alignment: .top
+                        )
+                        .clipShape(transitionSurfaceShape)
                         .opacity(usesOpenedVisualState ? 1 : 0)
+                        .transition(.opacity.animation(.easeOut(duration: 0.18).delay(0.12)))
                         .allowsHitTesting(usesOpenedVisualState)
                 }
 
-                v6ClosedSurface()
+                v6ClosedSurface(resolvedClosedPill)
                     .opacity(usesOpenedVisualState ? 0 : 1)
                     .allowsHitTesting(!usesOpenedVisualState)
             }
@@ -269,11 +283,10 @@ struct IslandPanelView: View {
     /// preferences. AppModel is @Observable so any change to sessions /
     /// preferences re-renders this automatically; UnifiedBars runs its own
     /// TimelineView internally for bar animation.
-    @ViewBuilder
-    private func v6ClosedSurface() -> some View {
+    private var closedPill: V6ClosedPill {
         let layout: V6ClosedLayout = isExternalDisplayPlacement ? .external : .macbook
         let physicalNotchWidth: CGFloat = targetOverlayScreen?.notchSize.width ?? 180
-        V6ClosedPill(
+        return V6ClosedPill(
             mode: model.islandClosedMode,
             label: layout == .external ? model.islandClosedLabel() : nil,
             rightSlot: model.islandClosedRightSlotContent(),
@@ -282,6 +295,11 @@ struct IslandPanelView: View {
             physicalNotchWidth: layout == .macbook ? physicalNotchWidth : 0,
             minWidth: 70
         )
+    }
+
+    @ViewBuilder
+    private func v6ClosedSurface(_ pill: V6ClosedPill) -> some View {
+        pill
         .scaleEffect(isPopping ? 1.04 : 1, anchor: .top)
         .animation(popAnimation, value: isPopping)
     }
@@ -289,39 +307,47 @@ struct IslandPanelView: View {
     // MARK: - Opened surface
 
     @ViewBuilder
-    private func openedSurface(width openedWidth: CGFloat, height openedHeight: CGFloat) -> some View {
-        let horizontalInset = 0.0
-        let bottomInset = 0.0
-        let surfaceWidth = openedWidth + (horizontalInset * 2)
-        let surfaceHeight = openedHeight + bottomInset
-        let surfaceShape = OpenedIslandSurfaceShape(
-            topProfile: usesNotchAwareOpenedHeader ? .notch : .topBar
-        )
-
-        ZStack(alignment: .top) {
-            surfaceShape
-                .fill(V6Palette.ink)
-                .frame(width: surfaceWidth, height: surfaceHeight)
-
-            VStack(spacing: 0) {
-                openedHeaderContent
-                    .frame(height: closedNotchHeight)
-
-                openedContent
-                    .frame(width: openedWidth)
-                    .frame(maxHeight: max(0, openedHeight - closedNotchHeight), alignment: .top)
-                    .clipped()
-            }
-            .frame(width: openedWidth, height: openedHeight, alignment: .top)
-            .padding(.horizontal, horizontalInset)
-            .padding(.bottom, bottomInset)
-            .clipShape(surfaceShape)
+    private func transitioningSurface(
+        openedWidth: CGFloat,
+        openedHeight: CGFloat,
+        closedPill: V6ClosedPill
+    ) -> some View {
+        let shape = transitionSurfaceShape
+        shape
+            .fill(V6Palette.ink)
             .overlay {
-                surfaceShape
-                    .stroke(Color.white.opacity(0.07), lineWidth: 1)
+                shape.stroke(Color.white.opacity(usesOpenedVisualState ? 0.07 : 0), lineWidth: 1)
             }
+            .frame(
+                width: usesOpenedVisualState ? openedWidth : closedPill.resolvedWidth,
+                height: usesOpenedVisualState ? openedHeight : closedNotchHeight
+            )
+            .animation(
+                .timingCurve(0.4, 0, 0.2, 1, duration: 0.45),
+                value: closedPill.resolvedWidth
+            )
+    }
+
+    private var transitionSurfaceShape: OpenedIslandSurfaceShape {
+        OpenedIslandSurfaceShape(
+            topProfile: usesNotchAwareOpenedHeader ? .notch : .topBar,
+            topCornerRadius: usesOpenedVisualState ? NotchShape.openedTopRadius : 0,
+            bottomCornerRadius: usesOpenedVisualState ? NotchShape.openedBottomRadius : closedNotchHeight / 2
+        )
+    }
+
+    @ViewBuilder
+    private func openedSurfaceContent(width openedWidth: CGFloat, height openedHeight: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            openedHeaderContent
+                .frame(height: closedNotchHeight)
+
+            openedContent
+                .frame(width: openedWidth)
+                .frame(maxHeight: max(0, openedHeight - closedNotchHeight), alignment: .top)
+                .clipped()
         }
-        .frame(width: surfaceWidth, height: surfaceHeight, alignment: .top)
+        .frame(width: openedWidth, height: openedHeight, alignment: .top)
     }
 
     // MARK: - Closed state
