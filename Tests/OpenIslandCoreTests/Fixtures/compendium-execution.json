@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 1,
+  "scheduling": {
+    "schemaVersion": 1,
+    "graphID": "dose-regulations-compendium",
+    "version": "execution-v1",
+    "digest": {
+      "algorithm": "sha256",
+      "value": "a84354701745e32f91f5df1df7e1e095b08a93065e986ea160d6f9c051b3cf8d"
+    },
+    "nodes": [
+      {
+        "id": "architect",
+        "title": "Compendium Architect",
+        "dependencyNodeIDs": [],
+        "requiredCapabilities": ["compendium"]
+      },
+      {
+        "id": "researcher",
+        "title": "Regulatory Researcher",
+        "dependencyNodeIDs": ["architect"],
+        "requiredCapabilities": ["compendium"]
+      },
+      {
+        "id": "graph",
+        "title": "Evidence Graph Builder",
+        "dependencyNodeIDs": ["researcher"],
+        "requiredCapabilities": ["compendium"]
+      },
+      {
+        "id": "reviewer",
+        "title": "Compendium Reviewer",
+        "dependencyNodeIDs": ["graph"],
+        "requiredCapabilities": ["compendium"]
+      }
+    ]
+  },
+  "schedulerPolicy": {
+    "schemaVersion": 1,
+    "policyID": "deterministic-compendium",
+    "version": "1",
+    "retryPolicy": {
+      "schemaVersion": 1,
+      "maximumAttempts": 2,
+      "retryableFailureCategories": ["execution_failure", "timeout", "transient"],
+      "nonRetryableFailureCategories": ["invalid_input"],
+      "initialBackoffSeconds": 10,
+      "backoffMultiplier": 2,
+      "maximumBackoffSeconds": 60,
+      "jitterBasisPoints": 0,
+      "jitterSeed": "compendium",
+      "timeoutBehavior": "retry",
+      "cancellationBehavior": "suppress",
+      "dependencyFailureBehavior": "fail_closed"
+    },
+    "defaultLeaseDurationSeconds": 60,
+    "claimAcquisitionTimeoutSeconds": 30,
+    "attemptExecutionTimeoutSeconds": 300,
+    "cancellationAcknowledgementTimeoutSeconds": 30,
+    "allowExpiredLeaseTakeover": true,
+    "schedulingEnabled": true
+  },
+  "executions": [
+    {
+      "nodeID": "architect",
+      "capabilityRequirement": ["compendium"],
+      "specification": {
+        "schemaVersion": 1,
+        "adapterKind": "deterministic",
+        "operation": "produce_section_plan",
+        "parameters": {"artifactRole": "node_output"}
+      },
+      "workspace": {"writableRelativePaths": []},
+      "environmentAllowlist": [],
+      "inputArtifactRoles": ["node_output"],
+      "timeoutPolicy": {"executionSeconds": 300, "cancellationAcknowledgementSeconds": 30}
+    },
+    {
+      "nodeID": "researcher",
+      "capabilityRequirement": ["compendium"],
+      "specification": {
+        "schemaVersion": 1,
+        "adapterKind": "deterministic",
+        "operation": "produce_researched_sections",
+        "parameters": {"artifactRole": "structured_result"}
+      },
+      "workspace": {"writableRelativePaths": []},
+      "environmentAllowlist": [],
+      "inputArtifactRoles": ["node_output"],
+      "timeoutPolicy": {"executionSeconds": 300, "cancellationAcknowledgementSeconds": 30}
+    },
+    {
+      "nodeID": "graph",
+      "capabilityRequirement": ["compendium"],
+      "specification": {
+        "schemaVersion": 1,
+        "adapterKind": "deterministic",
+        "operation": "produce_relationship_graph",
+        "parameters": {"artifactRole": "structured_result"}
+      },
+      "workspace": {"writableRelativePaths": []},
+      "environmentAllowlist": [],
+      "inputArtifactRoles": ["structured_result"],
+      "timeoutPolicy": {"executionSeconds": 300, "cancellationAcknowledgementSeconds": 30}
+    },
+    {
+      "nodeID": "reviewer",
+      "capabilityRequirement": ["compendium"],
+      "specification": {
+        "schemaVersion": 1,
+        "adapterKind": "deterministic",
+        "operation": "produce_review_verdict",
+        "parameters": {"artifactRole": "structured_result"}
+      },
+      "workspace": {"writableRelativePaths": []},
+      "environmentAllowlist": [],
+      "inputArtifactRoles": ["node_output", "structured_result"],
+      "timeoutPolicy": {"executionSeconds": 300, "cancellationAcknowledgementSeconds": 30}
+    }
+  ]
+}
