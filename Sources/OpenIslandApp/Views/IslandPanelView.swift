@@ -293,7 +293,8 @@ struct IslandPanelView: View {
             layout: layout,
             height: closedNotchHeight,
             physicalNotchWidth: layout == .macbook ? physicalNotchWidth : 0,
-            minWidth: 70
+            minWidth: 70,
+            idleAnimated: model.idleGlyphAnimationEnabled
         )
     }
 

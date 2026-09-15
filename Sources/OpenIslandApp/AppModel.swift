@@ -26,6 +26,8 @@ final class AppModel {
     private static let showCodexUsageDefaultsKey = "app.showCodexUsage"
     private static let completionReplyEnabledDefaultsKey = "feature.completionReply.enabled"
     private static let suppressFrontmostNotificationsDefaultsKey = "app.suppressFrontmostNotifications"
+    private static let idleGlyphAnimationEnabledDefaultsKey = "app.idleGlyphAnimationEnabled"
+    private static let processDiscoveryCadenceDefaultsKey = "app.processDiscoveryCadence"
     private static let legacyIslandSessionStateIndicatorDefaultsKey = "appearance.island.v8.stateIndicator"
     private static let legacyIslandSessionGroupDefaultsKey = "appearance.island.v8.sessionGroup"
     private static let legacyIslandSessionSortDefaultsKey = "appearance.island.v8.sessionSort"
@@ -298,6 +300,22 @@ final class AppModel {
         didSet {
             guard hasFinishedInit, suppressFrontmostNotifications != oldValue else { return }
             UserDefaults.standard.set(suppressFrontmostNotifications, forKey: Self.suppressFrontmostNotificationsDefaultsKey)
+        }
+    }
+    /// When false the resting notch glyph stops breathing — a battery option.
+    var idleGlyphAnimationEnabled: Bool = true {
+        didSet {
+            guard hasFinishedInit, idleGlyphAnimationEnabled != oldValue else { return }
+            UserDefaults.standard.set(idleGlyphAnimationEnabled, forKey: Self.idleGlyphAnimationEnabledDefaultsKey)
+        }
+    }
+    /// How often background process discovery scans for agent sessions started
+    /// without a hook. Slower cadences save battery at the cost of latency.
+    var processDiscoveryCadence: ProcessDiscoveryCadence = .standard {
+        didSet {
+            guard hasFinishedInit, processDiscoveryCadence != oldValue else { return }
+            UserDefaults.standard.set(processDiscoveryCadence.rawValue, forKey: Self.processDiscoveryCadenceDefaultsKey)
+            monitoring.discoveryCadence = processDiscoveryCadence
         }
     }
     var launchAtLoginEnabled: Bool = false {
@@ -631,6 +649,7 @@ final class AppModel {
             Self.keepNotchOpenUntilDecisionDefaultsKey: false,
             Self.completionReplyEnabledDefaultsKey: false,
             Self.suppressFrontmostNotificationsDefaultsKey: true,
+            Self.idleGlyphAnimationEnabledDefaultsKey: true,
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
@@ -646,6 +665,11 @@ final class AppModel {
             )
         }
         completionReplyEnabled = UserDefaults.standard.bool(forKey: Self.completionReplyEnabledDefaultsKey)
+        idleGlyphAnimationEnabled = UserDefaults.standard.bool(forKey: Self.idleGlyphAnimationEnabledDefaultsKey)
+        processDiscoveryCadence = ProcessDiscoveryCadence(
+            rawValue: UserDefaults.standard.string(forKey: Self.processDiscoveryCadenceDefaultsKey) ?? ""
+        ) ?? .standard
+        monitoring.discoveryCadence = processDiscoveryCadence
         launchAtLoginEnabled = LaunchAtLoginService.shared.isEnabled
         appearanceSettingsProfile = IslandAppearanceDisplayProfile(
             rawValue: UserDefaults.standard.string(forKey: Self.appearanceProfileSettingsDefaultsKey) ?? ""
@@ -731,6 +755,7 @@ final class AppModel {
         }
         monitoring.onCodexAppRunningChanged = { [weak self] isRunning in
             guard let self else { return }
+            self.discovery.updateCodexAppRunning(isRunning)
             if isRunning {
                 self.codexAppServer.ensureConnected()
             } else {
@@ -738,7 +763,10 @@ final class AppModel {
             }
         }
         monitoring.onCodexAppMaintenanceTick = { [weak self] in
-            self?.discovery.maintainCodexAppSessionsIfNeeded()
+            guard let self else { return }
+            self.discovery.maintainCodexAppSessionsIfNeeded(
+                appServerConnected: self.codexAppServer.hasLiveConnection
+            )
         }
         refreshOverlayDisplayConfiguration()
         hasFinishedInit = true
