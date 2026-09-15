@@ -486,6 +486,11 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func handleCodexHook(_ payload: CodexHookPayload, from clientID: UUID) {
+        if CodexInternalSessionFilter.isInternalReview(transcriptPath: payload.transcriptPath) {
+            send(.response(.acknowledged), to: clientID)
+            return
+        }
+
         // Filter out Codex.app internal invocations (e.g. conversation title
         // generation).  These fire hooks but have no transcript file — they're
         // ephemeral API calls, not user-facing sessions.
