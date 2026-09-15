@@ -65,6 +65,7 @@ public final class BridgeServer: @unchecked Sendable {
         let payload: CursorHookPayload
     }
 
+    private let controllerID = UUID()
     private let socketURL: URL
     private let queue = DispatchQueue(label: "app.openisland.bridge.server")
     private let queueKey = DispatchSpecificKey<Void>()
@@ -113,7 +114,7 @@ public final class BridgeServer: @unchecked Sendable {
         // Also listen on the legacy /tmp path so that older hook binaries
         // (from already-running Claude Code sessions) can still connect.
         let legacyURL = BridgeSocketLocation.legacyURL
-        if legacyURL != socketURL {
+        if socketURL == BridgeSocketLocation.defaultURL && legacyURL != socketURL {
             if let legacyListener = try? bindListener(at: legacyURL) {
                 listeners.append(legacyListener)
             }
@@ -121,40 +122,7 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func bindListener(at url: URL) throws -> Listener {
-        let parentURL = url.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: parentURL, withIntermediateDirectories: true)
-        try? FileManager.default.removeItem(at: url)
-
-        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard fd != -1 else {
-            throw BridgeTransportError.systemCallFailed("socket", errno)
-        }
-
-        do {
-            var reuseAddress: Int32 = 1
-            guard setsockopt(
-                fd, SOL_SOCKET, SO_REUSEADDR,
-                &reuseAddress, socklen_t(MemoryLayout<Int32>.size)
-            ) != -1 else {
-                throw BridgeTransportError.systemCallFailed("setsockopt", errno)
-            }
-
-            try withUnixSocketAddress(path: url.path) { address, length in
-                guard bind(fd, address, length) != -1 else {
-                    throw BridgeTransportError.systemCallFailed("bind", errno)
-                }
-            }
-
-            guard listen(fd, 16) != -1 else {
-                throw BridgeTransportError.systemCallFailed("listen", errno)
-            }
-
-            try makeSocketNonBlocking(fd)
-        } catch {
-            close(fd)
-            try? FileManager.default.removeItem(at: url)
-            throw error
-        }
+        let fd = try BridgeSocketSecurity.listen(at: url)
 
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
         source.setEventHandler { [weak self] in
@@ -223,6 +191,11 @@ public final class BridgeServer: @unchecked Sendable {
                 return
             }
 
+            guard BridgeSocketSecurity.isCurrentUser(clientFileDescriptor) else {
+                close(clientFileDescriptor)
+                continue
+            }
+
             do {
                 try disableSocketSigPipe(clientFileDescriptor)
                 try makeSocketNonBlocking(clientFileDescriptor)
@@ -240,16 +213,8 @@ public final class BridgeServer: @unchecked Sendable {
         readSource.setEventHandler { [weak self] in
             self?.readAvailableData(from: clientID)
         }
-        readSource.setCancelHandler { [weak self] in
-            guard let self else {
-                return
-            }
-
-            if let client = self.clients[clientID] {
-                close(client.fileDescriptor)
-            } else {
-                close(fileDescriptor)
-            }
+        readSource.setCancelHandler {
+            close(fileDescriptor)
         }
 
         clients[clientID] = ClientConnection(
@@ -284,6 +249,10 @@ public final class BridgeServer: @unchecked Sendable {
                         if case let .command(command) = envelope {
                             handle(command, from: clientID)
                         }
+                        // A handler may reject/disconnect this client or update its role.
+                        // Never reinsert a removed connection with a now-reusable descriptor.
+                        guard let updated = clients[clientID] else { return }
+                        client = updated
                     }
                 } catch {
                     removeClient(clientID)
@@ -308,7 +277,26 @@ public final class BridgeServer: @unchecked Sendable {
         }
     }
 
+    /// Decisions originate inside this process, never from hook/observer sockets.
+    public func performUserAction(_ command: BridgeCommand) {
+        switch command {
+        case .resolvePermission, .answerQuestion:
+            queue.async { [self] in handle(command, from: controllerID) }
+        default:
+            break
+        }
+    }
+
     private func handle(_ command: BridgeCommand, from clientID: UUID) {
+        switch command {
+        case .resolvePermission, .answerQuestion:
+            guard clientID == controllerID else {
+                removeClient(clientID)
+                return
+            }
+        default:
+            break
+        }
         switch command {
         case let .registerClient(role):
             guard var client = clients[clientID] else {

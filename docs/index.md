@@ -39,6 +39,8 @@ This index is the repository map for humans and coding agents. Read these files 
 
 ## Watch / iOS
 
+- [docs/security.md](./security.md) for current security boundaries, encrypted pairing and upgrade instructions
+
 - [docs/watch-notification-design.md](./watch-notification-design.md) for the Apple Watch notification design document
 - [docs/watch-notification-impl-plan.md](./watch-notification-impl-plan.md) for the Watch notification implementation plan
 

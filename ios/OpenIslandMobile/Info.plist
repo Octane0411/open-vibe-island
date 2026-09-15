@@ -6,7 +6,7 @@
 	<string>Open Island needs to discover your Mac on the local network to receive agent notifications.</string>
 	<key>NSBonjourServices</key>
 	<array>
-		<string>_openisland._tcp</string>
+		<string>_openisland2._tcp</string>
 	</array>
 </dict>
 </plist>

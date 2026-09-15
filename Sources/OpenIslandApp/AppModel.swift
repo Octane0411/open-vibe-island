@@ -52,6 +52,7 @@ final class AppModel {
             _cachedSessionBuckets = nil
             pruneAgentsGridObservationTicketsIfNeeded()
             bridgeServer.updateStateSnapshot(state)
+            watchRelay?.endpoint.setActiveSessionCount(state.liveSessionCount)
         }
     }
     @ObservationIgnored private var _cachedSessionBuckets: (primary: [AgentSession], overflow: [AgentSession])?
@@ -484,13 +485,12 @@ final class AppModel {
 
     /// Current pairing code for display in the settings UI.
     var watchPairingCode: String {
-        watchRelay?.endpoint.currentCode() ?? "----"
+        watchRelay?.endpoint.currentCode() ?? ""
     }
 
     /// Number of currently connected iPhone SSE clients.
     var watchConnectedDevices: Int {
-        // Placeholder — endpoint doesn't expose count yet
-        0
+        watchRelay?.endpoint.connectedDeviceCount ?? 0
     }
 
     private func startWatchRelay() {
@@ -518,13 +518,7 @@ final class AppModel {
             }
         }
 
-        relay.endpoint.activeSessionCountProvider = { [weak self] in
-            // Safe to call from any queue — reads a snapshot count.
-            guard let self else { return 0 }
-            return MainActor.assumeIsolated {
-                self.state.sessions.count
-            }
-        }
+        relay.endpoint.setActiveSessionCount(state.liveSessionCount)
     }
 
     private func stopWatchRelay() {
@@ -1503,18 +1497,7 @@ final class AppModel {
 
     private func send(_ command: BridgeCommand, userMessage: String) {
         lastActionMessage = userMessage
-
-        Task { [weak self] in
-            guard let self else {
-                return
-            }
-
-            do {
-                try await self.bridgeClient.send(command)
-            } catch {
-                self.lastActionMessage = "Failed to send bridge command: \(error.localizedDescription)"
-            }
-        }
+        bridgeServer.performUserAction(command)
     }
 
     private func permissionResolution(for approved: Bool) -> PermissionResolution {
