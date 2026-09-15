@@ -25,9 +25,12 @@ struct CodexAppServerTimeoutTests {
         }
 
         // Should fail fast relative to the configured timeout, not hang on the
-        // global test timeout. Leave room for CI runner scheduling jitter.
+        // global test timeout. The bound is deliberately loose: on CI runners
+        // this test shares the process with suites that block on ~2 s
+        // osascript timeouts, and that scheduling contention was pushing
+        // elapsed to 2.0–2.4 s against the previous 2.0 s bound.
         let elapsed = Date().timeIntervalSince(start)
-        #expect(elapsed < max(2.0, client.requestTimeoutSeconds * 20))
+        #expect(elapsed < max(5.0, client.requestTimeoutSeconds * 20))
     }
 
     @Test
