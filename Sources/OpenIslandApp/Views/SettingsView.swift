@@ -428,6 +428,7 @@ struct SetupSettingsPane: View {
     @State private var confirmingUninstallGrok = false
     @State private var confirmingUninstallPi = false
     @State private var confirmingUninstallOhMyPi = false
+    @State private var confirmingUninstallHermes = false
     @State private var confirmingUninstallClaudeUsage = false
 
     private var lang: LanguageManager { model.lang }
@@ -666,6 +667,23 @@ struct SetupSettingsPane: View {
                 } message: {
                     Text("This will remove the Open Island extension from ~/.omp/agent/extensions/.")
                 }
+
+                hookRow(
+                    name: "Hermes",
+                    installed: model.hermesHooksInstalled,
+                    busy: model.isHermesHookSetupBusy,
+                    configLocationURL: hermesHookConfigURL,
+                    installAction: { model.installHermesHooks() },
+                    uninstallAction: { confirmingUninstallHermes = true }
+                )
+                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallHermes) {
+                    Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
+                        model.uninstallHermesHooks()
+                    }
+                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
+                } message: {
+                    Text("This will remove Open Island hooks from ~/.hermes/config.yaml.")
+                }
             }
 
             Section {
@@ -744,6 +762,7 @@ struct SetupSettingsPane: View {
                     if !model.geminiHooksInstalled { model.installGeminiHooks() }
                     if !model.kimiHooksInstalled { model.installKimiHooks() }
                     if !model.grokHooksInstalled { model.installGrokHooks() }
+                    if !model.hermesHooksInstalled { model.installHermesHooks() }
                     if !model.piExtensionInstalled { model.installPiExtension() }
                     if !model.ohMyPiExtensionInstalled { model.installOhMyPiExtension() }
                     if !model.claudeUsageInstalled { model.installClaudeUsageBridge() }
@@ -808,7 +827,7 @@ struct SetupSettingsPane: View {
         model.claudeHooksInstalled && model.codexHooksInstalled && model.openCodePluginInstalled
             && model.qoderHooksInstalled && model.qwenCodeHooksInstalled && model.factoryHooksInstalled && model.codebuddyHooksInstalled
             && model.cursorHooksInstalled && model.geminiHooksInstalled && model.kimiHooksInstalled
-            && model.grokHooksInstalled
+            && model.grokHooksInstalled && model.hermesHooksInstalled
             && model.piExtensionInstalled && model.ohMyPiExtensionInstalled && model.claudeUsageInstalled
     }
 
@@ -846,6 +865,11 @@ struct SetupSettingsPane: View {
     private var geminiHookConfigURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".gemini/settings.json")
+    }
+
+    private var hermesHookConfigURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".hermes/config.yaml")
     }
 
     private var hasErrors: Bool {
