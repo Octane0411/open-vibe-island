@@ -275,7 +275,16 @@ struct TerminalJumpService {
             // Use the full terminal-specific jump (AppleScript for Ghostty/iTerm,
             // CLI for WezTerm, etc.) to focus the correct window/tab.
             if let descriptor {
-                switch descriptor.bundleIdentifier {
+                let normalizedPreferredName = normalizeTerminalAppName(target.terminalApp)
+                let preferredBundleIdentifier = preferredBundleIdentifierForAlias(
+                    for: descriptor,
+                    normalizedPreferredName: normalizedPreferredName
+                )
+                let resolvedBundleIdentifier = resolveBundleIdentifier(
+                    for: descriptor,
+                    preferredBundleIdentifier: preferredBundleIdentifier
+                )
+                switch resolvedBundleIdentifier {
                 case "com.mitchellh.ghostty":
                     if try jumpToGhosttyTerminal(target) {
                         return "Focused the matching tmux pane in Ghostty."
@@ -288,6 +297,17 @@ struct TerminalJumpService {
                     if try jumpToTerminalTab(target) {
                         return "Focused the matching tmux pane in Terminal."
                     }
+                case let id where Self.vscodeFamilyBundleIDs.contains(id):
+                    // VS Code's integrated terminal runs inside tmux. After
+                    // focusing the pane via select-window/select-pane, just
+                    // activate the app to bring its window to front. Don't
+                    // use `code -r` here: it can reload the VS Code window and
+                    // trigger "Do you want to terminate the active terminal
+                    // session?" prompts when the workspace is already open.
+                    try openAction(["-b", id])
+                    return paneSelected
+                        ? "Focused the matching tmux pane in \(descriptor.displayName)."
+                        : "Activated \(descriptor.displayName). tmux pane targeting failed."
                 default:
                     break
                 }
@@ -603,9 +623,8 @@ struct TerminalJumpService {
         }
 
         // tmuxTarget is "session:window.pane" (e.g. "oss-contributions:3.0")
-        // When running from a macOS GUI app (outside tmux), there is no
-        // "current client" — $TMUX is not set. We must explicitly find the
-        // client TTY and pass it via -c to switch-client.
+        // The GUI app runs outside tmux, but select-window/select-pane
+        // address the session directly, so no client context is needed.
 
         func socketArgs() -> [String] {
             if let socketPath = target.tmuxSocketPath, !socketPath.isEmpty {
@@ -614,7 +633,7 @@ struct TerminalJumpService {
             return []
         }
 
-        // Extract "session:window" and "session" from "session:window.pane"
+        // Extract "session:window" from "session:window.pane"
         let sessionWindow: String
         if let dotIndex = tmuxTarget.lastIndex(of: ".") {
             sessionWindow = String(tmuxTarget[tmuxTarget.startIndex..<dotIndex])
@@ -622,38 +641,17 @@ struct TerminalJumpService {
             sessionWindow = tmuxTarget
         }
 
-        let sessionName: String
-        if let colonIndex = tmuxTarget.firstIndex(of: ":") {
-            sessionName = String(tmuxTarget[tmuxTarget.startIndex..<colonIndex])
-        } else {
-            sessionName = tmuxTarget
-        }
-
-        // Find the client TTY (and the session it is already attached to) so we
-        // can explicitly target it with switch-client.
-        let clientLine = runTmuxCommand(tmuxPath: tmuxPath, socketArgs: socketArgs(),
-                                        args: ["list-clients", "-F", "#{client_tty}\t#{client_session}"])?
-            .components(separatedBy: "\n").first { !$0.isEmpty }
-        let clientFields = clientLine?.components(separatedBy: "\t") ?? []
-        let clientTTY = clientFields.first.flatMap { $0.isEmpty ? nil : $0 }
-        let clientSession = clientFields.count > 1 ? clientFields[1] : nil
-
-        // Step 1: switch-client — point the client at the target session.
-        // Skip it when the client is already attached to that session: a
-        // redundant switch-client makes terminals that mirror tmux state
-        // (e.g. iTerm2's tmux integration, `tmux -CC`) re-attach and rebuild
-        // every native window, which loses window placement/fullscreen.
-        // select-window / select-pane below are enough in that case.
-        if let clientTTY = clientTTY, clientSession != sessionName {
-            _ = runTmuxCommand(tmuxPath: tmuxPath, socketArgs: socketArgs(),
-                               args: ["switch-client", "-c", clientTTY, "-t", sessionName])
-        }
-
-        // Step 2: select-window — switch to the correct window.
+        // select-window/select-pane mutate the target session's global state,
+        // so every client attached to that session (the one running this
+        // agent, plus any others) follows to the focused pane. Never use
+        // switch-client here: with multiple attached clients it would yank
+        // an arbitrary client off its own session, and with terminals that
+        // mirror tmux state (iTerm2 `tmux -CC`) any switch-client — even a
+        // redundant one to the current session — re-attaches and rebuilds
+        // every native window.
         _ = runTmuxCommand(tmuxPath: tmuxPath, socketArgs: socketArgs(),
                            args: ["select-window", "-t", sessionWindow])
 
-        // Step 3: select-pane — focus the exact pane.
         let spResult = runTmuxCommand(tmuxPath: tmuxPath, socketArgs: socketArgs(),
                                       args: ["select-pane", "-t", tmuxTarget])
 
