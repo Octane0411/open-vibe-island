@@ -71,7 +71,12 @@ struct ActiveAgentProcessDiscovery {
             // OpenCode is an exception: it can run inside IDE integrated terminals
             // that don't expose a TTY in `ps` output. Let OpenCode processes
             // through so the liveness fallback can keep their sessions alive.
-            if process.terminalTTY == nil && !isOpenCodeProcess(command: process.command) {
+            // Hermes TUI/gateway processes are also TTY-less, so without this
+            // exemption they would be filtered out and their hook-managed
+            // sessions could be evicted by the liveness polls.
+            if process.terminalTTY == nil
+                && !isOpenCodeProcess(command: process.command)
+                && !isHermesProcess(command: process.command) {
                 continue
             }
 
@@ -225,6 +230,23 @@ struct ActiveAgentProcessDiscovery {
                 let lsofOutput = lsofOutput(pid: process.pid)
                 snapshots.append(ProcessSnapshot(
                     tool: .grokBuild,
+                    sessionID: nil,
+                    workingDirectory: lsofOutput.flatMap(workingDirectory(from:)),
+                    terminalTTY: process.terminalTTY,
+                    terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+                ))
+                continue
+            }
+
+            if isHermesProcess(command: process.command) {
+                let claimKey = "hermes:\(process.pid)"
+                guard claimedKeys.insert(claimKey).inserted else {
+                    continue
+                }
+
+                let lsofOutput = lsofOutput(pid: process.pid)
+                snapshots.append(ProcessSnapshot(
+                    tool: .hermes,
                     sessionID: nil,
                     workingDirectory: lsofOutput.flatMap(workingDirectory(from:)),
                     terminalTTY: process.terminalTTY,
@@ -833,6 +855,26 @@ struct ActiveAgentProcessDiscovery {
         return firstToken == "grok" || firstToken.hasSuffix("/grok")
     }
 
+    /// Matches the Hermes Agent gateway (`python -m tui_gateway.entry`) and the
+    /// Hermes TUI process (`node .../ui-tui/dist/entry.js`). Both run TTY-less
+    /// under iTerm2/Terminal, and ps/lsof cannot recover Hermes' session ID,
+    /// so the snapshot only anchors liveness — session identity comes from
+    /// the hook channel.
+    private func isHermesProcess(command: String) -> Bool {
+        let lowered = command.lowercased()
+        if lowered.contains("tui_gateway.entry") {
+            return true
+        }
+        guard lowered.contains("/ui-tui/dist/entry.js") else {
+            return false
+        }
+        guard let firstToken = lowered.split(separator: " ").first.map(String.init) else {
+            return false
+        }
+        let binaryName = (firstToken as NSString).lastPathComponent
+        return binaryName == "node"
+    }
+
     private func piAgentVariant(command: String) -> PiAgentVariant? {
         let lowered = command.lowercased()
         guard let firstToken = lowered.split(separator: " ").first.map(String.init) else {
@@ -978,7 +1020,8 @@ struct ActiveAgentProcessDiscovery {
         }
 
         // Find the terminal app hosting the tmux client connected to this pane
-        guard let hostTerminalApp = findTmuxClientTerminal(tmuxPath: tmuxPath, socketPath: socketPath, processesByPID: processesByPID) else {
+        let sessionName = tmuxTarget.split(separator: ":").first.map(String.init)
+        guard let hostTerminalApp = findTmuxClientTerminal(tmuxPath: tmuxPath, socketPath: socketPath, processesByPID: processesByPID, sessionName: sessionName) else {
             return nil
         }
 
@@ -1016,11 +1059,19 @@ struct ActiveAgentProcessDiscovery {
     private func findTmuxClientTerminal(
         tmuxPath: String,
         socketPath: String?,
-        processesByPID: [String: RunningProcess]
+        processesByPID: [String: RunningProcess],
+        sessionName: String? = nil
     ) -> String? {
+        // When we know the session, filter clients to that session — there may
+        // be multiple tmux clients from different host terminals attached to
+        // different sessions, and picking the wrong one resolves the wrong
+        // terminal app.
         var args: [String] = ["list-clients", "-F", "#{client_tty}"]
+        if let sessionName {
+            args = ["list-clients", "-t", sessionName, "-F", "#{client_tty}"]
+        }
 
-        if let socketPath = socketPath {
+        if let socketPath {
             args = ["-S", socketPath] + args
         }
 

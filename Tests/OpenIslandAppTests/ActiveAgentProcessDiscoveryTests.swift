@@ -259,6 +259,52 @@ struct ActiveAgentProcessDiscoveryTests {
     }
 
     @Test
+    func discoverDetectsHermesGatewayAndTUIProcesses() {
+        let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
+            if executablePath == "/bin/ps" {
+                return """
+                  601 501 ttys003 /Users/user/.hermes/hermes-agent/venv/bin/python -m tui_gateway.entry
+                  602 601 ttys003 /opt/homebrew/bin/node --expose-gc /Users/user/.hermes/hermes-agent/ui-tui/dist/entry.js
+                  603 501 ttys004 /usr/bin/python3 -m http.server
+                """
+            }
+
+            guard executablePath == "/usr/sbin/lsof",
+                  let pid = arguments.dropFirst(2).first else {
+                return nil
+            }
+
+            switch pid {
+            case "601":
+                return """
+                fcwd
+                n/tmp/hermes-work
+                """
+            case "602":
+                return """
+                fcwd
+                n/tmp/hermes-work
+                """
+            default:
+                Issue.record("unexpected lsof lookup for pid \(pid)")
+                return nil
+            }
+        }
+
+        let snapshots = discovery.discover()
+
+        let hermesSnapshots = snapshots.filter { $0.tool == .hermes }
+        #expect(hermesSnapshots.count == 2)
+        #expect(hermesSnapshots.contains(.init(
+            tool: .hermes,
+            sessionID: nil,
+            workingDirectory: "/tmp/hermes-work",
+            terminalTTY: "/dev/ttys003",
+            terminalApp: nil
+        )))
+    }
+
+    @Test
     func discoverDetectsOpenCodeProcessWithoutTTY() {
         let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
             if executablePath == "/bin/ps" {

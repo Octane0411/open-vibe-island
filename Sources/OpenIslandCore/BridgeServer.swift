@@ -482,6 +482,8 @@ public final class BridgeServer: @unchecked Sendable {
             handleGrokHook(payload, from: clientID)
         case let .processPiHook(payload):
             handlePiHook(payload, from: clientID)
+        case let .processHermesHook(payload):
+            handleHermesHook(payload, from: clientID)
         }
     }
 
@@ -1752,6 +1754,188 @@ public final class BridgeServer: @unchecked Sendable {
 
             send(.response(.acknowledged), to: clientID)
         }
+    }
+
+    private func handleHermesHook(_ payload: HermesHookPayload, from clientID: UUID) {
+        ensureHermesSessionExists(for: payload)
+
+        switch payload.hookEventName {
+        case .onSessionStart:
+            // ensureHermesSessionExists already created the session with the
+            // start summary; mark it running for the first turn.
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitSummary,
+                        phase: .running,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .postLLMCall:
+            emit(
+                .hermesSessionMetadataUpdated(
+                    HermesSessionMetadataUpdated(
+                        sessionID: payload.sessionID,
+                        hermesMetadata: payload.defaultHermesMetadata,
+                        jumpTarget: nil,
+                        timestamp: .now
+                    )
+                )
+            )
+            emit(
+                .sessionCompleted(
+                    SessionCompleted(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitSummary,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .subagentStop:
+            emit(
+                .sessionCompleted(
+                    SessionCompleted(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitSummary,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .onSessionEnd:
+            // Hermes fires on_session_end at the end of every run_conversation
+            // call (every turn), not just when the session truly exits. Passing
+            // isSessionEnd here would evict the row and its completion card
+            // almost immediately after they appear. Process monitoring owns
+            // hook-managed session lifecycle, so this event is treated as a
+            // normal completion, not a real session end.
+            //
+            // post_llm_call already emitted a sessionCompleted with the
+            // assistant response as the summary.  Re-emitting here would
+            // overwrite that summary with a generic "Hermes session ended"
+            // message, and — because the second sessionCompleted carries a
+            // later timestamp — the AppModel's wasAlreadyCompleted guard
+            // does not suppress the notification surface for it.  The user
+            // sees a second, redundant notch card pop for the same turn.
+            // Skip the redundant emit when the session is already completed;
+            // keep it as a fallback for turns where post_llm_call did not
+            // fire (e.g. interrupted or errored turns).
+            if localState.session(id: payload.sessionID)?.phase == .completed {
+                send(.response(.acknowledged), to: clientID)
+                return
+            }
+
+            emit(
+                .sessionCompleted(
+                    SessionCompleted(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitSummary,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .preToolCall:
+            // Human-in-the-loop: the clarify tool blocks the turn until the
+            // user answers, so surface it as an interactive question card.
+            if let prompt = payload.hitlQuestionPrompt {
+                emit(
+                    .questionAsked(
+                        QuestionAsked(
+                            sessionID: payload.sessionID,
+                            prompt: prompt,
+                            timestamp: .now
+                        )
+                    )
+                )
+            } else {
+                emit(
+                    .activityUpdated(
+                        SessionActivityUpdated(
+                            sessionID: payload.sessionID,
+                            summary: payload.implicitSummary,
+                            phase: .running,
+                            timestamp: .now
+                        )
+                    )
+                )
+            }
+            send(.response(.acknowledged), to: clientID)
+
+        case .preApprovalRequest:
+            if let request = payload.hitlPermissionRequest {
+                emit(
+                    .permissionRequested(
+                        PermissionRequested(
+                            sessionID: payload.sessionID,
+                            request: request,
+                            timestamp: .now
+                        )
+                    )
+                )
+            }
+            send(.response(.acknowledged), to: clientID)
+
+        case .preAPIRequest:
+            // Carries the turn's user prompt at the moment the turn starts,
+            // so the headline fills in immediately instead of waiting for
+            // post_llm_call. Don't pass jumpTarget here: the session already
+            // has one from on_session_start, and withRuntimeContext runs the
+            // focused-terminal locator on every hook event — if the user
+            // switched focus since session start, passing the new target would
+            // overwrite the original and break the jump action.
+            emit(
+                .hermesSessionMetadataUpdated(
+                    HermesSessionMetadataUpdated(
+                        sessionID: payload.sessionID,
+                        hermesMetadata: payload.defaultHermesMetadata,
+                        jumpTarget: nil,
+                        timestamp: .now
+                    )
+                )
+            )
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: payload.implicitSummary,
+                        phase: .running,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+        }
+    }
+
+    private func ensureHermesSessionExists(for payload: HermesHookPayload) {
+        guard !hasSession(id: payload.sessionID) else {
+            return
+        }
+
+        emit(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: payload.sessionID,
+                    title: payload.sessionTitle,
+                    tool: .hermes,
+                    origin: .live,
+                    initialPhase: .running,
+                    summary: payload.implicitSummary,
+                    timestamp: .now,
+                    jumpTarget: payload.defaultJumpTarget,
+                    hermesMetadata: payload.defaultHermesMetadata
+                )
+            )
+        )
     }
 
     private func ensureGeminiSessionExists(for payload: GeminiHookPayload) {
