@@ -463,9 +463,14 @@ struct TerminalJumpService {
     }
 
     private func jumpToITermSession(_ target: JumpTarget) throws -> Bool {
+        // Never spawn osascript for a stopped app: entering the tell block is
+        // what launches iTerm, and the in-block `is running` check runs too
+        // late to prevent that.
+        guard appRunningChecker("com.googlecode.iterm2") else { return false }
+
         let script = """
+        if not (application "iTerm" is running) then return ""
         tell application "iTerm"
-            if not (it is running) then return ""
             activate
             repeat with aWindow in windows
                 repeat with aTab in tabs of aWindow
@@ -825,7 +830,9 @@ struct TerminalJumpService {
     }
 
     private func jumpToGhosttyTerminal(_ target: JumpTarget) throws -> Bool {
-        try runAppleScript(ghosttyJumpScript(for: target)) == "matched"
+        guard appRunningChecker("com.mitchellh.ghostty") else { return false }
+
+        return try runAppleScript(ghosttyJumpScript(for: target)) == "matched"
     }
 
     func ghosttyJumpScript(for target: JumpTarget) -> String {
@@ -834,8 +841,8 @@ struct TerminalJumpService {
         let paneTitle = escapeAppleScript(target.paneTitle)
 
         return """
+        if not (application "Ghostty" is running) then return ""
         tell application "Ghostty"
-            if not (it is running) then return ""
             activate
 
             set targetWindow to missing value
@@ -954,9 +961,11 @@ struct TerminalJumpService {
     }
 
     private func jumpToTerminalTab(_ target: JumpTarget) throws -> Bool {
+        guard appRunningChecker("com.apple.Terminal") else { return false }
+
         let script = """
+        if not (application "Terminal" is running) then return ""
         tell application "Terminal"
-            if not (it is running) then return ""
             activate
             repeat with aWindow in windows
                 repeat with aTab in tabs of aWindow
@@ -1207,32 +1216,21 @@ struct TerminalJumpService {
     private func resolveTerminalApp(preferredName: String) -> TerminalAppDescriptor? {
         let normalized = normalizeTerminalAppName(preferredName)
 
-        // "Unknown" is the hook-side sentinel meaning "we could not classify this
-        // terminal". Returning nil here lets jump() fall through to the Finder
-        // cwd fallback instead of silently activating the first installed
-        // known terminal — the historical behavior that caused Warp sessions to
-        // open Terminal.app (or worse, iTerm) windows.
-        if normalized == "unknown" {
-            return nil
-        }
-
-        if let exact = Self.knownApps.first(where: { descriptor in
+        // Only an exact display-name or alias match resolves an app. Falling
+        // back to "the first installed known terminal" resolved iTerm — the
+        // first entry in `knownApps` — for every unclassified terminal name,
+        // including the hook-side "unknown" sentinel, and activated it for
+        // sessions hosted elsewhere. Returning nil lets jump() focus the tmux
+        // pane, fall back to the Finder cwd, or activate the reported app.
+        return Self.knownApps.first { descriptor in
             descriptor.displayName.lowercased() == normalized || descriptor.aliases.contains(normalized)
-        }) {
-            return exact
         }
-
-        return Self.knownApps.first(where: isInstalled(descriptor:))
     }
 
     private func normalizeTerminalAppName(_ preferredName: String) -> String {
         preferredName
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-    }
-
-    private func isInstalled(descriptor: TerminalAppDescriptor) -> Bool {
-        descriptor.allBundleIdentifiers.contains { applicationResolver($0) != nil }
     }
 
     private func preferredBundleIdentifierForAlias(
