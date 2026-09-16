@@ -313,7 +313,7 @@ struct TerminalJumpService {
                 }
 
                 // Fallback: at least activate the app
-                try openAction(["-b", descriptor.bundleIdentifier])
+                try openAction(["-b", resolvedBundleIdentifier])
                 return paneSelected
                     ? "Focused the matching tmux pane and activated \(descriptor.displayName)."
                     : "Activated \(descriptor.displayName). tmux pane targeting failed."

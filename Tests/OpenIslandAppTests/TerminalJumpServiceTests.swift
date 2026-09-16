@@ -515,6 +515,40 @@ struct TerminalJumpServiceTests {
         #expect(processInvocations.values.first?.0 == "trae")
         #expect(processInvocations.values.first?.1 == ["-r", "/Users/test/open-vibe-island"])
     }
+
+    @Test
+    func tmuxJumpFallbackActivatesTheResolvedBundleIdentifier() throws {
+        // A Zed Preview-only installation resolves to `dev.zed.Zed-Preview`,
+        // which the switch does not handle — the fallback must activate that
+        // same identifier instead of the descriptor's default bundle ID.
+        let openedArguments = OpenedArgumentsBox()
+        let service = TerminalJumpService(
+            applicationResolver: { bundleIdentifier in
+                bundleIdentifier == "dev.zed.Zed-Preview"
+                    ? URL(fileURLWithPath: "/Applications/Zed Preview.app")
+                    : nil
+            },
+            appRunningChecker: { _ in false },
+            openAction: { arguments in
+                openedArguments.values.append(arguments)
+            },
+            appleScriptRunner: { _ in "" },
+            processRunner: { _, _ in true }
+        )
+
+        let result = try service.jump(
+            to: JumpTarget(
+                terminalApp: "Zed",
+                workspaceName: "open-vibe-island",
+                paneTitle: "Zed abc123",
+                workingDirectory: "/Users/test/open-vibe-island",
+                tmuxTarget: "open-island-test-nonexistent:9.9"
+            )
+        )
+
+        #expect(result == "Activated Zed. tmux pane targeting failed.")
+        #expect(openedArguments.values == [["-b", "dev.zed.Zed-Preview"]])
+    }
 }
 
 final class ReadSequenceBox: @unchecked Sendable {
