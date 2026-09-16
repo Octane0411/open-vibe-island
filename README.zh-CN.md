@@ -295,7 +295,7 @@ AI coding 正在成为日常开发流程的一部分，但围绕它的控制层�
   swift run OpenIslandSetup uninstallGrok  # 移除 open-island.json 与 manifest
   ```
 
-- **Hermes Agent** — 基于 hook 的集成，写入 `~/.hermes/config.yaml` 的 `hooks:` 块（Hermes Agent CLI / gateway）。Hermes 以子进程方式运行 shell hooks（`shlex.split` + `shell=False`），JSON payload 通过 stdin 传入。Open Island 通过独立的 `--source hermes` 路径完成解码与会话生命周期映射：会话可见性、`post_llm_call` 驱动的 turn 完成卡片（`extra.user_message` / `extra.assistant_response`），以及 human-in-the-loop 拦截 —— `clarify` 工具的 `pre_tool_call` 弹出问题卡片（`.waitingForAnswer`），`pre_approval_request` 弹出审批卡片（`.waitingForApproval`）。受管安装为每个支持事件追加一条记录，并原样保留用户自建 hooks（首个 `(event, command)` 组合需要一次授权确认，或设置 `hooks_auto_accept: true`）。Fire-and-forget：hook 不向 stdout 写任何内容。可在设置窗口安装，或通过 CLI：
+- **Hermes Agent** — 基于 hook 的集成，写入 `~/.hermes/config.yaml` 的 `hooks:` 块（Hermes Agent CLI / gateway）。Hermes 以子进程方式运行 shell hooks（`shlex.split` + `shell=False`），JSON payload 通过 stdin 传入。Open Island 通过独立的 `--source hermes` 路径完成解码与会话生命周期映射：会话可见性、`post_llm_call` 驱动的 turn 完成卡片（`extra.user_message` / `extra.assistant_response`），以及 human-in-the-loop 拦截 —— `clarify` 工具的 `pre_tool_call` 弹出问题卡片（`.waitingForAnswer`），`pre_approval_request` 弹出审批卡片（`.waitingForApproval`）。受管安装为每个支持事件追加一条记录，并原样保留用户自建 hooks（首个 `(event, command)` 组合需要一次授权确认，或设置 `hooks_auto_accept: true`）。无 TTY 的运行（gateway、cron、CI）无法弹出该授权提示，因此新装 hooks 在这些场景下会保持未注册状态，需要先用交互式 CLI 授权一次，或设置 `hooks_auto_accept: true`（`HERMES_ACCEPT_HOOKS=1` / `--accept-hooks` 同样生效）。Fire-and-forget：hook 不向 stdout 写任何内容。可在设置窗口安装，或通过 CLI：
 
   ```sh
   swift run OpenIslandSetup installHermes    # 写入 ~/.hermes/config.yaml 的 hooks 块

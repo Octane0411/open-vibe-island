@@ -862,17 +862,27 @@ struct ActiveAgentProcessDiscovery {
     /// the hook channel.
     private func isHermesProcess(command: String) -> Bool {
         let lowered = command.lowercased()
-        if lowered.contains("tui_gateway.entry") {
-            return true
+        let tokens = lowered.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard let executable = tokens.first else {
+            return false
         }
+        let executableName = (executable as NSString).lastPathComponent
+
+        // The gateway runs as `python|python3[.x] -m tui_gateway.entry`; a bare
+        // substring match would also admit unrelated commands such as
+        // `grep tui_gateway.entry file`, which then keep sessions alive.
+        if executableName == "python" || executableName.hasPrefix("python3") {
+            for index in tokens.indices.dropLast()
+            where tokens[index] == "-m" && tokens[index + 1] == "tui_gateway.entry" {
+                return true
+            }
+            return false
+        }
+
         guard lowered.contains("/ui-tui/dist/entry.js") else {
             return false
         }
-        guard let firstToken = lowered.split(separator: " ").first.map(String.init) else {
-            return false
-        }
-        let binaryName = (firstToken as NSString).lastPathComponent
-        return binaryName == "node"
+        return executableName == "node"
     }
 
     private func piAgentVariant(command: String) -> PiAgentVariant? {

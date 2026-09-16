@@ -305,6 +305,40 @@ struct ActiveAgentProcessDiscoveryTests {
     }
 
     @Test
+    func discoverIgnoresUnrelatedCommandsMentioningGatewayModule() {
+        let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
+            if executablePath == "/bin/ps" {
+                return """
+                  701 1 ?? grep tui_gateway.entry /Users/user/.hermes/hermes.log
+                  702 1 ?? /usr/bin/python3 -m json.tool /tmp/payload.json
+                  703 1 ?? /Users/user/.hermes/hermes-agent/venv/bin/python3.12 -m tui_gateway.entry
+                """
+            }
+
+            guard executablePath == "/usr/sbin/lsof",
+                  let pid = arguments.dropFirst(2).first else {
+                return nil
+            }
+
+            switch pid {
+            case "703":
+                return """
+                fcwd
+                n/tmp/hermes-work
+                """
+            default:
+                Issue.record("unexpected lsof lookup for pid \(pid)")
+                return nil
+            }
+        }
+
+        let hermesSnapshots = discovery.discover().filter { $0.tool == .hermes }
+
+        #expect(hermesSnapshots.count == 1)
+        #expect(hermesSnapshots.first?.workingDirectory == "/tmp/hermes-work")
+    }
+
+    @Test
     func discoverDetectsOpenCodeProcessWithoutTTY() {
         let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
             if executablePath == "/bin/ps" {

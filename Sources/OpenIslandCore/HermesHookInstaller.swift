@@ -83,9 +83,15 @@ public enum HermesHookInstaller {
     ) throws -> HermesHookFileMutation {
         let text = existingData.map { String(decoding: $0, as: UTF8.self) } ?? ""
 
-        if let existingHooksRange = topLevelHooksBlockRange(in: text) {
+        switch topLevelHooksValue(in: text) {
+        case .inlineValue:
+            // `hooks: []` / `hooks: {...}` cannot carry hook entries, and
+            // appending an indented event mapping under such a scalar produces
+            // YAML Hermes cannot load — report the unsupported structure.
+            throw HermesHookInstallerError.unsupportedYAMLStructure
+        case let .block(existingHooksRange):
             let blockText = String(text[existingHooksRange])
-            let rebuilt = installIntoHooksBlock(blockText, hookCommand: hookCommand)
+            let rebuilt = try installIntoHooksBlock(blockText, hookCommand: hookCommand)
 
             // The located block range excludes a document-final newline, so
             // compare normalized forms before declaring the file changed.
@@ -105,6 +111,8 @@ public enum HermesHookInstaller {
                 changed: true,
                 managedHooksPresent: true
             )
+        case .absent:
+            break
         }
 
         // No top-level `hooks:` block — append a fresh one.
@@ -126,7 +134,7 @@ public enum HermesHookInstaller {
     private static func installIntoHooksBlock(
         _ blockText: String,
         hookCommand: String
-    ) -> String {
+    ) throws -> String {
         let blockLines = splitLines(blockText)
         let eventIndent = detectEventIndent(in: blockLines) ?? defaultEventIndent
         var output: [String] = []
@@ -152,13 +160,10 @@ public enum HermesHookInstaller {
             }
 
             guard isManagedEventMapping(trimmed) else {
-                // `post_llm_call: []` (or any other inline value) is a valid
-                // YAML node, not a block mapping to extend. Leave it verbatim
-                // and record it as present so no duplicate key is appended.
-                output.append(line)
-                eventsSeen.insert(event)
-                index += 1
-                continue
+                // `post_llm_call: []` is a valid YAML node but not a block
+                // mapping that can carry an entry, so the event would stay
+                // unhooked while the install reports success.
+                throw HermesHookInstallerError.unsupportedYAMLStructure
             }
 
             let body = eventBody(blockLines, from: index + 1, eventIndent: eventIndent)
@@ -166,13 +171,8 @@ public enum HermesHookInstaller {
                 // A mapping (or scalar) body — e.g. `command: ...` indented
                 // under the event — is not a hook-entry list. Mixing a
                 // `- command:` item into it would produce YAML Hermes cannot
-                // load, so the event is preserved verbatim and marked as
-                // present.
-                output.append(line)
-                output.append(contentsOf: body.lines)
-                eventsSeen.insert(event)
-                index += body.lineCount + 1
-                continue
+                // load.
+                throw HermesHookInstallerError.unsupportedYAMLStructure
             }
             let (foreignLines, _) = foreignEntryLines(body)
 
@@ -220,7 +220,9 @@ public enum HermesHookInstaller {
         }
 
         let text = String(decoding: existingData, as: UTF8.self)
-        guard let existingHooksRange = topLevelHooksBlockRange(in: text) else {
+        // An inline value (`hooks: []`) holds nothing of ours and cannot be
+        // edited as a block — nothing to remove.
+        guard case let .block(existingHooksRange) = topLevelHooksValue(in: text) else {
             return HermesHookFileMutation(contents: existingData, changed: false, managedHooksPresent: false)
         }
 
@@ -347,17 +349,44 @@ public enum HermesHookInstaller {
         }
 
         let text = String(decoding: existingData, as: UTF8.self)
-        guard let existingHooksRange = topLevelHooksBlockRange(in: text) else {
+        guard case let .block(existingHooksRange) = topLevelHooksValue(in: text) else {
             return false
         }
 
         return blockHasOpenIslandEntries(String(text[existingHooksRange]))
     }
 
+    /// Whether `command` is one of Open Island's own Hermes hook commands,
+    /// i.e. exactly `<binary> --source hermes`, where `<binary>` is the
+    /// managed hooks binary path (quoted when it contains spaces). Commands
+    /// that merely mention those names — a user wrapper, for example — are not
+    /// ours and must survive install and uninstall untouched.
     public static func isOpenIslandHermesHookCommand(_ command: String) -> Bool {
-        let normalized = command.lowercased()
-        return (normalized.contains("openislandhooks") || normalized.contains("vibeislandhooks"))
-            && normalized.contains("hermes")
+        let arguments = " --source hermes"
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasSuffix(arguments) else {
+            return false
+        }
+
+        var binary = String(trimmed.dropLast(arguments.count)).trimmingCharacters(in: .whitespaces)
+        var isQuoted = false
+        if binary.count >= 2,
+           (binary.hasPrefix("'") && binary.hasSuffix("'")) || (binary.hasPrefix("\"") && binary.hasSuffix("\"")) {
+            binary = String(binary.dropFirst().dropLast())
+            isQuoted = true
+        }
+        guard binary.contains("/"), !binary.contains("'"), !binary.contains("\"") else {
+            return false
+        }
+        // An unquoted prefix holding whitespace is several arguments (a
+        // wrapper, `env <name> …`) rather than the managed binary path.
+        if !isQuoted, binary.contains(where: { $0.isWhitespace }) {
+            return false
+        }
+
+        let name = (binary as NSString).lastPathComponent.lowercased()
+        return name == ManagedHooksBinary.binaryName.lowercased()
+            || name == ManagedHooksBinary.legacyBinaryName.lowercased()
     }
 
     // MARK: - Block location
@@ -383,9 +412,17 @@ public enum HermesHookInstaller {
         return lines
     }
 
-    /// Finds the range of the top-level `hooks:` mapping (through end of its
-    /// last indented line), or nil when absent/commented-out.
-    private static func topLevelHooksBlockRange(in text: String) -> Range<String.Index>? {
+    /// Locates the top-level `hooks` key. The key may be quoted (`"hooks":`).
+    /// A block mapping is returned as its range; an inline value
+    /// (`hooks: []`, `hooks: {...}`) cannot hold hook entries and is reported
+    /// as `.inlineValue`; a missing or commented-out key is `.absent`.
+    private enum TopLevelHooksValue {
+        case absent
+        case block(Range<String.Index>)
+        case inlineValue
+    }
+
+    private static func topLevelHooksValue(in text: String) -> TopLevelHooksValue {
         let lines = documentLines(in: text)
 
         for (lineIndex, entry) in lines.enumerated() {
@@ -395,8 +432,11 @@ public enum HermesHookInstaller {
             }
 
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard trimmed.hasPrefix("hooks:") else {
+            guard eventKey(of: trimmed) == "hooks" else {
                 continue
+            }
+            guard inlineValue(of: trimmed).isEmpty else {
+                return .inlineValue
             }
 
             var end = entry.range.upperBound
@@ -413,10 +453,10 @@ public enum HermesHookInstaller {
                 end = probe.range.upperBound
             }
 
-            return entry.range.lowerBound..<end
+            return .block(entry.range.lowerBound..<end)
         }
 
-        return nil
+        return .absent
     }
 
     private static func leadingIndent(of line: String) -> Int? {
@@ -460,22 +500,26 @@ public enum HermesHookInstaller {
         return rawKey
     }
 
-    /// Whether `trimmed` is an event key line we may rewrite: the key matches
-    /// a managed event AND the line carries no inline value (`post_llm_call:
-    /// []` is a valid YAML sequence, not a block mapping to extend — rewriting
-    /// its body would corrupt the document, so the caller leaves that event
-    /// untouched and simply marks it as present).
+    /// Whether `trimmed` is an event key line the installer may rewrite: the
+    /// key matches a managed event AND the line carries no inline value.
+    /// `post_llm_call: []` is a valid YAML sequence, not a block mapping to
+    /// extend — the installer rejects the block rather than writing hook
+    /// entries that Hermes cannot load.
     private static func isManagedEventMapping(_ trimmed: String) -> Bool {
-        guard let event = eventKey(of: trimmed) as String?, eventNames.contains(event) else {
-            return false
-        }
+        eventNames.contains(eventKey(of: trimmed)) && inlineValue(of: trimmed).isEmpty
+    }
 
-        var value = String(trimmed[trimmed.firstIndex(of: ":")!...].dropFirst())
+    /// Inline value on a mapping line (`hooks: []` → `[]`, `post_llm_call:`
+    /// → `""`); a trailing comment counts as no value.
+    private static func inlineValue(of trimmed: String) -> String {
+        guard let colon = trimmed.firstIndex(of: ":") else { return "" }
+
+        var value = String(trimmed[trimmed.index(after: colon)...])
             .trimmingCharacters(in: .whitespaces)
         if value.hasPrefix("#") {
             value = ""
         }
-        return value.isEmpty
+        return value
     }
 
     /// Indent used by the block's own event keys: taken from the first

@@ -75,9 +75,11 @@ enum SubprocessRunner {
         }
 
         guard spawnStatus == 0 else {
-            closeDescriptor(stdoutRead)
+            // The read ends are closed by the `defer` above; closing them here
+            // too would free their descriptor numbers for reuse before the
+            // deferred close runs, which can tear down an unrelated descriptor
+            // (BridgeServer client sockets live in this same process).
             closeDescriptor(stdoutWrite)
-            closeDescriptor(stderrRead)
             closeDescriptor(stderrWrite)
             return nil
         }

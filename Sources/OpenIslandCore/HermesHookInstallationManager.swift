@@ -110,6 +110,11 @@ public final class HermesHookInstallationManager: @unchecked Sendable {
 
         if let contents = mutation.contents {
             try contents.write(to: configURL, options: .atomic)
+        } else if mutation.changed, fileManager.fileExists(atPath: configURL.path) {
+            // The file held nothing but the managed hooks block — uninstall
+            // removed the whole config. Leaving the file in place would keep
+            // `status()` reporting the hooks as installed.
+            try fileManager.removeItem(at: configURL)
         }
 
         if fileManager.fileExists(atPath: manifestURL.path) {

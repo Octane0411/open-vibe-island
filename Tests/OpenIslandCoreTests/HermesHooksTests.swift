@@ -301,8 +301,45 @@ struct HermesHooksTests {
     func recognizesOpenIslandHermesCommands() {
         #expect(HermesHookInstaller.isOpenIslandHermesHookCommand("'/app/OpenIslandHooks' --source hermes"))
         #expect(HermesHookInstaller.isOpenIslandHermesHookCommand("'/app/VibeIslandHooks' --source hermes"))
+        #expect(HermesHookInstaller.isOpenIslandHermesHookCommand("/app/OpenIslandHooks --source hermes"))
+        #expect(HermesHookInstaller.isOpenIslandHermesHookCommand(
+            "'/Applications/Open Island.app/Contents/Helpers/OpenIslandHooks' --source hermes"
+        ))
         #expect(!HermesHookInstaller.isOpenIslandHermesHookCommand("'/app/OpenIslandHooks' --source gemini"))
         #expect(!HermesHookInstaller.isOpenIslandHermesHookCommand("'/usr/bin/echo hi'"))
+    }
+
+    @Test
+    func rejectsUserCommandsThatMerelyMentionOpenIsland() {
+        // Only the exact managed shape is ours — a wrapper (or any other
+        // command) that merely mentions the binary must survive untouched.
+        #expect(!HermesHookInstaller.isOpenIslandHermesHookCommand(
+            "/usr/local/bin/wrapper /app/OpenIslandHooks --source hermes"
+        ))
+        #expect(!HermesHookInstaller.isOpenIslandHermesHookCommand("echo openislandhooks hermes"))
+        #expect(!HermesHookInstaller.isOpenIslandHermesHookCommand("'/app/OpenIslandHooks' --source hermes --verbose"))
+        #expect(!HermesHookInstaller.isOpenIslandHermesHookCommand("'/app/Hooks --source hermes'"))
+    }
+
+    @Test
+    func uninstallPreservesUserCommandMentioningOpenIsland() throws {
+        let wrapper = "/usr/local/bin/wrapper /app/OpenIslandHooks --source hermes"
+        let existing = """
+        hooks:
+          on_session_start:
+            - command: '\(wrapper)'
+        """
+        let installed = try HermesHookInstaller.installConfigYAML(
+            existingData: Data(existing.utf8),
+            hookCommand: hookCommand
+        )
+        let mutation = try HermesHookInstaller.uninstallConfigYAML(
+            existingData: installed.contents,
+            managedCommand: hookCommand
+        )
+
+        let text = String(decoding: mutation.contents!, as: UTF8.self)
+        #expect(text.contains(wrapper))
     }
 
     // MARK: - YAML round-trip
@@ -361,10 +398,12 @@ struct HermesHooksTests {
     }
 
     @Test
-    func installLeavesInlineValuedEventVerbatim() throws {
+    func installExtendsQuotedHooksKeyWithoutDuplicateKey() throws {
         let existing = """
-        hooks:
-          post_llm_call: []
+        model: gpt-5
+        "hooks":
+          post_llm_call:
+            - command: '/usr/bin/echo mine'
         """
         let installed = try HermesHookInstaller.installConfigYAML(
             existingData: Data(existing.utf8),
@@ -372,9 +411,53 @@ struct HermesHooksTests {
         )
         let text = String(decoding: installed.contents!, as: UTF8.self)
 
-        #expect(text.contains("post_llm_call: []"))
-        #expect(!text.contains("post_llm_call:\n    - command:"))
+        #expect(text.contains("echo mine"))
+        #expect(text.components(separatedBy: "hooks").count - 1 == 1)
         #expect(text.contains("on_session_start:"))
+    }
+
+    @Test
+    func installRejectsInlineHooksValue() throws {
+        let existing = """
+        model: gpt-5
+        hooks: []
+        """
+        #expect(throws: HermesHookInstallerError.unsupportedYAMLStructure) {
+            _ = try HermesHookInstaller.installConfigYAML(
+                existingData: Data(existing.utf8),
+                hookCommand: hookCommand
+            )
+        }
+    }
+
+    @Test
+    func uninstallLeavesInlineHooksValueAlone() throws {
+        let existing = """
+        model: gpt-5
+        hooks: []
+        """
+        let mutation = try HermesHookInstaller.uninstallConfigYAML(
+            existingData: Data(existing.utf8),
+            managedCommand: hookCommand
+        )
+
+        #expect(!mutation.changed)
+        let text = String(decoding: mutation.contents!, as: UTF8.self)
+        #expect(text.contains("hooks: []"))
+    }
+
+    @Test
+    func installRejectsInlineValuedManagedEvent() throws {
+        let existing = """
+        hooks:
+          post_llm_call: []
+        """
+        #expect(throws: HermesHookInstallerError.unsupportedYAMLStructure) {
+            _ = try HermesHookInstaller.installConfigYAML(
+                existingData: Data(existing.utf8),
+                hookCommand: hookCommand
+            )
+        }
     }
 
     @Test
@@ -402,23 +485,18 @@ struct HermesHooksTests {
     }
 
     @Test
-    func installLeavesMappingValuedEventVerbatim() throws {
+    func installRejectsMappingValuedManagedEvent() throws {
         let existing = """
         hooks:
           post_llm_call:
             command: '/usr/bin/echo mine'
         """
-        let installed = try HermesHookInstaller.installConfigYAML(
-            existingData: Data(existing.utf8),
-            hookCommand: hookCommand
-        )
-        let text = String(decoding: installed.contents!, as: UTF8.self)
-
-        #expect(text.contains("command: '/usr/bin/echo mine'"))
-        // The mapping-valued event keeps its body; no list entry is mixed in
-        // under it.
-        #expect(!text.contains("echo mine'\n    - command:"))
-        #expect(text.contains("on_session_start:"))
+        #expect(throws: HermesHookInstallerError.unsupportedYAMLStructure) {
+            _ = try HermesHookInstaller.installConfigYAML(
+                existingData: Data(existing.utf8),
+                hookCommand: hookCommand
+            )
+        }
     }
 
     @Test

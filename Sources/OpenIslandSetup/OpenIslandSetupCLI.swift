@@ -398,6 +398,9 @@ private enum SetupError: Error, LocalizedError {
               swift run OpenIslandSetup installGrok [--hooks-binary /abs/path/to/OpenIslandHooks] [--grok-dir /abs/path/to/.grok]
               swift run OpenIslandSetup uninstallGrok [--grok-dir /abs/path/to/.grok]
               swift run OpenIslandSetup statusGrok [--hooks-binary /abs/path/to/OpenIslandHooks] [--grok-dir /abs/path/to/.grok]
+              swift run OpenIslandSetup installHermes [--hooks-binary /abs/path/to/OpenIslandHooks] [--hermes-dir /abs/path/to/.hermes]
+              swift run OpenIslandSetup uninstallHermes [--hermes-dir /abs/path/to/.hermes]
+              swift run OpenIslandSetup statusHermes [--hooks-binary /abs/path/to/OpenIslandHooks] [--hermes-dir /abs/path/to/.hermes]
             """
         case let .missingValue(flag):
             "Missing value for \(flag)"
