@@ -284,6 +284,16 @@ struct TerminalJumpService {
                     for: descriptor,
                     preferredBundleIdentifier: preferredBundleIdentifier
                 )
+
+                // Never activate a stopped app from this branch: `open -b`
+                // would launch it as a side effect of focusing a pane.
+                // Report the tmux-side result instead.
+                guard appRunningChecker(resolvedBundleIdentifier) else {
+                    return paneSelected
+                        ? "Focused the matching tmux pane."
+                        : "\(descriptor.displayName) is not running. tmux pane targeting failed."
+                }
+
                 switch resolvedBundleIdentifier {
                 case "com.mitchellh.ghostty":
                     if try jumpToGhosttyTerminal(target) {
