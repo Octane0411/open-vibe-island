@@ -50,7 +50,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 
 ## Supported Agents & Terminals
 
-**13 agents**: Claude Code, Codex, Cursor, Gemini CLI, Grok Build, Kimi CLI, OpenCode, Pi, Oh My Pi, Qoder, Qwen Code, Factory, CodeBuddy
+**14 agents**: Claude Code, Codex, Cursor, Gemini CLI, Grok Build, Kimi CLI, OpenCode, Pi, Oh My Pi, Qoder, Qwen Code, Factory, CodeBuddy, ZCode
 
 **15+ terminals & IDEs**: Terminal.app, Ghostty, iTerm2, WezTerm, Zellij, tmux, cmux, Kaku, VS Code, Cursor, Windsurf, Trae, Zed, JetBrains IDEs (IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover)
 
@@ -76,6 +76,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 | **Grok Build** | Supported | Hook integration via `~/.grok/hooks/open-island.json`, session tracking, terminal jump-back, fire-and-forget events (no permission round-trip yet; camelCase payload) |
 | **Pi** | Supported | TypeScript extension at `~/.pi/agent/extensions/open-island.ts`; session, prompt, tool, completion, process-discovery, persistence, and terminal jump tracking |
 | **Oh My Pi (OMP)** | Supported | TypeScript extension at `~/.omp/agent/extensions/open-island.ts`; the same lifecycle coverage adapted to OMP event aliases |
+| **ZCode** | Supported | Hook integration via `~/.zcode/cli/config.json` `hooks.events` (ZCode Desktop). Claude-compatible payload reuses the Claude decode path; lifecycle-only event set (SessionStart, UserPromptSubmit, Stop); app-process liveness like Codex.app |
 
 ### Terminals & IDEs
 
@@ -290,6 +291,14 @@ Developers who already live in the terminal and want a better way to work with c
   swift run OpenIslandSetup installGrok    # write ~/.grok/hooks/open-island.json
   swift run OpenIslandSetup statusGrok     # report whether managed hooks are present
   swift run OpenIslandSetup uninstallGrok  # remove managed open-island.json + manifest
+  ```
+
+- **ZCode** — Hook-based integration via the top-level `hooks` block of `~/.zcode/cli/config.json` (ZCode Desktop, `ZCode.app`). ZCode's hook payloads are Claude Code compatible on stdin (snake_case `hook_event_name`, `session_id`, `cwd`, `Stop` carries `last_assistant_message`), so Open Island reuses the Claude decode path behind a dedicated `--source zcode` entry. The managed v1 install registers the low-noise lifecycle set (`SessionStart`, `UserPromptSubmit`, `Stop`) and sets `hooks.enabled: true`, because ZCode configuration-file hooks are disabled by default; user-authored hook entries in the same file are preserved. ZCode is an Electron app: all sessions share one app process, so liveness follows the running app (same shape as Codex.app) rather than per-session TTY tracking, and jump-back activates ZCode. Usage tracking and permission round-trips are not covered in v1. Manage installation from the Settings window, or via CLI:
+
+  ```sh
+  swift run OpenIslandSetup installZcode    # write managed events into ~/.zcode/cli/config.json
+  swift run OpenIslandSetup statusZcode     # report whether managed hooks are present
+  swift run OpenIslandSetup uninstallZcode  # remove managed entries, preserve user-authored hooks
   ```
 
 ### Terminal Support

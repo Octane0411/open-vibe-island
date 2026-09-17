@@ -530,6 +530,17 @@ final class ProcessMonitoringCoordinator {
             }
         }
 
+        // ZCode sessions are hook-managed and all share one Electron app
+        // process, so per-session UUIDs cannot be recovered from ps/lsof.
+        // Same conservative fallback as Kimi: while any zcode process exists,
+        // keep every tracked ZCode session alive.
+        let hasZcodeProcess = activeProcesses.contains { $0.tool == .zcode }
+        if hasZcodeProcess {
+            for session in sessions where session.tool == .zcode && !session.isDemoSession {
+                aliveIDs.insert(session.id)
+            }
+        }
+
         // Grok sessions are hook-managed. Process discovery sees a `grok`
         // binary but cannot recover Grok's session UUID from ps/lsof.
         // Prefer TTY / CWD matches when unique; otherwise use a conservative
@@ -1595,6 +1606,8 @@ final class ProcessMonitoringCoordinator {
             return "Pi \(session.id.prefix(8))"
         case .ohMyPi:
             return "Oh My Pi \(session.id.prefix(8))"
+        case .zcode:
+            return "ZCode \(session.id.prefix(8))"
         }
     }
 }

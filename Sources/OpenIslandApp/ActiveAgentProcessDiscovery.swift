@@ -233,6 +233,25 @@ struct ActiveAgentProcessDiscovery {
                 continue
             }
 
+            if isZcodeProcess(command: process.command) {
+                // One snapshot for the whole app: every ZCode session lives in
+                // the same Electron process, so per-session liveness is
+                // hook-driven (same fallback shape as Kimi).
+                let claimKey = "zcode:\(process.pid)"
+                guard claimedKeys.insert(claimKey).inserted else {
+                    continue
+                }
+
+                snapshots.append(ProcessSnapshot(
+                    tool: .zcode,
+                    sessionID: nil,
+                    workingDirectory: nil,
+                    terminalTTY: nil,
+                    terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+                ))
+                continue
+            }
+
             if let piAgent = piAgentVariant(command: process.command) {
                 let claimKey = "\(piAgent.rawValue):\(process.pid)"
                 guard claimedKeys.insert(claimKey).inserted else {
@@ -565,6 +584,9 @@ struct ActiveAgentProcessDiscovery {
         if lowered.contains("/qoder.app/") {
             return "Qoder"
         }
+        if lowered.contains("/zcode.app/contents/macos/zcode") {
+            return "ZCode"
+        }
         if lowered.contains("/codebuddy.app/") {
             return "CodeBuddy"
         }
@@ -831,6 +853,17 @@ struct ActiveAgentProcessDiscovery {
         }
 
         return firstToken == "grok" || firstToken.hasSuffix("/grok")
+    }
+
+    /// Matches ZCode sessions. ZCode is an Electron desktop app: all sessions
+    /// run inside one app process whose command embeds the agent engine at
+    /// `…/ZCode.app/Contents/Resources/glm/zcode.cjs`. The Electron helper
+    /// processes share the framework naming and are matched by the same
+    /// bundle-path substring.
+    private func isZcodeProcess(command: String) -> Bool {
+        let lowered = command.lowercased()
+        return lowered.contains("/zcode.app/contents/resources/glm/zcode.cjs")
+            || (lowered.hasSuffix("/zcode") && lowered.contains("/zcode.app/contents/macos/"))
     }
 
     private func piAgentVariant(command: String) -> PiAgentVariant? {

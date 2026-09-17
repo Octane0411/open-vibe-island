@@ -144,6 +144,9 @@ final class AppModel {
     var grokHookStatus: GrokHookInstallationStatus? { hooks.grokHookStatus }
     var grokHookStatusTitle: String { hooks.grokHookStatusTitle }
     var grokHookStatusSummary: String { hooks.grokHookStatusSummary }
+    var zcodeHooksInstalled: Bool { hooks.zcodeHooksInstalled }
+    var isZcodeHookSetupBusy: Bool { hooks.isZcodeHookSetupBusy }
+    var zcodeHookStatus: ZCodeHookInstallationStatus? { hooks.zcodeHookStatus }
     var piExtensionInstalled: Bool { hooks.piExtensionInstalled }
     var ohMyPiExtensionInstalled: Bool { hooks.ohMyPiExtensionInstalled }
     var isPiSetupBusy: Bool { hooks.isPiSetupBusy }
@@ -177,6 +180,7 @@ final class AppModel {
             || hooks.geminiHooksInstalled
             || hooks.kimiHooksInstalled
             || hooks.grokHooksInstalled
+            || hooks.zcodeHooksInstalled
             || hooks.piExtensionInstalled
             || hooks.ohMyPiExtensionInstalled
     }
@@ -212,6 +216,9 @@ final class AppModel {
     func refreshGrokHookStatus() { hooks.refreshGrokHookStatus() }
     func installGrokHooks() { hooks.installGrokHooks() }
     func uninstallGrokHooks() { hooks.uninstallGrokHooks() }
+    func refreshZcodeHookStatus() { hooks.refreshZcodeHookStatus() }
+    func installZcodeHooks() { hooks.installZcodeHooks() }
+    func uninstallZcodeHooks() { hooks.uninstallZcodeHooks() }
     func refreshPiExtensionStatuses() { hooks.refreshPiExtensionStatuses() }
     func installPiExtension() { hooks.installPiExtension() }
     func uninstallPiExtension() { hooks.uninstallPiExtension() }
@@ -1720,6 +1727,7 @@ final class AppModel {
             if self.hooks.shouldAutoInstall(.gemini) { self.installGeminiHooks() }
             if self.hooks.shouldAutoInstall(.kimi) { self.installKimiHooks() }
             if self.hooks.shouldAutoInstall(.grok) { self.installGrokHooks() }
+            if self.hooks.shouldAutoInstall(.zcode) { self.installZcodeHooks() }
             if self.hooks.shouldAutoInstall(.claudeUsageBridge) { self.installClaudeUsageBridge() }
 
             // Run health checks after install to detect stale paths, conflicts, etc.

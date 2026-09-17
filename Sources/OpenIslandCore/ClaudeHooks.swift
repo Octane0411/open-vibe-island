@@ -892,6 +892,8 @@ public extension ClaudeHookPayload {
             return .codebuddy
         case "kimi":
             return .kimiCLI
+        case "zcode":
+            return .zcode
         default:
             return .claudeCode
         }

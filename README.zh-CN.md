@@ -50,7 +50,7 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 
 ## 支持的 Agents 和终端
 
-**13 个 Agents**：Claude Code、Codex、Cursor、Gemini CLI、Grok Build、Kimi CLI、OpenCode、Pi、Oh My Pi、Qoder、Qwen Code、Factory、CodeBuddy
+**14 个 Agents**：Claude Code、Codex、Cursor、Gemini CLI、Grok Build、Kimi CLI、OpenCode、Pi、Oh My Pi、Qoder、Qwen Code、Factory、CodeBuddy、ZCode
 
 **15+ 终端和 IDE**：Terminal.app、Ghostty、iTerm2、WezTerm、Zellij、tmux、cmux、Kaku、VS Code、Cursor、Windsurf、Trae、Zed、JetBrains 全家桶（IDEA、WebStorm、PyCharm、GoLand、CLion、RubyMine、PhpStorm、Rider、RustRover）
 
@@ -75,6 +75,7 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 | **Grok Build** | 已支持 | Hook 集成，写入 `~/.grok/hooks/open-island.json`，会话追踪与终端跳回，fire-and-forget 事件（暂无权限拦截；camelCase payload） |
 | **Pi** | 已支持 | TypeScript 扩展，位于 `~/.pi/agent/extensions/open-island.ts`，会话/提示词/工具/完成事件追踪，进程检测，会话持久化，终端跳转 |
 | **Oh My Pi (OMP)** | 已支持 | TypeScript 扩展，位于 `~/.omp/agent/extensions/open-island.ts`，同等生命周期覆盖，适配 OMP 事件别名 |
+| **ZCode** | 已支持 | Hook 集成，写入 `~/.zcode/cli/config.json` 的 `hooks.events`（ZCode Desktop）。payload 与 Claude Code 兼容，复用 Claude 解码路径；仅注册生命周期事件（SessionStart、UserPromptSubmit、Stop）；进程存活跟随 ZCode.app（同 Codex.app 模式） |
 
 ### 终端和 IDE
 
@@ -292,6 +293,14 @@ AI coding 正在成为日常开发流程的一部分，但围绕它的控制层�
   swift run OpenIslandSetup installGrok    # 写入 ~/.grok/hooks/open-island.json
   swift run OpenIslandSetup statusGrok     # 查看受管 hooks 是否已安装
   swift run OpenIslandSetup uninstallGrok  # 移除 open-island.json 与 manifest
+  ```
+
+- **ZCode** — 基于 hook 的集成，写入 `~/.zcode/cli/config.json` 顶层的 `hooks` 块（ZCode Desktop，`ZCode.app`）。ZCode 的 hook payload 与 Claude Code 兼容（snake_case 的 `hook_event_name`、`session_id`、`cwd`，`Stop` 事件附带 `last_assistant_message`），因此 Open Island 通过独立的 `--source zcode` 入口复用 Claude 解码路径。受管的 v1 安装只注册低噪声的生命周期事件集合（`SessionStart`、`UserPromptSubmit`、`Stop`），并设置 `hooks.enabled: true`（ZCode 的配置文件 hooks 默认关闭）；同一文件中用户自建的 hook 条目会被保留。ZCode 是 Electron 应用：所有会话共享同一个应用进程，存活判定跟随运行中的应用（同 Codex.app 模式）而非逐会话 TTY 追踪，跳回时激活 ZCode。v1 暂不覆盖用量追踪与权限拦截。可在设置窗口安装，或通过 CLI：
+
+  ```sh
+  swift run OpenIslandSetup installZcode    # 将受管事件写入 ~/.zcode/cli/config.json
+  swift run OpenIslandSetup statusZcode     # 查看受管 hooks 是否已安装
+  swift run OpenIslandSetup uninstallZcode  # 移除受管条目，保留用户自定义 hooks
   ```
 
 ### 终端支持

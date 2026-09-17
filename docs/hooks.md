@@ -1,6 +1,6 @@
 # Hook System
 
-OpenIsland receives lifecycle events from managed hook CLIs and runtime extensions. Codex, Claude-family agents, Gemini CLI, Grok Build, and Kimi CLI invoke `OpenIslandHooks`; Pi and Oh My Pi load a TypeScript extension. Both paths forward typed payloads to the app over its Unix socket. Hook sources that support blocking can receive directives on stdout; Pi-family extensions are fire-and-forget.
+OpenIsland receives lifecycle events from managed hook CLIs and runtime extensions. Codex, Claude-family agents, Gemini CLI, Grok Build, Kimi CLI, and ZCode invoke `OpenIslandHooks`; Pi and Oh My Pi load a TypeScript extension. Both paths forward typed payloads to the app over its Unix socket. Hook sources that support blocking can receive directives on stdout; Pi-family extensions are fire-and-forget.
 
 ## Architecture
 
@@ -349,6 +349,7 @@ Jump-back metadata (terminal app, terminal session ID, TTY) is read from the age
 | Claude Code | All other events | **45 seconds** |
 | Gemini CLI | All events | Bridge default |
 | Grok Build | All managed events | **45 seconds** |
+| ZCode | All managed events | **45 seconds** (shared Claude-format path) |
 | Pi / Oh My Pi | Heartbeat liveness | **45 seconds** |
 
 ---
@@ -407,6 +408,45 @@ swift run OpenIslandSetup uninstallGrok
 Or use **Settings → Setup → Grok Build** in the app.
 
 > If commercial Vibe Island is also installed, both may write under `~/.grok/hooks/`. Prefer one controller at a time.
+
+---
+
+## ZCode Hooks (`--source zcode`)
+
+**Payload type**: `ClaudeHookPayload` (shared with Claude Code)
+**Source**: [`Sources/OpenIslandCore/ZCodeHookInstaller.swift`](../Sources/OpenIslandCore/ZCodeHookInstaller.swift)
+
+ZCode (ZCode Desktop, `ZCode.app`) reads configuration-file hooks from the top-level `hooks` block of `~/.zcode/cli/config.json`, shaped as `{ enabled?, events: { <Event>: [group] } }`. Configuration-file hooks are **disabled by default**; the managed installer sets `hooks.enabled: true` alongside its event registrations.
+
+ZCode's hook payloads are Claude Code compatible on stdin (snake_case `hook_event_name`, `session_id`, `cwd`, tool events carry `tool_name` / `tool_input`, `Stop` carries `last_assistant_message`), so the runtime reuses the Claude decode path with a dedicated `--source zcode` value.
+
+### Events (managed install)
+
+The managed v1 install is intentionally low-noise — the same lifecycle set as Codex:
+
+| Event | Matcher | Current OpenIsland behavior |
+|---|---|---|
+| `SessionStart` | — | Creates / re-opens the ZCode session, title, and jump target |
+| `UserPromptSubmit` | — | Updates the session prompt / activity |
+| `Stop` | — | Settles the turn; `last_assistant_message` feeds the completion card |
+
+ZCode additionally supports blocking events (`PreToolUse`, `PermissionRequest`, `PostToolUse`, `PostToolUseFailure`). They are parseable through the shared Claude path but **not registered by the managed install**; approval round-trips can be enabled once designed for this surface.
+
+### Lifecycle / liveness notes
+
+- ZCode is an Electron desktop app: all sessions share one `ZCode.app` process. Process discovery matches the app process (and its embedded engine at `…/ZCode.app/Contents/Resources/glm/zcode.cjs`) and reports a single snapshot; per-session liveness is hook-driven.
+- While any zcode process is alive, Open Island keeps tracked ZCode sessions in the process-alive set (same conservative fallback as Kimi).
+- `transcript_path` in ZCode payloads points at a hook-runtime temporary file that is deleted after the hook completes; Open Island does not depend on it.
+
+### Install / uninstall
+
+```bash
+swift run OpenIslandSetup installZcode
+swift run OpenIslandSetup statusZcode
+swift run OpenIslandSetup uninstallZcode
+```
+
+Or use **Settings → Setup → ZCode** in the app. Uninstall removes managed event entries (and `hooks.enabled` when nothing else remains) while preserving user-authored hook groups in the same file.
 
 ---
 

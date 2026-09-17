@@ -29,6 +29,7 @@ final class HookInstallationCoordinator {
     var geminiHookStatus: GeminiHookInstallationStatus?
     var kimiHookStatus: KimiHookInstallationStatus?
     var grokHookStatus: GrokHookInstallationStatus?
+    var zcodeHookStatus: ZCodeHookInstallationStatus?
     var piExtensionStatus: PiExtensionInstallationStatus?
     var ohMyPiExtensionStatus: PiExtensionInstallationStatus?
     var claudeStatusLineStatus: ClaudeStatusLineInstallationStatus?
@@ -46,6 +47,7 @@ final class HookInstallationCoordinator {
     var isGeminiHookSetupBusy = false
     var isKimiHookSetupBusy = false
     var isGrokHookSetupBusy = false
+    var isZcodeHookSetupBusy = false
     var isPiSetupBusy = false
     var isOhMyPiSetupBusy = false
     var isClaudeUsageSetupBusy = false
@@ -99,6 +101,9 @@ final class HookInstallationCoordinator {
 
     @ObservationIgnored
     private let grokHookInstallationManager = GrokHookInstallationManager()
+
+    @ObservationIgnored
+    private let zcodeHookInstallationManager = ZCodeHookInstallationManager()
     private let piExtensionInstallationManager: PiExtensionInstallationManager
 
     @ObservationIgnored
@@ -166,6 +171,10 @@ final class HookInstallationCoordinator {
 
     var grokHooksInstalled: Bool {
         grokHookStatus?.managedHooksPresent == true
+    }
+
+    var zcodeHooksInstalled: Bool {
+        zcodeHookStatus?.managedHooksPresent == true
     }
 
     var piExtensionInstalled: Bool {
@@ -421,6 +430,18 @@ final class HookInstallationCoordinator {
         return "Grok hooks not installed"
     }
 
+    var zcodeHookStatusTitle: String {
+        if zcodeHooksInstalled {
+            return "ZCode hooks installed"
+        }
+
+        if hooksBinaryURL == nil {
+            return "Hook binary not found"
+        }
+
+        return "ZCode hooks not installed"
+    }
+
     var grokHookStatusSummary: String {
         guard grokHookStatus != nil else {
             return "Reading ~/.grok/hooks/open-island.json."
@@ -435,6 +456,22 @@ final class HookInstallationCoordinator {
         }
 
         return "no managed Grok hooks"
+    }
+
+    var zcodeHookStatusSummary: String {
+        guard zcodeHookStatus != nil else {
+            return "Reading ~/.zcode/cli/config.json."
+        }
+
+        if zcodeHooksInstalled {
+            return "managed hooks present"
+        }
+
+        if hooksBinaryURL == nil {
+            return "Build OpenIslandHooks before installing."
+        }
+
+        return "no managed ZCode hooks"
     }
 
     var codexHookStatusTitle: String {
@@ -764,6 +801,16 @@ final class HookInstallationCoordinator {
 
             group.addTask { @MainActor [weak self] in
                 guard let self else { return }
+                do {
+                    let status = try self.zcodeHookInstallationManager.status(hooksBinaryURL: self.hooksBinaryURL)
+                    self.zcodeHookStatus = status
+                } catch {
+                    self.onStatusMessage?("Failed to read ZCode hook status: \(error.localizedDescription)")
+                }
+            }
+
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
                 self.loadPiExtensionStatuses()
             }
         }
@@ -830,6 +877,19 @@ final class HookInstallationCoordinator {
                 self.grokHookStatus = status
             } catch {
                 self.onStatusMessage?("Failed to read Grok hook status: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func refreshZcodeHookStatus() {
+        Task { [weak self] in
+            guard let self else { return }
+
+            do {
+                let status = try self.zcodeHookInstallationManager.status(hooksBinaryURL: self.hooksBinaryURL)
+                self.zcodeHookStatus = status
+            } catch {
+                self.onStatusMessage?("Failed to read ZCode hook status: \(error.localizedDescription)")
             }
         }
     }
@@ -932,6 +992,7 @@ final class HookInstallationCoordinator {
         case .gemini: return !geminiHooksInstalled
         case .kimi: return !kimiHooksInstalled
         case .grok: return !grokHooksInstalled
+        case .zcode: return !zcodeHooksInstalled
         case .pi: return !(piExtensionStatus?.isCurrent ?? false)
         case .ohMyPi: return !(ohMyPiExtensionStatus?.isCurrent ?? false)
         case .claudeUsageBridge: return !claudeUsageInstalled
@@ -959,6 +1020,7 @@ final class HookInstallationCoordinator {
             case .gemini: return geminiHooksInstalled
             case .kimi: return kimiHooksInstalled
             case .grok: return grokHooksInstalled
+            case .zcode: return zcodeHooksInstalled
             case .pi: return piExtensionInstalled
             case .ohMyPi: return ohMyPiExtensionInstalled
             case .claudeUsageBridge: return claudeUsageInstalled
@@ -1185,6 +1247,23 @@ final class HookInstallationCoordinator {
 
     func uninstallGrokHooks() {
         updateGrokHooks(userMessage: "Removing Grok hooks.", intent: .uninstalled) { manager in
+            try manager.uninstall()
+        }
+    }
+
+    func installZcodeHooks() {
+        guard let hooksBinaryURL else {
+            onStatusMessage?("Could not find a local OpenIslandHooks binary. Build the package first.")
+            return
+        }
+
+        updateZcodeHooks(userMessage: "Installing ZCode hooks.", intent: .installed) { manager in
+            try manager.install(hooksBinaryURL: hooksBinaryURL)
+        }
+    }
+
+    func uninstallZcodeHooks() {
+        updateZcodeHooks(userMessage: "Removing ZCode hooks.", intent: .uninstalled) { manager in
             try manager.uninstall()
         }
     }
@@ -1512,6 +1591,34 @@ final class HookInstallationCoordinator {
                 }
             } catch {
                 self.onStatusMessage?("Grok hook update failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func updateZcodeHooks(
+        userMessage: String,
+        intent: AgentHookIntent,
+        operation: @escaping (ZCodeHookInstallationManager) throws -> ZCodeHookInstallationStatus
+    ) {
+        isZcodeHookSetupBusy = true
+        onStatusMessage?(userMessage)
+
+        Task { [weak self] in
+            guard let self else { return }
+
+            defer { self.isZcodeHookSetupBusy = false }
+
+            do {
+                let status = try operation(self.zcodeHookInstallationManager)
+                self.zcodeHookStatus = status
+                self.intentStore.setIntent(intent, for: .zcode)
+                if status.managedHooksPresent {
+                    self.onStatusMessage?("ZCode hooks are installed and ready.")
+                } else {
+                    self.onStatusMessage?("ZCode hooks are not installed.")
+                }
+            } catch {
+                self.onStatusMessage?("ZCode hook update failed: \(error.localizedDescription)")
             }
         }
     }
