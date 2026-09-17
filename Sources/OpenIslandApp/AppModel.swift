@@ -220,15 +220,20 @@ final class AppModel {
     func installClaudeUsageBridge() { hooks.installClaudeUsageBridge() }
     func uninstallClaudeUsageBridge() { hooks.uninstallClaudeUsageBridge() }
     func updateClaudeConfigDirectory(to newDirectory: URL?) { hooks.updateClaudeConfigDirectory(to: newDirectory) }
-    var claudeAccounts: [ClaudeAccountDirectory] { ClaudeAccountsStore.accounts }
+    /// Stored (rather than computed from `ClaudeAccountsStore` on every read)
+    /// so SwiftUI's observation tracking actually notices changes — a
+    /// computed passthrough to UserDefaults doesn't register as a dependency.
+    var claudeAccounts: [ClaudeAccountDirectory] = ClaudeAccountsStore.accounts
     var claudeAccountHookStatuses: [UUID: ClaudeHookInstallationStatus] { hooks.claudeAccountHookStatuses }
     func addClaudeAccount(label: String, directoryURL: URL) {
         ClaudeAccountsStore.add(label: label, directoryURL: directoryURL)
+        claudeAccounts = ClaudeAccountsStore.accounts
         hooks.installClaudeAccountHooks()
     }
     func removeClaudeAccount(id: UUID) {
         hooks.uninstallClaudeAccountHooks(id: id)
         ClaudeAccountsStore.remove(id: id)
+        claudeAccounts = ClaudeAccountsStore.accounts
     }
     func refreshClaudeAccountHookStatuses() { hooks.refreshClaudeAccountHookStatuses() }
     func runHealthChecks() { hooks.runHealthChecks() }

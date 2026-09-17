@@ -755,6 +755,9 @@ struct SetupSettingsPane: View {
         }
         .formStyle(.grouped)
         .navigationTitle(lang.t("settings.tab.setup"))
+        .task {
+            model.refreshClaudeAccountHookStatuses()
+        }
     }
 
     @ViewBuilder
@@ -805,9 +808,6 @@ struct SetupSettingsPane: View {
         }
     }
 
-    @State private var newClaudeAccountLabel: String = ""
-    @State private var newClaudeAccountDirectoryURL: URL?
-
     @ViewBuilder
     private var claudeAccountsSection: some View {
         Section {
@@ -839,26 +839,8 @@ struct SetupSettingsPane: View {
                 }
             }
 
-            HStack {
-                TextField(lang.t("setup.claudeAccounts.labelPlaceholder"), text: $newClaudeAccountLabel)
-                Button(newClaudeAccountDirectoryURL?.lastPathComponent ?? lang.t("setup.claudeConfigDir.choose")) {
-                    let panel = NSOpenPanel()
-                    panel.canChooseDirectories = true
-                    panel.canChooseFiles = false
-                    panel.canCreateDirectories = true
-                    panel.prompt = lang.t("setup.claudeConfigDir.choose")
-                    if panel.runModal() == .OK, let url = panel.url {
-                        newClaudeAccountDirectoryURL = url
-                    }
-                }
-                Button(lang.t("setup.claudeAccounts.add")) {
-                    let label = newClaudeAccountLabel.trimmingCharacters(in: .whitespaces)
-                    guard let url = newClaudeAccountDirectoryURL, !label.isEmpty else { return }
-                    model.addClaudeAccount(label: label, directoryURL: url)
-                    newClaudeAccountLabel = ""
-                    newClaudeAccountDirectoryURL = nil
-                }
-                .disabled(newClaudeAccountDirectoryURL == nil || newClaudeAccountLabel.trimmingCharacters(in: .whitespaces).isEmpty)
+            ClaudeAccountAddRow(choosePrompt: lang.t("setup.claudeConfigDir.choose"), labelPlaceholder: lang.t("setup.claudeAccounts.labelPlaceholder"), addTitle: lang.t("setup.claudeAccounts.add")) { label, url in
+                model.addClaudeAccount(label: label, directoryURL: url)
             }
         } header: {
             HStack(spacing: 4) {
@@ -870,9 +852,6 @@ struct SetupSettingsPane: View {
             Text(lang.t("setup.claudeAccounts.footer"))
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
-        }
-        .task {
-            model.refreshClaudeAccountHookStatuses()
         }
     }
 
@@ -1186,6 +1165,53 @@ struct PlaceholderSettingsPane: View {
         }
         .frame(maxWidth: .infinity)
         .navigationTitle(lang.t(titleKey))
+    }
+}
+
+// MARK: - Claude account add row
+
+/// A self-contained row for adding a Claude account directory. Kept as its
+/// own view (own `@State`) so its `TextField` identity is stable and isn't
+/// affected by re-renders of the much larger `SetupSettingsPane` around it.
+struct ClaudeAccountAddRow: View {
+    let choosePrompt: String
+    let labelPlaceholder: String
+    let addTitle: String
+    let onAdd: (String, URL) -> Void
+
+    @State private var label: String = ""
+    @State private var directoryURL: URL?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField(labelPlaceholder, text: $label)
+                .textFieldStyle(.roundedBorder)
+
+            HStack {
+                Button(directoryURL?.lastPathComponent ?? choosePrompt) {
+                    let panel = NSOpenPanel()
+                    panel.canChooseDirectories = true
+                    panel.canChooseFiles = false
+                    panel.canCreateDirectories = true
+                    panel.showsHiddenFiles = true
+                    panel.prompt = choosePrompt
+                    if panel.runModal() == .OK, let url = panel.url {
+                        directoryURL = url
+                    }
+                }
+
+                Spacer()
+
+                Button(addTitle) {
+                    let trimmedLabel = label.trimmingCharacters(in: .whitespaces)
+                    guard let url = directoryURL, !trimmedLabel.isEmpty else { return }
+                    onAdd(trimmedLabel, url)
+                    label = ""
+                    directoryURL = nil
+                }
+                .disabled(directoryURL == nil || label.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
     }
 }
 
