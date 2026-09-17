@@ -13,6 +13,10 @@ struct TerminalJumpServiceTests {
         var values: [(String, [String])] = []
     }
 
+    private final class RecordedScriptsBox: @unchecked Sendable {
+        var values: [String] = []
+    }
+
     @Test
     func ghosttyJumpScriptActivatesWindowAndRetriesFocusUntilItSticks() {
         let target = JumpTarget(
@@ -514,6 +518,228 @@ struct TerminalJumpServiceTests {
         #expect(processInvocations.values.count == 1)
         #expect(processInvocations.values.first?.0 == "trae")
         #expect(processInvocations.values.first?.1 == ["-r", "/Users/test/open-vibe-island"])
+    }
+
+    @Test
+    func tmuxJumpFallbackActivatesTheResolvedBundleIdentifier() throws {
+        // A Zed Preview-only installation resolves to `dev.zed.Zed-Preview`,
+        // which the switch does not handle — the fallback must activate that
+        // same identifier instead of the descriptor's default bundle ID. The
+        // app has to be running: the tmux branch never launches a stopped app.
+        let openedArguments = OpenedArgumentsBox()
+        let service = TerminalJumpService(
+            applicationResolver: { bundleIdentifier in
+                bundleIdentifier == "dev.zed.Zed-Preview"
+                    ? URL(fileURLWithPath: "/Applications/Zed Preview.app")
+                    : nil
+            },
+            appRunningChecker: { $0 == "dev.zed.Zed-Preview" },
+            openAction: { arguments in
+                openedArguments.values.append(arguments)
+            },
+            appleScriptRunner: { _ in "" },
+            processRunner: { _, _ in true }
+        )
+
+        let result = try service.jump(
+            to: JumpTarget(
+                terminalApp: "Zed",
+                workspaceName: "open-vibe-island",
+                paneTitle: "Zed abc123",
+                workingDirectory: "/Users/test/open-vibe-island",
+                tmuxTarget: "open-island-test-nonexistent:9.9"
+            )
+        )
+
+        #expect(result == "Activated Zed. tmux pane targeting failed.")
+        #expect(openedArguments.values == [["-b", "dev.zed.Zed-Preview"]])
+    }
+
+    @Test
+    func tmuxJumpDoesNotActivateStoppedApps() throws {
+        // The tmux branch focuses a pane; it must never `open -b` a stopped
+        // app, because that launches a terminal the user had quit. Both the
+        // VS Code-family activation and the fallback activation are gated on
+        // the resolved app actually running.
+        let cases = [
+            ("iTerm", "com.googlecode.iterm2"),
+            ("Ghostty", "com.mitchellh.ghostty"),
+            ("Terminal", "com.apple.Terminal"),
+            ("VS Code", "com.microsoft.VSCode"),
+        ]
+
+        for (terminalApp, bundleIdentifier) in cases {
+            let openedArguments = OpenedArgumentsBox()
+            let recordedScripts = RecordedScriptsBox()
+            let service = TerminalJumpService(
+                applicationResolver: { id in
+                    id == bundleIdentifier
+                        ? URL(fileURLWithPath: "/Applications/\(terminalApp).app")
+                        : nil
+                },
+                appRunningChecker: { _ in false },
+                openAction: { arguments in
+                    openedArguments.values.append(arguments)
+                },
+                appleScriptRunner: { script in
+                    recordedScripts.values.append(script)
+                    return "matched"
+                }
+            )
+
+            let result = try service.jump(
+                to: JumpTarget(
+                    terminalApp: terminalApp,
+                    workspaceName: "open-island",
+                    paneTitle: "",
+                    workingDirectory: "/tmp",
+                    tmuxTarget: "open-island-test-nonexistent:9.9"
+                )
+            )
+
+            #expect(
+                openedArguments.values.isEmpty,
+                "\(terminalApp) is stopped: the tmux jump must not activate it (opened: \(openedArguments.values))"
+            )
+            #expect(
+                recordedScripts.values.isEmpty,
+                "\(terminalApp) is stopped: osascript must not run (calls: \(recordedScripts.values.count))"
+            )
+            #expect(
+                result == "\(terminalApp) is not running. tmux pane targeting failed.",
+                "\(terminalApp) is stopped: unexpected result \(result)"
+            )
+        }
+    }
+
+    @Test
+    func tmuxJumpStillActivatesARunningVSCodeApp() throws {
+        // Control for the stopped-app gate: a running VS Code is activated
+        // after the pane selection, exactly as before.
+        let openedArguments = OpenedArgumentsBox()
+        let service = TerminalJumpService(
+            applicationResolver: { id in
+                id == "com.microsoft.VSCode" ? URL(fileURLWithPath: "/Applications/Visual Studio Code.app") : nil
+            },
+            appRunningChecker: { $0 == "com.microsoft.VSCode" },
+            openAction: { arguments in
+                openedArguments.values.append(arguments)
+            },
+            appleScriptRunner: { _ in "" }
+        )
+
+        let result = try service.jump(
+            to: JumpTarget(
+                terminalApp: "VS Code",
+                workspaceName: "open-island",
+                paneTitle: "",
+                workingDirectory: "/tmp",
+                tmuxTarget: "open-island-test-nonexistent:9.9"
+            )
+        )
+
+        #expect(openedArguments.values == [["-b", "com.microsoft.VSCode"]])
+        #expect(result == "Activated VS Code. tmux pane targeting failed.")
+    }
+
+    @Test
+    func unclassifiedTerminalNameDoesNotActivateFirstInstalledTerminal() throws {
+        let openedArguments = OpenedArgumentsBox()
+        // iTerm is installed and running and sits first in the service's
+        // known-app table — exactly the setup that turned any unclassified
+        // terminal name (empty, "tmux", a sentinel other than "Unknown") into
+        // an iTerm activation.
+        let service = TerminalJumpService(
+            applicationResolver: { bundleIdentifier in
+                bundleIdentifier == "com.googlecode.iterm2" ? URL(fileURLWithPath: "/Applications/iTerm.app") : nil
+            },
+            appRunningChecker: { bundleIdentifier in
+                bundleIdentifier == "com.googlecode.iterm2"
+            },
+            openAction: { arguments in
+                openedArguments.values.append(arguments)
+            },
+            appleScriptRunner: { _ in "" }
+        )
+
+        let result = try service.jump(
+            to: JumpTarget(
+                terminalApp: "",
+                workspaceName: "my-project",
+                paneTitle: "",
+                workingDirectory: "/tmp"
+            )
+        )
+
+        #expect(openedArguments.values == [["/tmp"]])
+        #expect(
+            result.contains("Finder"),
+            "Expected the Finder cwd fallback instead of an iTerm window, got: \(result)"
+        )
+    }
+
+    @Test
+    func appleScriptJumpRunsOnlyWhileTheTerminalIsRunning() throws {
+        let cases = [
+            ("iTerm", "com.googlecode.iterm2"),
+            ("Ghostty", "com.mitchellh.ghostty"),
+            ("Terminal", "com.apple.Terminal"),
+        ]
+
+        for (terminalApp, bundleIdentifier) in cases {
+            for isRunning in [false, true] {
+                let recordedScripts = RecordedScriptsBox()
+                let service = TerminalJumpService(
+                    applicationResolver: { id in
+                        id == bundleIdentifier
+                            ? URL(fileURLWithPath: "/Applications/\(terminalApp).app")
+                            : nil
+                    },
+                    appRunningChecker: { id in id == bundleIdentifier && isRunning },
+                    openAction: { _ in },
+                    appleScriptRunner: { script in
+                        recordedScripts.values.append(script)
+                        return "matched"
+                    }
+                )
+
+                _ = try service.jump(
+                    to: JumpTarget(
+                        terminalApp: terminalApp,
+                        workspaceName: "my-project",
+                        paneTitle: "",
+                        workingDirectory: "/tmp"
+                    )
+                )
+
+                #expect(
+                    recordedScripts.values.isEmpty == !isRunning,
+                    "\(terminalApp) isRunning=\(isRunning): osascript must not run while stopped (calls: \(recordedScripts.values.count))"
+                )
+            }
+        }
+    }
+
+    @Test
+    func ghosttyJumpScriptChecksRunningBeforeEnteringTheTellBlock() {
+        let script = TerminalJumpService().ghosttyJumpScript(
+            for: JumpTarget(
+                terminalApp: "Ghostty",
+                workspaceName: "open-island",
+                paneTitle: "",
+                workingDirectory: "/tmp"
+            )
+        )
+
+        let runningCheck = script.range(of: "if not (application \"Ghostty\" is running) then return \"\"")?.lowerBound
+        let tellBlock = script.range(of: "tell application \"Ghostty\"")?.lowerBound
+
+        #expect(runningCheck != nil)
+        #expect(tellBlock != nil)
+        if let runningCheck, let tellBlock {
+            #expect(runningCheck < tellBlock, "The running check must run before the tell block can launch Ghostty")
+        }
+        #expect(!script.contains("if not (it is running) then return"))
     }
 }
 
