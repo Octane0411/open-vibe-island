@@ -179,6 +179,7 @@ final class AppModel {
             || hooks.grokHooksInstalled
             || hooks.piExtensionInstalled
             || hooks.ohMyPiExtensionInstalled
+            || hooks.claudeAccountHookStatuses.values.contains { $0.managedHooksPresent }
     }
     func refreshCodexHookStatus() { hooks.refreshCodexHookStatus() }
     func refreshClaudeHookStatus() { hooks.refreshClaudeHookStatus() }
@@ -230,12 +231,22 @@ final class AppModel {
         claudeAccounts = ClaudeAccountsStore.accounts
         hooks.installClaudeAccountHooks()
     }
+    func installClaudeAccountHooks() { hooks.installClaudeAccountHooks() }
+    var claudeAccountsReady: Bool {
+        claudeAccounts.allSatisfy { hooks.claudeAccountHookStatuses[$0.id]?.managedHooksPresent == true }
+    }
     func removeClaudeAccount(id: UUID) {
-        hooks.uninstallClaudeAccountHooks(id: id)
+        do {
+            try hooks.uninstallClaudeAccountHooks(id: id)
+        } catch {
+            // Leave the account in place so the user can retry removal from
+            // its Settings row instead of losing track of still-installed hooks.
+            return
+        }
         ClaudeAccountsStore.remove(id: id)
         claudeAccounts = ClaudeAccountsStore.accounts
     }
-    func refreshClaudeAccountHookStatuses() { hooks.refreshClaudeAccountHookStatuses() }
+    func refreshClaudeAccountHookStatuses() async { await hooks.refreshClaudeAccountHookStatuses() }
     func runHealthChecks() { hooks.runHealthChecks() }
     func repairHooks() {
         Task { @MainActor in

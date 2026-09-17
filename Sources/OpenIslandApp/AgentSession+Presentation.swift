@@ -121,7 +121,13 @@ extension AgentSession {
         guard let accountLabel, !accountLabel.isEmpty else {
             return nil
         }
-        return accountLabel
+        // Badges use `.fixedSize(horizontal: true)`, so an unbounded label
+        // would push other controls (age, dismiss button) out of the row.
+        let maxLength = 16
+        guard accountLabel.count > maxLength else {
+            return accountLabel
+        }
+        return String(accountLabel.prefix(maxLength)) + "…"
     }
 
     var spotlightWorkspaceName: String {

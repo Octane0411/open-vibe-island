@@ -652,17 +652,16 @@ final class HookInstallationCoordinator {
     /// Refreshes hook install status for every additional Claude account
     /// directory the user has configured (beyond the primary directory,
     /// which `refreshClaudeHookStatus()` already covers).
-    func refreshClaudeAccountHookStatuses() {
+    /// Awaitable so both the Setup pane's `.task` and startup reconciliation
+    /// (`refreshAllHookStatusAndWait`) can wait for it to finish.
+    func refreshClaudeAccountHookStatuses() async {
         for account in ClaudeAccountsStore.accounts {
             let manager = ClaudeHookInstallationManager(claudeDirectory: account.directoryURL)
-            Task { [weak self] in
-                guard let self else { return }
-                do {
-                    let status = try manager.status(hooksBinaryURL: self.hooksBinaryURL)
-                    self.claudeAccountHookStatuses[account.id] = status
-                } catch {
-                    self.onStatusMessage?("Failed to read hook status for \(account.label): \(error.localizedDescription)")
-                }
+            do {
+                let status = try manager.status(hooksBinaryURL: hooksBinaryURL)
+                claudeAccountHookStatuses[account.id] = status
+            } catch {
+                onStatusMessage?("Failed to read hook status for \(account.label): \(error.localizedDescription)")
             }
         }
     }
@@ -678,32 +677,32 @@ final class HookInstallationCoordinator {
 
         for account in ClaudeAccountsStore.accounts {
             let manager = ClaudeHookInstallationManager(claudeDirectory: account.directoryURL)
-            Task { [weak self] in
-                guard let self else { return }
-                do {
-                    let status = try manager.install(hooksBinaryURL: hooksBinaryURL)
-                    self.claudeAccountHookStatuses[account.id] = status
-                } catch {
-                    self.onStatusMessage?("Failed to install Claude hooks for \(account.label): \(error.localizedDescription)")
-                }
+            do {
+                let status = try manager.install(hooksBinaryURL: hooksBinaryURL)
+                claudeAccountHookStatuses[account.id] = status
+            } catch {
+                onStatusMessage?("Failed to install Claude hooks for \(account.label): \(error.localizedDescription)")
             }
         }
     }
 
-    func uninstallClaudeAccountHooks(id: UUID) {
+    /// Throws (without removing anything) on failure, so the caller can
+    /// leave the account in place for the user to retry instead of losing
+    /// track of hooks that are still installed.
+    @discardableResult
+    func uninstallClaudeAccountHooks(id: UUID) throws -> ClaudeHookInstallationStatus? {
         guard let account = ClaudeAccountsStore.accounts.first(where: { $0.id == id }) else {
-            return
+            return nil
         }
 
         let manager = ClaudeHookInstallationManager(claudeDirectory: account.directoryURL)
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let status = try manager.uninstall()
-                self.claudeAccountHookStatuses[id] = status
-            } catch {
-                self.onStatusMessage?("Failed to remove Claude hooks for \(account.label): \(error.localizedDescription)")
-            }
+        do {
+            let status = try manager.uninstall()
+            claudeAccountHookStatuses[id] = status
+            return status
+        } catch {
+            onStatusMessage?("Failed to remove Claude hooks for \(account.label): \(error.localizedDescription)")
+            throw error
         }
     }
 
@@ -751,6 +750,19 @@ final class HookInstallationCoordinator {
                     self.codexHookStatus = status
                 } catch {
                     self.onStatusMessage?("Failed to read Codex hook status: \(error.localizedDescription)")
+                }
+            }
+
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
+                for account in ClaudeAccountsStore.accounts {
+                    let manager = ClaudeHookInstallationManager(claudeDirectory: account.directoryURL)
+                    do {
+                        let status = try manager.status(hooksBinaryURL: self.hooksBinaryURL)
+                        self.claudeAccountHookStatuses[account.id] = status
+                    } catch {
+                        self.onStatusMessage?("Failed to read hook status for \(account.label): \(error.localizedDescription)")
+                    }
                 }
             }
 

@@ -748,6 +748,7 @@ struct SetupSettingsPane: View {
                     if !model.piExtensionInstalled { model.installPiExtension() }
                     if !model.ohMyPiExtensionInstalled { model.installOhMyPiExtension() }
                     if !model.claudeUsageInstalled { model.installClaudeUsageBridge() }
+                    if !model.claudeAccountsReady { model.installClaudeAccountHooks() }
                 }
                 .disabled(model.hooksBinaryURL == nil || allReady)
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -756,7 +757,7 @@ struct SetupSettingsPane: View {
         .formStyle(.grouped)
         .navigationTitle(lang.t("settings.tab.setup"))
         .task {
-            model.refreshClaudeAccountHookStatuses()
+            await model.refreshClaudeAccountHookStatuses()
         }
     }
 
@@ -861,6 +862,7 @@ struct SetupSettingsPane: View {
             && model.cursorHooksInstalled && model.geminiHooksInstalled && model.kimiHooksInstalled
             && model.grokHooksInstalled
             && model.piExtensionInstalled && model.ohMyPiExtensionInstalled && model.claudeUsageInstalled
+            && model.claudeAccountsReady
     }
 
     @ViewBuilder
@@ -1203,13 +1205,13 @@ struct ClaudeAccountAddRow: View {
                 Spacer()
 
                 Button(addTitle) {
-                    let trimmedLabel = label.trimmingCharacters(in: .whitespaces)
+                    let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard let url = directoryURL, !trimmedLabel.isEmpty else { return }
                     onAdd(trimmedLabel, url)
                     label = ""
                     directoryURL = nil
                 }
-                .disabled(directoryURL == nil || label.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(directoryURL == nil || label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
     }

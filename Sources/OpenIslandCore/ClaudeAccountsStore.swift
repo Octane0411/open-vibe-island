@@ -107,17 +107,27 @@ public enum ClaudeAccountsStore {
     /// a transcript or hook manifest path) by matching it against the
     /// configured account directories. Returns `nil` when zero or one
     /// account is configured, since there's nothing to disambiguate.
+    ///
+    /// A directory only matches if `path` equals it exactly or falls under
+    /// it at a `/` boundary — a plain `hasPrefix` would let a sibling like
+    /// `.claude-work` match a configured `.claude` directory. When multiple
+    /// configured directories match (nested accounts), the most specific
+    /// (longest) one wins.
     public static func label(forPath path: String) -> String? {
         guard shouldShowAccountLabels else {
             return nil
         }
         let standardizedPath = (path as NSString).standardizingPath
+        var bestMatch: (label: String, length: Int)?
         for account in accounts {
             let prefix = account.directoryURL.standardizedFileURL.path
-            if standardizedPath.hasPrefix(prefix) {
-                return account.label
+            let isMatch = standardizedPath == prefix
+                || standardizedPath.hasPrefix(prefix + "/")
+            guard isMatch else { continue }
+            if bestMatch == nil || prefix.count > bestMatch!.length {
+                bestMatch = (account.label, prefix.count)
             }
         }
-        return nil
+        return bestMatch?.label
     }
 }

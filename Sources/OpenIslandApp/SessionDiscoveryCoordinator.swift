@@ -269,6 +269,7 @@ final class SessionDiscoveryCoordinator {
         }
 
         merged.origin = existing.origin ?? discovered.origin
+        merged.accountLabel = existing.accountLabel ?? discovered.accountLabel
         merged.attachmentState = mergeAttachmentState(existing.attachmentState, discovered.attachmentState)
         merged.jumpTarget = existing.jumpTarget ?? discovered.jumpTarget
         merged.codexMetadata = mergeCodexMetadata(existing.codexMetadata, discovered.codexMetadata)

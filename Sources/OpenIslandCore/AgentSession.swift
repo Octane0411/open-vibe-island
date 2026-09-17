@@ -494,6 +494,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         case openCodeMetadata
         case cursorMetadata
         case piMetadata
+        case accountLabel
     }
 
     public init(from decoder: any Decoder) throws {
@@ -516,6 +517,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         openCodeMetadata = try container.decodeIfPresent(OpenCodeSessionMetadata.self, forKey: .openCodeMetadata)
         cursorMetadata = try container.decodeIfPresent(CursorSessionMetadata.self, forKey: .cursorMetadata)
         piMetadata = try container.decodeIfPresent(PiSessionMetadata.self, forKey: .piMetadata)
+        accountLabel = try container.decodeIfPresent(String.self, forKey: .accountLabel)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -538,6 +540,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         try container.encodeIfPresent(openCodeMetadata, forKey: .openCodeMetadata)
         try container.encodeIfPresent(cursorMetadata, forKey: .cursorMetadata)
         try container.encodeIfPresent(piMetadata, forKey: .piMetadata)
+        try container.encodeIfPresent(accountLabel, forKey: .accountLabel)
     }
 }
 
