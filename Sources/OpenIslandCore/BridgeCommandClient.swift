@@ -61,6 +61,7 @@ public final class BridgeCommandClient: @unchecked Sendable {
         }
 
         var buffer = Data()
+        var scanCursor = 0
         var localBuffer = [UInt8](repeating: 0, count: 8_192)
 
         while true {
@@ -68,7 +69,7 @@ public final class BridgeCommandClient: @unchecked Sendable {
 
             if bytesRead > 0 {
                 buffer.append(localBuffer, count: bytesRead)
-                let messages = try BridgeCodec.decodeLines(from: &buffer)
+                let messages = try BridgeCodec.decodeLines(from: &buffer, scanCursor: &scanCursor)
 
                 for message in messages {
                     if case let .response(response) = message {

@@ -334,15 +334,26 @@ public enum BridgeCodec {
         return data
     }
 
-    public static func decodeLines(from buffer: inout Data) throws -> [BridgeEnvelope] {
+    /// Decodes every complete newline-delimited envelope in `buffer`, leaving any
+    /// trailing partial line buffered for the next call.
+    ///
+    /// `scanCursor` pairs with `buffer` across calls: it records how many leading
+    /// bytes have already been scanned without finding a newline. Resuming there
+    /// keeps a large line that arrives as many small reads linear; restarting from
+    /// the front on every call was O(n²) and burned seconds of CPU per multi-megabyte
+    /// payload. Callers must reset the cursor to zero whenever they clear `buffer`.
+    public static func decodeLines(from buffer: inout Data, scanCursor: inout Int) throws -> [BridgeEnvelope] {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .millisecondsSince1970
 
         var messages: [BridgeEnvelope] = []
 
-        while let newlineIndex = buffer.firstIndex(of: newline) {
+        while let newlineIndex = firstNewline(in: buffer, scanCursor: &scanCursor) {
             let line = buffer.prefix(upTo: newlineIndex)
             buffer.removeSubrange(...newlineIndex)
+
+            // Bytes past the consumed newline have not been scanned yet.
+            scanCursor = 0
 
             guard !line.isEmpty else {
                 continue
@@ -357,6 +368,18 @@ public enum BridgeCodec {
         }
 
         return messages
+    }
+
+    private static func firstNewline(in buffer: Data, scanCursor: inout Int) -> Data.Index? {
+        let scannedByteCount = min(max(scanCursor, 0), buffer.count)
+        let searchStart = buffer.index(buffer.startIndex, offsetBy: scannedByteCount)
+
+        guard let newlineIndex = buffer[searchStart...].firstIndex(of: newline) else {
+            scanCursor = buffer.count
+            return nil
+        }
+
+        return newlineIndex
     }
 }
 

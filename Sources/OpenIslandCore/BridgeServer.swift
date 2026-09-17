@@ -9,6 +9,7 @@ public final class BridgeServer: @unchecked Sendable {
         let readSource: DispatchSourceRead
         var role: BridgeClientRole?
         var buffer = Data()
+        var scanCursor = 0
     }
 
     private struct PendingApproval {
@@ -277,7 +278,10 @@ public final class BridgeServer: @unchecked Sendable {
                 client.buffer.append(localBuffer, count: bytesRead)
 
                 do {
-                    let envelopes = try BridgeCodec.decodeLines(from: &client.buffer)
+                    let envelopes = try BridgeCodec.decodeLines(
+                        from: &client.buffer,
+                        scanCursor: &client.scanCursor
+                    )
                     clients[clientID] = client
 
                     for envelope in envelopes {
