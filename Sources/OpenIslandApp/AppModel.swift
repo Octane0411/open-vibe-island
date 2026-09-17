@@ -229,22 +229,25 @@ final class AppModel {
     func addClaudeAccount(label: String, directoryURL: URL) {
         ClaudeAccountsStore.add(label: label, directoryURL: directoryURL)
         claudeAccounts = ClaudeAccountsStore.accounts
-        hooks.installClaudeAccountHooks()
+        Task { await hooks.installClaudeAccountHooks() }
     }
-    func installClaudeAccountHooks() { hooks.installClaudeAccountHooks() }
+    func installClaudeAccountHooks() { Task { await hooks.installClaudeAccountHooks() } }
     var claudeAccountsReady: Bool {
         claudeAccounts.allSatisfy { hooks.claudeAccountHookStatuses[$0.id]?.managedHooksPresent == true }
     }
     func removeClaudeAccount(id: UUID) {
-        do {
-            try hooks.uninstallClaudeAccountHooks(id: id)
-        } catch {
-            // Leave the account in place so the user can retry removal from
-            // its Settings row instead of losing track of still-installed hooks.
-            return
+        Task {
+            do {
+                try await hooks.uninstallClaudeAccountHooks(id: id)
+            } catch {
+                // Leave the account in place so the user can retry removal from
+                // its Settings row instead of losing track of still-installed hooks.
+                return
+            }
+            ClaudeAccountsStore.remove(id: id)
+            hooks.claudeAccountHookStatuses.removeValue(forKey: id)
+            claudeAccounts = ClaudeAccountsStore.accounts
         }
-        ClaudeAccountsStore.remove(id: id)
-        claudeAccounts = ClaudeAccountsStore.accounts
     }
     func refreshClaudeAccountHookStatuses() async { await hooks.refreshClaudeAccountHookStatuses() }
     func runHealthChecks() { hooks.runHealthChecks() }

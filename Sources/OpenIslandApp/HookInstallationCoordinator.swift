@@ -653,35 +653,49 @@ final class HookInstallationCoordinator {
     /// directory the user has configured (beyond the primary directory,
     /// which `refreshClaudeHookStatus()` already covers).
     /// Awaitable so both the Setup pane's `.task` and startup reconciliation
-    /// (`refreshAllHookStatusAndWait`) can wait for it to finish.
+    /// (`refreshAllHookStatusAndWait`) can wait for it to finish. The actual
+    /// filesystem reads run off the main actor.
     func refreshClaudeAccountHookStatuses() async {
-        for account in ClaudeAccountsStore.accounts {
-            let manager = ClaudeHookInstallationManager(claudeDirectory: account.directoryURL)
-            do {
-                let status = try manager.status(hooksBinaryURL: hooksBinaryURL)
-                claudeAccountHookStatuses[account.id] = status
-            } catch {
-                onStatusMessage?("Failed to read hook status for \(account.label): \(error.localizedDescription)")
+        let accounts = ClaudeAccountsStore.accounts
+        let hooksBinaryURL = hooksBinaryURL
+        let results = await Task.detached(priority: .utility) {
+            accounts.map { account in
+                (account.id, Result { try ClaudeHookInstallationManager(claudeDirectory: account.directoryURL).status(hooksBinaryURL: hooksBinaryURL) })
             }
-        }
+        }.value
+        applyClaudeAccountHookResults(results, accounts: accounts, failureVerb: "read hook status for")
     }
 
     /// Installs Claude hooks into every additional configured account
     /// directory. Best-effort per account: a failure on one account doesn't
-    /// block the others.
-    func installClaudeAccountHooks() {
+    /// block the others. The actual filesystem writes run off the main actor.
+    func installClaudeAccountHooks() async {
         guard let hooksBinaryURL else {
             onStatusMessage?("Could not find a local OpenIslandHooks binary. Build the package first.")
             return
         }
 
-        for account in ClaudeAccountsStore.accounts {
-            let manager = ClaudeHookInstallationManager(claudeDirectory: account.directoryURL)
-            do {
-                let status = try manager.install(hooksBinaryURL: hooksBinaryURL)
-                claudeAccountHookStatuses[account.id] = status
-            } catch {
-                onStatusMessage?("Failed to install Claude hooks for \(account.label): \(error.localizedDescription)")
+        let accounts = ClaudeAccountsStore.accounts
+        let results = await Task.detached(priority: .utility) {
+            accounts.map { account in
+                (account.id, Result { try ClaudeHookInstallationManager(claudeDirectory: account.directoryURL).install(hooksBinaryURL: hooksBinaryURL) })
+            }
+        }.value
+        applyClaudeAccountHookResults(results, accounts: accounts, failureVerb: "install Claude hooks for")
+    }
+
+    private func applyClaudeAccountHookResults(
+        _ results: [(UUID, Result<ClaudeHookInstallationStatus, Error>)],
+        accounts: [ClaudeAccountDirectory],
+        failureVerb: String
+    ) {
+        for (id, result) in results {
+            switch result {
+            case let .success(status):
+                claudeAccountHookStatuses[id] = status
+            case let .failure(error):
+                let label = accounts.first { $0.id == id }?.label ?? ""
+                onStatusMessage?("Failed to \(failureVerb) \(label): \(error.localizedDescription)")
             }
         }
     }
@@ -694,9 +708,10 @@ final class HookInstallationCoordinator {
     /// `ClaudeConfigDirectory` or by another remaining account (the same
     /// directory can be added under more than one label), the hooks are
     /// left installed — only their status is refreshed — since another
-    /// still-configured directory needs them.
+    /// still-configured directory needs them. The filesystem work runs off
+    /// the main actor.
     @discardableResult
-    func uninstallClaudeAccountHooks(id: UUID) throws -> ClaudeHookInstallationStatus? {
+    func uninstallClaudeAccountHooks(id: UUID) async throws -> ClaudeHookInstallationStatus? {
         guard let account = ClaudeAccountsStore.accounts.first(where: { $0.id == id }) else {
             return nil
         }
@@ -706,12 +721,16 @@ final class HookInstallationCoordinator {
         let isSharedWithAnotherAccount = ClaudeAccountsStore.accounts.contains {
             $0.id != id && $0.directoryURL.standardizedFileURL.path == path
         }
+        let directoryURL = account.directoryURL
+        let hooksBinaryURL = hooksBinaryURL
 
-        let manager = ClaudeHookInstallationManager(claudeDirectory: account.directoryURL)
         do {
-            let status = isSharedWithDefault || isSharedWithAnotherAccount
-                ? try manager.status(hooksBinaryURL: hooksBinaryURL)
-                : try manager.uninstall()
+            let status = try await Task.detached(priority: .utility) {
+                let manager = ClaudeHookInstallationManager(claudeDirectory: directoryURL)
+                return isSharedWithDefault || isSharedWithAnotherAccount
+                    ? try manager.status(hooksBinaryURL: hooksBinaryURL)
+                    : try manager.uninstall()
+            }.value
             claudeAccountHookStatuses[id] = status
             return status
         } catch {
@@ -769,6 +788,12 @@ final class HookInstallationCoordinator {
 
             group.addTask { @MainActor [weak self] in
                 guard let self else { return }
+                // Not routed through the shared Task.detached helper here:
+                // nesting a detached task inside this addTask closure hits a
+                // Swift 6 region-isolation checker limitation ("pattern that
+                // the region-based isolation checker does not understand").
+                // This runs once at startup, so briefly touching disk on the
+                // main actor here is an acceptable trade-off.
                 for account in ClaudeAccountsStore.accounts {
                     let manager = ClaudeHookInstallationManager(claudeDirectory: account.directoryURL)
                     do {
