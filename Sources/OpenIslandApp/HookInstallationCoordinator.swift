@@ -689,15 +689,29 @@ final class HookInstallationCoordinator {
     /// Throws (without removing anything) on failure, so the caller can
     /// leave the account in place for the user to retry instead of losing
     /// track of hooks that are still installed.
+    ///
+    /// If the account's directory is still referenced by the default
+    /// `ClaudeConfigDirectory` or by another remaining account (the same
+    /// directory can be added under more than one label), the hooks are
+    /// left installed — only their status is refreshed — since another
+    /// still-configured directory needs them.
     @discardableResult
     func uninstallClaudeAccountHooks(id: UUID) throws -> ClaudeHookInstallationStatus? {
         guard let account = ClaudeAccountsStore.accounts.first(where: { $0.id == id }) else {
             return nil
         }
 
+        let path = account.directoryURL.standardizedFileURL.path
+        let isSharedWithDefault = path == ClaudeConfigDirectory.resolved().standardizedFileURL.path
+        let isSharedWithAnotherAccount = ClaudeAccountsStore.accounts.contains {
+            $0.id != id && $0.directoryURL.standardizedFileURL.path == path
+        }
+
         let manager = ClaudeHookInstallationManager(claudeDirectory: account.directoryURL)
         do {
-            let status = try manager.uninstall()
+            let status = isSharedWithDefault || isSharedWithAnotherAccount
+                ? try manager.status(hooksBinaryURL: hooksBinaryURL)
+                : try manager.uninstall()
             claudeAccountHookStatuses[id] = status
             return status
         } catch {
