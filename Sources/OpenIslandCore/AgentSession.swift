@@ -15,6 +15,7 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
     case pi
     case ohMyPi
     case zcode
+    case hermes
 
     public var displayName: String {
         switch self {
@@ -46,6 +47,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "Oh My Pi"
         case .zcode:
             "ZCode"
+        case .hermes:
+            "Hermes"
         }
     }
 
@@ -79,6 +82,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "OMP"
         case .zcode:
             "ZCODE"
+        case .hermes:
+            "HERMES"
         }
     }
 
@@ -111,6 +116,7 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
         case .pi:         "#a3e635"
         case .ohMyPi:     "#f472b6"
         case .zcode:      "#2dd4bf"
+        case .hermes:     "#38bdf8"
         }
     }
 }
@@ -398,6 +404,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     public var openCodeMetadata: OpenCodeSessionMetadata?
     public var cursorMetadata: CursorSessionMetadata?
     public var piMetadata: PiSessionMetadata?
+    public var hermesMetadata: HermesSessionMetadata?
 
     /// Whether this session originates from a remote (SSH) connection.
     public var isRemote: Bool = false
@@ -453,7 +460,8 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         geminiMetadata: GeminiSessionMetadata? = nil,
         openCodeMetadata: OpenCodeSessionMetadata? = nil,
         cursorMetadata: CursorSessionMetadata? = nil,
-        piMetadata: PiSessionMetadata? = nil
+        piMetadata: PiSessionMetadata? = nil,
+        hermesMetadata: HermesSessionMetadata? = nil
     ) {
         self.id = id
         self.title = title
@@ -473,6 +481,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         self.openCodeMetadata = openCodeMetadata
         self.cursorMetadata = cursorMetadata
         self.piMetadata = piMetadata
+        self.hermesMetadata = hermesMetadata
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -494,6 +503,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         case openCodeMetadata
         case cursorMetadata
         case piMetadata
+        case hermesMetadata
     }
 
     public init(from decoder: any Decoder) throws {
@@ -516,6 +526,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         openCodeMetadata = try container.decodeIfPresent(OpenCodeSessionMetadata.self, forKey: .openCodeMetadata)
         cursorMetadata = try container.decodeIfPresent(CursorSessionMetadata.self, forKey: .cursorMetadata)
         piMetadata = try container.decodeIfPresent(PiSessionMetadata.self, forKey: .piMetadata)
+        hermesMetadata = try container.decodeIfPresent(HermesSessionMetadata.self, forKey: .hermesMetadata)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -538,6 +549,7 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
         try container.encodeIfPresent(openCodeMetadata, forKey: .openCodeMetadata)
         try container.encodeIfPresent(cursorMetadata, forKey: .cursorMetadata)
         try container.encodeIfPresent(piMetadata, forKey: .piMetadata)
+        try container.encodeIfPresent(hermesMetadata, forKey: .hermesMetadata)
     }
 }
 
@@ -584,7 +596,7 @@ public extension AgentSession {
     }
 
     var lastAssistantMessageText: String? {
-        codexMetadata?.lastAssistantMessage ?? claudeMetadata?.lastAssistantMessage ?? geminiMetadata?.lastAssistantMessage ?? openCodeMetadata?.lastAssistantMessage ?? cursorMetadata?.lastAssistantMessage ?? piMetadata?.lastAssistantMessage
+        codexMetadata?.lastAssistantMessage ?? claudeMetadata?.lastAssistantMessage ?? geminiMetadata?.lastAssistantMessage ?? openCodeMetadata?.lastAssistantMessage ?? cursorMetadata?.lastAssistantMessage ?? piMetadata?.lastAssistantMessage ?? hermesMetadata?.lastAssistantMessage
     }
 
     var completionAssistantMessageText: String? {
@@ -606,11 +618,11 @@ public extension AgentSession {
     }
 
     var latestUserPromptText: String? {
-        codexMetadata?.lastUserPrompt ?? claudeMetadata?.lastUserPrompt ?? geminiMetadata?.lastUserPrompt ?? openCodeMetadata?.lastUserPrompt ?? cursorMetadata?.lastUserPrompt ?? piMetadata?.lastUserPrompt
+        codexMetadata?.lastUserPrompt ?? claudeMetadata?.lastUserPrompt ?? geminiMetadata?.lastUserPrompt ?? openCodeMetadata?.lastUserPrompt ?? cursorMetadata?.lastUserPrompt ?? piMetadata?.lastUserPrompt ?? hermesMetadata?.lastUserPrompt
     }
 
     var initialUserPromptText: String? {
-        codexMetadata?.initialUserPrompt ?? claudeMetadata?.initialUserPrompt ?? geminiMetadata?.initialUserPrompt ?? openCodeMetadata?.initialUserPrompt ?? cursorMetadata?.initialUserPrompt ?? piMetadata?.initialUserPrompt
+        codexMetadata?.initialUserPrompt ?? claudeMetadata?.initialUserPrompt ?? geminiMetadata?.initialUserPrompt ?? openCodeMetadata?.initialUserPrompt ?? cursorMetadata?.initialUserPrompt ?? piMetadata?.initialUserPrompt ?? hermesMetadata?.initialUserPrompt
     }
 
     var currentCommandPreviewText: String? {

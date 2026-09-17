@@ -134,6 +134,11 @@ final class AppModel {
     var geminiHookStatus: GeminiHookInstallationStatus? { hooks.geminiHookStatus }
     var geminiHookStatusTitle: String { hooks.geminiHookStatusTitle }
     var geminiHookStatusSummary: String { hooks.geminiHookStatusSummary }
+    var hermesHooksInstalled: Bool { hooks.hermesHooksInstalled }
+    var isHermesHookSetupBusy: Bool { hooks.isHermesHookSetupBusy }
+    var hermesHookStatus: HermesHookInstallationStatus? { hooks.hermesHookStatus }
+    var hermesHookStatusTitle: String { hooks.hermesHookStatusTitle }
+    var hermesHookStatusSummary: String { hooks.hermesHookStatusSummary }
     var kimiHooksInstalled: Bool { hooks.kimiHooksInstalled }
     var isKimiHookSetupBusy: Bool { hooks.isKimiHookSetupBusy }
     var kimiHookStatus: KimiHookInstallationStatus? { hooks.kimiHookStatus }
@@ -181,6 +186,7 @@ final class AppModel {
             || hooks.kimiHooksInstalled
             || hooks.grokHooksInstalled
             || hooks.zcodeHooksInstalled
+            || hooks.hermesHooksInstalled
             || hooks.piExtensionInstalled
             || hooks.ohMyPiExtensionInstalled
     }
@@ -219,6 +225,8 @@ final class AppModel {
     func refreshZcodeHookStatus() { hooks.refreshZcodeHookStatus() }
     func installZcodeHooks() { hooks.installZcodeHooks() }
     func uninstallZcodeHooks() { hooks.uninstallZcodeHooks() }
+    func installHermesHooks() { hooks.installHermesHooks() }
+    func uninstallHermesHooks() { hooks.uninstallHermesHooks() }
     func refreshPiExtensionStatuses() { hooks.refreshPiExtensionStatuses() }
     func installPiExtension() { hooks.installPiExtension() }
     func uninstallPiExtension() { hooks.uninstallPiExtension() }
@@ -1593,6 +1601,7 @@ final class AppModel {
                 case let .openCodeSessionMetadataUpdated(p): return p.sessionID
                 case let .cursorSessionMetadataUpdated(p): return p.sessionID
                 case let .piSessionMetadataUpdated(p): return p.sessionID
+                case let .hermesSessionMetadataUpdated(p): return p.sessionID
                 case let .sessionHeartbeat(p): return p.sessionID
                 case let .actionableStateResolved(p): return p.sessionID
                 }
@@ -1728,6 +1737,7 @@ final class AppModel {
             if self.hooks.shouldAutoInstall(.kimi) { self.installKimiHooks() }
             if self.hooks.shouldAutoInstall(.grok) { self.installGrokHooks() }
             if self.hooks.shouldAutoInstall(.zcode) { self.installZcodeHooks() }
+            if self.hooks.shouldAutoInstall(.hermes) { self.installHermesHooks() }
             if self.hooks.shouldAutoInstall(.claudeUsageBridge) { self.installClaudeUsageBridge() }
 
             // Run health checks after install to detect stale paths, conflicts, etc.
@@ -1887,6 +1897,8 @@ final class AppModel {
                 return "\(state.session(id: payload.sessionID)?.tool.displayName ?? "Pi") is running \(currentTool)."
             }
             return payload.piMetadata.lastAssistantMessage ?? "Pi session metadata updated."
+        case let .hermesSessionMetadataUpdated(payload):
+            return payload.hermesMetadata.lastAssistantMessage ?? "Hermes session metadata updated."
         case let .sessionHeartbeat(payload):
             return "Heartbeat received for session \(payload.sessionID)."
         case let .actionableStateResolved(payload):
