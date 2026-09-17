@@ -642,10 +642,24 @@ final class HookInstallationCoordinator {
 
             do {
                 let status = try self.claudeHookInstallationManager.status(hooksBinaryURL: self.hooksBinaryURL)
-                self.claudeHookStatus = status
+                self.applyPrimaryClaudeHookStatus(status)
             } catch {
                 self.onStatusMessage?("Failed to read Claude hook status: \(error.localizedDescription)")
             }
+        }
+    }
+
+    /// Sets the primary Claude status and mirrors it onto any account entry
+    /// whose configured directory resolves to the same canonical path — a
+    /// user-added account can point at the default `ClaudeConfigDirectory`,
+    /// and the primary flow (Setup pane) and the account flow (Settings'
+    /// account rows) otherwise refresh their caches independently, so one
+    /// side can go stale while the other reflects the real on-disk state.
+    private func applyPrimaryClaudeHookStatus(_ status: ClaudeHookInstallationStatus) {
+        claudeHookStatus = status
+        let defaultPath = ClaudeConfigDirectory.resolved().standardizedFileURL.path
+        for account in ClaudeAccountsStore.accounts where account.directoryURL.standardizedFileURL.path == defaultPath {
+            claudeAccountHookStatuses[account.id] = status
         }
     }
 
@@ -728,10 +742,14 @@ final class HookInstallationCoordinator {
         accounts: [ClaudeAccountDirectory],
         failureVerb: String
     ) {
+        let defaultPath = ClaudeConfigDirectory.resolved().standardizedFileURL.path
         for (id, result) in results {
             switch result {
             case let .success(status):
                 claudeAccountHookStatuses[id] = status
+                if accounts.first(where: { $0.id == id })?.directoryURL.standardizedFileURL.path == defaultPath {
+                    claudeHookStatus = status
+                }
             case let .failure(error):
                 let label = accounts.first { $0.id == id }?.label ?? ""
                 onStatusMessage?("Failed to \(failureVerb) \(label): \(error.localizedDescription)")
@@ -819,7 +837,7 @@ final class HookInstallationCoordinator {
                 guard let self else { return }
                 do {
                     let status = try self.claudeHookInstallationManager.status(hooksBinaryURL: self.hooksBinaryURL)
-                    self.claudeHookStatus = status
+                    self.applyPrimaryClaudeHookStatus(status)
                 } catch {
                     self.onStatusMessage?("Failed to read Claude hook status: \(error.localizedDescription)")
                 }
@@ -1550,7 +1568,7 @@ final class HookInstallationCoordinator {
 
             do {
                 let status = try operation(self.claudeHookInstallationManager)
-                self.claudeHookStatus = status
+                self.applyPrimaryClaudeHookStatus(status)
                 self.intentStore.setIntent(intent, for: .claudeCode)
                 if status.managedHooksPresent {
                     self.onStatusMessage?(status.hasClaudeIslandHooks

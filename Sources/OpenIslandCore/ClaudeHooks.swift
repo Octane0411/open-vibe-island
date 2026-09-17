@@ -727,7 +727,7 @@ public extension ClaudeHookPayload {
         guard resolvedAgentTool == .claudeCode else {
             return nil
         }
-        return ClaudeAccountsStore.label(forPath: transcriptPath ?? cwd)
+        return ClaudeAccountsStore.label(forPath: transcriptPath ?? agentTranscriptPath ?? cwd)
     }
 
     var implicitStartSummary: String {
