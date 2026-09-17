@@ -95,7 +95,10 @@ final class CodexAppServerCoordinator {
     private func syncLoadedThreads() async {
         guard let client else { return }
         do {
-            let threads = try await client.listLoadedThreads()
+            var threads = try await client.listLoadedThreads()
+            if threads.isEmpty {
+                threads = try await client.listThreads(limit: 20)
+            }
             var created = 0
             for thread in threads where !thread.ephemeral {
                 // Skip threads already tracked — re-emitting sessionStarted
