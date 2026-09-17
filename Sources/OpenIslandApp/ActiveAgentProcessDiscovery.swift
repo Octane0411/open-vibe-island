@@ -71,7 +71,14 @@ struct ActiveAgentProcessDiscovery {
             // OpenCode is an exception: it can run inside IDE integrated terminals
             // that don't expose a TTY in `ps` output. Let OpenCode processes
             // through so the liveness fallback can keep their sessions alive.
-            if process.terminalTTY == nil && !isOpenCodeProcess(command: process.command) {
+            // Hermes TUI/gateway processes are also TTY-less, so without this
+            // exemption they would be filtered out and their hook-managed
+            // sessions could be evicted by the liveness polls.
+            // ZCode is an Electron app whose processes never carry a TTY.
+            if process.terminalTTY == nil
+                && !isOpenCodeProcess(command: process.command)
+                && !isHermesProcess(command: process.command)
+                && !isZcodeProcess(command: process.command) {
                 continue
             }
 
@@ -225,6 +232,42 @@ struct ActiveAgentProcessDiscovery {
                 let lsofOutput = lsofOutput(pid: process.pid)
                 snapshots.append(ProcessSnapshot(
                     tool: .grokBuild,
+                    sessionID: nil,
+                    workingDirectory: lsofOutput.flatMap(workingDirectory(from:)),
+                    terminalTTY: process.terminalTTY,
+                    terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+                ))
+                continue
+            }
+
+            if isZcodeProcess(command: process.command) {
+                // One snapshot for the whole app: every ZCode session lives in
+                // the same Electron process, so per-session liveness is
+                // hook-driven (same fallback shape as Kimi).
+                let claimKey = "zcode:\(process.pid)"
+                guard claimedKeys.insert(claimKey).inserted else {
+                    continue
+                }
+
+                snapshots.append(ProcessSnapshot(
+                    tool: .zcode,
+                    sessionID: nil,
+                    workingDirectory: nil,
+                    terminalTTY: nil,
+                    terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+                ))
+                continue
+            }
+
+            if isHermesProcess(command: process.command) {
+                let claimKey = "hermes:\(process.pid)"
+                guard claimedKeys.insert(claimKey).inserted else {
+                    continue
+                }
+
+                let lsofOutput = lsofOutput(pid: process.pid)
+                snapshots.append(ProcessSnapshot(
+                    tool: .hermes,
                     sessionID: nil,
                     workingDirectory: lsofOutput.flatMap(workingDirectory(from:)),
                     terminalTTY: process.terminalTTY,
@@ -565,6 +608,9 @@ struct ActiveAgentProcessDiscovery {
         if lowered.contains("/qoder.app/") {
             return "Qoder"
         }
+        if lowered.contains("/zcode.app/contents/macos/zcode") {
+            return "ZCode"
+        }
         if lowered.contains("/codebuddy.app/") {
             return "CodeBuddy"
         }
@@ -833,6 +879,47 @@ struct ActiveAgentProcessDiscovery {
         return firstToken == "grok" || firstToken.hasSuffix("/grok")
     }
 
+    /// Matches ZCode sessions. ZCode is an Electron desktop app: all sessions
+    /// run inside one app process whose command embeds the agent engine at
+    /// `…/ZCode.app/Contents/Resources/glm/zcode.cjs`. The Electron helper
+    /// processes share the framework naming and are matched by the same
+    /// bundle-path substring.
+    private func isZcodeProcess(command: String) -> Bool {
+        let lowered = command.lowercased()
+        return lowered.contains("/zcode.app/contents/resources/glm/zcode.cjs")
+            || (lowered.hasSuffix("/zcode") && lowered.contains("/zcode.app/contents/macos/"))
+    }
+
+    /// Matches the Hermes Agent gateway (`python -m tui_gateway.entry`) and the
+    /// Hermes TUI process (`node .../ui-tui/dist/entry.js`). Both run TTY-less
+    /// under iTerm2/Terminal, and ps/lsof cannot recover Hermes' session ID,
+    /// so the snapshot only anchors liveness — session identity comes from
+    /// the hook channel.
+    private func isHermesProcess(command: String) -> Bool {
+        let lowered = command.lowercased()
+        let tokens = lowered.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard let executable = tokens.first else {
+            return false
+        }
+        let executableName = (executable as NSString).lastPathComponent
+
+        // The gateway runs as `python|python3[.x] -m tui_gateway.entry`; a bare
+        // substring match would also admit unrelated commands such as
+        // `grep tui_gateway.entry file`, which then keep sessions alive.
+        if executableName == "python" || executableName.hasPrefix("python3") {
+            for index in tokens.indices.dropLast()
+            where tokens[index] == "-m" && tokens[index + 1] == "tui_gateway.entry" {
+                return true
+            }
+            return false
+        }
+
+        guard lowered.contains("/ui-tui/dist/entry.js") else {
+            return false
+        }
+        return executableName == "node"
+    }
+
     private func piAgentVariant(command: String) -> PiAgentVariant? {
         let lowered = command.lowercased()
         guard let firstToken = lowered.split(separator: " ").first.map(String.init) else {
@@ -978,7 +1065,8 @@ struct ActiveAgentProcessDiscovery {
         }
 
         // Find the terminal app hosting the tmux client connected to this pane
-        guard let hostTerminalApp = findTmuxClientTerminal(tmuxPath: tmuxPath, socketPath: socketPath, processesByPID: processesByPID) else {
+        let sessionName = tmuxTarget.split(separator: ":").first.map(String.init)
+        guard let hostTerminalApp = findTmuxClientTerminal(tmuxPath: tmuxPath, socketPath: socketPath, processesByPID: processesByPID, sessionName: sessionName) else {
             return nil
         }
 
@@ -1016,11 +1104,19 @@ struct ActiveAgentProcessDiscovery {
     private func findTmuxClientTerminal(
         tmuxPath: String,
         socketPath: String?,
-        processesByPID: [String: RunningProcess]
+        processesByPID: [String: RunningProcess],
+        sessionName: String? = nil
     ) -> String? {
+        // When we know the session, filter clients to that session — there may
+        // be multiple tmux clients from different host terminals attached to
+        // different sessions, and picking the wrong one resolves the wrong
+        // terminal app.
         var args: [String] = ["list-clients", "-F", "#{client_tty}"]
+        if let sessionName {
+            args = ["list-clients", "-t", sessionName, "-F", "#{client_tty}"]
+        }
 
-        if let socketPath = socketPath {
+        if let socketPath {
             args = ["-S", socketPath] + args
         }
 

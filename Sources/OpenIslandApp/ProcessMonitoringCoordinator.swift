@@ -56,6 +56,7 @@ final class ProcessMonitoringCoordinator {
     private static let codexAppStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let claudeDesktopStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let conductorStalenessTimeout: TimeInterval = 600  // 10 minutes
+    private static let hermesStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let piHeartbeatTimeout: TimeInterval = 45
 
     static func monitoringPollInterval(
@@ -384,6 +385,8 @@ final class ProcessMonitoringCoordinator {
             payload.sessionID
         case let .piSessionMetadataUpdated(payload):
             payload.sessionID
+        case let .hermesSessionMetadataUpdated(payload):
+            payload.sessionID
         case let .sessionHeartbeat(payload):
             payload.sessionID
         case let .actionableStateResolved(payload):
@@ -530,6 +533,17 @@ final class ProcessMonitoringCoordinator {
             }
         }
 
+        // ZCode sessions are hook-managed and all share one Electron app
+        // process, so per-session UUIDs cannot be recovered from ps/lsof.
+        // Same conservative fallback as Kimi: while any zcode process exists,
+        // keep every tracked ZCode session alive.
+        let hasZcodeProcess = activeProcesses.contains { $0.tool == .zcode }
+        if hasZcodeProcess {
+            for session in sessions where session.tool == .zcode && !session.isDemoSession {
+                aliveIDs.insert(session.id)
+            }
+        }
+
         // Grok sessions are hook-managed. Process discovery sees a `grok`
         // binary but cannot recover Grok's session UUID from ps/lsof.
         // Prefer TTY / CWD matches when unique; otherwise use a conservative
@@ -564,6 +578,29 @@ final class ProcessMonitoringCoordinator {
         if hasUnmatchedGrokProcess || (!grokProcesses.isEmpty && claimedGrokSessionIDs.isEmpty) {
             for session in trackedGrokSessions where !claimedGrokSessionIDs.contains(session.id) {
                 aliveIDs.insert(session.id)
+            }
+        }
+
+        // Hermes sessions are hook-managed. ps/lsof can see the Hermes TUI
+        // processes (node ui-tui/entry.js + python tui_gateway.entry) but
+        // cannot recover a Hermes session ID, so no unique per-session match
+        // is possible (same situation as Grok). While any Hermes process is
+        // alive, keep non-ended Hermes sessions in the alive set so the
+        // hook-managed processNotSeenCount path does not evict them two
+        // polls after their last hook event. Explicit SessionEnd still wins —
+        // ended sessions are skipped here and ignored by
+        // SessionState.markProcessLiveness once isSessionEnded.
+        // Completed sessions expire after a staleness window (same as Codex,
+        // Cursor, Claude Desktop) so idle sessions don't accumulate forever.
+        let hasHermesProcess = activeProcesses.contains { $0.tool == .hermes }
+        if hasHermesProcess {
+            for session in sessions
+            where session.tool == .hermes && !session.isDemoSession && !session.isSessionEnded {
+                let isStale = session.phase == .completed
+                    && session.updatedAt.addingTimeInterval(Self.hermesStalenessTimeout) < Date.now
+                if !isStale {
+                    aliveIDs.insert(session.id)
+                }
             }
         }
 
@@ -1595,6 +1632,10 @@ final class ProcessMonitoringCoordinator {
             return "Pi \(session.id.prefix(8))"
         case .ohMyPi:
             return "Oh My Pi \(session.id.prefix(8))"
+        case .zcode:
+            return "ZCode \(session.id.prefix(8))"
+        case .hermes:
+            return "Hermes \(session.id.prefix(8))"
         }
     }
 }

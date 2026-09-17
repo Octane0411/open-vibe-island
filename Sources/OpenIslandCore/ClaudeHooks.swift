@@ -688,14 +688,14 @@ public extension ClaudeHookPayload {
     }
 
     var sessionTitle: String {
-        "Claude · \(workspaceName)"
+        "\(resolvedAgentTool.displayName) · \(workspaceName)"
     }
 
     var defaultJumpTarget: JumpTarget {
         JumpTarget(
             terminalApp: terminalApp ?? "Unknown",
             workspaceName: workspaceName,
-            paneTitle: terminalTitle ?? "Claude \(sessionID.prefix(8))",
+            paneTitle: terminalTitle ?? "\(resolvedAgentTool.displayName) \(sessionID.prefix(8))",
             workingDirectory: cwd,
             terminalSessionID: terminalSessionID,
             terminalTTY: terminalTTY,
@@ -892,6 +892,8 @@ public extension ClaudeHookPayload {
             return .codebuddy
         case "kimi":
             return .kimiCLI
+        case "zcode":
+            return .zcode
         default:
             return .claudeCode
         }

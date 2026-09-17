@@ -1,6 +1,6 @@
 # Hook System
 
-OpenIsland receives lifecycle events from managed hook CLIs and runtime extensions. Codex, Claude-family agents, Gemini CLI, Grok Build, and Kimi CLI invoke `OpenIslandHooks`; Pi and Oh My Pi load a TypeScript extension. Both paths forward typed payloads to the app over its Unix socket. Hook sources that support blocking can receive directives on stdout; Pi-family extensions are fire-and-forget.
+OpenIsland receives lifecycle events from managed hook CLIs and runtime extensions. Codex, Claude-family agents, Gemini CLI, Grok Build, Kimi CLI, and ZCode invoke `OpenIslandHooks`; Pi and Oh My Pi load a TypeScript extension. Both paths forward typed payloads to the app over its Unix socket. Hook sources that support blocking can receive directives on stdout; Pi-family extensions are fire-and-forget.
 
 ## Architecture
 
@@ -349,6 +349,7 @@ Jump-back metadata (terminal app, terminal session ID, TTY) is read from the age
 | Claude Code | All other events | **45 seconds** |
 | Gemini CLI | All events | Bridge default |
 | Grok Build | All managed events | **45 seconds** |
+| ZCode | All managed events | **45 seconds** (shared Claude-format path) |
 | Pi / Oh My Pi | Heartbeat liveness | **45 seconds** |
 
 ---
@@ -407,6 +408,94 @@ swift run OpenIslandSetup uninstallGrok
 Or use **Settings → Setup → Grok Build** in the app.
 
 > If commercial Vibe Island is also installed, both may write under `~/.grok/hooks/`. Prefer one controller at a time.
+
+---
+
+## ZCode Hooks (`--source zcode`)
+
+**Payload type**: `ClaudeHookPayload` (shared with Claude Code)
+**Source**: [`Sources/OpenIslandCore/ZCodeHookInstaller.swift`](../Sources/OpenIslandCore/ZCodeHookInstaller.swift)
+
+ZCode (ZCode Desktop, `ZCode.app`) reads configuration-file hooks from the top-level `hooks` block of `~/.zcode/cli/config.json`, shaped as `{ enabled?, events: { <Event>: [group] } }`. Configuration-file hooks are **disabled by default**; the managed installer sets `hooks.enabled: true` alongside its event registrations.
+
+ZCode's hook payloads are Claude Code compatible on stdin (snake_case `hook_event_name`, `session_id`, `cwd`, tool events carry `tool_name` / `tool_input`, `Stop` carries `last_assistant_message`), so the runtime reuses the Claude decode path with a dedicated `--source zcode` value.
+
+### Events (managed install)
+
+The managed v1 install is intentionally low-noise — the Codex lifecycle set minus `PermissionRequest`:
+
+| Event | Matcher | Current OpenIsland behavior |
+|---|---|---|
+| `SessionStart` | — | Creates / re-opens the ZCode session, title, and jump target |
+| `UserPromptSubmit` | — | Updates the session prompt / activity |
+| `Stop` | — | Settles the turn; `last_assistant_message` feeds the completion card |
+
+ZCode additionally supports blocking events (`PreToolUse`, `PermissionRequest`, `PostToolUse`, `PostToolUseFailure`). They are parseable through the shared Claude path but **not registered by the managed install**; approval round-trips can be enabled once designed for this surface.
+
+### Lifecycle / liveness notes
+
+- ZCode is an Electron desktop app: all sessions share one `ZCode.app` process. Process discovery matches the app process (and its embedded engine at `…/ZCode.app/Contents/Resources/glm/zcode.cjs`) and reports a single snapshot; per-session liveness is hook-driven.
+- While any zcode process is alive, Open Island keeps tracked ZCode sessions in the process-alive set (same conservative fallback as Kimi).
+- `transcript_path` in ZCode payloads points at a hook-runtime temporary file that is deleted after the hook completes; Open Island does not depend on it.
+## Hermes Agent Hooks (`--source hermes`)
+
+**Payload type**: `HermesHookPayload`
+**Source**: [`Sources/OpenIslandCore/HermesHooks.swift`](../Sources/OpenIslandCore/HermesHooks.swift)
+
+Hermes Agent discovers shell hooks from the `hooks:` block in `~/.hermes/config.yaml` and runs each entry via `shlex.split` with `shell=False`, piping a JSON payload to stdin. Open Island appends one entry per managed event; user-authored hooks (for example a `post_tool_call` regression script) are preserved verbatim.
+
+### Events (managed install)
+
+| Event | Current OpenIsland behavior |
+|---|---|
+| `on_session_start` | Creates or re-opens the Hermes session with model/platform metadata |
+| `post_llm_call` | Turn completion: marks the session completed and emits a completion card with the last user message and assistant response |
+| `subagent_stop` | Marks the turn completed (subagent role shown in the summary when `child_role` is present) |
+| `on_session_end` | Marks the hook-managed session ended (`isSessionEnd`) |
+| `pre_tool_call` | Activity update; when `tool_name == "clarify"`, surfaces the question card and sets phase `.waitingForAnswer` (HITL) |
+| `pre_approval_request` | Surfaces the approval card and sets phase `.waitingForApproval` (HITL) |
+
+### Common payload fields
+
+| JSON key | Swift property | Description |
+|---|---|---|
+| `hook_event_name` | `hookEventName` | Event type (snake_case) |
+| `session_id` | `sessionID` | Session identifier |
+| `cwd` | `cwd` | Working directory |
+| `tool_name` | `toolName` | Tool name (`pre_tool_call`; on `pre_approval_request` it is only a fallback for the approval summary when `extra.command` is absent) |
+| `tool_input` | `toolInput` | Tool arguments object (`pre_tool_call` only; `null` otherwise) |
+| `extra` | `extra` | Event-specific kwargs (`user_message`, `assistant_response`, `model`, `platform`, `child_role`, `duration_ms`, `command`, `description`, `tool_call_id`, …) |
+
+`post_llm_call` completion cards read `extra.user_message` / `extra.assistant_response`; unknown `extra` keys are retained and ignored.
+
+### Wire format notes
+
+- Hermes runs hooks with `shlex.split` + `shell=False`, so the managed command is quoted in two layers: the binary path takes a shell single quote (`'…/OpenIslandHooks'`), and the whole entry is wrapped in a YAML single-quoted scalar — `command: '''…/OpenIslandHooks'' --source hermes'`. After YAML decoding, `shlex.split` yields the binary as `argv[0]` and `--source hermes` as separate arguments; paths containing spaces or apostrophes survive both layers.
+- Hooks are fire-and-forget: the CLI never writes to stdout (any stdout would be parsed as a directive response). Hook failures log to stderr and fail open.
+- Because every managed event fires on both CLI and gateway sessions, the bridge timeout is the standard 45 s; there is no blocking/interactive path.
+
+### HITL (human-in-the-loop)
+
+- `pre_tool_call` with `tool_name: "clarify"` decodes `tool_input.questions` (`question`, `header`, `options[].label/description`, `multi_select`) into the standard question card. The notch shows the question and the session phase becomes `.waitingForAnswer`.
+- `pre_approval_request` carries its payload in `extra`: `command` (the command awaiting approval; `tool_name` is only a fallback for the summary when `command` is absent), `description` (card title), and `tool_call_id`. It does not use `tool_input`. The session phase becomes `.waitingForApproval`.
+
+### Install / uninstall
+
+```bash
+swift run OpenIslandSetup installZcode
+swift run OpenIslandSetup statusZcode
+swift run OpenIslandSetup uninstallZcode
+```
+
+Or use **Settings → Setup → ZCode** in the app. Uninstall removes managed event entries (and `hooks.enabled` when nothing else remains) while preserving user-authored hook groups in the same file.
+swift run OpenIslandSetup installHermes    # write hooks block into ~/.hermes/config.yaml
+swift run OpenIslandSetup statusHermes     # report whether managed hooks are present
+swift run OpenIslandSetup uninstallHermes  # remove managed entries, preserve user-authored hooks
+```
+
+Or use **Settings → Setup → Hermes** in the app.
+
+> After install, Hermes asks for first-use consent per `(event, command)` pair; approve once (or set `hooks_auto_accept: true`, which Open Island does not change). The status hint in the notch disappears once the managed hooks block is detected in `~/.hermes/config.yaml`.
 
 ---
 

@@ -73,7 +73,8 @@ public struct SessionState: Equatable, Sendable {
                 geminiMetadata: payload.geminiMetadata?.isEmpty == true ? nil : payload.geminiMetadata,
                 openCodeMetadata: payload.openCodeMetadata?.isEmpty == true ? nil : payload.openCodeMetadata,
                 cursorMetadata: payload.cursorMetadata?.isEmpty == true ? nil : payload.cursorMetadata,
-                piMetadata: payload.piMetadata?.isEmpty == true ? nil : payload.piMetadata
+                piMetadata: payload.piMetadata?.isEmpty == true ? nil : payload.piMetadata,
+                hermesMetadata: payload.hermesMetadata?.isEmpty == true ? nil : payload.hermesMetadata
             )
             session.isRemote = payload.isRemote
             session.isHookManaged = payload.origin == .live
@@ -193,6 +194,18 @@ public struct SessionState: Equatable, Sendable {
             session.updatedAt = payload.timestamp
             upsert(session)
 
+        case let .hermesSessionMetadataUpdated(payload):
+            guard var session = sessionsByID[payload.sessionID] else {
+                return
+            }
+
+            session.hermesMetadata = payload.hermesMetadata.isEmpty ? nil : payload.hermesMetadata
+            if let jumpTarget = payload.jumpTarget {
+                session.jumpTarget = jumpTarget
+            }
+            session.updatedAt = payload.timestamp
+            upsert(session)
+
         case let .openCodeSessionMetadataUpdated(payload):
             guard var session = sessionsByID[payload.sessionID] else {
                 return
@@ -274,7 +287,7 @@ public struct SessionState: Equatable, Sendable {
         if resolution.isApproved {
             session.phase = .running
             switch session.tool {
-            case .claudeCode, .geminiCLI, .qoder, .qwenCode, .factory, .codebuddy, .kimiCLI:
+            case .claudeCode, .geminiCLI, .qoder, .qwenCode, .factory, .codebuddy, .kimiCLI, .zcode:
                 session.summary = "Permission approved. \(session.tool.displayName) continued the tool."
             case .openCode:
                 session.summary = "Permission approved. OpenCode continued the tool."
@@ -284,7 +297,7 @@ public struct SessionState: Equatable, Sendable {
         } else {
             session.phase = .completed
             switch session.tool {
-            case .claudeCode, .geminiCLI, .qoder, .qwenCode, .factory, .codebuddy, .kimiCLI:
+            case .claudeCode, .geminiCLI, .qoder, .qwenCode, .factory, .codebuddy, .kimiCLI, .zcode:
                 session.summary = "Permission denied in Open Island."
             case .openCode:
                 session.summary = "Permission denied in Open Island."
