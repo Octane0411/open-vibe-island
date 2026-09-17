@@ -728,10 +728,12 @@ struct SessionStateTests {
         )
 
         var buffer = try BridgeCodec.encodeLine(envelope)
-        let decoded = try BridgeCodec.decodeLines(from: &buffer)
+        var scanCursor = 0
+        let decoded = try BridgeCodec.decodeLines(from: &buffer, scanCursor: &scanCursor)
 
         #expect(decoded == [envelope])
         #expect(buffer.isEmpty)
+        #expect(scanCursor == 0)
     }
 
     @Test
