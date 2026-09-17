@@ -649,26 +649,59 @@ final class HookInstallationCoordinator {
         }
     }
 
+    /// Serializes filesystem operations (install/uninstall/status) per
+    /// canonical Claude account directory. `HookInstallationCoordinator`
+    /// itself no longer serializes these — the actual work runs in detached
+    /// tasks — so without this, an add racing a remove that resolve to the
+    /// same directory could interleave writes to its `settings.json`/hook
+    /// manifest (e.g. a stale "not shared" uninstall finishing after a
+    /// concurrent install for a newly added account on the same path).
+    /// Chaining happens here, synchronously on the main actor, so it can't
+    /// itself race; only the chained operation body runs off the main actor.
+    private var directoryOperationChains: [String: Task<Void, Never>] = [:]
+
+    private func serializedOnDirectory<T: Sendable>(
+        _ path: String,
+        _ operation: @escaping @Sendable () async -> T
+    ) async -> T {
+        let previous = directoryOperationChains[path]
+        let task = Task<T, Never> {
+            _ = await previous?.value
+            return await operation()
+        }
+        directoryOperationChains[path] = Task {
+            _ = await task.value
+        }
+        return await task.value
+    }
+
     /// Refreshes hook install status for every additional Claude account
     /// directory the user has configured (beyond the primary directory,
     /// which `refreshClaudeHookStatus()` already covers).
     /// Awaitable so both the Setup pane's `.task` and startup reconciliation
     /// (`refreshAllHookStatusAndWait`) can wait for it to finish. The actual
-    /// filesystem reads run off the main actor.
+    /// filesystem reads run off the main actor, serialized per directory.
     func refreshClaudeAccountHookStatuses() async {
         let accounts = ClaudeAccountsStore.accounts
         let hooksBinaryURL = hooksBinaryURL
-        let results = await Task.detached(priority: .utility) {
-            accounts.map { account in
-                (account.id, Result { try ClaudeHookInstallationManager(claudeDirectory: account.directoryURL).status(hooksBinaryURL: hooksBinaryURL) })
+        var results: [(UUID, Result<ClaudeHookInstallationStatus, Error>)] = []
+        for account in accounts {
+            let path = account.directoryURL.standardizedFileURL.path
+            let directoryURL = account.directoryURL
+            let result = await serializedOnDirectory(path) {
+                await Task.detached(priority: .utility) {
+                    Result { try ClaudeHookInstallationManager(claudeDirectory: directoryURL).status(hooksBinaryURL: hooksBinaryURL) }
+                }.value
             }
-        }.value
+            results.append((account.id, result))
+        }
         applyClaudeAccountHookResults(results, accounts: accounts, failureVerb: "read hook status for")
     }
 
     /// Installs Claude hooks into every additional configured account
     /// directory. Best-effort per account: a failure on one account doesn't
-    /// block the others. The actual filesystem writes run off the main actor.
+    /// block the others. The actual filesystem writes run off the main
+    /// actor, serialized per directory.
     func installClaudeAccountHooks() async {
         guard let hooksBinaryURL else {
             onStatusMessage?("Could not find a local OpenIslandHooks binary. Build the package first.")
@@ -676,11 +709,17 @@ final class HookInstallationCoordinator {
         }
 
         let accounts = ClaudeAccountsStore.accounts
-        let results = await Task.detached(priority: .utility) {
-            accounts.map { account in
-                (account.id, Result { try ClaudeHookInstallationManager(claudeDirectory: account.directoryURL).install(hooksBinaryURL: hooksBinaryURL) })
+        var results: [(UUID, Result<ClaudeHookInstallationStatus, Error>)] = []
+        for account in accounts {
+            let path = account.directoryURL.standardizedFileURL.path
+            let directoryURL = account.directoryURL
+            let result = await serializedOnDirectory(path) {
+                await Task.detached(priority: .utility) {
+                    Result { try ClaudeHookInstallationManager(claudeDirectory: directoryURL).install(hooksBinaryURL: hooksBinaryURL) }
+                }.value
             }
-        }.value
+            results.append((account.id, result))
+        }
         applyClaudeAccountHookResults(results, accounts: accounts, failureVerb: "install Claude hooks for")
     }
 
@@ -709,7 +748,7 @@ final class HookInstallationCoordinator {
     /// directory can be added under more than one label), the hooks are
     /// left installed — only their status is refreshed — since another
     /// still-configured directory needs them. The filesystem work runs off
-    /// the main actor.
+    /// the main actor, serialized per directory.
     @discardableResult
     func uninstallClaudeAccountHooks(id: UUID) async throws -> ClaudeHookInstallationStatus? {
         guard let account = ClaudeAccountsStore.accounts.first(where: { $0.id == id }) else {
@@ -717,20 +756,30 @@ final class HookInstallationCoordinator {
         }
 
         let path = account.directoryURL.standardizedFileURL.path
-        let isSharedWithDefault = path == ClaudeConfigDirectory.resolved().standardizedFileURL.path
-        let isSharedWithAnotherAccount = ClaudeAccountsStore.accounts.contains {
-            $0.id != id && $0.directoryURL.standardizedFileURL.path == path
-        }
         let directoryURL = account.directoryURL
         let hooksBinaryURL = hooksBinaryURL
 
-        do {
-            let status = try await Task.detached(priority: .utility) {
-                let manager = ClaudeHookInstallationManager(claudeDirectory: directoryURL)
-                return isSharedWithDefault || isSharedWithAnotherAccount
-                    ? try manager.status(hooksBinaryURL: hooksBinaryURL)
-                    : try manager.uninstall()
+        let outcome: Result<ClaudeHookInstallationStatus, Error> = await serializedOnDirectory(path) {
+            await Task.detached(priority: .utility) {
+                Result {
+                    // Re-checked here, after this directory's turn in the
+                    // queue, rather than from a snapshot taken before
+                    // queueing — otherwise a concurrent add/remove touching
+                    // the same directory could make this decision stale.
+                    let isSharedWithDefault = path == ClaudeConfigDirectory.resolved().standardizedFileURL.path
+                    let isSharedWithAnotherAccount = ClaudeAccountsStore.accounts.contains {
+                        $0.id != id && $0.directoryURL.standardizedFileURL.path == path
+                    }
+                    let manager = ClaudeHookInstallationManager(claudeDirectory: directoryURL)
+                    return isSharedWithDefault || isSharedWithAnotherAccount
+                        ? try manager.status(hooksBinaryURL: hooksBinaryURL)
+                        : try manager.uninstall()
+                }
             }.value
+        }
+
+        do {
+            let status = try outcome.get()
             claudeAccountHookStatuses[id] = status
             return status
         } catch {
