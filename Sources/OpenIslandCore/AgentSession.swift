@@ -393,6 +393,12 @@ public struct AgentSession: Equatable, Identifiable, Codable, Sendable {
     public var cursorMetadata: CursorSessionMetadata?
     public var piMetadata: PiSessionMetadata?
 
+    /// The label of the configured Claude account directory this session
+    /// belongs to (e.g. "work", "personal"). Only populated when the user
+    /// has configured more than one account directory; `nil` otherwise so
+    /// the UI doesn't clutter the common single-account case.
+    public var accountLabel: String?
+
     /// Whether this session originates from a remote (SSH) connection.
     public var isRemote: Bool = false
 

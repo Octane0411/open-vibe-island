@@ -135,6 +135,10 @@
 "setup.claudeConfigDir.choose" = "Choose…";
 "setup.claudeConfigDir.reset" = "Reset";
 "setup.claudeConfigDir.footer" = "For users who run Claude Code with CLAUDE_CONFIG_DIR. Leave default unless you use a custom config path.";
+"setup.claudeAccounts.section" = "Additional Claude Accounts";
+"setup.claudeAccounts.labelPlaceholder" = "Account name (e.g. Work)";
+"setup.claudeAccounts.add" = "Add Account";
+"setup.claudeAccounts.footer" = "Monitor additional Claude Code config directories (e.g. separate accounts). Each account's name appears in the notch next to its sessions.";
 "setup.section.hooks" = "CLI Hooks";
 "setup.section.usage" = "Usage Bridge";
 "setup.section.permissions" = "Permissions";

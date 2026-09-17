@@ -62,8 +62,22 @@ final class SessionDiscoveryCoordinator {
     @ObservationIgnored
     private let codexRolloutDiscovery = CodexRolloutDiscovery()
 
-    @ObservationIgnored
-    private let claudeTranscriptDiscovery = ClaudeTranscriptDiscovery()
+    /// Builds one `ClaudeTranscriptDiscovery` per configured Claude account
+    /// directory (falls back to the single legacy directory when the user
+    /// hasn't configured multiple accounts) and merges their results,
+    /// tagging each session with its account label.
+    nonisolated private func discoverClaudeSessionsAcrossAccounts() -> [AgentSession] {
+        ClaudeAccountsStore.effectiveDirectories().flatMap { account -> [AgentSession] in
+            let rootURL = account.directoryURL.appendingPathComponent("projects", isDirectory: true)
+            let discovery = ClaudeTranscriptDiscovery(rootURL: rootURL)
+            let label = account.label.isEmpty ? nil : account.label
+            return discovery.discoverRecentSessions().map { session in
+                var session = session
+                session.accountLabel = label
+                return session
+            }
+        }
+    }
 
     @ObservationIgnored
     private var codexSessionPersistenceTask: Task<Void, Never>?
@@ -112,7 +126,7 @@ final class SessionDiscoveryCoordinator {
         }
 
         let discoveredCodex = codexRolloutDiscovery.discoverRecentSessions()
-        let discoveredClaude = claudeTranscriptDiscovery.discoverRecentSessions()
+        let discoveredClaude = discoverClaudeSessionsAcrossAccounts()
 
         return StartupDiscoveryPayload(
             codexRecords: codexRecords,

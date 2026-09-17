@@ -114,6 +114,16 @@ extension AgentSession {
         jumpTarget?.terminalApp
     }
 
+    /// The Claude account label for this session, when the user has
+    /// configured more than one Claude config directory. `nil` for the
+    /// default/unlabeled account or for non-Claude sessions.
+    var spotlightAccountBadge: String? {
+        guard let accountLabel, !accountLabel.isEmpty else {
+            return nil
+        }
+        return accountLabel
+    }
+
     var spotlightWorkspaceName: String {
         if let workspaceName = jumpTarget?.workspaceName.trimmedForSurface,
            !workspaceName.isEmpty {

@@ -439,6 +439,7 @@ struct SetupSettingsPane: View {
             }
 
             claudeConfigDirectorySection
+            claudeAccountsSection
 
             Section(lang.t("setup.section.hooks")) {
                 hookRow(
@@ -801,6 +802,77 @@ struct SetupSettingsPane: View {
             Text(lang.t("setup.claudeConfigDir.footer"))
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
+        }
+    }
+
+    @State private var newClaudeAccountLabel: String = ""
+    @State private var newClaudeAccountDirectoryURL: URL?
+
+    @ViewBuilder
+    private var claudeAccountsSection: some View {
+        Section {
+            ForEach(model.claudeAccounts) { account in
+                HStack {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(account.label)
+                            Text(account.directoryURL.path)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    } icon: {
+                        Image(systemName: "person.crop.circle")
+                    }
+                    Spacer()
+                    if model.claudeAccountHookStatuses[account.id]?.managedHooksPresent == true {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                    Button {
+                        model.removeClaudeAccount(id: account.id)
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            HStack {
+                TextField(lang.t("setup.claudeAccounts.labelPlaceholder"), text: $newClaudeAccountLabel)
+                Button(newClaudeAccountDirectoryURL?.lastPathComponent ?? lang.t("setup.claudeConfigDir.choose")) {
+                    let panel = NSOpenPanel()
+                    panel.canChooseDirectories = true
+                    panel.canChooseFiles = false
+                    panel.canCreateDirectories = true
+                    panel.prompt = lang.t("setup.claudeConfigDir.choose")
+                    if panel.runModal() == .OK, let url = panel.url {
+                        newClaudeAccountDirectoryURL = url
+                    }
+                }
+                Button(lang.t("setup.claudeAccounts.add")) {
+                    let label = newClaudeAccountLabel.trimmingCharacters(in: .whitespaces)
+                    guard let url = newClaudeAccountDirectoryURL, !label.isEmpty else { return }
+                    model.addClaudeAccount(label: label, directoryURL: url)
+                    newClaudeAccountLabel = ""
+                    newClaudeAccountDirectoryURL = nil
+                }
+                .disabled(newClaudeAccountDirectoryURL == nil || newClaudeAccountLabel.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        } header: {
+            HStack(spacing: 4) {
+                Text(lang.t("setup.claudeAccounts.section"))
+                Text(lang.t("setup.optional"))
+                    .foregroundStyle(.tertiary)
+            }
+        } footer: {
+            Text(lang.t("setup.claudeAccounts.footer"))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .task {
+            model.refreshClaudeAccountHookStatuses()
         }
     }
 

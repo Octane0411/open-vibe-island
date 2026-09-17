@@ -32,6 +32,9 @@ final class HookInstallationCoordinator {
     var piExtensionStatus: PiExtensionInstallationStatus?
     var ohMyPiExtensionStatus: PiExtensionInstallationStatus?
     var claudeStatusLineStatus: ClaudeStatusLineInstallationStatus?
+    /// Hook install status for each additional Claude account directory
+    /// (beyond the primary `ClaudeConfigDirectory`), keyed by account id.
+    var claudeAccountHookStatuses: [UUID: ClaudeHookInstallationStatus] = [:]
     var claudeUsageSnapshot: ClaudeUsageSnapshot?
     var codexUsageSnapshot: CodexUsageSnapshot?
     var hooksBinaryURL: URL?
@@ -642,6 +645,64 @@ final class HookInstallationCoordinator {
                 self.claudeHookStatus = status
             } catch {
                 self.onStatusMessage?("Failed to read Claude hook status: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Refreshes hook install status for every additional Claude account
+    /// directory the user has configured (beyond the primary directory,
+    /// which `refreshClaudeHookStatus()` already covers).
+    func refreshClaudeAccountHookStatuses() {
+        for account in ClaudeAccountsStore.accounts {
+            let manager = ClaudeHookInstallationManager(claudeDirectory: account.directoryURL)
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    let status = try manager.status(hooksBinaryURL: self.hooksBinaryURL)
+                    self.claudeAccountHookStatuses[account.id] = status
+                } catch {
+                    self.onStatusMessage?("Failed to read hook status for \(account.label): \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    /// Installs Claude hooks into every additional configured account
+    /// directory. Best-effort per account: a failure on one account doesn't
+    /// block the others.
+    func installClaudeAccountHooks() {
+        guard let hooksBinaryURL else {
+            onStatusMessage?("Could not find a local OpenIslandHooks binary. Build the package first.")
+            return
+        }
+
+        for account in ClaudeAccountsStore.accounts {
+            let manager = ClaudeHookInstallationManager(claudeDirectory: account.directoryURL)
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    let status = try manager.install(hooksBinaryURL: hooksBinaryURL)
+                    self.claudeAccountHookStatuses[account.id] = status
+                } catch {
+                    self.onStatusMessage?("Failed to install Claude hooks for \(account.label): \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    func uninstallClaudeAccountHooks(id: UUID) {
+        guard let account = ClaudeAccountsStore.accounts.first(where: { $0.id == id }) else {
+            return
+        }
+
+        let manager = ClaudeHookInstallationManager(claudeDirectory: account.directoryURL)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let status = try manager.uninstall()
+                self.claudeAccountHookStatuses[id] = status
+            } catch {
+                self.onStatusMessage?("Failed to remove Claude hooks for \(account.label): \(error.localizedDescription)")
             }
         }
     }

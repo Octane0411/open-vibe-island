@@ -16,6 +16,7 @@ public struct SessionStarted: Equatable, Codable, Sendable {
     public var cursorMetadata: CursorSessionMetadata?
     public var piMetadata: PiSessionMetadata?
     public var isRemote: Bool
+    public var accountLabel: String?
 
     public init(
         sessionID: String,
@@ -32,7 +33,8 @@ public struct SessionStarted: Equatable, Codable, Sendable {
         openCodeMetadata: OpenCodeSessionMetadata? = nil,
         cursorMetadata: CursorSessionMetadata? = nil,
         piMetadata: PiSessionMetadata? = nil,
-        isRemote: Bool = false
+        isRemote: Bool = false,
+        accountLabel: String? = nil
     ) {
         self.sessionID = sessionID
         self.title = title
@@ -49,6 +51,7 @@ public struct SessionStarted: Equatable, Codable, Sendable {
         self.cursorMetadata = cursorMetadata
         self.piMetadata = piMetadata
         self.isRemote = isRemote
+        self.accountLabel = accountLabel
     }
 }
 

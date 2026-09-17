@@ -220,6 +220,17 @@ final class AppModel {
     func installClaudeUsageBridge() { hooks.installClaudeUsageBridge() }
     func uninstallClaudeUsageBridge() { hooks.uninstallClaudeUsageBridge() }
     func updateClaudeConfigDirectory(to newDirectory: URL?) { hooks.updateClaudeConfigDirectory(to: newDirectory) }
+    var claudeAccounts: [ClaudeAccountDirectory] { ClaudeAccountsStore.accounts }
+    var claudeAccountHookStatuses: [UUID: ClaudeHookInstallationStatus] { hooks.claudeAccountHookStatuses }
+    func addClaudeAccount(label: String, directoryURL: URL) {
+        ClaudeAccountsStore.add(label: label, directoryURL: directoryURL)
+        hooks.installClaudeAccountHooks()
+    }
+    func removeClaudeAccount(id: UUID) {
+        hooks.uninstallClaudeAccountHooks(id: id)
+        ClaudeAccountsStore.remove(id: id)
+    }
+    func refreshClaudeAccountHookStatuses() { hooks.refreshClaudeAccountHookStatuses() }
     func runHealthChecks() { hooks.runHealthChecks() }
     func repairHooks() {
         Task { @MainActor in

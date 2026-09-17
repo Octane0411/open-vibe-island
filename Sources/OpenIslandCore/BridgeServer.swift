@@ -657,7 +657,8 @@ public final class BridgeServer: @unchecked Sendable {
                         timestamp: .now,
                         jumpTarget: payload.defaultJumpTarget,
                         claudeMetadata: payload.defaultClaudeMetadata.isEmpty ? nil : payload.defaultClaudeMetadata,
-                        isRemote: payload.remote == true
+                        isRemote: payload.remote == true,
+                        accountLabel: payload.resolvedAccountLabel
                     )
                 )
             )
@@ -2355,7 +2356,8 @@ public final class BridgeServer: @unchecked Sendable {
                     timestamp: .now,
                     jumpTarget: payload.defaultJumpTarget,
                     claudeMetadata: payload.defaultClaudeMetadata.isEmpty ? nil : payload.defaultClaudeMetadata,
-                    isRemote: payload.remote == true
+                    isRemote: payload.remote == true,
+                    accountLabel: payload.resolvedAccountLabel
                 )
             )
         )
