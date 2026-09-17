@@ -422,7 +422,7 @@ ZCode's hook payloads are Claude Code compatible on stdin (snake_case `hook_even
 
 ### Events (managed install)
 
-The managed v1 install is intentionally low-noise — the same lifecycle set as Codex:
+The managed v1 install is intentionally low-noise — the Codex lifecycle set minus `PermissionRequest`:
 
 | Event | Matcher | Current OpenIsland behavior |
 |---|---|---|

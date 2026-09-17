@@ -57,7 +57,7 @@ public final class ZCodeHookInstallationManager: @unchecked Sendable {
             managedPresent = try ZCodeHookInstaller.uninstallConfigJSON(
                 existingData: configData,
                 managedCommand: managedCommand
-            ).changed
+            ).managedHooksPresent
         } else {
             managedPresent = false
         }

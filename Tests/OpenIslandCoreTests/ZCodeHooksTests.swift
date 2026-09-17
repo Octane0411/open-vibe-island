@@ -129,6 +129,60 @@ struct ZCodeHooksTests {
     }
 
     @Test
+    func uninstallDetectsManagedHookSharingGroupWithUserHook() throws {
+        // A managed and a user hook in the same group: group-level comparison
+        // would keep the group and miss the managed hook removal.
+        let config = Data("""
+        {
+          "hooks" : {
+            "enabled" : true,
+            "events" : {
+              "Stop" : [
+                {
+                  "hooks" : [
+                    { "type" : "command", "command" : "\(command)" },
+                    { "type" : "command", "command" : "user-notify" }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+        """.utf8)
+
+        let mutation = try ZCodeHookInstaller.uninstallConfigJSON(
+            existingData: config,
+            managedCommand: command
+        )
+
+        #expect(mutation.managedHooksPresent)
+        let root = try managedHookDictionary(data: try #require(mutation.contents))
+        let events = try #require((root["hooks"] as? [String: Any])?["events"] as? [String: Any])
+        let stopGroups = try #require(events["Stop"] as? [[String: Any]])
+        let hooksList = try #require(stopGroups[0]["hooks"] as? [[String: Any]])
+        #expect(hooksList.count == 1)
+        #expect(hooksList[0]["command"] as? String == "user-notify")
+    }
+
+    @Test
+    func reformattedConfigWithoutManagedHooksIsNotReportedInstalled() throws {
+        // Same semantics, different byte formatting: the exact removal signal
+        // must not mistake a serialization change for a managed install.
+        let config = Data("""
+        {
+          "provider" : "glm"
+        }
+        """.utf8)
+
+        let mutation = try ZCodeHookInstaller.uninstallConfigJSON(
+            existingData: config,
+            managedCommand: command
+        )
+
+        #expect(!mutation.managedHooksPresent)
+    }
+
+    @Test
     func uninstallWithoutManagedHooksLeavesConfigUntouched() throws {
         let existing = Data("""
         {

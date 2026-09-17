@@ -364,7 +364,9 @@ private struct SetupCommand {
         print("Installed Open Island ZCode hooks.")
         print("ZCode dir: \(status.zcodeDirectory.path)")
         print("Config file: \(status.configURL.path)")
-        print("Hooks binary: \(hooksBinary.path)")
+        if let resolvedBinaryURL = status.hooksBinaryURL {
+            print("Hooks binary: \(resolvedBinaryURL.path)")
+        }
     }
 
     private func uninstallZcode() throws {
@@ -385,8 +387,8 @@ private struct SetupCommand {
         print("ZCode dir: \(status.zcodeDirectory.path)")
         print("Config file: \(status.configURL.path)")
         print("Managed hooks present: \(status.managedHooksPresent ? "yes" : "no")")
-        if let hooksBinary {
-            print("Hooks binary: \(hooksBinary.path)")
+        if let resolvedBinaryURL = status.hooksBinaryURL {
+            print("Hooks binary: \(resolvedBinaryURL.path)")
         }
         if let manifest = status.manifest {
             print("Manifest: present")

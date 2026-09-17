@@ -74,9 +74,11 @@ struct ActiveAgentProcessDiscovery {
             // Hermes TUI/gateway processes are also TTY-less, so without this
             // exemption they would be filtered out and their hook-managed
             // sessions could be evicted by the liveness polls.
+            // ZCode is an Electron app whose processes never carry a TTY.
             if process.terminalTTY == nil
                 && !isOpenCodeProcess(command: process.command)
-                && !isHermesProcess(command: process.command) {
+                && !isHermesProcess(command: process.command)
+                && !isZcodeProcess(command: process.command) {
                 continue
             }
 

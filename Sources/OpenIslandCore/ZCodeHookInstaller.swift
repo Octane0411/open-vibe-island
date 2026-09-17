@@ -12,7 +12,7 @@ public struct ZCodeHookInstallerManifest: Equatable, Codable, Sendable {
     }
 }
 
-public struct ZCodeHookFileMutation: Equatable, Sendable {
+public struct ZCodeHookFileMutation: Equatable, Codable, Sendable {
     public var contents: Data?
     public var changed: Bool
     public var managedHooksPresent: Bool
@@ -99,14 +99,24 @@ public enum ZCodeHookInstaller {
             return ZCodeHookFileMutation(contents: existingData, changed: false, managedHooksPresent: false)
         }
 
-        var mutated = false
+        // Exact removal signal: whether any managed hook entry was actually
+        // dropped from a group. Group-count comparison alone would miss a
+        // managed hook sharing a group with user hooks.
+        var removedManagedHook = false
         if var eventsObject = hooksObject["events"] as? [String: Any] {
             for eventName in eventNames {
                 let existingGroups = eventsObject[eventName] as? [Any] ?? []
                 let cleanedGroups = sanitizeGroups(existingGroups, removingCommand: managedCommand)
 
-                if cleanedGroups.count != existingGroups.count {
-                    mutated = true
+                for (existing, cleaned) in zip(existingGroups, cleanedGroups) {
+                    let existingCount = (existing as? [String: Any])?["hooks"] as? [Any] ?? []
+                    let cleanedCount = (cleaned as? [String: Any])?["hooks"] as? [Any] ?? []
+                    if cleanedCount.count < existingCount.count {
+                        removedManagedHook = true
+                    }
+                }
+                if cleanedGroups.count < existingGroups.count {
+                    removedManagedHook = true
                 }
 
                 if cleanedGroups.isEmpty {
@@ -121,8 +131,6 @@ public enum ZCodeHookInstaller {
             } else {
                 hooksObject["events"] = eventsObject
             }
-        } else {
-            hooksObject.removeValue(forKey: "events")
         }
 
         // `enabled` only matters while managed events exist; drop it when
@@ -140,8 +148,8 @@ public enum ZCodeHookInstaller {
         let contents = rootObject.isEmpty ? nil : try serialize(rootObject)
         return ZCodeHookFileMutation(
             contents: contents,
-            changed: mutated || contents != existingData,
-            managedHooksPresent: mutated
+            changed: removedManagedHook || contents != existingData,
+            managedHooksPresent: removedManagedHook
         )
     }
 
