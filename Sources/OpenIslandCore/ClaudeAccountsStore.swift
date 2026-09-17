@@ -46,22 +46,30 @@ public enum ClaudeAccountsStore {
     }
 
     /// The directories Open Island should discover sessions in / install
-    /// hooks into: the existing (legacy) `ClaudeConfigDirectory`, unlabeled,
-    /// plus any additional accounts the user has explicitly added. This is
-    /// additive — configuring extra accounts never stops monitoring the
-    /// directory that already worked before this feature existed.
+    /// hooks into: every account the user has explicitly added, plus the
+    /// existing (legacy) `ClaudeConfigDirectory` if it isn't already covered
+    /// by one of them. This is additive — configuring extra accounts never
+    /// stops monitoring the directory that already worked before this
+    /// feature existed. A user-added account whose directory happens to
+    /// match the default takes precedence, so the default account can be
+    /// labeled too (e.g. when `CLAUDE_CONFIG_DIR` already points at it).
     public static func effectiveDirectories(
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> [ClaudeAccountDirectory] {
         let defaultURL = ClaudeConfigDirectory.resolved(environment: environment)
-        var seenPaths: Set<String> = [defaultURL.standardizedFileURL.path]
-        var result = [ClaudeAccountDirectory(label: "", directoryURL: defaultURL)]
+        let defaultPath = defaultURL.standardizedFileURL.path
+        var seenPaths: Set<String> = []
+        var result: [ClaudeAccountDirectory] = []
 
         for account in accounts {
             let path = account.directoryURL.standardizedFileURL.path
             guard !seenPaths.contains(path) else { continue }
             seenPaths.insert(path)
             result.append(account)
+        }
+
+        if !seenPaths.contains(defaultPath) {
+            result.append(ClaudeAccountDirectory(label: "", directoryURL: defaultURL))
         }
         return result
     }
