@@ -269,7 +269,10 @@ final class SessionDiscoveryCoordinator {
         }
 
         merged.origin = existing.origin ?? discovered.origin
-        merged.accountLabel = existing.accountLabel ?? discovered.accountLabel
+        // `discovered.accountLabel` is recomputed from the current account
+        // configuration on every discovery pass, so it's authoritative here —
+        // preferring `existing` would let a stale or removed label survive.
+        merged.accountLabel = discovered.accountLabel
         merged.attachmentState = mergeAttachmentState(existing.attachmentState, discovered.attachmentState)
         merged.jumpTarget = existing.jumpTarget ?? discovered.jumpTarget
         merged.codexMetadata = mergeCodexMetadata(existing.codexMetadata, discovered.codexMetadata)
