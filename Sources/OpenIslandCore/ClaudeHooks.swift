@@ -720,6 +720,16 @@ public extension ClaudeHookPayload {
         )
     }
 
+    /// The configured Claude account label whose directory contains this
+    /// session's transcript (falls back to `cwd` if no transcript path is
+    /// present yet). `nil` when the user hasn't configured multiple accounts.
+    var resolvedAccountLabel: String? {
+        guard resolvedAgentTool == .claudeCode else {
+            return nil
+        }
+        return ClaudeAccountsStore.label(forPath: transcriptPath ?? agentTranscriptPath ?? cwd)
+    }
+
     var implicitStartSummary: String {
         let agent = resolvedAgentTool.displayName
         switch hookEventName {

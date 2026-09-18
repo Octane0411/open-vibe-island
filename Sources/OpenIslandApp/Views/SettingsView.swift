@@ -439,6 +439,7 @@ struct SetupSettingsPane: View {
             }
 
             claudeConfigDirectorySection
+            claudeAccountsSection
 
             Section(lang.t("setup.section.hooks")) {
                 hookRow(
@@ -747,6 +748,7 @@ struct SetupSettingsPane: View {
                     if !model.piExtensionInstalled { model.installPiExtension() }
                     if !model.ohMyPiExtensionInstalled { model.installOhMyPiExtension() }
                     if !model.claudeUsageInstalled { model.installClaudeUsageBridge() }
+                    if !model.claudeAccountsReady { model.installClaudeAccountHooks() }
                 }
                 .disabled(model.hooksBinaryURL == nil || allReady)
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -754,6 +756,9 @@ struct SetupSettingsPane: View {
         }
         .formStyle(.grouped)
         .navigationTitle(lang.t("settings.tab.setup"))
+        .task {
+            await model.refreshClaudeAccountHookStatuses()
+        }
     }
 
     @ViewBuilder
@@ -804,12 +809,60 @@ struct SetupSettingsPane: View {
         }
     }
 
+    @ViewBuilder
+    private var claudeAccountsSection: some View {
+        Section {
+            ForEach(model.claudeAccounts) { account in
+                HStack {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(account.label)
+                            Text(account.directoryURL.path)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    } icon: {
+                        Image(systemName: "person.crop.circle")
+                    }
+                    Spacer()
+                    if model.claudeAccountHookStatuses[account.id]?.managedHooksPresent == true {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                    Button {
+                        model.removeClaudeAccount(id: account.id)
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            ClaudeAccountAddRow(choosePrompt: lang.t("setup.claudeConfigDir.choose"), labelPlaceholder: lang.t("setup.claudeAccounts.labelPlaceholder"), addTitle: lang.t("setup.claudeAccounts.add")) { label, url in
+                model.addClaudeAccount(label: label, directoryURL: url)
+            }
+        } header: {
+            HStack(spacing: 4) {
+                Text(lang.t("setup.claudeAccounts.section"))
+                Text(lang.t("setup.optional"))
+                    .foregroundStyle(.tertiary)
+            }
+        } footer: {
+            Text(lang.t("setup.claudeAccounts.footer"))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
     private var allReady: Bool {
         model.claudeHooksInstalled && model.codexHooksInstalled && model.openCodePluginInstalled
             && model.qoderHooksInstalled && model.qwenCodeHooksInstalled && model.factoryHooksInstalled && model.codebuddyHooksInstalled
             && model.cursorHooksInstalled && model.geminiHooksInstalled && model.kimiHooksInstalled
             && model.grokHooksInstalled
             && model.piExtensionInstalled && model.ohMyPiExtensionInstalled && model.claudeUsageInstalled
+            && model.claudeAccountsReady
     }
 
     @ViewBuilder
@@ -1114,6 +1167,53 @@ struct PlaceholderSettingsPane: View {
         }
         .frame(maxWidth: .infinity)
         .navigationTitle(lang.t(titleKey))
+    }
+}
+
+// MARK: - Claude account add row
+
+/// A self-contained row for adding a Claude account directory. Kept as its
+/// own view (own `@State`) so its `TextField` identity is stable and isn't
+/// affected by re-renders of the much larger `SetupSettingsPane` around it.
+struct ClaudeAccountAddRow: View {
+    let choosePrompt: String
+    let labelPlaceholder: String
+    let addTitle: String
+    let onAdd: (String, URL) -> Void
+
+    @State private var label: String = ""
+    @State private var directoryURL: URL?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField(labelPlaceholder, text: $label)
+                .textFieldStyle(.roundedBorder)
+
+            HStack {
+                Button(directoryURL?.lastPathComponent ?? choosePrompt) {
+                    let panel = NSOpenPanel()
+                    panel.canChooseDirectories = true
+                    panel.canChooseFiles = false
+                    panel.canCreateDirectories = true
+                    panel.showsHiddenFiles = true
+                    panel.prompt = choosePrompt
+                    if panel.runModal() == .OK, let url = panel.url {
+                        directoryURL = url
+                    }
+                }
+
+                Spacer()
+
+                Button(addTitle) {
+                    let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard let url = directoryURL, !trimmedLabel.isEmpty else { return }
+                    onAdd(trimmedLabel, url)
+                    label = ""
+                    directoryURL = nil
+                }
+                .disabled(directoryURL == nil || label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
     }
 }
 

@@ -179,6 +179,7 @@ final class AppModel {
             || hooks.grokHooksInstalled
             || hooks.piExtensionInstalled
             || hooks.ohMyPiExtensionInstalled
+            || hooks.claudeAccountHookStatuses.values.contains { $0.managedHooksPresent }
     }
     func refreshCodexHookStatus() { hooks.refreshCodexHookStatus() }
     func refreshClaudeHookStatus() { hooks.refreshClaudeHookStatus() }
@@ -220,6 +221,35 @@ final class AppModel {
     func installClaudeUsageBridge() { hooks.installClaudeUsageBridge() }
     func uninstallClaudeUsageBridge() { hooks.uninstallClaudeUsageBridge() }
     func updateClaudeConfigDirectory(to newDirectory: URL?) { hooks.updateClaudeConfigDirectory(to: newDirectory) }
+    /// Stored (rather than computed from `ClaudeAccountsStore` on every read)
+    /// so SwiftUI's observation tracking actually notices changes — a
+    /// computed passthrough to UserDefaults doesn't register as a dependency.
+    var claudeAccounts: [ClaudeAccountDirectory] = ClaudeAccountsStore.accounts
+    var claudeAccountHookStatuses: [UUID: ClaudeHookInstallationStatus] { hooks.claudeAccountHookStatuses }
+    func addClaudeAccount(label: String, directoryURL: URL) {
+        ClaudeAccountsStore.add(label: label, directoryURL: directoryURL)
+        claudeAccounts = ClaudeAccountsStore.accounts
+        Task { await hooks.installClaudeAccountHooks() }
+    }
+    func installClaudeAccountHooks() { Task { await hooks.installClaudeAccountHooks() } }
+    var claudeAccountsReady: Bool {
+        claudeAccounts.allSatisfy { hooks.claudeAccountHookStatuses[$0.id]?.managedHooksPresent == true }
+    }
+    func removeClaudeAccount(id: UUID) {
+        Task {
+            do {
+                try await hooks.uninstallClaudeAccountHooks(id: id)
+            } catch {
+                // Leave the account in place so the user can retry removal from
+                // its Settings row instead of losing track of still-installed hooks.
+                return
+            }
+            ClaudeAccountsStore.remove(id: id)
+            hooks.claudeAccountHookStatuses.removeValue(forKey: id)
+            claudeAccounts = ClaudeAccountsStore.accounts
+        }
+    }
+    func refreshClaudeAccountHookStatuses() async { await hooks.refreshClaudeAccountHookStatuses() }
     func runHealthChecks() { hooks.runHealthChecks() }
     func repairHooks() {
         Task { @MainActor in

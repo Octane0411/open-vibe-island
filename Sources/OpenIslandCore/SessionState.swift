@@ -76,6 +76,7 @@ public struct SessionState: Equatable, Sendable {
                 piMetadata: payload.piMetadata?.isEmpty == true ? nil : payload.piMetadata
             )
             session.isRemote = payload.isRemote
+            session.accountLabel = payload.tool == .claudeCode ? payload.accountLabel : nil
             session.isHookManaged = payload.origin == .live
             // Codex.app sessions use app-level liveness (NSRunningApplication)
             // rather than hook-managed processNotSeenCount polling — flag is

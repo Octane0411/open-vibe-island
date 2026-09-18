@@ -62,8 +62,22 @@ final class SessionDiscoveryCoordinator {
     @ObservationIgnored
     private let codexRolloutDiscovery = CodexRolloutDiscovery()
 
-    @ObservationIgnored
-    private let claudeTranscriptDiscovery = ClaudeTranscriptDiscovery()
+    /// Builds one `ClaudeTranscriptDiscovery` per configured Claude account
+    /// directory (falls back to the single legacy directory when the user
+    /// hasn't configured multiple accounts) and merges their results,
+    /// tagging each session with its account label.
+    nonisolated private func discoverClaudeSessionsAcrossAccounts() -> [AgentSession] {
+        ClaudeAccountsStore.effectiveDirectories().flatMap { account -> [AgentSession] in
+            let rootURL = account.directoryURL.appendingPathComponent("projects", isDirectory: true)
+            let discovery = ClaudeTranscriptDiscovery(rootURL: rootURL)
+            let label = account.label.isEmpty ? nil : account.label
+            return discovery.discoverRecentSessions().map { session in
+                var session = session
+                session.accountLabel = label
+                return session
+            }
+        }
+    }
 
     @ObservationIgnored
     private var codexSessionPersistenceTask: Task<Void, Never>?
@@ -112,7 +126,7 @@ final class SessionDiscoveryCoordinator {
         }
 
         let discoveredCodex = codexRolloutDiscovery.discoverRecentSessions()
-        let discoveredClaude = claudeTranscriptDiscovery.discoverRecentSessions()
+        let discoveredClaude = discoverClaudeSessionsAcrossAccounts()
 
         return StartupDiscoveryPayload(
             codexRecords: codexRecords,
@@ -255,6 +269,13 @@ final class SessionDiscoveryCoordinator {
         }
 
         merged.origin = existing.origin ?? discovered.origin
+        // `discovered.accountLabel` is recomputed from the current account
+        // configuration on every discovery pass, so it's authoritative here —
+        // preferring `existing` would let a stale or removed label survive.
+        // Gated on `merged.tool` (unchanged by this merge) so a non-Claude
+        // session can't pick up a Claude account badge even in the
+        // practically-impossible case of a cross-tool session ID collision.
+        merged.accountLabel = merged.tool == .claudeCode ? discovered.accountLabel : nil
         merged.attachmentState = mergeAttachmentState(existing.attachmentState, discovered.attachmentState)
         merged.jumpTarget = existing.jumpTarget ?? discovered.jumpTarget
         merged.codexMetadata = mergeCodexMetadata(existing.codexMetadata, discovered.codexMetadata)

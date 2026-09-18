@@ -135,6 +135,10 @@
 "setup.claudeConfigDir.choose" = "选择…";
 "setup.claudeConfigDir.reset" = "重置";
 "setup.claudeConfigDir.footer" = "适用于通过 CLAUDE_CONFIG_DIR 使用自定义配置路径启动 Claude Code 的用户。如无需要请保持默认。";
+"setup.claudeAccounts.section" = "其他 Claude 账户";
+"setup.claudeAccounts.labelPlaceholder" = "账户名称（例如 工作）";
+"setup.claudeAccounts.add" = "添加账户";
+"setup.claudeAccounts.footer" = "监控额外的 Claude Code 配置目录（例如不同的账户）。每个账户的名称会显示在灵动岛中对应会话旁边。";
 "setup.section.hooks" = "CLI Hooks";
 "setup.section.usage" = "用量桥接";
 "setup.section.permissions" = "权限";

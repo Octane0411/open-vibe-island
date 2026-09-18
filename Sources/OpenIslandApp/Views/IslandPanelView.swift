@@ -1363,6 +1363,9 @@ private struct IslandSessionRow: View {
 
             HStack(spacing: 6) {
                 agentBadge
+                if let accountBadge = session.spotlightAccountBadge {
+                    sideBadge(accountBadge)
+                }
                 if session.isRemote {
                     sideBadge("SSH")
                 }
