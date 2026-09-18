@@ -1303,8 +1303,10 @@ final class HookInstallationCoordinator {
             guard let self else { return }
 
             while !Task.isCancelled {
-                self.refreshClaudeUsageState()
-                try? await Task.sleep(for: .seconds(5))
+                if self.claudeUsageInstalled || ProcessMonitoringCoordinator.isClaudeDesktopAppRunning() {
+                    self.refreshClaudeUsageState()
+                }
+                try? await Task.sleep(for: .seconds(30))
             }
         }
     }
