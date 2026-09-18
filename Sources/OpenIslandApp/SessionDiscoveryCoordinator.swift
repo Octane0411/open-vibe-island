@@ -272,7 +272,10 @@ final class SessionDiscoveryCoordinator {
         // `discovered.accountLabel` is recomputed from the current account
         // configuration on every discovery pass, so it's authoritative here —
         // preferring `existing` would let a stale or removed label survive.
-        merged.accountLabel = discovered.accountLabel
+        // Gated on `merged.tool` (unchanged by this merge) so a non-Claude
+        // session can't pick up a Claude account badge even in the
+        // practically-impossible case of a cross-tool session ID collision.
+        merged.accountLabel = merged.tool == .claudeCode ? discovered.accountLabel : nil
         merged.attachmentState = mergeAttachmentState(existing.attachmentState, discovered.attachmentState)
         merged.jumpTarget = existing.jumpTarget ?? discovered.jumpTarget
         merged.codexMetadata = mergeCodexMetadata(existing.codexMetadata, discovered.codexMetadata)

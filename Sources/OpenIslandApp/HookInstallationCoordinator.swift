@@ -757,11 +757,22 @@ final class HookInstallationCoordinator {
         failureVerb: String
     ) {
         let defaultPath = ClaudeConfigDirectory.resolved().standardizedFileURL.path
+        // Re-check against the store as of now, not the `accounts` snapshot
+        // this batch started from — removeClaudeAccount can remove an
+        // earlier account while a later account's serialized read/install is
+        // still in flight, and writing that stale result back would let
+        // hasAnyInstalledAgent/claudeAccountsReady see a status for an
+        // account (or a directory) that's no longer configured.
+        let currentAccountsByID = Dictionary(uniqueKeysWithValues: ClaudeAccountsStore.accounts.map { ($0.id, $0) })
         for (id, result) in results {
             switch result {
             case let .success(status):
+                guard let originalPath = accounts.first(where: { $0.id == id })?.directoryURL.standardizedFileURL.path,
+                      currentAccountsByID[id]?.directoryURL.standardizedFileURL.path == originalPath else {
+                    continue
+                }
                 claudeAccountHookStatuses[id] = status
-                if accounts.first(where: { $0.id == id })?.directoryURL.standardizedFileURL.path == defaultPath {
+                if originalPath == defaultPath {
                     claudeHookStatus = status
                 }
             case let .failure(error):

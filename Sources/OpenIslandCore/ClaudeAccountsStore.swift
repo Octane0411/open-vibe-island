@@ -81,10 +81,22 @@ public enum ClaudeAccountsStore {
         !accounts.isEmpty
     }
 
+    /// Adding the same directory twice would leave the later record
+    /// unreachable — `effectiveDirectories()` drops later duplicates and
+    /// `label(forPath:)` keeps the first equal-length match — so it could
+    /// never actually supply its label. Relabel the existing record instead.
     @discardableResult
     public static func add(label: String, directoryURL: URL) -> ClaudeAccountDirectory {
+        var current = accounts
+        let path = directoryURL.standardizedFileURL.path
+        if let index = current.firstIndex(where: { $0.directoryURL.standardizedFileURL.path == path }) {
+            current[index].label = label
+            accounts = current
+            return current[index]
+        }
         let account = ClaudeAccountDirectory(label: label, directoryURL: directoryURL)
-        accounts.append(account)
+        current.append(account)
+        accounts = current
         return account
     }
 
