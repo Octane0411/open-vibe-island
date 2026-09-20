@@ -1212,6 +1212,61 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func mergedWithSyntheticEvosciSessionsAddsProcessSession() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        let process = ActiveProcessSnapshot(
+            tool: .evosci,
+            sessionID: nil,
+            workingDirectory: "/Users/zzq/Developer/auto-research/EvoSci",
+            terminalTTY: "/dev/ttys005",
+            terminalApp: "Terminal"
+        )
+
+        let merged = model.monitoring.mergedWithSyntheticEvosciSessions(
+            existingSessions: [],
+            activeProcesses: [process],
+            now: now
+        )
+
+        #expect(merged.count == 1)
+        #expect(merged.first?.tool == .evosci)
+        #expect(merged.first?.title == "Evosci · EvoSci")
+        #expect(merged.first?.phase == .running)
+        #expect(merged.first?.isProcessAlive == true)
+        #expect(merged.first?.jumpTarget?.terminalApp == "Terminal")
+        #expect(merged.first?.jumpTarget?.terminalTTY == "/dev/ttys005")
+        #expect(merged.first?.jumpTarget?.workingDirectory == "/Users/zzq/Developer/auto-research/EvoSci")
+    }
+
+    @Test
+    func mergedWithSyntheticEvosciSessionsRemovesSessionWhenProcessExits() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        let process = ActiveProcessSnapshot(
+            tool: .evosci,
+            sessionID: nil,
+            workingDirectory: "/tmp/evosci",
+            terminalTTY: "/dev/ttys005",
+            terminalApp: "Terminal"
+        )
+        let existing = model.monitoring.mergedWithSyntheticEvosciSessions(
+            existingSessions: [],
+            activeProcesses: [process],
+            now: now
+        )
+        #expect(existing.count == 1)
+
+        let merged = model.monitoring.mergedWithSyntheticEvosciSessions(
+            existingSessions: existing,
+            activeProcesses: [],
+            now: now
+        )
+
+        #expect(merged.isEmpty)
+    }
+
+    @Test
     func mergedWithSyntheticCursorSessionsDeduplicatesRepeatedConversationProcesses() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()

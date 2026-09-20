@@ -56,7 +56,9 @@ final class ProcessMonitoringCoordinator {
     private static let codexAppStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let claudeDesktopStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let conductorStalenessTimeout: TimeInterval = 600  // 10 minutes
+    private static let hermesStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let piHeartbeatTimeout: TimeInterval = 45
+    private static let evosciSyntheticSessionPrefix = "evosci-process:"
 
     static func monitoringPollInterval(
         isResolvingInitialLiveSessions: Bool,
@@ -224,8 +226,12 @@ final class ProcessMonitoringCoordinator {
             existingSessions: local.sessions,
             activeProcesses: activeProcesses
         )
-        let mergedSessions = mergedWithSyntheticCursorSessions(
+        let mergedCursorSessions = mergedWithSyntheticCursorSessions(
             existingSessions: mergedClaudeSessions,
+            activeProcesses: activeProcesses
+        )
+        let mergedSessions = mergedWithSyntheticEvosciSessions(
+            existingSessions: mergedCursorSessions,
             activeProcesses: activeProcesses
         )
         if mergedSessions != local.sessions {
@@ -384,6 +390,8 @@ final class ProcessMonitoringCoordinator {
             payload.sessionID
         case let .piSessionMetadataUpdated(payload):
             payload.sessionID
+        case let .hermesSessionMetadataUpdated(payload):
+            payload.sessionID
         case let .sessionHeartbeat(payload):
             payload.sessionID
         case let .actionableStateResolved(payload):
@@ -530,6 +538,17 @@ final class ProcessMonitoringCoordinator {
             }
         }
 
+        // ZCode sessions are hook-managed and all share one Electron app
+        // process, so per-session UUIDs cannot be recovered from ps/lsof.
+        // Same conservative fallback as Kimi: while any zcode process exists,
+        // keep every tracked ZCode session alive.
+        let hasZcodeProcess = activeProcesses.contains { $0.tool == .zcode }
+        if hasZcodeProcess {
+            for session in sessions where session.tool == .zcode && !session.isDemoSession {
+                aliveIDs.insert(session.id)
+            }
+        }
+
         // Grok sessions are hook-managed. Process discovery sees a `grok`
         // binary but cannot recover Grok's session UUID from ps/lsof.
         // Prefer TTY / CWD matches when unique; otherwise use a conservative
@@ -564,6 +583,29 @@ final class ProcessMonitoringCoordinator {
         if hasUnmatchedGrokProcess || (!grokProcesses.isEmpty && claimedGrokSessionIDs.isEmpty) {
             for session in trackedGrokSessions where !claimedGrokSessionIDs.contains(session.id) {
                 aliveIDs.insert(session.id)
+            }
+        }
+
+        // Hermes sessions are hook-managed. ps/lsof can see the Hermes TUI
+        // processes (node ui-tui/entry.js + python tui_gateway.entry) but
+        // cannot recover a Hermes session ID, so no unique per-session match
+        // is possible (same situation as Grok). While any Hermes process is
+        // alive, keep non-ended Hermes sessions in the alive set so the
+        // hook-managed processNotSeenCount path does not evict them two
+        // polls after their last hook event. Explicit SessionEnd still wins —
+        // ended sessions are skipped here and ignored by
+        // SessionState.markProcessLiveness once isSessionEnded.
+        // Completed sessions expire after a staleness window (same as Codex,
+        // Cursor, Claude Desktop) so idle sessions don't accumulate forever.
+        let hasHermesProcess = activeProcesses.contains { $0.tool == .hermes }
+        if hasHermesProcess {
+            for session in sessions
+            where session.tool == .hermes && !session.isDemoSession && !session.isSessionEnded {
+                let isStale = session.phase == .completed
+                    && session.updatedAt.addingTimeInterval(Self.hermesStalenessTimeout) < Date.now
+                if !isStale {
+                    aliveIDs.insert(session.id)
+                }
             }
         }
 
@@ -648,6 +690,17 @@ final class ProcessMonitoringCoordinator {
                 if !isStale {
                     aliveIDs.insert(session.id)
                 }
+            }
+        }
+
+        // Evosci is process-based in v1: any live launcher keeps its synthetic
+        // (or a future hook-created) session alive. When the launcher exits,
+        // the normal process-liveness path removes it.
+        let hasEvosciProcess = activeProcesses.contains { $0.tool == .evosci }
+        if hasEvosciProcess {
+            for session in sessions
+            where session.tool == .evosci && !session.isDemoSession && !session.isSessionEnded {
+                aliveIDs.insert(session.id)
             }
         }
 
@@ -892,6 +945,92 @@ final class ProcessMonitoringCoordinator {
 
     func isSyntheticClaudeSession(_ session: AgentSession) -> Bool {
         session.tool == .claudeCode && session.id.hasPrefix(syntheticClaudeSessionPrefix)
+    }
+
+    // MARK: - Synthetic Evosci sessions
+
+    /// Evosci has no Open Island hook channel yet. Process discovery creates a
+    /// synthetic, terminal-anchored session so the agent is visible while its
+    /// launcher is running and disappears when the launcher exits.
+    func mergedWithSyntheticEvosciSessions(
+        existingSessions: [AgentSession],
+        activeProcesses: [ActiveProcessSnapshot],
+        now: Date = .now
+    ) -> [AgentSession] {
+        let baseSessions = existingSessions.filter { !isSyntheticEvosciSession($0) }
+        let activeEvosciProcesses = activeProcesses.filter { $0.tool == .evosci }
+        let trackedEvosciSessions = baseSessions.filter { $0.tool == .evosci && !$0.isDemoSession }
+        let representedProcessKeys = representedEvosciProcessKeys(
+            sessions: trackedEvosciSessions,
+            activeProcesses: activeEvosciProcesses
+        )
+
+        let syntheticSessions = activeEvosciProcesses
+            .filter { !representedProcessKeys.contains(processIdentityKey($0)) }
+            .sorted { processIdentityKey($0) < processIdentityKey($1) }
+            .map { syntheticEvosciSession(for: $0, now: now) }
+
+        return baseSessions + syntheticSessions
+    }
+
+    private func representedEvosciProcessKeys(
+        sessions: [AgentSession],
+        activeProcesses: [ActiveProcessSnapshot]
+    ) -> Set<String> {
+        var representedProcessKeys: Set<String> = []
+        for process in activeProcesses {
+            let matchesSession = sessions.contains { session in
+                if let processTTY = normalizedTTYForMatching(process.terminalTTY) {
+                    return normalizedTTYForMatching(session.jumpTarget?.terminalTTY) == processTTY
+                }
+                if let processCWD = normalizedPathForMatching(process.workingDirectory) {
+                    return normalizedPathForMatching(session.jumpTarget?.workingDirectory) == processCWD
+                }
+                return false
+            }
+            if matchesSession {
+                representedProcessKeys.insert(processIdentityKey(process))
+            }
+        }
+        return representedProcessKeys
+    }
+
+    private func syntheticEvosciSession(
+        for process: ActiveProcessSnapshot,
+        now: Date
+    ) -> AgentSession {
+        let workingDirectory = process.workingDirectory
+        let workspaceName = workingDirectory.map { WorkspaceNameResolver.workspaceName(for: $0) } ?? "Workspace"
+        let terminalApp = supportedTerminalApp(for: process.terminalApp)
+            ?? process.terminalApp?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? "Unknown"
+        let sessionID = "\(Self.evosciSyntheticSessionPrefix)\(processIdentityKey(process))"
+
+        var session = AgentSession(
+            id: sessionID,
+            title: "Evosci · \(workspaceName)",
+            tool: .evosci,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Evosci process detected from \(terminalApp).",
+            updatedAt: now,
+            jumpTarget: JumpTarget(
+                terminalApp: terminalApp,
+                workspaceName: workspaceName,
+                paneTitle: "Evosci \(workspaceName)",
+                workingDirectory: workingDirectory,
+                terminalTTY: process.terminalTTY,
+                tmuxTarget: process.tmuxTarget,
+                tmuxSocketPath: process.tmuxSocketPath
+            )
+        )
+        session.isProcessAlive = true
+        return session
+    }
+
+    func isSyntheticEvosciSession(_ session: AgentSession) -> Bool {
+        session.tool == .evosci && session.id.hasPrefix(Self.evosciSyntheticSessionPrefix)
     }
 
     // MARK: - Synthetic Cursor sessions
@@ -1595,6 +1734,12 @@ final class ProcessMonitoringCoordinator {
             return "Pi \(session.id.prefix(8))"
         case .ohMyPi:
             return "Oh My Pi \(session.id.prefix(8))"
+        case .zcode:
+            return "ZCode \(session.id.prefix(8))"
+        case .hermes:
+            return "Hermes \(session.id.prefix(8))"
+        case .evosci:
+            return "Evosci \(session.id.prefix(8))"
         }
     }
 }

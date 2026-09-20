@@ -259,6 +259,128 @@ struct ActiveAgentProcessDiscoveryTests {
     }
 
     @Test
+    func discoverDetectsHermesGatewayAndTUIProcesses() {
+        let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
+            if executablePath == "/bin/ps" {
+                return """
+                  601 501 ttys003 /Users/user/.hermes/hermes-agent/venv/bin/python -m tui_gateway.entry
+                  602 601 ttys003 /opt/homebrew/bin/node --expose-gc /Users/user/.hermes/hermes-agent/ui-tui/dist/entry.js
+                  603 501 ttys004 /usr/bin/python3 -m http.server
+                """
+            }
+
+            guard executablePath == "/usr/sbin/lsof",
+                  let pid = arguments.dropFirst(2).first else {
+                return nil
+            }
+
+            switch pid {
+            case "601":
+                return """
+                fcwd
+                n/tmp/hermes-work
+                """
+            case "602":
+                return """
+                fcwd
+                n/tmp/hermes-work
+                """
+            default:
+                Issue.record("unexpected lsof lookup for pid \(pid)")
+                return nil
+            }
+        }
+
+        let snapshots = discovery.discover()
+
+        let hermesSnapshots = snapshots.filter { $0.tool == .hermes }
+        #expect(hermesSnapshots.count == 2)
+        #expect(hermesSnapshots.contains(.init(
+            tool: .hermes,
+            sessionID: nil,
+            workingDirectory: "/tmp/hermes-work",
+            terminalTTY: "/dev/ttys003",
+            terminalApp: nil
+        )))
+    }
+
+    @Test
+    func discoverIgnoresUnrelatedCommandsMentioningGatewayModule() {
+        let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
+            if executablePath == "/bin/ps" {
+                return """
+                  701 1 ?? grep tui_gateway.entry /Users/user/.hermes/hermes.log
+                  702 1 ?? /usr/bin/python3 -m json.tool /tmp/payload.json
+                  703 1 ?? /Users/user/.hermes/hermes-agent/venv/bin/python3.12 -m tui_gateway.entry
+                """
+            }
+
+            guard executablePath == "/usr/sbin/lsof",
+                  let pid = arguments.dropFirst(2).first else {
+                return nil
+            }
+
+            switch pid {
+            case "703":
+                return """
+                fcwd
+                n/tmp/hermes-work
+                """
+            default:
+                Issue.record("unexpected lsof lookup for pid \(pid)")
+                return nil
+            }
+        }
+
+        let hermesSnapshots = discovery.discover().filter { $0.tool == .hermes }
+
+        #expect(hermesSnapshots.count == 1)
+        #expect(hermesSnapshots.first?.workingDirectory == "/tmp/hermes-work")
+    }
+
+    @Test
+    func discoverDetectsEvosciProcessAndIgnoresSimilarCommands() {
+        let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
+            if executablePath == "/bin/ps" {
+                return """
+                  801 800 ttys005 /Users/zzq/.local/share/uv/tools/evoscientist/bin/python3 /Users/zzq/.local/bin/evosci
+                  802 801 ?? /Users/zzq/.local/share/uv/tools/evoscientist/bin/python3 /Users/zzq/.local/share/uv/tools/evoscientist/bin/langgraph dev --port 6174
+                  803 800 ttys006 grep evosci /tmp/evoscientist.log
+                  800 900 ttys005 -/bin/zsh
+                  900 1 ?? /Applications/Terminal.app/Contents/MacOS/Terminal
+                """
+            }
+
+            guard executablePath == "/usr/sbin/lsof",
+                  let pid = arguments.dropFirst(2).first else {
+                return nil
+            }
+
+            guard pid == "801" else {
+                Issue.record("unexpected lsof lookup for pid \(pid)")
+                return nil
+            }
+
+            return """
+            fcwd
+            n/Users/zzq/Developer/auto-research/EvoSci
+            """
+        }
+
+        let snapshots = discovery.discover()
+
+        #expect(snapshots == [
+            .init(
+                tool: .evosci,
+                sessionID: nil,
+                workingDirectory: "/Users/zzq/Developer/auto-research/EvoSci",
+                terminalTTY: "/dev/ttys005",
+                terminalApp: "Terminal"
+            ),
+        ])
+    }
+
+    @Test
     func discoverDetectsOpenCodeProcessWithoutTTY() {
         let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
             if executablePath == "/bin/ps" {
