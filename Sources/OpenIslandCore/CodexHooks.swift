@@ -711,9 +711,14 @@ public extension CodexHookPayload {
             case "kaku":
                 return "Kaku"
             case "vscode":
-                return "VS Code"
+                // Cursor and the other VS Code forks all inherit
+                // TERM_PROGRAM=vscode; narrow it down to the actual fork.
+                return VSCodeFamilyHost.displayName(from: environment)
             case "vscode-insiders":
-                return "VS Code Insiders"
+                return VSCodeFamilyHost.displayName(
+                    from: environment,
+                    default: "VS Code Insiders"
+                )
             case "windsurf":
                 return "Windsurf"
             case "trae":
