@@ -35,11 +35,26 @@ public struct CodexHookFileMutation: Equatable, Sendable {
     public var contents: Data?
     public var changed: Bool
     public var hasRemainingHooks: Bool
+    /// Whether hooks of ours were actually found in the file.
+    ///
+    /// Distinct from ``changed``, which is also true when the file merely
+    /// re-serializes differently (we write sorted, pretty-printed JSON). Use
+    /// this — never ``changed`` — to answer "are our hooks installed?".
+    public var ownHooksPresent: Bool
 
-    public init(contents: Data?, changed: Bool, hasRemainingHooks: Bool) {
+    /// - Parameter ownHooksPresent: Defaults to `false` so existing callers that
+    ///   only describe a write keep compiling; the uninstall path, which is the
+    ///   one asked about installed state, always passes it explicitly.
+    public init(
+        contents: Data?,
+        changed: Bool,
+        hasRemainingHooks: Bool,
+        ownHooksPresent: Bool = false
+    ) {
         self.contents = contents
         self.changed = changed
         self.hasRemainingHooks = hasRemainingHooks
+        self.ownHooksPresent = ownHooksPresent
     }
 }
 
@@ -133,12 +148,18 @@ public enum CodexHookInstaller {
         var rootObject = try loadRootObject(from: existingData)
         var hooksObject = rootObject["hooks"] as? [String: Any] ?? [:]
         var mutated = false
+        var ownHooksPresent = false
 
         for spec in eventSpecs {
             let existingGroups = hooksObject[spec.name] as? [Any] ?? []
             let cleanedGroups = sanitize(groups: existingGroups, managedCommand: managedCommand)
 
-            if cleanedGroups.count != existingGroups.count || containsManagedHook(in: existingGroups, managedCommand: managedCommand) {
+            let hadOwnHooks = containsManagedHook(in: existingGroups, managedCommand: managedCommand)
+            if hadOwnHooks {
+                ownHooksPresent = true
+            }
+
+            if cleanedGroups.count != existingGroups.count || hadOwnHooks {
                 mutated = true
             }
 
@@ -150,12 +171,22 @@ public enum CodexHookInstaller {
         }
 
         if hooksObject.isEmpty {
-            return CodexHookFileMutation(contents: nil, changed: mutated, hasRemainingHooks: false)
+            return CodexHookFileMutation(
+                contents: nil,
+                changed: mutated,
+                hasRemainingHooks: false,
+                ownHooksPresent: ownHooksPresent
+            )
         }
 
         rootObject["hooks"] = hooksObject
         let data = try serialize(rootObject)
-        return CodexHookFileMutation(contents: data, changed: mutated || data != existingData, hasRemainingHooks: true)
+        return CodexHookFileMutation(
+            contents: data,
+            changed: mutated || data != existingData,
+            hasRemainingHooks: true,
+            ownHooksPresent: ownHooksPresent
+        )
     }
 
     /// Enables the current Codex hooks feature flag and migrates the legacy flag when present.

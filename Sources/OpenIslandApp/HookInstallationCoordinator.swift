@@ -534,9 +534,17 @@ final class HookInstallationCoordinator {
             guard let self else { return }
 
             let binaryURL = self.hooksBinaryURL
+            let expectsClaude = self.expectsInstalledHooks(.claudeCode)
+            let expectsCodex = self.expectsInstalledHooks(.codex)
             let (claudeReport, codexReport, openCodeReport) = await Task.detached(priority: .utility) {
-                let claude = HookHealthCheck.checkClaude(hooksBinaryURL: binaryURL)
-                let codex = HookHealthCheck.checkCodex(hooksBinaryURL: binaryURL)
+                let claude = HookHealthCheck.checkClaude(
+                    hooksBinaryURL: binaryURL,
+                    expectsInstalledHooks: expectsClaude
+                )
+                let codex = HookHealthCheck.checkCodex(
+                    hooksBinaryURL: binaryURL,
+                    expectsInstalledHooks: expectsCodex
+                )
                 let openCode = HookHealthCheck.checkOpenCode()
                 return (claude, codex, openCode)
             }.value
@@ -562,9 +570,17 @@ final class HookInstallationCoordinator {
 
         // Re-run health checks first
         let binaryURL = hooksBinaryURL
+        let expectsClaude = expectsInstalledHooks(.claudeCode)
+        let expectsCodex = expectsInstalledHooks(.codex)
         let (claudeReport, codexReport, openCodeReport) = await Task.detached(priority: .utility) {
-            let claude = HookHealthCheck.checkClaude(hooksBinaryURL: binaryURL)
-            let codex = HookHealthCheck.checkCodex(hooksBinaryURL: binaryURL)
+            let claude = HookHealthCheck.checkClaude(
+                hooksBinaryURL: binaryURL,
+                expectsInstalledHooks: expectsClaude
+            )
+            let codex = HookHealthCheck.checkCodex(
+                hooksBinaryURL: binaryURL,
+                expectsInstalledHooks: expectsCodex
+            )
             let openCode = HookHealthCheck.checkOpenCode()
             return (claude, codex, openCode)
         }.value
@@ -598,8 +614,14 @@ final class HookInstallationCoordinator {
         if repaired {
             try? await Task.sleep(for: .milliseconds(500))
             let (updatedClaude, updatedCodex, updatedOpenCode) = await Task.detached(priority: .utility) {
-                let claude = HookHealthCheck.checkClaude(hooksBinaryURL: binaryURL)
-                let codex = HookHealthCheck.checkCodex(hooksBinaryURL: binaryURL)
+                let claude = HookHealthCheck.checkClaude(
+                    hooksBinaryURL: binaryURL,
+                    expectsInstalledHooks: expectsClaude
+                )
+                let codex = HookHealthCheck.checkCodex(
+                    hooksBinaryURL: binaryURL,
+                    expectsInstalledHooks: expectsCodex
+                )
                 let openCode = HookHealthCheck.checkOpenCode()
                 return (claude, codex, openCode)
             }.value
@@ -915,6 +937,12 @@ final class HookInstallationCoordinator {
     /// install. `.untouched` and `.uninstalled` both return false;
     /// untouched agents are surfaced to the user via the first-run
     /// onboarding window and the empty-state banner instead.
+    /// Whether the user has asked for this agent's hooks, so a config with none
+    /// of ours in it is a fault worth reporting rather than the desired state.
+    func expectsInstalledHooks(_ agent: AgentIdentifier) -> Bool {
+        intentStore.intent(for: agent) == .installed
+    }
+
     func shouldAutoInstall(_ agent: AgentIdentifier) -> Bool {
         guard intentStore.intent(for: agent) == .installed else {
             return false
