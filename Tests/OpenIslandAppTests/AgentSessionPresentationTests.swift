@@ -106,6 +106,7 @@ struct AgentSessionPresentationTests {
             (.geminiCLI, "Gemini"),
             (.openCode, "OpenCode"),
             (.qoder, "Qoder"),
+            (.qoderCN, "QoderCN"),
             (.qwenCode, "Qwen Code"),
             (.factory, "Factory"),
             (.codebuddy, "CodeBuddy"),

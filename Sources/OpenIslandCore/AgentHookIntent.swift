@@ -21,6 +21,7 @@ public enum AgentIdentifier: String, Codable, Sendable, CaseIterable {
     case codex
     case cursor
     case qoder
+    case qoderCN
     case qwenCode
     case factory
     case codebuddy

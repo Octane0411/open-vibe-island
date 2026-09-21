@@ -380,4 +380,16 @@ struct ActiveAgentProcessDiscoveryTests {
         #expect(!aliveIDs.contains("pi-a"))
         #expect(!aliveIDs.contains("omp-b"))
     }
+
+    @Test
+    @MainActor
+    func supportedTerminalAppPreservesQoderFamilyLabels() {
+        let coordinator = ProcessMonitoringCoordinator()
+        #expect(coordinator.supportedTerminalApp(for: "Qoder") == "Qoder")
+        #expect(coordinator.supportedTerminalApp(for: "QoderCN") == "QoderCN")
+        #expect(coordinator.supportedTerminalApp(for: "qoder cn") == "QoderCN")
+        #expect(coordinator.supportedTerminalApp(for: "qodercn") == "QoderCN")
+        #expect(coordinator.supportedTerminalApp(for: nil) == nil)
+        #expect(coordinator.supportedTerminalApp(for: "SomethingElse") == nil)
+    }
 }

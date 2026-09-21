@@ -1515,6 +1515,11 @@ final class ProcessMonitoringCoordinator {
             return "WezTerm"
         case "zellij":
             return "Zellij"
+        // Qoder family (QoderCN is the China distribution)
+        case "qoder":
+            return "Qoder"
+        case "qodercn", "qoder cn":
+            return "QoderCN"
         // VS Code family
         case "vscode", "code", "visual studio code":
             return "VS Code"
@@ -1579,6 +1584,8 @@ final class ProcessMonitoringCoordinator {
             return "OpenCode \(session.id.prefix(8))"
         case .qoder:
             return "Qoder \(session.id.prefix(8))"
+        case .qoderCN:
+            return "QoderCN \(session.id.prefix(8))"
         case .qwenCode:
             return "Qwen Code \(session.id.prefix(8))"
         case .factory:

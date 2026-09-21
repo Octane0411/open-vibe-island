@@ -21,6 +21,7 @@ final class HookInstallationCoordinator {
     var codexHookStatus: CodexHookInstallationStatus?
     var claudeHookStatus: ClaudeHookInstallationStatus?
     var qoderHookStatus: ClaudeHookInstallationStatus?
+    var qoderCNHookStatus: ClaudeHookInstallationStatus?
     var qwenCodeHookStatus: ClaudeHookInstallationStatus?
     var factoryHookStatus: ClaudeHookInstallationStatus?
     var codebuddyHookStatus: ClaudeHookInstallationStatus?
@@ -38,6 +39,7 @@ final class HookInstallationCoordinator {
     var isCodexSetupBusy = false
     var isClaudeHookSetupBusy = false
     var isQoderHookSetupBusy = false
+    var isQoderCNHookSetupBusy = false
     var isQwenCodeHookSetupBusy = false
     var isFactoryHookSetupBusy = false
     var isCodebuddyHookSetupBusy = false
@@ -65,6 +67,12 @@ final class HookInstallationCoordinator {
     private let qoderHookInstallationManager = ClaudeHookInstallationManager(
         claudeDirectory: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".qoder", isDirectory: true),
         hookSource: "qoder"
+    )
+
+    @ObservationIgnored
+    private let qoderCNHookInstallationManager = ClaudeHookInstallationManager(
+        claudeDirectory: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".qoder-cn", isDirectory: true),
+        hookSource: "qodercn"
     )
 
     @ObservationIgnored
@@ -134,6 +142,10 @@ final class HookInstallationCoordinator {
 
     var qoderHooksInstalled: Bool {
         qoderHookStatus?.managedHooksPresent == true
+    }
+
+    var qoderCNHooksInstalled: Bool {
+        qoderCNHookStatus?.managedHooksPresent == true
     }
 
     var qwenCodeHooksInstalled: Bool {
@@ -648,6 +660,7 @@ final class HookInstallationCoordinator {
 
     func refreshCCForkHookStatuses() {
         refreshCCForkHookStatus(manager: qoderHookInstallationManager, name: "Qoder") { [weak self] in self?.qoderHookStatus = $0 }
+        refreshCCForkHookStatus(manager: qoderCNHookInstallationManager, name: "QoderCN") { [weak self] in self?.qoderCNHookStatus = $0 }
         refreshCCForkHookStatus(manager: qwenCodeHookInstallationManager, name: "Qwen Code") { [weak self] in self?.qwenCodeHookStatus = $0 }
         refreshCCForkHookStatus(manager: factoryHookInstallationManager, name: "Factory") { [weak self] in self?.factoryHookStatus = $0 }
         refreshCCForkHookStatus(manager: codebuddyHookInstallationManager, name: "CodeBuddy") { [weak self] in self?.codebuddyHookStatus = $0 }
@@ -719,6 +732,7 @@ final class HookInstallationCoordinator {
                 guard let self else { return }
                 for (manager, name, apply) in [
                     (self.qoderHookInstallationManager, "Qoder", { [weak self] (s: ClaudeHookInstallationStatus) in self?.qoderHookStatus = s }),
+                    (self.qoderCNHookInstallationManager, "QoderCN", { [weak self] (s: ClaudeHookInstallationStatus) in self?.qoderCNHookStatus = s }),
                     (self.qwenCodeHookInstallationManager, "Qwen Code", { [weak self] (s: ClaudeHookInstallationStatus) in self?.qwenCodeHookStatus = s }),
                     (self.factoryHookInstallationManager, "Factory", { [weak self] (s: ClaudeHookInstallationStatus) in self?.factoryHookStatus = s }),
                     (self.codebuddyHookInstallationManager, "CodeBuddy", { [weak self] (s: ClaudeHookInstallationStatus) in self?.codebuddyHookStatus = s }),
@@ -925,6 +939,7 @@ final class HookInstallationCoordinator {
         case .codex: return !codexHooksInstalled
         case .cursor: return !cursorHooksInstalled
         case .qoder: return !qoderHooksInstalled
+        case .qoderCN: return !qoderCNHooksInstalled
         case .qwenCode: return !qwenCodeHooksInstalled
         case .factory: return !factoryHooksInstalled
         case .codebuddy: return !codebuddyHooksInstalled
@@ -952,6 +967,7 @@ final class HookInstallationCoordinator {
             case .codex: return codexHooksInstalled
             case .cursor: return cursorHooksInstalled
             case .qoder: return qoderHooksInstalled
+            case .qoderCN: return qoderCNHooksInstalled
             case .qwenCode: return qwenCodeHooksInstalled
             case .factory: return factoryHooksInstalled
             case .codebuddy: return codebuddyHooksInstalled
@@ -1008,6 +1024,14 @@ final class HookInstallationCoordinator {
 
     func uninstallQoderHooks() {
         updateCCForkHooks(manager: qoderHookInstallationManager, name: "Qoder", agent: .qoder, isBusySetter: { [weak self] in self?.isQoderHookSetupBusy = $0 }, statusSetter: { [weak self] in self?.qoderHookStatus = $0 }, install: false)
+    }
+
+    func installQoderCNHooks() {
+        updateCCForkHooks(manager: qoderCNHookInstallationManager, name: "QoderCN", agent: .qoderCN, isBusySetter: { [weak self] in self?.isQoderCNHookSetupBusy = $0 }, statusSetter: { [weak self] in self?.qoderCNHookStatus = $0 }, install: true)
+    }
+
+    func uninstallQoderCNHooks() {
+        updateCCForkHooks(manager: qoderCNHookInstallationManager, name: "QoderCN", agent: .qoderCN, isBusySetter: { [weak self] in self?.isQoderCNHookSetupBusy = $0 }, statusSetter: { [weak self] in self?.qoderCNHookStatus = $0 }, install: false)
     }
 
     func installQwenCodeHooks() {
