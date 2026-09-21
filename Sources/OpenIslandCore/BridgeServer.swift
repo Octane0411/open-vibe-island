@@ -986,7 +986,8 @@ public final class BridgeServer: @unchecked Sendable {
                         sessionID: payload.sessionID,
                         summary: summary,
                         phase: .running,
-                        timestamp: .now
+                        timestamp: .now,
+                        isSubagentCompletion: true
                     )
                 )
             )
@@ -1165,7 +1166,8 @@ public final class BridgeServer: @unchecked Sendable {
                     SessionCompleted(
                         sessionID: payload.sessionID,
                         summary: payload.lastAssistantMessage ?? payload.assistantMessagePreview ?? "OpenCode completed the turn.",
-                        timestamp: .now
+                        timestamp: .now,
+                        isSubagentCompletion: payload.isSubagent == true ? true : nil
                     )
                 )
             )

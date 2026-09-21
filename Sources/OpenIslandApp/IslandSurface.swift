@@ -28,6 +28,8 @@ enum IslandSurface: Equatable {
             .sessionList(actionableSessionID: payload.sessionID)
         case let .sessionCompleted(payload):
             payload.isInterrupt == true ? nil : .sessionList(actionableSessionID: payload.sessionID)
+        case let .activityUpdated(payload) where payload.isSubagentCompletion:
+            .sessionList(actionableSessionID: payload.sessionID)
         default:
             nil
         }
