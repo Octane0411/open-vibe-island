@@ -661,6 +661,94 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexAppSessionReconcilerCompletesAnIdleRunningTranscript() throws {
+        let now = Date(timeIntervalSince1970: 2_000_000)
+        let transcriptURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codex-idle-\(UUID().uuidString).jsonl")
+        try "{\"type\":\"session_meta\"}\n".write(to: transcriptURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: transcriptURL) }
+
+        var session = AgentSession(
+            id: "codex-idle-thread",
+            title: "Idle Codex thread",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .stale,
+            phase: .running,
+            summary: "Running",
+            updatedAt: now.addingTimeInterval(-3_600),
+            codexMetadata: CodexSessionMetadata(transcriptPath: transcriptURL.path)
+        )
+        session.isCodexAppSession = true
+
+        try FileManager.default.setAttributes(
+            [.modificationDate: now.addingTimeInterval(-1_801)],
+            ofItemAtPath: transcriptURL.path
+        )
+        let staleEvents = CodexAppSessionReconciler.stalledRunningEvents(for: [session], now: now)
+        #expect(staleEvents.count == 1)
+        if case let .activityUpdated(update) = staleEvents.first {
+            #expect(update.phase == .completed)
+            #expect(update.timestamp == now.addingTimeInterval(-1_801))
+        } else {
+            Issue.record("Expected a completed activity update")
+        }
+
+        try FileManager.default.setAttributes(
+            [.modificationDate: now.addingTimeInterval(-1_799)],
+            ofItemAtPath: transcriptURL.path
+        )
+        #expect(CodexAppSessionReconciler.stalledRunningEvents(for: [session], now: now).isEmpty)
+
+        session.updatedAt = now.addingTimeInterval(-60)
+        try FileManager.default.setAttributes(
+            [.modificationDate: now.addingTimeInterval(-3_600)],
+            ofItemAtPath: transcriptURL.path
+        )
+        let refreshedCacheEvents = CodexAppSessionReconciler.stalledRunningEvents(for: [session], now: now)
+        #expect(refreshedCacheEvents.count == 1)
+        if case let .activityUpdated(update) = refreshedCacheEvents.first {
+            #expect(update.phase == .completed)
+            #expect(update.timestamp == now.addingTimeInterval(-3_600))
+        } else {
+            Issue.record("Expected the idle transcript to complete despite a refreshed cache timestamp")
+        }
+    }
+
+    @Test
+    func codexMetadataOnlyRolloutDoesNotStartARunningTurn() throws {
+        let now = Date(timeIntervalSince1970: 2_000_000)
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codex-empty-rollout-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let transcriptURL = rootURL.appendingPathComponent("rollout-1970-01-24T03-33-20-empty-thread.jsonl")
+        let line = sessionMetaLine(
+            sessionID: "empty-thread",
+            timestamp: "1970-01-24T02:33:20.000Z",
+            cwd: "/tmp/empty-workspace"
+        )
+        try (line + "\n").write(to: transcriptURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.modificationDate: now.addingTimeInterval(-3_600)],
+            ofItemAtPath: transcriptURL.path
+        )
+
+        let snapshot = CodexRolloutReducer.snapshot(for: [line])
+        #expect(CodexRolloutReducer.events(
+            from: nil,
+            to: snapshot,
+            sessionID: "empty-thread",
+            transcriptPath: transcriptURL.path
+        ).isEmpty)
+
+        let records = CodexRolloutDiscovery(rootURL: rootURL).discoverRecentSessions(now: now)
+        #expect(records.count == 1)
+        #expect(records.first?.phase == .completed)
+    }
+
+    @Test
     func codexAppSessionReconcilerEndsArchivedSessions() {
         let events = CodexAppSessionReconciler.reconciliationEvents(
             for: [
