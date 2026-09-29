@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import Foundation
 import OpenIslandCore
 
@@ -389,11 +390,19 @@ struct TerminalJumpService {
                 try openAction(["-b", "com.tencent.workbuddy.mac"])
                 return "Activated WorkBuddy."
             case "dev.zcode.app":
-                // ZCode has no per-conversation deep link; its workspace URL
-                // focuses the window the session runs in.
+                // ZCode has no per-conversation deep link, and its workspace
+                // URL prompts a folder-trust dialog and opens a new window.
+                // When the session's workspace window already exists, raise
+                // it directly via the accessibility API instead.
+                if focusDesktopAppWindow(
+                    bundleIdentifier: "dev.zcode.app",
+                    titleFragment: zcodeWindowTitleFragment(for: target)
+                ) {
+                    return "Focused the ZCode workspace window."
+                }
                 if let deepLink = target.appDeepLinkURL, !deepLink.isEmpty {
                     try openAction([deepLink])
-                    return "Focused the ZCode workspace window."
+                    return "Opened the ZCode workspace for the session."
                 }
                 try openAction(["-b", "dev.zcode.app"])
                 return "Activated ZCode."
@@ -468,6 +477,76 @@ struct TerminalJumpService {
         }
 
         throw TerminalJumpError.unsupportedTerminal(target.terminalApp)
+    }
+
+    /// Title fragment used to match the ZCode workspace window for a session:
+    /// the workspace name (cwd's last path component), falling back to the
+    /// working directory's last component when they differ.
+    private func zcodeWindowTitleFragment(for target: JumpTarget) -> String {
+        let workspaceName = target.workspaceName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !workspaceName.isEmpty, workspaceName != "Unknown" {
+            return workspaceName
+        }
+
+        guard let workingDirectory = target.workingDirectory?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !workingDirectory.isEmpty,
+            let lastComponent = workingDirectory.split(separator: "/").last else {
+            return ""
+        }
+
+        return String(lastComponent)
+    }
+
+    /// Raises an existing window of the given desktop app whose AX title
+    /// contains `titleFragment`. With a single window, that window is raised
+    /// regardless of title — focusing the only window is almost always the
+    /// right jump target and avoids depending on title formats.
+    /// Returns false when the app is not running, the accessibility API is
+    /// unavailable (no Accessibility grant), or no window matches.
+    private func focusDesktopAppWindow(bundleIdentifier: String, titleFragment: String) -> Bool {
+        guard let app = NSWorkspace.shared.runningApplications
+            .first(where: { $0.bundleIdentifier == bundleIdentifier && $0.processIdentifier > 0 }) else {
+            return false
+        }
+
+        let appElement = AXUIElementCreateApplication(app.processIdentifier)
+        var windowsValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsValue) == .success,
+              let windows = windowsValue as? [AXUIElement],
+              !windows.isEmpty else {
+            return false
+        }
+
+        if windows.count == 1 {
+            raiseDesktopAppWindow(windows[0], application: app)
+            return true
+        }
+
+        let fragment = titleFragment.lowercased()
+        guard !fragment.isEmpty else {
+            return false
+        }
+
+        for window in windows {
+            var titleValue: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleValue) == .success,
+                  let title = titleValue as? String,
+                  title.lowercased().contains(fragment) else {
+                continue
+            }
+
+            raiseDesktopAppWindow(window, application: app)
+            return true
+        }
+
+        return false
+    }
+
+    private func raiseDesktopAppWindow(_ window: AXUIElement, application: NSRunningApplication) {
+        AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+        AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
+        application.activate(options: [.activateIgnoringOtherApps])
     }
 
     private func jumpToITermSession(_ target: JumpTarget) throws -> Bool {
