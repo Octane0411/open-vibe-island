@@ -179,6 +179,10 @@ public struct JumpTarget: Equatable, Codable, Sendable {
     /// `"Codex.app"`, the jump uses the `codex://threads/<id>` URL scheme
     /// to open the conversation directly rather than just activating the app.
     public var codexThreadID: String?
+    /// Stable conversation/session identifier owned by a desktop agent app.
+    /// ZCode uses this to resolve the current sidebar title from its read-only
+    /// task index before pressing the exact conversation through Accessibility.
+    public var appConversationID: String?
     /// App-specific deep link for jump-back. Set alongside a desktop-app
     /// `terminalApp` tag (e.g. `workbuddy://chat/<sessionID>` for WorkBuddy,
     /// `zcode://workspace/open?path=<cwd>` for ZCode); the jump opens it
@@ -196,6 +200,7 @@ public struct JumpTarget: Equatable, Codable, Sendable {
         tmuxSocketPath: String? = nil,
         warpPaneUUID: String? = nil,
         codexThreadID: String? = nil,
+        appConversationID: String? = nil,
         appDeepLinkURL: String? = nil
     ) {
         self.terminalApp = terminalApp
@@ -208,6 +213,7 @@ public struct JumpTarget: Equatable, Codable, Sendable {
         self.tmuxSocketPath = tmuxSocketPath
         self.warpPaneUUID = warpPaneUUID
         self.codexThreadID = codexThreadID
+        self.appConversationID = appConversationID
         self.appDeepLinkURL = appDeepLinkURL
     }
 }

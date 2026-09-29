@@ -11,6 +11,7 @@ struct TerminalJumpService {
     typealias ProcessRunner = @Sendable (String, [String]) -> Bool
     typealias WarpFocusedPaneReader = @Sendable () -> String?
     typealias WarpTabCountReader = @Sendable () -> Int
+    typealias ZCodeConversationFocuser = @Sendable (String) -> ZCodeConversationFocusResult
     /// Returns true when Warp is the system's frontmost app and ready to
     /// receive the next tab-advance command. Production asks
     /// `NSWorkspace.shared.frontmostApplication`; tests inject `{ true }`
@@ -242,6 +243,7 @@ struct TerminalJumpService {
     private let warpTabCountReader: WarpTabCountReader
     private let warpKeystroker: KeystrokeInjector
     private let warpFrontmostChecker: WarpFrontmostChecker
+    private let zcodeConversationFocuser: ZCodeConversationFocuser
 
     init(
         applicationResolver: @escaping ApplicationResolver = { bundleIdentifier in
@@ -262,6 +264,9 @@ struct TerminalJumpService {
             // updated via KVO that can lag the real frontmost transition).
             NSWorkspace.shared.frontmostApplication?.bundleIdentifier
                 == "dev.warp.Warp-Stable"
+        },
+        zcodeConversationFocuser: @escaping ZCodeConversationFocuser = { conversationID in
+            ZCodeConversationJumpController().focus(conversationID: conversationID)
         }
     ) {
         self.applicationResolver = applicationResolver
@@ -273,6 +278,7 @@ struct TerminalJumpService {
         self.warpTabCountReader = warpTabCountReader
         self.warpKeystroker = warpKeystroker
         self.warpFrontmostChecker = warpFrontmostChecker
+        self.zcodeConversationFocuser = zcodeConversationFocuser
     }
 
     func jump(to target: JumpTarget) throws -> String {
@@ -390,10 +396,28 @@ struct TerminalJumpService {
                 try openAction(["-b", "com.tencent.workbuddy.mac"])
                 return "Activated WorkBuddy."
             case "dev.zcode.app":
-                // ZCode has no per-conversation deep link, and its workspace
-                // URL prompts a folder-trust dialog and opens a new window.
-                // When the session's workspace window already exists, raise
-                // it directly via the accessibility API instead.
+                // ZCode has no public per-conversation deep link. Resolve the
+                // hook's stable session ID through ZCode's read-only task
+                // index, press the exact existing sidebar entry through AX,
+                // and verify that its conversation heading became active.
+                if let conversationID = target.appConversationID?
+                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                    !conversationID.isEmpty {
+                    switch zcodeConversationFocuser(conversationID) {
+                    case .focused:
+                        logJumpDiagnostics("zcode conversation focus ok")
+                        return "Focused the ZCode conversation."
+                    case let .unavailable(reason):
+                        logJumpDiagnostics("zcode conversation focus miss reason=\(reason)")
+                        if reason == "accessibility-unavailable", appIsRunning {
+                            try openAction(["-b", "dev.zcode.app"])
+                            return "Activated ZCode. Accessibility permission is required for conversation focus."
+                        }
+                    }
+                }
+
+                // Preserve workspace-window activation as a safe fallback for
+                // stale sessions and future ZCode schema/UI changes.
                 let zcodeFragment = zcodeWindowTitleFragment(for: target)
                 let zcodeDiagnostics = ZcodeWindowDiagnosticsCollector()
                 if focusDesktopAppWindow(
@@ -405,6 +429,11 @@ struct TerminalJumpService {
                     return "Focused the ZCode workspace window."
                 }
                 logJumpDiagnostics("zcode AX miss fragment=\(zcodeFragment) detail=[\(zcodeDiagnostics.summary)]")
+                if appIsRunning {
+                    logJumpDiagnostics("zcode AX miss fragment=\(zcodeFragment) -> activate running app")
+                    try openAction(["-b", "dev.zcode.app"])
+                    return "Activated ZCode. Conversation focus was unavailable."
+                }
                 if let deepLink = target.appDeepLinkURL, !deepLink.isEmpty {
                     logJumpDiagnostics("zcode AX miss fragment=\(zcodeFragment) -> deep link \(deepLink)")
                     try openAction([deepLink])

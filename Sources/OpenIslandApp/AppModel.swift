@@ -1372,16 +1372,37 @@ final class AppModel {
     }
 
     func jumpToFocusedSession() {
-        jump(to: focusedSession?.jumpTarget)
+        jump(to: focusedSession.flatMap(resolvedJumpTarget(for:)))
     }
 
     func jumpToSession(_ session: AgentSession) {
-        guard let jumpTarget = session.jumpTarget,
+        guard let jumpTarget = resolvedJumpTarget(for: session),
               jumpTarget.terminalApp.lowercased() != "unknown" else {
             lastActionMessage = "Cannot jump: terminal app is unknown."
             return
         }
         jump(to: jumpTarget)
+    }
+
+    private func resolvedJumpTarget(for session: AgentSession) -> JumpTarget? {
+        guard var jumpTarget = session.jumpTarget else {
+            return nil
+        }
+
+        // Sessions restored from registries written before the ZCode
+        // conversation locator existed still have the stable task id on the
+        // AgentSession itself. Upgrade them at click time so users do not need
+        // to wait for another hook event before precision jump starts working.
+        let hasConversationID = jumpTarget.appConversationID?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty == false
+        if jumpTarget.terminalApp.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            == "zcode.app",
+           !hasConversationID {
+            jumpTarget.appConversationID = session.id
+        }
+
+        return jumpTarget
     }
 
     private func jump(to jumpTarget: JumpTarget?) {

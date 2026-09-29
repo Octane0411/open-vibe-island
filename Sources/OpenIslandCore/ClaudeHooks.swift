@@ -743,6 +743,7 @@ public extension ClaudeHookPayload {
             terminalSessionID: terminalSessionID,
             terminalTTY: terminalTTY,
             warpPaneUUID: warpPaneUUID,
+            appConversationID: resolvedAgentTool == .zcode ? sessionID : nil,
             appDeepLinkURL: appDeepLinkURL
         )
     }

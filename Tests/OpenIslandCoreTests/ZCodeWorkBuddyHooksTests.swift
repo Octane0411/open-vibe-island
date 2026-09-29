@@ -307,8 +307,8 @@ struct ZCodeWorkBuddyHooksTests {
     }
 
     /// Jump targets for desktop-app agents carry an app-specific deep link
-    /// so clicking focuses the conversation (WorkBuddy) or workspace window
-    /// (ZCode) instead of only activating the app.
+    /// so clicking focuses the exact conversation instead of only activating
+    /// the desktop app or its workspace.
     @Test
     func jumpTargetCarriesAppDeepLinks() throws {
         let decoder = JSONDecoder()
@@ -326,12 +326,14 @@ struct ZCodeWorkBuddyHooksTests {
         )
         zcode.hookSource = "zcode"
         #expect(zcode.defaultJumpTarget.appDeepLinkURL == "zcode://workspace/open?path=%2FUsers%2Fx%2Fmy%20proj")
+        #expect(zcode.defaultJumpTarget.appConversationID == "zc-1")
 
         let claude = try decoder.decode(
             ClaudeHookPayload.self,
             from: Data(#"{"cwd": "/tmp", "hook_event_name": "SessionStart", "session_id": "c-1"}"#.utf8)
         )
         #expect(claude.defaultJumpTarget.appDeepLinkURL == nil)
+        #expect(claude.defaultJumpTarget.appConversationID == nil)
     }
 
     /// ZCode sessions often run in deep subdirectories of a project (agent
