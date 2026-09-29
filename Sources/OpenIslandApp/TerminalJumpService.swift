@@ -394,16 +394,20 @@ struct TerminalJumpService {
                 // URL prompts a folder-trust dialog and opens a new window.
                 // When the session's workspace window already exists, raise
                 // it directly via the accessibility API instead.
+                let zcodeFragment = zcodeWindowTitleFragment(for: target)
                 if focusDesktopAppWindow(
                     bundleIdentifier: "dev.zcode.app",
-                    titleFragment: zcodeWindowTitleFragment(for: target)
+                    titleFragment: zcodeFragment
                 ) {
+                    logJumpDiagnostics("zcode AX focus ok fragment=\(zcodeFragment)")
                     return "Focused the ZCode workspace window."
                 }
                 if let deepLink = target.appDeepLinkURL, !deepLink.isEmpty {
+                    logJumpDiagnostics("zcode AX miss fragment=\(zcodeFragment) -> deep link \(deepLink)")
                     try openAction([deepLink])
                     return "Opened the ZCode workspace for the session."
                 }
+                logJumpDiagnostics("zcode AX miss fragment=\(zcodeFragment) -> activate")
                 try openAction(["-b", "dev.zcode.app"])
                 return "Activated ZCode."
             case "com.googlecode.iterm2":
@@ -525,9 +529,11 @@ struct TerminalJumpService {
 
         let appElement = AXUIElementCreateApplication(app.processIdentifier)
         var windowsValue: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsValue) == .success,
+        let axResult = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsValue)
+        guard axResult == .success,
               let windows = windowsValue as? [AXUIElement],
               !windows.isEmpty else {
+            logJumpDiagnostics("AX windows query failed bundle=\(bundleIdentifier) error=\(axResult.rawValue)")
             return false
         }
 
@@ -561,6 +567,8 @@ struct TerminalJumpService {
             }
         }
 
+        let titles = windows.compactMap { copyAXStringValue(of: $0, attribute: kAXTitleAttribute as CFString) }
+        logJumpDiagnostics("AX no match bundle=\(bundleIdentifier) fragment=\(fragment) windowTitles=\(titles.joined(separator: " | "))")
         return false
     }
 
@@ -621,9 +629,34 @@ struct TerminalJumpService {
     }
 
     private func raiseDesktopAppWindow(_ window: AXUIElement, application: NSRunningApplication) {
+        // Un-minimize first: AXRaise alone does not restore a window from the
+        // Dock, so a jump targeting a minimized window would activate the app
+        // without bringing the window back — visibly "nothing happens".
+        AXUIElementSetAttributeValue(window, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
         AXUIElementPerformAction(window, kAXRaiseAction as CFString)
         AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
+        AXUIElementSetAttributeValue(window, kAXFocusedAttribute as CFString, kCFBooleanTrue)
         application.activate(options: [.activateIgnoringOtherApps])
+    }
+
+    /// Appends a line to ~/Library/Application Support/OpenIsland/jump-debug.log
+    /// so jump behavior can be diagnosed from real clicks when window matching
+    /// misbehaves on a specific machine.
+    private func logJumpDiagnostics(_ message: String) {
+        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("OpenIsland", isDirectory: true)
+        guard let directory else { return }
+
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let line = "\(ISO8601DateFormatter().string(from: .now)) \(message)\n"
+        let url = directory.appendingPathComponent("jump-debug.log")
+        if let handle = FileHandle(forWritingAtPath: url.path) {
+            handle.seekToEndOfFile()
+            handle.write(Data(line.utf8))
+            handle.closeFile()
+        } else {
+            try? Data(line.utf8).write(to: url)
+        }
     }
 
     private func jumpToITermSession(_ target: JumpTarget) throws -> Bool {
