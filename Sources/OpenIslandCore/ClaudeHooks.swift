@@ -759,8 +759,12 @@ public extension ClaudeHookPayload {
         case .workbuddy:
             return "workbuddy://chat/\(sessionID)"
         case .zcode:
+            // Sessions often run in deep subdirectories (agent run dirs);
+            // jump to the project root so ZCode focuses the real workspace
+            // instead of prompting to trust an ephemeral inner folder.
+            let workspacePath = WorkspaceNameResolver.projectRootPath(for: cwd) ?? cwd
             let unreserved = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
-            let encodedPath = cwd.addingPercentEncoding(withAllowedCharacters: unreserved) ?? cwd
+            let encodedPath = workspacePath.addingPercentEncoding(withAllowedCharacters: unreserved) ?? workspacePath
             return "zcode://workspace/open?path=\(encodedPath)"
         default:
             return nil

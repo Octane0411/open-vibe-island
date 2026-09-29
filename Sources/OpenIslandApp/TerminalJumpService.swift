@@ -483,6 +483,19 @@ struct TerminalJumpService {
     /// the workspace name (cwd's last path component), falling back to the
     /// working directory's last component when they differ.
     private func zcodeWindowTitleFragment(for target: JumpTarget) -> String {
+        // Prefer the git project root: ZCode window titles carry the project
+        // name, and sessions often run in deep subdirectories whose last path
+        // component (e.g. a timestamped run dir) never appears in a title.
+        if let workingDirectory = target.workingDirectory?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !workingDirectory.isEmpty,
+            let projectRoot = WorkspaceNameResolver.projectRootPath(for: workingDirectory) {
+            let rootName = URL(fileURLWithPath: projectRoot).lastPathComponent
+            if !rootName.isEmpty {
+                return rootName
+            }
+        }
+
         let workspaceName = target.workspaceName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !workspaceName.isEmpty, workspaceName != "Unknown" {
             return workspaceName

@@ -334,6 +334,32 @@ struct ZCodeWorkBuddyHooksTests {
         #expect(claude.defaultJumpTarget.appDeepLinkURL == nil)
     }
 
+    /// ZCode sessions often run in deep subdirectories of a project (agent
+    /// run dirs). The deep link must target the git project root so ZCode
+    /// focuses the real workspace window instead of prompting to trust an
+    /// ephemeral inner folder.
+    @Test
+    func zcodeDeepLinkTargetsProjectRootNotSessionCWD() throws {
+        let projectRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("zcode-deeplink-\(UUID().uuidString)", isDirectory: true)
+        let runDir = projectRoot
+            .appendingPathComponent(".state/governance/GOV06-G/run-20260929", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: projectRoot) }
+
+        try FileManager.default.createDirectory(at: runDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: projectRoot.appendingPathComponent(".git"), withIntermediateDirectories: true)
+
+        var payload = try JSONDecoder().decode(
+            ClaudeHookPayload.self,
+            from: Data(#"{"cwd": "\#(runDir.path)", "hook_event_name": "SessionStart", "session_id": "zc-run"}"#.utf8)
+        )
+        payload.hookSource = "zcode"
+
+        let unreserved = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+        let expectedRoot = projectRoot.path.addingPercentEncoding(withAllowedCharacters: unreserved)!
+        #expect(payload.defaultJumpTarget.appDeepLinkURL == "zcode://workspace/open?path=\(expectedRoot)")
+    }
+
     // MARK: - Real-world ZCode payload compatibility
 
     /// Regression: a real ZCode PreToolUse payload (captured from the ZCode
