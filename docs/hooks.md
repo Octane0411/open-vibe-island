@@ -266,7 +266,8 @@ ZCode consumes Claude-format payloads but differs from Claude Code in configurat
 - Configuration lives at `~/.zcode/cli/config.json`, with hook groups nested under `hooks.events.<Event>` (not a top-level `hooks` key) and `hooks.enabled: true` required before configuration-file hooks run.
 - ZCode supports exactly seven events; the managed install registers only these: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`, `Stop`.
 - `PermissionRequest` supports the interactive allow/deny directive (24 h timeout); matchers are case-sensitive regexes against tool names (`.*` installs as match-all).
-- Agents run inside the ZCode desktop app (`dev.zcode.app`); the hook stamps `terminal_app: "ZCode.app"` from the inherited bundle identifier, session liveness follows the running app, and jump-back activates it.
+- Agents run inside the ZCode desktop app (`dev.zcode.app`); the hook stamps `terminal_app: "ZCode.app"` from the `ZCODE_*` runtime env, session liveness follows the running app, and jump-back activates the app (raising it first if minimized).
+- **Jump-back ceiling**: ZCode renders all conversations inside a single macOS window (its "windows" are in-app virtual windows), exposes no per-session deep link, and its accessibility tree carries no session text — so no external app can focus a specific ZCode conversation. Jump-back brings ZCode forward and, when no window exists, opens the session's workspace via `zcode://workspace/open?path=<git root>`; per-conversation jumps would need ZCode to add a session URL scheme (as Codex does with `codex://threads/<id>`).
 
 ## WorkBuddy Hooks (`--source workbuddy`)
 
