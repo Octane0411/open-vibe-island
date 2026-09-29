@@ -379,6 +379,24 @@ struct TerminalJumpService {
                 // No per-session deep link; bring the app forward, like Claude.app.
                 try openAction(["-b", "com.conductor.app"])
                 return "Activated Conductor."
+            case "com.tencent.workbuddy.mac":
+                // WorkBuddy's own notifications open the task conversation via
+                // workbuddy://chat/<sessionId>; prefer that over bare activation.
+                if let deepLink = target.appDeepLinkURL, !deepLink.isEmpty {
+                    try openAction([deepLink])
+                    return "Focused the WorkBuddy conversation."
+                }
+                try openAction(["-b", "com.tencent.workbuddy.mac"])
+                return "Activated WorkBuddy."
+            case "dev.zcode.app":
+                // ZCode has no per-conversation deep link; its workspace URL
+                // focuses the window the session runs in.
+                if let deepLink = target.appDeepLinkURL, !deepLink.isEmpty {
+                    try openAction([deepLink])
+                    return "Focused the ZCode workspace window."
+                }
+                try openAction(["-b", "dev.zcode.app"])
+                return "Activated ZCode."
             case "com.googlecode.iterm2":
                 if try jumpToITermSession(target) {
                     return "Focused the matching iTerm session."

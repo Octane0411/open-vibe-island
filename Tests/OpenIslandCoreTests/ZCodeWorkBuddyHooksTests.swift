@@ -306,6 +306,34 @@ struct ZCodeWorkBuddyHooksTests {
         #expect(payload.withRuntimeContext(environment: terminalEnv).terminalApp == "Ghostty")
     }
 
+    /// Jump targets for desktop-app agents carry an app-specific deep link
+    /// so clicking focuses the conversation (WorkBuddy) or workspace window
+    /// (ZCode) instead of only activating the app.
+    @Test
+    func jumpTargetCarriesAppDeepLinks() throws {
+        let decoder = JSONDecoder()
+
+        var workbuddy = try decoder.decode(
+            ClaudeHookPayload.self,
+            from: Data(#"{"cwd": "/Users/x/proj", "hook_event_name": "SessionStart", "session_id": "wb-session-1"}"#.utf8)
+        )
+        workbuddy.hookSource = "workbuddy"
+        #expect(workbuddy.defaultJumpTarget.appDeepLinkURL == "workbuddy://chat/wb-session-1")
+
+        var zcode = try decoder.decode(
+            ClaudeHookPayload.self,
+            from: Data(#"{"cwd": "/Users/x/my proj", "hook_event_name": "SessionStart", "session_id": "zc-1"}"#.utf8)
+        )
+        zcode.hookSource = "zcode"
+        #expect(zcode.defaultJumpTarget.appDeepLinkURL == "zcode://workspace/open?path=%2FUsers%2Fx%2Fmy%20proj")
+
+        let claude = try decoder.decode(
+            ClaudeHookPayload.self,
+            from: Data(#"{"cwd": "/tmp", "hook_event_name": "SessionStart", "session_id": "c-1"}"#.utf8)
+        )
+        #expect(claude.defaultJumpTarget.appDeepLinkURL == nil)
+    }
+
     // MARK: - Real-world ZCode payload compatibility
 
     /// Regression: a real ZCode PreToolUse payload (captured from the ZCode

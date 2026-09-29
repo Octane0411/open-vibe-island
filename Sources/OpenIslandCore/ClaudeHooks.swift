@@ -742,8 +742,29 @@ public extension ClaudeHookPayload {
             workingDirectory: cwd,
             terminalSessionID: terminalSessionID,
             terminalTTY: terminalTTY,
-            warpPaneUUID: warpPaneUUID
+            warpPaneUUID: warpPaneUUID,
+            appDeepLinkURL: appDeepLinkURL
         )
+    }
+
+    /// Deep link to the exact conversation/window inside a desktop agent
+    /// app, following the same URL each app uses for its own navigation:
+    /// WorkBuddy's system notifications open `workbuddy://chat/<sessionId>`
+    /// (the renderer routes chat/<id> to the task conversation), and ZCode's
+    /// CLI opens the session's workspace window via
+    /// `zcode://workspace/open?path=<encoded cwd>` (ZCode has no
+    /// per-conversation deep link).
+    var appDeepLinkURL: String? {
+        switch resolvedAgentTool {
+        case .workbuddy:
+            return "workbuddy://chat/\(sessionID)"
+        case .zcode:
+            let unreserved = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+            let encodedPath = cwd.addingPercentEncoding(withAllowedCharacters: unreserved) ?? cwd
+            return "zcode://workspace/open?path=\(encodedPath)"
+        default:
+            return nil
+        }
     }
 
     var defaultClaudeMetadata: ClaudeSessionMetadata {
