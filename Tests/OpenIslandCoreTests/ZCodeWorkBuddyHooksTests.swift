@@ -277,4 +277,73 @@ struct ZCodeWorkBuddyHooksTests {
         let unknownPayload = try decoder.decode(ClaudeHookPayload.self, from: Data(baseJSON.utf8))
         #expect(unknownPayload.resolvedAgentTool == .claudeCode)
     }
+
+    // MARK: - Real-world ZCode payload compatibility
+
+    /// Regression: a real ZCode PreToolUse payload (captured from the ZCode
+    /// client) carries ZCode-specific values on Claude-schema fields —
+    /// `permission_mode: "yolo"` and extra camelCase keys. The payload must
+    /// decode instead of failing the whole hook, with unknown enum values
+    /// treated as absent.
+    @Test
+    func claudePayloadDecodesRealZcodePreToolUsePayload() throws {
+        let realZcodePayloadJSON = """
+        {
+          "cwd": "/tmp",
+          "hookEventName": "PreToolUse",
+          "mode": "yolo",
+          "riskLevel": "high",
+          "sessionId": "sess_9c28e78f-1ef6-4afd-b62c-627cb86886ee",
+          "sideEffectScope": "system",
+          "timestamp": "2026-09-29T14:08:10.360Z",
+          "toolCallId": "call_46ceed94c5dd4fcba342d706",
+          "toolInput": { "command": "echo hook-test-done", "description": "Echo hook test message" },
+          "toolName": "Bash",
+          "traceId": "50996fe3-7581-43a7-8627-0254fb5cbb0d",
+          "turnId": "turn_2f690dde-0dc7-43f4-9a8b-c80b01601588",
+          "hook_event_name": "PreToolUse",
+          "permission_mode": "yolo",
+          "session_id": "sess_9c28e78f-1ef6-4afd-b62c-627cb86886ee",
+          "transcript_path": "/var/folders/transcript.jsonl",
+          "transcriptPath": "/var/folders/transcript.jsonl",
+          "tool_name": "Bash",
+          "tool_input": { "command": "echo hook-test-done", "description": "Echo hook test message" },
+          "tool_use_id": "call_46ceed94c5dd4fcba342d706"
+        }
+        """
+
+        let payload = try JSONDecoder().decode(ClaudeHookPayload.self, from: Data(realZcodePayloadJSON.utf8))
+
+        #expect(payload.hookEventName == .preToolUse)
+        #expect(payload.sessionID == "sess_9c28e78f-1ef6-4afd-b62c-627cb86886ee")
+        #expect(payload.toolName == "Bash")
+        #expect(payload.toolInput != nil)
+        #expect(payload.transcriptPath == "/var/folders/transcript.jsonl")
+        // "yolo" is not a Claude permission mode — decodes as absent.
+        #expect(payload.permissionMode == nil)
+    }
+
+    /// ZCode's PostToolUseFailure puts an object in `error_details` and its
+    /// own shape in `permission_suggestions`; both must degrade to absent
+    /// instead of failing the payload.
+    @Test
+    func claudePayloadToleratesForkSpecificSchemaDrift() throws {
+        let json = """
+        {
+          "cwd": "/tmp",
+          "hook_event_name": "PostToolUseFailure",
+          "session_id": "s-fork-1",
+          "error": "command not found",
+          "error_details": { "code": 127, "stderr": "not found" },
+          "permission_suggestions": { "rows": [{ "tool": "Bash" }] }
+        }
+        """
+
+        let payload = try JSONDecoder().decode(ClaudeHookPayload.self, from: Data(json.utf8))
+
+        #expect(payload.hookEventName == .postToolUseFailure)
+        #expect(payload.error == "command not found")
+        #expect(payload.errorDetails == nil)
+        #expect(payload.permissionSuggestions == nil)
+    }
 }

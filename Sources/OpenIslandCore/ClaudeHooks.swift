@@ -479,6 +479,49 @@ public struct ClaudeHookPayload: Equatable, Codable, Sendable {
         self.warpPaneUUID = warpPaneUUID
         self.remote = remote
     }
+
+    /// Claude-format forks send the shared snake_case field names but attach
+    /// their own values to a few enum- and schema-bound fields: ZCode reports
+    /// `permission_mode` values like `"yolo"`/`"build"`/`"edit"`, emits its own
+    /// `permission_suggestions` shape, and puts an object in `error_details`.
+    /// Those four fields decode leniently (unknown value → absent) so one
+    /// divergent field never drops the whole hook payload; everything else
+    /// decodes strictly like Claude Code itself.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        cwd = try container.decode(String.self, forKey: .cwd)
+        hookEventName = try container.decode(ClaudeHookEventName.self, forKey: .hookEventName)
+        sessionID = try container.decode(String.self, forKey: .sessionID)
+        transcriptPath = try container.decodeIfPresent(String.self, forKey: .transcriptPath)
+        permissionMode = (try? container.decodeIfPresent(ClaudePermissionMode.self, forKey: .permissionMode)) ?? nil
+        agentID = try container.decodeIfPresent(String.self, forKey: .agentID)
+        agentType = try container.decodeIfPresent(String.self, forKey: .agentType)
+        model = try container.decodeIfPresent(String.self, forKey: .model)
+        source = (try? container.decodeIfPresent(ClaudeSessionStartSource.self, forKey: .source)) ?? nil
+        toolName = try container.decodeIfPresent(String.self, forKey: .toolName)
+        toolInput = try container.decodeIfPresent(ClaudeHookJSONValue.self, forKey: .toolInput)
+        toolUseID = try container.decodeIfPresent(String.self, forKey: .toolUseID)
+        toolResponse = try container.decodeIfPresent(ClaudeHookJSONValue.self, forKey: .toolResponse)
+        permissionSuggestions = (try? container.decodeIfPresent([ClaudePermissionUpdate].self, forKey: .permissionSuggestions)) ?? nil
+        prompt = try container.decodeIfPresent(String.self, forKey: .prompt)
+        message = try container.decodeIfPresent(String.self, forKey: .message)
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+        notificationType = try container.decodeIfPresent(String.self, forKey: .notificationType)
+        subtype = try container.decodeIfPresent(String.self, forKey: .subtype)
+        stopHookActive = try container.decodeIfPresent(Bool.self, forKey: .stopHookActive)
+        lastAssistantMessage = try container.decodeIfPresent(String.self, forKey: .lastAssistantMessage)
+        error = try container.decodeIfPresent(String.self, forKey: .error)
+        errorDetails = (try? container.decodeIfPresent(String.self, forKey: .errorDetails)) ?? nil
+        isInterrupt = try container.decodeIfPresent(Bool.self, forKey: .isInterrupt)
+        agentTranscriptPath = try container.decodeIfPresent(String.self, forKey: .agentTranscriptPath)
+        terminalApp = try container.decodeIfPresent(String.self, forKey: .terminalApp)
+        terminalSessionID = try container.decodeIfPresent(String.self, forKey: .terminalSessionID)
+        terminalTTY = try container.decodeIfPresent(String.self, forKey: .terminalTTY)
+        terminalTitle = try container.decodeIfPresent(String.self, forKey: .terminalTitle)
+        warpPaneUUID = try container.decodeIfPresent(String.self, forKey: .warpPaneUUID)
+        remote = try container.decodeIfPresent(Bool.self, forKey: .remote)
+        hookSource = try container.decodeIfPresent(String.self, forKey: .hookSource)
+    }
 }
 
 public struct ClaudePreToolUseDirective: Equatable, Codable, Sendable {
