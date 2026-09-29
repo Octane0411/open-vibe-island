@@ -395,13 +395,16 @@ struct TerminalJumpService {
                 // When the session's workspace window already exists, raise
                 // it directly via the accessibility API instead.
                 let zcodeFragment = zcodeWindowTitleFragment(for: target)
+                let zcodeDiagnostics = ZcodeWindowDiagnosticsCollector()
                 if focusDesktopAppWindow(
                     bundleIdentifier: "dev.zcode.app",
-                    titleFragment: zcodeFragment
+                    titleFragment: zcodeFragment,
+                    diagnostics: zcodeDiagnostics
                 ) {
-                    logJumpDiagnostics("zcode AX focus ok fragment=\(zcodeFragment)")
+                    logJumpDiagnostics("zcode AX focus ok fragment=\(zcodeFragment) detail=[\(zcodeDiagnostics.summary)]")
                     return "Focused the ZCode workspace window."
                 }
+                logJumpDiagnostics("zcode AX miss fragment=\(zcodeFragment) detail=[\(zcodeDiagnostics.summary)]")
                 if let deepLink = target.appDeepLinkURL, !deepLink.isEmpty {
                     logJumpDiagnostics("zcode AX miss fragment=\(zcodeFragment) -> deep link \(deepLink)")
                     try openAction([deepLink])
@@ -521,9 +524,14 @@ struct TerminalJumpService {
     /// right jump target and avoids depending on title formats.
     /// Returns false when the app is not running, the accessibility API is
     /// unavailable (no Accessibility grant), or no window matches.
-    private func focusDesktopAppWindow(bundleIdentifier: String, titleFragment: String) -> Bool {
+    private func focusDesktopAppWindow(
+        bundleIdentifier: String,
+        titleFragment: String,
+        diagnostics: ZcodeWindowDiagnosticsCollector? = nil
+    ) -> Bool {
         guard let app = NSWorkspace.shared.runningApplications
             .first(where: { $0.bundleIdentifier == bundleIdentifier && $0.processIdentifier > 0 }) else {
+            diagnostics?.append("app-not-running")
             return false
         }
 
@@ -533,12 +541,14 @@ struct TerminalJumpService {
         guard axResult == .success,
               let windows = windowsValue as? [AXUIElement],
               !windows.isEmpty else {
+            diagnostics?.append("ax-windows-error=\(axResult.rawValue)")
             logJumpDiagnostics("AX windows query failed bundle=\(bundleIdentifier) error=\(axResult.rawValue)")
             return false
         }
 
         if windows.count == 1 {
-            raiseDesktopAppWindow(windows[0], application: app)
+            diagnostics?.append(desktopAppWindowDebugDescription(windows[0], index: 0, fragment: "") + " single-raise")
+            raiseDesktopAppWindow(windows[0], application: app, diagnostics: diagnostics)
             return true
         }
 
@@ -547,29 +557,54 @@ struct TerminalJumpService {
             return false
         }
 
-        for window in windows {
+        for (index, window) in windows.enumerated() {
             var titleValue: CFTypeRef?
-            if AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleValue) == .success,
-               let title = titleValue as? String,
-               title.lowercased().contains(fragment) {
-                raiseDesktopAppWindow(window, application: app)
-                return true
-            }
+            let titleMatch = AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleValue) == .success
+                && (titleValue as? String)?.lowercased().contains(fragment) == true
 
             // Electron desktop agents (e.g. ZCode) title every window with
-            // the app name alone, so a title match never distinguishes
+            // the app name alone, so a title match rarely distinguishes
             // workspaces. Fall back to scanning the window's accessibility
             // tree for the project name — the app's header exposes it as
             // static text — and raise the first window whose content matches.
-            if desktopAppWindowContentContains(fragment, in: window) {
-                raiseDesktopAppWindow(window, application: app)
+            let contentMatch = !titleMatch && desktopAppWindowContentContains(fragment, in: window)
+
+            if titleMatch || contentMatch {
+                diagnostics?.append(desktopAppWindowDebugDescription(window, index: index, fragment: fragment)
+                    + (titleMatch ? " title-hit" : " content-hit"))
+                raiseDesktopAppWindow(window, application: app, diagnostics: diagnostics)
                 return true
             }
         }
 
-        let titles = windows.compactMap { copyAXStringValue(of: $0, attribute: kAXTitleAttribute as CFString) }
-        logJumpDiagnostics("AX no match bundle=\(bundleIdentifier) fragment=\(fragment) windowTitles=\(titles.joined(separator: " | "))")
+        let allWindows = windows.enumerated()
+            .map { desktopAppWindowDebugDescription($0.element, index: $0.offset, fragment: fragment) }
+            .joined(separator: " ; ")
+        logJumpDiagnostics("AX no match bundle=\(bundleIdentifier) fragment=\(fragment) windows=[\(allWindows)]")
         return false
+    }
+
+    /// One-line description of a desktop-app window for jump diagnostics:
+    /// title, subrole, minimized state, and whether its content contains the
+    /// target fragment.
+    private func desktopAppWindowDebugDescription(_ window: AXUIElement, index: Int, fragment: String) -> String {
+        let title = copyAXStringValue(of: window, attribute: kAXTitleAttribute as CFString) ?? "-"
+        let subrole = copyAXStringValue(of: window, attribute: kAXSubroleAttribute as CFString) ?? "-"
+        var minimized = "-"
+        var value: CFTypeRef?
+        if AXUIElementCopyAttributeValue(window, kAXMinimizedAttribute as CFString, &value) == .success,
+           let flag = value as? Bool {
+            minimized = flag ? "min" : "vis"
+        }
+
+        let content: String
+        if fragment.isEmpty {
+            content = "-"
+        } else {
+            content = desktopAppWindowContentContains(fragment, in: window) ? "match" : "nomatch"
+        }
+
+        return "[\(index)] \(title) (\(subrole), \(minimized), \(content))"
     }
 
     /// Shallow breadth-first scan of a window's accessibility tree looking
@@ -628,7 +663,11 @@ struct TerminalJumpService {
         return array
     }
 
-    private func raiseDesktopAppWindow(_ window: AXUIElement, application: NSRunningApplication) {
+    private func raiseDesktopAppWindow(
+        _ window: AXUIElement,
+        application: NSRunningApplication,
+        diagnostics: ZcodeWindowDiagnosticsCollector? = nil
+    ) {
         // Un-minimize first: AXRaise alone does not restore a window from the
         // Dock, so a jump targeting a minimized window would activate the app
         // without bringing the window back — visibly "nothing happens".
@@ -637,6 +676,29 @@ struct TerminalJumpService {
         AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
         AXUIElementSetAttributeValue(window, kAXFocusedAttribute as CFString, kCFBooleanTrue)
         application.activate(options: [.activateIgnoringOtherApps])
+
+        if let diagnostics {
+            var value: CFTypeRef?
+            let minimizedAfter = AXUIElementCopyAttributeValue(window, kAXMinimizedAttribute as CFString, &value) == .success
+                ? ((value as? Bool) == true ? "still-min" : "restored")
+                : "unknown"
+            diagnostics.append("after-raise \(minimizedAfter)")
+        }
+    }
+
+    /// Accumulates jump diagnostics for one click so the resulting log line
+    /// describes the full selection: every window considered, which one hit,
+    /// and whether the raise actually restored it.
+    final class ZcodeWindowDiagnosticsCollector {
+        private(set) var entries: [String] = []
+
+        func append(_ entry: String) {
+            entries.append(entry)
+        }
+
+        var summary: String {
+            entries.joined(separator: " ; ")
+        }
     }
 
     /// Appends a line to ~/Library/Application Support/OpenIsland/jump-debug.log
