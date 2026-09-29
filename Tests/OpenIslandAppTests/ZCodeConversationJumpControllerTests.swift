@@ -6,9 +6,38 @@ import Testing
 struct ZCodeConversationJumpControllerTests {
     @Test
     func taskIndexResolvesConversationTitleAndWorkspaceByHookSessionID() throws {
+        let fixture = try makeTaskIndex()
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+
+        let record = fixture.taskIndex.conversation(id: "sess_exact")
+
+        #expect(
+            record == ZCodeConversationRecord(
+                id: "sess_exact",
+                title: "Watch配对与新增Agent支持",
+                workspacePath: "/Users/demo/open-vibe-island"
+            )
+        )
+        #expect(fixture.taskIndex.conversation(id: "missing") == nil)
+    }
+
+    @Test
+    func expiredFocusDeadlineStopsBeforeAccessibilityOrAppActivation() throws {
+        let fixture = try makeTaskIndex()
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+
+        let controller = ZCodeConversationJumpController(
+            taskIndex: fixture.taskIndex,
+            clock: { 0 },
+            focusTimeout: 0
+        )
+
+        #expect(controller.focus(conversationID: "sess_exact") == .unavailable("focus-timeout"))
+    }
+
+    private func makeTaskIndex() throws -> (rootURL: URL, taskIndex: ZCodeTaskIndex) {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("open-island-zcode-index-\(UUID().uuidString)", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: rootURL) }
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
 
         let databaseURL = rootURL.appendingPathComponent("tasks-index.sqlite")
@@ -36,16 +65,6 @@ struct ZCodeConversationJumpControllerTests {
         """
         #expect(sqlite3_exec(openedDatabase, schema, nil, nil, nil) == SQLITE_OK)
 
-        let record = ZCodeTaskIndex(databasePath: databaseURL.path)
-            .conversation(id: "sess_exact")
-
-        #expect(
-            record == ZCodeConversationRecord(
-                id: "sess_exact",
-                title: "Watch配对与新增Agent支持",
-                workspacePath: "/Users/demo/open-vibe-island"
-            )
-        )
-        #expect(ZCodeTaskIndex(databasePath: databaseURL.path).conversation(id: "missing") == nil)
+        return (rootURL, ZCodeTaskIndex(databasePath: databaseURL.path))
     }
 }

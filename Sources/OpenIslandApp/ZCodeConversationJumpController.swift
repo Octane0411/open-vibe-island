@@ -88,21 +88,32 @@ enum ZCodeConversationFocusResult: Equatable, Sendable {
 /// the exact existing sidebar entry and verify the resulting page heading.
 struct ZCodeConversationJumpController: Sendable {
     typealias Sleeper = @Sendable (TimeInterval) -> Void
+    typealias MonotonicClock = @Sendable () -> TimeInterval
 
     private let taskIndex: ZCodeTaskIndex
     private let sleeper: Sleeper
+    private let clock: MonotonicClock
+    private let focusTimeout: TimeInterval
 
     init(
         taskIndex: ZCodeTaskIndex = ZCodeTaskIndex(),
-        sleeper: @escaping Sleeper = { Thread.sleep(forTimeInterval: $0) }
+        sleeper: @escaping Sleeper = { Thread.sleep(forTimeInterval: $0) },
+        clock: @escaping MonotonicClock = { ProcessInfo.processInfo.systemUptime },
+        focusTimeout: TimeInterval = 3
     ) {
         self.taskIndex = taskIndex
         self.sleeper = sleeper
+        self.clock = clock
+        self.focusTimeout = max(0, focusTimeout)
     }
 
     func focus(conversationID: String) -> ZCodeConversationFocusResult {
+        let deadline = clock() + focusTimeout
         guard let conversation = taskIndex.conversation(id: conversationID) else {
             return .unavailable("task-index-miss")
+        }
+        guard hasTimeRemaining(before: deadline) else {
+            return .unavailable("focus-timeout")
         }
         guard AXIsProcessTrusted() else {
             return .unavailable("accessibility-unavailable")
@@ -112,35 +123,51 @@ struct ZCodeConversationJumpController: Sendable {
             .first(where: { $0.processIdentifier > 0 }) else {
             return .unavailable("app-not-running")
         }
+        guard hasTimeRemaining(before: deadline) else {
+            return .unavailable("focus-timeout")
+        }
 
         // Electron may report an empty AXWindows array while ZCode is in the
         // background. Activation must happen before window lookup; waiting on
         // the hidden app alone never makes the accessibility window appear.
         application.unhide()
+        guard hasTimeRemaining(before: deadline) else {
+            return .unavailable("focus-timeout")
+        }
         application.activate(options: [.activateAllWindows])
-        guard let window = waitForWindow(of: application) else {
+        guard let window = waitForWindow(of: application, before: deadline) else {
+            if !hasTimeRemaining(before: deadline) {
+                return .unavailable("focus-timeout")
+            }
             return .unavailable("ax-window-missing")
         }
 
-        raise(window: window, application: application)
+        guard raise(window: window, before: deadline) else {
+            return .unavailable("focus-timeout")
+        }
 
         let workspaceName = URL(fileURLWithPath: conversation.workspacePath).lastPathComponent
-        ensureProjectsView(in: window)
-        guard let projectsWindow = waitForWindow(of: application) else {
+        ensureProjectsView(in: window, before: deadline)
+        guard let projectsWindow = waitForWindow(of: application, before: deadline) else {
+            if !hasTimeRemaining(before: deadline) {
+                return .unavailable("focus-timeout")
+            }
             return .unavailable("ax-window-missing-after-projects")
         }
-        expandProjectIfNeeded(named: workspaceName, in: projectsWindow)
+        expandProjectIfNeeded(named: workspaceName, in: projectsWindow, before: deadline)
 
-        if let expandedWindow = waitForWindow(of: application),
+        if let expandedWindow = waitForWindow(of: application, before: deadline),
            pressConversation(
                title: conversation.title,
                workspaceName: workspaceName,
-               in: expandedWindow
+               in: expandedWindow,
+               before: deadline
            ),
            waitUntilConversationIsActive(
                title: conversation.title,
                workspaceName: workspaceName,
-               application: application
+               application: application,
+               before: deadline
            ) {
             return .focused
         }
@@ -149,37 +176,49 @@ struct ZCodeConversationJumpController: Sendable {
         // larger projects. Reveal additional pages and retry after each DOM
         // update. Re-resolve every AX element because Chromium node handles
         // become stale when the sidebar rerenders.
-        for _ in 0..<20 {
-            guard let currentWindow = waitForWindow(of: application),
-                  pressShowMore(forProjectNamed: workspaceName, in: currentWindow) else {
+        for _ in 0..<20 where hasTimeRemaining(before: deadline) {
+            guard let currentWindow = waitForWindow(of: application, before: deadline),
+                  pressShowMore(
+                    forProjectNamed: workspaceName,
+                    in: currentWindow,
+                    before: deadline
+                  ) else {
                 break
             }
-            sleeper(0.08)
-            if let revealedWindow = waitForWindow(of: application),
+            sleep(0.08, before: deadline)
+            if let revealedWindow = waitForWindow(of: application, before: deadline),
                pressConversation(
                    title: conversation.title,
                    workspaceName: workspaceName,
-                   in: revealedWindow
+                   in: revealedWindow,
+                   before: deadline
                ),
                waitUntilConversationIsActive(
                    title: conversation.title,
                    workspaceName: workspaceName,
-                   application: application
+                   application: application,
+                   before: deadline
                ) {
                 return .focused
             }
         }
 
+        if !hasTimeRemaining(before: deadline) {
+            return .unavailable("focus-timeout")
+        }
         return .unavailable("sidebar-conversation-miss")
     }
 
     private func pressConversation(
         title: String,
         workspaceName: String,
-        in root: AXUIElement
+        in root: AXUIElement,
+        before deadline: TimeInterval
     ) -> Bool {
-        guard let container = projectContainer(named: workspaceName, in: root),
-              let taskItem = taskItem(titled: title, in: container) else {
+        guard hasTimeRemaining(before: deadline),
+              let container = projectContainer(named: workspaceName, in: root, before: deadline),
+              let taskItem = taskItem(titled: title, in: container, before: deadline),
+              hasTimeRemaining(before: deadline) else {
             return false
         }
         return AXUIElementPerformAction(taskItem, kAXPressAction as CFString) == .success
@@ -188,33 +227,35 @@ struct ZCodeConversationJumpController: Sendable {
     private func waitUntilConversationIsActive(
         title: String,
         workspaceName: String,
-        application: NSRunningApplication
+        application: NSRunningApplication,
+        before deadline: TimeInterval
     ) -> Bool {
         // Electron temporarily removes its AXWindow while navigating between
         // conversations. Reacquire the window and DOM nodes on every poll;
         // stale Chromium elements can otherwise make a completed transition
         // look like a miss or, worse, a false success.
-        for attempt in 0..<60 {
+        for attempt in 0..<60 where hasTimeRemaining(before: deadline) {
             if let window = firstWindow(of: application),
-               let container = projectContainer(named: workspaceName, in: window),
-               let item = taskItem(titled: title, in: container),
+               let container = projectContainer(named: workspaceName, in: window, before: deadline),
+               let item = taskItem(titled: title, in: container, before: deadline),
                domClasses(of: item).contains("bg-selected"),
-               hasConversationHeading(title, in: window) {
+               hasConversationHeading(title, in: window, before: deadline) {
                 return true
             }
             if attempt < 59 {
-                sleeper(0.05)
+                sleep(0.05, before: deadline)
             }
         }
         return false
     }
 
-    private func ensureProjectsView(in root: AXUIElement) {
-        for element in descendants(of: root) {
+    private func ensureProjectsView(in root: AXUIElement, before deadline: TimeInterval) {
+        for element in descendants(of: root, before: deadline) {
             guard displayedText(of: element) == "项目" || displayedText(of: element) == "Projects",
                   let tab = nearestAncestor(
                       of: element,
                       maximumLevels: 3,
+                      before: deadline,
                       matching: { candidate in
                           let role = copyStringValue(
                               of: candidate,
@@ -226,33 +267,53 @@ struct ZCodeConversationJumpController: Sendable {
                   ) else {
                 continue
             }
-            if copyBoolValue(of: tab, attribute: kAXSelectedAttribute as CFString) != true {
+            if hasTimeRemaining(before: deadline),
+               copyBoolValue(of: tab, attribute: kAXSelectedAttribute as CFString) != true {
                 _ = AXUIElementPerformAction(tab, kAXPressAction as CFString)
-                sleeper(0.08)
+                sleep(0.08, before: deadline)
             }
             return
         }
     }
 
-    private func expandProjectIfNeeded(named workspaceName: String, in root: AXUIElement) {
-        guard !workspaceName.isEmpty,
-              let button = projectButton(named: workspaceName, in: root),
+    private func expandProjectIfNeeded(
+        named workspaceName: String,
+        in root: AXUIElement,
+        before deadline: TimeInterval
+    ) {
+        guard hasTimeRemaining(before: deadline),
+              !workspaceName.isEmpty,
+              let button = projectButton(named: workspaceName, in: root, before: deadline),
               copyBoolValue(of: button, attribute: kAXExpandedAttribute as CFString) != true else {
             return
         }
         if AXUIElementPerformAction(button, kAXPressAction as CFString) == .success {
-            sleeper(0.08)
+            sleep(0.08, before: deadline)
         }
     }
 
-    private func pressShowMore(forProjectNamed workspaceName: String, in root: AXUIElement) -> Bool {
-        guard let projectContainer = projectContainer(named: workspaceName, in: root) else {
+    private func pressShowMore(
+        forProjectNamed workspaceName: String,
+        in root: AXUIElement,
+        before deadline: TimeInterval
+    ) -> Bool {
+        guard hasTimeRemaining(before: deadline),
+              let projectContainer = projectContainer(
+                named: workspaceName,
+                in: root,
+                before: deadline
+              ) else {
             return false
         }
 
-        for element in descendants(of: projectContainer) {
+        for element in descendants(of: projectContainer, before: deadline) {
             guard displayedText(of: element) == "显示更多" || displayedText(of: element) == "Show more",
-                  let pressable = nearestPressableAncestor(of: element, maximumLevels: 2) else {
+                  let pressable = nearestPressableAncestor(
+                    of: element,
+                    maximumLevels: 2,
+                    before: deadline
+                  ),
+                  hasTimeRemaining(before: deadline) else {
                 continue
             }
             return AXUIElementPerformAction(pressable, kAXPressAction as CFString) == .success
@@ -260,11 +321,17 @@ struct ZCodeConversationJumpController: Sendable {
         return false
     }
 
-    private func projectButton(named workspaceName: String, in root: AXUIElement) -> AXUIElement? {
-        for element in descendants(of: root) where displayedText(of: element) == workspaceName {
+    private func projectButton(
+        named workspaceName: String,
+        in root: AXUIElement,
+        before deadline: TimeInterval
+    ) -> AXUIElement? {
+        for element in descendants(of: root, before: deadline)
+        where displayedText(of: element) == workspaceName {
             if let button = nearestAncestor(
                 of: element,
                 maximumLevels: 3,
+                before: deadline,
                 matching: { candidate in
                     copyStringValue(of: candidate, attribute: kAXRoleAttribute as CFString) == "AXButton"
                         && hasAction(kAXPressAction as CFString, on: candidate)
@@ -276,36 +343,53 @@ struct ZCodeConversationJumpController: Sendable {
         return nil
     }
 
-    private func projectContainer(named workspaceName: String, in root: AXUIElement) -> AXUIElement? {
-        guard let button = projectButton(named: workspaceName, in: root) else {
+    private func projectContainer(
+        named workspaceName: String,
+        in root: AXUIElement,
+        before deadline: TimeInterval
+    ) -> AXUIElement? {
+        guard let button = projectButton(named: workspaceName, in: root, before: deadline) else {
             return nil
         }
-        return nearestAncestor(of: button, maximumLevels: 3) { candidate in
+        return nearestAncestor(of: button, maximumLevels: 3, before: deadline) { candidate in
             domClasses(of: candidate).contains("space-y-2")
         }
     }
 
-    private func taskItem(titled title: String, in projectContainer: AXUIElement) -> AXUIElement? {
-        for element in descendants(of: projectContainer)
+    private func taskItem(
+        titled title: String,
+        in projectContainer: AXUIElement,
+        before deadline: TimeInterval
+    ) -> AXUIElement? {
+        for element in descendants(of: projectContainer, before: deadline)
         where copyStringValue(of: element, attribute: kAXRoleAttribute as CFString) == "AXStaticText"
             && displayedText(of: element) == title {
-            if let item = nearestAncestor(of: element, maximumLevels: 4, matching: { candidate in
-                domClasses(of: candidate).contains("group/task-item")
-                    && hasAction(kAXPressAction as CFString, on: candidate)
-            }) {
+            if let item = nearestAncestor(
+                of: element,
+                maximumLevels: 4,
+                before: deadline,
+                matching: { candidate in
+                    domClasses(of: candidate).contains("group/task-item")
+                        && hasAction(kAXPressAction as CFString, on: candidate)
+                }
+            ) {
                 return item
             }
         }
         return nil
     }
 
-    private func hasConversationHeading(_ title: String, in root: AXUIElement) -> Bool {
-        descendants(of: root).contains { element in
+    private func hasConversationHeading(
+        _ title: String,
+        in root: AXUIElement,
+        before deadline: TimeInterval
+    ) -> Bool {
+        descendants(of: root, before: deadline).contains { element in
             guard copyStringValue(of: element, attribute: kAXRoleAttribute as CFString) == "AXHeading",
                   displayedText(of: element) == title else {
                 return false
             }
-            return nearestAncestor(of: element, maximumLevels: 4) { candidate in
+            return nearestAncestor(of: element, maximumLevels: 4, before: deadline) { candidate in
                 copyStringValue(of: candidate, attribute: kAXDOMIdentifierAttribute as CFString)
                     == "conversation"
             } != nil
@@ -316,14 +400,16 @@ struct ZCodeConversationJumpController: Sendable {
         copyStringArrayValue(of: element, attribute: "AXDOMClassList" as CFString) ?? []
     }
 
-    private func descendants(of root: AXUIElement) -> [AXUIElement] {
+    private func descendants(of root: AXUIElement, before deadline: TimeInterval) -> [AXUIElement] {
         let maximumNodes = 5_000
         let maximumDepth = 64
         var result: [AXUIElement] = []
         var queue: [(AXUIElement, Int)] = [(root, 0)]
         var nextIndex = 0
 
-        while nextIndex < queue.count, result.count < maximumNodes {
+        while nextIndex < queue.count,
+              result.count < maximumNodes,
+              hasTimeRemaining(before: deadline) {
             let (element, depth) = queue[nextIndex]
             nextIndex += 1
             result.append(element)
@@ -341,9 +427,10 @@ struct ZCodeConversationJumpController: Sendable {
 
     private func nearestPressableAncestor(
         of element: AXUIElement,
-        maximumLevels: Int
+        maximumLevels: Int,
+        before deadline: TimeInterval
     ) -> AXUIElement? {
-        nearestAncestor(of: element, maximumLevels: maximumLevels) { candidate in
+        nearestAncestor(of: element, maximumLevels: maximumLevels, before: deadline) { candidate in
             hasAction(kAXPressAction as CFString, on: candidate)
         }
     }
@@ -351,10 +438,11 @@ struct ZCodeConversationJumpController: Sendable {
     private func nearestAncestor(
         of element: AXUIElement,
         maximumLevels: Int,
+        before deadline: TimeInterval,
         matching predicate: (AXUIElement) -> Bool
     ) -> AXUIElement? {
         var current = element
-        for _ in 0..<maximumLevels {
+        for _ in 0..<maximumLevels where hasTimeRemaining(before: deadline) {
             guard let parent = copyElementValue(
                 of: current,
                 attribute: kAXParentAttribute as CFString
@@ -425,24 +513,38 @@ struct ZCodeConversationJumpController: Sendable {
         return value as? [AXUIElement]
     }
 
-    private func raise(window: AXUIElement, application: NSRunningApplication) {
+    private func raise(window: AXUIElement, before deadline: TimeInterval) -> Bool {
+        guard hasTimeRemaining(before: deadline) else { return false }
         AXUIElementSetAttributeValue(window, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
         AXUIElementPerformAction(window, kAXRaiseAction as CFString)
         AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
         AXUIElementSetAttributeValue(window, kAXFocusedAttribute as CFString, kCFBooleanTrue)
-        application.activate(options: [])
+        return hasTimeRemaining(before: deadline)
     }
 
-    private func waitForWindow(of application: NSRunningApplication) -> AXUIElement? {
-        for attempt in 0..<30 {
+    private func waitForWindow(
+        of application: NSRunningApplication,
+        before deadline: TimeInterval
+    ) -> AXUIElement? {
+        for attempt in 0..<30 where hasTimeRemaining(before: deadline) {
             if let window = firstWindow(of: application) {
                 return window
             }
             if attempt < 29 {
-                sleeper(0.05)
+                sleep(0.05, before: deadline)
             }
         }
         return nil
+    }
+
+    private func hasTimeRemaining(before deadline: TimeInterval) -> Bool {
+        clock() < deadline
+    }
+
+    private func sleep(_ interval: TimeInterval, before deadline: TimeInterval) {
+        let remaining = deadline - clock()
+        guard remaining > 0 else { return }
+        sleeper(min(interval, remaining))
     }
 
     private func firstWindow(of application: NSRunningApplication) -> AXUIElement? {
