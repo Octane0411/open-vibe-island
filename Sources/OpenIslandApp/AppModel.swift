@@ -101,14 +101,20 @@ final class AppModel {
     var qwenCodeHooksInstalled: Bool { hooks.qwenCodeHooksInstalled }
     var factoryHooksInstalled: Bool { hooks.factoryHooksInstalled }
     var codebuddyHooksInstalled: Bool { hooks.codebuddyHooksInstalled }
+    var zcodeHooksInstalled: Bool { hooks.zcodeHooksInstalled }
+    var workbuddyHooksInstalled: Bool { hooks.workbuddyHooksInstalled }
     var qoderHookStatus: ClaudeHookInstallationStatus? { hooks.qoderHookStatus }
     var qwenCodeHookStatus: ClaudeHookInstallationStatus? { hooks.qwenCodeHookStatus }
     var factoryHookStatus: ClaudeHookInstallationStatus? { hooks.factoryHookStatus }
     var codebuddyHookStatus: ClaudeHookInstallationStatus? { hooks.codebuddyHookStatus }
+    var zcodeHookStatus: ClaudeHookInstallationStatus? { hooks.zcodeHookStatus }
+    var workbuddyHookStatus: ClaudeHookInstallationStatus? { hooks.workbuddyHookStatus }
     var isQoderHookSetupBusy: Bool { hooks.isQoderHookSetupBusy }
     var isQwenCodeHookSetupBusy: Bool { hooks.isQwenCodeHookSetupBusy }
     var isFactoryHookSetupBusy: Bool { hooks.isFactoryHookSetupBusy }
     var isCodebuddyHookSetupBusy: Bool { hooks.isCodebuddyHookSetupBusy }
+    var isZcodeHookSetupBusy: Bool { hooks.isZcodeHookSetupBusy }
+    var isWorkbuddyHookSetupBusy: Bool { hooks.isWorkbuddyHookSetupBusy }
     var openCodePluginInstalled: Bool { hooks.openCodePluginInstalled }
     var claudeUsageInstalled: Bool { hooks.claudeUsageInstalled }
     var claudeHookStatusTitle: String { hooks.claudeHookStatusTitle }
@@ -173,6 +179,8 @@ final class AppModel {
             || hooks.qwenCodeHooksInstalled
             || hooks.factoryHooksInstalled
             || hooks.codebuddyHooksInstalled
+            || hooks.zcodeHooksInstalled
+            || hooks.workbuddyHooksInstalled
             || hooks.openCodePluginInstalled
             || hooks.geminiHooksInstalled
             || hooks.kimiHooksInstalled
@@ -198,6 +206,10 @@ final class AppModel {
     func uninstallFactoryHooks() { hooks.uninstallFactoryHooks() }
     func installCodebuddyHooks() { hooks.installCodebuddyHooks() }
     func uninstallCodebuddyHooks() { hooks.uninstallCodebuddyHooks() }
+    func installZcodeHooks() { hooks.installZcodeHooks() }
+    func uninstallZcodeHooks() { hooks.uninstallZcodeHooks() }
+    func installWorkbuddyHooks() { hooks.installWorkbuddyHooks() }
+    func uninstallWorkbuddyHooks() { hooks.uninstallWorkbuddyHooks() }
     func refreshCCForkHookStatuses() { hooks.refreshCCForkHookStatuses() }
     func installOpenCodePlugin() { hooks.installOpenCodePlugin() }
     func uninstallOpenCodePlugin() { hooks.uninstallOpenCodePlugin() }
@@ -1715,6 +1727,8 @@ final class AppModel {
             if self.hooks.shouldAutoInstall(.qwenCode) { self.installQwenCodeHooks() }
             if self.hooks.shouldAutoInstall(.factory) { self.installFactoryHooks() }
             if self.hooks.shouldAutoInstall(.codebuddy) { self.installCodebuddyHooks() }
+            if self.hooks.shouldAutoInstall(.zcode) { self.installZcodeHooks() }
+            if self.hooks.shouldAutoInstall(.workbuddy) { self.installWorkbuddyHooks() }
             if self.hooks.shouldAutoInstall(.openCode) { self.installOpenCodePlugin() }
             if self.hooks.shouldAutoInstall(.cursor) { self.installCursorHooks() }
             if self.hooks.shouldAutoInstall(.gemini) { self.installGeminiHooks() }

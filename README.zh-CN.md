@@ -50,7 +50,7 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 
 ## 支持的 Agents 和终端
 
-**13 个 Agents**：Claude Code、Codex、Cursor、Gemini CLI、Grok Build、Kimi CLI、OpenCode、Pi、Oh My Pi、Qoder、Qwen Code、Factory、CodeBuddy
+**15 个 Agents**：Claude Code、Codex、Cursor、Gemini CLI、Grok Build、Kimi CLI、OpenCode、Pi、Oh My Pi、Qoder、Qwen Code、Factory、CodeBuddy、ZCode、WorkBuddy
 
 **15+ 终端和 IDE**：Terminal.app、Ghostty、iTerm2、WezTerm、Zellij、tmux、cmux、Kaku、VS Code、Cursor、Windsurf、Trae、Zed、JetBrains 全家桶（IDEA、WebStorm、PyCharm、GoLand、CLion、RubyMine、PhpStorm、Rider、RustRover）
 
@@ -69,6 +69,8 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 | **Qwen Code** | 已支持 | Claude Code 分支——相同 hook 格式，配置位于 `~/.qwen/settings.json` |
 | **Factory** | 已支持 | Claude Code 分支——相同 hook 格式，配置位于 `~/.factory/settings.json` |
 | **CodeBuddy** | 已支持 | Claude Code 分支——相同 hook 格式，配置位于 `~/.codebuddy/settings.json` |
+| **ZCode** | 已支持 | Claude 格式 hook，配置嵌套于 `~/.zcode/cli/config.json` 的 `hooks.events`（7 事件子集，含权限审批）；桌面 App 通过 `dev.zcode.app` 识别 |
+| **WorkBuddy** | 已支持 | Claude Code 分支——相同 hook 格式，配置位于 `~/.workbuddy/settings.json`（9 事件子集）；桌面 App 通过 `com.tencent.workbuddy.mac` 识别 |
 | **Cursor** | 已支持 | Hook 集成，通过 `~/.cursor/hooks.json` 配置，会话追踪，工作区跳转 |
 | **Gemini CLI** | 已支持 | Hook 集成，通过 `~/.gemini/settings.json` 配置，会话追踪，fire-and-forget 事件 |
 | **Kimi CLI** | 已支持 | Hook 集成，通过 `~/.kimi/config.toml` 的 `[[hooks]]` 数组配置，会话追踪，复用 Claude payload 协议 |
@@ -276,6 +278,8 @@ AI coding 正在成为日常开发流程的一部分，但围绕它的控制层�
 - **Qwen Code** — Claude Code 分支。相同 hook 格式和事件，配置位于 `~/.qwen/settings.json`。使用 `--source qwen` 调用 hooks binary。
 - **Factory** — Claude Code 分支。相同 hook 格式和事件，配置位于 `~/.factory/settings.json`。使用 `--source factory` 调用 hooks binary。
 - **CodeBuddy** — Claude Code 分支。相同 hook 格式和事件，配置位于 `~/.codebuddy/settings.json`。使用 `--source codebuddy` 调用 hooks binary。
+- **ZCode** — Claude 格式 hook payload，但 hooks 位于 `~/.zcode/cli/config.json` 的 `hooks.events` 下且需要 `hooks.enabled: true`；ZCode 仅支持 7 种事件（`SessionStart`、`UserPromptSubmit`、`PreToolUse`、`PermissionRequest`、`PostToolUse`、`PostToolUseFailure`、`Stop`），包含交互式权限审批。Agent 运行在 ZCode 桌面 App（`dev.zcode.app`）内；App 运行期间会话保持存活，点击跳回即激活 App。使用 `--source zcode` 调用 hooks binary。
+- **WorkBuddy** — Claude Code 分支。相同 hook 格式，配置位于 `~/.workbuddy/settings.json`，安装 WorkBuddy 消费的 9 事件子集（会话生命周期、工具使用、Stop、Notification、PreCompact）。Agent 运行在 WorkBuddy 桌面 App（`com.tencent.workbuddy.mac`）内；App 运行期间会话保持存活，点击跳回即激活 App。使用 `--source workbuddy` 调用 hooks binary。
 - **Cursor** — 基于 hook 的集成，通过 `~/.cursor/hooks.json` 配置。接收 `beforeSubmitPrompt`、`beforeShellExecution`、`beforeMCPExecution`、`beforeReadFile`、`afterFileEdit` 和 `stop` 事件。跨应用启动持久化会话。通过 `cursor -r` 跳回工作区。使用 `--source cursor` 调用 hooks binary。
 - **Gemini CLI** — 基于 hook 的集成，通过 `~/.gemini/settings.json` 配置。接收 `SessionStart`、`PreToolUse`、`PostToolUse`、`Stop` 和 `UserPromptSubmit` 事件。Fire-and-forget（无 block/deny）。使用 `--source gemini` 调用 hooks binary。
 - **Kimi CLI** — 基于 hook 的集成，通过 `~/.kimi/config.toml` 的 `[[hooks]]` 数组配置（Moonshot AI）。Kimi 的 hook payload 与 Claude Code 字段兼容，Open Island 复用 Claude 解码路径，仅新增了 TOML installer。订阅 `SessionStart`、`UserPromptSubmit`、`Stop`、`Notification`、`PreToolUse`、`PostToolUse`。需要 Kimi CLI Hooks Beta。使用 `--source kimi` 调用 hooks binary。可以从设置窗口管理安装，或通过 CLI：

@@ -138,6 +138,16 @@ struct TerminalJumpService {
             aliases: ["conductor"]
         ),
         TerminalAppDescriptor(
+            displayName: "ZCode.app",
+            bundleIdentifier: "dev.zcode.app",
+            aliases: ["zcode", "zcode.app"]
+        ),
+        TerminalAppDescriptor(
+            displayName: "WorkBuddy.app",
+            bundleIdentifier: "com.tencent.workbuddy.mac",
+            aliases: ["workbuddy", "workbuddy.app"]
+        ),
+        TerminalAppDescriptor(
             displayName: "IntelliJ IDEA",
             bundleIdentifier: "com.jetbrains.intellij",
             aliases: ["intellij", "idea"]

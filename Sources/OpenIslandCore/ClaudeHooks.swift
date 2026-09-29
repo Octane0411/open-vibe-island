@@ -892,6 +892,10 @@ public extension ClaudeHookPayload {
             return .codebuddy
         case "kimi":
             return .kimiCLI
+        case "zcode":
+            return .zcode
+        case "workbuddy":
+            return .workbuddy
         default:
             return .claudeCode
         }
@@ -1195,6 +1199,21 @@ public extension ClaudeHookPayload {
             || environment["CONDUCTOR_WORKSPACE_ID"]?.isEmpty == false
             || environment["__CFBundleIdentifier"]?.lowercased() == "com.conductor.app" {
             return "Conductor"
+        }
+
+        // ZCode desktop app — agents run inside the app's own runtime, so the
+        // hook process is spawned TTY-less by the app and inherits its bundle
+        // identifier. Tag it so liveness follows the desktop app instead of a
+        // terminal that does not exist. Checked before TERM_PROGRAM for the
+        // same env-leak rationale as Claude.app above.
+        if environment["__CFBundleIdentifier"]?.lowercased() == "dev.zcode.app" {
+            return "ZCode.app"
+        }
+
+        // WorkBuddy desktop app — same TTY-less desktop-runtime situation as
+        // ZCode: hook commands inherit the WorkBuddy bundle identifier.
+        if environment["__CFBundleIdentifier"]?.lowercased() == "com.tencent.workbuddy.mac" {
+            return "WorkBuddy.app"
         }
 
         // TERM_PROGRAM is the only authoritative terminal signal. Each

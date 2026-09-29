@@ -14,6 +14,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
     case grokBuild
     case pi
     case ohMyPi
+    case zcode
+    case workbuddy
 
     public var displayName: String {
         switch self {
@@ -43,6 +45,10 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "Pi"
         case .ohMyPi:
             "Oh My Pi"
+        case .zcode:
+            "ZCode"
+        case .workbuddy:
+            "WorkBuddy"
         }
     }
 
@@ -74,12 +80,16 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "PI"
         case .ohMyPi:
             "OMP"
+        case .zcode:
+            "ZCODE"
+        case .workbuddy:
+            "WORKBUDDY"
         }
     }
 
     public var isClaudeCodeFork: Bool {
         switch self {
-        case .claudeCode, .qoder, .qwenCode, .factory, .codebuddy, .kimiCLI:
+        case .claudeCode, .qoder, .qwenCode, .factory, .codebuddy, .kimiCLI, .zcode, .workbuddy:
             true
         default:
             false
@@ -105,6 +115,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
         case .grokBuild:  "#22d3ee"
         case .pi:         "#a3e635"
         case .ohMyPi:     "#f472b6"
+        case .zcode:      "#2dd4bf"
+        case .workbuddy:  "#818cf8"
         }
     }
 }
@@ -578,7 +590,13 @@ public extension AgentSession {
     }
 
     var lastAssistantMessageText: String? {
-        codexMetadata?.lastAssistantMessage ?? claudeMetadata?.lastAssistantMessage ?? geminiMetadata?.lastAssistantMessage ?? openCodeMetadata?.lastAssistantMessage ?? cursorMetadata?.lastAssistantMessage ?? piMetadata?.lastAssistantMessage
+        if let text = codexMetadata?.lastAssistantMessage { return text }
+        if let text = claudeMetadata?.lastAssistantMessage { return text }
+        if let text = geminiMetadata?.lastAssistantMessage { return text }
+        if let text = openCodeMetadata?.lastAssistantMessage { return text }
+        if let text = cursorMetadata?.lastAssistantMessage { return text }
+        if let text = piMetadata?.lastAssistantMessage { return text }
+        return nil
     }
 
     var completionAssistantMessageText: String? {
@@ -600,11 +618,23 @@ public extension AgentSession {
     }
 
     var latestUserPromptText: String? {
-        codexMetadata?.lastUserPrompt ?? claudeMetadata?.lastUserPrompt ?? geminiMetadata?.lastUserPrompt ?? openCodeMetadata?.lastUserPrompt ?? cursorMetadata?.lastUserPrompt ?? piMetadata?.lastUserPrompt
+        if let text = codexMetadata?.lastUserPrompt { return text }
+        if let text = claudeMetadata?.lastUserPrompt { return text }
+        if let text = geminiMetadata?.lastUserPrompt { return text }
+        if let text = openCodeMetadata?.lastUserPrompt { return text }
+        if let text = cursorMetadata?.lastUserPrompt { return text }
+        if let text = piMetadata?.lastUserPrompt { return text }
+        return nil
     }
 
     var initialUserPromptText: String? {
-        codexMetadata?.initialUserPrompt ?? claudeMetadata?.initialUserPrompt ?? geminiMetadata?.initialUserPrompt ?? openCodeMetadata?.initialUserPrompt ?? cursorMetadata?.initialUserPrompt ?? piMetadata?.initialUserPrompt
+        if let text = codexMetadata?.initialUserPrompt { return text }
+        if let text = claudeMetadata?.initialUserPrompt { return text }
+        if let text = geminiMetadata?.initialUserPrompt { return text }
+        if let text = openCodeMetadata?.initialUserPrompt { return text }
+        if let text = cursorMetadata?.initialUserPrompt { return text }
+        if let text = piMetadata?.initialUserPrompt { return text }
+        return nil
     }
 
     var currentCommandPreviewText: String? {

@@ -19,10 +19,12 @@ struct OpenIslandHooksCLI {
         case gemini
         case kimi
         case grok
+        case zcode
+        case workbuddy
 
         var isClaudeFormat: Bool {
             switch self {
-            case .claude, .qoder, .qwen, .factory, .droid, .codebuddy, .kimi:
+            case .claude, .qoder, .qwen, .factory, .droid, .codebuddy, .kimi, .zcode, .workbuddy:
                 return true
             case .codex, .cursor, .gemini, .grok:
                 return false
@@ -67,7 +69,7 @@ struct OpenIslandHooksCLI {
                 if let output = try CodexHookOutputEncoder.standardOutput(for: response) {
                     FileHandle.standardOutput.write(output)
                 }
-            case .claude, .qoder, .qwen, .factory, .droid, .codebuddy, .kimi:
+            case .claude, .qoder, .qwen, .factory, .droid, .codebuddy, .kimi, .zcode, .workbuddy:
                 var payload = try decoder
                     .decode(ClaudeHookPayload.self, from: input)
                     .withRuntimeContext(environment: ProcessInfo.processInfo.environment)

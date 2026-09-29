@@ -252,6 +252,31 @@ Setting `interrupt: true` terminates the current agent turn immediately.
 
 ---
 
+## Claude Code Fork Hooks (`--source qoder` / `qwen` / `factory` / `droid` / `codebuddy` / `kimi`)
+
+Qoder, Qwen Code, Factory, CodeBuddy, and Kimi CLI reuse `ClaudeHookPayload` verbatim: the same 14 managed events, payload fields, and directive responses as Claude Code. Hooks are installed into each fork's `~/.<name>/settings.json`; the `--source` argument distinguishes the agent on the wire.
+
+## ZCode Hooks (`--source zcode`)
+
+**Payload type**: `ClaudeHookPayload` (Claude-format)
+**Source**: [`Sources/OpenIslandCore/ZCodeHookInstallationManager.swift`](../Sources/OpenIslandCore/ZCodeHookInstallationManager.swift)
+
+ZCode consumes Claude-format payloads but differs from Claude Code in configuration layout and event coverage:
+
+- Configuration lives at `~/.zcode/cli/config.json`, with hook groups nested under `hooks.events.<Event>` (not a top-level `hooks` key) and `hooks.enabled: true` required before configuration-file hooks run.
+- ZCode supports exactly seven events; the managed install registers only these: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`, `Stop`.
+- `PermissionRequest` supports the interactive allow/deny directive (24 h timeout); matchers are case-sensitive regexes against tool names (`.*` installs as match-all).
+- Agents run inside the ZCode desktop app (`dev.zcode.app`); the hook stamps `terminal_app: "ZCode.app"` from the inherited bundle identifier, session liveness follows the running app, and jump-back activates it.
+
+## WorkBuddy Hooks (`--source workbuddy`)
+
+**Payload type**: `ClaudeHookPayload` (Claude-format)
+**Config**: `~/.workbuddy/settings.json` — same shape as Claude Code
+
+WorkBuddy consumes a nine-event subset of the Claude format; the managed install registers `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `SubagentStop`, `Notification`, `PreCompact`. Events are fire-and-forget (no `PermissionRequest` integration). Agents run inside the WorkBuddy desktop app (`com.tencent.workbuddy.mac`); the hook stamps `terminal_app: "WorkBuddy.app"`, session liveness follows the running app, and jump-back activates it.
+
+---
+
 ## Gemini CLI Hooks (`--source gemini`)
 
 **Payload type**: `GeminiHookPayload`

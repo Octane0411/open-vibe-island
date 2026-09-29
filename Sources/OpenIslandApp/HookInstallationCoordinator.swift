@@ -24,6 +24,8 @@ final class HookInstallationCoordinator {
     var qwenCodeHookStatus: ClaudeHookInstallationStatus?
     var factoryHookStatus: ClaudeHookInstallationStatus?
     var codebuddyHookStatus: ClaudeHookInstallationStatus?
+    var zcodeHookStatus: ClaudeHookInstallationStatus?
+    var workbuddyHookStatus: ClaudeHookInstallationStatus?
     var openCodePluginStatus: OpenCodePluginInstallationStatus?
     var cursorHookStatus: CursorHookInstallationStatus?
     var geminiHookStatus: GeminiHookInstallationStatus?
@@ -41,6 +43,8 @@ final class HookInstallationCoordinator {
     var isQwenCodeHookSetupBusy = false
     var isFactoryHookSetupBusy = false
     var isCodebuddyHookSetupBusy = false
+    var isZcodeHookSetupBusy = false
+    var isWorkbuddyHookSetupBusy = false
     var isOpenCodeSetupBusy = false
     var isCursorHookSetupBusy = false
     var isGeminiHookSetupBusy = false
@@ -83,6 +87,22 @@ final class HookInstallationCoordinator {
     private let codebuddyHookInstallationManager = ClaudeHookInstallationManager(
         claudeDirectory: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codebuddy", isDirectory: true),
         hookSource: "codebuddy"
+    )
+
+    /// ZCode stores Claude-format hook groups nested under
+    /// `hooks.events` in `~/.zcode/cli/config.json` and supports a fixed
+    /// seven-event set, so it gets its own manager rather than the flat
+    /// settings.json path the other CC forks use.
+    @ObservationIgnored
+    private let zcodeHookInstallationManager = ZCodeHookInstallationManager()
+
+    /// WorkBuddy speaks the Claude hook format in `~/.workbuddy/settings.json`
+    /// but only consumes an event subset, so it passes its own event set.
+    @ObservationIgnored
+    private let workbuddyHookInstallationManager = ClaudeHookInstallationManager(
+        claudeDirectory: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".workbuddy", isDirectory: true),
+        hookSource: "workbuddy",
+        hookEvents: ClaudeHookInstaller.workbuddyEventSpecs
     )
 
     @ObservationIgnored
@@ -146,6 +166,14 @@ final class HookInstallationCoordinator {
 
     var codebuddyHooksInstalled: Bool {
         codebuddyHookStatus?.managedHooksPresent == true
+    }
+
+    var zcodeHooksInstalled: Bool {
+        zcodeHookStatus?.managedHooksPresent == true
+    }
+
+    var workbuddyHooksInstalled: Bool {
+        workbuddyHookStatus?.managedHooksPresent == true
     }
 
     var openCodePluginInstalled: Bool {
@@ -651,10 +679,12 @@ final class HookInstallationCoordinator {
         refreshCCForkHookStatus(manager: qwenCodeHookInstallationManager, name: "Qwen Code") { [weak self] in self?.qwenCodeHookStatus = $0 }
         refreshCCForkHookStatus(manager: factoryHookInstallationManager, name: "Factory") { [weak self] in self?.factoryHookStatus = $0 }
         refreshCCForkHookStatus(manager: codebuddyHookInstallationManager, name: "CodeBuddy") { [weak self] in self?.codebuddyHookStatus = $0 }
+        refreshCCForkHookStatus(manager: zcodeHookInstallationManager, name: "ZCode") { [weak self] in self?.zcodeHookStatus = $0 }
+        refreshCCForkHookStatus(manager: workbuddyHookInstallationManager, name: "WorkBuddy") { [weak self] in self?.workbuddyHookStatus = $0 }
     }
 
     private func refreshCCForkHookStatus(
-        manager: ClaudeHookInstallationManager,
+        manager: any ClaudeFormatHookInstallationManaging,
         name: String,
         apply: @MainActor @escaping (ClaudeHookInstallationStatus) -> Void
     ) {
@@ -718,11 +748,13 @@ final class HookInstallationCoordinator {
             group.addTask { @MainActor [weak self] in
                 guard let self else { return }
                 for (manager, name, apply) in [
-                    (self.qoderHookInstallationManager, "Qoder", { [weak self] (s: ClaudeHookInstallationStatus) in self?.qoderHookStatus = s }),
-                    (self.qwenCodeHookInstallationManager, "Qwen Code", { [weak self] (s: ClaudeHookInstallationStatus) in self?.qwenCodeHookStatus = s }),
-                    (self.factoryHookInstallationManager, "Factory", { [weak self] (s: ClaudeHookInstallationStatus) in self?.factoryHookStatus = s }),
-                    (self.codebuddyHookInstallationManager, "CodeBuddy", { [weak self] (s: ClaudeHookInstallationStatus) in self?.codebuddyHookStatus = s }),
-                ] {
+                    (self.qoderHookInstallationManager, "Qoder", { @MainActor @Sendable [weak self] (s: ClaudeHookInstallationStatus) in self?.qoderHookStatus = s }),
+                    (self.qwenCodeHookInstallationManager, "Qwen Code", { @MainActor @Sendable [weak self] (s: ClaudeHookInstallationStatus) in self?.qwenCodeHookStatus = s }),
+                    (self.factoryHookInstallationManager, "Factory", { @MainActor @Sendable [weak self] (s: ClaudeHookInstallationStatus) in self?.factoryHookStatus = s }),
+                    (self.codebuddyHookInstallationManager, "CodeBuddy", { @MainActor @Sendable [weak self] (s: ClaudeHookInstallationStatus) in self?.codebuddyHookStatus = s }),
+                    (self.zcodeHookInstallationManager, "ZCode", { @MainActor @Sendable [weak self] (s: ClaudeHookInstallationStatus) in self?.zcodeHookStatus = s }),
+                    (self.workbuddyHookInstallationManager, "WorkBuddy", { @MainActor @Sendable [weak self] (s: ClaudeHookInstallationStatus) in self?.workbuddyHookStatus = s }),
+                ] as [(any ClaudeFormatHookInstallationManaging, String, @MainActor @Sendable (ClaudeHookInstallationStatus) -> Void)] {
                     do {
                         let status = try manager.status(hooksBinaryURL: self.hooksBinaryURL)
                         apply(status)
@@ -928,6 +960,8 @@ final class HookInstallationCoordinator {
         case .qwenCode: return !qwenCodeHooksInstalled
         case .factory: return !factoryHooksInstalled
         case .codebuddy: return !codebuddyHooksInstalled
+        case .zcode: return !zcodeHooksInstalled
+        case .workbuddy: return !workbuddyHooksInstalled
         case .openCode: return !openCodePluginInstalled
         case .gemini: return !geminiHooksInstalled
         case .kimi: return !kimiHooksInstalled
@@ -955,6 +989,8 @@ final class HookInstallationCoordinator {
             case .qwenCode: return qwenCodeHooksInstalled
             case .factory: return factoryHooksInstalled
             case .codebuddy: return codebuddyHooksInstalled
+            case .zcode: return zcodeHooksInstalled
+            case .workbuddy: return workbuddyHooksInstalled
             case .openCode: return openCodePluginInstalled
             case .gemini: return geminiHooksInstalled
             case .kimi: return kimiHooksInstalled
@@ -1034,8 +1070,24 @@ final class HookInstallationCoordinator {
         updateCCForkHooks(manager: codebuddyHookInstallationManager, name: "CodeBuddy", agent: .codebuddy, isBusySetter: { [weak self] in self?.isCodebuddyHookSetupBusy = $0 }, statusSetter: { [weak self] in self?.codebuddyHookStatus = $0 }, install: false)
     }
 
+    func installZcodeHooks() {
+        updateCCForkHooks(manager: zcodeHookInstallationManager, name: "ZCode", agent: .zcode, isBusySetter: { [weak self] in self?.isZcodeHookSetupBusy = $0 }, statusSetter: { [weak self] in self?.zcodeHookStatus = $0 }, install: true)
+    }
+
+    func uninstallZcodeHooks() {
+        updateCCForkHooks(manager: zcodeHookInstallationManager, name: "ZCode", agent: .zcode, isBusySetter: { [weak self] in self?.isZcodeHookSetupBusy = $0 }, statusSetter: { [weak self] in self?.zcodeHookStatus = $0 }, install: false)
+    }
+
+    func installWorkbuddyHooks() {
+        updateCCForkHooks(manager: workbuddyHookInstallationManager, name: "WorkBuddy", agent: .workbuddy, isBusySetter: { [weak self] in self?.isWorkbuddyHookSetupBusy = $0 }, statusSetter: { [weak self] in self?.workbuddyHookStatus = $0 }, install: true)
+    }
+
+    func uninstallWorkbuddyHooks() {
+        updateCCForkHooks(manager: workbuddyHookInstallationManager, name: "WorkBuddy", agent: .workbuddy, isBusySetter: { [weak self] in self?.isWorkbuddyHookSetupBusy = $0 }, statusSetter: { [weak self] in self?.workbuddyHookStatus = $0 }, install: false)
+    }
+
     private func updateCCForkHooks(
-        manager: ClaudeHookInstallationManager,
+        manager: any ClaudeFormatHookInstallationManaging,
         name: String,
         agent: AgentIdentifier,
         isBusySetter: @MainActor @escaping (Bool) -> Void,
