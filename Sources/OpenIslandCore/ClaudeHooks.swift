@@ -1245,11 +1245,16 @@ public extension ClaudeHookPayload {
         }
 
         // ZCode desktop app — agents run inside the app's own runtime, so the
-        // hook process is spawned TTY-less by the app and inherits its bundle
-        // identifier. Tag it so liveness follows the desktop app instead of a
-        // terminal that does not exist. Checked before TERM_PROGRAM for the
-        // same env-leak rationale as Claude.app above.
-        if environment["__CFBundleIdentifier"]?.lowercased() == "dev.zcode.app" {
+        // hook process is spawned TTY-less by the app and liveness/jump-back
+        // follow the desktop app instead of a terminal. ZCode builds the hook
+        // environment itself and stamps its runtime identifiers into it;
+        // __CFBundleIdentifier is only present when the launching shell
+        // happened to carry it, so the ZCODE_* variables are the
+        // authoritative signal. Checked before TERM_PROGRAM for the same
+        // env-leak rationale as Claude.app above.
+        if environment["ZCODE_SESSION_ID"]?.isEmpty == false
+            || environment["ZCODE_APP_VERSION"]?.isEmpty == false
+            || environment["__CFBundleIdentifier"]?.lowercased() == "dev.zcode.app" {
             return "ZCode.app"
         }
 

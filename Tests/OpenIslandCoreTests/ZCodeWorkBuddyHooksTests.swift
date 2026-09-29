@@ -278,6 +278,34 @@ struct ZCodeWorkBuddyHooksTests {
         #expect(unknownPayload.resolvedAgentTool == .claudeCode)
     }
 
+    /// ZCode builds the hook environment itself and stamps `ZCODE_*`
+    /// runtime identifiers into it, but does not inherit
+    /// `__CFBundleIdentifier` from the desktop app. The runtime context must
+    /// still tag the session as "ZCode.app" (jump-back + liveness) from the
+    /// ZCode variables alone, and a plain terminal environment must not be
+    /// misclassified.
+    @Test
+    func runtimeContextTagsZcodeAppFromZcodeEnvSignals() throws {
+        let payload = try JSONDecoder().decode(
+            ClaudeHookPayload.self,
+            from: Data(#"{"cwd": "/tmp", "hook_event_name": "SessionStart", "session_id": "s-env"}"#.utf8)
+        )
+
+        let realZcodeEnv: [String: String] = [
+            "ZCODE_SESSION_ID": "sess_demo",
+            "ZCODE_APP_VERSION": "3.14.4",
+            "CLAUDE_SESSION_ID": "sess_demo",
+            "ZCODE_PROJECT_DIR": "/tmp",
+        ]
+        #expect(payload.withRuntimeContext(environment: realZcodeEnv).terminalApp == "ZCode.app")
+
+        let terminalEnv: [String: String] = [
+            "TERM_PROGRAM": "ghostty",
+            "GHOSTTY_RESOURCES_DIR": "/Applications/Ghostty.app/Contents/Resources",
+        ]
+        #expect(payload.withRuntimeContext(environment: terminalEnv).terminalApp == "Ghostty")
+    }
+
     // MARK: - Real-world ZCode payload compatibility
 
     /// Regression: a real ZCode PreToolUse payload (captured from the ZCode
