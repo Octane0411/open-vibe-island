@@ -543,17 +543,81 @@ struct TerminalJumpService {
 
         for window in windows {
             var titleValue: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleValue) == .success,
-                  let title = titleValue as? String,
-                  title.lowercased().contains(fragment) else {
-                continue
+            if AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleValue) == .success,
+               let title = titleValue as? String,
+               title.lowercased().contains(fragment) {
+                raiseDesktopAppWindow(window, application: app)
+                return true
             }
 
-            raiseDesktopAppWindow(window, application: app)
-            return true
+            // Electron desktop agents (e.g. ZCode) title every window with
+            // the app name alone, so a title match never distinguishes
+            // workspaces. Fall back to scanning the window's accessibility
+            // tree for the project name — the app's header exposes it as
+            // static text — and raise the first window whose content matches.
+            if desktopAppWindowContentContains(fragment, in: window) {
+                raiseDesktopAppWindow(window, application: app)
+                return true
+            }
         }
 
         return false
+    }
+
+    /// Shallow breadth-first scan of a window's accessibility tree looking
+    /// for static text containing `fragment`. Bounded so a deep Electron tree
+    /// cannot stall the jump.
+    private func desktopAppWindowContentContains(_ fragment: String, in window: AXUIElement) -> Bool {
+        var visited = 0
+        let maxNodes = 600
+        let maxDepth = 6
+
+        var depthBudget: [(AXUIElement, Int)] = [(window, 0)]
+        while !depthBudget.isEmpty, visited < maxNodes {
+            let (element, depth) = depthBudget.removeFirst()
+            visited += 1
+
+            if let role = copyAXStringValue(of: element, attribute: kAXRoleAttribute as CFString),
+               role == "AXStaticText" || role == "AXButton" || role == "AXHeading" {
+                let text = copyAXStringValue(of: element, attribute: kAXValueAttribute as CFString)
+                    ?? copyAXStringValue(of: element, attribute: kAXTitleAttribute as CFString)
+                if let text, text.lowercased().contains(fragment) {
+                    return true
+                }
+                continue
+            }
+
+            guard depth < maxDepth,
+                  let children = copyAXElementArrayValue(of: element, attribute: kAXChildrenAttribute as CFString) else {
+                continue
+            }
+
+            for child in children {
+                depthBudget.append((child, depth + 1))
+            }
+        }
+
+        return false
+    }
+
+    private func copyAXStringValue(of element: AXUIElement, attribute: CFString) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute, &value) == .success,
+              let string = value as? String else {
+            return nil
+        }
+
+        return string
+    }
+
+    private func copyAXElementArrayValue(of element: AXUIElement, attribute: CFString) -> [AXUIElement]? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute, &value) == .success,
+              let array = value as? [AXUIElement] else {
+            return nil
+        }
+
+        return array
     }
 
     private func raiseDesktopAppWindow(_ window: AXUIElement, application: NSRunningApplication) {
