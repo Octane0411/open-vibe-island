@@ -18,6 +18,12 @@ struct ActiveAgentProcessDiscovery {
         var transcriptPath: String?
         var tmuxTarget: String?
         var tmuxSocketPath: String?
+        /// PID of the process, recorded for daemon-hosted engines only.
+        var processID: String?
+        /// A Claude Code background engine or warm spare running under the
+        /// daemon's pty host. These have no terminal tab and are matched for
+        /// liveness by session ID or engine PID only.
+        var isClaudeDaemonHosted: Bool
 
         init(
             tool: AgentTool,
@@ -27,7 +33,9 @@ struct ActiveAgentProcessDiscovery {
             terminalApp: String? = nil,
             transcriptPath: String? = nil,
             tmuxTarget: String? = nil,
-            tmuxSocketPath: String? = nil
+            tmuxSocketPath: String? = nil,
+            processID: String? = nil,
+            isClaudeDaemonHosted: Bool = false
         ) {
             self.tool = tool
             self.sessionID = sessionID
@@ -37,6 +45,8 @@ struct ActiveAgentProcessDiscovery {
             self.transcriptPath = transcriptPath
             self.tmuxTarget = tmuxTarget
             self.tmuxSocketPath = tmuxSocketPath
+            self.processID = processID
+            self.isClaudeDaemonHosted = isClaudeDaemonHosted
         }
     }
 
@@ -67,6 +77,17 @@ struct ActiveAgentProcessDiscovery {
         var claimedKeys: Set<String> = []
 
         for process in processes {
+            // Claude Code background engines (and warm spares that become
+            // engines when a session claims them) run under the daemon's pty
+            // host. Their pty is not a terminal tab; the hook reports the
+            // viewer's terminal plus the engine PID used for liveness.
+            if let snapshot = claudeDaemonHostedSnapshot(for: process, processesByPID: processesByPID) {
+                if claimedKeys.insert("claude-daemon:\(process.pid)").inserted {
+                    snapshots.append(snapshot)
+                }
+                continue
+            }
+
             // Most agent detection requires a TTY (terminal-attached process).
             // OpenCode is an exception: it can run inside IDE integrated terminals
             // that don't expose a TTY in `ps` output. Let OpenCode processes
@@ -372,10 +393,54 @@ struct ActiveAgentProcessDiscovery {
         path.contains("/.claude/worktrees/agent-")
     }
 
+    /// Claude Code subcommands that manage or display sessions rather than
+    /// run one: the `claude agents` view, `claude attach` viewers, and the
+    /// daemon's own helper processes.
+    private static let claudeControlSubcommands: Set<String> = [
+        "agents", "attach", "daemon", "logs", "stop", "rm",
+        "bg-pty-host", "bg-spare", "--bg-pty-host", "--bg-spare",
+    ]
+
+    private func isClaudeControlProcess(command: String) -> Bool {
+        let tokens = command.split(whereSeparator: \.isWhitespace).map(String.init)
+        if tokens.count >= 2, Self.claudeControlSubcommands.contains(tokens[1]) {
+            return true
+        }
+        return tokens.contains("--bg-pty-host") || tokens.contains("--bg-spare")
+    }
+
+    /// A process spawned by Claude Code's background pty host
+    /// (`claude bg-pty-host --bg-pty-host …`): either a session engine
+    /// (`…/claude/versions/<v> --session-id <uuid>`) or a warm spare
+    /// (`claude bg-spare …`) that a new session may have claimed.
+    private func claudeDaemonHostedSnapshot(
+        for process: RunningProcess,
+        processesByPID: [String: RunningProcess]
+    ) -> ProcessSnapshot? {
+        guard let parent = processesByPID[process.parentPID],
+              parent.command.split(whereSeparator: \.isWhitespace).contains("--bg-pty-host"),
+              !process.command.split(whereSeparator: \.isWhitespace).contains("--bg-pty-host") else {
+            return nil
+        }
+
+        return ProcessSnapshot(
+            tool: .claudeCode,
+            sessionID: claudeSessionID(from: process.command),
+            workingDirectory: nil,
+            terminalTTY: nil,
+            processID: process.pid,
+            isClaudeDaemonHosted: true
+        )
+    }
+
     private func claudeSnapshot(
         for process: RunningProcess,
         processesByPID: [String: RunningProcess]
     ) -> ProcessSnapshot? {
+        if isClaudeControlProcess(command: process.command) {
+            return nil
+        }
+
         let lsofOutput = lsofOutput(pid: process.pid)
         let workingDirectory = lsofOutput.flatMap(workingDirectory(from:))
 

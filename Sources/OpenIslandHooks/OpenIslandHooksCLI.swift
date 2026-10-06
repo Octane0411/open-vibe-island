@@ -73,6 +73,14 @@ struct OpenIslandHooksCLI {
                     .withRuntimeContext(environment: ProcessInfo.processInfo.environment)
                 payload.hookSource = sourceString
 
+                // Warm spares of the Claude Code daemon fire hooks before any
+                // dispatch claims them; they are not sessions the user started.
+                if source == .claude,
+                   payload.backgroundAgentPID != nil,
+                   ClaudeDaemonRoster.isUnclaimedSpare(sessionID: payload.sessionID) {
+                    return
+                }
+
                 let timeout = payload.hookEventName == .permissionRequest
                     ? interactiveClaudeHookTimeout
                     : 45

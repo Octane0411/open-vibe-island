@@ -2402,6 +2402,10 @@ public final class BridgeServer: @unchecked Sendable {
            !existingUUID.isEmpty {
             merged.warpPaneUUID = existingUUID
         }
+        if merged.backgroundAgentPID == nil,
+           let existingPID = existing?.backgroundAgentPID {
+            merged.backgroundAgentPID = existingPID
+        }
         return merged
     }
 

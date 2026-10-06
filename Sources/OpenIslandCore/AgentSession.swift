@@ -167,6 +167,11 @@ public struct JumpTarget: Equatable, Codable, Sendable {
     /// `"Codex.app"`, the jump uses the `codex://threads/<id>` URL scheme
     /// to open the conversation directly rather than just activating the app.
     public var codexThreadID: String?
+    /// PID of a daemon-hosted agent engine — a Claude Code background
+    /// session running under `claude daemon` — whose pty is not a terminal
+    /// tab. Process liveness matches on it because the terminal fields
+    /// describe the viewer showing the session, not the engine itself.
+    public var backgroundAgentPID: Int32?
 
     public init(
         terminalApp: String,
@@ -178,7 +183,8 @@ public struct JumpTarget: Equatable, Codable, Sendable {
         tmuxTarget: String? = nil,
         tmuxSocketPath: String? = nil,
         warpPaneUUID: String? = nil,
-        codexThreadID: String? = nil
+        codexThreadID: String? = nil,
+        backgroundAgentPID: Int32? = nil
     ) {
         self.terminalApp = terminalApp
         self.workspaceName = workspaceName
@@ -190,6 +196,7 @@ public struct JumpTarget: Equatable, Codable, Sendable {
         self.tmuxSocketPath = tmuxSocketPath
         self.warpPaneUUID = warpPaneUUID
         self.codexThreadID = codexThreadID
+        self.backgroundAgentPID = backgroundAgentPID
     }
 }
 
