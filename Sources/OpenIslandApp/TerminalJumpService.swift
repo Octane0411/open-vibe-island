@@ -15,6 +15,11 @@ struct TerminalJumpService {
     /// `NSWorkspace.shared.frontmostApplication`; tests inject `{ true }`
     /// to skip the polling loop entirely.
     typealias WarpFrontmostChecker = @Sendable () -> Bool
+    /// Resolves a Claude Code CLI session ID to the Claude desktop app's
+    /// `local_…` session ID so the jump can open that exact conversation.
+    /// Production reads Claude.app's session records from disk; tests inject
+    /// a lookup table.
+    typealias ClaudeDesktopSessionResolver = @Sendable (String) -> String?
 
     private struct TerminalAppDescriptor {
         let displayName: String
@@ -231,6 +236,7 @@ struct TerminalJumpService {
     private let warpTabCountReader: WarpTabCountReader
     private let warpKeystroker: KeystrokeInjector
     private let warpFrontmostChecker: WarpFrontmostChecker
+    private let claudeDesktopSessionResolver: ClaudeDesktopSessionResolver
 
     init(
         applicationResolver: @escaping ApplicationResolver = { bundleIdentifier in
@@ -251,6 +257,9 @@ struct TerminalJumpService {
             // updated via KVO that can lag the real frontmost transition).
             NSWorkspace.shared.frontmostApplication?.bundleIdentifier
                 == "dev.warp.Warp-Stable"
+        },
+        claudeDesktopSessionResolver: @escaping ClaudeDesktopSessionResolver = { cliSessionID in
+            ClaudeDesktopSessionLocator.desktopSessionID(forCLISessionID: cliSessionID)
         }
     ) {
         self.applicationResolver = applicationResolver
@@ -262,6 +271,7 @@ struct TerminalJumpService {
         self.warpTabCountReader = warpTabCountReader
         self.warpKeystroker = warpKeystroker
         self.warpFrontmostChecker = warpFrontmostChecker
+        self.claudeDesktopSessionResolver = claudeDesktopSessionResolver
     }
 
     func jump(to target: JumpTarget) throws -> String {
@@ -361,8 +371,20 @@ struct TerminalJumpService {
                 try openAction(["-b", "com.openai.codex"])
                 return "Activated Codex.app."
             case "com.anthropic.claudefordesktop":
-                // Claude Desktop hosts the conversation in-app; there is no
-                // per-session deep link, so just bring the app forward.
+                // Claude Desktop hosts the conversation in-app. Its
+                // `claude://code/continue?session=` deep link opens a specific
+                // conversation, but it only accepts the desktop app's own
+                // `local_…` session ID, not the CLI UUID hooks report. Resolve
+                // the ID through Claude.app's on-disk session records; when
+                // that fails (record not written yet, custom data dir), fall
+                // back to activating the app.
+                if let cliSessionID = target.claudeSessionID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !cliSessionID.isEmpty,
+                   let desktopSessionID = claudeDesktopSessionResolver(cliSessionID),
+                   let continueURL = ClaudeDesktopSessionLocator.continueURL(forDesktopSessionID: desktopSessionID) {
+                    try openAction([continueURL])
+                    return "Focused the Claude.app session."
+                }
                 try openAction(["-b", "com.anthropic.claudefordesktop"])
                 return "Activated Claude."
             case "com.conductor.app":

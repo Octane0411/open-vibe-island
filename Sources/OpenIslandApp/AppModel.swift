@@ -1360,16 +1360,33 @@ final class AppModel {
     }
 
     func jumpToFocusedSession() {
-        jump(to: focusedSession?.jumpTarget)
+        jump(to: focusedSession.flatMap(Self.resolvedJumpTarget(for:)))
     }
 
     func jumpToSession(_ session: AgentSession) {
-        guard let jumpTarget = session.jumpTarget,
+        guard let jumpTarget = Self.resolvedJumpTarget(for: session),
               jumpTarget.terminalApp.lowercased() != "unknown" else {
             lastActionMessage = "Cannot jump: terminal app is unknown."
             return
         }
         jump(to: jumpTarget)
+    }
+
+    /// For Claude desktop sessions the session ID *is* the Claude Code CLI
+    /// session ID, which the jump needs to open the exact conversation. Hooks
+    /// stamp it on the jump target, but a target rebuilt by a code path that
+    /// doesn't carry `claudeSessionID` would silently degrade the jump to
+    /// "activate Claude.app", so backfill it here.
+    static func resolvedJumpTarget(for session: AgentSession) -> JumpTarget? {
+        guard var jumpTarget = session.jumpTarget else {
+            return nil
+        }
+        if session.tool == .claudeCode,
+           jumpTarget.terminalApp == "Claude.app",
+           jumpTarget.claudeSessionID?.isEmpty != false {
+            jumpTarget.claudeSessionID = session.id
+        }
+        return jumpTarget
     }
 
     private func jump(to jumpTarget: JumpTarget?) {
