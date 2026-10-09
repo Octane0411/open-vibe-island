@@ -345,6 +345,11 @@ final class AppModel {
         set { overlay.overlayDisplaySelectionID = newValue }
     }
 
+    var overlayEdge: OverlayEdge {
+        get { overlay.overlayEdge }
+        set { overlay.overlayEdge = newValue }
+    }
+
     // MARK: - Appearance
 
     var appearanceSettingsProfile: IslandAppearanceDisplayProfile = .topBar {
