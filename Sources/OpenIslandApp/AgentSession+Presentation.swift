@@ -234,6 +234,8 @@ extension AgentSession {
             return "Pi"
         case .ohMyPi:
             return "Oh My Pi"
+        case .hermes:
+            return "Hermes"
         }
     }
 
