@@ -150,6 +150,7 @@ public extension CodexTrackedSessionRecord {
 
     var shouldRestoreToLiveState: Bool {
         origin != .demo && !LegacyMockSessionIDs.all.contains(sessionID)
+            && !CodexInternalSessionFilter.isInternalReview(transcriptPath: codexMetadata?.transcriptPath)
     }
 }
 
@@ -368,6 +369,7 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         var sessionID: String
         var cwd: String
         var timestamp: Date?
+        var isInternalReview: Bool
 
         var workspaceName: String {
             let workspace = URL(fileURLWithPath: cwd).lastPathComponent
@@ -629,7 +631,7 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         snapshot: CodexRolloutSnapshot,
         sessionMeta: SessionMeta?
     ) -> CodexTrackedSessionRecord? {
-        guard let sessionMeta else { return nil }
+        guard let sessionMeta, !sessionMeta.isInternalReview else { return nil }
 
         let summary = snapshot.summary ?? sessionMeta.defaultSummary
         let updatedAt = snapshot.updatedAt ?? sessionMeta.timestamp ?? modifiedAt
@@ -675,7 +677,8 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             cwd: cwd,
             timestamp: codexRolloutParseTimestamp(
                 (payload["timestamp"] as? String) ?? (object["timestamp"] as? String)
-            )
+            ),
+            isInternalReview: CodexInternalSessionFilter.isInternalReview(metadata: payload)
         )
     }
 
