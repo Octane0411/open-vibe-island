@@ -14,6 +14,7 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
     case grokBuild
     case pi
     case ohMyPi
+    case zcode
     case hermes
 
     public var displayName: String {
@@ -44,6 +45,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "Pi"
         case .ohMyPi:
             "Oh My Pi"
+        case .zcode:
+            "ZCode"
         case .hermes:
             "Hermes"
         }
@@ -77,6 +80,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "PI"
         case .ohMyPi:
             "OMP"
+        case .zcode:
+            "ZCODE"
         case .hermes:
             "HERMES"
         }
@@ -110,6 +115,7 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
         case .grokBuild:  "#22d3ee"
         case .pi:         "#a3e635"
         case .ohMyPi:     "#f472b6"
+        case .zcode:      "#2dd4bf"
         case .hermes:     "#38bdf8"
         }
     }

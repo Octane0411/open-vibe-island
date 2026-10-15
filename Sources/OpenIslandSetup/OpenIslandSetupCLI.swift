@@ -31,6 +31,9 @@ private struct SetupCommand {
         case installGrok
         case uninstallGrok
         case statusGrok
+        case installZcode
+        case uninstallZcode
+        case statusZcode
         case installHermes
         case uninstallHermes
         case statusHermes
@@ -41,6 +44,7 @@ private struct SetupCommand {
     let claudeDirectory: URL
     let kimiDirectory: URL
     let grokDirectory: URL
+    let zcodeDirectory: URL
     let hermesDirectory: URL
     let hooksBinary: URL?
 
@@ -57,6 +61,7 @@ private struct SetupCommand {
         var claudeDirectory = ClaudeConfigDirectory.resolved()
         var kimiDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".kimi", isDirectory: true)
         var grokDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".grok", isDirectory: true)
+        var zcodeDirectory = ZCodeHookInstallationManager.defaultDirectory
         var hermesDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".hermes", isDirectory: true)
 
         var index = 1
@@ -97,6 +102,13 @@ private struct SetupCommand {
                 }
                 grokDirectory = URL(fileURLWithPath: arguments[index]).standardizedFileURL
 
+            case "--zcode-dir":
+                index += 1
+                guard index < arguments.count else {
+                    throw SetupError.missingValue("--zcode-dir")
+                }
+                zcodeDirectory = URL(fileURLWithPath: arguments[index]).standardizedFileURL
+
             case "--hermes-dir":
                 index += 1
                 guard index < arguments.count else {
@@ -111,7 +123,7 @@ private struct SetupCommand {
             index += 1
         }
 
-        if (action == .install || action == .installClaude || action == .installKimi || action == .installGrok || action == .installHermes), hooksBinary == nil {
+        if (action == .install || action == .installClaude || action == .installKimi || action == .installGrok || action == .installZcode || action == .installHermes), hooksBinary == nil {
             hooksBinary = HooksBinaryLocator.locate()
         }
 
@@ -119,6 +131,7 @@ private struct SetupCommand {
         self.claudeDirectory = claudeDirectory
         self.kimiDirectory = kimiDirectory
         self.grokDirectory = grokDirectory
+        self.zcodeDirectory = zcodeDirectory
         self.hermesDirectory = hermesDirectory
         self.hooksBinary = hooksBinary
     }
@@ -149,6 +162,12 @@ private struct SetupCommand {
             try uninstallGrok()
         case .statusGrok:
             try statusGrok()
+        case .installZcode:
+            try installZcode()
+        case .uninstallZcode:
+            try uninstallZcode()
+        case .statusZcode:
+            try statusZcode()
         case .installHermes:
             try installHermes()
         case .uninstallHermes:
@@ -334,6 +353,51 @@ private struct SetupCommand {
         }
     }
 
+    private func installZcode() throws {
+        guard let hooksBinary else {
+            throw SetupError.usage
+        }
+
+        let manager = ZCodeHookInstallationManager(zcodeDirectory: zcodeDirectory)
+        let status = try manager.install(hooksBinaryURL: hooksBinary)
+
+        print("Installed Open Island ZCode hooks.")
+        print("ZCode dir: \(status.zcodeDirectory.path)")
+        print("Config file: \(status.configURL.path)")
+        if let resolvedBinaryURL = status.hooksBinaryURL {
+            print("Hooks binary: \(resolvedBinaryURL.path)")
+        }
+    }
+
+    private func uninstallZcode() throws {
+        let manager = ZCodeHookInstallationManager(zcodeDirectory: zcodeDirectory)
+        let status = try manager.uninstall()
+
+        print("Removed Open Island ZCode hooks.")
+        print("ZCode dir: \(status.zcodeDirectory.path)")
+        if FileManager.default.fileExists(atPath: status.configURL.path) {
+            print("Preserved unrelated hooks entries in config.json.")
+        }
+    }
+
+    private func statusZcode() throws {
+        let manager = ZCodeHookInstallationManager(zcodeDirectory: zcodeDirectory)
+        let status = try manager.status(hooksBinaryURL: hooksBinary)
+
+        print("ZCode dir: \(status.zcodeDirectory.path)")
+        print("Config file: \(status.configURL.path)")
+        print("Managed hooks present: \(status.managedHooksPresent ? "yes" : "no")")
+        if let resolvedBinaryURL = status.hooksBinaryURL {
+            print("Hooks binary: \(resolvedBinaryURL.path)")
+        }
+        if let manifest = status.manifest {
+            print("Manifest: present")
+            print("Hook command: \(manifest.hookCommand)")
+        } else {
+            print("Manifest: missing")
+        }
+    }
+
     private func installHermes() throws {
         guard let hooksBinary else {
             throw SetupError.usage
@@ -398,6 +462,9 @@ private enum SetupError: Error, LocalizedError {
               swift run OpenIslandSetup installGrok [--hooks-binary /abs/path/to/OpenIslandHooks] [--grok-dir /abs/path/to/.grok]
               swift run OpenIslandSetup uninstallGrok [--grok-dir /abs/path/to/.grok]
               swift run OpenIslandSetup statusGrok [--hooks-binary /abs/path/to/OpenIslandHooks] [--grok-dir /abs/path/to/.grok]
+              swift run OpenIslandSetup installZcode [--hooks-binary /abs/path/to/OpenIslandHooks] [--zcode-dir /abs/path/to/.zcode/cli]
+              swift run OpenIslandSetup uninstallZcode [--zcode-dir /abs/path/to/.zcode/cli]
+              swift run OpenIslandSetup statusZcode [--hooks-binary /abs/path/to/OpenIslandHooks] [--zcode-dir /abs/path/to/.zcode/cli]
               swift run OpenIslandSetup installHermes [--hooks-binary /abs/path/to/OpenIslandHooks] [--hermes-dir /abs/path/to/.hermes]
               swift run OpenIslandSetup uninstallHermes [--hermes-dir /abs/path/to/.hermes]
               swift run OpenIslandSetup statusHermes [--hooks-binary /abs/path/to/OpenIslandHooks] [--hermes-dir /abs/path/to/.hermes]

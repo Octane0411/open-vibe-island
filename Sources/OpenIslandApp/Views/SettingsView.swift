@@ -426,6 +426,7 @@ struct SetupSettingsPane: View {
     @State private var confirmingUninstallGemini = false
     @State private var confirmingUninstallKimi = false
     @State private var confirmingUninstallGrok = false
+    @State private var confirmingUninstallZcode = false
     @State private var confirmingUninstallPi = false
     @State private var confirmingUninstallOhMyPi = false
     @State private var confirmingUninstallHermes = false
@@ -633,6 +634,23 @@ struct SetupSettingsPane: View {
                 }
 
                 hookRow(
+                    name: "ZCode",
+                    installed: model.zcodeHooksInstalled,
+                    busy: model.isZcodeHookSetupBusy,
+                    configLocationURL: model.zcodeHookStatus?.configURL,
+                    installAction: { model.installZcodeHooks() },
+                    uninstallAction: { confirmingUninstallZcode = true }
+                )
+                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallZcode) {
+                    Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
+                        model.uninstallZcodeHooks()
+                    }
+                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
+                } message: {
+                    Text("This will remove Open Island hooks from ~/.zcode/cli/config.json.")
+                }
+
+                hookRow(
                     name: "Pi",
                     installed: model.piExtensionInstalled,
                     busy: model.isPiSetupBusy,
@@ -762,6 +780,7 @@ struct SetupSettingsPane: View {
                     if !model.geminiHooksInstalled { model.installGeminiHooks() }
                     if !model.kimiHooksInstalled { model.installKimiHooks() }
                     if !model.grokHooksInstalled { model.installGrokHooks() }
+                    if !model.zcodeHooksInstalled { model.installZcodeHooks() }
                     if !model.hermesHooksInstalled { model.installHermesHooks() }
                     if !model.piExtensionInstalled { model.installPiExtension() }
                     if !model.ohMyPiExtensionInstalled { model.installOhMyPiExtension() }
@@ -827,6 +846,7 @@ struct SetupSettingsPane: View {
         model.claudeHooksInstalled && model.codexHooksInstalled && model.openCodePluginInstalled
             && model.qoderHooksInstalled && model.qwenCodeHooksInstalled && model.factoryHooksInstalled && model.codebuddyHooksInstalled
             && model.cursorHooksInstalled && model.geminiHooksInstalled && model.kimiHooksInstalled
+            && model.grokHooksInstalled && model.zcodeHooksInstalled
             && model.grokHooksInstalled && model.hermesHooksInstalled
             && model.piExtensionInstalled && model.ohMyPiExtensionInstalled && model.claudeUsageInstalled
     }
