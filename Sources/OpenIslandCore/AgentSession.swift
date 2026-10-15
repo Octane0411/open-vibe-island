@@ -167,6 +167,13 @@ public struct JumpTarget: Equatable, Codable, Sendable {
     /// `"Codex.app"`, the jump uses the `codex://threads/<id>` URL scheme
     /// to open the conversation directly rather than just activating the app.
     public var codexThreadID: String?
+    /// Claude Code CLI session ID (the UUID Claude Code reports as
+    /// `session_id`). Set only for sessions hosted by the Claude desktop app
+    /// (`terminalApp == "Claude.app"`). The jump resolves it to the desktop
+    /// app's own `local_…` session ID and opens
+    /// `claude://code/continue?session=<local id>` so the exact conversation
+    /// comes to the front instead of just activating Claude.
+    public var claudeSessionID: String?
 
     public init(
         terminalApp: String,
@@ -178,7 +185,8 @@ public struct JumpTarget: Equatable, Codable, Sendable {
         tmuxTarget: String? = nil,
         tmuxSocketPath: String? = nil,
         warpPaneUUID: String? = nil,
-        codexThreadID: String? = nil
+        codexThreadID: String? = nil,
+        claudeSessionID: String? = nil
     ) {
         self.terminalApp = terminalApp
         self.workspaceName = workspaceName
@@ -190,6 +198,7 @@ public struct JumpTarget: Equatable, Codable, Sendable {
         self.tmuxSocketPath = tmuxSocketPath
         self.warpPaneUUID = warpPaneUUID
         self.codexThreadID = codexThreadID
+        self.claudeSessionID = claudeSessionID
     }
 }
 

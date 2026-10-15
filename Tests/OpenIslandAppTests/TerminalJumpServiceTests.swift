@@ -482,6 +482,76 @@ struct TerminalJumpServiceTests {
     }
 
     @Test
+    func claudeAppJumpOpensSpecificSessionWhenDesktopSessionResolves() throws {
+        let openedArguments = OpenedArgumentsBox()
+        let cliSessionID = "ef3908a9-1149-44fb-9616-8bf003f93daa"
+        let desktopSessionID = "local_eb34f765-d478-44a2-8280-f581778da379"
+        let service = TerminalJumpService(
+            applicationResolver: { bundleIdentifier in
+                bundleIdentifier == "com.anthropic.claudefordesktop"
+                    ? URL(fileURLWithPath: "/Applications/Claude.app")
+                    : nil
+            },
+            appRunningChecker: { bundleIdentifier in
+                bundleIdentifier == "com.anthropic.claudefordesktop"
+            },
+            openAction: { arguments in
+                openedArguments.values.append(arguments)
+            },
+            appleScriptRunner: { _ in "" },
+            claudeDesktopSessionResolver: { requested in
+                requested == cliSessionID ? desktopSessionID : nil
+            }
+        )
+
+        let result = try service.jump(
+            to: JumpTarget(
+                terminalApp: "Claude.app",
+                workspaceName: "my-project",
+                paneTitle: "Claude ef3908a9",
+                workingDirectory: "/Users/test/my-project",
+                claudeSessionID: cliSessionID
+            )
+        )
+
+        #expect(result == "Focused the Claude.app session.")
+        #expect(openedArguments.values == [["claude://code/continue?session=\(desktopSessionID)"]])
+    }
+
+    @Test
+    func claudeAppJumpFallsBackToActivationWhenDesktopSessionUnknown() throws {
+        let openedArguments = OpenedArgumentsBox()
+        let service = TerminalJumpService(
+            applicationResolver: { bundleIdentifier in
+                bundleIdentifier == "com.anthropic.claudefordesktop"
+                    ? URL(fileURLWithPath: "/Applications/Claude.app")
+                    : nil
+            },
+            appRunningChecker: { bundleIdentifier in
+                bundleIdentifier == "com.anthropic.claudefordesktop"
+            },
+            openAction: { arguments in
+                openedArguments.values.append(arguments)
+            },
+            appleScriptRunner: { _ in "" },
+            claudeDesktopSessionResolver: { _ in nil }
+        )
+
+        let result = try service.jump(
+            to: JumpTarget(
+                terminalApp: "Claude.app",
+                workspaceName: "my-project",
+                paneTitle: "Claude ef3908a9",
+                workingDirectory: "/Users/test/my-project",
+                claudeSessionID: "ef3908a9-1149-44fb-9616-8bf003f93daa"
+            )
+        )
+
+        #expect(result == "Activated Claude.")
+        #expect(openedArguments.values == [["-b", "com.anthropic.claudefordesktop"]])
+    }
+
+    @Test
     func traeCNJumpFallsBackToWorkspaceViaTraeCLI() throws {
         let openedArguments = OpenedArgumentsBox()
         let processInvocations = ProcessInvocationBox()

@@ -2411,6 +2411,11 @@ public final class BridgeServer: @unchecked Sendable {
            !existingUUID.isEmpty {
             merged.warpPaneUUID = existingUUID
         }
+        if merged.claudeSessionID == nil,
+           let existingClaudeSessionID = existing?.claudeSessionID,
+           !existingClaudeSessionID.isEmpty {
+            merged.claudeSessionID = existingClaudeSessionID
+        }
         return merged
     }
 
