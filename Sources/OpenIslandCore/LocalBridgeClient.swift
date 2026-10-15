@@ -10,6 +10,7 @@ public final class LocalBridgeClient: @unchecked Sendable {
     private var readSource: DispatchSourceRead?
     private var continuation: AsyncThrowingStream<AgentEvent, Error>.Continuation?
     private var buffer = Data()
+    private var scanCursor = 0
 
     public init(socketURL: URL = BridgeSocketLocation.defaultURL) {
         self.socketURL = socketURL
@@ -106,6 +107,7 @@ public final class LocalBridgeClient: @unchecked Sendable {
             self.readSource?.cancel()
             self.readSource = nil
             self.buffer.removeAll(keepingCapacity: false)
+            self.scanCursor = 0
             self.finish(throwing: nil)
         }
     }
@@ -124,7 +126,7 @@ public final class LocalBridgeClient: @unchecked Sendable {
                 buffer.append(localBuffer, count: bytesRead)
 
                 do {
-                    let messages = try BridgeCodec.decodeLines(from: &buffer)
+                    let messages = try BridgeCodec.decodeLines(from: &buffer, scanCursor: &scanCursor)
 
                     for message in messages {
                         if case let .event(event) = message {
