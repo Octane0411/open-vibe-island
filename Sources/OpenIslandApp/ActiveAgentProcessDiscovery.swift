@@ -568,6 +568,15 @@ struct ActiveAgentProcessDiscovery {
         if lowered.contains("/codebuddy.app/") {
             return "CodeBuddy"
         }
+        // ZCode desktop app runs its agent runtime inside the app bundle.
+        if lowered.contains("/zcode.app/contents/macos/") {
+            return "ZCode.app"
+        }
+        // WorkBuddy (Tencent) runs agents under its embedded node/python
+        // runtimes, which live inside the WorkBuddy.app bundle.
+        if lowered.contains("/workbuddy.app/contents/") {
+            return "WorkBuddy.app"
+        }
         if lowered.contains("/visual studio code - insiders.app/") {
             return "VS Code Insiders"
         }

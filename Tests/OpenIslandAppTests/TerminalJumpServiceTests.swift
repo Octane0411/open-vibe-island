@@ -13,6 +13,10 @@ struct TerminalJumpServiceTests {
         var values: [(String, [String])] = []
     }
 
+    private final class StringValuesBox: @unchecked Sendable {
+        var values: [String] = []
+    }
+
     @Test
     func ghosttyJumpScriptActivatesWindowAndRetriesFocusUntilItSticks() {
         let target = JumpTarget(
@@ -479,6 +483,77 @@ struct TerminalJumpServiceTests {
 
         #expect(result == "Focused the Codex.app conversation.")
         #expect(openedArguments.values == [["codex://threads/\(threadID)"]])
+    }
+
+    @Test
+    func zcodeJumpFocusesExactConversationBeforeWorkspaceFallback() throws {
+        let openedArguments = OpenedArgumentsBox()
+        let focusedConversationIDs = StringValuesBox()
+        let service = TerminalJumpService(
+            applicationResolver: { bundleIdentifier in
+                bundleIdentifier == "dev.zcode.app" ? URL(fileURLWithPath: "/Applications/ZCode.app") : nil
+            },
+            appRunningChecker: { bundleIdentifier in
+                bundleIdentifier == "dev.zcode.app"
+            },
+            openAction: { arguments in
+                openedArguments.values.append(arguments)
+            },
+            appleScriptRunner: { _ in "" },
+            zcodeConversationFocuser: { conversationID in
+                focusedConversationIDs.values.append(conversationID)
+                return .focused
+            }
+        )
+
+        let result = try service.jump(
+            to: JumpTarget(
+                terminalApp: "ZCode.app",
+                workspaceName: "open-vibe-island",
+                paneTitle: "Claude sess_9fdf2cd9",
+                workingDirectory: "/Users/test/open-vibe-island",
+                appConversationID: "sess_9fdf2cd9-bb33-4e38-bab1-64c6c0861743",
+                appDeepLinkURL: "zcode://workspace/open?path=%2FUsers%2Ftest%2Fopen-vibe-island"
+            )
+        )
+
+        #expect(result == "Focused the ZCode conversation.")
+        #expect(focusedConversationIDs.values == ["sess_9fdf2cd9-bb33-4e38-bab1-64c6c0861743"])
+        #expect(openedArguments.values.isEmpty)
+    }
+
+    @Test
+    func zcodeWithoutAccessibilityActivatesRunningAppWithoutOpeningWorkspace() throws {
+        let openedArguments = OpenedArgumentsBox()
+        let service = TerminalJumpService(
+            applicationResolver: { bundleIdentifier in
+                bundleIdentifier == "dev.zcode.app" ? URL(fileURLWithPath: "/Applications/ZCode.app") : nil
+            },
+            appRunningChecker: { bundleIdentifier in
+                bundleIdentifier == "dev.zcode.app"
+            },
+            openAction: { arguments in
+                openedArguments.values.append(arguments)
+            },
+            appleScriptRunner: { _ in "" },
+            zcodeConversationFocuser: { _ in
+                .unavailable("accessibility-unavailable")
+            }
+        )
+
+        let result = try service.jump(
+            to: JumpTarget(
+                terminalApp: "ZCode.app",
+                workspaceName: "open-vibe-island",
+                paneTitle: "Claude sess_legacy",
+                workingDirectory: "/Users/test/open-vibe-island",
+                appConversationID: "sess_legacy",
+                appDeepLinkURL: "zcode://workspace/open?path=%2FUsers%2Ftest%2Fopen-vibe-island"
+            )
+        )
+
+        #expect(result == "Activated ZCode. Accessibility permission is required for conversation focus.")
+        #expect(openedArguments.values == [["-b", "dev.zcode.app"]])
     }
 
     @Test

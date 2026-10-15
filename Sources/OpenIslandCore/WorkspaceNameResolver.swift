@@ -45,6 +45,38 @@ public enum WorkspaceNameResolver {
         return nil
     }
 
+    /// Absolute path of the nearest ancestor of `cwd` that contains a `.git`
+    /// directory (or gitfile). Agents frequently run in deep subdirectories
+    /// of a project (build dirs, run dirs); the project root — not the raw
+    /// cwd — is what identifies the workspace window and folder.
+    public static func projectRootPath(for cwd: String) -> String? {
+        projectRootCache.value(for: cwd, compute: uncachedProjectRootPath(for:))
+    }
+
+    private static let projectRootCache = TimedCache<String, String?>(ttl: 30)
+
+    private static func uncachedProjectRootPath(for cwd: String) -> String? {
+        // Walk with plain string paths: URL.deletingLastPathComponent on "/"
+        // yields "/..", then "/../..", forever — the URL walk never terminates
+        // for cwd values outside any git repository.
+        let fileManager = FileManager.default
+        var path = URL(fileURLWithPath: cwd).standardizedFileURL.path
+
+        while !path.isEmpty {
+            if fileManager.fileExists(atPath: path + "/.git") {
+                return path
+            }
+
+            let parent = (path as NSString).deletingLastPathComponent
+            if parent == path || parent.isEmpty {
+                return nil
+            }
+            path = parent
+        }
+
+        return nil
+    }
+
     public static func gitBranch(for cwd: String) -> String? {
         // SwiftUI computed properties (e.g. `IslandSessionRow.summaryHeadlineText`)
         // call this on every layout pass. The walk-up-to-`.git` plus HEAD
@@ -82,11 +114,14 @@ public enum WorkspaceNameResolver {
                 }
             }
 
-            let parent = directory.deletingLastPathComponent()
-            if parent.path == directory.path {
+            // Deleting the last component of a root "/" URL yields "/..",
+            // then "/../..", endlessly — terminate on the string path instead
+            // so cwd values outside any git repository cannot spin forever.
+            let parentPath = (directory.path as NSString).deletingLastPathComponent
+            if parentPath == directory.path || parentPath.isEmpty {
                 return nil
             }
-            directory = parent
+            directory = URL(fileURLWithPath: parentPath)
         }
     }
 

@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import Foundation
 import OpenIslandCore
 
@@ -10,6 +11,7 @@ struct TerminalJumpService {
     typealias ProcessRunner = @Sendable (String, [String]) -> Bool
     typealias WarpFocusedPaneReader = @Sendable () -> String?
     typealias WarpTabCountReader = @Sendable () -> Int
+    typealias ZCodeConversationFocuser = @Sendable (String) -> ZCodeConversationFocusResult
     /// Returns true when Warp is the system's frontmost app and ready to
     /// receive the next tab-advance command. Production asks
     /// `NSWorkspace.shared.frontmostApplication`; tests inject `{ true }`
@@ -138,6 +140,16 @@ struct TerminalJumpService {
             aliases: ["conductor"]
         ),
         TerminalAppDescriptor(
+            displayName: "ZCode.app",
+            bundleIdentifier: "dev.zcode.app",
+            aliases: ["zcode", "zcode.app"]
+        ),
+        TerminalAppDescriptor(
+            displayName: "WorkBuddy.app",
+            bundleIdentifier: "com.tencent.workbuddy.mac",
+            aliases: ["workbuddy", "workbuddy.app"]
+        ),
+        TerminalAppDescriptor(
             displayName: "IntelliJ IDEA",
             bundleIdentifier: "com.jetbrains.intellij",
             aliases: ["intellij", "idea"]
@@ -231,6 +243,7 @@ struct TerminalJumpService {
     private let warpTabCountReader: WarpTabCountReader
     private let warpKeystroker: KeystrokeInjector
     private let warpFrontmostChecker: WarpFrontmostChecker
+    private let zcodeConversationFocuser: ZCodeConversationFocuser
 
     init(
         applicationResolver: @escaping ApplicationResolver = { bundleIdentifier in
@@ -251,6 +264,9 @@ struct TerminalJumpService {
             // updated via KVO that can lag the real frontmost transition).
             NSWorkspace.shared.frontmostApplication?.bundleIdentifier
                 == "dev.warp.Warp-Stable"
+        },
+        zcodeConversationFocuser: @escaping ZCodeConversationFocuser = { conversationID in
+            ZCodeConversationJumpController().focus(conversationID: conversationID)
         }
     ) {
         self.applicationResolver = applicationResolver
@@ -262,6 +278,7 @@ struct TerminalJumpService {
         self.warpTabCountReader = warpTabCountReader
         self.warpKeystroker = warpKeystroker
         self.warpFrontmostChecker = warpFrontmostChecker
+        self.zcodeConversationFocuser = zcodeConversationFocuser
     }
 
     func jump(to target: JumpTarget) throws -> String {
@@ -369,6 +386,62 @@ struct TerminalJumpService {
                 // No per-session deep link; bring the app forward, like Claude.app.
                 try openAction(["-b", "com.conductor.app"])
                 return "Activated Conductor."
+            case "com.tencent.workbuddy.mac":
+                // WorkBuddy's own notifications open the task conversation via
+                // workbuddy://chat/<sessionId>; prefer that over bare activation.
+                if let deepLink = target.appDeepLinkURL, !deepLink.isEmpty {
+                    try openAction([deepLink])
+                    return "Focused the WorkBuddy conversation."
+                }
+                try openAction(["-b", "com.tencent.workbuddy.mac"])
+                return "Activated WorkBuddy."
+            case "dev.zcode.app":
+                // ZCode has no public per-conversation deep link. Resolve the
+                // hook's stable session ID through ZCode's read-only task
+                // index, press the exact existing sidebar entry through AX,
+                // and verify that its conversation heading became active.
+                if let conversationID = target.appConversationID?
+                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                    !conversationID.isEmpty {
+                    switch zcodeConversationFocuser(conversationID) {
+                    case .focused:
+                        logJumpDiagnostics("zcode conversation focus ok")
+                        return "Focused the ZCode conversation."
+                    case let .unavailable(reason):
+                        logJumpDiagnostics("zcode conversation focus miss reason=\(reason)")
+                        if reason == "accessibility-unavailable", appIsRunning {
+                            try openAction(["-b", "dev.zcode.app"])
+                            return "Activated ZCode. Accessibility permission is required for conversation focus."
+                        }
+                    }
+                }
+
+                // Preserve workspace-window activation as a safe fallback for
+                // stale sessions and future ZCode schema/UI changes.
+                let zcodeFragment = zcodeWindowTitleFragment(for: target)
+                let zcodeDiagnostics = ZcodeWindowDiagnosticsCollector()
+                if focusDesktopAppWindow(
+                    bundleIdentifier: "dev.zcode.app",
+                    titleFragment: zcodeFragment,
+                    diagnostics: zcodeDiagnostics
+                ) {
+                    logJumpDiagnostics("zcode AX focus ok fragment=\(zcodeFragment) detail=[\(zcodeDiagnostics.summary)]")
+                    return "Focused the ZCode workspace window."
+                }
+                logJumpDiagnostics("zcode AX miss fragment=\(zcodeFragment) detail=[\(zcodeDiagnostics.summary)]")
+                if appIsRunning {
+                    logJumpDiagnostics("zcode AX miss fragment=\(zcodeFragment) -> activate running app")
+                    try openAction(["-b", "dev.zcode.app"])
+                    return "Activated ZCode. Conversation focus was unavailable."
+                }
+                if let deepLink = target.appDeepLinkURL, !deepLink.isEmpty {
+                    logJumpDiagnostics("zcode AX miss fragment=\(zcodeFragment) -> deep link \(deepLink)")
+                    try openAction([deepLink])
+                    return "Opened the ZCode workspace for the session."
+                }
+                logJumpDiagnostics("zcode AX miss fragment=\(zcodeFragment) -> activate")
+                try openAction(["-b", "dev.zcode.app"])
+                return "Activated ZCode."
             case "com.googlecode.iterm2":
                 if try jumpToITermSession(target) {
                     return "Focused the matching iTerm session."
@@ -440,6 +513,241 @@ struct TerminalJumpService {
         }
 
         throw TerminalJumpError.unsupportedTerminal(target.terminalApp)
+    }
+
+    /// Title fragment used to match the ZCode workspace window for a session:
+    /// the workspace name (cwd's last path component), falling back to the
+    /// working directory's last component when they differ.
+    private func zcodeWindowTitleFragment(for target: JumpTarget) -> String {
+        // Prefer the git project root: ZCode window titles carry the project
+        // name, and sessions often run in deep subdirectories whose last path
+        // component (e.g. a timestamped run dir) never appears in a title.
+        if let workingDirectory = target.workingDirectory?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !workingDirectory.isEmpty,
+            let projectRoot = WorkspaceNameResolver.projectRootPath(for: workingDirectory) {
+            let rootName = URL(fileURLWithPath: projectRoot).lastPathComponent
+            if !rootName.isEmpty {
+                return rootName
+            }
+        }
+
+        let workspaceName = target.workspaceName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !workspaceName.isEmpty, workspaceName != "Unknown" {
+            return workspaceName
+        }
+
+        guard let workingDirectory = target.workingDirectory?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !workingDirectory.isEmpty,
+            let lastComponent = workingDirectory.split(separator: "/").last else {
+            return ""
+        }
+
+        return String(lastComponent)
+    }
+
+    /// Raises an existing window of the given desktop app whose AX title
+    /// contains `titleFragment`. With a single window, that window is raised
+    /// regardless of title — focusing the only window is almost always the
+    /// right jump target and avoids depending on title formats.
+    /// Returns false when the app is not running, the accessibility API is
+    /// unavailable (no Accessibility grant), or no window matches.
+    private func focusDesktopAppWindow(
+        bundleIdentifier: String,
+        titleFragment: String,
+        diagnostics: ZcodeWindowDiagnosticsCollector? = nil
+    ) -> Bool {
+        guard let app = NSWorkspace.shared.runningApplications
+            .first(where: { $0.bundleIdentifier == bundleIdentifier && $0.processIdentifier > 0 }) else {
+            diagnostics?.append("app-not-running")
+            return false
+        }
+
+        let appElement = AXUIElementCreateApplication(app.processIdentifier)
+        var windowsValue: CFTypeRef?
+        let axResult = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsValue)
+        guard axResult == .success,
+              let windows = windowsValue as? [AXUIElement],
+              !windows.isEmpty else {
+            diagnostics?.append("ax-windows-error=\(axResult.rawValue)")
+            logJumpDiagnostics("AX windows query failed bundle=\(bundleIdentifier) error=\(axResult.rawValue)")
+            return false
+        }
+
+        if windows.count == 1 {
+            diagnostics?.append(desktopAppWindowDebugDescription(windows[0], index: 0, fragment: "") + " single-raise")
+            raiseDesktopAppWindow(windows[0], application: app, diagnostics: diagnostics)
+            return true
+        }
+
+        let fragment = titleFragment.lowercased()
+        guard !fragment.isEmpty else {
+            return false
+        }
+
+        for (index, window) in windows.enumerated() {
+            var titleValue: CFTypeRef?
+            let titleMatch = AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleValue) == .success
+                && (titleValue as? String)?.lowercased().contains(fragment) == true
+
+            // Electron desktop agents (e.g. ZCode) title every window with
+            // the app name alone, so a title match rarely distinguishes
+            // workspaces. Fall back to scanning the window's accessibility
+            // tree for the project name — the app's header exposes it as
+            // static text — and raise the first window whose content matches.
+            let contentMatch = !titleMatch && desktopAppWindowContentContains(fragment, in: window)
+
+            if titleMatch || contentMatch {
+                diagnostics?.append(desktopAppWindowDebugDescription(window, index: index, fragment: fragment)
+                    + (titleMatch ? " title-hit" : " content-hit"))
+                raiseDesktopAppWindow(window, application: app, diagnostics: diagnostics)
+                return true
+            }
+        }
+
+        let allWindows = windows.enumerated()
+            .map { desktopAppWindowDebugDescription($0.element, index: $0.offset, fragment: fragment) }
+            .joined(separator: " ; ")
+        logJumpDiagnostics("AX no match bundle=\(bundleIdentifier) fragment=\(fragment) windows=[\(allWindows)]")
+        return false
+    }
+
+    /// One-line description of a desktop-app window for jump diagnostics:
+    /// title, subrole, minimized state, and whether its content contains the
+    /// target fragment.
+    private func desktopAppWindowDebugDescription(_ window: AXUIElement, index: Int, fragment: String) -> String {
+        let title = copyAXStringValue(of: window, attribute: kAXTitleAttribute as CFString) ?? "-"
+        let subrole = copyAXStringValue(of: window, attribute: kAXSubroleAttribute as CFString) ?? "-"
+        var minimized = "-"
+        var value: CFTypeRef?
+        if AXUIElementCopyAttributeValue(window, kAXMinimizedAttribute as CFString, &value) == .success,
+           let flag = value as? Bool {
+            minimized = flag ? "min" : "vis"
+        }
+
+        let content: String
+        if fragment.isEmpty {
+            content = "-"
+        } else {
+            content = desktopAppWindowContentContains(fragment, in: window) ? "match" : "nomatch"
+        }
+
+        return "[\(index)] \(title) (\(subrole), \(minimized), \(content))"
+    }
+
+    /// Shallow breadth-first scan of a window's accessibility tree looking
+    /// for static text containing `fragment`. Bounded so a deep Electron tree
+    /// cannot stall the jump.
+    private func desktopAppWindowContentContains(_ fragment: String, in window: AXUIElement) -> Bool {
+        var visited = 0
+        let maxNodes = 600
+        let maxDepth = 6
+
+        var depthBudget: [(AXUIElement, Int)] = [(window, 0)]
+        while !depthBudget.isEmpty, visited < maxNodes {
+            let (element, depth) = depthBudget.removeFirst()
+            visited += 1
+
+            if let role = copyAXStringValue(of: element, attribute: kAXRoleAttribute as CFString),
+               role == "AXStaticText" || role == "AXButton" || role == "AXHeading" {
+                let text = copyAXStringValue(of: element, attribute: kAXValueAttribute as CFString)
+                    ?? copyAXStringValue(of: element, attribute: kAXTitleAttribute as CFString)
+                if let text, text.lowercased().contains(fragment) {
+                    return true
+                }
+                continue
+            }
+
+            guard depth < maxDepth,
+                  let children = copyAXElementArrayValue(of: element, attribute: kAXChildrenAttribute as CFString) else {
+                continue
+            }
+
+            for child in children {
+                depthBudget.append((child, depth + 1))
+            }
+        }
+
+        return false
+    }
+
+    private func copyAXStringValue(of element: AXUIElement, attribute: CFString) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute, &value) == .success,
+              let string = value as? String else {
+            return nil
+        }
+
+        return string
+    }
+
+    private func copyAXElementArrayValue(of element: AXUIElement, attribute: CFString) -> [AXUIElement]? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute, &value) == .success,
+              let array = value as? [AXUIElement] else {
+            return nil
+        }
+
+        return array
+    }
+
+    private func raiseDesktopAppWindow(
+        _ window: AXUIElement,
+        application: NSRunningApplication,
+        diagnostics: ZcodeWindowDiagnosticsCollector? = nil
+    ) {
+        // Un-minimize first: AXRaise alone does not restore a window from the
+        // Dock, so a jump targeting a minimized window would activate the app
+        // without bringing the window back — visibly "nothing happens".
+        AXUIElementSetAttributeValue(window, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+        AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+        AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
+        AXUIElementSetAttributeValue(window, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        application.activate(options: [.activateIgnoringOtherApps])
+
+        if let diagnostics {
+            var value: CFTypeRef?
+            let minimizedAfter = AXUIElementCopyAttributeValue(window, kAXMinimizedAttribute as CFString, &value) == .success
+                ? ((value as? Bool) == true ? "still-min" : "restored")
+                : "unknown"
+            diagnostics.append("after-raise \(minimizedAfter)")
+        }
+    }
+
+    /// Accumulates jump diagnostics for one click so the resulting log line
+    /// describes the full selection: every window considered, which one hit,
+    /// and whether the raise actually restored it.
+    final class ZcodeWindowDiagnosticsCollector {
+        private(set) var entries: [String] = []
+
+        func append(_ entry: String) {
+            entries.append(entry)
+        }
+
+        var summary: String {
+            entries.joined(separator: " ; ")
+        }
+    }
+
+    /// Appends a line to ~/Library/Application Support/OpenIsland/jump-debug.log
+    /// so jump behavior can be diagnosed from real clicks when window matching
+    /// misbehaves on a specific machine.
+    private func logJumpDiagnostics(_ message: String) {
+        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("OpenIsland", isDirectory: true)
+        guard let directory else { return }
+
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let line = "\(ISO8601DateFormatter().string(from: .now)) \(message)\n"
+        let url = directory.appendingPathComponent("jump-debug.log")
+        if let handle = FileHandle(forWritingAtPath: url.path) {
+            handle.seekToEndOfFile()
+            handle.write(Data(line.utf8))
+            handle.closeFile()
+        } else {
+            try? Data(line.utf8).write(to: url)
+        }
     }
 
     private func jumpToITermSession(_ target: JumpTarget) throws -> Bool {

@@ -50,7 +50,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 
 ## Supported Agents & Terminals
 
-**13 agents**: Claude Code, Codex, Cursor, Gemini CLI, Grok Build, Kimi CLI, OpenCode, Pi, Oh My Pi, Qoder, Qwen Code, Factory, CodeBuddy
+**15 agents**: Claude Code, Codex, Cursor, Gemini CLI, Grok Build, Kimi CLI, OpenCode, Pi, Oh My Pi, Qoder, Qwen Code, Factory, CodeBuddy, ZCode, WorkBuddy
 
 **15+ terminals & IDEs**: Terminal.app, Ghostty, iTerm2, WezTerm, Zellij, tmux, cmux, Kaku, VS Code, Cursor, Windsurf, Trae, Zed, JetBrains IDEs (IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover)
 
@@ -70,6 +70,8 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 | **Qwen Code** | Supported | Claude Code fork — same hook format, config at `~/.qwen/settings.json` |
 | **Factory** | Supported | Claude Code fork — same hook format, config at `~/.factory/settings.json` |
 | **CodeBuddy** | Supported | Claude Code fork — same hook format, config at `~/.codebuddy/settings.json` |
+| **ZCode** | Supported | Claude-format hooks nested under `hooks.events` in `~/.zcode/cli/config.json` (7-event subset incl. permission approval); desktop app detected via `dev.zcode.app` |
+| **WorkBuddy** | Supported | Claude Code fork — same hook format, config at `~/.workbuddy/settings.json` (9-event subset); desktop app detected via `com.tencent.workbuddy.mac` |
 | **Cursor** | Supported | Hook integration via `~/.cursor/hooks.json`, session tracking, workspace jump-back |
 | **Gemini CLI** | Supported | Hook integration via `~/.gemini/settings.json`, session tracking, fire-and-forget events |
 | **Kimi CLI** | Supported | Hook integration via `~/.kimi/config.toml` `[[hooks]]`, session tracking, permission flow (reuses Claude payload) |
@@ -274,6 +276,8 @@ Developers who already live in the terminal and want a better way to work with c
 - **Qwen Code** — Claude Code fork. Same hook format and events via `~/.qwen/settings.json`. Use `--source qwen` with the hooks binary.
 - **Factory** — Claude Code fork. Same hook format and events via `~/.factory/settings.json`. Use `--source factory` with the hooks binary.
 - **CodeBuddy** — Claude Code fork. Same hook format and events via `~/.codebuddy/settings.json`. Use `--source codebuddy` with the hooks binary.
+- **ZCode** — Claude-format hook payloads, but hooks live under `hooks.events` in `~/.zcode/cli/config.json` and require `hooks.enabled: true`; ZCode supports exactly seven events (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PostToolUseFailure`, `Stop`), including interactive permission approval. Agents run inside the ZCode desktop app (`dev.zcode.app`); sessions stay alive while the app runs and jump-back activates it. Use `--source zcode` with the hooks binary.
+- **WorkBuddy** — Claude Code fork. Same hook format via `~/.workbuddy/settings.json`, with the nine-event subset WorkBuddy consumes (session lifecycle, tool use, stop, notification, precompact). Agents run inside the WorkBuddy desktop app (`com.tencent.workbuddy.mac`); sessions stay alive while the app runs and jump-back activates it. Use `--source workbuddy` with the hooks binary.
 - **Cursor** — Hook-based integration via `~/.cursor/hooks.json`. Receives `beforeSubmitPrompt`, `beforeShellExecution`, `beforeMCPExecution`, `beforeReadFile`, `afterFileEdit`, and `stop` events. Session persistence across app launches. Workspace jump-back via `cursor -r`. Use `--source cursor` with the hooks binary.
 - **Gemini CLI** — Hook-based integration via `~/.gemini/settings.json`. Receives `SessionStart`, `PreToolUse`, `PostToolUse`, `Stop`, and `UserPromptSubmit` events. Fire-and-forget (no block/deny). Use `--source gemini` with the hooks binary.
 - **Kimi CLI** — Hook-based integration via `~/.kimi/config.toml` `[[hooks]]` array (Moonshot AI). Kimi's hook payload is byte-compatible with Claude Code, so Open Island reuses the Claude decode path and adds a dedicated TOML installer. Subscribes to `SessionStart`, `UserPromptSubmit`, `Stop`, `Notification`, `PreToolUse`, and `PostToolUse`. Requires the Kimi CLI Hooks Beta. Use `--source kimi` with the hooks binary. Manage installation from the Settings window, or via CLI:

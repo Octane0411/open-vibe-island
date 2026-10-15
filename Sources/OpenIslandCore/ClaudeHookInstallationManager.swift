@@ -28,22 +28,38 @@ public struct ClaudeHookInstallationStatus: Equatable, Sendable {
     }
 }
 
-public final class ClaudeHookInstallationManager: @unchecked Sendable {
+/// Common surface for managers that install Claude-format managed hooks, so
+/// the app layer can drive true Claude Code forks (flat `settings.json`) and
+/// ZCode (nested `config.json` hooks.events) through one install/uninstall/
+/// status flow.
+public protocol ClaudeFormatHookInstallationManaging: Sendable {
+    func status(hooksBinaryURL: URL?) throws -> ClaudeHookInstallationStatus
+    @discardableResult func install(hooksBinaryURL: URL) throws -> ClaudeHookInstallationStatus
+    @discardableResult func uninstall() throws -> ClaudeHookInstallationStatus
+}
+
+public final class ClaudeHookInstallationManager: @unchecked Sendable, ClaudeFormatHookInstallationManaging {
     public let claudeDirectory: URL
     public let managedHooksBinaryURL: URL
-    /// The `--source` value passed to the hooks binary (e.g. "claude", "qoder", "factory", "codebuddy").
+    /// The `--source` value passed to the hooks binary (e.g. "claude", "qoder", "factory", "codebuddy", "workbuddy").
     public let hookSource: String
+    /// The managed event set written into settings.json. `nil` installs the
+    /// full standard Claude-format event set; agents that only consume a
+    /// subset (e.g. WorkBuddy) pass their own list.
+    public let hookEvents: [ClaudeHookEventSpec]
     private let fileManager: FileManager
 
     public init(
         claudeDirectory: URL = ClaudeConfigDirectory.resolved(),
         managedHooksBinaryURL: URL = ManagedHooksBinary.defaultURL(),
         hookSource: String = "claude",
+        hookEvents: [ClaudeHookEventSpec]? = nil,
         fileManager: FileManager = .default
     ) {
         self.claudeDirectory = claudeDirectory
         self.managedHooksBinaryURL = managedHooksBinaryURL.standardizedFileURL
         self.hookSource = hookSource
+        self.hookEvents = hookEvents ?? ClaudeHookInstaller.standardEventSpecs
         self.fileManager = fileManager
     }
 
@@ -57,7 +73,9 @@ public final class ClaudeHookInstallationManager: @unchecked Sendable {
         let managedCommand = manifest?.hookCommand ?? resolvedHooksBinaryURL.map { ClaudeHookInstaller.hookCommand(for: $0.path, source: hookSource) }
         let uninstallMutation = try ClaudeHookInstaller.uninstallSettingsJSON(
             existingData: settingsData,
-            managedCommand: managedCommand
+            managedCommand: managedCommand,
+            source: hookSource,
+            eventSpecs: hookEvents
         )
 
         return ClaudeHookInstallationStatus(
@@ -87,7 +105,9 @@ public final class ClaudeHookInstallationManager: @unchecked Sendable {
         let command = ClaudeHookInstaller.hookCommand(for: installedHooksBinaryURL.path, source: hookSource)
         let mutation = try ClaudeHookInstaller.installSettingsJSON(
             existingData: existingSettings,
-            hookCommand: command
+            hookCommand: command,
+            source: hookSource,
+            eventSpecs: hookEvents
         )
 
         if mutation.changed, fileManager.fileExists(atPath: settingsURL.path) {
@@ -120,7 +140,9 @@ public final class ClaudeHookInstallationManager: @unchecked Sendable {
         let existingSettings = try? Data(contentsOf: settingsURL)
         let mutation = try ClaudeHookInstaller.uninstallSettingsJSON(
             existingData: existingSettings,
-            managedCommand: manifest?.hookCommand
+            managedCommand: manifest?.hookCommand,
+            source: hookSource,
+            eventSpecs: hookEvents
         )
 
         if mutation.changed, fileManager.fileExists(atPath: settingsURL.path) {

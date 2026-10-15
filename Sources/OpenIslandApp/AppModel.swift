@@ -101,14 +101,20 @@ final class AppModel {
     var qwenCodeHooksInstalled: Bool { hooks.qwenCodeHooksInstalled }
     var factoryHooksInstalled: Bool { hooks.factoryHooksInstalled }
     var codebuddyHooksInstalled: Bool { hooks.codebuddyHooksInstalled }
+    var zcodeHooksInstalled: Bool { hooks.zcodeHooksInstalled }
+    var workbuddyHooksInstalled: Bool { hooks.workbuddyHooksInstalled }
     var qoderHookStatus: ClaudeHookInstallationStatus? { hooks.qoderHookStatus }
     var qwenCodeHookStatus: ClaudeHookInstallationStatus? { hooks.qwenCodeHookStatus }
     var factoryHookStatus: ClaudeHookInstallationStatus? { hooks.factoryHookStatus }
     var codebuddyHookStatus: ClaudeHookInstallationStatus? { hooks.codebuddyHookStatus }
+    var zcodeHookStatus: ClaudeHookInstallationStatus? { hooks.zcodeHookStatus }
+    var workbuddyHookStatus: ClaudeHookInstallationStatus? { hooks.workbuddyHookStatus }
     var isQoderHookSetupBusy: Bool { hooks.isQoderHookSetupBusy }
     var isQwenCodeHookSetupBusy: Bool { hooks.isQwenCodeHookSetupBusy }
     var isFactoryHookSetupBusy: Bool { hooks.isFactoryHookSetupBusy }
     var isCodebuddyHookSetupBusy: Bool { hooks.isCodebuddyHookSetupBusy }
+    var isZcodeHookSetupBusy: Bool { hooks.isZcodeHookSetupBusy }
+    var isWorkbuddyHookSetupBusy: Bool { hooks.isWorkbuddyHookSetupBusy }
     var openCodePluginInstalled: Bool { hooks.openCodePluginInstalled }
     var claudeUsageInstalled: Bool { hooks.claudeUsageInstalled }
     var claudeHookStatusTitle: String { hooks.claudeHookStatusTitle }
@@ -173,6 +179,8 @@ final class AppModel {
             || hooks.qwenCodeHooksInstalled
             || hooks.factoryHooksInstalled
             || hooks.codebuddyHooksInstalled
+            || hooks.zcodeHooksInstalled
+            || hooks.workbuddyHooksInstalled
             || hooks.openCodePluginInstalled
             || hooks.geminiHooksInstalled
             || hooks.kimiHooksInstalled
@@ -198,6 +206,10 @@ final class AppModel {
     func uninstallFactoryHooks() { hooks.uninstallFactoryHooks() }
     func installCodebuddyHooks() { hooks.installCodebuddyHooks() }
     func uninstallCodebuddyHooks() { hooks.uninstallCodebuddyHooks() }
+    func installZcodeHooks() { hooks.installZcodeHooks() }
+    func uninstallZcodeHooks() { hooks.uninstallZcodeHooks() }
+    func installWorkbuddyHooks() { hooks.installWorkbuddyHooks() }
+    func uninstallWorkbuddyHooks() { hooks.uninstallWorkbuddyHooks() }
     func refreshCCForkHookStatuses() { hooks.refreshCCForkHookStatuses() }
     func installOpenCodePlugin() { hooks.installOpenCodePlugin() }
     func uninstallOpenCodePlugin() { hooks.uninstallOpenCodePlugin() }
@@ -1360,16 +1372,37 @@ final class AppModel {
     }
 
     func jumpToFocusedSession() {
-        jump(to: focusedSession?.jumpTarget)
+        jump(to: focusedSession.flatMap(resolvedJumpTarget(for:)))
     }
 
     func jumpToSession(_ session: AgentSession) {
-        guard let jumpTarget = session.jumpTarget,
+        guard let jumpTarget = resolvedJumpTarget(for: session),
               jumpTarget.terminalApp.lowercased() != "unknown" else {
             lastActionMessage = "Cannot jump: terminal app is unknown."
             return
         }
         jump(to: jumpTarget)
+    }
+
+    private func resolvedJumpTarget(for session: AgentSession) -> JumpTarget? {
+        guard var jumpTarget = session.jumpTarget else {
+            return nil
+        }
+
+        // Sessions restored from registries written before the ZCode
+        // conversation locator existed still have the stable task id on the
+        // AgentSession itself. Upgrade them at click time so users do not need
+        // to wait for another hook event before precision jump starts working.
+        let hasConversationID = jumpTarget.appConversationID?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty == false
+        if jumpTarget.terminalApp.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            == "zcode.app",
+           !hasConversationID {
+            jumpTarget.appConversationID = session.id
+        }
+
+        return jumpTarget
     }
 
     private func jump(to jumpTarget: JumpTarget?) {
@@ -1715,6 +1748,8 @@ final class AppModel {
             if self.hooks.shouldAutoInstall(.qwenCode) { self.installQwenCodeHooks() }
             if self.hooks.shouldAutoInstall(.factory) { self.installFactoryHooks() }
             if self.hooks.shouldAutoInstall(.codebuddy) { self.installCodebuddyHooks() }
+            if self.hooks.shouldAutoInstall(.zcode) { self.installZcodeHooks() }
+            if self.hooks.shouldAutoInstall(.workbuddy) { self.installWorkbuddyHooks() }
             if self.hooks.shouldAutoInstall(.openCode) { self.installOpenCodePlugin() }
             if self.hooks.shouldAutoInstall(.cursor) { self.installCursorHooks() }
             if self.hooks.shouldAutoInstall(.gemini) { self.installGeminiHooks() }

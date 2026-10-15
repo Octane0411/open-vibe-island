@@ -479,6 +479,49 @@ public struct ClaudeHookPayload: Equatable, Codable, Sendable {
         self.warpPaneUUID = warpPaneUUID
         self.remote = remote
     }
+
+    /// Claude-format forks send the shared snake_case field names but attach
+    /// their own values to a few enum- and schema-bound fields: ZCode reports
+    /// `permission_mode` values like `"yolo"`/`"build"`/`"edit"`, emits its own
+    /// `permission_suggestions` shape, and puts an object in `error_details`.
+    /// Those four fields decode leniently (unknown value → absent) so one
+    /// divergent field never drops the whole hook payload; everything else
+    /// decodes strictly like Claude Code itself.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        cwd = try container.decode(String.self, forKey: .cwd)
+        hookEventName = try container.decode(ClaudeHookEventName.self, forKey: .hookEventName)
+        sessionID = try container.decode(String.self, forKey: .sessionID)
+        transcriptPath = try container.decodeIfPresent(String.self, forKey: .transcriptPath)
+        permissionMode = (try? container.decodeIfPresent(ClaudePermissionMode.self, forKey: .permissionMode)) ?? nil
+        agentID = try container.decodeIfPresent(String.self, forKey: .agentID)
+        agentType = try container.decodeIfPresent(String.self, forKey: .agentType)
+        model = try container.decodeIfPresent(String.self, forKey: .model)
+        source = (try? container.decodeIfPresent(ClaudeSessionStartSource.self, forKey: .source)) ?? nil
+        toolName = try container.decodeIfPresent(String.self, forKey: .toolName)
+        toolInput = try container.decodeIfPresent(ClaudeHookJSONValue.self, forKey: .toolInput)
+        toolUseID = try container.decodeIfPresent(String.self, forKey: .toolUseID)
+        toolResponse = try container.decodeIfPresent(ClaudeHookJSONValue.self, forKey: .toolResponse)
+        permissionSuggestions = (try? container.decodeIfPresent([ClaudePermissionUpdate].self, forKey: .permissionSuggestions)) ?? nil
+        prompt = try container.decodeIfPresent(String.self, forKey: .prompt)
+        message = try container.decodeIfPresent(String.self, forKey: .message)
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+        notificationType = try container.decodeIfPresent(String.self, forKey: .notificationType)
+        subtype = try container.decodeIfPresent(String.self, forKey: .subtype)
+        stopHookActive = try container.decodeIfPresent(Bool.self, forKey: .stopHookActive)
+        lastAssistantMessage = try container.decodeIfPresent(String.self, forKey: .lastAssistantMessage)
+        error = try container.decodeIfPresent(String.self, forKey: .error)
+        errorDetails = (try? container.decodeIfPresent(String.self, forKey: .errorDetails)) ?? nil
+        isInterrupt = try container.decodeIfPresent(Bool.self, forKey: .isInterrupt)
+        agentTranscriptPath = try container.decodeIfPresent(String.self, forKey: .agentTranscriptPath)
+        terminalApp = try container.decodeIfPresent(String.self, forKey: .terminalApp)
+        terminalSessionID = try container.decodeIfPresent(String.self, forKey: .terminalSessionID)
+        terminalTTY = try container.decodeIfPresent(String.self, forKey: .terminalTTY)
+        terminalTitle = try container.decodeIfPresent(String.self, forKey: .terminalTitle)
+        warpPaneUUID = try container.decodeIfPresent(String.self, forKey: .warpPaneUUID)
+        remote = try container.decodeIfPresent(Bool.self, forKey: .remote)
+        hookSource = try container.decodeIfPresent(String.self, forKey: .hookSource)
+    }
 }
 
 public struct ClaudePreToolUseDirective: Equatable, Codable, Sendable {
@@ -699,8 +742,34 @@ public extension ClaudeHookPayload {
             workingDirectory: cwd,
             terminalSessionID: terminalSessionID,
             terminalTTY: terminalTTY,
-            warpPaneUUID: warpPaneUUID
+            warpPaneUUID: warpPaneUUID,
+            appConversationID: resolvedAgentTool == .zcode ? sessionID : nil,
+            appDeepLinkURL: appDeepLinkURL
         )
+    }
+
+    /// Deep link to the exact conversation/window inside a desktop agent
+    /// app, following the same URL each app uses for its own navigation:
+    /// WorkBuddy's system notifications open `workbuddy://chat/<sessionId>`
+    /// (the renderer routes chat/<id> to the task conversation), and ZCode's
+    /// CLI opens the session's workspace window via
+    /// `zcode://workspace/open?path=<encoded cwd>` (ZCode has no
+    /// per-conversation deep link).
+    var appDeepLinkURL: String? {
+        switch resolvedAgentTool {
+        case .workbuddy:
+            return "workbuddy://chat/\(sessionID)"
+        case .zcode:
+            // Sessions often run in deep subdirectories (agent run dirs);
+            // jump to the project root so ZCode focuses the real workspace
+            // instead of prompting to trust an ephemeral inner folder.
+            let workspacePath = WorkspaceNameResolver.projectRootPath(for: cwd) ?? cwd
+            let unreserved = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+            let encodedPath = workspacePath.addingPercentEncoding(withAllowedCharacters: unreserved) ?? workspacePath
+            return "zcode://workspace/open?path=\(encodedPath)"
+        default:
+            return nil
+        }
     }
 
     var defaultClaudeMetadata: ClaudeSessionMetadata {
@@ -892,6 +961,10 @@ public extension ClaudeHookPayload {
             return .codebuddy
         case "kimi":
             return .kimiCLI
+        case "zcode":
+            return .zcode
+        case "workbuddy":
+            return .workbuddy
         default:
             return .claudeCode
         }
@@ -1195,6 +1268,26 @@ public extension ClaudeHookPayload {
             || environment["CONDUCTOR_WORKSPACE_ID"]?.isEmpty == false
             || environment["__CFBundleIdentifier"]?.lowercased() == "com.conductor.app" {
             return "Conductor"
+        }
+
+        // ZCode desktop app — agents run inside the app's own runtime, so the
+        // hook process is spawned TTY-less by the app and liveness/jump-back
+        // follow the desktop app instead of a terminal. ZCode builds the hook
+        // environment itself and stamps its runtime identifiers into it;
+        // __CFBundleIdentifier is only present when the launching shell
+        // happened to carry it, so the ZCODE_* variables are the
+        // authoritative signal. Checked before TERM_PROGRAM for the same
+        // env-leak rationale as Claude.app above.
+        if environment["ZCODE_SESSION_ID"]?.isEmpty == false
+            || environment["ZCODE_APP_VERSION"]?.isEmpty == false
+            || environment["__CFBundleIdentifier"]?.lowercased() == "dev.zcode.app" {
+            return "ZCode.app"
+        }
+
+        // WorkBuddy desktop app — same TTY-less desktop-runtime situation as
+        // ZCode: hook commands inherit the WorkBuddy bundle identifier.
+        if environment["__CFBundleIdentifier"]?.lowercased() == "com.tencent.workbuddy.mac" {
+            return "WorkBuddy.app"
         }
 
         // TERM_PROGRAM is the only authoritative terminal signal. Each

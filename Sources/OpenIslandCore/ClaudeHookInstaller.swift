@@ -43,24 +43,56 @@ public enum ClaudeHookInstallerError: Error, LocalizedError {
     }
 }
 
+/// A single managed hook event registration: the event name, an optional
+/// tool-name matcher, and an optional per-hook timeout in seconds.
+public struct ClaudeHookEventSpec: Equatable, Sendable {
+    public let name: String
+    public let matcher: String?
+    public let timeout: Int?
+
+    public init(name: String, matcher: String? = nil, timeout: Int? = nil) {
+        self.name = name
+        self.matcher = matcher
+        self.timeout = timeout
+    }
+}
+
 public enum ClaudeHookInstaller {
     public static let managedTimeout = 86_400
 
-    private static let eventSpecs: [(name: String, matcher: String?, timeout: Int?)] = [
-        ("UserPromptSubmit", nil, nil),
-        ("SessionStart", nil, nil),
-        ("SessionEnd", nil, nil),
-        ("Stop", nil, nil),
-        ("StopFailure", nil, nil),
-        ("SubagentStart", nil, nil),
-        ("SubagentStop", nil, nil),
-        ("Notification", "*", nil),
-        ("PreToolUse", "*", nil),
-        ("PermissionRequest", "*", managedTimeout),
-        ("PostToolUse", "*", nil),
-        ("PostToolUseFailure", "*", nil),
-        ("PermissionDenied", "*", nil),
-        ("PreCompact", nil, nil),
+    /// Full Claude-format event set installed for Claude Code and true
+    /// Claude Code forks (Qoder, Qwen Code, Factory, CodeBuddy, Kimi, …).
+    public static let standardEventSpecs: [ClaudeHookEventSpec] = [
+        ClaudeHookEventSpec(name: "UserPromptSubmit"),
+        ClaudeHookEventSpec(name: "SessionStart"),
+        ClaudeHookEventSpec(name: "SessionEnd"),
+        ClaudeHookEventSpec(name: "Stop"),
+        ClaudeHookEventSpec(name: "StopFailure"),
+        ClaudeHookEventSpec(name: "SubagentStart"),
+        ClaudeHookEventSpec(name: "SubagentStop"),
+        ClaudeHookEventSpec(name: "Notification", matcher: "*"),
+        ClaudeHookEventSpec(name: "PreToolUse", matcher: "*"),
+        ClaudeHookEventSpec(name: "PermissionRequest", matcher: "*", timeout: managedTimeout),
+        ClaudeHookEventSpec(name: "PostToolUse", matcher: "*"),
+        ClaudeHookEventSpec(name: "PostToolUseFailure", matcher: "*"),
+        ClaudeHookEventSpec(name: "PermissionDenied", matcher: "*"),
+        ClaudeHookEventSpec(name: "PreCompact"),
+    ]
+
+    /// WorkBuddy speaks the Claude hook format but only consumes this event
+    /// subset (the set the closed-source Vibe Island registered against
+    /// WorkBuddy); unknown event names are not registered to keep its config
+    /// free of events it never fires.
+    public static let workbuddyEventSpecs: [ClaudeHookEventSpec] = [
+        ClaudeHookEventSpec(name: "SessionStart"),
+        ClaudeHookEventSpec(name: "SessionEnd"),
+        ClaudeHookEventSpec(name: "UserPromptSubmit"),
+        ClaudeHookEventSpec(name: "PreToolUse", matcher: "*"),
+        ClaudeHookEventSpec(name: "PostToolUse", matcher: "*"),
+        ClaudeHookEventSpec(name: "Stop"),
+        ClaudeHookEventSpec(name: "SubagentStop"),
+        ClaudeHookEventSpec(name: "Notification", matcher: "*"),
+        ClaudeHookEventSpec(name: "PreCompact"),
     ]
 
     public static func hookCommand(for binaryPath: String, source: String = "claude") -> String {
@@ -69,7 +101,9 @@ public enum ClaudeHookInstaller {
 
     public static func installSettingsJSON(
         existingData: Data?,
-        hookCommand: String
+        hookCommand: String,
+        source: String = "claude",
+        eventSpecs: [ClaudeHookEventSpec] = standardEventSpecs
     ) throws -> ClaudeHookFileMutation {
         var rootObject = try loadRootObject(from: existingData)
         let existingHooksObject = rootObject["hooks"] as? [String: Any] ?? [:]
@@ -77,7 +111,7 @@ public enum ClaudeHookInstaller {
 
         for (eventName, value) in existingHooksObject {
             let existingGroups = value as? [Any] ?? []
-            let cleanedGroups = sanitizeForInstall(groups: existingGroups, replacingCommand: hookCommand)
+            let cleanedGroups = sanitizeForInstall(groups: existingGroups, replacingCommand: hookCommand, source: source)
 
             if !cleanedGroups.isEmpty {
                 hooksObject[eventName] = cleanedGroups
@@ -86,7 +120,7 @@ public enum ClaudeHookInstaller {
 
         for spec in eventSpecs {
             let existingGroups = hooksObject[spec.name] as? [Any] ?? []
-            let cleanedGroups = sanitizeForInstall(groups: existingGroups, replacingCommand: hookCommand)
+            let cleanedGroups = sanitizeForInstall(groups: existingGroups, replacingCommand: hookCommand, source: source)
             hooksObject[spec.name] = cleanedGroups + [managedGroup(matcher: spec.matcher, timeout: spec.timeout, hookCommand: hookCommand)]
         }
 
@@ -103,7 +137,9 @@ public enum ClaudeHookInstaller {
 
     public static func uninstallSettingsJSON(
         existingData: Data?,
-        managedCommand: String?
+        managedCommand: String?,
+        source: String = "claude",
+        eventSpecs: [ClaudeHookEventSpec] = standardEventSpecs
     ) throws -> ClaudeHookFileMutation {
         guard let existingData else {
             return ClaudeHookFileMutation(
@@ -120,9 +156,9 @@ public enum ClaudeHookInstaller {
 
         for spec in eventSpecs {
             let existingGroups = hooksObject[spec.name] as? [Any] ?? []
-            let cleanedGroups = sanitize(groups: existingGroups, managedCommand: managedCommand)
+            let cleanedGroups = sanitize(groups: existingGroups, managedCommand: managedCommand, source: source)
 
-            if cleanedGroups.count != existingGroups.count || containsManagedHook(in: existingGroups, managedCommand: managedCommand) {
+            if cleanedGroups.count != existingGroups.count || containsManagedHook(in: existingGroups, managedCommand: managedCommand, source: source) {
                 mutated = true
             }
 
@@ -165,7 +201,7 @@ public enum ClaudeHookInstaller {
         try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
     }
 
-    private static func sanitize(groups: [Any], managedCommand: String?) -> [[String: Any]] {
+    private static func sanitize(groups: [Any], managedCommand: String?, source: String) -> [[String: Any]] {
         groups.compactMap { item in
             guard var group = item as? [String: Any] else {
                 return nil
@@ -177,7 +213,7 @@ public enum ClaudeHookInstaller {
                     return nil
                 }
 
-                return isManagedHook(hook, managedCommand: managedCommand) ? nil : hook
+                return isManagedHook(hook, managedCommand: managedCommand, source: source) ? nil : hook
             }
 
             guard !filteredHooks.isEmpty else {
@@ -189,7 +225,7 @@ public enum ClaudeHookInstaller {
         }
     }
 
-    private static func sanitizeForInstall(groups: [Any], replacingCommand: String) -> [[String: Any]] {
+    private static func sanitizeForInstall(groups: [Any], replacingCommand: String, source: String) -> [[String: Any]] {
         groups.compactMap { item in
             guard var group = item as? [String: Any] else {
                 return nil
@@ -201,7 +237,7 @@ public enum ClaudeHookInstaller {
                     return nil
                 }
 
-                return isManagedHookForInstall(hook, replacingCommand: replacingCommand) ? nil : hook
+                return isManagedHookForInstall(hook, replacingCommand: replacingCommand, source: source) ? nil : hook
             }
 
             guard !filteredHooks.isEmpty else {
@@ -213,7 +249,7 @@ public enum ClaudeHookInstaller {
         }
     }
 
-    private static func containsManagedHook(in groups: [Any], managedCommand: String?) -> Bool {
+    private static func containsManagedHook(in groups: [Any], managedCommand: String?, source: String) -> Bool {
         groups.contains { item in
             guard let group = item as? [String: Any],
                   let hooks = group["hooks"] as? [Any] else {
@@ -225,7 +261,7 @@ public enum ClaudeHookInstaller {
                     return false
                 }
 
-                return isManagedHook(hook, managedCommand: managedCommand)
+                return isManagedHook(hook, managedCommand: managedCommand, source: source)
             }
         }
     }
@@ -275,7 +311,7 @@ public enum ClaudeHookInstaller {
         return group
     }
 
-    private static func isManagedHook(_ hook: [String: Any], managedCommand: String?) -> Bool {
+    private static func isManagedHook(_ hook: [String: Any], managedCommand: String?, source: String) -> Bool {
         guard let command = hook["command"] as? String else {
             return false
         }
@@ -284,11 +320,11 @@ public enum ClaudeHookInstaller {
             return true
         }
 
-        return isLegacyOpenIslandHookCommand(command)
+        return isLegacyOpenIslandHookCommand(command, source: source)
     }
 
-    private static func isManagedHookForInstall(_ hook: [String: Any], replacingCommand: String) -> Bool {
-        if isManagedHook(hook, managedCommand: replacingCommand) {
+    private static func isManagedHookForInstall(_ hook: [String: Any], replacingCommand: String, source: String) -> Bool {
+        if isManagedHook(hook, managedCommand: replacingCommand, source: source) {
             return true
         }
 
@@ -296,17 +332,25 @@ public enum ClaudeHookInstaller {
             return false
         }
 
-        return isLegacyOpenIslandHookCommand(command)
+        return isLegacyOpenIslandHookCommand(command, source: source)
     }
 
-    private static func isLegacyOpenIslandHookCommand(_ command: String) -> Bool {
+    /// Recognizes hook commands installed by earlier Open Island builds and by
+    /// the closed-source Vibe Island, so a fresh install replaces (and an
+    /// uninstall removes) their stale entries. For the default `claude` source
+    /// any bridge command mentioning "claude" is treated as legacy; for other
+    /// sources the match is anchored on the exact `--source <name>` token so
+    /// one fork's cleanup never swallows another fork's hooks.
+    private static func isLegacyOpenIslandHookCommand(_ command: String, source: String) -> Bool {
         let normalized = command.lowercased()
-        if (normalized.contains("openislandhooks") || normalized.contains("vibeislandhooks")) && normalized.contains("--source claude") {
+        let sourceToken = "--source \(source)"
+        if (normalized.contains("openislandhooks") || normalized.contains("vibeislandhooks")) && normalized.contains(sourceToken) {
             return true
         }
 
+        let bridgeNeedle = source == "claude" ? "claude" : sourceToken
         return (normalized.contains("open-island-bridge") || normalized.contains("vibe-island-bridge"))
-            && normalized.contains("claude")
+            && normalized.contains(bridgeNeedle)
     }
 
     private static func shellQuote(_ string: String) -> String {

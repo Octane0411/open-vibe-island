@@ -56,6 +56,8 @@ final class ProcessMonitoringCoordinator {
     private static let codexAppStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let claudeDesktopStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let conductorStalenessTimeout: TimeInterval = 600  // 10 minutes
+    private static let zcodeAppStalenessTimeout: TimeInterval = 600  // 10 minutes
+    private static let workbuddyAppStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let piHeartbeatTimeout: TimeInterval = 45
 
     static func monitoringPollInterval(
@@ -645,6 +647,45 @@ final class ProcessMonitoringCoordinator {
                 if session.isSessionEnded { continue }
                 let isStale = session.phase == .completed
                     && session.updatedAt.addingTimeInterval(Self.conductorStalenessTimeout) < Date.now
+                if !isStale {
+                    aliveIDs.insert(session.id)
+                }
+            }
+        }
+
+        // ZCode desktop app sessions: ZCode runs its agents inside the app's
+        // own runtime, so ps/lsof discovery never sees the agent process.
+        // Keep them alive while ZCode is running; completed sessions expire
+        // after a staleness window (mirrors the Conductor handling above).
+        // Sessions are identified by the "ZCode.app" terminalApp tag stamped
+        // by the hook from the inherited bundle identifier.
+        let isZcodeRunning = Self.isZcodeAppRunning()
+        if isZcodeRunning {
+            for session in sessions
+            where session.tool == .zcode
+                && !session.isDemoSession
+                && session.jumpTarget?.terminalApp == "ZCode.app" {
+                if session.isSessionEnded { continue }
+                let isStale = session.phase == .completed
+                    && session.updatedAt.addingTimeInterval(Self.zcodeAppStalenessTimeout) < Date.now
+                if !isStale {
+                    aliveIDs.insert(session.id)
+                }
+            }
+        }
+
+        // WorkBuddy desktop app sessions: same TTY-less desktop-runtime
+        // situation as ZCode. Sessions are identified by the "WorkBuddy.app"
+        // terminalApp tag stamped by the hook.
+        let isWorkbuddyRunning = Self.isWorkbuddyAppRunning()
+        if isWorkbuddyRunning {
+            for session in sessions
+            where session.tool == .workbuddy
+                && !session.isDemoSession
+                && session.jumpTarget?.terminalApp == "WorkBuddy.app" {
+                if session.isSessionEnded { continue }
+                let isStale = session.phase == .completed
+                    && session.updatedAt.addingTimeInterval(Self.workbuddyAppStalenessTimeout) < Date.now
                 if !isStale {
                     aliveIDs.insert(session.id)
                 }
@@ -1439,6 +1480,22 @@ final class ProcessMonitoringCoordinator {
         }
     }
 
+    /// Check whether the ZCode desktop app is running, for the same reason as
+    /// ``isCodexDesktopAppRunning()``.
+    static func isZcodeAppRunning() -> Bool {
+        NSWorkspace.shared.runningApplications.contains { app in
+            app.bundleIdentifier == "dev.zcode.app"
+        }
+    }
+
+    /// Check whether the WorkBuddy desktop app is running, for the same
+    /// reason as ``isCodexDesktopAppRunning()``.
+    static func isWorkbuddyAppRunning() -> Bool {
+        NSWorkspace.shared.runningApplications.contains { app in
+            app.bundleIdentifier == "com.tencent.workbuddy.mac"
+        }
+    }
+
     private func processIdentityKey(_ process: ActiveProcessSnapshot) -> String {
         [
             process.sessionID,
@@ -1595,6 +1652,10 @@ final class ProcessMonitoringCoordinator {
             return "Pi \(session.id.prefix(8))"
         case .ohMyPi:
             return "Oh My Pi \(session.id.prefix(8))"
+        case .zcode:
+            return "ZCode \(session.id.prefix(8))"
+        case .workbuddy:
+            return "WorkBuddy \(session.id.prefix(8))"
         }
     }
 }

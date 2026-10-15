@@ -464,6 +464,39 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func jumpToLegacyZcodeSessionUsesAgentSessionIDAsConversationLocator() async throws {
+        let expectedMessage = "Focused the ZCode conversation."
+        let model = AppModel { target in
+            #expect(target.appConversationID == "sess_legacy_zcode")
+            return expectedMessage
+        }
+        let session = AgentSession(
+            id: "sess_legacy_zcode",
+            title: "ZCode · open-island",
+            tool: .zcode,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Running",
+            updatedAt: Date(timeIntervalSince1970: 2_000),
+            jumpTarget: JumpTarget(
+                terminalApp: "ZCode.app",
+                workspaceName: "open-island",
+                paneTitle: "Claude sess_leg",
+                workingDirectory: "/tmp/open-island"
+            )
+        )
+
+        model.jumpToSession(session)
+        for _ in 0..<20 {
+            if model.lastActionMessage == expectedMessage { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+
+        #expect(model.lastActionMessage == expectedMessage)
+    }
+
+    @Test
     func rolloutEventsDoNotPromoteRecoveredSessionsToAttachedDuringColdStart() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()

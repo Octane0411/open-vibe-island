@@ -422,6 +422,8 @@ struct SetupSettingsPane: View {
     @State private var confirmingUninstallQwenCode = false
     @State private var confirmingUninstallFactory = false
     @State private var confirmingUninstallCodebuddy = false
+    @State private var confirmingUninstallZcode = false
+    @State private var confirmingUninstallWorkbuddy = false
     @State private var confirmingUninstallCursor = false
     @State private var confirmingUninstallGemini = false
     @State private var confirmingUninstallKimi = false
@@ -559,6 +561,40 @@ struct SetupSettingsPane: View {
                     Button(lang.t("settings.general.cancel"), role: .cancel) {}
                 } message: {
                     Text("This will remove Open Island hooks from ~/.codebuddy/settings.json.")
+                }
+
+                hookRow(
+                    name: "ZCode",
+                    installed: model.zcodeHooksInstalled,
+                    busy: model.isZcodeHookSetupBusy,
+                    configLocationURL: model.zcodeHookStatus?.settingsURL,
+                    installAction: { model.installZcodeHooks() },
+                    uninstallAction: { confirmingUninstallZcode = true }
+                )
+                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallZcode) {
+                    Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
+                        model.uninstallZcodeHooks()
+                    }
+                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
+                } message: {
+                    Text("This will remove Open Island hooks from ~/.zcode/cli/config.json.")
+                }
+
+                hookRow(
+                    name: "WorkBuddy",
+                    installed: model.workbuddyHooksInstalled,
+                    busy: model.isWorkbuddyHookSetupBusy,
+                    configLocationURL: model.workbuddyHookStatus?.settingsURL,
+                    installAction: { model.installWorkbuddyHooks() },
+                    uninstallAction: { confirmingUninstallWorkbuddy = true }
+                )
+                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallWorkbuddy) {
+                    Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
+                        model.uninstallWorkbuddyHooks()
+                    }
+                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
+                } message: {
+                    Text("This will remove Open Island hooks from ~/.workbuddy/settings.json.")
                 }
 
                 hookRow(
@@ -740,6 +776,8 @@ struct SetupSettingsPane: View {
                     if !model.qwenCodeHooksInstalled { model.installQwenCodeHooks() }
                     if !model.factoryHooksInstalled { model.installFactoryHooks() }
                     if !model.codebuddyHooksInstalled { model.installCodebuddyHooks() }
+                    if !model.zcodeHooksInstalled { model.installZcodeHooks() }
+                    if !model.workbuddyHooksInstalled { model.installWorkbuddyHooks() }
                     if !model.cursorHooksInstalled { model.installCursorHooks() }
                     if !model.geminiHooksInstalled { model.installGeminiHooks() }
                     if !model.kimiHooksInstalled { model.installKimiHooks() }
@@ -806,7 +844,7 @@ struct SetupSettingsPane: View {
 
     private var allReady: Bool {
         model.claudeHooksInstalled && model.codexHooksInstalled && model.openCodePluginInstalled
-            && model.qoderHooksInstalled && model.qwenCodeHooksInstalled && model.factoryHooksInstalled && model.codebuddyHooksInstalled
+            && model.qoderHooksInstalled && model.qwenCodeHooksInstalled && model.factoryHooksInstalled && model.codebuddyHooksInstalled && model.zcodeHooksInstalled && model.workbuddyHooksInstalled
             && model.cursorHooksInstalled && model.geminiHooksInstalled && model.kimiHooksInstalled
             && model.grokHooksInstalled
             && model.piExtensionInstalled && model.ohMyPiExtensionInstalled && model.claudeUsageInstalled
