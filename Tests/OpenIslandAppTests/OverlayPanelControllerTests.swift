@@ -3,6 +3,64 @@ import Testing
 @testable import OpenIslandApp
 
 struct OverlayPanelControllerTests {
+    private let screenFrame = NSRect(x: 0, y: 0, width: 2560, height: 1440)
+    /// Menu bar reserves 24pt at the top, a visible Dock reserves 70pt at the bottom.
+    private let visibleFrame = NSRect(x: 0, y: 70, width: 2560, height: 1346)
+    private let panelSize = NSSize(width: 556, height: 400)
+
+    @Test
+    func topEdgePanelHugsTheScreenTop() {
+        let origin = OverlayEdgeGeometry.panelOrigin(
+            edge: .top, screenFrame: screenFrame, visibleFrame: visibleFrame, panelSize: panelSize
+        )
+        #expect(origin == NSPoint(x: 1002, y: 1040))
+
+        let anchor = OverlayEdgeGeometry.anchorRect(
+            edge: .top, screenFrame: screenFrame, visibleFrame: visibleFrame, size: NSSize(width: 190, height: 38)
+        )
+        #expect(anchor == NSRect(x: 1185, y: 1402, width: 190, height: 38))
+    }
+
+    @Test
+    func bottomEdgePanelRestsOnTheDock() {
+        let origin = OverlayEdgeGeometry.panelOrigin(
+            edge: .bottom, screenFrame: screenFrame, visibleFrame: visibleFrame, panelSize: panelSize
+        )
+        #expect(origin == NSPoint(x: 1002, y: 70))
+
+        let anchor = OverlayEdgeGeometry.anchorRect(
+            edge: .bottom, screenFrame: screenFrame, visibleFrame: visibleFrame, size: NSSize(width: 190, height: 38)
+        )
+        #expect(anchor == NSRect(x: 1185, y: 70, width: 190, height: 38))
+    }
+
+    @Test
+    func bottomEdgeWithHiddenDockReachesTheScreenBottom() {
+        let origin = OverlayEdgeGeometry.panelOrigin(
+            edge: .bottom, screenFrame: screenFrame, visibleFrame: screenFrame, panelSize: panelSize
+        )
+        #expect(origin.y == 0)
+    }
+
+    @Test
+    func contentRectKeepsTheShadowMarginAwayFromTheScreenEdge() {
+        let bounds = NSRect(x: 100, y: 200, width: 556, height: 400)
+
+        let top = OverlayEdgeGeometry.contentRect(edge: .top, bounds: bounds, horizontalInset: 18, shadowInset: 22)
+        #expect(top == NSRect(x: 118, y: 222, width: 520, height: 378))
+
+        let bottom = OverlayEdgeGeometry.contentRect(edge: .bottom, bounds: bounds, horizontalInset: 18, shadowInset: 22)
+        #expect(bottom == NSRect(x: 118, y: 200, width: 520, height: 378))
+    }
+
+    @Test
+    func overlayEdgeRestoresFromDefaultsAndFallsBackToTop() {
+        #expect(OverlayEdge.restored(from: "bottom") == .bottom)
+        #expect(OverlayEdge.restored(from: "top") == .top)
+        #expect(OverlayEdge.restored(from: "sideways") == .top)
+        #expect(OverlayEdge.restored(from: nil) == .top)
+    }
+
     @Test
     func legacyDisplayPreferenceResetsToAutomatic() {
         #expect(
