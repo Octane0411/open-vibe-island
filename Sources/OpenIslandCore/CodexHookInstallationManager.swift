@@ -77,7 +77,10 @@ public final class CodexHookInstallationManager: @unchecked Sendable {
     }
 
     @discardableResult
-    public func install(hooksBinaryURL: URL) throws -> CodexHookInstallationStatus {
+    public func install(
+        hooksBinaryURL: URL,
+        includePermissionRequest: Bool = false
+    ) throws -> CodexHookInstallationStatus {
         try fileManager.createDirectory(at: codexDirectory, withIntermediateDirectories: true)
 
         let configURL = codexDirectory.appendingPathComponent("config.toml")
@@ -98,7 +101,11 @@ public final class CodexHookInstallationManager: @unchecked Sendable {
             in: existingConfig,
             preferredKey: featureKeyProvider()
         )
-        let hooksMutation = try CodexHookInstaller.installHooksJSON(existingData: existingHooks, hookCommand: command)
+        let hooksMutation = try CodexHookInstaller.installHooksJSON(
+            existingData: existingHooks,
+            hookCommand: command,
+            includePermissionRequest: includePermissionRequest
+        )
 
         if featureMutation.changed, fileManager.fileExists(atPath: configURL.path) {
             try backupFile(at: configURL)

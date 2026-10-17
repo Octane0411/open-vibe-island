@@ -53,6 +53,7 @@ final class HookInstallationCoordinator {
     var isPiSetupBusy = false
     var isOhMyPiSetupBusy = false
     var isClaudeUsageSetupBusy = false
+    var brokerCodexPermissionRequests = false
 
     @ObservationIgnored
     var onStatusMessage: ((String) -> Void)?
@@ -528,7 +529,8 @@ final class HookInstallationCoordinator {
 
         if codexHooksInstalled {
             let featureText = status.featureFlagEnabled ? "feature on" : "feature off"
-            return "\(featureText) · managed hooks present"
+            let approvalText = brokerCodexPermissionRequests ? "Open Island approvals" : "native approvals"
+            return "\(featureText) · managed hooks present · \(approvalText)"
         }
 
         if hooksBinaryURL == nil {
@@ -1097,7 +1099,10 @@ final class HookInstallationCoordinator {
         }
 
         updateCodexHooks(userMessage: "Installing Codex hooks.", intent: .installed) { manager in
-            try manager.install(hooksBinaryURL: hooksBinaryURL)
+            try manager.install(
+                hooksBinaryURL: hooksBinaryURL,
+                includePermissionRequest: self.brokerCodexPermissionRequests
+            )
         }
     }
 
