@@ -22,6 +22,7 @@ import sys
 # ---------------------------------------------------------------------------
 
 def socket_path():
+    """Return the Unix socket path used to reach the local Open Island bridge."""
     path = os.environ.get("OPEN_ISLAND_SOCKET_PATH") or \
            os.environ.get("VIBE_ISLAND_SOCKET_PATH")
     if path:
@@ -33,6 +34,7 @@ def socket_path():
 # ---------------------------------------------------------------------------
 
 def infer_terminal_app(env):
+    """Infer the terminal app from environment variables available on the remote."""
     if env.get("ITERM_SESSION_ID") or env.get("LC_TERMINAL") == "iTerm2":
         return "iTerm"
     if env.get("CMUX_WORKSPACE_ID") or env.get("CMUX_SOCKET_PATH"):
@@ -54,6 +56,7 @@ def infer_terminal_app(env):
 
 
 def current_tty():
+    """Best-effort TTY detection for Linux and macOS remote hook processes."""
     # Try /proc (Linux) first — no subprocess needed.
     try:
         tty = os.ttyname(0)
@@ -122,7 +125,12 @@ def enrich_payload(payload, env):
 # Bridge socket communication
 # ---------------------------------------------------------------------------
 
-def send_command(envelope_json, timeout):
+def env_flag(env, name):
+    """Return whether an environment flag is enabled."""
+    return (env.get(name) or "").lower() in ("1", "true", "yes", "on")
+
+
+def send_command(envelope_json, timeout, wait_response=True):
     """Connect to bridge socket, send JSON line, return parsed response."""
     path = socket_path()
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -130,6 +138,8 @@ def send_command(envelope_json, timeout):
     try:
         sock.connect(path)
         sock.sendall(envelope_json.encode("utf-8") + b"\n")
+        if not wait_response:
+            return None
 
         buf = b""
         while True:
@@ -205,6 +215,16 @@ def encode_codex_stdout(response):
         output = {"decision": "block", "reason": directive.get("reason", "")}
         return json.dumps(output, sort_keys=True) + "\n"
 
+    if dtype == "permissionRequest":
+        output = {
+            "continue": True,
+            "hookSpecificOutput": {
+                "hookEventName": "PermissionRequest",
+                "decision": directive.get("decision", {}),
+            },
+        }
+        return json.dumps(output, sort_keys=True) + "\n"
+
     return None
 
 
@@ -234,6 +254,7 @@ def encode_opencode_stdout(response):
 # ---------------------------------------------------------------------------
 
 def parse_source(args):
+    """Parse the hook source from command-line arguments."""
     i = 0
     while i < len(args):
         if args[i] == "--source" and i + 1 < len(args):
@@ -243,6 +264,7 @@ def parse_source(args):
 
 
 def main():
+    """Read a hook payload from stdin, forward it to the bridge, and emit a directive."""
     try:
         raw = sys.stdin.buffer.read()
         if not raw:
@@ -257,6 +279,9 @@ def main():
 
         # Mark as remote so the UI can distinguish SSH sessions.
         payload["remote"] = True
+        notify_only = env_flag(env, "OPEN_ISLAND_NOTIFY_ONLY")
+        if notify_only:
+            payload["open_island_notify_only"] = True
 
         # Build bridge envelope
         if source == "claude":
@@ -269,12 +294,15 @@ def main():
             encoder = encode_opencode_stdout
         else:
             command = {"type": "processCodexHook", "codexHook": payload}
-            timeout = 45
+            timeout = 3600 if payload.get("hook_event_name") == "PermissionRequest" else 45
             encoder = encode_codex_stdout
 
         envelope = json.dumps({"type": "command", "command": command})
 
-        response = send_command(envelope, timeout)
+        if notify_only:
+            timeout = int(env.get("OPEN_ISLAND_NOTIFY_TIMEOUT", "2"))
+
+        response = send_command(envelope, timeout, wait_response=not notify_only)
         if response is None:
             return
 
