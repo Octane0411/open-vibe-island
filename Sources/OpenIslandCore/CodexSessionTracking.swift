@@ -268,8 +268,7 @@ public enum CodexAppSessionReconciler {
     }
 
     /// Emits completion updates for Codex.app sessions stuck in `.running`
-    /// when their rollout transcript is missing — a common outcome when Codex
-    /// blocks on quota before writing `turn_complete`.
+    /// when their rollout transcript is missing or has stopped changing.
     public static func stalledRunningEvents(
         for sessions: [AgentSession],
         fileManager: FileManager = .default,
@@ -326,7 +325,24 @@ public enum CodexAppSessionReconciler {
             )
         }
 
-        return nil
+        // A desktop app process can host many old threads. Its liveness alone
+        // does not mean every transcript is still running a turn.
+        guard let modifiedAt = try? fileManager.attributesOfItem(atPath: transcriptPath)[.modificationDate] as? Date else {
+            return nil
+        }
+        // The watcher can synthesize a fresh session.updatedAt while reading
+        // an old metadata-only rollout, so use the file's write time here.
+        guard now.timeIntervalSince(modifiedAt) > 30 * 60 else {
+            return nil
+        }
+        return .activityUpdated(
+            SessionActivityUpdated(
+                sessionID: session.id,
+                summary: "Turn stalled.",
+                phase: .completed,
+                timestamp: modifiedAt
+            )
+        )
     }
 
     private static func isArchivedTranscriptPath(_ transcriptPath: String?) -> Bool {
@@ -650,7 +666,7 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             origin: .live,
             attachmentState: .stale,
             summary: summary,
-            phase: snapshot.phase,
+            phase: snapshot.hasTurnActivity ? snapshot.phase : .completed,
             updatedAt: updatedAt,
             codexMetadata: metadata
         )
@@ -750,6 +766,11 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
             currentCommandPreview: currentCommandPreview
         )
     }
+
+    /// A file with only session_meta describes an opened thread, not a turn.
+    public var hasTurnActivity: Bool {
+        summary != nil || updatedAt != nil || !metadata.isEmpty || isCompleted
+    }
 }
 
 public enum CodexRolloutReducer {
@@ -783,6 +804,7 @@ public enum CodexRolloutReducer {
         sessionID: String,
         transcriptPath: String
     ) -> [AgentEvent] {
+        guard newSnapshot.hasTurnActivity else { return [] }
         var events: [AgentEvent] = []
         let timestamp = newSnapshot.updatedAt ?? .now
         let oldMetadata = oldSnapshot.map {
