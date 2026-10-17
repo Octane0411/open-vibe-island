@@ -30,6 +30,10 @@
 		IC000003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = IC000004 /* Assets.xcassets */; };
 		PV000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = PV000002 /* PrivacyInfo.xcprivacy */; };
 		PV000003 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = PV000004 /* PrivacyInfo.xcprivacy */; };
+		AE000101 /* WatchSecureTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000101; };
+		AE000102 /* WatchHTTPStream.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000102; };
+		AE000103 /* WatchHTTPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000103; };
+		AE000104 /* WatchCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000104; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -81,6 +85,10 @@
 		IC000004 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		PV000002 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		PV000004 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		AF000101 /* WatchSecureTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/OpenIslandTransport/WatchSecureTransport.swift"; sourceTree = SOURCE_ROOT; };
+		AF000102 /* WatchHTTPStream.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/OpenIslandTransport/WatchHTTPStream.swift"; sourceTree = SOURCE_ROOT; };
+		AF000103 /* WatchHTTPClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Sources/OpenIslandTransport/WatchHTTPClient.swift"; sourceTree = SOURCE_ROOT; };
+		AF000104 /* WatchCredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OpenIslandMobile/Network/WatchCredentialStore.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -132,6 +140,10 @@
 			children = (
 				AB000004 /* BonjourDiscovery.swift */,
 				AB000005 /* SSEClient.swift */,
+				AF000104 /* WatchCredentialStore.swift */,
+				AF000103 /* WatchHTTPClient.swift */,
+				AF000102 /* WatchHTTPStream.swift */,
+				AF000101 /* WatchSecureTransport.swift */,
 				AB000006 /* ConnectionManager.swift */,
 				AB000013 /* WatchConnectivityManager.swift */,
 			);
@@ -303,6 +315,10 @@
 				AA000003 /* WatchEvent.swift in Sources */,
 				AA000004 /* BonjourDiscovery.swift in Sources */,
 				AA000005 /* SSEClient.swift in Sources */,
+				AE000104 /* WatchCredentialStore.swift in Sources */,
+				AE000103 /* WatchHTTPClient.swift in Sources */,
+				AE000102 /* WatchHTTPStream.swift in Sources */,
+				AE000101 /* WatchSecureTransport.swift in Sources */,
 				AA000006 /* ConnectionManager.swift in Sources */,
 				AA000007 /* PairingView.swift in Sources */,
 				AA000008 /* NotificationManager.swift in Sources */,

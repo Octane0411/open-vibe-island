@@ -73,12 +73,10 @@ final class ConnectionManager: ObservableObject {
     let discovery = BonjourDiscovery()
     var notificationManager: NotificationManager?
     private var sseClient: SSEClient?
-    private var resolvedURL: URL?
+    private var connectionEndpoint: NWEndpoint?
     private var resolutionObservation: Task<Void, Never>?
-    private var savedToken: String? {
-        get { UserDefaults.standard.string(forKey: "openisland.token") }
-        set { UserDefaults.standard.set(newValue, forKey: "openisland.token") }
-    }
+    private var credentials = WatchCredentialStore.load()
+    private var savedToken: String? { credentials?.token }
     private var savedMacName: String? {
         get { UserDefaults.standard.string(forKey: "openisland.macName") }
         set { UserDefaults.standard.set(newValue, forKey: "openisland.macName") }
@@ -107,6 +105,7 @@ final class ConnectionManager: ObservableObject {
     // MARK: - Lifecycle
 
     init() {
+        UserDefaults.standard.removeObject(forKey: "openisland.token")
         let defaults = UserDefaults.standard
         self.notifyPermissions = defaults.object(forKey: "openisland.notify.permissions") as? Bool ?? true
         self.notifyQuestions = defaults.object(forKey: "openisland.notify.questions") as? Bool ?? true
@@ -234,10 +233,11 @@ final class ConnectionManager: ObservableObject {
         reconnectTask = nil
         discoveryObservation?.cancel()
         discoveryObservation = nil
-        savedToken = nil
+        credentials = nil
+        WatchCredentialStore.remove()
         savedMacName = nil
         pairedAt = nil
-        resolvedURL = nil
+        connectionEndpoint = nil
         connectedMacName = nil
         connectionError = nil
         recentEvents.removeAll()
@@ -247,114 +247,82 @@ final class ConnectionManager: ObservableObject {
     // MARK: - Pairing
 
     func pair(mac: DiscoveredMac, code: String) async throws {
-        let url = try await resolveEndpoint(mac.endpoint)
-        self.resolvedURL = url
-
-        var request = URLRequest(url: url.appendingPathComponent("pair"))
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let body = WatchPairRequest(code: code)
-        request.httpBody = try JSONEncoder().encode(body)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw PairingError.invalidResponse
-        }
-
-        switch httpResponse.statusCode {
-        case 200:
-            let pairResponse = try JSONDecoder().decode(WatchPairResponse.self, from: data)
-            savedToken = pairResponse.token
-            savedMacName = mac.name
-            pairedAt = Date()
-            connectedMacName = mac.name
-            state = .paired
-            showPairing = false
-            Self.logger.info("Paired successfully with \(mac.name)")
-            connectSSE()
-
-        case 403:
-            throw PairingError.invalidCode
-
-        case 410:
-            throw PairingError.codeExpired
-
-        default:
-            throw PairingError.serverError(httpResponse.statusCode)
-        }
+        let pairing = try WatchPairingCode(code)
+        try await completePairing(endpoint: mac.endpoint, name: mac.name, pairing: pairing)
     }
 
-    // MARK: - Manual Pairing (fallback when Bonjour unavailable)
-
     func pairManual(host: String, port: UInt16, code: String) async throws {
-        guard let url = URL(string: "http://\(host):\(port)") else {
-            throw PairingError.resolutionFailed
+        let pairing = try WatchPairingCode(code)
+        guard port > 0, let endpointPort = NWEndpoint.Port(rawValue: port) else { throw PairingError.resolutionFailed }
+        let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(host), port: endpointPort)
+        try await completePairing(endpoint: endpoint, name: host, pairing: pairing)
+    }
+
+    private func completePairing(endpoint: NWEndpoint, name: String, pairing: WatchPairingCode) async throws {
+        let body = try JSONEncoder().encode(WatchPairRequest(code: pairing.secret))
+        let response = try await WatchHTTPClient.request(endpoint: endpoint, key: pairing.key, path: "pair", method: "POST", body: body)
+        guard response.status == 200 else {
+            if let failure = try? JSONDecoder().decode(WatchPairingFailureResponse.self, from: response.body) {
+                throw PairingError.rejected(failure.error)
+            }
+            throw PairingError.serverError(response.status)
         }
-        self.resolvedURL = url
-
-        var request = URLRequest(url: url.appendingPathComponent("pair"))
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let body = WatchPairRequest(code: code)
-        request.httpBody = try JSONEncoder().encode(body)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw PairingError.invalidResponse
+        let reply = try JSONDecoder().decode(WatchPairResponse.self, from: response.body)
+        let credentials = WatchCredentials(token: reply.token, key: pairing.key)
+        do {
+            try WatchCredentialStore.save(credentials)
+        } catch {
+            throw PairingError.credentialStorageFailed
         }
-
-        switch httpResponse.statusCode {
-        case 200:
-            let pairResponse = try JSONDecoder().decode(WatchPairResponse.self, from: data)
-            savedToken = pairResponse.token
-            savedMacName = host
-            pairedAt = Date()
-            connectedMacName = host
-            state = .paired
-            showPairing = false
-            Self.logger.info("Paired manually with \(host):\(port)")
-            connectSSE()
-
-        case 403:
-            throw PairingError.invalidCode
-
-        case 410:
-            throw PairingError.codeExpired
-
-        default:
-            throw PairingError.serverError(httpResponse.statusCode)
-        }
+        self.credentials = credentials
+        connectionEndpoint = endpoint
+        savedMacName = name
+        pairedAt = Date()
+        connectedMacName = name
+        state = .paired
+        showPairing = false
+        connectSSE()
     }
 
     // MARK: - SSE Connection
 
     private func connectSSE() {
-        guard let url = resolvedURL, let token = savedToken else {
-            Self.logger.warning("Cannot connect SSE: missing URL or token")
+        guard let endpoint = connectionEndpoint, let credentials else {
+            Self.logger.warning("Cannot connect SSE: missing endpoint or token")
             return
         }
 
-        let client = SSEClient(baseURL: url, token: token)
-        client.onEvent = { [weak self] eventType, data in
-            self?.handleSSEEvent(eventType: eventType, data: data)
+        sseClient?.disconnect()
+        let client = SSEClient(endpoint: endpoint, credentials: credentials)
+        client.onEvent = { [weak self, weak client] eventType, data in
+            guard let self, self.sseClient === client else { return }
+            self.handleSSEEvent(eventType: eventType, data: data)
         }
-        client.onDisconnect = { [weak self] in
-            self?.handleSSEDisconnect()
+        observeSSELifecycle(client)
+        self.sseClient = client
+        state = .paired
+        client.connect()
+    }
+
+    private func observeSSELifecycle(_ client: SSEClient) {
+        client.onConnected = { [weak self, weak client] in
+            guard let self, self.sseClient === client else { return }
+            self.reconnectTask?.cancel()
+            self.reconnectTask = nil
+            self.state = .connected
+            self.connectionError = nil
         }
-        client.onUnauthorized = { [weak self] in
+        client.onDisconnect = { [weak self, weak client] in
+            guard let self, self.sseClient === client else { return }
+            self.sseClient = nil
+            self.handleSSEDisconnect()
+        }
+        client.onUnauthorized = { [weak self, weak client] in
+            guard let self, self.sseClient === client else { return }
             Self.logger.warning("SSE 401 — token expired")
-            self?.handleTokenExpired()
+            self.handleTokenExpired()
         }
 
-        self.sseClient = client
-        client.connect()
-        state = .connected
-        connectionError = nil
-        Self.logger.info("SSE connected")
     }
 
     private func handleSSEEvent(eventType: String, data: Data) {
@@ -488,92 +456,30 @@ final class ConnectionManager: ObservableObject {
 
                 if let mac = macs.first(where: { $0.name == macName }) {
                     Self.logger.info("Auto-reconnecting to \(macName)")
-                    do {
-                        let url = try await self.resolveEndpoint(mac.endpoint)
-                        self.resolvedURL = url
-                        self.connectedMacName = macName
-                        self.state = .paired
-                        self.connectSSE()
-                        return
-                    } catch {
-                        Self.logger.warning("Failed to resolve endpoint: \(error.localizedDescription)")
-                    }
+                    self.connectionEndpoint = mac.endpoint
+                    self.connectedMacName = macName
+                    self.state = .paired
+                    self.connectSSE()
+                    return
                 }
             }
-        }
-    }
-
-    // MARK: - Endpoint Resolution
-
-    /// Resolves a Bonjour NWEndpoint to an HTTP URL by briefly connecting to extract the IP and port.
-    private func resolveEndpoint(_ endpoint: NWEndpoint) async throws -> URL {
-        try await withCheckedThrowingContinuation { continuation in
-            var resumed = false
-            let connection = NWConnection(to: endpoint, using: .tcp)
-
-            connection.stateUpdateHandler = { state in
-                guard !resumed else { return }
-
-                switch state {
-                case .ready:
-                    defer { connection.cancel() }
-                    guard let remote = connection.currentPath?.remoteEndpoint,
-                          case let .hostPort(host, port) = remote else {
-                        resumed = true
-                        continuation.resume(throwing: PairingError.resolutionFailed)
-                        return
-                    }
-
-                    let hostString: String
-                    switch host {
-                    case let .ipv4(addr): hostString = "\(addr)"
-                    case let .ipv6(addr): hostString = "[\(addr)]"
-                    case let .name(name, _): hostString = name
-                    @unknown default: hostString = "\(host)"
-                    }
-
-                    guard let url = URL(string: "http://\(hostString):\(port.rawValue)") else {
-                        resumed = true
-                        continuation.resume(throwing: PairingError.resolutionFailed)
-                        return
-                    }
-                    resumed = true
-                    continuation.resume(returning: url)
-
-                case let .failed(error):
-                    connection.cancel()
-                    resumed = true
-                    continuation.resume(throwing: error)
-
-                default:
-                    break
-                }
-            }
-            connection.start(queue: .global())
         }
     }
 
     // MARK: - Resolution (post action back to Mac)
 
     func postResolution(requestID: String, action: String) async throws {
-        guard let url = resolvedURL, let token = savedToken else {
+        guard let endpoint = connectionEndpoint, let credentials else {
             throw PairingError.notConnected
         }
 
-        var request = URLRequest(url: url.appendingPathComponent("resolution"))
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let body = try JSONEncoder().encode(WatchResolutionRequest(requestID: requestID, action: action))
+        let response = try await WatchHTTPClient.request(
+            endpoint: endpoint, key: credentials.key, path: "resolution", method: "POST",
+            token: credentials.token, body: body
+        )
 
-        let body = WatchResolutionRequest(requestID: requestID, action: action)
-        request.httpBody = try JSONEncoder().encode(body)
-
-        let (_, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw PairingError.invalidResponse
-        }
-
-        switch httpResponse.statusCode {
+        switch response.status {
         case 200:
             Self.logger.info("Resolution posted: \(requestID) → \(action)")
         case 401:
@@ -582,7 +488,7 @@ final class ConnectionManager: ObservableObject {
             handleTokenExpired()
             throw PairingError.tokenExpired
         default:
-            throw PairingError.serverError(httpResponse.statusCode)
+            throw PairingError.serverError(response.status)
         }
     }
 
@@ -592,7 +498,8 @@ final class ConnectionManager: ObservableObject {
         sseClient = nil
         reconnectTask?.cancel()
         reconnectTask = nil
-        savedToken = nil
+        credentials = nil
+        WatchCredentialStore.remove()
         state = .disconnected
         connectionError = "配对已过期，请重新配对"
     }
@@ -608,6 +515,8 @@ enum PairingError: LocalizedError {
     case resolutionFailed
     case notConnected
     case tokenExpired
+    case rejected(WatchPairingFailure)
+    case credentialStorageFailed
 
     var errorDescription: String? {
         switch self {
@@ -618,6 +527,15 @@ enum PairingError: LocalizedError {
         case .resolutionFailed: return "无法解析 Mac 地址"
         case .notConnected: return "未连接到 Mac"
         case .tokenExpired: return "配对已过期，请重新配对"
+        case .credentialStorageFailed: return "配对密钥未能保存，刚才的密钥已使用。请在 Mac 上生成新的配对密钥后重试。"
+        case let .rejected(failure):
+            switch failure {
+            case .invalidCode: return "配对密钥错误，请检查是否复制完整"
+            case .pairingClosed: return "配对未开启，请在 Mac 上点击“配对新设备”"
+            case .codeExpired: return "配对密钥已过期，请在 Mac 上生成新的密钥"
+            case .attemptsExhausted: return "配对尝试次数已用尽，请在 Mac 上生成新的密钥"
+            case .codeUsed: return "配对密钥已使用，请在 Mac 上生成新的密钥"
+            }
         }
     }
 }
