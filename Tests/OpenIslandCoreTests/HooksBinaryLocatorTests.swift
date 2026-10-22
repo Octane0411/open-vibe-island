@@ -119,7 +119,7 @@ struct HooksBinaryLocatorTests {
 
         try makeExecutable(at: sourceURL, contents: "helper")
         try makeExecutable(at: installedURL, contents: "helper")
-        let fileNumberBefore = try fileNumber(at: installedURL)
+        let fileNumberBefore = try #require(try fileNumber(at: installedURL))
 
         let updated = try ManagedHooksBinary.updateIfNeeded(from: sourceURL, fileManager: fileManager)
 
