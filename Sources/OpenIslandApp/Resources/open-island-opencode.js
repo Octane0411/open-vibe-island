@@ -174,10 +174,33 @@ export default async ({ client, serverUrl }) => {
   const msgRoles = new Map();
   const sessionCwd = new Map();
   const sessions = new Map();
+  // Child sessions (task-tool subagents, plugin-injected sessions) carry
+  // info.parentID. Map each one to its root session so children never show
+  // up as island sessions of their own.
+  const rootSessionIDs = new Map();
 
   function getSession(sid) {
     if (!sessions.has(sid)) sessions.set(sid, { lastAssistantText: "" });
     return sessions.get(sid);
+  }
+
+  function isChildSession(sid) {
+    return rootSessionIDs.has(sid);
+  }
+
+  function trackChildSession(info) {
+    if (info.parentID && !isChildSession(info.id)) {
+      const root = rootSessionIDs.get(info.parentID) || info.parentID;
+      rootSessionIDs.set(info.id, root);
+      debugLog(`CHILD: ${info.id} root=${root}`);
+    }
+    return isChildSession(info.id);
+  }
+
+  // Approvals and questions from a child are shown on its root session,
+  // as the OpenCode TUI does. Replies still go out by request ID.
+  function rootSessionID(sid) {
+    return rootSessionIDs.get(sid) || sid;
   }
 
   function mapEvent(ev) {
@@ -186,6 +209,7 @@ export default async ({ client, serverUrl }) => {
 
     // session.created
     if (t === "session.created" && p.info) {
+      if (trackChildSession(p.info)) return null;
       const cwd = p.info.directory || "";
       sessionCwd.set(p.info.id, cwd);
       return makePayload("SessionStart", p.info.id, cwd);
@@ -193,6 +217,10 @@ export default async ({ client, serverUrl }) => {
 
     // session.deleted
     if (t === "session.deleted" && p.info) {
+      if (p.info.parentID || isChildSession(p.info.id)) {
+        rootSessionIDs.delete(p.info.id);
+        return null;
+      }
       sessions.delete(p.info.id);
       sessionCwd.delete(p.info.id);
       return makePayload("SessionEnd", p.info.id, sessionCwd.get(p.info.id));
@@ -200,6 +228,7 @@ export default async ({ client, serverUrl }) => {
 
     // session.updated (archived)
     if (t === "session.updated" && p.info) {
+      if (trackChildSession(p.info)) return null;
       if (p.info.directory) sessionCwd.set(p.info.id, p.info.directory);
       if (p.info.time?.archived) {
         sessions.delete(p.info.id);
@@ -212,6 +241,7 @@ export default async ({ client, serverUrl }) => {
     // session.status → idle = Stop (busy is ignored; session creation
     // comes from session.created or ensureOpenCodeSessionExists on first event)
     if (t === "session.status" && p.sessionID) {
+      if (isChildSession(p.sessionID)) return null;
       if (p.status?.type === "idle") {
         const s = getSession(p.sessionID);
         return makePayload("Stop", p.sessionID, sessionCwd.get(p.sessionID), {
@@ -223,6 +253,7 @@ export default async ({ client, serverUrl }) => {
 
     // message.updated — track role for message parts
     if (t === "message.updated" && p.info?.id && p.info?.sessionID) {
+      if (isChildSession(p.info.sessionID)) return null;
       msgRoles.set(p.info.id, { role: p.info.role, sessionID: p.info.sessionID });
       if (msgRoles.size > 200) { msgRoles.delete(msgRoles.keys().next().value); }
       return null;
@@ -246,6 +277,7 @@ export default async ({ client, serverUrl }) => {
 
     // message.part.updated — tool
     if (t === "message.part.updated" && p.part?.type === "tool" && p.part?.sessionID) {
+      if (isChildSession(p.part.sessionID)) return null;
       const st = p.part.state?.status;
       const cwd = sessionCwd.get(p.part.sessionID);
       const toolName = (p.part.tool || "").charAt(0).toUpperCase() + (p.part.tool || "").slice(1);
@@ -267,6 +299,7 @@ export default async ({ client, serverUrl }) => {
 
     // permission.asked
     if (t === "permission.asked" && p.id && p.sessionID) {
+      const sid = rootSessionID(p.sessionID);
       const toolName = (p.permission || "").charAt(0).toUpperCase() + (p.permission || "").slice(1);
       const patterns = p.patterns || [];
       const toolInput = { patterns, metadata: p.metadata };
@@ -276,7 +309,7 @@ export default async ({ client, serverUrl }) => {
       if ((p.permission === "edit" || p.permission === "write") && patterns.length > 0) {
         toolInput.file_path = patterns[0];
       }
-      return makePayload("PermissionRequest", p.sessionID, sessionCwd.get(p.sessionID), {
+      return makePayload("PermissionRequest", sid, sessionCwd.get(sid), {
         tool_name: toolName,
         tool_input: JSON.stringify(toolInput).slice(0, 200),
         permission_id: p.id,
@@ -290,15 +323,17 @@ export default async ({ client, serverUrl }) => {
 
     // permission.replied
     if (t === "permission.replied" && p.sessionID) {
-      return makePayload("PostToolUse", p.sessionID, sessionCwd.get(p.sessionID));
+      const sid = rootSessionID(p.sessionID);
+      return makePayload("PostToolUse", sid, sessionCwd.get(sid));
     }
 
     // question.asked
     if (t === "question.asked" && p.id && p.sessionID) {
+      const sid = rootSessionID(p.sessionID);
       const questions = Array.isArray(p.questions)
         ? p.questions.map(normalizeQuestion).filter(Boolean)
         : [];
-      return makePayload("QuestionAsked", p.sessionID, sessionCwd.get(p.sessionID), {
+      return makePayload("QuestionAsked", sid, sessionCwd.get(sid), {
         question_id: p.id,
         question_text: (p.questions || []).map(q => q.question).join("; ") || "OpenCode has a question",
         questions,
@@ -308,7 +343,8 @@ export default async ({ client, serverUrl }) => {
 
     // question.replied / question.rejected
     if ((t === "question.replied" || t === "question.rejected") && p.sessionID) {
-      return makePayload("PostToolUse", p.sessionID, sessionCwd.get(p.sessionID));
+      const sid = rootSessionID(p.sessionID);
+      return makePayload("PostToolUse", sid, sessionCwd.get(sid));
     }
 
     return null;
