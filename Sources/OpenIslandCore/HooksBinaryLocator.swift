@@ -44,8 +44,11 @@ public enum ManagedHooksBinary {
         return resolvedDestinationURL
     }
 
-    /// Overwrites the installed hooks binary if the bundle source differs.
-    /// Returns `true` if the binary was updated.
+    /// Overwrites the installed hooks binary if the bundle source differs, and
+    /// restores it if it is missing. Agent configs keep pointing at
+    /// `defaultURL` after the file is gone, and hooks fail open, so a missing
+    /// copy would otherwise drop every hook event without any visible error.
+    /// Returns `true` if the binary was updated or restored.
     @discardableResult
     public static func updateIfNeeded(
         from sourceURL: URL,
@@ -53,7 +56,8 @@ public enum ManagedHooksBinary {
     ) throws -> Bool {
         let installedURL = defaultURL(fileManager: fileManager)
         guard fileManager.fileExists(atPath: installedURL.path) else {
-            return false
+            try install(from: sourceURL, to: installedURL, fileManager: fileManager)
+            return true
         }
 
         let sourceData = try Data(contentsOf: sourceURL)

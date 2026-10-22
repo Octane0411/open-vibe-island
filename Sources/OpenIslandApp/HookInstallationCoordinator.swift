@@ -564,7 +564,8 @@ final class HookInstallationCoordinator {
 
     // MARK: - Auto-update hooks binary
 
-    /// Overwrites the installed hooks binary if the app bundle ships a newer version.
+    /// Overwrites the installed hooks binary if the app bundle ships a newer version,
+    /// or restores it if it is missing.
     /// Call once at startup after hooksBinaryURL is set.
     func updateHooksBinaryIfNeeded() {
         guard let sourceURL = hooksBinaryURL else { return }
