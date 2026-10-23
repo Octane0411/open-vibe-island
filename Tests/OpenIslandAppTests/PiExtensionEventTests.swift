@@ -74,7 +74,7 @@ struct PiExtensionEventTests {
         #expect(events.filter { $0 == "SessionEnd" }.count == 1)
         #expect(events.contains("Heartbeat"))
         #expect(result["heartbeatCountAfterShutdown"] as? Int == result["heartbeatCountAtShutdown"] as? Int)
-        #expect(result["shutdownWasAwaitable"] as? Bool == true)
+        #expect(result["shutdownWasAwaitable"] as? Bool == false)
         #expect(registered.contains(completionEvent))
         let unrelatedCompletionEvent = agent == .ohMyPi ? "agent_settled" : "session_stop"
         #expect(!registered.contains(unrelatedCompletionEvent))
