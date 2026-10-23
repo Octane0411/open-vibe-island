@@ -380,4 +380,66 @@ struct AgentSessionPresentationTests {
         #expect(Set(HookHealthReport.Agent.allCases.map(\.displayName)).count
             == HookHealthReport.Agent.allCases.count)
     }
+
+    private func claudeSession(
+        workingDirectory: String = "/Users/test/active",
+        workspaceName: String = "active",
+        metadata: ClaudeSessionMetadata
+    ) -> AgentSession {
+        AgentSession(
+            id: "claude-title-session",
+            title: "Claude · \(workspaceName)",
+            tool: .claudeCode,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Working",
+            updatedAt: Date(timeIntervalSince1970: 10_000),
+            jumpTarget: JumpTarget(
+                terminalApp: "Claude.app",
+                workspaceName: workspaceName,
+                paneTitle: "Claude",
+                workingDirectory: workingDirectory
+            ),
+            claudeMetadata: metadata
+        )
+    }
+
+    @Test
+    func claudeHeadlineUsesSessionTitleWhenPresent() {
+        let session = claudeSession(
+            metadata: ClaudeSessionMetadata(
+                initialUserPrompt: "@\"/Users/test/.claude/uploads/1a2b3c4d/contract.pdf\"",
+                sessionTitle: "  Sign the scooter insurance contract  "
+            )
+        )
+
+        #expect(session.spotlightHeadlineText == "Sign the scooter insurance contract")
+    }
+
+    @Test
+    func claudeHeadlineKeepsWorktreeBranchSuffixWithSessionTitle() {
+        let session = claudeSession(
+            metadata: ClaudeSessionMetadata(
+                initialUserPrompt: "Fix the bug",
+                worktreeBranch: "feat/titles",
+                sessionTitle: "ipad audit (fork)"
+            )
+        )
+
+        #expect(session.spotlightHeadlineText == "ipad audit (fork) (feat/titles)")
+    }
+
+    @Test
+    func claudeHeadlineFallsBackToWorkspaceAndPromptWithoutTitle() {
+        let untitled = claudeSession(
+            metadata: ClaudeSessionMetadata(initialUserPrompt: "Fix the bug")
+        )
+        let blankTitle = claudeSession(
+            metadata: ClaudeSessionMetadata(initialUserPrompt: "Fix the bug", sessionTitle: "   ")
+        )
+
+        #expect(untitled.spotlightHeadlineText == "active · Fix the bug")
+        #expect(blankTitle.spotlightHeadlineText == "active · Fix the bug")
+    }
 }

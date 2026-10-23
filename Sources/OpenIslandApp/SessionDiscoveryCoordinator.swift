@@ -63,7 +63,7 @@ final class SessionDiscoveryCoordinator {
     private let codexRolloutDiscovery = CodexRolloutDiscovery()
 
     @ObservationIgnored
-    private let claudeTranscriptDiscovery = ClaudeTranscriptDiscovery()
+    private let claudeTranscriptDiscovery = ClaudeTranscriptDiscovery(desktopTitleIndex: .shared)
 
     @ObservationIgnored
     private var codexSessionPersistenceTask: Task<Void, Never>?
@@ -404,7 +404,9 @@ final class SessionDiscoveryCoordinator {
             agentID: discovered.agentID ?? existing.agentID,
             agentType: discovered.agentType ?? existing.agentType,
             worktreeBranch: discovered.worktreeBranch ?? existing.worktreeBranch,
-            activeSubagents: existing.activeSubagents.isEmpty ? discovered.activeSubagents : existing.activeSubagents
+            activeSubagents: existing.activeSubagents.isEmpty ? discovered.activeSubagents : existing.activeSubagents,
+            // Freshly resolved titles win over a stale persisted one.
+            sessionTitle: discovered.sessionTitle ?? existing.sessionTitle
         )
         return merged.isEmpty ? nil : merged
     }

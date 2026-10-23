@@ -90,12 +90,23 @@ public final class BridgeServer: @unchecked Sendable {
     /// state — it only contains sessions created via bridge hooks and is
     /// overwritten whenever AppModel pushes a fresh snapshot.
     private var localState = SessionState()
+    /// Resolves Claude session titles (rename / Claude Desktop / AI title)
+    /// off the bridge queue; results come back through its change handler.
+    private let claudeTitleService: ClaudeSessionTitleService
 
     public init(
-        socketURL: URL = BridgeSocketLocation.defaultURL
+        socketURL: URL = BridgeSocketLocation.defaultURL,
+        claudeTitleService: ClaudeSessionTitleService = ClaudeSessionTitleService()
     ) {
         self.socketURL = socketURL
+        self.claudeTitleService = claudeTitleService
         queue.setSpecific(key: queueKey, value: ())
+        claudeTitleService.setChangeHandler { [weak self] sessionID, title in
+            guard let self else { return }
+            self.queue.async {
+                self.applyResolvedClaudeSessionTitle(title, toSession: sessionID)
+            }
+        }
     }
 
     deinit {
@@ -653,6 +664,12 @@ public final class BridgeServer: @unchecked Sendable {
         // subagents whose SubagentStop and task notification were never received.
         cleanUpStaleSubagents(forSession: payload.sessionID)
 
+        // Titles change over time (Claude Desktop names a session shortly
+        // after the first prompt; users rename later), so re-resolve on every
+        // parent-session event. Cheap and asynchronous: the result lands via
+        // `applyResolvedClaudeSessionTitle` when it differs from the cache.
+        requestClaudeTitleRefresh(for: payload)
+
         switch payload.hookEventName {
         case .sessionStart:
             clearStaleClaudeInteractionIfNeeded(for: payload.sessionID)
@@ -667,7 +684,7 @@ public final class BridgeServer: @unchecked Sendable {
                         summary: payload.implicitStartSummary,
                         timestamp: .now,
                         jumpTarget: payload.defaultJumpTarget,
-                        claudeMetadata: payload.defaultClaudeMetadata.isEmpty ? nil : payload.defaultClaudeMetadata,
+                        claudeMetadata: claudeMetadataWithCachedTitle(for: payload).nilIfEmpty,
                         isRemote: payload.remote == true
                     )
                 )
@@ -2547,7 +2564,7 @@ public final class BridgeServer: @unchecked Sendable {
                     summary: payload.implicitStartSummary,
                     timestamp: .now,
                     jumpTarget: payload.defaultJumpTarget,
-                    claudeMetadata: payload.defaultClaudeMetadata.isEmpty ? nil : payload.defaultClaudeMetadata,
+                    claudeMetadata: claudeMetadataWithCachedTitle(for: payload).nilIfEmpty,
                     isRemote: payload.remote == true
                 )
             )
@@ -2630,7 +2647,7 @@ public final class BridgeServer: @unchecked Sendable {
 
         let mergedMetadata = mergedClaudeMetadata(
             existing: existingSession.claudeMetadata,
-            update: payload.defaultClaudeMetadata,
+            update: claudeMetadataWithCachedTitle(for: payload),
             hookEventName: payload.hookEventName
         )
         guard !mergedMetadata.isEmpty else {
@@ -2723,7 +2740,48 @@ public final class BridgeServer: @unchecked Sendable {
                 : update.agentType ?? existing?.agentType,
             worktreeBranch: update.worktreeBranch ?? existing?.worktreeBranch,
             activeSubagents: existing?.activeSubagents ?? [],
-            activeTasks: existing?.activeTasks ?? []
+            activeTasks: existing?.activeTasks ?? [],
+            sessionTitle: update.sessionTitle ?? existing?.sessionTitle
+        )
+    }
+
+    // MARK: - Claude session titles
+
+    private func requestClaudeTitleRefresh(for payload: ClaudeHookPayload) {
+        guard payload.resolvedAgentTool == .claudeCode else { return }
+        claudeTitleService.requestRefresh(
+            sessionID: payload.sessionID,
+            transcriptPath: payload.transcriptPath
+        )
+    }
+
+    /// Hook-derived metadata plus the last resolved title (cache only, no IO).
+    private func claudeMetadataWithCachedTitle(for payload: ClaudeHookPayload) -> ClaudeSessionMetadata {
+        var metadata = payload.defaultClaudeMetadata
+        if payload.resolvedAgentTool == .claudeCode {
+            metadata.sessionTitle = claudeTitleService.cachedTitle(forSessionID: payload.sessionID)
+        }
+        return metadata
+    }
+
+    private func applyResolvedClaudeSessionTitle(_ title: String, toSession sessionID: String) {
+        guard let session = localState.session(id: sessionID),
+              session.tool == .claudeCode else {
+            return
+        }
+
+        var metadata = session.claudeMetadata ?? ClaudeSessionMetadata()
+        guard metadata.sessionTitle != title else { return }
+        metadata.sessionTitle = title
+
+        emit(
+            .claudeSessionMetadataUpdated(
+                ClaudeSessionMetadataUpdated(
+                    sessionID: sessionID,
+                    claudeMetadata: metadata,
+                    timestamp: .now
+                )
+            )
         )
     }
 
@@ -3415,5 +3473,11 @@ public final class BridgeServer: @unchecked Sendable {
 private extension ClaudeHookEventName {
     var isSubagentLifecycle: Bool {
         self == .subagentStart || self == .subagentStop
+    }
+}
+
+private extension ClaudeSessionMetadata {
+    var nilIfEmpty: ClaudeSessionMetadata? {
+        isEmpty ? nil : self
     }
 }

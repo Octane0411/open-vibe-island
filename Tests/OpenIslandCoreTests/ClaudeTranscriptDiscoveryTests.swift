@@ -87,4 +87,86 @@ struct ClaudeTranscriptDiscoveryTests {
         #expect(sessions.count == 1)
         #expect(sessions.first?.jumpTarget?.terminalApp == "Claude.app")
     }
+
+    @Test
+    func discoveryUsesLastCustomTitle() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-transcript-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let lines = [
+            #"{"type":"user","sessionId":"ccc33333","cwd":"/Users/test/active","timestamp":"2026-07-22T18:00:00Z","message":{"role":"user","content":"@\"/Users/test/.claude/uploads/1a2b3c4d/file.pdf\" sign"}}"#,
+            #"{"type":"ai-title","aiTitle":"Generated title","sessionId":"ccc33333"}"#,
+            #"{"type":"custom-title","customTitle":"ipad audit","sessionId":"ccc33333"}"#,
+            #"{"type":"custom-title","customTitle":"ipad audit (fork)","sessionId":"ccc33333"}"#,
+        ].joined(separator: "\n") + "\n"
+        try lines.write(to: root.appendingPathComponent("ccc33333.jsonl"), atomically: true, encoding: .utf8)
+
+        let sessions = ClaudeTranscriptDiscovery(rootURL: root).discoverRecentSessions()
+
+        #expect(sessions.count == 1)
+        #expect(sessions.first?.claudeMetadata?.sessionTitle == "ipad audit (fork)")
+        // Existing prompt extraction is unchanged.
+        #expect(sessions.first?.claudeMetadata?.initialUserPrompt?.hasPrefix("@\"/Users/test/.claude/uploads") == true)
+    }
+
+    @Test
+    func discoveryUsesLastAITitleWhenNotRenamed() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-transcript-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let lines = [
+            #"{"type":"attachment","sessionId":"ddd44444","cwd":"/Users/test/project","timestamp":"2026-07-22T18:00:00Z"}"#,
+            #"{"type":"ai-title","aiTitle":"First AI","sessionId":"ddd44444"}"#,
+            #"{"type":"ai-title","aiTitle":"Risposta PONG","sessionId":"ddd44444"}"#,
+        ].joined(separator: "\n") + "\n"
+        try lines.write(to: root.appendingPathComponent("ddd44444.jsonl"), atomically: true, encoding: .utf8)
+
+        let sessions = ClaudeTranscriptDiscovery(rootURL: root).discoverRecentSessions()
+
+        #expect(sessions.first?.claudeMetadata?.sessionTitle == "Risposta PONG")
+    }
+
+    @Test
+    func discoveryPrefersDesktopTitleOverAITitle() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-transcript-\(UUID().uuidString)", isDirectory: true)
+        let projects = root.appendingPathComponent("projects", isDirectory: true)
+        let desktopDir = root
+            .appendingPathComponent("desktop/\(UUID().uuidString)/\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: desktopDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let lines = [
+            #"{"type":"attachment","sessionId":"eee55555","cwd":"/Users/test/project","timestamp":"2026-07-22T18:00:00Z"}"#,
+            #"{"type":"ai-title","aiTitle":"AI title","sessionId":"eee55555"}"#,
+        ].joined(separator: "\n") + "\n"
+        try lines.write(to: projects.appendingPathComponent("eee55555.jsonl"), atomically: true, encoding: .utf8)
+        try #"{"cliSessionId":"eee55555","title":"Sign the scooter insurance contract","titleSource":"auto"}"#.write(
+            to: desktopDir.appendingPathComponent("local_x.json"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let discovery = ClaudeTranscriptDiscovery(
+            rootURL: projects,
+            desktopTitleIndex: ClaudeDesktopSessionTitleIndex(baseURL: root.appendingPathComponent("desktop"))
+        )
+        let sessions = discovery.discoverRecentSessions()
+
+        #expect(sessions.first?.claudeMetadata?.sessionTitle == "Sign the scooter insurance contract")
+    }
+
+    @Test
+    func discoveryWithoutTitleSourcesLeavesTitleNil() throws {
+        let line = #"{"type":"attachment","sessionId":"fff66666","cwd":"/Users/test/project","timestamp":"2026-07-22T18:00:00Z"}"#
+        let (discovery, root) = try makeDiscovery(line: line)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        #expect(discovery.discoverRecentSessions().first?.claudeMetadata?.sessionTitle == nil)
+    }
 }

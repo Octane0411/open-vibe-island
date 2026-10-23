@@ -261,6 +261,11 @@ public struct ClaudeSessionMetadata: Equatable, Codable, Sendable {
     public var worktreeBranch: String?
     public var activeSubagents: [ClaudeSubagentInfo]
     public var activeTasks: [ClaudeTaskInfo]
+    /// Human-facing session title resolved from local Claude sources
+    /// (`/rename` custom title, Claude Desktop session index, or the
+    /// transcript's AI title). `nil` when no title is known; persisted
+    /// registries predating this field decode it as `nil`.
+    public var sessionTitle: String?
 
     public init(
         transcriptPath: String? = nil,
@@ -276,7 +281,8 @@ public struct ClaudeSessionMetadata: Equatable, Codable, Sendable {
         agentType: String? = nil,
         worktreeBranch: String? = nil,
         activeSubagents: [ClaudeSubagentInfo] = [],
-        activeTasks: [ClaudeTaskInfo] = []
+        activeTasks: [ClaudeTaskInfo] = [],
+        sessionTitle: String? = nil
     ) {
         self.transcriptPath = transcriptPath
         self.initialUserPrompt = initialUserPrompt
@@ -292,6 +298,7 @@ public struct ClaudeSessionMetadata: Equatable, Codable, Sendable {
         self.worktreeBranch = worktreeBranch
         self.activeSubagents = activeSubagents
         self.activeTasks = activeTasks
+        self.sessionTitle = sessionTitle
     }
 
     public var isEmpty: Bool {
@@ -309,6 +316,7 @@ public struct ClaudeSessionMetadata: Equatable, Codable, Sendable {
             && worktreeBranch == nil
             && activeSubagents.isEmpty
             && activeTasks.isEmpty
+            && sessionTitle == nil
     }
 }
 
