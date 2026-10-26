@@ -265,6 +265,30 @@ struct TerminalJumpService {
     }
 
     func jump(to target: JumpTarget) throws -> String {
+        if let uri = target.vscodeTerminalURI {
+            guard let components = URLComponents(string: uri),
+                  let scheme = components.scheme,
+                  scheme == "vscode" || scheme == "vscode-insiders",
+                  components.host == "open-island.terminal-jump",
+                  components.path == "/focus",
+                  components.user == nil,
+                  components.password == nil,
+                  components.port == nil,
+                  components.fragment == nil,
+                  let query = components.query,
+                  let tokens = URLComponents(string: "?\(query)")?.queryItems?.filter({ $0.name == "token" }),
+                  tokens.count == 1,
+                  let token = tokens.first?.value,
+                  !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw TerminalJumpError.invalidVSCodeTerminalURI
+            }
+            let bundleIdentifier = scheme == "vscode-insiders"
+                ? "com.microsoft.VSCodeInsiders"
+                : "com.microsoft.VSCode"
+            try openAction(["-b", bundleIdentifier, uri])
+            return "Requested focus of the matching VS Code terminal."
+        }
+
         // tmux sessions: switch pane first, then use the terminal-specific
         // jump to focus the correct window/tab (not just activate the app).
         if let tmuxTarget = target.tmuxTarget, !tmuxTarget.isEmpty {
@@ -1342,6 +1366,7 @@ enum TerminalJumpError: Error, LocalizedError {
     case unsupportedTerminal(String)
     case openFailed([String])
     case appleScriptFailed(String)
+    case invalidVSCodeTerminalURI
 
     var errorDescription: String? {
         switch self {
@@ -1351,6 +1376,8 @@ enum TerminalJumpError: Error, LocalizedError {
             "Failed to launch terminal with arguments: \(arguments.joined(separator: " "))"
         case let .appleScriptFailed(message):
             "Terminal automation failed: \(message)"
+        case .invalidVSCodeTerminalURI:
+            "Could not focus the terminal because its VS Code terminal URI is invalid."
         }
     }
 }

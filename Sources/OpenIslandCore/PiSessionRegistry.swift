@@ -12,6 +12,7 @@ public struct PiTrackedSessionRecord: Equatable, Codable, Sendable {
     public var firstSeenAt: Date?
     public var jumpTarget: JumpTarget?
     public var piMetadata: PiSessionMetadata?
+    public var isRemote: Bool?
 
     public init(session: AgentSession) {
         sessionID = session.id
@@ -25,10 +26,11 @@ public struct PiTrackedSessionRecord: Equatable, Codable, Sendable {
         firstSeenAt = session.firstSeenAt
         jumpTarget = session.jumpTarget
         piMetadata = session.piMetadata
+        isRemote = session.isRemote
     }
 
     public var session: AgentSession {
-        AgentSession(
+        var restored = AgentSession(
             id: sessionID,
             title: title,
             tool: tool,
@@ -41,6 +43,8 @@ public struct PiTrackedSessionRecord: Equatable, Codable, Sendable {
             jumpTarget: jumpTarget,
             piMetadata: piMetadata
         )
+        restored.isRemote = isRemote ?? false
+        return restored
     }
 
     public func restorableSession(at restoredAt: Date) -> AgentSession {

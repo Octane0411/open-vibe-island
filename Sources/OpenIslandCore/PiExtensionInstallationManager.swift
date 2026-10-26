@@ -2,7 +2,7 @@ import Foundation
 
 public struct PiExtensionInstallerManifest: Equatable, Codable, Sendable {
     public static let fileName = "open-island-pi-extension-install.json"
-    public static let currentVersion = 3
+    public static let currentVersion = 5
 
     public var agent: PiAgentVariant
     public var extensionPath: String

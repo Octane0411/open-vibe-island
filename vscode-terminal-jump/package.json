@@ -1,0 +1,20 @@
+{
+  "name": "terminal-jump",
+  "displayName": "Open Island Terminal Jump",
+  "description": "Focus the exact existing integrated terminal selected by Open Island, including Remote-SSH terminals.",
+  "version": "0.1.0",
+  "publisher": "open-island",
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Octane0411/open-vibe-island.git",
+    "directory": "vscode-terminal-jump"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "extensionKind": ["workspace"],
+  "activationEvents": ["onStartupFinished", "onUri"],
+  "main": "./extension.js"
+}

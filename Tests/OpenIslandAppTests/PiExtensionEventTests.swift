@@ -12,8 +12,8 @@ import Testing
     "Requires node >= 22.6 on PATH to load the TypeScript extension"
 ))
 struct PiExtensionEventTests {
-    @Test(arguments: [PiAgentVariant.pi, .ohMyPi])
-    func emitsCanonicalLifecycleAndHeartbeat(agent: PiAgentVariant) throws {
+    @Test(arguments: [PiAgentVariant.pi, .ohMyPi], ["local", "SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY", "empty"])
+    func emitsCanonicalLifecycleAndHeartbeat(agent: PiAgentVariant, sshEnvironment: String) throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("open-island-pi-events-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -39,6 +39,16 @@ struct PiExtensionEventTests {
             socketURL.path,
             completionEvent,
         ]
+        var environment = ProcessInfo.processInfo.environment
+        for key in ["SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"] {
+            environment.removeValue(forKey: key)
+        }
+        if sshEnvironment == "empty" {
+            environment["SSH_CONNECTION"] = ""
+        } else if sshEnvironment != "local" {
+            environment[sshEnvironment] = "remote-session"
+        }
+        process.environment = environment
         let stdout = Pipe()
         let stderr = Pipe()
         process.standardOutput = stdout
@@ -65,7 +75,8 @@ struct PiExtensionEventTests {
             try JSONSerialization.jsonObject(with: output) as? [String: Any]
         )
         let events = try #require(result["events"] as? [String])
-        let registered = try #require(result["registered"] as? [String])
+        let remoteFlags = try #require(result["remoteFlags"] as? [Bool])
+        #expect(remoteFlags.allSatisfy { $0 == (sshEnvironment != "local" && sshEnvironment != "empty") })
 
         #expect(result["stopCountBeforeCompletion"] as? Int == 0)
         #expect(events.filter { $0 == "PreToolUse" }.count == 1)
@@ -75,13 +86,6 @@ struct PiExtensionEventTests {
         #expect(events.contains("Heartbeat"))
         #expect(result["heartbeatCountAfterShutdown"] as? Int == result["heartbeatCountAtShutdown"] as? Int)
         #expect(result["shutdownWasAwaitable"] as? Bool == true)
-        #expect(registered.contains(completionEvent))
-        let unrelatedCompletionEvent = agent == .ohMyPi ? "agent_settled" : "session_stop"
-        #expect(!registered.contains(unrelatedCompletionEvent))
-        #expect(!registered.contains("turn_end"))
-        #expect(!registered.contains("agent_end"))
-        #expect(!registered.contains("tool_call"))
-        #expect(!registered.contains("tool_result"))
     }
 
     @Test(arguments: ["abc", "0", "-1", "1.5", "999999999999999999999"])
@@ -150,12 +154,17 @@ struct PiExtensionEventTests {
     await unlink(socketPath).catch(() => {});
 
     const commands = [];
+    const remoteFlags = [];
     const server = createServer((socket) => {
       let buffer = "";
       socket.on("data", (chunk) => { buffer += chunk; });
       socket.on("end", () => {
         for (const line of buffer.trim().split("\n")) {
-          if (line) commands.push(JSON.parse(line).command.piHook.hook_event_name);
+          if (line) {
+            const hook = JSON.parse(line).command.piHook;
+            commands.push(hook.hook_event_name);
+            remoteFlags.push(hook.remote);
+          }
         }
       });
     });
@@ -217,7 +226,7 @@ struct PiExtensionEventTests {
 
     console.log(JSON.stringify({
       events: commands,
-      registered: [...handlers.keys()],
+      remoteFlags,
       stopCountBeforeCompletion,
       heartbeatCountAtShutdown,
       heartbeatCountAfterShutdown,

@@ -3,6 +3,7 @@
 import { connect } from "node:net";
 import { homedir } from "node:os";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 
 const AGENT_SOURCE = "__OPEN_ISLAND_PI_SOURCE__";
 const SESSION_PREFIX = AGENT_SOURCE === "oh-my-pi" ? "omp" : "pi";
@@ -85,24 +86,53 @@ function sendToSocket(command: unknown): Promise<void> {
   return promise;
 }
 
-function detectTTY(): string | undefined {
+function detectTerminalProcess(): { tty?: string; ancestors: number[] } {
+  const result: { tty?: string; ancestors: number[] } = { ancestors: [] };
   try {
     let pid = process.pid;
-    for (let depth = 0; depth < 8; depth += 1) {
+    for (let depth = 0; depth < 16; depth += 1) {
+      result.ancestors.push(pid);
       const output = execFileSync("/bin/ps", ["-o", "tty=,ppid=", "-p", String(pid)], {
         timeout: 1000,
       }).toString().trim();
       const [tty, parent] = output.split(/\s+/);
-      if (tty && tty !== "??" && tty !== "?") return `/dev/${tty}`;
+      if (!result.tty && tty && tty !== "??" && tty !== "?") result.tty = `/dev/${tty}`;
+      if (result.tty && process.env.TERM_PROGRAM !== "vscode") break;
       const parentPID = Number.parseInt(parent || "", 10);
-      if (!parentPID || parentPID <= 1) break;
+      if (!parentPID || parentPID <= 1 || result.ancestors.includes(parentPID)) break;
       pid = parentPID;
     }
   } catch {}
-  return undefined;
+  return result;
 }
 
-const detectedTTY = detectTTY();
+const terminalProcess = detectTerminalProcess();
+const vscodeRegistryDirectory = `${process.env.HOME || homedir()}/.cache/open-island/vscode-terminals`;
+let vscodeRecordCheckedAt = 0;
+let vscodeRecord: { uri: string; remote: boolean } | undefined;
+
+function vscodeTerminalRecord(): typeof vscodeRecord {
+  if (process.env.TERM_PROGRAM !== "vscode") return undefined;
+  const now = Date.now();
+  if (now - vscodeRecordCheckedAt < 5000) return vscodeRecord;
+  vscodeRecordCheckedAt = now;
+  vscodeRecord = undefined;
+  for (const pid of terminalProcess.ancestors) {
+    try {
+      const record = JSON.parse(readFileSync(`${vscodeRegistryDirectory}/${pid}.json`, "utf8"));
+      if (typeof record.uri !== "string" || typeof record.remote !== "boolean"
+        || typeof record.updatedAt !== "number" || now - record.updatedAt > 45_000
+        || record.updatedAt > now + 5000) continue;
+      const uri = new URL(record.uri);
+      if (!["vscode:", "vscode-insiders:"].includes(uri.protocol)
+        || uri.hostname !== "open-island.terminal-jump" || uri.pathname !== "/focus"
+        || !new URLSearchParams(decodeURIComponent(uri.search.slice(1))).get("token")) continue;
+      vscodeRecord = { uri: record.uri, remote: record.remote };
+      break;
+    } catch {}
+  }
+  return vscodeRecord;
+}
 
 function terminalFields(): Record<string, string> {
   const env = process.env;
@@ -128,7 +158,9 @@ function terminalFields(): Record<string, string> {
   if (env.TERM_SESSION_ID && !result.terminal_session_id) {
     result.terminal_session_id = env.TERM_SESSION_ID;
   }
-  if (detectedTTY) result.terminal_tty = detectedTTY;
+  if (terminalProcess.tty) result.terminal_tty = terminalProcess.tty;
+  const vscode = vscodeTerminalRecord();
+  if (vscode) result.vscode_terminal_uri = vscode.uri;
   return result;
 }
 
@@ -176,6 +208,8 @@ export default function openIslandPiExtension(pi: ExtensionAPICompat) {
       agent: AGENT_SOURCE,
       session_id: `${SESSION_PREFIX}-${rawID}`,
       cwd: ctx.cwd || process.cwd(),
+      remote: Boolean(process.env.SSH_CONNECTION || process.env.SSH_CLIENT || process.env.SSH_TTY
+        || vscodeTerminalRecord()?.remote),
       model,
       transcript_path: sessionManager?.getSessionFile?.(),
       ...terminalFields(),

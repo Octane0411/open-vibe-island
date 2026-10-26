@@ -62,8 +62,8 @@ struct PiIntegrationTests {
         }
     }
 
-    @Test
-    func sessionRegistryRoundTripsPiAndOhMyPiSessions() throws {
+    @Test(arguments: [false, true])
+    func sessionRegistryRoundTripsPiAndOhMyPiSessions(isRemote: Bool) throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("open-island-pi-registry-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -71,7 +71,7 @@ struct PiIntegrationTests {
         let timestamp = Date(timeIntervalSince1970: 12_345)
         let firstSeenAt = Date(timeIntervalSince1970: 12_000)
         let sessions = [AgentTool.pi, .ohMyPi].map { tool in
-            AgentSession(
+            var session = AgentSession(
                 id: "\(tool.rawValue)-session",
                 title: tool.displayName,
                 tool: tool,
@@ -94,6 +94,8 @@ struct PiIntegrationTests {
                     transcriptPath: "/tmp/\(tool.rawValue).jsonl"
                 )
             )
+            session.isRemote = isRemote
+            return session
         }
 
         try registry.save(sessions.map(PiTrackedSessionRecord.init(session:)))
@@ -102,6 +104,7 @@ struct PiIntegrationTests {
         let restored = loaded.map { $0.restorableSession(at: restoredAt) }
 
         #expect(restored.map(\.tool) == [.pi, .ohMyPi])
+        #expect(restored.allSatisfy { $0.isRemote == isRemote })
         #expect(restored.allSatisfy { $0.piMetadata?.model == "gpt-5.6" })
         #expect(restored.allSatisfy { $0.jumpTarget?.terminalApp == "Ghostty" })
         #expect(loaded.allSatisfy { $0.firstSeenAt == firstSeenAt })
@@ -138,6 +141,7 @@ struct PiIntegrationTests {
 
         let restoredAt = Date(timeIntervalSince1970: 99_000)
         let restored = record.restorableSession(at: restoredAt)
+        #expect(restored.isRemote == false)
         let legacyUpdated = ISO8601DateFormatter().date(from: "2026-01-01T00:00:00Z")
         #expect(restored.firstSeenAt == legacyUpdated)
         #expect(restored.updatedAt == legacyUpdated)
@@ -194,5 +198,89 @@ struct PiIntegrationTests {
         #expect(restored.heartbeatReconnectStartedAt == restoredAt)
         #expect(restored.lastHeartbeatAt == nil)
         #expect(restored.updatedAt == restoredAt.addingTimeInterval(-3_600))
+    }
+
+    @Test(arguments: [PiAgentVariant.pi, .ohMyPi], [PiHookEventName.sessionStart, .heartbeat, .userPromptSubmit])
+    func remoteIdentitySurvivesFirstHook(agent: PiAgentVariant, event: PiHookEventName) async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
+
+        let json = try JSONSerialization.data(withJSONObject: [
+            "hook_event_name": event.rawValue,
+            "agent": agent.rawValue,
+            "session_id": "remote-session",
+            "cwd": "/home/user/project",
+            "remote": true,
+        ])
+        let hook = try JSONDecoder().decode(PiHookPayload.self, from: json)
+        _ = try BridgeCommandClient(socketURL: socketURL).send(.processPiHook(hook))
+        var iterator = stream.makeAsyncIterator()
+        let received = try #require(try await iterator.next())
+        guard case let .sessionStarted(started) = received else {
+            Issue.record("Expected the first remote hook to create a session")
+            return
+        }
+        #expect(started.isRemote)
+        #expect(started.tool == agent.tool)
+
+        if event == .heartbeat {
+            let heartbeat = try #require(try await iterator.next())
+            guard case let .sessionHeartbeat(payload) = heartbeat else {
+                Issue.record("Expected a recoverable heartbeat")
+                return
+            }
+            #expect(payload.recoverySession?.isRemote == true)
+        }
+    }
+
+    @Test(arguments: [AgentTool.pi, .ohMyPi])
+    func heartbeatRepairsRemoteTerminalWithoutResettingActivity(tool: AgentTool) throws {
+        let timestamp = Date(timeIntervalSince1970: 100_000)
+        var state = SessionState()
+        let started = SessionStarted(
+            sessionID: "restored-session", title: "Working", tool: tool,
+            origin: .live, initialPhase: .running, summary: "Running tool", timestamp: timestamp,
+            jumpTarget: JumpTarget(
+                terminalApp: "VS Code", workspaceName: "project", paneTitle: "OMP",
+                workingDirectory: "/home/user/project", tmuxTarget: "%42",
+                vscodeTerminalURI: "vscode://open-island.terminal-jump/focus?token=previous"
+            )
+        )
+        state.apply(.sessionStarted(started))
+        var recovery = started
+        recovery.isRemote = true
+        recovery.initialPhase = .completed
+        let uri = "vscode://open-island.terminal-jump/focus?token=registered&windowId=7"
+        recovery.jumpTarget = JumpTarget(
+            terminalApp: "VS Code", workspaceName: "project", paneTitle: "OMP",
+            vscodeTerminalURI: uri
+        )
+        state.apply(.sessionHeartbeat(SessionHeartbeat(
+            sessionID: started.sessionID, timestamp: timestamp.addingTimeInterval(15), recoverySession: recovery
+        )))
+        let repaired = try #require(state.session(id: started.sessionID))
+        #expect(repaired.isRemote)
+        #expect(repaired.phase == .running)
+        #expect(repaired.summary == "Running tool")
+        #expect(repaired.firstSeenAt == timestamp)
+        #expect(repaired.updatedAt == timestamp)
+        #expect(repaired.jumpTarget?.vscodeTerminalURI == uri)
+        #expect(repaired.jumpTarget?.tmuxTarget == "%42")
+        #expect(repaired.jumpTarget?.workingDirectory == "/home/user/project")
+
+        // A legacy heartbeat must not erase an established origin or terminal locator.
+        var legacyRecovery = started
+        legacyRecovery.jumpTarget?.vscodeTerminalURI = nil
+        state.apply(.sessionHeartbeat(SessionHeartbeat(
+            sessionID: started.sessionID, timestamp: timestamp.addingTimeInterval(30), recoverySession: legacyRecovery
+        )))
+        #expect(state.session(id: started.sessionID)?.isRemote == true)
+        #expect(state.session(id: started.sessionID)?.jumpTarget?.vscodeTerminalURI == uri)
     }
 }

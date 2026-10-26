@@ -2289,7 +2289,8 @@ public final class BridgeServer: @unchecked Sendable {
             summary: payload.implicitStartSummary,
             timestamp: .now,
             jumpTarget: payload.defaultJumpTarget,
-            piMetadata: payload.defaultPiMetadata.isEmpty ? nil : payload.defaultPiMetadata
+            piMetadata: payload.defaultPiMetadata.isEmpty ? nil : payload.defaultPiMetadata,
+            isRemote: payload.remote == true
         )
     }
 
@@ -2576,7 +2577,7 @@ public final class BridgeServer: @unchecked Sendable {
     ///    the mapping for the rest of the session, demoting precision
     ///    jump to bare activation until the NEXT lucky hook.
     ///
-    /// Both are "resolved fields": the hook either succeeds at
+    /// These and the VS Code terminal URI are resolved fields: the hook either succeeds at
     /// finding them or reports nil. nil does NOT mean "absence is the
     /// ground truth" — it means "this invocation could not determine
     /// the value, prefer the last known good one".
@@ -2594,6 +2595,9 @@ public final class BridgeServer: @unchecked Sendable {
            let existingUUID = existing?.warpPaneUUID,
            !existingUUID.isEmpty {
             merged.warpPaneUUID = existingUUID
+        }
+        if merged.vscodeTerminalURI == nil {
+            merged.vscodeTerminalURI = existing?.vscodeTerminalURI
         }
         return merged
     }

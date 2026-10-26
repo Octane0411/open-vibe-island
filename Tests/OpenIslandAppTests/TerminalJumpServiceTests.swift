@@ -13,46 +13,86 @@ struct TerminalJumpServiceTests {
         var values: [(String, [String])] = []
     }
 
-    @Test
-    func ghosttyJumpScriptActivatesWindowAndRetriesFocusUntilItSticks() {
-        let target = JumpTarget(
-            terminalApp: "Ghostty",
-            workspaceName: "open-island",
-            paneTitle: "codex ~/p/open-island",
-            workingDirectory: "/Users/wangruobing/Personal/open-island",
-            terminalSessionID: "448D7E28-24FB-46F1-9504-C252F97926C1"
+    @Test(arguments: ["vscode", "vscode-insiders"], [false, true])
+    func preciseVSCodeTerminalTakesPrecedenceOverTmuxAndWorkspace(scheme: String, encodedQuery: Bool) throws {
+        let openedArguments = OpenedArgumentsBox()
+        let processInvocations = ProcessInvocationBox()
+        let service = TerminalJumpService(
+            applicationResolver: { _ in
+                Issue.record("Precise terminal URI should bypass app resolution")
+                return nil
+            },
+            openAction: { openedArguments.values.append($0) },
+            appleScriptRunner: { _ in
+                Issue.record("Precise terminal URI should bypass terminal automation")
+                return ""
+            },
+            processRunner: { executable, arguments in
+                processInvocations.values.append((executable, arguments))
+                return true
+            }
         )
+        let query = encodedQuery ? "token%3Dexact-terminal%26windowId%3D7" : "token=exact-terminal&windowId=7"
+        let uri = "\(scheme)://open-island.terminal-jump/focus?\(query)"
+        _ = try service.jump(to: JumpTarget(
+            terminalApp: "VS Code", workspaceName: "project", paneTitle: "OMP",
+            workingDirectory: FileManager.default.temporaryDirectory.path,
+            tmuxTarget: "%42", vscodeTerminalURI: uri
+        ))
 
-        let script = TerminalJumpService().ghosttyJumpScript(for: target)
-
-        #expect(script.contains("activate"))
-        #expect(script.contains("activate window targetWindow"))
-        #expect(script.contains("select tab targetTab"))
-        #expect(script.contains("focus targetTerminal"))
-        #expect(script.contains("repeat 3 times"))
-        #expect(script.contains("delay 0.04"))
-        #expect(script.contains("delay 0.08"))
-        #expect(script.contains("focused terminal of selected tab of front window"))
-        #expect(script.contains("repeat with aWindow in windows"))
-        #expect(script.contains("repeat with aTab in tabs of aWindow"))
-        #expect(script.contains("repeat with aTerminal in terminals of aTab"))
+        let bundleIdentifier = scheme == "vscode-insiders"
+            ? "com.microsoft.VSCodeInsiders" : "com.microsoft.VSCode"
+        #expect(openedArguments.values == [["-b", bundleIdentifier, uri]])
+        #expect(processInvocations.values.isEmpty)
     }
 
-    @Test
-    func ghosttyJumpScriptFallsBackToWorkingDirectoryAndTitle() {
-        let target = JumpTarget(
-            terminalApp: "Ghostty",
-            workspaceName: "open-island",
-            paneTitle: "codex ~/p/open-island",
-            workingDirectory: "/Users/wangruobing/Personal/open-island"
+    @Test(arguments: [
+        "https://open-island.terminal-jump/focus?token=secret",
+        "vscode://other.extension/focus?token=secret",
+        "vscode://open-island.terminal-jump/command?token=secret",
+        "vscode://open-island.terminal-jump/focus",
+        "vscode://open-island.terminal-jump/focus?token=",
+        "vscode://open-island.terminal-jump/focus?token=%20",
+        "vscode://open-island.terminal-jump/focus?token=one&token=two",
+        "vscode://attacker@open-island.terminal-jump/focus?token=secret",
+        "vscode://open-island.terminal-jump:123/focus?token=secret",
+        "vscode://open-island.terminal-jump/focus?token=secret#command",
+        "command:workbench.action.terminal.new",
+        ""
+    ])
+    func invalidVSCodeTerminalURIRejectsWithoutOpeningOrFallback(uri: String) {
+        let openedArguments = OpenedArgumentsBox()
+        let processInvocations = ProcessInvocationBox()
+        let service = TerminalJumpService(
+            applicationResolver: { _ in
+                Issue.record("Invalid URI must not fall back to app activation")
+                return nil
+            },
+            openAction: { openedArguments.values.append($0) },
+            appleScriptRunner: { _ in
+                Issue.record("Invalid URI must not run terminal automation")
+                return ""
+            },
+            processRunner: { executable, arguments in
+                processInvocations.values.append((executable, arguments))
+                return true
+            }
         )
-
-        let script = TerminalJumpService().ghosttyJumpScript(for: target)
-
-        #expect(script.contains("(working directory of aTerminal as text) is \"/Users/wangruobing/Personal/open-island\""))
-        #expect(script.contains("(name of aTerminal as text) contains \"codex ~/p/open-island\""))
-        #expect(script.contains("if \"\" is \"\" then"))
+        do {
+            _ = try service.jump(to: JumpTarget(
+                terminalApp: "VS Code", workspaceName: "project", paneTitle: "OMP",
+                workingDirectory: FileManager.default.temporaryDirectory.path,
+                tmuxTarget: "%42", vscodeTerminalURI: uri
+            ))
+            Issue.record("Invalid terminal URI should throw")
+        } catch TerminalJumpError.invalidVSCodeTerminalURI {
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+        #expect(openedArguments.values.isEmpty)
+        #expect(processInvocations.values.isEmpty)
     }
+
 
     @Test
     func ghosttyJumpIntegrationMatchesFocusedTerminalForLiveSurfaces() throws {

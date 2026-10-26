@@ -1,6 +1,6 @@
-# SSH Remote Claude Code Setup
+# SSH Remote Agent Setup
 
-Connect Open Island to Claude Code running on a remote server over SSH.
+Connect Open Island to agents running on a remote server over SSH. The Python setup below is for Claude Code; Pi and Oh My Pi use their TypeScript extension instead.
 
 ## How it works
 
@@ -167,3 +167,54 @@ RemoteForward /tmp/open-island-remote.sock /tmp/open-island-501.sock
 # On remote, set env var (add to ~/.bashrc):
 export OPEN_ISLAND_SOCKET_PATH=/tmp/open-island-remote.sock
 ```
+
+## Pi and Oh My Pi (OMP)
+
+Use an Open Island build containing Pi/OMP remote recognition and reinstall the extension from **Settings → Setup → CLI Hooks**. Managed extension version 5 detects non-empty `SSH_CONNECTION`, `SSH_CLIENT`, or `SSH_TTY`, and also recognizes Remote-SSH through the VS Code companion below. The app shows the SSH badge and preserves remote identity across heartbeat recovery and registry restore. Updating only the extension does not add remote recognition or precise terminal jumps to older app builds, including 1.2.1.
+
+For OMP, copy the installed extension to the remote machine:
+
+```bash
+ssh user@server 'mkdir -p ~/.omp/agent/extensions'
+scp ~/.omp/agent/extensions/open-island.ts user@server:~/.omp/agent/extensions/open-island.ts
+```
+
+For Pi, substitute `~/.pi/agent/extensions` on both sides. Copy the installed file, not the bundled template containing `__OPEN_ISLAND_PI_SOURCE__`. The Claude-specific `remote-setup.sh` is not needed.
+
+Forward a socket in a private remote directory to the Mac's current bridge path:
+
+```bash
+ssh user@server 'mkdir -p ~/.open-island; chmod 700 ~/.open-island'
+ssh -o ExitOnForwardFailure=yes \
+  -R "/home/REMOTE_USER/.open-island/bridge.sock:$HOME/Library/Application Support/OpenIsland/bridge.sock" \
+  user@server
+```
+
+Replace `/home/REMOTE_USER` with the actual remote home directory. In that remote shell:
+
+```bash
+OPEN_ISLAND_SOCKET_PATH="$HOME/.open-island/bridge.sock" omp
+```
+
+Keep the SSH tunnel open and restart existing Pi/OMP sessions after installing or updating the extension. In tmux, the agent must inherit an SSH environment variable; sessions launched without those variables cannot infer remote origin. The socket override alone is not treated as proof of a remote session because local setups can also use custom sockets.
+
+If reconnecting fails because the socket already exists, follow the sshd `StreamLocalBindUnlink` guidance above or remove only the known stale socket after confirming its listener is disconnected. Never remove a live socket.
+
+This transports live status, not historical session files. The SSH flag alone does not provide a local terminal-tab mapping or precise remote tmux jump-back.
+
+### Exact VS Code Remote-SSH terminal jump
+
+Build the dependency-free companion from this checkout:
+
+```bash
+cd vscode-terminal-jump
+npx --yes @vscode/vsce package --allow-missing-repository --skip-license --out ../open-island-terminal-jump.vsix
+```
+
+Install the VSIX into the **SSH remote** extension host using **Extensions: Install from VSIX** in the Remote-SSH window, or run `code --install-extension /path/to/open-island-terminal-jump.vsix` in that window's remote terminal. The extension ID is `open-island.terminal-jump`; it is a locally built companion, not a Marketplace dependency.
+
+Use the patched Mac app and managed Pi/OMP extension version 5 together. Reload the agent extensions with `/reload` while idle, or restart the agent. Existing VS Code terminals do not need recreation. The companion registers their shell process IDs in private `~/.cache/open-island/vscode-terminals` files; the agent matches its process ancestry and reports the window-routed URI. Heartbeats update that locator without resetting task state. Records refresh every 15 seconds and the agent rejects records older than 45 seconds.
+
+Clicking the island item asks VS Code to focus the exact existing terminal, even when several terminals share a directory. No SSH login, terminal creation, shell input, or Accessibility permission is used for this jump. A closed terminal or expired window token is reported as stale rather than selecting a different terminal. Reloading/reconnecting the VS Code window refreshes routing on subsequent heartbeats. Check the **Open Island Terminal Jump** output channel for focus results.
+
+Without the companion, existing workspace-level jumping remains best-effort; exact tmux pane selection inside a remote VS Code terminal is not provided.

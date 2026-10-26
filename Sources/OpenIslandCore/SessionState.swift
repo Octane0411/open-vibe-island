@@ -252,6 +252,19 @@ public struct SessionState: Equatable, Sendable {
             session.processNotSeenCount = 0
             session.lastHeartbeatAt = payload.timestamp
             session.heartbeatReconnectStartedAt = nil
+            // Repair records saved before remote identity was persisted without
+            // letting a legacy extension clear an already-known remote origin.
+            session.isRemote = session.isRemote || payload.recoverySession?.isRemote == true
+            // Terminal registration can arrive after session startup. Refresh only
+            // the locator so heartbeat delivery never resets the active turn.
+            if let recoveryTarget = payload.recoverySession?.jumpTarget,
+               let uri = recoveryTarget.vscodeTerminalURI {
+                if session.jumpTarget == nil {
+                    session.jumpTarget = recoveryTarget
+                } else {
+                    session.jumpTarget?.vscodeTerminalURI = uri
+                }
+            }
             upsert(session)
 
         case let .actionableStateResolved(payload):
