@@ -9,6 +9,8 @@ permissions:
 jobs:
   validate-credentials:
     runs-on: macos-26
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
     steps:
       - name: Validate Apple notarization credentials
         env:

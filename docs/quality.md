@@ -27,7 +27,7 @@ Commit `Package.resolved` with dependency changes. The test wrapper, harness bui
 
 To update dependencies deliberately, review upstream releases and security advisories, run `swift package update`, inspect the lockfile diff, and rerun the isolated suite and relevant packaging checks before committing. Do not remove the lockfile to fix a CI failure.
 
-The October 31, 2026 baseline locks MarkdownUI 2.4.1, NetworkImage 6.0.1, swift-cmark 0.9.0, and Sparkle 2.10.1. Sparkle's minimum is also 2.10.1, matching the locally tested version. Its [published security advisories](https://github.com/sparkle-project/Sparkle/security/advisories) were reviewed for this baseline; this is not a permanent security guarantee. Local verification used Swift 6.4 and Xcode 27.1 (27A9275). CI toolchain pinning, action revision pinning, packaging-tool versions, macOS 14/Intel runtime checks, and GUI checks remain tracked under H13.
+The October 31, 2026 baseline locks MarkdownUI 2.4.1, NetworkImage 6.0.1, swift-cmark 0.9.0, and Sparkle 2.10.1. Sparkle's minimum is also 2.10.1, matching the locally tested version. Its [published security advisories](https://github.com/sparkle-project/Sparkle/security/advisories) were reviewed for this baseline; this is not a permanent security guarantee. Local verification used Swift 6.4 and Xcode 27.1 (27A9275). CI now selects Xcode 26.0.1 (minimum Swift 6.2 toolchain) and 26.6 explicitly, and pins checkout/setup-node actions to full revisions. These paths are listed in the [runner inventory](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md). Workflow execution is still pending on the fork; local verification does not establish the CI results. macOS 14/Intel runtime and GUI checks remain release gates.
 
 ## Test isolation
 
@@ -95,3 +95,26 @@ Every meaningful round should leave behind:
 - The harness captures milestone timings and log summaries, but it does not yet provide a queryable log/metrics/trace stack.
 - The current accessibility assertions are still scenario-specific rather than full golden snapshots.
 - We do not yet have execution-plan lifecycle automation beyond the directory conventions defined in [docs/exec-plans/README.md](./exec-plans/README.md).
+
+## Fork validation matrix and limits
+
+| Environment | Evidence | Remaining requirement |
+| --- | --- | --- |
+| Apple Silicon, macOS 26.6.1, Xcode 27.1 (27A9275), Swift 6.4, Node 25.2.1 | Full isolated Swift tests and JavaScript contract tests run locally | Real agent/terminal and signed desktop checks |
+| Xcode 26.0.1 and 26.6 on macOS 26 | Exact toolchains configured in CI; not available together on this machine | Successful fork CI run after pushing the reviewed branch |
+| Intel target | Local x86_64 cross-build passed; Mach-O minimum OS is 14.0 | Actual Intel runtime and terminal verification |
+| macOS 14 minimum | Declared deployment target | Isolated macOS 14 runtime verification before claiming support |
+| iPhone/Watch | Runtime unavailable in this fork | Mobile builds, secure pairing, revocation and remote round trips before re-enabling |
+| Terminal replies and SSH setup | Runtime/setup restrictions tested | H09/H16 criteria before re-enabling |
+
+Agent adapters and terminal drivers have fixture coverage, not certification against every installed agent or terminal version. Do not interpret the inherited support tables as a completed fork compatibility matrix. Record the exact agent CLI and terminal versions during release testing; no live agent/terminal version is certified by the automated hardening run.
+
+The harness test step runs both `node --test Tests/PluginTests/*.test.cjs` and the Swift suite. Node 24.22.1 is pinned for CI in `.node-version`; the local Node version is recorded separately above. Both Swift and JavaScript contract suites are required. No test opt-in for live Ghostty/Warp or desktop smoke is enabled by CI.
+
+Packaging uses committed brand assets; normal builds no longer install an unpinned Pillow. Optional regeneration requires Pillow 11.3.0. DMG tooling is pinned to create-dmg 1.2.3, revision `994a036532d3ac1bb1cd5a425a0d5d796ecbed83`; CI checks the revision after fetching. Every bundle records the source commit, lockfile hash, Swift/Xcode versions, and packaging-tool version in `Contents/Resources/build-info.txt`. Hosted runner OS images can still change; CI records the image version. This is not a claim of byte-identical signed archives across machines.
+
+For a local app/ZIP check without Finder automation or app launch, set `OPEN_ISLAND_CREATE_DMG=false` and leave `OPEN_ISLAND_PACKAGE_SMOKE=false`. Explicit desktop smoke requires `OPEN_ISLAND_PACKAGE_SMOKE=true` in a disposable test account. Never grant TCC permissions, start installed hooks, or test real terminal actions as part of the ordinary suite.
+
+Before distribution, record screenshots/results for normal and denied Accessibility/Automation permission, a fresh install, restart with live approvals, terminal switching/cancellation, malformed/expired requests, and upgrade recovery. Use disposable agent projects and test accounts. macOS 14, Intel hardware, mobile devices, signing credentials, and a fork CI run are not supplied by this workspace; their verification remains blocked rather than inferred from local tests. See `docs/release-signing.md`.
+
+The local Apple Silicon release app/ZIP package passed bundle, disabled-update metadata, bundled-license, and strict deep ad-hoc signature checks without launching. DMG creation, Developer ID signing, notarization, and desktop smoke were not run. Both the arm64 release app and x86_64 debug app report a macOS 14.0 minimum in their Mach-O load commands. The Xcode 27 cross-build emits an Intel deprecation warning; no claim of future Intel toolchain support is made.

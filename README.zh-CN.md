@@ -1,3 +1,5 @@
+> **Development fork:** hardening is in progress. Automatic updates and release publication are disabled; terminal replies, phone/Watch connections, and SSH setup are unavailable. Upstream download/support information below is historical reference. See [the hardening register](docs/pre-feature-hardening.md) and [verified environments](docs/quality.md#fork-validation-matrix-and-limits).
+
 <p align="center">
   <img src="docs/images/readme-banner.svg" alt="Open Island - agents in your menu bar" width="760">
 </p>

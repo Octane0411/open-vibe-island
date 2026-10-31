@@ -3,41 +3,60 @@ name: CI
 on:
   pull_request:
   push:
-    branches:
-      - main
-      - 'feat/**'
-      - 'fix/**'
-      - 'docs/**'
-      - 'refactor/**'
-      - 'chore/**'
-      - 'investigate/**'
+    branches: [main, 'feat/**', 'fix/**', 'docs/**', 'refactor/**', 'chore/**', 'investigate/**']
+
+permissions:
+  contents: read
 
 jobs:
   harness:
     runs-on: macos-26
-
+    strategy:
+      fail-fast: false
+      matrix:
+        xcode: ['26.0.1', '26.6']
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Show Swift Version
-        run: swift --version
-
-      - name: Run CI checks
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Record environment
+        run: |
+          test -d "$DEVELOPER_DIR"
+          xcodebuild -version
+          swift --version
+          node --version
+          sw_vers
+          uname -m
+          echo "Runner image: $ImageVersion"
+          shasum -a 256 Package.resolved
+      - name: Run isolated automated checks
         run: zsh scripts/harness.sh ci
+      - name: Compile Intel target
+        run: swift build --force-resolved-versions --arch x86_64
 
   package-verify:
     runs-on: macos-26
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install dependencies
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - name: Fetch exact packaging tool
         run: |
-          brew install create-dmg
-          pip3 install --break-system-packages Pillow
-
-      - name: Build and package
+          git clone https://github.com/create-dmg/create-dmg.git "$RUNNER_TEMP/create-dmg"
+          git -C "$RUNNER_TEMP/create-dmg" checkout --detach 994a036532d3ac1bb1cd5a425a0d5d796ecbed83
+          test "$(git -C "$RUNNER_TEMP/create-dmg" rev-parse HEAD)" = 994a036532d3ac1bb1cd5a425a0d5d796ecbed83
+          "$RUNNER_TEMP/create-dmg/create-dmg" --version
+      - name: Build development package without launching it
+        env:
+          OPEN_ISLAND_CREATE_DMG_TOOL: ${{ runner.temp }}/create-dmg/create-dmg
+          OPEN_ISLAND_PACKAGE_SMOKE: 'false'
+          OPEN_ISLAND_UNIVERSAL: 'true'
         run: zsh scripts/package-app.sh
-
-      # Bundle structure is verified inside package-app.sh itself.
-      # No separate verify step needed — the script exits non-zero on
-      # missing files.

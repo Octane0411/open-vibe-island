@@ -117,6 +117,12 @@ The fork never constructs or starts Sparkle while its release restriction is act
 
 Configuration-only packaging checks pass, and attempted enablement is rejected. `docs/release-signing.md` records the concrete remaining requirements: production identity and storage migration, maintainer-owned signing/update keys, notarized artifacts, platform/GUI evidence, signed upgrade/recovery tests, and anonymous asset verification before metadata promotion. These require maintainer credentials and isolated platform environments; no release, signing credential, or update channel was created by this task.
 
+### H13 — reproducible inputs and local build checks implemented; external matrix pending
+
+CI actions are pinned to verified revisions, Node to 24.22.1, and Xcode to explicit 26.0.1/26.6 paths. The test harness includes JavaScript contracts, and CI also cross-compiles Intel. DMG tooling is pinned to create-dmg 1.2.3 revision `994a036532d3ac1bb1cd5a425a0d5d796ecbed83`. Packaging uses committed assets instead of installing arbitrary Pillow versions; explicit regeneration requires 11.3.0. Bundles record source/dirty state, lock hash, and tool versions. Packaging desktop smoke is opt-in.
+
+Local release app/ZIP packaging passed without launching, as did disabled-update metadata, bundled-license, and strict deep ad-hoc signature checks. Intel cross-compilation passed; arm64 release and x86_64 debug binaries declare macOS 14.0 minimum deployment. Hosted CI, the minimum Swift toolchain, actual macOS 14/Intel execution, DMG generation, and GUI/TCC checks remain unverified. The minimum Xcode is not installed here. `docs/quality.md` narrows claims and records the exact local environment and required release matrix. Distribution remains blocked; no CI job was run or result inferred from the local build.
+
 ## Completion gates
 
 | Gate | Required outcome |
@@ -141,7 +147,7 @@ P1 means incorrect authorization, unintended input, configuration damage, or a s
 | H10 | Secure remote pairing and approvals | P1 | Conditional | Restricted in code; implementation deferred |
 | H11 | Fix remote endpoint lifecycle and request processing | P2 | Conditional | Restricted in code; implementation deferred |
 | H12 | Restrict diagnostics and remote Markdown content | P2 | Core | Implemented locally |
-| H13 | Make builds and compatibility checks reproducible | P2 | Core and Release | Partial: dependency locking |
+| H13 | Make builds and compatibility checks reproducible | P2 | Core and Release | Local checks passed; CI/platform release checks pending |
 | H14 | Give the fork a safe release and update configuration | P1 | Release | Updates/publication disabled; release verification blocked |
 | H15 | Stop cancelled terminal jumps before side effects | P2 | Core | Implemented locally |
 | H16 | Preserve and correctly merge SSH hook configuration | P2 | Conditional | Restricted in code; implementation deferred |

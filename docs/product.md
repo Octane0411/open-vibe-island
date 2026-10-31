@@ -20,6 +20,10 @@ CLI coding agents are powerful, but they pull attention away from the editor and
 - **Terminal-native** — built to support the terminal workflow, not replace it
 - **Fail open** — if the app or bridge is unavailable, agents keep running unchanged
 
+## Fork compatibility evidence
+
+This fork is locally validated through automated tests on Apple Silicon/macOS 26.6.1 with Swift 6.4. Live agent/terminal versions, macOS 14, Intel runtime, GUI permission paths, and mobile round trips are not yet certified. The following inherited integration tables describe intended compatibility, not a completed fork test matrix. Use [the quality matrix](./quality.md#fork-validation-matrix-and-limits) and the release gate before making distribution claims.
+
 ## Supported Code Agents
 
 | Agent | Status | Notes |

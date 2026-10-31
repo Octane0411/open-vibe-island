@@ -18,6 +18,13 @@ zip_path="${OPEN_ISLAND_ZIP_PATH:-$package_root/$app_name.zip}"
 dmg_path="${OPEN_ISLAND_DMG_PATH:-$package_root/$app_name.dmg}"
 signing_identity="${OPEN_ISLAND_SIGN_IDENTITY:-}"
 notary_profile="${OPEN_ISLAND_NOTARY_PROFILE:-}"
+build_root="${OPEN_ISLAND_BUILD_ROOT:-$repo_root/.build}"
+create_dmg_tool="${OPEN_ISLAND_CREATE_DMG_TOOL:-create-dmg}"
+create_dmg="${OPEN_ISLAND_CREATE_DMG:-true}"
+if [[ "$create_dmg" != "true" && "$create_dmg" != "false" ]]; then
+    echo "OPEN_ISLAND_CREATE_DMG must be true or false." >&2
+    exit 1
+fi
 
 # Updates remain unavailable until the fork release gate is reviewed and completed.
 if [[ "${OPEN_ISLAND_ENABLE_UPDATES:-false}" != "false" || -n "${OPEN_ISLAND_UPDATE_FEED_URL:-}" || -n "${OPEN_ISLAND_EDDSA_PUBLIC_KEY:-}" ]]; then
@@ -39,16 +46,34 @@ entitlements_path="$repo_root/config/packaging/OpenIslandApp.entitlements"
 
 cd "$repo_root"
 
+swift_build_flags=(--force-resolved-versions --scratch-path "$build_root")
+if [[ -n "${OPEN_ISLAND_SWIFT_CACHE:-}" ]]; then
+    swift_build_flags+=(--cache-path "$OPEN_ISLAND_SWIFT_CACHE")
+fi
+if [[ -n "${OPEN_ISLAND_SWIFT_CONFIG:-}" ]]; then
+    swift_build_flags+=(--config-path "$OPEN_ISLAND_SWIFT_CONFIG")
+fi
+if [[ -n "${OPEN_ISLAND_SWIFT_SECURITY:-}" ]]; then
+    swift_build_flags+=(--security-path "$OPEN_ISLAND_SWIFT_SECURITY")
+fi
+if [[ "$create_dmg" == "true" ]]; then
+    tool_version="$("$create_dmg_tool" --version)"
+    if [[ "$tool_version" != "create-dmg 1.2.3" ]]; then
+        echo "Packaging requires pinned create-dmg 1.2.3 (see CI for its exact revision)." >&2
+        exit 1
+    fi
+fi
+
 arch_flags=()
 if [[ "${OPEN_ISLAND_UNIVERSAL:-false}" == "true" ]]; then
     arch_flags=(--arch arm64 --arch x86_64)
 fi
 
-swift build --force-resolved-versions -c release "${arch_flags[@]}" --product OpenIslandApp
-swift build --force-resolved-versions -c release "${arch_flags[@]}" --product OpenIslandHooks
-swift build --force-resolved-versions -c release "${arch_flags[@]}" --product OpenIslandSetup
+swift build "${swift_build_flags[@]}" -c release "${arch_flags[@]}" --product OpenIslandApp
+swift build "${swift_build_flags[@]}" -c release "${arch_flags[@]}" --product OpenIslandHooks
+swift build "${swift_build_flags[@]}" -c release "${arch_flags[@]}" --product OpenIslandSetup
 
-build_bin_dir="$(swift build --force-resolved-versions -c release "${arch_flags[@]}" --show-bin-path)"
+build_bin_dir="$(swift build "${swift_build_flags[@]}" -c release "${arch_flags[@]}" --show-bin-path)"
 app_binary="$build_bin_dir/OpenIslandApp"
 hooks_binary="$build_bin_dir/OpenIslandHooks"
 setup_binary="$build_bin_dir/OpenIslandSetup"
@@ -60,6 +85,7 @@ brand_icon="$repo_root/Assets/Brand/OpenIsland.icns"
 # has (see scripts/launch-dev-app.sh). Opt in when the brand source changed.
 dmg_background="$repo_root/Assets/Brand/dmg-background.png"
 if [[ "${OPEN_ISLAND_REGENERATE_BRAND_ASSETS:-false}" == "true" ]]; then
+    python3 -c 'import PIL; assert PIL.__version__ == "11.3.0", "Brand regeneration requires Pillow 11.3.0"'
     python3 "$brand_script"
     python3 "$dmg_bg_script"
 else
@@ -71,6 +97,11 @@ else
     done
 fi
 
+# Refuse dangerous destinations before removing previous packaging outputs.
+if [[ "$bundle_dir" != *.app || "$zip_path" != *.zip || "$dmg_path" != *.dmg ]]; then
+    echo "Bundle/archive destinations must end in .app, .zip, and .dmg." >&2
+    exit 1
+fi
 rm -rf "$bundle_dir" "$zip_path" "$dmg_path"
 mkdir -p "$bundle_dir/Contents/MacOS" "$bundle_dir/Contents/Helpers" "$bundle_dir/Contents/Resources" "$bundle_dir/Contents/Frameworks"
 
@@ -79,9 +110,17 @@ cp "$hooks_binary" "$bundle_dir/Contents/Helpers/OpenIslandHooks"
 cp "$setup_binary" "$bundle_dir/Contents/Helpers/OpenIslandSetup"
 cp "$brand_icon" "$bundle_dir/Contents/Resources/OpenIsland.icns"
 cp -R "$repo_root/ThirdPartyLicenses" "$bundle_dir/Contents/Resources/"
+{
+    git rev-parse HEAD
+    if [[ -n "$(git status --porcelain)" ]]; then echo "working-tree: dirty"; else echo "working-tree: clean"; fi
+    shasum -a 256 Package.resolved
+    xcodebuild -version
+    swift --version
+    echo "create-dmg: ${tool_version:-not used}; regenerated assets: ${OPEN_ISLAND_REGENERATE_BRAND_ASSETS:-false}"
+} > "$bundle_dir/Contents/Resources/build-info.txt"
 
 # Copy Sparkle.framework for auto-update support.
-sparkle_framework="$repo_root/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
+sparkle_framework="$build_root/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
 if [[ -d "$sparkle_framework" ]]; then
     cp -R "$sparkle_framework" "$bundle_dir/Contents/Frameworks/"
 else
@@ -255,10 +294,11 @@ if [[ -n "$signing_identity" && -n "$notary_profile" ]]; then
     ditto -c -k --keepParent "$bundle_dir" "$zip_path"
 fi
 
+if [[ "$create_dmg" == "true" ]]; then
 # --- Styled DMG creation ---
 dmg_bg="$repo_root/Assets/Brand/dmg-background@2x.png"
 
-create-dmg \
+"$create_dmg_tool" \
     --volname "$app_name" \
     --background "$dmg_bg" \
     --window-pos 200 120 \
@@ -287,13 +327,15 @@ if [[ -n "$signing_identity" && -n "$notary_profile" ]]; then
     xcrun stapler staple -v "$dmg_path"
 fi
 
+fi
+
 echo "Bundle: $bundle_dir"
 echo "Archive: $zip_path"
-echo "DMG: $dmg_path"
+if [[ "$create_dmg" == "true" ]]; then echo "DMG: $dmg_path"; fi
 if [[ -n "$signing_identity" ]]; then
     echo "Signed with identity: $signing_identity"
 else
-    echo "No signing identity configured; produced an unsigned local bundle."
+    echo "No Developer ID identity configured; produced an ad-hoc development bundle."
 fi
 
 if [[ -n "$notary_profile" ]]; then

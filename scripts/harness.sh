@@ -21,6 +21,7 @@ run_step() {
             ;;
         test)
             echo "==> test"
+            node --test "$repo_root"/Tests/PluginTests/*.test.cjs
             zsh "$repo_root/scripts/test-clt.sh"
             ;;
         lint)
