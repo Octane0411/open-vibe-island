@@ -1,5 +1,5 @@
 import Foundation
-import TOMLKit
+import CodexTOML
 
 public struct CodexHookInstallerManifest: Equatable, Codable, Sendable {
     public static let fileName = "open-island-install.json"
@@ -162,23 +162,13 @@ public enum CodexHookInstaller {
 
     /// Validates both documents and proves that only the managed feature flags change.
     static func validatedFeatureMutation(in contents: String, enabling key: CodexHooksFeatureFlagKey?) throws -> CodexFeatureMutation {
-        let expected = try TOMLTable(string: contents)
-        guard expected["features"] == nil || expected["features"]?.table != nil else {
-            throw ConfigurationError.invalidFormat("config.toml features")
-        }
-        let features = expected["features"]?.table ?? TOMLTable()
-        let wasEnabled = features["hooks"]?.bool == true || features["codex_hooks"]?.bool == true
-        features.remove(at: "hooks")
-        features.remove(at: "codex_hooks")
-        if let key { features[key.rawValue] = true }
-        expected["features"] = features
         let mutation = key.map { enableCodexHooksFeature(in: contents, preferredKey: $0) }
             ?? disableCodexHooksFeatureIfManaged(in: contents)
-        let actual = try TOMLTable(string: mutation.contents)
-        // Removing an empty features table has the same configuration meaning.
-        if features.isEmpty { expected.remove(at: "features") }
-        if actual["features"]?.table?.isEmpty == true { actual.remove(at: "features") }
-        guard actual == expected else { throw ConfigurationError.invalidFormat("config.toml (unsupported feature layout)") }
+        var wasEnabled = false
+        guard !contents.contains("\0"), !mutation.contents.contains("\0"),
+              codex_validate_feature_edit(contents, mutation.contents, key?.rawValue, &wasEnabled) else {
+            throw ConfigurationError.invalidFormat("config.toml (invalid TOML or unsupported feature layout)")
+        }
         return .init(contents: mutation.contents, changed: mutation.changed, featureEnabledByInstaller: key != nil && !wasEnabled)
     }
 

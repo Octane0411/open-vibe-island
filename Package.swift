@@ -27,14 +27,14 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/LebJe/TOMLKit.git", exact: "0.6.0"),
         .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.1"),
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.10.1"),
     ],
     targets: [
+        .target(name: "CodexTOML"),
         .target(
             name: "OpenIslandCore",
-            dependencies: [.product(name: "TOMLKit", package: "TOMLKit")]
+            dependencies: ["CodexTOML"]
         ),
         .executableTarget(
             name: "OpenIslandHooks",
@@ -63,5 +63,6 @@ let package = Package(
             name: "OpenIslandAppTests",
             dependencies: ["OpenIslandApp", "OpenIslandCore"]
         ),
-    ]
+    ],
+    cxxLanguageStandard: .cxx17
 )
