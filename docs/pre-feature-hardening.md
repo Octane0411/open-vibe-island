@@ -8,7 +8,7 @@ This plan covers incorrect approvals, configuration damage, unreliable communica
 
 - Review date: October 31, 2026.
 - Source baseline: upstream commit [`01aa0924fd96bf319a64e75646765c55cae4e2c5`](https://github.com/Octane0411/open-vibe-island/tree/01aa0924fd96bf319a64e75646765c55cae4e2c5), also the fork's starting commit.
-- Core changes are implemented and locally verified on the hardening branch. H13 still needs a fork CI run on the pinned toolchains. Conditional capabilities are restricted in code; distribution remains blocked on the H13/H14 release evidence below.
+- Core changes are implemented and verified locally and by fork CI on both pinned toolchains. Conditional capabilities are restricted in code; distribution remains blocked on the H13/H14 release evidence below.
 - Source references point to the reviewed commit so their line numbers remain stable as the fork changes.
 
 The baseline package built on Apple Silicon with macOS 26.6.1 and Swift 6.4. Documentation and localization checks passed, as did 78 selected tests across 14 suites. The selected suites covered payloads, transcript processing, registries, subprocess behavior, and related model logic. They do not establish full application, GUI, remote-device, Intel, or macOS 14 compatibility.
@@ -117,11 +117,21 @@ The fork never constructs or starts Sparkle while its release restriction is act
 
 Configuration-only packaging checks pass, and attempted enablement is rejected. `docs/release-signing.md` records the concrete remaining requirements: production identity and storage migration, maintainer-owned signing/update keys, notarized artifacts, platform/GUI evidence, signed upgrade/recovery tests, and anonymous asset verification before metadata promotion. These require maintainer credentials and isolated platform environments; no release, signing credential, or update channel was created by this task.
 
-### H13 — reproducible inputs and local build checks implemented; external matrix pending
+### H13 — automated toolchain checks verified; platform release matrix pending
 
 CI actions are pinned to verified revisions, Node to 24.22.1, and Xcode to explicit 26.0.1/26.6 paths. The test harness includes JavaScript contracts, and CI also cross-compiles Intel. DMG tooling is pinned to create-dmg 1.2.3 revision `994a036532d3ac1bb1cd5a425a0d5d796ecbed83`. Packaging uses committed assets instead of installing arbitrary Pillow versions; explicit regeneration requires 11.3.0. Bundles record source/dirty state, lock hash, and tool versions. Packaging desktop smoke is opt-in.
 
-Local release app/ZIP packaging passed without launching, as did disabled-update metadata, bundled-license, and strict deep ad-hoc signature checks. Intel cross-compilation passed; arm64 release and x86_64 debug binaries declare macOS 14.0 minimum deployment. Hosted CI, the minimum Swift toolchain, actual macOS 14/Intel execution, DMG generation, and GUI/TCC checks remain unverified. The minimum Xcode is not installed here. `docs/quality.md` narrows claims and records the exact local environment and required release matrix. Distribution remains blocked; no CI job was run or result inferred from the local build.
+Local release app/ZIP packaging passed without launching, as did disabled-update metadata, bundled-license, and strict deep ad-hoc signature checks. Intel cross-compilation passed; arm64 release and x86_64 debug binaries declare macOS 14.0 minimum deployment. Hosted CI subsequently verified the minimum toolchain, Intel cross-builds, and universal app/ZIP/DMG packaging as recorded below. Actual macOS 14/Intel execution and app GUI/TCC checks remain unverified. `docs/quality.md` records the tested environments and required release matrix. Distribution remains blocked.
+
+### Hosted CI verification — October 31, 2026
+
+[CI run 41213119726](https://github.com/RobinEdquist/open-vibe-island/actions/runs/41213119726) passed all three jobs at commit `9348d7f8e998a82583ae457137b3b00f4c0d41d4`:
+
+- Xcode 26.0.1 / Swift 6.2 and Xcode 26.6 / Swift 6.3.3 on macOS 26.6.2 (25G83), runner image `20261026.0455.2`, Node 24.22.1: documentation/localization checks, 560 Swift tests across 72 suites, six JavaScript tests, native builds, and Intel cross-builds passed. Both live desktop tests were explicitly skipped.
+- Both toolchains also passed six tests across three suites with a constrained cooperative task pool. The setting applies only to the test helper; applying it to Swift 6.2 Package Manager stalled before test execution. The stress step has a two-minute timeout.
+- Xcode 26.6 universal app/ZIP/DMG packaging passed bundle/resource checks and strict deep ad-hoc signature verification. DMG styling ran Finder automation on the disposable hosted runner. Open Island was not launched; Developer ID signing, notarization, app upgrades, and publication were not performed. CI does not upload the generated packages.
+
+The initial runs exposed old-toolchain type-checking limits and an unavailable test cancellation API. Metadata fallback order is preserved using explicit steps (`8073650`), and desktop opt-in uses the older supported test trait (`27665b6`). CI also exposed test-worker starvation and an unreliable one-second fixture-readiness deadline. Blocking clients now run off the cooperative executor, start independently of task scheduling, and synchronize setup through real bridge permission events (`1b88060`, `40036a7`, `9348d7f`). The test-only client deadline uses the production 45-second default, with a one-minute suite limit; simulated-clock expiry and decision assertions are retained. The stress runner correction is `c7e3f31`. No application timeout or approval policy was relaxed to obtain a passing run.
 
 ### Final local verification and resolving commits
 
@@ -140,11 +150,11 @@ Final Intel compilation and arm64 release app/ZIP packaging also passed at runti
 | H08 | `ac33a2b` |
 | H09/H10/H11/H16 | `7825691` (enforced restriction, capability implementation deferred) |
 | H12 | `36008eb`, diagnostic removal in `ee7c39f` |
-| H13 | `d4f4c7a`, `cded1be`, `46a2b54` |
+| H13 | `d4f4c7a`, `cded1be`, `46a2b54`, `8073650`, `1b88060`, `27665b6`, `40036a7`, `c7e3f31`, `9348d7f` |
 | H14 | `6ec21ff` (updates/publication blocked until release criteria are met) |
 | H15 | `99a541e` |
 
-The local Core implementation and enforced Conditional restrictions are complete. The Core milestone remains pending the fork CI run on the declared toolchains; publishing this branch requires the maintainer's explicit instruction under the repository workflow. The Release milestone additionally needs the environments, credentials, and manual evidence listed in `docs/quality.md` and `docs/release-signing.md`. No changes were merged into the shared main worktree, no hooks were installed into the developer's real agent configuration, and no build was published.
+The Core milestone and enforced Conditional restrictions are complete under the narrowed compatibility claims. The maintainer authorized pushing the hardening branch; the pinned-toolchain CI run is now verified. The Release milestone additionally needs the environments, credentials, and manual evidence listed in `docs/quality.md` and `docs/release-signing.md`. No changes were merged into the shared main worktree, no hooks were installed into the developer's real agent configuration, and no build was published.
 
 ## Completion gates
 
@@ -170,7 +180,7 @@ P1 means incorrect authorization, unintended input, configuration damage, or a s
 | H10 | Secure remote pairing and approvals | P1 | Conditional | Restricted in code; implementation deferred |
 | H11 | Fix remote endpoint lifecycle and request processing | P2 | Conditional | Restricted in code; implementation deferred |
 | H12 | Restrict diagnostics and remote Markdown content | P2 | Core | Implemented locally |
-| H13 | Make builds and compatibility checks reproducible | P2 | Core and Release | Local checks passed; CI/platform release checks pending |
+| H13 | Make builds and compatibility checks reproducible | P2 | Core and Release | Local and CI checks passed; manual platform/release checks pending |
 | H14 | Give the fork a safe release and update configuration | P1 | Release | Updates/publication disabled; release verification blocked |
 | H15 | Stop cancelled terminal jumps before side effects | P2 | Core | Implemented locally |
 | H16 | Preserve and correctly merge SSH hook configuration | P2 | Conditional | Restricted in code; implementation deferred |
@@ -446,7 +456,7 @@ Hooks intentionally fail open when the application is unavailable. Preserve the 
 
 ## Exit criteria before new features
 
-- [ ] Every Core item is resolved with its acceptance criteria verified. Local implementation is complete; the pinned-toolchain fork CI run remains outstanding (H13).
+- [x] Every Core item is resolved with its acceptance criteria verified within the narrowed compatibility scope. Local and pinned-toolchain CI checks passed; manual platform and signed-distribution checks remain Release gates.
 - [x] Conditional capabilities are either verified or explicitly restricted in code and documentation, including previously saved enablement preferences.
 - [x] The full ordinary test suite runs without modifying real user state or controlling desktop applications on the locally verified environment.
 - [x] Request identity, delivery acknowledgment, installer preservation, fragmented messages, startup ordering, and stalled clients have regression coverage.
