@@ -65,9 +65,10 @@ final class AppModel {
     @ObservationIgnored private var _agentsGridObservedSequence: [String: Int] = [:]
     @ObservationIgnored private var _agentsGridNextTicket: Int = 0
     var selectedSessionID: String?
-    let hooks = HookInstallationCoordinator()
-    let overlay = OverlayUICoordinator()
-    let discovery = SessionDiscoveryCoordinator()
+    @ObservationIgnored private let defaults: UserDefaults
+    let hooks: HookInstallationCoordinator
+    let overlay: OverlayUICoordinator
+    let discovery: SessionDiscoveryCoordinator
     let monitoring = ProcessMonitoringCoordinator()
     let codexAppServer = CodexAppServerCoordinator()
     let updateChecker = UpdateChecker()
@@ -266,7 +267,7 @@ final class AppModel {
     var showDockIcon: Bool = false {
         didSet {
             guard hasFinishedInit, showDockIcon != oldValue else { return }
-            UserDefaults.standard.set(showDockIcon, forKey: Self.showDockIconDefaultsKey)
+            defaults.set(showDockIcon, forKey: Self.showDockIconDefaultsKey)
             NSApp.setActivationPolicy(showDockIcon ? .regular : .accessory)
             if !showDockIcon {
                 // macOS does not immediately refresh the Dock when switching to
@@ -282,7 +283,7 @@ final class AppModel {
     var hapticFeedbackEnabled: Bool = false {
         didSet {
             guard hasFinishedInit, hapticFeedbackEnabled != oldValue else { return }
-            UserDefaults.standard.set(hapticFeedbackEnabled, forKey: Self.hapticFeedbackEnabledDefaultsKey)
+            defaults.set(hapticFeedbackEnabled, forKey: Self.hapticFeedbackEnabledDefaultsKey)
         }
     }
     /// Keep the island open until the user acts on a pending approval /
@@ -293,26 +294,26 @@ final class AppModel {
     var keepNotchOpenUntilDecision: Bool = false {
         didSet {
             guard hasFinishedInit, keepNotchOpenUntilDecision != oldValue else { return }
-            UserDefaults.standard.set(keepNotchOpenUntilDecision, forKey: Self.keepNotchOpenUntilDecisionDefaultsKey)
+            defaults.set(keepNotchOpenUntilDecision, forKey: Self.keepNotchOpenUntilDecisionDefaultsKey)
         }
     }
     var showCodexUsage: Bool = false {
         didSet {
             guard hasFinishedInit, showCodexUsage != oldValue else { return }
-            UserDefaults.standard.set(showCodexUsage, forKey: Self.showCodexUsageDefaultsKey)
+            defaults.set(showCodexUsage, forKey: Self.showCodexUsageDefaultsKey)
         }
     }
     var completionReplyEnabled: Bool = false {
         didSet {
             guard hasFinishedInit, completionReplyEnabled != oldValue else { return }
-            UserDefaults.standard.set(completionReplyEnabled, forKey: Self.completionReplyEnabledDefaultsKey)
+            defaults.set(completionReplyEnabled, forKey: Self.completionReplyEnabledDefaultsKey)
             refreshOverlayPlacementIfVisible()
         }
     }
     var suppressFrontmostNotifications: Bool = true {
         didSet {
             guard hasFinishedInit, suppressFrontmostNotifications != oldValue else { return }
-            UserDefaults.standard.set(suppressFrontmostNotifications, forKey: Self.suppressFrontmostNotificationsDefaultsKey)
+            defaults.set(suppressFrontmostNotifications, forKey: Self.suppressFrontmostNotificationsDefaultsKey)
         }
     }
     var launchAtLoginEnabled: Bool = false {
@@ -343,7 +344,7 @@ final class AppModel {
                 return
             }
 
-            UserDefaults.standard.set(isSoundMuted, forKey: Self.soundMutedDefaultsKey)
+            defaults.set(isSoundMuted, forKey: Self.soundMutedDefaultsKey)
             lastActionMessage = isSoundMuted
                 ? "Island sound notifications muted."
                 : "Island sound notifications enabled."
@@ -352,7 +353,7 @@ final class AppModel {
     var selectedSoundName: String = NotificationSoundService.defaultSoundName {
         didSet {
             guard selectedSoundName != oldValue else { return }
-            NotificationSoundService.selectedSoundName = selectedSoundName
+            NotificationSoundService.selectSound(selectedSoundName, defaults: defaults)
         }
     }
     var overlayDisplaySelectionID: String {
@@ -365,7 +366,7 @@ final class AppModel {
     var appearanceSettingsProfile: IslandAppearanceDisplayProfile = .topBar {
         didSet {
             guard appearanceSettingsProfile != oldValue else { return }
-            UserDefaults.standard.set(appearanceSettingsProfile.rawValue, forKey: Self.appearanceProfileSettingsDefaultsKey)
+            defaults.set(appearanceSettingsProfile.rawValue, forKey: Self.appearanceProfileSettingsDefaultsKey)
         }
     }
 
@@ -468,7 +469,6 @@ final class AppModel {
         _ preferences: IslandAppearancePreferences,
         for profile: IslandAppearanceDisplayProfile
     ) {
-        let defaults = UserDefaults.standard
         defaults.set(preferences.rightSlot.rawValue, forKey: Self.appearanceDefaultsKey(profile, "rightSlot"))
         defaults.set(preferences.centerLabel.rawValue, forKey: Self.appearanceDefaultsKey(profile, "centerLabel"))
         defaults.set(preferences.usageDisplay.rawValue, forKey: Self.appearanceDefaultsKey(profile, "usageDisplay"))
@@ -485,7 +485,7 @@ final class AppModel {
     var watchNotificationEnabled: Bool = false {
         didSet {
             guard watchNotificationEnabled != oldValue else { return }
-            UserDefaults.standard.set(watchNotificationEnabled, forKey: Self.watchNotificationEnabledKey)
+            defaults.set(watchNotificationEnabled, forKey: Self.watchNotificationEnabledKey)
             if watchNotificationEnabled {
                 startWatchRelay()
             } else {
@@ -560,7 +560,7 @@ final class AppModel {
     private var hasStarted = false
 
     @ObservationIgnored
-    private let bridgeServer = BridgeServer()
+    private let bridgeServer = BridgeServer(legacySocketURL: BridgeSocketLocation.legacyURL)
 
     @ObservationIgnored
     private var bridgeClient = LocalBridgeClient()
@@ -590,8 +590,7 @@ final class AppModel {
         "appearance.island.v8.\(profile.rawValue).\(name)"
     }
 
-    private static func loadAppearancePreferences(for profile: IslandAppearanceDisplayProfile) -> IslandAppearancePreferences {
-        let defaults = UserDefaults.standard
+    private static func loadAppearancePreferences(for profile: IslandAppearanceDisplayProfile, defaults: UserDefaults) -> IslandAppearancePreferences {
         return IslandAppearancePreferences(
             rightSlot: IslandRightSlot(
                 rawValue: defaults.string(forKey: appearanceDefaultsKey(profile, "rightSlot"))
@@ -631,6 +630,9 @@ final class AppModel {
     }
 
     init(
+        defaults: UserDefaults = .standard,
+        discovery: SessionDiscoveryCoordinator = SessionDiscoveryCoordinator(),
+        panelController: any OverlayPanelControlling = OverlayPanelController(),
         terminalJumpAction: @escaping @Sendable (JumpTarget) throws -> String = { target in
             try TerminalJumpService().jump(to: target)
         },
@@ -638,36 +640,40 @@ final class AppModel {
             await ForegroundTerminalSessionProbe().matches(session: session)
         }
     ) {
+        self.defaults = defaults
+        self.discovery = discovery
+        self.hooks = HookInstallationCoordinator(intentStore: AgentIntentStore(defaults: defaults))
+        self.overlay = OverlayUICoordinator(defaults: defaults, panelController: panelController)
         self.terminalJumpAction = terminalJumpAction
         self.isNotificationSessionAlreadyFrontmost = isNotificationSessionAlreadyFrontmost
-        UserDefaults.standard.register(defaults: [
+        defaults.register(defaults: [
             Self.showDockIconDefaultsKey: true,
             Self.hapticFeedbackEnabledDefaultsKey: false,
             Self.keepNotchOpenUntilDecisionDefaultsKey: false,
             Self.completionReplyEnabledDefaultsKey: false,
             Self.suppressFrontmostNotificationsDefaultsKey: true,
         ])
-        isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
-        selectedSoundName = NotificationSoundService.selectedSoundName
-        showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
-        hapticFeedbackEnabled = UserDefaults.standard.bool(forKey: Self.hapticFeedbackEnabledDefaultsKey)
-        keepNotchOpenUntilDecision = UserDefaults.standard.bool(forKey: Self.keepNotchOpenUntilDecisionDefaultsKey)
-        suppressFrontmostNotifications = UserDefaults.standard.bool(forKey: Self.suppressFrontmostNotificationsDefaultsKey)
-        if UserDefaults.standard.object(forKey: Self.showCodexUsageDefaultsKey) != nil {
-            showCodexUsage = UserDefaults.standard.bool(forKey: Self.showCodexUsageDefaultsKey)
+        isSoundMuted = defaults.bool(forKey: Self.soundMutedDefaultsKey)
+        selectedSoundName = NotificationSoundService.selectedSoundName(defaults: defaults)
+        showDockIcon = defaults.bool(forKey: Self.showDockIconDefaultsKey)
+        hapticFeedbackEnabled = defaults.bool(forKey: Self.hapticFeedbackEnabledDefaultsKey)
+        keepNotchOpenUntilDecision = defaults.bool(forKey: Self.keepNotchOpenUntilDecisionDefaultsKey)
+        suppressFrontmostNotifications = defaults.bool(forKey: Self.suppressFrontmostNotificationsDefaultsKey)
+        if defaults.object(forKey: Self.showCodexUsageDefaultsKey) != nil {
+            showCodexUsage = defaults.bool(forKey: Self.showCodexUsageDefaultsKey)
         } else {
             showCodexUsage = FileManager.default.fileExists(
                 atPath: CodexRolloutDiscovery.defaultRootURL.path
             )
         }
-        completionReplyEnabled = UserDefaults.standard.bool(forKey: Self.completionReplyEnabledDefaultsKey)
+        completionReplyEnabled = defaults.bool(forKey: Self.completionReplyEnabledDefaultsKey)
         launchAtLoginEnabled = LaunchAtLoginService.shared.isEnabled
         appearanceSettingsProfile = IslandAppearanceDisplayProfile(
-            rawValue: UserDefaults.standard.string(forKey: Self.appearanceProfileSettingsDefaultsKey) ?? ""
+            rawValue: defaults.string(forKey: Self.appearanceProfileSettingsDefaultsKey) ?? ""
         ) ?? .topBar
-        notchAppearancePreferences = Self.loadAppearancePreferences(for: .notch)
-        topBarAppearancePreferences = Self.loadAppearancePreferences(for: .topBar)
-        watchNotificationEnabled = UserDefaults.standard.bool(forKey: Self.watchNotificationEnabledKey)
+        notchAppearancePreferences = Self.loadAppearancePreferences(for: .notch, defaults: defaults)
+        topBarAppearancePreferences = Self.loadAppearancePreferences(for: .topBar, defaults: defaults)
+        watchNotificationEnabled = defaults.bool(forKey: Self.watchNotificationEnabledKey)
         if watchNotificationEnabled {
             startWatchRelay()
         }

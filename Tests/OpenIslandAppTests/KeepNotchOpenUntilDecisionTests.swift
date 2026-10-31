@@ -6,9 +6,8 @@ import OpenIslandCore
 @MainActor
 @Suite(.serialized)
 struct KeepNotchOpenUntilDecisionTests {
-    init() {
-        UserDefaults.standard.removeObject(forKey: "app.keepNotchOpenUntilDecision")
-    }
+    private let environment = AppModelTestEnvironment()
+
 
     private static func approvalSession(
         id: String = "approval-session",
@@ -33,7 +32,7 @@ struct KeepNotchOpenUntilDecisionTests {
 
     @Test
     func preferenceIsOffByDefaultSoClickOutsideStillDismisses() {
-        let model = AppModel()
+        let model = environment.makeModel()
         #expect(model.keepNotchOpenUntilDecision == false)
 
         model.state = SessionState(sessions: [Self.approvalSession()])
@@ -45,7 +44,7 @@ struct KeepNotchOpenUntilDecisionTests {
 
     @Test
     func blocksClickOutsideDismissWhileAwaitingApprovalWhenEnabled() {
-        let model = AppModel()
+        let model = environment.makeModel()
         model.keepNotchOpenUntilDecision = true
 
         model.state = SessionState(sessions: [Self.approvalSession()])
@@ -57,7 +56,7 @@ struct KeepNotchOpenUntilDecisionTests {
 
     @Test
     func hiddenSubagentAwaitingApprovalDoesNotPinTheIsland() {
-        let model = AppModel()
+        let model = environment.makeModel()
         model.keepNotchOpenUntilDecision = true
 
         model.state = SessionState(sessions: [
@@ -74,7 +73,7 @@ struct KeepNotchOpenUntilDecisionTests {
 
     @Test
     func doesNotBlockWhenPreferenceDisabled() {
-        let model = AppModel()
+        let model = environment.makeModel()
         model.keepNotchOpenUntilDecision = false
 
         model.state = SessionState(sessions: [
@@ -100,7 +99,7 @@ struct KeepNotchOpenUntilDecisionTests {
 
     @Test
     func doesNotBlockWhenOnlyRunningSessions() {
-        let model = AppModel()
+        let model = environment.makeModel()
         model.state = SessionState(sessions: [
             AgentSession(
                 id: "running",
@@ -119,7 +118,7 @@ struct KeepNotchOpenUntilDecisionTests {
 
     @Test
     func blocksWhileAwaitingQuestionAnswerWhenEnabled() {
-        let model = AppModel()
+        let model = environment.makeModel()
         model.keepNotchOpenUntilDecision = true
         model.state = SessionState(sessions: [
             AgentSession(

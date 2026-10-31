@@ -6,6 +6,23 @@ import OpenIslandCore
 @Observable
 final class SessionDiscoveryCoordinator {
 
+    /// One directory owns all session persistence; tests provide a temporary root.
+    init(storageDirectory: URL = CodexSessionStore.defaultDirectoryURL) {
+        codexSessionStore = CodexSessionStore(fileURL: storageDirectory.appendingPathComponent(CodexSessionStore.defaultFileURL.lastPathComponent))
+        claudeSessionRegistry = ClaudeSessionRegistry(fileURL: storageDirectory.appendingPathComponent(ClaudeSessionRegistry.defaultFileURL.lastPathComponent))
+        openCodeSessionRegistry = OpenCodeSessionRegistry(fileURL: storageDirectory.appendingPathComponent(OpenCodeSessionRegistry.defaultFileURL.lastPathComponent))
+        cursorSessionRegistry = CursorSessionRegistry(fileURL: storageDirectory.appendingPathComponent(CursorSessionRegistry.defaultFileURL.lastPathComponent))
+        piSessionRegistry = PiSessionRegistry(fileURL: storageDirectory.appendingPathComponent(PiSessionRegistry.defaultFileURL.lastPathComponent))
+    }
+
+    isolated deinit {
+        codexSessionPersistenceTask?.cancel()
+        claudeSessionPersistenceTask?.cancel()
+        openCodeSessionPersistenceTask?.cancel()
+        cursorSessionPersistenceTask?.cancel()
+        piSessionPersistenceTask?.cancel()
+    }
+
     /// Raw I/O results collected off the main thread during startup.
     struct StartupDiscoveryPayload: Sendable {
         var codexRecords: [CodexTrackedSessionRecord]
@@ -42,19 +59,19 @@ final class SessionDiscoveryCoordinator {
     var onAgentEvent: ((AgentEvent) -> Void)?
 
     @ObservationIgnored
-    private let codexSessionStore = CodexSessionStore()
+    private let codexSessionStore: CodexSessionStore
 
     @ObservationIgnored
-    private let claudeSessionRegistry = ClaudeSessionRegistry()
+    private let claudeSessionRegistry: ClaudeSessionRegistry
 
     @ObservationIgnored
-    private let openCodeSessionRegistry = OpenCodeSessionRegistry()
+    private let openCodeSessionRegistry: OpenCodeSessionRegistry
 
     @ObservationIgnored
-    private let cursorSessionRegistry = CursorSessionRegistry()
+    private let cursorSessionRegistry: CursorSessionRegistry
 
     @ObservationIgnored
-    private let piSessionRegistry = PiSessionRegistry()
+    private let piSessionRegistry: PiSessionRegistry
 
     @ObservationIgnored
     let codexRolloutWatcher = CodexRolloutWatcher()

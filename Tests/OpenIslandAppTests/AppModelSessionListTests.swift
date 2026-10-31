@@ -6,34 +6,13 @@ import OpenIslandCore
 @MainActor
 @Suite(.serialized)
 struct AppModelSessionListTests {
-    init() {
-        [
-            "appearance.island.v8.stateIndicator",
-            "appearance.island.v8.sessionGroup",
-            "appearance.island.v8.sessionSort",
-            "appearance.island.v8.completedStaleThreshold",
-            "appearance.island.v8.notch.rightSlot",
-            "appearance.island.v8.notch.centerLabel",
-            "appearance.island.v8.notch.stateIndicator",
-            "appearance.island.v8.notch.sessionGroup",
-            "appearance.island.v8.notch.sessionSort",
-            "appearance.island.v8.notch.completedStaleThreshold",
-            "appearance.island.v8.topBar.rightSlot",
-            "appearance.island.v8.topBar.centerLabel",
-            "appearance.island.v8.topBar.stateIndicator",
-            "appearance.island.v8.topBar.sessionGroup",
-            "appearance.island.v8.topBar.sessionSort",
-            "appearance.island.v8.topBar.completedStaleThreshold",
-            "app.suppressFrontmostNotifications",
-            "feature.completionReply.enabled",
-            "overlay.sound.muted",
-        ].forEach(UserDefaults.standard.removeObject(forKey:))
-    }
+    private let environment = AppModelTestEnvironment()
+
 
     @Test
     func islandListSessionsOnlyIncludeLiveAttachedSessions() {
         let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel()
+        let model = environment.makeModel()
 
         var liveSession = AgentSession(
             id: "live-session",
@@ -93,7 +72,7 @@ struct AppModelSessionListTests {
     @Test
     func islandListDeduplicatesSessionsSharingTheSameLiveGhosttyTerminal() {
         let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel()
+        let model = environment.makeModel()
 
         var runningLive = AgentSession(
             id: "running-live",
@@ -166,7 +145,7 @@ struct AppModelSessionListTests {
     @Test
     func islandListKeepsDistinctCodexAppThreadsInTheSameWorkspace() {
         let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel()
+        let model = environment.makeModel()
 
         var firstThread = AgentSession(
             id: "codex-app-thread-1",
@@ -217,7 +196,7 @@ struct AppModelSessionListTests {
     @Test
     func sessionBootstrapPlaceholderAppearsWhileStartupResolutionIsPending() {
         let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel()
+        let model = environment.makeModel()
         model.isResolvingInitialLiveSessions = true
         model.state = SessionState(
             sessions: [
@@ -241,7 +220,7 @@ struct AppModelSessionListTests {
     @Test
     func sessionBootstrapPlaceholderClearsOnceALiveSessionIsConfirmed() {
         let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel()
+        let model = environment.makeModel()
         model.isResolvingInitialLiveSessions = true
 
         var liveSession = AgentSession(
@@ -265,7 +244,7 @@ struct AppModelSessionListTests {
     @Test
     func freshCompletedSessionsSortAheadOfV8StaleCompletedSessions() {
         let now = Date()
-        let model = AppModel()
+        let model = environment.makeModel()
 
         var staleCompleted = AgentSession(
             id: "stale-completed",
@@ -313,7 +292,7 @@ struct AppModelSessionListTests {
     @Test
     func islandSessionSectionsGroupStaleCompletedIntoIdle() {
         let now = Date()
-        let model = AppModel()
+        let model = environment.makeModel()
         // Write and read through an explicit display profile: the implicit
         // setters resolve against the machine's real screen, which flips from
         // .topBar to .notch mid-test on notched MacBooks.
@@ -345,7 +324,7 @@ struct AppModelSessionListTests {
     @Test
     func islandSessionSectionsKeepCompletedInDoneWhenStaleThresholdIsNever() {
         let now = Date()
-        let model = AppModel()
+        let model = environment.makeModel()
         model.updateAppearancePreferences(for: .topBar) {
             $0.sessionGroup = .state
             $0.completedStaleThreshold = .never
@@ -363,7 +342,7 @@ struct AppModelSessionListTests {
     @Test
     func islandSessionListCanSortByLastUpdate() {
         let now = Date()
-        let model = AppModel()
+        let model = environment.makeModel()
         model.updateAppearancePreferences(for: .topBar) {
             $0.sessionSort = .lastUpdate
         }
@@ -381,7 +360,7 @@ struct AppModelSessionListTests {
 
     @Test
     func islandAppearancePreferencesPersistPerDisplayProfile() {
-        let model = AppModel()
+        let model = environment.makeModel()
         model.updateAppearancePreferences(for: .notch) {
             $0.usageDisplay = .hidden
             $0.sessionGroup = .state
@@ -407,7 +386,7 @@ struct AppModelSessionListTests {
         #expect(model.islandSessionStateIndicator == .tint)
         #expect(model.completedStaleThreshold == .never)
 
-        let reloaded = AppModel()
+        let reloaded = environment.makeModel()
         reloaded.overlayPlacementDiagnostics = placementDiagnostics(mode: .notch)
         #expect(reloaded.islandUsageDisplay == .hidden)
         #expect(reloaded.islandSessionGroup == .state)
@@ -466,7 +445,7 @@ struct AppModelSessionListTests {
     @Test
     func rolloutEventsDoNotPromoteRecoveredSessionsToAttachedDuringColdStart() {
         let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel()
+        let model = environment.makeModel()
         model.isResolvingInitialLiveSessions = true
         model.state = SessionState(
             sessions: [
@@ -504,7 +483,7 @@ struct AppModelSessionListTests {
     @Test
     func bridgeEventsStillPromoteSessionsToAttached() {
         let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel()
+        let model = environment.makeModel()
         model.state = SessionState(
             sessions: [
                 AgentSession(
@@ -540,7 +519,7 @@ struct AppModelSessionListTests {
     @Test
     func rolloutCompletionDoesNotPresentNotificationDuringColdStart() {
         let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel()
+        let model = environment.makeModel()
         model.isResolvingInitialLiveSessions = true
         model.notchStatus = .closed
         model.notchOpenReason = nil
@@ -579,7 +558,7 @@ struct AppModelSessionListTests {
     @Test
     func bridgeNotificationIsSuppressedWhenSessionIsAlreadyFrontmost() async throws {
         let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel(
+        let model = environment.makeModel(
             isNotificationSessionAlreadyFrontmost: { session in
                 session.id == "frontmost-session"
             }
@@ -630,7 +609,7 @@ struct AppModelSessionListTests {
     @Test
     func bridgeNotificationStillPresentsWhenSessionIsNotFrontmost() async throws {
         let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel(
+        let model = environment.makeModel(
             isNotificationSessionAlreadyFrontmost: { _ in false }
         )
         model.notchStatus = .closed
@@ -681,7 +660,7 @@ struct AppModelSessionListTests {
 
     @Test
     func hoverOpenedSessionListAutoCollapsesOnPointerExit() {
-        let model = AppModel()
+        let model = environment.makeModel()
         model.notchStatus = .opened
         model.notchOpenReason = .hover
         model.islandSurface = .sessionList()
@@ -697,7 +676,7 @@ struct AppModelSessionListTests {
 
     @Test
     func closeTransitionSetsStateImmediatelyAndClearsPending() {
-        let model = AppModel()
+        let model = environment.makeModel()
         model.notchStatus = .opened
         model.notchOpenReason = .hover
         model.islandSurface = .sessionList()
@@ -713,7 +692,7 @@ struct AppModelSessionListTests {
 
     @Test
     func clickedSessionListDoesNotAutoCollapseOnPointerExit() {
-        let model = AppModel()
+        let model = environment.makeModel()
         model.notchStatus = .opened
         model.notchOpenReason = .click
         model.islandSurface = .sessionList()
@@ -730,7 +709,7 @@ struct AppModelSessionListTests {
 
     @Test
     func completionNotificationRequiresSurfaceEntryBeforePointerExitCollapse() {
-        let model = AppModel()
+        let model = environment.makeModel()
         // Add a completed session so autoDismissesWhenPresentedAsNotification can check phase
         model.applyTrackedEvent(
             .sessionStarted(SessionStarted(
@@ -770,7 +749,7 @@ struct AppModelSessionListTests {
 
     @Test
     func completionNotificationDefersTimedCollapseWhilePointerIsInside() {
-        let model = AppModel()
+        let model = environment.makeModel()
         model.overlay.pointerLocationProvider = { NSPoint(x: -10_000, y: -10_000) }
         model.applyTrackedEvent(
             .sessionStarted(SessionStarted(
@@ -809,7 +788,7 @@ struct AppModelSessionListTests {
 
     @Test
     func completionNotificationHoverCancelsPendingTimedCollapse() {
-        let model = AppModel()
+        let model = environment.makeModel()
         // Pin the pointer far outside the overlay: auto-collapse is never
         // scheduled when the machine's real cursor sits inside the expanded
         // area, which made this test depend on the host's mouse position.
@@ -843,7 +822,7 @@ struct AppModelSessionListTests {
     @Test
     func mergeDiscoveredClaudeSessionsPreservesRegistryJumpTargetAndAddsTranscriptMetadata() {
         let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel()
+        let model = environment.makeModel()
         model.state = SessionState(
             sessions: [
                 AgentSession(
@@ -902,7 +881,7 @@ struct AppModelSessionListTests {
     @Test
     func mergeDiscoveredCodexSessionsReplacesInjectedCachedInitialPromptOnly() {
         let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel()
+        let model = environment.makeModel()
         model.state = SessionState(
             sessions: [
                 AgentSession(
@@ -1010,7 +989,7 @@ struct AppModelSessionListTests {
     @Test
     func mergedWithSyntheticClaudeSessionsAddsGhosttyClaudeProcessWhenNoTrackedSessionExists() {
         let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel()
+        let model = environment.makeModel()
 
         let merged = model.monitoring.mergedWithSyntheticClaudeSessions(
             existingSessions: [],
@@ -1036,7 +1015,7 @@ struct AppModelSessionListTests {
     @Test
     func sanitizeCrossToolGhosttyJumpTargetsClearsClaudeMisbinding() {
         let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel()
+        let model = environment.makeModel()
         let misboundClaudeSession = AgentSession(
             id: "e45d5e87-66d0-4f67-8399-6ebc02f3d453",
             title: "Claude · open-island",
@@ -1064,7 +1043,7 @@ struct AppModelSessionListTests {
     @Test
     func mergedWithSyntheticClaudeSessionsSkipsSyntheticWhenAttachedClaudeAlreadyRepresentsGroup() {
         let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel()
+        let model = environment.makeModel()
         let existing = AgentSession(
             id: "e45d5e87-66d0-4f67-8399-6ebc02f3d453",
             title: "Claude · open-island",
@@ -1103,7 +1082,7 @@ struct AppModelSessionListTests {
     @Test
     func mergedWithSyntheticClaudeSessionsSkipsSyntheticWhenStaleClaudeSessionMatchesActiveProcess() {
         let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel()
+        let model = environment.makeModel()
         let existing = AgentSession(
             id: "e45d5e87-66d0-4f67-8399-6ebc02f3d453",
             title: "Claude · open-island-readme",
@@ -1145,7 +1124,7 @@ struct AppModelSessionListTests {
     @Test
     func mergedWithSyntheticCursorSessionsAddsCursorAgentWhenNoTrackedSessionExists() {
         let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel()
+        let model = environment.makeModel()
 
         let merged = model.monitoring.mergedWithSyntheticCursorSessions(
             existingSessions: [],
@@ -1173,7 +1152,7 @@ struct AppModelSessionListTests {
     @Test
     func mergedWithSyntheticCursorSessionsSkipsSyntheticWhenHookSessionMatchesConversation() {
         let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel()
+        let model = environment.makeModel()
         let existing = AgentSession(
             id: "6f7b9f8a-2bd0-48b4-a497-9801dd191d03",
             title: "Cursor · simple-agent-lab",
@@ -1214,7 +1193,7 @@ struct AppModelSessionListTests {
     @Test
     func mergedWithSyntheticCursorSessionsDeduplicatesRepeatedConversationProcesses() {
         let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel()
+        let model = environment.makeModel()
 
         let merged = model.monitoring.mergedWithSyntheticCursorSessions(
             existingSessions: [],
@@ -1247,7 +1226,7 @@ struct AppModelSessionListTests {
     @Test
     @MainActor
     func approvalCardMeasuredHeightClearedWhenSurfaceSessionChanges() {
-        let model = AppModel()
+        let model = environment.makeModel()
 
         var sessionA = AgentSession(
             id: "approval-session-A",
@@ -1303,7 +1282,7 @@ struct AppModelSessionListTests {
     @Test
     @MainActor
     func notificationMeasuredHeightClearedWhenSameSessionCardContentChanges() {
-        let model = AppModel()
+        let model = environment.makeModel()
         model.isSoundMuted = true
 
         var session = AgentSession(
@@ -1347,7 +1326,7 @@ struct AppModelSessionListTests {
     @Test
     @MainActor
     func hoveredNotificationCardIsNotReplacedByAnotherNotification() {
-        let model = AppModel()
+        let model = environment.makeModel()
         model.isSoundMuted = true
 
         var currentSession = AgentSession(
@@ -1411,7 +1390,7 @@ struct AppModelSessionListTests {
     @Test
     func recoveredSessionMatchesLiveGhosttyProcessByCWDWhenMultipleCandidatesExist() {
         let now = Date(timeIntervalSince1970: 2_000)
-        let model = AppModel()
+        let model = environment.makeModel()
         let recoveredSessions = [
             AgentSession(
                 id: "e45d5e87-66d0-4f67-8399-6ebc02f3d453",

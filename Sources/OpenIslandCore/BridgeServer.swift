@@ -67,6 +67,7 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private let socketURL: URL
+    private let legacySocketURL: URL?
     private let queue = DispatchQueue(label: "app.openisland.bridge.server")
     private let queueKey = DispatchSpecificKey<Void>()
 
@@ -92,9 +93,11 @@ public final class BridgeServer: @unchecked Sendable {
     private var localState = SessionState()
 
     public init(
-        socketURL: URL = BridgeSocketLocation.defaultURL
+        socketURL: URL = BridgeSocketLocation.defaultURL,
+        legacySocketURL: URL? = nil
     ) {
         self.socketURL = socketURL
+        self.legacySocketURL = legacySocketURL
         queue.setSpecific(key: queueKey, value: ())
     }
 
@@ -113,8 +116,7 @@ public final class BridgeServer: @unchecked Sendable {
 
         // Also listen on the legacy /tmp path so that older hook binaries
         // (from already-running Claude Code sessions) can still connect.
-        let legacyURL = BridgeSocketLocation.legacyURL
-        if legacyURL != socketURL {
+        if let legacyURL = legacySocketURL, legacyURL != socketURL {
             if let legacyListener = try? bindListener(at: legacyURL) {
                 listeners.append(legacyListener)
             }

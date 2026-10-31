@@ -21,6 +21,23 @@ The repository harness exists to make a round of work mechanically checkable. Th
 - The app can be launched locally in a deterministic harness mode without requiring live hook traffic.
 - The smoke path produces a machine-readable report plus PNG, accessibility, and runtime-observability evidence for the rendered window surface.
 
+## Test isolation
+
+Ordinary `swift test` runs use unique temporary sockets and installer directories. Application model tests use `AppModelTestEnvironment`: a fresh preferences suite, temporary session registry directory, headless overlay panel, and injected terminal/foreground actions. Reuse that environment when a test needs to reload a model. Do not construct a production `AppModel()` in a unit test or clear `UserDefaults.standard`.
+
+`BridgeServer` binds only its primary socket unless `legacySocketURL` is explicitly supplied. The app supplies its legacy compatibility address; tests must use unique addresses for both listeners. Never point a test server at a production socket.
+
+Live desktop tests are opt-in and should run only in an isolated macOS test account with disposable terminal sessions:
+
+```sh
+OPEN_ISLAND_RUN_GHOSTTY_JUMP_INTEGRATION=1 swift test --filter ghosttyJumpIntegrationMatchesFocusedTerminalForLiveSurfaces
+OPEN_ISLAND_RUN_WARP_TAB_INTEGRATION=1 swift test --filter liveWarpTabAdvanceSmokeTest
+```
+
+These checks can activate applications, switch tabs, and request Automation or Accessibility permission. Keep both variables unset for ordinary tests and CI. The Warp check is a manual smoke check; its lack of a crash does not prove the intended tab received focus.
+
+When using a custom Swift build directory, set `OPEN_ISLAND_HOOKS_BINARY` to the `OpenIslandHooks` executable from that build before running the Hermes end-to-end tests.
+
 ## Smoke Mode
 
 `scripts/smoke-dev-app.sh` sets harness environment variables before launching `OpenIslandApp`.

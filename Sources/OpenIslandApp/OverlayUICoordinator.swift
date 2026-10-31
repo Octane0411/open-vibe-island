@@ -7,6 +7,13 @@ import OpenIslandCore
 @Observable
 final class OverlayUICoordinator {
 
+    @ObservationIgnored private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard, panelController: any OverlayPanelControlling = OverlayPanelController()) {
+        self.defaults = defaults
+        self.overlayPanelController = panelController
+    }
+
     private static let notificationSurfaceAutoCollapseDelay: TimeInterval = 10
 
     var notchStatus: NotchStatus = .closed
@@ -52,7 +59,7 @@ final class OverlayUICoordinator {
     var harnessRuntimeMonitor: HarnessRuntimeMonitor?
 
     @ObservationIgnored
-    let overlayPanelController = OverlayPanelController()
+    let overlayPanelController: any OverlayPanelControlling
 
     @ObservationIgnored
     private var screenParametersObserver: NSObjectProtocol?
@@ -105,7 +112,6 @@ final class OverlayUICoordinator {
     // MARK: - Initialization
 
     func restoreDisplayPreference() {
-        let defaults = UserDefaults.standard
         let storedSelectionID = defaults.string(
             forKey: OverlayDisplayPreferencePolicy.preferenceDefaultsKey
         )
@@ -540,7 +546,6 @@ final class OverlayUICoordinator {
     // MARK: - Persistence
 
     private func persistOverlayDisplayPreference() {
-        let defaults = UserDefaults.standard
         if overlayDisplaySelectionID == OverlayDisplayOption.automaticID {
             overlayDisplaySelectionTitle = nil
             defaults.removeObject(forKey: OverlayDisplayPreferencePolicy.preferenceDefaultsKey)

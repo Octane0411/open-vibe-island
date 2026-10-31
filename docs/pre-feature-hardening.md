@@ -8,7 +8,7 @@ This plan covers incorrect approvals, configuration damage, unreliable communica
 
 - Review date: October 31, 2026.
 - Source baseline: upstream commit [`01aa0924fd96bf319a64e75646765c55cae4e2c5`](https://github.com/Octane0411/open-vibe-island/tree/01aa0924fd96bf319a64e75646765c55cae4e2c5), also the fork's starting commit.
-- All findings below are **open**. Writing this plan does not implement or resolve them.
+- H01 is implemented and locally verified on the hardening branch. All other findings remain open unless the implementation record below says otherwise.
 - Source references point to the reviewed commit so their line numbers remain stable as the fork changes.
 
 The baseline package built on Apple Silicon with macOS 26.6.1 and Swift 6.4. Documentation and localization checks passed, as did 78 selected tests across 14 suites. The selected suites covered payloads, transcript processing, registries, subprocess behavior, and related model logic. They do not establish full application, GUI, remote-device, Intel, or macOS 14 compatibility.
@@ -20,6 +20,16 @@ Evidence labels distinguish three levels:
 - **Engineering gap:** a missing protection or verification step, with a concrete acceptance criterion. This is not a claim that exploitation has been demonstrated.
 
 The full test suite was not run on the developer's live environment because H01 identifies tests that can touch production state. No signed release artifact was independently audited. Dependency versions resolved during the review do not establish versions embedded in previously published downloads.
+
+## Implementation record
+
+### H01 — implemented, locally verified
+
+The bridge compatibility listener is now an explicit production option. App tests use unique preferences and temporary registry storage, a headless panel controller, and injected terminal actions. The live Warp check requires explicit opt-in; the payload inference test supplies a terminal locator instead of querying iTerm. Pending registry writes are cancelled when their coordinator is released.
+
+Verification on October 31, 2026: Swift 6.4, macOS 26.6.1, Apple Silicon. The full Swift Testing run reported 355 core tests in 37 suites and 177 app tests in 24 suites passing. The Warp check was skipped and Ghostty integration check cancelled by its opt-in guard. Production registry bytes/metadata and socket identities were unchanged across the completed run. New tests cover independent preferences, all five injected registry paths, and an existing compatibility listener alongside two test servers. Documentation and whitespace checks passed. See [test isolation guidance](./quality.md#test-isolation).
+
+An initial run was stopped after discovering an unisolated iTerm AppleScript query; that test now injects its locator and the completed rerun has no live terminal interaction. GUI, permission-dialog, and other platform checks remain outside this verification.
 
 ## Completion gates
 
@@ -323,7 +333,7 @@ Hooks intentionally fail open when the application is unavailable. Preserve the 
 
 - [ ] Every Core item is resolved with its acceptance criteria verified.
 - [ ] Conditional capabilities are either verified or explicitly restricted in code and documentation, including previously saved enablement preferences.
-- [ ] The full ordinary test suite runs without modifying real user state or controlling desktop applications.
+- [x] The full ordinary test suite runs without modifying real user state or controlling desktop applications on the locally verified environment.
 - [ ] Request identity, delivery acknowledgment, installer preservation, fragmented messages, startup ordering, and stalled clients have regression coverage.
 - [ ] Supported agent and terminal versions are recorded, with known limitations visible.
 - [ ] Remaining Release items have named follow-up work and block distribution until complete.

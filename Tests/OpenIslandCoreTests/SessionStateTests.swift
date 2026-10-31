@@ -1492,12 +1492,12 @@ struct SessionStateTests {
         let inferredITerm = payload.withRuntimeContext(environment: [
             "TERM_PROGRAM": "iTerm.app",
             "ITERM_SESSION_ID": "w0t0p0",
-        ])
+        ], currentTTYProvider: { nil }, terminalLocatorProvider: { _ in (nil, nil, nil) })
         #expect(inferredITerm.terminalApp == "iTerm")
 
         let inferredGhostty = payload.withRuntimeContext(environment: [
             "TERM_PROGRAM": "ghostty",
-        ])
+        ], currentTTYProvider: { nil }, terminalLocatorProvider: { _ in (nil, nil, nil) })
         #expect(inferredGhostty.terminalApp == "Ghostty")
         #expect(inferredGhostty.defaultJumpTarget.workingDirectory == "/tmp/worktree")
     }
