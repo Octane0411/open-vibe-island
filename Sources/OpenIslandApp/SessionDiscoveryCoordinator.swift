@@ -151,8 +151,11 @@ final class SessionDiscoveryCoordinator {
     }
 
     /// Applies startup discovery results on the main thread after background I/O completes.
-    /// Returns the hooksBinaryURL found during startup.
     func applyStartupDiscoveryPayload(_ payload: StartupDiscoveryPayload) {
+        // Anything already received while background discovery was running is
+        // authoritative. Source/arrival order wins even if cache clocks differ.
+        let protectedSessionIDs = Set(state.sessions.map(\.id))
+
         // Prune stale records if needed.
         if payload.codexRecordsNeedPrune {
             try? codexSessionStore.save(payload.codexRecords)
@@ -172,28 +175,29 @@ final class SessionDiscoveryCoordinator {
 
         // Restore persisted Codex sessions.
         if !payload.codexRecords.isEmpty {
-            state = SessionState(sessions: payload.codexRecords.map(\.restorableSession))
+            let restoredSessions = payload.codexRecords.map(\.restorableSession)
+            state = SessionState(sessions: mergeDiscoveredSessions(restoredSessions, preserving: protectedSessionIDs))
             onStatusMessage?("Restored \(payload.codexRecords.count) recent Codex session(s) from local cache.")
         }
 
         // Restore persisted Claude sessions.
         if !payload.claudeRecords.isEmpty {
             let restoredSessions = payload.claudeRecords.map(\.restorableSession)
-            state = SessionState(sessions: mergeDiscoveredSessions(restoredSessions))
+            state = SessionState(sessions: mergeDiscoveredSessions(restoredSessions, preserving: protectedSessionIDs))
             onStatusMessage?("Restored \(payload.claudeRecords.count) recent Claude session(s) from local registry.")
         }
 
         // Restore persisted OpenCode sessions.
         if !payload.openCodeRecords.isEmpty {
             let restoredSessions = payload.openCodeRecords.map(\.restorableSession)
-            state = SessionState(sessions: mergeDiscoveredSessions(restoredSessions))
+            state = SessionState(sessions: mergeDiscoveredSessions(restoredSessions, preserving: protectedSessionIDs))
             onStatusMessage?("Restored \(payload.openCodeRecords.count) recent OpenCode session(s) from local registry.")
         }
 
         // Restore persisted Cursor sessions.
         if !payload.cursorRecords.isEmpty {
             let restoredSessions = payload.cursorRecords.map(\.restorableSession)
-            state = SessionState(sessions: mergeDiscoveredSessions(restoredSessions))
+            state = SessionState(sessions: mergeDiscoveredSessions(restoredSessions, preserving: protectedSessionIDs))
             onStatusMessage?("Restored \(payload.cursorRecords.count) recent Cursor session(s) from local registry.")
         }
 
@@ -202,13 +206,13 @@ final class SessionDiscoveryCoordinator {
             let restoredSessions = payload.piRecords.map {
                 $0.restorableSession(at: restoredAt)
             }
-            state = SessionState(sessions: mergeDiscoveredSessions(restoredSessions))
+            state = SessionState(sessions: mergeDiscoveredSessions(restoredSessions, preserving: protectedSessionIDs))
             onStatusMessage?("Restored \(payload.piRecords.count) recent Pi session(s) from local registry.")
         }
 
         // Merge discovered Codex sessions.
         if !payload.discoveredCodexRecords.isEmpty {
-            let mergedSessions = mergeDiscoveredSessions(payload.discoveredCodexRecords.map(\.session))
+            let mergedSessions = mergeDiscoveredSessions(payload.discoveredCodexRecords.map(\.session), preserving: protectedSessionIDs)
             state = SessionState(sessions: mergedSessions)
             scheduleCodexSessionPersistence()
             onStatusMessage?("Discovered \(payload.discoveredCodexRecords.count) recent Codex session(s) from local rollouts.")
@@ -216,7 +220,7 @@ final class SessionDiscoveryCoordinator {
 
         // Merge discovered Claude sessions.
         if !payload.discoveredClaudeSessions.isEmpty {
-            let mergedSessions = mergeDiscoveredSessions(payload.discoveredClaudeSessions)
+            let mergedSessions = mergeDiscoveredSessions(payload.discoveredClaudeSessions, preserving: protectedSessionIDs)
             state = SessionState(sessions: mergedSessions)
             scheduleClaudeSessionPersistence()
             onStatusMessage?("Discovered \(payload.discoveredClaudeSessions.count) recent Claude session(s) from local transcripts.")
@@ -228,13 +232,17 @@ final class SessionDiscoveryCoordinator {
 
     // MARK: - Merge & discovery
 
-    func mergeDiscoveredSessions(_ discoveredSessions: [AgentSession]) -> [AgentSession] {
+    func mergeDiscoveredSessions(
+        _ discoveredSessions: [AgentSession], preserving sessionIDs: Set<String> = []
+    ) -> [AgentSession] {
         var mergedByID = Dictionary(uniqueKeysWithValues: state.sessions.map { ($0.id, $0) })
 
         for discovered in discoveredSessions {
             if let existing = mergedByID[discovered.id] {
+                guard !sessionIDs.contains(existing.id) else { continue }
                 mergedByID[discovered.id] = merge(discovered: discovered, into: existing)
             } else if let existingID = existingSessionID(matchingTranscriptOf: discovered, in: mergedByID) {
+                guard !sessionIDs.contains(existingID) else { continue }
                 mergedByID[existingID] = merge(discovered: discovered, into: mergedByID[existingID]!)
             } else {
                 mergedByID[discovered.id] = discovered
