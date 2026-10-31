@@ -304,6 +304,7 @@ final class AppModel {
     }
     var completionReplyEnabled: Bool = false {
         didSet {
+            if completionReplyEnabled && !CapabilityAvailability.terminalReplies { completionReplyEnabled = false; return }
             guard hasFinishedInit, completionReplyEnabled != oldValue else { return }
             defaults.set(completionReplyEnabled, forKey: Self.completionReplyEnabledDefaultsKey)
             refreshOverlayPlacementIfVisible()
@@ -483,6 +484,7 @@ final class AppModel {
 
     var watchNotificationEnabled: Bool = false {
         didSet {
+            if watchNotificationEnabled && !CapabilityAvailability.remoteApprovals { watchNotificationEnabled = false; return }
             guard watchNotificationEnabled != oldValue else { return }
             defaults.set(watchNotificationEnabled, forKey: Self.watchNotificationEnabledKey)
             if watchNotificationEnabled {
@@ -508,6 +510,7 @@ final class AppModel {
     }
 
     private func startWatchRelay() {
+        guard CapabilityAvailability.remoteApprovals else { return }
         guard watchRelay == nil else { return }
         let relay = WatchNotificationRelay()
         setupWatchRelayCallbacks(relay)
@@ -684,14 +687,16 @@ final class AppModel {
                 atPath: CodexRolloutDiscovery.defaultRootURL.path
             )
         }
-        completionReplyEnabled = defaults.bool(forKey: Self.completionReplyEnabledDefaultsKey)
+        completionReplyEnabled = CapabilityAvailability.terminalReplies && defaults.bool(forKey: Self.completionReplyEnabledDefaultsKey)
+        if !CapabilityAvailability.terminalReplies { defaults.set(false, forKey: Self.completionReplyEnabledDefaultsKey) }
         launchAtLoginEnabled = LaunchAtLoginService.shared.isEnabled
         appearanceSettingsProfile = IslandAppearanceDisplayProfile(
             rawValue: defaults.string(forKey: Self.appearanceProfileSettingsDefaultsKey) ?? ""
         ) ?? .topBar
         notchAppearancePreferences = Self.loadAppearancePreferences(for: .notch, defaults: defaults)
         topBarAppearancePreferences = Self.loadAppearancePreferences(for: .topBar, defaults: defaults)
-        watchNotificationEnabled = defaults.bool(forKey: Self.watchNotificationEnabledKey)
+        watchNotificationEnabled = CapabilityAvailability.remoteApprovals && defaults.bool(forKey: Self.watchNotificationEnabledKey)
+        if !CapabilityAvailability.remoteApprovals { defaults.set(false, forKey: Self.watchNotificationEnabledKey) }
         if watchNotificationEnabled {
             startWatchRelay()
         }

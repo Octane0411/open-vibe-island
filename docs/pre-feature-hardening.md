@@ -99,6 +99,12 @@ Server writes use per-connection nonblocking queues. Accepting a decision waits 
 
 The frame size accommodates the existing four-MiB tool-input fixture plus its envelope. Regressions exercise a stalled observer alongside a working producer, oversized unterminated input, excess connections, and trickling responses. The full run passed 369 core tests and 185 app tests. During this run, the TOML wrapper's borrowed table replacement proved unstable; it was replaced by a direct C interface to pinned toml++, keeping parser ownership in C++. Expiration tests now use a controlled monotonic clock to avoid missing short-lived requests under parallel test load.
 
+### H09/H10/H11/H16 — conditional gates enforced; capability work deferred
+
+Terminal replies refuse both capability checks and direct sends. Phone/Watch startup refuses to create a listener, including internal retries. AppModel clears previously saved enablement and refuses subsequent setters; settings show why these capabilities are unavailable. SSH setup exits before any SSH, copy, or configuration command. No preference or environment flag bypasses these restrictions.
+
+Tests cover direct reply rejection, saved enablement, repeated attempts to enable, and direct endpoint startup. The SSH command returns a clear failure before contacting the supplied host. Product and SSH documentation label upstream descriptions as reference only. Underlying destination verification, encrypted pairing, remote request lifecycle, and SSH configuration merging remain deferred; these capabilities must not be advertised or enabled until their original criteria are fulfilled.
+
 ## Completion gates
 
 | Gate | Required outcome |
@@ -119,14 +125,14 @@ P1 means incorrect authorization, unintended input, configuration damage, or a s
 | H06 | Bound bridge reads, writes, and connections | P2 | Core | Implemented locally |
 | H07 | Enforce local bridge identity and command permissions | P1 | Core | Implemented locally |
 | H08 | Preserve live state during startup discovery | P2 | Core | Implemented locally |
-| H09 | Verify the destination before submitting terminal replies | P1 | Conditional | Open |
-| H10 | Secure remote pairing and approvals | P1 | Conditional | Open |
-| H11 | Fix remote endpoint lifecycle and request processing | P2 | Conditional | Open |
+| H09 | Verify the destination before submitting terminal replies | P1 | Conditional | Restricted in code; implementation deferred |
+| H10 | Secure remote pairing and approvals | P1 | Conditional | Restricted in code; implementation deferred |
+| H11 | Fix remote endpoint lifecycle and request processing | P2 | Conditional | Restricted in code; implementation deferred |
 | H12 | Restrict diagnostics and remote Markdown content | P2 | Core | Open |
 | H13 | Make builds and compatibility checks reproducible | P2 | Core and Release | Partial: dependency locking |
 | H14 | Give the fork a safe release and update configuration | P1 | Release | Open |
 | H15 | Stop cancelled terminal jumps before side effects | P2 | Core | Implemented locally |
-| H16 | Preserve and correctly merge SSH hook configuration | P2 | Conditional | Open |
+| H16 | Preserve and correctly merge SSH hook configuration | P2 | Conditional | Restricted in code; implementation deferred |
 
 ## Core fixes
 

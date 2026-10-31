@@ -109,6 +109,7 @@ public final class WatchNotificationRelay: @unchecked Sendable {
     // MARK: - Lifecycle
 
     public func start() {
+        guard CapabilityAvailability.remoteApprovals else { return }
         endpoint.start()
     }
 

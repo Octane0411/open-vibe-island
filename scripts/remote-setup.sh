@@ -16,6 +16,10 @@
 
 set -euo pipefail
 
+# H16: no flag or saved preference may bypass this restriction.
+echo "SSH installation is unavailable until safe configuration merging is verified. See docs/pre-feature-hardening.md (H16)." >&2
+exit 1
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HOOK_SCRIPT="$SCRIPT_DIR/open-island-hooks.py"
 REMOTE_BIN_DIR=".local/bin"

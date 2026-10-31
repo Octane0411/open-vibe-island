@@ -224,6 +224,9 @@ struct GeneralSettingsPane: View {
                     get: { model.completionReplyEnabled },
                     set: { model.completionReplyEnabled = $0 }
                 ))
+                .disabled(!CapabilityAvailability.terminalReplies)
+                Text("Terminal replies are unavailable until destination verification is complete.")
+                    .font(.caption).foregroundStyle(.secondary)
                 Toggle(lang.t("settings.general.suppressFrontmostNotifications"), isOn: Binding(
                     get: { model.suppressFrontmostNotifications },
                     set: { model.suppressFrontmostNotifications = $0 }
@@ -1075,6 +1078,9 @@ struct WatchSettingsPane: View {
                     get: { model.watchNotificationEnabled },
                     set: { model.watchNotificationEnabled = $0 }
                 ))
+                .disabled(!CapabilityAvailability.remoteApprovals)
+                Text("Phone and Watch connections are unavailable until secure pairing is complete.")
+                    .font(.caption).foregroundStyle(.secondary)
 
                 if model.watchNotificationEnabled {
                     Text("When enabled, the macOS app broadcasts a Bonjour service that your iPhone can discover on the same WiFi network.")
