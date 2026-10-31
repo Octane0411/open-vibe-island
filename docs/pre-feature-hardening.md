@@ -8,7 +8,7 @@ This plan covers incorrect approvals, configuration damage, unreliable communica
 
 - Review date: October 31, 2026.
 - Source baseline: upstream commit [`01aa0924fd96bf319a64e75646765c55cae4e2c5`](https://github.com/Octane0411/open-vibe-island/tree/01aa0924fd96bf319a64e75646765c55cae4e2c5), also the fork's starting commit.
-- H01, H08, and H15 are implemented and locally verified on the hardening branch. All other findings remain open unless the implementation record below says otherwise.
+- Core changes are implemented and locally verified on the hardening branch. H13 still needs a fork CI run on the pinned toolchains. Conditional capabilities are restricted in code; distribution remains blocked on the H13/H14 release evidence below.
 - Source references point to the reviewed commit so their line numbers remain stable as the fork changes.
 
 The baseline package built on Apple Silicon with macOS 26.6.1 and Swift 6.4. Documentation and localization checks passed, as did 78 selected tests across 14 suites. The selected suites covered payloads, transcript processing, registries, subprocess behavior, and related model logic. They do not establish full application, GUI, remote-device, Intel, or macOS 14 compatibility.
@@ -19,7 +19,7 @@ Evidence labels distinguish three levels:
 - **Source traced:** the defect follows from the inspected control flow, but its complete user-facing scenario still needs an automated regression test.
 - **Engineering gap:** a missing protection or verification step, with a concrete acceptance criterion. This is not a claim that exploitation has been demonstrated.
 
-The full test suite was not run on the developer's live environment because H01 identifies tests that can touch production state. No signed release artifact was independently audited. Dependency versions resolved during the review do not establish versions embedded in previously published downloads.
+During the initial review, the full test suite was withheld because H01 identified tests that could touch production state. The implementation records below describe subsequent isolated full-suite runs. No signed release artifact was independently audited. Dependency versions resolved during the review do not establish versions embedded in previously published downloads.
 
 ## Implementation record
 
@@ -33,7 +33,7 @@ Verification on October 31, 2026: Swift 6.4, macOS 26.6.1, Apple Silicon. The fu
 
 An initial run was stopped after discovering an unisolated iTerm AppleScript query; that test now injects its locator and the completed rerun has no live terminal interaction. GUI, permission-dialog, and other platform checks remain outside this verification.
 
-### H13 — dependency locking implemented; remaining work open
+### H13 — initial dependency-locking step
 
 Resolving commit for dependency locking: `d4f4c7a` (`build: lock tested dependency versions (H13)`).
 
@@ -41,7 +41,7 @@ Resolving commit for dependency locking: `d4f4c7a` (`build: lock tested dependen
 
 Verification: the locked package build and test wrapper passed locally; shell syntax, documentation, and localization checks passed. Packaging was checked for syntax only, not signed or distributed.
 
-This is only the dependency-locking portion of H13. The toolchain/platform matrix, action and packaging-tool pinning, signed packaging, GUI checks, and mobile validation remain open.
+This initial step covered dependency locking only. The later H13 record below supersedes its remaining-work status.
 
 ### H15 — implemented, locally verified
 
@@ -59,11 +59,11 @@ Startup merges now retain every session already received while background discov
 
 Three regression tests (four cases) failed on the original implementation and pass after the fix: both live/discovery arrival orders, a future-dated conflicting cache/transcript record, and an ended session. Full desktop startup and reconnect in a signed app remain manual integration checks; these tests exercise the real coordinator and AppModel state wiring with isolated storage and desktop effects.
 
-### Final verification of this implementation batch
+### Initial implementation batch verification (historical)
 
 The locked full test wrapper passed with 355 core tests in 37 suites and 182 app tests in 26 suites. The two live desktop checks remained excluded by their opt-in guards. Production registry files and both socket paths were unchanged. The package build, documentation, localization, shell syntax, and whitespace checks passed. Existing Swift concurrency/redundant-code warnings remain; the build is not warning-free.
 
-This batch does not close the complete hardening milestone. Next priorities are exact approval/answer identity and acknowledgment (H02/H03), configuration preservation (H04), and the OpenCode protocol contract (H05). All remaining Core, Conditional, and Release gates still apply.
+This was the initial isolated baseline. H02–H07 and the later work are recorded below; use the current status table and final verification record for the remaining gates.
 
 ### H02/H03 — implemented, locally verified; H07 controller authority implemented
 
@@ -83,7 +83,7 @@ In-process installs are serialized and original bytes are rechecked before each 
 
 ### H05 — implemented, locally verified
 
-The plugin consumes complete newline-delimited envelopes, requires protocol version 2, and accepts only the expected response kind. Session events cannot become decisions. Reads have a eight MiB frame bound and total deadline, including fragmented input and EOF. Session broadcasts go only to registered observers; registration now waits for acknowledgment and retains its role across reads.
+The plugin consumes complete newline-delimited envelopes, requires protocol version 2, and accepts only the expected response kind. Session events cannot become decisions. Reads have an eight MiB frame bound and total deadline, including fragmented input and EOF. Session broadcasts go only to registered observers; registration now waits for acknowledgment and retains its role across reads.
 
 Structured question decisions carry ordered arrays of selections through Swift encoding into the JavaScript reply body. Ambiguous flattened responses to multiple questions are rejected. Five Node tests cover every response split point, interleaved events, incomplete EOF, protocol mismatch, oversize, and timeout. The real JavaScript plugin also connects to the real Swift server in a contract test and receives two ordered questions with multiple selections intact. The targeted Swift run passed 78 tests across four suites. The first cross-language run confirmed that the old plugin wrote its synthetic event to the predictable temporary log; payload logging has now been removed (the diagnostic portion of H12). Existing log files are not automatically deleted. Run `node --test Tests/PluginTests/*.test.cjs` alongside Swift tests; Node is now required for the cross-language suite.
 
@@ -122,6 +122,29 @@ Configuration-only packaging checks pass, and attempted enablement is rejected. 
 CI actions are pinned to verified revisions, Node to 24.22.1, and Xcode to explicit 26.0.1/26.6 paths. The test harness includes JavaScript contracts, and CI also cross-compiles Intel. DMG tooling is pinned to create-dmg 1.2.3 revision `994a036532d3ac1bb1cd5a425a0d5d796ecbed83`. Packaging uses committed assets instead of installing arbitrary Pillow versions; explicit regeneration requires 11.3.0. Bundles record source/dirty state, lock hash, and tool versions. Packaging desktop smoke is opt-in.
 
 Local release app/ZIP packaging passed without launching, as did disabled-update metadata, bundled-license, and strict deep ad-hoc signature checks. Intel cross-compilation passed; arm64 release and x86_64 debug binaries declare macOS 14.0 minimum deployment. Hosted CI, the minimum Swift toolchain, actual macOS 14/Intel execution, DMG generation, and GUI/TCC checks remain unverified. The minimum Xcode is not installed here. `docs/quality.md` narrows claims and records the exact local environment and required release matrix. Distribution remains blocked; no CI job was run or result inferred from the local build.
+
+### Final local verification and resolving commits
+
+The final isolated suite passed **371 core tests in 43 suites and 189 app tests in 29 suites**, plus **six JavaScript tests**. The two live desktop integrations remained excluded by their opt-in guards. The final bridge checks cover competing requests from Codex, Claude, and OpenCode; releasing an observer now finishes its event stream. Documentation, localization, shell syntax, workflow YAML, and whitespace checks passed. Production registry bytes/metadata and both production socket identities match the pre-test snapshot. The first OpenCode contract run's synthetic temporary log is recorded under H05/H12; no claim is made that old logs were deleted.
+
+Final Intel compilation and arm64 release app/ZIP packaging also passed at runtime commit `46a2b54`. The bundle records that commit and a dirty working tree because this verification document was still being updated; no runtime source was uncommitted. Its development identity, absent update feed/key, included license notices, and strict deep ad-hoc signature were checked. Neither the app nor a DMG was launched. This is development artifact evidence, not a signed release certification.
+
+| Finding | Resolving commits on `fix/pre-feature-hardening` |
+| --- | --- |
+| H01 | `6ebc913`, trailing-closure fixture correction in `439a9fe` |
+| H02/H03 | `439a9fe`, cross-agent coverage in `114cc2f` |
+| H04 | `bc3975e`, `611178d`, `717ce83` |
+| H05 | `ee7c39f` |
+| H06 | `135ad21`, `114cc2f` |
+| H07 | `92f68a8`, controller boundary in `439a9fe` |
+| H08 | `ac33a2b` |
+| H09/H10/H11/H16 | `7825691` (enforced restriction, capability implementation deferred) |
+| H12 | `36008eb`, diagnostic removal in `ee7c39f` |
+| H13 | `d4f4c7a`, `cded1be`, `46a2b54` |
+| H14 | `6ec21ff` (updates/publication blocked until release criteria are met) |
+| H15 | `99a541e` |
+
+The local Core implementation and enforced Conditional restrictions are complete. The Core milestone remains pending the fork CI run on the declared toolchains; publishing this branch requires the maintainer's explicit instruction under the repository workflow. The Release milestone additionally needs the environments, credentials, and manual evidence listed in `docs/quality.md` and `docs/release-signing.md`. No changes were merged into the shared main worktree, no hooks were installed into the developer's real agent configuration, and no build was published.
 
 ## Completion gates
 
@@ -423,10 +446,10 @@ Hooks intentionally fail open when the application is unavailable. Preserve the 
 
 ## Exit criteria before new features
 
-- [ ] Every Core item is resolved with its acceptance criteria verified.
-- [ ] Conditional capabilities are either verified or explicitly restricted in code and documentation, including previously saved enablement preferences.
+- [ ] Every Core item is resolved with its acceptance criteria verified. Local implementation is complete; the pinned-toolchain fork CI run remains outstanding (H13).
+- [x] Conditional capabilities are either verified or explicitly restricted in code and documentation, including previously saved enablement preferences.
 - [x] The full ordinary test suite runs without modifying real user state or controlling desktop applications on the locally verified environment.
-- [ ] Request identity, delivery acknowledgment, installer preservation, fragmented messages, startup ordering, and stalled clients have regression coverage.
-- [ ] Supported agent and terminal versions are recorded, with known limitations visible.
-- [ ] Remaining Release items have named follow-up work and block distribution until complete.
-- [ ] The resolving changes and verification results are linked from this plan; passing the original 78-test subset alone does not close the milestone.
+- [x] Request identity, delivery acknowledgment, installer preservation, fragmented messages, startup ordering, and stalled clients have regression coverage.
+- [x] Compatibility claims are narrowed: automated fixtures and local build evidence are recorded; live agent/terminal versions remain uncertified and explicitly block distribution.
+- [x] Remaining Release items have named follow-up work and block distribution until complete.
+- [x] The resolving commits and verification results are recorded above; the original 78-test subset is superseded by the full isolated suite.
