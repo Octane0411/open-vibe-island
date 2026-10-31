@@ -59,22 +59,37 @@ struct BridgeDecisionSafetyTests {
         #expect(server.sessionStateSnapshotForTests().session(id: "expired")?.permissionRequest == nil)
     }
 
-    @Test
-    func competingRequestsAreRejectedWithoutReplacingTheOriginalWaiter() async throws {
+    @Test(arguments: ["codex", "claude", "opencode"])
+    func competingRequestsAreRejectedWithoutReplacingTheOriginalWaiter(backend: String) async throws {
         let socket = BridgeSocketLocation.uniqueTestURL()
         let server = BridgeServer(socketURL: socket)
         try server.start()
         defer { server.stop(); try? FileManager.default.removeItem(at: socket) }
-        let first = Task.detached { try BridgeCommandClient(socketURL: socket).send(.processCodexHook(Self.payload("shared")), timeout: 3) }
+        let command: BridgeCommand
+        let allowed: BridgeResponse
+        switch backend {
+        case "claude":
+            command = .processClaudeHook(.init(cwd: "/tmp", hookEventName: .permissionRequest, sessionID: "shared", toolName: "Bash"))
+            allowed = .claudeHookDirective(.permissionRequest(.allow()))
+        case "opencode":
+            command = .processOpenCodeHook(.init(hookEventName: .permissionRequest, sessionID: "shared", cwd: "/tmp"))
+            allowed = .openCodeHookDirective(.allow)
+        default:
+            command = .processCodexHook(Self.payload("shared"))
+            allowed = .codexHookDirective(.permissionRequest(.allow))
+        }
+        let first = Task.detached { try BridgeCommandClient(socketURL: socket).send(command, timeout: 3) }
         let request = try await permission(on: server, sessionID: "shared")
-        let second = try BridgeCommandClient(socketURL: socket).send(.processCodexHook(Self.payload("shared")), timeout: 1)
-        guard case .codexHookDirective(.permissionRequest(.deny))? = second else {
+        let second = try BridgeCommandClient(socketURL: socket).send(command, timeout: 1)
+        switch second {
+        case .codexHookDirective(.permissionRequest(.deny))?, .claudeHookDirective(.permissionRequest(.deny))?, .openCodeHookDirective(.deny)?: break
+        default:
             Issue.record("A competing request must receive an explicit denial")
             return
         }
         #expect(server.sessionStateSnapshotForTests().session(id: "shared")?.permissionRequest?.id == request.id)
         _ = try await server.decide(.permission(sessionID: "shared", requestID: request.id, resolution: .allowOnce()))
-        #expect(try await first.value == .codexHookDirective(.permissionRequest(.allow)))
+        #expect(try await first.value == allowed)
     }
 
     private static func payload(_ sessionID: String) -> CodexHookPayload {

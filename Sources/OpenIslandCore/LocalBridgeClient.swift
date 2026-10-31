@@ -18,7 +18,11 @@ public final class LocalBridgeClient: @unchecked Sendable {
         self.socketURL = socketURL
     }
 
-    deinit { readSource?.cancel() }
+    deinit {
+        readSource?.cancel()
+        registration?.continuation.resume(throwing: BridgeTransportError.notConnected)
+        continuation?.finish()
+    }
 
     public func connect() throws -> AsyncThrowingStream<AgentEvent, Error> {
         try queue.sync { try connectLocked() }
