@@ -639,6 +639,8 @@ public enum ClaudeHookOutputEncoder {
 
         let data: Data?
         switch response {
+        case .commandRejected:
+            throw BridgeDecisionError.mismatchedRequest
         case .acknowledged:
             data = nil
         case .codexHookDirective:

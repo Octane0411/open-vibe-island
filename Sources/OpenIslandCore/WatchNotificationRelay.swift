@@ -9,10 +9,10 @@ public final class WatchNotificationRelay: @unchecked Sendable {
     public let endpoint: WatchHTTPEndpoint
 
     /// Callback to resolve a permission request (sessionID, approved).
-    public var onResolvePermission: (@Sendable (_ sessionID: String, _ approved: Bool) -> Void)?
+    public var onResolvePermission: (@Sendable (_ sessionID: String, _ requestID: String, _ approved: Bool) -> Void)?
 
     /// Callback to answer a question (sessionID, answer).
-    public var onAnswerQuestion: (@Sendable (_ sessionID: String, _ answer: String) -> Void)?
+    public var onAnswerQuestion: (@Sendable (_ sessionID: String, _ requestID: String, _ answer: String) -> Void)?
 
     /// Provider for looking up session by ID (needed to map requestID → sessionID).
     public var sessionLookup: (@Sendable (_ requestID: String) -> (sessionID: String, kind: PendingRequestKind)?)?
@@ -168,11 +168,11 @@ public final class WatchNotificationRelay: @unchecked Sendable {
             case .permission:
                 let approved = resolution.action.lowercased() == "allow"
                 Self.logger.info("Resolving permission for session \(pending.sessionID): \(resolution.action)")
-                self.onResolvePermission?(pending.sessionID, approved)
+                self.onResolvePermission?(pending.sessionID, resolution.requestID, approved)
 
             case .question:
                 Self.logger.info("Answering question for session \(pending.sessionID): \(resolution.action)")
-                self.onAnswerQuestion?(pending.sessionID, resolution.action)
+                self.onAnswerQuestion?(pending.sessionID, resolution.requestID, resolution.action)
             }
         }
     }

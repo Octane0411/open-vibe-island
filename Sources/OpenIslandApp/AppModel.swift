@@ -517,16 +517,17 @@ final class AppModel {
 
     /// Wire up resolution callbacks so Watch/iPhone actions flow back to the bridge.
     private func setupWatchRelayCallbacks(_ relay: WatchNotificationRelay) {
-        relay.onResolvePermission = { [weak self] sessionID, approved in
+        relay.onResolvePermission = { [weak self] sessionID, requestID, approved in
             Task { @MainActor [weak self] in
-                self?.approvePermission(for: sessionID, approved: approved)
+                self?.approvePermission(for: sessionID, requestID: UUID(uuidString: requestID), approved: approved)
             }
         }
 
-        relay.onAnswerQuestion = { [weak self] sessionID, answer in
+        relay.onAnswerQuestion = { [weak self] sessionID, requestID, answer in
             Task { @MainActor [weak self] in
                 self?.answerQuestion(
                     for: sessionID,
+                    requestID: UUID(uuidString: requestID),
                     answer: QuestionPromptResponse(answer: answer)
                 )
             }
@@ -559,7 +560,16 @@ final class AppModel {
     private var hasStarted = false
 
     @ObservationIgnored
-    private let bridgeServer = BridgeServer(legacySocketURL: BridgeSocketLocation.legacyURL)
+    private let bridgeServer: BridgeServer
+    @ObservationIgnored
+    private let decisionHandler: @Sendable (BridgeDecision) async throws -> BridgeDecisionOutcome
+
+    enum DecisionDeliveryState: Equatable {
+        case sending, acknowledged, expired
+        case failed(String)
+    }
+    private(set) var decisionDeliveryStates: [UUID: DecisionDeliveryState] = [:]
+    @ObservationIgnored private var decisionHistory: [UUID] = []
 
     @ObservationIgnored
     private var bridgeClient = LocalBridgeClient()
@@ -633,6 +643,8 @@ final class AppModel {
 
     init(
         defaults: UserDefaults = .standard,
+        bridgeServer: BridgeServer = BridgeServer(legacySocketURL: BridgeSocketLocation.legacyURL),
+        decisionHandler: (@Sendable (BridgeDecision) async throws -> BridgeDecisionOutcome)? = nil,
         discovery: SessionDiscoveryCoordinator = SessionDiscoveryCoordinator(),
         panelController: any OverlayPanelControlling = OverlayPanelController(),
         terminalJumpAction: @escaping @Sendable (JumpTarget) throws -> String = { target in
@@ -644,6 +656,8 @@ final class AppModel {
         }
     ) {
         self.defaults = defaults
+        self.bridgeServer = bridgeServer
+        self.decisionHandler = decisionHandler ?? { try await bridgeServer.decide($0) }
         self.discovery = discovery
         self.hooks = HookInstallationCoordinator(intentStore: AgentIntentStore(defaults: defaults))
         self.overlay = OverlayUICoordinator(defaults: defaults, panelController: panelController)
@@ -1361,27 +1375,13 @@ final class AppModel {
     }
 
     func approveFocusedPermission(_ approved: Bool) {
-        guard let session = focusedSession else {
-            return
-        }
-
-        send(
-            .resolvePermission(sessionID: session.id, resolution: permissionResolution(for: approved)),
-            userMessage: approved
-                ? "Approving permission for \(session.title)."
-                : "Denying permission for \(session.title)."
-        )
+        guard let session = focusedSession else { return }
+        approvePermission(for: session.id, requestID: session.permissionRequest?.id, approved: approved)
     }
 
     func answerFocusedQuestion(_ answer: String) {
-        guard let session = focusedSession else {
-            return
-        }
-
-        send(
-            .answerQuestion(sessionID: session.id, response: QuestionPromptResponse(answer: answer)),
-            userMessage: "Sending answer \"\(answer)\" for \(session.title)."
-        )
+        guard let session = focusedSession else { return }
+        answerQuestion(for: session.id, requestID: session.questionPrompt?.id, answer: QuestionPromptResponse(answer: answer))
     }
 
     func jumpToFocusedSession() {
@@ -1439,54 +1439,21 @@ final class AppModel {
         return jumpTask
     }
 
-    func approvePermission(for sessionID: String, approved: Bool) {
-        guard let session = state.session(id: sessionID) else {
-            return
-        }
-
-        let resolution = permissionResolution(for: approved)
-        dismissNotificationSurfaceIfPresent(for: sessionID)
-        state.resolvePermission(sessionID: session.id, resolution: resolution)
-        synchronizeSelection()
-        refreshOverlayPlacementIfVisible()
-
-        send(
-            .resolvePermission(sessionID: session.id, resolution: resolution),
-            userMessage: approved
-                ? "Approving permission for \(session.title)."
-                : "Denying permission for \(session.title)."
-        )
+    @discardableResult
+    func approvePermission(for sessionID: String, requestID: UUID?, approved: Bool) -> Task<Void, Never>? {
+        approvePermission(for: sessionID, requestID: requestID, action: approved ? .allowOnce : .deny)
     }
 
-    func approvePermission(for sessionID: String, action: ApprovalAction) {
-        guard let session = state.session(id: sessionID) else {
-            return
-        }
-
+    @discardableResult
+    func approvePermission(for sessionID: String, requestID: UUID?, action: ApprovalAction) -> Task<Void, Never>? {
+        guard let requestID else { return nil }
         let resolution: PermissionResolution
-        let message: String
-
         switch action {
-        case .deny:
-            resolution = .deny(message: "Permission denied in Open Island.", interrupt: false)
-            message = "Denying permission for \(session.title)."
-        case .allowOnce:
-            resolution = .allowOnce()
-            message = "Approving permission for \(session.title)."
-        case let .allowWithUpdates(updates):
-            resolution = .allowOnce(updatedPermissions: updates)
-            message = "Always allowing for \(session.title)."
+        case .deny: resolution = .deny(message: "Permission denied in Open Island.")
+        case .allowOnce: resolution = .allowOnce()
+        case let .allowWithUpdates(updates): resolution = .allowOnce(updatedPermissions: updates)
         }
-
-        dismissNotificationSurfaceIfPresent(for: sessionID)
-        state.resolvePermission(sessionID: session.id, resolution: resolution)
-        synchronizeSelection()
-        refreshOverlayPlacementIfVisible()
-
-        send(
-            .resolvePermission(sessionID: session.id, resolution: resolution),
-            userMessage: message
-        )
+        return submitDecision(.permission(sessionID: sessionID, requestID: requestID, resolution: resolution))
     }
 
     func dismissSession(_ sessionID: String) {
@@ -1495,20 +1462,69 @@ final class AppModel {
         synchronizeSelection()
     }
 
-    func answerQuestion(for sessionID: String, answer: QuestionPromptResponse) {
-        guard let session = state.session(id: sessionID) else {
-            return
+    @discardableResult
+    func answerQuestion(for sessionID: String, requestID: UUID?, answer: QuestionPromptResponse) -> Task<Void, Never>? {
+        guard let requestID else { return nil }
+        return submitDecision(.question(sessionID: sessionID, requestID: requestID, response: answer))
+    }
+
+    func decisionDeliveryState(for session: AgentSession) -> DecisionDeliveryState? {
+        guard let id = session.permissionRequest?.id ?? session.questionPrompt?.id else { return nil }
+        return decisionDeliveryStates[id]
+    }
+
+    private func recordDelivery(_ status: DecisionDeliveryState, for id: UUID) {
+        if decisionDeliveryStates[id] == nil { decisionHistory.append(id) }
+        decisionDeliveryStates[id] = status
+        if decisionHistory.count > 128 {
+            decisionDeliveryStates.removeValue(forKey: decisionHistory.removeFirst())
         }
+    }
 
-        dismissNotificationSurfaceIfPresent(for: sessionID)
-        state.answerQuestion(sessionID: session.id, response: answer)
-        synchronizeSelection()
-        refreshOverlayPlacementIfVisible()
-
-        send(
-            .answerQuestion(sessionID: session.id, response: answer),
-            userMessage: "Sending answer for \(session.title)."
-        )
+    private func submitDecision(_ decision: BridgeDecision) -> Task<Void, Never>? {
+        guard decisionDeliveryStates[decision.requestID] != .sending else { return nil }
+        let current = state.session(id: decision.sessionID)
+        let expectedID: UUID?
+        switch decision {
+        case .permission: expectedID = current?.permissionRequest?.id
+        case .question: expectedID = current?.questionPrompt?.id
+        }
+        guard expectedID == decision.requestID else {
+            recordDelivery(.expired, for: decision.requestID)
+            lastActionMessage = "This request is no longer active."
+            return nil
+        }
+        recordDelivery(.sending, for: decision.requestID)
+        lastActionMessage = "Sending decision…"
+        let handler = decisionHandler
+        return Task { [weak self] in
+            do {
+                _ = try await handler(decision)
+                guard let self else { return }
+                self.recordDelivery(.acknowledged, for: decision.requestID)
+                // A newer request may have arrived before this acknowledgment.
+                let session = self.state.session(id: decision.sessionID)
+                switch decision {
+                case let .permission(id, requestID, resolution):
+                    if session?.permissionRequest?.id == requestID {
+                        self.state.resolvePermission(sessionID: id, resolution: resolution)
+                        self.dismissNotificationSurfaceIfPresent(for: id)
+                    }
+                case let .question(id, requestID, answer):
+                    if session?.questionPrompt?.id == requestID {
+                        self.state.answerQuestion(sessionID: id, response: answer)
+                        self.dismissNotificationSurfaceIfPresent(for: id)
+                    }
+                }
+                self.synchronizeSelection()
+                self.lastActionMessage = "Decision accepted."
+            } catch {
+                guard let self else { return }
+                let expired = (error as? BridgeDecisionError) == .expiredOrUnknown
+                self.recordDelivery(expired ? .expired : .failed(error.localizedDescription), for: decision.requestID)
+                self.lastActionMessage = "Decision not delivered: \(error.localizedDescription)"
+            }
+        }
     }
 
     func replyToSession(_ session: AgentSession, text: String) {

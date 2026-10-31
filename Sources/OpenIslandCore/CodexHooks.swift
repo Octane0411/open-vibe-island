@@ -340,6 +340,8 @@ public enum CodexHookOutputEncoder {
         encoder.outputFormatting = [.sortedKeys]
 
         switch response {
+        case .commandRejected:
+            throw BridgeDecisionError.mismatchedRequest
         case .acknowledged:
             return nil
         case let .codexHookDirective(directive):

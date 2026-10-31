@@ -20,12 +20,14 @@ final class AppModelTestEnvironment {
     }
 
     func makeModel(
+        decisionHandler: @escaping @Sendable (BridgeDecision) async throws -> BridgeDecisionOutcome = { _ in .accepted },
         terminalJumpAction: @escaping @Sendable (JumpTarget) throws -> String = { _ in "Test jump" },
         jumpDismissDelay: @escaping @Sendable () async throws -> Void = { try await Task.sleep(for: .milliseconds(20)) },
         isNotificationSessionAlreadyFrontmost: @escaping @Sendable (AgentSession) async -> Bool = { _ in false }
     ) -> AppModel {
         AppModel(
             defaults: defaults,
+            decisionHandler: decisionHandler,
             discovery: SessionDiscoveryCoordinator(storageDirectory: directory),
             panelController: HeadlessOverlayPanelController(),
             terminalJumpAction: terminalJumpAction,

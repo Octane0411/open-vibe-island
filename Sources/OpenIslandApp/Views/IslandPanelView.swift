@@ -613,8 +613,9 @@ struct IslandPanelView: View {
                     presentation: .notification,
                     sideInset: sessionListSideInset,
                     lang: model.lang,
-                    onApprove: { model.approvePermission(for: session.id, action: $0) },
-                    onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
+                    decisionStatus: model.decisionDeliveryState(for: session),
+                    onApprove: { model.approvePermission(for: session.id, requestID: session.permissionRequest?.id, action: $0) },
+                    onAnswer: { model.answerQuestion(for: session.id, requestID: session.questionPrompt?.id, answer: $0) },
                     onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                         ? { model.replyToSession(session, text: $0) } : nil,
                     onJump: { model.jumpToSession(session) }
@@ -654,8 +655,9 @@ struct IslandPanelView: View {
                                 isInteractive: model.notchStatus == .opened,
                                 sideInset: sessionListSideInset,
                                 lang: model.lang,
-                                onApprove: { model.approvePermission(for: session.id, action: $0) },
-                                onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
+                                decisionStatus: model.decisionDeliveryState(for: session),
+                                onApprove: { model.approvePermission(for: session.id, requestID: session.permissionRequest?.id, action: $0) },
+                                onAnswer: { model.answerQuestion(for: session.id, requestID: session.questionPrompt?.id, answer: $0) },
                                 onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                                     ? { model.replyToSession(session, text: $0) } : nil,
                                 onJump: { model.jumpToSession(session) },
@@ -704,8 +706,9 @@ struct IslandPanelView: View {
                         isInteractive: model.notchStatus == .opened,
                         sideInset: sessionListSideInset,
                         lang: model.lang,
-                        onApprove: { model.approvePermission(for: session.id, action: $0) },
-                        onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
+                        decisionStatus: model.decisionDeliveryState(for: session),
+                        onApprove: { model.approvePermission(for: session.id, requestID: session.permissionRequest?.id, action: $0) },
+                        onAnswer: { model.answerQuestion(for: session.id, requestID: session.questionPrompt?.id, answer: $0) },
                         onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                             ? { model.replyToSession(session, text: $0) } : nil,
                         onJump: { model.jumpToSession(session) },
@@ -1265,6 +1268,7 @@ private struct IslandSessionRow: View {
     var presentation: IslandSessionRowPresentation = .list
     var sideInset: CGFloat = 16
     var lang: LanguageManager = .shared
+    var decisionStatus: AppModel.DecisionDeliveryState?
     var onApprove: ((ApprovalAction) -> Void)?
     var onAnswer: ((QuestionPromptResponse) -> Void)?
     var onReply: ((String) -> Void)?
@@ -1293,11 +1297,27 @@ private struct IslandSessionRow: View {
         return VStack(alignment: .leading, spacing: 0) {
             rowSummary(presence: presence, showsDetail: showsDetail)
 
+            if let decisionStatus {
+                Group {
+                    switch decisionStatus {
+                    case .sending: Text("Sending decision…")
+                    case .acknowledged: Text("Decision accepted.")
+                    case .expired: Text("This request expired. Return to your terminal.")
+                    case let .failed(message): Text("Decision failed: \(message) Try again.")
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .padding(.horizontal, sideInset)
+                .padding(.vertical, 6)
+            }
+
             if showsDetail {
                 rowAuxiliaryDetails(presence: presence)
 
                 if shouldShowEmbeddedDetailBody {
                     embeddedDetailBody
+                        .disabled(decisionStatus == .sending || decisionStatus == .expired)
                         .padding(.leading, detailLeadingInset)
                         .padding(.trailing, sideInset)
                         .padding(.bottom, 13)

@@ -69,7 +69,7 @@ public struct BridgeHello: Equatable, Codable, Sendable {
     public var protocolVersion: Int
     public var serverLabel: String
 
-    public init(protocolVersion: Int = 1, serverLabel: String = "local-bridge") {
+    public init(protocolVersion: Int = 2, serverLabel: String = "local-bridge") {
         self.protocolVersion = protocolVersion
         self.serverLabel = serverLabel
     }
@@ -215,6 +215,7 @@ public enum BridgeCommand: Equatable, Codable, Sendable {
 
 public enum BridgeResponse: Equatable, Codable, Sendable {
     case acknowledged
+    case commandRejected(reason: String)
     case codexHookDirective(CodexHookDirective)
     case claudeHookDirective(ClaudeHookDirective)
     case openCodeHookDirective(OpenCodeHookDirective)
@@ -223,10 +224,12 @@ public enum BridgeResponse: Equatable, Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case type
         case directive
+        case reason
     }
 
     private enum ResponseType: String, Codable {
         case acknowledged
+        case commandRejected
         case codexHookDirective
         case claudeHookDirective
         case openCodeHookDirective
@@ -238,6 +241,8 @@ public enum BridgeResponse: Equatable, Codable, Sendable {
         let type = try container.decode(ResponseType.self, forKey: .type)
 
         switch type {
+        case .commandRejected:
+            self = .commandRejected(reason: try container.decode(String.self, forKey: .reason))
         case .acknowledged:
             self = .acknowledged
         case .codexHookDirective:
@@ -255,6 +260,9 @@ public enum BridgeResponse: Equatable, Codable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
 
         switch self {
+        case let .commandRejected(reason):
+            try container.encode(ResponseType.commandRejected, forKey: .type)
+            try container.encode(reason, forKey: .reason)
         case .acknowledged:
             try container.encode(ResponseType.acknowledged, forKey: .type)
         case let .codexHookDirective(directive):

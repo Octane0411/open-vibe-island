@@ -65,6 +65,14 @@ The locked full test wrapper passed with 355 core tests in 37 suites and 182 app
 
 This batch does not close the complete hardening milestone. Next priorities are exact approval/answer identity and acknowledgment (H02/H03), configuration preservation (H04), and the OpenCode protocol contract (H05). All remaining Core, Conditional, and Release gates still apply.
 
+### H02/H03 — implemented, locally verified; H07 controller authority implemented
+
+Decisions now use an in-process controller API with the exact session, immutable request UUID, and request kind. Socket decision commands are explicitly rejected. Protocol hello version is 2; existing producer envelopes remain compatible. Only one blocking request per session is accepted; competing requests receive an explicit denial without replacing the original waiter. Requests expire after five monotonic minutes and release waiting producers with a denial. Up to 1,024 accepted decisions retain idempotent receipts; conflicting retries fail.
+
+The interface retains a request while sending, shows failure or expiration, and clears it only after the bridge accepts that exact decision and writes its complete directive. This acknowledgment does not claim that the agent completed the tool. A late acknowledgment cannot clear a newer request. Hook fail-open behavior when the app is unavailable remains unchanged.
+
+Verification: 358 core and 185 app tests passed, including wrong ID/session/kind, socket rejection, competing requests, expiry, idempotent and conflicting retries, failure retention, duplicate clicks, and late acknowledgment. One remaining trailing-closure AppModel construction in the test suite was also migrated to the isolated fixture. Filesystem identity and resource bounds remain open under H06/H07.
+
 ## Completion gates
 
 | Gate | Required outcome |
@@ -78,8 +86,8 @@ P1 means incorrect authorization, unintended input, configuration damage, or a s
 | ID | Work item | Priority | Gate | Status |
 | --- | --- | --- | --- | --- |
 | H01 | Isolate automated tests from the developer environment | P1 | Core | Implemented locally |
-| H02 | Bind approvals and answers to exact requests | P1 | Core | Open |
-| H03 | Acknowledge decisions before clearing the interface | P2 | Core | Open |
+| H02 | Bind approvals and answers to exact requests | P1 | Core | Implemented locally |
+| H03 | Acknowledge decisions before clearing the interface | P2 | Core | Implemented locally |
 | H04 | Preserve agent configuration during installation | P1 | Core | Open |
 | H05 | Repair the OpenCode protocol contract | P1 | Core | Open |
 | H06 | Bound bridge reads, writes, and connections | P2 | Core | Open |
