@@ -132,7 +132,7 @@ public final class OpenCodePluginInstallationManager: @unchecked Sendable {
             .init(file: plugin, contents: pluginSourceData),
             .init(file: config, contents: config.original == nil && pluginSourceData == nil ? nil : output),
             .init(file: manifestFile, contents: manifest)
-        ], recoveryRoot: openCodeConfigDirectory)
+        ], recoveryRoot: openCodeConfigDirectory, fileManager: fileManager)
     }
 
     private func configuration(from data: Data?) throws -> [String: Any] {

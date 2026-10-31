@@ -37,12 +37,12 @@ struct ConfigurationTransaction {
         var permissions: Int? = nil
     }
 
-    static func apply(_ proposed: [Change], recoveryRoot: URL) throws {
+    static func apply(_ proposed: [Change], recoveryRoot: URL, fileManager: FileManager = .default) throws {
         let changes = proposed.filter { $0.file.original != $0.contents }
         guard !changes.isEmpty else { return }
         for change in changes { try change.file.check() }
         let backup = recoveryRoot.appendingPathComponent(".open-island-recovery-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try fileManager.createDirectory(at: backup, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         var manifest: [[String: Any]] = []
         for (index, change) in changes.enumerated() {
             if let original = change.file.original {
@@ -58,25 +58,25 @@ struct ConfigurationTransaction {
                 try change.file.check()
                 // Record before writing so a failed chmod is also rolled back.
                 applied.append(change)
-                try replace(change.file.url, with: change.contents, permissions: change.permissions ?? change.file.permissions)
+                try replace(change.file.url, with: change.contents, permissions: change.permissions ?? change.file.permissions, fileManager: fileManager)
             }
         } catch {
             for change in applied.reversed() {
                 if let current = try? File(change.file.url), current.original == change.contents {
-                    try? replace(change.file.url, with: change.file.original, permissions: change.file.permissions)
+                    try? replace(change.file.url, with: change.file.original, permissions: change.file.permissions, fileManager: fileManager)
                 }
             }
             throw ConfigurationError.transactionFailed(backup.path, error.localizedDescription)
         }
     }
 
-    private static func replace(_ url: URL, with contents: Data?, permissions: Int) throws {
+    private static func replace(_ url: URL, with contents: Data?, permissions: Int, fileManager: FileManager) throws {
         if let contents {
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try contents.write(to: url, options: .atomic)
-            try FileManager.default.setAttributes([.posixPermissions: permissions], ofItemAtPath: url.path)
-        } else if FileManager.default.fileExists(atPath: url.path) {
-            try FileManager.default.removeItem(at: url)
+            try fileManager.setAttributes([.posixPermissions: permissions], ofItemAtPath: url.path)
+        } else if fileManager.fileExists(atPath: url.path) {
+            try fileManager.removeItem(at: url)
         }
     }
 }

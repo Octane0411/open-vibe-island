@@ -79,7 +79,7 @@ Codex and OpenCode installation now read all destinations and validate configura
 
 Changes retain original bytes and permissions in a private `.open-island-recovery-<UUID>` directory beside the configuration. Its `manifest.json` maps numbered originals to destinations. Ordinary failures roll back files still matching this installation's writes; subsequent external edits are never deliberately restored over. For process interruption, quit the app and restore only the affected files from this manifest after reviewing concurrent edits. Recovery copies may contain secrets: delete them after verifying the integration. No automatic retention deletion runs.
 
-In-process installs are serialized and original bytes are rechecked before each replacement. External editors do not participate in this lock; a narrow check/replace race remains. Close editors and avoid concurrent setup processes during installation. Files are individually atomic, not a filesystem-wide atomic transaction. Tests cover malformed settings, duplicate TOML tables, commented headers, concurrent edits, and preservation of unrelated OpenCode plugins/settings.
+In-process installs are serialized and original bytes are rechecked before each replacement. External editors do not participate in this lock; a narrow check/replace race remains. Close editors and avoid concurrent setup processes during installation. Files are individually atomic, not a filesystem-wide atomic transaction. Tests cover malformed settings, duplicate TOML tables, commented headers, concurrent edits, and preservation of unrelated OpenCode plugins/settings. A forced failure after writing configuration verifies that the original plugin and configuration are restored, no success manifest is left, and private recovery copies remain available. The five configuration tests pass.
 
 ### H05 — implemented, locally verified
 
@@ -126,7 +126,7 @@ P1 means incorrect authorization, unintended input, configuration damage, or a s
 | H01 | Isolate automated tests from the developer environment | P1 | Core | Implemented locally |
 | H02 | Bind approvals and answers to exact requests | P1 | Core | Implemented locally |
 | H03 | Acknowledge decisions before clearing the interface | P2 | Core | Implemented locally |
-| H04 | Preserve agent configuration during installation | P1 | Core | Implemented; recovery checks pending |
+| H04 | Preserve agent configuration during installation | P1 | Core | Implemented locally |
 | H05 | Repair the OpenCode protocol contract | P1 | Core | Implemented locally |
 | H06 | Bound bridge reads, writes, and connections | P2 | Core | Implemented locally |
 | H07 | Enforce local bridge identity and command permissions | P1 | Core | Implemented locally |

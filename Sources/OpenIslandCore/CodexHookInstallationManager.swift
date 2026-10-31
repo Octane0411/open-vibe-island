@@ -102,7 +102,7 @@ public final class CodexHookInstallationManager: @unchecked Sendable {
             .init(file: config, contents: Data(feature.contents.utf8)),
             .init(file: manifestFile, contents: try encoder.encode(manifest)),
             .init(file: legacy, contents: nil)
-        ], recoveryRoot: codexDirectory)
+        ], recoveryRoot: codexDirectory, fileManager: fileManager)
         return try status(hooksBinaryURL: managedHooksBinaryURL)
     }
 
@@ -126,7 +126,7 @@ public final class CodexHookInstallationManager: @unchecked Sendable {
             .init(file: config, contents: configData),
             .init(file: primary, contents: nil),
             .init(file: legacy, contents: nil)
-        ], recoveryRoot: codexDirectory)
+        ], recoveryRoot: codexDirectory, fileManager: fileManager)
         return try status()
     }
 
