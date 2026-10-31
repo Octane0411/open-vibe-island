@@ -29,7 +29,7 @@ run_step() {
             ;;
         build)
             echo "==> build"
-            swift build
+            swift build --force-resolved-versions
             ;;
         smoke)
             echo "==> smoke"

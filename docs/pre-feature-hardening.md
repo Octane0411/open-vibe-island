@@ -25,11 +25,21 @@ The full test suite was not run on the developer's live environment because H01 
 
 ### H01 — implemented, locally verified
 
+Resolving commit: `6ebc913` (`fix: isolate automated tests from user state (H01)`).
+
 The bridge compatibility listener is now an explicit production option. App tests use unique preferences and temporary registry storage, a headless panel controller, and injected terminal actions. The live Warp check requires explicit opt-in; the payload inference test supplies a terminal locator instead of querying iTerm. Pending registry writes are cancelled when their coordinator is released.
 
 Verification on October 31, 2026: Swift 6.4, macOS 26.6.1, Apple Silicon. The full Swift Testing run reported 355 core tests in 37 suites and 177 app tests in 24 suites passing. The Warp check was skipped and Ghostty integration check cancelled by its opt-in guard. Production registry bytes/metadata and socket identities were unchanged across the completed run. New tests cover independent preferences, all five injected registry paths, and an existing compatibility listener alongside two test servers. Documentation and whitespace checks passed. See [test isolation guidance](./quality.md#test-isolation).
 
 An initial run was stopped after discovering an unisolated iTerm AppleScript query; that test now injects its locator and the completed rerun has no live terminal interaction. GUI, permission-dialog, and other platform checks remain outside this verification.
+
+### H13 — dependency locking implemented; remaining work open
+
+`Package.resolved` records the four locally tested dependency versions. Test, harness-build, and packaging entry points require those resolutions. Sparkle's minimum is raised to the already-tested 2.10.1 so a future resolution cannot fall back to the old 2.9.0 floor. [Upstream advisories](https://github.com/sparkle-project/Sparkle/security/advisories) were rechecked on October 31, 2026; their listed patched versions are at or below 2.9.6.
+
+Verification: the locked package build and test wrapper passed locally; shell syntax, documentation, and localization checks passed. Packaging was checked for syntax only, not signed or distributed.
+
+This is only the dependency-locking portion of H13. The toolchain/platform matrix, action and packaging-tool pinning, signed packaging, GUI checks, and mobile validation remain open.
 
 ## Completion gates
 

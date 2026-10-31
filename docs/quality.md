@@ -21,6 +21,14 @@ The repository harness exists to make a round of work mechanically checkable. Th
 - The app can be launched locally in a deterministic harness mode without requiring live hook traffic.
 - The smoke path produces a machine-readable report plus PNG, accessibility, and runtime-observability evidence for the rendered window surface.
 
+## Dependency baseline
+
+Commit `Package.resolved` with dependency changes. The test wrapper, harness build, and packaging script use `--force-resolved-versions` so they fail when resolution needs to change instead of silently selecting new versions. For direct commands, use `swift build --force-resolved-versions` and `swift test --force-resolved-versions`.
+
+To update dependencies deliberately, review upstream releases and security advisories, run `swift package update`, inspect the lockfile diff, and rerun the isolated suite and relevant packaging checks before committing. Do not remove the lockfile to fix a CI failure.
+
+The October 31, 2026 baseline locks MarkdownUI 2.4.1, NetworkImage 6.0.1, swift-cmark 0.9.0, and Sparkle 2.10.1. Sparkle's minimum is also 2.10.1, matching the locally tested version. Its [published security advisories](https://github.com/sparkle-project/Sparkle/security/advisories) were reviewed for this baseline; this is not a permanent security guarantee. Local verification used Swift 6.4 and Xcode 27.1 (27A9275). CI toolchain pinning, action revision pinning, packaging-tool versions, macOS 14/Intel runtime checks, and GUI checks remain tracked under H13.
+
 ## Test isolation
 
 Ordinary `swift test` runs use unique temporary sockets and installer directories. Application model tests use `AppModelTestEnvironment`: a fresh preferences suite, temporary session registry directory, headless overlay panel, and injected terminal/foreground actions. Reuse that environment when a test needs to reload a model. Do not construct a production `AppModel()` in a unit test or clear `UserDefaults.standard`.
