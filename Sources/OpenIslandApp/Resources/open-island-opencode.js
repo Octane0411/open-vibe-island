@@ -2,13 +2,7 @@
 // Bridges OpenCode events to the Open Island desktop app via Unix socket.
 // Install: copy to ~/.config/opencode/plugins/open-island.js
 import { connect } from "net";
-import { appendFileSync } from "fs";
 import { homedir } from "os";
-
-const DEBUG_LOG = "/tmp/open-island-opencode-debug.log";
-function debugLog(msg) {
-  try { appendFileSync(DEBUG_LOG, `[${new Date().toISOString()}] ${msg}\n`); } catch {}
-}
 
 const SOCKET_PATH =
   process.env.OPEN_ISLAND_SOCKET_PATH ||
@@ -19,47 +13,57 @@ function encodeEnvelope(command) {
 }
 
 function sendToSocket(json) {
-  return new Promise((resolve) => {
-    try {
-      const sock = connect({ path: SOCKET_PATH }, () => {
-        sock.end(encodeEnvelope(json));
-      });
-      let buf = "";
-      sock.on("data", (chunk) => { buf += chunk.toString(); });
-      sock.on("end", () => { resolve(true); });
-      sock.on("error", () => resolve(false));
-      sock.setTimeout(3000, () => { sock.destroy(); resolve(false); });
-    } catch { resolve(false); }
-  });
+  return sendAndWaitResponse(json, 3000, "acknowledged").then(Boolean);
 }
 
-function sendAndWaitResponse(json, timeoutMs = 300000) {
+function sendAndWaitResponse(json, timeoutMs = 300000, expectedType = "openCodeHookDirective") {
   return new Promise((resolve) => {
+    let sock;
+    let finished = false;
+    let buffer = Buffer.alloc(0);
+    let receivedHello = false;
+    const maximumFrameBytes = 4 * 1024 * 1024;
+    const finish = (value) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(deadline);
+      sock?.destroy();
+      resolve(value);
+    };
+    // A total deadline, not an idle timeout that a trickling peer can reset.
+    const deadline = setTimeout(() => finish(null), timeoutMs);
     try {
-      const sock = connect({ path: SOCKET_PATH }, () => {
-        sock.write(encodeEnvelope(json));
+      sock = connect({ path: SOCKET_PATH }, () => {
+        if (!finished) sock.write(encodeEnvelope(json));
       });
-      let buf = "";
       sock.on("data", (chunk) => {
-        buf += chunk.toString();
-        // BridgeServer sends hello first, then response after processing
-        const lines = buf.split("\n").filter(Boolean);
-        if (lines.length >= 2) {
-          sock.destroy();
-          try { resolve(JSON.parse(lines[1])); } catch { resolve(null); }
+        if (finished) return;
+        buffer = Buffer.concat([buffer, chunk]);
+        let newline;
+        while ((newline = buffer.indexOf(10)) !== -1) {
+          if (newline > maximumFrameBytes) return finish(null);
+          const line = buffer.subarray(0, newline);
+          buffer = buffer.subarray(newline + 1);
+          if (!line.length) continue;
+          let envelope;
+          try { envelope = JSON.parse(line.toString("utf8")); } catch { return finish(null); }
+          if (envelope.type === "hello") {
+            if (receivedHello || envelope.hello?.protocolVersion !== 2) return finish(null);
+            receivedHello = true;
+          } else if (!receivedHello) {
+            return finish(null);
+          } else if (envelope.type === "response") {
+            if (envelope.response?.type !== expectedType) return finish(null);
+            return finish(envelope);
+          }
+          // Event envelopes are never decisions, including those from older servers.
         }
+        if (buffer.length > maximumFrameBytes) finish(null);
       });
-      sock.on("end", () => {
-        const lines = buf.split("\n").filter(Boolean);
-        if (lines.length >= 2) {
-          try { resolve(JSON.parse(lines[1])); } catch { resolve(null); }
-        } else {
-          resolve(null);
-        }
-      });
-      sock.on("error", () => resolve(null));
-      sock.setTimeout(timeoutMs, () => { sock.destroy(); resolve(null); });
-    } catch { resolve(null); }
+      sock.on("end", () => finish(null));
+      sock.on("close", () => finish(null));
+      sock.on("error", () => finish(null));
+    } catch { finish(null); }
   });
 }
 
@@ -317,11 +321,7 @@ export default async ({ client, serverUrl }) => {
   return {
     "event": async ({ event }) => {
       try {
-        debugLog(`EVENT: ${event.type} | props: ${JSON.stringify(event.properties || {}).slice(0, 300)}`);
         const mapped = mapEvent(event);
-        if (mapped) {
-          debugLog(`MAPPED: ${mapped.openCodeHook.hook_event_name} sid=${mapped.openCodeHook.session_id}`);
-        }
         if (!mapped) return;
 
         // Permission request — hold connection for approval
@@ -331,6 +331,7 @@ export default async ({ client, serverUrl }) => {
             if (!response) return;
             const directive = response?.response?.directive;
             if (!directive) return;
+            if (!["allow", "deny"].includes(directive.type)) return;
             const reply = directive.type === "allow" ? "once" : "reject";
             const message = directive.type === "deny" ? directive.reason : undefined;
             try {
@@ -352,11 +353,14 @@ export default async ({ client, serverUrl }) => {
             const directive = response?.response?.directive;
             if (!directive) return;
             if (directive.type === "answer") {
+              const answers = directive.answers || (typeof directive.text === "string" ? [[directive.text]] : null);
+              if (!Array.isArray(answers) || answers.length !== mapped.openCodeHook.questions.length ||
+                  !answers.every(values => Array.isArray(values) && values.length && values.every(value => typeof value === "string" && value.length))) return;
               try {
                 await internalFetch(new Request(`http://localhost:${serverPort}/question/${requestId}/reply`, {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ answers: [[directive.text]] }),
+                  body: JSON.stringify({ answers }),
                 }));
               } catch {}
             }

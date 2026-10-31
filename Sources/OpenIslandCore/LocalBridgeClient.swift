@@ -11,6 +11,7 @@ public final class LocalBridgeClient: @unchecked Sendable {
     private var continuation: AsyncThrowingStream<AgentEvent, Error>.Continuation?
     private var buffer = Data()
     private var scanCursor = 0
+    private var registration: (id: UUID, continuation: CheckedContinuation<Void, Error>)?
 
     public init(socketURL: URL = BridgeSocketLocation.defaultURL) {
         self.socketURL = socketURL
@@ -89,9 +90,22 @@ public final class LocalBridgeClient: @unchecked Sendable {
                 }
 
                 do {
-                    try writeAll(data, to: self.fileDescriptor)
-                    continuation.resume(returning: ())
+                    if case .registerClient = command {
+                        guard self.registration == nil else { throw BridgeTransportError.alreadyConnected }
+                        let id = UUID()
+                        self.registration = (id, continuation)
+                        try writeAll(data, to: self.fileDescriptor)
+                        self.queue.asyncAfter(deadline: .now() + 5) { [weak self] in
+                            guard let self, self.registration?.id == id else { return }
+                            self.finish(throwing: BridgeTransportError.responseTimedOut)
+                            self.disconnect()
+                        }
+                    } else {
+                        try writeAll(data, to: self.fileDescriptor)
+                        continuation.resume(returning: ())
+                    }
                 } catch {
+                    self.registration = nil
                     continuation.resume(throwing: error)
                 }
             }
@@ -131,6 +145,10 @@ public final class LocalBridgeClient: @unchecked Sendable {
                     for message in messages {
                         if case let .event(event) = message {
                             continuation?.yield(event)
+                        } else if case let .response(response) = message, let pending = registration {
+                            registration = nil
+                            if response == .acknowledged { pending.continuation.resume() }
+                            else { pending.continuation.resume(throwing: BridgeTransportError.malformedEnvelope) }
                         }
                     }
                 } catch {
@@ -162,6 +180,8 @@ public final class LocalBridgeClient: @unchecked Sendable {
     }
 
     private func finish(throwing error: Error?) {
+        registration?.continuation.resume(throwing: error ?? BridgeTransportError.notConnected)
+        registration = nil
         if let error {
             continuation?.finish(throwing: error)
         } else {

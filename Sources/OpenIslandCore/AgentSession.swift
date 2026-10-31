@@ -324,15 +324,18 @@ public struct QuestionAnswerAnnotation: Equatable, Codable, Sendable {
 
 public struct QuestionPromptResponse: Equatable, Codable, Sendable {
     public var rawAnswer: String?
+    public var orderedAnswers: [[String]]?
     public var answers: [String: String]
     public var annotations: [String: QuestionAnswerAnnotation]
 
     public init(
         rawAnswer: String? = nil,
         answers: [String: String] = [:],
+        orderedAnswers: [[String]]? = nil,
         annotations: [String: QuestionAnswerAnnotation] = [:]
     ) {
         self.rawAnswer = rawAnswer
+        self.orderedAnswers = orderedAnswers
         self.answers = answers
         self.annotations = annotations
     }

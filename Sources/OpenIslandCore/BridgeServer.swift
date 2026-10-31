@@ -324,6 +324,8 @@ public final class BridgeServer: @unchecked Sendable {
                             handle(command, from: clientID)
                         }
                     }
+                    guard let updated = clients[clientID] else { return }
+                    client = updated
                 } catch {
                     removeClient(clientID)
                     return
@@ -420,9 +422,22 @@ public final class BridgeServer: @unchecked Sendable {
             if let pending = pendingClaudeInteractions[sessionID], case let .question(payload, prompt) = pending.kind {
                 recipient = pending.clientID
                 response = .claudeHookDirective(.permissionRequest(.allow(updatedInput: mergedClaudeQuestionInput(payload: payload, prompt: prompt, response: answer))))
-            } else if let pending = pendingOpenCodeInteractions[sessionID], case .question = pending.kind {
+            } else if let pending = pendingOpenCodeInteractions[sessionID], case let .question(payload) = pending.kind {
                 recipient = pending.clientID
-                response = .openCodeHookDirective(.answer(text: answer.rawAnswer ?? answer.displaySummary))
+                if let answers = answer.orderedAnswers {
+                    let questions = payload.questions ?? []
+                    guard answers.count == questions.count, !answers.isEmpty,
+                          zip(answers, questions).allSatisfy({ values, question in
+                              !values.isEmpty && values.allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                                  && (question.multiSelect == true || values.count == 1)
+                          }) else { throw BridgeDecisionError.mismatchedRequest }
+                    response = .openCodeHookDirective(.answers(answers))
+                } else {
+                    guard (payload.questions?.count ?? 0) <= 1, let text = answer.rawAnswer, !text.isEmpty else {
+                        throw BridgeDecisionError.mismatchedRequest
+                    }
+                    response = .openCodeHookDirective(.answer(text: text))
+                }
             } else {
                 // Questions created explicitly through requestQuestion have no blocking producer.
                 guard !hasPendingInteraction(sessionID) else { throw BridgeDecisionError.mismatchedRequest }
@@ -3130,7 +3145,7 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func hasSession(id: String) -> Bool {
-        localState.session(id: id) != nil || localState.session(id: id) != nil
+        localState.session(id: id) != nil
     }
 
     private func send(_ envelope: BridgeEnvelope, to clientID: UUID) {
@@ -3147,7 +3162,7 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func broadcast(_ envelopes: [BridgeEnvelope]) {
-        let clientIDs = Array(clients.keys)
+        let clientIDs = clients.values.filter { $0.role == .observer }.map(\.id)
 
         for clientID in clientIDs {
             for envelope in envelopes {

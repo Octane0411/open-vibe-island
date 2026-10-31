@@ -81,6 +81,12 @@ Changes retain original bytes and permissions in a private `.open-island-recover
 
 In-process installs are serialized and original bytes are rechecked before each replacement. External editors do not participate in this lock; a narrow check/replace race remains. Close editors and avoid concurrent setup processes during installation. Files are individually atomic, not a filesystem-wide atomic transaction. Tests cover malformed settings, duplicate TOML tables, commented headers, concurrent edits, and preservation of unrelated OpenCode plugins/settings.
 
+### H05 — implemented, locally verified
+
+The plugin consumes complete newline-delimited envelopes, requires protocol version 2, and accepts only the expected response kind. Session events cannot become decisions. Reads have a four MiB frame bound and total deadline, including fragmented input and EOF. Session broadcasts go only to registered observers; registration now waits for acknowledgment and retains its role across reads.
+
+Structured question decisions carry ordered arrays of selections through Swift encoding into the JavaScript reply body. Ambiguous flattened responses to multiple questions are rejected. Five Node tests cover every response split point, interleaved events, incomplete EOF, protocol mismatch, oversize, and timeout. The real JavaScript plugin also connects to the real Swift server in a contract test and receives two ordered questions with multiple selections intact. The targeted Swift run passed 78 tests across four suites. The first cross-language run confirmed that the old plugin wrote its synthetic event to the predictable temporary log; payload logging has now been removed (the diagnostic portion of H12). Existing log files are not automatically deleted. Run `node --test Tests/PluginTests/*.test.cjs` alongside Swift tests; Node is now required for the cross-language suite.
+
 ## Completion gates
 
 | Gate | Required outcome |
@@ -97,7 +103,7 @@ P1 means incorrect authorization, unintended input, configuration damage, or a s
 | H02 | Bind approvals and answers to exact requests | P1 | Core | Implemented locally |
 | H03 | Acknowledge decisions before clearing the interface | P2 | Core | Implemented locally |
 | H04 | Preserve agent configuration during installation | P1 | Core | Implemented; recovery checks pending |
-| H05 | Repair the OpenCode protocol contract | P1 | Core | Open |
+| H05 | Repair the OpenCode protocol contract | P1 | Core | Implemented locally |
 | H06 | Bound bridge reads, writes, and connections | P2 | Core | Open |
 | H07 | Enforce local bridge identity and command permissions | P1 | Core | Open |
 | H08 | Preserve live state during startup discovery | P2 | Core | Implemented locally |

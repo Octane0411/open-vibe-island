@@ -2301,7 +2301,7 @@ private struct StructuredQuestionPromptView: View {
             ),
             onSubmit: {
                 if hasCompleteSelection {
-                    onAnswer(QuestionPromptResponse(answers: answerMap))
+                    onAnswer(QuestionPromptResponse(answers: answerMap, orderedAnswers: structuredQuestions.map { resolvedAnswers(for: $0) }))
                 }
             }
         )
@@ -2446,7 +2446,8 @@ private struct StructuredQuestionPromptView: View {
         onAnswer(
             QuestionPromptResponse(
                 rawAnswer: primarySelectedAnswer,
-                answers: answerMap
+                answers: answerMap,
+                orderedAnswers: structuredQuestions.map { resolvedAnswers(for: $0) }
             )
         )
     }
