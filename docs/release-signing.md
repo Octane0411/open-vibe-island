@@ -1,60 +1,21 @@
-# Release Signing & Notarization
+# Fork release and update gate
 
-Open Island releases are code-signed and notarized via GitHub Actions. This document explains how to set up the required secrets.
+**Distribution and updates are blocked.** The inherited automatic release workflow no longer imports credentials, publishes assets, merges appcasts, or modifies upstream repositories. Tags and manual invocations fail with an explanation. Both automatic and manual Sparkle checks are disabled in the app, and packaging omits the upstream feed and key. The inherited appcast offers no releases. There is no environment-variable bypass.
 
-## Required GitHub Secrets
+The default package identity is `io.github.robinedquist.openisland.dev`, for local development only. Choosing a production identity, release name, website/feed, and signing credentials remains a maintainer decision. This does not establish side-by-side compatibility: session registries, installed helpers, agent hook entries, and socket paths still overlap with upstream. Only one listener can own a socket path.
 
-Go to **Settings → Secrets and variables → Actions** in the repository and add:
+## Requirements before enabling distribution
 
-| Secret | Description |
-|--------|-------------|
-| `APPLE_CERTIFICATE_P12` | Base64-encoded Developer ID Application certificate (.p12) |
-| `APPLE_CERTIFICATE_PASSWORD` | Password for the .p12 file |
-| `APPLE_SIGNING_IDENTITY` | Signing identity string, e.g. `Developer ID Application: Your Name (TEAMID)` |
-| `APPLE_ID` | Apple ID email used for notarization |
-| `APPLE_TEAM_ID` | 10-character Apple Developer Team ID |
-| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password for notarization (generate at appleid.apple.com) |
+1. Choose the production bundle identity and ownership/migration rules for all shared paths. Test an upstream-to-fork migration and uninstall without removing unrelated user hooks.
+2. Provision a Developer ID Application identity and Apple notarization credentials under maintainer control. Keep private credentials in the platform keychain or protected CI secrets. Do not copy upstream credentials or keys.
+3. Generate a fork-owned Sparkle signing key, publish only its public key, and configure an HTTPS feed controlled by the fork. Implement configuration validation before removing the runtime restriction.
+4. Build the exact reviewed commit with its lockfile and recorded toolchain. Verify helper/resources/license notices, both intended architectures, code signatures, notarization acceptance, and stapling. A local ad-hoc signature is not distribution approval.
+5. Complete the platform, terminal, agent, GUI, and permission-denied matrix in `docs/quality.md`. Record exact versions and evidence; narrow public compatibility claims when a platform has not been tested.
+6. Test a signed upgrade, correct signature rejection, helper compatibility, interrupted-update recovery, and rollback on a separate test account/machine.
+7. Restore a reviewed publication workflow that creates a draft and uploads assets first. After explicit publication, verify every asset through an anonymous HTTPS download and compare its length/hash to the signed artifact. Only then generate/promote update metadata. Draft or failed releases must not alter appcast or package-manager metadata. Use normal reviewed PRs; no administrative auto-merge or force-push to a third-party tap.
 
-## How to export the certificate
+## Local verification
 
-1. Open **Keychain Access** → **My Certificates**
-2. Find your **Developer ID Application** certificate
-3. Right-click → **Export** → save as `.p12` with a password
-4. Base64-encode it:
-   ```bash
-   base64 -i Certificates.p12 | pbcopy
-   ```
-5. Paste the result into the `APPLE_CERTIFICATE_P12` secret
+`zsh scripts/package-app.sh --verify-configuration` checks the disabled update configuration without building, signing, installing, or launching an app. Attempts to supply an update feed/key or enable flag fail before building. The packaging script produces local artifacts only; nothing in this workflow authorizes publishing them.
 
-## How to generate an app-specific password
-
-1. Go to [appleid.apple.com](https://appleid.apple.com) → **Sign-In and Security** → **App-Specific Passwords**
-2. Generate a new password, label it `open-island-notary`
-3. Save it as the `APPLE_APP_SPECIFIC_PASSWORD` secret
-
-## Local signed builds
-
-You can also build signed locally:
-
-```bash
-export OPEN_ISLAND_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
-export OPEN_ISLAND_NOTARY_PROFILE="open-island-notary"
-export OPEN_ISLAND_VERSION="0.2.0"
-
-# First, store notarization credentials (one-time):
-xcrun notarytool store-credentials "open-island-notary" \
-  --apple-id "you@example.com" \
-  --team-id "TEAMID" \
-  --password "xxxx-xxxx-xxxx-xxxx"
-
-# Then build:
-zsh scripts/package-app.sh
-```
-
-## Release flow
-
-1. Merge all PRs to `main`
-2. Tag the release: `git tag v0.2.0 && git push origin v0.2.0`
-3. The `Release` workflow runs automatically — builds, signs, notarizes, and creates a draft GitHub Release
-4. Review the draft release and publish it
-5. Update `appcast.xml` for Sparkle auto-update
+Desktop smoke tests must run explicitly in an isolated test account. Building a package must not silently start the app against the developer's existing sessions. Required manual evidence remains a release blocker, not a claim implied by a successful compiler run.

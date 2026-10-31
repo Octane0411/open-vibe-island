@@ -111,6 +111,12 @@ Payload logging was removed from the OpenCode plugin rather than retaining an op
 
 The privacy policy now inventories preferences, session registries, transcript reads, managed integrations, recovery copies, legacy temporary files, update traffic, third-party libraries, and disabled remote capabilities. Existing logs and recovery copies are not automatically deleted; removal instructions explicitly distinguish app-owned caches from agent-owned transcripts and overlapping upstream storage.
 
+### H14 — update and publication restrictions enforced; distribution blocked
+
+The fork never constructs or starts Sparkle while its release restriction is active, including manual checks. Packaging removes upstream feed/key defaults, rejects update-enabling variables before building, and uses a distinct development bundle identity. The inherited appcast offers no assets. The automatic release workflow is replaced by an explicit failure gate; it cannot promote drafts, auto-merge metadata, or modify the upstream Homebrew tap. The appcast script also refuses publication. Desktop packaging smoke tests require explicit opt-in in an isolated account.
+
+Configuration-only packaging checks pass, and attempted enablement is rejected. `docs/release-signing.md` records the concrete remaining requirements: production identity and storage migration, maintainer-owned signing/update keys, notarized artifacts, platform/GUI evidence, signed upgrade/recovery tests, and anonymous asset verification before metadata promotion. These require maintainer credentials and isolated platform environments; no release, signing credential, or update channel was created by this task.
+
 ## Completion gates
 
 | Gate | Required outcome |
@@ -136,7 +142,7 @@ P1 means incorrect authorization, unintended input, configuration damage, or a s
 | H11 | Fix remote endpoint lifecycle and request processing | P2 | Conditional | Restricted in code; implementation deferred |
 | H12 | Restrict diagnostics and remote Markdown content | P2 | Core | Implemented locally |
 | H13 | Make builds and compatibility checks reproducible | P2 | Core and Release | Partial: dependency locking |
-| H14 | Give the fork a safe release and update configuration | P1 | Release | Open |
+| H14 | Give the fork a safe release and update configuration | P1 | Release | Updates/publication disabled; release verification blocked |
 | H15 | Stop cancelled terminal jumps before side effects | P2 | Core | Implemented locally |
 | H16 | Preserve and correctly merge SSH hook configuration | P2 | Conditional | Restricted in code; implementation deferred |
 

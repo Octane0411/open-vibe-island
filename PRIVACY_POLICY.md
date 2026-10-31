@@ -12,7 +12,7 @@ Installing integrations writes agent configuration and a managed helper or plugi
 
 The OpenCode plugin no longer logs event payloads. Old `/tmp/open-island-opencode-debug.log` files are not automatically removed. System and development logs can still contain operational errors and identifiers. This project does not configure an analytics or remote crash-reporting service; it does include third-party libraries, including Sparkle and MarkdownUI.
 
-Agent-authored Markdown uses local image placeholders, including inline images: image URLs and local image paths are not fetched. Clicking a link can open the destination in your browser. OpenCode replies use that agent's local service interface. Sparkle update traffic depends on the build's update configuration; see the fork release restrictions before distributing a build. Phone/Watch networking and terminal reply injection are disabled by runtime guards in this fork. SSH setup is disabled pending safe configuration merging. Separately running agents and user-configured SSH tunnels have their own data flows and privacy policies.
+Agent-authored Markdown uses local image placeholders, including inline images: image URLs and local image paths are not fetched. Clicking a link can open the destination in your browser. OpenCode replies use that agent's local service interface. Sparkle automatic and manual update checks are disabled in this fork; future update traffic requires a separately configured and verified release channel. Phone/Watch networking and terminal reply injection are disabled by runtime guards in this fork. SSH setup is disabled pending safe configuration merging. Separately running agents and user-configured SSH tunnels have their own data flows and privacy policies.
 
 To remove retained app data, quit the app, uninstall unwanted managed integrations, then review and remove its session registry files and preferences for the installed bundle identity. Review recovery directories and old diagnostic/usage files separately. Removing app caches does not delete transcripts owned by your agents, operating-system logs, or backups made by your backup software. Upstream and fork storage names currently overlap; do not delete shared data while another build uses it. There is no single in-app “erase all data” control.
 
@@ -30,6 +30,6 @@ Report concerns through the [fork issue tracker](https://github.com/RobinEdquist
 
 OpenCode 插件已停止记录事件内容；旧的临时日志不会自动删除。系统和开发日志仍可能包含运行错误和标识。本项目未配置分析或远程崩溃报告服务，但包含 Sparkle、MarkdownUI 等第三方库。
 
-代理 Markdown 中的独立图片和行内图片都显示为本地图标，不读取其网址或文件路径。点击链接仍可能打开浏览器。OpenCode 回复通过代理的本地服务处理。更新联网行为取决于构建配置，分发前须遵守分支发布限制。手机和 Watch 联网、终端回复以及 SSH 安装目前被代码禁用。代理自身和用户配置的 SSH 隧道另有数据流及隐私政策。
+代理 Markdown 中的独立图片和行内图片都显示为本地图标，不读取其网址或文件路径。点击链接仍可能打开浏览器。OpenCode 回复通过代理的本地服务处理。本分支已禁用自动和手动更新检查，未来启用更新渠道前必须完成独立配置和验证。手机和 Watch 联网、终端回复以及 SSH 安装目前被代码禁用。代理自身和用户配置的 SSH 隧道另有数据流及隐私政策。
 
 删除数据前请退出应用并卸载不再需要的集成，然后分别检查会话缓存、该安装身份的偏好设置、恢复备份及旧日志。应用缓存的删除不会删除代理记录、系统日志或其他备份。分支与上游仍使用部分相同存储路径，请勿在其他版本使用时删除共享数据。目前没有一个可以删除所有数据的应用内按钮。

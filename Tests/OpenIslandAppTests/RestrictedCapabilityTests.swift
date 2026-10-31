@@ -6,6 +6,15 @@ import OpenIslandCore
 @MainActor
 struct RestrictedCapabilityTests {
     @Test
+    func manualAndAutomaticUpdatesRemainUnavailable() {
+        let checker = UpdateChecker()
+        checker.startIfNeeded()
+        checker.checkForUpdates()
+        #expect(!checker.canCheckForUpdates)
+        #expect(!checker.hasUpdate)
+    }
+
+    @Test
     func savedEnablementCannotStartRestrictedCapabilities() {
         let environment = AppModelTestEnvironment()
         environment.defaults.set(true, forKey: "watch.notification.enabled")

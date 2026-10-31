@@ -9,7 +9,7 @@ fi
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 app_name="${OPEN_ISLAND_APP_NAME:-Open Island}"
-bundle_identifier="${OPEN_ISLAND_BUNDLE_ID:-app.openisland.dev}"
+bundle_identifier="${OPEN_ISLAND_BUNDLE_ID:-io.github.robinedquist.openisland.dev}"
 version="${OPEN_ISLAND_VERSION:-0.1.0}"
 build_number="${OPEN_ISLAND_BUILD_NUMBER:-$(git -C "$repo_root" rev-list --count HEAD 2>/dev/null || echo 1)}"
 package_root="${OPEN_ISLAND_PACKAGE_ROOT:-$repo_root/output/package}"
@@ -18,6 +18,20 @@ zip_path="${OPEN_ISLAND_ZIP_PATH:-$package_root/$app_name.zip}"
 dmg_path="${OPEN_ISLAND_DMG_PATH:-$package_root/$app_name.dmg}"
 signing_identity="${OPEN_ISLAND_SIGN_IDENTITY:-}"
 notary_profile="${OPEN_ISLAND_NOTARY_PROFILE:-}"
+
+# Updates remain unavailable until the fork release gate is reviewed and completed.
+if [[ "${OPEN_ISLAND_ENABLE_UPDATES:-false}" != "false" || -n "${OPEN_ISLAND_UPDATE_FEED_URL:-}" || -n "${OPEN_ISLAND_EDDSA_PUBLIC_KEY:-}" ]]; then
+    echo "Fork updates are disabled. Complete docs/release-signing.md before enabling a channel." >&2
+    exit 1
+fi
+if [[ "${1:-}" == "--verify-configuration" ]]; then
+    echo "Development bundle: $bundle_identifier; automatic updates: disabled"
+    exit 0
+fi
+if (( $# > 0 )); then
+    echo "Usage: scripts/package-app.sh [--verify-configuration]" >&2
+    exit 64
+fi
 
 brand_script="$repo_root/scripts/generate_brand_icons.py"
 dmg_bg_script="$repo_root/scripts/generate_dmg_background.py"
@@ -125,10 +139,8 @@ cat > "$bundle_dir/Contents/Info.plist" <<EOF
     <true/>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
-    <key>SUFeedURL</key>
-    <string>https://raw.githubusercontent.com/Octane0411/open-vibe-island/main/appcast.xml</string>
-    <key>SUPublicEDKey</key>
-    <string>${OPEN_ISLAND_EDDSA_PUBLIC_KEY:-3IF8txq9RRNanzE2FNhyGRcwhslTucCcJHpTkpxcgBQ=}</string>
+    <key>OpenIslandUpdatesEnabled</key>
+    <false/>
 </dict>
 </plist>
 EOF
@@ -159,6 +171,7 @@ echo "Bundle structure verified."
 # --- Smoke-test the app outside the repo to catch Bundle.module fallback hacks ---
 # SPM's generated resource accessor has a hardcoded fallback to the local .build/
 # directory. Running from /tmp ensures the app works without that crutch.
+if [[ "${OPEN_ISLAND_PACKAGE_SMOKE:-false}" == "true" ]]; then
 smoke_dir="$(mktemp -d)/smoke-test"
 mkdir -p "$smoke_dir"
 cp -R "$bundle_dir" "$smoke_dir/"
@@ -183,6 +196,10 @@ if [[ -x "$smoke_binary" ]]; then
     rm -rf "$(dirname "$smoke_dir")"
 else
     echo "WARNING: smoke test skipped — binary not found at $smoke_binary" >&2
+fi
+
+else
+    echo "Desktop smoke test requires OPEN_ISLAND_PACKAGE_SMOKE=true in an isolated test account."
 fi
 
 sparkle_fw="$bundle_dir/Contents/Frameworks/Sparkle.framework"
