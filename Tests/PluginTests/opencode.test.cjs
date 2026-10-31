@@ -10,12 +10,13 @@ function fixture() {
   socket.end = () => {};
   socket.setTimeout = () => {};
   socket.destroy = () => { socket.destroyed = true; };
+  const writes = [];
   const context = { Buffer, setTimeout, clearTimeout, process: { env: {} }, Request,
-    homedir: () => '/unused', appendFileSync: () => {},
+    homedir: () => '/unused', appendFileSync: (...args) => writes.push(args),
     connect: (_, connected) => { queueMicrotask(connected); return socket; } };
   vm.createContext(context);
   vm.runInContext(source.replace(/^import .*;\n/gm, '').replace('export default', 'globalThis.plugin ='), context);
-  return { socket, context };
+  return { socket, context, writes };
 }
 const hello = JSON.stringify({ type: 'hello', hello: { protocolVersion: 2 } }) + '\n';
 const response = JSON.stringify({ type: 'response', response: { type: 'openCodeHookDirective', directive: { type: 'allow' } } }) + '\n';
@@ -53,4 +54,11 @@ test('a silent peer is closed by the total deadline', async () => {
   const { socket, context } = fixture();
   assert.equal(await context.sendAndWaitResponse({}, 10), null);
   assert.ok(socket.destroyed);
+});
+
+test('default plugin diagnostics never write event secrets', async () => {
+  const { context, writes } = fixture();
+  const plugin = await context.plugin({ client: {}, serverUrl: { port: '4096' } });
+  await plugin.event({ event: { type: 'unknown', properties: { prompt: 'private prompt', token: 'secret fixture' } } });
+  assert.deepEqual(writes, []);
 });

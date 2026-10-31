@@ -105,6 +105,12 @@ Terminal replies refuse both capability checks and direct sends. Phone/Watch sta
 
 Tests cover direct reply rejection, saved enablement, repeated attempts to enable, and direct endpoint startup. The SSH command returns a clear failure before contacting the supplied host. Product and SSH documentation label upstream descriptions as reference only. Underlying destination verification, encrypted pairing, remote request lifecycle, and SSH configuration merging remain deferred; these capabilities must not be advertised or enabled until their original criteria are fulfilled.
 
+### H12 — implemented, locally verified
+
+Payload logging was removed from the OpenCode plugin rather than retaining an optional sensitive log. A Node regression verifies that events containing synthetic secrets cause no diagnostic file writes. Markdown now uses explicit local-only providers for both block and inline images, including file URLs. The inline provider regression fails with the former network provider and succeeds without an image server. Source review verifies both provider modifiers are attached to the sole agent Markdown renderer; the block provider contains only a static SwiftUI label. Offscreen rendering alone did not exercise network loading and is not counted as proof of network isolation.
+
+The privacy policy now inventories preferences, session registries, transcript reads, managed integrations, recovery copies, legacy temporary files, update traffic, third-party libraries, and disabled remote capabilities. Existing logs and recovery copies are not automatically deleted; removal instructions explicitly distinguish app-owned caches from agent-owned transcripts and overlapping upstream storage.
+
 ## Completion gates
 
 | Gate | Required outcome |
@@ -128,7 +134,7 @@ P1 means incorrect authorization, unintended input, configuration damage, or a s
 | H09 | Verify the destination before submitting terminal replies | P1 | Conditional | Restricted in code; implementation deferred |
 | H10 | Secure remote pairing and approvals | P1 | Conditional | Restricted in code; implementation deferred |
 | H11 | Fix remote endpoint lifecycle and request processing | P2 | Conditional | Restricted in code; implementation deferred |
-| H12 | Restrict diagnostics and remote Markdown content | P2 | Core | Open |
+| H12 | Restrict diagnostics and remote Markdown content | P2 | Core | Implemented locally |
 | H13 | Make builds and compatibility checks reproducible | P2 | Core and Release | Partial: dependency locking |
 | H14 | Give the fork a safe release and update configuration | P1 | Release | Open |
 | H15 | Stop cancelled terminal jumps before side effects | P2 | Core | Implemented locally |

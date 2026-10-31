@@ -1797,7 +1797,7 @@ private struct IslandSessionRow: View {
         VStack(alignment: .leading, spacing: 0) {
             if !completionMessageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 AutoHeightScrollView(maxHeight: 160) {
-                    Markdown(completionMessageText)
+                    SafeMarkdown(content: completionMessageText)
                         .markdownTheme(.completionCard)
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                         .padding(.horizontal, 14)
