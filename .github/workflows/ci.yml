@@ -37,6 +37,10 @@ jobs:
           shasum -a 256 Package.resolved
       - name: Run isolated automated checks
         run: zsh scripts/harness.sh ci
+      - name: Verify bridge tests with a constrained task pool
+        env:
+          LIBDISPATCH_COOPERATIVE_POOL_STRICT: '1'
+        run: zsh scripts/test-clt.sh --skip-build --filter 'BridgeDecisionSafetyTests|CodexAppServerTimeoutTests|OpenCodePluginContractTests'
       - name: Compile Intel target
         run: swift build --force-resolved-versions --arch x86_64
 
