@@ -38,9 +38,22 @@ jobs:
       - name: Run isolated automated checks
         run: zsh scripts/harness.sh ci
       - name: Verify bridge tests with a constrained task pool
-        env:
-          LIBDISPATCH_COOPERATIVE_POOL_STRICT: '1'
-        run: zsh scripts/test-clt.sh --skip-build --filter 'BridgeDecisionSafetyTests|CodexAppServerTimeoutTests|OpenCodePluginContractTests'
+        timeout-minutes: 2
+        run: |
+          # Constrain only the test process. Swift 6.2 Package Manager itself
+          # stalls before launching tests when it inherits this setting.
+          test_bin_dir="$(swift build --force-resolved-versions --show-bin-path)"
+          test_bundle="$test_bin_dir/OpenIslandPackageTests.xctest/Contents/MacOS/OpenIslandPackageTests"
+          swift_bin="$(xcrun --find swift)"
+          test_helper="${swift_bin%/bin/swift}/libexec/swift/pm/swiftpm-testing-helper"
+          platform_developer="$(xcrun --sdk macosx --show-sdk-platform-path)/Developer"
+          test -f "$test_bundle"
+          test -x "$test_helper"
+          env LIBDISPATCH_COOPERATIVE_POOL_STRICT=1 \
+            DYLD_FRAMEWORK_PATH="$platform_developer/Library/Frameworks" \
+            DYLD_LIBRARY_PATH="$platform_developer/usr/lib" \
+            "$test_helper" --test-bundle-path "$test_bundle" --testing-library swift-testing \
+            --filter 'BridgeDecisionSafetyTests|CodexAppServerTimeoutTests|OpenCodePluginContractTests'
       - name: Compile Intel target
         run: swift build --force-resolved-versions --arch x86_64
 
