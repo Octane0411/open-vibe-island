@@ -23,7 +23,7 @@ extension BridgeServer {
 func startBridgeCommandOffExecutor(
     _ command: BridgeCommand,
     socketURL: URL,
-    timeout: TimeInterval = 3
+    timeout: TimeInterval = 45
 ) -> Task<BridgeResponse?, Error> {
     // Start the producer immediately, before any Task scheduling. Older Swift
     // executors can defer a new Task until after the controller's polling deadline.
@@ -45,7 +45,7 @@ func startBridgeCommandOffExecutor(
 func sendBridgeCommandOffExecutor(
     _ command: BridgeCommand,
     socketURL: URL,
-    timeout: TimeInterval = 3
+    timeout: TimeInterval = 45
 ) async throws -> BridgeResponse? {
     try await startBridgeCommandOffExecutor(command, socketURL: socketURL, timeout: timeout).value
 }

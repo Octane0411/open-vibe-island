@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import OpenIslandCore
 
+@Suite(.timeLimit(.minutes(1)))
 struct BridgeDecisionSafetyTests {
     @Test
     func decisionsRequireExactIdentityAndCannotBeSentOverTheSocket() async throws {
@@ -9,8 +10,12 @@ struct BridgeDecisionSafetyTests {
         let server = BridgeServer(socketURL: socket)
         try server.start()
         defer { server.stop(); try? FileManager.default.removeItem(at: socket) }
+        let observer = LocalBridgeClient(socketURL: socket)
+        var events = try observer.connect().makeAsyncIterator()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
         let waiter = startBridgeCommandOffExecutor(.processCodexHook(Self.payload("one")), socketURL: socket)
-        let request = try await permission(on: server, sessionID: "one")
+        let request = try await permission(from: &events, sessionID: "one")
         let decision = BridgeDecision.permission(sessionID: "one", requestID: request.id, resolution: .allowOnce())
 
         #expect(try await sendBridgeCommandOffExecutor(.resolvePermission(sessionID: "one", resolution: .allowOnce()), socketURL: socket) == .commandRejected(reason: "Decisions require the in-process controller."))
@@ -31,7 +36,7 @@ struct BridgeDecisionSafetyTests {
             try await server.decide(.permission(sessionID: "one", requestID: request.id, resolution: .deny()))
         }
         let nextWaiter = startBridgeCommandOffExecutor(.processCodexHook(Self.payload("one")), socketURL: socket)
-        let nextRequest = try await permission(on: server, sessionID: "one")
+        let nextRequest = try await permission(from: &events, sessionID: "one")
         #expect(nextRequest.id != request.id)
         #expect(try await server.decide(decision) == .alreadyAccepted)
         #expect(server.sessionStateSnapshotForTests().session(id: "one")?.permissionRequest?.id == nextRequest.id)
@@ -46,8 +51,12 @@ struct BridgeDecisionSafetyTests {
         let server = BridgeServer(socketURL: socket, decisionLifetime: 0.1, decisionClock: { clock.now })
         try server.start()
         defer { server.stop(); try? FileManager.default.removeItem(at: socket) }
-        let waiter = startBridgeCommandOffExecutor(.processCodexHook(Self.payload("expired")), socketURL: socket, timeout: 2)
-        let request = try await permission(on: server, sessionID: "expired")
+        let observer = LocalBridgeClient(socketURL: socket)
+        var events = try observer.connect().makeAsyncIterator()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
+        let waiter = startBridgeCommandOffExecutor(.processCodexHook(Self.payload("expired")), socketURL: socket)
+        let request = try await permission(from: &events, sessionID: "expired")
         clock.advance()
         guard case .codexHookDirective(.permissionRequest(.deny))? = try await waiter.value else {
             Issue.record("Expiration must explicitly deny and release the waiting hook")
@@ -65,6 +74,10 @@ struct BridgeDecisionSafetyTests {
         let server = BridgeServer(socketURL: socket)
         try server.start()
         defer { server.stop(); try? FileManager.default.removeItem(at: socket) }
+        let observer = LocalBridgeClient(socketURL: socket)
+        var events = try observer.connect().makeAsyncIterator()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
         let command: BridgeCommand
         let allowed: BridgeResponse
         switch backend {
@@ -79,7 +92,7 @@ struct BridgeDecisionSafetyTests {
             allowed = .codexHookDirective(.permissionRequest(.allow))
         }
         let first = startBridgeCommandOffExecutor(command, socketURL: socket)
-        let request = try await permission(on: server, sessionID: "shared")
+        let request = try await permission(from: &events, sessionID: "shared")
         let second = try await sendBridgeCommandOffExecutor(command, socketURL: socket, timeout: 1)
         switch second {
         case .codexHookDirective(.permissionRequest(.deny))?, .claudeHookDirective(.permissionRequest(.deny))?, .openCodeHookDirective(.deny)?: break
@@ -97,13 +110,16 @@ struct BridgeDecisionSafetyTests {
                          permissionMode: .default, sessionID: sessionID, transcriptPath: nil)
     }
 
-    private func permission(on server: BridgeServer, sessionID: String) async throws -> PermissionRequest {
-        let deadline = ContinuousClock.now + .seconds(1)
-        while ContinuousClock.now < deadline {
-            if let request = server.sessionStateSnapshotForTests().session(id: sessionID)?.permissionRequest { return request }
-            try await Task.sleep(for: .milliseconds(2))
+    private func permission(
+        from events: inout AsyncThrowingStream<AgentEvent, Error>.Iterator,
+        sessionID: String
+    ) async throws -> PermissionRequest {
+        while let event = try await events.next() {
+            if case let .permissionRequested(payload) = event, payload.sessionID == sessionID {
+                return payload.request
+            }
         }
-        return try #require(server.sessionStateSnapshotForTests().session(id: sessionID)?.permissionRequest)
+        return try #require(nil as PermissionRequest?, "Observer ended before the permission request arrived.")
     }
 }
 
