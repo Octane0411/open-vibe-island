@@ -121,6 +121,10 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     public func start() throws {
+        try queue.sync { try startLocked() }
+    }
+
+    private func startLocked() throws {
         guard listeners.isEmpty else {
             return
         }
@@ -152,12 +156,10 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func bindListener(at url: URL) throws -> Listener {
-        let parentURL = url.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: parentURL, withIntermediateDirectories: true)
-        try? FileManager.default.removeItem(at: url)
-
+        let lock = try BridgeSocketIdentity.prepare(url, privateDirectory: url == BridgeSocketLocation.defaultURL)
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd != -1 else {
+            close(lock)
             throw BridgeTransportError.systemCallFailed("socket", errno)
         }
 
@@ -176,6 +178,9 @@ public final class BridgeServer: @unchecked Sendable {
                 }
             }
 
+            guard chmod(url.path, 0o600) == 0 else {
+                throw BridgeTransportError.systemCallFailed("chmod socket", errno)
+            }
             guard listen(fd, 16) != -1 else {
                 throw BridgeTransportError.systemCallFailed("listen", errno)
             }
@@ -183,7 +188,8 @@ public final class BridgeServer: @unchecked Sendable {
             try makeSocketNonBlocking(fd)
         } catch {
             close(fd)
-            try? FileManager.default.removeItem(at: url)
+            close(lock)
+            // Preserve the path on failure. A future startup can inspect a stale socket safely.
             throw error
         }
 
@@ -193,6 +199,7 @@ public final class BridgeServer: @unchecked Sendable {
         }
         source.setCancelHandler {
             close(fd)
+            close(lock)
         }
         source.resume()
 
@@ -259,6 +266,10 @@ public final class BridgeServer: @unchecked Sendable {
                 return
             }
 
+            guard BridgeSocketIdentity.isCurrentUser(clientFileDescriptor) else {
+                close(clientFileDescriptor)
+                continue
+            }
             do {
                 try disableSocketSigPipe(clientFileDescriptor)
                 try makeSocketNonBlocking(clientFileDescriptor)

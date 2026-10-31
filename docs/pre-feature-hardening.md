@@ -87,6 +87,12 @@ The plugin consumes complete newline-delimited envelopes, requires protocol vers
 
 Structured question decisions carry ordered arrays of selections through Swift encoding into the JavaScript reply body. Ambiguous flattened responses to multiple questions are rejected. Five Node tests cover every response split point, interleaved events, incomplete EOF, protocol mismatch, oversize, and timeout. The real JavaScript plugin also connects to the real Swift server in a contract test and receives two ordered questions with multiple selections intact. The targeted Swift run passed 78 tests across four suites. The first cross-language run confirmed that the old plugin wrote its synthetic event to the predictable temporary log; payload logging has now been removed (the diagnostic portion of H12). Existing log files are not automatically deleted. Run `node --test Tests/PluginTests/*.test.cjs` alongside Swift tests; Node is now required for the cross-language suite.
 
+### H07 — implemented, locally verified
+
+The production bridge directory is checked for ownership and made private (0700); sockets and listener locks are owner-only (0600). An exclusive instance lock protects each path, including the compatibility path. Startup refuses live listeners, foreign-owned files, non-sockets, and symlinks; it removes only an owned stale socket after a connection probe and identity recheck. Accepted connections must pass the operating system's peer-UID check. Socket callers cannot become decision controllers; that API remains in process. Same-account processes can still publish events or register as observers, and arbitrary code running as the account owner is outside this boundary.
+
+Regressions reproduced live listener replacement, ordinary-file/symlink deletion, and permissive socket modes before the change; all now pass. Six tests across socket identity, approval safety, and the real OpenCode contract passed. Cross-account OS testing requires a separate account and is not claimed by this local run. Lock files intentionally remain after shutdown to avoid replacing a lock inode still held by another process.
+
 ## Completion gates
 
 | Gate | Required outcome |
@@ -105,7 +111,7 @@ P1 means incorrect authorization, unintended input, configuration damage, or a s
 | H04 | Preserve agent configuration during installation | P1 | Core | Implemented; recovery checks pending |
 | H05 | Repair the OpenCode protocol contract | P1 | Core | Implemented locally |
 | H06 | Bound bridge reads, writes, and connections | P2 | Core | Open |
-| H07 | Enforce local bridge identity and command permissions | P1 | Core | Open |
+| H07 | Enforce local bridge identity and command permissions | P1 | Core | Implemented locally |
 | H08 | Preserve live state during startup discovery | P2 | Core | Implemented locally |
 | H09 | Verify the destination before submitting terminal replies | P1 | Conditional | Open |
 | H10 | Secure remote pairing and approvals | P1 | Conditional | Open |
