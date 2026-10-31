@@ -73,6 +73,14 @@ The interface retains a request while sending, shows failure or expiration, and 
 
 Verification: 358 core and 185 app tests passed, including wrong ID/session/kind, socket rejection, competing requests, expiry, idempotent and conflicting retries, failure retention, duplicate clicks, and late acknowledgment. One remaining trailing-closure AppModel construction in the test suite was also migrated to the isolated fixture. Filesystem identity and resource bounds remain open under H06/H07.
 
+### H04 — validated configuration edits and recovery
+
+Codex and OpenCode installation now read all destinations and validate configuration before modifying any file. Missing files are distinct from unreadable, malformed, or non-regular files. Codex uses pinned [TOMLKit 0.6.0](https://github.com/LebJe/TOMLKit/tree/0.6.0) to validate input/output and compare the entire parsed document against the intended feature-only mutation; unsupported layouts are preserved and reported. Commented table headers are supported. Hook JSON with unsupported shapes is rejected rather than silently discarded. Reinstallation retains ownership of the feature flag, and uninstall preserves unrelated root settings.
+
+Changes retain original bytes and permissions in a private `.open-island-recovery-<UUID>` directory beside the configuration. Its `manifest.json` maps numbered originals to destinations. Ordinary failures roll back files still matching this installation's writes; subsequent external edits are never deliberately restored over. For process interruption, quit the app and restore only the affected files from this manifest after reviewing concurrent edits. Recovery copies may contain secrets: delete them after verifying the integration. No automatic retention deletion runs.
+
+In-process installs are serialized and original bytes are rechecked before each replacement. External editors do not participate in this lock; a narrow check/replace race remains. Close editors and avoid concurrent setup processes during installation. Files are individually atomic, not a filesystem-wide atomic transaction. Tests cover malformed settings, duplicate TOML tables, commented headers, concurrent edits, and preservation of unrelated OpenCode plugins/settings.
+
 ## Completion gates
 
 | Gate | Required outcome |
@@ -88,7 +96,7 @@ P1 means incorrect authorization, unintended input, configuration damage, or a s
 | H01 | Isolate automated tests from the developer environment | P1 | Core | Implemented locally |
 | H02 | Bind approvals and answers to exact requests | P1 | Core | Implemented locally |
 | H03 | Acknowledge decisions before clearing the interface | P2 | Core | Implemented locally |
-| H04 | Preserve agent configuration during installation | P1 | Core | Open |
+| H04 | Preserve agent configuration during installation | P1 | Core | Implemented; recovery checks pending |
 | H05 | Repair the OpenCode protocol contract | P1 | Core | Open |
 | H06 | Bound bridge reads, writes, and connections | P2 | Core | Open |
 | H07 | Enforce local bridge identity and command permissions | P1 | Core | Open |

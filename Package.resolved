@@ -1,5 +1,5 @@
 {
-  "originHash" : "3e81a795f5d014bb8716f3ac51d9d416cec04e879cf33b35b6dea80384903dd0",
+  "originHash" : "94fd4b0433b7284b97cb5d8de3a50e537326a1d7898c1b60431d79023a5c3f5c",
   "pins" : [
     {
       "identity" : "networkimage",
@@ -35,6 +35,15 @@
       "state" : {
         "revision" : "5f613358148239d0292c0cef674a3c2314737f9e",
         "version" : "2.4.1"
+      }
+    },
+    {
+      "identity" : "tomlkit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/LebJe/TOMLKit.git",
+      "state" : {
+        "revision" : "ec6198d37d495efc6acd4dffbd262cdca7ff9b3f",
+        "version" : "0.6.0"
       }
     }
   ],

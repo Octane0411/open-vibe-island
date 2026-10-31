@@ -64,6 +64,7 @@ cp "$app_binary" "$bundle_dir/Contents/MacOS/OpenIslandApp"
 cp "$hooks_binary" "$bundle_dir/Contents/Helpers/OpenIslandHooks"
 cp "$setup_binary" "$bundle_dir/Contents/Helpers/OpenIslandSetup"
 cp "$brand_icon" "$bundle_dir/Contents/Resources/OpenIsland.icns"
+cp -R "$repo_root/ThirdPartyLicenses" "$bundle_dir/Contents/Resources/"
 
 # Copy Sparkle.framework for auto-update support.
 sparkle_framework="$repo_root/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
