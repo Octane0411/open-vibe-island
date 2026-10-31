@@ -270,7 +270,6 @@ if [[ -n "$signing_identity" ]]; then
         --sign "$signing_identity" \
         "$bundle_dir"
 
-    codesign --verify --deep --strict --verbose=2 "$bundle_dir"
 else
     # Ad-hoc sign so macOS accepts the embedded Sparkle.framework.
     if [[ -d "$sparkle_fw" ]]; then
@@ -283,6 +282,8 @@ else
     codesign --force --sign - "$bundle_dir/Contents/Helpers/OpenIslandSetup" 2>/dev/null || true
     codesign --force --sign - "$bundle_dir" 2>/dev/null || true
 fi
+# Local ad-hoc packages must also fail verification rather than hiding signing errors.
+codesign --verify --deep --strict --verbose=2 "$bundle_dir"
 
 ditto -c -k --keepParent "$bundle_dir" "$zip_path"
 
