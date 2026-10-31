@@ -53,6 +53,8 @@ An OS action that has already started is not forcibly interrupted or undone; lat
 
 ### H08 — implemented, locally verified
 
+Resolving commit: `ac33a2b` (`fix: preserve live sessions during startup discovery (H08)`).
+
 Startup merges now retain every session already received while background discovery was running. Those session IDs take precedence over every startup cache and transcript result, including records with later timestamps or matching transcript aliases. Other discovered sessions are added through the existing merger. This preserves pending approvals and ended-session state without using wall-clock time to decide whether cache data can override live ingress. State still goes through the AppModel setter that forwards snapshots to the bridge.
 
 Three regression tests (four cases) failed on the original implementation and pass after the fix: both live/discovery arrival orders, a future-dated conflicting cache/transcript record, and an ended session. Full desktop startup and reconnect in a signed app remain manual integration checks; these tests exercise the real coordinator and AppModel state wiring with isolated storage and desktop effects.
@@ -73,24 +75,24 @@ This batch does not close the complete hardening milestone. Next priorities are 
 
 P1 means incorrect authorization, unintended input, configuration damage, or a significant trust-boundary failure is possible. P2 covers reliability, privacy, and verification defects that still need scheduled remediation. These are engineering priorities, not CVSS scores.
 
-| ID | Work item | Priority | Gate |
-| --- | --- | --- | --- |
-| H01 | Isolate automated tests from the developer environment | P1 | Core |
-| H02 | Bind approvals and answers to exact requests | P1 | Core |
-| H03 | Acknowledge decisions before clearing the interface | P2 | Core |
-| H04 | Preserve agent configuration during installation | P1 | Core |
-| H05 | Repair the OpenCode protocol contract | P1 | Core |
-| H06 | Bound bridge reads, writes, and connections | P2 | Core |
-| H07 | Enforce local bridge identity and command permissions | P1 | Core |
-| H08 | Preserve live state during startup discovery | P2 | Core |
-| H09 | Verify the destination before submitting terminal replies | P1 | Conditional |
-| H10 | Secure remote pairing and approvals | P1 | Conditional |
-| H11 | Fix remote endpoint lifecycle and request processing | P2 | Conditional |
-| H12 | Restrict diagnostics and remote Markdown content | P2 | Core |
-| H13 | Make builds and compatibility checks reproducible | P2 | Core and Release |
-| H14 | Give the fork a safe release and update configuration | P1 | Release |
-| H15 | Stop cancelled terminal jumps before side effects | P2 | Core |
-| H16 | Preserve and correctly merge SSH hook configuration | P2 | Conditional |
+| ID | Work item | Priority | Gate | Status |
+| --- | --- | --- | --- | --- |
+| H01 | Isolate automated tests from the developer environment | P1 | Core | Implemented locally |
+| H02 | Bind approvals and answers to exact requests | P1 | Core | Open |
+| H03 | Acknowledge decisions before clearing the interface | P2 | Core | Open |
+| H04 | Preserve agent configuration during installation | P1 | Core | Open |
+| H05 | Repair the OpenCode protocol contract | P1 | Core | Open |
+| H06 | Bound bridge reads, writes, and connections | P2 | Core | Open |
+| H07 | Enforce local bridge identity and command permissions | P1 | Core | Open |
+| H08 | Preserve live state during startup discovery | P2 | Core | Implemented locally |
+| H09 | Verify the destination before submitting terminal replies | P1 | Conditional | Open |
+| H10 | Secure remote pairing and approvals | P1 | Conditional | Open |
+| H11 | Fix remote endpoint lifecycle and request processing | P2 | Conditional | Open |
+| H12 | Restrict diagnostics and remote Markdown content | P2 | Core | Open |
+| H13 | Make builds and compatibility checks reproducible | P2 | Core and Release | Partial: dependency locking |
+| H14 | Give the fork a safe release and update configuration | P1 | Release | Open |
+| H15 | Stop cancelled terminal jumps before side effects | P2 | Core | Implemented locally |
+| H16 | Preserve and correctly merge SSH hook configuration | P2 | Conditional | Open |
 
 ## Core fixes
 
