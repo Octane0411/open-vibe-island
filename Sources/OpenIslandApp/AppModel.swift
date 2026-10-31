@@ -34,7 +34,6 @@ final class AppModel {
 
     private static let syntheticClaudeSessionPrefix = "claude-process:"
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
-    private static let jumpOverlayDismissLeadTime: Duration = .milliseconds(20)
     private static let agentsGridObservedSequenceLimit = 512
     static let hoverOpenDelay: TimeInterval = 0.15
 
@@ -566,7 +565,10 @@ final class AppModel {
     private var bridgeClient = LocalBridgeClient()
 
     @ObservationIgnored
-    private let terminalJumpAction: @Sendable (JumpTarget) throws -> String
+    private let terminalJumpExecutor: TerminalJumpExecutor
+
+    @ObservationIgnored
+    private let jumpDismissDelay: @Sendable () async throws -> Void
 
     @ObservationIgnored
     private let isNotificationSessionAlreadyFrontmost: @Sendable (AgentSession) async -> Bool
@@ -636,6 +638,7 @@ final class AppModel {
         terminalJumpAction: @escaping @Sendable (JumpTarget) throws -> String = { target in
             try TerminalJumpService().jump(to: target)
         },
+        jumpDismissDelay: @escaping @Sendable () async throws -> Void = { try await Task.sleep(for: .milliseconds(20)) },
         isNotificationSessionAlreadyFrontmost: @escaping @Sendable (AgentSession) async -> Bool = { session in
             await ForegroundTerminalSessionProbe().matches(session: session)
         }
@@ -644,7 +647,8 @@ final class AppModel {
         self.discovery = discovery
         self.hooks = HookInstallationCoordinator(intentStore: AgentIntentStore(defaults: defaults))
         self.overlay = OverlayUICoordinator(defaults: defaults, panelController: panelController)
-        self.terminalJumpAction = terminalJumpAction
+        self.terminalJumpExecutor = TerminalJumpExecutor(action: terminalJumpAction)
+        self.jumpDismissDelay = jumpDismissDelay
         self.isNotificationSessionAlreadyFrontmost = isNotificationSessionAlreadyFrontmost
         defaults.register(defaults: [
             Self.showDockIconDefaultsKey: true,
@@ -1384,35 +1388,38 @@ final class AppModel {
         jump(to: focusedSession?.jumpTarget)
     }
 
-    func jumpToSession(_ session: AgentSession) {
+    /// The completion handle can be awaited or cancelled. An already-running
+    /// native action finishes before the next action is allowed to begin.
+    @discardableResult
+    func jumpToSession(_ session: AgentSession) -> Task<Void, Never>? {
         guard let jumpTarget = session.jumpTarget,
               jumpTarget.terminalApp.lowercased() != "unknown" else {
             lastActionMessage = "Cannot jump: terminal app is unknown."
-            return
+            return nil
         }
-        jump(to: jumpTarget)
+        return jump(to: jumpTarget)
     }
 
-    private func jump(to jumpTarget: JumpTarget?) {
+    @discardableResult
+    private func jump(to jumpTarget: JumpTarget?) -> Task<Void, Never>? {
         guard let jumpTarget else {
             lastActionMessage = "No jump target is available yet."
-            return
+            return nil
         }
 
         let shouldDelayForDismissAnimation = isOverlayVisible
-        let jumpAction = terminalJumpAction
+        let executor = terminalJumpExecutor
+        let dismissDelay = jumpDismissDelay
 
         dismissOverlayForJump()
         jumpTask?.cancel()
         jumpTask = Task { [weak self] in
-            if shouldDelayForDismissAnimation {
-                try? await Task.sleep(for: Self.jumpOverlayDismissLeadTime)
-            }
-
             do {
-                let result = try await Task.detached(priority: .userInitiated) {
-                    try jumpAction(jumpTarget)
-                }.value
+                if shouldDelayForDismissAnimation {
+                    try await dismissDelay()
+                }
+                try Task.checkCancellation()
+                let result = try await executor.run(jumpTarget)
 
                 guard !Task.isCancelled else {
                     return
@@ -1429,6 +1436,7 @@ final class AppModel {
                 self?.lastActionMessage = "Jump failed: \(error.localizedDescription)"
             }
         }
+        return jumpTask
     }
 
     func approvePermission(for sessionID: String, approved: Bool) {

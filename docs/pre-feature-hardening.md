@@ -8,7 +8,7 @@ This plan covers incorrect approvals, configuration damage, unreliable communica
 
 - Review date: October 31, 2026.
 - Source baseline: upstream commit [`01aa0924fd96bf319a64e75646765c55cae4e2c5`](https://github.com/Octane0411/open-vibe-island/tree/01aa0924fd96bf319a64e75646765c55cae4e2c5), also the fork's starting commit.
-- H01 is implemented and locally verified on the hardening branch. All other findings remain open unless the implementation record below says otherwise.
+- H01 and H15 are implemented and locally verified on the hardening branch. All other findings remain open unless the implementation record below says otherwise.
 - Source references point to the reviewed commit so their line numbers remain stable as the fork changes.
 
 The baseline package built on Apple Silicon with macOS 26.6.1 and Swift 6.4. Documentation and localization checks passed, as did 78 selected tests across 14 suites. The selected suites covered payloads, transcript processing, registries, subprocess behavior, and related model logic. They do not establish full application, GUI, remote-device, Intel, or macOS 14 compatibility.
@@ -35,11 +35,19 @@ An initial run was stopped after discovering an unisolated iTerm AppleScript que
 
 ### H13 — dependency locking implemented; remaining work open
 
+Resolving commit for dependency locking: `d4f4c7a` (`build: lock tested dependency versions (H13)`).
+
 `Package.resolved` records the four locally tested dependency versions. Test, harness-build, and packaging entry points require those resolutions. Sparkle's minimum is raised to the already-tested 2.10.1 so a future resolution cannot fall back to the old 2.9.0 floor. [Upstream advisories](https://github.com/sparkle-project/Sparkle/security/advisories) were rechecked on October 31, 2026; their listed patched versions are at or below 2.9.6.
 
 Verification: the locked package build and test wrapper passed locally; shell syntax, documentation, and localization checks passed. Packaging was checked for syntax only, not signed or distributed.
 
 This is only the dependency-locking portion of H13. The toolchain/platform matrix, action and packaging-tool pinning, signed packaging, GUI checks, and mobile validation remain open.
+
+### H15 — implemented, locally verified
+
+A controllable dismissal delay reproduced the old behavior: selecting B before A's delay finished executed B and then A. The regression now passes with only B executed. Cancellation errors leave before dispatch, and a serial executor checks cancellation again before invoking the platform runner. A second regression verifies that a running A completes before B starts and cannot overwrite B's final status.
+
+An OS action that has already started is not forcibly interrupted or undone; later actions wait for it. This defines ordering without claiming that every existing terminal driver is preemptible. Both cancellation/ordering tests passed with fake platform runners; no real terminal was activated.
 
 ## Completion gates
 

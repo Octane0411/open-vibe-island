@@ -21,6 +21,7 @@ final class AppModelTestEnvironment {
 
     func makeModel(
         terminalJumpAction: @escaping @Sendable (JumpTarget) throws -> String = { _ in "Test jump" },
+        jumpDismissDelay: @escaping @Sendable () async throws -> Void = { try await Task.sleep(for: .milliseconds(20)) },
         isNotificationSessionAlreadyFrontmost: @escaping @Sendable (AgentSession) async -> Bool = { _ in false }
     ) -> AppModel {
         AppModel(
@@ -28,6 +29,7 @@ final class AppModelTestEnvironment {
             discovery: SessionDiscoveryCoordinator(storageDirectory: directory),
             panelController: HeadlessOverlayPanelController(),
             terminalJumpAction: terminalJumpAction,
+            jumpDismissDelay: jumpDismissDelay,
             isNotificationSessionAlreadyFrontmost: isNotificationSessionAlreadyFrontmost
         )
     }
