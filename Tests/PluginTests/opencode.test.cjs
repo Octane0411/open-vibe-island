@@ -45,7 +45,7 @@ test('unsupported hello is rejected', async () => {
 test('oversized unterminated frames close the connection', async () => {
   const { socket, context } = fixture();
   const result = context.sendAndWaitResponse({});
-  socket.emit('data', Buffer.alloc(4 * 1024 * 1024 + 1, 120));
+  socket.emit('data', Buffer.alloc(8 * 1024 * 1024 + 1, 120));
   assert.equal(await result, null);
   assert.ok(socket.destroyed);
 });

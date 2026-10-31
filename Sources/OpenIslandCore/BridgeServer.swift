@@ -7,6 +7,10 @@ public final class BridgeServer: @unchecked Sendable {
         let id: UUID
         let fileDescriptor: Int32
         let readSource: DispatchSourceRead
+        let writer: BridgeSocketWriter
+        var lastRead = ProcessInfo.processInfo.systemUptime
+        var frameStarted: TimeInterval?
+        var commandCount = 0
         var role: BridgeClientRole?
         var buffer = Data()
         var scanCursor = 0
@@ -73,9 +77,11 @@ public final class BridgeServer: @unchecked Sendable {
     }
     private var requestExpiryTimer: DispatchSourceTimer?
     private let decisionLifetime: TimeInterval
+    private let decisionClock: @Sendable () -> TimeInterval
     private var activeRequests: [String: ActiveRequest] = [:]
     private var decisionReceipts: [UUID: BridgeDecision] = [:]
     private var receiptOrder: [UUID] = []
+    private var decisionsInFlight: Set<UUID> = []
     private static let busyReason = "Another request in this session is awaiting a decision. Retry after it finishes."
 
     private let socketURL: URL
@@ -107,10 +113,12 @@ public final class BridgeServer: @unchecked Sendable {
     public init(
         socketURL: URL = BridgeSocketLocation.defaultURL,
         legacySocketURL: URL? = nil,
-        decisionLifetime: TimeInterval = 300
+        decisionLifetime: TimeInterval = 300,
+        decisionClock: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     ) {
         precondition(decisionLifetime > 0 && decisionLifetime.isFinite)
         self.decisionLifetime = decisionLifetime
+        self.decisionClock = decisionClock
         self.socketURL = socketURL
         self.legacySocketURL = legacySocketURL
         queue.setSpecific(key: queueKey, value: ())
@@ -139,8 +147,16 @@ public final class BridgeServer: @unchecked Sendable {
         timer.setEventHandler { [weak self] in
             guard let self else { return }
             let now = ProcessInfo.processInfo.systemUptime
-            let expired = self.activeRequests.filter { now - $0.value.createdAt >= self.decisionLifetime }.map(\.key)
+            let expired = self.activeRequests.filter { self.decisionClock() - $0.value.createdAt >= self.decisionLifetime }.map(\.key)
             for id in expired { self.expireInteraction(id, reason: "The request expired before a decision was received.") }
+            for client in Array(self.clients.values) {
+                client.writer.expire(at: now)
+                if let started = client.frameStarted, now - started > 5 {
+                    self.removeClient(client.id)
+                } else if client.role == nil, now - client.lastRead > 10, !self.clientHasPendingRequest(client.id) {
+                    self.removeClient(client.id)
+                }
+            }
         }
         requestExpiryTimer = timer
         timer.resume()
@@ -231,6 +247,7 @@ public final class BridgeServer: @unchecked Sendable {
         activeRequests.removeAll()
         decisionReceipts.removeAll()
         receiptOrder.removeAll()
+        decisionsInFlight.removeAll()
         pendingApprovals.removeAll()
         pendingClaudeInteractions.removeAll()
         pendingClaudeToolContexts.removeAll()
@@ -240,7 +257,7 @@ public final class BridgeServer: @unchecked Sendable {
         pendingCursorInteractions.removeAll()
 
         let activeConnections = Array(clients.values)
-        activeConnections.forEach { $0.readSource.cancel() }
+        activeConnections.forEach { $0.writer.cancel(); $0.readSource.cancel() }
         clients.removeAll()
 
         for listener in listeners {
@@ -266,7 +283,8 @@ public final class BridgeServer: @unchecked Sendable {
                 return
             }
 
-            guard BridgeSocketIdentity.isCurrentUser(clientFileDescriptor) else {
+            guard clients.count < BridgeLimits.maximumConnections,
+                  BridgeSocketIdentity.isCurrentUser(clientFileDescriptor) else {
                 close(clientFileDescriptor)
                 continue
             }
@@ -287,22 +305,14 @@ public final class BridgeServer: @unchecked Sendable {
         readSource.setEventHandler { [weak self] in
             self?.readAvailableData(from: clientID)
         }
-        readSource.setCancelHandler { [weak self] in
-            guard let self else {
-                return
-            }
-
-            if let client = self.clients[clientID] {
-                close(client.fileDescriptor)
-            } else {
-                close(fileDescriptor)
-            }
-        }
+        readSource.setCancelHandler { close(fileDescriptor) }
+        let writer = BridgeSocketWriter(descriptor: fileDescriptor, queue: queue)
 
         clients[clientID] = ClientConnection(
             id: clientID,
             fileDescriptor: fileDescriptor,
             readSource: readSource,
+            writer: writer,
             role: nil
         )
         readSource.resume()
@@ -316,11 +326,14 @@ public final class BridgeServer: @unchecked Sendable {
         }
 
         var localBuffer = [UInt8](repeating: 0, count: 8_192)
-
-        while true {
+        var budget = 262_144
+        while budget > 0 {
             let bytesRead = read(client.fileDescriptor, &localBuffer, localBuffer.count)
 
             if bytesRead > 0 {
+                budget -= bytesRead
+                client.lastRead = ProcessInfo.processInfo.systemUptime
+                if client.buffer.isEmpty { client.frameStarted = client.lastRead }
                 client.buffer.append(localBuffer, count: bytesRead)
 
                 do {
@@ -328,8 +341,12 @@ public final class BridgeServer: @unchecked Sendable {
                         from: &client.buffer,
                         scanCursor: &client.scanCursor
                     )
+                    if client.buffer.isEmpty { client.frameStarted = nil }
                     clients[clientID] = client
-
+                    guard clients.values.reduce(0, { $0 + $1.buffer.count }) <= BridgeLimits.maximumBufferedBytes else {
+                        removeClient(clientID)
+                        return
+                    }
                     for envelope in envelopes {
                         if case let .command(command) = envelope {
                             handle(command, from: clientID)
@@ -358,13 +375,14 @@ public final class BridgeServer: @unchecked Sendable {
             removeClient(clientID)
             return
         }
+        clients[clientID] = client
     }
 
     /// Decisions are trusted in-process calls, not permissions granted to socket peers.
     public func decide(_ decision: BridgeDecision) async throws -> BridgeDecisionOutcome {
         try await withCheckedThrowingContinuation { continuation in
             queue.async {
-                do { continuation.resume(returning: try self.applyDecision(decision)) }
+                do { try self.applyDecision(decision, completion: continuation) }
                 catch { continuation.resume(throwing: error) }
             }
         }
@@ -375,15 +393,17 @@ public final class BridgeServer: @unchecked Sendable {
             || pendingOpenCodeInteractions[sessionID] != nil || pendingCursorInteractions[sessionID] != nil
     }
 
-    private func applyDecision(_ decision: BridgeDecision) throws -> BridgeDecisionOutcome {
+    private func applyDecision(_ decision: BridgeDecision, completion: CheckedContinuation<BridgeDecisionOutcome, Error>) throws {
         if let previous = decisionReceipts[decision.requestID] {
             guard previous == decision else { throw BridgeDecisionError.conflictingRetry }
-            return .alreadyAccepted
+            completion.resume(returning: .alreadyAccepted)
+            return
         }
+        guard !decisionsInFlight.contains(decision.requestID) else { throw BridgeDecisionError.deliveryFailed }
         let sessionID = decision.sessionID
         guard let request = activeRequests[sessionID] else { throw BridgeDecisionError.expiredOrUnknown }
         guard request.id == decision.requestID else { throw BridgeDecisionError.mismatchedRequest }
-        guard ProcessInfo.processInfo.systemUptime - request.createdAt < decisionLifetime else {
+        guard decisionClock() - request.createdAt < decisionLifetime else {
             expireInteraction(sessionID, reason: "The request expired before a decision was received.")
             throw BridgeDecisionError.expiredOrUnknown
         }
@@ -457,14 +477,27 @@ public final class BridgeServer: @unchecked Sendable {
             }
         }
 
-        if let recipient, let response {
-            guard let client = clients[recipient] else { throw BridgeDecisionError.deliveryFailed }
-            do { try writeAll(BridgeCodec.encodeLine(.response(response)), to: client.fileDescriptor) }
-            catch {
-                removeClient(recipient)
-                throw BridgeDecisionError.deliveryFailed
+        decisionsInFlight.insert(decision.requestID)
+        let completedSummary = summary
+        let finish: (Bool) -> Void = { [self] delivered in
+            decisionsInFlight.remove(decision.requestID)
+            guard delivered, activeRequests[sessionID]?.id == decision.requestID else {
+                if let recipient { removeClient(recipient) }
+                completion.resume(throwing: BridgeDecisionError.deliveryFailed)
+                return
             }
+            completeDecision(decision, approved: approved, summary: completedSummary)
+            completion.resume(returning: .accepted)
         }
+        if let recipient, let response {
+            guard let client = clients[recipient] else { finish(false); return }
+            do { client.writer.enqueue(try BridgeCodec.encodeLine(.response(response)), completion: finish) }
+            catch { finish(false) }
+        } else { finish(true) }
+    }
+
+    private func completeDecision(_ decision: BridgeDecision, approved: Bool, summary: String) {
+        let sessionID = decision.sessionID
         switch decision {
         case let .permission(_, _, resolution): localState.resolvePermission(sessionID: sessionID, resolution: resolution)
         case let .question(_, _, answer): localState.answerQuestion(sessionID: sessionID, response: answer)
@@ -482,10 +515,14 @@ public final class BridgeServer: @unchecked Sendable {
         } else {
             emit(.sessionCompleted(SessionCompleted(sessionID: sessionID, summary: summary, timestamp: .now)))
         }
-        return .accepted
     }
 
     private func expireInteraction(_ sessionID: String, reason: String) {
+        if let request = activeRequests[sessionID], decisionsInFlight.contains(request.id) {
+            let ids = clients.keys.filter { clientHasPendingRequest($0, sessionID: sessionID) }
+            for id in ids { removeClient(id) }
+            return
+        }
         if let pending = pendingApprovals.removeValue(forKey: sessionID) {
             let directive: CodexHookDirective = pending.hookEventName == .permissionRequest
                 ? .permissionRequest(.deny(message: reason)) : .deny(reason: reason)
@@ -504,13 +541,30 @@ public final class BridgeServer: @unchecked Sendable {
         emit(.actionableStateResolved(ActionableStateResolved(sessionID: sessionID, summary: reason, timestamp: .now)))
     }
 
+    private func clientHasPendingRequest(_ id: UUID, sessionID: String? = nil) -> Bool {
+        pendingApprovals.contains { (sessionID == nil || $0.key == sessionID) && $0.value.clientID == id }
+            || pendingClaudeInteractions.contains { (sessionID == nil || $0.key == sessionID) && $0.value.clientID == id }
+            || pendingOpenCodeInteractions.contains { (sessionID == nil || $0.key == sessionID) && $0.value.clientID == id }
+            || pendingCursorInteractions.contains { (sessionID == nil || $0.key == sessionID) && $0.value.clientID == id }
+    }
+
     private func handle(_ command: BridgeCommand, from clientID: UUID) {
+        guard var connection = clients[clientID], connection.commandCount < 128, !clientHasPendingRequest(clientID) else {
+            removeClient(clientID)
+            return
+        }
+        connection.commandCount += 1
+        clients[clientID] = connection
         switch command {
         case let .registerClient(role):
             guard var client = clients[clientID] else {
                 return
             }
 
+            guard client.role != nil || clients.values.filter({ $0.role == .observer }).count < BridgeLimits.maximumObservers else {
+                removeClient(clientID)
+                return
+            }
             client.role = role
             clients[clientID] = client
             send(.response(.acknowledged), to: clientID)
@@ -3134,10 +3188,10 @@ public final class BridgeServer: @unchecked Sendable {
         switch event {
         case let .permissionRequested(value):
             guard !hasPendingInteraction(value.sessionID) else { return }
-            activeRequests[value.sessionID] = ActiveRequest(id: value.request.id, isQuestion: false, createdAt: ProcessInfo.processInfo.systemUptime)
+            activeRequests[value.sessionID] = ActiveRequest(id: value.request.id, isQuestion: false, createdAt: decisionClock())
         case let .questionAsked(value):
             guard !hasPendingInteraction(value.sessionID) else { return }
-            activeRequests[value.sessionID] = ActiveRequest(id: value.prompt.id, isQuestion: true, createdAt: ProcessInfo.processInfo.systemUptime)
+            activeRequests[value.sessionID] = ActiveRequest(id: value.prompt.id, isQuestion: true, createdAt: decisionClock())
         case let .actionableStateResolved(value): activeRequests.removeValue(forKey: value.sessionID)
         case let .sessionCompleted(value):
             if hasPendingInteraction(value.sessionID) { expireInteraction(value.sessionID, reason: "The session completed outside this request.") }
@@ -3166,7 +3220,9 @@ public final class BridgeServer: @unchecked Sendable {
 
         do {
             let data = try BridgeCodec.encodeLine(envelope)
-            try writeAll(data, to: client.fileDescriptor)
+            client.writer.enqueue(data) { [weak self] success in
+                if !success { self?.removeClient(clientID) }
+            }
         } catch {
             removeClient(clientID)
         }
@@ -3186,6 +3242,7 @@ public final class BridgeServer: @unchecked Sendable {
         guard let client = clients.removeValue(forKey: clientID) else {
             return
         }
+        client.writer.cancel()
 
         let pendingSessionIDs = pendingApprovals.compactMap { entry -> String? in
             let (sessionID, pendingApproval) = entry

@@ -75,7 +75,7 @@ Verification: 358 core and 185 app tests passed, including wrong ID/session/kind
 
 ### H04 — validated configuration edits and recovery
 
-Codex and OpenCode installation now read all destinations and validate configuration before modifying any file. Missing files are distinct from unreadable, malformed, or non-regular files. Codex uses pinned [TOMLKit 0.6.0](https://github.com/LebJe/TOMLKit/tree/0.6.0) to validate input/output and compare the entire parsed document against the intended feature-only mutation; unsupported layouts are preserved and reported. Commented table headers are supported. Hook JSON with unsupported shapes is rejected rather than silently discarded. Reinstallation retains ownership of the feature flag, and uninstall preserves unrelated root settings.
+Codex and OpenCode installation now read all destinations and validate configuration before modifying any file. Missing files are distinct from unreadable, malformed, or non-regular files. Codex uses vendored [toml++ 3.4.0](https://github.com/marzer/tomlplusplus/releases/tag/v3.4.0), through a small C interface that retains all node ownership inside C++, to validate input/output and compare the entire parsed document against the intended feature-only mutation; unsupported layouts are preserved and reported. Commented table headers are supported. Hook JSON with unsupported shapes is rejected rather than silently discarded. Reinstallation retains ownership of the feature flag, and uninstall preserves unrelated root settings.
 
 Changes retain original bytes and permissions in a private `.open-island-recovery-<UUID>` directory beside the configuration. Its `manifest.json` maps numbered originals to destinations. Ordinary failures roll back files still matching this installation's writes; subsequent external edits are never deliberately restored over. For process interruption, quit the app and restore only the affected files from this manifest after reviewing concurrent edits. Recovery copies may contain secrets: delete them after verifying the integration. No automatic retention deletion runs.
 
@@ -83,7 +83,7 @@ In-process installs are serialized and original bytes are rechecked before each 
 
 ### H05 — implemented, locally verified
 
-The plugin consumes complete newline-delimited envelopes, requires protocol version 2, and accepts only the expected response kind. Session events cannot become decisions. Reads have a four MiB frame bound and total deadline, including fragmented input and EOF. Session broadcasts go only to registered observers; registration now waits for acknowledgment and retains its role across reads.
+The plugin consumes complete newline-delimited envelopes, requires protocol version 2, and accepts only the expected response kind. Session events cannot become decisions. Reads have a eight MiB frame bound and total deadline, including fragmented input and EOF. Session broadcasts go only to registered observers; registration now waits for acknowledgment and retains its role across reads.
 
 Structured question decisions carry ordered arrays of selections through Swift encoding into the JavaScript reply body. Ambiguous flattened responses to multiple questions are rejected. Five Node tests cover every response split point, interleaved events, incomplete EOF, protocol mismatch, oversize, and timeout. The real JavaScript plugin also connects to the real Swift server in a contract test and receives two ordered questions with multiple selections intact. The targeted Swift run passed 78 tests across four suites. The first cross-language run confirmed that the old plugin wrote its synthetic event to the predictable temporary log; payload logging has now been removed (the diagnostic portion of H12). Existing log files are not automatically deleted. Run `node --test Tests/PluginTests/*.test.cjs` alongside Swift tests; Node is now required for the cross-language suite.
 
@@ -92,6 +92,12 @@ Structured question decisions carry ordered arrays of selections through Swift e
 The production bridge directory is checked for ownership and made private (0700); sockets and listener locks are owner-only (0600). An exclusive instance lock protects each path, including the compatibility path. Startup refuses live listeners, foreign-owned files, non-sockets, and symlinks; it removes only an owned stale socket after a connection probe and identity recheck. Accepted connections must pass the operating system's peer-UID check. Socket callers cannot become decision controllers; that API remains in process. Same-account processes can still publish events or register as observers, and arbitrary code running as the account owner is outside this boundary.
 
 Regressions reproduced live listener replacement, ordinary-file/symlink deletion, and permissive socket modes before the change; all now pass. Six tests across socket identity, approval safety, and the real OpenCode contract passed. Cross-account OS testing requires a separate account and is not claimed by this local run. Lock files intentionally remain after shutdown to avoid replacing a lock inode still held by another process.
+
+### H06 — implemented, locally verified
+
+Server writes use per-connection nonblocking queues. Accepting a decision waits for its queued directive to finish; no observer write blocks producers. Limits are eight MiB per frame/output queue, 32 connections, four observers, 32 MiB aggregate incomplete input, 128 commands per connection, and one blocking request per connection. A write has a one-second deadline (idle writes are swept within the next one-second timer tick). Incomplete frames expire after five seconds; idle non-observers without pending work close after ten seconds. Read/write callbacks have byte budgets so another connection gets service. The observer stream is bounded to 64 events and disconnects on overflow. Hook clients use a total response deadline, with EINTR handling and bounded writes.
+
+The frame size accommodates the existing four-MiB tool-input fixture plus its envelope. Regressions exercise a stalled observer alongside a working producer, oversized unterminated input, excess connections, and trickling responses. The full run passed 369 core tests and 185 app tests. During this run, the TOML wrapper's borrowed table replacement proved unstable; it was replaced by a direct C interface to pinned toml++, keeping parser ownership in C++. Expiration tests now use a controlled monotonic clock to avoid missing short-lived requests under parallel test load.
 
 ## Completion gates
 
@@ -110,7 +116,7 @@ P1 means incorrect authorization, unintended input, configuration damage, or a s
 | H03 | Acknowledge decisions before clearing the interface | P2 | Core | Implemented locally |
 | H04 | Preserve agent configuration during installation | P1 | Core | Implemented; recovery checks pending |
 | H05 | Repair the OpenCode protocol contract | P1 | Core | Implemented locally |
-| H06 | Bound bridge reads, writes, and connections | P2 | Core | Open |
+| H06 | Bound bridge reads, writes, and connections | P2 | Core | Implemented locally |
 | H07 | Enforce local bridge identity and command permissions | P1 | Core | Implemented locally |
 | H08 | Preserve live state during startup discovery | P2 | Core | Implemented locally |
 | H09 | Verify the destination before submitting terminal replies | P1 | Conditional | Open |

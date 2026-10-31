@@ -22,7 +22,7 @@ function sendAndWaitResponse(json, timeoutMs = 300000, expectedType = "openCodeH
     let finished = false;
     let buffer = Buffer.alloc(0);
     let receivedHello = false;
-    const maximumFrameBytes = 4 * 1024 * 1024;
+    const maximumFrameBytes = 8 * 1024 * 1024;
     const finish = (value) => {
       if (finished) return;
       finished = true;

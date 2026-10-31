@@ -36,11 +36,19 @@ public enum BridgeSocketLocation {
     }
 }
 
+enum BridgeLimits {
+    static let maximumFrameBytes = 8 * 1024 * 1024
+    static let maximumConnections = 32
+    static let maximumObservers = 4
+    static let maximumBufferedBytes = 32 * 1024 * 1024
+}
+
 public enum BridgeTransportError: Error, LocalizedError {
     case alreadyConnected
     case notConnected
     case malformedEnvelope
     case responseTimedOut
+    case resourceLimit
     case listenerFailed(String)
     case socketPathTooLong
     case systemCallFailed(String, Int32)
@@ -53,6 +61,8 @@ public enum BridgeTransportError: Error, LocalizedError {
             "The bridge client is not connected."
         case .malformedEnvelope:
             "The bridge transport received malformed data."
+        case .resourceLimit:
+            "The bridge connection exceeded its resource limit."
         case .responseTimedOut:
             "The local bridge timed out while waiting for a response."
         case let .listenerFailed(message):
@@ -346,6 +356,7 @@ public enum BridgeCodec {
         encoder.dateEncodingStrategy = .millisecondsSince1970
 
         var data = try encoder.encode(envelope)
+        guard data.count <= BridgeLimits.maximumFrameBytes else { throw BridgeTransportError.resourceLimit }
         data.append(newline)
         return data
     }
@@ -366,6 +377,7 @@ public enum BridgeCodec {
 
         while let newlineIndex = firstNewline(in: buffer, scanCursor: &scanCursor) {
             let line = buffer.prefix(upTo: newlineIndex)
+            guard line.count <= BridgeLimits.maximumFrameBytes else { throw BridgeTransportError.resourceLimit }
             buffer.removeSubrange(...newlineIndex)
 
             // Bytes past the consumed newline have not been scanned yet.
@@ -383,6 +395,7 @@ public enum BridgeCodec {
             }
         }
 
+        guard buffer.count <= BridgeLimits.maximumFrameBytes else { throw BridgeTransportError.resourceLimit }
         return messages
     }
 
@@ -459,25 +472,23 @@ func disableSocketSigPipe(_ fileDescriptor: Int32) throws {
     }
 }
 
-func writeAll(_ data: Data, to fileDescriptor: Int32) throws {
+func writeAll(_ data: Data, to fileDescriptor: Int32, timeout: TimeInterval = 1) throws {
+    try makeSocketNonBlocking(fileDescriptor)
+    let deadline = ProcessInfo.processInfo.systemUptime + timeout
     var remaining = data[...]
-
     while !remaining.isEmpty {
-        let bytesWritten = remaining.withUnsafeBytes { rawBuffer -> Int in
-            let baseAddress = rawBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self)
-            return write(fileDescriptor, baseAddress, rawBuffer.count)
-        }
-
-        if bytesWritten > 0 {
-            remaining.removeFirst(bytesWritten)
+        guard ProcessInfo.processInfo.systemUptime < deadline else { throw BridgeTransportError.responseTimedOut }
+        let written = remaining.withUnsafeBytes { Darwin.write(fileDescriptor, $0.baseAddress, $0.count) }
+        if written > 0 { remaining.removeFirst(written); continue }
+        if written < 0 && errno == EINTR { continue }
+        if written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) {
+            var descriptor = pollfd(fd: fileDescriptor, events: Int16(POLLOUT), revents: 0)
+            let milliseconds = max(1, min(50, Int((deadline - ProcessInfo.processInfo.systemUptime) * 1000)))
+            if poll(&descriptor, 1, Int32(milliseconds)) < 0 && errno != EINTR {
+                throw BridgeTransportError.systemCallFailed("poll write", errno)
+            }
             continue
         }
-
-        if bytesWritten == -1 && (errno == EAGAIN || errno == EWOULDBLOCK) {
-            usleep(1_000)
-            continue
-        }
-
         throw BridgeTransportError.systemCallFailed("write", errno)
     }
 }

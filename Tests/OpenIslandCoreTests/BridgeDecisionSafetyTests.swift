@@ -42,11 +42,13 @@ struct BridgeDecisionSafetyTests {
     @Test
     func expiredRequestsReleaseTheirWaiterAndCannotBeApprovedLater() async throws {
         let socket = BridgeSocketLocation.uniqueTestURL()
-        let server = BridgeServer(socketURL: socket, decisionLifetime: 0.1)
+        let clock = DecisionTestClock()
+        let server = BridgeServer(socketURL: socket, decisionLifetime: 0.1, decisionClock: { clock.now })
         try server.start()
         defer { server.stop(); try? FileManager.default.removeItem(at: socket) }
         let waiter = Task.detached { try BridgeCommandClient(socketURL: socket).send(.processCodexHook(Self.payload("expired")), timeout: 2) }
         let request = try await permission(on: server, sessionID: "expired")
+        clock.advance()
         guard case .codexHookDirective(.permissionRequest(.deny))? = try await waiter.value else {
             Issue.record("Expiration must explicitly deny and release the waiting hook")
             return
@@ -88,4 +90,11 @@ struct BridgeDecisionSafetyTests {
         }
         return try #require(server.sessionStateSnapshotForTests().session(id: sessionID)?.permissionRequest)
     }
+}
+
+private final class DecisionTestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: TimeInterval = 100
+    var now: TimeInterval { lock.withLock { value } }
+    func advance() { lock.withLock { value += 1 } }
 }
