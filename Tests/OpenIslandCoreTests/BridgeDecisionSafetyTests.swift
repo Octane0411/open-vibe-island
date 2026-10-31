@@ -9,7 +9,7 @@ struct BridgeDecisionSafetyTests {
         let server = BridgeServer(socketURL: socket)
         try server.start()
         defer { server.stop(); try? FileManager.default.removeItem(at: socket) }
-        let waiter = Task { try await sendBridgeCommandOffExecutor(.processCodexHook(Self.payload("one")), socketURL: socket) }
+        let waiter = startBridgeCommandOffExecutor(.processCodexHook(Self.payload("one")), socketURL: socket)
         let request = try await permission(on: server, sessionID: "one")
         let decision = BridgeDecision.permission(sessionID: "one", requestID: request.id, resolution: .allowOnce())
 
@@ -30,7 +30,7 @@ struct BridgeDecisionSafetyTests {
         await #expect(throws: BridgeDecisionError.self) {
             try await server.decide(.permission(sessionID: "one", requestID: request.id, resolution: .deny()))
         }
-        let nextWaiter = Task { try await sendBridgeCommandOffExecutor(.processCodexHook(Self.payload("one")), socketURL: socket) }
+        let nextWaiter = startBridgeCommandOffExecutor(.processCodexHook(Self.payload("one")), socketURL: socket)
         let nextRequest = try await permission(on: server, sessionID: "one")
         #expect(nextRequest.id != request.id)
         #expect(try await server.decide(decision) == .alreadyAccepted)
@@ -46,7 +46,7 @@ struct BridgeDecisionSafetyTests {
         let server = BridgeServer(socketURL: socket, decisionLifetime: 0.1, decisionClock: { clock.now })
         try server.start()
         defer { server.stop(); try? FileManager.default.removeItem(at: socket) }
-        let waiter = Task { try await sendBridgeCommandOffExecutor(.processCodexHook(Self.payload("expired")), socketURL: socket, timeout: 2) }
+        let waiter = startBridgeCommandOffExecutor(.processCodexHook(Self.payload("expired")), socketURL: socket, timeout: 2)
         let request = try await permission(on: server, sessionID: "expired")
         clock.advance()
         guard case .codexHookDirective(.permissionRequest(.deny))? = try await waiter.value else {
@@ -78,7 +78,7 @@ struct BridgeDecisionSafetyTests {
             command = .processCodexHook(Self.payload("shared"))
             allowed = .codexHookDirective(.permissionRequest(.allow))
         }
-        let first = Task { try await sendBridgeCommandOffExecutor(command, socketURL: socket) }
+        let first = startBridgeCommandOffExecutor(command, socketURL: socket)
         let request = try await permission(on: server, sessionID: "shared")
         let second = try await sendBridgeCommandOffExecutor(command, socketURL: socket, timeout: 1)
         switch second {
