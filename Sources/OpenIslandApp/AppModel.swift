@@ -34,7 +34,6 @@ final class AppModel {
 
     private static let syntheticClaudeSessionPrefix = "claude-process:"
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
-    private static let jumpOverlayDismissLeadTime: Duration = .milliseconds(20)
     private static let agentsGridObservedSequenceLimit = 512
     static let hoverOpenDelay: TimeInterval = 0.15
 
@@ -65,9 +64,10 @@ final class AppModel {
     @ObservationIgnored private var _agentsGridObservedSequence: [String: Int] = [:]
     @ObservationIgnored private var _agentsGridNextTicket: Int = 0
     var selectedSessionID: String?
-    let hooks = HookInstallationCoordinator()
-    let overlay = OverlayUICoordinator()
-    let discovery = SessionDiscoveryCoordinator()
+    @ObservationIgnored private let defaults: UserDefaults
+    let hooks: HookInstallationCoordinator
+    let overlay: OverlayUICoordinator
+    let discovery: SessionDiscoveryCoordinator
     let monitoring = ProcessMonitoringCoordinator()
     let codexAppServer = CodexAppServerCoordinator()
     let updateChecker = UpdateChecker()
@@ -266,7 +266,7 @@ final class AppModel {
     var showDockIcon: Bool = false {
         didSet {
             guard hasFinishedInit, showDockIcon != oldValue else { return }
-            UserDefaults.standard.set(showDockIcon, forKey: Self.showDockIconDefaultsKey)
+            defaults.set(showDockIcon, forKey: Self.showDockIconDefaultsKey)
             NSApp.setActivationPolicy(showDockIcon ? .regular : .accessory)
             if !showDockIcon {
                 // macOS does not immediately refresh the Dock when switching to
@@ -282,7 +282,7 @@ final class AppModel {
     var hapticFeedbackEnabled: Bool = false {
         didSet {
             guard hasFinishedInit, hapticFeedbackEnabled != oldValue else { return }
-            UserDefaults.standard.set(hapticFeedbackEnabled, forKey: Self.hapticFeedbackEnabledDefaultsKey)
+            defaults.set(hapticFeedbackEnabled, forKey: Self.hapticFeedbackEnabledDefaultsKey)
         }
     }
     /// Keep the island open until the user acts on a pending approval /
@@ -293,26 +293,27 @@ final class AppModel {
     var keepNotchOpenUntilDecision: Bool = false {
         didSet {
             guard hasFinishedInit, keepNotchOpenUntilDecision != oldValue else { return }
-            UserDefaults.standard.set(keepNotchOpenUntilDecision, forKey: Self.keepNotchOpenUntilDecisionDefaultsKey)
+            defaults.set(keepNotchOpenUntilDecision, forKey: Self.keepNotchOpenUntilDecisionDefaultsKey)
         }
     }
     var showCodexUsage: Bool = false {
         didSet {
             guard hasFinishedInit, showCodexUsage != oldValue else { return }
-            UserDefaults.standard.set(showCodexUsage, forKey: Self.showCodexUsageDefaultsKey)
+            defaults.set(showCodexUsage, forKey: Self.showCodexUsageDefaultsKey)
         }
     }
     var completionReplyEnabled: Bool = false {
         didSet {
+            if completionReplyEnabled && !CapabilityAvailability.terminalReplies { completionReplyEnabled = false; return }
             guard hasFinishedInit, completionReplyEnabled != oldValue else { return }
-            UserDefaults.standard.set(completionReplyEnabled, forKey: Self.completionReplyEnabledDefaultsKey)
+            defaults.set(completionReplyEnabled, forKey: Self.completionReplyEnabledDefaultsKey)
             refreshOverlayPlacementIfVisible()
         }
     }
     var suppressFrontmostNotifications: Bool = true {
         didSet {
             guard hasFinishedInit, suppressFrontmostNotifications != oldValue else { return }
-            UserDefaults.standard.set(suppressFrontmostNotifications, forKey: Self.suppressFrontmostNotificationsDefaultsKey)
+            defaults.set(suppressFrontmostNotifications, forKey: Self.suppressFrontmostNotificationsDefaultsKey)
         }
     }
     var launchAtLoginEnabled: Bool = false {
@@ -343,7 +344,7 @@ final class AppModel {
                 return
             }
 
-            UserDefaults.standard.set(isSoundMuted, forKey: Self.soundMutedDefaultsKey)
+            defaults.set(isSoundMuted, forKey: Self.soundMutedDefaultsKey)
             lastActionMessage = isSoundMuted
                 ? "Island sound notifications muted."
                 : "Island sound notifications enabled."
@@ -352,7 +353,7 @@ final class AppModel {
     var selectedSoundName: String = NotificationSoundService.defaultSoundName {
         didSet {
             guard selectedSoundName != oldValue else { return }
-            NotificationSoundService.selectedSoundName = selectedSoundName
+            NotificationSoundService.selectSound(selectedSoundName, defaults: defaults)
         }
     }
     var overlayDisplaySelectionID: String {
@@ -365,7 +366,7 @@ final class AppModel {
     var appearanceSettingsProfile: IslandAppearanceDisplayProfile = .topBar {
         didSet {
             guard appearanceSettingsProfile != oldValue else { return }
-            UserDefaults.standard.set(appearanceSettingsProfile.rawValue, forKey: Self.appearanceProfileSettingsDefaultsKey)
+            defaults.set(appearanceSettingsProfile.rawValue, forKey: Self.appearanceProfileSettingsDefaultsKey)
         }
     }
 
@@ -468,7 +469,6 @@ final class AppModel {
         _ preferences: IslandAppearancePreferences,
         for profile: IslandAppearanceDisplayProfile
     ) {
-        let defaults = UserDefaults.standard
         defaults.set(preferences.rightSlot.rawValue, forKey: Self.appearanceDefaultsKey(profile, "rightSlot"))
         defaults.set(preferences.centerLabel.rawValue, forKey: Self.appearanceDefaultsKey(profile, "centerLabel"))
         defaults.set(preferences.usageDisplay.rawValue, forKey: Self.appearanceDefaultsKey(profile, "usageDisplay"))
@@ -484,8 +484,9 @@ final class AppModel {
 
     var watchNotificationEnabled: Bool = false {
         didSet {
+            if watchNotificationEnabled && !CapabilityAvailability.remoteApprovals { watchNotificationEnabled = false; return }
             guard watchNotificationEnabled != oldValue else { return }
-            UserDefaults.standard.set(watchNotificationEnabled, forKey: Self.watchNotificationEnabledKey)
+            defaults.set(watchNotificationEnabled, forKey: Self.watchNotificationEnabledKey)
             if watchNotificationEnabled {
                 startWatchRelay()
             } else {
@@ -509,6 +510,7 @@ final class AppModel {
     }
 
     private func startWatchRelay() {
+        guard CapabilityAvailability.remoteApprovals else { return }
         guard watchRelay == nil else { return }
         let relay = WatchNotificationRelay()
         setupWatchRelayCallbacks(relay)
@@ -518,16 +520,17 @@ final class AppModel {
 
     /// Wire up resolution callbacks so Watch/iPhone actions flow back to the bridge.
     private func setupWatchRelayCallbacks(_ relay: WatchNotificationRelay) {
-        relay.onResolvePermission = { [weak self] sessionID, approved in
+        relay.onResolvePermission = { [weak self] sessionID, requestID, approved in
             Task { @MainActor [weak self] in
-                self?.approvePermission(for: sessionID, approved: approved)
+                self?.approvePermission(for: sessionID, requestID: UUID(uuidString: requestID), approved: approved)
             }
         }
 
-        relay.onAnswerQuestion = { [weak self] sessionID, answer in
+        relay.onAnswerQuestion = { [weak self] sessionID, requestID, answer in
             Task { @MainActor [weak self] in
                 self?.answerQuestion(
                     for: sessionID,
+                    requestID: UUID(uuidString: requestID),
                     answer: QuestionPromptResponse(answer: answer)
                 )
             }
@@ -560,13 +563,25 @@ final class AppModel {
     private var hasStarted = false
 
     @ObservationIgnored
-    private let bridgeServer = BridgeServer()
+    private let bridgeServer: BridgeServer
+    @ObservationIgnored
+    private let decisionHandler: @Sendable (BridgeDecision) async throws -> BridgeDecisionOutcome
+
+    enum DecisionDeliveryState: Equatable {
+        case sending, acknowledged, expired
+        case failed(String)
+    }
+    private(set) var decisionDeliveryStates: [UUID: DecisionDeliveryState] = [:]
+    @ObservationIgnored private var decisionHistory: [UUID] = []
 
     @ObservationIgnored
     private var bridgeClient = LocalBridgeClient()
 
     @ObservationIgnored
-    private let terminalJumpAction: @Sendable (JumpTarget) throws -> String
+    private let terminalJumpExecutor: TerminalJumpExecutor
+
+    @ObservationIgnored
+    private let jumpDismissDelay: @Sendable () async throws -> Void
 
     @ObservationIgnored
     private let isNotificationSessionAlreadyFrontmost: @Sendable (AgentSession) async -> Bool
@@ -590,8 +605,7 @@ final class AppModel {
         "appearance.island.v8.\(profile.rawValue).\(name)"
     }
 
-    private static func loadAppearancePreferences(for profile: IslandAppearanceDisplayProfile) -> IslandAppearancePreferences {
-        let defaults = UserDefaults.standard
+    private static func loadAppearancePreferences(for profile: IslandAppearanceDisplayProfile, defaults: UserDefaults) -> IslandAppearancePreferences {
         return IslandAppearancePreferences(
             rightSlot: IslandRightSlot(
                 rawValue: defaults.string(forKey: appearanceDefaultsKey(profile, "rightSlot"))
@@ -631,43 +645,58 @@ final class AppModel {
     }
 
     init(
+        defaults: UserDefaults = .standard,
+        bridgeServer: BridgeServer = BridgeServer(legacySocketURL: BridgeSocketLocation.legacyURL),
+        decisionHandler: (@Sendable (BridgeDecision) async throws -> BridgeDecisionOutcome)? = nil,
+        discovery: SessionDiscoveryCoordinator = SessionDiscoveryCoordinator(),
+        panelController: any OverlayPanelControlling = OverlayPanelController(),
         terminalJumpAction: @escaping @Sendable (JumpTarget) throws -> String = { target in
             try TerminalJumpService().jump(to: target)
         },
+        jumpDismissDelay: @escaping @Sendable () async throws -> Void = { try await Task.sleep(for: .milliseconds(20)) },
         isNotificationSessionAlreadyFrontmost: @escaping @Sendable (AgentSession) async -> Bool = { session in
             await ForegroundTerminalSessionProbe().matches(session: session)
         }
     ) {
-        self.terminalJumpAction = terminalJumpAction
+        self.defaults = defaults
+        self.bridgeServer = bridgeServer
+        self.decisionHandler = decisionHandler ?? { try await bridgeServer.decide($0) }
+        self.discovery = discovery
+        self.hooks = HookInstallationCoordinator(intentStore: AgentIntentStore(defaults: defaults))
+        self.overlay = OverlayUICoordinator(defaults: defaults, panelController: panelController)
+        self.terminalJumpExecutor = TerminalJumpExecutor(action: terminalJumpAction)
+        self.jumpDismissDelay = jumpDismissDelay
         self.isNotificationSessionAlreadyFrontmost = isNotificationSessionAlreadyFrontmost
-        UserDefaults.standard.register(defaults: [
+        defaults.register(defaults: [
             Self.showDockIconDefaultsKey: true,
             Self.hapticFeedbackEnabledDefaultsKey: false,
             Self.keepNotchOpenUntilDecisionDefaultsKey: false,
             Self.completionReplyEnabledDefaultsKey: false,
             Self.suppressFrontmostNotificationsDefaultsKey: true,
         ])
-        isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
-        selectedSoundName = NotificationSoundService.selectedSoundName
-        showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
-        hapticFeedbackEnabled = UserDefaults.standard.bool(forKey: Self.hapticFeedbackEnabledDefaultsKey)
-        keepNotchOpenUntilDecision = UserDefaults.standard.bool(forKey: Self.keepNotchOpenUntilDecisionDefaultsKey)
-        suppressFrontmostNotifications = UserDefaults.standard.bool(forKey: Self.suppressFrontmostNotificationsDefaultsKey)
-        if UserDefaults.standard.object(forKey: Self.showCodexUsageDefaultsKey) != nil {
-            showCodexUsage = UserDefaults.standard.bool(forKey: Self.showCodexUsageDefaultsKey)
+        isSoundMuted = defaults.bool(forKey: Self.soundMutedDefaultsKey)
+        selectedSoundName = NotificationSoundService.selectedSoundName(defaults: defaults)
+        showDockIcon = defaults.bool(forKey: Self.showDockIconDefaultsKey)
+        hapticFeedbackEnabled = defaults.bool(forKey: Self.hapticFeedbackEnabledDefaultsKey)
+        keepNotchOpenUntilDecision = defaults.bool(forKey: Self.keepNotchOpenUntilDecisionDefaultsKey)
+        suppressFrontmostNotifications = defaults.bool(forKey: Self.suppressFrontmostNotificationsDefaultsKey)
+        if defaults.object(forKey: Self.showCodexUsageDefaultsKey) != nil {
+            showCodexUsage = defaults.bool(forKey: Self.showCodexUsageDefaultsKey)
         } else {
             showCodexUsage = FileManager.default.fileExists(
                 atPath: CodexRolloutDiscovery.defaultRootURL.path
             )
         }
-        completionReplyEnabled = UserDefaults.standard.bool(forKey: Self.completionReplyEnabledDefaultsKey)
+        completionReplyEnabled = CapabilityAvailability.terminalReplies && defaults.bool(forKey: Self.completionReplyEnabledDefaultsKey)
+        if !CapabilityAvailability.terminalReplies { defaults.set(false, forKey: Self.completionReplyEnabledDefaultsKey) }
         launchAtLoginEnabled = LaunchAtLoginService.shared.isEnabled
         appearanceSettingsProfile = IslandAppearanceDisplayProfile(
-            rawValue: UserDefaults.standard.string(forKey: Self.appearanceProfileSettingsDefaultsKey) ?? ""
+            rawValue: defaults.string(forKey: Self.appearanceProfileSettingsDefaultsKey) ?? ""
         ) ?? .topBar
-        notchAppearancePreferences = Self.loadAppearancePreferences(for: .notch)
-        topBarAppearancePreferences = Self.loadAppearancePreferences(for: .topBar)
-        watchNotificationEnabled = UserDefaults.standard.bool(forKey: Self.watchNotificationEnabledKey)
+        notchAppearancePreferences = Self.loadAppearancePreferences(for: .notch, defaults: defaults)
+        topBarAppearancePreferences = Self.loadAppearancePreferences(for: .topBar, defaults: defaults)
+        watchNotificationEnabled = CapabilityAvailability.remoteApprovals && defaults.bool(forKey: Self.watchNotificationEnabledKey)
+        if !CapabilityAvailability.remoteApprovals { defaults.set(false, forKey: Self.watchNotificationEnabledKey) }
         if watchNotificationEnabled {
             startWatchRelay()
         }
@@ -1351,62 +1380,51 @@ final class AppModel {
     }
 
     func approveFocusedPermission(_ approved: Bool) {
-        guard let session = focusedSession else {
-            return
-        }
-
-        send(
-            .resolvePermission(sessionID: session.id, resolution: permissionResolution(for: approved)),
-            userMessage: approved
-                ? "Approving permission for \(session.title)."
-                : "Denying permission for \(session.title)."
-        )
+        guard let session = focusedSession else { return }
+        approvePermission(for: session.id, requestID: session.permissionRequest?.id, approved: approved)
     }
 
     func answerFocusedQuestion(_ answer: String) {
-        guard let session = focusedSession else {
-            return
-        }
-
-        send(
-            .answerQuestion(sessionID: session.id, response: QuestionPromptResponse(answer: answer)),
-            userMessage: "Sending answer \"\(answer)\" for \(session.title)."
-        )
+        guard let session = focusedSession else { return }
+        answerQuestion(for: session.id, requestID: session.questionPrompt?.id, answer: QuestionPromptResponse(answer: answer))
     }
 
     func jumpToFocusedSession() {
         jump(to: focusedSession?.jumpTarget)
     }
 
-    func jumpToSession(_ session: AgentSession) {
+    /// The completion handle can be awaited or cancelled. An already-running
+    /// native action finishes before the next action is allowed to begin.
+    @discardableResult
+    func jumpToSession(_ session: AgentSession) -> Task<Void, Never>? {
         guard let jumpTarget = session.jumpTarget,
               jumpTarget.terminalApp.lowercased() != "unknown" else {
             lastActionMessage = "Cannot jump: terminal app is unknown."
-            return
+            return nil
         }
-        jump(to: jumpTarget)
+        return jump(to: jumpTarget)
     }
 
-    private func jump(to jumpTarget: JumpTarget?) {
+    @discardableResult
+    private func jump(to jumpTarget: JumpTarget?) -> Task<Void, Never>? {
         guard let jumpTarget else {
             lastActionMessage = "No jump target is available yet."
-            return
+            return nil
         }
 
         let shouldDelayForDismissAnimation = isOverlayVisible
-        let jumpAction = terminalJumpAction
+        let executor = terminalJumpExecutor
+        let dismissDelay = jumpDismissDelay
 
         dismissOverlayForJump()
         jumpTask?.cancel()
         jumpTask = Task { [weak self] in
-            if shouldDelayForDismissAnimation {
-                try? await Task.sleep(for: Self.jumpOverlayDismissLeadTime)
-            }
-
             do {
-                let result = try await Task.detached(priority: .userInitiated) {
-                    try jumpAction(jumpTarget)
-                }.value
+                if shouldDelayForDismissAnimation {
+                    try await dismissDelay()
+                }
+                try Task.checkCancellation()
+                let result = try await executor.run(jumpTarget)
 
                 guard !Task.isCancelled else {
                     return
@@ -1423,56 +1441,24 @@ final class AppModel {
                 self?.lastActionMessage = "Jump failed: \(error.localizedDescription)"
             }
         }
+        return jumpTask
     }
 
-    func approvePermission(for sessionID: String, approved: Bool) {
-        guard let session = state.session(id: sessionID) else {
-            return
-        }
-
-        let resolution = permissionResolution(for: approved)
-        dismissNotificationSurfaceIfPresent(for: sessionID)
-        state.resolvePermission(sessionID: session.id, resolution: resolution)
-        synchronizeSelection()
-        refreshOverlayPlacementIfVisible()
-
-        send(
-            .resolvePermission(sessionID: session.id, resolution: resolution),
-            userMessage: approved
-                ? "Approving permission for \(session.title)."
-                : "Denying permission for \(session.title)."
-        )
+    @discardableResult
+    func approvePermission(for sessionID: String, requestID: UUID?, approved: Bool) -> Task<Void, Never>? {
+        approvePermission(for: sessionID, requestID: requestID, action: approved ? .allowOnce : .deny)
     }
 
-    func approvePermission(for sessionID: String, action: ApprovalAction) {
-        guard let session = state.session(id: sessionID) else {
-            return
-        }
-
+    @discardableResult
+    func approvePermission(for sessionID: String, requestID: UUID?, action: ApprovalAction) -> Task<Void, Never>? {
+        guard let requestID else { return nil }
         let resolution: PermissionResolution
-        let message: String
-
         switch action {
-        case .deny:
-            resolution = .deny(message: "Permission denied in Open Island.", interrupt: false)
-            message = "Denying permission for \(session.title)."
-        case .allowOnce:
-            resolution = .allowOnce()
-            message = "Approving permission for \(session.title)."
-        case let .allowWithUpdates(updates):
-            resolution = .allowOnce(updatedPermissions: updates)
-            message = "Always allowing for \(session.title)."
+        case .deny: resolution = .deny(message: "Permission denied in Open Island.")
+        case .allowOnce: resolution = .allowOnce()
+        case let .allowWithUpdates(updates): resolution = .allowOnce(updatedPermissions: updates)
         }
-
-        dismissNotificationSurfaceIfPresent(for: sessionID)
-        state.resolvePermission(sessionID: session.id, resolution: resolution)
-        synchronizeSelection()
-        refreshOverlayPlacementIfVisible()
-
-        send(
-            .resolvePermission(sessionID: session.id, resolution: resolution),
-            userMessage: message
-        )
+        return submitDecision(.permission(sessionID: sessionID, requestID: requestID, resolution: resolution))
     }
 
     func dismissSession(_ sessionID: String) {
@@ -1481,20 +1467,69 @@ final class AppModel {
         synchronizeSelection()
     }
 
-    func answerQuestion(for sessionID: String, answer: QuestionPromptResponse) {
-        guard let session = state.session(id: sessionID) else {
-            return
+    @discardableResult
+    func answerQuestion(for sessionID: String, requestID: UUID?, answer: QuestionPromptResponse) -> Task<Void, Never>? {
+        guard let requestID else { return nil }
+        return submitDecision(.question(sessionID: sessionID, requestID: requestID, response: answer))
+    }
+
+    func decisionDeliveryState(for session: AgentSession) -> DecisionDeliveryState? {
+        guard let id = session.permissionRequest?.id ?? session.questionPrompt?.id else { return nil }
+        return decisionDeliveryStates[id]
+    }
+
+    private func recordDelivery(_ status: DecisionDeliveryState, for id: UUID) {
+        if decisionDeliveryStates[id] == nil { decisionHistory.append(id) }
+        decisionDeliveryStates[id] = status
+        if decisionHistory.count > 128 {
+            decisionDeliveryStates.removeValue(forKey: decisionHistory.removeFirst())
         }
+    }
 
-        dismissNotificationSurfaceIfPresent(for: sessionID)
-        state.answerQuestion(sessionID: session.id, response: answer)
-        synchronizeSelection()
-        refreshOverlayPlacementIfVisible()
-
-        send(
-            .answerQuestion(sessionID: session.id, response: answer),
-            userMessage: "Sending answer for \(session.title)."
-        )
+    private func submitDecision(_ decision: BridgeDecision) -> Task<Void, Never>? {
+        guard decisionDeliveryStates[decision.requestID] != .sending else { return nil }
+        let current = state.session(id: decision.sessionID)
+        let expectedID: UUID?
+        switch decision {
+        case .permission: expectedID = current?.permissionRequest?.id
+        case .question: expectedID = current?.questionPrompt?.id
+        }
+        guard expectedID == decision.requestID else {
+            recordDelivery(.expired, for: decision.requestID)
+            lastActionMessage = "This request is no longer active."
+            return nil
+        }
+        recordDelivery(.sending, for: decision.requestID)
+        lastActionMessage = "Sending decision…"
+        let handler = decisionHandler
+        return Task { [weak self] in
+            do {
+                _ = try await handler(decision)
+                guard let self else { return }
+                self.recordDelivery(.acknowledged, for: decision.requestID)
+                // A newer request may have arrived before this acknowledgment.
+                let session = self.state.session(id: decision.sessionID)
+                switch decision {
+                case let .permission(id, requestID, resolution):
+                    if session?.permissionRequest?.id == requestID {
+                        self.state.resolvePermission(sessionID: id, resolution: resolution)
+                        self.dismissNotificationSurfaceIfPresent(for: id)
+                    }
+                case let .question(id, requestID, answer):
+                    if session?.questionPrompt?.id == requestID {
+                        self.state.answerQuestion(sessionID: id, response: answer)
+                        self.dismissNotificationSurfaceIfPresent(for: id)
+                    }
+                }
+                self.synchronizeSelection()
+                self.lastActionMessage = "Decision accepted."
+            } catch {
+                guard let self else { return }
+                let expired = (error as? BridgeDecisionError) == .expiredOrUnknown
+                self.recordDelivery(expired ? .expired : .failed(error.localizedDescription), for: decision.requestID)
+                self.lastActionMessage = "Decision not delivered: \(error.localizedDescription)"
+            }
+        }
     }
 
     func replyToSession(_ session: AgentSession, text: String) {

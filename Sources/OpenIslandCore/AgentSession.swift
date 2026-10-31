@@ -324,15 +324,18 @@ public struct QuestionAnswerAnnotation: Equatable, Codable, Sendable {
 
 public struct QuestionPromptResponse: Equatable, Codable, Sendable {
     public var rawAnswer: String?
+    public var orderedAnswers: [[String]]?
     public var answers: [String: String]
     public var annotations: [String: QuestionAnswerAnnotation]
 
     public init(
         rawAnswer: String? = nil,
         answers: [String: String] = [:],
+        orderedAnswers: [[String]]? = nil,
         annotations: [String: QuestionAnswerAnnotation] = [:]
     ) {
         self.rawAnswer = rawAnswer
+        self.orderedAnswers = orderedAnswers
         self.answers = answers
         self.annotations = annotations
     }
@@ -596,7 +599,13 @@ public extension AgentSession {
     }
 
     var lastAssistantMessageText: String? {
-        codexMetadata?.lastAssistantMessage ?? claudeMetadata?.lastAssistantMessage ?? geminiMetadata?.lastAssistantMessage ?? openCodeMetadata?.lastAssistantMessage ?? cursorMetadata?.lastAssistantMessage ?? piMetadata?.lastAssistantMessage ?? hermesMetadata?.lastAssistantMessage
+        if let value = codexMetadata?.lastAssistantMessage { return value }
+        if let value = claudeMetadata?.lastAssistantMessage { return value }
+        if let value = geminiMetadata?.lastAssistantMessage { return value }
+        if let value = openCodeMetadata?.lastAssistantMessage { return value }
+        if let value = cursorMetadata?.lastAssistantMessage { return value }
+        if let value = piMetadata?.lastAssistantMessage { return value }
+        return hermesMetadata?.lastAssistantMessage
     }
 
     var completionAssistantMessageText: String? {
@@ -618,11 +627,23 @@ public extension AgentSession {
     }
 
     var latestUserPromptText: String? {
-        codexMetadata?.lastUserPrompt ?? claudeMetadata?.lastUserPrompt ?? geminiMetadata?.lastUserPrompt ?? openCodeMetadata?.lastUserPrompt ?? cursorMetadata?.lastUserPrompt ?? piMetadata?.lastUserPrompt ?? hermesMetadata?.lastUserPrompt
+        if let value = codexMetadata?.lastUserPrompt { return value }
+        if let value = claudeMetadata?.lastUserPrompt { return value }
+        if let value = geminiMetadata?.lastUserPrompt { return value }
+        if let value = openCodeMetadata?.lastUserPrompt { return value }
+        if let value = cursorMetadata?.lastUserPrompt { return value }
+        if let value = piMetadata?.lastUserPrompt { return value }
+        return hermesMetadata?.lastUserPrompt
     }
 
     var initialUserPromptText: String? {
-        codexMetadata?.initialUserPrompt ?? claudeMetadata?.initialUserPrompt ?? geminiMetadata?.initialUserPrompt ?? openCodeMetadata?.initialUserPrompt ?? cursorMetadata?.initialUserPrompt ?? piMetadata?.initialUserPrompt ?? hermesMetadata?.initialUserPrompt
+        if let value = codexMetadata?.initialUserPrompt { return value }
+        if let value = claudeMetadata?.initialUserPrompt { return value }
+        if let value = geminiMetadata?.initialUserPrompt { return value }
+        if let value = openCodeMetadata?.initialUserPrompt { return value }
+        if let value = cursorMetadata?.initialUserPrompt { return value }
+        if let value = piMetadata?.initialUserPrompt { return value }
+        return hermesMetadata?.initialUserPrompt
     }
 
     var currentCommandPreviewText: String? {

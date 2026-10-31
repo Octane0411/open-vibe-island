@@ -21,6 +21,7 @@ This index is the repository map for humans and coding agents. Read these files 
 
 ## Harness And Planning
 
+- [docs/pre-feature-hardening.md](./pre-feature-hardening.md) for the prioritized safety and reliability fixes required before new features
 - [docs/exec-plans/README.md](./exec-plans/README.md) for the active and completed execution-plan convention
 - [docs/references/README.md](./references/README.md) for pinned reference material and external behavior baselines
 

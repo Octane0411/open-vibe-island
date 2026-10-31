@@ -11,12 +11,24 @@ public final class LocalBridgeClient: @unchecked Sendable {
     private var continuation: AsyncThrowingStream<AgentEvent, Error>.Continuation?
     private var buffer = Data()
     private var scanCursor = 0
+    private var generation = UUID()
+    private var registration: (id: UUID, continuation: CheckedContinuation<Void, Error>)?
 
     public init(socketURL: URL = BridgeSocketLocation.defaultURL) {
         self.socketURL = socketURL
     }
 
+    deinit {
+        readSource?.cancel()
+        registration?.continuation.resume(throwing: BridgeTransportError.notConnected)
+        continuation?.finish()
+    }
+
     public func connect() throws -> AsyncThrowingStream<AgentEvent, Error> {
+        try queue.sync { try connectLocked() }
+    }
+
+    private func connectLocked() throws -> AsyncThrowingStream<AgentEvent, Error> {
         guard fileDescriptor == -1 else {
             throw BridgeTransportError.alreadyConnected
         }
@@ -41,11 +53,16 @@ public final class LocalBridgeClient: @unchecked Sendable {
 
         self.fileDescriptor = fileDescriptor
 
-        let stream = AsyncThrowingStream<AgentEvent, Error> { continuation in
+        generation = UUID()
+        let connectionGeneration = generation
+        let stream = AsyncThrowingStream<AgentEvent, Error>(bufferingPolicy: .bufferingOldest(64)) { continuation in
             self.continuation = continuation
 
             continuation.onTermination = { @Sendable [weak self] _ in
-                self?.disconnect()
+                self?.queue.async { [weak self] in
+                    guard let self, self.generation == connectionGeneration else { return }
+                    self.finish(throwing: nil)
+                }
             }
         }
 
@@ -53,16 +70,7 @@ public final class LocalBridgeClient: @unchecked Sendable {
         readSource.setEventHandler { [weak self] in
             self?.readAvailableData()
         }
-        readSource.setCancelHandler { [weak self] in
-            guard let self else {
-                return
-            }
-
-            if self.fileDescriptor != -1 {
-                close(self.fileDescriptor)
-                self.fileDescriptor = -1
-            }
-        }
+        readSource.setCancelHandler { close(fileDescriptor) }
         self.readSource = readSource
         readSource.resume()
 
@@ -70,10 +78,6 @@ public final class LocalBridgeClient: @unchecked Sendable {
     }
 
     public func send(_ command: BridgeCommand) async throws {
-        guard fileDescriptor != -1 else {
-            throw BridgeTransportError.notConnected
-        }
-
         let data = try BridgeCodec.encodeLine(.command(command))
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -88,11 +92,28 @@ public final class LocalBridgeClient: @unchecked Sendable {
                     return
                 }
 
+                guard self.registration == nil else {
+                    continuation.resume(throwing: BridgeTransportError.alreadyConnected)
+                    return
+                }
                 do {
-                    try writeAll(data, to: self.fileDescriptor)
-                    continuation.resume(returning: ())
+                    if case .registerClient = command {
+                        let id = UUID()
+                        self.registration = (id, continuation)
+                        try writeAll(data, to: self.fileDescriptor)
+                        self.queue.asyncAfter(deadline: .now() + 5) { [weak self] in
+                            guard let self, self.registration?.id == id else { return }
+                            self.finish(throwing: BridgeTransportError.responseTimedOut)
+                            self.disconnect()
+                        }
+                    } else {
+                        try writeAll(data, to: self.fileDescriptor)
+                        continuation.resume(returning: ())
+                    }
                 } catch {
+                    self.registration = nil
                     continuation.resume(throwing: error)
+                    self.finish(throwing: error)
                 }
             }
         }
@@ -130,7 +151,14 @@ public final class LocalBridgeClient: @unchecked Sendable {
 
                     for message in messages {
                         if case let .event(event) = message {
-                            continuation?.yield(event)
+                            if case .dropped = continuation?.yield(event) {
+                                finish(throwing: BridgeTransportError.resourceLimit)
+                                return
+                            }
+                        } else if case let .response(response) = message, let pending = registration {
+                            registration = nil
+                            if response == .acknowledged { pending.continuation.resume() }
+                            else { pending.continuation.resume(throwing: BridgeTransportError.malformedEnvelope) }
                         }
                     }
                 } catch {
@@ -162,6 +190,13 @@ public final class LocalBridgeClient: @unchecked Sendable {
     }
 
     private func finish(throwing error: Error?) {
+        readSource?.cancel()
+        readSource = nil
+        fileDescriptor = -1
+        buffer.removeAll(keepingCapacity: false)
+        scanCursor = 0
+        registration?.continuation.resume(throwing: error ?? BridgeTransportError.notConnected)
+        registration = nil
         if let error {
             continuation?.finish(throwing: error)
         } else {

@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import OpenIslandCore
 import Sparkle
 
 /// Wraps Sparkle's `SPUUpdater` to provide observable update state for SwiftUI.
@@ -10,7 +11,7 @@ import Sparkle
 @MainActor
 @Observable
 final class UpdateChecker: NSObject {
-    static let releasesURL = URL(string: "https://github.com/Octane0411/open-vibe-island/releases")!
+    static let releasesURL = URL(string: "https://github.com/RobinEdquist/open-vibe-island/releases")!
 
     private(set) var canCheckForUpdates = false
     private(set) var hasUpdate = false
@@ -24,6 +25,7 @@ final class UpdateChecker: NSObject {
 
     override init() {
         super.init()
+        guard CapabilityAvailability.automaticUpdates else { return }
         updaterController = SPUStandardUpdaterController(
             startingUpdater: false,
             updaterDelegate: self,
@@ -34,6 +36,7 @@ final class UpdateChecker: NSObject {
     /// Start Sparkle's automatic update checking schedule.
     /// Call once after app launch.
     func startIfNeeded() {
+        guard CapabilityAvailability.automaticUpdates else { return }
         #if DEBUG
         // Dev builds run from a local branch that often carries fixes not yet in
         // the upstream appcast. Letting Sparkle prompt the user to "update" to
@@ -63,6 +66,7 @@ final class UpdateChecker: NSObject {
 
     /// Manually trigger an update check (from Settings UI).
     func checkForUpdates() {
+        guard CapabilityAvailability.automaticUpdates, canCheckForUpdates else { return }
         updaterController.checkForUpdates(nil)
     }
 }

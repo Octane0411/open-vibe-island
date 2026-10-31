@@ -139,10 +139,14 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
 
     // MARK: - Lifecycle
 
-    public func start() {
+    /// Returns false when this build prohibits remote listening.
+    @discardableResult
+    public func start() -> Bool {
+        guard CapabilityAvailability.remoteApprovals else { return false }
         queue.async { [weak self] in
             self?.startListener()
         }
+        return true
     }
 
     public func stop() {
@@ -204,6 +208,7 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
     // MARK: - Private: Listener
 
     private func startListener() {
+        guard CapabilityAvailability.remoteApprovals else { return }
         do {
             let params = NWParameters.tcp
             let listener = try NWListener(using: params)

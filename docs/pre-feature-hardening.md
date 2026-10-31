@@ -1,0 +1,465 @@
+# Open Island Hardening Before New Features
+
+Continue development of the existing native macOS application, but complete the core safety and reliability work below before adding features. Preserve the session reducer, existing regression fixtures, and agent and terminal compatibility code. Address defects through small changes with regression tests; a full rewrite is not a prerequisite.
+
+This plan covers incorrect approvals, configuration damage, unreliable communication, session races, privacy behavior, test isolation, and release safeguards. Optional remote approvals and terminal replies require additional protection before they can be enabled safely.
+
+## Baseline and evidence
+
+- Review date: October 31, 2026.
+- Source baseline: upstream commit [`01aa0924fd96bf319a64e75646765c55cae4e2c5`](https://github.com/Octane0411/open-vibe-island/tree/01aa0924fd96bf319a64e75646765c55cae4e2c5), also the fork's starting commit.
+- Core changes are implemented and verified locally and by fork CI on both pinned toolchains. Conditional capabilities are restricted in code; distribution remains blocked on the H13/H14 release evidence below.
+- Source references point to the reviewed commit so their line numbers remain stable as the fork changes.
+
+The baseline package built on Apple Silicon with macOS 26.6.1 and Swift 6.4. Documentation and localization checks passed, as did 78 selected tests across 14 suites. The selected suites covered payloads, transcript processing, registries, subprocess behavior, and related model logic. They do not establish full application, GUI, remote-device, Intel, or macOS 14 compatibility.
+
+Evidence labels distinguish three levels:
+
+- **Reproduced:** an isolated probe exercised the implementation and observed the defect. Configuration probes used temporary directories; transport probes used mocked messages or a local socket pair.
+- **Source traced:** the defect follows from the inspected control flow, but its complete user-facing scenario still needs an automated regression test.
+- **Engineering gap:** a missing protection or verification step, with a concrete acceptance criterion. This is not a claim that exploitation has been demonstrated.
+
+During the initial review, the full test suite was withheld because H01 identified tests that could touch production state. The implementation records below describe subsequent isolated full-suite runs. No signed release artifact was independently audited. Dependency versions resolved during the review do not establish versions embedded in previously published downloads.
+
+## Implementation record
+
+### H01 — implemented, locally verified
+
+Resolving commit: `6ebc913` (`fix: isolate automated tests from user state (H01)`).
+
+The bridge compatibility listener is now an explicit production option. App tests use unique preferences and temporary registry storage, a headless panel controller, and injected terminal actions. The live Warp check requires explicit opt-in; the payload inference test supplies a terminal locator instead of querying iTerm. Pending registry writes are cancelled when their coordinator is released.
+
+Verification on October 31, 2026: Swift 6.4, macOS 26.6.1, Apple Silicon. The full Swift Testing run reported 355 core tests in 37 suites and 177 app tests in 24 suites passing. The Warp check was skipped and Ghostty integration check cancelled by its opt-in guard. Production registry bytes/metadata and socket identities were unchanged across the completed run. New tests cover independent preferences, all five injected registry paths, and an existing compatibility listener alongside two test servers. Documentation and whitespace checks passed. See [test isolation guidance](./quality.md#test-isolation).
+
+An initial run was stopped after discovering an unisolated iTerm AppleScript query; that test now injects its locator and the completed rerun has no live terminal interaction. GUI, permission-dialog, and other platform checks remain outside this verification.
+
+### H13 — initial dependency-locking step
+
+Resolving commit for dependency locking: `d4f4c7a` (`build: lock tested dependency versions (H13)`).
+
+`Package.resolved` records the four locally tested dependency versions. Test, harness-build, and packaging entry points require those resolutions. Sparkle's minimum is raised to the already-tested 2.10.1 so a future resolution cannot fall back to the old 2.9.0 floor. [Upstream advisories](https://github.com/sparkle-project/Sparkle/security/advisories) were rechecked on October 31, 2026; their listed patched versions are at or below 2.9.6.
+
+Verification: the locked package build and test wrapper passed locally; shell syntax, documentation, and localization checks passed. Packaging was checked for syntax only, not signed or distributed.
+
+This initial step covered dependency locking only. The later H13 record below supersedes its remaining-work status.
+
+### H15 — implemented, locally verified
+
+Resolving commit: `99a541e` (`fix: cancel queued terminal jumps and serialize actions (H15)`).
+
+A controllable dismissal delay reproduced the old behavior: selecting B before A's delay finished executed B and then A. The regression now passes with only B executed. Cancellation errors leave before dispatch, and a serial executor checks cancellation again before invoking the platform runner. A second regression verifies that a running A completes before B starts and cannot overwrite B's final status.
+
+An OS action that has already started is not forcibly interrupted or undone; later actions wait for it. This defines ordering without claiming that every existing terminal driver is preemptible. Both cancellation/ordering tests passed with fake platform runners; no real terminal was activated.
+
+### H08 — implemented, locally verified
+
+Resolving commit: `ac33a2b` (`fix: preserve live sessions during startup discovery (H08)`).
+
+Startup merges now retain every session already received while background discovery was running. Those session IDs take precedence over every startup cache and transcript result, including records with later timestamps or matching transcript aliases. Other discovered sessions are added through the existing merger. This preserves pending approvals and ended-session state without using wall-clock time to decide whether cache data can override live ingress. State still goes through the AppModel setter that forwards snapshots to the bridge.
+
+Three regression tests (four cases) failed on the original implementation and pass after the fix: both live/discovery arrival orders, a future-dated conflicting cache/transcript record, and an ended session. Full desktop startup and reconnect in a signed app remain manual integration checks; these tests exercise the real coordinator and AppModel state wiring with isolated storage and desktop effects.
+
+### Initial implementation batch verification (historical)
+
+The locked full test wrapper passed with 355 core tests in 37 suites and 182 app tests in 26 suites. The two live desktop checks remained excluded by their opt-in guards. Production registry files and both socket paths were unchanged. The package build, documentation, localization, shell syntax, and whitespace checks passed. Existing Swift concurrency/redundant-code warnings remain; the build is not warning-free.
+
+This was the initial isolated baseline. H02–H07 and the later work are recorded below; use the current status table and final verification record for the remaining gates.
+
+### H02/H03 — implemented, locally verified; H07 controller authority implemented
+
+Decisions now use an in-process controller API with the exact session, immutable request UUID, and request kind. Socket decision commands are explicitly rejected. Protocol hello version is 2; existing producer envelopes remain compatible. Only one blocking request per session is accepted; competing requests receive an explicit denial without replacing the original waiter. Requests expire after five monotonic minutes and release waiting producers with a denial. Up to 1,024 accepted decisions retain idempotent receipts; conflicting retries fail.
+
+The interface retains a request while sending, shows failure or expiration, and clears it only after the bridge accepts that exact decision and writes its complete directive. This acknowledgment does not claim that the agent completed the tool. A late acknowledgment cannot clear a newer request. Hook fail-open behavior when the app is unavailable remains unchanged.
+
+Verification: 358 core and 185 app tests passed, including wrong ID/session/kind, socket rejection, competing requests, expiry, idempotent and conflicting retries, failure retention, duplicate clicks, and late acknowledgment. One remaining trailing-closure AppModel construction in the test suite was also migrated to the isolated fixture. Filesystem identity and resource bounds remain open under H06/H07.
+
+### H04 — validated configuration edits and recovery
+
+Codex and OpenCode installation now read all destinations and validate configuration before modifying any file. Missing files are distinct from unreadable, malformed, or non-regular files. Codex uses vendored [toml++ 3.4.0](https://github.com/marzer/tomlplusplus/releases/tag/v3.4.0), through a small C interface that retains all node ownership inside C++, to validate input/output and compare the entire parsed document against the intended feature-only mutation; unsupported layouts are preserved and reported. Commented table headers are supported. Hook JSON with unsupported shapes is rejected rather than silently discarded. Reinstallation retains ownership of the feature flag, and uninstall preserves unrelated root settings.
+
+Changes retain original bytes and permissions in a private `.open-island-recovery-<UUID>` directory beside the configuration. Its `manifest.json` maps numbered originals to destinations. Ordinary failures roll back files still matching this installation's writes; subsequent external edits are never deliberately restored over. For process interruption, quit the app and restore only the affected files from this manifest after reviewing concurrent edits. Recovery copies may contain secrets: delete them after verifying the integration. No automatic retention deletion runs.
+
+In-process installs are serialized and original bytes are rechecked before each replacement. External editors do not participate in this lock; a narrow check/replace race remains. Close editors and avoid concurrent setup processes during installation. Files are individually atomic, not a filesystem-wide atomic transaction. Tests cover malformed settings, duplicate TOML tables, commented headers, concurrent edits, and preservation of unrelated OpenCode plugins/settings. A forced failure after writing configuration verifies that the original plugin and configuration are restored, no success manifest is left, and private recovery copies remain available. The five configuration tests pass.
+
+### H05 — implemented, locally verified
+
+The plugin consumes complete newline-delimited envelopes, requires protocol version 2, and accepts only the expected response kind. Session events cannot become decisions. Reads have an eight MiB frame bound and total deadline, including fragmented input and EOF. Session broadcasts go only to registered observers; registration now waits for acknowledgment and retains its role across reads.
+
+Structured question decisions carry ordered arrays of selections through Swift encoding into the JavaScript reply body. Ambiguous flattened responses to multiple questions are rejected. Five Node tests cover every response split point, interleaved events, incomplete EOF, protocol mismatch, oversize, and timeout. The real JavaScript plugin also connects to the real Swift server in a contract test and receives two ordered questions with multiple selections intact. The targeted Swift run passed 78 tests across four suites. The first cross-language run confirmed that the old plugin wrote its synthetic event to the predictable temporary log; payload logging has now been removed (the diagnostic portion of H12). Existing log files are not automatically deleted. Run `node --test Tests/PluginTests/*.test.cjs` alongside Swift tests; Node is now required for the cross-language suite.
+
+### H07 — implemented, locally verified
+
+The production bridge directory is checked for ownership and made private (0700); sockets and listener locks are owner-only (0600). An exclusive instance lock protects each path, including the compatibility path. Startup refuses live listeners, foreign-owned files, non-sockets, and symlinks; it removes only an owned stale socket after a connection probe and identity recheck. Accepted connections must pass the operating system's peer-UID check. Socket callers cannot become decision controllers; that API remains in process. Same-account processes can still publish events or register as observers, and arbitrary code running as the account owner is outside this boundary.
+
+Regressions reproduced live listener replacement, ordinary-file/symlink deletion, and permissive socket modes before the change; all now pass. Six tests across socket identity, approval safety, and the real OpenCode contract passed. Cross-account OS testing requires a separate account and is not claimed by this local run. Lock files intentionally remain after shutdown to avoid replacing a lock inode still held by another process.
+
+### H06 — implemented, locally verified
+
+Server writes use per-connection nonblocking queues. Accepting a decision waits for its queued directive to finish; no observer write blocks producers. Limits are eight MiB per frame/output queue, 32 connections, four observers, 32 MiB aggregate incomplete input, 128 commands per connection, and one blocking request per connection. A write has a one-second deadline (idle writes are swept within the next one-second timer tick). Incomplete frames expire after five seconds; idle non-observers without pending work close after ten seconds. Read/write callbacks have byte budgets so another connection gets service. The observer stream is bounded to 64 events and disconnects on overflow. Hook clients use a total response deadline, with EINTR handling and bounded writes.
+
+The frame size accommodates the existing four-MiB tool-input fixture plus its envelope. Regressions exercise a stalled observer alongside a working producer, oversized unterminated input, excess connections, and trickling responses. The full run passed 369 core tests and 185 app tests. During this run, the TOML wrapper's borrowed table replacement proved unstable; it was replaced by a direct C interface to pinned toml++, keeping parser ownership in C++. Expiration tests now use a controlled monotonic clock to avoid missing short-lived requests under parallel test load.
+
+### H09/H10/H11/H16 — conditional gates enforced; capability work deferred
+
+Terminal replies refuse both capability checks and direct sends. Phone/Watch startup refuses to create a listener, including internal retries. AppModel clears previously saved enablement and refuses subsequent setters; settings show why these capabilities are unavailable. SSH setup exits before any SSH, copy, or configuration command. No preference or environment flag bypasses these restrictions.
+
+Tests cover direct reply rejection, saved enablement, repeated attempts to enable, and direct endpoint startup. The SSH command returns a clear failure before contacting the supplied host. Product and SSH documentation label upstream descriptions as reference only. Underlying destination verification, encrypted pairing, remote request lifecycle, and SSH configuration merging remain deferred; these capabilities must not be advertised or enabled until their original criteria are fulfilled.
+
+### H12 — implemented, locally verified
+
+Payload logging was removed from the OpenCode plugin rather than retaining an optional sensitive log. A Node regression verifies that events containing synthetic secrets cause no diagnostic file writes. Markdown now uses explicit local-only providers for both block and inline images, including file URLs. The inline provider regression fails with the former network provider and succeeds without an image server. Source review verifies both provider modifiers are attached to the sole agent Markdown renderer; the block provider contains only a static SwiftUI label. Offscreen rendering alone did not exercise network loading and is not counted as proof of network isolation.
+
+The privacy policy now inventories preferences, session registries, transcript reads, managed integrations, recovery copies, legacy temporary files, update traffic, third-party libraries, and disabled remote capabilities. Existing logs and recovery copies are not automatically deleted; removal instructions explicitly distinguish app-owned caches from agent-owned transcripts and overlapping upstream storage.
+
+### H14 — update and publication restrictions enforced; distribution blocked
+
+The fork never constructs or starts Sparkle while its release restriction is active, including manual checks. Packaging removes upstream feed/key defaults, rejects update-enabling variables before building, and uses a distinct development bundle identity. The inherited appcast offers no assets. The automatic release workflow is replaced by an explicit failure gate; it cannot promote drafts, auto-merge metadata, or modify the upstream Homebrew tap. The appcast script also refuses publication. Desktop packaging smoke tests require explicit opt-in in an isolated account.
+
+Configuration-only packaging checks pass, and attempted enablement is rejected. `docs/release-signing.md` records the concrete remaining requirements: production identity and storage migration, maintainer-owned signing/update keys, notarized artifacts, platform/GUI evidence, signed upgrade/recovery tests, and anonymous asset verification before metadata promotion. These require maintainer credentials and isolated platform environments; no release, signing credential, or update channel was created by this task.
+
+### H13 — automated toolchain checks verified; platform release matrix pending
+
+CI actions are pinned to verified revisions, Node to 24.22.1, and Xcode to explicit 26.0.1/26.6 paths. The test harness includes JavaScript contracts, and CI also cross-compiles Intel. DMG tooling is pinned to create-dmg 1.2.3 revision `994a036532d3ac1bb1cd5a425a0d5d796ecbed83`. Packaging uses committed assets instead of installing arbitrary Pillow versions; explicit regeneration requires 11.3.0. Bundles record source/dirty state, lock hash, and tool versions. Packaging desktop smoke is opt-in.
+
+Local release app/ZIP packaging passed without launching, as did disabled-update metadata, bundled-license, and strict deep ad-hoc signature checks. Intel cross-compilation passed; arm64 release and x86_64 debug binaries declare macOS 14.0 minimum deployment. Hosted CI subsequently verified the minimum toolchain, Intel cross-builds, and universal app/ZIP/DMG packaging as recorded below. Actual macOS 14/Intel execution and app GUI/TCC checks remain unverified. `docs/quality.md` records the tested environments and required release matrix. Distribution remains blocked.
+
+### Hosted CI verification — October 31, 2026
+
+[CI run 41213119726](https://github.com/RobinEdquist/open-vibe-island/actions/runs/41213119726) passed all three jobs at commit `9348d7f8e998a82583ae457137b3b00f4c0d41d4`:
+
+- Xcode 26.0.1 / Swift 6.2 and Xcode 26.6 / Swift 6.3.3 on macOS 26.6.2 (25G83), runner image `20261026.0455.2`, Node 24.22.1: documentation/localization checks, 560 Swift tests across 72 suites, six JavaScript tests, native builds, and Intel cross-builds passed. Both live desktop tests were explicitly skipped.
+- Both toolchains also passed six tests across three suites with a constrained cooperative task pool. The setting applies only to the test helper; applying it to Swift 6.2 Package Manager stalled before test execution. The stress step has a two-minute timeout.
+- Xcode 26.6 universal app/ZIP/DMG packaging passed bundle/resource checks and strict deep ad-hoc signature verification. DMG styling ran Finder automation on the disposable hosted runner. Open Island was not launched; Developer ID signing, notarization, app upgrades, and publication were not performed. CI does not upload the generated packages.
+
+The initial runs exposed old-toolchain type-checking limits and an unavailable test cancellation API. Metadata fallback order is preserved using explicit steps (`8073650`), and desktop opt-in uses the older supported test trait (`27665b6`). CI also exposed test-worker starvation and an unreliable one-second fixture-readiness deadline. Blocking clients now run off the cooperative executor, start independently of task scheduling, and synchronize setup through real bridge permission events (`1b88060`, `40036a7`, `9348d7f`). The test-only client deadline uses the production 45-second default, with a one-minute suite limit; simulated-clock expiry and decision assertions are retained. The stress runner correction is `c7e3f31`. No application timeout or approval policy was relaxed to obtain a passing run.
+
+### Final local verification and resolving commits
+
+The final isolated suite passed **371 core tests in 43 suites and 189 app tests in 29 suites**, plus **six JavaScript tests**. The two live desktop integrations remained excluded by their opt-in guards. The final bridge checks cover competing requests from Codex, Claude, and OpenCode; releasing an observer now finishes its event stream. Documentation, localization, shell syntax, workflow YAML, and whitespace checks passed. Production registry bytes/metadata and both production socket identities match the pre-test snapshot. The first OpenCode contract run's synthetic temporary log is recorded under H05/H12; no claim is made that old logs were deleted.
+
+Final Intel compilation and arm64 release app/ZIP packaging also passed at runtime commit `46a2b54`. The bundle records that commit and a dirty working tree because this verification document was still being updated; no runtime source was uncommitted. Its development identity, absent update feed/key, included license notices, and strict deep ad-hoc signature were checked. Neither the app nor a DMG was launched. This is development artifact evidence, not a signed release certification.
+
+| Finding | Resolving commits on `fix/pre-feature-hardening` |
+| --- | --- |
+| H01 | `6ebc913`, trailing-closure fixture correction in `439a9fe` |
+| H02/H03 | `439a9fe`, cross-agent coverage in `114cc2f` |
+| H04 | `bc3975e`, `611178d`, `717ce83` |
+| H05 | `ee7c39f` |
+| H06 | `135ad21`, `114cc2f` |
+| H07 | `92f68a8`, controller boundary in `439a9fe` |
+| H08 | `ac33a2b` |
+| H09/H10/H11/H16 | `7825691` (enforced restriction, capability implementation deferred) |
+| H12 | `36008eb`, diagnostic removal in `ee7c39f` |
+| H13 | `d4f4c7a`, `cded1be`, `46a2b54`, `8073650`, `1b88060`, `27665b6`, `40036a7`, `c7e3f31`, `9348d7f` |
+| H14 | `6ec21ff` (updates/publication blocked until release criteria are met) |
+| H15 | `99a541e` |
+
+The Core milestone and enforced Conditional restrictions are complete under the narrowed compatibility claims. The maintainer authorized pushing the hardening branch; the pinned-toolchain CI run is now verified. The Release milestone additionally needs the environments, credentials, and manual evidence listed in `docs/quality.md` and `docs/release-signing.md`. No changes were merged into the shared main worktree, no hooks were installed into the developer's real agent configuration, and no build was published.
+
+## Completion gates
+
+| Gate | Required outcome |
+| --- | --- |
+| Core | Complete before new feature implementation. A passing regression test and reviewed implementation close each item. |
+| Conditional | Complete before the affected optional capability is enabled or advertised as supported. Deferral requires an enforced runtime restriction and clear product documentation; a default-off preference alone is insufficient. |
+| Release | Complete before distributing a fork build or activating its update channel. |
+
+P1 means incorrect authorization, unintended input, configuration damage, or a significant trust-boundary failure is possible. P2 covers reliability, privacy, and verification defects that still need scheduled remediation. These are engineering priorities, not CVSS scores.
+
+| ID | Work item | Priority | Gate | Status |
+| --- | --- | --- | --- | --- |
+| H01 | Isolate automated tests from the developer environment | P1 | Core | Implemented locally |
+| H02 | Bind approvals and answers to exact requests | P1 | Core | Implemented locally |
+| H03 | Acknowledge decisions before clearing the interface | P2 | Core | Implemented locally |
+| H04 | Preserve agent configuration during installation | P1 | Core | Implemented locally |
+| H05 | Repair the OpenCode protocol contract | P1 | Core | Implemented locally |
+| H06 | Bound bridge reads, writes, and connections | P2 | Core | Implemented locally |
+| H07 | Enforce local bridge identity and command permissions | P1 | Core | Implemented locally |
+| H08 | Preserve live state during startup discovery | P2 | Core | Implemented locally |
+| H09 | Verify the destination before submitting terminal replies | P1 | Conditional | Restricted in code; implementation deferred |
+| H10 | Secure remote pairing and approvals | P1 | Conditional | Restricted in code; implementation deferred |
+| H11 | Fix remote endpoint lifecycle and request processing | P2 | Conditional | Restricted in code; implementation deferred |
+| H12 | Restrict diagnostics and remote Markdown content | P2 | Core | Implemented locally |
+| H13 | Make builds and compatibility checks reproducible | P2 | Core and Release | Local and CI checks passed; manual platform/release checks pending |
+| H14 | Give the fork a safe release and update configuration | P1 | Release | Updates/publication disabled; release verification blocked |
+| H15 | Stop cancelled terminal jumps before side effects | P2 | Core | Implemented locally |
+| H16 | Preserve and correctly merge SSH hook configuration | P2 | Conditional | Restricted in code; implementation deferred |
+
+## Core fixes
+
+### H01 Isolate automated tests
+
+**Evidence: Source traced.** A bridge started with a custom test socket also attempts to bind the production legacy socket. Some application tests schedule persistence through stores with production default paths. A keystroke test invokes the real Warp controller, which activates the app and clicks its tab menu. Test execution can therefore interfere with a running app, overwrite session registries, or change desktop focus.
+
+Sources: [BridgeServer.swift:114–127](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandCore/BridgeServer.swift#L114-L127), [SessionDiscoveryCoordinator.swift:44–57](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandApp/SessionDiscoveryCoordinator.swift#L44-L57), [AppModel.swift:1582–1586](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandApp/AppModel.swift#L1582-L1586), [KeystrokeInjectorTests.swift:5–12](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Tests/OpenIslandAppTests/KeystrokeInjectorTests.swift#L5-L12).
+
+Inject storage locations, preferences, socket locations, clocks, and platform command runners. Make the legacy socket an explicit production option. Put real desktop interactions in a separately invoked integration suite.
+
+**Acceptance criteria**
+
+- The ordinary suite uses temporary stores and sockets, with no production registry writes, integration installs, terminal activation, or permission prompts.
+- Two suites can run concurrently without sharing sockets or persistent state.
+- A sentinel production socket and sentinel registry files remain unchanged during test execution.
+- Real OS integration tests require explicit invocation and an isolated test environment.
+
+### H02 Bind decisions to exact requests
+
+**Evidence: Source traced.** Approval commands identify only the session. Pending Claude and OpenCode interactions are also keyed by session, so request B can replace request A. A delayed decision for A can then resolve B. The Watch relay receives a request ID but forwards only the session ID and decision.
+
+Sources: [BridgeTransport.swift:82–86](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandCore/BridgeTransport.swift#L82-L86), [BridgeServer.swift:758–787](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandCore/BridgeServer.swift#L758-L787), [OpenCode pending request storage](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandCore/BridgeServer.swift#L1144-L1167), [WatchNotificationRelay.swift:157–175](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandCore/WatchNotificationRelay.swift#L157-L175).
+
+Carry an immutable request ID, session identity, and decision through the UI, protocol, remote relay, and pending-request store. Define expiration, cancellation, and concurrent-request behavior. Version the protocol change and define compatibility with installed older helpers.
+
+**Acceptance criteria**
+
+- With A and B pending in one session, approving A never approves B; neither waiter is silently overwritten.
+- Stale, expired, cancelled, duplicate, unknown, and wrong-session responses have explicit outcomes.
+- Desktop and remote clients use the same request identity rules.
+- Unsupported protocol versions cannot silently convert a decision into an approval.
+
+### H03 Confirm decision delivery
+
+**Evidence: Source traced.** The UI clears approvals and questions before sending. A send failure only changes status text. The local client treats a successful socket write as completion and does not await a matching application response.
+
+Sources: [AppModel.swift:1428–1444](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandApp/AppModel.swift#L1428-L1444), [answer and error handling](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandApp/AppModel.swift#L1484-L1530), [LocalBridgeClient.swift:72–98](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandCore/LocalBridgeClient.swift#L72-L98).
+
+Introduce pending, sending, acknowledged, failed, and expired states. An acknowledgment must describe acceptance of the exact request, not merely successful byte delivery. Retry using the same decision identity and deduplicate on the receiving side.
+
+**Acceptance criteria**
+
+- Disconnecting before or during delivery does not leave a false success state or silently discard a still-actionable request.
+- Server rejection and timeout produce an actionable error.
+- Retrying after an uncertain acknowledgment cannot apply the decision twice or resolve another request.
+
+### H04 Preserve configuration during installation
+
+**Evidence: Reproduced.** The Codex editor fails to recognize a valid commented table header and appends another table. For example:
+
+```toml
+[features] # optional settings
+hooks = false
+```
+
+Installation adds a second `[features]` table. An independent TOML parser rejected the generated result. Separately, OpenCode installation treats malformed JSON as an empty dictionary and replaces the active configuration with a plugin-only object. A backup is written, but the invalid input is not reported as an installation failure.
+
+Sources: [CodexHookInstaller.swift:201–220](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandCore/CodexHookInstaller.swift#L201-L220), [table recognition](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandCore/CodexHookInstaller.swift#L415-L424), [Codex configuration write](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandCore/CodexHookInstallationManager.swift#L88-L122), [OpenCodePluginInstallationManager.swift:153–180](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandCore/OpenCodePluginInstallationManager.swift#L153-L180).
+
+Use syntax-aware editing and distinguish a missing file from an unreadable or invalid file. Validate all proposed outputs before replacing any active configuration. Preserve unrelated settings, detect concurrent edits, and make partial installation recoverable. Audit the other installers for the same patterns rather than assuming these two are the only affected adapters.
+
+**Acceptance criteria**
+
+- Commented headers, quoted keys, unrelated tables, and existing user hooks survive install and uninstall.
+- Invalid or unreadable input fails without modifying configuration or installed helper/plugin files.
+- Repeated installation is idempotent; uninstall removes only managed entries.
+- A concurrent edit is detected rather than overwritten.
+- Simulated write failure leaves a consistent previous state or a documented, tested recovery path.
+
+### H05 Repair the OpenCode protocol contract
+
+**Evidence: Reproduced transport defects; source-traced answer loss.** The JavaScript client assumes the second received line is a response. The server broadcasts events to every client, including request producers. The client also parses an incomplete second line and closes the connection. Isolated execution of the actual function returned an event for `hello + event + response`, and returned `null` for a partial response.
+
+Structured answers have a separate defect: the server flattens multiple answers into display text, then the plugin sends that text as a single answer array. Question order and multiple selections are lost.
+
+Sources: [open-island-opencode.js:36–61](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandApp/Resources/open-island-opencode.js#L36-L61), [BridgeServer.swift:3324–3331](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandCore/BridgeServer.swift#L3324-L3331), [answer flattening](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandCore/BridgeServer.swift#L2413-L2439), [answer submission](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandApp/Resources/open-island-opencode.js#L347-L360).
+
+Parse complete frames with streaming UTF-8 decoding, inspect envelope types, and wait for the correlated response. Deliver observer events only to authorized subscribers. Preserve typed answers in source question order. Validate the plugin against explicitly supported OpenCode versions; the source defects above are separate from upstream API compatibility.
+
+**Acceptance criteria**
+
+- A real Swift bridge and JavaScript client complete permission and question round trips using isolated sockets.
+- Fragmentation at every byte boundary, including multibyte characters, and interleaved events do not lose a response.
+- Two questions and multiple selected answers round-trip without flattening or reordering.
+- Disconnect and timeout leave the underlying agent in its documented fallback state.
+
+### H06 Bound bridge resource use
+
+**Evidence: Reproduced writer blocking; source-traced limits gap.** `writeAll` retries `EAGAIN` indefinitely. The server calls it on a shared serial queue, so a non-reading client can stall unrelated sessions. A socket-pair probe remained blocked beyond 300 ms and stopped when the peer closed. Source inspection establishes the missing deadline; the probe was not a full application denial-of-service test. Incoming frame buffers and connection counts also need explicit bounds.
+
+Sources: [BridgeTransport.swift:454–474](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandCore/BridgeTransport.swift#L454-L474), [BridgeServer.swift:267–297](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandCore/BridgeServer.swift#L267-L297), [shared write path](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandCore/BridgeServer.swift#L3311-L3331).
+
+Use asynchronous writes with bounded per-client queues and deadlines. Set documented limits for frames, connections, pending work, and idle clients. Choose limits from representative valid payload fixtures, including large transcripts.
+
+**Acceptance criteria**
+
+- A stalled client cannot prevent a second client from completing a request within the documented deadline.
+- Oversized or unterminated frames and excess clients are rejected with bounded memory use.
+- Disconnect, timeout, and shutdown cancel work and release descriptors and pending requests.
+
+### H07 Enforce local bridge trust boundaries
+
+**Evidence: Engineering gap confirmed in source.** Socket creation does not explicitly enforce private permissions or peer credentials. Command handling does not establish distinct authority for a hook producer, observer, and decision controller. A process able to connect can submit decision commands. The legacy path also needs safe ownership and stale-socket handling.
+
+Sources: [BridgeServer.swift:124–169](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandCore/BridgeServer.swift#L124-L169), [accepted clients](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandCore/BridgeServer.swift#L215-L264), [command dispatch](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandCore/BridgeServer.swift#L315-L353).
+
+Define and enforce the supported trust boundary. Use a private directory, explicit socket permissions, peer UID checks, and an ownership check before removing a stale socket. Keep UI decision control in process where practical, or grant it separate authenticated authority. A client-supplied role string alone is not authentication.
+
+**Acceptance criteria**
+
+- An unauthorized peer cannot subscribe to events or resolve requests.
+- A hook producer cannot gain controller authority merely by changing a message field.
+- Starting another instance cannot silently replace a live listener or remove an unrelated path.
+- Document same-user limitations: this is not a general sandbox against arbitrary code already running as the account owner. The default Unix socket is not a remote network endpoint.
+
+### H08 Preserve live state during startup
+
+**Evidence: Source traced.** Startup discovery runs asynchronously while the bridge begins receiving events. Applying a nonempty cached Codex list later replaces the entire current state, discarding live sessions or approvals received during discovery.
+
+Sources: [AppModel.swift:1131–1137](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandApp/AppModel.swift#L1131-L1137), [bridge startup](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandApp/AppModel.swift#L1173-L1175), [SessionDiscoveryCoordinator.swift:156–159](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandApp/SessionDiscoveryCoordinator.swift#L156-L159).
+
+Seed state before accepting events or merge discovery results beneath newer live state. Define precedence using event/source identity and ordering; avoid relying solely on wall-clock timestamps.
+
+**Acceptance criteria**
+
+- Delay discovery, deliver a new session and approval, then complete discovery: both remain present and actionable.
+- Cached records cannot restore an older phase over a newer live phase or resurrect an ended session.
+- The authoritative store and bridge view remain consistent after startup and reconnect.
+
+### H12 Restrict sensitive diagnostics and remote content
+
+**Evidence: Source traced.** The OpenCode plugin logs portions of every event's properties to a predictable `/tmp` file without opt-in, explicit private permissions, redaction, or rotation. Completion Markdown uses the resolved MarkdownUI dependency's default network image provider, so rendering agent output can request remote images. This network behavior was traced through the dependency, not exercised with a live tracking endpoint. The privacy policy describes substantially less storage and external communication than the application supports.
+
+Sources: [debug log destination](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandApp/Resources/open-island-opencode.js#L8-L10), [logged event properties](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandApp/Resources/open-island-opencode.js#L318-L323), [completion Markdown](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandApp/Views/IslandPanelView.swift#L1776-L1784), [privacy policy](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/PRIVACY_POLICY.md#L9-L22).
+
+Disable payload diagnostics by default. Use private bounded storage and redact sensitive values when diagnostics are enabled. Block remote image loading unless the user chooses it. Document caches, retention, diagnostics, remote devices, and update traffic accurately.
+
+**Acceptance criteria**
+
+- Sensitive fixture prompts and tool inputs do not appear in default diagnostics.
+- Rendering Markdown containing remote images performs no network request by default, including inline images.
+- Tests verify diagnostic permissions, size/retention limits, and redaction.
+- Privacy documentation describes the implemented behavior and available deletion controls.
+
+### H15 Respect cancelled terminal jumps
+
+**Evidence: Source traced.** Cancelling the previous jump task does not prevent its action. Cancellation during the delay is swallowed, detached work starts anyway, and the cancellation check occurs after the window operation.
+
+Source: [AppModel.swift:1390–1412](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandApp/AppModel.swift#L1390-L1412).
+
+Check cancellation before side effects and serialize platform actions. Use bounded, cancellable subprocess operations where possible.
+
+**Acceptance criteria**
+
+- With a controllable clock and fake runner, selecting A then B during the dismissal delay invokes only B.
+- Work already dispatched has defined cancellation behavior and cannot apply a later stale focus change after B completes.
+
+## Optional capability fixes
+
+### H09 Verify terminal reply destinations
+
+**Evidence: Source traced.** The reply path falls back from a missing Ghostty session ID to the first directory/title match, then sends text and Enter. It does not revalidate that the intended agent still owns the terminal. A stale session can therefore send input to another pane or to a shell. The feature defaults off, but saved preferences can enable it.
+
+Source: [TerminalTextSender.swift:82–147](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandApp/TerminalTextSender.swift#L82-L147).
+
+Require a current exact terminal identity and validate the recipient immediately before submission. Refuse stale or ambiguous targets. Prefer an agent input API when available. Process checks and text injection are not inherently atomic, so document and address the remaining race rather than treating a PID lookup as a complete guarantee.
+
+**Acceptance criteria**
+
+- Closing the original pane, duplicating its directory/title, or returning to a shell never causes fallback text submission.
+- A changed recipient between validation and submission is handled safely to the extent supported by the terminal API; unsupported cases disable submission.
+- Test tmux as well as Ghostty, including reused pane identities and terminated agents.
+
+### H10 Secure remote approval access
+
+**Evidence: Source traced.** The optional phone/Watch endpoint advertises a plaintext TCP service and pairs using a four-digit code, without attempt throttling or explicit Mac confirmation. Bearer tokens authorize decisions. An attacker able to intercept traffic can obtain a token; a reachable client can repeatedly guess pairing codes. Remote support defaults off.
+
+Sources: [WatchHTTPEndpoint.swift:113–124](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandCore/WatchHTTPEndpoint.swift#L113-L124), [listener](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandCore/WatchHTTPEndpoint.swift#L206-L240), [pairing](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandCore/WatchHTTPEndpoint.swift#L305-L329), [decision endpoint](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandCore/WatchHTTPEndpoint.swift#L403-L416).
+
+Use authenticated encryption with a verified peer identity, explicit pairing confirmation, bounded pairing attempts, and device-specific credentials. Store secrets in platform credential storage. Separate notification access from approval authority and define expiry and revocation behavior.
+
+**Acceptance criteria**
+
+- An unpaired or revoked device cannot read events or submit decisions.
+- Pairing resists repeated guesses and active peer impersonation, not just passive observation.
+- Approval requests use H02's exact identity and H03's acknowledgment semantics.
+- Enabling the feature clearly communicates its reach and capabilities; disabling it closes all listeners and connections.
+
+### H11 Correct remote endpoint behavior
+
+**Evidence: Source traced.** Revoking tokens leaves existing event streams connected. `/status` calls a `MainActor.assumeIsolated` closure from the networking queue, which can fail the actor isolation assertion. Request parsing assumes a single TCP receive contains a complete HTTP request.
+
+Sources: [token revocation and event delivery](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandCore/WatchHTTPEndpoint.swift#L179-L200), [HTTP receive](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandCore/WatchHTTPEndpoint.swift#L254-L271), [status callback](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandCore/WatchHTTPEndpoint.swift#L419-L428), [actor assumption](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Sources/OpenIslandApp/AppModel.swift#L536-L541).
+
+Associate streams with device credentials and cancel them on revocation. Read session counts through an explicit synchronized snapshot or actor hop. Use bounded incremental HTTP parsing with complete body handling, or a maintained server implementation appropriate to the product.
+
+**Acceptance criteria**
+
+- A revoked open stream receives no subsequent events.
+- Authenticated `/status` calls from the real endpoint succeed without an isolation assertion.
+- Fragmented headers/bodies, malformed lengths, oversized requests, and slow clients are handled predictably with deadlines.
+- Stop/start cycles cannot leave orphan connections or restart a listener after the user disables it.
+
+### H16 Correct SSH hook merging
+
+**Evidence: Source traced.** The SSH setup script deduplicates `command` on hook groups even though commands are nested inside `hooks`. Existing and new groups can both appear to have a missing command, causing the new integration to be skipped.
+
+Source: [remote-setup.sh:78–92](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/scripts/remote-setup.sh#L78-L92).
+
+Merge using the actual nested schema and preserve unrelated hooks. Apply the configuration integrity rules from H04. The legacy socket path is intentionally supported by the bridge and is not itself a confirmed SSH defect.
+
+**Acceptance criteria**
+
+- A fixture with existing user hooks receives the Open Island entries without losing those hooks.
+- A second installation creates no duplicate entries.
+- Invalid input is preserved and reported; removal affects only managed entries.
+
+## Build and distribution fixes
+
+### H13 Reproduce builds and verify supported environments
+
+**Evidence: Engineering gap.** The manifest uses dependency version ranges and `.gitignore` excludes `Package.resolved`. CI uses a single macOS runner family and omits GUI smoke tests. Passing on Swift 6.4 does not verify the declared Swift 6.2 minimum, macOS 14 runtime, Intel hardware, or mobile targets.
+
+Sources: [Package.swift](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/Package.swift), [ignored lockfile](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/.gitignore#L13-L17), [CI workflow](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/.github/workflows/ci.yml#L15-L39), [documented harness gaps](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/docs/quality.md).
+
+The review resolved MarkdownUI 2.4.1, Sparkle 2.10.1, NetworkImage 6.0.1, and swift-cmark 0.9.0. Record these as historical evidence, not an indefinite approval of those versions. Sparkle's lower permitted versions include releases affected by [GHSA-3x7w-j75x-ppq5](https://github.com/sparkle-project/Sparkle/security/advisories/GHSA-3x7w-j75x-ppq5), fixed in 2.9.6. Recheck current advisories when selecting the fork's lockfile.
+
+**Acceptance criteria**
+
+- Commit `Package.resolved`; clean CI builds use the recorded resolutions and a declared toolchain.
+- Pin workflow actions to reviewed revisions and record packaging tool versions.
+- Run the full isolated suite after H01, including JavaScript/Swift contract tests from H05.
+- Add GUI and permission-denied checks in a suitable environment. Record the tested OS, architecture, terminal, and agent versions; narrow support claims where coverage is unavailable.
+- Validate mobile builds and remote round trips before enabling phone/Watch support.
+
+### H14 Protect the fork release channel
+
+**Evidence: Source traced and engineering gap.** Packaging defaults to the upstream Sparkle feed and public key. A fork build must not unintentionally offer upstream replacements. The release workflow also merges update metadata before creating a draft release, so it can advertise assets before they are publicly available. This is a workflow defect, not a claim that the current published appcast is broken.
+
+Sources: [package-app.sh:127–130](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/scripts/package-app.sh#L127-L130), [release.yml:181–224](https://github.com/Octane0411/open-vibe-island/blob/01aa0924fd96bf319a64e75646765c55cae4e2c5/.github/workflows/release.yml#L181-L224).
+
+Choose the fork's bundle identity, signing identity, update feed, and update signing key. Keep updates disabled until that configuration exists. Inventory shared cache, helper, socket, and configuration ownership before claiming the fork can coexist with upstream. Preserve required license notices and define the fork's distribution approach before release.
+
+**Acceptance criteria**
+
+- A packaged fork build has the intended identity and never contacts the upstream update feed by accident.
+- Release validation covers the exact source commit, dependency resolutions, signatures, bundle resources, and notarization result.
+- Create and verify assets first; publish them and confirm anonymous download access before promoting the appcast or package-manager metadata.
+- Failed or draft releases do not become offered updates.
+- An upgrade test verifies signature acceptance, application replacement, helper compatibility, and recovery from an interrupted update.
+
+## Implementation sequence
+
+1. **Make verification safe:** H01, then the dependency-locking portion of H13. Establish one repeatable baseline command and record existing failures without suppressing them.
+2. **Protect decisions and configuration:** H02, H03, H04, and H05. Add failing regression tests before changing these behaviors. Keep protocol migration and existing helper compatibility explicit.
+3. **Stabilize the local runtime:** H06, H07, H08, H12, and H15. Verify resource bounds, state ordering, and permission-denied behavior.
+4. **Decide optional capability readiness:** complete H09–H11 and H16, or enforce their disabled/unsupported status while recording the deferral. Update existing preferences safely so a previously enabled capability cannot bypass the restriction.
+5. **Complete distribution checks:** finish H13 and H14 before shipping a fork build. Run the selected platform and compatibility matrix against the release candidate.
+
+Each implementation change should reference its finding ID, include a regression test or concrete manual verification procedure, and record the resolving commit or PR. Update the register status when the acceptance criteria are satisfied. Keep separate PRs focused on one coherent change; do not combine a broad interface rewrite with a safety fix.
+
+## Architecture direction
+
+Use these fixes to establish one serialized owner of session and pending-request state. Discovery and agent adapters should emit typed events; the UI should send request-scoped decisions; transport and terminal operations should execute bounded effects through testable interfaces.
+
+Preserve `SessionState.apply` and useful regression fixtures. Extract agent adapters and terminal drivers as the affected areas change. Large files are evidence of concentrated responsibility, but splitting every large file is not an exit criterion for this milestone.
+
+Hooks intentionally fail open when the application is unavailable. Preserve the underlying agent's own permission behavior and document this boundary. Open Island must not be presented as a mandatory security enforcement layer.
+
+## Exit criteria before new features
+
+- [x] Every Core item is resolved with its acceptance criteria verified within the narrowed compatibility scope. Local and pinned-toolchain CI checks passed; manual platform and signed-distribution checks remain Release gates.
+- [x] Conditional capabilities are either verified or explicitly restricted in code and documentation, including previously saved enablement preferences.
+- [x] The full ordinary test suite runs without modifying real user state or controlling desktop applications on the locally verified environment.
+- [x] Request identity, delivery acknowledgment, installer preservation, fragmented messages, startup ordering, and stalled clients have regression coverage.
+- [x] Compatibility claims are narrowed: automated fixtures and local build evidence are recorded; live agent/terminal versions remain uncertified and explicitly block distribution.
+- [x] Remaining Release items have named follow-up work and block distribution until complete.
+- [x] The resolving commits and verification results are recorded above; the original 78-test subset is superseded by the full isolated suite.

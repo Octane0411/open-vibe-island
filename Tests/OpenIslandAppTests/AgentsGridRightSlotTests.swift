@@ -6,6 +6,8 @@ import OpenIslandCore
 
 @MainActor
 struct AgentsGridRightSlotTests {
+    private let environment = AppModelTestEnvironment()
+
     /// At bulk first observation (e.g. app launch) ties are broken by
     /// session.firstSeenAt so historical order is preserved.
     @Test
@@ -177,7 +179,7 @@ struct AgentsGridRightSlotTests {
     /// .notch mid-test on notched MacBooks. Writing the preference to both
     /// profiles keeps reads deterministic on every machine.
     private func makeAgentsSlotModel() -> AppModel {
-        let model = AppModel()
+        let model = environment.makeModel()
         model.updateAppearancePreferences(for: .topBar) { $0.rightSlot = .agents }
         model.updateAppearancePreferences(for: .notch) { $0.rightSlot = .agents }
         return model

@@ -1,5 +1,7 @@
 # SSH Remote Claude Code Setup
 
+> **Fork hardening restriction:** terminal replies, phone/Watch connections, and SSH installation are unavailable in this build. Runtime guards override saved preferences. The descriptions below include upstream capabilities retained as reference; they are not support claims for the fork. See [the hardening register](./pre-feature-hardening.md) for re-enable requirements.
+
 Connect Open Island to Claude Code running on a remote server over SSH.
 
 ## How it works

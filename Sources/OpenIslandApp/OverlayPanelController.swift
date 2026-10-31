@@ -7,7 +7,17 @@ import OpenIslandCore
 private let overlayLog = Logger(subsystem: "app.openisland", category: "overlay")
 
 @MainActor
-final class OverlayPanelController {
+protocol OverlayPanelControlling {
+    func availableDisplayOptions() -> [OverlayDisplayOption]
+    func ensurePanel(model: AppModel, preferredScreenID: String?)
+    func show(model: AppModel, preferredScreenID: String?) -> OverlayPlacementDiagnostics?
+    func setInteractive(_ interactive: Bool)
+    func reposition(preferredScreenID: String?) -> OverlayPlacementDiagnostics?
+    func isPointInExpandedArea(_ point: NSPoint) -> Bool
+}
+
+@MainActor
+final class OverlayPanelController: OverlayPanelControlling {
     private static let preferredNotchOpenedPanelWidth: CGFloat = 540
     private static let preferredTopBarOpenedPanelWidth: CGFloat = 520
     private static let preferredNotificationPanelWidth: CGFloat = 620

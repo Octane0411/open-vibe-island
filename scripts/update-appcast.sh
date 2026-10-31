@@ -11,6 +11,9 @@
 
 set -euo pipefail
 
+echo "Appcast publication is disabled until the fork release gate in docs/release-signing.md is complete." >&2
+exit 1
+
 if [[ $# -lt 4 ]]; then
     echo "Usage: $0 <version> <build_number> <ed_signature> <length> [pub_date]" >&2
     exit 1

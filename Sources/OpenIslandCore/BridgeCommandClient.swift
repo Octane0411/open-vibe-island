@@ -12,6 +12,8 @@ public final class BridgeCommandClient: @unchecked Sendable {
         _ command: BridgeCommand,
         timeout: TimeInterval = 45
     ) throws -> BridgeResponse? {
+        guard timeout.isFinite, timeout > 0, timeout <= 86_400 else { throw BridgeTransportError.responseTimedOut }
+        let deadline = ProcessInfo.processInfo.systemUptime + timeout
         let fileDescriptor = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fileDescriptor != -1 else {
             throw BridgeTransportError.systemCallFailed("socket", errno)
@@ -55,7 +57,7 @@ public final class BridgeCommandClient: @unchecked Sendable {
             }
 
             let data = try BridgeCodec.encodeLine(.command(command))
-            try writeAll(data, to: fileDescriptor)
+            try writeAll(data, to: fileDescriptor, timeout: min(timeout, 1))
         } catch {
             throw error
         }
@@ -65,6 +67,15 @@ public final class BridgeCommandClient: @unchecked Sendable {
         var localBuffer = [UInt8](repeating: 0, count: 8_192)
 
         while true {
+            let remaining = deadline - ProcessInfo.processInfo.systemUptime
+            guard remaining > 0 else { throw BridgeTransportError.responseTimedOut }
+            var descriptor = pollfd(fd: fileDescriptor, events: Int16(POLLIN), revents: 0)
+            let ready = poll(&descriptor, 1, Int32(max(1, min(remaining * 1000, 1000))))
+            if ready == 0 { continue }
+            if ready < 0 {
+                if errno == EINTR { continue }
+                throw BridgeTransportError.systemCallFailed("poll read", errno)
+            }
             let bytesRead = read(fileDescriptor, &localBuffer, localBuffer.count)
 
             if bytesRead > 0 {
@@ -84,9 +95,7 @@ public final class BridgeCommandClient: @unchecked Sendable {
                 return nil
             }
 
-            if errno == EAGAIN || errno == EWOULDBLOCK {
-                throw BridgeTransportError.responseTimedOut
-            }
+            if errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR { continue }
 
             throw BridgeTransportError.systemCallFailed("read", errno)
         }

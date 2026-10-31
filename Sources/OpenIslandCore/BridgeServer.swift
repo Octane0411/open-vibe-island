@@ -7,6 +7,10 @@ public final class BridgeServer: @unchecked Sendable {
         let id: UUID
         let fileDescriptor: Int32
         let readSource: DispatchSourceRead
+        let writer: BridgeSocketWriter
+        var lastRead = ProcessInfo.processInfo.systemUptime
+        var frameStarted: TimeInterval?
+        var commandCount = 0
         var role: BridgeClientRole?
         var buffer = Data()
         var scanCursor = 0
@@ -66,7 +70,22 @@ public final class BridgeServer: @unchecked Sendable {
         let payload: CursorHookPayload
     }
 
+    private struct ActiveRequest {
+        let id: UUID
+        let isQuestion: Bool
+        let createdAt: TimeInterval
+    }
+    private var requestExpiryTimer: DispatchSourceTimer?
+    private let decisionLifetime: TimeInterval
+    private let decisionClock: @Sendable () -> TimeInterval
+    private var activeRequests: [String: ActiveRequest] = [:]
+    private var decisionReceipts: [UUID: BridgeDecision] = [:]
+    private var receiptOrder: [UUID] = []
+    private var decisionsInFlight: Set<UUID> = []
+    private static let busyReason = "Another request in this session is awaiting a decision. Retry after it finishes."
+
     private let socketURL: URL
+    private let legacySocketURL: URL?
     private let queue = DispatchQueue(label: "app.openisland.bridge.server")
     private let queueKey = DispatchSpecificKey<Void>()
 
@@ -92,9 +111,16 @@ public final class BridgeServer: @unchecked Sendable {
     private var localState = SessionState()
 
     public init(
-        socketURL: URL = BridgeSocketLocation.defaultURL
+        socketURL: URL = BridgeSocketLocation.defaultURL,
+        legacySocketURL: URL? = nil,
+        decisionLifetime: TimeInterval = 300,
+        decisionClock: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     ) {
+        precondition(decisionLifetime > 0 && decisionLifetime.isFinite)
+        self.decisionLifetime = decisionLifetime
+        self.decisionClock = decisionClock
         self.socketURL = socketURL
+        self.legacySocketURL = legacySocketURL
         queue.setSpecific(key: queueKey, value: ())
     }
 
@@ -103,6 +129,10 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     public func start() throws {
+        try queue.sync { try startLocked() }
+    }
+
+    private func startLocked() throws {
         guard listeners.isEmpty else {
             return
         }
@@ -111,10 +141,30 @@ public final class BridgeServer: @unchecked Sendable {
         let primaryListener = try bindListener(at: socketURL)
         listeners.append(primaryListener)
 
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        let interval = DispatchTimeInterval.milliseconds(max(1, Int(min(1, decisionLifetime / 2) * 1_000)))
+        timer.schedule(deadline: .now() + interval, repeating: interval)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            let now = ProcessInfo.processInfo.systemUptime
+            let expired = self.activeRequests.filter { self.decisionClock() - $0.value.createdAt >= self.decisionLifetime }.map(\.key)
+            for id in expired { self.expireInteraction(id, reason: "The request expired before a decision was received.") }
+            for client in Array(self.clients.values) {
+                client.writer.expire(at: now)
+                if let started = client.frameStarted, now - started > 5 {
+                    self.removeClient(client.id)
+                } else if client.role == nil, now - client.lastRead > 10, !self.clientHasPendingRequest(client.id) {
+                    self.removeClient(client.id)
+                }
+            }
+        }
+        requestExpiryTimer = timer
+        timer.resume()
+
+
         // Also listen on the legacy /tmp path so that older hook binaries
         // (from already-running Claude Code sessions) can still connect.
-        let legacyURL = BridgeSocketLocation.legacyURL
-        if legacyURL != socketURL {
+        if let legacyURL = legacySocketURL, legacyURL != socketURL {
             if let legacyListener = try? bindListener(at: legacyURL) {
                 listeners.append(legacyListener)
             }
@@ -122,12 +172,10 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func bindListener(at url: URL) throws -> Listener {
-        let parentURL = url.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: parentURL, withIntermediateDirectories: true)
-        try? FileManager.default.removeItem(at: url)
-
+        let lock = try BridgeSocketIdentity.prepare(url, privateDirectory: url == BridgeSocketLocation.defaultURL)
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd != -1 else {
+            close(lock)
             throw BridgeTransportError.systemCallFailed("socket", errno)
         }
 
@@ -146,6 +194,9 @@ public final class BridgeServer: @unchecked Sendable {
                 }
             }
 
+            guard chmod(url.path, 0o600) == 0 else {
+                throw BridgeTransportError.systemCallFailed("chmod socket", errno)
+            }
             guard listen(fd, 16) != -1 else {
                 throw BridgeTransportError.systemCallFailed("listen", errno)
             }
@@ -153,7 +204,8 @@ public final class BridgeServer: @unchecked Sendable {
             try makeSocketNonBlocking(fd)
         } catch {
             close(fd)
-            try? FileManager.default.removeItem(at: url)
+            close(lock)
+            // Preserve the path on failure. A future startup can inspect a stale socket safely.
             throw error
         }
 
@@ -163,6 +215,7 @@ public final class BridgeServer: @unchecked Sendable {
         }
         source.setCancelHandler {
             close(fd)
+            close(lock)
         }
         source.resume()
 
@@ -189,6 +242,12 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func stopLocked() {
+        requestExpiryTimer?.cancel()
+        requestExpiryTimer = nil
+        activeRequests.removeAll()
+        decisionReceipts.removeAll()
+        receiptOrder.removeAll()
+        decisionsInFlight.removeAll()
         pendingApprovals.removeAll()
         pendingClaudeInteractions.removeAll()
         pendingClaudeToolContexts.removeAll()
@@ -198,7 +257,7 @@ public final class BridgeServer: @unchecked Sendable {
         pendingCursorInteractions.removeAll()
 
         let activeConnections = Array(clients.values)
-        activeConnections.forEach { $0.readSource.cancel() }
+        activeConnections.forEach { $0.writer.cancel(); $0.readSource.cancel() }
         clients.removeAll()
 
         for listener in listeners {
@@ -224,6 +283,11 @@ public final class BridgeServer: @unchecked Sendable {
                 return
             }
 
+            guard clients.count < BridgeLimits.maximumConnections,
+                  BridgeSocketIdentity.isCurrentUser(clientFileDescriptor) else {
+                close(clientFileDescriptor)
+                continue
+            }
             do {
                 try disableSocketSigPipe(clientFileDescriptor)
                 try makeSocketNonBlocking(clientFileDescriptor)
@@ -241,22 +305,14 @@ public final class BridgeServer: @unchecked Sendable {
         readSource.setEventHandler { [weak self] in
             self?.readAvailableData(from: clientID)
         }
-        readSource.setCancelHandler { [weak self] in
-            guard let self else {
-                return
-            }
-
-            if let client = self.clients[clientID] {
-                close(client.fileDescriptor)
-            } else {
-                close(fileDescriptor)
-            }
-        }
+        readSource.setCancelHandler { close(fileDescriptor) }
+        let writer = BridgeSocketWriter(descriptor: fileDescriptor, queue: queue)
 
         clients[clientID] = ClientConnection(
             id: clientID,
             fileDescriptor: fileDescriptor,
             readSource: readSource,
+            writer: writer,
             role: nil
         )
         readSource.resume()
@@ -270,11 +326,14 @@ public final class BridgeServer: @unchecked Sendable {
         }
 
         var localBuffer = [UInt8](repeating: 0, count: 8_192)
-
-        while true {
+        var budget = 262_144
+        while budget > 0 {
             let bytesRead = read(client.fileDescriptor, &localBuffer, localBuffer.count)
 
             if bytesRead > 0 {
+                budget -= bytesRead
+                client.lastRead = ProcessInfo.processInfo.systemUptime
+                if client.buffer.isEmpty { client.frameStarted = client.lastRead }
                 client.buffer.append(localBuffer, count: bytesRead)
 
                 do {
@@ -282,13 +341,19 @@ public final class BridgeServer: @unchecked Sendable {
                         from: &client.buffer,
                         scanCursor: &client.scanCursor
                     )
+                    if client.buffer.isEmpty { client.frameStarted = nil }
                     clients[clientID] = client
-
+                    guard clients.values.reduce(0, { $0 + $1.buffer.count }) <= BridgeLimits.maximumBufferedBytes else {
+                        removeClient(clientID)
+                        return
+                    }
                     for envelope in envelopes {
                         if case let .command(command) = envelope {
                             handle(command, from: clientID)
                         }
                     }
+                    guard let updated = clients[clientID] else { return }
+                    client = updated
                 } catch {
                     removeClient(clientID)
                     return
@@ -310,20 +375,205 @@ public final class BridgeServer: @unchecked Sendable {
             removeClient(clientID)
             return
         }
+        clients[clientID] = client
+    }
+
+    /// Decisions are trusted in-process calls, not permissions granted to socket peers.
+    public func decide(_ decision: BridgeDecision) async throws -> BridgeDecisionOutcome {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async {
+                do { try self.applyDecision(decision, completion: continuation) }
+                catch { continuation.resume(throwing: error) }
+            }
+        }
+    }
+
+    private func hasPendingInteraction(_ sessionID: String) -> Bool {
+        pendingApprovals[sessionID] != nil || pendingClaudeInteractions[sessionID] != nil
+            || pendingOpenCodeInteractions[sessionID] != nil || pendingCursorInteractions[sessionID] != nil
+    }
+
+    private func applyDecision(_ decision: BridgeDecision, completion: CheckedContinuation<BridgeDecisionOutcome, Error>) throws {
+        if let previous = decisionReceipts[decision.requestID] {
+            guard previous == decision else { throw BridgeDecisionError.conflictingRetry }
+            completion.resume(returning: .alreadyAccepted)
+            return
+        }
+        guard !decisionsInFlight.contains(decision.requestID) else { throw BridgeDecisionError.deliveryFailed }
+        let sessionID = decision.sessionID
+        guard let request = activeRequests[sessionID] else { throw BridgeDecisionError.expiredOrUnknown }
+        guard request.id == decision.requestID else { throw BridgeDecisionError.mismatchedRequest }
+        guard decisionClock() - request.createdAt < decisionLifetime else {
+            expireInteraction(sessionID, reason: "The request expired before a decision was received.")
+            throw BridgeDecisionError.expiredOrUnknown
+        }
+
+        let recipient: UUID?
+        let response: BridgeResponse?
+        var summary: String
+        let approved: Bool
+        switch decision {
+        case let .permission(_, _, resolution):
+            guard !request.isQuestion else { throw BridgeDecisionError.mismatchedRequest }
+            approved = resolution.isApproved
+            summary = approved ? "Permission approved." : "Permission denied in Open Island."
+            if case let .deny(message, _) = resolution { summary = message ?? summary }
+            if let pending = pendingApprovals[sessionID] {
+                recipient = pending.clientID
+                if approved {
+                    summary = pending.hookEventName == .permissionRequest
+                        ? "Permission approved. Codex continued the tool." : "Permission approved. Codex continued the command."
+                }
+                switch (pending.hookEventName, resolution) {
+                case (.permissionRequest, .allowOnce): response = .codexHookDirective(.permissionRequest(.allow))
+                case let (.permissionRequest, .deny(message, _)):
+                    response = .codexHookDirective(.permissionRequest(.deny(message: message ?? summary)))
+                case (_, .allowOnce): response = .acknowledged
+                case let (_, .deny(message, _)): response = .codexHookDirective(.deny(reason: message ?? summary))
+                }
+            } else if let pending = pendingClaudeInteractions[sessionID], case let .permission(payload) = pending.kind {
+                recipient = pending.clientID
+                switch resolution {
+                case let .allowOnce(input, permissions):
+                    response = .claudeHookDirective(.permissionRequest(.allow(updatedInput: input ?? payload.toolInput, updatedPermissions: permissions)))
+                case let .deny(message, interrupt):
+                    response = .claudeHookDirective(.permissionRequest(.deny(message: message ?? summary, interrupt: interrupt)))
+                }
+            } else if let pending = pendingOpenCodeInteractions[sessionID], case .permission = pending.kind {
+                recipient = pending.clientID
+                response = .openCodeHookDirective(approved ? .allow : .deny(reason: summary))
+            } else if let pending = pendingCursorInteractions[sessionID] {
+                recipient = pending.clientID
+                response = .cursorHookDirective(CursorHookDirective(continue: true, permission: approved ? .allow : .deny))
+            } else { throw BridgeDecisionError.expiredOrUnknown }
+        case let .question(_, _, answer):
+            guard request.isQuestion else { throw BridgeDecisionError.mismatchedRequest }
+            approved = true
+            summary = answer.displaySummary.isEmpty ? "Answered the question." : "Answered: \(answer.displaySummary)"
+            if let pending = pendingClaudeInteractions[sessionID], case let .question(payload, prompt) = pending.kind {
+                recipient = pending.clientID
+                response = .claudeHookDirective(.permissionRequest(.allow(updatedInput: mergedClaudeQuestionInput(payload: payload, prompt: prompt, response: answer))))
+            } else if let pending = pendingOpenCodeInteractions[sessionID], case let .question(payload) = pending.kind {
+                recipient = pending.clientID
+                if let answers = answer.orderedAnswers {
+                    let questions = payload.questions ?? []
+                    guard answers.count == questions.count, !answers.isEmpty,
+                          zip(answers, questions).allSatisfy({ values, question in
+                              !values.isEmpty && values.allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                                  && (question.multiSelect == true || values.count == 1)
+                          }) else { throw BridgeDecisionError.mismatchedRequest }
+                    response = .openCodeHookDirective(.answers(answers))
+                } else {
+                    guard (payload.questions?.count ?? 0) <= 1, let text = answer.rawAnswer, !text.isEmpty else {
+                        throw BridgeDecisionError.mismatchedRequest
+                    }
+                    response = .openCodeHookDirective(.answer(text: text))
+                }
+            } else {
+                // Questions created explicitly through requestQuestion have no blocking producer.
+                guard !hasPendingInteraction(sessionID) else { throw BridgeDecisionError.mismatchedRequest }
+                recipient = nil
+                response = nil
+            }
+        }
+
+        decisionsInFlight.insert(decision.requestID)
+        let completedSummary = summary
+        let finish: (Bool) -> Void = { [self] delivered in
+            decisionsInFlight.remove(decision.requestID)
+            guard delivered, activeRequests[sessionID]?.id == decision.requestID else {
+                if let recipient { removeClient(recipient) }
+                completion.resume(throwing: BridgeDecisionError.deliveryFailed)
+                return
+            }
+            completeDecision(decision, approved: approved, summary: completedSummary)
+            completion.resume(returning: .accepted)
+        }
+        if let recipient, let response {
+            guard let client = clients[recipient] else { finish(false); return }
+            do { client.writer.enqueue(try BridgeCodec.encodeLine(.response(response)), completion: finish) }
+            catch { finish(false) }
+        } else { finish(true) }
+    }
+
+    private func completeDecision(_ decision: BridgeDecision, approved: Bool, summary: String) {
+        let sessionID = decision.sessionID
+        switch decision {
+        case let .permission(_, _, resolution): localState.resolvePermission(sessionID: sessionID, resolution: resolution)
+        case let .question(_, _, answer): localState.answerQuestion(sessionID: sessionID, response: answer)
+        }
+        pendingApprovals.removeValue(forKey: sessionID)
+        pendingClaudeInteractions.removeValue(forKey: sessionID)
+        pendingOpenCodeInteractions.removeValue(forKey: sessionID)
+        pendingCursorInteractions.removeValue(forKey: sessionID)
+        activeRequests.removeValue(forKey: sessionID)
+        decisionReceipts[decision.requestID] = decision
+        receiptOrder.append(decision.requestID)
+        if receiptOrder.count > 1_024 { decisionReceipts.removeValue(forKey: receiptOrder.removeFirst()) }
+        if approved {
+            emit(.activityUpdated(SessionActivityUpdated(sessionID: sessionID, summary: summary, phase: .running, timestamp: .now)))
+        } else {
+            emit(.sessionCompleted(SessionCompleted(sessionID: sessionID, summary: summary, timestamp: .now)))
+        }
+    }
+
+    private func expireInteraction(_ sessionID: String, reason: String) {
+        if let request = activeRequests[sessionID], decisionsInFlight.contains(request.id) {
+            let ids = clients.keys.filter { clientHasPendingRequest($0, sessionID: sessionID) }
+            for id in ids { removeClient(id) }
+            return
+        }
+        if let pending = pendingApprovals.removeValue(forKey: sessionID) {
+            let directive: CodexHookDirective = pending.hookEventName == .permissionRequest
+                ? .permissionRequest(.deny(message: reason)) : .deny(reason: reason)
+            send(.response(.codexHookDirective(directive)), to: pending.clientID)
+        }
+        if let pending = pendingClaudeInteractions.removeValue(forKey: sessionID) {
+            send(.response(.claudeHookDirective(.permissionRequest(.deny(message: reason)))), to: pending.clientID)
+        }
+        if let pending = pendingOpenCodeInteractions.removeValue(forKey: sessionID) {
+            send(.response(.openCodeHookDirective(.deny(reason: reason))), to: pending.clientID)
+        }
+        if let pending = pendingCursorInteractions.removeValue(forKey: sessionID) {
+            send(.response(.cursorHookDirective(CursorHookDirective(continue: true, permission: .deny))), to: pending.clientID)
+        }
+        activeRequests.removeValue(forKey: sessionID)
+        emit(.actionableStateResolved(ActionableStateResolved(sessionID: sessionID, summary: reason, timestamp: .now)))
+    }
+
+    private func clientHasPendingRequest(_ id: UUID, sessionID: String? = nil) -> Bool {
+        pendingApprovals.contains { (sessionID == nil || $0.key == sessionID) && $0.value.clientID == id }
+            || pendingClaudeInteractions.contains { (sessionID == nil || $0.key == sessionID) && $0.value.clientID == id }
+            || pendingOpenCodeInteractions.contains { (sessionID == nil || $0.key == sessionID) && $0.value.clientID == id }
+            || pendingCursorInteractions.contains { (sessionID == nil || $0.key == sessionID) && $0.value.clientID == id }
     }
 
     private func handle(_ command: BridgeCommand, from clientID: UUID) {
+        guard var connection = clients[clientID], connection.commandCount < 128, !clientHasPendingRequest(clientID) else {
+            removeClient(clientID)
+            return
+        }
+        connection.commandCount += 1
+        clients[clientID] = connection
         switch command {
         case let .registerClient(role):
             guard var client = clients[clientID] else {
                 return
             }
 
+            guard client.role != nil || clients.values.filter({ $0.role == .observer }).count < BridgeLimits.maximumObservers else {
+                removeClient(clientID)
+                return
+            }
             client.role = role
             clients[clientID] = client
             send(.response(.acknowledged), to: clientID)
 
         case let .requestQuestion(sessionID, prompt):
+            guard !hasPendingInteraction(sessionID) else {
+                send(.response(.commandRejected(reason: Self.busyReason)), to: clientID)
+                return
+            }
             guard hasSession(id: sessionID) else {
                 send(.response(.acknowledged), to: clientID)
                 return
@@ -340,132 +590,8 @@ public final class BridgeServer: @unchecked Sendable {
             )
             send(.response(.acknowledged), to: clientID)
 
-        case let .resolvePermission(sessionID, resolution):
-            if pendingClaudeInteractions[sessionID] != nil {
-                resolvePendingClaudeInteraction(sessionID: sessionID, resolution: resolution)
-                send(.response(.acknowledged), to: clientID)
-                return
-            }
-
-            if pendingOpenCodeInteractions[sessionID] != nil {
-                resolvePendingOpenCodeInteraction(sessionID: sessionID, resolution: resolution)
-                send(.response(.acknowledged), to: clientID)
-                return
-            }
-
-            if let interaction = pendingCursorInteractions.removeValue(forKey: sessionID) {
-                let directive: CursorHookDirective
-                let summary: String
-                let phase: SessionPhase
-                switch resolution {
-                case .allowOnce:
-                    directive = CursorHookDirective(continue: true, permission: .allow)
-                    summary = "Permission approved."
-                    phase = .running
-                case let .deny(message, _):
-                    directive = CursorHookDirective(continue: true, permission: .deny, agentMessage: message)
-                    summary = message ?? "Permission denied in Open Island."
-                    phase = .completed
-                }
-
-                emit(
-                    phase == .completed
-                        ? .sessionCompleted(
-                            SessionCompleted(
-                                sessionID: sessionID,
-                                summary: summary,
-                                timestamp: .now
-                            )
-                        )
-                        : .activityUpdated(
-                            SessionActivityUpdated(
-                                sessionID: sessionID,
-                                summary: summary,
-                                phase: phase,
-                                timestamp: .now
-                            )
-                        )
-                )
-
-                send(.response(.cursorHookDirective(directive)), to: interaction.clientID)
-                send(.response(.acknowledged), to: clientID)
-                return
-            }
-
-            guard let pendingApproval = pendingApprovals[sessionID] else {
-                emit(
-                    .actionableStateResolved(
-                        ActionableStateResolved(
-                            sessionID: sessionID,
-                            summary: "Permission request is no longer active.",
-                            timestamp: .now
-                        )
-                    )
-                )
-                send(.response(.acknowledged), to: clientID)
-                return
-            }
-
-            let approvedSummary = pendingApproval.hookEventName == .permissionRequest
-                ? "Permission approved. Codex continued the tool."
-                : "Permission approved. Codex continued the command."
-            let deniedSummary: String = {
-                if case let .deny(message, _) = resolution {
-                    return message ?? "Permission denied in Open Island."
-                }
-
-                return "Permission denied in Open Island."
-            }()
-
-            localState.resolvePermission(sessionID: sessionID, resolution: resolution)
-            broadcast([.event(
-                resolution.isApproved
-                    ? .activityUpdated(
-                        SessionActivityUpdated(
-                            sessionID: sessionID,
-                            summary: approvedSummary,
-                            phase: .running,
-                            timestamp: .now
-                        )
-                    )
-                    : .sessionCompleted(
-                        SessionCompleted(
-                            sessionID: sessionID,
-                            summary: deniedSummary,
-                            timestamp: .now
-                        )
-                    )
-            )])
-            resolvePendingApproval(sessionID: sessionID, resolution: resolution)
-            send(.response(.acknowledged), to: clientID)
-
-        case let .answerQuestion(sessionID, response):
-            if pendingClaudeInteractions[sessionID] != nil {
-                resolvePendingClaudeQuestion(sessionID: sessionID, response: response)
-                send(.response(.acknowledged), to: clientID)
-                return
-            }
-
-            if pendingOpenCodeInteractions[sessionID] != nil {
-                resolvePendingOpenCodeQuestion(sessionID: sessionID, response: response)
-                send(.response(.acknowledged), to: clientID)
-                return
-            }
-
-            let summary = response.displaySummary.isEmpty
-                ? "Answered the question."
-                : "Answered: \(response.displaySummary)"
-            emit(
-                .activityUpdated(
-                    SessionActivityUpdated(
-                        sessionID: sessionID,
-                        summary: summary,
-                        phase: .running,
-                        timestamp: .now
-                    )
-                )
-            )
-            send(.response(.acknowledged), to: clientID)
+        case .resolvePermission, .answerQuestion:
+            send(.response(.commandRejected(reason: "Decisions require the in-process controller.")), to: clientID)
 
         case let .processCodexHook(payload):
             handleCodexHook(payload, from: clientID)
@@ -492,6 +618,10 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func handleCodexHook(_ payload: CodexHookPayload, from clientID: UUID) {
+        if (payload.hookEventName == .preToolUse || payload.hookEventName == .permissionRequest), hasPendingInteraction(payload.sessionID) {
+            send(.response(.codexHookDirective(payload.hookEventName == .permissionRequest ? .permissionRequest(.deny(message: Self.busyReason)) : .deny(reason: Self.busyReason))), to: clientID)
+            return
+        }
         if CodexInternalSessionFilter.isInternalReview(transcriptPath: payload.transcriptPath) {
             send(.response(.acknowledged), to: clientID)
             return
@@ -637,6 +767,10 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func handleClaudeHook(_ payload: ClaudeHookPayload, from clientID: UUID) {
+        if (payload.hookEventName == .permissionRequest), hasPendingInteraction(payload.sessionID) {
+            send(.response(.claudeHookDirective(.permissionRequest(.deny(message: Self.busyReason, interrupt: false)))), to: clientID)
+            return
+        }
         // Subagent processes fire their own hooks with agentID set.
         // The parent session already receives SubagentStart/SubagentStop events,
         // so we suppress subagent hooks to avoid creating duplicate sessions.
@@ -1046,6 +1180,10 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func handleOpenCodeHook(_ payload: OpenCodeHookPayload, from clientID: UUID) {
+        if (payload.hookEventName == .permissionRequest || payload.hookEventName == .questionAsked), hasPendingInteraction(payload.sessionID) {
+            send(.response(.openCodeHookDirective(.deny(reason: Self.busyReason))), to: clientID)
+            return
+        }
         switch payload.hookEventName {
         case .sessionStart:
             clearStaleOpenCodeInteractionIfNeeded(for: payload.sessionID)
@@ -2027,19 +2165,8 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func clearStaleCursorInteractionIfNeeded(for sessionID: String) {
-        guard pendingCursorInteractions.removeValue(forKey: sessionID) != nil else {
-            return
-        }
-
-        emit(
-            .actionableStateResolved(
-                ActionableStateResolved(
-                    sessionID: sessionID,
-                    summary: "Approval was handled outside Open Island.",
-                    timestamp: .now
-                )
-            )
-        )
+        guard pendingCursorInteractions[sessionID] != nil else { return }
+        expireInteraction(sessionID, reason: "Approval was handled outside Open Island.")
     }
 
     /// Creates a Cursor session if one does not already exist for the given
@@ -2125,19 +2252,8 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func clearStaleOpenCodeInteractionIfNeeded(for sessionID: String) {
-        guard pendingOpenCodeInteractions.removeValue(forKey: sessionID) != nil else {
-            return
-        }
-
-        emit(
-            .actionableStateResolved(
-                ActionableStateResolved(
-                    sessionID: sessionID,
-                    summary: "Approval was handled outside Open Island.",
-                    timestamp: .now
-                )
-            )
-        )
+        guard pendingOpenCodeInteractions[sessionID] != nil else { return }
+        expireInteraction(sessionID, reason: "Approval was handled outside Open Island.")
     }
 
     private func ensureOpenCodeSessionExists(for payload: OpenCodeHookPayload) {
@@ -2354,106 +2470,9 @@ public final class BridgeServer: @unchecked Sendable {
         )
     }
 
-    private func resolvePendingOpenCodeInteraction(
-        sessionID: String,
-        resolution: PermissionResolution
-    ) {
-        guard let pendingInteraction = pendingOpenCodeInteractions.removeValue(forKey: sessionID) else {
-            return
-        }
-
-        let directive: OpenCodeHookDirective
-        let summary: String
-        let phase: SessionPhase
-
-        switch (pendingInteraction.kind, resolution) {
-        case let (.permission(payload), .allowOnce):
-            directive = .allow
-            summary = payload.toolName.map { "Permission approved for \($0)." } ?? "Permission approved."
-            phase = .running
-
-        case let (.permission(_), .deny(message, _)):
-            directive = .deny(reason: message ?? "Permission denied in Open Island.")
-            summary = message ?? "Permission denied in Open Island."
-            phase = .completed
-
-        case (.question, .allowOnce):
-            directive = .allow
-            summary = "OpenCode's question was answered."
-            phase = .running
-
-        case let (.question(_), .deny(message, _)):
-            directive = .deny(reason: message ?? "Declined to answer.")
-            summary = message ?? "Declined to answer."
-            phase = .completed
-        }
-
-        emit(
-            phase == .completed
-                ? .sessionCompleted(
-                    SessionCompleted(
-                        sessionID: sessionID,
-                        summary: summary,
-                        timestamp: .now
-                    )
-                )
-                : .activityUpdated(
-                    SessionActivityUpdated(
-                        sessionID: sessionID,
-                        summary: summary,
-                        phase: phase,
-                        timestamp: .now
-                    )
-                )
-        )
-
-        send(.response(.openCodeHookDirective(directive)), to: pendingInteraction.clientID)
-    }
-
-    private func resolvePendingOpenCodeQuestion(
-        sessionID: String,
-        response: QuestionPromptResponse
-    ) {
-        guard let pendingInteraction = pendingOpenCodeInteractions.removeValue(forKey: sessionID) else {
-            return
-        }
-
-        let answerText = response.rawAnswer ?? response.displaySummary
-        let summary = answerText.isEmpty
-            ? "Answered OpenCode's question."
-            : "Answered: \(answerText)"
-
-        emit(
-            .activityUpdated(
-                SessionActivityUpdated(
-                    sessionID: sessionID,
-                    summary: summary,
-                    phase: .running,
-                    timestamp: .now
-                )
-            )
-        )
-
-        send(
-            .response(.openCodeHookDirective(.answer(text: answerText))),
-            to: pendingInteraction.clientID
-        )
-    }
-
     private func clearStaleClaudeInteractionIfNeeded(for sessionID: String) {
-        guard pendingClaudeInteractions.removeValue(forKey: sessionID) != nil else {
-            return
-        }
-
-        emit(
-            .actionableStateResolved(
-                ActionableStateResolved(
-                    sessionID: sessionID,
-                    summary: "Approval was handled outside Open Island.",
-                    timestamp: .now
-                )
-            )
-        )
+        guard pendingClaudeInteractions[sessionID] != nil else { return }
+        expireInteraction(sessionID, reason: "Approval was handled outside Open Island.")
     }
 
     private func ensureSessionExists(for payload: CodexHookPayload) {
@@ -3112,140 +3131,6 @@ public final class BridgeServer: @unchecked Sendable {
         }
     }
 
-    private func resolvePendingApproval(sessionID: String, resolution: PermissionResolution) {
-        guard let pendingApproval = pendingApprovals.removeValue(forKey: sessionID) else {
-            return
-        }
-
-        let response: BridgeResponse
-        switch (pendingApproval.hookEventName, resolution) {
-        case (.preToolUse, .allowOnce):
-            response = .acknowledged
-        case let (.preToolUse, .deny(message, _)):
-            response = .codexHookDirective(.deny(reason: message ?? "Permission denied in Open Island."))
-        case (.permissionRequest, .allowOnce):
-            response = .codexHookDirective(.permissionRequest(.allow))
-        case let (.permissionRequest, .deny(message, _)):
-            response = .codexHookDirective(
-                .permissionRequest(.deny(message: message ?? "Permission denied in Open Island."))
-            )
-        case (.sessionStart, _), (.postToolUse, _), (.userPromptSubmit, _), (.stop, _):
-            assertionFailure("Unexpected Codex hook waiting for permission.")
-            response = .acknowledged
-        }
-
-        send(.response(response), to: pendingApproval.clientID)
-    }
-
-    private func resolvePendingClaudeInteraction(
-        sessionID: String,
-        resolution: PermissionResolution
-    ) {
-        guard let pendingInteraction = pendingClaudeInteractions.removeValue(forKey: sessionID) else {
-            return
-        }
-
-        let directive: ClaudeHookDirective
-        let summary: String
-        let phase: SessionPhase
-
-        switch (pendingInteraction.kind, resolution) {
-        case let (.permission(payload), .allowOnce(updatedInput, updatedPermissions)):
-            let finalInput = updatedInput ?? payload.toolInput
-            directive = .permissionRequest(
-                .allow(updatedInput: finalInput, updatedPermissions: updatedPermissions)
-            )
-            summary = payload.toolName.map { "Permission approved for \($0)." } ?? "Permission approved."
-            phase = .running
-
-        case let (.permission(_), .deny(message, interrupt)):
-            directive = .permissionRequest(
-                .deny(message: message ?? "Permission denied in Open Island.", interrupt: interrupt)
-            )
-            summary = message ?? "Permission denied in Open Island."
-            phase = .completed
-
-        case let (.question(payload, _), .allowOnce(updatedInput, updatedPermissions)):
-            let finalInput = updatedInput ?? payload.toolInput
-            directive = .permissionRequest(
-                .allow(updatedInput: finalInput, updatedPermissions: updatedPermissions)
-            )
-            summary = "\(payload.resolvedAgentTool.displayName)'s questions were answered."
-            phase = .running
-
-        case let (.question(payload, _), .deny(message, interrupt)):
-            let fallback = "Declined to answer \(payload.resolvedAgentTool.displayName)'s questions."
-            directive = .permissionRequest(
-                .deny(message: message ?? fallback, interrupt: interrupt)
-            )
-            summary = message ?? fallback
-            phase = .completed
-        }
-
-        emit(
-            phase == .completed
-                ? .sessionCompleted(
-                    SessionCompleted(
-                        sessionID: sessionID,
-                        summary: summary,
-                        timestamp: .now
-                    )
-                )
-                : .activityUpdated(
-                    SessionActivityUpdated(
-                        sessionID: sessionID,
-                        summary: summary,
-                        phase: phase,
-                        timestamp: .now
-                    )
-                )
-        )
-
-        send(.response(.claudeHookDirective(directive)), to: pendingInteraction.clientID)
-    }
-
-    private func resolvePendingClaudeQuestion(
-        sessionID: String,
-        response: QuestionPromptResponse
-    ) {
-        guard let pendingInteraction = pendingClaudeInteractions.removeValue(forKey: sessionID) else {
-            return
-        }
-
-        guard case let .question(payload, prompt) = pendingInteraction.kind else {
-            return
-        }
-
-        let updatedInput = mergedClaudeQuestionInput(
-            payload: payload,
-            prompt: prompt,
-            response: response
-        )
-        let summary = response.displaySummary.isEmpty
-            ? "Answered \(payload.resolvedAgentTool.displayName)'s questions."
-            : "Answered: \(response.displaySummary)"
-
-        emit(
-            .activityUpdated(
-                SessionActivityUpdated(
-                    sessionID: sessionID,
-                    summary: summary,
-                    phase: .running,
-                    timestamp: .now
-                )
-            )
-        )
-
-        send(
-            .response(
-                .claudeHookDirective(
-                    .permissionRequest(.allow(updatedInput: updatedInput))
-                )
-            ),
-            to: pendingInteraction.clientID
-        )
-    }
-
     private func claudeToolUseID(for payload: ClaudeHookPayload) -> String? {
         payload.toolUseID ?? pendingClaudeToolContexts[payload.permissionCorrelationKey]?.toolUseID
     }
@@ -3300,12 +3185,32 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func emit(_ event: AgentEvent) {
+        switch event {
+        case let .permissionRequested(value):
+            guard !hasPendingInteraction(value.sessionID) else { return }
+            activeRequests[value.sessionID] = ActiveRequest(id: value.request.id, isQuestion: false, createdAt: decisionClock())
+        case let .questionAsked(value):
+            guard !hasPendingInteraction(value.sessionID) else { return }
+            activeRequests[value.sessionID] = ActiveRequest(id: value.prompt.id, isQuestion: true, createdAt: decisionClock())
+        case let .actionableStateResolved(value): activeRequests.removeValue(forKey: value.sessionID)
+        case let .sessionCompleted(value):
+            if hasPendingInteraction(value.sessionID) { expireInteraction(value.sessionID, reason: "The session completed outside this request.") }
+            activeRequests.removeValue(forKey: value.sessionID)
+        case let .sessionStarted(value):
+            guard !hasPendingInteraction(value.sessionID) else { return }
+        case let .activityUpdated(value):
+            guard !hasPendingInteraction(value.sessionID) else { return }
+            if value.phase != .waitingForApproval && value.phase != .waitingForAnswer {
+                activeRequests.removeValue(forKey: value.sessionID)
+            }
+        default: break
+        }
         localState.apply(event)
         broadcast([.event(event)])
     }
 
     private func hasSession(id: String) -> Bool {
-        localState.session(id: id) != nil || localState.session(id: id) != nil
+        localState.session(id: id) != nil
     }
 
     private func send(_ envelope: BridgeEnvelope, to clientID: UUID) {
@@ -3315,14 +3220,16 @@ public final class BridgeServer: @unchecked Sendable {
 
         do {
             let data = try BridgeCodec.encodeLine(envelope)
-            try writeAll(data, to: client.fileDescriptor)
+            client.writer.enqueue(data) { [weak self] success in
+                if !success { self?.removeClient(clientID) }
+            }
         } catch {
             removeClient(clientID)
         }
     }
 
     private func broadcast(_ envelopes: [BridgeEnvelope]) {
-        let clientIDs = Array(clients.keys)
+        let clientIDs = clients.values.filter { $0.role == .observer }.map(\.id)
 
         for clientID in clientIDs {
             for envelope in envelopes {
@@ -3335,6 +3242,7 @@ public final class BridgeServer: @unchecked Sendable {
         guard let client = clients.removeValue(forKey: clientID) else {
             return
         }
+        client.writer.cancel()
 
         let pendingSessionIDs = pendingApprovals.compactMap { entry -> String? in
             let (sessionID, pendingApproval) = entry

@@ -1,4 +1,5 @@
 import Foundation
+import CodexTOML
 
 public struct CodexHookInstallerManifest: Equatable, Codable, Sendable {
     public static let fileName = "open-island-install.json"
@@ -150,12 +151,25 @@ public enum CodexHookInstaller {
         }
 
         if hooksObject.isEmpty {
-            return CodexHookFileMutation(contents: nil, changed: mutated, hasRemainingHooks: false)
+            rootObject.removeValue(forKey: "hooks")
+            return CodexHookFileMutation(contents: rootObject.isEmpty ? nil : try serialize(rootObject), changed: mutated, hasRemainingHooks: false)
         }
 
         rootObject["hooks"] = hooksObject
         let data = try serialize(rootObject)
         return CodexHookFileMutation(contents: data, changed: mutated || data != existingData, hasRemainingHooks: true)
+    }
+
+    /// Validates both documents and proves that only the managed feature flags change.
+    static func validatedFeatureMutation(in contents: String, enabling key: CodexHooksFeatureFlagKey?) throws -> CodexFeatureMutation {
+        let mutation = key.map { enableCodexHooksFeature(in: contents, preferredKey: $0) }
+            ?? disableCodexHooksFeatureIfManaged(in: contents)
+        var wasEnabled = false
+        guard !contents.contains("\0"), !mutation.contents.contains("\0"),
+              codex_validate_feature_edit(contents, mutation.contents, key?.rawValue, &wasEnabled) else {
+            throw ConfigurationError.invalidFormat("config.toml (invalid TOML or unsupported feature layout)")
+        }
+        return .init(contents: mutation.contents, changed: mutation.changed, featureEnabledByInstaller: key != nil && !wasEnabled)
     }
 
     /// Enables the current Codex hooks feature flag and migrates the legacy flag when present.
@@ -290,6 +304,15 @@ public enum CodexHookInstaller {
             throw CodexHookInstallerError.invalidHooksJSON
         }
 
+        if let value = rootObject["hooks"] {
+            guard let hooks = value as? [String: Any] else { throw CodexHookInstallerError.invalidHooksJSON }
+            for value in hooks.values {
+                guard let groups = value as? [[String: Any]] else { throw CodexHookInstallerError.invalidHooksJSON }
+                for group in groups {
+                    guard group["hooks"] is [[String: Any]] else { throw CodexHookInstallerError.invalidHooksJSON }
+                }
+            }
+        }
         return rootObject
     }
 
@@ -412,14 +435,19 @@ public enum CodexHookInstaller {
         return normalized.contains("open-island-bridge") || normalized.contains("vibe-island-bridge")
     }
 
+    private static func uncommentedHeader(_ line: String) -> String {
+        String(line.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0])
+            .trimmingCharacters(in: .whitespaces)
+    }
+
     private static func sectionRange(named section: String, lines: [String]) -> Range<Int>? {
-        guard let headerIndex = lines.firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "[\(section)]" }) else {
+        guard let headerIndex = lines.firstIndex(where: { uncommentedHeader($0) == "[\(section)]" }) else {
             return nil
         }
 
         var endIndex = lines.count
         for index in (headerIndex + 1)..<lines.count {
-            let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
+            let trimmed = uncommentedHeader(lines[index])
             if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") {
                 endIndex = index
                 break

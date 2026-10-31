@@ -20,13 +20,12 @@ struct NotificationSoundService {
     }
 
     /// The currently selected sound name, persisted in UserDefaults.
-    static var selectedSoundName: String {
-        get {
-            UserDefaults.standard.string(forKey: defaultsKey) ?? defaultSoundName
-        }
-        set {
-            UserDefaults.standard.set(newValue, forKey: defaultsKey)
-        }
+    static func selectedSoundName(defaults: UserDefaults = .standard) -> String {
+        defaults.string(forKey: defaultsKey) ?? defaultSoundName
+    }
+
+    static func selectSound(_ name: String, defaults: UserDefaults = .standard) {
+        defaults.set(name, forKey: defaultsKey)
     }
 
     /// Plays a system sound by name.
@@ -41,6 +40,6 @@ struct NotificationSoundService {
     /// Plays the user-selected notification sound, respecting the mute setting.
     static func playNotification(isMuted: Bool) {
         guard !isMuted else { return }
-        play(selectedSoundName)
+        play(selectedSoundName())
     }
 }

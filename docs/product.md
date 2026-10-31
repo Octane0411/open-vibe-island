@@ -1,5 +1,7 @@
 # Product Scope
 
+> **Fork hardening restriction:** terminal replies, phone/Watch connections, and SSH installation are unavailable in this build. Runtime guards override saved preferences. The descriptions below include upstream capabilities retained as reference; they are not support claims for the fork. See [the hardening register](./pre-feature-hardening.md) for re-enable requirements.
+
 ## Problem
 
 CLI coding agents are powerful, but they pull attention away from the editor and terminal. Developers need a lightweight control surface to monitor work, approve actions, answer questions, and return to the right session quickly — without handing their machine over to a closed-source paid app.
@@ -17,6 +19,10 @@ CLI coding agents are powerful, but they pull attention away from the editor and
 - **Native macOS** — SwiftUI + AppKit, not a web wrapper
 - **Terminal-native** — built to support the terminal workflow, not replace it
 - **Fail open** — if the app or bridge is unavailable, agents keep running unchanged
+
+## Fork compatibility evidence
+
+This fork is locally validated through automated tests on Apple Silicon/macOS 26.6.1 with Swift 6.4. Live agent/terminal versions, macOS 14, Intel runtime, GUI permission paths, and mobile round trips are not yet certified. The following inherited integration tables describe intended compatibility, not a completed fork test matrix. Use [the quality matrix](./quality.md#fork-validation-matrix-and-limits) and the release gate before making distribution claims.
 
 ## Supported Code Agents
 

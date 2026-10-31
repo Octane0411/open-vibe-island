@@ -195,11 +195,13 @@ public enum OpenCodeHookDirective: Equatable, Codable, Sendable {
     case allow
     case deny(reason: String?)
     case answer(text: String)
+    case answers([[String]])
 
     private enum CodingKeys: String, CodingKey {
         case type
         case reason
         case text
+        case answers
     }
 
     private enum DirectiveType: String, Codable {
@@ -218,7 +220,9 @@ public enum OpenCodeHookDirective: Equatable, Codable, Sendable {
         case .deny:
             self = .deny(reason: try container.decodeIfPresent(String.self, forKey: .reason))
         case .answer:
-            self = .answer(text: try container.decode(String.self, forKey: .text))
+            if let answers = try container.decodeIfPresent([[String]].self, forKey: .answers) {
+                self = .answers(answers)
+            } else { self = .answer(text: try container.decode(String.self, forKey: .text)) }
         }
     }
 
@@ -234,6 +238,9 @@ public enum OpenCodeHookDirective: Equatable, Codable, Sendable {
         case let .answer(text):
             try container.encode(DirectiveType.answer, forKey: .type)
             try container.encode(text, forKey: .text)
+        case let .answers(answers):
+            try container.encode(DirectiveType.answer, forKey: .type)
+            try container.encode(answers, forKey: .answers)
         }
     }
 }

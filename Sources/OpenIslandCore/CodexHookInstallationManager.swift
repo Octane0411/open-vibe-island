@@ -78,97 +78,62 @@ public final class CodexHookInstallationManager: @unchecked Sendable {
 
     @discardableResult
     public func install(hooksBinaryURL: URL) throws -> CodexHookInstallationStatus {
-        try fileManager.createDirectory(at: codexDirectory, withIntermediateDirectories: true)
-
-        let configURL = codexDirectory.appendingPathComponent("config.toml")
-        let hooksURL = codexDirectory.appendingPathComponent("hooks.json")
-        let manifestURL = codexDirectory.appendingPathComponent(CodexHookInstallerManifest.fileName)
-        let legacyManifestURL = codexDirectory.appendingPathComponent(CodexHookInstallerManifest.legacyFileName)
-
-        let existingConfig = (try? String(contentsOf: configURL, encoding: .utf8)) ?? ""
-        let existingHooks = try? Data(contentsOf: hooksURL)
-        let installedHooksBinaryURL = try ManagedHooksBinary.install(
-            from: hooksBinaryURL,
-            to: managedHooksBinaryURL,
-            fileManager: fileManager
-        )
-
-        let command = CodexHookInstaller.hookCommand(for: installedHooksBinaryURL.path)
-        let featureMutation = CodexHookInstaller.enableCodexHooksFeature(
-            in: existingConfig,
-            preferredKey: featureKeyProvider()
-        )
-        let hooksMutation = try CodexHookInstaller.installHooksJSON(existingData: existingHooks, hookCommand: command)
-
-        if featureMutation.changed, fileManager.fileExists(atPath: configURL.path) {
-            try backupFile(at: configURL)
-        }
-        if hooksMutation.changed, fileManager.fileExists(atPath: hooksURL.path) {
-            try backupFile(at: hooksURL)
-        }
-
-        try featureMutation.contents.write(to: configURL, atomically: true, encoding: .utf8)
-        if let hooksData = hooksMutation.contents {
-            try hooksData.write(to: hooksURL, options: .atomic)
-        }
-
-        let manifest = CodexHookInstallerManifest(
-            hookCommand: command,
-            enabledCodexHooksFeature: featureMutation.featureEnabledByInstaller
-        )
+        ConfigurationTransaction.installationLock.lock()
+        defer { ConfigurationTransaction.installationLock.unlock() }
+        let config = try ConfigurationTransaction.File(codexDirectory.appendingPathComponent("config.toml"))
+        let hooks = try ConfigurationTransaction.File(codexDirectory.appendingPathComponent("hooks.json"))
+        let manifestFile = try ConfigurationTransaction.File(codexDirectory.appendingPathComponent(CodexHookInstallerManifest.fileName))
+        let legacy = try ConfigurationTransaction.File(codexDirectory.appendingPathComponent(CodexHookInstallerManifest.legacyFileName))
+        let binary = try ConfigurationTransaction.File(managedHooksBinaryURL)
+        let existingManifest = try loadManifest(at: resolvedManifestURL())
+        let configText = try configurationText(config)
+        let feature = try CodexHookInstaller.validatedFeatureMutation(in: configText, enabling: featureKeyProvider())
+        let command = CodexHookInstaller.hookCommand(for: managedHooksBinaryURL.path)
+        let hookMutation = try CodexHookInstaller.installHooksJSON(existingData: hooks.original, hookCommand: command)
+        let sourceData = try Data(contentsOf: hooksBinaryURL)
+        let manifest = CodexHookInstallerManifest(hookCommand: command,
+            enabledCodexHooksFeature: existingManifest?.enabledCodexHooksFeature == true || feature.featureEnabledByInstaller)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(manifest).write(to: manifestURL, options: .atomic)
-        if fileManager.fileExists(atPath: legacyManifestURL.path) {
-            try fileManager.removeItem(at: legacyManifestURL)
-        }
-
-        return try status(hooksBinaryURL: installedHooksBinaryURL)
+        try ConfigurationTransaction.apply([
+            .init(file: binary, contents: sourceData, permissions: 0o755),
+            .init(file: hooks, contents: hookMutation.contents),
+            .init(file: config, contents: Data(feature.contents.utf8)),
+            .init(file: manifestFile, contents: try encoder.encode(manifest)),
+            .init(file: legacy, contents: nil)
+        ], recoveryRoot: codexDirectory, fileManager: fileManager)
+        return try status(hooksBinaryURL: managedHooksBinaryURL)
     }
 
     @discardableResult
     public func uninstall() throws -> CodexHookInstallationStatus {
-        let configURL = codexDirectory.appendingPathComponent("config.toml")
-        let hooksURL = codexDirectory.appendingPathComponent("hooks.json")
-        let manifestURL = resolvedManifestURL()
-        let primaryManifestURL = codexDirectory.appendingPathComponent(CodexHookInstallerManifest.fileName)
-        let legacyManifestURL = codexDirectory.appendingPathComponent(CodexHookInstallerManifest.legacyFileName)
-
-        let manifest = try loadManifest(at: manifestURL)
-        let existingHooks = try? Data(contentsOf: hooksURL)
-        let hooksMutation = try CodexHookInstaller.uninstallHooksJSON(
-            existingData: existingHooks,
-            managedCommand: manifest?.hookCommand
-        )
-
-        if hooksMutation.changed, fileManager.fileExists(atPath: hooksURL.path) {
-            try backupFile(at: hooksURL)
+        ConfigurationTransaction.installationLock.lock()
+        defer { ConfigurationTransaction.installationLock.unlock() }
+        let config = try ConfigurationTransaction.File(codexDirectory.appendingPathComponent("config.toml"))
+        let hooks = try ConfigurationTransaction.File(codexDirectory.appendingPathComponent("hooks.json"))
+        let primary = try ConfigurationTransaction.File(codexDirectory.appendingPathComponent(CodexHookInstallerManifest.fileName))
+        let legacy = try ConfigurationTransaction.File(codexDirectory.appendingPathComponent(CodexHookInstallerManifest.legacyFileName))
+        let manifest = try loadManifest(at: resolvedManifestURL())
+        let hookMutation = try CodexHookInstaller.uninstallHooksJSON(existingData: hooks.original, managedCommand: manifest?.hookCommand)
+        var configData = config.original
+        if manifest?.enabledCodexHooksFeature == true && !hookMutation.hasRemainingHooks {
+            let feature = try CodexHookInstaller.validatedFeatureMutation(in: configurationText(config), enabling: nil)
+            if feature.changed { configData = Data(feature.contents.utf8) }
         }
-
-        if let hooksData = hooksMutation.contents {
-            try hooksData.write(to: hooksURL, options: .atomic)
-        } else if fileManager.fileExists(atPath: hooksURL.path) {
-            try fileManager.removeItem(at: hooksURL)
-        }
-
-        if let manifest, manifest.enabledCodexHooksFeature, !hooksMutation.hasRemainingHooks {
-            let existingConfig = (try? String(contentsOf: configURL, encoding: .utf8)) ?? ""
-            let featureMutation = CodexHookInstaller.disableCodexHooksFeatureIfManaged(in: existingConfig)
-
-            if featureMutation.changed {
-                if fileManager.fileExists(atPath: configURL.path) {
-                    try backupFile(at: configURL)
-                }
-                try featureMutation.contents.write(to: configURL, atomically: true, encoding: .utf8)
-            }
-        }
-
-        for candidate in [primaryManifestURL, legacyManifestURL] where fileManager.fileExists(atPath: candidate.path) {
-            try fileManager.removeItem(at: candidate)
-        }
-
+        try ConfigurationTransaction.apply([
+            .init(file: hooks, contents: hookMutation.contents),
+            .init(file: config, contents: configData),
+            .init(file: primary, contents: nil),
+            .init(file: legacy, contents: nil)
+        ], recoveryRoot: codexDirectory, fileManager: fileManager)
         return try status()
+    }
+
+    private func configurationText(_ file: ConfigurationTransaction.File) throws -> String {
+        guard let data = file.original else { return "" }
+        guard let text = String(data: data, encoding: .utf8) else { throw ConfigurationError.invalidFormat(file.url.path) }
+        return text
     }
 
     private func loadManifest(at url: URL) throws -> CodexHookInstallerManifest? {
@@ -204,18 +169,4 @@ public final class CodexHookInstallationManager: @unchecked Sendable {
         return managedHooksBinaryURL
     }
 
-    private func backupFile(at url: URL) throws {
-        guard fileManager.fileExists(atPath: url.path) else {
-            return
-        }
-
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        let timestamp = formatter.string(from: .now).replacingOccurrences(of: ":", with: "-")
-        let backupURL = url.appendingPathExtension("backup.\(timestamp)")
-        if fileManager.fileExists(atPath: backupURL.path) {
-            try fileManager.removeItem(at: backupURL)
-        }
-        try fileManager.copyItem(at: url, to: backupURL)
-    }
 }

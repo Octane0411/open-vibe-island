@@ -14,7 +14,7 @@ struct TerminalTextSender {
     // MARK: - Capability check
 
     static func canReply(to session: AgentSession, enabled: Bool) -> Bool {
-        guard enabled else { return false }
+        guard CapabilityAvailability.terminalReplies, enabled else { return false }
         guard session.phase == .completed else { return false }
         guard let target = session.jumpTarget else { return false }
 
@@ -34,6 +34,7 @@ struct TerminalTextSender {
     /// Returns `true` on success.
     @discardableResult
     static func send(_ text: String, to session: AgentSession) -> Bool {
+        guard CapabilityAvailability.terminalReplies else { return false }
         guard let target = session.jumpTarget else { return false }
 
         // Prefer tmux when available — it targets a specific pane without
