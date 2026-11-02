@@ -1055,7 +1055,11 @@ struct AppModelSessionListTests {
         #expect(merged.first?.jumpTarget?.terminalApp == "Codex.app")
         #expect(merged.first?.jumpTarget?.codexThreadID == "desktop-session")
         #expect(merged.first?.isCodexAppSession == true)
-        #expect(merged.first?.isProcessAlive == true)
+        #expect(merged.first?.isProcessAlive == false)
+        model.state = SessionState(sessions: merged)
+        #expect(model.monitoring.sessionIDsWithAliveProcesses(
+            activeProcesses: [], isCodexAppRunning: true
+        ).contains("desktop-session"))
     }
 
     @Test
@@ -1076,6 +1080,43 @@ struct AppModelSessionListTests {
         )
 
         #expect(selected.isEmpty)
+    }
+
+    @Test(arguments: [false, true])
+    func desktopRediscoveryPreservesLivenessUntilMonitoring(hasNewActivity: Bool) {
+        let model = AppModel()
+        var expired = AgentSession(
+            id: "expired-desktop-session",
+            title: "Codex · project",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .completed,
+            summary: "Completed earlier",
+            updatedAt: Date.now.addingTimeInterval(-1_800),
+            jumpTarget: JumpTarget(terminalApp: "Unknown", workspaceName: "project", paneTitle: "Codex")
+        )
+        expired.isProcessAlive = false
+        model.state = SessionState(sessions: [expired])
+        var discovered = expired
+        discovered.jumpTarget?.terminalApp = "Codex.app"
+        discovered.jumpTarget?.codexThreadID = expired.id
+        discovered.isCodexAppSession = true
+        discovered.isProcessAlive = true
+        if hasNewActivity {
+            discovered.updatedAt = .now
+            discovered.phase = .running
+        }
+
+        let merged = model.discovery.mergeDiscoveredSessions([discovered])
+        #expect(merged.first?.isProcessAlive == false)
+        #expect(merged.first?.isCodexAppSession == true)
+        #expect(merged.first?.jumpTarget?.codexThreadID == expired.id)
+        model.state = SessionState(sessions: merged)
+        let aliveIDs = model.monitoring.sessionIDsWithAliveProcesses(
+            activeProcesses: [], isCodexAppRunning: true
+        )
+        #expect(aliveIDs.contains(expired.id) == hasNewActivity)
     }
 
     @Test

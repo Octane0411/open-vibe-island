@@ -272,9 +272,9 @@ final class SessionDiscoveryCoordinator {
         // (hook or rediscovery), preserve that flag so liveness uses the
         // app-level check instead of subprocess polling.
         merged.isCodexAppSession = existing.isCodexAppSession || discovered.isCodexAppSession
-        if discovered.isCodexAppSession && discovered.isProcessAlive {
-            merged.isProcessAlive = true
-        }
+        // Preserve the monitor's liveness decision. Re-reading an unchanged
+        // rollout must not revive a completed, expired desktop thread.
+        // Fresh activity is picked up by the next monitoring pass.
 
         return merged
     }
