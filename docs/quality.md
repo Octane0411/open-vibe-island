@@ -12,6 +12,8 @@ The repository harness exists to make a round of work mechanically checkable. Th
 - `scripts/harness.sh smoke-all` runs the full debug-scenario suite and validates each artifact set.
 - `scripts/check-docs.sh` enforces the minimum doc map and required links.
 
+The `AgentSession` metadata fallback getters deliberately split long optional-coalescing chains into smaller expressions: Apple Swift 6.2.3 exceeds its type-checking limit on the seven-source form. Keep the existing source priority and nil-only fallback semantics when extending these getters; an empty string is still a present value.
+
 ## Current Guarantees
 
 - Core docs remain present and indexed from [docs/index.md](./index.md).
