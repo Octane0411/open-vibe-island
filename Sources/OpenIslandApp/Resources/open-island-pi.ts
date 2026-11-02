@@ -265,6 +265,6 @@ export default function openIslandPiExtension(pi: ExtensionAPICompat) {
   pi.on("session_shutdown", (event, ctx) => {
     stopHeartbeat();
     if (event.reason === "reload") return;
-    return send("SessionEnd", ctx);
+    void send("SessionEnd", ctx);
   });
 }
