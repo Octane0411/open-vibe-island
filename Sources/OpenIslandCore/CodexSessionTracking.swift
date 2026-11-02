@@ -33,6 +33,13 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
             && currentTool == nil
             && currentCommandPreview == nil
     }
+
+    package var sanitizedPrompts: Self {
+        var metadata = self
+        metadata.initialUserPrompt = initialUserPrompt.flatMap(CodexRolloutReducer.userVisiblePromptSegment)
+        metadata.lastUserPrompt = lastUserPrompt.flatMap(CodexRolloutReducer.userVisiblePromptSegment)
+        return metadata
+    }
 }
 
 public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
@@ -93,7 +100,7 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
             summary: summary,
             updatedAt: updatedAt,
             jumpTarget: jumpTarget,
-            codexMetadata: codexMetadata
+            codexMetadata: codexMetadata?.sanitizedPrompts
         )
         // Re-derive the Codex.app flag from the persisted terminalApp so
         // restarted sessions continue to use app-level liveness rather than
@@ -370,6 +377,12 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         var cwd: String
         var timestamp: Date?
         var isInternalReview: Bool
+        var originator: String?
+
+        var isCodexDesktop: Bool {
+            guard let originator else { return false }
+            return ["codex desktop", "codex_work_desktop"].contains(originator.lowercased())
+        }
 
         var workspaceName: String {
             let workspace = URL(fileURLWithPath: cwd).lastPathComponent
@@ -643,6 +656,15 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             currentTool: snapshot.currentTool,
             currentCommandPreview: snapshot.currentCommandPreview
         )
+        let jumpTarget = sessionMeta.isCodexDesktop
+            ? JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: sessionMeta.workspaceName,
+                paneTitle: sessionMeta.sessionTitle,
+                workingDirectory: sessionMeta.cwd,
+                codexThreadID: sessionMeta.sessionID
+            )
+            : nil
 
         return CodexTrackedSessionRecord(
             sessionID: sessionMeta.sessionID,
@@ -652,6 +674,7 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             summary: summary,
             phase: snapshot.phase,
             updatedAt: updatedAt,
+            jumpTarget: jumpTarget,
             codexMetadata: metadata
         )
     }
@@ -678,7 +701,8 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             timestamp: codexRolloutParseTimestamp(
                 (payload["timestamp"] as? String) ?? (object["timestamp"] as? String)
             ),
-            isInternalReview: CodexInternalSessionFilter.isInternalReview(metadata: payload)
+            isInternalReview: CodexInternalSessionFilter.isInternalReview(metadata: payload),
+            originator: payload["originator"] as? String
         )
     }
 
@@ -1499,16 +1523,43 @@ public enum CodexRolloutReducer {
         return clipped(segment)
     }
 
-    private static func userVisiblePromptSegment(from text: String) -> String? {
+    package static func userVisiblePromptSegment(from text: String) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return nil
         }
 
-        if let markerRange = trimmed.range(of: "## My request for Codex:", options: .backwards) {
+        let requestRange = ["## My request for Codex:", "## My request:"]
+            .compactMap { trimmed.range(of: $0, options: .backwards) }
+            .max { $0.lowerBound < $1.lowerBound }
+        if let markerRange = requestRange {
             let request = trimmed[markerRange.upperBound...]
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             return request.isEmpty ? nil : request
+        }
+
+        // Desktop context messages are transport metadata. If a context block
+        // and a real prompt share one text item, retain the prompt after it.
+        if trimmed.hasPrefix("<external_codex_apps_") || trimmed.hasPrefix("<in-app-browser-context"),
+           let openingEnd = trimmed.firstIndex(of: ">") {
+            let tag = trimmed[trimmed.index(after: trimmed.startIndex)..<openingEnd]
+                .split(whereSeparator: { $0.isWhitespace }).first ?? ""
+            if let end = trimmed.range(of: "</\(tag)>") {
+                return userVisiblePromptSegment(from: String(trimmed[end.upperBound...]))
+            }
+        }
+
+        let replyTag = "send_user_message_question_reply"
+        if trimmed.hasPrefix("<\(replyTag)>"),
+           let end = trimmed.range(of: "</\(replyTag)>") {
+            let start = trimmed.index(trimmed.startIndex, offsetBy: replyTag.count + 2)
+            let body = String(trimmed[start..<end.lowerBound])
+            if let replies = try? JSONSerialization.jsonObject(with: Data(body.utf8)) as? [[String: Any]] {
+                let answers = replies.compactMap { $0["answer"] as? String }
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                return answers.isEmpty ? nil : answers.joined(separator: "; ")
+            }
         }
 
         return isInjectedPromptBlock(trimmed) ? nil : trimmed
@@ -1517,6 +1568,9 @@ public enum CodexRolloutReducer {
     package static func isInjectedPromptBlock(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.hasPrefix("<recommended_plugins>")
+            || trimmed.hasPrefix("<external_codex_apps_")
+            || trimmed.hasPrefix("<in-app-browser-context")
+            || trimmed.hasPrefix("<send_user_message_question_reply>")
             || trimmed.hasPrefix("# AGENTS.md instructions")
             || trimmed.hasPrefix("# Files mentioned by the user:")
             || trimmed.hasPrefix("# Chrome tabs:")

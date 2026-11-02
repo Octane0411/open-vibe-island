@@ -60,6 +60,31 @@ The `CodexHookPayload` model and `BridgeServer` can parse richer events (`PreToo
 
 > **Note on file-edit coverage**: Codex file edits may use internal apply-patch paths that do not emit `PreToolUse` events. File-edit approval should not be treated as guaranteed `PreToolUse` coverage; the current reliable coverage is command/shell-level events, depending on Codex hook configuration.
 
+### Desktop identity and prompt handling
+
+Codex Desktop and Codex CLI are identified separately. Desktop hooks can use
+`CODEX_INTERNAL_ORIGINATOR_OVERRIDE` when the host strips `__CFBundleIdentifier`.
+Rollout discovery recognizes the explicit desktop originators `Codex Desktop`
+and `codex_work_desktop`; `source: "vscode"` alone is not sufficient. A re-scan
+can repair an already tracked `Unknown` target and attach its thread ID for
+`codex://threads/<id>` jump-back without converting terminal CLI sessions.
+Rediscovery preserves pending approval/question controls and the monitor's
+liveness decision; unchanged expired threads must not be revived by a re-scan.
+
+The desktop app is resolved by bundle ID `com.openai.codex`, regardless of its
+display name. Its bundled CLI can be at
+`Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex` or the older
+`Contents/Resources/codex` path. App-server thread lists accept current `data`
+and legacy `threads` response keys; loaded-thread ID pages are resolved with
+`thread/read` without loading turn history. A separately launched app-server
+need not share the desktop's loaded threads, so rollout discovery remains
+necessary.
+
+Titles and prompt previews filter desktop page/browser context, unwrap user
+answers to clarification questions, and retain the request after attachment
+headers. This applies to hook ingress, rollout reads, and restored metadata,
+so upgrading also repairs cached context-only prompts.
+
 ### Common payload fields
 
 | JSON key | Swift property | Description |

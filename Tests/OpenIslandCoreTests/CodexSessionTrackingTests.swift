@@ -4,6 +4,33 @@ import Testing
 
 struct CodexSessionTrackingTests {
     @Test
+    func desktopContextDoesNotReplaceRealPromptsAndQuestionRepliesRemainReadable() {
+        let context = #"<external_codex_apps_open_page>{"page_id":null}</external_codex_apps_open_page>"#
+        let reply = #"<send_user_message_question_reply>[{"questionItemId":"private-id","question":"Which view?","answer":"Board view"}]</send_user_message_question_reply>"#
+        let snapshot = CodexRolloutReducer.snapshot(for: [
+            rolloutLine(timestamp: "2026-11-02T01:00:00Z", type: "response_item", payload: [
+                "type": "message", "role": "user", "content": [["type": "input_text", "text": context], ["type": "input_text", "text": "Build a task board"]]
+            ]),
+            rolloutLine(timestamp: "2026-11-02T01:00:01Z", type: "event_msg", payload: ["type": "user_message", "message": context]),
+            rolloutLine(timestamp: "2026-11-02T01:00:02Z", type: "event_msg", payload: ["type": "user_message", "message": reply]),
+        ])
+        #expect(snapshot.initialUserPrompt == "Build a task board")
+        #expect(snapshot.lastUserPrompt == "Board view")
+        #expect(CodexRolloutReducer.userVisiblePromptSegment(from: context + "\nPlease fix jumping") == "Please fix jumping")
+        let browserContext = #"<in-app-browser-context source="ambient-ui-state">Current tab metadata</in-app-browser-context>"#
+        #expect(CodexRolloutReducer.userVisiblePromptSegment(from: browserContext) == nil)
+        #expect(CodexRolloutReducer.userVisiblePromptSegment(from: browserContext + "\nRead this page") == "Read this page")
+        let attachmentPrompt = "# Files mentioned by the user:\nScreenshot.png\n## My request:\nFix this session title"
+        #expect(CodexRolloutReducer.userVisiblePromptSegment(from: attachmentPrompt) == "Fix this session title")
+        #expect(CodexRolloutReducer.userVisiblePromptSegment(from: "<send_user_message_question_reply>truncated") == nil)
+        #expect(CodexRolloutReducer.userVisiblePromptSegment(from: "Explain <external_codex_apps_open_page> in this example") != nil)
+
+        let cached = CodexTrackedSessionRecord(sessionID: "cached", title: "Codex · project", summary: "Thinking", phase: .running, updatedAt: .now, codexMetadata: .init(initialUserPrompt: context, lastUserPrompt: reply))
+        #expect(cached.restorableSession.initialUserPromptText == nil)
+        #expect(cached.restorableSession.latestUserPromptText == "Board view")
+    }
+
+    @Test
     func codexSessionStoreRoundTripsTrackedSessions() throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("open-island-tracking-\(UUID().uuidString)", isDirectory: true)
@@ -1218,6 +1245,49 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutDiscoveryIdentifiesDesktopOriginatorWithoutMisclassifyingCLI() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-desktop-origin-\(UUID().uuidString)", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/04/02", isDirectory: true)
+        let desktopURL = rolloutDirectoryURL.appendingPathComponent("rollout-desktop.jsonl")
+        let cliURL = rolloutDirectoryURL.appendingPathComponent("rollout-cli.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        try sessionMetaLine(
+            sessionID: "desktop-session",
+            timestamp: "2026-04-02T04:03:44.000Z",
+            cwd: "/Users/u/desktop-project",
+            originator: "Codex Desktop",
+            source: "vscode"
+        ).appending("\n").write(to: desktopURL, atomically: true, encoding: .utf8)
+        try sessionMetaLine(
+            sessionID: "cli-session",
+            timestamp: "2026-04-02T04:03:45.000Z",
+            cwd: "/Users/u/cli-project"
+        ).appending("\n").write(to: cliURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: desktopURL.path)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: cliURL.path)
+
+        let records = CodexRolloutDiscovery(
+            rootURL: rootURL,
+            fileManager: .default,
+            maxAge: 86_400,
+            maxFiles: 10
+        ).discoverRecentSessions(now: now)
+
+        let desktop = records.first { $0.sessionID == "desktop-session" }
+        let cli = records.first { $0.sessionID == "cli-session" }
+        #expect(desktop?.jumpTarget?.terminalApp == "Codex.app")
+        #expect(desktop?.jumpTarget?.codexThreadID == "desktop-session")
+        #expect(desktop?.session.isCodexAppSession == true)
+        #expect(cli?.jumpTarget == nil)
+        #expect(cli?.session.isCodexAppSession == false)
+    }
+
+    @Test
     func codexRolloutDiscoveryStreamsRolloutsLargerThanReadChunk() throws {
         // Pins streaming behavior across read-chunk boundaries. The
         // discovery path used to slurp the whole rollout via
@@ -1675,7 +1745,9 @@ private func rolloutLine(
 private func sessionMetaLine(
     sessionID: String,
     timestamp: String,
-    cwd: String
+    cwd: String,
+    originator: String = "codex-tui",
+    source: String = "cli"
 ) -> String {
     rolloutLine(
         timestamp: timestamp,
@@ -1684,8 +1756,8 @@ private func sessionMetaLine(
             "id": sessionID,
             "timestamp": timestamp,
             "cwd": cwd,
-            "originator": "codex-tui",
-            "source": "cli",
+            "originator": originator,
+            "source": source,
         ]
     )
 }

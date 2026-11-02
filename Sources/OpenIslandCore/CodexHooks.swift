@@ -400,8 +400,8 @@ public extension CodexHookPayload {
     var defaultCodexMetadata: CodexSessionMetadata {
         CodexSessionMetadata(
             transcriptPath: transcriptPath,
-            initialUserPrompt: prompt ?? promptPreview,
-            lastUserPrompt: prompt ?? promptPreview,
+            initialUserPrompt: prompt.flatMap(CodexRolloutReducer.userVisiblePromptSegment),
+            lastUserPrompt: prompt.flatMap(CodexRolloutReducer.userVisiblePromptSegment),
             lastAssistantMessage: lastAssistantMessage,
             currentTool: toolName,
             currentCommandPreview: commandPreview
@@ -474,7 +474,7 @@ public extension CodexHookPayload {
     }
 
     var promptPreview: String? {
-        clipped(prompt)
+        clipped(prompt.flatMap(CodexRolloutReducer.userVisiblePromptSegment))
     }
 
     var assistantMessagePreview: String? {
@@ -687,6 +687,15 @@ public extension CodexHookPayload {
         // not one containing both "openai" and "codex".
         if let bundleID = environment["__CFBundleIdentifier"]?.lowercased(),
            bundleID.contains("openai") && bundleID.contains("codex") {
+            return "Codex.app"
+        }
+
+        // Newer Codex Desktop builds launch the agent through a sanitized
+        // code-mode host that strips __CFBundleIdentifier. The internal
+        // originator marker survives that boundary and is absent from normal
+        // Codex CLI sessions, so use it as the desktop fallback.
+        if let originator = environment["CODEX_INTERNAL_ORIGINATOR_OVERRIDE"]?.lowercased(),
+           ["codex", "codex desktop", "codex_work_desktop"].contains(originator) {
             return "Codex.app"
         }
 

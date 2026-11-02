@@ -1008,6 +1008,196 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func mergeDiscoveredCodexSessionsUpgradesUnknownDesktopJumpTarget() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel()
+        model.state = SessionState(sessions: [
+            AgentSession(
+                id: "desktop-session",
+                title: "Codex · project",
+                tool: .codex,
+                origin: .live,
+                attachmentState: .attached,
+                phase: .running,
+                summary: "Hook session",
+                updatedAt: now,
+                jumpTarget: JumpTarget(
+                    terminalApp: "Unknown",
+                    workspaceName: "project",
+                    paneTitle: "Codex desktop",
+                    workingDirectory: "/Users/u/project"
+                )
+            ),
+        ])
+
+        var discovered = AgentSession(
+            id: "desktop-session",
+            title: "Codex · project",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .stale,
+            phase: .running,
+            summary: "Rollout session",
+            updatedAt: now,
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "project",
+                paneTitle: "Codex · project",
+                workingDirectory: "/Users/u/project",
+                codexThreadID: "desktop-session"
+            )
+        )
+        discovered.isCodexAppSession = true
+        discovered.isProcessAlive = true
+
+        let merged = model.discovery.mergeDiscoveredSessions([discovered])
+
+        #expect(merged.first?.jumpTarget?.terminalApp == "Codex.app")
+        #expect(merged.first?.jumpTarget?.codexThreadID == "desktop-session")
+        #expect(merged.first?.isCodexAppSession == true)
+        #expect(merged.first?.isProcessAlive == false)
+        model.state = SessionState(sessions: merged)
+        #expect(model.monitoring.sessionIDsWithAliveProcesses(
+            activeProcesses: [], isCodexAppRunning: true
+        ).contains("desktop-session"))
+    }
+
+    @Test
+    func codexAppRediscoveryExcludesCLIRecordsWithNewTranscriptPaths() {
+        let model = AppModel()
+        let cliRecord = CodexTrackedSessionRecord(
+            sessionID: "cli-session",
+            title: "Codex · project",
+            summary: "CLI rollout",
+            phase: .running,
+            updatedAt: Date(timeIntervalSince1970: 2_000),
+            codexMetadata: CodexSessionMetadata(transcriptPath: "/tmp/new-cli-rollout.jsonl")
+        )
+
+        let selected = model.discovery.codexAppRediscoveryRecords(
+            from: [cliRecord],
+            existingSessions: []
+        )
+
+        #expect(selected.isEmpty)
+    }
+
+    @Test(arguments: [false, true])
+    func desktopRediscoveryPreservesLivenessUntilMonitoring(hasNewActivity: Bool) {
+        let model = AppModel()
+        var expired = AgentSession(
+            id: "expired-desktop-session",
+            title: "Codex · project",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .completed,
+            summary: "Completed earlier",
+            updatedAt: Date.now.addingTimeInterval(-1_800),
+            jumpTarget: JumpTarget(terminalApp: "Unknown", workspaceName: "project", paneTitle: "Codex")
+        )
+        expired.isProcessAlive = false
+        model.state = SessionState(sessions: [expired])
+        var discovered = expired
+        discovered.jumpTarget?.terminalApp = "Codex.app"
+        discovered.jumpTarget?.codexThreadID = expired.id
+        discovered.isCodexAppSession = true
+        discovered.isProcessAlive = true
+        if hasNewActivity {
+            discovered.updatedAt = .now
+            discovered.phase = .running
+        }
+
+        let merged = model.discovery.mergeDiscoveredSessions([discovered])
+        #expect(merged.first?.isProcessAlive == false)
+        #expect(merged.first?.isCodexAppSession == true)
+        #expect(merged.first?.jumpTarget?.codexThreadID == expired.id)
+        model.state = SessionState(sessions: merged)
+        let aliveIDs = model.monitoring.sessionIDsWithAliveProcesses(
+            activeProcesses: [], isCodexAppRunning: true
+        )
+        #expect(aliveIDs.contains(expired.id) == hasNewActivity)
+    }
+
+    @Test(arguments: [false, true])
+    func desktopRediscoveryPreservesPendingRequests(isQuestion: Bool) {
+        let model = AppModel()
+        var pending = AgentSession(
+            id: "desktop-request", title: "Codex", tool: .codex,
+            phase: isQuestion ? .waitingForAnswer : .waitingForApproval,
+            summary: "Waiting for user", updatedAt: .now
+        )
+        if isQuestion {
+            pending.questionPrompt = QuestionPrompt(title: "Choose an option", options: ["A", "B"])
+        } else {
+            pending.permissionRequest = PermissionRequest(title: "Approve tool", summary: "Run command", affectedPath: "/tmp")
+        }
+        model.state = SessionState(sessions: [pending])
+        var discovered = AgentSession(
+            id: pending.id, title: "Recovered title", tool: .codex,
+            phase: .running, summary: "Thinking", updatedAt: pending.updatedAt.addingTimeInterval(1)
+        )
+        discovered.isCodexAppSession = true
+        let merged = model.discovery.mergeDiscoveredSessions([discovered]).first
+        #expect(merged?.title == "Recovered title")
+        #expect(merged?.phase == pending.phase)
+        #expect(merged?.summary == pending.summary)
+        #expect(merged?.permissionRequest == pending.permissionRequest)
+        #expect(merged?.questionPrompt == pending.questionPrompt)
+    }
+
+    @Test
+    func codexAppRediscoveryReconcilesAlreadyIdentifiedDesktopSessions() {
+        let model = AppModel()
+        let now = Date(timeIntervalSince1970: 2_000)
+        let existing = AgentSession(
+            id: "desktop-session",
+            title: "Codex · project",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Earlier rollout metadata",
+            updatedAt: now,
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex.app",
+                workspaceName: "project",
+                paneTitle: "Codex · project",
+                workingDirectory: "/Users/u/project",
+                codexThreadID: "desktop-session"
+            ),
+            codexMetadata: CodexSessionMetadata(
+                transcriptPath: "/tmp/desktop-rollout.jsonl",
+                lastAssistantMessage: "Earlier response"
+            )
+        )
+        let updatedRecord = CodexTrackedSessionRecord(
+            sessionID: "desktop-session",
+            title: "Codex · project",
+            origin: .live,
+            attachmentState: .stale,
+            summary: "Updated rollout metadata",
+            phase: .running,
+            updatedAt: now.addingTimeInterval(10),
+            jumpTarget: existing.jumpTarget,
+            codexMetadata: CodexSessionMetadata(
+                transcriptPath: "/tmp/desktop-rollout.jsonl",
+                lastAssistantMessage: "Latest response"
+            )
+        )
+
+        let selected = model.discovery.codexAppRediscoveryRecords(
+            from: [updatedRecord],
+            existingSessions: [existing]
+        )
+        let merged = model.discovery.mergeDiscoveredSessions(selected.map(\.session))
+
+        #expect(selected.map(\.sessionID) == ["desktop-session"])
+        #expect(merged.first?.summary == "Updated rollout metadata")
+        #expect(merged.first?.codexMetadata?.lastAssistantMessage == "Latest response")
+    }
+
+    @Test
     func mergedWithSyntheticClaudeSessionsAddsGhosttyClaudeProcessWhenNoTrackedSessionExists() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()
