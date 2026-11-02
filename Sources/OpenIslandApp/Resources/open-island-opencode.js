@@ -65,13 +65,16 @@ function sendAndWaitResponse(json, timeoutMs = 300000) {
 
 // Terminal environment detection
 let detectedTty = null;
+let detectedOpenCodeDesktop = false;
 try {
   const { execSync } = require("child_process");
   let walkPid = process.pid;
   for (let i = 0; i < 8; i++) {
-    const info = execSync(`ps -o tty=,ppid= -p ${walkPid}`, { timeout: 1000 }).toString().trim();
-    const parts = info.split(/\s+/);
-    const tty = parts[0], ppid = parseInt(parts[1]);
+    const info = execSync(`ps -o tty=,ppid=,command= -p ${walkPid}`, { timeout: 1000 }).toString().trim();
+    if (info.includes("/OpenCode.app/Contents/")) detectedOpenCodeDesktop = true;
+    const match = info.match(/^(\S+)\s+(\d+)\s+/);
+    if (!match) break;
+    const tty = match[1], ppid = parseInt(match[2]);
     if (tty && tty !== "??" && tty !== "?") { detectedTty = `/dev/${tty}`; break; }
     if (!ppid || ppid <= 1) break;
     walkPid = ppid;
@@ -96,7 +99,8 @@ function terminalFields() {
   const result = {};
   const executablePath = process.execPath || "";
   const resourcesPath = process.resourcesPath || "";
-  const isOpenCodeDesktop = env.__CFBundleIdentifier === "ai.opencode.desktop" ||
+  const isOpenCodeDesktop = detectedOpenCodeDesktop ||
+    env.__CFBundleIdentifier === "ai.opencode.desktop" ||
     executablePath.includes("/OpenCode.app/Contents/") ||
     resourcesPath.includes("/OpenCode.app/Contents/");
   if (isOpenCodeDesktop) {
