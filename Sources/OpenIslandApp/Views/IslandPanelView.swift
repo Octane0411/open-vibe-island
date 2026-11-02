@@ -364,8 +364,9 @@ struct IslandPanelView: View {
     private var openedHeaderContent: some View {
         if usesNotchAwareOpenedHeader {
             GeometryReader { geometry in
-                let providers = openedUsageProviders
-                let providerGroups = splitUsageProviders(providers)
+                // Usage lives in its own table below (notchUsageTable): the
+                // lanes beside the notch can't fit every provider's windows.
+                let providerGroups = splitUsageProviders([])
                 let metrics = openedHeaderMetrics(for: geometry.size.width)
 
                 HStack(spacing: 0) {
@@ -442,6 +443,15 @@ struct IslandPanelView: View {
 
     private var openedContent: some View {
         VStack(spacing: 8) {
+            if usesNotchAwareOpenedHeader,
+               model.notchOpenReason != .notification,
+               openedUsageProviders.isEmpty == false {
+                // Inset to line up with the session list's header text.
+                notchUsageTable
+                    .padding(.horizontal, 42)
+                    .padding(.top, 6)
+            }
+
             if !model.hasAnyInstalledAgent {
                 installHooksHint
                     .padding(.horizontal, 18)
@@ -870,6 +880,64 @@ struct IslandPanelView: View {
 
     // MARK: - Helpers
 
+    /// Usage as a small table under the notch: one row per provider, one
+    /// column per window, each cell showing the percentage, a thin bar and
+    /// the time until it resets.
+    private var notchUsageTable: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { _ in
+            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 8) {
+                ForEach(openedUsageProviders) { provider in
+                    GridRow {
+                        Text(provider.title)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.74))
+
+                        ForEach(provider.windows) { window in
+                            notchUsageCell(window)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(.white.opacity(0.06), lineWidth: 1)
+            )
+        }
+    }
+
+    private func notchUsageCell(_ window: UsageWindowPresentation) -> some View {
+        let color = usageColor(for: window.usedPercentage)
+        let barWidth: CGFloat = 120
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Text(window.label)
+                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.42))
+                Text("\(window.roundedUsedPercentage)%")
+                    .font(.system(size: 11.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(color)
+                if let resetsAt = window.resetsAt,
+                   let remaining = remainingDurationString(until: resetsAt) {
+                    Text(remaining)
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.34))
+                }
+            }
+            Capsule()
+                .fill(.white.opacity(0.08))
+                .frame(width: barWidth, height: 3)
+                .overlay(alignment: .leading) {
+                    Capsule()
+                        .fill(color)
+                        .frame(width: barWidth * min(max(window.usedPercentage, 0), 100) / 100, height: 3)
+                }
+        }
+    }
+
     @ViewBuilder
     private var openedUsageSummary: some View {
         let providers = openedUsageProviders
@@ -1164,8 +1232,8 @@ struct IslandPanelView: View {
         formatter.unitsStyle = .abbreviated
 
         if interval >= 86_400 {
-            formatter.allowedUnits = [.day]
-            formatter.maximumUnitCount = 1
+            formatter.allowedUnits = [.day, .hour]
+            formatter.maximumUnitCount = 2
         } else if interval >= 3_600 {
             formatter.allowedUnits = [.hour, .minute]
             formatter.maximumUnitCount = 2
