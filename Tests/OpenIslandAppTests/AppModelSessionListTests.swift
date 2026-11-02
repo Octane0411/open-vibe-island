@@ -1119,6 +1119,33 @@ struct AppModelSessionListTests {
         #expect(aliveIDs.contains(expired.id) == hasNewActivity)
     }
 
+    @Test(arguments: [false, true])
+    func desktopRediscoveryPreservesPendingRequests(isQuestion: Bool) {
+        let model = AppModel()
+        var pending = AgentSession(
+            id: "desktop-request", title: "Codex", tool: .codex,
+            phase: isQuestion ? .waitingForAnswer : .waitingForApproval,
+            summary: "Waiting for user", updatedAt: .now
+        )
+        if isQuestion {
+            pending.questionPrompt = QuestionPrompt(title: "Choose an option", options: ["A", "B"])
+        } else {
+            pending.permissionRequest = PermissionRequest(title: "Approve tool", summary: "Run command", affectedPath: "/tmp")
+        }
+        model.state = SessionState(sessions: [pending])
+        var discovered = AgentSession(
+            id: pending.id, title: "Recovered title", tool: .codex,
+            phase: .running, summary: "Thinking", updatedAt: pending.updatedAt.addingTimeInterval(1)
+        )
+        discovered.isCodexAppSession = true
+        let merged = model.discovery.mergeDiscoveredSessions([discovered]).first
+        #expect(merged?.title == "Recovered title")
+        #expect(merged?.phase == pending.phase)
+        #expect(merged?.summary == pending.summary)
+        #expect(merged?.permissionRequest == pending.permissionRequest)
+        #expect(merged?.questionPrompt == pending.questionPrompt)
+    }
+
     @Test
     func codexAppRediscoveryReconcilesAlreadyIdentifiedDesktopSessions() {
         let model = AppModel()

@@ -68,6 +68,8 @@ Rollout discovery recognizes the explicit desktop originators `Codex Desktop`
 and `codex_work_desktop`; `source: "vscode"` alone is not sufficient. A re-scan
 can repair an already tracked `Unknown` target and attach its thread ID for
 `codex://threads/<id>` jump-back without converting terminal CLI sessions.
+Rediscovery preserves pending approval/question controls and the monitor's
+liveness decision; unchanged expired threads must not be revived by a re-scan.
 
 The desktop app is resolved by bundle ID `com.openai.codex`, regardless of its
 display name. Its bundled CLI can be at

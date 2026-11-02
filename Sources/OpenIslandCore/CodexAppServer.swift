@@ -230,8 +230,13 @@ public final class CodexAppServerClient: @unchecked Sendable {
             threads.append(contentsOf: page.threads)
             for id in page.ids {
                 // A thread may unload between listing and reading it.
-                guard let data = try? await sendRequest(method: "thread/read", params: ReadParams(threadId: id)),
-                      let result = try? JSONDecoder().decode(ReadResult.self, from: data) else { continue }
+                let data: Data
+                do {
+                    data = try await sendRequest(method: "thread/read", params: ReadParams(threadId: id))
+                } catch CodexAppServerError.rpcError {
+                    continue
+                }
+                guard let result = try? JSONDecoder().decode(ReadResult.self, from: data) else { continue }
                 threads.append(result.thread)
             }
             cursor = page.nextCursor

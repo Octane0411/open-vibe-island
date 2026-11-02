@@ -93,6 +93,46 @@ struct CodexAppServerLifecycleTests {
         #expect(threads.first?.source == .vscode)
     }
 
+    @Test(arguments: [false, true])
+    func loadedThreadReadsSkipUnloadedThreadsButPropagateDisconnect(disconnect: Bool) async throws {
+        let client = CodexAppServerClient()
+        let pipe = Pipe()
+        client.stdin = pipe.fileHandleForWriting
+        client.requestTimeoutSeconds = 2
+        defer {
+            client.stop()
+            try? pipe.fileHandleForWriting.close()
+            try? pipe.fileHandleForReading.close()
+        }
+        let server = Task.detached {
+            for index in 0..<2 {
+                let request = try #require(JSONSerialization.jsonObject(with: pipe.fileHandleForReading.availableData) as? [String: Any])
+                let id = try #require(request["id"] as? Int)
+                if index == 1 && disconnect {
+                    client.stop()
+                    return
+                }
+                let response: [String: Any] = index == 0
+                    ? ["id": id, "result": ["data": ["unloaded-thread"]]]
+                    : ["id": id, "error": ["code": -32600, "message": "Thread no longer loaded"]]
+                var data = try JSONSerialization.data(withJSONObject: response)
+                data.append(10)
+                client.handleIncomingData(data)
+            }
+        }
+        if disconnect {
+            do {
+                _ = try await client.listLoadedThreads()
+                Issue.record("Expected a disconnected error")
+            } catch CodexAppServerError.disconnected {
+                // Transport failure must reach the coordinator.
+            }
+        } else {
+            #expect(try await client.listLoadedThreads().isEmpty)
+        }
+        try await server.value
+    }
+
     @Test
     func outputHandlersUnregisterAtEndOfFile() async throws {
         let client = CodexAppServerClient()

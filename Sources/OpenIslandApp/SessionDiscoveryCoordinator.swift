@@ -247,11 +247,19 @@ final class SessionDiscoveryCoordinator {
 
         if discoveredIsNewer {
             merged.title = discovered.title
-            merged.phase = discovered.phase
-            merged.summary = discovered.summary
             merged.updatedAt = discovered.updatedAt
-            merged.permissionRequest = discovered.permissionRequest
-            merged.questionPrompt = discovered.questionPrompt
+            let preservesDesktopRequest = discovered.isCodexAppSession && (
+                (existing.phase == .waitingForApproval && existing.permissionRequest != nil && discovered.permissionRequest == nil)
+                    || (existing.phase == .waitingForAnswer && existing.questionPrompt != nil && discovered.questionPrompt == nil)
+            )
+            // Rollouts do not carry the hook bridge's actionable requests.
+            // Only the request lifecycle should dismiss those controls.
+            if !preservesDesktopRequest {
+                merged.phase = discovered.phase
+                merged.summary = discovered.summary
+                merged.permissionRequest = discovered.permissionRequest
+                merged.questionPrompt = discovered.questionPrompt
+            }
         }
 
         merged.origin = existing.origin ?? discovered.origin
