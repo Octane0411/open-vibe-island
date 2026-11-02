@@ -79,6 +79,11 @@ struct TerminalJumpService {
             aliases: ["codex.app"]
         ),
         TerminalAppDescriptor(
+            displayName: "OpenCode.app",
+            bundleIdentifier: "ai.opencode.desktop",
+            aliases: ["opencode.app", "opencode desktop"]
+        ),
+        TerminalAppDescriptor(
             displayName: "Claude.app",
             bundleIdentifier: "com.anthropic.claudefordesktop",
             aliases: ["claude.app"]
@@ -350,6 +355,9 @@ struct TerminalJumpService {
 
         if let descriptor {
             switch resolvedBundleIdentifier ?? descriptor.bundleIdentifier {
+            case "ai.opencode.desktop":
+                try openAction(["-b", "ai.opencode.desktop"])
+                return "Activated OpenCode.app."
             case "com.openai.codex":
                 // If we have a thread ID, use the codex:// URL scheme to
                 // open the specific conversation directly.  Otherwise just

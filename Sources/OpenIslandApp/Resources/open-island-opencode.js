@@ -94,7 +94,14 @@ function collectEnv() {
 function terminalFields() {
   const env = process.env;
   const result = {};
-  if (env.ITERM_SESSION_ID) {
+  const executablePath = process.execPath || "";
+  const resourcesPath = process.resourcesPath || "";
+  const isOpenCodeDesktop = env.__CFBundleIdentifier === "ai.opencode.desktop" ||
+    executablePath.includes("/OpenCode.app/Contents/") ||
+    resourcesPath.includes("/OpenCode.app/Contents/");
+  if (isOpenCodeDesktop) {
+    result.terminal_app = "OpenCode.app";
+  } else if (env.ITERM_SESSION_ID) {
     result.terminal_app = "iTerm";
     result.terminal_session_id = env.ITERM_SESSION_ID;
   } else if (env.CMUX_WORKSPACE_ID || env.CMUX_SOCKET_PATH) {

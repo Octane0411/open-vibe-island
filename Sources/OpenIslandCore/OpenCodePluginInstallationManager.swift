@@ -8,10 +8,15 @@ public struct OpenCodePluginInstallationStatus: Equatable, Sendable {
     public var manifestURL: URL
     public var pluginFilePresent: Bool
     public var pluginRegistered: Bool
+    public var pluginCurrent: Bool
     public var manifest: OpenCodePluginInstallerManifest?
 
     public var isInstalled: Bool {
         pluginFilePresent && pluginRegistered
+    }
+
+    public var isCurrent: Bool {
+        isInstalled && pluginCurrent
     }
 
     public init(
@@ -22,6 +27,7 @@ public struct OpenCodePluginInstallationStatus: Equatable, Sendable {
         manifestURL: URL,
         pluginFilePresent: Bool,
         pluginRegistered: Bool,
+        pluginCurrent: Bool,
         manifest: OpenCodePluginInstallerManifest?
     ) {
         self.openCodeConfigDirectory = openCodeConfigDirectory
@@ -31,6 +37,7 @@ public struct OpenCodePluginInstallationStatus: Equatable, Sendable {
         self.manifestURL = manifestURL
         self.pluginFilePresent = pluginFilePresent
         self.pluginRegistered = pluginRegistered
+        self.pluginCurrent = pluginCurrent
         self.manifest = manifest
     }
 }
@@ -78,9 +85,10 @@ public final class OpenCodePluginInstallationManager: @unchecked Sendable {
         openCodeConfigDirectory.appendingPathComponent(OpenCodePluginInstallerManifest.fileName)
     }
 
-    public func status() throws -> OpenCodePluginInstallationStatus {
+    public func status(expectedPluginData: Data? = nil) throws -> OpenCodePluginInstallationStatus {
         let pluginPresent = fileManager.fileExists(atPath: pluginFileURL.path)
         let registered = isPluginRegistered()
+        let pluginCurrent = expectedPluginData.map { (try? Data(contentsOf: pluginFileURL)) == $0 } ?? pluginPresent
         let manifest = try loadManifest()
 
         return OpenCodePluginInstallationStatus(
@@ -91,6 +99,7 @@ public final class OpenCodePluginInstallationManager: @unchecked Sendable {
             manifestURL: manifestURL,
             pluginFilePresent: pluginPresent,
             pluginRegistered: registered,
+            pluginCurrent: pluginCurrent,
             manifest: manifest
         )
     }
@@ -112,7 +121,7 @@ public final class OpenCodePluginInstallationManager: @unchecked Sendable {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(manifest).write(to: manifestURL, options: .atomic)
 
-        return try status()
+        return try status(expectedPluginData: pluginSourceData)
     }
 
     @discardableResult
