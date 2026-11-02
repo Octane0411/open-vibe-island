@@ -47,7 +47,8 @@ a signed but non-notarized build.
    Copy the `sparkle:edSignature` and `length` values for the appcast entry.
 4. **Update `appcast.xml`** in the repo root — add a new `<item>` entry with the version, download URL, EdDSA signature, and length. See the "Sparkle Appcast" section below.
 5. **Commit and push** the updated `appcast.xml` to `main`.
-6. **Create the release**:
+6. **Prepare release notes**: verify each change's PR author on GitHub, append `by @author` to every change entry, and include the bilingual `Contributors | 贡献者` acknowledgements with all credited authors. Check these requirements even when starting from GitHub-generated notes; see "Contributor Attribution" below.
+7. **Create the release**:
    ```bash
    gh release create v<version> \
      "output/package/Open Island.dmg#Open.Island.dmg" \
@@ -56,7 +57,7 @@ a signed but non-notarized build.
      --title "Open Island v<version> — <Title>" \
      --notes-file release-notes.md
    ```
-7. **Verify**: open the release page and confirm assets are downloadable.
+8. **Verify**: open the published release page, confirm assets are downloadable, and check that every change has its author mention and the bilingual contributor acknowledgements are present.
 
 ## Release Notes Format
 
@@ -67,8 +68,13 @@ All release notes **must be bilingual** (English + Simplified Chinese). Use the 
 
 ### Changes since v<prev> | 自 v<prev> 以来的变更
 
-- <emoji> **Category**: English description (#PR)
-  中文描述 (#PR)
+- <emoji> **Category**: English description (#PR by @author)
+  中文描述。
+
+### Contributors | 贡献者
+
+Thanks to @author and @another-author for the changes in this release.
+感谢 @author 和 @another-author 对本版本的贡献。
 
 ---
 
@@ -78,6 +84,15 @@ All release notes **must be bilingual** (English + Simplified Chinese). Use the 
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 ```
+
+### Contributor Attribution
+
+Every release must credit contributors in both places:
+
+- **Each change entry** must end with its PR reference and the verified GitHub author mention, for example `(#737 by @Yiipu)`. For a grouped entry covering multiple PRs, attribute each PR to its author. A mention on the English line covers the paired Chinese description.
+- **A dedicated `Contributors | 贡献者` section** must thank all authors credited in the change entries, in English and Simplified Chinese. List each GitHub username once per language and preserve the `@` mentions.
+
+Read the actual PR author metadata on GitHub; do not infer usernames from display names, branch names, or the person who merged the PR. Resolve missing or ambiguous attribution before publication. Generated release notes are only a starting point: manually add any missing per-change mentions and contributor acknowledgements, then read back the published notes to verify both survived publication.
 
 ### Change categories
 
