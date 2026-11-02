@@ -1349,7 +1349,8 @@ final class ProcessMonitoringCoordinator {
                 tmuxTarget: process.tmuxTarget ?? session.jumpTarget?.tmuxTarget,
                 tmuxSocketPath: process.tmuxSocketPath ?? session.jumpTarget?.tmuxSocketPath,
                 warpPaneUUID: session.jumpTarget?.warpPaneUUID,
-                codexThreadID: session.jumpTarget?.codexThreadID
+                codexThreadID: session.jumpTarget?.codexThreadID,
+                claudeSessionID: session.jumpTarget?.claudeSessionID
             )
 
             guard jumpTarget != session.jumpTarget
