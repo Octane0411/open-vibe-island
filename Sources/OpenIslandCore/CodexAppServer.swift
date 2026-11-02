@@ -113,6 +113,18 @@ public final class CodexAppServerClient: @unchecked Sendable {
         self.codexPath = codexPath
     }
 
+    /// Resolve the CLI inside the installed desktop bundle, including the
+    /// nested CLI app shipped by newer builds. Never fall back to a PATH CLI.
+    public static func executableURL(
+        in bundleURL: URL,
+        isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+    ) -> URL? {
+        ["Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+         "Contents/Resources/codex"]
+            .map { bundleURL.appendingPathComponent($0) }
+            .first { isExecutable($0.path) }
+    }
+
     public var isRunning: Bool {
         process?.isRunning == true
     }
@@ -203,21 +215,67 @@ public final class CodexAppServerClient: @unchecked Sendable {
 
     /// List currently loaded threads from the app-server.
     public func listLoadedThreads() async throws -> [CodexThread] {
-        struct Params: Encodable {}
-        struct Result: Decodable { let threads: [CodexThread] }
-        let data = try await sendRequest(method: "thread/loaded/list", params: Params())
-        let result = try JSONDecoder().decode(Result.self, from: data)
-        return result.threads
+        struct Params: Encodable { let cursor: String? }
+        struct ReadParams: Encodable {
+            let threadId: String
+            let includeTurns = false
+        }
+        struct ReadResult: Decodable { let thread: CodexThread }
+        var threads: [CodexThread] = []
+        var cursor: String?
+        var visitedCursors = Set<String>()
+        repeat {
+            let data = try await sendRequest(method: "thread/loaded/list", params: Params(cursor: cursor))
+            let page = try Self.decodeLoadedThreadListResponse(data)
+            threads.append(contentsOf: page.threads)
+            for id in page.ids {
+                // A thread may unload between listing and reading it.
+                guard let data = try? await sendRequest(method: "thread/read", params: ReadParams(threadId: id)),
+                      let result = try? JSONDecoder().decode(ReadResult.self, from: data) else { continue }
+                threads.append(result.thread)
+            }
+            cursor = page.nextCursor
+            if let cursor, !visitedCursors.insert(cursor).inserted { break }
+        } while cursor != nil
+        return threads
+    }
+
+    static func decodeLoadedThreadListResponse(_ data: Data) throws -> (ids: [String], threads: [CodexThread], nextCursor: String?) {
+        struct Result: Decodable {
+            let data: [String]
+            let nextCursor: String?
+        }
+        if let result = try? JSONDecoder().decode(Result.self, from: data) {
+            return (result.data, [], result.nextCursor)
+        }
+        // Older servers returned full objects, rather than IDs.
+        return ([], try decodeThreadListResponse(data), nil)
     }
 
     /// List all threads (including not-loaded) from the app-server.
     public func listThreads(limit: Int? = nil) async throws -> [CodexThread] {
         struct Params: Encodable { let limit: Int? }
-        struct Result: Decodable { let threads: [CodexThread] }
         let data = try await sendRequest(method: "thread/list", params: Params(limit: limit))
-        let result = try JSONDecoder().decode(Result.self, from: data)
-        return result.threads
+        return try Self.decodeThreadListResponse(data)
     }
+
+    static func decodeThreadListResponse(_ data: Data) throws -> [CodexThread] {
+        struct Result: Decodable {
+            let data: [CodexThread]?
+            let threads: [CodexThread]?
+        }
+
+        let result = try JSONDecoder().decode(Result.self, from: data)
+        guard let threads = result.data ?? result.threads else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.data,
+                .init(codingPath: [], debugDescription: "Missing thread list")
+            )
+        }
+        return threads
+    }
+
+    private enum CodingKeys: String, CodingKey { case data }
 
     // MARK: - JSON-RPC transport
 

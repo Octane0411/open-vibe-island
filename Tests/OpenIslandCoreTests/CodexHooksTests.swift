@@ -4,6 +4,17 @@ import Testing
 
 struct CodexHooksTests {
     @Test
+    func desktopHookContextDoesNotBecomePromptMetadata() {
+        let context = #"<external_codex_apps_open_page>{"page_id":null}</external_codex_apps_open_page>"#
+        var payload = CodexHookPayload(cwd: "/tmp/project", hookEventName: .userPromptSubmit, model: "test", permissionMode: .default, sessionID: "desktop-session", transcriptPath: nil, prompt: context)
+        #expect(payload.defaultCodexMetadata.initialUserPrompt == nil)
+        #expect(payload.promptPreview == nil)
+        payload.prompt = context + "\nPlease fix jumping"
+        #expect(payload.defaultCodexMetadata.lastUserPrompt == "Please fix jumping")
+        #expect(payload.promptPreview == "Please fix jumping")
+    }
+
+    @Test
     func codexDefaultJumpTargetForwardsWarpPaneUUID() {
         var payload = CodexHookPayload(
             cwd: "/tmp/demo",
@@ -84,6 +95,45 @@ struct CodexHooksTests {
 
         #expect(payload.terminalApp == "Codex.app")
         #expect(payload.warpPaneUUID == nil)
+    }
+
+    @Test(arguments: ["Codex", "Codex Desktop", "codex_work_desktop"])
+    func codexWithRuntimeContextDetectsSanitizedCodexDesktopHost(originator: String) {
+        let payload = CodexHookPayload(
+            cwd: "/Users/u/project",
+            hookEventName: .sessionStart,
+            model: "gpt-5",
+            permissionMode: .default,
+            sessionID: "s1",
+            transcriptPath: nil
+        ).withRuntimeContext(
+            environment: ["CODEX_INTERNAL_ORIGINATOR_OVERRIDE": originator],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) },
+            warpPaneResolver: { _ in nil }
+        )
+
+        #expect(payload.terminalApp == "Codex.app")
+        #expect(payload.defaultJumpTarget.codexThreadID == "s1")
+    }
+
+    @Test
+    func codexWithRuntimeContextDoesNotTreatUnknownOriginatorAsDesktop() {
+        let payload = CodexHookPayload(
+            cwd: "/Users/u/project",
+            hookEventName: .sessionStart,
+            model: "gpt-5",
+            permissionMode: .default,
+            sessionID: "s1",
+            transcriptPath: nil
+        ).withRuntimeContext(
+            environment: ["CODEX_INTERNAL_ORIGINATOR_OVERRIDE": "third-party"],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) },
+            warpPaneResolver: { _ in nil }
+        )
+
+        #expect(payload.terminalApp == nil)
     }
 
     @Test

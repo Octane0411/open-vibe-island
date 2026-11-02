@@ -48,12 +48,10 @@ final class CodexAppServerCoordinator {
         ) else {
             return
         }
-        let codexPath = bundleURL
-            .appendingPathComponent("Contents/Resources/codex")
-            .path
-        guard FileManager.default.isExecutableFile(atPath: codexPath) else {
+        guard let executableURL = CodexAppServerClient.executableURL(in: bundleURL) else {
             return
         }
+        let codexPath = executableURL.path
 
         connectTask = Task { [weak self] in
             guard let self else { return }
