@@ -38,7 +38,7 @@ struct CodexAppServerLifecycleTests {
             try? pipe.fileHandleForWriting.close()
             try? pipe.fileHandleForReading.close()
         }
-        let server = Task.detached { () throws -> [String] in
+        let server = runMockServer { () throws -> [String] in
             var methods: [String] = []
             for _ in 0..<3 {
                 let data = pipe.fileHandleForReading.availableData
@@ -104,7 +104,7 @@ struct CodexAppServerLifecycleTests {
             try? pipe.fileHandleForWriting.close()
             try? pipe.fileHandleForReading.close()
         }
-        let server = Task.detached {
+        let server = runMockServer {
             for index in 0..<2 {
                 let request = try #require(JSONSerialization.jsonObject(with: pipe.fileHandleForReading.availableData) as? [String: Any])
                 let id = try #require(request["id"] as? Int)
@@ -193,5 +193,19 @@ struct CodexAppServerLifecycleTests {
             try? await Task.sleep(for: .milliseconds(10))
         }
         return condition()
+    }
+}
+
+/// Pipe reads block. Keep them off Swift's cooperative executor so small CI
+/// runners can still schedule the client and its request timeout tasks.
+private func runMockServer<T: Sendable>(
+    _ operation: @escaping @Sendable () throws -> T
+) -> Task<T, Error> {
+    Task {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global().async {
+                continuation.resume(with: Result(catching: operation))
+            }
+        }
     }
 }
