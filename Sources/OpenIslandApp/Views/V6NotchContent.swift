@@ -222,6 +222,10 @@ struct V6ClosedPill: View {
     /// width that fits just the glyph.
     var minWidth: CGFloat = 70
 
+    /// Flat edge faces down and the rounded corners face up when the island
+    /// is pinned to the bottom screen edge.
+    var flipped: Bool = false
+
     var body: some View {
         switch layout {
         case .external: externalBody
@@ -258,7 +262,7 @@ struct V6ClosedPill: View {
         let glyphW: CGFloat = 24
 
         return ZStack {
-            V6ClosedPillShape()
+            V6ClosedPillShape(flipped: flipped)
                 .fill(V6Palette.ink)
 
             HStack(spacing: 0) {
@@ -295,7 +299,7 @@ struct V6ClosedPill: View {
 
     private var macbookBody: some View {
         return ZStack {
-            V6ClosedPillShape()
+            V6ClosedPillShape(flipped: flipped)
                 .fill(V6Palette.ink)
 
             HStack(spacing: 0) {

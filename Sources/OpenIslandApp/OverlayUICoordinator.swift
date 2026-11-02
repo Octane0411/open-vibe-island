@@ -27,6 +27,16 @@ final class OverlayUICoordinator {
         }
     }
 
+    var overlayEdge: OverlayEdge = .top {
+        didSet {
+            guard overlayEdge != oldValue else {
+                return
+            }
+            UserDefaults.standard.set(overlayEdge.rawValue, forKey: OverlayEdge.defaultsKey)
+            refreshOverlayPlacement()
+        }
+    }
+
     @ObservationIgnored
     weak var appModel: AppModel?
 
@@ -106,6 +116,7 @@ final class OverlayUICoordinator {
 
     func restoreDisplayPreference() {
         let defaults = UserDefaults.standard
+        overlayEdge = OverlayEdge.restored(from: defaults.string(forKey: OverlayEdge.defaultsKey))
         let storedSelectionID = defaults.string(
             forKey: OverlayDisplayPreferencePolicy.preferenceDefaultsKey
         )
@@ -300,6 +311,7 @@ final class OverlayUICoordinator {
     }
 
     func refreshOverlayPlacement() {
+        overlayPanelController.overlayEdge = overlayEdge
         overlayPlacementDiagnostics = overlayPanelController.reposition(
             preferredScreenID: preferredOverlayScreenID
         )

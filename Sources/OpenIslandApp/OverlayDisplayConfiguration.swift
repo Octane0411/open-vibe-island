@@ -82,6 +82,82 @@ enum OverlayDisplayPreferencePolicy {
 enum OverlayPlacementMode: String, Equatable {
     case notch = "Notch area"
     case topBar = "Top bar fallback"
+    case bottomBar = "Bottom bar"
+}
+
+/// Which screen edge the island is pinned to. `.top` is the classic notch /
+/// top-bar placement. `.bottom` parks the island on the lower edge, resting
+/// on the Dock when it is visible, for people who find the top of the
+/// screen out of reach on a large external display.
+enum OverlayEdge: String, CaseIterable, Equatable, Sendable {
+    case top
+    case bottom
+
+    static let defaultsKey = "overlay.edge"
+
+    static func restored(from rawValue: String?) -> OverlayEdge {
+        guard let rawValue, let edge = OverlayEdge(rawValue: rawValue) else {
+            return .top
+        }
+        return edge
+    }
+}
+
+/// Pure geometry for pinning the overlay to either screen edge. Kept free of
+/// `NSScreen` so it can be unit-tested with plain rects.
+enum OverlayEdgeGeometry {
+    /// Origin of the (always opened-size) panel window.
+    static func panelOrigin(
+        edge: OverlayEdge,
+        screenFrame: NSRect,
+        visibleFrame: NSRect,
+        panelSize: NSSize
+    ) -> NSPoint {
+        let x = screenFrame.midX - panelSize.width / 2
+        switch edge {
+        case .top:
+            return NSPoint(x: x, y: screenFrame.maxY - panelSize.height)
+        case .bottom:
+            // visibleFrame.minY already sits above a visible Dock and equals
+            // screenFrame.minY when the Dock is hidden or on another edge.
+            return NSPoint(x: x, y: visibleFrame.minY)
+        }
+    }
+
+    /// Screen-space rect of the closed island strip (the "notch" slot the
+    /// closed pill is centred on and the hover hot-zone grows from).
+    static func anchorRect(
+        edge: OverlayEdge,
+        screenFrame: NSRect,
+        visibleFrame: NSRect,
+        size: NSSize
+    ) -> NSRect {
+        let x = screenFrame.midX - size.width / 2
+        switch edge {
+        case .top:
+            return NSRect(x: x, y: screenFrame.maxY - size.height, width: size.width, height: size.height)
+        case .bottom:
+            return NSRect(x: x, y: visibleFrame.minY, width: size.width, height: size.height)
+        }
+    }
+
+    /// The visible island area inside the panel bounds, excluding the shadow
+    /// margin. The margin sits on the side facing away from the screen edge.
+    static func contentRect(
+        edge: OverlayEdge,
+        bounds: NSRect,
+        horizontalInset: CGFloat,
+        shadowInset: CGFloat
+    ) -> NSRect {
+        let width = max(0, bounds.width - (horizontalInset * 2))
+        let height = max(0, bounds.height - shadowInset)
+        switch edge {
+        case .top:
+            return NSRect(x: bounds.minX + horizontalInset, y: bounds.minY + shadowInset, width: width, height: height)
+        case .bottom:
+            return NSRect(x: bounds.minX + horizontalInset, y: bounds.minY, width: width, height: height)
+        }
+    }
 }
 
 struct OverlayPlacementDiagnostics {
@@ -140,19 +216,23 @@ enum OverlayDisplayResolver {
         }
     }
 
-    static func diagnostics(preferredScreenID: String?, panelSize: NSSize) -> OverlayPlacementDiagnostics? {
+    static func diagnostics(
+        preferredScreenID: String?,
+        panelSize: NSSize,
+        edge: OverlayEdge = .top
+    ) -> OverlayPlacementDiagnostics? {
         guard let resolvedScreen = resolveScreen(preferredScreenID: preferredScreenID) else {
             return nil
         }
 
         let screen = resolvedScreen.screen
-        let overlayFrame = frame(for: screen, panelSize: panelSize)
+        let overlayFrame = frame(for: screen, panelSize: panelSize, edge: edge)
 
         return OverlayPlacementDiagnostics(
             targetScreenID: screenID(for: screen),
             targetScreenName: screen.localizedName,
             selectionSummary: resolvedScreen.selectionSummary,
-            mode: placementMode(for: screen),
+            mode: placementMode(for: screen, edge: edge),
             screenFrame: screen.frame,
             visibleFrame: screen.visibleFrame,
             safeAreaInsets: screen.safeAreaInsets,
@@ -160,17 +240,19 @@ enum OverlayDisplayResolver {
         )
     }
 
-    private static func frame(for screen: NSScreen, panelSize: NSSize) -> NSRect {
+    private static func frame(for screen: NSScreen, panelSize: NSSize, edge: OverlayEdge) -> NSRect {
         let width = min(panelSize.width, screen.visibleFrame.width - 64)
         let height = panelSize.height
         let x = screen.frame.midX - (width / 2)
 
         let y: CGFloat
-        switch placementMode(for: screen) {
+        switch placementMode(for: screen, edge: edge) {
         case .notch:
             y = screen.frame.maxY - height
         case .topBar:
             y = screen.visibleFrame.maxY - height - 18
+        case .bottomBar:
+            y = screen.visibleFrame.minY
         }
 
         return NSRect(x: x, y: y, width: width, height: height)
@@ -210,8 +292,11 @@ enum OverlayDisplayResolver {
         return (screens[0], "automatic")
     }
 
-    private static func placementMode(for screen: NSScreen) -> OverlayPlacementMode {
-        isNotched(screen) ? .notch : .topBar
+    private static func placementMode(for screen: NSScreen, edge: OverlayEdge = .top) -> OverlayPlacementMode {
+        if edge == .bottom {
+            return .bottomBar
+        }
+        return isNotched(screen) ? .notch : .topBar
     }
 
     private static func isNotched(_ screen: NSScreen) -> Bool {

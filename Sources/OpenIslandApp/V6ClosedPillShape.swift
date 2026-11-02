@@ -8,8 +8,16 @@ import SwiftUI
 /// both are black); on external displays it sits as a standalone pill.
 struct V6ClosedPillShape: Shape {
     var cornerRadius: CGFloat?
+    /// Mirror vertically (flat bottom, rounded top) for an island pinned to
+    /// the bottom screen edge.
+    var flipped: Bool = false
 
     func path(in rect: CGRect) -> Path {
+        let path = unflippedPath(in: rect)
+        return flipped ? path.verticallyMirrored(in: rect) : path
+    }
+
+    private func unflippedPath(in rect: CGRect) -> Path {
         let r = min(cornerRadius ?? rect.height / 2, rect.width / 2, rect.height)
         var path = Path()
         path.move(to: CGPoint(x: rect.minX, y: rect.minY))
@@ -32,6 +40,14 @@ struct V6ClosedPillShape: Shape {
         )
         path.closeSubpath()
         return path
+    }
+}
+
+extension Path {
+    /// The same path mirrored across the horizontal centre line of `rect`,
+    /// so a shape drawn for the top screen edge reads correctly at the bottom.
+    func verticallyMirrored(in rect: CGRect) -> Path {
+        applying(CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: rect.minY + rect.maxY))
     }
 }
 

@@ -257,6 +257,14 @@ struct DisplaySettingsPane: View {
                             .disabled(!option.isAvailable)
                     }
                 }
+
+                Picker(lang.t("settings.display.edge"), selection: Binding(
+                    get: { model.overlayEdge },
+                    set: { model.overlayEdge = $0 }
+                )) {
+                    Text(lang.t("settings.display.edge.top")).tag(OverlayEdge.top)
+                    Text(lang.t("settings.display.edge.bottom")).tag(OverlayEdge.bottom)
+                }
             }
 
             if let diag = model.overlayPlacementDiagnostics {
