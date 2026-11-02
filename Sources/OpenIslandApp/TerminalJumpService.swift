@@ -363,7 +363,17 @@ struct TerminalJumpService {
             case "com.anthropic.claudefordesktop":
                 // Claude Desktop hosts the conversation in-app; there is no
                 // per-session deep link, so just bring the app forward.
-                try openAction(["-b", "com.anthropic.claudefordesktop"])
+                // Several copies can run at once under the same bundle ID
+                // (e.g. a wrapped build next to /Applications/Claude.app);
+                // `open -b` picks whichever Launch Services prefers, so open
+                // the copy that actually hosts this session.
+                if let hostPath = ClaudeDesktopHostLocator.hostAppPath(
+                    workingDirectory: target.workingDirectory
+                ) {
+                    try openAction(["-a", hostPath])
+                } else {
+                    try openAction(["-b", "com.anthropic.claudefordesktop"])
+                }
                 return "Activated Claude."
             case "com.conductor.app":
                 // No per-session deep link; bring the app forward, like Claude.app.
