@@ -419,6 +419,7 @@ struct SetupSettingsPane: View {
     @State private var confirmingUninstallCodex = false
     @State private var confirmingUninstallOpenCode = false
     @State private var confirmingUninstallQoder = false
+    @State private var confirmingUninstallQoderCN = false
     @State private var confirmingUninstallQwenCode = false
     @State private var confirmingUninstallFactory = false
     @State private var confirmingUninstallCodebuddy = false
@@ -510,6 +511,23 @@ struct SetupSettingsPane: View {
                     Button(lang.t("settings.general.cancel"), role: .cancel) {}
                 } message: {
                     Text("This will remove Open Island hooks from ~/.qoder/settings.json.")
+                }
+
+                hookRow(
+                    name: "Qoder CN",
+                    installed: model.qoderCNHooksInstalled,
+                    busy: model.isQoderCNHookSetupBusy,
+                    configLocationURL: model.qoderCNHookStatus?.settingsURL,
+                    installAction: { model.installQoderCNHooks() },
+                    uninstallAction: { confirmingUninstallQoderCN = true }
+                )
+                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallQoderCN) {
+                    Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
+                        model.uninstallQoderCNHooks()
+                    }
+                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
+                } message: {
+                    Text("This will remove Open Island hooks from ~/.qoder-cn/settings.json.")
                 }
 
                 hookRow(

@@ -75,10 +75,12 @@ struct ActiveAgentProcessDiscovery {
             // exemption they would be filtered out and their hook-managed
             // sessions could be evicted by the liveness polls.
             // ZCode is an Electron app whose processes never carry a TTY.
+            // Qoder CN is the same shape.
             if process.terminalTTY == nil
                 && !isOpenCodeProcess(command: process.command)
                 && !isHermesProcess(command: process.command)
-                && !isZcodeProcess(command: process.command) {
+                && !isZcodeProcess(command: process.command)
+                && !isQoderCNProcess(command: process.command) {
                 continue
             }
 
@@ -255,6 +257,25 @@ struct ActiveAgentProcessDiscovery {
                     workingDirectory: nil,
                     terminalTTY: nil,
                     terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+                ))
+                continue
+            }
+
+            if isQoderCNProcess(command: process.command) {
+                // Whole-app liveness (ZCode shape): Qoder CN sessions are
+                // hook-managed, per-session identity cannot be recovered.
+                let claimKey = "qodercn:\(process.pid)"
+                guard claimedKeys.insert(claimKey).inserted else {
+                    continue
+                }
+
+                snapshots.append(ProcessSnapshot(
+                    tool: .qoderCN,
+                    sessionID: nil,
+                    workingDirectory: nil,
+                    terminalTTY: nil,
+                    terminalApp: recognizedTerminalApp(for: process.command)
+                        ?? terminalApp(for: process, processesByPID: processesByPID)
                 ))
                 continue
             }
@@ -608,6 +629,9 @@ struct ActiveAgentProcessDiscovery {
         if lowered.contains("/qoder.app/") {
             return "Qoder"
         }
+        if lowered.contains("/qoder cn.app/") {
+            return "Qoder CN"
+        }
         if lowered.contains("/zcode.app/contents/macos/zcode") {
             return "ZCode"
         }
@@ -888,6 +912,15 @@ struct ActiveAgentProcessDiscovery {
         let lowered = command.lowercased()
         return lowered.contains("/zcode.app/contents/resources/glm/zcode.cjs")
             || (lowered.hasSuffix("/zcode") && lowered.contains("/zcode.app/contents/macos/"))
+    }
+
+    /// Matches the Qoder CN (国内版) desktop app's main binary only — the
+    /// Electron helper processes must not match, otherwise every helper
+    /// spawns its own snapshot. Sessions are hook-managed; the snapshot
+    /// anchors whole-app liveness (ZCode shape).
+    private func isQoderCNProcess(command: String) -> Bool {
+        let lowered = command.lowercased()
+        return lowered.hasSuffix("/qoder cn") && lowered.contains("/qoder cn.app/contents/macos/")
     }
 
     /// Matches the Hermes Agent gateway (`python -m tui_gateway.entry`) and the

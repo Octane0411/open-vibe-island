@@ -544,6 +544,17 @@ final class ProcessMonitoringCoordinator {
             }
         }
 
+        // Qoder CN sessions are hook-managed (Claude Code fork inside the
+        // Qoder CN desktop app): while the app process exists, keep every
+        // non-ended tracked session alive. Explicit SessionEnd still wins.
+        let hasQoderCNProcess = activeProcesses.contains { $0.tool == .qoderCN }
+        if hasQoderCNProcess {
+            for session in sessions
+            where session.tool == .qoderCN && !session.isDemoSession && !session.isSessionEnded {
+                aliveIDs.insert(session.id)
+            }
+        }
+
         // Grok sessions are hook-managed. Process discovery sees a `grok`
         // binary but cannot recover Grok's session UUID from ps/lsof.
         // Prefer TTY / CWD matches when unique; otherwise use a conservative
@@ -1636,6 +1647,8 @@ final class ProcessMonitoringCoordinator {
             return "ZCode \(session.id.prefix(8))"
         case .hermes:
             return "Hermes \(session.id.prefix(8))"
+        case .qoderCN:
+            return "Qoder CN \(session.id.prefix(8))"
         }
     }
 }

@@ -16,6 +16,7 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
     case ohMyPi
     case zcode
     case hermes
+    case qoderCN
 
     public var displayName: String {
         switch self {
@@ -49,6 +50,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "ZCode"
         case .hermes:
             "Hermes"
+        case .qoderCN:
+            "Qoder CN"
         }
     }
 
@@ -84,12 +87,14 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "ZCODE"
         case .hermes:
             "HERMES"
+        case .qoderCN:
+            "QDCN"
         }
     }
 
     public var isClaudeCodeFork: Bool {
         switch self {
-        case .claudeCode, .qoder, .qwenCode, .factory, .codebuddy, .kimiCLI:
+        case .claudeCode, .qoder, .qoderCN, .qwenCode, .factory, .codebuddy, .kimiCLI:
             true
         default:
             false
@@ -117,6 +122,7 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
         case .ohMyPi:     "#f472b6"
         case .zcode:      "#2dd4bf"
         case .hermes:     "#38bdf8"
+        case .qoderCN:    "#ff4d88"
         }
     }
 }

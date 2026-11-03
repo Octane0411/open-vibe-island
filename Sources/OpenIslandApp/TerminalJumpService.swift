@@ -127,6 +127,11 @@ struct TerminalJumpService {
             alternateBundleIdentifiers: ["com.qoder.qoder"]
         ),
         TerminalAppDescriptor(
+            displayName: "Qoder CN",
+            bundleIdentifier: "com.qodercn.app",
+            aliases: ["qoder cn", "qoder-cn", "qodercn"]
+        ),
+        TerminalAppDescriptor(
             displayName: "Zed",
             bundleIdentifier: "dev.zed.Zed",
             aliases: ["zed"],
