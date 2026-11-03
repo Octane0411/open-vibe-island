@@ -139,6 +139,9 @@ final class AppModel {
     var hermesHookStatus: HermesHookInstallationStatus? { hooks.hermesHookStatus }
     var hermesHookStatusTitle: String { hooks.hermesHookStatusTitle }
     var hermesHookStatusSummary: String { hooks.hermesHookStatusSummary }
+    var dshPluginStatus: DshPluginInstallationStatus? { hooks.dshPluginStatus }
+    var dshPluginInstalled: Bool { hooks.dshPluginInstalled }
+    var isDshSetupBusy: Bool { hooks.isDshSetupBusy }
     var kimiHooksInstalled: Bool { hooks.kimiHooksInstalled }
     var isKimiHookSetupBusy: Bool { hooks.isKimiHookSetupBusy }
     var kimiHookStatus: KimiHookInstallationStatus? { hooks.kimiHookStatus }
@@ -187,6 +190,7 @@ final class AppModel {
             || hooks.grokHooksInstalled
             || hooks.zcodeHooksInstalled
             || hooks.hermesHooksInstalled
+            || hooks.dshPluginInstalled
             || hooks.piExtensionInstalled
             || hooks.ohMyPiExtensionInstalled
     }
@@ -227,6 +231,9 @@ final class AppModel {
     func uninstallZcodeHooks() { hooks.uninstallZcodeHooks() }
     func installHermesHooks() { hooks.installHermesHooks() }
     func uninstallHermesHooks() { hooks.uninstallHermesHooks() }
+    func refreshDshPluginStatus() { hooks.refreshDshPluginStatus() }
+    func installDshPlugin() { hooks.installDshPlugin() }
+    func uninstallDshPlugin() { hooks.uninstallDshPlugin() }
     func refreshPiExtensionStatuses() { hooks.refreshPiExtensionStatuses() }
     func installPiExtension() { hooks.installPiExtension() }
     func uninstallPiExtension() { hooks.uninstallPiExtension() }
@@ -1716,6 +1723,9 @@ final class AppModel {
             // binary and are installed whether or not it was located.
             if self.hooks.shouldAutoInstall(.pi) { self.installPiExtension() }
             if self.hooks.shouldAutoInstall(.ohMyPi) { self.installOhMyPiExtension() }
+            // The DeepSeek Harness plugin also talks to the bridge socket
+            // directly and does not depend on the hooks binary.
+            if self.hooks.shouldAutoInstall(.dsh) { self.installDshPlugin() }
 
             // Everything below writes the hooks binary path into agent
             // config, so it only runs once the binary has been located.

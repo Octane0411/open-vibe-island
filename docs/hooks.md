@@ -2,6 +2,40 @@
 
 OpenIsland receives lifecycle events from managed hook CLIs and runtime extensions. Codex, Claude-family agents, Gemini CLI, Grok Build, Kimi CLI, and ZCode invoke `OpenIslandHooks`; Pi and Oh My Pi load a TypeScript extension. Both paths forward typed payloads to the app over its Unix socket. Hook sources that support blocking can receive directives on stdout; Pi-family extensions are fire-and-forget.
 
+---
+
+## DeepSeek Harness Plugin (`open-island-dsh`)
+
+**Payload type**: `DshHookPayload`
+**Sources**: [`Sources/OpenIslandCore/DshHooks.swift`](../Sources/OpenIslandCore/DshHooks.swift), [`Sources/OpenIslandApp/PluginSources/open-island-dsh/index.js`](../Sources/OpenIslandApp/PluginSources/open-island-dsh/index.js)
+
+DeepSeek Harness (dsh) has no Claude-style hooks. It is a cordis "everything-is-a-plugin" runtime, so Open Island ships a zero-dependency plugin that subscribes to cordis lifecycle events and forwards them to the bridge socket directly (no hook CLI involved). The DSH app itself is never modified, so dsh can be updated freely.
+
+### Event mapping
+
+| Cordis event | OpenIsland behavior |
+|---|---|
+| `session/created` | `sessionStart` — creates/re-opens the DSH session card |
+| `session/disposed` | `sessionEnd` — settles the session (`isSessionEnd`) |
+| `session/event` (`user/message`) | Captures the prompt; the activity line shows "Prompt: …" |
+| `session/event` (`assistant/message`) | Captures the assistant reply; feeds the completion card |
+| `agent/status` (`running`) | `activity` — marks the session running |
+| `agent/status` (`idle`) | `turnCompleted` — completion card with the assistant reply |
+| `agent/error` | `turnCompleted` (failure summary) |
+| `tools/pre-execute` | `activity` with tool name + input preview. **This is a cordis waterfall — the plugin always `return await next()`**, so tool execution is never blocked |
+
+### Install / uninstall
+
+The installer injects the plugin into **every detected profile** under `~/.dsh/profiles/`: the plugin payload is copied to `<profile>/node_modules/open-island-dsh/`, a managed `- insert` entry is appended to `cordis.patch.yml` (a pristine `[]` template line is replaced in place, idempotent, timestamped backup first), and `package.json` is deliberately left untouched. An ownership manifest records the pre-install state so uninstall restores user bytes exactly. New profiles appear as "not installed" until the user reinstalls. Manage from **Settings → Setup → DeepSeek Harness**.
+
+### Wire format notes
+
+- Socket JSON uses snake_case (`hook_event_name`, `session_id`, `tool_name`, …) with the four normalized event values `sessionStart` / `sessionEnd` / `activity` / `turnCompleted`.
+- `session/event` is dispatched with per-listener containment on the session's carrier fiber; the plugin registers with `{ global: true }` (as every in-tree dsh consumer does). Append payloads live under `event.data`.
+- Fire-and-forget: responses are always `acknowledged`; the plugin never blocks dsh and ignores socket errors (fail-open).
+- `OPEN_ISLAND_DSH_DEBUG=1` dumps raw cordis events to `~/Library/Logs/open-island-dsh.log`.
+- DSH is a developer preview; the plugin reads every payload field defensively.
+
 ## Architecture
 
 ```text
@@ -376,6 +410,7 @@ Jump-back metadata (terminal app, terminal session ID, TTY) is read from the age
 | Grok Build | All managed events | **45 seconds** |
 | ZCode | All managed events | **45 seconds** (shared Claude-format path) |
 | Pi / Oh My Pi | Heartbeat liveness | **45 seconds** |
+| DeepSeek Harness | All plugin events | Bridge default (fire-and-forget) |
 
 ---
 
@@ -554,6 +589,8 @@ For iTerm, Terminal, and Ghostty the process additionally runs an AppleScript qu
 | [`Sources/OpenIslandCore/PiHooks.swift`](../Sources/OpenIslandCore/PiHooks.swift) | Pi/OMP payload model and session metadata helpers |
 | [`Sources/OpenIslandCore/PiExtensionInstallationManager.swift`](../Sources/OpenIslandCore/PiExtensionInstallationManager.swift) | Installs and removes the runtime-specific TypeScript extension |
 | [`Sources/OpenIslandCore/PiSessionRegistry.swift`](../Sources/OpenIslandCore/PiSessionRegistry.swift) | Persists recent Pi and OMP sessions |
+| [`Sources/OpenIslandCore/DshHooks.swift`](../Sources/OpenIslandCore/DshHooks.swift) | DSH plugin payload model and summary helpers |
+| [`Sources/OpenIslandCore/DshPluginInstallationManager.swift`](../Sources/OpenIslandCore/DshPluginInstallationManager.swift) | Installs/removes the bundled `open-island-dsh` plugin across `~/.dsh/profiles/` |
 | [`Sources/OpenIslandApp/Resources/open-island-pi.ts`](../Sources/OpenIslandApp/Resources/open-island-pi.ts) | Shared Pi/OMP runtime extension |
 | [`Sources/OpenIslandCore/BridgeServer.swift`](../Sources/OpenIslandCore/BridgeServer.swift) | Unix socket server — handles incoming hook payloads |
 | [`Sources/OpenIslandCore/BridgeTransport.swift`](../Sources/OpenIslandCore/BridgeTransport.swift) | Protocol codec and envelope types |
