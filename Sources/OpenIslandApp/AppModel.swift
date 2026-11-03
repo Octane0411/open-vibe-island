@@ -110,6 +110,7 @@ final class AppModel {
     var isFactoryHookSetupBusy: Bool { hooks.isFactoryHookSetupBusy }
     var isCodebuddyHookSetupBusy: Bool { hooks.isCodebuddyHookSetupBusy }
     var openCodePluginInstalled: Bool { hooks.openCodePluginInstalled }
+    var openCodePluginCurrent: Bool { hooks.openCodePluginStatus?.isCurrent == true }
     var claudeUsageInstalled: Bool { hooks.claudeUsageInstalled }
     var claudeHookStatusTitle: String { hooks.claudeHookStatusTitle }
     var claudeHookStatusSummary: String { hooks.claudeHookStatusSummary }
@@ -1716,6 +1717,7 @@ final class AppModel {
             // binary and are installed whether or not it was located.
             if self.hooks.shouldAutoInstall(.pi) { self.installPiExtension() }
             if self.hooks.shouldAutoInstall(.ohMyPi) { self.installOhMyPiExtension() }
+            if self.hooks.shouldAutoInstall(.openCode) { self.installOpenCodePlugin() }
 
             // Everything below writes the hooks binary path into agent
             // config, so it only runs once the binary has been located.
@@ -1731,7 +1733,6 @@ final class AppModel {
             if self.hooks.shouldAutoInstall(.qwenCode) { self.installQwenCodeHooks() }
             if self.hooks.shouldAutoInstall(.factory) { self.installFactoryHooks() }
             if self.hooks.shouldAutoInstall(.codebuddy) { self.installCodebuddyHooks() }
-            if self.hooks.shouldAutoInstall(.openCode) { self.installOpenCodePlugin() }
             if self.hooks.shouldAutoInstall(.cursor) { self.installCursorHooks() }
             if self.hooks.shouldAutoInstall(.gemini) { self.installGeminiHooks() }
             if self.hooks.shouldAutoInstall(.kimi) { self.installKimiHooks() }

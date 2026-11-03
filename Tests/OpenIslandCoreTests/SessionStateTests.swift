@@ -837,6 +837,86 @@ struct SessionStateTests {
     }
 
     @Test
+    func openCodeDesktopEventReplacesUnknownHostWithoutLosingWorkspace() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
+
+        let sessionID = "opencode-desktop-existing"
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processOpenCodeHook(
+                OpenCodeHookPayload(
+                    hookEventName: .sessionStart,
+                    sessionID: sessionID,
+                    cwd: "/tmp/worktree",
+                    terminalApp: "Unknown",
+                    terminalSessionID: "stale-terminal-id"
+                )
+            )
+        )
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processOpenCodeHook(
+                OpenCodeHookPayload(
+                    hookEventName: .sessionStart,
+                    sessionID: sessionID,
+                    cwd: ".",
+                    terminalApp: "OpenCode.app"
+                )
+            )
+        )
+
+        var iterator = stream.makeAsyncIterator()
+        _ = try await nextEvent(from: &iterator)
+        let jumpEvent = try await nextEvent(from: &iterator)
+        let activityEvent = try await nextEvent(from: &iterator)
+
+        #expect(jumpEvent.jumpTargetUpdate?.jumpTarget.terminalApp == "OpenCode.app")
+        #expect(jumpEvent.jumpTargetUpdate?.jumpTarget.workingDirectory == "/tmp/worktree")
+        #expect(jumpEvent.jumpTargetUpdate?.jumpTarget.workspaceName == "worktree")
+        #expect(jumpEvent.jumpTargetUpdate?.jumpTarget.terminalSessionID == nil)
+        #expect(activityEvent.activityUpdate?.phase == .running)
+        #expect(!activityEvent.isSessionStarted)
+    }
+
+    @Test
+    func newOpenCodeDesktopSessionDropsInheritedTerminalLocators() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        try await observer.send(.registerClient(role: .observer))
+
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processOpenCodeHook(
+                OpenCodeHookPayload(
+                    hookEventName: .sessionStart,
+                    sessionID: "opencode-desktop-new",
+                    cwd: "/tmp/worktree",
+                    terminalApp: "OpenCode.app",
+                    terminalSessionID: "inherited-session",
+                    terminalTTY: "/dev/ttys001"
+                )
+            )
+        )
+
+        var iterator = stream.makeAsyncIterator()
+        let startEvent = try await nextEvent(from: &iterator)
+        #expect(startEvent.startedSession?.jumpTarget?.terminalApp == "OpenCode.app")
+        #expect(startEvent.startedSession?.jumpTarget?.terminalSessionID == nil)
+        #expect(startEvent.startedSession?.jumpTarget?.terminalTTY == nil)
+    }
+
+    @Test
     func codexPreToolUseWaitsForApprovalAndReturnsDenyDirective() async throws {
         let socketURL = BridgeSocketLocation.uniqueTestURL()
         let server = BridgeServer(socketURL: socketURL)

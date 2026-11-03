@@ -480,6 +480,7 @@ struct SetupSettingsPane: View {
                 hookRow(
                     name: "OpenCode",
                     installed: model.openCodePluginInstalled,
+                    updateAvailable: !model.openCodePluginCurrent,
                     busy: model.isOpenCodeSetupBusy,
                     requiresBinary: false,
                     configLocationURL: model.openCodePluginStatus?.configURL,
@@ -771,7 +772,7 @@ struct SetupSettingsPane: View {
                 Button(lang.t("setup.installAll")) {
                     if !model.claudeHooksInstalled { model.installClaudeHooks() }
                     if !model.codexHooksInstalled { model.installCodexHooks() }
-                    if !model.openCodePluginInstalled { model.installOpenCodePlugin() }
+                    if !model.openCodePluginCurrent { model.installOpenCodePlugin() }
                     if !model.qoderHooksInstalled { model.installQoderHooks() }
                     if !model.qwenCodeHooksInstalled { model.installQwenCodeHooks() }
                     if !model.factoryHooksInstalled { model.installFactoryHooks() }
@@ -843,7 +844,7 @@ struct SetupSettingsPane: View {
     }
 
     private var allReady: Bool {
-        model.claudeHooksInstalled && model.codexHooksInstalled && model.openCodePluginInstalled
+        model.claudeHooksInstalled && model.codexHooksInstalled && model.openCodePluginCurrent
             && model.qoderHooksInstalled && model.qwenCodeHooksInstalled && model.factoryHooksInstalled && model.codebuddyHooksInstalled
             && model.cursorHooksInstalled && model.geminiHooksInstalled && model.kimiHooksInstalled
             && model.grokHooksInstalled && model.zcodeHooksInstalled
@@ -1001,6 +1002,7 @@ struct SetupSettingsPane: View {
     private func hookRow(
         name: String,
         installed: Bool,
+        updateAvailable: Bool = false,
         busy: Bool,
         requiresBinary: Bool = true,
         configLocationURL: URL? = nil,
@@ -1023,16 +1025,24 @@ struct SetupSettingsPane: View {
                         .help(lang.t("setup.revealConfigLocation"))
                     }
                     HStack(spacing: 4) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                        Text(lang.t("settings.general.activated"))
+                        Image(systemName: updateAvailable ? "arrow.triangle.2.circlepath.circle.fill" : "checkmark.circle.fill")
+                            .foregroundStyle(updateAvailable ? .orange : .green)
+                        Text(updateAvailable ? lang.t("settings.general.install") : lang.t("settings.general.activated"))
                             .foregroundStyle(.secondary)
+                    }
+                    if updateAvailable {
+                        Button(lang.t("settings.general.install")) {
+                            installAction()
+                        }
+                        .font(.caption)
+                        .disabled(busy)
                     }
                     Button(lang.t("settings.general.uninstall")) {
                         uninstallAction()
                     }
                     .foregroundStyle(.red)
                     .font(.caption)
+                    .disabled(busy)
                 }
             } else if busy {
                 ProgressView().controlSize(.small)

@@ -55,6 +55,7 @@ final class ProcessMonitoringCoordinator {
     private static let cursorStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let codexAppStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let claudeDesktopStalenessTimeout: TimeInterval = 600  // 10 minutes
+    private static let openCodeDesktopStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let conductorStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let hermesStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let piHeartbeatTimeout: TimeInterval = 45
@@ -402,10 +403,12 @@ final class ProcessMonitoringCoordinator {
     /// Codex/Claude/Gemini).
     func sessionIDsWithAliveProcesses(
         activeProcesses: [ActiveProcessSnapshot],
-        isCodexAppRunning: Bool
+        isCodexAppRunning: Bool,
+        isOpenCodeAppRunning: Bool? = nil
     ) -> Set<String> {
         var aliveIDs: Set<String> = []
         let sessions = state.sessions
+        let isOpenCodeAppRunning = isOpenCodeAppRunning ?? Self.isOpenCodeDesktopAppRunning()
 
         // Codex CLI sessions: match by session ID directly.
         let codexProcessIDs = Set(
@@ -498,6 +501,17 @@ final class ProcessMonitoringCoordinator {
         if hasUnmatchedOpenCodeProcess {
             for session in trackedOpenCodeSessions where !claimedOpenCodeSessionIDs.contains(session.id) {
                 aliveIDs.insert(session.id)
+            }
+        }
+
+        if isOpenCodeAppRunning {
+            for session in trackedOpenCodeSessions where session.jumpTarget?.terminalApp == "OpenCode.app" {
+                if session.isSessionEnded { continue }
+                let isStale = session.phase == .completed
+                    && session.updatedAt.addingTimeInterval(Self.openCodeDesktopStalenessTimeout) < Date.now
+                if !isStale {
+                    aliveIDs.insert(session.id)
+                }
             }
         }
 
@@ -1464,6 +1478,12 @@ final class ProcessMonitoringCoordinator {
     static func isClaudeDesktopAppRunning() -> Bool {
         NSWorkspace.shared.runningApplications.contains { app in
             app.bundleIdentifier == "com.anthropic.claudefordesktop"
+        }
+    }
+
+    static func isOpenCodeDesktopAppRunning() -> Bool {
+        NSWorkspace.shared.runningApplications.contains { app in
+            app.bundleIdentifier == "ai.opencode.desktop"
         }
     }
 

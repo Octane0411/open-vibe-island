@@ -72,7 +72,7 @@ try {
     const info = execSync(`ps -o tty=,ppid= -p ${walkPid}`, { timeout: 1000 }).toString().trim();
     const parts = info.split(/\s+/);
     const tty = parts[0], ppid = parseInt(parts[1]);
-    if (tty && tty !== "??" && tty !== "?") { detectedTty = `/dev/${tty}`; break; }
+    if (!detectedTty && tty && tty !== "??" && tty !== "?") detectedTty = `/dev/${tty}`;
     if (!ppid || ppid <= 1) break;
     walkPid = ppid;
   }
@@ -94,7 +94,10 @@ function collectEnv() {
 function terminalFields() {
   const env = process.env;
   const result = {};
-  if (env.ITERM_SESSION_ID) {
+  const isOpenCodeDesktop = env.OPENCODE_CLIENT === "desktop";
+  if (isOpenCodeDesktop) {
+    result.terminal_app = "OpenCode.app";
+  } else if (env.ITERM_SESSION_ID) {
     result.terminal_app = "iTerm";
     result.terminal_session_id = env.ITERM_SESSION_ID;
   } else if (env.CMUX_WORKSPACE_ID || env.CMUX_SOCKET_PATH) {
@@ -193,18 +196,20 @@ export default async ({ client, serverUrl }) => {
 
     // session.deleted
     if (t === "session.deleted" && p.info) {
+      const cwd = sessionCwd.get(p.info.id);
       sessions.delete(p.info.id);
       sessionCwd.delete(p.info.id);
-      return makePayload("SessionEnd", p.info.id, sessionCwd.get(p.info.id));
+      return makePayload("SessionEnd", p.info.id, cwd);
     }
 
     // session.updated (archived)
     if (t === "session.updated" && p.info) {
       if (p.info.directory) sessionCwd.set(p.info.id, p.info.directory);
       if (p.info.time?.archived) {
+        const cwd = sessionCwd.get(p.info.id);
         sessions.delete(p.info.id);
         sessionCwd.delete(p.info.id);
-        return makePayload("SessionEnd", p.info.id, sessionCwd.get(p.info.id));
+        return makePayload("SessionEnd", p.info.id, cwd);
       }
       return null;
     }

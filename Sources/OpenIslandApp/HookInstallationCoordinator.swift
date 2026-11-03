@@ -342,6 +342,9 @@ final class HookInstallationCoordinator {
         }
 
         if status.isInstalled {
+            if !status.pluginCurrent {
+                return "managed plugin update available"
+            }
             return "managed plugin present in \(status.pluginsDirectory.path)"
         }
 
@@ -768,7 +771,9 @@ final class HookInstallationCoordinator {
             group.addTask { @MainActor [weak self] in
                 guard let self else { return }
                 do {
-                    let status = try self.openCodePluginInstallationManager.status()
+                    let status = try self.openCodePluginInstallationManager.status(
+                        expectedPluginData: self.loadBundledOpenCodePlugin()
+                    )
                     self.openCodePluginStatus = status
                 } catch {
                     self.onStatusMessage?("Failed to read OpenCode plugin status: \(error.localizedDescription)")
@@ -866,7 +871,9 @@ final class HookInstallationCoordinator {
             guard let self else { return }
 
             do {
-                let status = try self.openCodePluginInstallationManager.status()
+                let status = try self.openCodePluginInstallationManager.status(
+                    expectedPluginData: self.loadBundledOpenCodePlugin()
+                )
                 self.openCodePluginStatus = status
             } catch {
                 self.onStatusMessage?("Failed to read OpenCode plugin status: \(error.localizedDescription)")
@@ -1046,7 +1053,7 @@ final class HookInstallationCoordinator {
         case .qwenCode: return !qwenCodeHooksInstalled
         case .factory: return !factoryHooksInstalled
         case .codebuddy: return !codebuddyHooksInstalled
-        case .openCode: return !openCodePluginInstalled
+        case .openCode: return openCodePluginStatus?.isCurrent != true
         case .gemini: return !geminiHooksInstalled
         case .kimi: return !kimiHooksInstalled
         case .grok: return !grokHooksInstalled
