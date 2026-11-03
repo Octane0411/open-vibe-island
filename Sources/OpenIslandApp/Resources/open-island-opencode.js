@@ -65,16 +65,13 @@ function sendAndWaitResponse(json, timeoutMs = 300000) {
 
 // Terminal environment detection
 let detectedTty = null;
-let detectedOpenCodeDesktop = false;
 try {
   const { execSync } = require("child_process");
   let walkPid = process.pid;
   for (let i = 0; i < 8; i++) {
-    const info = execSync(`ps -o tty=,ppid=,command= -p ${walkPid}`, { timeout: 1000 }).toString().trim();
-    if (info.includes("/OpenCode.app/Contents/")) detectedOpenCodeDesktop = true;
-    const match = info.match(/^(\S+)\s+(\d+)\s+/);
-    if (!match) break;
-    const tty = match[1], ppid = parseInt(match[2]);
+    const info = execSync(`ps -o tty=,ppid= -p ${walkPid}`, { timeout: 1000 }).toString().trim();
+    const parts = info.split(/\s+/);
+    const tty = parts[0], ppid = parseInt(parts[1]);
     if (!detectedTty && tty && tty !== "??" && tty !== "?") detectedTty = `/dev/${tty}`;
     if (!ppid || ppid <= 1) break;
     walkPid = ppid;
@@ -97,12 +94,7 @@ function collectEnv() {
 function terminalFields() {
   const env = process.env;
   const result = {};
-  const executablePath = process.execPath || "";
-  const resourcesPath = process.resourcesPath || "";
-  const isOpenCodeDesktop = detectedOpenCodeDesktop ||
-    env.__CFBundleIdentifier === "ai.opencode.desktop" ||
-    executablePath.includes("/OpenCode.app/Contents/") ||
-    resourcesPath.includes("/OpenCode.app/Contents/");
+  const isOpenCodeDesktop = env.OPENCODE_CLIENT === "desktop";
   if (isOpenCodeDesktop) {
     result.terminal_app = "OpenCode.app";
   } else if (env.ITERM_SESSION_ID) {

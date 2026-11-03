@@ -479,7 +479,8 @@ struct SetupSettingsPane: View {
 
                 hookRow(
                     name: "OpenCode",
-                    installed: model.openCodePluginCurrent,
+                    installed: model.openCodePluginInstalled,
+                    updateAvailable: !model.openCodePluginCurrent,
                     busy: model.isOpenCodeSetupBusy,
                     requiresBinary: false,
                     configLocationURL: model.openCodePluginStatus?.configURL,
@@ -1001,6 +1002,7 @@ struct SetupSettingsPane: View {
     private func hookRow(
         name: String,
         installed: Bool,
+        updateAvailable: Bool = false,
         busy: Bool,
         requiresBinary: Bool = true,
         configLocationURL: URL? = nil,
@@ -1023,16 +1025,24 @@ struct SetupSettingsPane: View {
                         .help(lang.t("setup.revealConfigLocation"))
                     }
                     HStack(spacing: 4) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                        Text(lang.t("settings.general.activated"))
+                        Image(systemName: updateAvailable ? "arrow.triangle.2.circlepath.circle.fill" : "checkmark.circle.fill")
+                            .foregroundStyle(updateAvailable ? .orange : .green)
+                        Text(updateAvailable ? lang.t("settings.general.install") : lang.t("settings.general.activated"))
                             .foregroundStyle(.secondary)
+                    }
+                    if updateAvailable {
+                        Button(lang.t("settings.general.install")) {
+                            installAction()
+                        }
+                        .font(.caption)
+                        .disabled(busy)
                     }
                     Button(lang.t("settings.general.uninstall")) {
                         uninstallAction()
                     }
                     .foregroundStyle(.red)
                     .font(.caption)
+                    .disabled(busy)
                 }
             } else if busy {
                 ProgressView().controlSize(.small)

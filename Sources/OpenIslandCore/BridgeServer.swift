@@ -1075,7 +1075,7 @@ public final class BridgeServer: @unchecked Sendable {
                         initialPhase: .running,
                         summary: payload.implicitStartSummary,
                         timestamp: .now,
-                        jumpTarget: payload.defaultJumpTarget,
+                        jumpTarget: openCodeJumpTarget(for: payload),
                         openCodeMetadata: payload.defaultOpenCodeMetadata.isEmpty ? nil : payload.defaultOpenCodeMetadata
                     )
                 )
@@ -2171,7 +2171,7 @@ public final class BridgeServer: @unchecked Sendable {
                     initialPhase: .running,
                     summary: payload.implicitStartSummary,
                     timestamp: .now,
-                    jumpTarget: payload.defaultJumpTarget,
+                    jumpTarget: openCodeJumpTarget(for: payload),
                     openCodeMetadata: payload.defaultOpenCodeMetadata.isEmpty ? nil : payload.defaultOpenCodeMetadata
                 )
             )
@@ -2183,19 +2183,10 @@ public final class BridgeServer: @unchecked Sendable {
             return
         }
 
-        var jumpTarget = payload.defaultJumpTarget
+        var jumpTarget = openCodeJumpTarget(for: payload, existingTarget: existingSession.jumpTarget)
 
-        if jumpTarget.terminalApp == "OpenCode.app" {
-            if payload.cwd == ".", let existingTarget = existingSession.jumpTarget {
-                jumpTarget.workspaceName = existingTarget.workspaceName
-                jumpTarget.workingDirectory = existingTarget.workingDirectory
-            }
-            jumpTarget.terminalSessionID = nil
-            jumpTarget.terminalTTY = nil
-            jumpTarget.tmuxTarget = nil
-            jumpTarget.tmuxSocketPath = nil
-            jumpTarget.warpPaneUUID = nil
-        } else if jumpTarget.terminalSessionID == nil,
+        if jumpTarget.terminalApp != "OpenCode.app",
+           jumpTarget.terminalSessionID == nil,
            let existingID = existingSession.jumpTarget?.terminalSessionID,
            !existingID.isEmpty {
             jumpTarget.terminalSessionID = existingID
@@ -2214,6 +2205,27 @@ public final class BridgeServer: @unchecked Sendable {
                 )
             )
         )
+    }
+
+    private func openCodeJumpTarget(
+        for payload: OpenCodeHookPayload,
+        existingTarget: JumpTarget? = nil
+    ) -> JumpTarget {
+        var jumpTarget = payload.defaultJumpTarget
+        guard jumpTarget.terminalApp == "OpenCode.app" else {
+            return jumpTarget
+        }
+
+        if payload.cwd == ".", let existingTarget {
+            jumpTarget.workspaceName = existingTarget.workspaceName
+            jumpTarget.workingDirectory = existingTarget.workingDirectory
+        }
+        jumpTarget.terminalSessionID = nil
+        jumpTarget.terminalTTY = nil
+        jumpTarget.tmuxTarget = nil
+        jumpTarget.tmuxSocketPath = nil
+        jumpTarget.warpPaneUUID = nil
+        return jumpTarget
     }
 
     private func synchronizeOpenCodeMetadata(for payload: OpenCodeHookPayload) {

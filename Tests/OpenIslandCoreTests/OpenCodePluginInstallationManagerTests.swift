@@ -21,4 +21,16 @@ struct OpenCodePluginInstallationManagerTests {
         #expect(outdated.isInstalled)
         #expect(!outdated.isCurrent)
     }
+
+    @Test
+    func statusDoesNotAssumePluginIsCurrentWithoutExpectedData() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let manager = OpenCodePluginInstallationManager(openCodeConfigDirectory: directory)
+        _ = try manager.install(pluginSourceData: Data("plugin".utf8))
+
+        #expect(!(try manager.status()).isCurrent)
+    }
 }

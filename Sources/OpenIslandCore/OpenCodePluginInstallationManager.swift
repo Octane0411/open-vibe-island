@@ -88,7 +88,7 @@ public final class OpenCodePluginInstallationManager: @unchecked Sendable {
     public func status(expectedPluginData: Data? = nil) throws -> OpenCodePluginInstallationStatus {
         let pluginPresent = fileManager.fileExists(atPath: pluginFileURL.path)
         let registered = isPluginRegistered()
-        let pluginCurrent = expectedPluginData.map { (try? Data(contentsOf: pluginFileURL)) == $0 } ?? pluginPresent
+        let pluginCurrent = expectedPluginData.map { (try? Data(contentsOf: pluginFileURL)) == $0 } ?? false
         let manifest = try loadManifest()
 
         return OpenCodePluginInstallationStatus(
