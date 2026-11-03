@@ -1634,6 +1634,8 @@ final class ProcessMonitoringCoordinator {
             return "Oh My Pi \(session.id.prefix(8))"
         case .zcode:
             return "ZCode \(session.id.prefix(8))"
+        case .dsh:
+            return "DSH \(session.id.prefix(8))"
         case .hermes:
             return "Hermes \(session.id.prefix(8))"
         }

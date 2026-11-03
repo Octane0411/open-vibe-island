@@ -84,7 +84,7 @@ public struct SessionState: Equatable, Sendable {
             Self.refreshCodexAppClassification(for: &session)
             session.isSessionEnded = false
             session.isProcessAlive = true
-            if payload.tool == .pi || payload.tool == .ohMyPi {
+            if payload.tool.usesHeartbeatLiveness {
                 session.lastHeartbeatAt = payload.timestamp
                 session.heartbeatReconnectStartedAt = nil
             }
@@ -242,7 +242,7 @@ public struct SessionState: Equatable, Sendable {
 
         case let .sessionHeartbeat(payload):
             guard var session = sessionsByID[payload.sessionID],
-                  (session.tool == .pi || session.tool == .ohMyPi),
+                  session.tool.usesHeartbeatLiveness,
                   !session.isSessionEnded else {
                 return
             }
@@ -385,7 +385,7 @@ public struct SessionState: Equatable, Sendable {
     ) {
         guard var session = sessionsByID[sessionID] else { return }
 
-        if session.tool == .pi || session.tool == .ohMyPi {
+        if session.tool.usesHeartbeatLiveness {
             guard !session.isSessionEnded else { return }
             session.isHookManaged = true
             session.lastHeartbeatAt = timestamp
@@ -394,8 +394,7 @@ public struct SessionState: Equatable, Sendable {
 
         guard !session.isProcessAlive
             || session.processNotSeenCount != 0
-            || session.tool == .pi
-            || session.tool == .ohMyPi else {
+            || session.tool.usesHeartbeatLiveness else {
             return
         }
         session.isProcessAlive = true
@@ -444,9 +443,9 @@ public struct SessionState: Equatable, Sendable {
                     continue
                 }
 
-                // Pi and Oh My Pi have no reliable process-to-session mapping.
+                // Pi-family and DSH sessions have no reliable process mapping.
                 // Their extension heartbeat owns liveness and expiry.
-                if session.tool == .pi || session.tool == .ohMyPi {
+                if session.tool.usesHeartbeatLiveness {
                     continue
                 }
 
@@ -491,14 +490,14 @@ public struct SessionState: Equatable, Sendable {
         return changed
     }
 
-    /// Ends heartbeat-managed Pi sessions whose extension stopped reporting.
+    /// Ends heartbeat-managed runtime sessions whose extension stopped reporting.
     /// Returns the IDs that transitioned to ended.
     @discardableResult
     public mutating func expireStalePiHeartbeats(before deadline: Date) -> Set<String> {
         var expired: Set<String> = []
 
         for (id, var session) in sessionsByID {
-            guard session.tool == .pi || session.tool == .ohMyPi,
+            guard session.tool.usesHeartbeatLiveness,
                   session.isHookManaged,
                   !session.isSessionEnded else {
                 continue

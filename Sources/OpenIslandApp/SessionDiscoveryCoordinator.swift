@@ -108,7 +108,7 @@ final class SessionDiscoveryCoordinator {
 
         let allPi = (try? piSessionRegistry.load()) ?? []
         let piRecords = allPi.filter {
-            $0.updatedAt >= cutoff && ($0.tool == .pi || $0.tool == .ohMyPi)
+            $0.updatedAt >= cutoff && ($0.tool.usesHeartbeatLiveness)
         }
 
         let discoveredCodex = codexRolloutDiscovery.discoverRecentSessions()
@@ -630,7 +630,7 @@ final class SessionDiscoveryCoordinator {
         piSessionPersistenceTask?.cancel()
         let records = state.sessions
             .filter {
-                ($0.tool == .pi || $0.tool == .ohMyPi)
+                ($0.tool.usesHeartbeatLiveness)
                     && $0.isTrackedLiveSession
                     && !$0.isSessionEnded
                     && $0.updatedAt >= Date.now.addingTimeInterval(-86_400)

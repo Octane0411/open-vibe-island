@@ -90,6 +90,7 @@ public enum BridgeCommand: Equatable, Codable, Sendable {
     case processCursorHook(CursorHookPayload)
     case processGeminiHook(GeminiHookPayload)
     case processGrokHook(GrokHookPayload)
+    case processDSHHook(DSHHookPayload)
     case processPiHook(PiHookPayload)
     case processHermesHook(HermesHookPayload)
 
@@ -106,6 +107,7 @@ public enum BridgeCommand: Equatable, Codable, Sendable {
         case cursorHook
         case geminiHook
         case grokHook
+        case dshHook
         case piHook
         case hermesHook
     }
@@ -121,6 +123,7 @@ public enum BridgeCommand: Equatable, Codable, Sendable {
         case processCursorHook
         case processGeminiHook
         case processGrokHook
+        case processDSHHook = "processDshHook"
         case processPiHook
         case processHermesHook
     }
@@ -159,6 +162,8 @@ public enum BridgeCommand: Equatable, Codable, Sendable {
             self = .processGeminiHook(try container.decode(GeminiHookPayload.self, forKey: .geminiHook))
         case .processGrokHook:
             self = .processGrokHook(try container.decode(GrokHookPayload.self, forKey: .grokHook))
+        case .processDSHHook:
+            self = .processDSHHook(try container.decode(DSHHookPayload.self, forKey: .dshHook))
         case .processPiHook:
             self = .processPiHook(try container.decode(PiHookPayload.self, forKey: .piHook))
         case .processHermesHook:
@@ -203,6 +208,9 @@ public enum BridgeCommand: Equatable, Codable, Sendable {
         case let .processGrokHook(payload):
             try container.encode(CommandType.processGrokHook, forKey: .type)
             try container.encode(payload, forKey: .grokHook)
+        case let .processDSHHook(payload):
+            try container.encode(CommandType.processDSHHook, forKey: .type)
+            try container.encode(payload, forKey: .dshHook)
         case let .processPiHook(payload):
             try container.encode(CommandType.processPiHook, forKey: .type)
             try container.encode(payload, forKey: .piHook)

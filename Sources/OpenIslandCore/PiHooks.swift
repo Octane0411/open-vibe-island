@@ -12,7 +12,9 @@ public enum PiAgentVariant: String, Codable, Sendable, CaseIterable {
     }
 }
 
-public enum PiHookEventName: String, Codable, Sendable {
+public typealias PiHookEventName = RuntimeHookEventName
+
+public enum RuntimeHookEventName: String, Codable, Sendable {
     case sessionStart = "SessionStart"
     case sessionEnd = "SessionEnd"
     case userPromptSubmit = "UserPromptSubmit"
@@ -151,20 +153,43 @@ public struct PiSessionMetadata: Equatable, Codable, Sendable {
     }
 }
 
-public extension PiHookPayload {
+/// Shared nonblocking lifecycle contract for local runtime extensions.
+/// Pi metadata and registry names are retained for persisted-data compatibility.
+public protocol RuntimeHookPayload: Sendable {
+    var hookEventName: PiHookEventName { get }
+    var tool: AgentTool { get }
+    var sessionID: String { get }
+    var cwd: String { get }
+    var toolName: String? { get }
+    var toolInput: String? { get }
+    var prompt: String? { get }
+    var lastAssistantMessage: String? { get }
+    var model: String? { get }
+    var transcriptPath: String? { get }
+    var terminalApp: String? { get }
+    var terminalSessionID: String? { get }
+    var terminalTTY: String? { get }
+    var terminalTitle: String? { get }
+}
+
+extension PiHookPayload: RuntimeHookPayload {
+    public var tool: AgentTool { agent.tool }
+}
+
+public extension RuntimeHookPayload {
     var workspaceName: String {
         WorkspaceNameResolver.workspaceName(for: cwd)
     }
 
     var sessionTitle: String {
-        "\(agent.tool.displayName) · \(workspaceName)"
+        "\(tool.displayName): \(workspaceName)"
     }
 
     var defaultJumpTarget: JumpTarget {
         JumpTarget(
             terminalApp: terminalApp ?? "Unknown",
             workspaceName: workspaceName,
-            paneTitle: terminalTitle ?? "\(agent.tool.displayName) \(sessionID.prefix(8))",
+            paneTitle: terminalTitle ?? "\(tool.displayName) \(sessionID.prefix(8))",
             workingDirectory: cwd,
             terminalSessionID: terminalSessionID,
             terminalTTY: terminalTTY
@@ -184,7 +209,7 @@ public extension PiHookPayload {
     }
 
     var implicitStartSummary: String {
-        let name = agent.tool.displayName
+        let name = tool.displayName
         return switch hookEventName {
         case .sessionStart: "Started \(name) session in \(workspaceName)."
         case .sessionEnd: "\(name) session ended in \(workspaceName)."

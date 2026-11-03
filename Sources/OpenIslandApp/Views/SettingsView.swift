@@ -427,6 +427,7 @@ struct SetupSettingsPane: View {
     @State private var confirmingUninstallKimi = false
     @State private var confirmingUninstallGrok = false
     @State private var confirmingUninstallZcode = false
+    @State private var confirmingUninstallDSH = false
     @State private var confirmingUninstallPi = false
     @State private var confirmingUninstallOhMyPi = false
     @State private var confirmingUninstallHermes = false
@@ -651,6 +652,24 @@ struct SetupSettingsPane: View {
                 }
 
                 hookRow(
+                    name: lang.t("setup.dsh.name"),
+                    installed: model.dshPluginInstalled,
+                    busy: model.isDSHSetupBusy,
+                    requiresBinary: false,
+                    configLocationURL: model.dshPluginStatus?.configURL,
+                    installAction: { model.installDSHPlugin() },
+                    uninstallAction: { confirmingUninstallDSH = true }
+                )
+                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallDSH) {
+                    Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
+                        model.uninstallDSHPlugin()
+                    }
+                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
+                } message: {
+                    Text(lang.t("setup.dsh.uninstallMessage"))
+                }
+
+                hookRow(
                     name: "Pi",
                     installed: model.piExtensionInstalled,
                     busy: model.isPiSetupBusy,
@@ -782,6 +801,7 @@ struct SetupSettingsPane: View {
                     if !model.grokHooksInstalled { model.installGrokHooks() }
                     if !model.zcodeHooksInstalled { model.installZcodeHooks() }
                     if !model.hermesHooksInstalled { model.installHermesHooks() }
+                    if !model.dshPluginInstalled { model.installDSHPlugin() }
                     if !model.piExtensionInstalled { model.installPiExtension() }
                     if !model.ohMyPiExtensionInstalled { model.installOhMyPiExtension() }
                     if !model.claudeUsageInstalled { model.installClaudeUsageBridge() }
@@ -848,7 +868,7 @@ struct SetupSettingsPane: View {
             && model.cursorHooksInstalled && model.geminiHooksInstalled && model.kimiHooksInstalled
             && model.grokHooksInstalled && model.zcodeHooksInstalled
             && model.grokHooksInstalled && model.hermesHooksInstalled
-            && model.piExtensionInstalled && model.ohMyPiExtensionInstalled && model.claudeUsageInstalled
+            && model.dshPluginInstalled && model.piExtensionInstalled && model.ohMyPiExtensionInstalled && model.claudeUsageInstalled
     }
 
     @ViewBuilder

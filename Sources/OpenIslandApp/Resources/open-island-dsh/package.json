@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Read-only per-session lifecycle observer for the local Open Island bridge",
   "type": "module",
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "main": "open-island-dsh.js",
   "exports": {
     ".": "./open-island-dsh.js",

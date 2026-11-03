@@ -97,6 +97,7 @@ export function createSocketTransport(socketPath, { timeoutMs = 500, maxPending 
     let socket
     let timer
     let settled = false
+    let written = false
     function finish(sent) {
       if (settled) return
       settled = true
@@ -112,11 +113,14 @@ export function createSocketTransport(socketPath, { timeoutMs = 500, maxPending 
       timer = setTimeout(() => finish(false), timeoutMs)
       timer.unref()
       socket = connect({ path: socketPath }, () => {
-        socket.end(item.line, () => finish(true))
+        // Keep the read half open until the bridge closes it. Destroying here
+        // can make its initial greeting fail before it reads our command.
+        socket.end(item.line, () => { written = true })
       })
       socket.unref()
       socket.once('error', () => finish(false))
-      socket.once('close', () => finish(false))
+      socket.once('end', () => finish(written))
+      socket.once('close', () => finish(written))
       // The Swift bridge greets new clients. Replies are deliberately ignored.
       socket.on('data', () => {})
     } catch {

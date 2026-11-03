@@ -4,17 +4,19 @@ Dependency-free ESM host plugin for DSH 0.2.1-rc.3 and compatible 0.2 releases. 
 
 ## Install explicitly
 
-From the Open Island repository, ask DSH to install the bundled resource package into the intended profile:
+Prefer Settings > Setup > DSH (Web profile) in Open Island. It installs a managed local bundle and preserves unrelated profile settings. Restart DSH afterward.
+
+For other profiles, use the Open Island setup CLI documented in the [hook guide](../../../../docs/hooks.md#deepseek-harness-dsh-plugin), or install this package directly from the repository as an alternative. Use one installation method per profile to avoid duplicate observers:
 
 ```sh
 dsh plugin --profile web add "file:$PWD/Sources/OpenIslandApp/Resources/open-island-dsh"
 ```
 
-Use the actual profile name for other hosts. Restart that profile if it does not support host plugin reload. This command changes the selected DSH profile only when a person runs it. Open Island must separately support the DSH bridge command before observations appear.
+Use the actual profile name for other hosts. Restart that profile if it does not support host plugin reload. This command changes the selected DSH profile only when a person runs it.
 
-For an app installer, assemble the three runtime resources into one persistent package directory before invoking `dsh plugin`. SwiftPM resource processing can flatten subdirectories, so preserve the package manifest name and the relative bundle patch path when reconstructing the directory. Do not install from an ephemeral app extraction directory.
+The app installer reconstructs a persistent managed package from the bundled JavaScript and generated Cordis metadata. It registers the bundle in the existing profile manifest without running `dsh plugin` or rewriting user YAML. Its managed package name is `open-island-dsh`. SwiftPM may flatten the source resources, so installation does not depend on the original package directory surviving in the app bundle.
 
-Remove explicitly with:
+Remove a managed installation through Open Island Settings. Remove a direct package installation with:
 
 ```sh
 dsh plugin --profile web remove dsh-plugin-open-island
