@@ -1049,6 +1049,22 @@ public final class BridgeServer: @unchecked Sendable {
         switch payload.hookEventName {
         case .sessionStart:
             clearStaleOpenCodeInteractionIfNeeded(for: payload.sessionID)
+            if hasSession(id: payload.sessionID) {
+                synchronizeOpenCodeJumpTarget(for: payload)
+                synchronizeOpenCodeMetadata(for: payload)
+                emit(
+                    .activityUpdated(
+                        SessionActivityUpdated(
+                            sessionID: payload.sessionID,
+                            summary: payload.implicitStartSummary,
+                            phase: .running,
+                            timestamp: .now
+                        )
+                    )
+                )
+                send(.response(.acknowledged), to: clientID)
+                return
+            }
             emit(
                 .sessionStarted(
                     SessionStarted(

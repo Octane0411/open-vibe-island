@@ -75,7 +75,7 @@ try {
     const match = info.match(/^(\S+)\s+(\d+)\s+/);
     if (!match) break;
     const tty = match[1], ppid = parseInt(match[2]);
-    if (tty && tty !== "??" && tty !== "?") { detectedTty = `/dev/${tty}`; break; }
+    if (!detectedTty && tty && tty !== "??" && tty !== "?") detectedTty = `/dev/${tty}`;
     if (!ppid || ppid <= 1) break;
     walkPid = ppid;
   }
@@ -204,18 +204,20 @@ export default async ({ client, serverUrl }) => {
 
     // session.deleted
     if (t === "session.deleted" && p.info) {
+      const cwd = sessionCwd.get(p.info.id);
       sessions.delete(p.info.id);
       sessionCwd.delete(p.info.id);
-      return makePayload("SessionEnd", p.info.id, sessionCwd.get(p.info.id));
+      return makePayload("SessionEnd", p.info.id, cwd);
     }
 
     // session.updated (archived)
     if (t === "session.updated" && p.info) {
       if (p.info.directory) sessionCwd.set(p.info.id, p.info.directory);
       if (p.info.time?.archived) {
+        const cwd = sessionCwd.get(p.info.id);
         sessions.delete(p.info.id);
         sessionCwd.delete(p.info.id);
-        return makePayload("SessionEnd", p.info.id, sessionCwd.get(p.info.id));
+        return makePayload("SessionEnd", p.info.id, cwd);
       }
       return null;
     }

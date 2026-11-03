@@ -479,7 +479,7 @@ struct SetupSettingsPane: View {
 
                 hookRow(
                     name: "OpenCode",
-                    installed: model.openCodePluginInstalled,
+                    installed: model.openCodePluginCurrent,
                     busy: model.isOpenCodeSetupBusy,
                     requiresBinary: false,
                     configLocationURL: model.openCodePluginStatus?.configURL,
@@ -771,7 +771,7 @@ struct SetupSettingsPane: View {
                 Button(lang.t("setup.installAll")) {
                     if !model.claudeHooksInstalled { model.installClaudeHooks() }
                     if !model.codexHooksInstalled { model.installCodexHooks() }
-                    if !model.openCodePluginInstalled { model.installOpenCodePlugin() }
+                    if !model.openCodePluginCurrent { model.installOpenCodePlugin() }
                     if !model.qoderHooksInstalled { model.installQoderHooks() }
                     if !model.qwenCodeHooksInstalled { model.installQwenCodeHooks() }
                     if !model.factoryHooksInstalled { model.installFactoryHooks() }
@@ -843,7 +843,7 @@ struct SetupSettingsPane: View {
     }
 
     private var allReady: Bool {
-        model.claudeHooksInstalled && model.codexHooksInstalled && model.openCodePluginInstalled
+        model.claudeHooksInstalled && model.codexHooksInstalled && model.openCodePluginCurrent
             && model.qoderHooksInstalled && model.qwenCodeHooksInstalled && model.factoryHooksInstalled && model.codebuddyHooksInstalled
             && model.cursorHooksInstalled && model.geminiHooksInstalled && model.kimiHooksInstalled
             && model.grokHooksInstalled && model.zcodeHooksInstalled

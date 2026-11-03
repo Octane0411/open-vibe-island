@@ -863,10 +863,9 @@ struct SessionStateTests {
         _ = try BridgeCommandClient(socketURL: socketURL).send(
             .processOpenCodeHook(
                 OpenCodeHookPayload(
-                    hookEventName: .userPromptSubmit,
+                    hookEventName: .sessionStart,
                     sessionID: sessionID,
                     cwd: ".",
-                    prompt: "Continue",
                     terminalApp: "OpenCode.app"
                 )
             )
@@ -875,6 +874,7 @@ struct SessionStateTests {
         var iterator = stream.makeAsyncIterator()
         _ = try await nextEvent(from: &iterator)
         let jumpEvent = try await nextEvent(from: &iterator)
+        _ = try await nextEvent(from: &iterator)
 
         #expect(jumpEvent.jumpTargetUpdate?.jumpTarget.terminalApp == "OpenCode.app")
         #expect(jumpEvent.jumpTargetUpdate?.jumpTarget.workingDirectory == "/tmp/worktree")
