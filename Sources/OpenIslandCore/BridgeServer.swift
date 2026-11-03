@@ -2169,7 +2169,17 @@ public final class BridgeServer: @unchecked Sendable {
 
         var jumpTarget = payload.defaultJumpTarget
 
-        if jumpTarget.terminalSessionID == nil,
+        if jumpTarget.terminalApp == "OpenCode.app" {
+            if payload.cwd == ".", let existingTarget = existingSession.jumpTarget {
+                jumpTarget.workspaceName = existingTarget.workspaceName
+                jumpTarget.workingDirectory = existingTarget.workingDirectory
+            }
+            jumpTarget.terminalSessionID = nil
+            jumpTarget.terminalTTY = nil
+            jumpTarget.tmuxTarget = nil
+            jumpTarget.tmuxSocketPath = nil
+            jumpTarget.warpPaneUUID = nil
+        } else if jumpTarget.terminalSessionID == nil,
            let existingID = existingSession.jumpTarget?.terminalSessionID,
            !existingID.isEmpty {
             jumpTarget.terminalSessionID = existingID
