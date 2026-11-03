@@ -358,6 +358,26 @@ struct TerminalJumpServiceTests {
     }
 
     @Test
+    func unrecognizedHostAppIsActivatedByName() throws {
+        let openedArguments = OpenedArgumentsBox()
+        let service = TerminalJumpService(
+            applicationResolver: { _ in URL(fileURLWithPath: "/Applications/iTerm.app") },
+            appRunningChecker: { _ in true },
+            openAction: { arguments in
+                openedArguments.values.append(arguments)
+            },
+            appleScriptRunner: { _ in "" }
+        )
+
+        let result = try service.jump(
+            to: JumpTarget(terminalApp: "Superset", workspaceName: "my-project", paneTitle: "", workingDirectory: "/tmp")
+        )
+
+        #expect(openedArguments.values == [["-a", "Superset"]])
+        #expect(result == "Activated Superset.")
+    }
+
+    @Test
     func traeJumpActivatesRunningTraeCNApp() throws {
         let openedArguments = OpenedArgumentsBox()
         let service = TerminalJumpService(
