@@ -1,6 +1,6 @@
 # Open Island DSH companion
 
-Dependency-free host and browser companion for DSH 0.2.1-rc.3 and compatible 0.2 releases. It observes live sessions and relays one narrow action: select a conversation in the installed DSH Web PWA and focus its composer. No build step, subprocess hook, or live user configuration change is required to prepare the package.
+Dependency-free host and browser companion for DSH 0.2.1-rc.3 and compatible 0.2 releases. It observes live sessions, focuses the installed DSH Web PWA, and relays explicit human question, plan-review, and one-shot approval decisions through a private leased connection. No build step, subprocess hook, or live user configuration change is required to prepare the package.
 
 ## Install explicitly
 
@@ -58,7 +58,9 @@ Optional Cordis row settings are `socketPath` and `heartbeatIntervalMs`. `OPEN_I
 
 ## Safety and limitations
 
-DSH exposes committed `approval/asked` and `approval/decided` audit events. Its `approval/request` and `user-questions/ask` APIs are answerer waterfalls, not passive notification feeds. The companion does not register either waterfall, answer questions, grant approvals, switch policies, control tools, or execute arbitrary UI scripts. The only native command accepted is conversation focus.
+DSH exposes committed `approval/asked` and `approval/decided` audit events. Its `approval/request` and `user-questions/request` APIs are answerer waterfalls, not passive notification feeds. The companion prepends an answerer that claims requests only while one native app observer holds a live lease and the exact calling agent is a live runtime root. The app must collect an explicit human decision. The companion never grants automatically, changes approval or sandbox policy, or executes arbitrary UI scripts. DSH's service-level `never` approval policy rejects before invoking any answerer, including this companion.
+
+Timed questions (`request.wait.timed`) remain in native DSH. Supporting their foreground countdown requires a separate public `userQuestions.attachWait` claim and their late replies require `userQuestions.answer`. This first slice does neither. Missing apps, oversized or unsupported questions, and missing live root identity delegate unchanged to native DSH. Tool calls and injected user context never become synthetic answers. No historical interaction is replayed when the plugin loads.
 
 Session end delivery is best-effort during abrupt process exit. A session that remains loaded in a Web host is live even when its browser tab is disconnected. Unloading this plugin emits `SessionEnd` for its observation lifetime even if DSH itself continues running. Reload emits a new start. Historical prompts and in-flight tool calls are not replayed on plugin attachment. Transcript paths and exact terminal jump metadata are not available through the session APIs used here and are omitted. Delivery is not acknowledged or persisted.
 
@@ -97,6 +99,40 @@ Only standalone, fullscreen, or minimal-ui display modes register. Fullscreen is
 Clients report focus epochs through one-second polls. The host selects the most recently focused eligible client, never broadcasts to all tabs, and expires registrations after 3.5 seconds without a poll. A cold client can register while a request waits. Once delivered, a request is not redirected to a different client.
 
 The client calls public `uiWorkspace.openSession(id)`, borrows `sessions.scope(id)`, and calls `conversation.input.for(scope).focus()`. It yields to rendering and retries for a mounted editor. Success requires the target to retain its public `mainView` reference, a focused document, and the composer to hold keyboard focus. Newer selections invalidate older asynchronous focus work. Drafts are never modified.
+
+## Interactive decision protocol
+
+The same private focus endpoint also accepts one host-wide observer. It is not an HTTP endpoint and requires the same verified owner and private filesystem permissions. Subscribe with one NDJSON line:
+
+```json
+{"type":"observe_interactions","protocol_version":1,"observer_id":"client-generated-uuid-v4"}
+```
+
+The host replies with `interaction_ready`, protocol version 1, and the exact `observer_id`. A second observer receives `busy`. Every second the host sends `interaction_ping` with `observer_id` and a random `nonce`. Reply with `interaction_pong` and both exact values. Four seconds without a valid pong revokes the lease and closes the stream. All sockets and timers remain unreferenced.
+
+One frame presents each claimed request:
+
+```json
+{"type":"interaction","session_id":"native-dsh-session","interaction":{"request_id":"host-generated-uuid-v4","kind":"question","status":"pending","call_id":"optional-tool-call","questions":[{"id":"choice","question":"Which option?","options":[{"label":"A"}],"multiSelect":false}]}}
+```
+
+Kinds are `question`, `plan`, and `approval`. Question fields preserve the public DSH service vocabulary, including `detail`, `header`, `multiSelect`, and `intent`. A plan question preserves its complete markdown `detail` and `intent: {kind: "plan-review", approve: "Approve", callId: "..."}`. The native app presents plans as questions, never tool permissions. Approval presentations carry `tool_name`, optional `call_id`, and optional `reason`. Request IDs are fresh UUIDs, not approval audit IDs. The public approval callback does not carry its audit ID.
+
+Send a response on a separate one-shot connection:
+
+```json
+{"type":"respond_interaction","observer_id":"current-observer-uuid","session_id":"native-dsh-session","request_id":"host-request-uuid","answers":[{"id":"choice","selected":["A"],"custom":"optional feedback"}]}
+```
+
+Approval responses instead carry `decision: "allowed-once"` or `decision: "rejected"`. Any kind may carry `decision: "delegate"` to transfer to native DSH. A successful response acknowledges `{"ok":true}`. Invalid input, stale identity, replay, or another observer's capability returns `{"ok":false,"error":"invalid-request"}` or `stale-request` without changing the pending request. Answers must name every question exactly once, select actual offered labels, avoid duplicate labels, and respect single-select. An empty selection without custom text is an explicit skipped answer, not a timeout or a grant.
+
+The observer receives the same request identity with `status: "resolved"` and `resolution: "answered"`, `delegate`, or `cancelled`. The host removes the pending ID before publishing resolution or invoking native `next()`. It never races a native answerer against the app. Observer disconnect or lease expiry revokes all IDs before scheduling native fallback. Request abort, owning session disposal, turn end, or a correlated terminal tool result cancels ownership. The app clears cards when the stream closes. Reusing a session ID or reconnecting cannot revive an old decision.
+
+The stream has at most 128 pending interactions. Frames and control input are capped at 1 MiB. The host preserves question meaning instead of truncating actionable details and delegates questions whose serialized presentation exceeds 900000 bytes. Each request has at most 16 questions and each question at most 64 unique options. Custom answer text is capped at 4096 characters. Focus-only requests retain their 8 KiB cap. The app's observer may arrive after session metadata on another socket, so native code buffers a bounded unknown-session frame until matching lifecycle registration, otherwise explicitly delegates it.
+
+### Published result semantics
+
+`ask_user_question` returns `{answers: [{id, selected, custom?}]}`. The plan tool uses the same question service. Approval requires exactly `selected: [intent.approve]` with no `custom`. It returns `{approved:true}`, then commits `plan/mode` inactive at the next accepted pre-step. Keep-planning feedback produces a tool error with the user's feedback, not an approval. Dismissal in native DSH produces `ASK_CANCELLED`, which the plan tool converts to `{approved:false}` and concludes the turn. Tool results are authoritative observations, not a second opportunity to decide. Approval audit order is `approval/asked`, answerer waterfall, then matching `approval/decided` with one of `allowed-once`, `rejected`, `cancelled`, or `unavailable`.
 
 ## Tests
 

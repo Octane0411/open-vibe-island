@@ -1,7 +1,7 @@
 {
   "name": "open-island-dsh",
   "version": "0.2.0",
-  "description": "Session lifecycle observer and private DSH Web conversation focus relay",
+  "description": "Session observer, private DSH Web focus relay, and leased human interaction bridge",
   "type": "module",
   "license": "GPL-3.0-only",
   "main": "open-island-dsh.js",

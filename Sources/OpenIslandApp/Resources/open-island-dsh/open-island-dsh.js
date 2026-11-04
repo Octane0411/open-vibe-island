@@ -1,6 +1,6 @@
-// Lifecycle observer and narrow conversation focus relay. No tool or approval controls.
+// Lifecycle observer, private focus relay, and leased explicit human interactions.
 import { connect, createServer } from 'node:net'
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { chmod, lstat, mkdir, rmdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -164,9 +164,8 @@ const failure = error => ({ ok: false, error })
 const validId = value => typeof value === 'string' && value.length > 0
   && value.length <= 512 && !/[\u0000-\u001f\u007f]/.test(value)
 
-// The only local command is selection + composer focus. Each host owns one random
-// endpoint, and each request replaces older work rather than replaying stale clicks.
-export async function createFocusRelay({ hasSession, timeoutMs = 5800, pollMs = 1000 } = {}) {
+// One private endpoint carries focus commands and an optional interaction observer.
+export async function createFocusRelay({ hasSession, interactions, timeoutMs = 5800, pollMs = 1000 } = {}) {
   const directory = `/tmp/oi-dsh-focus-${randomBytes(12).toString('hex')}`
   await mkdir(directory, { mode: 0o700 })
   const ownedDirectory = await lstat(directory)
@@ -308,7 +307,7 @@ export async function createFocusRelay({ hasSession, timeoutMs = 5800, pollMs = 
     socket.on('data', chunk => {
       if (accepted) return
       bytes += Buffer.byteLength(chunk)
-      if (bytes > 8192) {
+      if (bytes > 1048576 || (bytes > 8192 && !/^\s*\{/.test(buffer + chunk))) {
         accepted = true
         return reply(failure('invalid-request'))
       }
@@ -317,7 +316,12 @@ export async function createFocusRelay({ hasSession, timeoutMs = 5800, pollMs = 
       accepted = true
       let body
       try { body = JSON.parse(buffer.trim()) } catch { return reply(failure('invalid-request')) }
-      if (!body || !validId(body.session_id) || Object.keys(body).length !== 1) return reply(failure('invalid-request'))
+      if (body?.type === 'observe_interactions' && interactions) {
+        clearTimeout(timer)
+        return interactions.attach(socket, body)
+      }
+      if (body?.type === 'respond_interaction' && interactions) return reply(interactions.respond(body))
+      if (bytes > 8192 || !body || !validId(body.session_id) || Object.keys(body).length !== 1) return reply(failure('invalid-request'))
       void request(body.session_id, Math.max(1, deadline - Date.now() - 20)).then(reply)
     })
   })
@@ -355,6 +359,194 @@ export async function createFocusRelay({ hasSession, timeoutMs = 5800, pollMs = 
   }
 }
 
+// Own exactly one answerer at a time. Losing the native observer first revokes
+// all request IDs, then delegates to the original DSH waterfall. Never race next().
+export function createInteractionController({ isLive, callIdFor, pingMs = 1000, leaseMs = 4000 } = {}) {
+  const pending = new Map()
+  let observer
+  let disposed = false
+  const aborted = () => Object.assign(new Error('Question lifetime ended'), { name: 'UserQuestionError', code: 'ASK_ABORTED' })
+  const validUUID = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  const keysOnly = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
+    && Object.keys(value).every(key => keys.includes(key))
+  const write = (socket, frame) => {
+    if (socket.destroyed || socket.writableEnded || socket.writableLength > 1048576) return false
+    try {
+      socket.write(JSON.stringify(frame) + '\n')
+      return true
+    } catch { return false }
+  }
+  function publish(entry, status, resolution) {
+    if (!observer) return false
+    const presentation = status === 'pending' ? entry.presentation
+      : { request_id: entry.presentation.request_id, kind: entry.presentation.kind, call_id: entry.presentation.call_id }
+    return write(observer.socket, { type: 'interaction', session_id: entry.session.id,
+      interaction: { ...presentation, status, ...(resolution ? { resolution } : {}) } })
+  }
+  function finish(entry, action, value) {
+    if (pending.get(entry.presentation.request_id) !== entry) return
+    pending.delete(entry.presentation.request_id)
+    entry.signal?.removeEventListener('abort', entry.abort)
+    if (!publish(entry, 'resolved', action) && observer) detach(observer)
+    // Promise scheduling prevents a downstream handler from running before every
+    // stale ID has been revoked during observer shutdown.
+    if (action === 'delegate') Promise.resolve().then(entry.next).then(entry.resolve, entry.reject)
+    else if (action === 'cancelled') {
+      if (entry.presentation.kind === 'approval') entry.resolve('cancelled')
+      else entry.reject(aborted())
+    } else entry.resolve(value)
+  }
+  function detach(client) {
+    if (observer !== client) return
+    observer = undefined
+    clearInterval(client.timer)
+    for (const entry of [...pending.values()]) finish(entry, 'delegate')
+    client.socket.destroy()
+  }
+  function attach(socket, body) {
+    if (disposed || !keysOnly(body, ['type', 'protocol_version', 'observer_id']) || body.protocol_version !== 1 || !validUUID(body.observer_id)) {
+      return socket.end(JSON.stringify(failure('invalid-request')) + '\n')
+    }
+    if (observer) return socket.end(JSON.stringify(failure('busy')) + '\n')
+    const client = { socket, id: body.observer_id, seen: Date.now(), nonce: undefined }
+    observer = client
+    let buffer = ''
+    socket.on('data', chunk => {
+      buffer += chunk.toString('utf8')
+      if (Buffer.byteLength(buffer) > 8192) return detach(client)
+      while (buffer.includes('\n')) {
+        const index = buffer.indexOf('\n')
+        const line = buffer.slice(0, index)
+        buffer = buffer.slice(index + 1)
+        let frame
+        try { frame = JSON.parse(line) } catch { return detach(client) }
+        if (!keysOnly(frame, ['type', 'nonce', 'observer_id']) || frame.type !== 'interaction_pong'
+          || frame.observer_id !== client.id || !client.nonce || frame.nonce !== client.nonce) return detach(client)
+        client.seen = Date.now()
+        client.nonce = undefined
+      }
+    })
+    socket.once('close', () => detach(client))
+    socket.once('end', () => detach(client))
+    socket.once('error', () => detach(client))
+    client.timer = setInterval(() => {
+      if (Date.now() - client.seen >= leaseMs) return detach(client)
+      if (!client.nonce) client.nonce = randomUUID()
+      if (!write(socket, { type: 'interaction_ping', observer_id: client.id, nonce: client.nonce })) detach(client)
+    }, pingMs)
+    client.timer.unref()
+    if (!write(socket, { type: 'interaction_ready', protocol_version: 1, observer_id: client.id })) detach(client)
+  }
+  function questionsOf(request) {
+    const questions = request.questions
+    if (!Array.isArray(questions) || questions.length < 1 || questions.length > 16) return undefined
+    const ids = new Set()
+    for (const question of questions) {
+      if (!validId(question?.id) || ids.has(question.id) || typeof question.question !== 'string'
+        || (question.detail !== undefined && typeof question.detail !== 'string')
+        || (question.header !== undefined && typeof question.header !== 'string')
+        || (question.multiSelect !== undefined && typeof question.multiSelect !== 'boolean')) return undefined
+      ids.add(question.id)
+      if (question.options !== undefined && (!Array.isArray(question.options) || question.options.length > 64
+        || question.options.some(option => !validId(option?.label)
+          || (option.description !== undefined && typeof option.description !== 'string'))
+        || new Set(question.options.map(option => option.label)).size !== question.options.length)) return undefined
+      if (question.intent !== undefined && (question.intent.kind !== 'plan-review'
+        || !question.options?.some(option => option.label === question.intent.approve))) return undefined
+    }
+    // Do not truncate a decision's meaning. Oversized requests retain native UI.
+    if (Buffer.byteLength(JSON.stringify(questions)) > 900000) return undefined
+    return questions.map(question => ({ id: question.id, question: question.question,
+      ...(question.detail === undefined ? {} : { detail: question.detail }),
+      ...(question.header === undefined ? {} : { header: question.header }),
+      ...(question.options === undefined ? {} : { options: question.options.map(option => ({
+        label: option.label, ...(option.description === undefined ? {} : { description: option.description }),
+      })) }),
+      ...(question.multiSelect === undefined ? {} : { multiSelect: question.multiSelect }),
+      ...(question.intent === undefined ? {} : { intent: { ...question.intent } }),
+    }))
+  }
+  function request(kind, req, next) {
+    const session = req.agent?.session
+    // Timed waits need a separate public attachWait claim. This slice deliberately
+    // leaves their existing countdown and late-answer UI in native DSH.
+    if (disposed || !observer || pending.size >= 128 || !session || !isLive(req.agent) || req.wait?.timed === true) return next()
+    if (req.signal?.aborted) return kind === 'approval' ? Promise.resolve('cancelled') : Promise.reject(aborted())
+    let presentation
+    if (kind === 'approval') {
+      if (!validId(req.toolName) || (req.reason !== undefined && typeof req.reason !== 'string')) return next()
+      presentation = { kind, tool_name: req.toolName, ...(req.reason === undefined ? {} : { reason: req.reason }),
+        ...(req.callId === undefined ? {} : { call_id: req.callId }) }
+    } else {
+      let questions
+      try { questions = questionsOf(req) } catch { return next() }
+      if (!questions) return next()
+      const plan = questions.length === 1 && questions[0].intent?.kind === 'plan-review'
+      const callId = req.wait?.callId ?? questions[0].intent?.callId ?? callIdFor?.(session)
+      presentation = { kind: plan ? 'plan' : 'question', questions, ...(callId ? { call_id: callId } : {}) }
+    }
+    presentation.request_id = randomUUID()
+    return new Promise((resolve, reject) => {
+      const entry = { session, agent: req.agent, presentation, next, resolve, reject, signal: req.signal }
+      entry.abort = () => finish(entry, 'cancelled')
+      pending.set(presentation.request_id, entry)
+      req.signal?.addEventListener('abort', entry.abort, { once: true })
+      if (req.signal?.aborted) return entry.abort()
+      if (!publish(entry, 'pending')) detach(observer)
+    })
+  }
+  function respond(body) {
+    if (!keysOnly(body, ['type', 'observer_id', 'session_id', 'request_id', 'decision', 'answers'])
+      || !validId(body.session_id) || !validUUID(body.request_id)) return failure('invalid-request')
+    if (!observer || body.observer_id !== observer.id) return failure('stale-request')
+    const entry = pending.get(body.request_id)
+    if (!entry || entry.session.id !== body.session_id || !isLiveSession(entry)) return failure('stale-request')
+    if (body.decision === 'delegate' && body.answers === undefined) {
+      finish(entry, 'delegate')
+      return { ok: true }
+    }
+    if (entry.presentation.kind === 'approval') {
+      if (body.answers !== undefined || !['allowed-once', 'rejected'].includes(body.decision)) return failure('invalid-request')
+      finish(entry, 'answered', body.decision)
+      return { ok: true }
+    }
+    const questions = entry.presentation.questions
+    if (body.decision !== undefined || !Array.isArray(body.answers) || body.answers.length !== questions.length) return failure('invalid-request')
+    const ids = new Set()
+    for (const answer of body.answers) {
+      const question = questions.find(item => item.id === answer?.id)
+      if (!keysOnly(answer, ['id', 'selected', 'custom']) || !question || ids.has(answer.id)
+        || !Array.isArray(answer.selected) || new Set(answer.selected).size !== answer.selected.length
+        || answer.selected.some(label => !question.options?.some(option => option.label === label))
+        || (!question.multiSelect && answer.selected.length > 1)
+        || (answer.custom !== undefined && (typeof answer.custom !== 'string' || answer.custom.length > 4096))) return failure('invalid-request')
+      ids.add(answer.id)
+    }
+    finish(entry, 'answered', { answers: body.answers.map(answer => ({ id: answer.id,
+      selected: [...answer.selected], ...(answer.custom === undefined ? {} : { custom: answer.custom }),
+    })) })
+    return { ok: true }
+  }
+  function isLiveSession(entry) {
+    return !disposed && !entry.signal?.aborted && isLive(entry.agent)
+  }
+  return {
+    attach, respond,
+    request,
+    cancelSession(session) {
+      for (const entry of [...pending.values()]) if (entry.session === session) finish(entry, 'cancelled')
+    },
+    cancelCall(session, callId) {
+      if (!validId(callId)) return
+      for (const entry of [...pending.values()]) if (entry.session === session && entry.presentation.call_id === callId) finish(entry, 'cancelled')
+    },
+    close() {
+      disposed = true
+      if (observer) detach(observer)
+    },
+  }
+}
+
 export function apply(ctx, config = {}) {
   const store = ctx.sessions
   const socketPath = config.socketPath || process.env.OPEN_ISLAND_SOCKET_PATH
@@ -365,6 +557,17 @@ export function apply(ctx, config = {}) {
   const sessions = new Map()
   let disposed = false
   let webMetadata = {}
+  const interactions = createInteractionController({
+    isLive: agent => !disposed && !!agent && store.get(agent.session?.id) === agent.session
+      && sessions.has(agent.session) && ctx.get('agents')?.get(agent.id) === agent
+      && ctx.get('agents')?.roots().includes(agent),
+    callIdFor: session => {
+      const calls = [...(sessions.get(session)?.tools ?? [])].filter(([, tool]) => tool === 'ask_user_question')
+      return calls.length === 1 ? calls[0][0] : undefined
+    },
+  })
+  ctx.on('user-questions/request', (request, next) => interactions.request('question', request, next), { prepend: true })
+  ctx.on('approval/request', (request, next) => interactions.request('approval', request, next), { prepend: true })
 
   // Web services are optional. The sessions-only CLI observer keeps working.
   ctx.inject(['connection', 'webApp'], webCtx => {
@@ -373,6 +576,7 @@ export function apply(ctx, config = {}) {
       let relay
       let unregister
       const ready = createFocusRelay({
+        interactions,
         hasSession: id => !disposed && store.get(id) !== undefined
           && sessions.has(store.get(id)),
       }).then(async value => {
@@ -413,6 +617,7 @@ export function apply(ctx, config = {}) {
     const state = sessions.get(session)
     if (!state) return
     clearInterval(state.timer)
+    interactions.cancelSession(session)
     sessions.delete(session)
     send(session, state, { hook_event_name: 'SessionEnd' })
   }
@@ -436,6 +641,8 @@ export function apply(ctx, config = {}) {
     start(session)
     const state = sessions.get(session)
     if (!state) return
+    if (event.type === 'tool/result') interactions.cancelCall(session, event.data?.message?.toolCallId)
+    if (event.type === 'turn/end') interactions.cancelSession(session)
     const lifecycle = normalizeEvent(state, event)
     if (lifecycle) send(session, state, lifecycle)
   })
@@ -444,6 +651,7 @@ export function apply(ctx, config = {}) {
   ctx.effect(() => async () => {
     disposed = true
     for (const session of sessions.keys()) end(session)
+    interactions.close()
     let deadline
     await Promise.race([
       transport.flush(),
