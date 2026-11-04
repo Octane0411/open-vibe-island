@@ -273,7 +273,7 @@ AI coding 正在成为日常开发流程的一部分，但围绕它的控制层�
 - **Codex CLI** — Hook 集成。Codex CLI 受管安装器默认只安装 `SessionStart`、`UserPromptSubmit` 和 `Stop`，以保持终端输出低噪声。Open Island 可以解析手动配置的 `PreToolUse` / `PostToolUse` 等更细粒度 Codex hook 事件，但这些事件不属于默认受管安装范围。Codex 文件编辑可能走内部 apply-patch 路径，因此不应把文件编辑审批描述为稳定的 `PreToolUse` 覆盖能力。从本地 rollout 文件读取 5 小时和 7 天 account usage windows。支持从设置窗口或 CLI 安装/卸载受管 hooks。
 - **Codex 桌面 App** — 通过 `__CFBundleIdentifier` 识别；hook session 标记为 `isCodexAppSession`，生命周期由 `NSWorkspace.shared.runningApplications` 判断（而不是每轮对话后退出的 CLI 子进程）。除 hook 外，Open Island 还会启动自己的 `codex app-server` 子进程，通过 stdio JSON-RPC 接收实时的 `thread/started`、`turn/started`、`turn/completed`、`thread/closed` 通知。点击 session 会通过 `codex://threads/<id>` URL scheme 精确打开对应对话。
 - **Claude Code** — 基于 hook 的集成，通过 `~/.claude/settings.json` 配置。从 `~/.claude/projects/` JSONL transcript 自动发现会话。跨应用启动持久化和恢复会话。受管 status line bridge，opt-in 安装。读取缓存的 5 小时和 7 天 usage windows。
-- **OpenCode** — JS 插件集成，通过 `~/.config/opencode/plugins/`。首次启动自动安装插件。接收会话生命周期、工具使用、权限和问答事件。支持权限审批和问答交互。通过 `ps` 进行进程检测。
+- **OpenCode** — JS 插件集成，通过 `~/.config/opencode/plugins/`。首次启动自动安装插件。支持 OpenCode 1.x 与 2.x。接收会话生命周期、工具使用、权限和问答事件。支持权限审批和问答交互。通过 `ps` 进行进程检测。
 - **Qoder** — Claude Code 分支。相同 hook 格式和事件，配置位于 `~/.qoder/settings.json`。使用 `--source qoder` 调用 hooks binary。
 - **Qwen Code** — Claude Code 分支。相同 hook 格式和事件，配置位于 `~/.qwen/settings.json`。使用 `--source qwen` 调用 hooks binary。
 - **Factory** — Claude Code 分支。相同 hook 格式和事件，配置位于 `~/.factory/settings.json`。使用 `--source factory` 调用 hooks binary。

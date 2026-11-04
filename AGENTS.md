@@ -71,6 +71,8 @@ See [docs/worktree-workflow.md](/Users/wangruobing/Personal/open-island/docs/wor
 - Treat `Codex CLI` and `Codex Desktop App` as distinct runtime surfaces.
 - Do not assume Codex file edits are covered by `PreToolUse`; Codex may edit through internal apply-patch paths.
 - Keep managed Codex CLI hooks low-noise unless the user explicitly asks for richer hook coverage.
+- Keep the bundled OpenCode plugin dual-API: one default export with `id`, `setup(ctx)` for OpenCode 2 and `server()` for OpenCode 1.x. Do not drop either entrypoint when editing `Sources/OpenIslandApp/Resources/open-island-opencode.js`.
+- OpenCode 2 plugins receive `{ type, data }` events and do not receive `session.status` / `session.idle`; treat `session.execution.*` as the turn boundary and dedupe repeated deliveries across plugin instances.
 - Keep Claude-family integrations source-specific in user-facing behavior, even when payload formats are shared.
 - Treat Gemini hooks as fire-and-forget unless the code being edited explicitly supports blocking behavior.
 
