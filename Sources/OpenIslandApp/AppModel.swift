@@ -98,14 +98,17 @@ final class AppModel {
     var codexHooksInstalled: Bool { hooks.codexHooksInstalled }
     var claudeHooksInstalled: Bool { hooks.claudeHooksInstalled }
     var qoderHooksInstalled: Bool { hooks.qoderHooksInstalled }
+    var workBuddyHooksInstalled: Bool { hooks.workBuddyHooksInstalled }
     var qwenCodeHooksInstalled: Bool { hooks.qwenCodeHooksInstalled }
     var factoryHooksInstalled: Bool { hooks.factoryHooksInstalled }
     var codebuddyHooksInstalled: Bool { hooks.codebuddyHooksInstalled }
     var qoderHookStatus: ClaudeHookInstallationStatus? { hooks.qoderHookStatus }
+    var workBuddyHookStatus: ClaudeHookInstallationStatus? { hooks.workBuddyHookStatus }
     var qwenCodeHookStatus: ClaudeHookInstallationStatus? { hooks.qwenCodeHookStatus }
     var factoryHookStatus: ClaudeHookInstallationStatus? { hooks.factoryHookStatus }
     var codebuddyHookStatus: ClaudeHookInstallationStatus? { hooks.codebuddyHookStatus }
     var isQoderHookSetupBusy: Bool { hooks.isQoderHookSetupBusy }
+    var isWorkBuddyHookSetupBusy: Bool { hooks.isWorkBuddyHookSetupBusy }
     var isQwenCodeHookSetupBusy: Bool { hooks.isQwenCodeHookSetupBusy }
     var isFactoryHookSetupBusy: Bool { hooks.isFactoryHookSetupBusy }
     var isCodebuddyHookSetupBusy: Bool { hooks.isCodebuddyHookSetupBusy }
@@ -178,6 +181,7 @@ final class AppModel {
             || hooks.codexHooksInstalled
             || hooks.cursorHooksInstalled
             || hooks.qoderHooksInstalled
+            || hooks.workBuddyHooksInstalled
             || hooks.qwenCodeHooksInstalled
             || hooks.factoryHooksInstalled
             || hooks.codebuddyHooksInstalled
@@ -202,6 +206,8 @@ final class AppModel {
     func uninstallClaudeHooks() { hooks.uninstallClaudeHooks() }
     func installQoderHooks() { hooks.installQoderHooks() }
     func uninstallQoderHooks() { hooks.uninstallQoderHooks() }
+    func installWorkBuddyHooks() { hooks.installWorkBuddyHooks() }
+    func uninstallWorkBuddyHooks() { hooks.uninstallWorkBuddyHooks() }
     func installQwenCodeHooks() { hooks.installQwenCodeHooks() }
     func uninstallQwenCodeHooks() { hooks.uninstallQwenCodeHooks() }
     func installFactoryHooks() { hooks.installFactoryHooks() }
@@ -1728,6 +1734,7 @@ final class AppModel {
             if self.hooks.shouldAutoInstall(.claudeCode) { self.installClaudeHooks() }
             if self.hooks.shouldAutoInstall(.codex) { self.installCodexHooks() }
             if self.hooks.shouldAutoInstall(.qoder) { self.installQoderHooks() }
+            if self.hooks.shouldAutoInstall(.workBuddy) { self.installWorkBuddyHooks() }
             if self.hooks.shouldAutoInstall(.qwenCode) { self.installQwenCodeHooks() }
             if self.hooks.shouldAutoInstall(.factory) { self.installFactoryHooks() }
             if self.hooks.shouldAutoInstall(.codebuddy) { self.installCodebuddyHooks() }

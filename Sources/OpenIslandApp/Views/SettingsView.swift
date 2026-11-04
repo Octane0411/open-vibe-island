@@ -419,6 +419,7 @@ struct SetupSettingsPane: View {
     @State private var confirmingUninstallCodex = false
     @State private var confirmingUninstallOpenCode = false
     @State private var confirmingUninstallQoder = false
+    @State private var confirmingUninstallWorkBuddy = false
     @State private var confirmingUninstallQwenCode = false
     @State private var confirmingUninstallFactory = false
     @State private var confirmingUninstallCodebuddy = false
@@ -510,6 +511,23 @@ struct SetupSettingsPane: View {
                     Button(lang.t("settings.general.cancel"), role: .cancel) {}
                 } message: {
                     Text("This will remove Open Island hooks from ~/.qoder/settings.json.")
+                }
+
+                hookRow(
+                    name: "WorkBuddy",
+                    installed: model.workBuddyHooksInstalled,
+                    busy: model.isWorkBuddyHookSetupBusy,
+                    configLocationURL: model.workBuddyHookStatus?.settingsURL,
+                    installAction: { model.installWorkBuddyHooks() },
+                    uninstallAction: { confirmingUninstallWorkBuddy = true }
+                )
+                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallWorkBuddy) {
+                    Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
+                        model.uninstallWorkBuddyHooks()
+                    }
+                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
+                } message: {
+                    Text("This will remove Open Island hooks from ~/.workbuddy/settings.json.")
                 }
 
                 hookRow(

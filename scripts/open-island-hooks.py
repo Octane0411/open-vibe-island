@@ -259,7 +259,9 @@ def main():
         payload["remote"] = True
 
         # Build bridge envelope
-        if source == "claude":
+        CLAUDE_FORMAT_SOURCES = ("claude", "qoder", "workbuddy", "qwen", "factory",
+                                 "droid", "codebuddy", "kimi", "zcode")
+        if source in CLAUDE_FORMAT_SOURCES:
             command = {"type": "processClaudeHook", "claudeHook": payload}
             timeout = 86400 if payload.get("hook_event_name") == "PermissionRequest" else 45
             encoder = encode_claude_stdout

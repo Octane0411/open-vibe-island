@@ -127,6 +127,11 @@ struct TerminalJumpService {
             alternateBundleIdentifiers: ["com.qoder.qoder"]
         ),
         TerminalAppDescriptor(
+            displayName: "WorkBuddy",
+            bundleIdentifier: "com.tencent.workbuddy.mac",
+            aliases: ["workbuddy"]
+        ),
+        TerminalAppDescriptor(
             displayName: "Zed",
             bundleIdentifier: "dev.zed.Zed",
             aliases: ["zed"],
