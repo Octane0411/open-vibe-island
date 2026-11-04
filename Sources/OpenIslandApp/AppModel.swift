@@ -1782,6 +1782,10 @@ final class AppModel {
 
         for session in rankedSessions where session.isVisibleInIsland {
             guard !session.isSubagentSession else { continue }
+            if session.isCodexAppSession,
+               session.isStaleCompletedForIsland(at: now, threshold: completedStaleThreshold.seconds) {
+                continue
+            }
 
             if let liveAttachmentKey = monitoring.liveAttachmentKey(for: session) {
                 guard claimedLiveAttachmentKeys.insert(liveAttachmentKey).inserted else {

@@ -165,7 +165,7 @@ struct AppModelSessionListTests {
 
     @Test
     func islandListKeepsDistinctCodexAppThreadsInTheSameWorkspace() {
-        let now = Date(timeIntervalSince1970: 2_000)
+        let now = Date.now
         let model = AppModel()
 
         var firstThread = AgentSession(
@@ -212,6 +212,43 @@ struct AppModelSessionListTests {
 
         #expect(model.surfacedSessions.map(\.id) == ["codex-app-thread-1", "codex-app-thread-2"])
         #expect(model.liveSessionCount == 2)
+    }
+
+    @Test
+    func oldCompletedCodexAppThreadsDoNotInflateLiveCount() {
+        let now = Date.now
+        let model = AppModel()
+
+        var recent = AgentSession(
+            id: "recent-codex-thread",
+            title: "Recent Codex thread",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .stale,
+            phase: .completed,
+            summary: "Just finished",
+            updatedAt: now.addingTimeInterval(-30)
+        )
+        recent.isCodexAppSession = true
+        recent.isProcessAlive = true
+
+        var idle = AgentSession(
+            id: "idle-codex-thread",
+            title: "Idle Codex thread",
+            tool: .codex,
+            origin: .live,
+            attachmentState: .stale,
+            phase: .completed,
+            summary: "Finished long ago",
+            updatedAt: now.addingTimeInterval(-3_600)
+        )
+        idle.isCodexAppSession = true
+        idle.isProcessAlive = true
+
+        model.state = SessionState(sessions: [recent, idle])
+
+        #expect(model.surfacedSessions.map(\.id) == ["recent-codex-thread"])
+        #expect(model.liveSessionCount == 1)
     }
 
     @Test
