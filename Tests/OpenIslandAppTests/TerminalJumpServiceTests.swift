@@ -158,6 +158,49 @@ struct TerminalJumpServiceTests {
         #expect(openedArguments.values == [["-b", "com.todesktop.230313mzl4w4u92"]])
     }
 
+    /// The app inherits the LaunchServices PATH, which has neither
+    /// /usr/local/bin nor Homebrew on it, so the bare `cursor` name cannot be
+    /// resolved from a GUI launch. Prefer the launcher inside the app bundle.
+    @Test
+    func vscodeFamilyJumpPrefersTheLauncherInsideTheAppBundle() throws {
+        let invocations = ProcessInvocationBox()
+        let appURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("Cursor-\(UUID().uuidString).app")
+        let binDirectory = appURL.appendingPathComponent("Contents/Resources/app/bin")
+        try FileManager.default.createDirectory(at: binDirectory, withIntermediateDirectories: true)
+        let cliURL = binDirectory.appendingPathComponent("cursor")
+        try Data().write(to: cliURL)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: cliURL.path)
+        defer { try? FileManager.default.removeItem(at: appURL) }
+
+        let service = TerminalJumpService(
+            applicationResolver: { bundleIdentifier in
+                bundleIdentifier == "com.todesktop.230313mzl4w4u92" ? appURL : nil
+            },
+            appRunningChecker: { _ in true },
+            openAction: { _ in },
+            appleScriptRunner: { _ in "" },
+            processRunner: { executable, arguments in
+                invocations.values.append((executable, arguments))
+                return true
+            }
+        )
+
+        let result = try service.jump(
+            to: JumpTarget(
+                terminalApp: "Cursor",
+                workspaceName: "open-vibe-island",
+                paneTitle: "Cursor abc123",
+                workingDirectory: "/Users/test/open-vibe-island"
+            )
+        )
+
+        #expect(result == "Focused the matching Cursor workspace.")
+        #expect(invocations.values.count == 1)
+        #expect(invocations.values.first?.0 == cliURL.path)
+        #expect(invocations.values.first?.1 == ["-r", "/Users/test/open-vibe-island"])
+    }
+
     @Test
     func cursorJumpFallsBackToWorkspaceWhenAppNotRunning() throws {
         let openedArguments = OpenedArgumentsBox()
