@@ -20,7 +20,7 @@ struct CodexSharedSessionTests {
     func processPresenceAloneDoesNotInventConversationRows() {
         let model = AppModel()
         model.monitoring.reconcileSessionAttachments(
-            activeProcesses: [.init(tool: .codex, sessionID: nil, workingDirectory: "/tmp/project", terminalTTY: "/dev/ttys001", processID: "101")],
+            activeProcesses: [.init(tool: .codex, sessionID: nil, workingDirectory: "/tmp/project", terminalTTY: "/dev/ttys001")],
             ghosttyAvailability: .available([], appIsRunning: false),
             terminalAvailability: .available([], appIsRunning: false),
             preResolvedJumpTargets: [:], observedCodexAppRunning: false
@@ -32,6 +32,10 @@ struct CodexSharedSessionTests {
     func onlyRecentRootConversationsAreShownWithRealIdentities() throws {
         let model = AppModel()
         let now = Date(timeIntervalSince1970: 10_000)
+        model.state = SessionState(sessions: [
+            AgentSession(id: "child", title: "Old background row", tool: .codex,
+                         phase: .waitingForAnswer, summary: "Waiting", updatedAt: now),
+        ])
         model.applySharedCodexThreads([
             try thread("working"),
             try thread("finished", status: "idle", updatedAt: 9_900),

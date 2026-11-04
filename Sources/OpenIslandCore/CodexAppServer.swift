@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 // MARK: - Protocol models
 
@@ -87,13 +88,14 @@ public enum CodexAppServerNotification: Sendable {
 
 // MARK: - JSON-RPC transport
 
-/// A lightweight JSON-RPC client that communicates with Codex app-server
-/// over a stdio-based `Process`.  Uses newline-delimited JSON messages
-/// (one JSON object per line, no Content-Length framing).
+/// A read-only JSON-RPC client for an existing shared daemon over a local
+/// WebSocket, or a desktop app-server subprocess over newline-delimited stdio.
 public final class CodexAppServerClient: @unchecked Sendable {
     private let codexPath: String
     private let usesSharedDaemon: Bool
     private var localWebSocket = CodexLocalWebSocket()
+    private var sharedSocketHandle: FileHandle?
+    private var handshakeContinuation: CheckedContinuation<Void, any Error>?
     private var process: Process?
     private var stdoutReadHandle: FileHandle?
     private var stderrReadHandle: FileHandle?
@@ -136,7 +138,7 @@ public final class CodexAppServerClient: @unchecked Sendable {
     }
 
     public var isRunning: Bool {
-        process?.isRunning == true
+        sharedSocketHandle != nil || process?.isRunning == true
     }
 
     // MARK: - Lifecycle
@@ -145,27 +147,51 @@ public final class CodexAppServerClient: @unchecked Sendable {
     public func start() async throws {
         guard !isRunning else { return }
 
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: codexPath)
-        proc.arguments = usesSharedDaemon ? ["app-server", "proxy"] : ["app-server", "--listen", "stdio://"]
-
-        let stdinPipe = Pipe()
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        proc.standardInput = stdinPipe
-        proc.standardOutput = stdoutPipe
-        proc.standardError = stderrPipe
-
-        self.stdin = stdinPipe.fileHandleForWriting
-        self.process = proc
-
-        configureOutputHandlers(
-            stdout: stdoutPipe.fileHandleForReading,
-            stderr: stderrPipe.fileHandleForReading
-        )
-
-        try proc.run()
-        if usesSharedDaemon { self.stdin?.write(localWebSocket.upgradeRequest) }
+        if usesSharedDaemon {
+            let home = ProcessInfo.processInfo.environment["CODEX_HOME"]
+                ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex").path
+            let path = URL(fileURLWithPath: home).appendingPathComponent("app-server-control/app-server-control.sock").path
+            let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
+            guard descriptor >= 0 else { throw CodexAppServerError.notConnected }
+            do {
+                try disableSocketSigPipe(descriptor)
+                try withUnixSocketAddress(path: path) { address, length in
+                    guard Darwin.connect(descriptor, address, length) == 0 else {
+                        throw CodexAppServerError.notConnected
+                    }
+                }
+            } catch { Darwin.close(descriptor); throw error }
+            let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+            sharedSocketHandle = handle
+            stdin = handle
+            configureOutputHandlers(stdout: handle, stderr: nil)
+            // The server must accept the HTTP upgrade before any RPC frame is
+            // sent; pipelining it can lose the first request in HTTP parsing.
+            let timeout = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(5))
+                if !Task.isCancelled { self?.finishHandshake(error: CodexAppServerError.timeout) }
+            }
+            defer { timeout.cancel() }
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                lock.withLock { handshakeContinuation = continuation }
+                do { try handle.write(contentsOf: localWebSocket.upgradeRequest) }
+                catch { finishHandshake(error: error) }
+            }
+        } else {
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: codexPath)
+            proc.arguments = ["app-server", "--listen", "stdio://"]
+            let stdinPipe = Pipe()
+            let stdoutPipe = Pipe()
+            let stderrPipe = Pipe()
+            proc.standardInput = stdinPipe
+            proc.standardOutput = stdoutPipe
+            proc.standardError = stderrPipe
+            self.stdin = stdinPipe.fileHandleForWriting
+            self.process = proc
+            configureOutputHandlers(stdout: stdoutPipe.fileHandleForReading, stderr: stderrPipe.fileHandleForReading)
+            try proc.run()
+        }
 
         // Send initialize request.
         struct InitializeParams: Encodable {
@@ -180,10 +206,10 @@ public final class CodexAppServerClient: @unchecked Sendable {
             params: InitializeParams(clientInfo: .init(name: "OpenIsland", version: "1.0.0"))
         )
         let initialized = Data("{\"method\":\"initialized\"}\n".utf8)
-        self.stdin?.write(usesSharedDaemon ? CodexLocalWebSocket.encode(initialized) : initialized)
+        try self.stdin?.write(contentsOf: usesSharedDaemon ? CodexLocalWebSocket.encode(initialized) : initialized)
     }
 
-    func configureOutputHandlers(stdout: FileHandle, stderr: FileHandle) {
+    func configureOutputHandlers(stdout: FileHandle, stderr: FileHandle?) {
         stdoutReadHandle = stdout
         stderrReadHandle = stderr
 
@@ -192,13 +218,14 @@ public final class CodexAppServerClient: @unchecked Sendable {
             let data = handle.availableData
             guard !data.isEmpty else {
                 handle.readabilityHandler = nil
+                if self?.usesSharedDaemon == true { self?.stop() }
                 return
             }
             self?.handleIncomingData(data)
         }
 
         // Drain stderr so a full pipe can't block the child process.
-        stderr.readabilityHandler = { handle in
+        stderr?.readabilityHandler = { handle in
             let data = handle.availableData
             if data.isEmpty {
                 handle.readabilityHandler = nil
@@ -208,6 +235,7 @@ public final class CodexAppServerClient: @unchecked Sendable {
 
     /// Stop the app-server subprocess.
     public func stop() {
+        finishHandshake(error: CodexAppServerError.disconnected)
         stdoutReadHandle?.readabilityHandler = nil
         stderrReadHandle?.readabilityHandler = nil
         stdoutReadHandle = nil
@@ -215,6 +243,8 @@ public final class CodexAppServerClient: @unchecked Sendable {
         process?.terminate()
         process = nil
         stdin = nil
+        try? sharedSocketHandle?.close()
+        sharedSocketHandle = nil
         lock.lock()
         let pending = pendingRequests
         pendingRequests.removeAll()
@@ -346,7 +376,8 @@ public final class CodexAppServerClient: @unchecked Sendable {
             lock.lock()
             pendingRequests[requestID] = continuation
             lock.unlock()
-            stdin.write(usesSharedDaemon ? CodexLocalWebSocket.encode(line) : line)
+            do { try stdin.write(contentsOf: usesSharedDaemon ? CodexLocalWebSocket.encode(line) : line) }
+            catch { self.failPendingRequest(id: requestID, with: .disconnected) }
         }
     }
 
@@ -374,10 +405,12 @@ public final class CodexAppServerClient: @unchecked Sendable {
     func handleIncomingData(_ data: Data) {
         if usesSharedDaemon {
             do {
-                for frame in try localWebSocket.receive(data) {
+                let frames = try localWebSocket.receive(data)
+                if localWebSocket.isUpgraded { finishHandshake() }
+                for frame in frames {
                     switch frame {
                     case let .text(payload): handleJSONData(payload + Data([10]))
-                    case let .ping(payload): stdin?.write(CodexLocalWebSocket.encode(payload, opcode: 10))
+                    case let .ping(payload): try stdin?.write(contentsOf: CodexLocalWebSocket.encode(payload, opcode: 10))
                     case .closed: stop()
                     }
                 }
@@ -385,6 +418,16 @@ public final class CodexAppServerClient: @unchecked Sendable {
         } else {
             handleJSONData(data)
         }
+    }
+
+    private func finishHandshake(error: Error? = nil) {
+        let continuation = lock.withLock {
+            let pending = handshakeContinuation
+            handshakeContinuation = nil
+            return pending
+        }
+        if let error { continuation?.resume(throwing: error) }
+        else { continuation?.resume() }
     }
 
     private func handleJSONData(_ data: Data) {

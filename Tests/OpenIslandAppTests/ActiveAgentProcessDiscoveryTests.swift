@@ -4,59 +4,6 @@ import Testing
 import OpenIslandCore
 
 struct ActiveAgentProcessDiscoveryTests {
-    @Test(arguments: [false, true])
-    func codexDiscoveryRetainsTerminalWithoutOpenRollout(lsofUnavailable: Bool) {
-        let discovery = ActiveAgentProcessDiscovery { executablePath, _ in
-            if executablePath == "/bin/ps" {
-                return """
-                  202 401 ttys001 /opt/homebrew/bin/codex
-                  401 900 ttys001 -zsh
-                  900 1 ?? /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
-                """
-            }
-            guard executablePath == "/usr/sbin/lsof", !lsofUnavailable else { return nil }
-            return """
-            fcwd
-            n/tmp/project
-            n/Users/test/.codex/state_5.sqlite
-            n/Users/test/.codex/logs_2.sqlite
-            """
-        }
-
-        let snapshots = discovery.discover()
-        #expect(snapshots.count == 1)
-        #expect(snapshots.first?.tool == .codex)
-        #expect(snapshots.first?.sessionID == nil)
-        #expect(snapshots.first?.workingDirectory == (lsofUnavailable ? nil : "/tmp/project"))
-        #expect(snapshots.first?.terminalTTY == "/dev/ttys001")
-        #expect(snapshots.first?.terminalApp == "Terminal")
-        #expect(snapshots.first?.processID == "202")
-    }
-
-    @Test
-    func codexDiscoveryDeduplicatesProcessesSharingTTYWithoutRollouts() {
-        let discovery = ActiveAgentProcessDiscovery { executablePath, _ in
-            if executablePath == "/bin/ps" {
-                return """
-                  201 401 ttys001 /opt/homebrew/bin/codex
-                  202 201 ttys001 /opt/homebrew/bin/codex app-server
-                  203 402 ttys002 /opt/homebrew/bin/codex
-                  204 1 ?? /opt/homebrew/bin/codex app-server
-                  401 900 ttys001 -zsh
-                  402 900 ttys002 -zsh
-                  900 1 ?? /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
-                """
-            }
-            guard executablePath == "/usr/sbin/lsof" else { return nil }
-            return "fcwd\nn/tmp/project"
-        }
-
-        let snapshots = discovery.discover()
-        #expect(snapshots.count == 2)
-        #expect(snapshots.map(\.processID) == ["201", "203"])
-        #expect(snapshots.map(\.terminalTTY) == ["/dev/ttys001", "/dev/ttys002"])
-    }
-
     @Test
     func discoverOnlyReturnsInteractiveClaudeAndCodexProcesses() {
         let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
@@ -110,9 +57,7 @@ struct ActiveAgentProcessDiscoveryTests {
             sessionID: "019d516f-71ee-7e40-bcff-502fedac0928",
             workingDirectory: "/tmp/open-island",
             terminalTTY: "/dev/ttys001",
-            terminalApp: "Ghostty",
-            processID: "202",
-            executablePath: "/Users/test/.nvm/versions/node/v22/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/codex/codex"
+            terminalApp: "Ghostty"
         )))
     }
 
@@ -187,9 +132,7 @@ struct ActiveAgentProcessDiscoveryTests {
                 sessionID: "019e0dc1-3f8b-7eb0-ae8d-04a5911e95b9",
                 workingDirectory: "/tmp/open-island",
                 terminalTTY: "/dev/ttys001",
-                terminalApp: "Ghostty",
-                processID: "202",
-                executablePath: "/opt/homebrew/bin/codex"
+                terminalApp: "Ghostty"
             ),
         ])
     }

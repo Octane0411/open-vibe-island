@@ -45,9 +45,9 @@ OpenCode → JS plugin (~/.config/opencode/plugins/) → Unix socket → BridgeS
 4. Start live bridge
 
 Codex shared CLI runtimes are observed through their existing local daemon's
-read-only `thread/loaded/list` and `thread/read` APIs. `codex app-server proxy`
-provides the raw local socket transport, with WebSocket framing handled by the
-client. The observer never resumes a conversation, starts a turn, or answers an
+read-only `thread/loaded/list` and `thread/read` APIs over its existing local
+Unix socket, with WebSocket framing handled by the client. The observer never
+resumes a conversation, starts a turn, or answers an
 approval. Real conversation IDs and runtime status drive visibility and phase;
 terminal processes alone do not create rows. Active root conversations remain
 visible, completed conversations expire after five minutes, and ephemeral or

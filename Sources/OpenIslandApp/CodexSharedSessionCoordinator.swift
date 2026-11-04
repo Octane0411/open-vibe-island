@@ -23,16 +23,7 @@ final class CodexSharedSessionCoordinator {
                             try await Task.sleep(for: .seconds(10))
                             continue
                         }
-                        let snapshots = await Task.detached(priority: .utility) {
-                            ActiveAgentProcessDiscovery().discover()
-                        }.value
-                        guard let path = snapshots.first(where: {
-                            $0.tool == .codex && $0.executablePath?.hasPrefix("/") == true
-                        })?.executablePath else {
-                            try await Task.sleep(for: .seconds(10))
-                            continue
-                        }
-                        let client = CodexAppServerClient(codexPath: path, usesSharedDaemon: true)
+                        let client = CodexAppServerClient(usesSharedDaemon: true)
                         self.client = client
                         try await client.start()
                     }

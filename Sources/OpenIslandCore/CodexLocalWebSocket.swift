@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-/// WebSocket framing for the local daemon's raw stdio proxy. No network listener
+/// WebSocket framing for the existing local daemon socket. No network listener
 /// is created and no session is resumed or subscribed on the user's behalf.
 struct CodexLocalWebSocket {
     enum Frame { case text(Data), ping(Data), closed }
@@ -11,6 +11,7 @@ struct CodexLocalWebSocket {
     private var fragments = Data()
     private var isFragmented = false
     private var upgraded = false
+    var isUpgraded: Bool { upgraded }
     private let key = Data((0..<16).map { _ in UInt8.random(in: .min ... .max) }).base64EncodedString()
 
     var upgradeRequest: Data {
@@ -45,7 +46,7 @@ struct CodexLocalWebSocket {
             let header = String(decoding: buffer[..<end.upperBound], as: UTF8.self)
             let expected = Data(Insecure.SHA1.hash(data: Data((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").utf8))).base64EncodedString()
             guard header.hasPrefix("HTTP/1.1 101 "),
-                  header.split(separator: "\n").contains(where: {
+                  header.components(separatedBy: "\r\n").contains(where: {
                       $0.lowercased().hasPrefix("sec-websocket-accept:")
                           && $0.split(separator: ":", maxSplits: 1).last?.trimmingCharacters(in: .whitespacesAndNewlines) == expected
                   }) else { throw ProtocolError.invalidHandshake }

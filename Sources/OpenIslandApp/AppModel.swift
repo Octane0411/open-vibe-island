@@ -1705,7 +1705,8 @@ final class AppModel {
             CodexLiveSessionPolicy.shouldShow($0, now: now, lastActiveAt: sharedCodexLastActiveAt[$0.id])
         }
         let ids = Set(visible.map(\.id))
-        let retired = monitoring.sharedCodexSessionIDs.subtracting(ids)
+        let excluded = Set(threads.map(\.id)).subtracting(ids)
+        let retired = monitoring.sharedCodexSessionIDs.subtracting(ids).union(excluded)
         monitoring.sharedCodexSessionIDs = ids
         var sessions = state.sessions.filter { !retired.contains($0.id) }
         for thread in visible {
