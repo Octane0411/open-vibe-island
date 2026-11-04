@@ -17,6 +17,7 @@ public struct DSHHookPayload: Equatable, Codable, Sendable, RuntimeHookPayload {
     public var terminalTitle: String?
     public var webOrigin: String?
     public var webFocusSocket: String?
+    public var interaction: DSHInteraction?
 
     public var defaultJumpTarget: JumpTarget {
         let webTarget: DSHWebJumpTarget?
@@ -50,6 +51,7 @@ public struct DSHHookPayload: Equatable, Codable, Sendable, RuntimeHookPayload {
         case terminalTitle = "terminal_title"
         case webOrigin = "web_origin"
         case webFocusSocket = "web_focus_socket"
+        case interaction
     }
 
     public init(
@@ -67,7 +69,8 @@ public struct DSHHookPayload: Equatable, Codable, Sendable, RuntimeHookPayload {
         terminalTTY: String? = nil,
         terminalTitle: String? = nil,
         webOrigin: String? = nil,
-        webFocusSocket: String? = nil
+        webFocusSocket: String? = nil,
+        interaction: DSHInteraction? = nil
     ) {
         self.hookEventName = hookEventName
         self.sessionID = sessionID
@@ -84,5 +87,6 @@ public struct DSHHookPayload: Equatable, Codable, Sendable, RuntimeHookPayload {
         self.terminalTitle = terminalTitle
         self.webOrigin = webOrigin
         self.webFocusSocket = webFocusSocket
+        self.interaction = interaction
     }
 }
