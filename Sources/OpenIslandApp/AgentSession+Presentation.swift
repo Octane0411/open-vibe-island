@@ -169,6 +169,17 @@ extension AgentSession {
     }
 
     var spotlightHeadlineText: String {
+        // A real session title (renamed via `/rename` or Claude Desktop,
+        // Desktop auto-title, or the transcript AI title) replaces the
+        // "<workspace> · <initial prompt>" fallback. Resolved off the view
+        // path by BridgeServer / transcript discovery; no IO here.
+        if let sessionTitle = spotlightSessionTitle {
+            if let branch = spotlightWorktreeBranch {
+                return "\(sessionTitle) (\(branch))"
+            }
+            return sessionTitle
+        }
+
         let workspaceName = spotlightWorkspaceName
         var headline = workspaceName
 
@@ -185,6 +196,15 @@ extension AgentSession {
         }
 
         return "\(headline) · \(prompt)"
+    }
+
+    /// Resolved Claude session title, or `nil` when none is known.
+    var spotlightSessionTitle: String? {
+        guard let title = claudeMetadata?.sessionTitle?.trimmedForSurface,
+              !title.isEmpty else {
+            return nil
+        }
+        return title
     }
 
     var spotlightHeadlinePromptText: String? {

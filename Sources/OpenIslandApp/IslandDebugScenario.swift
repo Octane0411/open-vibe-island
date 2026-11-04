@@ -20,6 +20,7 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
     case questionCard
     case completionCard
     case longCompletionCard
+    case claudeSessionTitles
 
     var id: String { rawValue }
 
@@ -37,6 +38,8 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
             "Completion Card"
         case .longCompletionCard:
             "Long Completion Card"
+        case .claudeSessionTitles:
+            "Claude Session Titles"
         }
     }
 
@@ -54,6 +57,8 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
             "Auto-expanded finished-task reminder surface after a turn completes."
         case .longCompletionCard:
             "Long finished-task reply stays inside the card and scrolls internally."
+        case .claudeSessionTitles:
+            "Claude sessions headlined by their real title (rename / Claude Desktop / AI title) with fallback."
         }
     }
 
@@ -124,6 +129,19 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
                 selectedSessionID: session.id
             )
 
+        case .claudeSessionTitles:
+            let sessions = DebugSessionFactory.claudeTitledSessions(now: now)
+            return IslandDebugSnapshot(
+                title: title,
+                summary: summary,
+                previewHeight: 430,
+                notchStatus: .opened,
+                notchOpenReason: .click,
+                islandSurface: .sessionList(),
+                sessions: sessions,
+                selectedSessionID: sessions.first?.id
+            )
+
         case .longCompletionCard:
             let session = DebugSessionFactory.longCompletionSession(now: now)
             return IslandDebugSnapshot(
@@ -141,6 +159,87 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
 }
 
 private enum DebugSessionFactory {
+    static func claudeTitledSessions(now: Date) -> [AgentSession] {
+        [
+            claudeSession(
+                id: "session-claude-desktop-title",
+                workspace: "active",
+                terminalApp: "Claude.app",
+                phase: .running,
+                sessionTitle: "Sign the scooter insurance contract",
+                initialPrompt: "@\"/Users/demo/.claude/uploads/1a2b3c4d-demo/contract.pdf\" sign it",
+                latestPrompt: "Wait, let me approve it again",
+                assistant: "The signed PDF is ready.",
+                age: 30,
+                now: now
+            ),
+            claudeSession(
+                id: "session-claude-renamed-branch",
+                workspace: "open-island",
+                terminalApp: "Ghostty",
+                phase: .completed,
+                sessionTitle: "Session titles in the notch",
+                worktreeBranch: "feat/claude-desktop-session-titles",
+                initialPrompt: "install the dev build",
+                latestPrompt: "add the harness scenario",
+                assistant: "Scenario added.",
+                age: 4 * 60,
+                now: now
+            ),
+            claudeSession(
+                id: "session-claude-no-title",
+                workspace: "marketing-reports",
+                terminalApp: "Claude.app",
+                phase: .completed,
+                sessionTitle: nil,
+                initialPrompt: "Prepare the weekly campaign report",
+                latestPrompt: "Prepare the weekly campaign report",
+                assistant: "Report ready.",
+                age: 20 * 60,
+                now: now
+            ),
+        ]
+    }
+
+    static func claudeSession(
+        id: String,
+        workspace: String,
+        terminalApp: String,
+        phase: SessionPhase,
+        sessionTitle: String?,
+        worktreeBranch: String? = nil,
+        initialPrompt: String,
+        latestPrompt: String,
+        assistant: String,
+        age: TimeInterval,
+        now: Date
+    ) -> AgentSession {
+        AgentSession(
+            id: id,
+            title: "Claude · \(workspace)",
+            tool: .claudeCode,
+            origin: .demo,
+            attachmentState: .attached,
+            phase: phase,
+            summary: assistant,
+            updatedAt: now.addingTimeInterval(-age),
+            jumpTarget: JumpTarget(
+                terminalApp: terminalApp,
+                workspaceName: workspace,
+                paneTitle: "claude ~/Projects/\(workspace)",
+                workingDirectory: "/Users/demo/Projects/\(workspace)",
+                terminalSessionID: "\(terminalApp.lowercased())-\(id)"
+            ),
+            claudeMetadata: ClaudeSessionMetadata(
+                initialUserPrompt: initialPrompt,
+                lastUserPrompt: latestPrompt,
+                lastAssistantMessage: assistant,
+                worktreeBranch: worktreeBranch,
+                sessionTitle: sessionTitle
+            )
+        )
+    }
+
     static func listSessions(now: Date) -> [AgentSession] {
         [
             runningSession(now: now),

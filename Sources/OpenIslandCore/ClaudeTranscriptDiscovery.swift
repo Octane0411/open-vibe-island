@@ -15,17 +15,22 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
     private let fileManager: FileManager
     private let maxAge: TimeInterval
     private let maxFiles: Int
+    /// Optional Claude Desktop title index consulted when resolving
+    /// `ClaudeSessionMetadata.sessionTitle`. `nil` skips the Desktop source.
+    private let desktopTitleIndex: ClaudeDesktopSessionTitleIndex?
 
     public init(
         rootURL: URL = ClaudeTranscriptDiscovery.defaultRootURL,
         fileManager: FileManager = .default,
         maxAge: TimeInterval = 86_400,
-        maxFiles: Int = 40
+        maxFiles: Int = 40,
+        desktopTitleIndex: ClaudeDesktopSessionTitleIndex? = nil
     ) {
         self.rootURL = rootURL
         self.fileManager = fileManager
         self.maxAge = maxAge
         self.maxFiles = maxFiles
+        self.desktopTitleIndex = desktopTitleIndex
     }
 
     public func discoverRecentSessions(now: Date = .now) -> [AgentSession] {
@@ -61,6 +66,10 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
             .sorted { $0.modifiedAt > $1.modifiedAt }
             .prefix(maxFiles)
 
+        if !sortedCandidates.isEmpty {
+            desktopTitleIndex?.refreshIfNeeded(now: now)
+        }
+
         return sortedCandidates.compactMap { candidate in
             parseSession(at: candidate.fileURL, fallbackUpdatedAt: candidate.modifiedAt)
         }
@@ -89,6 +98,7 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
         var currentTool: String?
         var currentToolInputPreview: String?
         var pendingToolUses: [String: (name: String, preview: String?)] = [:]
+        var transcriptTitles = ClaudeTranscriptTitles()
 
         let processLine: (String) -> Void = { line in
             guard let data = line.data(using: .utf8),
@@ -169,6 +179,8 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
                       let summary = object["summary"] as? String,
                       !summary.isEmpty {
                 lastAssistantMessage = summary
+            } else if let titleRecord = ClaudeTranscriptTitleRecord.parse(object) {
+                transcriptTitles.apply(titleRecord)
             }
         }
 
@@ -201,7 +213,12 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
             lastAssistantMessage: lastAssistantMessage,
             currentTool: currentTool,
             currentToolInputPreview: currentToolInputPreview,
-            model: model
+            model: model,
+            sessionTitle: ClaudeSessionTitleResolver.resolve(
+                customTitle: transcriptTitles.customTitle,
+                desktopTitle: desktopTitleIndex?.title(forCLISessionID: sessionID),
+                aiTitle: transcriptTitles.aiTitle
+            )
         )
         let summary = lastAssistantMessage
             ?? lastUserPrompt
