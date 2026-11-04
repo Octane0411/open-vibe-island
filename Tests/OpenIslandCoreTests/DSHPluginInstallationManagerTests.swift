@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 @testable import OpenIslandCore
@@ -19,6 +20,7 @@ private final class ConfigEditingFileManager: FileManager, @unchecked Sendable {
 
 struct DSHPluginInstallationManagerTests {
     private let source = Data("export function apply(ctx) {}\n".utf8)
+    private let clientSource = Data("window.__ModuleLoader__.load({ id: 'open-island-dsh', factory: () => ({ apply() {} }) })\n".utf8)
 
     private func temporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
@@ -34,6 +36,129 @@ struct DSHPluginInstallationManagerTests {
 
     private func config(at directory: URL) throws -> NSDictionary {
         try #require(JSONSerialization.jsonObject(with: Data(contentsOf: directory.appendingPathComponent("package.json"))) as? NSDictionary)
+    }
+
+    private func legacyInstallation(in directory: URL) throws -> DSHPluginInstallationManager {
+        let manager = DSHPluginInstallationManager(dshProfileDirectory: directory)
+        var original = try #require(try config(at: directory) as? [String: Any])
+        var dsh = original["dsh"] as? [String: Any] ?? [:]
+        var profile = dsh["profile"] as? [String: Any] ?? [:]
+        var bundles = profile["bundles"] as? [String] ?? []
+        let createdDsh = original["dsh"] == nil
+        let createdProfile = dsh["profile"] == nil
+        let createdBundles = profile["bundles"] == nil
+        bundles.append("open-island-dsh")
+        profile["bundles"] = bundles
+        dsh["profile"] = profile
+        original["dsh"] = dsh
+        try writeConfig(original, to: directory)
+        let package: [String: Any] = [
+            "name": "open-island-dsh", "version": "1.0.0", "private": true, "type": "module",
+            "main": "./open-island-dsh.js", "exports": [".": "./open-island-dsh.js"],
+            "dsh": ["bundle": ["patch": "./cordis.patch.yml"]],
+            "engines": ["dsh": ">=0.2.1-rc.3 <0.3.0", "node": ">=22.19"],
+        ]
+        let patch = [["insert": [["id": "open-island", "name": manager.pluginFileURL.absoluteString]]]]
+        let files = [
+            "open-island-dsh.js": source,
+            "package.json": try JSONSerialization.data(withJSONObject: package, options: [.prettyPrinted, .sortedKeys]),
+            "cordis.patch.yml": try JSONSerialization.data(withJSONObject: patch, options: [.prettyPrinted, .sortedKeys]),
+        ]
+        try FileManager.default.createDirectory(at: manager.pluginDirectory, withIntermediateDirectories: true)
+        for (name, data) in files { try data.write(to: manager.pluginDirectory.appendingPathComponent(name)) }
+        let manifest = DSHPluginInstallerManifest(
+            version: 1,
+            pluginPath: manager.pluginFileURL.path,
+            fileDigests: files.mapValues { SHA256.hash(data: $0).map { String(format: "%02x", $0) }.joined() },
+            createdDsh: createdDsh,
+            createdProfile: createdProfile,
+            createdBundles: createdBundles
+        )
+        try JSONEncoder().encode(manifest).write(to: manager.manifestURL)
+        return manager
+    }
+
+    private func snapshot(_ manager: DSHPluginInstallationManager) throws -> [String: Data] {
+        var files: [String: Data] = [
+            "profile": try Data(contentsOf: manager.configURL),
+            "manifest": try Data(contentsOf: manager.manifestURL),
+        ]
+        for name in try FileManager.default.contentsOfDirectory(atPath: manager.pluginDirectory.path) {
+            files[name] = try Data(contentsOf: manager.pluginDirectory.appendingPathComponent(name))
+        }
+        return files
+    }
+
+    @Test(arguments: [true, false], [true, false])
+    func legacyInstallCanUpgradeOrUninstallWithoutLosingProfileData(upgrade: Bool, existingContainers: Bool) throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var original: [String: Any] = ["private": true, "dependencies": ["other": "1.2.3"]]
+        if existingContainers {
+            original["dsh"] = ["profile": ["bundles": [], "custom": "keep"], "custom": true]
+        }
+        try writeConfig(original, to: directory)
+        let manager = try legacyInstallation(in: directory)
+        let legacy = try manager.status()
+        #expect(legacy.isInstalled)
+        #expect(!legacy.isCurrent)
+        #expect(!legacy.clientFilePresent)
+        if upgrade {
+            let upgraded = try manager.install(pluginSourceData: source, clientSourceData: clientSource)
+            #expect(upgraded.isCurrent)
+            #expect(upgraded.manifest?.createdDsh == legacy.manifest?.createdDsh)
+            #expect(upgraded.manifest?.createdProfile == legacy.manifest?.createdProfile)
+            #expect(upgraded.manifest?.createdBundles == legacy.manifest?.createdBundles)
+            #expect(try Data(contentsOf: manager.clientFileURL) == clientSource)
+            let installed = try config(at: directory)
+            let dsh = try #require(installed["dsh"] as? NSDictionary)
+            let profile = try #require(dsh["profile"] as? NSDictionary)
+            #expect(profile["bundles"] as? [String] == ["open-island-dsh"])
+        }
+        try manager.uninstall()
+        #expect(try config(at: directory) == original as NSDictionary)
+        #expect(!FileManager.default.fileExists(atPath: manager.pluginDirectory.path))
+    }
+
+    @Test(arguments: ["client", "host", "manifest"])
+    func legacyUpgradeRefusesUnownedClientOrChangedOwnership(kind: String) throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try writeConfig(["private": true], to: directory)
+        let manager = try legacyInstallation(in: directory)
+        switch kind {
+        case "client": try Data("unowned client".utf8).write(to: manager.clientFileURL)
+        case "host": try Data("changed host".utf8).write(to: manager.pluginFileURL)
+        default:
+            var manifest = try #require(manager.status().manifest)
+            manifest.fileDigests["unexpected.js"] = "unowned"
+            try JSONEncoder().encode(manifest).write(to: manager.manifestURL)
+        }
+        let before = try snapshot(manager)
+        #expect(throws: DSHPluginInstallationError.self) { try manager.install(pluginSourceData: source, clientSourceData: clientSource) }
+        #expect(throws: DSHPluginInstallationError.self) { try manager.uninstall() }
+        #expect(try snapshot(manager) == before)
+    }
+
+    @Test
+    func failedLegacyUpgradeRestoresThreeFileOwnershipAndRemovesNewClient() throws {
+        guard getuid() != 0 else { return }
+        let directory = try temporaryDirectory()
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        try writeConfig(["private": true], to: directory)
+        let manager = try legacyInstallation(in: directory)
+        let before = try snapshot(manager)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        #expect(throws: (any Error).self) {
+            try manager.install(pluginSourceData: Data("changed host".utf8), clientSourceData: clientSource)
+        }
+        #expect(try snapshot(manager) == before)
+        #expect(!FileManager.default.fileExists(atPath: manager.clientFileURL.path))
+        #expect(try manager.status().isInstalled)
+        #expect(try !manager.status().isCurrent)
     }
 
     @Test
@@ -52,8 +177,8 @@ struct DSHPluginInstallationManagerTests {
         try yaml.write(to: patchURL)
         let manager = DSHPluginInstallationManager(dshProfileDirectory: directory)
 
-        #expect(try manager.install(pluginSourceData: source).isCurrent)
-        #expect(try manager.install(pluginSourceData: Data("export function apply(ctx) { return ctx }\n".utf8)).isCurrent)
+        #expect(try manager.install(pluginSourceData: source, clientSourceData: clientSource).isCurrent)
+        #expect(try manager.install(pluginSourceData: Data("export function apply(ctx) { return ctx }\n".utf8), clientSourceData: clientSource).isCurrent)
         let installed = try config(at: directory)
         let dsh = try #require(installed["dsh"] as? NSDictionary)
         let profile = try #require(dsh["profile"] as? NSDictionary)
@@ -78,12 +203,12 @@ struct DSHPluginInstallationManagerTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         try writeConfig(["private": true], to: directory)
         let manager = DSHPluginInstallationManager(dshProfileDirectory: directory)
-        try manager.install(pluginSourceData: source)
-        try manager.install(pluginSourceData: source)
+        try manager.install(pluginSourceData: source, clientSourceData: clientSource)
+        try manager.install(pluginSourceData: source, clientSourceData: clientSource)
         try manager.uninstall()
         #expect(try config(at: directory) == ["private": true] as NSDictionary)
 
-        try manager.install(pluginSourceData: source)
+        try manager.install(pluginSourceData: source, clientSourceData: clientSource)
         var edited = try #require(try config(at: directory) as? [String: Any])
         edited["dsh"] = ["extra": "new", "profile": ["extra": [1, 2], "bundles": ["open-island-dsh", "new-plugin"]]]
         try writeConfig(edited, to: directory)
@@ -98,7 +223,7 @@ struct DSHPluginInstallationManagerTests {
         let manager = DSHPluginInstallationManager(dshProfileDirectory: directory)
         let original = Data(input.utf8)
         try original.write(to: manager.configURL)
-        #expect(throws: DSHPluginInstallationError.self) { try manager.install(pluginSourceData: source) }
+        #expect(throws: DSHPluginInstallationError.self) { try manager.install(pluginSourceData: source, clientSourceData: clientSource) }
         #expect(throws: DSHPluginInstallationError.self) { try manager.uninstall() }
         #expect(try Data(contentsOf: manager.configURL) == original)
         #expect(!FileManager.default.fileExists(atPath: manager.pluginsDirectory.path))
@@ -113,10 +238,11 @@ struct DSHPluginInstallationManagerTests {
         let manager = DSHPluginInstallationManager(dshProfileDirectory: absent)
         #expect(try !manager.status().isInstalled)
         #expect(try !manager.uninstall().isInstalled)
-        #expect(throws: DSHPluginInstallationError.self) { try manager.install(pluginSourceData: source) }
+        #expect(throws: DSHPluginInstallationError.self) { try manager.install(pluginSourceData: source, clientSourceData: clientSource) }
         #expect(!FileManager.default.fileExists(atPath: absent.path))
         for invalid in [Data(), Data([0xff]), Data(" \n".utf8)] {
-            #expect(throws: DSHPluginInstallationError.self) { try manager.install(pluginSourceData: invalid) }
+            #expect(throws: DSHPluginInstallationError.self) { try manager.install(pluginSourceData: invalid, clientSourceData: clientSource) }
+            #expect(throws: DSHPluginInstallationError.invalidSource) { try manager.install(pluginSourceData: source, clientSourceData: invalid) }
         }
     }
 
@@ -136,7 +262,7 @@ struct DSHPluginInstallationManagerTests {
             try Data("{\"pluginPath\":\"/outside/open-island-dsh.js\"}".utf8).write(to: manager.manifestURL)
         }
         let before = try Data(contentsOf: manager.configURL)
-        #expect(throws: DSHPluginInstallationError.self) { try manager.install(pluginSourceData: source) }
+        #expect(throws: DSHPluginInstallationError.self) { try manager.install(pluginSourceData: source, clientSourceData: clientSource) }
         #expect(throws: DSHPluginInstallationError.self) { try manager.uninstall() }
         #expect(try Data(contentsOf: manager.configURL) == before)
         if kind == "bundle" { #expect(try Data(contentsOf: manager.pluginFileURL) == source) }
@@ -148,17 +274,17 @@ struct DSHPluginInstallationManagerTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         try writeConfig(["private": true], to: directory)
         let manager = DSHPluginInstallationManager(dshProfileDirectory: directory)
-        var manifest = try #require(manager.install(pluginSourceData: source).manifest)
+        var manifest = try #require(manager.install(pluginSourceData: source, clientSourceData: clientSource).manifest)
         manifest.version = version
         try JSONEncoder().encode(manifest).write(to: manager.manifestURL)
         let before = try Data(contentsOf: manager.configURL)
-        #expect(throws: DSHPluginInstallationError.self) { try manager.install(pluginSourceData: source) }
+        #expect(throws: DSHPluginInstallationError.self) { try manager.install(pluginSourceData: source, clientSourceData: clientSource) }
         #expect(throws: DSHPluginInstallationError.self) { try manager.uninstall() }
         #expect(try Data(contentsOf: manager.configURL) == before)
         #expect(try Data(contentsOf: manager.pluginFileURL) == source)
     }
 
-    @Test(arguments: ["config", "node_modules", "bundle", "plugin", "manifest", "ancestor"])
+    @Test(arguments: ["config", "node_modules", "bundle", "plugin", "client", "manifest", "ancestor"])
     func symbolicLinksNeverRedirectWrites(kind: String) throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -176,6 +302,7 @@ struct DSHPluginInstallationManagerTests {
         case "node_modules": target = manager.pluginsDirectory
         case "bundle": target = manager.pluginDirectory
         case "plugin": target = manager.pluginFileURL
+        case "client": target = manager.clientFileURL
         case "manifest": target = manager.manifestURL
         default: target = directory.appendingPathComponent("linked", isDirectory: true)
         }
@@ -184,27 +311,29 @@ struct DSHPluginInstallationManagerTests {
         let effectiveManager = kind == "ancestor"
             ? DSHPluginInstallationManager(dshProfileDirectory: target.appendingPathComponent("profile"))
             : manager
-        #expect(throws: DSHPluginInstallationError.self) { try effectiveManager.install(pluginSourceData: source) }
+        #expect(throws: DSHPluginInstallationError.self) { try effectiveManager.install(pluginSourceData: source, clientSourceData: clientSource) }
         #expect(throws: DSHPluginInstallationError.self) { try effectiveManager.uninstall() }
         #expect(try Data(contentsOf: sentinel) == Data("untouched".utf8))
         #expect(try FileManager.default.contentsOfDirectory(atPath: outside.path) == ["sentinel"])
     }
 
-    @Test(arguments: ["modified", "extra", "missing"])
+    @Test(arguments: ["modified", "client", "extra", "missing", "missingClient"])
     func changedManagedBundleIsPreserved(kind: String) throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         try writeConfig(["private": true], to: directory)
         let manager = DSHPluginInstallationManager(dshProfileDirectory: directory)
-        try manager.install(pluginSourceData: source)
+        try manager.install(pluginSourceData: source, clientSourceData: clientSource)
         switch kind {
         case "modified": try Data("user changes".utf8).write(to: manager.pluginFileURL)
+        case "client": try Data("user client changes".utf8).write(to: manager.clientFileURL)
         case "extra": try Data("user file".utf8).write(to: manager.pluginDirectory.appendingPathComponent("keep.txt"))
+        case "missingClient": try FileManager.default.removeItem(at: manager.clientFileURL)
         default: try FileManager.default.removeItem(at: manager.pluginFileURL)
         }
         let before = try Data(contentsOf: manager.configURL)
         #expect(try !manager.status().isCurrent)
-        #expect(throws: DSHPluginInstallationError.self) { try manager.install(pluginSourceData: source) }
+        #expect(throws: DSHPluginInstallationError.self) { try manager.install(pluginSourceData: source, clientSourceData: clientSource) }
         #expect(throws: DSHPluginInstallationError.self) { try manager.uninstall() }
         #expect(try Data(contentsOf: manager.configURL) == before)
         #expect(FileManager.default.fileExists(atPath: manager.manifestURL.path))
@@ -223,7 +352,7 @@ struct DSHPluginInstallationManagerTests {
             try edited.write(to: directory.appendingPathComponent("package.json"))
         }
         #expect(throws: DSHPluginInstallationError.configurationChanged) {
-            try manager.install(pluginSourceData: source)
+            try manager.install(pluginSourceData: source, clientSourceData: clientSource)
         }
         #expect(try Data(contentsOf: manager.configURL) == edited)
         #expect(!FileManager.default.fileExists(atPath: manager.pluginDirectory.path))
@@ -241,14 +370,15 @@ struct DSHPluginInstallationManagerTests {
         }
         try writeConfig(["private": true], to: directory)
         let manager = DSHPluginInstallationManager(dshProfileDirectory: directory)
-        try manager.install(pluginSourceData: source)
+        try manager.install(pluginSourceData: source, clientSourceData: clientSource)
         let originalConfig = try Data(contentsOf: manager.configURL)
         let originalManifest = try Data(contentsOf: manager.manifestURL)
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
         #expect(throws: (any Error).self) {
-            try manager.install(pluginSourceData: Data("export function apply() { return 2 }\n".utf8))
+            try manager.install(pluginSourceData: Data("export function apply() { return 2 }\n".utf8), clientSourceData: Data("updated client\n".utf8))
         }
         #expect(try Data(contentsOf: manager.pluginFileURL) == source)
+        #expect(try Data(contentsOf: manager.clientFileURL) == clientSource)
         #expect(try Data(contentsOf: manager.configURL) == originalConfig)
         #expect(try Data(contentsOf: manager.manifestURL) == originalManifest)
         #expect(try manager.status().isCurrent)

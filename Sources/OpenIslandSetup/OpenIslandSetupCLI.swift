@@ -51,6 +51,7 @@ private struct SetupCommand {
     let hermesDirectory: URL
     let dshProfileDirectory: URL
     let pluginSource: URL?
+    let clientSource: URL?
     let hooksBinary: URL?
 
     init(arguments: [String]) throws {
@@ -63,6 +64,7 @@ private struct SetupCommand {
 
         var hooksBinary: URL?
         var pluginSource: URL?
+        var clientSource: URL?
         var dshProfileDirectory = DSHPluginInstallationManager.defaultProfileDirectory
         var codexDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex", isDirectory: true)
         var claudeDirectory = ClaudeConfigDirectory.resolved()
@@ -137,6 +139,13 @@ private struct SetupCommand {
                 }
                 pluginSource = URL(fileURLWithPath: arguments[index]).standardizedFileURL
 
+            case "--client-source":
+                index += 1
+                guard index < arguments.count else {
+                    throw SetupError.missingValue("--client-source")
+                }
+                clientSource = URL(fileURLWithPath: arguments[index]).standardizedFileURL
+
             default:
                 throw SetupError.unexpectedArgument(arguments[index])
             }
@@ -156,6 +165,7 @@ private struct SetupCommand {
         self.hermesDirectory = hermesDirectory
         self.dshProfileDirectory = dshProfileDirectory
         self.pluginSource = pluginSource
+        self.clientSource = clientSource
         self.hooksBinary = hooksBinary
     }
 
@@ -199,8 +209,12 @@ private struct SetupCommand {
             try statusHermes()
         case .installDsh:
             guard let pluginSource else { throw SetupError.missingValue("--plugin-source") }
+            guard let clientSource else { throw SetupError.missingValue("--client-source") }
             let manager = DSHPluginInstallationManager(dshProfileDirectory: dshProfileDirectory)
-            let status = try manager.install(pluginSourceData: Data(contentsOf: pluginSource))
+            let status = try manager.install(
+                pluginSourceData: Data(contentsOf: pluginSource),
+                clientSourceData: Data(contentsOf: clientSource)
+            )
             print("Installed Open Island DSH plugin.")
             printDshStatus(status)
         case .uninstallDsh:
@@ -218,6 +232,8 @@ private struct SetupCommand {
         print("DSH profile: \(status.dshProfileDirectory.path)")
         print("Config: \(status.configURL.path)")
         print("Plugin: \(status.pluginFileURL.path)")
+        print("Client: \(status.clientFileURL.path)")
+        print("Client file present: \(status.clientFilePresent ? "yes" : "no")")
         print("Plugin registered: \(status.pluginRegistered ? "yes" : "no")")
         print("Managed files intact: \(status.managedFilesIntact ? "yes" : "no")")
         print("Current installation: \(status.isCurrent ? "yes" : "no")")
@@ -514,11 +530,12 @@ private enum SetupError: Error, LocalizedError {
               swift run OpenIslandSetup installHermes [--hooks-binary /abs/path/to/OpenIslandHooks] [--hermes-dir /abs/path/to/.hermes]
               swift run OpenIslandSetup uninstallHermes [--hermes-dir /abs/path/to/.hermes]
               swift run OpenIslandSetup statusHermes [--hooks-binary /abs/path/to/OpenIslandHooks] [--hermes-dir /abs/path/to/.hermes]
-              swift run OpenIslandSetup installDsh --plugin-source /abs/path/to/open-island-dsh.js [--dsh-profile-dir /abs/path/to/.dsh/profiles/web]
+              swift run OpenIslandSetup installDsh --plugin-source /abs/path/to/open-island-dsh.js --client-source /abs/path/to/open-island-dsh-client.js [--dsh-profile-dir /abs/path/to/.dsh/profiles/web]
               swift run OpenIslandSetup uninstallDsh [--dsh-profile-dir /abs/path/to/.dsh/profiles/web]
               swift run OpenIslandSetup statusDsh [--dsh-profile-dir /abs/path/to/.dsh/profiles/web]
 
             DSH requires an existing profile package.json. Start DSH with that profile first.
+            Restart the DSH Web host and reload the PWA after installing or upgrading.
             The default DSH profile is web under DSH_HOME, or ~/.dsh when DSH_HOME is unset.
             """
         case let .missingValue(flag):
