@@ -7,6 +7,7 @@ struct CodexLocalWebSocketTests {
     private func handshake(_ socket: CodexLocalWebSocket) -> Data {
         let request = String(decoding: socket.upgradeRequest, as: UTF8.self)
         let key = request.components(separatedBy: "Sec-WebSocket-Key: ")[1].components(separatedBy: "\r\n")[0]
+        #expect(Data(base64Encoded: key)?.count == 16)
         let accept = Data(Insecure.SHA1.hash(data: Data((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").utf8))).base64EncodedString()
         return Data("HTTP/1.1 101 Switching Protocols\r\nSec-WebSocket-Accept: \(accept)\r\n\r\n".utf8)
     }

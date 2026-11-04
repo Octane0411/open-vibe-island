@@ -1744,7 +1744,8 @@ final class AppModel {
         sharedCodexLastActiveAt = sharedCodexLastActiveAt.filter {
             now.timeIntervalSince($0.value) <= 300 || ids.contains($0.key)
         }
-        state = SessionState(sessions: sessions)
+        let nextState = SessionState(sessions: sessions)
+        if nextState != state { state = nextState }
     }
 
     /// Applies startup discovery results on the main thread after background I/O completes.

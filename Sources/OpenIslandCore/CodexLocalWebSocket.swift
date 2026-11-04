@@ -11,7 +11,7 @@ struct CodexLocalWebSocket {
     private var fragments = Data()
     private var isFragmented = false
     private var upgraded = false
-    private let key = UUID().uuidString.data(using: .utf8)!.base64EncodedString()
+    private let key = Data((0..<16).map { _ in UInt8.random(in: .min ... .max) }).base64EncodedString()
 
     var upgradeRequest: Data {
         Data("GET / HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: \(key)\r\nSec-WebSocket-Version: 13\r\n\r\n".utf8)
