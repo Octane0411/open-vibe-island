@@ -28,6 +28,7 @@
 "settings.general.hapticFeedback" = "Haptic feedback on hover";
 "settings.general.suppressFrontmostNotifications" = "Suppress notifications for focused sessions";
 "settings.general.showCodexUsage" = "Show Codex usage";
+"settings.general.usageShowsRemaining" = "Show remaining quota instead of used quota";
 "settings.general.completionReply" = "Reply from completion card";
 "settings.general.cliHooks" = "CLI Hooks";
 "settings.general.activated" = "Activated";
@@ -199,6 +200,7 @@
 "island.section.idle" = "Idle";
 "island.showAll" = "Show all %lld sessions";
 "island.collapseList" = "Collapse list";
+"island.usageWindowRemaining" = "%@ %lld%% left";
 "island.usageWaiting" = "Usage waiting";
 
 /* Island Panel - Approval */
