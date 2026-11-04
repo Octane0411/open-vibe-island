@@ -104,6 +104,23 @@ test('private interaction ownership validates full structured answers and reject
   assert.equal(nativeCalls, 1)
 })
 
+test('a delayed app answers only one outstanding lease challenge without duplicate-pong disconnects', async t => {
+  const { agent, controller, relay } = await fixture(t, { pingMs: 10, leaseMs: 200 })
+  const observer = await observe(relay.socketPath, { pong: false })
+  t.after(() => observer.socket.destroy())
+  const waiting = controller.request('question', { agent, questions }, () => assert.fail('Healthy lease delegated'))
+  await until(() => observer.frames.some(frame => frame.type === 'interaction_ping'))
+  await delay(35)
+  assert.equal(observer.frames.filter(frame => frame.type === 'interaction_ping').length, 1)
+  const ping = observer.frames.find(frame => frame.type === 'interaction_ping')
+  observer.socket.write(JSON.stringify({ type: 'interaction_pong', observer_id: observer.observerID, nonce: ping.nonce }) + '\n')
+  await until(() => observer.frames.filter(frame => frame.type === 'interaction_ping').length === 2)
+  const requestID = observer.frames.find(frame => frame.interaction?.status === 'pending').interaction.request_id
+  assert.deepEqual(await command(relay.socketPath, { type: 'respond_interaction', observer_id: observer.observerID,
+    session_id: agent.session.id, request_id: requestID, ...answer }), { ok: true })
+  assert.deepEqual(await waiting, answer)
+})
+
 test('lease loss, explicit delegation, cancellation, result and disposal revoke IDs without competing resolvers', async t => {
   const { agent, controller, relay } = await fixture(t, { pingMs: 10, leaseMs: 45 })
   let nativeCalls = 0

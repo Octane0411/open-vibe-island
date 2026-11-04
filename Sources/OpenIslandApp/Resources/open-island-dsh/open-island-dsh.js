@@ -431,7 +431,10 @@ export function createInteractionController({ isLive, callIdFor, pingMs = 1000, 
     socket.once('error', () => detach(client))
     client.timer = setInterval(() => {
       if (Date.now() - client.seen >= leaseMs) return detach(client)
-      if (!client.nonce) client.nonce = randomUUID()
+      // Keep only one challenge outstanding. Repeating it while a busy app is
+      // catching up would produce duplicate pongs and revoke a healthy observer.
+      if (client.nonce) return
+      client.nonce = randomUUID()
       if (!write(socket, { type: 'interaction_ping', observer_id: client.id, nonce: client.nonce })) detach(client)
     }, pingMs)
     client.timer.unref()
