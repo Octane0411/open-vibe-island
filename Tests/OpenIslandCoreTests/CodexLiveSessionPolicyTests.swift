@@ -46,4 +46,14 @@ struct CodexLiveSessionPolicyTests {
         #expect(CodexLiveSessionPolicy.phase(for: try thread(status: "idle").status) == .completed)
         #expect(CodexLiveSessionPolicy.phase(for: try thread(status: "systemError").status) == .completed)
     }
+
+    @Test
+    func indexedActivityRefreshPreservesRuntimeStatusAndCompletionRecency() throws {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let finished = try thread(status: "idle").updatingActivityTimestamp(9_999)
+        #expect(CodexLiveSessionPolicy.shouldShow(finished, now: now))
+        let waiting = try thread(flags: ["waitingOnApproval"]).updatingActivityTimestamp(9_999)
+        #expect(CodexLiveSessionPolicy.phase(for: waiting.status) == .waitingForApproval)
+        #expect(waiting.updatingActivityTimestamp(1).updatedAt == 9_999)
+    }
 }

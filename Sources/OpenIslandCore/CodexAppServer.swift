@@ -20,6 +20,14 @@ public struct CodexThread: Codable, Sendable {
     /// Turns are only populated on `thread/resume` and `thread/fork`
     /// responses, empty otherwise.
     public let turns: [CodexTurn]?
+
+    func updatingActivityTimestamp(_ timestamp: Int) -> CodexThread {
+        CodexThread(
+            id: id, cwd: cwd, name: name, preview: preview, modelProvider: modelProvider,
+            createdAt: createdAt, updatedAt: max(updatedAt, timestamp), ephemeral: ephemeral,
+            path: path, status: status, source: source, turns: turns
+        )
+    }
 }
 
 public enum CodexThreadStatusType: String, Codable, Sendable {
@@ -285,6 +293,13 @@ public final class CodexAppServerClient: @unchecked Sendable {
             cursor = page.nextCursor
             if let cursor, !visitedCursors.insert(cursor).inserted { break }
         } while cursor != nil
+        if usesSharedDaemon,
+           let recent = try? await listThreads(limit: 100, sortKey: "updated_at") {
+            // Loaded legacy threads can retain their original creation-time
+            // updatedAt. The history index has the actual latest activity date.
+            let activity = Dictionary(uniqueKeysWithValues: recent.map { ($0.id, $0.updatedAt) })
+            return threads.map { $0.updatingActivityTimestamp(activity[$0.id] ?? $0.updatedAt) }
+        }
         return threads
     }
 
@@ -301,9 +316,9 @@ public final class CodexAppServerClient: @unchecked Sendable {
     }
 
     /// List all threads (including not-loaded) from the app-server.
-    public func listThreads(limit: Int? = nil) async throws -> [CodexThread] {
-        struct Params: Encodable { let limit: Int? }
-        let data = try await sendRequest(method: "thread/list", params: Params(limit: limit))
+    public func listThreads(limit: Int? = nil, sortKey: String? = nil) async throws -> [CodexThread] {
+        struct Params: Encodable { let limit: Int?; let sortKey: String? }
+        let data = try await sendRequest(method: "thread/list", params: Params(limit: limit, sortKey: sortKey))
         return try Self.decodeThreadListResponse(data)
     }
 
