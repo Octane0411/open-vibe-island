@@ -3,6 +3,7 @@ import Foundation
 import Testing
 @testable import OpenIslandCore
 
+@Suite(.serialized)
 struct DSHInteractionTests {
     @Test
     func boundaryPreservesNativeIdentityPlanDetailAndLosslessSelections() throws {
@@ -112,6 +113,199 @@ struct DSHInteractionTests {
     }
 
     @Test
+    func typedResultsRetainMarkdownAndNonSuccessTurnReasons() async throws {
+        let bridgeURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: bridgeURL)
+        try server.start()
+        defer { server.stop() }
+        let observer = LocalBridgeClient(socketURL: bridgeURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        let deadline = Task {
+            try? await Task.sleep(for: .seconds(8))
+            if !Task.isCancelled { observer.disconnect() }
+        }
+        defer { deadline.cancel() }
+        try await observer.send(.registerClient(role: .observer))
+        var iterator = stream.makeAsyncIterator()
+        let commands = BridgeCommandClient(socketURL: bridgeURL)
+        _ = try commands.send(.processDSHHook(DSHHookPayload(hookEventName: .sessionStart, sessionID: "results", cwd: "/tmp/project")))
+        _ = try #require(try await iterator.next())
+        let wire = Data("""
+        {"hook_event_name":"PostToolUse","session_id":"results","cwd":"/tmp/project","turn_id":3,
+        "interaction_result":{"kind":"plan","outcome":"declined","call_id":"plan-call"}}
+        """.utf8)
+        let result = try JSONDecoder().decode(DSHHookPayload.self, from: wire)
+        #expect(result.interactionResult?.outcome == .declined)
+        #expect(result.turnID == 3)
+        _ = try commands.send(.processDSHHook(result))
+        guard case let .activityUpdated(activity) = try #require(try await iterator.next()) else { Issue.record("Expected typed interaction result")
+            return
+        }
+        #expect(activity.summary == result.postToolUseSummary)
+        let markdown = "# Complete result\n\n" + String(repeating: "- Full assistant markdown retained.\n", count: 100)
+        let completion = DSHHookPayload(hookEventName: .stop, sessionID: "results", cwd: "/tmp/project", lastAssistantMessage: markdown,
+                                        turnID: 3, turnOutcome: "completed", interactionResult: result.interactionResult)
+        _ = try commands.send(.processDSHHook(completion))
+        guard case let .piSessionMetadataUpdated(metadata) = try #require(try await iterator.next()),
+              case let .sessionCompleted(completed) = try #require(try await iterator.next()) else { Issue.record("Expected full result and completion")
+            return
+        }
+        #expect(metadata.piMetadata.lastAssistantMessage == markdown)
+        #expect(completed.summary == completion.completionSummary)
+        for reason in ["error", "aborted", "blocked", "max-tokens", "interrupted", "forked", "extension-reason"] {
+            let hook = DSHHookPayload(hookEventName: .stop, sessionID: "results", cwd: "/tmp/project", turnID: 4, turnOutcome: reason)
+            _ = try commands.send(.processDSHHook(hook))
+            guard case let .piSessionMetadataUpdated(update) = try #require(try await iterator.next()),
+                  case let .sessionCompleted(end) = try #require(try await iterator.next()) else { Issue.record("Expected non-success outcome metadata")
+                return
+            }
+            #expect(update.piMetadata.lastAssistantMessage == hook.completionSummary)
+            #expect(update.piMetadata.lastAssistantMessage != markdown)
+            #expect(end.summary == hook.completionSummary)
+            #expect(end.isInterrupt == (["aborted", "interrupted"].contains(reason) ? true : nil))
+        }
+    }
+
+    @Test
+    func turnScopedStopsPreserveNewerCardsAndCompleteBeforeResolvedFrames() async throws {
+        let peer = try InteractionPeer()
+        defer { peer.stop() }
+        let bridgeURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: bridgeURL)
+        try server.start()
+        defer { server.stop() }
+        let observer = LocalBridgeClient(socketURL: bridgeURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        let deadline = Task {
+            try? await Task.sleep(for: .seconds(8))
+            if !Task.isCancelled { observer.disconnect() }
+        }
+        defer { deadline.cancel() }
+        try await observer.send(.registerClient(role: .observer))
+        var iterator = stream.makeAsyncIterator()
+        let commands = BridgeCommandClient(socketURL: bridgeURL)
+        _ = try commands.send(.processDSHHook(peer.hook(.sessionStart, sessionID: "chat")))
+        _ = try #require(try await iterator.next())
+        try peer.waitForSubscription()
+        var first = DSHInteraction(requestID: UUID().uuidString.lowercased(), kind: .question, status: .pending,
+                                   questions: [DSHInteractionQuestion(id: "first", question: "First")], turnID: 3)
+        var newer = DSHInteraction(requestID: UUID().uuidString.lowercased(), kind: .question, status: .pending,
+                                   questions: [DSHInteractionQuestion(id: "newer", question: "Newer")], turnID: 4)
+        try peer.publish(sessionID: "chat", interaction: first)
+        _ = try #require(try await iterator.next())
+        try peer.publish(sessionID: "chat", interaction: newer)
+        var stop = peer.hook(.stop, sessionID: "chat")
+        stop.turnID = 2
+        _ = try commands.send(.processDSHHook(stop))
+        _ = try commands.send(.processDSHHook(peer.hook(.heartbeat, sessionID: "chat")))
+        guard case .sessionHeartbeat = try #require(try await iterator.next()) else { Issue.record("Old turn Stop changed pending state")
+            return
+        }
+        stop.turnID = 3
+        _ = try commands.send(.processDSHHook(stop))
+        guard case .actionableStateResolved = try #require(try await iterator.next()),
+              case let .questionAsked(question) = try #require(try await iterator.next()) else { Issue.record("Expected only older turn to resolve")
+            return
+        }
+        #expect(question.prompt.id == newer.presentationID)
+        first.status = .resolved
+        try peer.publish(sessionID: "chat", interaction: first)
+        stop.turnID = 5
+        _ = try commands.send(.processDSHHook(stop))
+        guard case .sessionCompleted = try #require(try await iterator.next()) else { Issue.record("Current turn completion was lost before its resolved frame")
+            return
+        }
+        newer.status = .resolved
+        try peer.publish(sessionID: "chat", interaction: newer)
+        _ = try commands.send(.processDSHHook(peer.hook(.heartbeat, sessionID: "chat")))
+        guard case .sessionHeartbeat = try #require(try await iterator.next()) else { Issue.record("Late resolved frame changed completed state")
+            return
+        }
+        #expect(peer.responses.isEmpty)
+        await #expect(throws: DSHInteractionError.staleRequest) {
+            try await server.answerDSHQuestion(sessionID: "chat", requestID: try #require(newer.presentationID), response: QuestionPromptResponse(answer: "Late"))
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func rejectedDelegationRevokesOnlyItsObserverGeneration(delayedFailure: Bool) async throws {
+        let peer = try InteractionPeer()
+        defer { peer.stop() }
+        let bridgeURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: bridgeURL)
+        try server.start()
+        defer { server.stop() }
+        let observer = LocalBridgeClient(socketURL: bridgeURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        let deadline = Task {
+            try? await Task.sleep(for: .seconds(8))
+            if !Task.isCancelled { observer.disconnect() }
+        }
+        defer { deadline.cancel() }
+        try await observer.send(.registerClient(role: .observer))
+        var iterator = stream.makeAsyncIterator()
+        let commands = BridgeCommandClient(socketURL: bridgeURL)
+        _ = try commands.send(.processDSHHook(peer.hook(.sessionStart, sessionID: "chat")))
+        _ = try #require(try await iterator.next())
+        try peer.waitForSubscription()
+        let oldObserver = try #require(peer.observerID)
+        let firstID = UUID()
+        var request = DSHInteraction(requestID: firstID.uuidString.lowercased(), kind: .question, status: .pending,
+                                     questions: [DSHInteractionQuestion(id: "native", question: "Explain")])
+        try peer.publish(sessionID: "chat", interaction: request)
+        guard case .questionAsked = try #require(try await iterator.next()) else { Issue.record("Expected visible request")
+            return
+        }
+        let queuedID = UUID()
+        request.requestID = queuedID.uuidString.lowercased()
+        try peer.publish(sessionID: "chat", interaction: request)
+        peer.acknowledgement = false
+        peer.holdNextResponse = delayedFailure
+        request.requestID = UUID().uuidString.lowercased()
+        request.questions?.append(DSHInteractionQuestion(id: "native", question: "Duplicate ID"))
+        try peer.publish(sessionID: "chat", interaction: request)
+        try peer.waitForResponse()
+        #expect(peer.responses.last?.decision == "delegate")
+        if delayedFailure { peer.disconnectObserver() }
+        try peer.waitForObserverDisconnect()
+        guard case .actionableStateResolved = try #require(try await iterator.next()) else {
+            Issue.record("Failed delegation must clear visible and queued requests")
+            return
+        }
+        for id in [firstID, queuedID] {
+            await #expect(throws: DSHInteractionError.staleRequest) {
+                try await server.answerDSHQuestion(sessionID: "chat", requestID: id, response: QuestionPromptResponse(answer: "Stale"))
+            }
+        }
+        if delayedFailure {
+            _ = try commands.send(.processDSHHook(peer.hook(.heartbeat, sessionID: "chat")))
+            guard case .sessionHeartbeat = try #require(try await iterator.next()) else { Issue.record("Expected reconnect heartbeat")
+                return
+            }
+            try peer.waitForSubscription()
+            let newObserver = try #require(peer.observerID)
+            #expect(newObserver != oldObserver)
+            let newID = UUID()
+            request = DSHInteraction(requestID: newID.uuidString.lowercased(), kind: .question, status: .pending,
+                                     questions: [DSHInteractionQuestion(id: "new-native", question: "New generation")])
+            try peer.publish(sessionID: "chat", interaction: request)
+            guard case .questionAsked = try #require(try await iterator.next()) else { Issue.record("Expected new generation request")
+                return
+            }
+            peer.acknowledgement = true
+            peer.releaseDelayedResponse()
+            // Allow the deliberately delayed old failure to reach the bridge queue.
+            try await Task.sleep(for: .milliseconds(100))
+            try await server.answerDSHQuestion(sessionID: "chat", requestID: newID, response: QuestionPromptResponse(answer: "Explicit new answer"))
+            #expect(peer.responses.last?.observerID == newObserver)
+            #expect(peer.responses.last?.requestID == request.requestID)
+        }
+    }
+
+    @Test
     func exactResponsesQueueResolutionAndLeaseCleanup() async throws {
         let peer = try InteractionPeer()
         defer { peer.stop() }
@@ -151,6 +345,8 @@ struct DSHInteractionTests {
         #expect(state.session(id: "one")?.questionPrompt?.id == questionID)
         let approval = DSHInteraction(requestID: approvalID.uuidString.lowercased(), kind: .approval, status: .pending, toolName: "bash", reason: "Run tests")
         try peer.publish(sessionID: "one", interaction: approval)
+        // An old turn's FIFO Stop can arrive after a new pending stream frame.
+        _ = try commandClient.send(.processDSHHook(peer.hook(.stop, sessionID: "one")))
         _ = try commandClient.send(.answerQuestion(sessionID: "one", response: QuestionPromptResponse(answer: "must not route")))
         _ = try commandClient.send(.resolvePermission(sessionID: "one", resolution: .allowOnce()))
         await #expect(throws: DSHInteractionError.staleRequest) {
@@ -230,12 +426,21 @@ private final class InteractionPeer: @unchecked Sendable {
     private let pong = DispatchSemaphore(value: 0)
     private let responded = DispatchSemaphore(value: 0)
     private let observerDisconnected = DispatchSemaphore(value: 0)
+    private let delayedResponse = DispatchSemaphore(value: 0)
     private var stopped = false
     private var connections: Set<Int32> = []
     private var observer: Int32?
     private var subscriptionID: String?
     private var replies: [InteractionReply] = []
     private var acceptsResponse = true
+    private var delayNextResponse = false
+
+    var holdNextResponse: Bool {
+        get { lock.withLock { delayNextResponse } }
+        set { lock.withLock { delayNextResponse = newValue } }
+    }
+
+    func releaseDelayedResponse() { delayedResponse.signal() }
 
     var observerID: String? { lock.withLock { subscriptionID } }
     var responses: [InteractionReply] { lock.withLock { replies } }
@@ -323,12 +528,15 @@ private final class InteractionPeer: @unchecked Sendable {
                 }
             }
         } else if request.type == "respond_interaction" {
-            let accepted = lock.withLock { replies.append(request)
-                return acceptsResponse
+            let behavior = lock.withLock { replies.append(request)
+                let hold = delayNextResponse
+                delayNextResponse = false
+                return (acceptsResponse, hold)
             }
-            let response = accepted ? "{\"ok\":true}\n" : "{\"ok\":false,\"error\":\"stale-request\"}\n"
-            try? writeAll(Data(response.utf8), to: fd)
             responded.signal()
+            if behavior.1 { _ = delayedResponse.wait(timeout: .now() + 3) }
+            let response = behavior.0 ? "{\"ok\":true}\n" : "{\"ok\":false,\"error\":\"stale-request\"}\n"
+            try? writeAll(Data(response.utf8), to: fd)
         }
     }
 
@@ -350,6 +558,7 @@ private final class InteractionPeer: @unchecked Sendable {
     }
 
     func stop() {
+        delayedResponse.signal()
         lock.withLock {
             stopped = true
             for fd in connections { _ = shutdown(fd, SHUT_RDWR) }

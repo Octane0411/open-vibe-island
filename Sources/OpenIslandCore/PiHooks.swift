@@ -171,6 +171,10 @@ public protocol RuntimeHookPayload: Sendable {
     var terminalTTY: String? { get }
     var terminalTitle: String? { get }
     var defaultJumpTarget: JumpTarget { get }
+    var defaultPiMetadata: PiSessionMetadata { get }
+    var postToolUseSummary: String? { get }
+    var completionSummary: String? { get }
+    var isInterrupt: Bool? { get }
 }
 
 extension PiHookPayload: RuntimeHookPayload {
@@ -178,6 +182,10 @@ extension PiHookPayload: RuntimeHookPayload {
 }
 
 public extension RuntimeHookPayload {
+    var postToolUseSummary: String? { nil }
+    var completionSummary: String? { nil }
+    var isInterrupt: Bool? { nil }
+
     var workspaceName: String {
         WorkspaceNameResolver.workspaceName(for: cwd)
     }

@@ -61,6 +61,7 @@ public struct DSHInteraction: Equatable, Codable, Sendable {
     public var kind: Kind
     public var status: Status
     public var callID: String?
+    public var turnID: Int?
     public var questions: [DSHInteractionQuestion]?
     public var toolName: String?
     public var reason: String?
@@ -70,18 +71,20 @@ public struct DSHInteraction: Equatable, Codable, Sendable {
         case requestID = "request_id"
         case kind, status, questions, reason, resolution
         case callID = "call_id"
+        case turnID = "turn_id"
         case toolName = "tool_name"
     }
 
     public init(
         requestID: String, kind: Kind, status: Status, callID: String? = nil,
         questions: [DSHInteractionQuestion]? = nil, toolName: String? = nil,
-        reason: String? = nil, resolution: String? = nil
+        reason: String? = nil, resolution: String? = nil, turnID: Int? = nil
     ) {
         self.requestID = requestID
         self.kind = kind
         self.status = status
         self.callID = callID
+        self.turnID = turnID
         self.questions = questions
         self.toolName = toolName
         self.reason = reason

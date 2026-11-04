@@ -514,8 +514,14 @@ public final class BridgeServer: @unchecked Sendable {
         case let .processPiHook(payload):
             handleRuntimeHook(payload, from: clientID)
         case let .processDSHHook(payload):
-            handleRuntimeHook(payload, from: clientID)
-            if [.sessionEnd, .sessionStart, .stop].contains(payload.hookEventName) {
+            if payload.hookEventName == .stop, !shouldCompleteDSHTurn(payload) {
+                // Independent sockets can deliver a prior turn's Stop after a
+                // newer pending card. Its completion metadata is stale as well.
+                send(.response(.acknowledged), to: clientID)
+            } else {
+                handleRuntimeHook(payload, from: clientID)
+            }
+            if [.sessionEnd, .sessionStart].contains(payload.hookEventName) {
                 clearDSHInteractions(sessionID: payload.sessionID, includingBuffered: payload.hookEventName != .sessionStart)
             }
             if payload.hookEventName != .sessionEnd {
@@ -1464,7 +1470,40 @@ public final class BridgeServer: @unchecked Sendable {
             observerID: subscription.observerID, sessionID: sessionID,
             requestID: request.requestID, decision: "delegate"
         )
-        DispatchQueue.global(qos: .utility).async { try? subscription.respond(command) }
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            do { try subscription.respond(command) }
+            catch {
+                // Without an acknowledged delegate, only ending this exact lease
+                // guarantees the discarded request returns to native DSH.
+                subscription.cancel()
+                self?.queue.async { [weak self] in
+                    self?.disconnectDSHSubscription(path: subscription.socketPath, observerID: subscription.observerID)
+                }
+            }
+        }
+    }
+
+    private func shouldCompleteDSHTurn(_ payload: DSHHookPayload) -> Bool {
+        let sessionID = payload.sessionID
+        guard let order = pendingDSHOrder[sessionID], !order.isEmpty else { return true }
+        guard let turn = payload.turnID, turn >= 0 else { return false }
+        let removed = Set(order.filter { id in
+            guard let requestTurn = pendingDSHInteractions[sessionID]?[id]?.request.turnID else { return false }
+            return requestTurn >= 0 && requestTurn <= turn
+        })
+        let removedVisible = order.first.map { removed.contains($0) } ?? false
+        for id in removed { pendingDSHInteractions[sessionID]?.removeValue(forKey: id) }
+        pendingDSHOrder[sessionID]?.removeAll { removed.contains($0) }
+        if pendingDSHOrder[sessionID]?.isEmpty == true {
+            pendingDSHOrder.removeValue(forKey: sessionID)
+            pendingDSHInteractions.removeValue(forKey: sessionID)
+            return true
+        }
+        if removedVisible {
+            emitDSHResolution(sessionID: sessionID)
+            presentNextDSHInteraction(sessionID: sessionID)
+        }
+        return false
     }
 
     private func handleRuntimeHook(_ payload: some RuntimeHookPayload, from clientID: UUID) {
@@ -1549,7 +1588,8 @@ public final class BridgeServer: @unchecked Sendable {
                 .activityUpdated(
                     SessionActivityUpdated(
                         sessionID: payload.sessionID,
-                        summary: payload.toolName.map { "\($0) finished." } ?? "\(displayName) tool finished.",
+                        summary: payload.postToolUseSummary
+                            ?? payload.toolName.map { "\($0) finished." } ?? "\(displayName) tool finished.",
                         phase: .running,
                         timestamp: .now
                     )
@@ -1565,9 +1605,10 @@ public final class BridgeServer: @unchecked Sendable {
                 .sessionCompleted(
                     SessionCompleted(
                         sessionID: payload.sessionID,
-                        summary: payload.assistantMessagePreview
+                        summary: payload.completionSummary ?? payload.assistantMessagePreview
                             ?? "\(displayName) completed the turn.",
-                        timestamp: .now
+                        timestamp: .now,
+                        isInterrupt: payload.isInterrupt
                     )
                 )
             )
