@@ -78,18 +78,6 @@ private let closeAnimation = Animation.smooth(duration: 0.3)
 private let popAnimation = Animation.spring(response: 0.3, dampingFraction: 0.5)
 private let openedSurfaceUnmountDelay: TimeInterval = 0.36
 
-private struct ConditionalDrawingGroup: ViewModifier {
-    let enabled: Bool
-
-    func body(content: Content) -> some View {
-        if enabled {
-            content.drawingGroup()
-        } else {
-            content
-        }
-    }
-}
-
 // MARK: - Main island view
 
 struct IslandPanelView: View {
@@ -608,7 +596,6 @@ struct IslandPanelView: View {
                     stateIndicator: model.islandSessionStateIndicator,
                     completedStaleThreshold: model.completedStaleThreshold.seconds,
                     isActionable: true,
-                    useDrawingGroup: model.notchStatus == .opened,
                     isInteractive: model.notchStatus == .opened,
                     presentation: .notification,
                     sideInset: sessionListSideInset,
@@ -650,7 +637,6 @@ struct IslandPanelView: View {
                                 stateIndicator: model.islandSessionStateIndicator,
                                 completedStaleThreshold: model.completedStaleThreshold.seconds,
                                 isActionable: session.phase.requiresAttention || session.id == actionableSessionID,
-                                useDrawingGroup: model.notchStatus == .opened,
                                 isInteractive: model.notchStatus == .opened,
                                 sideInset: sessionListSideInset,
                                 lang: model.lang,
@@ -687,8 +673,8 @@ struct IslandPanelView: View {
 
     @ViewBuilder
     private func sessionRowsContent(referenceDate: Date) -> some View {
-        ForEach(model.islandSessionSections) { section in
-            VStack(alignment: .leading, spacing: 0) {
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(model.islandSessionSections) { section in
                 if model.islandSessionGroup != .none {
                     sessionSectionHeader(section)
                 }
@@ -700,7 +686,6 @@ struct IslandPanelView: View {
                         stateIndicator: model.islandSessionStateIndicator,
                         completedStaleThreshold: model.completedStaleThreshold.seconds,
                         isActionable: session.phase.requiresAttention || session.id == actionableSessionID,
-                        useDrawingGroup: model.notchStatus == .opened,
                         isInteractive: model.notchStatus == .opened,
                         sideInset: sessionListSideInset,
                         lang: model.lang,
@@ -1260,7 +1245,6 @@ private struct IslandSessionRow: View {
     var stateIndicator: IslandSessionStateIndicator = .animatedDot
     var completedStaleThreshold: TimeInterval = AgentSession.staleCompletedDisplayThreshold
     var isActionable: Bool = false
-    var useDrawingGroup: Bool = true
     var isInteractive: Bool = true
     var presentation: IslandSessionRowPresentation = .list
     var sideInset: CGFloat = 16
@@ -1320,7 +1304,6 @@ private struct IslandSessionRow: View {
             }
         }
         .opacity(isStaleCompleted ? 0.7 : 1)
-        .modifier(ConditionalDrawingGroup(enabled: useDrawingGroup && !isActionable))
         .contentShape(Rectangle())
         .animation(.easeInOut(duration: 0.15), value: isHighlighted)
         .onTapGesture(perform: handlePrimaryTap)
@@ -1948,11 +1931,8 @@ private struct IslandSessionRow: View {
         let tint = statusTint(for: presence)
         switch stateIndicator {
         case .animatedDot:
-            if let interval = stateIndicator.timelineInterval(presence: presence, isActionable: isActionable) {
-                TimelineView(.periodic(from: .now, by: interval)) { context in
-                    let pulse = (sin(context.date.timeIntervalSinceReferenceDate * 3.2) + 1) / 2
-                    statusDot(tint: tint, presence: presence, pulse: pulse)
-                }
+            if stateIndicator.usesLayerAnimation(presence: presence, isActionable: isActionable) {
+                PulsingStatusDot(tint: tint)
                 .frame(width: 10, height: 24, alignment: .top)
             } else {
                 statusDot(tint: tint, presence: presence, pulse: 0)
