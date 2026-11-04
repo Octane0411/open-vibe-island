@@ -1411,9 +1411,16 @@ final class AppModel {
             }
 
             do {
-                let result = try await Task.detached(priority: .userInitiated) {
-                    try jumpAction(jumpTarget)
-                }.value
+                try Task.checkCancellation()
+                let worker = Task.detached(priority: .userInitiated) {
+                    try Task.checkCancellation()
+                    return try jumpAction(jumpTarget)
+                }
+                let result = try await withTaskCancellationHandler {
+                    try await worker.value
+                } onCancel: {
+                    worker.cancel()
+                }
 
                 guard !Task.isCancelled else {
                     return

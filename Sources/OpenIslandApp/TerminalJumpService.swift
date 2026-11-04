@@ -231,6 +231,7 @@ struct TerminalJumpService {
     private let warpTabCountReader: WarpTabCountReader
     private let warpKeystroker: KeystrokeInjector
     private let warpFrontmostChecker: WarpFrontmostChecker
+    private let dshWebJumpAction: @Sendable (JumpTarget) throws -> String
 
     init(
         applicationResolver: @escaping ApplicationResolver = { bundleIdentifier in
@@ -251,6 +252,9 @@ struct TerminalJumpService {
             // updated via KVO that can lag the real frontmost transition).
             NSWorkspace.shared.frontmostApplication?.bundleIdentifier
                 == "dev.warp.Warp-Stable"
+        },
+        dshWebJumpAction: @escaping @Sendable (JumpTarget) throws -> String = { target in
+            try DSHWebJumpService().jump(to: target)
         }
     ) {
         self.applicationResolver = applicationResolver
@@ -262,9 +266,13 @@ struct TerminalJumpService {
         self.warpTabCountReader = warpTabCountReader
         self.warpKeystroker = warpKeystroker
         self.warpFrontmostChecker = warpFrontmostChecker
+        self.dshWebJumpAction = dshWebJumpAction
     }
 
     func jump(to target: JumpTarget) throws -> String {
+        if target.dshWeb != nil || target.terminalApp.caseInsensitiveCompare("DSH Web") == .orderedSame {
+            return try dshWebJumpAction(target)
+        }
         // tmux sessions: switch pane first, then use the terminal-specific
         // jump to focus the correct window/tab (not just activate the app).
         if let tmuxTarget = target.tmuxTarget, !tmuxTarget.isEmpty {

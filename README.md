@@ -66,7 +66,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 | **Codex** (CLI) | Supported | Hook integration (SessionStart, UserPromptSubmit, Stop by default; PreToolUse/PostToolUse parseable but not default), usage tracking |
 | **Codex Desktop App** | Supported | Hook integration + app-server JSON-RPC connection for real-time thread/turn lifecycle. Precise conversation jump via `codex://threads/<id>` deep-link |
 | **OpenCode** | Supported | JS plugin integration, permission/question flows, process detection |
-| **DeepSeek Harness (DSH)** | Supported | Local host plugin for lifecycle, tools, completion cards, persistence and per-session heartbeats. Settings installs into the Web profile. Approvals remain in DSH. See [DSH setup](docs/hooks.md#deepseek-harness-dsh-plugin) |
+| **DeepSeek Harness (DSH)** | Supported | Local host/client plugin for lifecycle, tools, completion cards, persistence, per-session heartbeats, and exact-chat jump-back with composer focus in the installed Web PWA. Settings installs into the Web profile. Approvals remain in DSH. See [DSH setup](docs/hooks.md#deepseek-harness-dsh-plugin) |
 | **Qoder** | Supported | Claude Code fork — same hook format, config at `~/.qoder/settings.json` |
 | **Qwen Code** | Supported | Claude Code fork — same hook format, config at `~/.qwen/settings.json` |
 | **Factory** | Supported | Claude Code fork — same hook format, config at `~/.factory/settings.json` |
