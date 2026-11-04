@@ -34,7 +34,7 @@ struct DSHIntegrationTests {
             return
         }
         #expect(payload.tool == .dsh)
-        #expect(payload.jumpTarget?.terminalApp == "Unknown")
+        #expect(payload.jumpTarget?.terminalApp == "DSH Web")
         #expect(payload.jumpTarget?.terminalTTY == nil)
         #expect(payload.jumpTarget?.workingDirectory == "/tmp/project")
         #expect(payload.piMetadata?.model == "deepseek")

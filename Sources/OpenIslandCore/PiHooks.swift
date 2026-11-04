@@ -170,6 +170,7 @@ public protocol RuntimeHookPayload: Sendable {
     var terminalSessionID: String? { get }
     var terminalTTY: String? { get }
     var terminalTitle: String? { get }
+    var defaultJumpTarget: JumpTarget { get }
 }
 
 extension PiHookPayload: RuntimeHookPayload {

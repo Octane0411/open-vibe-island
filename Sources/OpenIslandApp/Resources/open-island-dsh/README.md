@@ -1,10 +1,10 @@
-# Open Island DSH host plugin
+# Open Island DSH companion
 
-Dependency-free ESM host plugin for DSH 0.2.1-rc.3 and compatible 0.2 releases. No build step, browser plugin, subprocess hook, or live user configuration change is required to prepare the package.
+Dependency-free host and browser companion for DSH 0.2.1-rc.3 and compatible 0.2 releases. It observes live sessions and relays one narrow action: select a conversation in the installed DSH Web PWA and focus its composer. No build step, subprocess hook, or live user configuration change is required to prepare the package.
 
 ## Install explicitly
 
-Prefer Settings > Setup > DSH (Web profile) in Open Island. It installs a managed local bundle and preserves unrelated profile settings. Restart DSH afterward.
+Prefer Settings > Setup > DSH (Web profile) in Open Island. It installs a managed local bundle with both JavaScript files and preserves unrelated profile settings. Restart the DSH host and reload the installed PWA afterward. A host restart alone does not invalidate the browser client-module cache.
 
 For other profiles, use the Open Island setup CLI documented in the [hook guide](../../../../docs/hooks.md#deepseek-harness-dsh-plugin), or install this package directly from the repository as an alternative. Use one installation method per profile to avoid duplicate observers:
 
@@ -19,7 +19,7 @@ The app installer reconstructs a persistent managed package from the bundled Jav
 Remove a managed installation through Open Island Settings. Remove a direct package installation with:
 
 ```sh
-dsh plugin --profile web remove dsh-plugin-open-island
+dsh plugin --profile web remove open-island-dsh
 ```
 
 ## Public host APIs
@@ -58,9 +58,45 @@ Optional Cordis row settings are `socketPath` and `heartbeatIntervalMs`. `OPEN_I
 
 ## Safety and limitations
 
-This first version is observe-only. DSH exposes committed `approval/asked` and `approval/decided` audit events. Its `approval/request` and `user-questions/ask` APIs are answerer waterfalls, not passive notification feeds. The plugin does not register either waterfall, answer questions, grant approvals, switch policies, or accept app commands.
+DSH exposes committed `approval/asked` and `approval/decided` audit events. Its `approval/request` and `user-questions/ask` APIs are answerer waterfalls, not passive notification feeds. The companion does not register either waterfall, answer questions, grant approvals, switch policies, control tools, or execute arbitrary UI scripts. The only native command accepted is conversation focus.
 
 Session end delivery is best-effort during abrupt process exit. A session that remains loaded in a Web host is live even when its browser tab is disconnected. Unloading this plugin emits `SessionEnd` for its observation lifetime even if DSH itself continues running. Reload emits a new start. Historical prompts and in-flight tool calls are not replayed on plugin attachment. Transcript paths and exact terminal jump metadata are not available through the session APIs used here and are omitted. Delivery is not acknowledged or persisted.
+
+## Conversation focus protocol
+
+The package and Cordis patch identity are `open-island-dsh`. The package exports `./client`, whose file registers a lazy `window.__ModuleLoader__.load` factory with that same ID, not raw ESM. Its web injection metadata lists these package IDs:
+
+- `@deepseek-ai/dsh-client-connection`
+- `@deepseek-ai/dsh-api-session-controller`
+- `@deepseek-ai/dsh-client-ui-workspace`
+- `@deepseek-ai/dsh-client-ui-conversation`
+
+The client requires services `connection`, `sessions`, `uiWorkspace`, and `conversation`. Host `connection` and `webApp` are optional, so sessions-only CLI profiles retain lifecycle observation without a focus listener.
+
+Web hosts publish optional lifecycle fields only after the endpoint is ready:
+
+- `web_origin`: credential-free loopback HTTP origin with a trailing slash
+- `web_focus_socket`: `/tmp/oi-dsh-focus-<random>/focus.sock`
+
+The parent directory is owned by the host user with mode `0700`. Its socket has the same owner and mode `0600`. Both are checked before publication. macOS may resolve `/tmp` to `/private/tmp`. Native first activates the matching installed PWA, then connects to this exact socket and writes one UTF-8 NDJSON line:
+
+```json
+{"session_id":"target-session-id"}
+```
+
+Read one response line, either `{"ok":true}` or `{"ok":false,"error":"safe-code"}`. Error codes are `invalid-request`, `not-found`, `no-client`, `timeout`, `busy`, `disposed`, `superseded`, and `focus-failed`. Input is capped at 8 KiB, with at most 16 local connections and 16 registered clients. Requests finish within 5.8 seconds from connection acceptance. New valid requests replace older focus work instead of queuing stale clicks. Unknown and disposed host sessions cannot be opened.
+
+The listener is unreferenced so it cannot keep a CLI process alive. Disposal closes connections and polls. Node removes its bound socket on close, then the companion removes only its verified own empty directory. It never scans for sockets or recursively removes directories. The private random parent prevents replacement by other users. Processes running as the same user remain inside the local trust boundary, including Node's automatic unlink behavior.
+
+### Browser routing
+
+The relay uses existing authenticated Connection RPC at `/open-island-dsh`, with endpoints `poll`, `ack`, and `leave`. It does not create another HTTP server. The host accepts only the existing browser owner Peer, not authenticated API principals. Acknowledgements must match the current random request ID and selected client ID.
+
+Only standalone, fullscreen, or minimal-ui display modes register. Fullscreen is necessary because DSH's shipped manifest requests it. Mini windows, mini previews, and standard browser display mode are excluded. Browser display-mode APIs cannot attest installed application identity, so native installed-app matching and activation remain necessary.
+
+Clients report focus epochs through one-second polls. The host selects the most recently focused eligible client, never broadcasts to all tabs, and expires registrations after 3.5 seconds without a poll. A cold client can register while a request waits. Once delivered, a request is not redirected to a different client.
+
+The client calls public `uiWorkspace.openSession(id)`, borrows `sessions.scope(id)`, and calls `conversation.input.for(scope).focus()`. It yields to rendering and retries for a mounted editor. Success requires the target to retain its public `mainView` reference, a focused document, and the composer to hold keyboard focus. Newer selections invalidate older asynchronous focus work. Drafts are never modified.
 
 ## Tests
 
@@ -76,4 +112,6 @@ Normalization and real Unix socket tests require only Node. To also run the real
 DSH_PACKAGE_ROOT="$(npm root -g)/@deepseek-ai/dsh" node --test Tests/DshPluginTests/*.test.mjs
 ```
 
-The integration tests use real published DSH classes, create multiple live sessions and detached history, and verify timer cleanup on session disposal, id reuse, and plugin unload. A child process also verifies that loaded sessions and an unavailable bridge cannot keep the host alive. Without the dependency anchor or locally resolvable DSH packages, these two API integration tests are explicitly skipped.
+The integration tests use real published Cordis and SessionStore classes, create live sessions and detached history, and verify cleanup on disposal, id reuse, optional web activation, and plugin unload. Real Unix sockets exercise NDJSON validation, cold registration, latest-request selection, stale acknowledgements, timeouts, and private endpoint permissions. Browser tests execute the actual closure factory with public-service doubles and delayed composer mounts. A child process verifies that loaded sessions and an unavailable bridge cannot keep the host alive. Tests requiring installed APIs are explicitly skipped without the dependency anchor or locally resolvable DSH packages.
+
+Installed Chrome PWA activation and actual React editor rendering still require a manual end-to-end check after installation and restart.

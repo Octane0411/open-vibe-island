@@ -35,7 +35,7 @@ final class HookInstallationCoordinator {
     var ohMyPiExtensionStatus: PiExtensionInstallationStatus?
     var dshPluginStatus: DSHPluginInstallationStatus?
     var isDSHSetupBusy = false
-    var dshPluginInstalled: Bool { dshPluginStatus?.isInstalled == true }
+    var dshPluginInstalled: Bool { dshPluginStatus?.isCurrent == true }
 
     @ObservationIgnored
     private let dshPluginInstallationManager = DSHPluginInstallationManager()
@@ -1381,12 +1381,21 @@ final class HookInstallationCoordinator {
                     onStatusMessage?("Could not find the bundled DSH plugin.")
                     return
                 }
-                dshPluginStatus = try dshPluginInstallationManager.install(pluginSourceData: Data(contentsOf: sourceURL))
+                guard let clientURL = Bundle.appResources.url(
+                    forResource: "open-island-dsh-client", withExtension: "js", subdirectory: "open-island-dsh"
+                ) ?? Bundle.appResources.url(forResource: "open-island-dsh-client", withExtension: "js") else {
+                    onStatusMessage?("Could not find the bundled DSH client plugin.")
+                    return
+                }
+                dshPluginStatus = try dshPluginInstallationManager.install(
+                    pluginSourceData: Data(contentsOf: sourceURL),
+                    clientSourceData: Data(contentsOf: clientURL)
+                )
             } else {
                 dshPluginStatus = try dshPluginInstallationManager.uninstall()
             }
             intentStore.setIntent(install ? .installed : .uninstalled, for: .dsh)
-            onStatusMessage?(install ? "DSH plugin installed. Restart the DSH Web host to activate." : "DSH plugin removed. Restart the DSH Web host to deactivate.")
+            onStatusMessage?(install ? "DSH plugin installed. Restart DSH Web and reload its PWA to activate." : "DSH plugin removed. Restart the DSH Web host to deactivate.")
         } catch {
             onStatusMessage?("DSH plugin update failed: \(error.localizedDescription)")
         }

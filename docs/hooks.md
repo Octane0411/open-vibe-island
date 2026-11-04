@@ -377,7 +377,8 @@ Other profiles can be selected through the setup CLI:
 ```bash
 swift run OpenIslandSetup installDsh \
   --dsh-profile-dir "$HOME/.dsh/profiles/web" \
-  --plugin-source Sources/OpenIslandApp/Resources/open-island-dsh/open-island-dsh.js
+  --plugin-source Sources/OpenIslandApp/Resources/open-island-dsh/open-island-dsh.js \
+  --client-source Sources/OpenIslandApp/Resources/open-island-dsh/open-island-dsh-client.js
 swift run OpenIslandSetup statusDsh --dsh-profile-dir "$HOME/.dsh/profiles/web"
 swift run OpenIslandSetup uninstallDsh --dsh-profile-dir "$HOME/.dsh/profiles/web"
 ```
@@ -394,12 +395,20 @@ swift run OpenIslandSetup uninstallDsh --dsh-profile-dir "$HOME/.dsh/profiles/we
 
 The NDJSON command is `processDshHook` with a `dshHook` payload. It shares the nonblocking runtime lifecycle reducer, metadata, and persisted registry schema used by Pi without identifying DSH as Pi. A 45-second heartbeat timeout hides sessions after an abnormal host exit. Generic host-process discovery never keeps unrelated DSH sessions alive. Socket sends are bounded and fail open when Open Island is unavailable.
 
+### Conversation jump-back
+
+Clicking a DSH conversation activates the installed Chromium PWA whose saved local Web origin matches that session, selects the exact conversation, and focuses its composer. Open Island discovers the app shim from its native manifest rather than opening a browser URL. If multiple installed app profiles match, open the intended one first. Missing or ambiguous apps do not fall back to a browser tab or Finder.
+
+The host plugin advertises a credential-free `web_origin` and a private `web_focus_socket`. The socket is in a random owner-only directory under `/tmp`, accepts only an exact session selector, and waits for the client to acknowledge mounted composer focus. The companion client uses authenticated DSH RPC and the public workspace/session/input APIs. Navigation requests are latest-wins, target an eligible focused PWA rather than all browser tabs, and never execute tools or change approval policy. Focus endpoints can arrive on a heartbeat after host initialization without changing the session's activity timestamp or phase.
+
+**Upgrade from lifecycle-only support:** reinstall the DSH plugin from Setup, restart the DSH Web host, then reload its PWA. Both host and client artifacts are required. The installer safely recognizes intact v1 ownership manifests and upgrades them without overwriting user-modified files. A host restart is necessary because DSH can cache the previous package's missing client metadata. Open Island does not restart the DSH host or reload a conversation automatically.
+
 ### Limitations
 
 - Tested against DSH 0.2.1-rc.3 host APIs. Older versions without session-store lifecycle events are not supported.
 - Approvals and questions stay in DSH. The plugin does not register an answerer, block tools, or change permission policy.
 - The plugin tracks loaded sessions, not the on-disk conversation catalog. It does not replay old prompts or completion events.
-- A Web host has no reliable per-session terminal identity. The plugin deliberately does not assign its host terminal to every conversation. Browser conversation jump-back and usage tracking are not implemented.
+- A Web host has no reliable per-session terminal identity, so jump-back targets the installed local-origin PWA instead. The client must be loaded, authenticated as the owner, and report app display mode. That display-mode check is a heuristic, not an authentication boundary. Plain browser tabs and mini-window previews are excluded. Usage tracking remains unimplemented.
 
 ---
 

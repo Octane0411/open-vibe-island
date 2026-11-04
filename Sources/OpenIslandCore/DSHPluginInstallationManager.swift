@@ -3,7 +3,7 @@ import Foundation
 
 public struct DSHPluginInstallerManifest: Equatable, Codable, Sendable {
     public static let fileName = "open-island-dsh-plugin-install.json"
-    public static let currentVersion = 1
+    public static let currentVersion = 2
 
     public var version: Int
     public var pluginPath: String
@@ -19,8 +19,10 @@ public struct DSHPluginInstallationStatus: Equatable, Sendable {
     public var pluginsDirectory: URL
     public var pluginDirectory: URL
     public var pluginFileURL: URL
+    public var clientFileURL: URL
     public var manifestURL: URL
     public var pluginFilePresent: Bool
+    public var clientFilePresent: Bool
     public var pluginRegistered: Bool
     public var manifest: DSHPluginInstallerManifest?
     public var managedFilesIntact: Bool
@@ -30,7 +32,7 @@ public struct DSHPluginInstallationStatus: Equatable, Sendable {
     }
 
     public var isCurrent: Bool {
-        isInstalled && manifest?.version == DSHPluginInstallerManifest.currentVersion
+        isInstalled && clientFilePresent && manifest?.version == DSHPluginInstallerManifest.currentVersion
     }
 }
 
@@ -50,7 +52,7 @@ public enum DSHPluginInstallationError: LocalizedError, Equatable {
         case .invalidConfiguration:
             "DSH package.json must contain an object with an optional dsh.profile.bundles string array."
         case .invalidSource:
-            "The DSH plugin source must be nonempty UTF-8 JavaScript."
+            "The DSH host and client plugin sources must both be nonempty UTF-8 JavaScript."
         case .configurationChanged:
             "The DSH profile configuration changed during installation. Retry with the latest configuration."
         case let .unsafePath(path):
@@ -68,6 +70,7 @@ public enum DSHPluginInstallationError: LocalizedError, Equatable {
 /// User YAML patches and package dependencies are never changed.
 public final class DSHPluginInstallationManager: @unchecked Sendable {
     public static let pluginFileName = "open-island-dsh.js"
+    public static let clientFileName = "open-island-dsh-client.js"
     public static let bundleName = "open-island-dsh"
     public static var defaultProfileDirectory: URL {
         let home = ProcessInfo.processInfo.environment["DSH_HOME"].flatMap { $0.isEmpty ? nil : $0 }
@@ -78,7 +81,17 @@ public final class DSHPluginInstallationManager: @unchecked Sendable {
 
     public let dshProfileDirectory: URL
     private let fileManager: FileManager
-    private static let managedFileNames: Set<String> = [pluginFileName, "package.json", "cordis.patch.yml"]
+    private static func managedFileNames(for version: Int) -> Set<String> {
+        switch version {
+        case 1: [pluginFileName, "package.json", "cordis.patch.yml"]
+        case 2: [pluginFileName, clientFileName, "package.json", "cordis.patch.yml"]
+        default: []
+        }
+    }
+
+    private static var managedFileNames: Set<String> {
+        managedFileNames(for: DSHPluginInstallerManifest.currentVersion)
+    }
 
     public init(
         dshProfileDirectory: URL = DSHPluginInstallationManager.defaultProfileDirectory,
@@ -92,6 +105,7 @@ public final class DSHPluginInstallationManager: @unchecked Sendable {
     public var pluginsDirectory: URL { dshProfileDirectory.appendingPathComponent("node_modules", isDirectory: true) }
     public var pluginDirectory: URL { pluginsDirectory.appendingPathComponent(Self.bundleName, isDirectory: true) }
     public var pluginFileURL: URL { pluginDirectory.appendingPathComponent(Self.pluginFileName) }
+    public var clientFileURL: URL { pluginDirectory.appendingPathComponent(Self.clientFileName) }
     public var manifestURL: URL { dshProfileDirectory.appendingPathComponent(DSHPluginInstallerManifest.fileName) }
 
     public func status() throws -> DSHPluginInstallationStatus {
@@ -105,8 +119,10 @@ public final class DSHPluginInstallationManager: @unchecked Sendable {
             pluginsDirectory: pluginsDirectory,
             pluginDirectory: pluginDirectory,
             pluginFileURL: pluginFileURL,
+            clientFileURL: clientFileURL,
             manifestURL: manifestURL,
             pluginFilePresent: exists(pluginFileURL),
+            clientFilePresent: exists(clientFileURL),
             pluginRegistered: try bundles(in: config).contains(Self.bundleName),
             manifest: manifest,
             managedFilesIntact: intact
@@ -114,10 +130,12 @@ public final class DSHPluginInstallationManager: @unchecked Sendable {
     }
 
     @discardableResult
-    public func install(pluginSourceData: Data) throws -> DSHPluginInstallationStatus {
-        guard let source = String(data: pluginSourceData, encoding: .utf8),
-              !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw DSHPluginInstallationError.invalidSource
+    public func install(pluginSourceData: Data, clientSourceData: Data) throws -> DSHPluginInstallationStatus {
+        for data in [pluginSourceData, clientSourceData] {
+            guard let source = String(data: data, encoding: .utf8),
+                  !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw DSHPluginInstallationError.invalidSource
+            }
         }
         try validatePaths()
         let configuration = try readConfiguration(required: true)
@@ -128,7 +146,7 @@ public final class DSHPluginInstallationManager: @unchecked Sendable {
         var dsh = config["dsh"] as? [String: Any] ?? [:]
         var profile = dsh["profile"] as? [String: Any] ?? [:]
         var selectedBundles = try bundles(in: config)
-        let files = try bundleFiles(pluginSourceData: pluginSourceData)
+        let files = try bundleFiles(pluginSourceData: pluginSourceData, clientSourceData: clientSourceData)
         let manifest = DSHPluginInstallerManifest(
             version: DSHPluginInstallerManifest.currentVersion,
             pluginPath: pluginFileURL.path,
@@ -143,7 +161,7 @@ public final class DSHPluginInstallationManager: @unchecked Sendable {
         config["dsh"] = dsh
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        var replacements = files.map { (pluginDirectory.appendingPathComponent($0.key), Optional($0.value)) }
+        var replacements = files.keys.sorted().map { (pluginDirectory.appendingPathComponent($0), files[$0]) }
         replacements.append((manifestURL, try encoder.encode(manifest)))
         // Register last so a failed file write cannot activate an incomplete bundle.
         replacements.append((configURL, try encode(config)))
@@ -183,7 +201,7 @@ public final class DSHPluginInstallationManager: @unchecked Sendable {
         var replacements: [(URL, Data?)] = []
         // Unregister before removing the managed files.
         if exists(configURL) { replacements.append((configURL, try encode(config))) }
-        replacements += Self.managedFileNames.sorted().map { (pluginDirectory.appendingPathComponent($0), nil) }
+        replacements += manifest.fileDigests.keys.sorted().map { (pluginDirectory.appendingPathComponent($0), nil) }
         replacements.append((manifestURL, nil))
         try apply(replacements, expectedConfiguration: configuration.data)
         try removeDirectoryIfEmpty(pluginDirectory)
@@ -227,7 +245,7 @@ public final class DSHPluginInstallationManager: @unchecked Sendable {
               manifest.version > 0,
               manifest.version <= DSHPluginInstallerManifest.currentVersion,
               manifest.pluginPath == pluginFileURL.path,
-              Set(manifest.fileDigests.keys) == Self.managedFileNames else {
+              Set(manifest.fileDigests.keys) == Self.managedFileNames(for: manifest.version) else {
             throw DSHPluginInstallationError.unownedInstallation(manifestURL.path)
         }
         return manifest
@@ -249,7 +267,7 @@ public final class DSHPluginInstallationManager: @unchecked Sendable {
     private func filesAreIntact(_ manifest: DSHPluginInstallerManifest) throws -> Bool {
         guard exists(pluginDirectory) else { return false }
         let names = try fileManager.contentsOfDirectory(atPath: pluginDirectory.path)
-        guard Set(names) == Self.managedFileNames else { return false }
+        guard Set(names) == Self.managedFileNames(for: manifest.version) else { return false }
         for name in names {
             let url = pluginDirectory.appendingPathComponent(name)
             try validateType(url, directory: false)
@@ -258,15 +276,30 @@ public final class DSHPluginInstallationManager: @unchecked Sendable {
         return true
     }
 
-    private func bundleFiles(pluginSourceData: Data) throws -> [String: Data] {
+    private func bundleFiles(pluginSourceData: Data, clientSourceData: Data) throws -> [String: Data] {
         let package: [String: Any] = [
             "name": Self.bundleName,
             "version": "1.0.0",
             "private": true,
             "type": "module",
             "main": "./\(Self.pluginFileName)",
-            "exports": [".": "./\(Self.pluginFileName)"],
-            "dsh": ["bundle": ["patch": "./cordis.patch.yml"]],
+            "exports": [
+                ".": "./\(Self.pluginFileName)",
+                "./client": "./\(Self.clientFileName)",
+                "./package.json": "./package.json",
+            ],
+            "dsh": [
+                "bundle": ["patch": "./cordis.patch.yml"],
+                "client": [
+                    "platform": "web",
+                    "inject": [
+                        "@deepseek-ai/dsh-client-connection",
+                        "@deepseek-ai/dsh-api-session-controller",
+                        "@deepseek-ai/dsh-client-ui-workspace",
+                        "@deepseek-ai/dsh-client-ui-conversation",
+                    ],
+                ],
+            ],
             "engines": ["dsh": ">=0.2.1-rc.3 <0.3.0", "node": ">=22.19"],
         ]
         // JSON is a supported YAML subset and avoids quoting filesystem paths by hand.
@@ -276,6 +309,7 @@ public final class DSHPluginInstallationManager: @unchecked Sendable {
         ]]]]
         return [
             Self.pluginFileName: pluginSourceData,
+            Self.clientFileName: clientSourceData,
             "package.json": try encode(package),
             "cordis.patch.yml": try JSONSerialization.data(withJSONObject: patch, options: [.prettyPrinted, .sortedKeys]),
         ]

@@ -15,7 +15,13 @@ struct DSHRuntimeTests {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         try Data("{\"name\":\"test-profile\"}".utf8).write(to: root.appendingPathComponent("package.json"))
-        let installed = try DSHPluginInstallationManager(dshProfileDirectory: root).install(pluginSourceData: Data(contentsOf: sourceURL))
+        let clientURL = try #require(
+            Bundle.appResources.url(forResource: "open-island-dsh-client", withExtension: "js", subdirectory: "open-island-dsh")
+                ?? Bundle.appResources.url(forResource: "open-island-dsh-client", withExtension: "js")
+        )
+        let installed = try DSHPluginInstallationManager(dshProfileDirectory: root).install(
+            pluginSourceData: Data(contentsOf: sourceURL), clientSourceData: Data(contentsOf: clientURL)
+        )
         let socketURL = BridgeSocketLocation.uniqueTestURL()
         let server = BridgeServer(socketURL: socketURL)
         try server.start()
@@ -67,6 +73,7 @@ struct DSHRuntimeTests {
     plugin.apply({
       sessions: { list: () => [], get: id => sessions.get(id) },
       on: (name, handler) => handlers.set(name, handler),
+      inject: () => {},
       effect: effect => cleanups.push(effect()),
     }, { socketPath })
     const session = { id: 'dsh-bundle-smoke', header: { cwd: '/tmp/project' } }

@@ -65,7 +65,7 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 | **Codex**（CLI） | 已支持 | Hook 集成（默认 SessionStart、UserPromptSubmit、Stop；PreToolUse/PostToolUse 可解析但非默认安装）、用量追踪 |
 | **Codex 桌面 App** | 已支持 | Hook 集成 + app-server JSON-RPC 直连，实时获取 thread/turn 生命周期。点击 session 通过 `codex://threads/<id>` 精确跳转到对应会话 |
 | **OpenCode** | 已支持 | JS 插件集成、权限/问答交互、进程检测 |
-| **DeepSeek Harness（DSH）** | 已支持 | 本地主机插件，支持会话、工具、完成卡片、持久化和独立心跳。设置中安装到 Web 配置，审批仍在 DSH 中处理。参见 [DSH 安装](docs/hooks.md#deepseek-harness-dsh-plugin) |
+| **DeepSeek Harness（DSH）** | 已支持 | 本地主机与客户端插件，支持会话、工具、完成卡片、持久化、独立心跳，以及跳转到已安装 Web PWA 的指定会话并聚焦输入框。设置中安装到 Web 配置，审批仍在 DSH 中处理。参见 [DSH 安装](docs/hooks.md#deepseek-harness-dsh-plugin) |
 | **Qoder** | 已支持 | Claude Code 分支——相同 hook 格式，配置位于 `~/.qoder/settings.json` |
 | **Qwen Code** | 已支持 | Claude Code 分支——相同 hook 格式，配置位于 `~/.qwen/settings.json` |
 | **Factory** | 已支持 | Claude Code 分支——相同 hook 格式，配置位于 `~/.factory/settings.json` |

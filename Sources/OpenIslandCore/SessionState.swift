@@ -247,6 +247,16 @@ public struct SessionState: Equatable, Sendable {
                 return
             }
 
+            // The DSH relay starts asynchronously after session observation.
+            // Adopt its first or refreshed endpoint without making an idle chat
+            // look newly active or replacing its phase, summary, or tool state.
+            if session.tool == .dsh,
+               let recovery = payload.recoverySession,
+               recovery.tool == .dsh, recovery.sessionID == session.id,
+               let target = recovery.jumpTarget,
+               target.dshWeb?.sessionID == session.id {
+                session.jumpTarget = target
+            }
             session.isHookManaged = true
             session.isProcessAlive = true
             session.processNotSeenCount = 0
