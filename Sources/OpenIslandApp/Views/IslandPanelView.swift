@@ -1358,6 +1358,7 @@ private struct IslandSessionRow: View {
                         .truncationMode(.tail)
                 }
             }
+            .layoutPriority(1)
 
             Spacer(minLength: 10)
 
@@ -1368,6 +1369,8 @@ private struct IslandSessionRow: View {
                 }
                 if let terminalBadge = session.spotlightTerminalBadge {
                     sideBadge(terminalBadge)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 }
                 Text(session.spotlightAgeBadge)
                     .font(.system(size: 10.5, weight: .medium, design: .monospaced))
@@ -1489,7 +1492,7 @@ private struct IslandSessionRow: View {
             .font(.system(size: 10.5, weight: .medium, design: .monospaced))
             .foregroundStyle(V6Palette.paper.opacity(presentation == .notification ? 0.52 : 0.7))
             .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
+            .truncationMode(.tail)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(.white.opacity(presentation == .notification ? 0.045 : 0.06), in: Capsule())
@@ -1508,6 +1511,14 @@ private struct IslandSessionRow: View {
 
     private var summaryHeadlineText: String {
         if presentation == .notification, session.phase == .completed {
+            // For completed cards, prefer the prompt (session topic) as the
+            // headline — the workspace name is already shown in the terminal
+            // badge.  Using the workspace name here makes the headline
+            // redundant AND too long (it gets truncated to nothing visible).
+            if let prompt = session.spotlightHeadlinePromptText,
+               !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
             return notificationWorkspaceHeadlineText
         }
 

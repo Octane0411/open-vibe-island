@@ -111,7 +111,17 @@ extension AgentSession {
     }
 
     var spotlightTerminalBadge: String? {
-        jumpTarget?.terminalApp
+        guard let terminalApp = jumpTarget?.terminalApp else {
+            return nil
+        }
+        // With prompt-first headlines the workspace name no longer appears in
+        // the headline, so pair it with the terminal app here to keep the
+        // workspace context visible at a glance.
+        if let workspace = jumpTarget?.workspaceName.trimmedForSurface,
+           !workspace.isEmpty, workspace != "/" {
+            return "\(terminalApp) · \(HexEscapedUTF8.decodeIfNeeded(workspace))"
+        }
+        return terminalApp
     }
 
     var spotlightWorkspaceName: String {
@@ -169,22 +179,19 @@ extension AgentSession {
     }
 
     var spotlightHeadlineText: String {
-        let workspaceName = spotlightWorkspaceName
-        var headline = workspaceName
-
-        if let branch = spotlightWorktreeBranch {
-            headline += " (\(branch))"
-        }
-
-        guard let prompt = spotlightHeadlinePromptText else {
-            return headline
-        }
-
-        guard workspaceName != "/" else {
+        // The prompt (session topic) is what distinguishes sessions; the
+        // workspace name goes to the terminal badge line instead of leading
+        // the headline. This matters most when several sessions share one
+        // workspace — identical headlines make the list unusable.
+        if let prompt = spotlightHeadlinePromptText?.trimmedForSurface, !prompt.isEmpty {
             return prompt
         }
 
-        return "\(headline) · \(prompt)"
+        var headline = spotlightWorkspaceName
+        if let branch = spotlightWorktreeBranch {
+            headline += " (\(branch))"
+        }
+        return headline
     }
 
     var spotlightHeadlinePromptText: String? {
