@@ -546,7 +546,8 @@ public extension CodexHookPayload {
             environment: environment,
             currentTTYProvider: { currentTTY() },
             terminalLocatorProvider: { terminalLocator(for: $0) },
-            warpPaneResolver: Self.defaultWarpPaneResolver
+            warpPaneResolver: Self.defaultWarpPaneResolver,
+            embeddedHostResolver: { EmbeddedTerminalResolver.resolveCurrentHostContext() }
         )
     }
 
@@ -569,12 +570,22 @@ public extension CodexHookPayload {
         environment: [String: String],
         currentTTYProvider: () -> String?,
         terminalLocatorProvider: (String) -> (sessionID: String?, tty: String?, title: String?),
-        warpPaneResolver: (String) -> String? = Self.defaultWarpPaneResolver
+        warpPaneResolver: (String) -> String? = Self.defaultWarpPaneResolver,
+        embeddedHostResolver: () -> EmbeddedTerminalResolver.HostContext? = {
+            EmbeddedTerminalResolver.resolveCurrentHostContext()
+        }
     ) -> CodexHookPayload {
         var payload = self
 
         if payload.terminalApp == nil {
             payload.terminalApp = inferTerminalApp(from: environment)
+        }
+
+        // Process-tree fallback for hosts the env vars don't reach
+        // (Obsidian terminal plugin, agents launched without inherited
+        // TERM_PROGRAM). See ClaudeHookPayload.withRuntimeContext.
+        if payload.terminalApp == nil, let host = embeddedHostResolver() {
+            payload.terminalApp = host.host.displayName
         }
 
         if payload.terminalApp == "Warp", payload.warpPaneUUID == nil {
