@@ -66,7 +66,7 @@ enum CodexProcessSessionReconciler {
             var resolved = process
             let candidates = sessions.filter { session in
                 guard session.tool == .codex, !session.isDemoSession,
-                      !session.isCodexAppSession, !isSynthetic(session),
+                      !session.isCodexAppSession, !session.isSessionEnded, !isSynthetic(session),
                       !claimedIDs.contains(session.id),
                       let tty = normalizedTTY(process.terminalTTY),
                       normalizedTTY(session.jumpTarget?.terminalTTY) == tty else { return false }

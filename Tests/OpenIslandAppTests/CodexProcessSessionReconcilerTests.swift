@@ -85,8 +85,10 @@ struct CodexProcessSessionReconcilerTests {
         conflicting.jumpTarget?.workingDirectory = "/tmp/different-project"
         var desktop = session("desktop", tty: "ttys001")
         desktop.isCodexAppSession = true
+        var ended = session("ended", tty: "ttys001")
+        ended.isSessionEnded = true
         let result = CodexProcessSessionReconciler.reconcile(
-            sessions: [conflicting, desktop], processes: [process("101", tty: "ttys001")]
+            sessions: [conflicting, desktop, ended], processes: [process("101", tty: "ttys001")]
         )
         #expect(result.processes.first?.sessionID == "codex-process:101")
     }
