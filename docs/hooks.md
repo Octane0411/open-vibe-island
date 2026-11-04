@@ -364,6 +364,45 @@ Jump-back metadata (terminal app, terminal session ID, TTY) is read from the age
 
 ---
 
+## DeepSeek Harness (DSH) Plugin
+
+**Payload type**: `DSHHookPayload`
+
+**Source**: [bundled DSH host plugin](../Sources/OpenIslandApp/Resources/open-island-dsh/open-island-dsh.js)
+
+Settings > Setup > DSH (Web profile) installs a dependency-free local Cordis bundle into the existing DSH Web profile. The installer registers only its package in `dsh.profile.bundles` in the [Web profile manifest](~/.dsh/profiles/web/package.json). It preserves unrelated settings and does not rewrite Cordis YAML. Initialize the profile with `dsh web` before installing, then restart the DSH host to load the plugin. Uninstall also requires a restart.
+
+Other profiles can be selected through the setup CLI:
+
+```bash
+swift run OpenIslandSetup installDsh \
+  --dsh-profile-dir "$HOME/.dsh/profiles/web" \
+  --plugin-source Sources/OpenIslandApp/Resources/open-island-dsh/open-island-dsh.js
+swift run OpenIslandSetup statusDsh --dsh-profile-dir "$HOME/.dsh/profiles/web"
+swift run OpenIslandSetup uninstallDsh --dsh-profile-dir "$HOME/.dsh/profiles/web"
+```
+
+| Open Island event | DSH source | Behavior |
+|---|---|---|
+| `SessionStart` | `session/created` and already loaded live sessions | Tracks DSH identity and the session working directory |
+| `UserPromptSubmit` | `user/message` with user source | Marks the session running and updates prompt metadata |
+| `PreToolUse` | `tool/call` | Displays tool name and bounded input preview |
+| `PostToolUse` | `tool/result` | Clears the current tool |
+| `Stop` | `turn/end` | Completes the turn with the latest assistant text |
+| `Heartbeat` | 15-second timer for each exact live session object | Refreshes liveness without changing turn state |
+| `SessionEnd` | `session/disposed` and plugin teardown | Ends the tracked session and stops its timer |
+
+The NDJSON command is `processDshHook` with a `dshHook` payload. It shares the nonblocking runtime lifecycle reducer, metadata, and persisted registry schema used by Pi without identifying DSH as Pi. A 45-second heartbeat timeout hides sessions after an abnormal host exit. Generic host-process discovery never keeps unrelated DSH sessions alive. Socket sends are bounded and fail open when Open Island is unavailable.
+
+### Limitations
+
+- Tested against DSH 0.2.1-rc.3 host APIs. Older versions without session-store lifecycle events are not supported.
+- Approvals and questions stay in DSH. The plugin does not register an answerer, block tools, or change permission policy.
+- The plugin tracks loaded sessions, not the on-disk conversation catalog. It does not replay old prompts or completion events.
+- A Web host has no reliable per-session terminal identity. The plugin deliberately does not assign its host terminal to every conversation. Browser conversation jump-back and usage tracking are not implemented.
+
+---
+
 ## Timeout Policy
 
 | Source | Event | Timeout |

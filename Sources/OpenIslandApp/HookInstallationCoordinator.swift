@@ -33,6 +33,12 @@ final class HookInstallationCoordinator {
     var hermesHookStatus: HermesHookInstallationStatus?
     var piExtensionStatus: PiExtensionInstallationStatus?
     var ohMyPiExtensionStatus: PiExtensionInstallationStatus?
+    var dshPluginStatus: DSHPluginInstallationStatus?
+    var isDSHSetupBusy = false
+    var dshPluginInstalled: Bool { dshPluginStatus?.isInstalled == true }
+
+    @ObservationIgnored
+    private let dshPluginInstallationManager = DSHPluginInstallationManager()
     var claudeStatusLineStatus: ClaudeStatusLineInstallationStatus?
     var claudeUsageSnapshot: ClaudeUsageSnapshot?
     var codexUsageSnapshot: CodexUsageSnapshot?
@@ -857,6 +863,7 @@ final class HookInstallationCoordinator {
             group.addTask { @MainActor [weak self] in
                 guard let self else { return }
                 self.loadPiExtensionStatuses()
+                self.loadDSHPluginStatus()
             }
         }
     }
@@ -1039,6 +1046,7 @@ final class HookInstallationCoordinator {
         }
 
         switch agent {
+        case .dsh: return !(dshPluginStatus?.isCurrent ?? false)
         case .claudeCode: return !claudeHooksInstalled
         case .codex: return !codexHooksInstalled
         case .cursor: return !cursorHooksInstalled
@@ -1068,6 +1076,7 @@ final class HookInstallationCoordinator {
     func migrateIntentStoreIfNeeded() {
         intentStore.migrateFromLegacyStateIfNeeded { [self] agent in
             switch agent {
+            case .dsh: return dshPluginInstalled
             case .claudeCode: return claudeHooksInstalled
             case .codex: return codexHooksInstalled
             case .cursor: return cursorHooksInstalled
@@ -1342,6 +1351,44 @@ final class HookInstallationCoordinator {
     func uninstallHermesHooks() {
         updateHermesHooks(userMessage: "Removing Hermes hooks.", intent: .uninstalled) { manager in
             try manager.uninstall()
+        }
+    }
+
+    func refreshDSHPluginStatus() {
+        loadDSHPluginStatus()
+    }
+
+    private func loadDSHPluginStatus() {
+        do {
+            dshPluginStatus = try dshPluginInstallationManager.status()
+        } catch {
+            onStatusMessage?("Failed to read DSH plugin status: \(error.localizedDescription)")
+        }
+    }
+
+    func installDSHPlugin() { updateDSHPlugin(install: true) }
+    func uninstallDSHPlugin() { updateDSHPlugin(install: false) }
+
+    private func updateDSHPlugin(install: Bool) {
+        guard !isDSHSetupBusy else { return }
+        isDSHSetupBusy = true
+        defer { isDSHSetupBusy = false }
+        do {
+            if install {
+                guard let sourceURL = Bundle.appResources.url(
+                    forResource: "open-island-dsh", withExtension: "js", subdirectory: "open-island-dsh"
+                ) ?? Bundle.appResources.url(forResource: "open-island-dsh", withExtension: "js") else {
+                    onStatusMessage?("Could not find the bundled DSH plugin.")
+                    return
+                }
+                dshPluginStatus = try dshPluginInstallationManager.install(pluginSourceData: Data(contentsOf: sourceURL))
+            } else {
+                dshPluginStatus = try dshPluginInstallationManager.uninstall()
+            }
+            intentStore.setIntent(install ? .installed : .uninstalled, for: .dsh)
+            onStatusMessage?(install ? "DSH plugin installed. Restart the DSH Web host to activate." : "DSH plugin removed. Restart the DSH Web host to deactivate.")
+        } catch {
+            onStatusMessage?("DSH plugin update failed: \(error.localizedDescription)")
         }
     }
 

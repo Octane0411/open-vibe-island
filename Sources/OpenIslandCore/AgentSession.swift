@@ -16,6 +16,11 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
     case ohMyPi
     case zcode
     case hermes
+    case dsh
+
+    public var usesHeartbeatLiveness: Bool {
+        self == .pi || self == .ohMyPi || self == .dsh
+    }
 
     public var displayName: String {
         switch self {
@@ -47,6 +52,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "Oh My Pi"
         case .zcode:
             "ZCode"
+        case .dsh:
+            "DSH"
         case .hermes:
             "Hermes"
         }
@@ -82,6 +89,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "OMP"
         case .zcode:
             "ZCODE"
+        case .dsh:
+            "DSH"
         case .hermes:
             "HERMES"
         }
@@ -117,6 +126,7 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
         case .ohMyPi:     "#f472b6"
         case .zcode:      "#2dd4bf"
         case .hermes:     "#38bdf8"
+        case .dsh:        "#4d6bfe"
         }
     }
 }

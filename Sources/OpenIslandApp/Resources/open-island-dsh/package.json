@@ -1,0 +1,26 @@
+{
+  "name": "dsh-plugin-open-island",
+  "version": "0.1.0",
+  "description": "Read-only per-session lifecycle observer for the local Open Island bridge",
+  "type": "module",
+  "license": "GPL-3.0-only",
+  "main": "open-island-dsh.js",
+  "exports": {
+    ".": "./open-island-dsh.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "open-island-dsh.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.19",
+    "dsh": ">=0.2.1-rc.3 <0.3.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

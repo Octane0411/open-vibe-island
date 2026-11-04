@@ -152,6 +152,9 @@ final class AppModel {
     var zcodeHooksInstalled: Bool { hooks.zcodeHooksInstalled }
     var isZcodeHookSetupBusy: Bool { hooks.isZcodeHookSetupBusy }
     var zcodeHookStatus: ZCodeHookInstallationStatus? { hooks.zcodeHookStatus }
+    var dshPluginInstalled: Bool { hooks.dshPluginInstalled }
+    var isDSHSetupBusy: Bool { hooks.isDSHSetupBusy }
+    var dshPluginStatus: DSHPluginInstallationStatus? { hooks.dshPluginStatus }
     var piExtensionInstalled: Bool { hooks.piExtensionInstalled }
     var ohMyPiExtensionInstalled: Bool { hooks.ohMyPiExtensionInstalled }
     var isPiSetupBusy: Bool { hooks.isPiSetupBusy }
@@ -187,6 +190,7 @@ final class AppModel {
             || hooks.grokHooksInstalled
             || hooks.zcodeHooksInstalled
             || hooks.hermesHooksInstalled
+            || hooks.dshPluginInstalled
             || hooks.piExtensionInstalled
             || hooks.ohMyPiExtensionInstalled
     }
@@ -228,6 +232,8 @@ final class AppModel {
     func installHermesHooks() { hooks.installHermesHooks() }
     func uninstallHermesHooks() { hooks.uninstallHermesHooks() }
     func refreshPiExtensionStatuses() { hooks.refreshPiExtensionStatuses() }
+    func installDSHPlugin() { hooks.installDSHPlugin() }
+    func uninstallDSHPlugin() { hooks.uninstallDSHPlugin() }
     func installPiExtension() { hooks.installPiExtension() }
     func uninstallPiExtension() { hooks.uninstallPiExtension() }
     func installOhMyPiExtension() { hooks.installOhMyPiExtension() }
@@ -1141,6 +1147,7 @@ final class AppModel {
             hooks.refreshClaudeHookStatus()
             hooks.refreshCCForkHookStatuses()
             hooks.refreshOpenCodePluginStatus()
+            hooks.refreshDSHPluginStatus()
             hooks.refreshPiExtensionStatuses()
             hooks.refreshCursorHookStatus()
             hooks.refreshGrokHookStatus()
@@ -1714,6 +1721,7 @@ final class AppModel {
             // Pi and Oh My Pi load a runtime extension that talks to the
             // bridge socket directly, so they do not depend on the hooks
             // binary and are installed whether or not it was located.
+            if self.hooks.shouldAutoInstall(.dsh) { self.installDSHPlugin() }
             if self.hooks.shouldAutoInstall(.pi) { self.installPiExtension() }
             if self.hooks.shouldAutoInstall(.ohMyPi) { self.installOhMyPiExtension() }
 
@@ -1893,10 +1901,11 @@ final class AppModel {
 
             return payload.cursorMetadata.lastAssistantMessage ?? "Cursor session metadata updated."
         case let .piSessionMetadataUpdated(payload):
+            let name = state.session(id: payload.sessionID)?.tool.displayName ?? "Agent"
             if let currentTool = payload.piMetadata.currentTool {
-                return "\(state.session(id: payload.sessionID)?.tool.displayName ?? "Pi") is running \(currentTool)."
+                return "\(name) is running \(currentTool)."
             }
-            return payload.piMetadata.lastAssistantMessage ?? "Pi session metadata updated."
+            return payload.piMetadata.lastAssistantMessage ?? "\(name) session metadata updated."
         case let .hermesSessionMetadataUpdated(payload):
             return payload.hermesMetadata.lastAssistantMessage ?? "Hermes session metadata updated."
         case let .sessionHeartbeat(payload):

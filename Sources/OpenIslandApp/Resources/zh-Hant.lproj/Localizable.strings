@@ -1,3 +1,6 @@
+"setup.dsh.name" = "DSH（Web 設定）";
+"setup.dsh.uninstallMessage" = "從 DSH Web 設定中移除 Open Island 外掛？完成後請重新啟動 DSH。";
+
 /* Common */
 "app.name" = "Open Island";
 "app.name.oss" = "Open Island OSS";

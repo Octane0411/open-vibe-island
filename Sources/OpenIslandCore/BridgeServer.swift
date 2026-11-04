@@ -485,7 +485,9 @@ public final class BridgeServer: @unchecked Sendable {
         case let .processGrokHook(payload):
             handleGrokHook(payload, from: clientID)
         case let .processPiHook(payload):
-            handlePiHook(payload, from: clientID)
+            handleRuntimeHook(payload, from: clientID)
+        case let .processDSHHook(payload):
+            handleRuntimeHook(payload, from: clientID)
         case let .processHermesHook(payload):
             handleHermesHook(payload, from: clientID)
         }
@@ -1202,14 +1204,23 @@ public final class BridgeServer: @unchecked Sendable {
         }
     }
 
-    private func handlePiHook(_ payload: PiHookPayload, from clientID: UUID) {
-        let displayName = payload.agent.tool.displayName
+    private func handleRuntimeHook(_ payload: some RuntimeHookPayload, from clientID: UUID) {
+        guard !payload.sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            send(.response(.acknowledged), to: clientID)
+            return
+        }
+        if payload.hookEventName != .sessionStart,
+           localState.session(id: payload.sessionID)?.isSessionEnded == true {
+            send(.response(.acknowledged), to: clientID)
+            return
+        }
+        let displayName = payload.tool.displayName
 
         switch payload.hookEventName {
         case .sessionStart:
             emit(
                 .sessionStarted(
-                    piSessionStarted(for: payload, initialPhase: .completed)
+                    runtimeSessionStarted(for: payload, initialPhase: .completed)
                 )
             )
             send(.response(.acknowledged), to: clientID)
@@ -1219,13 +1230,13 @@ public final class BridgeServer: @unchecked Sendable {
                 send(.response(.acknowledged), to: clientID)
                 return
             }
-            ensurePiSessionExists(for: payload, initialPhase: .completed)
+            ensureRuntimeSessionExists(for: payload, initialPhase: .completed)
             emit(
                 .sessionHeartbeat(
                     SessionHeartbeat(
                         sessionID: payload.sessionID,
                         timestamp: .now,
-                        recoverySession: piSessionStarted(
+                        recoverySession: runtimeSessionStarted(
                             for: payload,
                             initialPhase: .completed
                         )
@@ -1235,9 +1246,9 @@ public final class BridgeServer: @unchecked Sendable {
             send(.response(.acknowledged), to: clientID)
 
         case .userPromptSubmit:
-            ensurePiSessionExists(for: payload)
-            synchronizePiJumpTarget(for: payload)
-            synchronizePiMetadata(for: payload)
+            ensureRuntimeSessionExists(for: payload)
+            synchronizeRuntimeJumpTarget(for: payload)
+            synchronizeRuntimeMetadata(for: payload)
             emit(
                 .activityUpdated(
                     SessionActivityUpdated(
@@ -1251,9 +1262,9 @@ public final class BridgeServer: @unchecked Sendable {
             send(.response(.acknowledged), to: clientID)
 
         case .preToolUse:
-            ensurePiSessionExists(for: payload)
-            synchronizePiJumpTarget(for: payload)
-            synchronizePiMetadata(for: payload)
+            ensureRuntimeSessionExists(for: payload)
+            synchronizeRuntimeJumpTarget(for: payload)
+            synchronizeRuntimeMetadata(for: payload)
             let summary = payload.toolName.map { "Running \($0)" } ?? "Running \(displayName) tool"
             emit(
                 .activityUpdated(
@@ -1268,9 +1279,9 @@ public final class BridgeServer: @unchecked Sendable {
             send(.response(.acknowledged), to: clientID)
 
         case .postToolUse:
-            ensurePiSessionExists(for: payload)
-            synchronizePiJumpTarget(for: payload)
-            synchronizePiMetadata(for: payload)
+            ensureRuntimeSessionExists(for: payload)
+            synchronizeRuntimeJumpTarget(for: payload)
+            synchronizeRuntimeMetadata(for: payload)
             emit(
                 .activityUpdated(
                     SessionActivityUpdated(
@@ -1284,9 +1295,9 @@ public final class BridgeServer: @unchecked Sendable {
             send(.response(.acknowledged), to: clientID)
 
         case .stop:
-            ensurePiSessionExists(for: payload)
-            synchronizePiJumpTarget(for: payload)
-            synchronizePiMetadata(for: payload)
+            ensureRuntimeSessionExists(for: payload)
+            synchronizeRuntimeJumpTarget(for: payload)
+            synchronizeRuntimeMetadata(for: payload)
             emit(
                 .sessionCompleted(
                     SessionCompleted(
@@ -1300,9 +1311,9 @@ public final class BridgeServer: @unchecked Sendable {
             send(.response(.acknowledged), to: clientID)
 
         case .sessionEnd:
-            ensurePiSessionExists(for: payload)
-            synchronizePiJumpTarget(for: payload)
-            synchronizePiMetadata(for: payload)
+            ensureRuntimeSessionExists(for: payload)
+            synchronizeRuntimeJumpTarget(for: payload)
+            synchronizeRuntimeMetadata(for: payload)
             emit(
                 .sessionCompleted(
                     SessionCompleted(
@@ -2276,14 +2287,14 @@ public final class BridgeServer: @unchecked Sendable {
         }
     }
 
-    private func piSessionStarted(
-        for payload: PiHookPayload,
+    private func runtimeSessionStarted(
+        for payload: some RuntimeHookPayload,
         initialPhase: SessionPhase
     ) -> SessionStarted {
         SessionStarted(
             sessionID: payload.sessionID,
             title: payload.sessionTitle,
-            tool: payload.agent.tool,
+            tool: payload.tool,
             origin: .live,
             initialPhase: initialPhase,
             summary: payload.implicitStartSummary,
@@ -2293,19 +2304,19 @@ public final class BridgeServer: @unchecked Sendable {
         )
     }
 
-    private func ensurePiSessionExists(
-        for payload: PiHookPayload,
+    private func ensureRuntimeSessionExists(
+        for payload: some RuntimeHookPayload,
         initialPhase: SessionPhase = .running
     ) {
         guard !hasSession(id: payload.sessionID) else { return }
         emit(
             .sessionStarted(
-                piSessionStarted(for: payload, initialPhase: initialPhase)
+                runtimeSessionStarted(for: payload, initialPhase: initialPhase)
             )
         )
     }
 
-    private func synchronizePiJumpTarget(for payload: PiHookPayload) {
+    private func synchronizeRuntimeJumpTarget(for payload: some RuntimeHookPayload) {
         guard let existingSession = localState.session(id: payload.sessionID) else {
             return
         }
@@ -2330,7 +2341,7 @@ public final class BridgeServer: @unchecked Sendable {
         )
     }
 
-    private func synchronizePiMetadata(for payload: PiHookPayload) {
+    private func synchronizeRuntimeMetadata(for payload: some RuntimeHookPayload) {
         guard let existingSession = localState.session(id: payload.sessionID) else { return }
         let existing = existingSession.piMetadata
         let update = payload.defaultPiMetadata
