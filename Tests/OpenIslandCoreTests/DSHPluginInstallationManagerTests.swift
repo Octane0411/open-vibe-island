@@ -18,6 +18,26 @@ private final class ConfigEditingFileManager: FileManager, @unchecked Sendable {
     }
 }
 
+private final class LinkEditingFileManager: FileManager, @unchecked Sendable {
+    var onCreateLink: (() throws -> Void)?
+    var failRemoving: URL?
+
+    override func createSymbolicLink(atPath path: String, withDestinationPath destination: String) throws {
+        try super.createSymbolicLink(atPath: path, withDestinationPath: destination)
+        let callback = onCreateLink
+        onCreateLink = nil
+        try callback?()
+    }
+
+    override func removeItem(at url: URL) throws {
+        if failRemoving == url {
+            failRemoving = nil
+            throw CocoaError(.fileWriteUnknown)
+        }
+        try super.removeItem(at: url)
+    }
+}
+
 struct DSHPluginInstallationManagerTests {
     private let source = Data("export function apply(ctx) {}\n".utf8)
     private let clientSource = Data("window.__ModuleLoader__.load({ id: 'open-island-dsh', factory: () => ({ apply() {} }) })\n".utf8)
@@ -38,7 +58,7 @@ struct DSHPluginInstallationManagerTests {
         try #require(JSONSerialization.jsonObject(with: Data(contentsOf: directory.appendingPathComponent("package.json"))) as? NSDictionary)
     }
 
-    private func legacyInstallation(in directory: URL) throws -> DSHPluginInstallationManager {
+    private func legacyInstallation(in directory: URL, version: Int = 1) throws -> DSHPluginInstallationManager {
         let manager = DSHPluginInstallationManager(dshProfileDirectory: directory)
         var original = try #require(try config(at: directory) as? [String: Any])
         var dsh = original["dsh"] as? [String: Any] ?? [:]
@@ -58,17 +78,19 @@ struct DSHPluginInstallationManagerTests {
             "dsh": ["bundle": ["patch": "./cordis.patch.yml"]],
             "engines": ["dsh": ">=0.2.1-rc.3 <0.3.0", "node": ">=22.19"],
         ]
-        let patch = [["insert": [["id": "open-island", "name": manager.pluginFileURL.absoluteString]]]]
-        let files = [
+        let legacyHost = manager.linkedPluginURL.appendingPathComponent(DSHPluginInstallationManager.pluginFileName)
+        let patch = [["insert": [["id": "open-island", "name": legacyHost.absoluteString]]]]
+        var files = [
             "open-island-dsh.js": source,
             "package.json": try JSONSerialization.data(withJSONObject: package, options: [.prettyPrinted, .sortedKeys]),
             "cordis.patch.yml": try JSONSerialization.data(withJSONObject: patch, options: [.prettyPrinted, .sortedKeys]),
         ]
-        try FileManager.default.createDirectory(at: manager.pluginDirectory, withIntermediateDirectories: true)
-        for (name, data) in files { try data.write(to: manager.pluginDirectory.appendingPathComponent(name)) }
+        if version >= 2 { files[DSHPluginInstallationManager.clientFileName] = clientSource }
+        try FileManager.default.createDirectory(at: manager.linkedPluginURL, withIntermediateDirectories: true)
+        for (name, data) in files { try data.write(to: manager.linkedPluginURL.appendingPathComponent(name)) }
         let manifest = DSHPluginInstallerManifest(
-            version: 1,
-            pluginPath: manager.pluginFileURL.path,
+            version: version,
+            pluginPath: legacyHost.path,
             fileDigests: files.mapValues { SHA256.hash(data: $0).map { String(format: "%02x", $0) }.joined() },
             createdDsh: createdDsh,
             createdProfile: createdProfile,
@@ -83,8 +105,13 @@ struct DSHPluginInstallationManagerTests {
             "profile": try Data(contentsOf: manager.configURL),
             "manifest": try Data(contentsOf: manager.manifestURL),
         ]
-        for name in try FileManager.default.contentsOfDirectory(atPath: manager.pluginDirectory.path) {
-            files[name] = try Data(contentsOf: manager.pluginDirectory.appendingPathComponent(name))
+        let manifest = try JSONDecoder().decode(DSHPluginInstallerManifest.self, from: files["manifest"]!)
+        let installedDirectory = URL(fileURLWithPath: manifest.pluginPath).deletingLastPathComponent()
+        for name in try FileManager.default.contentsOfDirectory(atPath: installedDirectory.path) {
+            files[name] = try Data(contentsOf: installedDirectory.appendingPathComponent(name))
+        }
+        if let target = try? FileManager.default.destinationOfSymbolicLink(atPath: manager.linkedPluginURL.path) {
+            files["link-target"] = Data(target.utf8)
         }
         return files
     }
@@ -127,8 +154,8 @@ struct DSHPluginInstallationManagerTests {
         try writeConfig(["private": true], to: directory)
         let manager = try legacyInstallation(in: directory)
         switch kind {
-        case "client": try Data("unowned client".utf8).write(to: manager.clientFileURL)
-        case "host": try Data("changed host".utf8).write(to: manager.pluginFileURL)
+        case "client": try Data("unowned client".utf8).write(to: manager.linkedPluginURL.appendingPathComponent(DSHPluginInstallationManager.clientFileName))
+        case "host": try Data("changed host".utf8).write(to: manager.linkedPluginURL.appendingPathComponent(DSHPluginInstallationManager.pluginFileName))
         default:
             var manifest = try #require(manager.status().manifest)
             manifest.fileDigests["unexpected.js"] = "unowned"
@@ -273,18 +300,15 @@ struct DSHPluginInstallationManagerTests {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         try writeConfig(["private": true, "unrelated": ["enabled": true]], to: directory)
-        let manager = DSHPluginInstallationManager(dshProfileDirectory: directory)
-        var old = try #require(manager.install(pluginSourceData: source, clientSourceData: clientSource).manifest)
-        old.version = 2
-        try JSONEncoder().encode(old).write(to: manager.manifestURL)
+        let manager = try legacyInstallation(in: directory, version: 2)
         #expect(try manager.status().isInstalled)
         #expect(try !manager.status().isCurrent)
         if upgrade {
-            let before = try Data(contentsOf: manager.configURL)
             let replacement = Data("export function apply(ctx) { return ctx }\n".utf8)
             #expect(try manager.install(pluginSourceData: replacement, clientSourceData: clientSource).isCurrent)
             #expect(try Data(contentsOf: manager.pluginFileURL) == replacement)
-            #expect(try Data(contentsOf: manager.configURL) == before)
+            #expect(try config(at: directory)["unrelated"] as? NSDictionary == ["enabled": true] as NSDictionary)
+            #expect(try FileManager.default.destinationOfSymbolicLink(atPath: manager.linkedPluginURL.path) == "../open-island-plugins/open-island-dsh")
         } else {
             #expect(try !manager.uninstall().isInstalled)
             #expect(!FileManager.default.fileExists(atPath: manager.clientFileURL.path))
@@ -308,7 +332,7 @@ struct DSHPluginInstallationManagerTests {
         #expect(try Data(contentsOf: manager.pluginFileURL) == source)
     }
 
-    @Test(arguments: ["config", "node_modules", "bundle", "plugin", "client", "manifest", "ancestor"])
+    @Test(arguments: ["config", "node_modules", "plugins", "link", "bundle", "plugin", "client", "manifest", "ancestor"])
     func symbolicLinksNeverRedirectWrites(kind: String) throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -323,7 +347,9 @@ struct DSHPluginInstallationManagerTests {
         let target: URL
         switch kind {
         case "config": target = manager.configURL
-        case "node_modules": target = manager.pluginsDirectory
+        case "node_modules": target = manager.nodeModulesDirectory
+        case "plugins": target = manager.pluginsDirectory
+        case "link": target = manager.linkedPluginURL
         case "bundle": target = manager.pluginDirectory
         case "plugin": target = manager.pluginFileURL
         case "client": target = manager.clientFileURL
@@ -381,6 +407,144 @@ struct DSHPluginInstallationManagerTests {
         #expect(try Data(contentsOf: manager.configURL) == edited)
         #expect(!FileManager.default.fileExists(atPath: manager.pluginDirectory.path))
         #expect(!FileManager.default.fileExists(atPath: manager.manifestURL.path))
+    }
+
+    @Test(arguments: [1, 2])
+    func prunedLegacyPackageMigratesToDurableSourceAndDeclaredLink(version: Int) throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let original: [String: Any] = ["private": true, "dependencies": ["other": "1.2.3"]]
+        try writeConfig(original, to: directory)
+        let manager = try legacyInstallation(in: directory, version: version)
+        try FileManager.default.removeItem(at: manager.linkedPluginURL)
+        #expect(try !manager.status().isInstalled)
+        let repaired = try manager.install(pluginSourceData: source, clientSourceData: clientSource)
+        #expect(repaired.isCurrent)
+        #expect(repaired.dependencyRegistered && repaired.managedLinkPresent)
+        #expect(try Data(contentsOf: manager.pluginFileURL) == source)
+        #expect(try Data(contentsOf: manager.linkedPluginURL.appendingPathComponent(DSHPluginInstallationManager.clientFileName)) == clientSource)
+        #expect(try config(at: directory)["dependencies"] as? NSDictionary == [
+            "other": "1.2.3", "open-island-dsh": "link:./open-island-plugins/open-island-dsh"
+        ] as NSDictionary)
+        try manager.uninstall()
+        #expect(try config(at: directory) == original as NSDictionary)
+        #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: manager.linkedPluginURL.path)) == nil)
+        #expect(!FileManager.default.fileExists(atPath: manager.pluginDirectory.path))
+    }
+
+    @Test(arguments: ["fresh", "legacy", "owned"])
+    func foreignDependencyIsNeverAdoptedOrOverwritten(kind: String) throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try writeConfig(["private": true], to: directory)
+        let manager: DSHPluginInstallationManager
+        if kind == "legacy" { manager = try legacyInstallation(in: directory, version: 2) }
+        else {
+            manager = DSHPluginInstallationManager(dshProfileDirectory: directory)
+            if kind == "owned" { try manager.install(pluginSourceData: source, clientSourceData: clientSource) }
+        }
+        var edited = try #require(try config(at: directory) as? [String: Any])
+        // Even the same spelling is not adopted without manifest ownership.
+        edited["dependencies"] = ["open-island-dsh": kind == "owned" ? "file:../user-plugin" : "link:./open-island-plugins/open-island-dsh"]
+        try writeConfig(edited, to: directory)
+        let before = try Data(contentsOf: manager.configURL)
+        #expect(throws: DSHPluginInstallationError.self) { try manager.install(pluginSourceData: source, clientSourceData: clientSource) }
+        #expect(throws: DSHPluginInstallationError.self) { try manager.uninstall() }
+        #expect(try Data(contentsOf: manager.configURL) == before)
+        if kind == "owned" { #expect(try Data(contentsOf: manager.pluginFileURL) == source) }
+        if kind == "legacy" { #expect(try Data(contentsOf: manager.linkedPluginURL.appendingPathComponent(DSHPluginInstallationManager.pluginFileName)) == source) }
+    }
+
+    @Test
+    func missingManagedLinkRepairsAndPackageManagerLinkRecreationRemainsOwned() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try writeConfig(["private": true], to: directory)
+        let manager = DSHPluginInstallationManager(dshProfileDirectory: directory)
+        try manager.install(pluginSourceData: source, clientSourceData: clientSource)
+        let before = try Data(contentsOf: manager.pluginFileURL)
+        try FileManager.default.removeItem(at: manager.linkedPluginURL)
+        let missing = try manager.status()
+        #expect(missing.managedFilesIntact && !missing.isCurrent)
+        #expect(try manager.install(pluginSourceData: source, clientSourceData: clientSource).isCurrent)
+        #expect(try Data(contentsOf: manager.pluginFileURL) == before)
+        try FileManager.default.removeItem(at: manager.linkedPluginURL)
+        try FileManager.default.createSymbolicLink(atPath: manager.linkedPluginURL.path, withDestinationPath: manager.pluginDirectory.path)
+        #expect(try manager.status().isCurrent)
+        let sibling = manager.pluginsDirectory.appendingPathComponent("user-data")
+        let module = manager.nodeModulesDirectory.appendingPathComponent("user-data")
+        try Data("stable sibling".utf8).write(to: sibling)
+        try Data("module sibling".utf8).write(to: module)
+        var edited = try #require(try config(at: directory) as? [String: Any])
+        edited["dependencies"] = ["open-island-dsh": DSHPluginInstallationManager.dependencySpecifier, "later-added": "2.0.0"]
+        try writeConfig(edited, to: directory)
+        try manager.uninstall()
+        #expect(try config(at: directory)["dependencies"] as? NSDictionary == ["later-added": "2.0.0"] as NSDictionary)
+        #expect(try Data(contentsOf: sibling) == Data("stable sibling".utf8))
+        #expect(try Data(contentsOf: module) == Data("module sibling".utf8))
+    }
+
+    @Test(arguments: [false, true])
+    func foreignResolutionSlotNeverRedirectsOwnedSourceWrites(realDirectory: Bool) throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try writeConfig(["private": true], to: directory)
+        let manager = DSHPluginInstallationManager(dshProfileDirectory: directory)
+        try manager.install(pluginSourceData: source, clientSourceData: clientSource)
+        try FileManager.default.removeItem(at: manager.linkedPluginURL)
+        let outside = directory.appendingPathComponent("foreign")
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: false)
+        let sentinel = outside.appendingPathComponent("keep")
+        try Data("foreign".utf8).write(to: sentinel)
+        if realDirectory { try FileManager.default.createDirectory(at: manager.linkedPluginURL, withIntermediateDirectories: false) }
+        else { try FileManager.default.createSymbolicLink(at: manager.linkedPluginURL, withDestinationURL: outside) }
+        let before = try Data(contentsOf: manager.configURL)
+        #expect(throws: DSHPluginInstallationError.self) { try manager.install(pluginSourceData: Data("new host".utf8), clientSourceData: clientSource) }
+        #expect(throws: DSHPluginInstallationError.self) { try manager.uninstall() }
+        #expect(try Data(contentsOf: manager.configURL) == before)
+        #expect(try Data(contentsOf: manager.pluginFileURL) == source)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: outside.path) == ["keep"])
+        #expect(try Data(contentsOf: sentinel) == Data("foreign".utf8))
+    }
+
+    @Test(arguments: [false, true])
+    func migrationLinkFailureRestoresLegacyLayoutAndPreservesConcurrentConfiguration(concurrentEdit: Bool) throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try writeConfig(["private": true, "dependencies": ["other": "1"]], to: directory)
+        _ = try legacyInstallation(in: directory, version: 2)
+        let fileManager = LinkEditingFileManager()
+        let manager = DSHPluginInstallationManager(dshProfileDirectory: directory, fileManager: fileManager)
+        let before = try snapshot(manager)
+        let edited = Data("{\"private\":true,\"concurrent\":\"keep\"}".utf8)
+        fileManager.onCreateLink = {
+            if concurrentEdit { try edited.write(to: manager.configURL) }
+            else { throw CocoaError(.fileWriteUnknown) }
+        }
+        #expect(throws: (any Error).self) { try manager.install(pluginSourceData: Data("new host".utf8), clientSourceData: clientSource) }
+        var after = try snapshot(manager)
+        if concurrentEdit {
+            #expect(after["profile"] == edited)
+            after["profile"] = before["profile"]
+        }
+        #expect(after == before)
+        #expect(!FileManager.default.fileExists(atPath: manager.pluginsDirectory.path))
+        #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: manager.linkedPluginURL.path)) == nil)
+    }
+
+    @Test
+    func uninstallFailureRestoresDependencySourceAndExactLink() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try writeConfig(["private": true], to: directory)
+        let fileManager = LinkEditingFileManager()
+        let manager = DSHPluginInstallationManager(dshProfileDirectory: directory, fileManager: fileManager)
+        try manager.install(pluginSourceData: source, clientSourceData: clientSource)
+        let before = try snapshot(manager)
+        fileManager.failRemoving = manager.manifestURL
+        #expect(throws: (any Error).self) { try manager.uninstall() }
+        #expect(try snapshot(manager) == before)
+        #expect(try manager.status().isCurrent)
     }
 
     @Test

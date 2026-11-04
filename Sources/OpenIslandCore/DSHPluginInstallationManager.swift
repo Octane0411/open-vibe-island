@@ -11,6 +11,12 @@ public struct DSHPluginInstallerManifest: Equatable, Codable, Sendable {
     public var createdDsh: Bool
     public var createdProfile: Bool
     public var createdBundles: Bool
+    public var dependencySpecifier: String? = nil
+    public var linkPath: String? = nil
+    public var linkTarget: String? = nil
+    public var createdDependencies: Bool? = nil
+    public var createdPluginsDirectory: Bool? = nil
+    public var createdNodeModulesDirectory: Bool? = nil
 }
 
 public struct DSHPluginInstallationStatus: Equatable, Sendable {
@@ -26,13 +32,16 @@ public struct DSHPluginInstallationStatus: Equatable, Sendable {
     public var pluginRegistered: Bool
     public var manifest: DSHPluginInstallerManifest?
     public var managedFilesIntact: Bool
+    public var dependencyRegistered: Bool = false
+    public var managedLinkPresent: Bool = false
 
     public var isInstalled: Bool {
         pluginFilePresent && pluginRegistered && managedFilesIntact && manifest != nil
     }
 
     public var isCurrent: Bool {
-        isInstalled && clientFilePresent && manifest?.version == DSHPluginInstallerManifest.currentVersion
+        isInstalled && clientFilePresent && dependencyRegistered && managedLinkPresent
+            && manifest?.dependencySpecifier != nil && manifest?.version == DSHPluginInstallerManifest.currentVersion
     }
 }
 
@@ -67,11 +76,13 @@ public enum DSHPluginInstallationError: LocalizedError, Equatable {
 
 /// Installs a local Cordis bundle into an existing DSH profile.
 /// The profile manifest selects the bundle through dsh.profile.bundles.
-/// User YAML patches and package dependencies are never changed.
+/// User YAML patches and unrelated dependencies are never changed.
+/// The owned local link dependency keeps package-manager pruning away from the source.
 public final class DSHPluginInstallationManager: @unchecked Sendable {
     public static let pluginFileName = "open-island-dsh.js"
     public static let clientFileName = "open-island-dsh-client.js"
     public static let bundleName = "open-island-dsh"
+    public static let dependencySpecifier = "link:./open-island-plugins/open-island-dsh"
     public static var defaultProfileDirectory: URL {
         let home = ProcessInfo.processInfo.environment["DSH_HOME"].flatMap { $0.isEmpty ? nil : $0 }
             .map { URL(fileURLWithPath: $0, isDirectory: true) }
@@ -81,6 +92,25 @@ public final class DSHPluginInstallationManager: @unchecked Sendable {
 
     public let dshProfileDirectory: URL
     private let fileManager: FileManager
+    private enum Mutation {
+        case file(URL, Data?)
+        case directory(URL, present: Bool)
+        case link(URL, target: String?)
+        case prune(URL)
+
+        var url: URL {
+            switch self {
+            case let .file(url, _), let .directory(url, _), let .link(url, _), let .prune(url): url
+            }
+        }
+    }
+
+    private enum Entry {
+        case missing
+        case file(Data)
+        case directory(NSNumber?)
+        case link(String)
+    }
     private static func managedFileNames(for version: Int) -> Set<String> {
         switch version {
         case 1: [pluginFileName, "package.json", "cordis.patch.yml"]
@@ -102,7 +132,10 @@ public final class DSHPluginInstallationManager: @unchecked Sendable {
     }
 
     public var configURL: URL { dshProfileDirectory.appendingPathComponent("package.json") }
-    public var pluginsDirectory: URL { dshProfileDirectory.appendingPathComponent("node_modules", isDirectory: true) }
+    public var pluginsDirectory: URL { dshProfileDirectory.appendingPathComponent("open-island-plugins", isDirectory: true) }
+    public var nodeModulesDirectory: URL { dshProfileDirectory.appendingPathComponent("node_modules", isDirectory: true) }
+    public var linkedPluginURL: URL { nodeModulesDirectory.appendingPathComponent(Self.bundleName, isDirectory: true) }
+    private var legacyPluginFileURL: URL { linkedPluginURL.appendingPathComponent(Self.pluginFileName) }
     public var pluginDirectory: URL { pluginsDirectory.appendingPathComponent(Self.bundleName, isDirectory: true) }
     public var pluginFileURL: URL { pluginDirectory.appendingPathComponent(Self.pluginFileName) }
     public var clientFileURL: URL { pluginDirectory.appendingPathComponent(Self.clientFileName) }
@@ -113,19 +146,22 @@ public final class DSHPluginInstallationManager: @unchecked Sendable {
         let config = try readConfiguration(required: false).object
         let manifest = try loadManifest()
         let intact = try manifest.map { try filesAreIntact($0) } ?? false
+        let installedDirectory = manifest.map(installationDirectory) ?? pluginDirectory
         return DSHPluginInstallationStatus(
             dshProfileDirectory: dshProfileDirectory,
             configURL: configURL,
             pluginsDirectory: pluginsDirectory,
-            pluginDirectory: pluginDirectory,
-            pluginFileURL: pluginFileURL,
-            clientFileURL: clientFileURL,
+            pluginDirectory: installedDirectory,
+            pluginFileURL: installedDirectory.appendingPathComponent(Self.pluginFileName),
+            clientFileURL: installedDirectory.appendingPathComponent(Self.clientFileName),
             manifestURL: manifestURL,
-            pluginFilePresent: exists(pluginFileURL),
-            clientFilePresent: exists(clientFileURL),
+            pluginFilePresent: exists(installedDirectory.appendingPathComponent(Self.pluginFileName)),
+            clientFilePresent: exists(installedDirectory.appendingPathComponent(Self.clientFileName)),
             pluginRegistered: try bundles(in: config).contains(Self.bundleName),
             manifest: manifest,
-            managedFilesIntact: intact
+            managedFilesIntact: intact,
+            dependencyRegistered: try dependencies(in: config)[Self.bundleName] as? String == Self.dependencySpecifier,
+            managedLinkPresent: try isManagedLink()
         )
     }
 
@@ -153,19 +189,39 @@ public final class DSHPluginInstallationManager: @unchecked Sendable {
             fileDigests: files.mapValues(Self.digest),
             createdDsh: existingManifest?.createdDsh ?? (config["dsh"] == nil),
             createdProfile: existingManifest?.createdProfile ?? (dsh["profile"] == nil),
-            createdBundles: existingManifest?.createdBundles ?? (profile["bundles"] == nil)
+            createdBundles: existingManifest?.createdBundles ?? (profile["bundles"] == nil),
+            dependencySpecifier: Self.dependencySpecifier,
+            linkPath: linkedPluginURL.path,
+            linkTarget: pluginDirectory.path,
+            createdDependencies: existingManifest?.createdDependencies ?? (config["dependencies"] == nil),
+            createdPluginsDirectory: existingManifest?.createdPluginsDirectory ?? !exists(pluginsDirectory),
+            createdNodeModulesDirectory: existingManifest?.createdNodeModulesDirectory ?? !exists(nodeModulesDirectory)
         )
         if !selectedBundles.contains(Self.bundleName) { selectedBundles.append(Self.bundleName) }
         profile["bundles"] = selectedBundles
         dsh["profile"] = profile
         config["dsh"] = dsh
+        var dependencies = try dependencies(in: config)
+        dependencies[Self.bundleName] = Self.dependencySpecifier
+        config["dependencies"] = dependencies
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        var replacements = files.keys.sorted().map { (pluginDirectory.appendingPathComponent($0), files[$0]) }
-        replacements.append((manifestURL, try encoder.encode(manifest)))
-        // Register last so a failed file write cannot activate an incomplete bundle.
-        replacements.append((configURL, try encode(config)))
-        try apply(replacements, expectedConfiguration: configuration.data)
+        var mutations: [Mutation] = []
+        for directory in [pluginsDirectory, pluginDirectory, nodeModulesDirectory] where !exists(directory) {
+            mutations.append(.directory(directory, present: true))
+        }
+        mutations += files.keys.sorted().map { .file(pluginDirectory.appendingPathComponent($0), files[$0]) }
+        if let old = existingManifest, old.dependencySpecifier == nil, exists(linkedPluginURL) {
+            mutations += old.fileDigests.keys.sorted().map { .file(linkedPluginURL.appendingPathComponent($0), nil) }
+            mutations.append(.directory(linkedPluginURL, present: false))
+        }
+        if try !isManagedLink() {
+            mutations.append(.link(linkedPluginURL, target: "../open-island-plugins/open-island-dsh"))
+        }
+        mutations.append(.file(manifestURL, try encoder.encode(manifest)))
+        // Register last so a failed filesystem migration cannot activate an incomplete bundle.
+        mutations.append(.file(configURL, try encode(config)))
+        try apply(mutations, expectedConfiguration: configuration.data)
         return try status()
     }
 
@@ -198,13 +254,28 @@ public final class DSHPluginInstallationManager: @unchecked Sendable {
                 config["dsh"] = dsh
             }
         }
-        var replacements: [(URL, Data?)] = []
-        // Unregister before removing the managed files.
-        if exists(configURL) { replacements.append((configURL, try encode(config))) }
-        replacements += manifest.fileDigests.keys.sorted().map { (pluginDirectory.appendingPathComponent($0), nil) }
-        replacements.append((manifestURL, nil))
-        try apply(replacements, expectedConfiguration: configuration.data)
-        try removeDirectoryIfEmpty(pluginDirectory)
+        if manifest.dependencySpecifier != nil {
+            var dependencies = try dependencies(in: config)
+            dependencies.removeValue(forKey: Self.bundleName)
+            if dependencies.isEmpty, manifest.createdDependencies == true {
+                config.removeValue(forKey: "dependencies")
+            } else if config["dependencies"] != nil {
+                config["dependencies"] = dependencies
+            }
+        }
+        var mutations: [Mutation] = []
+        // Unregister before removing the owned link and source files.
+        if exists(configURL) { mutations.append(.file(configURL, try encode(config))) }
+        if manifest.dependencySpecifier != nil, exists(linkedPluginURL) {
+            mutations.append(.link(linkedPluginURL, target: nil))
+        }
+        let directory = installationDirectory(manifest)
+        mutations += manifest.fileDigests.keys.sorted().map { .file(directory.appendingPathComponent($0), nil) }
+        if exists(directory) { mutations.append(.directory(directory, present: false)) }
+        mutations.append(.file(manifestURL, nil))
+        if manifest.createdPluginsDirectory == true { mutations.append(.prune(pluginsDirectory)) }
+        if manifest.createdNodeModulesDirectory == true { mutations.append(.prune(nodeModulesDirectory)) }
+        try apply(mutations, expectedConfiguration: configuration.data)
         return try status()
     }
 
@@ -236,40 +307,92 @@ public final class DSHPluginInstallationManager: @unchecked Sendable {
             throw DSHPluginInstallationError.invalidConfiguration
         }
         _ = try bundles(in: config)
+        _ = try dependencies(in: config)
         return (config, data)
+    }
+
+    private func dependencies(in config: [String: Any]) throws -> [String: Any] {
+        guard let raw = config["dependencies"] else { return [:] }
+        guard let dependencies = raw as? [String: Any] else { throw DSHPluginInstallationError.invalidConfiguration }
+        return dependencies
+    }
+
+    private func installationDirectory(_ manifest: DSHPluginInstallerManifest) -> URL {
+        manifest.pluginPath == legacyPluginFileURL.path ? linkedPluginURL : pluginDirectory
     }
 
     private func loadManifest() throws -> DSHPluginInstallerManifest? {
         guard exists(manifestURL) else { return nil }
         guard let manifest = try? JSONDecoder().decode(DSHPluginInstallerManifest.self, from: Data(contentsOf: manifestURL)),
-              manifest.version > 0,
-              manifest.version <= DSHPluginInstallerManifest.currentVersion,
-              manifest.pluginPath == pluginFileURL.path,
+              manifest.version > 0, manifest.version <= DSHPluginInstallerManifest.currentVersion,
               Set(manifest.fileDigests.keys) == Self.managedFileNames(for: manifest.version) else {
             throw DSHPluginInstallationError.unownedInstallation(manifestURL.path)
+        }
+        if manifest.pluginPath == legacyPluginFileURL.path {
+            guard manifest.dependencySpecifier == nil, manifest.linkPath == nil, manifest.linkTarget == nil,
+                  manifest.createdDependencies == nil, manifest.createdPluginsDirectory == nil,
+                  manifest.createdNodeModulesDirectory == nil else {
+                throw DSHPluginInstallationError.unownedInstallation(manifestURL.path)
+            }
+        } else {
+            guard manifest.pluginPath == pluginFileURL.path, manifest.version == 3,
+                  manifest.dependencySpecifier == Self.dependencySpecifier,
+                  manifest.linkPath == linkedPluginURL.path, manifest.linkTarget == pluginDirectory.path,
+                  manifest.createdDependencies != nil, manifest.createdPluginsDirectory != nil,
+                  manifest.createdNodeModulesDirectory != nil else {
+                throw DSHPluginInstallationError.unownedInstallation(manifestURL.path)
+            }
         }
         return manifest
     }
 
+    private func isManagedLink() throws -> Bool {
+        guard fileType(linkedPluginURL) == .typeSymbolicLink else { return false }
+        let target = try fileManager.destinationOfSymbolicLink(atPath: linkedPluginURL.path)
+        // Do not normalize arbitrary symlink traversal through foreign path components.
+        return target == pluginDirectory.path || target == "../open-island-plugins/open-island-dsh"
+    }
+
     private func requireOwnership(manifest: DSHPluginInstallerManifest?, config: [String: Any]) throws {
+        let dependency = try dependencies(in: config)[Self.bundleName]
+        for section in ["devDependencies", "optionalDependencies", "peerDependencies"] {
+            if (config[section] as? [String: Any])?[Self.bundleName] != nil {
+                throw DSHPluginInstallationError.unownedInstallation(configURL.path)
+            }
+        }
         guard let manifest else {
-            guard !exists(pluginDirectory), !(try bundles(in: config)).contains(Self.bundleName) else {
+            guard !exists(pluginDirectory), !exists(linkedPluginURL), dependency == nil,
+                  !(try bundles(in: config)).contains(Self.bundleName) else {
                 throw DSHPluginInstallationError.unownedInstallation(pluginDirectory.path)
             }
             return
         }
-        // A removed bundle can be repaired, but never replace a changed or partially removed bundle.
-        guard try !exists(pluginDirectory) || filesAreIntact(manifest) else {
-            throw DSHPluginInstallationError.modifiedInstallation(pluginDirectory.path)
+        let directory = installationDirectory(manifest)
+        // Entirely removed owned packages may be repaired. Partial or edited packages may not.
+        guard try !exists(directory) || filesAreIntact(manifest) else {
+            throw DSHPluginInstallationError.modifiedInstallation(directory.path)
+        }
+        if manifest.dependencySpecifier != nil {
+            guard dependency == nil || dependency as? String == Self.dependencySpecifier else {
+                throw DSHPluginInstallationError.unownedInstallation(configURL.path)
+            }
+            guard try !exists(linkedPluginURL) || isManagedLink() else {
+                throw DSHPluginInstallationError.unownedInstallation(linkedPluginURL.path)
+            }
+        } else {
+            guard dependency == nil, !exists(pluginDirectory) else {
+                throw DSHPluginInstallationError.unownedInstallation(pluginDirectory.path)
+            }
         }
     }
 
     private func filesAreIntact(_ manifest: DSHPluginInstallerManifest) throws -> Bool {
-        guard exists(pluginDirectory) else { return false }
-        let names = try fileManager.contentsOfDirectory(atPath: pluginDirectory.path)
+        let directory = installationDirectory(manifest)
+        guard fileType(directory) == .typeDirectory else { return false }
+        let names = try fileManager.contentsOfDirectory(atPath: directory.path)
         guard Set(names) == Self.managedFileNames(for: manifest.version) else { return false }
         for name in names {
-            let url = pluginDirectory.appendingPathComponent(name)
+            let url = directory.appendingPathComponent(name)
             try validateType(url, directory: false)
             guard Self.digest(try Data(contentsOf: url)) == manifest.fileDigests[name] else { return false }
         }
@@ -323,9 +446,11 @@ public final class DSHPluginInstallationManager: @unchecked Sendable {
         try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys, .fragmentsAllowed])
     }
 
-    private func exists(_ url: URL) -> Bool {
-        (try? fileManager.attributesOfItem(atPath: url.path)) != nil
+    private func fileType(_ url: URL) -> FileAttributeType? {
+        (try? fileManager.attributesOfItem(atPath: url.path)[.type]) as? FileAttributeType
     }
+
+    private func exists(_ url: URL) -> Bool { fileType(url) != nil }
 
     private func validateType(_ url: URL, directory: Bool) throws {
         guard let attributes = try? fileManager.attributesOfItem(atPath: url.path) else { return }
@@ -349,38 +474,112 @@ public final class DSHPluginInstallationManager: @unchecked Sendable {
         try validateType(configURL, directory: false)
         try validateType(pluginsDirectory, directory: true)
         try validateType(pluginDirectory, directory: true)
+        try validateType(nodeModulesDirectory, directory: true)
         try validateType(manifestURL, directory: false)
+        if let type = fileType(linkedPluginURL) {
+            guard type == .typeDirectory || type == .typeSymbolicLink else {
+                throw DSHPluginInstallationError.unsafePath(linkedPluginURL.path)
+            }
+            if type == .typeSymbolicLink, try !isManagedLink() {
+                throw DSHPluginInstallationError.unsafePath(linkedPluginURL.path)
+            }
+        }
         for name in Self.managedFileNames {
             try validateType(pluginDirectory.appendingPathComponent(name), directory: false)
+            if fileType(linkedPluginURL) == .typeDirectory {
+                try validateType(linkedPluginURL.appendingPathComponent(name), directory: false)
+            }
         }
     }
 
-    private func apply(_ replacements: [(URL, Data?)], expectedConfiguration: Data?) throws {
-        try requireUnchangedConfiguration(expectedConfiguration)
-        let originals = try replacements.map { (url, _) in
-            (url, exists(url) ? try Data(contentsOf: url) : nil)
+    private func entry(at url: URL) throws -> Entry {
+        switch fileType(url) {
+        case nil: return .missing
+        case .typeRegular: return .file(try Data(contentsOf: url))
+        case .typeSymbolicLink: return .link(try fileManager.destinationOfSymbolicLink(atPath: url.path))
+        case .typeDirectory:
+            return .directory(try fileManager.attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber)
+        default: throw DSHPluginInstallationError.unsafePath(url.path)
         }
-        let hadPluginDirectory = exists(pluginDirectory)
-        let hadPluginsDirectory = exists(pluginsDirectory)
-        var completedCount = 0
-        do {
-            if replacements.contains(where: { $0.0.deletingLastPathComponent() == pluginDirectory && $0.1 != nil }) {
-                try fileManager.createDirectory(at: pluginDirectory, withIntermediateDirectories: true)
+    }
+
+    private func perform(_ mutation: Mutation) throws {
+        let url = mutation.url
+        switch mutation {
+        case let .file(_, data):
+            try validateType(url, directory: false)
+            if let data { try data.write(to: url, options: .atomic) }
+            else if exists(url) { try fileManager.removeItem(at: url) }
+        case let .directory(_, present):
+            try validateType(url, directory: true)
+            if present {
+                if !exists(url) { try fileManager.createDirectory(at: url, withIntermediateDirectories: false) }
+            } else if exists(url) {
+                guard try fileManager.contentsOfDirectory(atPath: url.path).isEmpty else {
+                    throw DSHPluginInstallationError.modifiedInstallation(url.path)
+                }
+                try fileManager.removeItem(at: url)
             }
-            for (url, data) in replacements {
-                if url == configURL { try requireUnchangedConfiguration(expectedConfiguration) }
-                if let data { try data.write(to: url, options: .atomic) }
-                else if exists(url) { try fileManager.removeItem(at: url) }
-                completedCount += 1
+        case let .link(_, target):
+            if let target {
+                guard !exists(url) else { throw DSHPluginInstallationError.unownedInstallation(url.path) }
+                try fileManager.createSymbolicLink(atPath: url.path, withDestinationPath: target)
+            } else if exists(url) {
+                guard try isManagedLink() else { throw DSHPluginInstallationError.unsafePath(url.path) }
+                try fileManager.removeItem(at: url)
+            }
+        case .prune:
+            try removeDirectoryIfEmpty(url)
+        }
+    }
+
+    private func restore(_ original: Entry, at url: URL) throws {
+        switch original {
+        case .missing:
+            if fileType(url) == .typeDirectory { try removeDirectoryIfEmpty(url) }
+            else if exists(url) { try fileManager.removeItem(at: url) }
+        case let .file(data):
+            try validateType(url, directory: false)
+            try data.write(to: url, options: .atomic)
+        case let .link(target):
+            if fileType(url) == .typeSymbolicLink {
+                let current = try fileManager.destinationOfSymbolicLink(atPath: url.path)
+                if current == target { return }
+                try fileManager.removeItem(at: url)
+            }
+            guard !exists(url) else { throw DSHPluginInstallationError.unsafePath(url.path) }
+            try fileManager.createSymbolicLink(atPath: url.path, withDestinationPath: target)
+        case let .directory(permissions):
+            if fileType(url) == .typeSymbolicLink { try fileManager.removeItem(at: url) }
+            try validateType(url, directory: true)
+            if !exists(url) {
+                let attributes = permissions.map { [FileAttributeKey.posixPermissions: $0] }
+                try fileManager.createDirectory(at: url, withIntermediateDirectories: false, attributes: attributes)
+            }
+        }
+    }
+
+    private func apply(_ mutations: [Mutation], expectedConfiguration: Data?) throws {
+        try requireUnchangedConfiguration(expectedConfiguration)
+        let originals = try mutations.map { try entry(at: $0.url) }
+        var attempted = 0
+        var writtenConfiguration: Data?
+        do {
+            for mutation in mutations {
+                try validatePaths()
+                if mutation.url == configURL { try requireUnchangedConfiguration(expectedConfiguration) }
+                attempted += 1
+                try perform(mutation)
+                if case let .file(url, data) = mutation, url == configURL { writtenConfiguration = data }
             }
         } catch {
-            // Restore only files we changed, never an untouched concurrent config edit.
-            for (url, data) in originals.prefix(completedCount).reversed() {
-                if let data { try? data.write(to: url, options: .atomic) }
-                else if exists(url) { try? fileManager.removeItem(at: url) }
+            // Undo only attempted mutations. A concurrent config edit is never restored over.
+            for index in (0..<attempted).reversed() {
+                let url = mutations[index].url
+                if url == configURL, let writtenConfiguration,
+                   (try? Data(contentsOf: configURL)) != writtenConfiguration { continue }
+                try? restore(originals[index], at: url)
             }
-            if !hadPluginDirectory { try? removeDirectoryIfEmpty(pluginDirectory) }
-            if !hadPluginsDirectory { try? removeDirectoryIfEmpty(pluginsDirectory) }
             throw error
         }
     }
