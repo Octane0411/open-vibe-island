@@ -33,7 +33,7 @@ CLI coding agents are powerful, but they pull attention away from the editor and
 | **Kimi CLI** | Supported | Hook integration via `~/.kimi/config.toml` `[[hooks]]` (Moonshot AI). Kimi's hook payload is byte-compatible with Claude Code, so runtime reuses the Claude decode path; a dedicated TOML installer preserves user-authored hooks |
 | **Pi** | Supported | Runtime extension at `~/.pi/agent/extensions/open-island.ts`; lifecycle/tool events, session persistence, process detection, and terminal jump metadata |
 | **Oh My Pi (OMP)** | Supported | Runtime extension at `~/.omp/agent/extensions/open-island.ts`; equivalent coverage through OMP lifecycle aliases |
-| **DeepSeek Harness (DSH)** | Supported | Local host/client plugin, per-session lifecycle/tool activity, completion cards, heartbeat liveness, persistence, and exact-conversation jump-back with composer focus in the installed Web PWA. Settings installs into the Web profile. Approvals remain in DSH. |
+| **DeepSeek Harness (DSH)** | Supported | Local host/client plugin, per-session lifecycle/tool activity, completion cards, heartbeat liveness, persistence, and exact-conversation jump-back with composer focus in the installed Web PWA. Native questions, plan review, explicit allow-once/deny actions, and typed interaction outcomes respect DSH permission policy. Timed questions remain native to DSH. |
 
 ## Supported Terminals
 

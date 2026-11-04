@@ -388,8 +388,8 @@ swift run OpenIslandSetup uninstallDsh --dsh-profile-dir "$HOME/.dsh/profiles/we
 | `SessionStart` | `session/created` and already loaded live sessions | Tracks DSH identity and the session working directory |
 | `UserPromptSubmit` | `user/message` with user source | Marks the session running and updates prompt metadata |
 | `PreToolUse` | `tool/call` | Displays tool name and bounded input preview |
-| `PostToolUse` | `tool/result` | Clears the current tool |
-| `Stop` | `turn/end` | Completes the turn with the latest assistant text |
+| `PostToolUse` | `tool/result` | Clears the current tool and carries bounded typed question/plan outcomes when observed |
+| `Stop` | `turn/end` | Completes the turn with final visible assistant markdown and the exact terminal reason |
 | `Heartbeat` | 15-second timer for each exact live session object | Refreshes liveness without changing turn state |
 | `SessionEnd` | `session/disposed` and plugin teardown | Ends the tracked session and stops its timer |
 
@@ -399,14 +399,35 @@ The NDJSON command is `processDshHook` with a `dshHook` payload. It shares the n
 
 Clicking a DSH conversation activates the installed Chromium PWA whose saved local Web origin matches that session, selects the exact conversation, and focuses its composer. Open Island discovers the app shim from its native manifest rather than opening a browser URL. If multiple installed app profiles match, open the intended one first. Missing or ambiguous apps do not fall back to a browser tab or Finder.
 
-The host plugin advertises a credential-free `web_origin` and a private `web_focus_socket`. The socket is in a random owner-only directory under `/tmp`, accepts only an exact session selector, and waits for the client to acknowledge mounted composer focus. The companion client uses authenticated DSH RPC and the public workspace/session/input APIs. Navigation requests are latest-wins, target an eligible focused PWA rather than all browser tabs, and never execute tools or change approval policy. Focus endpoints can arrive on a heartbeat after host initialization without changing the session's activity timestamp or phase.
+The host plugin advertises a credential-free `web_origin` and a private `web_focus_socket`. The socket is in a random owner-only directory under `/tmp`. Its navigation command accepts an exact session selector and waits for the client to acknowledge mounted composer focus. The separate interaction protocol below uses explicit request identities and a leased observer. The companion client uses authenticated DSH RPC and the public workspace/session/input APIs. Navigation requests are latest-wins, target an eligible focused PWA rather than all browser tabs, and never execute tools or change approval policy. Focus endpoints can arrive on a heartbeat after host initialization without changing the session's activity timestamp or phase.
 
-**Upgrade from lifecycle-only support:** reinstall the DSH plugin from Setup, restart the DSH Web host, then reload its PWA. Both host and client artifacts are required. The installer safely recognizes intact v1 ownership manifests and upgrades them without overwriting user-modified files. A host restart is necessary because DSH can cache the previous package's missing client metadata. Open Island does not restart the DSH host or reload a conversation automatically.
+**Upgrade from lifecycle-only or jump-only support:** install the updated app, reinstall the DSH plugin from Setup, restart the DSH Web host, then reload its PWA. Both host and client artifacts are required. The v3 installer safely recognizes intact v1 and v2 ownership manifests and upgrades them without overwriting user-modified files. A host restart is necessary because DSH can cache the previous package's missing client metadata. Open Island does not restart the DSH host or reload a conversation automatically.
+
+### Questions, plan reviews, and approval requests
+
+The host prepends supported public `user-questions/request` and `approval/request` waterfall listeners. A new live root-agent request is claimed only while one native Open Island observer holds a healthy private-socket lease. If there is no observer, the request is unsupported, or the lease disconnects, ownership is revoked before the waterfall continues to DSH's native handler. Open Island never races a second answerer against the DSH UI.
+
+- User questions become `questionAsked` cards. Native question IDs, multiselect arrays, comma-containing labels, custom replies, and duplicate visible question text are preserved without parsing display prose.
+- `exit_plan_mode` uses the same question flow with its full markdown detail and exact `plan-review` intent. Approve and Keep planning are explicit choices. Custom feedback is returned unchanged. Approving a plan does not grant tool permissions or force a mode transition outside DSH's own controller.
+- DSH approval requests become `permissionRequested` cards with only allow-once and deny controls. The `never` policy remains an upstream rejection and never enters this waterfall. The plugin cannot change approval policy or install persistent allow rules.
+- Each card uses the request UUID. Stale clicks, replayed replies, foreign observer capabilities, and wrong-session answers are rejected. The UI retains its draft and card until the matching host resolution, not merely until a button is clicked or a transport write succeeds.
+- Cancellation, tool completion, turn completion, session disposal, and lease loss revoke pending identities. Known turn IDs prevent a delayed old-turn Stop from clearing a newer question. If delegation fails, the native observer closes so an invisible claimed request cannot remain stuck in DSH.
+
+The private protocol starts with `observe_interactions`, exchanges leased `interaction_ping` / `interaction_pong` frames, and sends typed pending/resolved interaction frames. A separate `respond_interaction` command carries the observer capability, exact session/request IDs, and explicit answers or a single-request decision. It is private to the current OS user and does not use browser authentication tokens. Plan presentation is bounded to fit the local frame budget without silently truncating the text a user is asked to approve.
+
+### Results and completion cards
+
+Observed question decisions are correlated with the terminal result of `ask_user_question` or `exit_plan_mode`. Only then does `interaction_result` report approved, declined, answered, cancelled, or failed. A selected Approve option is not fabricated as successful execution if the actual terminal result fails. No arbitrary tool output, reasoning, injected context, or private feedback is forwarded as result prose.
+
+`Stop` preserves the exact public `turn_outcome` reason. Error, interruption, blocked, and token-limit outcomes are not described as successful completion. Final visible assistant markdown is retained up to 16 KiB for the scrollable completion card. A pre-question preamble is not reused as the final result when no later assistant reply exists.
 
 ### Limitations
 
-- Tested against DSH 0.2.1-rc.3 host APIs. Older versions without session-store lifecycle events are not supported.
-- Approvals and questions stay in DSH. The plugin does not register an answerer, block tools, or change permission policy.
+- Tested against DSH 0.2.1-rc.3 public host APIs. Older versions without the required services are not supported.
+- Timed questions retain DSH's native countdown and ownership. They are not claimed by Open Island.
+- Already pending native-owned requests are not stolen or replayed when the app connects. Trigger a new request after upgrading and restarting.
+- Legacy overlapping asks without a public call ID, late steered replies, and results from before plugin attachment cannot always be correlated safely. Unknown results are not guessed from rendered prose.
+- Structured DSH decisions are currently macOS controls, not Watch controls. Usage tracking remains unimplemented.
 - The plugin tracks loaded sessions, not the on-disk conversation catalog. It does not replay old prompts or completion events.
 - A Web host has no reliable per-session terminal identity, so jump-back targets the installed local-origin PWA instead. The client must be loaded, authenticated as the owner, and report app display mode. That display-mode check is a heuristic, not an authentication boundary. Plain browser tabs and mini-window previews are excluded. Usage tracking remains unimplemented.
 
