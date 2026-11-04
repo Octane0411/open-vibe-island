@@ -2,13 +2,7 @@
 // Bridges OpenCode events to the Open Island desktop app via Unix socket.
 // Install: copy to ~/.config/opencode/plugins/open-island.js
 import { connect } from "net";
-import { appendFileSync } from "fs";
 import { homedir } from "os";
-
-const DEBUG_LOG = "/tmp/open-island-opencode-debug.log";
-function debugLog(msg) {
-  try { appendFileSync(DEBUG_LOG, `[${new Date().toISOString()}] ${msg}\n`); } catch {}
-}
 
 const SOCKET_PATH =
   process.env.OPEN_ISLAND_SOCKET_PATH ||
@@ -317,11 +311,7 @@ export default async ({ client, serverUrl }) => {
   return {
     "event": async ({ event }) => {
       try {
-        debugLog(`EVENT: ${event.type} | props: ${JSON.stringify(event.properties || {}).slice(0, 300)}`);
         const mapped = mapEvent(event);
-        if (mapped) {
-          debugLog(`MAPPED: ${mapped.openCodeHook.hook_event_name} sid=${mapped.openCodeHook.session_id}`);
-        }
         if (!mapped) return;
 
         // Permission request — hold connection for approval

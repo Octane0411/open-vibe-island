@@ -1,5 +1,8 @@
 # Apple Watch 通知 — 实现计划
 
+> 历史设计：明文 HTTP、四位配对码及 UserDefaults 令牌已被替换。当前加密配对与安全边界见 [security.md](./security.md)。
+> Historical design: plaintext HTTP, four-digit codes and UserDefaults tokens are superseded by [the secure transport](./security.md).
+
 > 设计文档：[watch-notification-design.md](./watch-notification-design.md)
 > 分支：`worktree-feat-watch-notification`
 

@@ -17,11 +17,11 @@ struct DiscoveredMac: Identifiable, Hashable {
     }
 }
 
-/// Uses NWBrowser to discover macOS instances advertising `_openisland._tcp`.
+/// Uses NWBrowser to discover macOS instances advertising `_openisland2._tcp`.
 @MainActor
 final class BonjourDiscovery: ObservableObject {
     private static let logger = Logger(subsystem: "app.openisland.mobile", category: "BonjourDiscovery")
-    private static let serviceType = "_openisland._tcp"
+    private static let serviceType = WatchSecureTransport.serviceType
 
     @Published private(set) var discoveredMacs: [DiscoveredMac] = []
     @Published private(set) var isSearching = false

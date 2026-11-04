@@ -14,10 +14,10 @@ cd "$repo_root"
 
 if [[ -z "$developer_dir" || ! -d "$testing_frameworks/Testing.framework" ]]; then
     # Xcode toolchains bundle Swift Testing into the toolchain itself.
-    exec swift test "$@"
+    exec swift test --disable-automatic-resolution "$@"
 fi
 
-swift test \
+swift test --disable-automatic-resolution \
     --enable-swift-testing \
     -Xswiftc -F \
     -Xswiftc "$testing_frameworks" \

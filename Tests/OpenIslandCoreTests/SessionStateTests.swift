@@ -822,7 +822,7 @@ struct SessionStateTests {
         #expect(questionEvent.questionPrompt?.questions.first?.options.map(\.label) == ["Inline choices", "Jump back"])
         #expect(questionEvent.questionPrompt?.questions.first?.options.first?.description == "Answer directly in the island")
 
-        try await observer.send(
+        server.performUserAction(
             .answerQuestion(
                 sessionID: "opencode-question-1",
                 response: QuestionPromptResponse(answer: "Inline choices")
@@ -870,7 +870,7 @@ struct SessionStateTests {
         #expect(startedEvent.isSessionStarted)
         #expect(permissionEvent.isPermissionRequested)
 
-        try await observer.send(
+        server.performUserAction(
             .resolvePermission(
                 sessionID: "codex-session-1",
                 resolution: .deny(message: "Use the project cleanup script instead.")
@@ -922,7 +922,7 @@ struct SessionStateTests {
         #expect(permission.request.toolName == "apply_patch")
         #expect(permission.request.toolUseID == "tool-use-1")
 
-        try await observer.send(.resolvePermission(sessionID: "codex-permission-allow", resolution: .allowOnce()))
+        server.performUserAction(.resolvePermission(sessionID: "codex-permission-allow", resolution: .allowOnce()))
 
         let activityEvent = try await nextEvent(from: &iterator)
         let response = try await responseTask
@@ -973,7 +973,7 @@ struct SessionStateTests {
         #expect(permission.request.summary == "Run a cleanup command")
         #expect(permission.request.affectedPath == "rm -rf build")
 
-        try await observer.send(
+        server.performUserAction(
             .resolvePermission(
                 sessionID: "codex-permission-deny",
                 resolution: .deny(message: "Use the project cleanup script instead.")
@@ -1031,7 +1031,7 @@ struct SessionStateTests {
         #expect(startedEvent.isSessionStarted)
         #expect(permissionEvent.isPermissionRequested)
 
-        try await observer.send(.resolvePermission(sessionID: "codex-session-no-ask", resolution: .allowOnce()))
+        server.performUserAction(.resolvePermission(sessionID: "codex-session-no-ask", resolution: .allowOnce()))
 
         let activityEvent = try await nextEvent(from: &iterator)
         let response = try await responseTask

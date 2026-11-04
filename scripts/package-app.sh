@@ -30,11 +30,11 @@ if [[ "${OPEN_ISLAND_UNIVERSAL:-false}" == "true" ]]; then
     arch_flags=(--arch arm64 --arch x86_64)
 fi
 
-swift build -c release "${arch_flags[@]}" --product OpenIslandApp
-swift build -c release "${arch_flags[@]}" --product OpenIslandHooks
-swift build -c release "${arch_flags[@]}" --product OpenIslandSetup
+swift build --disable-automatic-resolution -c release "${arch_flags[@]}" --product OpenIslandApp
+swift build --disable-automatic-resolution -c release "${arch_flags[@]}" --product OpenIslandHooks
+swift build --disable-automatic-resolution -c release "${arch_flags[@]}" --product OpenIslandSetup
 
-build_bin_dir="$(swift build -c release "${arch_flags[@]}" --show-bin-path)"
+build_bin_dir="$(swift build --disable-automatic-resolution -c release "${arch_flags[@]}" --show-bin-path)"
 app_binary="$build_bin_dir/OpenIslandApp"
 hooks_binary="$build_bin_dir/OpenIslandHooks"
 setup_binary="$build_bin_dir/OpenIslandSetup"
