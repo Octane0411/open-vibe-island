@@ -12,6 +12,8 @@ final class ProcessMonitoringCoordinator {
 
     @ObservationIgnored
     var syntheticClaudeSessionPrefix = ""
+    @ObservationIgnored
+    var sharedCodexSessionIDs: Set<String> = []
 
     @ObservationIgnored
     var stateAccessor: (() -> SessionState)?
@@ -209,20 +211,12 @@ final class ProcessMonitoringCoordinator {
         preResolvedJumpTargets: [String: JumpTarget]? = nil,
         observedCodexAppRunning: Bool? = nil
     ) {
-        let discoveredProcesses = activeProcesses ?? activeAgentProcessDiscovery.discover()
+        let activeProcesses = activeProcesses ?? activeAgentProcessDiscovery.discover()
 
         // Work on a local copy to avoid triggering didSet (and its queue.sync +
         // view invalidation) on every intermediate mutation.
         let originalState = state
         var local = originalState
-        let codexResult = CodexProcessSessionReconciler.reconcile(
-            sessions: local.sessions,
-            processes: discoveredProcesses
-        )
-        let activeProcesses = codexResult.processes
-        if codexResult.sessions != local.sessions {
-            local = SessionState(sessions: codexResult.sessions)
-        }
 
         let sanitizedSessions = sanitizeCrossToolGhosttyJumpTargets(in: local.sessions)
         if sanitizedSessions != local.sessions {
@@ -414,12 +408,8 @@ final class ProcessMonitoringCoordinator {
         isCodexAppRunning: Bool,
         sessions: [AgentSession]? = nil
     ) -> Set<String> {
-        var aliveIDs: Set<String> = []
+        var aliveIDs = sharedCodexSessionIDs
         let sessions = sessions ?? state.sessions
-        let activeProcesses = CodexProcessSessionReconciler.resolvedProcesses(
-            sessions: sessions,
-            processes: activeProcesses
-        )
 
         // Codex CLI sessions: match by session ID directly.
         let codexProcessIDs = Set(

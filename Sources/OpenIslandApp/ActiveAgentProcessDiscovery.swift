@@ -19,6 +19,7 @@ struct ActiveAgentProcessDiscovery {
         var tmuxTarget: String?
         var tmuxSocketPath: String?
         var processID: String?
+        var executablePath: String?
 
         init(
             tool: AgentTool,
@@ -29,7 +30,8 @@ struct ActiveAgentProcessDiscovery {
             transcriptPath: String? = nil,
             tmuxTarget: String? = nil,
             tmuxSocketPath: String? = nil,
-            processID: String? = nil
+            processID: String? = nil,
+            executablePath: String? = nil
         ) {
             self.tool = tool
             self.sessionID = sessionID
@@ -40,6 +42,7 @@ struct ActiveAgentProcessDiscovery {
             self.tmuxTarget = tmuxTarget
             self.tmuxSocketPath = tmuxSocketPath
             self.processID = processID
+            self.executablePath = executablePath
         }
     }
 
@@ -346,7 +349,8 @@ struct ActiveAgentProcessDiscovery {
             workingDirectory: lsofOutput.flatMap(workingDirectory(from:)),
             terminalTTY: process.terminalTTY,
             terminalApp: terminalApp(for: process, processesByPID: processesByPID),
-            processID: process.pid
+            processID: process.pid,
+            executablePath: process.command.split(separator: " ").first.map(String.init)
         )
 
         // If terminalApp is nil and we have a TTY, try to resolve tmux info

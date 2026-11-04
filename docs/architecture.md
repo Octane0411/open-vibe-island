@@ -44,14 +44,15 @@ OpenCode → JS plugin (~/.config/opencode/plugins/) → Unix socket → BridgeS
 3. Reconcile with active terminal processes
 4. Start live bridge
 
-Codex terminal process discovery does not require an open rollout descriptor.
-When the runtime closes JSONL files between writes or uses SQLite-backed history,
-the monitor keeps a process-only session keyed by PID and its terminal TTY. A
-unique hook session on the same TTY replaces that placeholder; conversation IDs
-recovered from open transcripts take priority. Working directory alone never
-links a Codex process to a conversation, so terminals sharing a project stay
-separate. Process-only rows disappear when the process exits and do not imply
-that the agent is currently running a turn.
+Codex shared CLI runtimes are observed through their existing local daemon's
+read-only `thread/loaded/list` and `thread/read` APIs. `codex app-server proxy`
+provides the raw local socket transport, with WebSocket framing handled by the
+client. The observer never resumes a conversation, starts a turn, or answers an
+approval. Real conversation IDs and runtime status drive visibility and phase;
+terminal processes alone do not create rows. Active root conversations remain
+visible, completed conversations expire after five minutes, and ephemeral or
+background subagent threads are excluded. Older standalone runtimes retain their
+existing transcript and hook discovery paths.
 Terminal monitoring starts independently of the background transcript scan;
 restored history merges into live state so a slow scan cannot hide or overwrite
 terminals discovered during startup.

@@ -111,7 +111,8 @@ struct ActiveAgentProcessDiscoveryTests {
             workingDirectory: "/tmp/open-island",
             terminalTTY: "/dev/ttys001",
             terminalApp: "Ghostty",
-            processID: "202"
+            processID: "202",
+            executablePath: "/Users/test/.nvm/versions/node/v22/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/codex/codex"
         )))
     }
 
@@ -187,7 +188,8 @@ struct ActiveAgentProcessDiscoveryTests {
                 workingDirectory: "/tmp/open-island",
                 terminalTTY: "/dev/ttys001",
                 terminalApp: "Ghostty",
-                processID: "202"
+                processID: "202",
+                executablePath: "/opt/homebrew/bin/codex"
             ),
         ])
     }

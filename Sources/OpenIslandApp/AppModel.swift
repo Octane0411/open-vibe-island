@@ -70,6 +70,8 @@ final class AppModel {
     let discovery = SessionDiscoveryCoordinator()
     let monitoring = ProcessMonitoringCoordinator()
     let codexAppServer = CodexAppServerCoordinator()
+    private let sharedCodex = CodexSharedSessionCoordinator()
+    private var sharedCodexLastActiveAt: [String: Date] = [:]
     let updateChecker = UpdateChecker()
 
     var notchStatus: NotchStatus {
@@ -755,6 +757,9 @@ final class AppModel {
         monitoring.onCodexAppMaintenanceTick = { [weak self] in
             self?.discovery.maintainCodexAppSessionsIfNeeded()
         }
+        sharedCodex.onThreads = { [weak self] threads in
+            self?.applySharedCodexThreads(threads)
+        }
         refreshOverlayDisplayConfiguration()
         hasFinishedInit = true
     }
@@ -1130,6 +1135,7 @@ final class AppModel {
             // Terminal presence does not depend on replaying transcript history.
             // Large rollouts can take minutes to scan on a cold launch.
             monitoring.startMonitoringIfNeeded()
+            sharedCodex.startIfNeeded()
 
             Task.detached(priority: .userInitiated) { [weak self] in
                 guard let self else { return }
@@ -1689,6 +1695,56 @@ final class AppModel {
             self.selectedSessionID = surfacedSessions.first?.id ?? state.sessions.first?.id
             return
         }
+    }
+
+    func applySharedCodexThreads(_ threads: [CodexThread], now: Date = .now) {
+        for thread in threads where thread.status.type == .active {
+            sharedCodexLastActiveAt[thread.id] = now
+        }
+        let visible = threads.filter {
+            CodexLiveSessionPolicy.shouldShow($0, now: now, lastActiveAt: sharedCodexLastActiveAt[$0.id])
+        }
+        let ids = Set(visible.map(\.id))
+        let retired = monitoring.sharedCodexSessionIDs.subtracting(ids)
+        monitoring.sharedCodexSessionIDs = ids
+        var sessions = state.sessions.filter { !retired.contains($0.id) }
+        for thread in visible {
+            let workspace = WorkspaceNameResolver.workspaceName(for: thread.cwd)
+            let phase = CodexLiveSessionPolicy.phase(for: thread.status)
+            let existingIndex = sessions.firstIndex { $0.id == thread.id }
+            var session = existingIndex.map { sessions[$0] } ?? AgentSession(
+                id: thread.id, title: thread.name ?? "Codex · \(workspace)", tool: .codex,
+                origin: .live, attachmentState: .attached, phase: phase,
+                summary: String(thread.preview.prefix(240)), updatedAt: now,
+                jumpTarget: JumpTarget(
+                    terminalApp: "Unknown", workspaceName: workspace, paneTitle: "Codex",
+                    workingDirectory: thread.cwd
+                ),
+                codexMetadata: CodexSessionMetadata(
+                    transcriptPath: thread.path, initialUserPrompt: thread.preview
+                )
+            )
+            if session.phase != phase { session.updatedAt = now }
+            session.phase = phase
+            session.isProcessAlive = true
+            session.isSessionEnded = false
+            session.attachmentState = .attached
+            switch phase {
+            case .running: session.summary = session.codexMetadata?.currentTool ?? "Codex is working…"
+            case .waitingForApproval: session.summary = "Codex is waiting for approval."
+            case .waitingForAnswer: session.summary = "Codex is waiting for input."
+            case .completed:
+                session.summary = session.codexMetadata?.lastAssistantMessage ?? "Turn completed."
+            }
+            if phase != .waitingForApproval { session.permissionRequest = nil }
+            if phase != .waitingForAnswer { session.questionPrompt = nil }
+            if let existingIndex { sessions[existingIndex] = session }
+            else { sessions.append(session) }
+        }
+        sharedCodexLastActiveAt = sharedCodexLastActiveAt.filter {
+            now.timeIntervalSince($0.value) <= 300 || ids.contains($0.key)
+        }
+        state = SessionState(sessions: sessions)
     }
 
     /// Applies startup discovery results on the main thread after background I/O completes.

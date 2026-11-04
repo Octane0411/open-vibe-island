@@ -48,10 +48,16 @@ public enum CodexThreadSource: String, Codable, Sendable {
     case appServer = "app-server"
     case codexExec = "codex-exec"
     case unknown
+    case subagent
 
     public init(from decoder: Decoder) throws {
-        let value = try decoder.singleValueContainer().decode(String.self)
-        self = CodexThreadSource(rawValue: value) ?? .unknown
+        let container = try decoder.singleValueContainer()
+        if let value = try? container.decode(String.self) {
+            self = CodexThreadSource(rawValue: value) ?? .unknown
+        } else {
+            // Shared runtimes encode subagents as a structured source object.
+            self = .subagent
+        }
     }
 }
 
@@ -86,6 +92,8 @@ public enum CodexAppServerNotification: Sendable {
 /// (one JSON object per line, no Content-Length framing).
 public final class CodexAppServerClient: @unchecked Sendable {
     private let codexPath: String
+    private let usesSharedDaemon: Bool
+    private var localWebSocket = CodexLocalWebSocket()
     private var process: Process?
     private var stdoutReadHandle: FileHandle?
     private var stderrReadHandle: FileHandle?
@@ -109,8 +117,10 @@ public final class CodexAppServerClient: @unchecked Sendable {
 
     public var onNotification: (@Sendable (CodexAppServerNotification) -> Void)?
 
-    public init(codexPath: String = "/Applications/Codex.app/Contents/Resources/codex") {
+    public init(codexPath: String = "/Applications/Codex.app/Contents/Resources/codex", usesSharedDaemon: Bool = false) {
         self.codexPath = codexPath
+        self.usesSharedDaemon = usesSharedDaemon
+        if usesSharedDaemon { requestTimeoutSeconds = 5 }
     }
 
     /// Resolve the CLI inside the installed desktop bundle, including the
@@ -137,7 +147,7 @@ public final class CodexAppServerClient: @unchecked Sendable {
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: codexPath)
-        proc.arguments = ["app-server", "--listen", "stdio://"]
+        proc.arguments = usesSharedDaemon ? ["app-server", "proxy"] : ["app-server", "--listen", "stdio://"]
 
         let stdinPipe = Pipe()
         let stdoutPipe = Pipe()
@@ -155,6 +165,7 @@ public final class CodexAppServerClient: @unchecked Sendable {
         )
 
         try proc.run()
+        if usesSharedDaemon { self.stdin?.write(localWebSocket.upgradeRequest) }
 
         // Send initialize request.
         struct InitializeParams: Encodable {
@@ -168,6 +179,8 @@ public final class CodexAppServerClient: @unchecked Sendable {
             method: "initialize",
             params: InitializeParams(clientInfo: .init(name: "OpenIsland", version: "1.0.0"))
         )
+        let initialized = Data("{\"method\":\"initialized\"}\n".utf8)
+        self.stdin?.write(usesSharedDaemon ? CodexLocalWebSocket.encode(initialized) : initialized)
     }
 
     func configureOutputHandlers(stdout: FileHandle, stderr: FileHandle) {
@@ -333,7 +346,7 @@ public final class CodexAppServerClient: @unchecked Sendable {
             lock.lock()
             pendingRequests[requestID] = continuation
             lock.unlock()
-            stdin.write(line)
+            stdin.write(usesSharedDaemon ? CodexLocalWebSocket.encode(line) : line)
         }
     }
 
@@ -359,6 +372,22 @@ public final class CodexAppServerClient: @unchecked Sendable {
     static let maxLineByteCount = 8 * 1_024 * 1_024
 
     func handleIncomingData(_ data: Data) {
+        if usesSharedDaemon {
+            do {
+                for frame in try localWebSocket.receive(data) {
+                    switch frame {
+                    case let .text(payload): handleJSONData(payload + Data([10]))
+                    case let .ping(payload): stdin?.write(CodexLocalWebSocket.encode(payload, opcode: 10))
+                    case .closed: stop()
+                    }
+                }
+            } catch { stop() }
+        } else {
+            handleJSONData(data)
+        }
+    }
+
+    private func handleJSONData(_ data: Data) {
         readBuffer.append(data)
 
         while let newlineIndex = readBuffer.firstIndex(of: UInt8(ascii: "\n")) {
