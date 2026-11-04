@@ -3,7 +3,7 @@ import Foundation
 
 public struct DSHPluginInstallerManifest: Equatable, Codable, Sendable {
     public static let fileName = "open-island-dsh-plugin-install.json"
-    public static let currentVersion = 2
+    public static let currentVersion = 3
 
     public var version: Int
     public var pluginPath: String
@@ -84,7 +84,7 @@ public final class DSHPluginInstallationManager: @unchecked Sendable {
     private static func managedFileNames(for version: Int) -> Set<String> {
         switch version {
         case 1: [pluginFileName, "package.json", "cordis.patch.yml"]
-        case 2: [pluginFileName, clientFileName, "package.json", "cordis.patch.yml"]
+        case 2, 3: [pluginFileName, clientFileName, "package.json", "cordis.patch.yml"]
         default: []
         }
     }

@@ -268,6 +268,30 @@ struct DSHPluginInstallationManagerTests {
         if kind == "bundle" { #expect(try Data(contentsOf: manager.pluginFileURL) == source) }
     }
 
+    @Test(arguments: [true, false])
+    func jumpOnlyV2InstallationCanUpgradeOrUninstallSafely(upgrade: Bool) throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try writeConfig(["private": true, "unrelated": ["enabled": true]], to: directory)
+        let manager = DSHPluginInstallationManager(dshProfileDirectory: directory)
+        var old = try #require(manager.install(pluginSourceData: source, clientSourceData: clientSource).manifest)
+        old.version = 2
+        try JSONEncoder().encode(old).write(to: manager.manifestURL)
+        #expect(try manager.status().isInstalled)
+        #expect(try !manager.status().isCurrent)
+        if upgrade {
+            let before = try Data(contentsOf: manager.configURL)
+            let replacement = Data("export function apply(ctx) { return ctx }\n".utf8)
+            #expect(try manager.install(pluginSourceData: replacement, clientSourceData: clientSource).isCurrent)
+            #expect(try Data(contentsOf: manager.pluginFileURL) == replacement)
+            #expect(try Data(contentsOf: manager.configURL) == before)
+        } else {
+            #expect(try !manager.uninstall().isInstalled)
+            #expect(!FileManager.default.fileExists(atPath: manager.clientFileURL.path))
+            #expect(try config(at: directory)["unrelated"] as? NSDictionary == ["enabled": true] as NSDictionary)
+        }
+    }
+
     @Test(arguments: [0, DSHPluginInstallerManifest.currentVersion + 1])
     func unsupportedManifestVersionsCannotClaimOwnership(version: Int) throws {
         let directory = try temporaryDirectory()
