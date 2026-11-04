@@ -275,7 +275,26 @@ struct TerminalJumpService {
             // Use the full terminal-specific jump (AppleScript for Ghostty/iTerm,
             // CLI for WezTerm, etc.) to focus the correct window/tab.
             if let descriptor {
-                switch descriptor.bundleIdentifier {
+                let normalizedPreferredName = normalizeTerminalAppName(target.terminalApp)
+                let preferredBundleIdentifier = preferredBundleIdentifierForAlias(
+                    for: descriptor,
+                    normalizedPreferredName: normalizedPreferredName
+                )
+                let resolvedBundleIdentifier = resolveBundleIdentifier(
+                    for: descriptor,
+                    preferredBundleIdentifier: preferredBundleIdentifier
+                )
+
+                // Never activate a stopped app from this branch: `open -b`
+                // would launch it as a side effect of focusing a pane.
+                // Report the tmux-side result instead.
+                guard appRunningChecker(resolvedBundleIdentifier) else {
+                    return paneSelected
+                        ? "Focused the matching tmux pane."
+                        : "\(descriptor.displayName) is not running. tmux pane targeting failed."
+                }
+
+                switch resolvedBundleIdentifier {
                 case "com.mitchellh.ghostty":
                     if try jumpToGhosttyTerminal(target) {
                         return "Focused the matching tmux pane in Ghostty."
@@ -288,12 +307,23 @@ struct TerminalJumpService {
                     if try jumpToTerminalTab(target) {
                         return "Focused the matching tmux pane in Terminal."
                     }
+                case let id where Self.vscodeFamilyBundleIDs.contains(id):
+                    // VS Code's integrated terminal runs inside tmux. After
+                    // focusing the pane via select-window/select-pane, just
+                    // activate the app to bring its window to front. Don't
+                    // use `code -r` here: it can reload the VS Code window and
+                    // trigger "Do you want to terminate the active terminal
+                    // session?" prompts when the workspace is already open.
+                    try openAction(["-b", id])
+                    return paneSelected
+                        ? "Focused the matching tmux pane in \(descriptor.displayName)."
+                        : "Activated \(descriptor.displayName). tmux pane targeting failed."
                 default:
                     break
                 }
 
                 // Fallback: at least activate the app
-                try openAction(["-b", descriptor.bundleIdentifier])
+                try openAction(["-b", resolvedBundleIdentifier])
                 return paneSelected
                     ? "Focused the matching tmux pane and activated \(descriptor.displayName)."
                     : "Activated \(descriptor.displayName). tmux pane targeting failed."
@@ -443,9 +473,14 @@ struct TerminalJumpService {
     }
 
     private func jumpToITermSession(_ target: JumpTarget) throws -> Bool {
+        // Never spawn osascript for a stopped app: entering the tell block is
+        // what launches iTerm, and the in-block `is running` check runs too
+        // late to prevent that.
+        guard appRunningChecker("com.googlecode.iterm2") else { return false }
+
         let script = """
+        if not (application "iTerm" is running) then return ""
         tell application "iTerm"
-            if not (it is running) then return ""
             activate
             repeat with aWindow in windows
                 repeat with aTab in tabs of aWindow
@@ -603,9 +638,8 @@ struct TerminalJumpService {
         }
 
         // tmuxTarget is "session:window.pane" (e.g. "oss-contributions:3.0")
-        // When running from a macOS GUI app (outside tmux), there is no
-        // "current client" — $TMUX is not set. We must explicitly find the
-        // client TTY and pass it via -c to switch-client.
+        // The GUI app runs outside tmux, but select-window/select-pane
+        // address the session directly, so no client context is needed.
 
         func socketArgs() -> [String] {
             if let socketPath = target.tmuxSocketPath, !socketPath.isEmpty {
@@ -614,7 +648,7 @@ struct TerminalJumpService {
             return []
         }
 
-        // Extract "session:window" and "session" from "session:window.pane"
+        // Extract "session:window" from "session:window.pane"
         let sessionWindow: String
         if let dotIndex = tmuxTarget.lastIndex(of: ".") {
             sessionWindow = String(tmuxTarget[tmuxTarget.startIndex..<dotIndex])
@@ -622,38 +656,17 @@ struct TerminalJumpService {
             sessionWindow = tmuxTarget
         }
 
-        let sessionName: String
-        if let colonIndex = tmuxTarget.firstIndex(of: ":") {
-            sessionName = String(tmuxTarget[tmuxTarget.startIndex..<colonIndex])
-        } else {
-            sessionName = tmuxTarget
-        }
-
-        // Find the client TTY (and the session it is already attached to) so we
-        // can explicitly target it with switch-client.
-        let clientLine = runTmuxCommand(tmuxPath: tmuxPath, socketArgs: socketArgs(),
-                                        args: ["list-clients", "-F", "#{client_tty}\t#{client_session}"])?
-            .components(separatedBy: "\n").first { !$0.isEmpty }
-        let clientFields = clientLine?.components(separatedBy: "\t") ?? []
-        let clientTTY = clientFields.first.flatMap { $0.isEmpty ? nil : $0 }
-        let clientSession = clientFields.count > 1 ? clientFields[1] : nil
-
-        // Step 1: switch-client — point the client at the target session.
-        // Skip it when the client is already attached to that session: a
-        // redundant switch-client makes terminals that mirror tmux state
-        // (e.g. iTerm2's tmux integration, `tmux -CC`) re-attach and rebuild
-        // every native window, which loses window placement/fullscreen.
-        // select-window / select-pane below are enough in that case.
-        if let clientTTY = clientTTY, clientSession != sessionName {
-            _ = runTmuxCommand(tmuxPath: tmuxPath, socketArgs: socketArgs(),
-                               args: ["switch-client", "-c", clientTTY, "-t", sessionName])
-        }
-
-        // Step 2: select-window — switch to the correct window.
+        // select-window/select-pane mutate the target session's global state,
+        // so every client attached to that session (the one running this
+        // agent, plus any others) follows to the focused pane. Never use
+        // switch-client here: with multiple attached clients it would yank
+        // an arbitrary client off its own session, and with terminals that
+        // mirror tmux state (iTerm2 `tmux -CC`) any switch-client — even a
+        // redundant one to the current session — re-attaches and rebuilds
+        // every native window.
         _ = runTmuxCommand(tmuxPath: tmuxPath, socketArgs: socketArgs(),
                            args: ["select-window", "-t", sessionWindow])
 
-        // Step 3: select-pane — focus the exact pane.
         let spResult = runTmuxCommand(tmuxPath: tmuxPath, socketArgs: socketArgs(),
                                       args: ["select-pane", "-t", tmuxTarget])
 
@@ -827,7 +840,9 @@ struct TerminalJumpService {
     }
 
     private func jumpToGhosttyTerminal(_ target: JumpTarget) throws -> Bool {
-        try runAppleScript(ghosttyJumpScript(for: target)) == "matched"
+        guard appRunningChecker("com.mitchellh.ghostty") else { return false }
+
+        return try runAppleScript(ghosttyJumpScript(for: target)) == "matched"
     }
 
     func ghosttyJumpScript(for target: JumpTarget) -> String {
@@ -836,8 +851,8 @@ struct TerminalJumpService {
         let paneTitle = escapeAppleScript(target.paneTitle)
 
         return """
+        if not (application "Ghostty" is running) then return ""
         tell application "Ghostty"
-            if not (it is running) then return ""
             activate
 
             set targetWindow to missing value
@@ -956,9 +971,11 @@ struct TerminalJumpService {
     }
 
     private func jumpToTerminalTab(_ target: JumpTarget) throws -> Bool {
+        guard appRunningChecker("com.apple.Terminal") else { return false }
+
         let script = """
+        if not (application "Terminal" is running) then return ""
         tell application "Terminal"
-            if not (it is running) then return ""
             activate
             repeat with aWindow in windows
                 repeat with aTab in tabs of aWindow
@@ -1209,32 +1226,21 @@ struct TerminalJumpService {
     private func resolveTerminalApp(preferredName: String) -> TerminalAppDescriptor? {
         let normalized = normalizeTerminalAppName(preferredName)
 
-        // "Unknown" is the hook-side sentinel meaning "we could not classify this
-        // terminal". Returning nil here lets jump() fall through to the Finder
-        // cwd fallback instead of silently activating the first installed
-        // known terminal — the historical behavior that caused Warp sessions to
-        // open Terminal.app (or worse, iTerm) windows.
-        if normalized == "unknown" {
-            return nil
-        }
-
-        if let exact = Self.knownApps.first(where: { descriptor in
+        // Only an exact display-name or alias match resolves an app. Falling
+        // back to "the first installed known terminal" resolved iTerm — the
+        // first entry in `knownApps` — for every unclassified terminal name,
+        // including the hook-side "unknown" sentinel, and activated it for
+        // sessions hosted elsewhere. Returning nil lets jump() focus the tmux
+        // pane, fall back to the Finder cwd, or activate the reported app.
+        return Self.knownApps.first { descriptor in
             descriptor.displayName.lowercased() == normalized || descriptor.aliases.contains(normalized)
-        }) {
-            return exact
         }
-
-        return Self.knownApps.first(where: isInstalled(descriptor:))
     }
 
     private func normalizeTerminalAppName(_ preferredName: String) -> String {
         preferredName
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-    }
-
-    private func isInstalled(descriptor: TerminalAppDescriptor) -> Bool {
-        descriptor.allBundleIdentifiers.contains { applicationResolver($0) != nil }
     }
 
     private func preferredBundleIdentifierForAlias(
