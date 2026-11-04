@@ -98,6 +98,8 @@ public struct PiSessionMetadata: Equatable, Codable, Sendable {
     public var currentToolInputPreview: String?
     public var model: String?
     public var transcriptPath: String?
+    public var isSubagent: Bool?
+    public var parentSessionID: String?
 
     public init(
         initialUserPrompt: String? = nil,
@@ -106,7 +108,9 @@ public struct PiSessionMetadata: Equatable, Codable, Sendable {
         currentTool: String? = nil,
         currentToolInputPreview: String? = nil,
         model: String? = nil,
-        transcriptPath: String? = nil
+        transcriptPath: String? = nil,
+        isSubagent: Bool? = nil,
+        parentSessionID: String? = nil
     ) {
         self.initialUserPrompt = initialUserPrompt
         self.lastUserPrompt = lastUserPrompt
@@ -115,6 +119,8 @@ public struct PiSessionMetadata: Equatable, Codable, Sendable {
         self.currentToolInputPreview = currentToolInputPreview
         self.model = model
         self.transcriptPath = transcriptPath
+        self.isSubagent = isSubagent
+        self.parentSessionID = parentSessionID
     }
 
     public var isEmpty: Bool {
@@ -125,6 +131,8 @@ public struct PiSessionMetadata: Equatable, Codable, Sendable {
             && currentToolInputPreview == nil
             && model == nil
             && transcriptPath == nil
+            && isSubagent == nil
+            && parentSessionID == nil
     }
 
     /// Field-level merge shared by the live bridge path and registry restore.
@@ -148,7 +156,9 @@ public struct PiSessionMetadata: Equatable, Codable, Sendable {
                 ? nil
                 : (update.currentToolInputPreview ?? existing?.currentToolInputPreview),
             model: update.model ?? existing?.model,
-            transcriptPath: update.transcriptPath ?? existing?.transcriptPath
+            transcriptPath: update.transcriptPath ?? existing?.transcriptPath,
+            isSubagent: existing?.isSubagent == true ? true : (update.isSubagent ?? existing?.isSubagent),
+            parentSessionID: update.parentSessionID ?? existing?.parentSessionID
         )
     }
 }

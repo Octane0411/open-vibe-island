@@ -2,9 +2,19 @@ import Foundation
 
 public struct SessionState: Equatable, Sendable {
     public private(set) var sessionsByID: [String: AgentSession]
+    public private(set) var excludedDSHSessionIDs: Set<String>
 
     public init(sessions: [AgentSession] = []) {
-        self.sessionsByID = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
+        let excluded = Set(sessions.filter { $0.tool == .dsh && $0.piMetadata?.isSubagent == true }.map(\.id))
+        self.excludedDSHSessionIDs = excluded
+        self.sessionsByID = Dictionary(uniqueKeysWithValues: sessions.filter { !excluded.contains($0.id) }.map { ($0.id, $0) })
+    }
+
+    public mutating func retainDSHExclusions(from previous: SessionState) {
+        excludedDSHSessionIDs.formUnion(previous.excludedDSHSessionIDs)
+        for id in excludedDSHSessionIDs where sessionsByID[id]?.tool == .dsh {
+            sessionsByID.removeValue(forKey: id)
+        }
     }
 
     public var sessions: [AgentSession] {
@@ -56,6 +66,11 @@ public struct SessionState: Equatable, Sendable {
     public mutating func apply(_ event: AgentEvent) {
         switch event {
         case let .sessionStarted(payload):
+            if payload.tool == .dsh && (payload.piMetadata?.isSubagent == true || excludedDSHSessionIDs.contains(payload.sessionID)) {
+                excludedDSHSessionIDs.insert(payload.sessionID)
+                sessionsByID.removeValue(forKey: payload.sessionID)
+                return
+            }
             let preservedFirstSeenAt = sessionsByID[payload.sessionID]?.firstSeenAt
             var session = AgentSession(
                 id: payload.sessionID,
@@ -225,7 +240,14 @@ public struct SessionState: Equatable, Sendable {
             upsert(session)
 
         case let .piSessionMetadataUpdated(payload):
+            if payload.piMetadata.isSubagent == true {
+                excludedDSHSessionIDs.insert(payload.sessionID)
+            }
             guard var session = sessionsByID[payload.sessionID] else {
+                return
+            }
+            if session.tool == .dsh && payload.piMetadata.isSubagent == true {
+                sessionsByID.removeValue(forKey: payload.sessionID)
                 return
             }
 
@@ -234,7 +256,8 @@ public struct SessionState: Equatable, Sendable {
             upsert(session)
 
         case let .sessionHeartbeat(payload) where sessionsByID[payload.sessionID] == nil:
-            guard let recoverySession = payload.recoverySession else {
+            guard let recoverySession = payload.recoverySession,
+                  !(recoverySession.tool == .dsh && (recoverySession.piMetadata?.isSubagent == true || excludedDSHSessionIDs.contains(payload.sessionID))) else {
                 return
             }
             apply(.sessionStarted(recoverySession))
@@ -245,6 +268,18 @@ public struct SessionState: Equatable, Sendable {
                   session.tool.usesHeartbeatLiveness,
                   !session.isSessionEnded else {
                 return
+            }
+
+            if session.tool == .dsh, let metadata = payload.recoverySession?.piMetadata,
+               let isSubagent = metadata.isSubagent {
+                if isSubagent {
+                    excludedDSHSessionIDs.insert(payload.sessionID)
+                    sessionsByID.removeValue(forKey: payload.sessionID)
+                    return
+                }
+                session.piMetadata = PiSessionMetadata.merged(existing: session.piMetadata, update: PiSessionMetadata(
+                    isSubagent: false, parentSessionID: metadata.parentSessionID
+                ))
             }
 
             // The DSH relay starts asynchronously after session observation.

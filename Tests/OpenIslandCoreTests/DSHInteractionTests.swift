@@ -56,6 +56,48 @@ struct DSHInteractionTests {
     }
 
     @Test
+    func unconfirmedCachedRowsCannotAdmitPrivateInteractions() async throws {
+        let peer = try InteractionPeer()
+        defer { peer.stop() }
+        let socket = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socket)
+        try server.start()
+        defer { server.stop() }
+        let observer = LocalBridgeClient(socketURL: socket)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+        let timeout = Task {
+            try? await Task.sleep(for: .seconds(5))
+            if !Task.isCancelled { observer.disconnect() }
+        }
+        defer { timeout.cancel() }
+        try await observer.send(.registerClient(role: .observer))
+        var iterator = stream.makeAsyncIterator()
+        let commands = BridgeCommandClient(socketURL: socket)
+        _ = try commands.send(.processDSHHook(peer.hook(.sessionStart, sessionID: "anchor")))
+        _ = try #require(try await iterator.next())
+        try peer.waitForSubscription()
+        let cached = AgentSession(id: "unconfirmed", title: "DSH", tool: .dsh, origin: .live, phase: .running, summary: "Old cache", updatedAt: .now, jumpTarget: peer.hook(.heartbeat, sessionID: "unconfirmed").defaultJumpTarget)
+        server.updateStateSnapshot(SessionState(sessions: [cached]))
+        let request = DSHInteraction(requestID: UUID().uuidString.lowercased(), kind: .question, status: .pending, questions: [DSHInteractionQuestion(id: "one", question: "Synthetic?", options: [DSHInteractionOption(label: "A")])])
+        try peer.publish(sessionID: cached.id, interaction: request)
+        _ = try commands.send(.processDSHHook(peer.hook(.sessionStart, sessionID: "barrier")))
+        guard case let .sessionStarted(barrier) = try #require(try await iterator.next()) else {
+            Issue.record("An unconfirmed cached session admitted an actionable event")
+            return
+        }
+        #expect(barrier.sessionID == "barrier")
+        _ = try commands.send(.processDSHHook(peer.hook(.sessionStart, sessionID: cached.id)))
+        guard case let .sessionStarted(root) = try #require(try await iterator.next()),
+              case let .questionAsked(question) = try #require(try await iterator.next()) else {
+            Issue.record("A proven root did not recover its buffered request")
+            return
+        }
+        #expect(root.piMetadata?.isSubagent == false)
+        #expect(question.prompt.id == request.presentationID)
+    }
+
+    @Test
     func registrationRacesAndTerminalLifecycleReleaseOwnership() async throws {
         let peer = try InteractionPeer()
         defer { peer.stop() }
@@ -132,7 +174,7 @@ struct DSHInteractionTests {
         _ = try commands.send(.processDSHHook(DSHHookPayload(hookEventName: .sessionStart, sessionID: "results", cwd: "/tmp/project")))
         _ = try #require(try await iterator.next())
         let wire = Data("""
-        {"hook_event_name":"PostToolUse","session_id":"results","cwd":"/tmp/project","turn_id":3,
+        {"hook_event_name":"PostToolUse","session_id":"results","cwd":"/tmp/project","turn_id":3,"is_subagent":false,
         "interaction_result":{"kind":"plan","outcome":"declined","call_id":"plan-call"}}
         """.utf8)
         let result = try JSONDecoder().decode(DSHHookPayload.self, from: wire)

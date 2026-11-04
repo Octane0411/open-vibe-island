@@ -22,7 +22,7 @@ struct DSHIntegrationTests {
 
         // Decode the actual dependency-free plugin envelope, without a Pi agent field.
         let wire = Data("""
-        {"type":"command","command":{"type":"processDshHook","dshHook":{"hook_event_name":"SessionStart","session_id":"dsh-one","cwd":"/tmp/project","model":"deepseek"}}}
+        {"type":"command","command":{"type":"processDshHook","dshHook":{"hook_event_name":"SessionStart","session_id":"dsh-one","cwd":"/tmp/project","model":"deepseek","is_subagent":false}}}
         """.utf8)
         let envelope = try JSONDecoder().decode(BridgeEnvelope.self, from: wire)
         guard case let .command(command) = envelope else { Issue.record("Expected command")

@@ -197,8 +197,10 @@ public final class BridgeServer: @unchecked Sendable {
     /// can read session data without maintaining its own copy.
     public func updateStateSnapshot(_ snapshot: SessionState) {
         queue.async { [self] in
-            stateSnapshot = snapshot
-            localState = snapshot
+            var filtered = snapshot
+            filtered.retainDSHExclusions(from: localState)
+            stateSnapshot = filtered
+            localState = filtered
         }
     }
 
@@ -514,6 +516,22 @@ public final class BridgeServer: @unchecked Sendable {
         case let .processPiHook(payload):
             handleRuntimeHook(payload, from: clientID)
         case let .processDSHHook(payload):
+            if payload.isSubagent == true {
+                clearDSHInteractions(sessionID: payload.sessionID, emitResolution: false)
+                // A classification tombstone removes legacy persisted rows without
+                // creating a completion card, sound, or notification.
+                emit(.piSessionMetadataUpdated(PiSessionMetadataUpdated(
+                    sessionID: payload.sessionID,
+                    piMetadata: PiSessionMetadata(isSubagent: true, parentSessionID: payload.parentSessionID),
+                    timestamp: localState.session(id: payload.sessionID)?.updatedAt ?? .now
+                )))
+                send(.response(.acknowledged), to: clientID)
+                return
+            }
+            guard payload.isSubagent == false, !localState.excludedDSHSessionIDs.contains(payload.sessionID) else {
+                send(.response(.acknowledged), to: clientID)
+                return
+            }
             if payload.hookEventName == .stop, !shouldCompleteDSHTurn(payload) {
                 // Independent sockets can deliver a prior turn's Stop after a
                 // newer pending card. Its completion metadata is stale as well.
@@ -1374,11 +1392,15 @@ public final class BridgeServer: @unchecked Sendable {
             }
             return
         }
+        if localState.excludedDSHSessionIDs.contains(sessionID) || localState.session(id: sessionID)?.piMetadata?.isSubagent == true {
+            delegateDSHInteraction(sessionID: sessionID, request: request, subscription: subscription)
+            return
+        }
         guard request.questionPrompt != nil || request.permissionRequest != nil else {
             delegateDSHInteraction(sessionID: sessionID, request: request, subscription: subscription)
             return
         }
-        guard let session = localState.session(id: sessionID), session.tool == .dsh,
+        guard let session = localState.session(id: sessionID), session.tool == .dsh, session.piMetadata?.isSubagent == false,
               !session.isSessionEnded,
               session.jumpTarget?.dshWeb?.focusSocketPath == subscription.socketPath else {
             guard bufferedDSHInteractions[id] == nil else { return }
@@ -1427,13 +1449,13 @@ public final class BridgeServer: @unchecked Sendable {
         )))
     }
 
-    private func clearDSHInteractions(sessionID: String, includingBuffered: Bool = true) {
+    private func clearDSHInteractions(sessionID: String, includingBuffered: Bool = true, emitResolution: Bool = true) {
         if let pending = pendingDSHInteractions.removeValue(forKey: sessionID) {
             pendingDSHOrder.removeValue(forKey: sessionID)
             for item in pending.values {
                 delegateDSHInteraction(sessionID: sessionID, request: item.request, subscription: item.subscription)
             }
-            emitDSHResolution(sessionID: sessionID)
+            if emitResolution { emitDSHResolution(sessionID: sessionID) }
         }
         guard includingBuffered else { return }
         let buffered = bufferedDSHInteractions.filter { $0.value.sessionID == sessionID }

@@ -94,17 +94,18 @@ struct DSHInteractionRuntimeTests {
     const [pluginPath, socketPath] = process.argv.slice(2)
     const require = createRequire(join(process.env.DSH_PACKAGE_ROOT, 'package.json'))
     const load = name => import(pathToFileURL(require.resolve('@deepseek-ai/' + name)).href)
-    const [{ Context }, { default: SessionStore }, { UserQuestionService }, { ApprovalService }, { PlanModeController }, plugin] = await Promise.all([
-      load('cordis'), load('dsh-session'), load('dsh-user-questions'), load('dsh-user-approval'), load('dsh-plan-mode'), import(pathToFileURL(pluginPath).href),
+    const [{ Context }, { default: SessionStore }, { AgentRegistry }, { UserQuestionService }, { ApprovalService }, { PlanModeController }, plugin] = await Promise.all([
+      load('cordis'), load('dsh-session'), load('dsh-agent'), load('dsh-user-questions'), load('dsh-user-approval'), load('dsh-plan-mode'), import(pathToFileURL(pluginPath).href),
     ])
     const ctx = new Context()
     // The real Web host owns a referenced HTTP server. Keep this disposable
     // host alive while the observer and explicit UI response are in flight.
     const keepAlive = setInterval(() => {}, 1000)
     await ctx.plugin(SessionStore).inertia
+    await ctx.plugin(AgentRegistry).inertia
     const session = ctx.sessions.create('native-roundtrip-session')
-    const agent = { id: 'native-roundtrip-root', session, ctx }
-    ctx.provide('agents', { get: id => id === agent.id ? agent : undefined, roots: () => [agent] })
+    const agent = { id: session.id, session, ctx }
+    await ctx.agents.register(agent)
     ctx.provide('connection', { browserPeer: {}, rpc: { handle: () => () => {} } })
     ctx.provide('webApp', { getAdvertisedUrl: () => 'http://127.0.0.1:3080/' })
     await ctx.plugin(UserQuestionService).inertia

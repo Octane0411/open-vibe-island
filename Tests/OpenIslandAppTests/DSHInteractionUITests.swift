@@ -40,7 +40,7 @@ struct DSHInteractionUITests {
                 await calls.recordPermission(session, id, resolution.isApproved)
             }
         )
-        model.state.apply(.sessionStarted(SessionStarted(sessionID: "synthetic", title: "DSH", tool: .dsh, origin: .live, summary: "Working", timestamp: .now)))
+        model.state.apply(.sessionStarted(SessionStarted(sessionID: "synthetic", title: "DSH", tool: .dsh, origin: .live, summary: "Working", timestamp: .now, piMetadata: PiSessionMetadata(isSubagent: false))))
         model.selectedSessionID = "synthetic"
         let original = QuestionPrompt(title: "First question", options: ["A"])
         model.state.apply(.questionAsked(QuestionAsked(sessionID: "synthetic", prompt: original, timestamp: .now)))

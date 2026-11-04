@@ -609,6 +609,7 @@ public extension AgentSession {
     /// Hook-managed sessions (Claude Code via hooks) rely on hook lifecycle
     /// signals; non-hook sessions use process polling.
     var isVisibleInIsland: Bool {
+        if tool == .dsh && (piMetadata?.isSubagent == true || (!isDemoSession && piMetadata?.isSubagent != false)) { return false }
         if isDemoSession { return true }
         if phase.requiresAttention { return true }
         // Codex.app sessions stay visible while the desktop app is running,

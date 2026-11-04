@@ -631,6 +631,7 @@ final class SessionDiscoveryCoordinator {
         let records = state.sessions
             .filter {
                 ($0.tool.usesHeartbeatLiveness)
+                    && ($0.tool != .dsh || $0.piMetadata?.isSubagent == false)
                     && $0.isTrackedLiveSession
                     && !$0.isSessionEnded
                     && $0.updatedAt >= Date.now.addingTimeInterval(-86_400)

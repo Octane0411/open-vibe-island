@@ -26,6 +26,9 @@ extension AgentSession {
     /// Note: `claudeMetadata.agentID` is NOT a reliable signal here because
     /// SubagentStart hooks set `agent_id` on the *parent* session's metadata.
     var isSubagentSession: Bool {
+        if tool == .dsh {
+            return piMetadata?.isSubagent == true || (!isDemoSession && piMetadata?.isSubagent != false)
+        }
         if let path = claudeMetadata?.transcriptPath, path.contains("/subagents/") {
             return true
         }

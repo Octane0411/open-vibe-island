@@ -40,6 +40,8 @@ public struct DSHHookPayload: Equatable, Codable, Sendable, RuntimeHookPayload {
     public var turnID: Int?
     public var turnOutcome: String?
     public var interactionResult: DSHInteractionResult?
+    public var isSubagent: Bool?
+    public var parentSessionID: String?
 
     public var defaultJumpTarget: JumpTarget {
         let webTarget: DSHWebJumpTarget?
@@ -94,7 +96,8 @@ public struct DSHHookPayload: Equatable, Codable, Sendable, RuntimeHookPayload {
             initialUserPrompt: promptPreview, lastUserPrompt: promptPreview,
             lastAssistantMessage: fullMessage ?? (hookEventName == .stop ? completionSummary : nil),
             currentTool: toolName, currentToolInputPreview: toolInputPreview,
-            model: model, transcriptPath: transcriptPath
+            model: model, transcriptPath: transcriptPath,
+            isSubagent: isSubagent, parentSessionID: parentSessionID
         )
     }
 
@@ -118,6 +121,8 @@ public struct DSHHookPayload: Equatable, Codable, Sendable, RuntimeHookPayload {
         case turnID = "turn_id"
         case turnOutcome = "turn_outcome"
         case interactionResult = "interaction_result"
+        case isSubagent = "is_subagent"
+        case parentSessionID = "parent_session_id"
     }
 
     public init(
@@ -139,7 +144,9 @@ public struct DSHHookPayload: Equatable, Codable, Sendable, RuntimeHookPayload {
         interaction: DSHInteraction? = nil,
         turnID: Int? = nil,
         turnOutcome: String? = nil,
-        interactionResult: DSHInteractionResult? = nil
+        interactionResult: DSHInteractionResult? = nil,
+        isSubagent: Bool? = false,
+        parentSessionID: String? = nil
     ) {
         self.hookEventName = hookEventName
         self.sessionID = sessionID
@@ -160,5 +167,7 @@ public struct DSHHookPayload: Equatable, Codable, Sendable, RuntimeHookPayload {
         self.turnID = turnID
         self.turnOutcome = turnOutcome
         self.interactionResult = interactionResult
+        self.isSubagent = isSubagent
+        self.parentSessionID = parentSessionID
     }
 }

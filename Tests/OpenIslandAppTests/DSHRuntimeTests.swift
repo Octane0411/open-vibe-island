@@ -70,14 +70,19 @@ struct DSHRuntimeTests {
     const sessions = new Map()
     const handlers = new Map()
     const cleanups = []
-    plugin.apply({
-      sessions: { list: () => [], get: id => sessions.get(id) },
+    const agents = new Map()
+    const context = {
+      sessions: { list: () => [...sessions.values()], get: id => sessions.get(id) },
+      agents: { get: id => agents.get(id), roots: () => [...agents.values()] },
+      get(name) { return this[name] },
       on: (name, handler) => handlers.set(name, handler),
-      inject: () => {},
+      inject(names, effect) { if (names.every(name => this[name])) effect(this) },
       effect: effect => cleanups.push(effect()),
-    }, { socketPath })
+    }
+    plugin.apply(context, { socketPath })
     const session = { id: 'dsh-bundle-smoke', header: { cwd: '/tmp/project' } }
     sessions.set(session.id, session)
+    agents.set(session.id, { id: session.id, session, ctx: context })
     handlers.get('session/created')(session)
     const emit = (type, data) => handlers.get('session/event')(session, { type, data })
     emit('user/message', { source: { kind: 'user' }, content: 'Build integration' })

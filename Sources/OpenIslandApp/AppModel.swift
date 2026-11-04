@@ -714,7 +714,7 @@ final class AppModel {
             self?.lastActionMessage = message
         }
         discovery.stateAccessor = { [weak self] in self?.state ?? SessionState() }
-        discovery.stateUpdater = { [weak self] in self?.state = $0 }
+        discovery.stateUpdater = { [weak self] in self?.acceptCoordinatorState($0) }
         discovery.onStateChanged = { [weak self] in
             self?.synchronizeSelection()
             self?.refreshOverlayPlacementIfVisible()
@@ -749,7 +749,7 @@ final class AppModel {
 
         monitoring.syntheticClaudeSessionPrefix = Self.syntheticClaudeSessionPrefix
         monitoring.stateAccessor = { [weak self] in self?.state ?? SessionState() }
-        monitoring.stateUpdater = { [weak self] in self?.state = $0 }
+        monitoring.stateUpdater = { [weak self] in self?.acceptCoordinatorState($0) }
         monitoring.onSessionsReconciled = { [weak self] in
             self?.synchronizeSelection()
             self?.refreshOverlayPlacementIfVisible()
@@ -776,13 +776,17 @@ final class AppModel {
         hasFinishedInit = true
     }
 
-    var sessions: [AgentSession] {
-        state.sessions
+    func acceptCoordinatorState(_ incoming: SessionState) {
+        var next = incoming
+        next.retainDSHExclusions(from: state)
+        state = next
     }
 
-    var allSessions: [AgentSession] {
-        state.sessions
+    var sessions: [AgentSession] {
+        state.sessions.filter { !$0.isSubagentSession }
     }
+
+    var allSessions: [AgentSession] { sessions }
 
     /// Measured by SwiftUI GeometryReader in notification mode. Used by panel controller for sizing.
     /// Uses a tolerance of 2pt to avoid infinite layout loops caused by floating-point jitter
@@ -1038,15 +1042,16 @@ final class AppModel {
     }
 
     var focusedSession: AgentSession? {
-        state.session(id: selectedSessionID) ?? surfacedSessions.first ?? state.activeActionableSession ?? state.sessions.first
+        state.session(id: selectedSessionID).flatMap { $0.isSubagentSession ? nil : $0 }
+            ?? surfacedSessions.first ?? sessions.first(where: { $0.phase.requiresAttention }) ?? sessions.first
     }
 
     var activeIslandCardSession: AgentSession? {
-        guard let sessionID = islandSurface.sessionID else {
+        guard let sessionID = islandSurface.sessionID,
+              let session = state.session(id: sessionID), !session.isSubagentSession else {
             return nil
         }
-
-        return state.session(id: sessionID)
+        return session
     }
 
     var hasAnySession: Bool {
@@ -1754,7 +1759,7 @@ final class AppModel {
         ingress: TrackedEventIngress
     ) -> Bool {
         guard let sessionID = surface.sessionID,
-              let session = state.session(id: sessionID) else {
+              let session = state.session(id: sessionID), !session.isSubagentSession else {
             return false
         }
 
@@ -1767,7 +1772,7 @@ final class AppModel {
     private func synchronizeSelection() {
         let surfacedIDs = Set(surfacedSessions.map(\.id))
 
-        if let activeAction = state.activeActionableSession {
+        if let activeAction = sessions.first(where: { $0.phase.requiresAttention }) {
             selectedSessionID = activeAction.id
             return
         }
@@ -1775,7 +1780,7 @@ final class AppModel {
         guard let selectedSessionID,
               surfacedIDs.contains(selectedSessionID),
               state.session(id: selectedSessionID) != nil else {
-            self.selectedSessionID = surfacedSessions.first?.id ?? state.sessions.first?.id
+            self.selectedSessionID = surfacedSessions.first?.id ?? sessions.first?.id
             return
         }
     }
