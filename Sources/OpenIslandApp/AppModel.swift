@@ -1717,10 +1717,6 @@ final class AppModel {
                 id: thread.id, title: thread.name ?? "Codex · \(workspace)", tool: .codex,
                 origin: .live, attachmentState: .attached, phase: phase,
                 summary: String(thread.preview.prefix(240)), updatedAt: now,
-                jumpTarget: JumpTarget(
-                    terminalApp: "Unknown", workspaceName: workspace, paneTitle: "Codex",
-                    workingDirectory: thread.cwd
-                ),
                 codexMetadata: CodexSessionMetadata(
                     transcriptPath: thread.path, initialUserPrompt: thread.preview
                 )

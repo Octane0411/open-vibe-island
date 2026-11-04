@@ -46,6 +46,7 @@ struct CodexSharedSessionTests {
         #expect(model.state.sessions.first { $0.id == "working" }?.phase == .running)
         #expect(model.state.sessions.first { $0.id == "finished" }?.phase == .completed)
         #expect(model.monitoring.sharedCodexSessionIDs == ["working", "finished"])
+        #expect(model.state.sessions.allSatisfy { $0.jumpTarget == nil })
     }
 
     @Test
