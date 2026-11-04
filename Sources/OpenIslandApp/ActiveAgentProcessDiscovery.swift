@@ -18,6 +18,7 @@ struct ActiveAgentProcessDiscovery {
         var transcriptPath: String?
         var tmuxTarget: String?
         var tmuxSocketPath: String?
+        var processID: String?
 
         init(
             tool: AgentTool,
@@ -27,7 +28,8 @@ struct ActiveAgentProcessDiscovery {
             terminalApp: String? = nil,
             transcriptPath: String? = nil,
             tmuxTarget: String? = nil,
-            tmuxSocketPath: String? = nil
+            tmuxSocketPath: String? = nil,
+            processID: String? = nil
         ) {
             self.tool = tool
             self.sessionID = sessionID
@@ -37,6 +39,7 @@ struct ActiveAgentProcessDiscovery {
             self.transcriptPath = transcriptPath
             self.tmuxTarget = tmuxTarget
             self.tmuxSocketPath = tmuxSocketPath
+            self.processID = processID
         }
     }
 
@@ -87,7 +90,7 @@ struct ActiveAgentProcessDiscovery {
                     continue
                 }
 
-                let claimKey = "codex:\(snapshot.sessionID ?? process.pid)"
+                let claimKey = "codex:\(snapshot.sessionID ?? snapshot.terminalTTY ?? process.pid)"
                 guard claimedKeys.insert(claimKey).inserted else {
                     continue
                 }
@@ -331,18 +334,19 @@ struct ActiveAgentProcessDiscovery {
         for process: RunningProcess,
         processesByPID: [String: RunningProcess]
     ) -> ProcessSnapshot? {
-        guard let lsofOutput = lsofOutput(pid: process.pid),
-              let transcriptPath = bestCodexTranscriptPath(in: lsofOutput),
-              let sessionID = firstUUID(in: transcriptPath) else {
-            return nil
-        }
+        // Recent Codex runtimes do not keep rollout descriptors open. Preserve
+        // the terminal process even when lsof cannot recover a conversation ID.
+        let lsofOutput = lsofOutput(pid: process.pid)
+        let transcriptPath = lsofOutput.flatMap(bestCodexTranscriptPath(in:))
+        let sessionID = transcriptPath.flatMap(firstUUID(in:))
 
         var snapshot = ProcessSnapshot(
             tool: .codex,
             sessionID: sessionID,
-            workingDirectory: workingDirectory(from: lsofOutput),
+            workingDirectory: lsofOutput.flatMap(workingDirectory(from:)),
             terminalTTY: process.terminalTTY,
-            terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+            terminalApp: terminalApp(for: process, processesByPID: processesByPID),
+            processID: process.pid
         )
 
         // If terminalApp is nil and we have a TTY, try to resolve tmux info

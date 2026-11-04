@@ -44,6 +44,15 @@ OpenCode → JS plugin (~/.config/opencode/plugins/) → Unix socket → BridgeS
 3. Reconcile with active terminal processes
 4. Start live bridge
 
+Codex terminal process discovery does not require an open rollout descriptor.
+When the runtime closes JSONL files between writes or uses SQLite-backed history,
+the monitor keeps a process-only session keyed by PID and its terminal TTY. A
+unique hook session on the same TTY replaces that placeholder; conversation IDs
+recovered from open transcripts take priority. Working directory alone never
+links a Codex process to a conversation, so terminals sharing a project stay
+separate. Process-only rows disappear when the process exits and do not imply
+that the agent is currently running a turn.
+
 **Fail-open principle**: if the bridge is unavailable, the hook process exits silently without writing to stdout, so the agent continues running unaffected.
 
 ## Event Model

@@ -209,12 +209,20 @@ final class ProcessMonitoringCoordinator {
         preResolvedJumpTargets: [String: JumpTarget]? = nil,
         observedCodexAppRunning: Bool? = nil
     ) {
-        let activeProcesses = activeProcesses ?? activeAgentProcessDiscovery.discover()
+        let discoveredProcesses = activeProcesses ?? activeAgentProcessDiscovery.discover()
 
         // Work on a local copy to avoid triggering didSet (and its queue.sync +
         // view invalidation) on every intermediate mutation.
         let originalState = state
         var local = originalState
+        let codexResult = CodexProcessSessionReconciler.reconcile(
+            sessions: local.sessions,
+            processes: discoveredProcesses
+        )
+        let activeProcesses = codexResult.processes
+        if codexResult.sessions != local.sessions {
+            local = SessionState(sessions: codexResult.sessions)
+        }
 
         let sanitizedSessions = sanitizeCrossToolGhosttyJumpTargets(in: local.sessions)
         if sanitizedSessions != local.sessions {
@@ -282,7 +290,8 @@ final class ProcessMonitoringCoordinator {
         // Phase 1: populate isProcessAlive in parallel with existing system.
         let aliveIDs = sessionIDsWithAliveProcesses(
             activeProcesses: activeProcesses,
-            isCodexAppRunning: isCodexAppRunning
+            isCodexAppRunning: isCodexAppRunning,
+            sessions: local.sessions
         )
         _ = local.markProcessLiveness(
             aliveSessionIDs: aliveIDs,
@@ -402,10 +411,15 @@ final class ProcessMonitoringCoordinator {
     /// Codex/Claude/Gemini).
     func sessionIDsWithAliveProcesses(
         activeProcesses: [ActiveProcessSnapshot],
-        isCodexAppRunning: Bool
+        isCodexAppRunning: Bool,
+        sessions: [AgentSession]? = nil
     ) -> Set<String> {
         var aliveIDs: Set<String> = []
-        let sessions = state.sessions
+        let sessions = sessions ?? state.sessions
+        let activeProcesses = CodexProcessSessionReconciler.resolvedProcesses(
+            sessions: sessions,
+            processes: activeProcesses
+        )
 
         // Codex CLI sessions: match by session ID directly.
         let codexProcessIDs = Set(
