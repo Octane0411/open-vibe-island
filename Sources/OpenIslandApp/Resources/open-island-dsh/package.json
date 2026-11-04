@@ -1,16 +1,18 @@
 {
-  "name": "dsh-plugin-open-island",
-  "version": "0.1.0",
-  "description": "Read-only per-session lifecycle observer for the local Open Island bridge",
+  "name": "open-island-dsh",
+  "version": "0.2.0",
+  "description": "Session lifecycle observer and private DSH Web conversation focus relay",
   "type": "module",
   "license": "GPL-3.0-only",
   "main": "open-island-dsh.js",
   "exports": {
     ".": "./open-island-dsh.js",
+    "./client": "./open-island-dsh-client.js",
     "./package.json": "./package.json"
   },
   "files": [
     "open-island-dsh.js",
+    "open-island-dsh-client.js",
     "cordis.patch.yml",
     "README.md"
   ],
@@ -19,6 +21,15 @@
     "dsh": ">=0.2.1-rc.3 <0.3.0"
   },
   "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-client-ui-workspace",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    },
     "bundle": {
       "patch": "./cordis.patch.yml"
     }

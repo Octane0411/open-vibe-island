@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { createServer } from 'node:net'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, lstat, access } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -161,6 +161,45 @@ async function installedRuntime() {
 }
 
 const runtime = await installedRuntime()
+
+test('optional web services advertise only ready private endpoints and restrict RPC to the browser owner', {
+  skip: !runtime && 'Set DSH_PACKAGE_ROOT for real Cordis coverage',
+}, async t => {
+  const { Context, SessionStore } = runtime
+  const receiver = await bridge(t)
+  const ctx = new Context()
+  t.after(() => ctx.fiber.dispose())
+  await ctx.plugin(SessionStore).inertia
+  ctx.sessions.create('web-session', { meta: { cwd: '/workspace' } })
+  const browserPeer = { principal: { kind: 'owner' } }
+  let handler
+  let unregistered = false
+  ctx.provide('connection', {
+    browserPeer,
+    rpc: { handle: (_channel, callback) => {
+      handler = callback
+      return async () => { unregistered = true }
+    } },
+  })
+  ctx.provide('webApp', { getAdvertisedUrl: () => 'http://127.0.0.1:3080/?ignored=not-a-credential' })
+  const observer = ctx.plugin(plugin, { socketPath: receiver.path })
+  await observer.inertia
+  await eventually(() => receiver.lines.some(line => line.command.dshHook.web_focus_socket))
+  const payload = receiver.lines.find(line => line.command.dshHook.web_focus_socket).command.dshHook
+  assert.equal(payload.web_origin, 'http://127.0.0.1:3080/')
+  assert.equal((await lstat(payload.web_focus_socket)).mode & 0o777, 0o600)
+  const request = { client_id: 'pwa', standalone: true, focused: true, focus_epoch: 1 }
+  const denied = await handler('poll', request, new AbortController().signal, { principal: { kind: 'api' } })
+  assert.equal(denied.ok, false)
+  assert.equal(denied.error.code, 'FORBIDDEN')
+  const cancellation = new AbortController()
+  const poll = handler('poll', request, cancellation.signal, browserPeer)
+  cancellation.abort()
+  assert.equal((await poll).ok, true)
+  await observer.dispose()
+  assert.equal(unregistered, true)
+  await assert.rejects(access(payload.web_focus_socket), { code: 'ENOENT' })
+})
 
 test('observes real Cordis sessions independently and stops heartbeats at session and plugin disposal', {
   skip: !runtime && 'Set DSH_PACKAGE_ROOT to an installed DSH package directory for real API coverage',
