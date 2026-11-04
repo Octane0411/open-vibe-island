@@ -276,6 +276,27 @@ struct ActiveAgentProcessDiscovery {
                 continue
             }
 
+            if isEvosciProcess(command: process.command) {
+                // Evosci launches as a Python entry-point wrapper. The
+                // langgraph child process is intentionally not matched: the
+                // wrapper owns the terminal-facing session, while the child is
+                // an implementation detail.
+                let claimKey = "evosci:\(process.pid)"
+                guard claimedKeys.insert(claimKey).inserted else {
+                    continue
+                }
+
+                let lsofOutput = lsofOutput(pid: process.pid)
+                snapshots.append(ProcessSnapshot(
+                    tool: .evosci,
+                    sessionID: nil,
+                    workingDirectory: lsofOutput.flatMap(workingDirectory(from:)),
+                    terminalTTY: process.terminalTTY,
+                    terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+                ))
+                continue
+            }
+
             if let piAgent = piAgentVariant(command: process.command) {
                 let claimKey = "\(piAgent.rawValue):\(process.pid)"
                 guard claimedKeys.insert(claimKey).inserted else {
@@ -888,6 +909,29 @@ struct ActiveAgentProcessDiscovery {
         let lowered = command.lowercased()
         return lowered.contains("/zcode.app/contents/resources/glm/zcode.cjs")
             || (lowered.hasSuffix("/zcode") && lowered.contains("/zcode.app/contents/macos/"))
+    }
+
+    /// Matches the Evosci/EvoScientist entry-point. The installed launcher may
+    /// appear either as `evosci` or as `python .../evosci`; requiring the
+    /// executable basename avoids accidental matches such as `grep evosci`.
+    private func isEvosciProcess(command: String) -> Bool {
+        let lowered = command.lowercased()
+        let tokens = lowered.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard let executable = tokens.first else {
+            return false
+        }
+
+        let executableName = (executable as NSString).lastPathComponent
+        if executableName == "evosci" {
+            return true
+        }
+
+        guard executableName == "python" || executableName.hasPrefix("python3"),
+              let entryPoint = tokens.dropFirst().first else {
+            return false
+        }
+
+        return (entryPoint as NSString).lastPathComponent == "evosci"
     }
 
     /// Matches the Hermes Agent gateway (`python -m tui_gateway.entry`) and the

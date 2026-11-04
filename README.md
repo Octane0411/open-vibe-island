@@ -50,7 +50,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 
 ## Supported Agents & Terminals
 
-**15 agents**: Claude Code, Codex, Cursor, Gemini CLI, Grok Build, Kimi CLI, OpenCode, Pi, Oh My Pi, Qoder, Qwen Code, Factory, CodeBuddy, ZCode, Hermes Agent
+**16 agents**: Claude Code, Codex, Cursor, Gemini CLI, Grok Build, Kimi CLI, OpenCode, Pi, Oh My Pi, Qoder, Qwen Code, Factory, CodeBuddy, ZCode, Hermes Agent, Evosci
 
 **15+ terminals & IDEs**: Terminal.app, Ghostty, iTerm2, WezTerm, Zellij, tmux, cmux, Kaku, VS Code, Cursor, Windsurf, Trae, Zed, JetBrains IDEs (IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover)
 
@@ -75,6 +75,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 | **Kimi CLI** | Supported | Hook integration via `~/.kimi/config.toml` `[[hooks]]`, session tracking, permission flow (reuses Claude payload) |
 | **Grok Build** | Supported | Hook integration via `~/.grok/hooks/open-island.json`, session tracking, terminal jump-back, fire-and-forget events (no permission round-trip yet; camelCase payload) |
 | **Hermes Agent** | Supported | Hook integration via `hooks:` block in `~/.hermes/config.yaml`, session tracking, turn completion cards, HITL question/approval cards (clarify / pre_approval_request), fire-and-forget |
+| **Evosci** | Supported | Process-based detection for the local EvoScientist launcher, synthetic running session, terminal jump-back; no hook lifecycle in v1 |
 | **Pi** | Supported | TypeScript extension at `~/.pi/agent/extensions/open-island.ts`; session, prompt, tool, completion, process-discovery, persistence, and terminal jump tracking |
 | **Oh My Pi (OMP)** | Supported | TypeScript extension at `~/.omp/agent/extensions/open-island.ts`; the same lifecycle coverage adapted to OMP event aliases |
 | **ZCode** | Supported | Hook integration via `~/.zcode/cli/config.json` `hooks.events` (ZCode Desktop). Claude-compatible payload reuses the Claude decode path; lifecycle-only event set (SessionStart, UserPromptSubmit, Stop); app-process liveness like Codex.app |
@@ -307,6 +308,8 @@ Developers who already live in the terminal and want a better way to work with c
   swift run OpenIslandSetup statusHermes     # report whether managed hooks are present
   swift run OpenIslandSetup uninstallHermes  # remove managed entries, preserve user-authored hooks
   ```
+- **Evosci** — Process-based integration for the local EvoScientist launcher (`evosci`, commonly visible as `python …/.local/bin/evosci`). Open Island detects the launcher with `ps`, resolves its working directory with `lsof`, creates a synthetic running session, and uses the parent terminal/TTY for jump-back. Evosci v1 has no Open Island hook channel, so it does not provide lifecycle events, permission/turn-completion cards, reply routing, or usage tracking; the session disappears when the launcher process exits.
+
 
 ### Terminal Support
 
