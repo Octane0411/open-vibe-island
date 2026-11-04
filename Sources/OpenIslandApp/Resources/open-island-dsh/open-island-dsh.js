@@ -11,15 +11,61 @@ export const inject = ['sessions']
 const DEFAULT_HEARTBEAT_MS = 15_000
 const MAX_PREVIEW = 4096
 
-function preview(value) {
-  return typeof value === 'string' && value.trim() ? value.slice(0, MAX_PREVIEW) : undefined
+function preview(value, limit = MAX_PREVIEW) {
+  return typeof value === 'string' && value.trim() ? value.slice(0, limit) : undefined
 }
 
-function textContent(content) {
-  if (typeof content === 'string') return preview(content)
+function textContent(content, limit = MAX_PREVIEW) {
+  if (typeof content === 'string') return preview(content, limit)
   if (!Array.isArray(content)) return undefined
   return preview(content.filter(part => part?.type === 'text' && typeof part.text === 'string')
-    .map(part => part.text).join('\n'))
+    .map(part => part.text).join('\n'), limit)
+}
+
+function assistantText(content) {
+  const text = textContent(content, Infinity)
+  if (!text) return undefined
+  const bytes = Buffer.from(text)
+  // Streaming decode excludes a UTF-8 code point cut by the byte boundary.
+  return new TextDecoder().decode(bytes.subarray(0, 16384), { stream: true })
+}
+
+const validTurn = value => Number.isSafeInteger(value) && value >= 0
+const cancellationCodes = new Set(['ASK_CANCELLED', 'ASK_ABORTED', 'ABORTED', 'ABORTED_BEFORE_DISPATCH'])
+
+function answerBatch(value) {
+  if (!value || !Array.isArray(value.answers) || value.answers.some(answer => !answer
+    || typeof answer.id !== 'string' || !Array.isArray(answer.selected)
+    || answer.selected.some(label => typeof label !== 'string')
+    || (answer.custom !== undefined && typeof answer.custom !== 'string'))
+    || new Set(value.answers.map(answer => answer.id)).size !== value.answers.length) return undefined
+  return value.answers
+}
+
+function resultValue(message) {
+  const blocks = message?.content
+  if (!Array.isArray(blocks) || blocks.length !== 1 || blocks[0]?.type !== 'text'
+    || typeof blocks[0].text !== 'string') return undefined
+  try { return JSON.parse(blocks[0].text) } catch { return undefined }
+}
+
+function interactionResult(state, callId, toolName, data) {
+  const observed = state.interactionCalls?.get(callId)
+  state.interactionCalls?.delete(callId)
+  const kind = toolName === 'exit_plan_mode' ? 'plan' : toolName === 'ask_user_question' ? 'question' : undefined
+  if (!kind) return undefined
+  const failed = data.error !== undefined || data.message?.isError === true
+  let outcome
+  if (cancellationCodes.has(data.error?.code)) outcome = 'cancelled'
+  else if (failed) outcome = kind === 'plan' && observed?.outcome === 'declined' ? 'declined' : 'failed'
+  else {
+    const value = resultValue(data.message)
+    // Read only the two published tools' structured schemas, never result prose.
+    if (kind === 'plan' && typeof value?.approved === 'boolean') outcome = value.approved ? 'approved' : 'cancelled'
+    else if (kind === 'question' && answerBatch(value)) outcome = 'answered'
+    else outcome = observed?.outcome
+  }
+  return outcome ? { kind, outcome, call_id: callId } : undefined
 }
 
 function validInterval(value) {
@@ -38,9 +84,13 @@ function modelName(config) {
 export function normalizeEvent(state, event) {
   const data = event?.data
   if (!data || typeof data !== 'object') return undefined
+  if (['turn/start', 'turn/end', 'tool/call', 'tool/result', 'assistant/message'].includes(event.type)
+    && validTurn(data.turn)) state.turnId = data.turn
   switch (event.type) {
     case 'turn/start':
       state.lastAssistantMessage = undefined
+      state.interactionResult = undefined
+      state.interactionCalls?.clear()
       return undefined
     case 'request/header':
       state.model = modelName(data.header?.config) || state.model
@@ -64,15 +114,26 @@ export function normalizeEvent(state, event) {
       if (typeof callId !== 'string') return undefined
       const toolName = state.tools.get(callId)
       state.tools.delete(callId)
-      return { hook_event_name: 'PostToolUse', tool_name: preview(toolName) }
+      const result = interactionResult(state, callId, toolName, data)
+      if (toolName === 'exit_plan_mode' || toolName === 'ask_user_question') {
+        // A pre-tool preamble is not the final response to the human's decision.
+        state.lastAssistantMessage = undefined
+      }
+      if (result) state.interactionResult = result
+      return { hook_event_name: 'PostToolUse', tool_name: preview(toolName),
+        ...(result ? { interaction_result: result } : {}) }
     }
     case 'assistant/message':
-      state.lastAssistantMessage = textContent(data.message?.content) || state.lastAssistantMessage
+      state.lastAssistantMessage = assistantText(data.message?.content) || state.lastAssistantMessage
       state.model = modelName(data.message?.source) || state.model
       return undefined
     case 'turn/end':
       state.tools.clear()
-      return { hook_event_name: 'Stop', last_assistant_message: state.lastAssistantMessage }
+      state.interactionCalls?.clear()
+      return { hook_event_name: 'Stop', last_assistant_message: state.lastAssistantMessage,
+        ...(typeof data.reason?.kind === 'string' && data.reason.kind.length <= 128
+          ? { turn_outcome: data.reason.kind } : {}),
+        ...(state.interactionResult ? { interaction_result: state.interactionResult } : {}) }
     default:
       return undefined
   }
@@ -361,7 +422,7 @@ export async function createFocusRelay({ hasSession, interactions, timeoutMs = 5
 
 // Own exactly one answerer at a time. Losing the native observer first revokes
 // all request IDs, then delegates to the original DSH waterfall. Never race next().
-export function createInteractionController({ isLive, callIdFor, pingMs = 1000, leaseMs = 4000 } = {}) {
+export function createInteractionController({ isLive, callIdFor, turnIdFor, pingMs = 1000, leaseMs = 4000 } = {}) {
   const pending = new Map()
   let observer
   let disposed = false
@@ -379,7 +440,8 @@ export function createInteractionController({ isLive, callIdFor, pingMs = 1000, 
   function publish(entry, status, resolution) {
     if (!observer) return false
     const presentation = status === 'pending' ? entry.presentation
-      : { request_id: entry.presentation.request_id, kind: entry.presentation.kind, call_id: entry.presentation.call_id }
+      : { request_id: entry.presentation.request_id, kind: entry.presentation.kind,
+        call_id: entry.presentation.call_id, turn_id: entry.presentation.turn_id }
     return write(observer.socket, { type: 'interaction', session_id: entry.session.id,
       interaction: { ...presentation, status, ...(resolution ? { resolution } : {}) } })
   }
@@ -489,6 +551,8 @@ export function createInteractionController({ isLive, callIdFor, pingMs = 1000, 
       presentation = { kind: plan ? 'plan' : 'question', questions, ...(callId ? { call_id: callId } : {}) }
     }
     presentation.request_id = randomUUID()
+    const turnId = turnIdFor?.(session)
+    if (validTurn(turnId)) presentation.turn_id = turnId
     return new Promise((resolve, reject) => {
       const entry = { session, agent: req.agent, presentation, next, resolve, reject, signal: req.signal }
       entry.abort = () => finish(entry, 'cancelled')
@@ -560,16 +624,47 @@ export function apply(ctx, config = {}) {
   const sessions = new Map()
   let disposed = false
   let webMetadata = {}
+  function callIdFor(session) {
+    const calls = [...(sessions.get(session)?.tools ?? [])].filter(([, tool]) => tool === 'ask_user_question')
+    return calls.length === 1 ? calls[0][0] : undefined
+  }
   const interactions = createInteractionController({
     isLive: agent => !disposed && !!agent && store.get(agent.session?.id) === agent.session
       && sessions.has(agent.session) && ctx.get('agents')?.get(agent.id) === agent
       && ctx.get('agents')?.roots().includes(agent),
-    callIdFor: session => {
-      const calls = [...(sessions.get(session)?.tools ?? [])].filter(([, tool]) => tool === 'ask_user_question')
-      return calls.length === 1 ? calls[0][0] : undefined
-    },
+    callIdFor,
+    turnIdFor: session => sessions.get(session)?.turnId,
   })
-  ctx.on('user-questions/request', (request, next) => interactions.request('question', request, next), { prepend: true })
+  ctx.on('user-questions/request', async (request, next) => {
+    const state = sessions.get(request.agent?.session)
+    const question = request.questions?.length === 1 ? request.questions[0] : undefined
+    const plan = question?.intent?.kind === 'plan-review'
+    const callId = request.wait?.callId ?? question?.intent?.callId ?? callIdFor(request.agent?.session)
+    const expectedTool = plan ? 'exit_plan_mode' : 'ask_user_question'
+    const observation = state?.tools.get(callId) === expectedTool ? {} : undefined
+    if (observation) state.interactionCalls.set(callId, observation)
+    try {
+      // Observe the original answer regardless of which answerer owns the UI.
+      // Returning this exact value preserves native validation and error behavior.
+      const answer = await interactions.request('question', request, next)
+      if (observation) {
+        const answers = answerBatch(answer)
+        const matching = answers && Array.isArray(request.questions)
+          && answers.length === request.questions.length
+          && request.questions.every(item => answers.some(entry => entry.id === item.id))
+        if (!matching) observation.outcome = 'failed'
+        else if (plan) {
+          const review = answers[0]
+          observation.outcome = review.selected.length === 1
+            && review.selected[0] === question.intent.approve && review.custom === undefined ? 'approved' : 'declined'
+        } else observation.outcome = 'answered'
+      }
+      return answer
+    } catch (error) {
+      if (observation) observation.outcome = cancellationCodes.has(error?.code) ? 'cancelled' : 'failed'
+      throw error
+    }
+  }, { prepend: true })
   ctx.on('approval/request', (request, next) => interactions.request('approval', request, next), { prepend: true })
 
   // Web services are optional. The sessions-only CLI observer keeps working.
@@ -610,6 +705,7 @@ export function apply(ctx, config = {}) {
       session_id: session.id,
       cwd: session.header?.cwd || process.cwd(),
       model: state.model,
+      ...(validTurn(state.turnId) ? { turn_id: state.turnId } : {}),
       ...webMetadata,
       ...lifecycle,
     }
@@ -627,7 +723,7 @@ export function apply(ctx, config = {}) {
 
   function start(session) {
     if (disposed || sessions.has(session) || store.get(session.id) !== session) return
-    const state = { tools: new Map(), model: modelName(session.requestHeader?.()?.config) }
+    const state = { tools: new Map(), interactionCalls: new Map(), model: modelName(session.requestHeader?.()?.config) }
     sessions.set(session, state)
     send(session, state, { hook_event_name: 'SessionStart' })
     state.timer = setInterval(() => {

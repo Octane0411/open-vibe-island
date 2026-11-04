@@ -38,7 +38,7 @@ It subscribes to `session/created`, `session/event`, and `session/disposed`. Ini
 | Timer while exact Session object remains in the store | `Heartbeat` |
 | Session disposal or plugin unload | `SessionEnd` |
 
-Injected context is not a user prompt. Assistant reasoning, attachments, and tool outputs are not forwarded. Text previews and raw tool argument strings are capped at 4096 characters. The session id is the native DSH id, without an extra prefix. No guessed terminal or process identity is attached to Web sessions.
+Injected context is not a user prompt. Assistant reasoning, attachments, and tool outputs are not forwarded. Prompt previews and raw tool argument strings are capped at 4096 characters. Final visible assistant markdown is preserved up to 16 KiB with a UTF-8-safe boundary. The session id is the native DSH id, without an extra prefix. No guessed terminal or process identity is attached to Web sessions.
 
 ## Bridge transport
 
@@ -48,7 +48,7 @@ Each observation is one newline-terminated JSON command:
 {"type":"command","command":{"type":"processDshHook","dshHook":{"hook_event_name":"PreToolUse","session_id":"session-id","cwd":"/workspace","model":"deepseek/model-id","tool_name":"bash","tool_input":"{\"command\":\"pwd\"}"}}}
 ```
 
-The snake_case payload follows the Pi lifecycle contract without its `agent` field. Optional fields are `prompt`, `tool_name`, `tool_input`, `last_assistant_message`, and `model`. `Stop` describes turn completion, not session disposal.
+The snake_case payload follows the Pi lifecycle contract without its `agent` field. Optional fields are `prompt`, `tool_name`, `tool_input`, `last_assistant_message`, `model`, `turn_id`, `turn_outcome`, and `interaction_result`. `Stop` describes turn completion, not session disposal. `turn_id` is the public session event's exact `turn` integer, remembered between events. It is also present inside pending and resolved interaction frames when known. `turn_outcome` on Stop preserves exact public `reason.kind`: `completed`, `aborted`, `error`, `blocked`, `max-tokens`, `interrupted`, `forked`, or a bounded plugin-defined kind. Unknown reasons must not become a successful completion claim. No historical events are replayed on attachment.
 
 Socket selection matches `BridgeSocketLocation.currentURL`: `OPEN_ISLAND_SOCKET_PATH`, then `VIBE_ISLAND_SOCKET_PATH`, then the per-user `Library/Application Support/OpenIsland/bridge.sock`. There is no automatic fallback to the old temporary socket.
 
@@ -133,6 +133,20 @@ The stream has at most 128 pending interactions. Frames and control input are ca
 ### Published result semantics
 
 `ask_user_question` returns `{answers: [{id, selected, custom?}]}`. The plan tool uses the same question service. Approval requires exactly `selected: [intent.approve]` with no `custom`. It returns `{approved:true}`, then commits `plan/mode` inactive at the next accepted pre-step. Keep-planning feedback produces a tool error with the user's feedback, not an approval. Dismissal in native DSH produces `ASK_CANCELLED`, which the plan tool converts to `{approved:false}` and concludes the turn. Tool results are authoritative observations, not a second opportunity to decide. Approval audit order is `approval/asked`, answerer waterfall, then matching `approval/decided` with one of `allowed-once`, `rejected`, `cancelled`, or `unavailable`.
+
+### Observed outcome wire
+
+Terminal `PostToolUse` and the same turn's `Stop` include a bounded typed observation when the published APIs prove an outcome:
+
+```json
+{"interaction_result":{"kind":"plan","outcome":"approved","call_id":"native-call-id"},"turn_id":3}
+```
+
+Kinds are `plan` and `question`. Outcomes are `approved`, `declined`, `answered`, `cancelled`, and `failed`. The public question waterfall's result is observed even when native DSH owns the UI. A plan's exact approve selection is remembered but is not published as success until its terminal tool result arrives. Any terminal error overrides a remembered approval. A keep-planning selection is `declined` even though the published tool intentionally throws to return feedback. Native `ASK_CANCELLED` is `cancelled`, including when the plan tool converts it to a successful `{approved:false}` return. Cancellation error codes and structured result schemas are read directly. Arbitrary result prose, error text, raw answers, and generic tool output are never forwarded or searched for verdict words.
+
+A question or plan terminal result clears earlier same-turn assistant preamble. Only visible assistant text arriving afterward supplies the final markdown. If no final text arrives, the app can present the typed result instead of stale pre-tool text. Starting another turn clears both the retained result and assistant text.
+
+Unknown call identity cannot safely reconstruct a result. This includes in-flight calls from before plugin attachment, and legacy overlapping question calls whose public request carries no call ID. An unstructured successful plan result without a correlated observed public answer cannot be classified by its rendered prose. Timed question `pending` results are not answers, and late steered replies are not terminal tool results, so no fabricated terminal status is emitted for those paths. These cases retain native DSH presentation.
 
 ## Tests
 

@@ -221,11 +221,13 @@ test('actual host plugin publishes endpoint and cancels cards on terminal result
   const settled = result.then(value => ({ value }), error => ({ error }))
   await until(() => observer.frames.some(frame => frame.interaction?.status === 'pending'))
   assert.equal(observer.frames.find(frame => frame.interaction).interaction.call_id, 'actual-question-call')
+  assert.equal(observer.frames.find(frame => frame.interaction).interaction.turn_id, 1)
   session.append('tool/result', { turn: 1, step: 1, message: { id: 'actual-result', role: 'tool',
     source: { kind: 'tool', callId: 'actual-question-call' }, toolCallId: 'actual-question-call', content: [],
   } }, { surfaceOp: 'append' })
   assert.equal((await settled).error.code, 'ASK_ABORTED')
   await until(() => observer.frames.some(frame => frame.interaction?.status === 'resolved'))
+  assert.equal(observer.frames.find(frame => frame.interaction?.status === 'resolved').interaction.turn_id, 1)
   const unloading = ctx.userQuestions.ask({ agent, questions })
   const unloaded = unloading.then(value => ({ value }), error => ({ error }))
   await until(() => observer.frames.filter(frame => frame.interaction?.status === 'pending').length === 2)

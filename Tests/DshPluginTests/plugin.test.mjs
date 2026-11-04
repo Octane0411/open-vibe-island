@@ -81,11 +81,11 @@ test('normalizes DSH event data without leaking reasoning, injected context, or 
     content: [{ type: 'reasoning', text: 'private reasoning' }, { type: 'text', text: 'Done' }],
   } })
   assert.deepEqual(normalize('turn/end', { turn: 1, reason: { kind: 'completed' } }), {
-    hook_event_name: 'Stop', last_assistant_message: 'Done',
+    hook_event_name: 'Stop', last_assistant_message: 'Done', turn_outcome: 'completed',
   })
   normalize('turn/start', { turn: 2 })
   assert.deepEqual(normalize('turn/end', { turn: 2, reason: { kind: 'aborted' } }), {
-    hook_event_name: 'Stop', last_assistant_message: undefined,
+    hook_event_name: 'Stop', last_assistant_message: undefined, turn_outcome: 'aborted',
   })
   assert.equal(normalize('approval/asked', { toolName: 'bash' }), undefined)
   assert.equal(normalize('approval/policy', { policy: 'never' }), undefined)
