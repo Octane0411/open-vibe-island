@@ -155,7 +155,7 @@ final class SessionDiscoveryCoordinator {
 
         // Restore persisted Codex sessions.
         if !payload.codexRecords.isEmpty {
-            state = SessionState(sessions: payload.codexRecords.map(\.restorableSession))
+            state = SessionState(sessions: mergeDiscoveredSessions(payload.codexRecords.map(\.restorableSession)))
             onStatusMessage?("Restored \(payload.codexRecords.count) recent Codex session(s) from local cache.")
         }
 

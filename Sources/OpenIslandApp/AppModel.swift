@@ -1127,6 +1127,9 @@ final class AppModel {
 
         if loadRuntimeState {
             isResolvingInitialLiveSessions = true
+            // Terminal presence does not depend on replaying transcript history.
+            // Large rollouts can take minutes to scan on a cold launch.
+            monitoring.startMonitoringIfNeeded()
 
             Task.detached(priority: .userInitiated) { [weak self] in
                 guard let self else { return }
@@ -1745,9 +1748,8 @@ final class AppModel {
             await self.hooks.repairHooksIfNeeded()
         }
 
-        // Reconcile attachments and start monitoring (requires sessions to be loaded).
+        // Reconcile newly loaded history with the already running terminal monitor.
         monitoring.reconcileSessionAttachments()
-        monitoring.startMonitoringIfNeeded()
     }
 
 

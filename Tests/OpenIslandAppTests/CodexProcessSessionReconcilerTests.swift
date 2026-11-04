@@ -111,6 +111,37 @@ struct CodexProcessSessionReconcilerTests {
 @Suite(.serialized)
 struct CodexProcessMonitoringTests {
     @Test
+    func delayedHistoryRestorePreservesAlreadyDiscoveredTerminal() {
+        let model = AppModel()
+        let process = ActiveProcessSnapshot(
+            tool: .codex, sessionID: nil, workingDirectory: "/tmp/project",
+            terminalTTY: "/dev/ttys001", terminalApp: "Terminal", processID: "101"
+        )
+        model.monitoring.reconcileSessionAttachments(
+            activeProcesses: [process],
+            ghosttyAvailability: .available([], appIsRunning: false),
+            terminalAvailability: .available([], appIsRunning: false),
+            preResolvedJumpTargets: [:], observedCodexAppRunning: false
+        )
+        let cached = CodexTrackedSessionRecord(
+            sessionID: "cached-thread", title: "Codex", summary: "Earlier conversation",
+            phase: .completed, updatedAt: .now
+        )
+        model.discovery.applyStartupDiscoveryPayload(.init(
+            codexRecords: [cached], codexRecordsNeedPrune: false,
+            claudeRecords: [], claudeRecordsNeedPrune: false,
+            openCodeRecords: [], openCodeRecordsNeedPrune: false,
+            cursorRecords: [], cursorRecordsNeedPrune: false,
+            piRecords: [], piRecordsNeedPrune: false,
+            discoveredCodexRecords: [], discoveredClaudeSessions: [], hooksBinaryURL: nil
+        ))
+
+        #expect(Set(model.state.sessions.map(\.id)) == ["codex-process:101", "cached-thread"])
+        #expect(model.state.sessions.first { $0.id == "codex-process:101" }?.isProcessAlive == true)
+        #expect(model.islandListSessions.map(\.id) == ["codex-process:101"])
+    }
+
+    @Test
     func firstMonitorPollSurfacesCodexAndExitRemovesIt() {
         let model = AppModel()
         let process = ActiveProcessSnapshot(

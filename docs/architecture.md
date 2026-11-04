@@ -52,6 +52,9 @@ recovered from open transcripts take priority. Working directory alone never
 links a Codex process to a conversation, so terminals sharing a project stay
 separate. Process-only rows disappear when the process exits and do not imply
 that the agent is currently running a turn.
+Terminal monitoring starts independently of the background transcript scan;
+restored history merges into live state so a slow scan cannot hide or overwrite
+terminals discovered during startup.
 
 **Fail-open principle**: if the bridge is unavailable, the hook process exits silently without writing to stdout, so the agent continues running unaffected.
 
