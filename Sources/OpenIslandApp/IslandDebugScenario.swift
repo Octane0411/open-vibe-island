@@ -18,6 +18,7 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
     case sessionList
     case approvalCard
     case questionCard
+    case dshPlanReview
     case completionCard
     case longCompletionCard
 
@@ -33,6 +34,8 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
             "Approval Card"
         case .questionCard:
             "Question Card"
+        case .dshPlanReview:
+            "DSH Plan Review"
         case .completionCard:
             "Completion Card"
         case .longCompletionCard:
@@ -50,6 +53,8 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
             "Auto-expanded permission surface with approve and deny actions."
         case .questionCard:
             "Auto-expanded question surface with selectable answer buttons."
+        case .dshPlanReview:
+            "Native plan review with full detail and explicit structured choices."
         case .completionCard:
             "Auto-expanded finished-task reminder surface after a turn completes."
         case .longCompletionCard:
@@ -108,6 +113,19 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
                 notchOpenReason: .notification,
                 islandSurface: .sessionList(actionableSessionID: session.id),
                 sessions: DebugSessionFactory.notificationSessions(lead: session, now: now),
+                selectedSessionID: session.id
+            )
+
+        case .dshPlanReview:
+            let session = DebugSessionFactory.dshPlanReviewSession(now: now)
+            return IslandDebugSnapshot(
+                title: title,
+                summary: summary,
+                previewHeight: 500,
+                notchStatus: .opened,
+                notchOpenReason: .notification,
+                islandSurface: .sessionList(actionableSessionID: session.id),
+                sessions: [session],
                 selectedSessionID: session.id
             )
 
@@ -376,6 +394,40 @@ private enum DebugSessionFactory {
                 lastUserPrompt: "我们应该怎么做？",
                 lastAssistantMessage: "建议先把 approvalCard、questionCard、completionCard 拆成独立 surface。"
             )
+        )
+    }
+
+    static func dshPlanReviewSession(now: Date) -> AgentSession {
+        let detail = """
+        # DSH interaction support
+
+        Route questions and plan reviews to the native question card. Preserve exact request IDs so delayed clicks cannot answer a newer request.
+
+        ## Implementation
+        - Use a private, owner-only local socket.
+        - Keep full plan detail available in the scrollable review.
+        - Return explicit selections and feedback to DSH.
+        - Fall back to DSH if Open Island becomes unavailable.
+
+        ## Verification
+        Check approvals, cancellation, stale responses, and final result cards without changing DSH permission policy.
+        """
+        let request = DSHInteraction(
+            requestID: UUID().uuidString, kind: .plan, status: .pending,
+            questions: [DSHInteractionQuestion(
+                id: "plan-review", question: "Approve this plan and leave plan mode?", detail: detail,
+                header: "Plan review", options: [
+                    DSHInteractionOption(label: "Approve", description: "Leave plan mode with this plan."),
+                    DSHInteractionOption(label: "Keep planning", description: "Request changes before continuing."),
+                ], intent: DSHInteractionIntent(kind: "plan-review", approve: "Approve")
+            )]
+        )
+        return AgentSession(
+            id: "dsh-plan-review", title: "DSH: open-island", tool: .dsh, origin: .demo,
+            attachmentState: .attached, phase: .waitingForAnswer, summary: "Review plan", updatedAt: now,
+            questionPrompt: request.questionPrompt,
+            jumpTarget: JumpTarget(terminalApp: "DSH Web", workspaceName: "open-island", paneTitle: "DSH"),
+            piMetadata: PiSessionMetadata(lastUserPrompt: "Add native DSH plan and question support")
         )
     }
 

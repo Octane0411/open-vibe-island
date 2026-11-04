@@ -253,6 +253,20 @@ def main() -> None:
         if not ({"Allow", "Allow Once"} & button_labels) and selected_session_phase(report) != "waitingForApproval":
             fail("missing allow-style approval button label")
 
+    elif scenario == "dshPlanReview":
+        if notch_status != "opened" or not is_actionable_session_surface(island_surface):
+            fail("DSH review did not open its actionable session surface")
+        if selected_session_phase(report) != "waitingForAnswer" or selected_session(report).get("tool") != "dsh":
+            fail("DSH review is missing its native pending question")
+        require_frame_between(
+            overlay_frame,
+            width=(520, 780),
+            height=(360, 680),
+            context="DSH review overlay frame",
+        )
+        if len(button_labels) < 4:
+            fail("DSH review is missing accessible decision controls")
+
     elif scenario == "questionCard":
         if notch_status != "opened":
             fail(f"expected opened notch for questionCard, got {notch_status!r}")
@@ -261,7 +275,8 @@ def main() -> None:
         require_frame_between(
             overlay_frame,
             width=(520, 780),
-            height=(180, 430),
+            # Include setup chrome and the session switcher instead of clipping them.
+            height=(180, 470),
             context="questionCard overlay frame",
         )
         if selected_session_phase(report) != "waitingForAnswer":

@@ -571,6 +571,13 @@ final class AppModel {
     @ObservationIgnored
     private var bridgeClient = LocalBridgeClient()
 
+    private(set) var respondingDSHRequestIDs: Set<UUID> = []
+
+    @ObservationIgnored
+    private let dshQuestionAction: (@Sendable (String, UUID, QuestionPromptResponse) async throws -> Void)?
+    @ObservationIgnored
+    private let dshPermissionAction: (@Sendable (String, UUID, PermissionResolution) async throws -> Void)?
+
     @ObservationIgnored
     private let terminalJumpAction: @Sendable (JumpTarget) throws -> String
 
@@ -640,10 +647,14 @@ final class AppModel {
         terminalJumpAction: @escaping @Sendable (JumpTarget) throws -> String = { target in
             try TerminalJumpService().jump(to: target)
         },
+        dshQuestionAction: (@Sendable (String, UUID, QuestionPromptResponse) async throws -> Void)? = nil,
+        dshPermissionAction: (@Sendable (String, UUID, PermissionResolution) async throws -> Void)? = nil,
         isNotificationSessionAlreadyFrontmost: @escaping @Sendable (AgentSession) async -> Bool = { session in
             await ForegroundTerminalSessionProbe().matches(session: session)
         }
     ) {
+        self.dshQuestionAction = dshQuestionAction
+        self.dshPermissionAction = dshPermissionAction
         self.terminalJumpAction = terminalJumpAction
         self.isNotificationSessionAlreadyFrontmost = isNotificationSessionAlreadyFrontmost
         UserDefaults.standard.register(defaults: [
@@ -1362,6 +1373,10 @@ final class AppModel {
             return
         }
 
+        if session.tool == .dsh {
+            approvePermission(for: session.id, approved: approved)
+            return
+        }
         send(
             .resolvePermission(sessionID: session.id, resolution: permissionResolution(for: approved)),
             userMessage: approved
@@ -1375,6 +1390,10 @@ final class AppModel {
             return
         }
 
+        if session.tool == .dsh {
+            answerQuestion(for: session.id, answer: QuestionPromptResponse(answer: answer))
+            return
+        }
         send(
             .answerQuestion(sessionID: session.id, response: QuestionPromptResponse(answer: answer)),
             userMessage: "Sending answer \"\(answer)\" for \(session.title)."
@@ -1445,6 +1464,10 @@ final class AppModel {
         }
 
         let resolution = permissionResolution(for: approved)
+        if session.tool == .dsh {
+            submitDSHPermission(session: session, requestID: session.permissionRequest?.id, resolution: resolution)
+            return
+        }
         dismissNotificationSurfaceIfPresent(for: sessionID)
         state.resolvePermission(sessionID: session.id, resolution: resolution)
         synchronizeSelection()
@@ -1458,7 +1481,7 @@ final class AppModel {
         )
     }
 
-    func approvePermission(for sessionID: String, action: ApprovalAction) {
+    func approvePermission(for sessionID: String, action: ApprovalAction, requestID: UUID? = nil) {
         guard let session = state.session(id: sessionID) else {
             return
         }
@@ -1478,6 +1501,11 @@ final class AppModel {
             message = "Always allowing for \(session.title)."
         }
 
+        if session.tool == .dsh {
+            submitDSHPermission(session: session, requestID: requestID ?? session.permissionRequest?.id, resolution: resolution)
+            return
+        }
+
         dismissNotificationSurfaceIfPresent(for: sessionID)
         state.resolvePermission(sessionID: session.id, resolution: resolution)
         synchronizeSelection()
@@ -1495,8 +1523,20 @@ final class AppModel {
         synchronizeSelection()
     }
 
-    func answerQuestion(for sessionID: String, answer: QuestionPromptResponse) {
+    func answerQuestion(for sessionID: String, answer: QuestionPromptResponse, requestID: UUID? = nil) {
         guard let session = state.session(id: sessionID) else {
+            return
+        }
+
+        if session.tool == .dsh {
+            guard let id = requestID ?? session.questionPrompt?.id,
+                  session.questionPrompt?.id == id, session.phase == .waitingForAnswer else { return }
+            let action = dshQuestionAction
+            let server = bridgeServer
+            submitDSHInteraction(requestID: id) {
+                if let action { try await action(session.id, id, answer) }
+                else { try await server.answerDSHQuestion(sessionID: session.id, requestID: id, response: answer) }
+            }
             return
         }
 
@@ -1509,6 +1549,37 @@ final class AppModel {
             .answerQuestion(sessionID: session.id, response: answer),
             userMessage: "Sending answer for \(session.title)."
         )
+    }
+
+    func isRespondingToDSHInteraction(_ session: AgentSession) -> Bool {
+        guard session.tool == .dsh, let id = session.questionPrompt?.id ?? session.permissionRequest?.id else { return false }
+        return respondingDSHRequestIDs.contains(id)
+    }
+
+    private func submitDSHPermission(session: AgentSession, requestID: UUID?, resolution: PermissionResolution) {
+        guard let id = requestID, session.permissionRequest?.id == id, session.phase == .waitingForApproval else { return }
+        let action = dshPermissionAction
+        let server = bridgeServer
+        submitDSHInteraction(requestID: id) {
+            if let action { try await action(session.id, id, resolution) }
+            else { try await server.resolveDSHPermission(sessionID: session.id, requestID: id, resolution: resolution) }
+        }
+    }
+
+    private func submitDSHInteraction(requestID: UUID, operation: @escaping () async throws -> Void) {
+        guard respondingDSHRequestIDs.insert(requestID).inserted else { return }
+        lastActionMessage = "Sending response to DSH."
+        Task { [weak self] in
+            guard let self else { return }
+            defer { self.respondingDSHRequestIDs.remove(requestID) }
+            do {
+                try await operation()
+                // Keep the card and its draft until the matching host resolution.
+                self.lastActionMessage = "Response accepted by DSH."
+            } catch {
+                self.lastActionMessage = "DSH did not accept the response: \(error.localizedDescription)"
+            }
+        }
     }
 
     func replyToSession(_ session: AgentSession, text: String) {
@@ -1621,7 +1692,14 @@ final class AppModel {
                 }
             }()
             let session = eventSessionID.flatMap { state.session(id: $0) }
-            relay.notifyEvent(event, session: session)
+            // Watch's string-only controls cannot preserve native questionnaire
+            // identities or plan intent. Keep these decisions on the Mac.
+            let needsNativeDSHControls: Bool
+            switch event {
+            case .permissionRequested, .questionAsked: needsNativeDSHControls = session?.tool == .dsh
+            default: needsNativeDSHControls = false
+            }
+            if !needsNativeDSHControls { relay.notifyEvent(event, session: session) }
         }
 
         if updateLastActionMessage {

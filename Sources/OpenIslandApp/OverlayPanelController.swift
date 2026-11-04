@@ -648,6 +648,8 @@ final class OverlayPanelController {
                 contentHeight += 16 // header
             }
             contentHeight += 20 // question text
+            if question.detail?.isEmpty == false { contentHeight += 188 }
+            if question.nativeID != nil && question.options.isEmpty { contentHeight += 38 }
             contentHeight += CGFloat(question.options.count) * 38 // option rows
         }
 

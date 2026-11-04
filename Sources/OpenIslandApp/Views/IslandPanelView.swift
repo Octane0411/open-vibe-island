@@ -461,6 +461,20 @@ struct IslandPanelView: View {
             }
         }
         .padding(.bottom, 0)
+        .fixedSize(horizontal: false, vertical: isNotificationMode)
+        .background(
+            GeometryReader { geometry in
+                Color.clear.preference(
+                    key: NotificationContentHeightKey.self,
+                    value: isNotificationMode ? geometry.size.height : 0
+                )
+            }
+        )
+        .onPreferenceChange(NotificationContentHeightKey.self) { height in
+            if isNotificationMode && height > 0 {
+                model.measuredNotificationContentHeight = height
+            }
+        }
     }
 
     /// Persistent hint at the top of the expanded island while no agent
@@ -564,19 +578,7 @@ struct IslandPanelView: View {
                             model.handlePointerExitedIslandSurface()
                         }
                     }
-                    .background(
-                        GeometryReader { geo in
-                            Color.clear.preference(
-                                key: NotificationContentHeightKey.self,
-                                value: geo.size.height
-                            )
-                        }
-                    )
-                    .onPreferenceChange(NotificationContentHeightKey.self) { height in
-                        if height > 0 {
-                            model.measuredNotificationContentHeight = height
-                        }
-                    }
+
             } else {
                 VStack(spacing: 0) {
                     sessionPanelHeader(referenceDate: referenceDate)
@@ -613,8 +615,9 @@ struct IslandPanelView: View {
                     presentation: .notification,
                     sideInset: sessionListSideInset,
                     lang: model.lang,
-                    onApprove: { model.approvePermission(for: session.id, action: $0) },
-                    onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
+                    onApprove: { model.approvePermission(for: session.id, action: $0, requestID: session.permissionRequest?.id) },
+                    onAnswer: { model.answerQuestion(for: session.id, answer: $0, requestID: session.questionPrompt?.id) },
+                    isSubmittingResponse: model.isRespondingToDSHInteraction(session),
                     onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                         ? { model.replyToSession(session, text: $0) } : nil,
                     onJump: { model.jumpToSession(session) }
@@ -654,8 +657,9 @@ struct IslandPanelView: View {
                                 isInteractive: model.notchStatus == .opened,
                                 sideInset: sessionListSideInset,
                                 lang: model.lang,
-                                onApprove: { model.approvePermission(for: session.id, action: $0) },
-                                onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
+                                onApprove: { model.approvePermission(for: session.id, action: $0, requestID: session.permissionRequest?.id) },
+                                onAnswer: { model.answerQuestion(for: session.id, answer: $0, requestID: session.questionPrompt?.id) },
+                                isSubmittingResponse: model.isRespondingToDSHInteraction(session),
                                 onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                                     ? { model.replyToSession(session, text: $0) } : nil,
                                 onJump: { model.jumpToSession(session) },
@@ -704,8 +708,9 @@ struct IslandPanelView: View {
                         isInteractive: model.notchStatus == .opened,
                         sideInset: sessionListSideInset,
                         lang: model.lang,
-                        onApprove: { model.approvePermission(for: session.id, action: $0) },
-                        onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
+                        onApprove: { model.approvePermission(for: session.id, action: $0, requestID: session.permissionRequest?.id) },
+                        onAnswer: { model.answerQuestion(for: session.id, answer: $0, requestID: session.questionPrompt?.id) },
+                        isSubmittingResponse: model.isRespondingToDSHInteraction(session),
                         onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                             ? { model.replyToSession(session, text: $0) } : nil,
                         onJump: { model.jumpToSession(session) },
@@ -1267,6 +1272,7 @@ private struct IslandSessionRow: View {
     var lang: LanguageManager = .shared
     var onApprove: ((ApprovalAction) -> Void)?
     var onAnswer: ((QuestionPromptResponse) -> Void)?
+    var isSubmittingResponse: Bool = false
     var onReply: ((String) -> Void)?
     let onJump: () -> Void
     var onDismiss: (() -> Void)?
@@ -1745,7 +1751,7 @@ private struct IslandSessionRow: View {
                     .buttonStyle(IslandActionButtonStyle(kind: .secondary, expands: true))
                 Button(session.permissionRequest?.primaryActionTitle ?? lang.t("approval.allowOnce")) { onApprove?(.allowOnce) }
                     .buttonStyle(IslandActionButtonStyle(kind: .warning, expands: true))
-                if let toolName = session.permissionRequest?.toolName {
+                if session.tool != .dsh, let toolName = session.permissionRequest?.toolName {
                     Button(lang.t("approval.alwaysAllow", toolName)) {
                         let rule = ClaudePermissionRuleValue(toolName: toolName)
                         let update = ClaudePermissionUpdate.addRules(
@@ -1758,6 +1764,7 @@ private struct IslandSessionRow: View {
                     .buttonStyle(IslandActionButtonStyle(kind: .primary, expands: true))
                 }
             }
+            .disabled(isSubmittingResponse)
         }
     }
 
@@ -1769,6 +1776,8 @@ private struct IslandSessionRow: View {
             lang: lang,
             onAnswer: { onAnswer?($0) }
         )
+        .id(session.questionPrompt?.id)
+        .disabled(isSubmittingResponse)
     }
 
     // MARK: - Completion action area
@@ -2139,10 +2148,10 @@ private struct StructuredQuestionPromptView: View {
             if structuredQuestions.isEmpty {
                 freeformAnswerBody
             } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(structuredQuestions, id: \.question) { question in
-                        questionRow(question)
-                    }
+                if usesNativeQuestions {
+                    AutoHeightScrollView(maxHeight: 360) { questionRows }
+                } else {
+                    questionRows
                 }
 
                 quickReplyField
@@ -2167,6 +2176,14 @@ private struct StructuredQuestionPromptView: View {
         )
     }
 
+    private var questionRows: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(structuredQuestions, id: \.responseKey) { question in
+                questionRow(question)
+            }
+        }
+    }
+
     // MARK: - Per-question row
 
     /// Renders a single question with its header, text, and vertical option list.
@@ -2184,9 +2201,39 @@ private struct StructuredQuestionPromptView: View {
                 .foregroundStyle(.white.opacity(0.88))
                 .fixedSize(horizontal: false, vertical: true)
 
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(Array(question.options.enumerated()), id: \.element.id) { index, option in
-                    optionRow(option, optionIndex: index, question: question)
+            if let detail = question.detail, !detail.isEmpty {
+                AutoHeightScrollView(maxHeight: 180) {
+                    Markdown(detail)
+                        .markdownTheme(.completionCard)
+                        .markdownImageProvider(.asset)
+                        .markdownInlineImageProvider(.asset)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 4)
+                }
+                .accessibilityIdentifier("question.detail.\(question.responseKey)")
+            }
+
+            if question.nativeID != nil && question.options.isEmpty {
+                ReplyTextField(
+                    placeholder: lang.t("question.otherPlaceholder"),
+                    text: Binding(
+                        get: { freeformTexts[question.responseKey] ?? "" },
+                        set: { freeformTexts[question.responseKey] = $0 }
+                    ),
+                    onSubmit: { if canSubmit { submitAnswer() } }
+                )
+                .frame(height: 30)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.035)))
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.white.opacity(0.055)))
+                .accessibilityLabel(question.question)
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(question.options.enumerated()), id: \.element.id) { index, option in
+                        optionRow(option, optionIndex: index, question: question)
+                    }
                 }
             }
         }
@@ -2281,7 +2328,7 @@ private struct StructuredQuestionPromptView: View {
             ),
             onSubmit: {
                 if hasCompleteSelection {
-                    onAnswer(QuestionPromptResponse(answers: answerMap))
+                    submitAnswer()
                 }
             }
         )
@@ -2373,7 +2420,7 @@ private struct StructuredQuestionPromptView: View {
             guard !values.isEmpty else {
                 return nil
             }
-            return (question.question, values.joined(separator: ", "))
+            return (question.responseKey, values.joined(separator: ", "))
         })
     }
 
@@ -2382,7 +2429,8 @@ private struct StructuredQuestionPromptView: View {
     }
 
     private var showsGlobalReplyField: Bool {
-        structuredQuestions.isEmpty || !structuredQuestions.contains { question in
+        if usesNativeQuestions { return false }
+        return structuredQuestions.isEmpty || !structuredQuestions.contains { question in
             question.options.contains { $0.allowsFreeform }
         }
     }
@@ -2401,8 +2449,17 @@ private struct StructuredQuestionPromptView: View {
         return values.joined(separator: ", ")
     }
 
+    private var usesNativeQuestions: Bool {
+        !structuredQuestions.isEmpty && structuredQuestions.allSatisfy { $0.nativeID != nil }
+    }
+
+    private var nativeResponse: QuestionPromptResponse? {
+        NativeQuestionAnswerBuilder.response(questions: structuredQuestions, selections: selections, freeformTexts: freeformTexts)
+    }
+
     private var canSubmit: Bool {
-        !trimmedReply.isEmpty || (!structuredQuestions.isEmpty && hasCompleteSelection)
+        if usesNativeQuestions { return nativeResponse != nil }
+        return !trimmedReply.isEmpty || (!structuredQuestions.isEmpty && hasCompleteSelection)
     }
 
     private var submitButtonTitle: String {
@@ -2418,6 +2475,10 @@ private struct StructuredQuestionPromptView: View {
     }
 
     private func submitAnswer() {
+        if usesNativeQuestions {
+            if let response = nativeResponse { onAnswer(response) }
+            return
+        }
         if !trimmedReply.isEmpty {
             onAnswer(QuestionPromptResponse(answer: trimmedReply))
             return
@@ -2432,7 +2493,8 @@ private struct StructuredQuestionPromptView: View {
     }
 
     private var hasCompleteSelection: Bool {
-        structuredQuestions.allSatisfy { question in
+        if usesNativeQuestions { return nativeResponse != nil }
+        return structuredQuestions.allSatisfy { question in
             let selected = selectedLabels(for: question)
             guard !selected.isEmpty else {
                 return false
@@ -2448,7 +2510,7 @@ private struct StructuredQuestionPromptView: View {
     }
 
     private func selectedLabels(for question: QuestionPromptItem) -> Set<String> {
-        selections[question.question] ?? []
+        selections[question.responseKey] ?? []
     }
 
     private func resolvedAnswers(for question: QuestionPromptItem) -> [String] {
@@ -2469,11 +2531,11 @@ private struct StructuredQuestionPromptView: View {
     }
 
     private func freeformKey(for question: QuestionPromptItem, option: QuestionOption) -> String {
-        "\(question.question)|\(option.label)"
+        "\(question.responseKey)|\(option.label)"
     }
 
     private func optionKey(for question: QuestionPromptItem, option: QuestionOption) -> String {
-        "\(question.question)|\(option.label)"
+        "\(question.responseKey)|\(option.label)"
     }
 
     private func optionFillColor(isSelected: Bool, isHovered: Bool) -> Color {
@@ -2502,7 +2564,7 @@ private struct StructuredQuestionPromptView: View {
     }
 
     private func toggle(option: String, for question: QuestionPromptItem) {
-        var selected = selections[question.question] ?? []
+        var selected = selections[question.responseKey] ?? []
 
         if question.multiSelect {
             if selected.contains(option) {
@@ -2519,7 +2581,7 @@ private struct StructuredQuestionPromptView: View {
         }
 
         typedReply = ""
-        selections[question.question] = selected
+        selections[question.responseKey] = selected
     }
 }
 
@@ -2543,7 +2605,7 @@ private struct ReplyTextField: NSViewRepresentable {
         field.placeholderAttributedString = NSAttributedString(
             string: placeholder,
             attributes: [
-                .foregroundColor: NSColor.white.withAlphaComponent(0.35),
+                .foregroundColor: NSColor.white.withAlphaComponent(0.58),
                 .font: NSFont.systemFont(ofSize: 13),
             ]
         )
