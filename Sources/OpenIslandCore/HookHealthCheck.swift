@@ -24,6 +24,9 @@ public struct HookHealthReport: Equatable, Sendable, Identifiable {
         case manifestMissing(expectedPath: String)
         /// The OpenCode plugin file is missing even though it should be installed.
         case pluginMissing(expectedPath: String)
+        /// The user asked for these hooks, but none of ours are in the config.
+        /// Usually another tool rewrote the file and dropped our entries.
+        case hooksMissing(configPath: String)
 
         public var description: String {
             switch self {
@@ -41,6 +44,8 @@ public struct HookHealthReport: Equatable, Sendable, Identifiable {
                 "Installation manifest missing: \(expectedPath)"
             case .pluginMissing(let expectedPath):
                 "OpenCode plugin file is missing: \(expectedPath)"
+            case .hooksMissing(let configPath):
+                "Open Island hooks are missing from \(configPath) — another tool may have rewritten it."
             }
         }
 
@@ -55,7 +60,7 @@ public struct HookHealthReport: Equatable, Sendable, Identifiable {
 
         public var isAutoRepairable: Bool {
             switch self {
-            case .staleCommandPath, .binaryNotExecutable, .manifestMissing, .pluginMissing:
+            case .staleCommandPath, .binaryNotExecutable, .manifestMissing, .pluginMissing, .hooksMissing:
                 true
             default:
                 false
@@ -119,10 +124,16 @@ public struct HookHealthReport: Equatable, Sendable, Identifiable {
 /// Performs deep health checks on hook installations, beyond the simple "managed hooks present" check.
 public enum HookHealthCheck {
     /// Check Claude Code hook health.
+    ///
+    /// - Parameter expectsInstalledHooks: Whether the user has asked for these
+    ///   hooks (persisted intent is `.installed`). Only then is an empty config
+    ///   a problem — otherwise "no hooks of ours" is the desired state, and
+    ///   reporting it would auto-repair hooks the user deliberately removed.
     public static func checkClaude(
         claudeDirectory: URL = ClaudeConfigDirectory.resolved(),
         hooksBinaryURL: URL? = nil,
         managedHooksBinaryURL: URL = ManagedHooksBinary.defaultURL(),
+        expectsInstalledHooks: Bool = false,
         fileManager: FileManager = .default
     ) -> HookHealthReport {
         var issues: [HookHealthReport.Issue] = []
@@ -173,13 +184,19 @@ public enum HookHealthCheck {
             }
         }
 
-        // 3. Check manifest
-        if fileManager.fileExists(atPath: settingsPath),
-           hasOpenIslandHooks(in: settingsURL, fileManager: fileManager) {
+        // 3. Check that our own hooks are actually there, and the manifest.
+        let hasOwnHooks = hasOpenIslandHooks(in: settingsURL, fileManager: fileManager)
+
+        if hasOwnHooks {
             let legacyManifestURL = claudeDirectory.appendingPathComponent(ClaudeHookInstallerManifest.legacyFileName)
             if !fileManager.fileExists(atPath: manifestURL.path) && !fileManager.fileExists(atPath: legacyManifestURL.path) {
                 issues.append(.manifestMissing(expectedPath: manifestURL.path))
             }
+        } else if expectsInstalledHooks, !issues.contains(.configMalformedJSON(path: settingsPath)) {
+            // Don't claim the hooks are gone when we couldn't parse the file —
+            // the malformed-JSON issue already describes that case, and
+            // re-installing over unparseable settings would not help.
+            issues.append(.hooksMissing(configPath: settingsPath))
         }
 
         return HookHealthReport(
@@ -191,10 +208,13 @@ public enum HookHealthCheck {
     }
 
     /// Check Codex hook health.
+    ///
+    /// - Parameter expectsInstalledHooks: See ``checkClaude(claudeDirectory:hooksBinaryURL:managedHooksBinaryURL:expectsInstalledHooks:fileManager:)``.
     public static func checkCodex(
         codexDirectory: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex", isDirectory: true),
         hooksBinaryURL: URL? = nil,
         managedHooksBinaryURL: URL = ManagedHooksBinary.defaultURL(),
+        expectsInstalledHooks: Bool = false,
         fileManager: FileManager = .default
     ) -> HookHealthReport {
         var issues: [HookHealthReport.Issue] = []
@@ -236,13 +256,16 @@ public enum HookHealthCheck {
             }
         }
 
-        // 3. Check manifest
-        if fileManager.fileExists(atPath: hooksPath),
-           hasOpenIslandHooks(in: hooksURL, fileManager: fileManager) {
+        // 3. Check that our own hooks are actually there, and the manifest.
+        let hasOwnHooks = hasOpenIslandHooks(in: hooksURL, fileManager: fileManager)
+
+        if hasOwnHooks {
             let legacyManifestURL = codexDirectory.appendingPathComponent(CodexHookInstallerManifest.legacyFileName)
             if !fileManager.fileExists(atPath: manifestURL.path) && !fileManager.fileExists(atPath: legacyManifestURL.path) {
                 issues.append(.manifestMissing(expectedPath: manifestURL.path))
             }
+        } else if expectsInstalledHooks, !issues.contains(.configMalformedJSON(path: hooksPath)) {
+            issues.append(.hooksMissing(configPath: hooksPath))
         }
 
         return HookHealthReport(
