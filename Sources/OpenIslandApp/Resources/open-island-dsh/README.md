@@ -26,17 +26,21 @@ dsh plugin --profile web remove open-island-dsh
 
 The Cordis entry exports `name`, `inject = ['sessions']`, and `apply(ctx, config)`. It uses `ctx.on`, `ctx.effect`, `ctx.sessions.list()`, and `ctx.sessions.get(id)`. Session metadata uses `session.id`, `session.header.cwd`, and the incremental `session.requestHeader()` fold.
 
-It subscribes to `session/created`, `session/event`, and `session/disposed`. Initial enumeration includes only loaded live Session objects. Detached persisted sessions and the host process itself never produce heartbeats. Each live Session object owns its heartbeat timer, tool-call correlation, model metadata, and latest assistant text. A disposed object cannot be revived by another session reusing its id. Plugin unload ends all observed sessions and clears every timer.
+It subscribes to `session/created`, `session/event`, `session/disposed`, `agent/created`, and `agent/disposed`. Only proven top-level agents are observed. Proof requires `agents.get(session.id)` to return the exact live agent for that Session object and `agents.roots()` to contain that agent. Immutable `session.header.origin === 'subagent'` or positive `delegationDepth` always excludes the session, even if resumed as a runtime root. `parentSession` alone is fork lineage and does not exclude a proven root. Unknown sessions, including SessionStore entries created before agent publication or profiles without the public Agents service, produce no activity and wait for classification. Titles, prompts, and tool names are never used to infer ownership.
+
+Initial enumeration includes only loaded live Session objects and does not replay pre-classification events. Each proven root Session object owns its heartbeat timer, tool-call correlation, model metadata, and latest assistant text. Agent or session disposal ends that exact observation. Reclassification as a child clears its timers and pending interactions. A disposed object cannot be revived by another session reusing its id. Plugin unload ends all observed roots and clears every timer.
 
 | DSH event | Open Island lifecycle |
 | --- | --- |
-| Session creation or existing live session at plugin load | `SessionStart` |
+| Exact root agent confirmed at publication or plugin load | `SessionStart` |
 | `user/message` with `source.kind = 'user'` | `UserPromptSubmit` |
 | `tool/call` | `PreToolUse` |
 | `tool/result` | `PostToolUse` |
 | `turn/end`, including cancellation and failure | `Stop` |
 | Timer while exact Session object remains in the store | `Heartbeat` |
 | Session disposal or plugin unload | `SessionEnd` |
+
+Every normal root payload carries `is_subagent: false`. A known child sends only one exclusion tombstone per Session object and plugin lifetime: `SessionEnd` with `is_subagent: true`, `session_id`, `cwd`, and optional `parent_session_id` from its public immutable header. Native code must consume this before ordinary lifecycle processing, silently remove any older persisted child row, and never notify, create a card, or show completion. Children emit no starts, heartbeats, metadata, tool observations, outcomes, or completion text. Their question and approval waterfalls are left to native DSH. A public question service may itself reject an owned child with `DELEGATED_CALLER` before dispatch.
 
 Injected context is not a user prompt. Assistant reasoning, attachments, and tool outputs are not forwarded. Prompt previews and raw tool argument strings are capped at 4096 characters. Final visible assistant markdown is preserved up to 16 KiB with a UTF-8-safe boundary. The session id is the native DSH id, without an extra prefix. No guessed terminal or process identity is attached to Web sessions.
 
@@ -73,7 +77,7 @@ The package and Cordis patch identity are `open-island-dsh`. The package exports
 - `@deepseek-ai/dsh-client-ui-workspace`
 - `@deepseek-ai/dsh-client-ui-conversation`
 
-The client requires services `connection`, `sessions`, `uiWorkspace`, and `conversation`. Host `connection` and `webApp` are optional, so sessions-only CLI profiles retain lifecycle observation without a focus listener.
+The client requires services `connection`, `sessions`, `uiWorkspace`, and `conversation`. Host `connection` and `webApp` are optional, so CLI profiles with the public Agents service retain root-only lifecycle observation without a focus listener. Session-only profiles remain silent because they cannot prove root ownership.
 
 Web hosts publish optional lifecycle fields only after the endpoint is ready:
 

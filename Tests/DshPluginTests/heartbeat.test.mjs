@@ -7,11 +7,13 @@ import test from 'node:test'
 
 let cordisURL
 let sessionURL
+let agentURL
 try {
   const require = process.env.DSH_PACKAGE_ROOT
     ? createRequire(join(process.env.DSH_PACKAGE_ROOT, 'package.json')) : createRequire(import.meta.url)
   cordisURL = pathToFileURL(require.resolve('@deepseek-ai/cordis')).href
   sessionURL = pathToFileURL(require.resolve('@deepseek-ai/dsh-session')).href
+  agentURL = pathToFileURL(require.resolve('@deepseek-ai/dsh-agent')).href
 } catch (error) {
   if (process.env.DSH_PACKAGE_ROOT) throw error
 }
@@ -24,10 +26,13 @@ test('loaded sessions and an unavailable bridge never keep a host process alive'
   const script = `
     import { Context } from ${JSON.stringify(cordisURL)}
     import SessionStore from ${JSON.stringify(sessionURL)}
+    import AgentRegistry from ${JSON.stringify(agentURL)}
     import * as observer from ${JSON.stringify(pluginURL)}
     const ctx = new Context()
     await ctx.plugin(SessionStore).inertia
-    ctx.sessions.create('live-at-exit', { meta: { cwd: '/workspace' } })
+    const session = ctx.sessions.create('live-at-exit', { meta: { cwd: '/workspace' } })
+    await ctx.plugin(AgentRegistry).inertia
+    await ctx.agents.register({ id: session.id, session, ctx })
     const plugin = ctx.plugin(observer, { socketPath: '/tmp/oi-dsh-not-running/bridge.sock' })
     await plugin.inertia
     if (plugin.state !== 2) throw new Error('Observer did not activate')

@@ -153,7 +153,8 @@ async function installedRuntime() {
       ? createRequire(join(process.env.DSH_PACKAGE_ROOT, 'package.json')) : createRequire(import.meta.url)
     const { Context } = await import(pathToFileURL(require.resolve('@deepseek-ai/cordis')).href)
     const { default: SessionStore, Session } = await import(pathToFileURL(require.resolve('@deepseek-ai/dsh-session')).href)
-    return { Context, SessionStore, Session }
+    const { AgentRegistry } = await import(pathToFileURL(require.resolve('@deepseek-ai/dsh-agent')).href)
+    return { Context, SessionStore, Session, AgentRegistry }
   } catch (error) {
     if (process.env.DSH_PACKAGE_ROOT) throw error
     return undefined
@@ -161,6 +162,21 @@ async function installedRuntime() {
 }
 
 const runtime = await installedRuntime()
+
+async function registerFixtureRoots(ctx) {
+  await ctx.plugin(runtime.AgentRegistry).inertia
+  const owners = new Map()
+  ctx.on('session/created', session => {
+    const agent = { id: session.id, session, ctx }
+    owners.set(session, ctx.agents.enter(agent, undefined))
+    void ctx.agents.announce(agent, 'create')
+  })
+  ctx.on('session/disposed', session => {
+    owners.get(session)?.()
+    owners.delete(session)
+  })
+  ctx.effect(() => () => { for (const detach of owners.values()) detach() }, 'fixture root lifetimes')
+}
 
 test('optional web services advertise only ready private endpoints and restrict RPC to the browser owner', {
   skip: !runtime && 'Set DSH_PACKAGE_ROOT for real Cordis coverage',
@@ -170,6 +186,7 @@ test('optional web services advertise only ready private endpoints and restrict 
   const ctx = new Context()
   t.after(() => ctx.fiber.dispose())
   await ctx.plugin(SessionStore).inertia
+  await registerFixtureRoots(ctx)
   ctx.sessions.create('web-session', { meta: { cwd: '/workspace' } })
   const browserPeer = { principal: { kind: 'owner' } }
   let handler
@@ -210,6 +227,7 @@ test('observes real Cordis sessions independently and stops heartbeats at sessio
   t.after(() => ctx.fiber.dispose())
   const storeFiber = ctx.plugin(SessionStore)
   await storeFiber.inertia
+  await registerFixtureRoots(ctx)
   const ownerA = ctx.plugin({ name: 'owner-a', inject: ['sessions'], apply() {} })
   await ownerA.inertia
   const a = ownerA.ctx.sessions.create('session-a', { meta: { cwd: '/workspace/a' } })

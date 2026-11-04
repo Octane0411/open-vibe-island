@@ -165,10 +165,10 @@ async function installedRuntime() {
   try {
     const require = process.env.DSH_PACKAGE_ROOT ? createRequire(join(process.env.DSH_PACKAGE_ROOT, 'package.json')) : createRequire(import.meta.url)
     const load = async name => import(pathToFileURL(require.resolve(`@deepseek-ai/${name}`)).href)
-    const [{ Context }, { default: SessionStore }, { UserQuestionService }, { ApprovalService }, { PlanModeController }] = await Promise.all([
-      load('cordis'), load('dsh-session'), load('dsh-user-questions'), load('dsh-user-approval'), load('dsh-plan-mode'),
+    const [{ Context }, { default: SessionStore }, { UserQuestionService }, { ApprovalService }, { PlanModeController }, { AgentRegistry }] = await Promise.all([
+      load('cordis'), load('dsh-session'), load('dsh-user-questions'), load('dsh-user-approval'), load('dsh-plan-mode'), load('dsh-agent'),
     ])
-    return { Context, SessionStore, UserQuestionService, ApprovalService, PlanModeController }
+    return { Context, SessionStore, UserQuestionService, ApprovalService, PlanModeController, AgentRegistry }
   } catch (error) {
     if (process.env.DSH_PACKAGE_ROOT) throw error
   }
@@ -199,8 +199,9 @@ test('actual host plugin publishes endpoint and cancels cards on terminal result
   t.after(() => ctx.fiber.dispose())
   await ctx.plugin(SessionStore).inertia
   const session = ctx.sessions.create('actual-host-session')
-  const agent = { id: 'actual-host-root', ctx, session }
-  ctx.provide('agents', { get: id => id === agent.id ? agent : undefined, roots: () => [agent] })
+  const agent = { id: session.id, ctx, session }
+  await ctx.plugin(runtime.AgentRegistry).inertia
+  await ctx.agents.register(agent)
   ctx.provide('connection', { browserPeer: {}, rpc: { handle: () => () => {} } })
   ctx.provide('webApp', { getAdvertisedUrl: () => 'http://127.0.0.1:3080/' })
   await ctx.plugin(UserQuestionService).inertia

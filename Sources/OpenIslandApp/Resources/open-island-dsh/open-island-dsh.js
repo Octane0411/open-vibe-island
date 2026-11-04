@@ -622,20 +622,32 @@ export function apply(ctx, config = {}) {
   const heartbeatMs = validInterval(config.heartbeatIntervalMs ?? process.env.OPEN_ISLAND_HEARTBEAT_INTERVAL_MS)
   const transport = createSocketTransport(socketPath)
   const sessions = new Map()
+  const excluded = new WeakSet()
   let disposed = false
   let webMetadata = {}
+  function classification(session) {
+    if (!session || store.get(session.id) !== session) return { kind: 'unknown' }
+    if (excluded.has(session) || session.header?.origin === 'subagent' || session.header?.delegationDepth > 0) return { kind: 'child' }
+    const registry = ctx.get('agents')
+    const agent = registry?.get(session.id)
+    if (!agent || agent.session !== session) return { kind: 'unknown' }
+    return { kind: registry.roots().includes(agent) ? 'root' : 'child', agent }
+  }
+  function isRootAgent(agent) {
+    const current = classification(agent?.session)
+    return !disposed && current.kind === 'root' && current.agent === agent
+  }
   function callIdFor(session) {
     const calls = [...(sessions.get(session)?.tools ?? [])].filter(([, tool]) => tool === 'ask_user_question')
     return calls.length === 1 ? calls[0][0] : undefined
   }
   const interactions = createInteractionController({
-    isLive: agent => !disposed && !!agent && store.get(agent.session?.id) === agent.session
-      && sessions.has(agent.session) && ctx.get('agents')?.get(agent.id) === agent
-      && ctx.get('agents')?.roots().includes(agent),
+    isLive: agent => isRootAgent(agent) && sessions.has(agent.session),
     callIdFor,
     turnIdFor: session => sessions.get(session)?.turnId,
   })
   ctx.on('user-questions/request', async (request, next) => {
+    if (request.agent?.session) start(request.agent.session)
     const state = sessions.get(request.agent?.session)
     const question = request.questions?.length === 1 ? request.questions[0] : undefined
     const plan = question?.intent?.kind === 'plan-review'
@@ -665,9 +677,12 @@ export function apply(ctx, config = {}) {
       throw error
     }
   }, { prepend: true })
-  ctx.on('approval/request', (request, next) => interactions.request('approval', request, next), { prepend: true })
+  ctx.on('approval/request', (request, next) => {
+    if (request.agent?.session) start(request.agent.session)
+    return interactions.request('approval', request, next)
+  }, { prepend: true })
 
-  // Web services are optional. The sessions-only CLI observer keeps working.
+  // Web services are optional. Root classification still requires public Agents.
   ctx.inject(['connection', 'webApp'], webCtx => {
     webCtx.effect(() => {
       let cancelled = false
@@ -675,8 +690,8 @@ export function apply(ctx, config = {}) {
       let unregister
       const ready = createFocusRelay({
         interactions,
-        hasSession: id => !disposed && store.get(id) !== undefined
-          && sessions.has(store.get(id)),
+        hasSession: id => !disposed && sessions.has(store.get(id))
+          && classification(store.get(id)).kind === 'root',
       }).then(async value => {
         relay = value
         if (cancelled) return
@@ -701,9 +716,15 @@ export function apply(ctx, config = {}) {
   })
 
   function send(session, state, lifecycle) {
+    if (lifecycle.hook_event_name !== 'SessionEnd' && classification(session).kind !== 'root') {
+      start(session)
+      return
+    }
     const payload = {
       session_id: session.id,
       cwd: session.header?.cwd || process.cwd(),
+      is_subagent: false,
+      ...(session.header?.parentSession ? { parent_session_id: session.header.parentSession } : {}),
       model: state.model,
       ...(validTurn(state.turnId) ? { turn_id: state.turnId } : {}),
       ...webMetadata,
@@ -721,20 +742,52 @@ export function apply(ctx, config = {}) {
     send(session, state, { hook_event_name: 'SessionEnd' })
   }
 
+  function exclude(session) {
+    const state = sessions.get(session)
+    if (state) {
+      clearInterval(state.timer)
+      interactions.cancelSession(session)
+      sessions.delete(session)
+    }
+    if (excluded.has(session)) return
+    excluded.add(session)
+    // A tombstone only removes rows from older companions. Native must consume
+    // this before ordinary lifecycle processing, without a completion notification.
+    void transport.send({ type: 'command', command: { type: 'processDshHook', dshHook: {
+      hook_event_name: 'SessionEnd', session_id: session.id,
+      cwd: session.header?.cwd || process.cwd(), is_subagent: true,
+      ...(session.header?.parentSession ? { parent_session_id: session.header.parentSession } : {}),
+    } } })
+  }
+
   function start(session) {
-    if (disposed || sessions.has(session) || store.get(session.id) !== session) return
-    const state = { tools: new Map(), interactionCalls: new Map(), model: modelName(session.requestHeader?.()?.config) }
+    if (disposed || !session || store.get(session.id) !== session) return
+    const current = classification(session)
+    if (current.kind === 'child') return exclude(session)
+    if (current.kind !== 'root') return end(session)
+    const existing = sessions.get(session)
+    if (existing?.agent === current.agent) return
+    if (existing) end(session)
+    const state = { agent: current.agent, tools: new Map(), interactionCalls: new Map(), model: modelName(session.requestHeader?.()?.config) }
     sessions.set(session, state)
     send(session, state, { hook_event_name: 'SessionStart' })
     state.timer = setInterval(() => {
       if (store.get(session.id) !== session) return end(session)
-      send(session, state, { hook_event_name: 'Heartbeat' })
+      start(session)
+      if (sessions.get(session) === state) send(session, state, { hook_event_name: 'Heartbeat' })
     }, heartbeatMs)
     state.timer.unref()
   }
 
   ctx.on('session/created', start)
   ctx.on('session/disposed', end)
+  ctx.on('agent/created', ({ agent }) => { start(agent.session) }, { global: true })
+  ctx.on('agent/disposed', ({ agent }) => {
+    if (sessions.get(agent.session)?.agent === agent) end(agent.session)
+  }, { global: true })
+  ctx.inject(['agents'], () => {
+    for (const session of store.list()) start(session)
+  })
   ctx.on('session/event', (session, event) => {
     if (disposed || store.get(session.id) !== session) return
     start(session)

@@ -20,10 +20,10 @@ async function installedRuntime() {
   try {
     const require = process.env.DSH_PACKAGE_ROOT ? createRequire(join(process.env.DSH_PACKAGE_ROOT, 'package.json')) : createRequire(import.meta.url)
     const load = async name => import(pathToFileURL(require.resolve(`@deepseek-ai/${name}`)).href)
-    const [{ Context }, { default: SessionStore }, { UserQuestionService, UserQuestionError }, { PlanModeController }, askTool] = await Promise.all([
-      load('cordis'), load('dsh-session'), load('dsh-user-questions'), load('dsh-plan-mode'), load('dsh-tool-ask-user'),
+    const [{ Context }, { default: SessionStore }, { UserQuestionService, UserQuestionError }, { PlanModeController }, askTool, { AgentRegistry }] = await Promise.all([
+      load('cordis'), load('dsh-session'), load('dsh-user-questions'), load('dsh-plan-mode'), load('dsh-tool-ask-user'), load('dsh-agent'),
     ])
-    return { Context, SessionStore, UserQuestionService, UserQuestionError, PlanModeController, askTool }
+    return { Context, SessionStore, UserQuestionService, UserQuestionError, PlanModeController, askTool, AgentRegistry }
   } catch (error) {
     if (process.env.DSH_PACKAGE_ROOT) throw error
   }
@@ -55,8 +55,9 @@ test('published question and plan executions expose terminal outcomes after nati
   t.after(() => ctx.fiber.dispose())
   await ctx.plugin(SessionStore).inertia
   const session = ctx.sessions.create('published-results-session')
-  const agent = { id: 'published-results-root', session, ctx }
-  ctx.provide('agents', { get: id => id === agent.id ? agent : undefined, roots: () => [agent] })
+  const agent = { id: session.id, session, ctx }
+  await ctx.plugin(runtime.AgentRegistry).inertia
+  await ctx.agents.register(agent)
   const definitions = new Map()
   ctx.provide('tools', { register: tool => definitions.set(tool.name, tool) })
   ctx.provide('systemPrompt', { section() {}, getSectionOrder: () => 0 })
