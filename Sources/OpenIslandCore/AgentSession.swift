@@ -281,17 +281,25 @@ public struct QuestionPromptItem: Equatable, Codable, Sendable {
     public var header: String
     public var options: [QuestionOption]
     public var multiSelect: Bool
+    public var nativeID: String?
+    public var detail: String?
+
+    public var responseKey: String { nativeID ?? question }
 
     public init(
         question: String,
         header: String,
         options: [QuestionOption],
-        multiSelect: Bool = false
+        multiSelect: Bool = false,
+        nativeID: String? = nil,
+        detail: String? = nil
     ) {
         self.question = question
         self.header = header
         self.options = options
         self.multiSelect = multiSelect
+        self.nativeID = nativeID
+        self.detail = detail
     }
 }
 
@@ -335,19 +343,33 @@ public struct QuestionAnswerAnnotation: Equatable, Codable, Sendable {
     }
 }
 
+/// Exact native answers avoid losing IDs or splitting labels that contain commas.
+public struct StructuredQuestionAnswer: Equatable, Codable, Sendable {
+    public var selectedOptions: [String]
+    public var customText: String?
+
+    public init(selectedOptions: [String] = [], customText: String? = nil) {
+        self.selectedOptions = selectedOptions
+        self.customText = customText
+    }
+}
+
 public struct QuestionPromptResponse: Equatable, Codable, Sendable {
     public var rawAnswer: String?
     public var answers: [String: String]
     public var annotations: [String: QuestionAnswerAnnotation]
+    public var structuredAnswers: [String: StructuredQuestionAnswer]?
 
     public init(
         rawAnswer: String? = nil,
         answers: [String: String] = [:],
-        annotations: [String: QuestionAnswerAnnotation] = [:]
+        annotations: [String: QuestionAnswerAnnotation] = [:],
+        structuredAnswers: [String: StructuredQuestionAnswer]? = nil
     ) {
         self.rawAnswer = rawAnswer
         self.answers = answers
         self.annotations = annotations
+        self.structuredAnswers = structuredAnswers
     }
 
     public init(answer: String) {
