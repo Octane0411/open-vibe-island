@@ -48,6 +48,11 @@ public struct PiTrackedSessionRecord: Equatable, Codable, Sendable {
         restored.attachmentState = .stale
 
         if restored.origin != .demo {
+            // Runtime root ownership is not a persistent liveness fact. A prior
+            // root may now be owned by a parent, so wait for fresh registry proof.
+            if restored.tool == .dsh, restored.piMetadata?.isSubagent == false {
+                restored.piMetadata?.isSubagent = nil
+            }
             restored.isHookManaged = true
             restored.heartbeatReconnectStartedAt = restoredAt
         }
