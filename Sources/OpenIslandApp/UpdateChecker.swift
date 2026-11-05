@@ -34,6 +34,7 @@ final class UpdateChecker: NSObject {
     /// Start Sparkle's automatic update checking schedule.
     /// Call once after app launch.
     func startIfNeeded() {
+        guard Bundle.main.object(forInfoDictionaryKey: "OpenIslandCustomBuild") as? Bool != true else { return }
         #if DEBUG
         // Dev builds run from a local branch that often carries fixes not yet in
         // the upstream appcast. Letting Sparkle prompt the user to "update" to
@@ -63,6 +64,7 @@ final class UpdateChecker: NSObject {
 
     /// Manually trigger an update check (from Settings UI).
     func checkForUpdates() {
+        guard Bundle.main.object(forInfoDictionaryKey: "OpenIslandCustomBuild") as? Bool != true else { return }
         updaterController.checkForUpdates(nil)
     }
 }

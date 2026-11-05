@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import Foundation
+import OpenIslandCore
 
 struct HarnessArtifactReport: Codable {
     struct AccessibilitySummary: Codable {
@@ -73,6 +74,7 @@ struct HarnessArtifactReport: Codable {
         let attachmentState: String
         let title: String
         let summary: String
+        let subagents: [OpenIslandCore.SessionSubagent]
     }
 
     let scenario: String?
@@ -173,7 +175,8 @@ enum HarnessArtifactRecorder {
                     phase: $0.phase.rawValue,
                     attachmentState: $0.attachmentState.rawValue,
                     title: $0.title,
-                    summary: $0.summary
+                    summary: $0.summary,
+                    subagents: $0.islandSubagents
                 )
             }
         )

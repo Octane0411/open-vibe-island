@@ -30,6 +30,8 @@ This index is the repository map for humans and coding agents. Read these files 
 
 ## Runtime And Product Notes
 
+- [docs/codex-claude-ux.md](./codex-claude-ux.md) for the selected workflow comparison, child-agent behavior and portable custom builds
+
 - [docs/notch-surface-model.md](./notch-surface-model.md) for the island surface routing model and debug harness intent
 - [docs/app-ghostty-codex-chain.md](./app-ghostty-codex-chain.md) for terminal environment findings across the current supported chain
 

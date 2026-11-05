@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 // MARK: - Protocol models
 
@@ -15,10 +16,28 @@ public struct CodexThread: Codable, Sendable {
     public let path: String?
     public let status: CodexThreadStatus
     public let source: CodexThreadSource?
+    public let parentThreadId: String?
+    public let agentNickname: String?
+    public let agentRole: String?
+    public let model: String?
+    public let reasoningEffort: String?
+
+    public var subagentParentID: String? { parentThreadId ?? source?.subagentInfo?.parentThreadID }
+    public var isSubagent: Bool { subagentParentID != nil || source?.isSubagent == true }
 
     /// Turns are only populated on `thread/resume` and `thread/fork`
     /// responses, empty otherwise.
     public let turns: [CodexTurn]?
+
+    func updatingActivityTimestamp(_ timestamp: Int) -> CodexThread {
+        CodexThread(
+            id: id, cwd: cwd, name: name, preview: preview, modelProvider: modelProvider,
+            createdAt: createdAt, updatedAt: max(updatedAt, timestamp), ephemeral: ephemeral,
+            path: path, status: status, source: source, parentThreadId: parentThreadId,
+            agentNickname: agentNickname, agentRole: agentRole, model: model,
+            reasoningEffort: reasoningEffort, turns: turns
+        )
+    }
 }
 
 public enum CodexThreadStatusType: String, Codable, Sendable {
@@ -42,16 +61,82 @@ public struct CodexThreadStatus: Codable, Sendable {
     }
 }
 
-public enum CodexThreadSource: String, Codable, Sendable {
-    case cli
-    case vscode
-    case appServer = "app-server"
-    case codexExec = "codex-exec"
-    case unknown
+/// The structured source carries the only reliable parent/child relationship.
+public struct CodexSubagentSource: Equatable, Codable, Sendable {
+    public let parentThreadID: String
+    public let depth: Int?
+    public let nickname: String?
+    public let role: String?
 
-    public init(from decoder: Decoder) throws {
-        let value = try decoder.singleValueContainer().decode(String.self)
-        self = CodexThreadSource(rawValue: value) ?? .unknown
+    private enum CodingKeys: String, CodingKey {
+        case parentThreadID = "parent_thread_id"
+        case depth
+        case nickname = "agent_nickname"
+        case role = "agent_role"
+    }
+}
+
+public enum CodexThreadSource: Equatable, Codable, Sendable {
+    case cli, vscode, appServer, codexExec, unknown
+    case subagent(CodexSubagentSource?)
+
+    public var subagentInfo: CodexSubagentSource? {
+        if case let .subagent(info) = self { return info }
+        return nil
+    }
+
+    public var isSubagent: Bool {
+        if case .subagent = self { return true }
+        return false
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .cli: "cli"
+        case .vscode: "vscode"
+        case .appServer: "app-server"
+        case .codexExec: "codex-exec"
+        case .unknown: "unknown"
+        case .subagent: "subagent"
+        }
+    }
+
+    private enum SourceKey: String, CodingKey { case subAgent }
+
+    private struct StructuredSource: Codable {
+        struct Subagent: Codable {
+            let thread_spawn: CodexSubagentSource?
+        }
+        let subAgent: Subagent
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let value = try? container.decode(String.self) {
+            switch value {
+            case "cli": self = .cli
+            case "vscode": self = .vscode
+            case "app-server": self = .appServer
+            case "codex-exec": self = .codexExec
+            case "subagent": self = .subagent(nil)
+            default: self = .unknown
+            }
+        } else if let source = try? container.decode(StructuredSource.self) {
+            self = .subagent(source.subAgent.thread_spawn)
+        } else if let object = try? decoder.container(keyedBy: SourceKey.self), object.contains(.subAgent) {
+            self = .subagent(nil)
+        } else {
+            self = .unknown
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        if case let .subagent(info?) = self {
+            try container.encode(StructuredSource(subAgent: .init(thread_spawn: info)))
+        } else {
+            try container.encode(rawValue)
+        }
     }
 }
 
@@ -81,11 +166,14 @@ public enum CodexAppServerNotification: Sendable {
 
 // MARK: - JSON-RPC transport
 
-/// A lightweight JSON-RPC client that communicates with Codex app-server
-/// over a stdio-based `Process`.  Uses newline-delimited JSON messages
-/// (one JSON object per line, no Content-Length framing).
+/// A read-only JSON-RPC client for an existing shared daemon over a local
+/// WebSocket, or a desktop app-server subprocess over newline-delimited stdio.
 public final class CodexAppServerClient: @unchecked Sendable {
     private let codexPath: String
+    private let usesSharedDaemon: Bool
+    private var localWebSocket = CodexLocalWebSocket()
+    private var sharedSocketHandle: FileHandle?
+    private var handshakeContinuation: CheckedContinuation<Void, any Error>?
     private var process: Process?
     private var stdoutReadHandle: FileHandle?
     private var stderrReadHandle: FileHandle?
@@ -109,8 +197,10 @@ public final class CodexAppServerClient: @unchecked Sendable {
 
     public var onNotification: (@Sendable (CodexAppServerNotification) -> Void)?
 
-    public init(codexPath: String = "/Applications/Codex.app/Contents/Resources/codex") {
+    public init(codexPath: String = "/Applications/Codex.app/Contents/Resources/codex", usesSharedDaemon: Bool = false) {
         self.codexPath = codexPath
+        self.usesSharedDaemon = usesSharedDaemon
+        if usesSharedDaemon { requestTimeoutSeconds = 5 }
     }
 
     /// Resolve the CLI inside the installed desktop bundle, including the
@@ -126,7 +216,7 @@ public final class CodexAppServerClient: @unchecked Sendable {
     }
 
     public var isRunning: Bool {
-        process?.isRunning == true
+        sharedSocketHandle != nil || process?.isRunning == true
     }
 
     // MARK: - Lifecycle
@@ -135,26 +225,51 @@ public final class CodexAppServerClient: @unchecked Sendable {
     public func start() async throws {
         guard !isRunning else { return }
 
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: codexPath)
-        proc.arguments = ["app-server", "--listen", "stdio://"]
-
-        let stdinPipe = Pipe()
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        proc.standardInput = stdinPipe
-        proc.standardOutput = stdoutPipe
-        proc.standardError = stderrPipe
-
-        self.stdin = stdinPipe.fileHandleForWriting
-        self.process = proc
-
-        configureOutputHandlers(
-            stdout: stdoutPipe.fileHandleForReading,
-            stderr: stderrPipe.fileHandleForReading
-        )
-
-        try proc.run()
+        if usesSharedDaemon {
+            let home = ProcessInfo.processInfo.environment["CODEX_HOME"]
+                ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex").path
+            let path = URL(fileURLWithPath: home).appendingPathComponent("app-server-control/app-server-control.sock").path
+            let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
+            guard descriptor >= 0 else { throw CodexAppServerError.notConnected }
+            do {
+                try disableSocketSigPipe(descriptor)
+                try withUnixSocketAddress(path: path) { address, length in
+                    guard Darwin.connect(descriptor, address, length) == 0 else {
+                        throw CodexAppServerError.notConnected
+                    }
+                }
+            } catch { Darwin.close(descriptor); throw error }
+            let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+            sharedSocketHandle = handle
+            stdin = handle
+            configureOutputHandlers(stdout: handle, stderr: nil)
+            // The server must accept the HTTP upgrade before any RPC frame is
+            // sent; pipelining it can lose the first request in HTTP parsing.
+            let timeout = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(5))
+                if !Task.isCancelled { self?.finishHandshake(error: CodexAppServerError.timeout) }
+            }
+            defer { timeout.cancel() }
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                lock.withLock { handshakeContinuation = continuation }
+                do { try handle.write(contentsOf: localWebSocket.upgradeRequest) }
+                catch { finishHandshake(error: error) }
+            }
+        } else {
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: codexPath)
+            proc.arguments = ["app-server", "--listen", "stdio://"]
+            let stdinPipe = Pipe()
+            let stdoutPipe = Pipe()
+            let stderrPipe = Pipe()
+            proc.standardInput = stdinPipe
+            proc.standardOutput = stdoutPipe
+            proc.standardError = stderrPipe
+            self.stdin = stdinPipe.fileHandleForWriting
+            self.process = proc
+            configureOutputHandlers(stdout: stdoutPipe.fileHandleForReading, stderr: stderrPipe.fileHandleForReading)
+            try proc.run()
+        }
 
         // Send initialize request.
         struct InitializeParams: Encodable {
@@ -168,9 +283,11 @@ public final class CodexAppServerClient: @unchecked Sendable {
             method: "initialize",
             params: InitializeParams(clientInfo: .init(name: "OpenIsland", version: "1.0.0"))
         )
+        let initialized = Data("{\"method\":\"initialized\"}\n".utf8)
+        try self.stdin?.write(contentsOf: usesSharedDaemon ? CodexLocalWebSocket.encode(initialized) : initialized)
     }
 
-    func configureOutputHandlers(stdout: FileHandle, stderr: FileHandle) {
+    func configureOutputHandlers(stdout: FileHandle, stderr: FileHandle?) {
         stdoutReadHandle = stdout
         stderrReadHandle = stderr
 
@@ -179,13 +296,14 @@ public final class CodexAppServerClient: @unchecked Sendable {
             let data = handle.availableData
             guard !data.isEmpty else {
                 handle.readabilityHandler = nil
+                if self?.usesSharedDaemon == true { self?.stop() }
                 return
             }
             self?.handleIncomingData(data)
         }
 
         // Drain stderr so a full pipe can't block the child process.
-        stderr.readabilityHandler = { handle in
+        stderr?.readabilityHandler = { handle in
             let data = handle.availableData
             if data.isEmpty {
                 handle.readabilityHandler = nil
@@ -195,6 +313,7 @@ public final class CodexAppServerClient: @unchecked Sendable {
 
     /// Stop the app-server subprocess.
     public func stop() {
+        finishHandshake(error: CodexAppServerError.disconnected)
         stdoutReadHandle?.readabilityHandler = nil
         stderrReadHandle?.readabilityHandler = nil
         stdoutReadHandle = nil
@@ -202,6 +321,8 @@ public final class CodexAppServerClient: @unchecked Sendable {
         process?.terminate()
         process = nil
         stdin = nil
+        try? sharedSocketHandle?.close()
+        sharedSocketHandle = nil
         lock.lock()
         let pending = pendingRequests
         pendingRequests.removeAll()
@@ -242,6 +363,13 @@ public final class CodexAppServerClient: @unchecked Sendable {
             cursor = page.nextCursor
             if let cursor, !visitedCursors.insert(cursor).inserted { break }
         } while cursor != nil
+        if usesSharedDaemon,
+           let recent = try? await listThreads(limit: 100, sortKey: "updated_at") {
+            // Loaded legacy threads can retain their original creation-time
+            // updatedAt. The history index has the actual latest activity date.
+            let activity = Dictionary(uniqueKeysWithValues: recent.map { ($0.id, $0.updatedAt) })
+            return threads.map { $0.updatingActivityTimestamp(activity[$0.id] ?? $0.updatedAt) }
+        }
         return threads
     }
 
@@ -258,9 +386,9 @@ public final class CodexAppServerClient: @unchecked Sendable {
     }
 
     /// List all threads (including not-loaded) from the app-server.
-    public func listThreads(limit: Int? = nil) async throws -> [CodexThread] {
-        struct Params: Encodable { let limit: Int? }
-        let data = try await sendRequest(method: "thread/list", params: Params(limit: limit))
+    public func listThreads(limit: Int? = nil, sortKey: String? = nil) async throws -> [CodexThread] {
+        struct Params: Encodable { let limit: Int?; let sortKey: String? }
+        let data = try await sendRequest(method: "thread/list", params: Params(limit: limit, sortKey: sortKey))
         return try Self.decodeThreadListResponse(data)
     }
 
@@ -333,7 +461,8 @@ public final class CodexAppServerClient: @unchecked Sendable {
             lock.lock()
             pendingRequests[requestID] = continuation
             lock.unlock()
-            stdin.write(line)
+            do { try stdin.write(contentsOf: usesSharedDaemon ? CodexLocalWebSocket.encode(line) : line) }
+            catch { self.failPendingRequest(id: requestID, with: .disconnected) }
         }
     }
 
@@ -359,6 +488,34 @@ public final class CodexAppServerClient: @unchecked Sendable {
     static let maxLineByteCount = 8 * 1_024 * 1_024
 
     func handleIncomingData(_ data: Data) {
+        if usesSharedDaemon {
+            do {
+                let frames = try localWebSocket.receive(data)
+                if localWebSocket.isUpgraded { finishHandshake() }
+                for frame in frames {
+                    switch frame {
+                    case let .text(payload): handleJSONData(payload + Data([10]))
+                    case let .ping(payload): try stdin?.write(contentsOf: CodexLocalWebSocket.encode(payload, opcode: 10))
+                    case .closed: stop()
+                    }
+                }
+            } catch { stop() }
+        } else {
+            handleJSONData(data)
+        }
+    }
+
+    private func finishHandshake(error: Error? = nil) {
+        let continuation = lock.withLock {
+            let pending = handshakeContinuation
+            handshakeContinuation = nil
+            return pending
+        }
+        if let error { continuation?.resume(throwing: error) }
+        else { continuation?.resume() }
+    }
+
+    private func handleJSONData(_ data: Data) {
         readBuffer.append(data)
 
         while let newlineIndex = readBuffer.firstIndex(of: UInt8(ascii: "\n")) {

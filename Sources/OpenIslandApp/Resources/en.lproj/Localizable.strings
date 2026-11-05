@@ -226,3 +226,36 @@
 
 /* Window Titles */
 "window.settings" = "Open Island Settings";
+
+"subagents.runningCount" = "%lld subagents running";
+"subagents.running" = "Running";
+"subagents.approval" = "Needs approval";
+"subagents.answer" = "Needs answer";
+"settings.general.showSubagents" = "Show subagents";
+"settings.general.showSubagentsHelp" = "Show child agents inside their parent conversation. Waiting children remain visible when details are hidden.";
+
+"settings.display.content" = "Content";
+"settings.display.layout" = "Closed island layout";
+"settings.display.clean" = "Clean";
+"settings.display.detailed" = "Detailed";
+"settings.display.layoutHelp" = "Clean leaves more room in the menu bar. Detailed shows a conversation title on displays without a notch.";
+"settings.display.showModel" = "Show AI model";
+"settings.display.showReasoning" = "Show reasoning effort";
+
+"settings.general.expandCompletion" = "Expand for completion notifications";
+"settings.general.expandQuestion" = "Expand for questions";
+"settings.general.dismissOutside" = "Dismiss auto reveal on outside click";
+
+"settings.shortcuts.enabled" = "Enable keyboard shortcuts";
+"settings.shortcuts.toggle" = "Toggle island (global)";
+"settings.shortcuts.unavailable" = "This shortcut is in use. Choose the other combination.";
+"settings.shortcuts.inPanel" = "When the island has keyboard focus";
+"settings.shortcuts.next" = "Next conversation";
+"settings.shortcuts.previous" = "Previous conversation";
+"settings.shortcuts.jump" = "Jump to selected conversation";
+"settings.shortcuts.approve" = "Allow the visible approval";
+"settings.shortcuts.deny" = "Deny the visible approval";
+"settings.shortcuts.close" = "Close island";
+"settings.shortcuts.scope" = "Panel shortcuts work while the island has keyboard focus. Text fields keep their normal editing keys.";
+
+"subagents.doneCount" = "%lld subagents completed";

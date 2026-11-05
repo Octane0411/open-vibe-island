@@ -3,6 +3,17 @@ import CoreGraphics
 import Foundation
 import OpenIslandCore
 
+enum IslandToggleShortcut: String, CaseIterable, Identifiable {
+    case commandShiftI, controlOptionI
+    var id: String { rawValue }
+    var label: String { self == .commandShiftI ? "⌘⇧I" : "⌃⌥I" }
+}
+
+enum IslandLayoutMode: String, CaseIterable, Identifiable {
+    case clean, detailed
+    var id: String { rawValue }
+}
+
 enum NotchStatus: Equatable {
     case closed
     case opened

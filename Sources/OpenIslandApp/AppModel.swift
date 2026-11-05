@@ -16,6 +16,15 @@ extension Notification.Name {
 @Observable
 final class AppModel {
     private static let soundMutedDefaultsKey = "overlay.sound.muted"
+    private static let keyboardShortcutsDefaultsKey = "app.keyboardShortcutsEnabled"
+    private static let toggleShortcutDefaultsKey = "app.toggleShortcut"
+    private static let autoExpandCompletionDefaultsKey = "app.autoExpandOnCompletion"
+    private static let autoExpandQuestionDefaultsKey = "app.autoExpandOnQuestion"
+    private static let dismissOnOutsideClickDefaultsKey = "app.dismissOnOutsideClick"
+    private static let islandLayoutModeDefaultsKey = "appearance.layoutMode"
+    private static let showModelDefaultsKey = "app.showModel"
+    private static let showReasoningEffortDefaultsKey = "app.showReasoningEffort"
+    private static let showSubagentsDefaultsKey = "app.showSubagents"
     private static let showDockIconDefaultsKey = "app.showDockIcon"
     private static let hapticFeedbackEnabledDefaultsKey = "app.hapticFeedbackEnabled"
     /// When true, click-outside does not dismiss the notch while any session
@@ -65,11 +74,17 @@ final class AppModel {
     @ObservationIgnored private var _agentsGridObservedSequence: [String: Int] = [:]
     @ObservationIgnored private var _agentsGridNextTicket: Int = 0
     var selectedSessionID: String?
+    private(set) var islandKeyboardSelectionRevision: UInt64 = 0
     let hooks = HookInstallationCoordinator()
     let overlay = OverlayUICoordinator()
     let discovery = SessionDiscoveryCoordinator()
     let monitoring = ProcessMonitoringCoordinator()
     let codexAppServer = CodexAppServerCoordinator()
+    @ObservationIgnored private var keyboardController: IslandShortcutController?
+    var keyboardShortcutError: Int32?
+    private let sharedCodex = CodexSharedSessionCoordinator()
+    private var sharedCodexChildIDs: Set<String> = []
+    private var sharedCodexLastActiveAt: [String: Date] = [:]
     let updateChecker = UpdateChecker()
 
     var notchStatus: NotchStatus {
@@ -294,6 +309,94 @@ final class AppModel {
         didSet {
             guard hasFinishedInit, keepNotchOpenUntilDecision != oldValue else { return }
             UserDefaults.standard.set(keepNotchOpenUntilDecision, forKey: Self.keepNotchOpenUntilDecisionDefaultsKey)
+        }
+    }
+    var keyboardShortcutsEnabled: Bool = true {
+        didSet {
+            guard hasFinishedInit, keyboardShortcutsEnabled != oldValue else { return }
+            UserDefaults.standard.set(keyboardShortcutsEnabled, forKey: Self.keyboardShortcutsDefaultsKey)
+            keyboardController?.configure()
+        }
+    }
+    var islandToggleShortcut: IslandToggleShortcut = .commandShiftI {
+        didSet {
+            guard hasFinishedInit, islandToggleShortcut != oldValue else { return }
+            UserDefaults.standard.set(islandToggleShortcut.rawValue, forKey: Self.toggleShortcutDefaultsKey)
+            keyboardController?.configure()
+        }
+    }
+
+    func startKeyboardShortcuts() {
+        guard keyboardController == nil else { return }
+        keyboardController = IslandShortcutController(model: self)
+        keyboardController?.configure()
+    }
+
+    func stopKeyboardShortcuts() { keyboardController?.stop() }
+
+    func moveIslandSelection(by offset: Int) {
+        let sessions = islandListSessions
+        guard !sessions.isEmpty else { return }
+        let current = sessions.firstIndex { $0.id == selectedSessionID } ?? 0
+        let index = (current + offset % sessions.count + sessions.count) % sessions.count
+        selectedSessionID = sessions[index].id
+        islandKeyboardSelectionRevision &+= 1
+    }
+
+    var autoExpandOnCompletion: Bool = true {
+        didSet {
+            guard hasFinishedInit, autoExpandOnCompletion != oldValue else { return }
+            UserDefaults.standard.set(autoExpandOnCompletion, forKey: Self.autoExpandCompletionDefaultsKey)
+        }
+    }
+    var autoExpandOnQuestion: Bool = true {
+        didSet {
+            guard hasFinishedInit, autoExpandOnQuestion != oldValue else { return }
+            UserDefaults.standard.set(autoExpandOnQuestion, forKey: Self.autoExpandQuestionDefaultsKey)
+        }
+    }
+    var dismissOnOutsideClick: Bool = true {
+        didSet {
+            guard hasFinishedInit, dismissOnOutsideClick != oldValue else { return }
+            UserDefaults.standard.set(dismissOnOutsideClick, forKey: Self.dismissOnOutsideClickDefaultsKey)
+        }
+    }
+
+    func shouldAutoExpandNotification(for session: AgentSession) -> Bool {
+        switch session.phase {
+        case .completed: autoExpandOnCompletion
+        case .waitingForAnswer: autoExpandOnQuestion
+        case .waitingForApproval: true
+        case .running: false
+        }
+    }
+
+    var islandLayoutMode: IslandLayoutMode = .detailed {
+        didSet {
+            guard hasFinishedInit, islandLayoutMode != oldValue else { return }
+            UserDefaults.standard.set(islandLayoutMode.rawValue, forKey: Self.islandLayoutModeDefaultsKey)
+            refreshOverlayPlacementIfVisible()
+        }
+    }
+    var showModel: Bool = true {
+        didSet {
+            guard hasFinishedInit, showModel != oldValue else { return }
+            UserDefaults.standard.set(showModel, forKey: Self.showModelDefaultsKey)
+            refreshOverlayPlacementIfVisible()
+        }
+    }
+    var showReasoningEffort: Bool = true {
+        didSet {
+            guard hasFinishedInit, showReasoningEffort != oldValue else { return }
+            UserDefaults.standard.set(showReasoningEffort, forKey: Self.showReasoningEffortDefaultsKey)
+            refreshOverlayPlacementIfVisible()
+        }
+    }
+    var showSubagents: Bool = true {
+        didSet {
+            guard hasFinishedInit, showSubagents != oldValue else { return }
+            UserDefaults.standard.set(showSubagents, forKey: Self.showSubagentsDefaultsKey)
+            refreshOverlayPlacementIfVisible()
         }
     }
     var showCodexUsage: Bool = false {
@@ -642,6 +745,13 @@ final class AppModel {
         self.isNotificationSessionAlreadyFrontmost = isNotificationSessionAlreadyFrontmost
         UserDefaults.standard.register(defaults: [
             Self.showDockIconDefaultsKey: true,
+            Self.keyboardShortcutsDefaultsKey: true,
+            Self.autoExpandCompletionDefaultsKey: true,
+            Self.autoExpandQuestionDefaultsKey: true,
+            Self.dismissOnOutsideClickDefaultsKey: true,
+            Self.showSubagentsDefaultsKey: true,
+            Self.showModelDefaultsKey: true,
+            Self.showReasoningEffortDefaultsKey: true,
             Self.hapticFeedbackEnabledDefaultsKey: false,
             Self.keepNotchOpenUntilDecisionDefaultsKey: false,
             Self.completionReplyEnabledDefaultsKey: false,
@@ -649,6 +759,15 @@ final class AppModel {
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
+        keyboardShortcutsEnabled = UserDefaults.standard.bool(forKey: Self.keyboardShortcutsDefaultsKey)
+        islandToggleShortcut = IslandToggleShortcut(rawValue: UserDefaults.standard.string(forKey: Self.toggleShortcutDefaultsKey) ?? "") ?? .commandShiftI
+        autoExpandOnCompletion = UserDefaults.standard.bool(forKey: Self.autoExpandCompletionDefaultsKey)
+        autoExpandOnQuestion = UserDefaults.standard.bool(forKey: Self.autoExpandQuestionDefaultsKey)
+        dismissOnOutsideClick = UserDefaults.standard.bool(forKey: Self.dismissOnOutsideClickDefaultsKey)
+        islandLayoutMode = IslandLayoutMode(rawValue: UserDefaults.standard.string(forKey: Self.islandLayoutModeDefaultsKey) ?? "") ?? .detailed
+        showModel = UserDefaults.standard.bool(forKey: Self.showModelDefaultsKey)
+        showReasoningEffort = UserDefaults.standard.bool(forKey: Self.showReasoningEffortDefaultsKey)
+        showSubagents = UserDefaults.standard.bool(forKey: Self.showSubagentsDefaultsKey)
         showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
         hapticFeedbackEnabled = UserDefaults.standard.bool(forKey: Self.hapticFeedbackEnabledDefaultsKey)
         keepNotchOpenUntilDecision = UserDefaults.standard.bool(forKey: Self.keepNotchOpenUntilDecisionDefaultsKey)
@@ -754,6 +873,9 @@ final class AppModel {
         }
         monitoring.onCodexAppMaintenanceTick = { [weak self] in
             self?.discovery.maintainCodexAppSessionsIfNeeded()
+        }
+        sharedCodex.onThreads = { [weak self] threads in
+            self?.applySharedCodexThreads(threads)
         }
         refreshOverlayDisplayConfiguration()
         hasFinishedInit = true
@@ -896,8 +1018,8 @@ final class AppModel {
     /// directly into idle so the pill never stops on a tick glyph.
     var islandClosedMode: UnifiedBars.Mode {
         let sessions = surfacedSessions
-        if sessions.contains(where: { $0.phase.requiresAttention }) { return .waiting }
-        if sessions.contains(where: { $0.phase == .running })       { return .running }
+        if sessions.contains(where: { $0.phase.requiresAttention || $0.islandSubagents.contains { $0.phase.requiresAttention } }) { return .waiting }
+        if sessions.contains(where: { $0.phase == .running || $0.islandSubagents.contains { $0.phase == .running } }) { return .running }
         return .idle
     }
 
@@ -1127,6 +1249,10 @@ final class AppModel {
 
         if loadRuntimeState {
             isResolvingInitialLiveSessions = true
+            // Terminal presence does not depend on replaying transcript history.
+            // Large rollouts can take minutes to scan on a cold launch.
+            monitoring.startMonitoringIfNeeded()
+            sharedCodex.startIfNeeded()
 
             Task.detached(priority: .userInitiated) { [weak self] in
                 guard let self else { return }
@@ -1666,7 +1792,8 @@ final class AppModel {
             return false
         }
 
-        return (ingress == .bridge || !isResolvingInitialLiveSessions)
+        return !session.isSubagentSession && !sharedCodexChildIDs.contains(session.id)
+            && (ingress == .bridge || !isResolvingInitialLiveSessions)
             && (notchStatus == .closed || notchOpenReason == .notification)
             && !overlay.shouldPreserveCurrentNotificationSurface(against: surface)
             && surface.matchesCurrentState(of: session)
@@ -1686,6 +1813,70 @@ final class AppModel {
             self.selectedSessionID = surfacedSessions.first?.id ?? state.sessions.first?.id
             return
         }
+    }
+
+    func applySharedCodexThreads(_ threads: [CodexThread], now: Date = .now) {
+        sharedCodexChildIDs = Set(threads.filter(\.isSubagent).map(\.id))
+        for thread in threads where thread.status.type == .active {
+            sharedCodexLastActiveAt[thread.id] = now
+        }
+        let rootIDs = Set(threads.filter { !$0.ephemeral && !$0.isSubagent && $0.status.type != .notLoaded }.map(\.id))
+        let subagents = CodexLiveSessionPolicy.subagentsByRoot(
+            threads, rootIDs: rootIDs, now: now, lastActiveAt: sharedCodexLastActiveAt
+        )
+        let visible = threads.filter {
+            CodexLiveSessionPolicy.shouldShow($0, now: now, lastActiveAt: sharedCodexLastActiveAt[$0.id])
+                || (rootIDs.contains($0.id) && subagents[$0.id]?.contains { $0.phase != .completed } == true)
+        }
+        let ids = Set(visible.map(\.id))
+        let excluded = Set(threads.map(\.id)).subtracting(ids)
+        let retired = monitoring.sharedCodexSessionIDs.subtracting(ids).union(excluded)
+        monitoring.sharedCodexSessionIDs = ids
+        monitoring.sharedCodexWorkingDirectories = Dictionary(
+            visible.map { ($0.id, $0.cwd) }, uniquingKeysWith: { _, latest in latest }
+        )
+        var sessions = state.sessions.filter { !retired.contains($0.id) }
+        for thread in visible {
+            let workspace = WorkspaceNameResolver.workspaceName(for: thread.cwd)
+            let phase = CodexLiveSessionPolicy.phase(for: thread.status)
+            let existingIndex = sessions.firstIndex { $0.id == thread.id }
+            var session = existingIndex.map { sessions[$0] } ?? AgentSession(
+                id: thread.id, title: thread.name ?? "Codex · \(workspace)", tool: .codex,
+                origin: .live, attachmentState: .attached, phase: phase,
+                summary: String(thread.preview.prefix(240)), updatedAt: now,
+                codexMetadata: CodexSessionMetadata(
+                    transcriptPath: thread.path, initialUserPrompt: thread.preview
+                )
+            )
+            var metadata = session.codexMetadata ?? CodexSessionMetadata()
+            metadata.transcriptPath = thread.path ?? metadata.transcriptPath
+            metadata.initialUserPrompt = metadata.initialUserPrompt ?? CodexRolloutReducer.userVisiblePromptSegment(from: thread.preview)
+            metadata.subagents = subagents[thread.id] ?? []
+            metadata.model = thread.model ?? metadata.model
+            metadata.reasoningEffort = thread.reasoningEffort ?? metadata.reasoningEffort
+            session.codexMetadata = metadata
+            if session.phase != phase { session.updatedAt = now }
+            session.phase = phase
+            session.isProcessAlive = true
+            session.isSessionEnded = false
+            session.attachmentState = .attached
+            switch phase {
+            case .running: session.summary = session.codexMetadata?.currentTool ?? "Codex is working…"
+            case .waitingForApproval: session.summary = "Codex is waiting for approval."
+            case .waitingForAnswer: session.summary = "Codex is waiting for input."
+            case .completed:
+                session.summary = session.codexMetadata?.lastAssistantMessage ?? "Turn completed."
+            }
+            if phase != .waitingForApproval { session.permissionRequest = nil }
+            if phase != .waitingForAnswer { session.questionPrompt = nil }
+            if let existingIndex { sessions[existingIndex] = session }
+            else { sessions.append(session) }
+        }
+        sharedCodexLastActiveAt = sharedCodexLastActiveAt.filter {
+            now.timeIntervalSince($0.value) <= 300 || ids.contains($0.key)
+        }
+        let nextState = SessionState(sessions: sessions)
+        if nextState != state { state = nextState }
     }
 
     /// Applies startup discovery results on the main thread after background I/O completes.
@@ -1745,9 +1936,8 @@ final class AppModel {
             await self.hooks.repairHooksIfNeeded()
         }
 
-        // Reconcile attachments and start monitoring (requires sessions to be loaded).
+        // Reconcile newly loaded history with the already running terminal monitor.
         monitoring.reconcileSessionAttachments()
-        monitoring.startMonitoringIfNeeded()
     }
 
 

@@ -149,7 +149,7 @@ struct SettingsView: View {
             case .watch:
                 WatchSettingsPane(model: model)
             case .shortcuts:
-                PlaceholderSettingsPane(model: model, titleKey: "settings.tab.shortcuts", subtitleKey: "settings.shortcuts.comingSoon")
+                IslandShortcutsSettingsPane(model: model)
             case .lab:
                 PlaceholderSettingsPane(model: model, titleKey: "settings.tab.lab", subtitleKey: "settings.lab.comingSoon")
             case .about:
@@ -208,6 +208,22 @@ struct GeneralSettingsPane: View {
             }
 
             Section(lang.t("settings.general.behavior")) {
+                Toggle(lang.t("settings.general.expandCompletion"), isOn: Binding(
+                    get: { model.autoExpandOnCompletion }, set: { model.autoExpandOnCompletion = $0 }
+                ))
+                Toggle(lang.t("settings.general.expandQuestion"), isOn: Binding(
+                    get: { model.autoExpandOnQuestion }, set: { model.autoExpandOnQuestion = $0 }
+                ))
+                Toggle(lang.t("settings.general.dismissOutside"), isOn: Binding(
+                    get: { model.dismissOnOutsideClick }, set: { model.dismissOnOutsideClick = $0 }
+                ))
+                Toggle(lang.t("settings.general.showSubagents"), isOn: Binding(
+                    get: { model.showSubagents },
+                    set: { model.showSubagents = $0 }
+                ))
+                Text(lang.t("settings.general.showSubagentsHelp"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Toggle(lang.t("settings.general.keepOpenUntilDecision"), isOn: Binding(
                     get: { model.keepNotchOpenUntilDecision },
                     set: { model.keepNotchOpenUntilDecision = $0 }
@@ -257,6 +273,23 @@ struct DisplaySettingsPane: View {
                             .disabled(!option.isAvailable)
                     }
                 }
+            }
+
+            Section(lang.t("settings.display.content")) {
+                Picker(lang.t("settings.display.layout"), selection: Binding(
+                    get: { model.islandLayoutMode }, set: { model.islandLayoutMode = $0 }
+                )) {
+                    Text(lang.t("settings.display.clean")).tag(IslandLayoutMode.clean)
+                    Text(lang.t("settings.display.detailed")).tag(IslandLayoutMode.detailed)
+                }
+                Text(lang.t("settings.display.layoutHelp"))
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle(lang.t("settings.display.showModel"), isOn: Binding(
+                    get: { model.showModel }, set: { model.showModel = $0 }
+                ))
+                Toggle(lang.t("settings.display.showReasoning"), isOn: Binding(
+                    get: { model.showReasoningEffort }, set: { model.showReasoningEffort = $0 }
+                ))
             }
 
             if let diag = model.overlayPlacementDiagnostics {

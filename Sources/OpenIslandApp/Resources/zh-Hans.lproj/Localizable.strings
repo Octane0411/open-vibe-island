@@ -226,3 +226,36 @@
 
 /* Window Titles */
 "window.settings" = "Open Island 设置";
+
+"subagents.runningCount" = "%lld 个子代理运行中";
+"subagents.running" = "运行中";
+"subagents.approval" = "需要审批";
+"subagents.answer" = "需要回答";
+"settings.general.showSubagents" = "显示子代理";
+"settings.general.showSubagentsHelp" = "在父会话中显示子代理。隐藏详情时，等待处理的子代理仍然可见。";
+
+"settings.display.content" = "内容";
+"settings.display.layout" = "收起时的布局";
+"settings.display.clean" = "简洁";
+"settings.display.detailed" = "详细";
+"settings.display.layoutHelp" = "简洁布局为菜单栏腾出空间。无刘海屏幕上的详细布局显示会话标题。";
+"settings.display.showModel" = "显示 AI 模型";
+"settings.display.showReasoning" = "显示推理强度";
+
+"settings.general.expandCompletion" = "完成时展开通知";
+"settings.general.expandQuestion" = "提问时展开通知";
+"settings.general.dismissOutside" = "点击外部关闭自动展开面板";
+
+"settings.shortcuts.enabled" = "启用键盘快捷键";
+"settings.shortcuts.toggle" = "切换灵动岛（全局）";
+"settings.shortcuts.unavailable" = "该快捷键不可用，请选择另一组合。";
+"settings.shortcuts.inPanel" = "灵动岛获得键盘焦点时";
+"settings.shortcuts.next" = "下一个会话";
+"settings.shortcuts.previous" = "上一个会话";
+"settings.shortcuts.jump" = "跳转到选中的会话";
+"settings.shortcuts.approve" = "允许当前审批";
+"settings.shortcuts.deny" = "拒绝当前审批";
+"settings.shortcuts.close" = "关闭灵动岛";
+"settings.shortcuts.scope" = "面板快捷键仅在灵动岛获得键盘焦点时生效。文本框保留正常编辑按键。";
+
+"subagents.doneCount" = "%lld 个子代理已完成";
