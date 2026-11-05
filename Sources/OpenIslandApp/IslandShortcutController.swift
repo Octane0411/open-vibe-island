@@ -34,9 +34,8 @@ final class IslandShortcutController {
             EventHotKeyID(signature: 0x4f49534c, id: 1), GetApplicationEventTarget(), 0, &hotKey)
         model.keyboardShortcutError = registerStatus == noErr ? nil : registerStatus
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            MainActor.assumeIsolated {
-                self?.handleLocal(event) == true ? nil : event
-            }
+            let handled = MainActor.assumeIsolated { self?.handleLocal(event) == true }
+            return handled ? nil : event
         }
     }
 

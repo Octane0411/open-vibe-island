@@ -41,7 +41,7 @@ public extension CodexLiveSessionPolicy {
     ) -> [String: [SessionSubagent]] {
         let byID = Dictionary(threads.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
         var result: [String: [SessionSubagent]] = [:]
-        for child in threads {
+        for child in byID.values {
             guard !child.ephemeral, let parentID = child.subagentParentID else { continue }
             switch child.status.type {
             case .active: break
