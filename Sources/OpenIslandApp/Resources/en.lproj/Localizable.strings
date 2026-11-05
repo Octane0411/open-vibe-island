@@ -233,3 +233,11 @@
 "subagents.answer" = "Needs answer";
 "settings.general.showSubagents" = "Show subagents";
 "settings.general.showSubagentsHelp" = "Show child agents inside their parent conversation. Waiting children remain visible when details are hidden.";
+
+"settings.display.content" = "Content";
+"settings.display.layout" = "Closed island layout";
+"settings.display.clean" = "Clean";
+"settings.display.detailed" = "Detailed";
+"settings.display.layoutHelp" = "Clean leaves more room in the menu bar. Detailed shows a conversation title on displays without a notch.";
+"settings.display.showModel" = "Show AI model";
+"settings.display.showReasoning" = "Show reasoning effort";

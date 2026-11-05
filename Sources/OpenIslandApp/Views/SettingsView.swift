@@ -266,6 +266,23 @@ struct DisplaySettingsPane: View {
                 }
             }
 
+            Section(lang.t("settings.display.content")) {
+                Picker(lang.t("settings.display.layout"), selection: Binding(
+                    get: { model.islandLayoutMode }, set: { model.islandLayoutMode = $0 }
+                )) {
+                    Text(lang.t("settings.display.clean")).tag(IslandLayoutMode.clean)
+                    Text(lang.t("settings.display.detailed")).tag(IslandLayoutMode.detailed)
+                }
+                Text(lang.t("settings.display.layoutHelp"))
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle(lang.t("settings.display.showModel"), isOn: Binding(
+                    get: { model.showModel }, set: { model.showModel = $0 }
+                ))
+                Toggle(lang.t("settings.display.showReasoning"), isOn: Binding(
+                    get: { model.showReasoningEffort }, set: { model.showReasoningEffort = $0 }
+                ))
+            }
+
             if let diag = model.overlayPlacementDiagnostics {
                 Section(lang.t("settings.display.diagnostics")) {
                     LabeledContent(lang.t("settings.display.currentScreen"), value: diag.targetScreenName)

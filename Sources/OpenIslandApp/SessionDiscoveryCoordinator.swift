@@ -389,7 +389,10 @@ final class SessionDiscoveryCoordinator {
             lastAssistantMessage: discovered.lastAssistantMessage ?? existing.lastAssistantMessage,
             currentTool: discovered.currentTool ?? existing.currentTool,
             currentCommandPreview: discovered.currentCommandPreview ?? existing.currentCommandPreview,
-            subagents: existing.subagents ?? discovered.subagents
+            subagents: existing.subagents ?? discovered.subagents,
+            model: discovered.model ?? existing.model,
+            reasoningEffort: discovered.reasoningEffort ?? existing.reasoningEffort,
+            parentThreadID: discovered.parentThreadID ?? existing.parentThreadID
         )
         return merged.isEmpty ? nil : merged
     }

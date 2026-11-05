@@ -9,9 +9,12 @@ public struct SessionSubagent: Equatable, Codable, Sendable, Identifiable {
     public let phase: SessionPhase
     public let startedAt: Date?
     public let depth: Int
+    public let model: String?
+    public let reasoningEffort: String?
 
     public init(id: String, name: String, role: String? = nil, task: String? = nil,
-                phase: SessionPhase, startedAt: Date? = nil, depth: Int = 1) {
+                phase: SessionPhase, startedAt: Date? = nil, depth: Int = 1,
+                model: String? = nil, reasoningEffort: String? = nil) {
         self.id = id
         self.name = name
         self.role = role
@@ -19,6 +22,8 @@ public struct SessionSubagent: Equatable, Codable, Sendable, Identifiable {
         self.phase = phase
         self.startedAt = startedAt
         self.depth = depth
+        self.model = model
+        self.reasoningEffort = reasoningEffort
     }
 
     /// Attention remains visible even when ordinary child details are hidden.
@@ -37,7 +42,7 @@ public extension CodexLiveSessionPolicy {
         let byID = Dictionary(threads.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
         var result: [String: [SessionSubagent]] = [:]
         for child in threads {
-            guard !child.ephemeral, let source = child.source?.subagentInfo else { continue }
+            guard !child.ephemeral, let parentID = child.subagentParentID else { continue }
             switch child.status.type {
             case .active: break
             case .idle, .systemError:
@@ -45,25 +50,25 @@ public extension CodexLiveSessionPolicy {
                 guard now.timeIntervalSince1970 - activity <= completedWindow else { continue }
             case .notLoaded: continue
             }
-            var ancestor = source.parentThreadID
+            var ancestor = parentID
             var visited: Set<String> = [child.id]
             var depth = 1
             while !rootIDs.contains(ancestor), visited.insert(ancestor).inserted,
-                  let parent = byID[ancestor]?.source?.subagentInfo {
-                ancestor = parent.parentThreadID
+                  let parent = byID[ancestor]?.subagentParentID {
+                ancestor = parent
                 depth += 1
             }
             guard rootIDs.contains(ancestor), !visited.contains(ancestor) else { continue }
-            let name = source.nickname.flatMap { value -> String? in
+            let name = (child.agentNickname ?? child.source?.subagentInfo?.nickname).flatMap { value -> String? in
                 let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
                 return trimmed.isEmpty ? nil : trimmed
             }
-            let task = CodexRolloutReducer.userVisiblePromptSegment(child.preview)
+            let task = CodexRolloutReducer.userVisiblePromptSegment(from: child.preview)
             result[ancestor, default: []].append(SessionSubagent(
                 id: child.id, name: name ?? String(child.id.prefix(8)),
-                role: source.role, task: task.map { String($0.prefix(160)) },
+                role: child.agentRole ?? child.source?.subagentInfo?.role, task: task.map { String($0.prefix(160)) },
                 phase: phase(for: child.status), startedAt: Date(timeIntervalSince1970: Double(child.createdAt)),
-                depth: depth
+                depth: depth, model: child.model, reasoningEffort: child.reasoningEffort
             ))
         }
         for root in result.keys {

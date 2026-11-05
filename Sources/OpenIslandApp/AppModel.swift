@@ -16,6 +16,9 @@ extension Notification.Name {
 @Observable
 final class AppModel {
     private static let soundMutedDefaultsKey = "overlay.sound.muted"
+    private static let islandLayoutModeDefaultsKey = "appearance.layoutMode"
+    private static let showModelDefaultsKey = "app.showModel"
+    private static let showReasoningEffortDefaultsKey = "app.showReasoningEffort"
     private static let showSubagentsDefaultsKey = "app.showSubagents"
     private static let showDockIconDefaultsKey = "app.showDockIcon"
     private static let hapticFeedbackEnabledDefaultsKey = "app.hapticFeedbackEnabled"
@@ -297,6 +300,27 @@ final class AppModel {
         didSet {
             guard hasFinishedInit, keepNotchOpenUntilDecision != oldValue else { return }
             UserDefaults.standard.set(keepNotchOpenUntilDecision, forKey: Self.keepNotchOpenUntilDecisionDefaultsKey)
+        }
+    }
+    var islandLayoutMode: IslandLayoutMode = .detailed {
+        didSet {
+            guard hasFinishedInit, islandLayoutMode != oldValue else { return }
+            UserDefaults.standard.set(islandLayoutMode.rawValue, forKey: Self.islandLayoutModeDefaultsKey)
+            refreshOverlayPlacementIfVisible()
+        }
+    }
+    var showModel: Bool = true {
+        didSet {
+            guard hasFinishedInit, showModel != oldValue else { return }
+            UserDefaults.standard.set(showModel, forKey: Self.showModelDefaultsKey)
+            refreshOverlayPlacementIfVisible()
+        }
+    }
+    var showReasoningEffort: Bool = true {
+        didSet {
+            guard hasFinishedInit, showReasoningEffort != oldValue else { return }
+            UserDefaults.standard.set(showReasoningEffort, forKey: Self.showReasoningEffortDefaultsKey)
+            refreshOverlayPlacementIfVisible()
         }
     }
     var showSubagents: Bool = true {
@@ -653,6 +677,8 @@ final class AppModel {
         UserDefaults.standard.register(defaults: [
             Self.showDockIconDefaultsKey: true,
             Self.showSubagentsDefaultsKey: true,
+            Self.showModelDefaultsKey: true,
+            Self.showReasoningEffortDefaultsKey: true,
             Self.hapticFeedbackEnabledDefaultsKey: false,
             Self.keepNotchOpenUntilDecisionDefaultsKey: false,
             Self.completionReplyEnabledDefaultsKey: false,
@@ -660,6 +686,9 @@ final class AppModel {
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
+        islandLayoutMode = IslandLayoutMode(rawValue: UserDefaults.standard.string(forKey: Self.islandLayoutModeDefaultsKey) ?? "") ?? .detailed
+        showModel = UserDefaults.standard.bool(forKey: Self.showModelDefaultsKey)
+        showReasoningEffort = UserDefaults.standard.bool(forKey: Self.showReasoningEffortDefaultsKey)
         showSubagents = UserDefaults.standard.bool(forKey: Self.showSubagentsDefaultsKey)
         showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
         hapticFeedbackEnabled = UserDefaults.standard.bool(forKey: Self.hapticFeedbackEnabledDefaultsKey)
@@ -911,8 +940,8 @@ final class AppModel {
     /// directly into idle so the pill never stops on a tick glyph.
     var islandClosedMode: UnifiedBars.Mode {
         let sessions = surfacedSessions
-        if sessions.contains(where: { $0.phase.requiresAttention }) { return .waiting }
-        if sessions.contains(where: { $0.phase == .running })       { return .running }
+        if sessions.contains(where: { $0.phase.requiresAttention || $0.islandSubagents.contains { $0.phase.requiresAttention } }) { return .waiting }
+        if sessions.contains(where: { $0.phase == .running || $0.islandSubagents.contains { $0.phase == .running } }) { return .running }
         return .idle
     }
 
@@ -1711,13 +1740,15 @@ final class AppModel {
         for thread in threads where thread.status.type == .active {
             sharedCodexLastActiveAt[thread.id] = now
         }
+        let rootIDs = Set(threads.filter { !$0.ephemeral && !$0.isSubagent && $0.status.type != .notLoaded }.map(\.id))
+        let subagents = CodexLiveSessionPolicy.subagentsByRoot(
+            threads, rootIDs: rootIDs, now: now, lastActiveAt: sharedCodexLastActiveAt
+        )
         let visible = threads.filter {
             CodexLiveSessionPolicy.shouldShow($0, now: now, lastActiveAt: sharedCodexLastActiveAt[$0.id])
+                || (rootIDs.contains($0.id) && subagents[$0.id]?.contains { $0.phase != .completed } == true)
         }
         let ids = Set(visible.map(\.id))
-        let subagents = CodexLiveSessionPolicy.subagentsByRoot(
-            threads, rootIDs: ids, now: now, lastActiveAt: sharedCodexLastActiveAt
-        )
         let excluded = Set(threads.map(\.id)).subtracting(ids)
         let retired = monitoring.sharedCodexSessionIDs.subtracting(ids).union(excluded)
         monitoring.sharedCodexSessionIDs = ids
@@ -1736,8 +1767,10 @@ final class AppModel {
             )
             var metadata = session.codexMetadata ?? CodexSessionMetadata()
             metadata.transcriptPath = thread.path ?? metadata.transcriptPath
-            metadata.initialUserPrompt = metadata.initialUserPrompt ?? CodexRolloutReducer.userVisiblePromptSegment(thread.preview)
+            metadata.initialUserPrompt = metadata.initialUserPrompt ?? CodexRolloutReducer.userVisiblePromptSegment(from: thread.preview)
             metadata.subagents = subagents[thread.id] ?? []
+            metadata.model = thread.model ?? metadata.model
+            metadata.reasoningEffort = thread.reasoningEffort ?? metadata.reasoningEffort
             session.codexMetadata = metadata
             if session.phase != phase { session.updatedAt = now }
             session.phase = phase

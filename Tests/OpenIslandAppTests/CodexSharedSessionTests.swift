@@ -93,4 +93,20 @@ struct CodexSharedSessionTests {
         #expect(model.state.sessions.first?.islandSubagents.isEmpty == true)
     }
 
+    @Test
+    func runningChildKeepsCompletedParentVisibleWithoutReopeningIt() throws {
+        let model = AppModel()
+        let now = Date(timeIntervalSince1970: 10_000)
+        model.applySharedCodexThreads([
+            try thread("root", status: "idle"),
+            try thread("child", source: ["subAgent": ["thread_spawn": ["parent_thread_id": "root"]]]),
+        ], now: now)
+        #expect(model.state.sessions.count == 1)
+        let root = try #require(model.state.sessions.first)
+        #expect(root.phase == .completed)
+        #expect(!root.isStaleCompletedForIsland(at: now.addingTimeInterval(1_000)))
+        #expect(model.islandClosedMode == .running)
+        #expect(model.notchStatus == .closed)
+    }
+
 }

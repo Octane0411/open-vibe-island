@@ -3,6 +3,11 @@ import CoreGraphics
 import Foundation
 import OpenIslandCore
 
+enum IslandLayoutMode: String, CaseIterable, Identifiable {
+    case clean, detailed
+    var id: String { rawValue }
+}
+
 enum NotchStatus: Equatable {
     case closed
     case opened

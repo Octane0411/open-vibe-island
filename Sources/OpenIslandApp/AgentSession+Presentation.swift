@@ -26,6 +26,7 @@ extension AgentSession {
     /// Note: `claudeMetadata.agentID` is NOT a reliable signal here because
     /// SubagentStart hooks set `agent_id` on the *parent* session's metadata.
     var isSubagentSession: Bool {
+        if codexMetadata?.parentThreadID != nil { return true }
         if let path = claudeMetadata?.transcriptPath, path.contains("/subagents/") {
             return true
         }
@@ -350,7 +351,7 @@ extension AgentSession {
             return .running
         }
 
-        if phase.requiresAttention {
+        if phase.requiresAttention || islandSubagents.contains(where: { $0.phase != .completed }) {
             return .active
         }
 
@@ -368,6 +369,7 @@ extension AgentSession {
         threshold: TimeInterval = Self.staleCompletedDisplayThreshold
     ) -> Bool {
         phase == .completed
+            && !islandSubagents.contains(where: { $0.phase != .completed })
             && referenceDate.timeIntervalSince(islandActivityDate) >= threshold
     }
 

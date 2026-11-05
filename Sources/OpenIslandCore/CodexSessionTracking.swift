@@ -8,6 +8,9 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
     public var lastAssistantMessage: String?
     public var currentTool: String?
     public var currentCommandPreview: String?
+    public var model: String?
+    public var reasoningEffort: String?
+    public var parentThreadID: String?
     public var subagents: [SessionSubagent]?
 
     public init(
@@ -17,7 +20,8 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
         lastAssistantMessage: String? = nil,
         currentTool: String? = nil,
         currentCommandPreview: String? = nil,
-        subagents: [SessionSubagent]? = nil
+        subagents: [SessionSubagent]? = nil,
+        model: String? = nil, reasoningEffort: String? = nil, parentThreadID: String? = nil
     ) {
         self.transcriptPath = transcriptPath
         self.initialUserPrompt = initialUserPrompt
@@ -26,6 +30,9 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
         self.currentTool = currentTool
         self.currentCommandPreview = currentCommandPreview
         self.subagents = subagents
+        self.model = model
+        self.reasoningEffort = reasoningEffort
+        self.parentThreadID = parentThreadID
     }
 
     public var isEmpty: Bool {
@@ -35,6 +42,7 @@ public struct CodexSessionMetadata: Equatable, Codable, Sendable {
             && lastAssistantMessage == nil
             && currentTool == nil
             && currentCommandPreview == nil
+            && model == nil && reasoningEffort == nil && parentThreadID == nil
             && (subagents?.isEmpty ?? true)
     }
 
@@ -658,7 +666,8 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             lastUserPrompt: snapshot.lastUserPrompt,
             lastAssistantMessage: snapshot.lastAssistantMessage,
             currentTool: snapshot.currentTool,
-            currentCommandPreview: snapshot.currentCommandPreview
+            currentCommandPreview: snapshot.currentCommandPreview,
+            model: snapshot.model, reasoningEffort: snapshot.reasoningEffort, parentThreadID: snapshot.parentThreadID
         )
         let jumpTarget = sessionMeta.isCodexDesktop
             ? JumpTarget(
@@ -742,6 +751,9 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
     public var lastAssistantMessage: String?
     public var currentTool: String?
     public var currentCommandPreview: String?
+    public var model: String?
+    public var reasoningEffort: String?
+    public var parentThreadID: String?
     public var isCompleted: Bool
     public var isInterrupted: Bool
 
@@ -754,6 +766,7 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
         lastAssistantMessage: String? = nil,
         currentTool: String? = nil,
         currentCommandPreview: String? = nil,
+        model: String? = nil, reasoningEffort: String? = nil, parentThreadID: String? = nil,
         isCompleted: Bool = false,
         isInterrupted: Bool = false
     ) {
@@ -765,6 +778,9 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
         self.lastAssistantMessage = lastAssistantMessage
         self.currentTool = currentTool
         self.currentCommandPreview = currentCommandPreview
+        self.model = model
+        self.reasoningEffort = reasoningEffort
+        self.parentThreadID = parentThreadID
         self.isCompleted = isCompleted
         self.isInterrupted = isInterrupted
     }
@@ -775,7 +791,8 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
             lastUserPrompt: lastUserPrompt,
             lastAssistantMessage: lastAssistantMessage,
             currentTool: currentTool,
-            currentCommandPreview: currentCommandPreview
+            currentCommandPreview: currentCommandPreview,
+            model: model, reasoningEffort: reasoningEffort, parentThreadID: parentThreadID
         )
     }
 }
@@ -796,6 +813,15 @@ public enum CodexRolloutReducer {
         let payload = object["payload"] as? [String: Any] ?? [:]
 
         switch object["type"] as? String {
+        case "session_meta":
+            let source = payload["source"] as? [String: Any]
+            let subagent = source?["subAgent"] as? [String: Any]
+            let spawn = subagent?["thread_spawn"] as? [String: Any]
+            snapshot.parentThreadID = spawn?["parent_thread_id"] as? String ?? snapshot.parentThreadID
+        case "turn_context":
+            snapshot.model = payload["model"] as? String ?? snapshot.model
+            snapshot.reasoningEffort = payload["effort"] as? String
+                ?? payload["reasoning_effort"] as? String ?? snapshot.reasoningEffort
         case "event_msg":
             applyEventMessage(payload, timestamp: timestamp, to: &snapshot)
         case "response_item":
@@ -820,7 +846,8 @@ public enum CodexRolloutReducer {
                 lastUserPrompt: $0.lastUserPrompt,
                 lastAssistantMessage: $0.lastAssistantMessage,
                 currentTool: $0.currentTool,
-                currentCommandPreview: $0.currentCommandPreview
+                currentCommandPreview: $0.currentCommandPreview,
+                model: $0.model, reasoningEffort: $0.reasoningEffort, parentThreadID: $0.parentThreadID
             )
         }
         let newMetadata = CodexSessionMetadata(
@@ -829,7 +856,8 @@ public enum CodexRolloutReducer {
             lastUserPrompt: newSnapshot.lastUserPrompt,
             lastAssistantMessage: newSnapshot.lastAssistantMessage,
             currentTool: newSnapshot.currentTool,
-            currentCommandPreview: newSnapshot.currentCommandPreview
+            currentCommandPreview: newSnapshot.currentCommandPreview,
+            model: newSnapshot.model, reasoningEffort: newSnapshot.reasoningEffort, parentThreadID: newSnapshot.parentThreadID
         )
 
         if oldMetadata != newMetadata {

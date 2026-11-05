@@ -16,6 +16,14 @@ public struct CodexThread: Codable, Sendable {
     public let path: String?
     public let status: CodexThreadStatus
     public let source: CodexThreadSource?
+    public let parentThreadId: String?
+    public let agentNickname: String?
+    public let agentRole: String?
+    public let model: String?
+    public let reasoningEffort: String?
+
+    public var subagentParentID: String? { parentThreadId ?? source?.subagentInfo?.parentThreadID }
+    public var isSubagent: Bool { subagentParentID != nil || source?.isSubagent == true }
 
     /// Turns are only populated on `thread/resume` and `thread/fork`
     /// responses, empty otherwise.
@@ -25,7 +33,9 @@ public struct CodexThread: Codable, Sendable {
         CodexThread(
             id: id, cwd: cwd, name: name, preview: preview, modelProvider: modelProvider,
             createdAt: createdAt, updatedAt: max(updatedAt, timestamp), ephemeral: ephemeral,
-            path: path, status: status, source: source, turns: turns
+            path: path, status: status, source: source, parentThreadId: parentThreadId,
+            agentNickname: agentNickname, agentRole: agentRole, model: model,
+            reasoningEffort: reasoningEffort, turns: turns
         )
     }
 }

@@ -232,3 +232,11 @@
 "subagents.answer" = "需要回答";
 "settings.general.showSubagents" = "顯示子代理";
 "settings.general.showSubagentsHelp" = "在父對話中顯示子代理。隱藏詳情時，等待處理的子代理仍然可見。";
+
+"settings.display.content" = "內容";
+"settings.display.layout" = "收起時的佈局";
+"settings.display.clean" = "簡潔";
+"settings.display.detailed" = "詳細";
+"settings.display.layoutHelp" = "簡潔佈局為選單列騰出空間。無瀏海螢幕上的詳細佈局顯示對話標題。";
+"settings.display.showModel" = "顯示 AI 模型";
+"settings.display.showReasoning" = "顯示推理強度";

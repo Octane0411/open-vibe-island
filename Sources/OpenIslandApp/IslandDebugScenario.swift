@@ -94,8 +94,10 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
             var codex = DebugSessionFactory.runningSession(now: now)
             codex.codexMetadata?.initialUserPrompt = "Compare the island and ship a portable Mac build"
             codex.codexMetadata?.lastUserPrompt = "Show each child under its parent conversation"
+            codex.codexMetadata?.model = "GPT · example"
+            codex.codexMetadata?.reasoningEffort = "high"
             codex.codexMetadata?.subagents = [
-                SessionSubagent(id: "child-design", name: "Ada", role: "UI review", phase: .running, startedAt: now.addingTimeInterval(-85)),
+                SessionSubagent(id: "child-design", name: "Ada", role: "UI review", phase: .running, startedAt: now.addingTimeInterval(-85), model: "GPT · example", reasoningEffort: "high"),
                 SessionSubagent(id: "child-waiting", name: "Turing", role: "Test runner", phase: .waitingForApproval, depth: 2),
                 SessionSubagent(id: "child-done", name: "Lovelace", role: "Runtime audit", phase: .completed),
             ]

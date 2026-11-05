@@ -51,7 +51,7 @@ private struct AutoHeightScrollView<Content: View>: View {
 
 extension AgentSession {
     /// Estimated row height matching `IslandSessionRow` layout for viewport sizing.
-    func estimatedIslandRowHeight(at date: Date) -> CGFloat {
+    func estimatedIslandRowHeight(at date: Date, showSubagents: Bool = true, showModel: Bool = true, showReasoningEffort: Bool = true) -> CGFloat {
         let presence = islandPresence(at: date)
         // v8 list rows are full-width scan rows, not rounded cards.
         // Base: vertical padding (22) + headline (~17) + divider rounding.
@@ -59,9 +59,13 @@ extension AgentSession {
         guard presence != .inactive else { return height }
         if spotlightPromptLineText != nil { height += 17 }
         if spotlightActivityLineText != nil { height += 20 }
+        if (showModel && (codexMetadata?.model ?? claudeMetadata?.model) != nil)
+            || (showReasoningEffort && codexMetadata?.reasoningEffort != nil) { height += 20 }
         if !islandSubagents.isEmpty {
             height += 18
-            height += CGFloat(islandSubagents.count) * 18  // each subagent row (spacing 4 + text 14)
+            let visible = SessionSubagent.visible(islandSubagents, showDetails: showSubagents)
+            height += CGFloat(visible.count) * 18
+            height += CGFloat(visible.filter { (showModel && $0.model != nil) || (showReasoningEffort && $0.reasoningEffort != nil) }.count) * 15  // each subagent row (spacing 4 + text 14)
         }
         if let tasks = claudeMetadata?.activeTasks, !tasks.isEmpty {
             height += 17
@@ -288,7 +292,7 @@ struct IslandPanelView: View {
         let physicalNotchWidth: CGFloat = targetOverlayScreen?.notchSize.width ?? 180
         return V6ClosedPill(
             mode: model.islandClosedMode,
-            label: layout == .external ? model.islandClosedLabel() : nil,
+            label: layout == .external && model.islandLayoutMode == .detailed ? model.islandClosedLabel() : nil,
             rightSlot: model.islandClosedRightSlotContent(),
             layout: layout,
             height: closedNotchHeight,
@@ -608,6 +612,8 @@ struct IslandPanelView: View {
                     stateIndicator: model.islandSessionStateIndicator,
                     completedStaleThreshold: model.completedStaleThreshold.seconds,
                     showSubagents: model.showSubagents,
+                    showModel: model.showModel,
+                    showReasoningEffort: model.showReasoningEffort,
                     isActionable: true,
                     useDrawingGroup: model.notchStatus == .opened,
                     isInteractive: model.notchStatus == .opened,
@@ -651,6 +657,8 @@ struct IslandPanelView: View {
                                 stateIndicator: model.islandSessionStateIndicator,
                                 completedStaleThreshold: model.completedStaleThreshold.seconds,
                     showSubagents: model.showSubagents,
+                    showModel: model.showModel,
+                    showReasoningEffort: model.showReasoningEffort,
                                 isActionable: session.phase.requiresAttention || session.id == actionableSessionID,
                                 useDrawingGroup: model.notchStatus == .opened,
                                 isInteractive: model.notchStatus == .opened,
@@ -702,6 +710,8 @@ struct IslandPanelView: View {
                         stateIndicator: model.islandSessionStateIndicator,
                         completedStaleThreshold: model.completedStaleThreshold.seconds,
                     showSubagents: model.showSubagents,
+                    showModel: model.showModel,
+                    showReasoningEffort: model.showReasoningEffort,
                         isActionable: session.phase.requiresAttention || session.id == actionableSessionID,
                         useDrawingGroup: model.notchStatus == .opened,
                         isInteractive: model.notchStatus == .opened,
@@ -1263,6 +1273,8 @@ private struct IslandSessionRow: View {
     var stateIndicator: IslandSessionStateIndicator = .animatedDot
     var completedStaleThreshold: TimeInterval = AgentSession.staleCompletedDisplayThreshold
     var showSubagents: Bool = true
+    var showModel: Bool = true
+    var showReasoningEffort: Bool = true
     var isActionable: Bool = false
     var useDrawingGroup: Bool = true
     var isInteractive: Bool = true
@@ -1391,6 +1403,18 @@ private struct IslandSessionRow: View {
 
     @ViewBuilder
     private func rowAuxiliaryDetails(presence: IslandSessionPresence) -> some View {
+        if let context = modelContext(
+            model: session.codexMetadata?.model ?? session.claudeMetadata?.model,
+            effort: session.codexMetadata?.reasoningEffort
+        ) {
+            Text(context)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.45))
+                .lineLimit(1)
+                .padding(.leading, detailLeadingInset)
+                .padding(.trailing, sideInset)
+                .padding(.bottom, 7)
+        }
         if !shouldShowEmbeddedDetailBody,
            let activityLine = session.spotlightActivityLineText ?? expandedActivityLineText {
             Text(activityLine)
@@ -1418,6 +1442,7 @@ private struct IslandSessionRow: View {
                 .foregroundStyle(.cyan.opacity(0.8))
 
                 ForEach(visible) { child in
+                    VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Circle()
                             .fill(IslandDesignPalette.Status.tint(for: child.phase))
@@ -1442,6 +1467,14 @@ private struct IslandSessionRow: View {
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundStyle(IslandDesignPalette.Status.tint(for: child.phase).opacity(0.9))
                         }
+                    }
+                    if let context = modelContext(model: child.model, effort: child.reasoningEffort) {
+                        Text(context)
+                            .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.4))
+                            .lineLimit(1)
+                            .padding(.leading, 12)
+                    }
                     }
                     .padding(.leading, CGFloat(min(max(child.depth - 1, 0), 4)) * 10)
                     .help(child.task ?? child.name)
@@ -1476,6 +1509,11 @@ private struct IslandSessionRow: View {
             .padding(.trailing, sideInset)
             .padding(.bottom, 10)
         }
+    }
+
+    private func modelContext(model: String?, effort: String?) -> String? {
+        let parts = [showModel ? model : nil, showReasoningEffort ? effort : nil].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     private func subagentStateLabel(_ phase: SessionPhase) -> String {

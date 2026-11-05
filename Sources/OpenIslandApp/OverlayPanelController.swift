@@ -553,7 +553,7 @@ final class OverlayPanelController {
             // a measurement→reposition cycle.
             if let actionableID,
                let session = model.state.session(id: actionableID) {
-                let rowHeight = session.estimatedIslandRowHeight(at: now)
+                let rowHeight = session.estimatedIslandRowHeight(at: now, showSubagents: model.showSubagents, showModel: model.showModel, showReasoningEffort: model.showReasoningEffort)
                 let bodyHeight = actionableBodyHeight(for: session, model: model)
                 return rowHeight + bodyHeight + Self.notificationEstimatedVerticalInsets
             }
@@ -562,10 +562,10 @@ final class OverlayPanelController {
 
         let rowHeights = visibleSessions.map { session -> CGFloat in
             if session.id == actionableID {
-                return session.estimatedIslandRowHeight(at: now)
+                return session.estimatedIslandRowHeight(at: now, showSubagents: model.showSubagents, showModel: model.showModel, showReasoningEffort: model.showReasoningEffort)
                     + actionableBodyHeight(for: session, model: model)
             }
-            return session.estimatedIslandRowHeight(at: now)
+            return session.estimatedIslandRowHeight(at: now, showSubagents: model.showSubagents, showModel: model.showModel, showReasoningEffort: model.showReasoningEffort)
         }
 
         let rowsHeight = rowHeights.reduce(CGFloat.zero, +)
