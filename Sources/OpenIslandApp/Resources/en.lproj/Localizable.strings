@@ -241,3 +241,7 @@
 "settings.display.layoutHelp" = "Clean leaves more room in the menu bar. Detailed shows a conversation title on displays without a notch.";
 "settings.display.showModel" = "Show AI model";
 "settings.display.showReasoning" = "Show reasoning effort";
+
+"settings.general.expandCompletion" = "Expand for completion notifications";
+"settings.general.expandQuestion" = "Expand for questions";
+"settings.general.dismissOutside" = "Dismiss auto reveal on outside click";

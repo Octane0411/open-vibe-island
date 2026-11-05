@@ -16,6 +16,9 @@ extension Notification.Name {
 @Observable
 final class AppModel {
     private static let soundMutedDefaultsKey = "overlay.sound.muted"
+    private static let autoExpandCompletionDefaultsKey = "app.autoExpandOnCompletion"
+    private static let autoExpandQuestionDefaultsKey = "app.autoExpandOnQuestion"
+    private static let dismissOnOutsideClickDefaultsKey = "app.dismissOnOutsideClick"
     private static let islandLayoutModeDefaultsKey = "appearance.layoutMode"
     private static let showModelDefaultsKey = "app.showModel"
     private static let showReasoningEffortDefaultsKey = "app.showReasoningEffort"
@@ -75,6 +78,7 @@ final class AppModel {
     let monitoring = ProcessMonitoringCoordinator()
     let codexAppServer = CodexAppServerCoordinator()
     private let sharedCodex = CodexSharedSessionCoordinator()
+    private var sharedCodexChildIDs: Set<String> = []
     private var sharedCodexLastActiveAt: [String: Date] = [:]
     let updateChecker = UpdateChecker()
 
@@ -302,6 +306,34 @@ final class AppModel {
             UserDefaults.standard.set(keepNotchOpenUntilDecision, forKey: Self.keepNotchOpenUntilDecisionDefaultsKey)
         }
     }
+    var autoExpandOnCompletion: Bool = true {
+        didSet {
+            guard hasFinishedInit, autoExpandOnCompletion != oldValue else { return }
+            UserDefaults.standard.set(autoExpandOnCompletion, forKey: Self.autoExpandCompletionDefaultsKey)
+        }
+    }
+    var autoExpandOnQuestion: Bool = true {
+        didSet {
+            guard hasFinishedInit, autoExpandOnQuestion != oldValue else { return }
+            UserDefaults.standard.set(autoExpandOnQuestion, forKey: Self.autoExpandQuestionDefaultsKey)
+        }
+    }
+    var dismissOnOutsideClick: Bool = true {
+        didSet {
+            guard hasFinishedInit, dismissOnOutsideClick != oldValue else { return }
+            UserDefaults.standard.set(dismissOnOutsideClick, forKey: Self.dismissOnOutsideClickDefaultsKey)
+        }
+    }
+
+    func shouldAutoExpandNotification(for session: AgentSession) -> Bool {
+        switch session.phase {
+        case .completed: autoExpandOnCompletion
+        case .waitingForAnswer: autoExpandOnQuestion
+        case .waitingForApproval: true
+        case .running: false
+        }
+    }
+
     var islandLayoutMode: IslandLayoutMode = .detailed {
         didSet {
             guard hasFinishedInit, islandLayoutMode != oldValue else { return }
@@ -676,6 +708,9 @@ final class AppModel {
         self.isNotificationSessionAlreadyFrontmost = isNotificationSessionAlreadyFrontmost
         UserDefaults.standard.register(defaults: [
             Self.showDockIconDefaultsKey: true,
+            Self.autoExpandCompletionDefaultsKey: true,
+            Self.autoExpandQuestionDefaultsKey: true,
+            Self.dismissOnOutsideClickDefaultsKey: true,
             Self.showSubagentsDefaultsKey: true,
             Self.showModelDefaultsKey: true,
             Self.showReasoningEffortDefaultsKey: true,
@@ -686,6 +721,9 @@ final class AppModel {
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
+        autoExpandOnCompletion = UserDefaults.standard.bool(forKey: Self.autoExpandCompletionDefaultsKey)
+        autoExpandOnQuestion = UserDefaults.standard.bool(forKey: Self.autoExpandQuestionDefaultsKey)
+        dismissOnOutsideClick = UserDefaults.standard.bool(forKey: Self.dismissOnOutsideClickDefaultsKey)
         islandLayoutMode = IslandLayoutMode(rawValue: UserDefaults.standard.string(forKey: Self.islandLayoutModeDefaultsKey) ?? "") ?? .detailed
         showModel = UserDefaults.standard.bool(forKey: Self.showModelDefaultsKey)
         showReasoningEffort = UserDefaults.standard.bool(forKey: Self.showReasoningEffortDefaultsKey)
@@ -1714,7 +1752,8 @@ final class AppModel {
             return false
         }
 
-        return (ingress == .bridge || !isResolvingInitialLiveSessions)
+        return !session.isSubagentSession && !sharedCodexChildIDs.contains(session.id)
+            && (ingress == .bridge || !isResolvingInitialLiveSessions)
             && (notchStatus == .closed || notchOpenReason == .notification)
             && !overlay.shouldPreserveCurrentNotificationSurface(against: surface)
             && surface.matchesCurrentState(of: session)
@@ -1737,6 +1776,7 @@ final class AppModel {
     }
 
     func applySharedCodexThreads(_ threads: [CodexThread], now: Date = .now) {
+        sharedCodexChildIDs = Set(threads.filter(\.isSubagent).map(\.id))
         for thread in threads where thread.status.type == .active {
             sharedCodexLastActiveAt[thread.id] = now
         }

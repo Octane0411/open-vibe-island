@@ -241,3 +241,7 @@
 "settings.display.layoutHelp" = "简洁布局为菜单栏腾出空间。无刘海屏幕上的详细布局显示会话标题。";
 "settings.display.showModel" = "显示 AI 模型";
 "settings.display.showReasoning" = "显示推理强度";
+
+"settings.general.expandCompletion" = "完成时展开通知";
+"settings.general.expandQuestion" = "提问时展开通知";
+"settings.general.dismissOutside" = "点击外部关闭自动展开面板";

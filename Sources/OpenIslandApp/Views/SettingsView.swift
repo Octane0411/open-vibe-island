@@ -208,6 +208,15 @@ struct GeneralSettingsPane: View {
             }
 
             Section(lang.t("settings.general.behavior")) {
+                Toggle(lang.t("settings.general.expandCompletion"), isOn: Binding(
+                    get: { model.autoExpandOnCompletion }, set: { model.autoExpandOnCompletion = $0 }
+                ))
+                Toggle(lang.t("settings.general.expandQuestion"), isOn: Binding(
+                    get: { model.autoExpandOnQuestion }, set: { model.autoExpandOnQuestion = $0 }
+                ))
+                Toggle(lang.t("settings.general.dismissOutside"), isOn: Binding(
+                    get: { model.dismissOnOutsideClick }, set: { model.dismissOnOutsideClick = $0 }
+                ))
                 Toggle(lang.t("settings.general.showSubagents"), isOn: Binding(
                     get: { model.showSubagents },
                     set: { model.showSubagents = $0 }

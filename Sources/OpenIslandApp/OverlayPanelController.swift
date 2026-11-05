@@ -286,7 +286,8 @@ final class OverlayPanelController {
             if !isPointInExpandedArea(screenLocation) {
                 // Keep the island open while a permission/question is pending
                 // when the user opted into “keep open until decision” (#547).
-                if model.shouldBlockDismissWhileAwaitingDecision {
+                if model.shouldBlockDismissWhileAwaitingDecision
+                    || (model.notchOpenReason == .notification && !model.dismissOnOutsideClick) {
                     return
                 }
                 model.notchClose()

@@ -240,3 +240,7 @@
 "settings.display.layoutHelp" = "簡潔佈局為選單列騰出空間。無瀏海螢幕上的詳細佈局顯示對話標題。";
 "settings.display.showModel" = "顯示 AI 模型";
 "settings.display.showReasoning" = "顯示推理強度";
+
+"settings.general.expandCompletion" = "完成時展開通知";
+"settings.general.expandQuestion" = "提問時展開通知";
+"settings.general.dismissOutside" = "點擊外部關閉自動展開面板";
