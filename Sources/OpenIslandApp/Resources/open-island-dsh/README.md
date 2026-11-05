@@ -14,7 +14,7 @@ dsh plugin --profile web add "file:$PWD/Sources/OpenIslandApp/Resources/open-isl
 
 Use the actual profile name for other hosts. Restart that profile if it does not support host plugin reload. This command changes the selected DSH profile only when a person runs it.
 
-The app installer reconstructs a persistent managed package from the bundled JavaScript and generated Cordis metadata. It registers the bundle in the existing profile manifest without running `dsh plugin` or rewriting user YAML. Its managed package name is `open-island-dsh`. SwiftPM may flatten the source resources, so installation does not depend on the original package directory surviving in the app bundle.
+The app installer reconstructs a persistent managed package from the bundled JavaScript and generated Cordis metadata. Its canonical source is stored under `open-island-plugins/open-island-dsh` in the profile, outside package-manager-controlled `node_modules`. It registers the bare bundle name and exactly one owned `link:./open-island-plugins/open-island-dsh` dependency, with an exact-target `node_modules/open-island-dsh` link. This survives dependency reconciliation instead of relying on an extraneous copied package. It does not run `dsh plugin`, rewrite unrelated dependencies, change user YAML, or run package scripts. Its managed package name is `open-island-dsh`. SwiftPM may flatten the source resources, so installation does not depend on the original package directory surviving in the app bundle.
 
 Remove a managed installation through Open Island Settings. Remove a direct package installation with:
 

@@ -370,7 +370,9 @@ Jump-back metadata (terminal app, terminal session ID, TTY) is read from the age
 
 **Source**: [bundled DSH host plugin](../Sources/OpenIslandApp/Resources/open-island-dsh/open-island-dsh.js)
 
-Settings > Setup > DSH (Web profile) installs a dependency-free local Cordis bundle into the existing DSH Web profile. The installer registers only its package in `dsh.profile.bundles` in the [Web profile manifest](~/.dsh/profiles/web/package.json). It preserves unrelated settings and does not rewrite Cordis YAML. Initialize the profile with `dsh web` before installing, then restart the DSH host to load the plugin. Uninstall also requires a restart.
+Settings > Setup > DSH (Web profile) installs a dependency-free local Cordis bundle into the existing DSH Web profile. The installer registers its bare package name in `dsh.profile.bundles` and one owned local link dependency in the [Web profile manifest](~/.dsh/profiles/web/package.json). It preserves unrelated dependencies and settings and does not rewrite Cordis YAML. Initialize the profile with `dsh web` before installing, then restart the DSH host to load the plugin. Uninstall also requires a restart.
+
+The canonical package lives in [the stable profile directory](~/.dsh/profiles/web/open-island-plugins/open-island-dsh). The declared dependency is `dependencies.open-island-dsh = "link:./open-island-plugins/open-island-dsh"`, with `node_modules/open-island-dsh` materialized as an exact-target link. Package-manager pruning can remove a materialized link without deleting the owned source. The installer repairs a missing link, migrates intact or entirely pruned legacy node_modules installations, and refuses foreign dependencies, links, or changed owned files. It does not rewrite lockfiles or run package scripts. If reconciling dependencies manually, use pnpm with `--no-frozen-lockfile` so the new owned local dependency can enter the existing lockfile.
 
 Other profiles can be selected through the setup CLI:
 
@@ -385,7 +387,7 @@ swift run OpenIslandSetup uninstallDsh --dsh-profile-dir "$HOME/.dsh/profiles/we
 
 | Open Island event | DSH source | Behavior |
 |---|---|---|
-| `SessionStart` | `session/created` and already loaded live sessions | Tracks DSH identity and the session working directory |
+| `SessionStart` | `session/created` or `agent/created` after live root proof | Tracks only top-level DSH identity and working directory |
 | `UserPromptSubmit` | `user/message` with user source | Marks the session running and updates prompt metadata |
 | `PreToolUse` | `tool/call` | Displays tool name and bounded input preview |
 | `PostToolUse` | `tool/result` | Clears the current tool and carries bounded typed question/plan outcomes when observed |
@@ -394,6 +396,12 @@ swift run OpenIslandSetup uninstallDsh --dsh-profile-dir "$HOME/.dsh/profiles/we
 | `SessionEnd` | `session/disposed` and plugin teardown | Ends the tracked session and stops its timer |
 
 The NDJSON command is `processDshHook` with a `dshHook` payload. It shares the nonblocking runtime lifecycle reducer, metadata, and persisted registry schema used by Pi without identifying DSH as Pi. A 45-second heartbeat timeout hides sessions after an abnormal host exit. Generic host-process discovery never keeps unrelated DSH sessions alive. Socket sends are bounded and fail open when Open Island is unavailable.
+
+### Root sessions only
+
+Subagents do not create rows, heartbeats, tool activity, questions, approvals, completion cards, sounds, or notifications. The host requires the exact live public agent-registry object and root membership before sending `is_subagent: false`. Durable subagent origin or positive delegation depth excludes a session even if resumed as a runtime root. A parent-session field alone can identify an ordinary fork and is not sufficient to hide a proven root.
+
+Unknown sessions remain silent until classified. A child-classification tombstone carries `is_subagent: true` and removes an old row without a completion event. Native state keeps that exclusion across late hooks and stale discovery snapshots. Restored DSH records, including formerly proven roots, stay hidden until a fresh heartbeat confirms current root ownership.
 
 ### Conversation jump-back
 
