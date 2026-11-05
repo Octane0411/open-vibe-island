@@ -74,6 +74,7 @@ final class AppModel {
     @ObservationIgnored private var _agentsGridObservedSequence: [String: Int] = [:]
     @ObservationIgnored private var _agentsGridNextTicket: Int = 0
     var selectedSessionID: String?
+    private(set) var islandKeyboardSelectionRevision: UInt64 = 0
     let hooks = HookInstallationCoordinator()
     let overlay = OverlayUICoordinator()
     let discovery = SessionDiscoveryCoordinator()
@@ -339,6 +340,7 @@ final class AppModel {
         let current = sessions.firstIndex { $0.id == selectedSessionID } ?? 0
         let index = (current + offset % sessions.count + sessions.count) % sessions.count
         selectedSessionID = sessions[index].id
+        islandKeyboardSelectionRevision &+= 1
     }
 
     var autoExpandOnCompletion: Bool = true {

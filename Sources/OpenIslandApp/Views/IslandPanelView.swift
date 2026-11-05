@@ -591,8 +591,10 @@ struct IslandPanelView: View {
                         }
                         .scrollIndicators(.hidden)
                         .scrollBounceBehavior(.basedOnSize)
-                        .onChange(of: model.selectedSessionID) { _, id in
-                            if let id { withAnimation(.easeInOut(duration: 0.15)) { proxy.scrollTo(id) } }
+                        .onChange(of: model.islandKeyboardSelectionRevision) { _, _ in
+                            if let id = model.selectedSessionID {
+                                withAnimation(.easeInOut(duration: 0.15)) { proxy.scrollTo(id, anchor: .top) }
+                            }
                         }
                     }
 
@@ -1731,7 +1733,9 @@ private struct IslandSessionRow: View {
         if session.phase == .completed {
             return isActionable && completionHasExpandedBody
         }
-        return session.phase == .running && runningDetailText != nil
+        // Running rows lead with the current step. Full command blocks are
+        // shown only after the user explicitly expands detail.
+        return session.phase == .running && detailOverride == true && runningDetailText != nil
     }
 
     private var completionHasExpandedBody: Bool {
