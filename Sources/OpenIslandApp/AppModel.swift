@@ -16,6 +16,8 @@ extension Notification.Name {
 @Observable
 final class AppModel {
     private static let soundMutedDefaultsKey = "overlay.sound.muted"
+    private static let keyboardShortcutsDefaultsKey = "app.keyboardShortcutsEnabled"
+    private static let toggleShortcutDefaultsKey = "app.toggleShortcut"
     private static let autoExpandCompletionDefaultsKey = "app.autoExpandOnCompletion"
     private static let autoExpandQuestionDefaultsKey = "app.autoExpandOnQuestion"
     private static let dismissOnOutsideClickDefaultsKey = "app.dismissOnOutsideClick"
@@ -77,6 +79,8 @@ final class AppModel {
     let discovery = SessionDiscoveryCoordinator()
     let monitoring = ProcessMonitoringCoordinator()
     let codexAppServer = CodexAppServerCoordinator()
+    @ObservationIgnored private var keyboardController: IslandShortcutController?
+    var keyboardShortcutError: Int32?
     private let sharedCodex = CodexSharedSessionCoordinator()
     private var sharedCodexChildIDs: Set<String> = []
     private var sharedCodexLastActiveAt: [String: Date] = [:]
@@ -306,6 +310,37 @@ final class AppModel {
             UserDefaults.standard.set(keepNotchOpenUntilDecision, forKey: Self.keepNotchOpenUntilDecisionDefaultsKey)
         }
     }
+    var keyboardShortcutsEnabled: Bool = true {
+        didSet {
+            guard hasFinishedInit, keyboardShortcutsEnabled != oldValue else { return }
+            UserDefaults.standard.set(keyboardShortcutsEnabled, forKey: Self.keyboardShortcutsDefaultsKey)
+            keyboardController?.configure()
+        }
+    }
+    var islandToggleShortcut: IslandToggleShortcut = .commandShiftI {
+        didSet {
+            guard hasFinishedInit, islandToggleShortcut != oldValue else { return }
+            UserDefaults.standard.set(islandToggleShortcut.rawValue, forKey: Self.toggleShortcutDefaultsKey)
+            keyboardController?.configure()
+        }
+    }
+
+    func startKeyboardShortcuts() {
+        guard keyboardController == nil else { return }
+        keyboardController = IslandShortcutController(model: self)
+        keyboardController?.configure()
+    }
+
+    func stopKeyboardShortcuts() { keyboardController?.stop() }
+
+    func moveIslandSelection(by offset: Int) {
+        let sessions = islandListSessions
+        guard !sessions.isEmpty else { return }
+        let current = sessions.firstIndex { $0.id == selectedSessionID } ?? 0
+        let index = (current + offset % sessions.count + sessions.count) % sessions.count
+        selectedSessionID = sessions[index].id
+    }
+
     var autoExpandOnCompletion: Bool = true {
         didSet {
             guard hasFinishedInit, autoExpandOnCompletion != oldValue else { return }
@@ -708,6 +743,7 @@ final class AppModel {
         self.isNotificationSessionAlreadyFrontmost = isNotificationSessionAlreadyFrontmost
         UserDefaults.standard.register(defaults: [
             Self.showDockIconDefaultsKey: true,
+            Self.keyboardShortcutsDefaultsKey: true,
             Self.autoExpandCompletionDefaultsKey: true,
             Self.autoExpandQuestionDefaultsKey: true,
             Self.dismissOnOutsideClickDefaultsKey: true,
@@ -721,6 +757,8 @@ final class AppModel {
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
+        keyboardShortcutsEnabled = UserDefaults.standard.bool(forKey: Self.keyboardShortcutsDefaultsKey)
+        islandToggleShortcut = IslandToggleShortcut(rawValue: UserDefaults.standard.string(forKey: Self.toggleShortcutDefaultsKey) ?? "") ?? .commandShiftI
         autoExpandOnCompletion = UserDefaults.standard.bool(forKey: Self.autoExpandCompletionDefaultsKey)
         autoExpandOnQuestion = UserDefaults.standard.bool(forKey: Self.autoExpandQuestionDefaultsKey)
         dismissOnOutsideClick = UserDefaults.standard.bool(forKey: Self.dismissOnOutsideClickDefaultsKey)

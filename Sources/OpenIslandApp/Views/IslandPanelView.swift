@@ -585,11 +585,16 @@ struct IslandPanelView: View {
                 VStack(spacing: 0) {
                     sessionPanelHeader(referenceDate: referenceDate)
 
-                    ScrollView(.vertical) {
-                        sessionRowsContent(referenceDate: referenceDate)
+                    ScrollViewReader { proxy in
+                        ScrollView(.vertical) {
+                            sessionRowsContent(referenceDate: referenceDate)
+                        }
+                        .scrollIndicators(.hidden)
+                        .scrollBounceBehavior(.basedOnSize)
+                        .onChange(of: model.selectedSessionID) { _, id in
+                            if let id { withAnimation(.easeInOut(duration: 0.15)) { proxy.scrollTo(id) } }
+                        }
                     }
-                    .scrollIndicators(.hidden)
-                    .scrollBounceBehavior(.basedOnSize)
 
                     sessionPanelFooter
                 }
@@ -611,6 +616,7 @@ struct IslandPanelView: View {
                     referenceDate: referenceDate,
                     stateIndicator: model.islandSessionStateIndicator,
                     completedStaleThreshold: model.completedStaleThreshold.seconds,
+                    isSelected: model.selectedSessionID == session.id,
                     showSubagents: model.showSubagents,
                     showModel: model.showModel,
                     showReasoningEffort: model.showReasoningEffort,
@@ -656,6 +662,7 @@ struct IslandPanelView: View {
                                 referenceDate: referenceDate,
                                 stateIndicator: model.islandSessionStateIndicator,
                                 completedStaleThreshold: model.completedStaleThreshold.seconds,
+                    isSelected: model.selectedSessionID == session.id,
                     showSubagents: model.showSubagents,
                     showModel: model.showModel,
                     showReasoningEffort: model.showReasoningEffort,
@@ -709,6 +716,7 @@ struct IslandPanelView: View {
                         referenceDate: referenceDate,
                         stateIndicator: model.islandSessionStateIndicator,
                         completedStaleThreshold: model.completedStaleThreshold.seconds,
+                    isSelected: model.selectedSessionID == session.id,
                     showSubagents: model.showSubagents,
                     showModel: model.showModel,
                     showReasoningEffort: model.showReasoningEffort,
@@ -1272,6 +1280,7 @@ private struct IslandSessionRow: View {
     let referenceDate: Date
     var stateIndicator: IslandSessionStateIndicator = .animatedDot
     var completedStaleThreshold: TimeInterval = AgentSession.staleCompletedDisplayThreshold
+    var isSelected: Bool = false
     var showSubagents: Bool = true
     var showModel: Bool = true
     var showReasoningEffort: Bool = true
@@ -2045,7 +2054,7 @@ private struct IslandSessionRow: View {
             return Color.clear
         }
 
-        let base = isHighlighted ? Color.white.opacity(isActionable ? 0.06 : 0.04) : Color.clear
+        let base = (isHighlighted || isSelected) ? Color.white.opacity(isActionable ? 0.06 : 0.04) : Color.clear
         guard stateIndicator == .tint else { return base }
 
         let tintOpacity: Double

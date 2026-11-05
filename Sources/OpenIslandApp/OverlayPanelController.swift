@@ -42,6 +42,8 @@ final class OverlayPanelController {
     weak var model: AppModel?
     private(set) var notchRect: NSRect = .zero
 
+    var isKeyPanel: Bool { panel?.isKeyWindow == true }
+
     var isVisible: Bool {
         panel?.isVisible == true
     }

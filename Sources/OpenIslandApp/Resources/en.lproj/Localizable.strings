@@ -245,3 +245,15 @@
 "settings.general.expandCompletion" = "Expand for completion notifications";
 "settings.general.expandQuestion" = "Expand for questions";
 "settings.general.dismissOutside" = "Dismiss auto reveal on outside click";
+
+"settings.shortcuts.enabled" = "Enable keyboard shortcuts";
+"settings.shortcuts.toggle" = "Toggle island (global)";
+"settings.shortcuts.unavailable" = "This shortcut is in use. Choose the other combination.";
+"settings.shortcuts.inPanel" = "When the island has keyboard focus";
+"settings.shortcuts.next" = "Next conversation";
+"settings.shortcuts.previous" = "Previous conversation";
+"settings.shortcuts.jump" = "Jump to selected conversation";
+"settings.shortcuts.approve" = "Allow the visible approval";
+"settings.shortcuts.deny" = "Deny the visible approval";
+"settings.shortcuts.close" = "Close island";
+"settings.shortcuts.scope" = "Panel shortcuts work while the island has keyboard focus. Text fields keep their normal editing keys.";

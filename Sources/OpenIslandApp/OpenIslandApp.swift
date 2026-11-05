@@ -30,6 +30,7 @@ final class OpenIslandAppDelegate: NSObject, NSApplicationDelegate {
                 loadRuntimeState: harnessLaunchConfiguration.scenario == nil
             )
             harnessRuntimeMonitor.recordMilestone("modelStarted")
+            if harnessLaunchConfiguration.scenario == nil { model.startKeyboardShortcuts() }
 
             if let scenario = harnessLaunchConfiguration.scenario {
                 model.loadDebugSnapshot(
@@ -71,6 +72,8 @@ final class OpenIslandAppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
+
+    func applicationWillTerminate(_ notification: Notification) { model.stopKeyboardShortcuts() }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false

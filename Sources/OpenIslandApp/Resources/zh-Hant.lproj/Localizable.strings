@@ -244,3 +244,15 @@
 "settings.general.expandCompletion" = "完成時展開通知";
 "settings.general.expandQuestion" = "提問時展開通知";
 "settings.general.dismissOutside" = "點擊外部關閉自動展開面板";
+
+"settings.shortcuts.enabled" = "啟用鍵盤快捷鍵";
+"settings.shortcuts.toggle" = "切換靈動島（全域）";
+"settings.shortcuts.unavailable" = "該快捷鍵無法使用，請選擇另一組合。";
+"settings.shortcuts.inPanel" = "靈動島獲得鍵盤焦點時";
+"settings.shortcuts.next" = "下一個對話";
+"settings.shortcuts.previous" = "上一個對話";
+"settings.shortcuts.jump" = "跳轉到選中的對話";
+"settings.shortcuts.approve" = "允許目前審批";
+"settings.shortcuts.deny" = "拒絕目前審批";
+"settings.shortcuts.close" = "關閉靈動島";
+"settings.shortcuts.scope" = "面板快捷鍵僅在靈動島獲得鍵盤焦點時生效。文字框保留正常編輯按鍵。";

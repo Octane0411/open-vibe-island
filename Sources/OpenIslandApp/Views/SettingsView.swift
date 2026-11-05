@@ -149,7 +149,7 @@ struct SettingsView: View {
             case .watch:
                 WatchSettingsPane(model: model)
             case .shortcuts:
-                PlaceholderSettingsPane(model: model, titleKey: "settings.tab.shortcuts", subtitleKey: "settings.shortcuts.comingSoon")
+                IslandShortcutsSettingsPane(model: model)
             case .lab:
                 PlaceholderSettingsPane(model: model, titleKey: "settings.tab.lab", subtitleKey: "settings.lab.comingSoon")
             case .about:
