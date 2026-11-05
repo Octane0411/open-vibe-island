@@ -44,7 +44,7 @@ final class OpenIslandAppDelegate: NSObject, NSApplicationDelegate {
             }
 
             // Hide all windows on launch — settings opens on demand only.
-            OpenIslandAppDelegate.hideAllAppWindows()
+            OpenIslandAppDelegate.hideInitialSettingsWindows()
 
             harnessRuntimeMonitor.recordMilestone("bootstrapCompleted")
 
@@ -83,8 +83,8 @@ final class OpenIslandAppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
-    private static func hideAllAppWindows() {
-        for window in NSApp.windows {
+    private static func hideInitialSettingsWindows() {
+        for window in NSApp.windows where !(window is NSPanel) {
             window.orderOut(nil)
         }
     }
