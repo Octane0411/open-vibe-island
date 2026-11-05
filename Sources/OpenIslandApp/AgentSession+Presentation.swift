@@ -161,11 +161,20 @@ extension AgentSession {
         return WorkspaceNameResolver.worktreeBranch(for: workingDirectory)
     }
 
-    var spotlightSubagentLabel: String? {
-        guard let subagents = claudeMetadata?.activeSubagents, !subagents.isEmpty else {
-            return nil
+    var islandSubagents: [SessionSubagent] {
+        if tool == .codex { return codexMetadata?.subagents ?? [] }
+        return (claudeMetadata?.activeSubagents ?? []).map { child in
+            SessionSubagent(
+                id: child.agentID, name: child.agentType ?? child.agentID,
+                task: child.taskDescription,
+                phase: child.summary == nil ? .running : .completed,
+                startedAt: child.startedAt
+            )
         }
-        return "Subagents (\(subagents.count))"
+    }
+
+    var spotlightSubagentLabel: String? {
+        islandSubagents.isEmpty ? nil : "Subagents (\(islandSubagents.count))"
     }
 
     var spotlightHeadlineText: String {

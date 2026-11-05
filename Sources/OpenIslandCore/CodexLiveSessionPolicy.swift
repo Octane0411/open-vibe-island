@@ -2,7 +2,7 @@ import Foundation
 
 public enum CodexLiveSessionPolicy {
     public static func shouldShow(_ thread: CodexThread, now: Date = .now, lastActiveAt: Date? = nil, completedWindow: TimeInterval = 300) -> Bool {
-        guard !thread.ephemeral, thread.source != .subagent else { return false }
+        guard !thread.ephemeral, thread.source?.isSubagent != true else { return false }
         switch thread.status.type {
         case .active: return true
         case .idle, .systemError:

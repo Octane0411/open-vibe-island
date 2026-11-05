@@ -59,9 +59,9 @@ extension AgentSession {
         guard presence != .inactive else { return height }
         if spotlightPromptLineText != nil { height += 17 }
         if spotlightActivityLineText != nil { height += 20 }
-        if let subagents = claudeMetadata?.activeSubagents, !subagents.isEmpty {
+        if !islandSubagents.isEmpty {
             height += 18
-            height += CGFloat(subagents.count) * 18  // each subagent row (spacing 4 + text 14)
+            height += CGFloat(islandSubagents.count) * 18  // each subagent row (spacing 4 + text 14)
         }
         if let tasks = claudeMetadata?.activeTasks, !tasks.isEmpty {
             height += 17
@@ -607,6 +607,7 @@ struct IslandPanelView: View {
                     referenceDate: referenceDate,
                     stateIndicator: model.islandSessionStateIndicator,
                     completedStaleThreshold: model.completedStaleThreshold.seconds,
+                    showSubagents: model.showSubagents,
                     isActionable: true,
                     useDrawingGroup: model.notchStatus == .opened,
                     isInteractive: model.notchStatus == .opened,
@@ -649,6 +650,7 @@ struct IslandPanelView: View {
                                 referenceDate: referenceDate,
                                 stateIndicator: model.islandSessionStateIndicator,
                                 completedStaleThreshold: model.completedStaleThreshold.seconds,
+                    showSubagents: model.showSubagents,
                                 isActionable: session.phase.requiresAttention || session.id == actionableSessionID,
                                 useDrawingGroup: model.notchStatus == .opened,
                                 isInteractive: model.notchStatus == .opened,
@@ -699,6 +701,7 @@ struct IslandPanelView: View {
                         referenceDate: referenceDate,
                         stateIndicator: model.islandSessionStateIndicator,
                         completedStaleThreshold: model.completedStaleThreshold.seconds,
+                    showSubagents: model.showSubagents,
                         isActionable: session.phase.requiresAttention || session.id == actionableSessionID,
                         useDrawingGroup: model.notchStatus == .opened,
                         isInteractive: model.notchStatus == .opened,
@@ -1259,6 +1262,7 @@ private struct IslandSessionRow: View {
     let referenceDate: Date
     var stateIndicator: IslandSessionStateIndicator = .animatedDot
     var completedStaleThreshold: TimeInterval = AgentSession.staleCompletedDisplayThreshold
+    var showSubagents: Bool = true
     var isActionable: Bool = false
     var useDrawingGroup: Bool = true
     var isInteractive: Bool = true
@@ -1398,47 +1402,50 @@ private struct IslandSessionRow: View {
                 .padding(.bottom, 10)
         }
 
-        if let subagents = session.claudeMetadata?.activeSubagents,
-           !subagents.isEmpty {
-            VStack(alignment: .leading, spacing: 4) {
+        if !session.islandSubagents.isEmpty {
+            let children = session.islandSubagents
+            let visible = SessionSubagent.visible(children, showDetails: showSubagents)
+            let runningCount = children.filter { $0.phase != .completed }.count
+            VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 5) {
                     Image(systemName: "arrow.triangle.branch")
                         .font(.system(size: 9, weight: .medium))
-                    Text(lang.t("subagents.title", subagents.count))
+                    Text(showSubagents
+                         ? lang.t("subagents.title", children.count)
+                         : lang.t("subagents.runningCount", runningCount))
                         .font(.system(size: 10.5, weight: .medium))
                 }
                 .foregroundStyle(.cyan.opacity(0.8))
 
-                ForEach(subagents, id: \.agentID) { sub in
+                ForEach(visible) { child in
                     HStack(spacing: 6) {
                         Circle()
-                            .fill(sub.summary != nil
-                                ? IslandDesignPalette.Status.completed
-                                : IslandDesignPalette.Status.running)
+                            .fill(IslandDesignPalette.Status.tint(for: child.phase))
                             .frame(width: 6, height: 6)
-                        Text(sub.agentType ?? sub.agentID)
+                        Text(child.name)
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.white.opacity(0.8))
                             .lineLimit(1)
-                        if let desc = sub.taskDescription {
-                            Text("(\(desc))")
+                        if let detail = child.role ?? child.task {
+                            Text(detail)
                                 .font(.system(size: 10.5))
                                 .foregroundStyle(.white.opacity(0.5))
                                 .lineLimit(1)
                         }
                         Spacer(minLength: 0)
-                        if sub.summary != nil {
-                            Text(lang.t("subagents.completed"))
-                                .font(.system(size: 10, weight: .medium))
+                        if child.phase == .running, let started = child.startedAt {
+                            Text(subagentElapsed(since: started, at: referenceDate))
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
                                 .foregroundStyle(.white.opacity(0.4))
-                        } else if let started = sub.startedAt {
-                            TimelineView(.periodic(from: .now, by: 1)) { timeline in
-                                Text(subagentElapsed(since: started, at: timeline.date))
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundStyle(.white.opacity(0.4))
-                            }
+                        } else {
+                            Text(subagentStateLabel(child.phase))
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(IslandDesignPalette.Status.tint(for: child.phase).opacity(0.9))
                         }
                     }
+                    .padding(.leading, CGFloat(min(max(child.depth - 1, 0), 4)) * 10)
+                    .help(child.task ?? child.name)
+                    .accessibilityElement(children: .combine)
                 }
             }
             .padding(.leading, detailLeadingInset)
@@ -1468,6 +1475,15 @@ private struct IslandSessionRow: View {
             .padding(.leading, detailLeadingInset)
             .padding(.trailing, sideInset)
             .padding(.bottom, 10)
+        }
+    }
+
+    private func subagentStateLabel(_ phase: SessionPhase) -> String {
+        switch phase {
+        case .running: lang.t("subagents.running")
+        case .waitingForApproval: lang.t("subagents.approval")
+        case .waitingForAnswer: lang.t("subagents.answer")
+        case .completed: lang.t("subagents.completed")
         }
     }
 

@@ -226,3 +226,10 @@
 
 /* Window Titles */
 "window.settings" = "Open Island Settings";
+
+"subagents.runningCount" = "%lld subagents running";
+"subagents.running" = "Running";
+"subagents.approval" = "Needs approval";
+"subagents.answer" = "Needs answer";
+"settings.general.showSubagents" = "Show subagents";
+"settings.general.showSubagentsHelp" = "Show child agents inside their parent conversation. Waiting children remain visible when details are hidden.";

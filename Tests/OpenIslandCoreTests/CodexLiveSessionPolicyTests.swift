@@ -26,7 +26,7 @@ struct CodexLiveSessionPolicyTests {
     @Test
     func structuredSubagentSourceDoesNotBreakThreadDecodingOrLeakBackgroundRows() throws {
         let child = try thread(source: ["subAgent": ["thread_spawn": ["parent_thread_id": "root"]]])
-        #expect(child.source == .subagent)
+        #expect(child.source?.isSubagent == true)
         #expect(!CodexLiveSessionPolicy.shouldShow(child))
     }
 
@@ -56,4 +56,18 @@ struct CodexLiveSessionPolicyTests {
         #expect(CodexLiveSessionPolicy.phase(for: waiting.status) == .waitingForApproval)
         #expect(waiting.updatingActivityTimestamp(1).updatedAt == 9_999)
     }
+    @Test
+    func structuredSourceRoundTripsParentAndIdentity() throws {
+        let child = try thread(source: ["subAgent": ["thread_spawn": [
+            "parent_thread_id": "root", "depth": 2, "agent_nickname": "Ada", "agent_role": "explorer",
+        ]]])
+        let decoded = try JSONDecoder().decode(CodexThread.self, from: JSONEncoder().encode(child))
+        #expect(decoded.source?.subagentInfo?.parentThreadID == "root")
+        #expect(decoded.source?.subagentInfo?.nickname == "Ada")
+        #expect(decoded.source?.subagentInfo?.role == "explorer")
+        #expect(decoded.source?.subagentInfo?.depth == 2)
+        let legacy = try JSONDecoder().decode(CodexSessionMetadata.self, from: Data("{}".utf8))
+        #expect(legacy.subagents == nil)
+    }
+
 }

@@ -208,6 +208,13 @@ struct GeneralSettingsPane: View {
             }
 
             Section(lang.t("settings.general.behavior")) {
+                Toggle(lang.t("settings.general.showSubagents"), isOn: Binding(
+                    get: { model.showSubagents },
+                    set: { model.showSubagents = $0 }
+                ))
+                Text(lang.t("settings.general.showSubagentsHelp"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Toggle(lang.t("settings.general.keepOpenUntilDecision"), isOn: Binding(
                     get: { model.keepNotchOpenUntilDecision },
                     set: { model.keepNotchOpenUntilDecision = $0 }

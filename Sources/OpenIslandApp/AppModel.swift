@@ -16,6 +16,7 @@ extension Notification.Name {
 @Observable
 final class AppModel {
     private static let soundMutedDefaultsKey = "overlay.sound.muted"
+    private static let showSubagentsDefaultsKey = "app.showSubagents"
     private static let showDockIconDefaultsKey = "app.showDockIcon"
     private static let hapticFeedbackEnabledDefaultsKey = "app.hapticFeedbackEnabled"
     /// When true, click-outside does not dismiss the notch while any session
@@ -296,6 +297,13 @@ final class AppModel {
         didSet {
             guard hasFinishedInit, keepNotchOpenUntilDecision != oldValue else { return }
             UserDefaults.standard.set(keepNotchOpenUntilDecision, forKey: Self.keepNotchOpenUntilDecisionDefaultsKey)
+        }
+    }
+    var showSubagents: Bool = true {
+        didSet {
+            guard hasFinishedInit, showSubagents != oldValue else { return }
+            UserDefaults.standard.set(showSubagents, forKey: Self.showSubagentsDefaultsKey)
+            refreshOverlayPlacementIfVisible()
         }
     }
     var showCodexUsage: Bool = false {
@@ -644,6 +652,7 @@ final class AppModel {
         self.isNotificationSessionAlreadyFrontmost = isNotificationSessionAlreadyFrontmost
         UserDefaults.standard.register(defaults: [
             Self.showDockIconDefaultsKey: true,
+            Self.showSubagentsDefaultsKey: true,
             Self.hapticFeedbackEnabledDefaultsKey: false,
             Self.keepNotchOpenUntilDecisionDefaultsKey: false,
             Self.completionReplyEnabledDefaultsKey: false,
@@ -651,6 +660,7 @@ final class AppModel {
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
+        showSubagents = UserDefaults.standard.bool(forKey: Self.showSubagentsDefaultsKey)
         showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
         hapticFeedbackEnabled = UserDefaults.standard.bool(forKey: Self.hapticFeedbackEnabledDefaultsKey)
         keepNotchOpenUntilDecision = UserDefaults.standard.bool(forKey: Self.keepNotchOpenUntilDecisionDefaultsKey)
@@ -1705,6 +1715,9 @@ final class AppModel {
             CodexLiveSessionPolicy.shouldShow($0, now: now, lastActiveAt: sharedCodexLastActiveAt[$0.id])
         }
         let ids = Set(visible.map(\.id))
+        let subagents = CodexLiveSessionPolicy.subagentsByRoot(
+            threads, rootIDs: ids, now: now, lastActiveAt: sharedCodexLastActiveAt
+        )
         let excluded = Set(threads.map(\.id)).subtracting(ids)
         let retired = monitoring.sharedCodexSessionIDs.subtracting(ids).union(excluded)
         monitoring.sharedCodexSessionIDs = ids
@@ -1721,6 +1734,11 @@ final class AppModel {
                     transcriptPath: thread.path, initialUserPrompt: thread.preview
                 )
             )
+            var metadata = session.codexMetadata ?? CodexSessionMetadata()
+            metadata.transcriptPath = thread.path ?? metadata.transcriptPath
+            metadata.initialUserPrompt = metadata.initialUserPrompt ?? CodexRolloutReducer.userVisiblePromptSegment(thread.preview)
+            metadata.subagents = subagents[thread.id] ?? []
+            session.codexMetadata = metadata
             if session.phase != phase { session.updatedAt = now }
             session.phase = phase
             session.isProcessAlive = true

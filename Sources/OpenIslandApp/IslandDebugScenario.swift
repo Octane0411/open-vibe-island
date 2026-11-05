@@ -16,6 +16,7 @@ struct IslandDebugSnapshot {
 enum IslandDebugScenario: String, CaseIterable, Identifiable {
     case closed
     case sessionList
+    case subagents
     case approvalCard
     case questionCard
     case completionCard
@@ -29,6 +30,8 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
             "Closed Notch"
         case .sessionList:
             "Session List"
+        case .subagents:
+            "Nested Subagents"
         case .approvalCard:
             "Approval Card"
         case .questionCard:
@@ -46,6 +49,8 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
             "Collapsed idle/running notch with live count and attention affordance."
         case .sessionList:
             "Manual expanded list with running, active, and inactive session rows."
+        case .subagents:
+            "Codex and Claude children stay under their roots with independent live states."
         case .approvalCard:
             "Auto-expanded permission surface with approve and deny actions."
         case .questionCard:
@@ -83,6 +88,30 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
                 islandSurface: .sessionList(),
                 sessions: sessions,
                 selectedSessionID: sessions.first?.id
+            )
+
+        case .subagents:
+            var codex = DebugSessionFactory.runningSession(now: now)
+            codex.codexMetadata?.initialUserPrompt = "Compare the island and ship a portable Mac build"
+            codex.codexMetadata?.lastUserPrompt = "Show each child under its parent conversation"
+            codex.codexMetadata?.subagents = [
+                SessionSubagent(id: "child-design", name: "Ada", role: "UI review", phase: .running, startedAt: now.addingTimeInterval(-85)),
+                SessionSubagent(id: "child-waiting", name: "Turing", role: "Test runner", phase: .waitingForApproval, depth: 2),
+                SessionSubagent(id: "child-done", name: "Lovelace", role: "Runtime audit", phase: .completed),
+            ]
+            let claude = AgentSession(
+                id: "claude-parent", title: "Claude · open-island", tool: .claudeCode,
+                origin: .demo, attachmentState: .attached, phase: .running,
+                summary: "Reviewing the release", updatedAt: now,
+                claudeMetadata: ClaudeSessionMetadata(
+                    initialUserPrompt: "Review the release and documentation",
+                    activeSubagents: [ClaudeSubagentInfo(agentID: "claude-child", agentType: "Explore", taskDescription: "Check packaging", startedAt: now.addingTimeInterval(-40))]
+                )
+            )
+            return IslandDebugSnapshot(
+                title: title, summary: summary, previewHeight: 430, notchStatus: .opened,
+                notchOpenReason: .click, islandSurface: .sessionList(),
+                sessions: [codex, claude], selectedSessionID: codex.id
             )
 
         case .approvalCard:

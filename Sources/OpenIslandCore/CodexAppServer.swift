@@ -51,21 +51,81 @@ public struct CodexThreadStatus: Codable, Sendable {
     }
 }
 
-public enum CodexThreadSource: String, Codable, Sendable {
-    case cli
-    case vscode
-    case appServer = "app-server"
-    case codexExec = "codex-exec"
-    case unknown
-    case subagent
+/// The structured source carries the only reliable parent/child relationship.
+public struct CodexSubagentSource: Equatable, Codable, Sendable {
+    public let parentThreadID: String
+    public let depth: Int?
+    public let nickname: String?
+    public let role: String?
 
-    public init(from decoder: Decoder) throws {
+    private enum CodingKeys: String, CodingKey {
+        case parentThreadID = "parent_thread_id"
+        case depth
+        case nickname = "agent_nickname"
+        case role = "agent_role"
+    }
+}
+
+public enum CodexThreadSource: Equatable, Codable, Sendable {
+    case cli, vscode, appServer, codexExec, unknown
+    case subagent(CodexSubagentSource?)
+
+    public var subagentInfo: CodexSubagentSource? {
+        if case let .subagent(info) = self { return info }
+        return nil
+    }
+
+    public var isSubagent: Bool {
+        if case .subagent = self { return true }
+        return false
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .cli: "cli"
+        case .vscode: "vscode"
+        case .appServer: "app-server"
+        case .codexExec: "codex-exec"
+        case .unknown: "unknown"
+        case .subagent: "subagent"
+        }
+    }
+
+    private enum SourceKey: String, CodingKey { case subAgent }
+
+    private struct StructuredSource: Codable {
+        struct Subagent: Codable {
+            let thread_spawn: CodexSubagentSource?
+        }
+        let subAgent: Subagent
+    }
+
+    public init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()
         if let value = try? container.decode(String.self) {
-            self = CodexThreadSource(rawValue: value) ?? .unknown
+            switch value {
+            case "cli": self = .cli
+            case "vscode": self = .vscode
+            case "app-server": self = .appServer
+            case "codex-exec": self = .codexExec
+            case "subagent": self = .subagent(nil)
+            default: self = .unknown
+            }
+        } else if let source = try? container.decode(StructuredSource.self) {
+            self = .subagent(source.subAgent.thread_spawn)
+        } else if let object = try? decoder.container(keyedBy: SourceKey.self), object.contains(.subAgent) {
+            self = .subagent(nil)
         } else {
-            // Shared runtimes encode subagents as a structured source object.
-            self = .subagent
+            self = .unknown
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        if case let .subagent(info?) = self {
+            try container.encode(StructuredSource(subAgent: .init(thread_spawn: info)))
+        } else {
+            try container.encode(rawValue)
         }
     }
 }

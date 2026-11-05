@@ -64,4 +64,33 @@ struct CodexSharedSessionTests {
         model.applySharedCodexThreads([try thread("actual", status: "idle")], now: now.addingTimeInterval(301))
         #expect(model.state.sessions.isEmpty)
     }
+    @Test
+    func childrenKeepTheirOwnStatesAndNeverInflateRootCount() throws {
+        let model = AppModel()
+        let now = Date(timeIntervalSince1970: 10_000)
+        func child(_ id: String, parent: String, status: String = "active", flags: [String] = []) throws -> CodexThread {
+            try thread(id, status: status, updatedAt: 9_999, source: ["subAgent": ["thread_spawn": [
+                "parent_thread_id": parent, "agent_nickname": id, "agent_role": "reviewer", "depth": 1,
+            ]]], flags: flags)
+        }
+        model.applySharedCodexThreads([
+            try thread("root", status: "idle", updatedAt: 9_999),
+            try child("running", parent: "root"),
+            try child("approval", parent: "running", flags: ["waitingOnApproval"]),
+            try child("done", parent: "root", status: "idle"),
+            try child("orphan", parent: "missing"),
+            try child("cycleA", parent: "cycleB"), try child("cycleB", parent: "cycleA"),
+        ], now: now)
+        let root = try #require(model.state.sessions.first)
+        #expect(model.state.sessions.count == 1)
+        #expect(root.phase == .completed)
+        #expect(root.islandSubagents.count == 3)
+        #expect(root.islandSubagents.first { $0.id == "approval" }?.depth == 2)
+        #expect(root.islandSubagents.first { $0.id == "approval" }?.phase == .waitingForApproval)
+        #expect(root.islandSubagents.first { $0.id == "done" }?.phase == .completed)
+        #expect(SessionSubagent.visible(root.islandSubagents, showDetails: false).map(\.id) == ["approval"])
+        model.applySharedCodexThreads([try thread("root")], now: now)
+        #expect(model.state.sessions.first?.islandSubagents.isEmpty == true)
+    }
+
 }

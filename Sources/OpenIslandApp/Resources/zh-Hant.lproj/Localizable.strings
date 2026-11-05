@@ -225,3 +225,10 @@
 
 /* Window Titles */
 "window.settings" = "Open Island 設定";
+
+"subagents.runningCount" = "%lld 個子代理執行中";
+"subagents.running" = "執行中";
+"subagents.approval" = "需要審批";
+"subagents.answer" = "需要回答";
+"settings.general.showSubagents" = "顯示子代理";
+"settings.general.showSubagentsHelp" = "在父對話中顯示子代理。隱藏詳情時，等待處理的子代理仍然可見。";
