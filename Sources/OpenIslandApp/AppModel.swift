@@ -1830,6 +1830,9 @@ final class AppModel {
         let excluded = Set(threads.map(\.id)).subtracting(ids)
         let retired = monitoring.sharedCodexSessionIDs.subtracting(ids).union(excluded)
         monitoring.sharedCodexSessionIDs = ids
+        monitoring.sharedCodexWorkingDirectories = Dictionary(
+            visible.map { ($0.id, $0.cwd) }, uniquingKeysWith: { _, latest in latest }
+        )
         var sessions = state.sessions.filter { !retired.contains($0.id) }
         for thread in visible {
             let workspace = WorkspaceNameResolver.workspaceName(for: thread.cwd)

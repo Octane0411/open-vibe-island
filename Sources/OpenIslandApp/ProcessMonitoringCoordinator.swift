@@ -14,6 +14,8 @@ final class ProcessMonitoringCoordinator {
     var syntheticClaudeSessionPrefix = ""
     @ObservationIgnored
     var sharedCodexSessionIDs: Set<String> = []
+    @ObservationIgnored
+    var sharedCodexWorkingDirectories: [String: String] = [:]
 
     @ObservationIgnored
     var stateAccessor: (() -> SessionState)?
@@ -202,6 +204,28 @@ final class ProcessMonitoringCoordinator {
         return isCodexAppRunning
     }
 
+    /// CWD can identify an app when all matching frontends agree; it cannot
+    /// identify a tab. Leave TTY and pane IDs empty until a hook/probe supplies
+    /// precise evidence. Conflicting apps deliberately produce no fallback.
+    func sharedCodexAppFallbacks(for sessions: [AgentSession], processes: [ActiveProcessSnapshot]) -> [String: JumpTarget] {
+        var targets: [String: JumpTarget] = [:]
+        for session in sessions where session.tool == .codex && session.jumpTarget == nil {
+            guard sharedCodexSessionIDs.contains(session.id),
+                  let cwd = sharedCodexWorkingDirectories[session.id] else { continue }
+            let candidates = processes.filter { $0.tool == .codex && $0.workingDirectory == cwd }
+            guard !candidates.isEmpty, candidates.allSatisfy({
+                guard let app = $0.terminalApp else { return false }
+                return !app.isEmpty && app.lowercased() != "unknown"
+            }) else { continue }
+            let apps = Set(candidates.compactMap { $0.terminalApp })
+            guard apps.count == 1, let app = apps.first else { continue }
+            targets[session.id] = JumpTarget(
+                terminalApp: app, workspaceName: WorkspaceNameResolver.workspaceName(for: cwd), paneTitle: ""
+            )
+        }
+        return targets
+    }
+
     // MARK: - Reconciliation
 
     func reconcileSessionAttachments(
@@ -244,6 +268,7 @@ final class ProcessMonitoringCoordinator {
         // launch even when no sessions exist yet, so the app-server
         // coordinator can connect and report threads.
         let isCodexAppRunning = reconcileCodexAppRunningState(observedCodexAppRunning)
+        _ = local.reconcileJumpTargets(sharedCodexAppFallbacks(for: local.sessions, processes: activeProcesses))
         let sessions = local.sessions.filter(\.isTrackedLiveSession)
         guard !sessions.isEmpty else {
             // Flush local changes only if something actually changed.

@@ -20,6 +20,7 @@ are outside this comparison.
 | Completion / question reveal | Independent General switches control automatic expansion. Approvals remain actionable; existing frontmost-session suppression, sounds, mute and keep-open behavior are preserved. |
 | Outside click | General controls dismissal of automatic reveals. Manually opened panels retain normal outside-click dismissal. |
 | Keyboard | A configurable global toggle opens/focuses the island. Command-Up/Down selects a conversation; Return jumps; Escape closes; Command-Y/N acts only on an actual visible or selected approval. Text fields retain editing behavior. |
+| Missing terminal locator | A unique observed Codex host app for the same workspace supplies an app-only jump. No TTY or tab is guessed; conflicting or unknown hosts remain unresolved. |
 | Usage, Markdown and navigation | Existing Claude/Codex quota displays, Markdown completion/plan content, questions and terminal jump integrations remain in use. |
 
 The shared daemon connection is observational: initialize, list and read. It

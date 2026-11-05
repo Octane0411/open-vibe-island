@@ -109,4 +109,24 @@ struct CodexSharedSessionTests {
         #expect(model.notchStatus == .closed)
     }
 
+    @Test
+    func jumpFallbackNeedsOneKnownHostAndNeverGuessesAPane() throws {
+        let model = AppModel()
+        model.applySharedCodexThreads([try thread("root")])
+        let terminal = ActiveProcessSnapshot(tool: .codex, sessionID: nil, workingDirectory: "/tmp/project",
+                                             terminalTTY: "/dev/ttys001", terminalApp: "Terminal")
+        let fallback = model.monitoring.sharedCodexAppFallbacks(for: model.state.sessions, processes: [terminal])
+        #expect(fallback["root"]?.terminalApp == "Terminal")
+        #expect(fallback["root"]?.terminalTTY == nil)
+        #expect(fallback["root"]?.workingDirectory == nil)
+        var conflicting = terminal
+        conflicting.terminalApp = "Ghostty"
+        #expect(model.monitoring.sharedCodexAppFallbacks(for: model.state.sessions, processes: [terminal, conflicting]).isEmpty)
+        conflicting.terminalApp = nil
+        #expect(model.monitoring.sharedCodexAppFallbacks(for: model.state.sessions, processes: [terminal, conflicting]).isEmpty)
+        model.state.reconcileJumpTargets(fallback)
+        #expect(model.monitoring.sharedCodexAppFallbacks(for: model.state.sessions, processes: [terminal]).isEmpty)
+        #expect(model.state.sessions.count == 1)
+    }
+
 }
