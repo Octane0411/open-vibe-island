@@ -256,3 +256,5 @@
 "settings.shortcuts.deny" = "拒絕目前審批";
 "settings.shortcuts.close" = "關閉靈動島";
 "settings.shortcuts.scope" = "面板快捷鍵僅在靈動島獲得鍵盤焦點時生效。文字框保留正常編輯按鍵。";
+
+"subagents.doneCount" = "%lld 個子代理已完成";

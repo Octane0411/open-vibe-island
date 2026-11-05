@@ -37,6 +37,10 @@ final class OpenIslandAppDelegate: NSObject, NSApplicationDelegate {
                     scenario.snapshot(),
                     presentOverlay: harnessLaunchConfiguration.presentOverlay
                 )
+            } else if harnessLaunchConfiguration.presentOverlay {
+                // Exercise the real discovery pipeline in an expanded panel.
+                // No demo sessions or lifecycle overrides are injected.
+                model.notchOpen(reason: .click)
             }
 
             // Hide all windows on launch — settings opens on demand only.

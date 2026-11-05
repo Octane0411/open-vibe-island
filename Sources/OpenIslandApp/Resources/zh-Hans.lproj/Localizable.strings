@@ -257,3 +257,5 @@
 "settings.shortcuts.deny" = "拒绝当前审批";
 "settings.shortcuts.close" = "关闭灵动岛";
 "settings.shortcuts.scope" = "面板快捷键仅在灵动岛获得键盘焦点时生效。文本框保留正常编辑按键。";
+
+"subagents.doneCount" = "%lld 个子代理已完成";

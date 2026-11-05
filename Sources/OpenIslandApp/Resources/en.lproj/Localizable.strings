@@ -257,3 +257,5 @@
 "settings.shortcuts.deny" = "Deny the visible approval";
 "settings.shortcuts.close" = "Close island";
 "settings.shortcuts.scope" = "Panel shortcuts work while the island has keyboard focus. Text fields keep their normal editing keys.";
+
+"subagents.doneCount" = "%lld subagents completed";

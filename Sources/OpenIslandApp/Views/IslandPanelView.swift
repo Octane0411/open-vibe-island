@@ -1438,14 +1438,16 @@ private struct IslandSessionRow: View {
         if !session.islandSubagents.isEmpty {
             let children = session.islandSubagents
             let visible = SessionSubagent.visible(children, showDetails: showSubagents)
-            let runningCount = children.filter { $0.phase != .completed }.count
+            let runningCount = children.filter { $0.phase == .running }.count
+            let hiddenSummary = runningCount > 0
+                ? lang.t("subagents.runningCount", runningCount)
+                : (children.allSatisfy { $0.phase == .completed }
+                   ? lang.t("subagents.doneCount", children.count) : lang.t("subagents.title", children.count))
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 5) {
                     Image(systemName: "arrow.triangle.branch")
                         .font(.system(size: 9, weight: .medium))
-                    Text(showSubagents
-                         ? lang.t("subagents.title", children.count)
-                         : lang.t("subagents.runningCount", runningCount))
+                    Text(showSubagents ? lang.t("subagents.title", children.count) : hiddenSummary)
                         .font(.system(size: 10.5, weight: .medium))
                 }
                 .foregroundStyle(.cyan.opacity(0.8))
