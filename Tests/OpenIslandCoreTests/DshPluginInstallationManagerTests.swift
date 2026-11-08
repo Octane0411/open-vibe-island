@@ -65,6 +65,8 @@ struct DshPluginInstallationManagerTests {
         for profile in status.profiles {
             #expect(profile.patchEntryPresent)
             #expect(profile.nodeModulesPresent)
+            #expect(profile.payloadIsSymlink)
+            #expect(profile.payloadLinkTarget == pluginSource.standardizedFileURL.path)
             #expect(profile.installed)
 
             let patch = try String(contentsOf: profile.directory.appendingPathComponent("cordis.patch.yml"), encoding: .utf8)
@@ -83,12 +85,24 @@ struct DshPluginInstallationManagerTests {
             }
         }
 
-        // Plugin payload landed inside node_modules.
-        let installedIndex = status.profiles[0]
+        // The payload is a managed symlink into the bundled source, not a copy.
+        let installedLink = status.profiles[0]
             .directory.appendingPathComponent("node_modules")
             .appendingPathComponent("open-island-dsh")
-            .appendingPathComponent("index.js")
-        #expect(FileManager.default.fileExists(atPath: installedIndex.path))
+        let attributes = try FileManager.default.attributesOfItem(atPath: installedLink.path)
+        #expect(attributes[.type] as? FileAttributeType == .typeSymbolicLink)
+        // The link still resolves the plugin's entry file, so DSH's loader can
+        // import it exactly as it imported the copied directory before.
+        #expect(FileManager.default.fileExists(
+            atPath: installedLink.appendingPathComponent("index.js").path
+        ))
+
+        // The ownership manifest records how the payload was installed.
+        let manifestData = try Data(contentsOf: status.profiles[0].directory
+            .appendingPathComponent("open-island-plugin-install.json"))
+        let manifest = try JSONDecoder().decode([String: String].self, from: manifestData)
+        #expect(manifest["payloadKind"] == "symlink")
+        #expect(manifest["linkTarget"] == pluginSource.standardizedFileURL.path)
     }
 
     @Test
@@ -103,6 +117,7 @@ struct DshPluginInstallationManagerTests {
 
         let patch = try String(contentsOf: dshRoot.appendingPathComponent("profiles/desktop/cordis.patch.yml"), encoding: .utf8)
         #expect(patch.components(separatedBy: "name: open-island-dsh").count - 1 == 1)
+        #expect(try manager.status().pluginInstalledInAllDetectedProfiles)
     }
 
     @Test
@@ -165,5 +180,77 @@ struct DshPluginInstallationManagerTests {
             atPath: dshRoot.appendingPathComponent("profiles/desktop/node_modules/open-island-dsh").path
         ))
         #expect(FileManager.default.fileExists(atPath: dshRoot.appendingPathComponent("profiles/desktop/package.json").path))
+        // Uninstall removed only the managed link; the app-bundle source that
+        // the link pointed at survives.
+        #expect(FileManager.default.fileExists(
+            atPath: pluginSource.appendingPathComponent("index.js").path
+        ))
+    }
+
+    @Test
+    func legacyCopiedPayloadIsReportedNotInstalledAndMigratedToSymlink() throws {
+        let (dshRoot, pluginSource) = try makeSandbox()
+        defer { try? FileManager.default.removeItem(at: dshRoot.deletingLastPathComponent()) }
+        try makeProfile(dshRoot, name: "desktop", existingPatch: nil)
+
+        let manager = DshPluginInstallationManager(dshDirectory: dshRoot, pluginSourceURL: pluginSource)
+        try manager.install()
+
+        // Simulate a profile installed by a build that copied the payload.
+        let pluginDirectory = dshRoot.appendingPathComponent("profiles/desktop/node_modules/open-island-dsh")
+        try FileManager.default.removeItem(at: pluginDirectory)
+        try FileManager.default.copyItem(at: pluginSource, to: pluginDirectory)
+
+        let legacy = try manager.status()
+        #expect(legacy.profiles[0].patchEntryPresent)
+        #expect(legacy.profiles[0].nodeModulesPresent)
+        #expect(!legacy.profiles[0].payloadIsSymlink)
+        #expect(!legacy.profiles[0].installed)
+        #expect(!legacy.pluginInstalledInAllDetectedProfiles)
+
+        // The launch repair rewrites the copy as the managed link without
+        // touching the patch file or duplicating the managed entry.
+        try manager.install()
+        let migrated = try manager.status()
+        #expect(migrated.profiles[0].payloadIsSymlink)
+        #expect(migrated.profiles[0].payloadLinkTarget == pluginSource.standardizedFileURL.path)
+        #expect(migrated.profiles[0].installed)
+        #expect(migrated.pluginInstalledInAllDetectedProfiles)
+        let patch = try String(
+            contentsOf: dshRoot.appendingPathComponent("profiles/desktop/cordis.patch.yml"),
+            encoding: .utf8
+        )
+        #expect(patch.components(separatedBy: "name: open-island-dsh").count - 1 == 1)
+    }
+
+    @Test
+    func danglingSymlinkPayloadIsRepairedByInstall() throws {
+        let (dshRoot, pluginSource) = try makeSandbox()
+        defer { try? FileManager.default.removeItem(at: dshRoot.deletingLastPathComponent()) }
+        try makeProfile(dshRoot, name: "desktop", existingPatch: nil)
+
+        let manager = DshPluginInstallationManager(dshDirectory: dshRoot, pluginSourceURL: pluginSource)
+        try manager.install()
+
+        // A moved or deleted app bundle leaves the managed link dangling.
+        let pluginDirectory = dshRoot.appendingPathComponent("profiles/desktop/node_modules/open-island-dsh")
+        try FileManager.default.removeItem(at: pluginDirectory)
+        try FileManager.default.createSymbolicLink(
+            atPath: pluginDirectory.path,
+            withDestinationPath: dshRoot.appendingPathComponent("missing-plugin-source").path
+        )
+
+        let dangling = try manager.status()
+        #expect(dangling.profiles[0].payloadIsSymlink)
+        #expect(!dangling.profiles[0].nodeModulesPresent)
+        #expect(!dangling.profiles[0].installed)
+
+        try manager.install()
+        let repaired = try manager.status()
+        #expect(repaired.profiles[0].installed)
+        #expect(repaired.pluginInstalledInAllDetectedProfiles)
+        #expect(FileManager.default.fileExists(
+            atPath: pluginDirectory.appendingPathComponent("index.js").path
+        ))
     }
 }

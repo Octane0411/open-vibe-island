@@ -6,11 +6,24 @@ public struct DshProfileInstallStatus: Equatable, Sendable {
     public var directory: URL
     public var patchEntryPresent: Bool
     public var nodeModulesPresent: Bool
+    /// Whether `node_modules/open-island-dsh` is the managed symlink to the
+    /// bundled plugin source rather than a real directory.
+    public var payloadIsSymlink: Bool
+    /// Destination of the managed symlink, when the payload is one.
+    public var payloadLinkTarget: String?
     /// Timestamped backups created by the last install that mutated files.
     public var backups: [URL]
 
+    /// A profile counts as installed only with the managed symlink in place.
+    ///
+    /// Builds before the managed-symlink layout copied the payload into
+    /// `node_modules`; pnpm ≥ 11.28.1 under its default `hoisted` layout treats
+    /// such an unrecorded real directory as extraneous and quarantines it into
+    /// `node_modules/.ignored` on the next profile install, which leaves the
+    /// managed `cordis.patch.yml` entry failing to import. Reporting a copy as
+    /// not installed lets the launch repair migrate it in place.
     public var installed: Bool {
-        patchEntryPresent && nodeModulesPresent
+        patchEntryPresent && nodeModulesPresent && payloadIsSymlink
     }
 
     public init(
@@ -18,12 +31,16 @@ public struct DshProfileInstallStatus: Equatable, Sendable {
         directory: URL,
         patchEntryPresent: Bool,
         nodeModulesPresent: Bool,
+        payloadIsSymlink: Bool = false,
+        payloadLinkTarget: String? = nil,
         backups: [URL] = []
     ) {
         self.name = name
         self.directory = directory
         self.patchEntryPresent = patchEntryPresent
         self.nodeModulesPresent = nodeModulesPresent
+        self.payloadIsSymlink = payloadIsSymlink
+        self.payloadLinkTarget = payloadLinkTarget
         self.backups = backups
     }
 }
@@ -33,8 +50,9 @@ public struct DshPluginInstallationStatus: Equatable, Sendable {
     public var profiles: [DshProfileInstallStatus]
     public var pluginSourceURL: URL
 
-    /// Healthy only when the plugin is present in every detected profile —
-    /// new profiles appear as "not installed" until the user reinstalls.
+    /// Healthy only when every detected profile carries the managed symlink —
+    /// new profiles, and profiles still holding a legacy copied payload, appear
+    /// as "not installed" until the launch repair or the user reinstalls.
     public var pluginInstalledInAllDetectedProfiles: Bool {
         !profiles.isEmpty && profiles.allSatisfy(\.installed)
     }
@@ -66,6 +84,11 @@ public enum DshPluginInstallationError: Error, LocalizedError {
 ///   rewrites; uninstall restores user-authored bytes exactly.
 /// - `package.json` is deliberately left untouched (avoiding pnpm lockfile
 ///   drift); the loader resolves `open-island-dsh` from node_modules.
+/// - The payload is a symlink into the app bundle, never a copy: pnpm ≥ 11.28.1
+///   under its default `hoisted` layout quarantines unrecorded real
+///   directories into `node_modules/.ignored` on every profile install, which
+///   silently removed copied payloads and broke the managed entry. A symlink is
+///   skipped by that prune and still resolves from the profile.
 public final class DshPluginInstallationManager: @unchecked Sendable {
     public static let pluginPackageName = "open-island-dsh"
     public static let patchFileName = "cordis.patch.yml"
@@ -110,6 +133,14 @@ public final class DshPluginInstallationManager: @unchecked Sendable {
             let nodeModulesPresent = fileManager.fileExists(
                 atPath: pluginDirectory.appendingPathComponent("index.js").path
             )
+            let payloadAttributes = try? fileManager.attributesOfItem(atPath: pluginDirectory.path)
+            let payloadIsSymlink = (payloadAttributes?[.type] as? FileAttributeType) == .typeSymbolicLink
+            let payloadLinkTarget: String?
+            if payloadIsSymlink {
+                payloadLinkTarget = try? fileManager.destinationOfSymbolicLink(atPath: pluginDirectory.path)
+            } else {
+                payloadLinkTarget = nil
+            }
 
             profiles.append(
                 DshProfileInstallStatus(
@@ -117,6 +148,8 @@ public final class DshPluginInstallationManager: @unchecked Sendable {
                     directory: profileDirectory,
                     patchEntryPresent: patchEntryPresent,
                     nodeModulesPresent: nodeModulesPresent,
+                    payloadIsSymlink: payloadIsSymlink,
+                    payloadLinkTarget: payloadLinkTarget,
                     backups: backupsFor(profileDirectory: profileDirectory)
                 )
             )
@@ -134,16 +167,20 @@ public final class DshPluginInstallationManager: @unchecked Sendable {
         }
 
         for profileDirectory in try detectProfileDirectories() {
-            // 1. Copy plugin payload into the profile's node_modules.
+            // 1. Install the managed symlink into the profile's node_modules.
+            // A legacy real directory, a stale symlink, or a dangling symlink is
+            // replaced. The link, not a copy, is what survives pnpm's hoisted
+            // layout prune: see the class comment above.
             let pluginDirectory = pluginNodeModulesURL(for: profileDirectory)
             try fileManager.createDirectory(
                 at: pluginDirectory.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
-            if fileManager.fileExists(atPath: pluginDirectory.path) {
-                try fileManager.removeItem(at: pluginDirectory)
-            }
-            try fileManager.copyItem(at: pluginSourceURL, to: pluginDirectory)
+            try removePluginPayloadIfPresent(at: pluginDirectory)
+            try fileManager.createSymbolicLink(
+                atPath: pluginDirectory.path,
+                withDestinationPath: pluginSourceURL.path
+            )
 
             // 2. Insert the managed patch entry (idempotent).
             // A pristine profile ships `[]` as its whole document — appending
@@ -201,6 +238,8 @@ public final class DshPluginInstallationManager: @unchecked Sendable {
                 "separatorAdded": mutation.separatorAdded ? "true" : "false",
                 "replacedEmptyArray": mutation.replacedEmptyArray ? "true" : "false",
                 "trailingNewlineAdded": mutation.trailingNewlineAdded ? "true" : "false",
+                "payloadKind": "symlink",
+                "linkTarget": pluginSourceURL.path,
             ]
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -258,11 +297,10 @@ public final class DshPluginInstallationManager: @unchecked Sendable {
                 }
             }
 
-            // 2. Remove the plugin payload.
+            // 2. Remove the plugin payload. The link only: the app-bundle source
+            // stays untouched.
             let pluginDirectory = pluginNodeModulesURL(for: profileDirectory)
-            if fileManager.fileExists(atPath: pluginDirectory.path) {
-                try fileManager.removeItem(at: pluginDirectory)
-            }
+            try removePluginPayloadIfPresent(at: pluginDirectory)
 
             // 3. Remove the ownership manifest.
             if fileManager.fileExists(atPath: manifestURL.path) {
@@ -274,6 +312,18 @@ public final class DshPluginInstallationManager: @unchecked Sendable {
     }
 
     // MARK: - Private
+
+    /// Remove whatever occupies the payload path — a legacy real directory, a
+    /// stale symlink, or a dangling symlink — without following a link.
+    /// `attributesOfItem` reports the symlink itself, so a dangling link is
+    /// still detected and removed; `fileExists` follows the link and would miss
+    /// it, leaving the path occupied for the install that follows.
+    private func removePluginPayloadIfPresent(at url: URL) throws {
+        guard (try? fileManager.attributesOfItem(atPath: url.path)) != nil else {
+            return
+        }
+        try fileManager.removeItem(at: url)
+    }
 
     /// Range of a bare `[]` line ("[]", optionally indented) if the document
     /// still holds the pristine empty-list form.
