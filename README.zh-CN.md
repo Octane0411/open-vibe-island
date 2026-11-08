@@ -50,7 +50,7 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 
 ## 支持的 Agents 和终端
 
-**15 个 Agents**：Claude Code、Codex、Cursor、Gemini CLI、Grok Build、Kimi CLI、OpenCode、Pi、Oh My Pi、Qoder、Qwen Code、Factory、CodeBuddy、ZCode、Hermes Agent
+**16 个 Agents**：Claude Code、Codex、Cursor、Gemini CLI、Grok Build、Kimi CLI、OpenCode、Pi、Oh My Pi、Qoder、Qwen Code、Factory、CodeBuddy、ZCode、Hermes Agent、DeepSeek Harness
 
 **15+ 终端和 IDE**：Terminal.app、Ghostty、iTerm2、WezTerm、Zellij、tmux、cmux、Kaku、VS Code、Cursor、Windsurf、Trae、Zed、JetBrains 全家桶（IDEA、WebStorm、PyCharm、GoLand、CLion、RubyMine、PhpStorm、Rider、RustRover）
 
@@ -77,6 +77,7 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 | **Pi** | 已支持 | TypeScript 扩展，位于 `~/.pi/agent/extensions/open-island.ts`，会话/提示词/工具/完成事件追踪，进程检测，会话持久化，终端跳转 |
 | **Oh My Pi (OMP)** | 已支持 | TypeScript 扩展，位于 `~/.omp/agent/extensions/open-island.ts`，同等生命周期覆盖，适配 OMP 事件别名 |
 | **ZCode** | 已支持 | Hook 集成，写入 `~/.zcode/cli/config.json` 的 `hooks.events`（ZCode Desktop）。payload 与 Claude Code 兼容，复用 Claude 解码路径；仅注册生命周期事件（SessionStart、UserPromptSubmit、Stop）；进程存活跟随 ZCode.app（同 Codex.app 模式） |
+| **DeepSeek Harness** | 已支持 | 内置 `open-island-dsh` cordis 插件，注入 `~/.dsh/profiles/` 下所有 profile；fire-and-forget 生命周期事件（会话开始/结束、活动、完成）；绝不修改 DSH 应用本体 |
 
 ### 终端和 IDE
 

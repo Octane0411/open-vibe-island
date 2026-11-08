@@ -127,6 +127,11 @@ struct TerminalJumpService {
             alternateBundleIdentifiers: ["com.qoder.qoder"]
         ),
         TerminalAppDescriptor(
+            displayName: "DeepSeek Harness",
+            bundleIdentifier: "com.deepseek.dsh",
+            aliases: ["deepseek harness", "dsh"]
+        ),
+        TerminalAppDescriptor(
             displayName: "Zed",
             bundleIdentifier: "dev.zed.Zed",
             aliases: ["zed"],

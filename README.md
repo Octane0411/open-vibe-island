@@ -50,7 +50,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 
 ## Supported Agents & Terminals
 
-**15 agents**: Claude Code, Codex, Cursor, Gemini CLI, Grok Build, Kimi CLI, OpenCode, Pi, Oh My Pi, Qoder, Qwen Code, Factory, CodeBuddy, ZCode, Hermes Agent
+**16 agents**: Claude Code, Codex, Cursor, Gemini CLI, Grok Build, Kimi CLI, OpenCode, Pi, Oh My Pi, Qoder, Qwen Code, Factory, CodeBuddy, ZCode, Hermes Agent, DeepSeek Harness
 
 **15+ terminals & IDEs**: Terminal.app, Ghostty, iTerm2, WezTerm, Zellij, tmux, cmux, Kaku, VS Code, Cursor, Windsurf, Trae, Zed, JetBrains IDEs (IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover)
 
@@ -78,6 +78,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 | **Pi** | Supported | TypeScript extension at `~/.pi/agent/extensions/open-island.ts`; session, prompt, tool, completion, process-discovery, persistence, and terminal jump tracking |
 | **Oh My Pi (OMP)** | Supported | TypeScript extension at `~/.omp/agent/extensions/open-island.ts`; the same lifecycle coverage adapted to OMP event aliases |
 | **ZCode** | Supported | Hook integration via `~/.zcode/cli/config.json` `hooks.events` (ZCode Desktop). Claude-compatible payload reuses the Claude decode path; lifecycle-only event set (SessionStart, UserPromptSubmit, Stop); app-process liveness like Codex.app |
+| **DeepSeek Harness** | Supported | Bundled `open-island-dsh` cordis plugin installed into every profile under `~/.dsh/profiles/`; fire-and-forget lifecycle events (session start/end, activity, completion); the DSH app itself is never modified |
 
 ### Terminals & IDEs
 

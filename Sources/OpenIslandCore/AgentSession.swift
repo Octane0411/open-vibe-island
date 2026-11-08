@@ -16,6 +16,7 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
     case ohMyPi
     case zcode
     case hermes
+    case dsh
 
     public var displayName: String {
         switch self {
@@ -49,6 +50,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "ZCode"
         case .hermes:
             "Hermes"
+        case .dsh:
+            "DeepSeek Harness"
         }
     }
 
@@ -84,6 +87,8 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
             "ZCODE"
         case .hermes:
             "HERMES"
+        case .dsh:
+            "DSH"
         }
     }
 
@@ -117,6 +122,7 @@ public enum AgentTool: String, CaseIterable, Codable, Sendable {
         case .ohMyPi:     "#f472b6"
         case .zcode:      "#2dd4bf"
         case .hermes:     "#38bdf8"
+        case .dsh:        "#4d6bfe"
         }
     }
 }

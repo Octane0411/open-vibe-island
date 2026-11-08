@@ -51,6 +51,9 @@ let package = Package(
             ],
             resources: [
                 .process("Resources"),
+                // `.process` flattens/drops subdirectories; the DSH plugin must
+                // ship as a package directory, so copy it verbatim.
+                .copy("PluginSources/open-island-dsh"),
             ]
         ),
         .testTarget(
