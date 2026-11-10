@@ -307,8 +307,8 @@ final class OverlayPanelController {
 
         eventMonitors.start { [weak self] location in
             self?.handleMouseMoved(location)
-        } mouseDownHandler: { [weak self] location, modifiers, isLocalEvent in
-            self?.handleMouseDown(location, modifiers: modifiers, isLocalEvent: isLocalEvent)
+        } mouseDownHandler: { [weak self] location, modifiers in
+            self?.handleMouseDown(location, modifiers: modifiers)
         } mouseUpHandler: { [weak self] location in
             self?.pointerSequenceEnded(at: location)
         }
@@ -341,12 +341,11 @@ final class OverlayPanelController {
 
     /// Global observations never open the island: that click already belongs
     /// to Chrome or another app. Outside dismissal never re-posts a click.
-    func handleMouseDown(_ screenLocation: NSPoint, modifiers: NSEvent.ModifierFlags = [], isLocalEvent: Bool) {
+    func handleMouseDown(_ screenLocation: NSPoint, modifiers: NSEvent.ModifierFlags = []) {
         guard let model else { return }
         cancelHoverOpenImmediately()
         let inside = model.notchStatus == .opened
             ? isPointInExpandedArea(screenLocation) : isPointInClosedSurfaceArea(screenLocation)
-        if isLocalEvent, inside, !modifiers.contains(.option) { ownsPointerSequence = true }
         if model.notchStatus == .opened, !inside || modifiers.contains(.option) {
             if !model.shouldBlockDismissWhileAwaitingDecision
                 && !(model.notchOpenReason == .notification && !model.dismissOnOutsideClick) {
@@ -852,7 +851,7 @@ final class NotchEventMonitors {
 
     func start(
         mouseMoveHandler: @MainActor @escaping @Sendable (NSPoint) -> Void,
-        mouseDownHandler: @MainActor @escaping @Sendable (NSPoint, NSEvent.ModifierFlags, Bool) -> Void,
+        mouseDownHandler: @MainActor @escaping @Sendable (NSPoint, NSEvent.ModifierFlags) -> Void,
         mouseUpHandler: @MainActor @escaping @Sendable (NSPoint) -> Void
     ) {
         // AppKit invokes monitor handlers on the main thread. Do not defer the
@@ -865,10 +864,10 @@ final class NotchEventMonitors {
             return event
         }) { monitors.append(monitor) }
         if let monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown], handler: { event in
-            MainActor.assumeIsolated { mouseDownHandler(NSEvent.mouseLocation, event.modifierFlags, false) }
+            MainActor.assumeIsolated { mouseDownHandler(NSEvent.mouseLocation, event.modifierFlags) }
         }) { monitors.append(monitor) }
         if let monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown], handler: { event in
-            MainActor.assumeIsolated { mouseDownHandler(NSEvent.mouseLocation, event.modifierFlags, true) }
+            MainActor.assumeIsolated { mouseDownHandler(NSEvent.mouseLocation, event.modifierFlags) }
             return event
         }) { monitors.append(monitor) }
         if let monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp, .rightMouseUp, .otherMouseUp], handler: { _ in

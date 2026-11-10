@@ -43,14 +43,17 @@ struct IslandPointerInteractionTests {
         defer { controller.shutDown() }
         controller.ensurePanel(model: model, preferredScreenID: nil)
         let closed = try #require(controller.visibleSurfaceRect())
-        controller.handleMouseDown(NSPoint(x: closed.midX, y: closed.midY), isLocalEvent: false)
+        controller.handleMouseDown(NSPoint(x: closed.midX, y: closed.midY))
         #expect(model.notchStatus == .closed)
+        // An observation from another window must not claim an island drag.
+        controller.updatePointerInteraction(at: NSPoint(x: closed.midX, y: closed.minY - 5))
+        #expect(controller.isIgnoringMouseEvents)
         model.notchOpen(reason: .click)
         let opened = try #require(controller.visibleSurfaceRect())
         let outside = NSPoint(x: opened.minX - 5, y: opened.midY)
         controller.updatePointerInteraction(at: outside)
         #expect(controller.isIgnoringMouseEvents)
-        controller.handleMouseDown(outside, isLocalEvent: false)
+        controller.handleMouseDown(outside)
         #expect(model.notchStatus == .closed)
         #expect(controller.isIgnoringMouseEvents)
     }
