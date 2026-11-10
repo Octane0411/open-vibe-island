@@ -244,6 +244,9 @@ struct IslandPanelView: View {
         .padding(.horizontal, panelShadowHorizontalInset)
         .padding(.bottom, panelShadowBottomInset)
         .animation(notchTransitionAnimation, value: model.notchStatus)
+        .onChange(of: resolvedClosedPill.resolvedWidth) { _, _ in
+            model.refreshOverlayPlacementIfVisible()
+        }
         .contentShape(Rectangle())
         .onHover { hovering in
             withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {

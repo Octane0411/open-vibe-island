@@ -119,6 +119,13 @@ final class OverlayPanelController {
 
     func updatePointerInteraction(at point: NSPoint, modifiers: NSEvent.ModifierFlags = []) {
         guard let panel, let model else { return }
+        if !ownsPointerSequence && !panel.frame.contains(point) {
+            if !panel.ignoresMouseEvents { panel.ignoresMouseEvents = true }
+            panel.acceptsMouseMovedEvents = false
+            modifierTimer?.invalidate()
+            modifierTimer = nil
+            return
+        }
         let inside = model.notchStatus == .opened
             ? isPointInExpandedArea(point) : isPointInClosedSurfaceArea(point)
         let accepts = ownsPointerSequence || (!keepsExpandedBackingDuringClose && inside && !modifiers.contains(.option))
@@ -393,7 +400,7 @@ final class OverlayPanelController {
     // MARK: - Hit testing geometry
 
     func isPointInClosedSurfaceArea(_ screenPoint: NSPoint) -> Bool {
-        guard let model else { return false }
+        guard let model, let panel, panel.frame.contains(screenPoint) else { return false }
 
         guard let rect = closedSurfaceRect(for: model) else { return false }
         return Self.surfaceContains(screenPoint, in: rect, openedTopProfile: nil)
@@ -403,7 +410,8 @@ final class OverlayPanelController {
         guard let model, model.notchStatus == .opened else {
             return isPointInClosedSurfaceArea(screenPoint)
         }
-        guard let panel, let rect = contentRect(for: model, in: panel.frame) else { return false }
+        guard let panel, panel.frame.contains(screenPoint),
+              let rect = contentRect(for: model, in: panel.frame) else { return false }
         let profile: OpenedIslandSurfaceShape.TopProfile = (resolveTargetScreen()?.safeAreaInsets.top ?? 0) > 0 ? .notch : .topBar
         return Self.surfaceContains(screenPoint, in: rect, openedTopProfile: profile)
     }
