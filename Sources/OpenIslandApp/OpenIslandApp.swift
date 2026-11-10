@@ -77,7 +77,10 @@ final class OpenIslandAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func applicationWillTerminate(_ notification: Notification) { model.stopKeyboardShortcuts() }
+    func applicationWillTerminate(_ notification: Notification) {
+        model.stopKeyboardShortcuts()
+        model.overlay.overlayPanelController.shutDown()
+    }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false

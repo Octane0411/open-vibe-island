@@ -24,6 +24,7 @@ final class AppModel {
     private static let islandLayoutModeDefaultsKey = "appearance.layoutMode"
     private static let showModelDefaultsKey = "app.showModel"
     private static let showReasoningEffortDefaultsKey = "app.showReasoningEffort"
+    private static let hoverToOpenDefaultsKey = "app.hoverToOpenEnabled"
     private static let showSubagentsDefaultsKey = "app.showSubagents"
     private static let showDockIconDefaultsKey = "app.showDockIcon"
     private static let hapticFeedbackEnabledDefaultsKey = "app.hapticFeedbackEnabled"
@@ -45,7 +46,7 @@ final class AppModel {
     private static let liveSessionStalenessWindow: TimeInterval = 15 * 60
     private static let jumpOverlayDismissLeadTime: Duration = .milliseconds(20)
     private static let agentsGridObservedSequenceLimit = 512
-    static let hoverOpenDelay: TimeInterval = 0.15
+    static let hoverOpenDelay: TimeInterval = 0.45
 
     struct AcceptanceStep: Identifiable {
         let id: String
@@ -390,6 +391,13 @@ final class AppModel {
             guard hasFinishedInit, showReasoningEffort != oldValue else { return }
             UserDefaults.standard.set(showReasoningEffort, forKey: Self.showReasoningEffortDefaultsKey)
             refreshOverlayPlacementIfVisible()
+        }
+    }
+    var hoverToOpenEnabled: Bool = false {
+        didSet {
+            guard hasFinishedInit, hoverToOpenEnabled != oldValue else { return }
+            UserDefaults.standard.set(hoverToOpenEnabled, forKey: Self.hoverToOpenDefaultsKey)
+            overlay.overlayPanelController.refreshPointerInteraction()
         }
     }
     var showSubagents: Bool = true {
@@ -749,6 +757,7 @@ final class AppModel {
             Self.autoExpandCompletionDefaultsKey: true,
             Self.autoExpandQuestionDefaultsKey: true,
             Self.dismissOnOutsideClickDefaultsKey: true,
+            Self.hoverToOpenDefaultsKey: false,
             Self.showSubagentsDefaultsKey: true,
             Self.showModelDefaultsKey: true,
             Self.showReasoningEffortDefaultsKey: true,
@@ -767,6 +776,7 @@ final class AppModel {
         islandLayoutMode = IslandLayoutMode(rawValue: UserDefaults.standard.string(forKey: Self.islandLayoutModeDefaultsKey) ?? "") ?? .detailed
         showModel = UserDefaults.standard.bool(forKey: Self.showModelDefaultsKey)
         showReasoningEffort = UserDefaults.standard.bool(forKey: Self.showReasoningEffortDefaultsKey)
+        hoverToOpenEnabled = UserDefaults.standard.bool(forKey: Self.hoverToOpenDefaultsKey)
         showSubagents = UserDefaults.standard.bool(forKey: Self.showSubagentsDefaultsKey)
         showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
         hapticFeedbackEnabled = UserDefaults.standard.bool(forKey: Self.hapticFeedbackEnabledDefaultsKey)

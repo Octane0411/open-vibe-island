@@ -208,6 +208,11 @@ struct GeneralSettingsPane: View {
             }
 
             Section(lang.t("settings.general.behavior")) {
+                Toggle(lang.t("settings.general.hoverToOpen"), isOn: Binding(
+                    get: { model.hoverToOpenEnabled }, set: { model.hoverToOpenEnabled = $0 }
+                ))
+                Text(lang.t("settings.general.pointerHelp"))
+                    .font(.caption).foregroundStyle(.secondary)
                 Toggle(lang.t("settings.general.expandCompletion"), isOn: Binding(
                     get: { model.autoExpandOnCompletion }, set: { model.autoExpandOnCompletion = $0 }
                 ))

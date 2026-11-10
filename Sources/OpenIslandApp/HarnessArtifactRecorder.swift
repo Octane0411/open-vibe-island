@@ -67,6 +67,17 @@ struct HarnessArtifactReport: Codable {
         }
     }
 
+    struct PointerRoutingSnapshot: Codable {
+        let centerReceivesMouse: Bool
+        let shadowPassesThrough: Bool
+        let sidePassesThrough: Bool
+        let roundedCornerPassesThrough: Bool
+        let optionPassesThrough: Bool
+        let visibleFrame: RectSnapshot
+        let backingFrame: RectSnapshot
+        let hoverToOpenEnabled: Bool
+    }
+
     struct SessionSnapshot: Codable {
         let id: String
         let tool: String
@@ -93,6 +104,7 @@ struct HarnessArtifactReport: Codable {
     let notchStatus: String
     let runtime: HarnessRuntimeArtifacts?
     let sessions: [SessionSnapshot]
+    let pointerRouting: PointerRoutingSnapshot?
 }
 
 @MainActor
@@ -110,6 +122,7 @@ enum HarnessArtifactRecorder {
 
         try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
 
+        let pointerRouting = configuration.scenario != nil ? pointerRoutingSnapshot(model: model) : nil
         var windows: [HarnessArtifactReport.WindowArtifact] = []
         for window in orderedVisibleWindows() {
             guard let imageData = snapshotPNGData(for: window) else {
@@ -178,7 +191,8 @@ enum HarnessArtifactRecorder {
                     summary: $0.summary,
                     subagents: $0.islandSubagents
                 )
-            }
+            },
+            pointerRouting: pointerRouting
         )
 
         let encoder = JSONEncoder()
@@ -186,6 +200,26 @@ enum HarnessArtifactRecorder {
         encoder.dateEncodingStrategy = .iso8601
         let reportURL = directoryURL.appendingPathComponent("report.json")
         try encoder.encode(report).write(to: reportURL)
+    }
+
+    private static func pointerRoutingSnapshot(model: AppModel) -> HarnessArtifactReport.PointerRoutingSnapshot? {
+        let controller = model.overlay.overlayPanelController
+        guard let rect = controller.visibleSurfaceRect(), let frame = controller.windowFrame else { return nil }
+        func ignores(at point: NSPoint, modifiers: NSEvent.ModifierFlags = []) -> Bool {
+            controller.updatePointerInteraction(at: point, modifiers: modifiers)
+            return controller.isIgnoringMouseEvents
+        }
+        let center = NSPoint(x: rect.midX, y: rect.midY)
+        let result = HarnessArtifactReport.PointerRoutingSnapshot(
+            centerReceivesMouse: !ignores(at: center),
+            shadowPassesThrough: ignores(at: NSPoint(x: rect.midX, y: rect.minY - 5)),
+            sidePassesThrough: ignores(at: NSPoint(x: rect.minX - 5, y: rect.midY)),
+            roundedCornerPassesThrough: ignores(at: NSPoint(x: rect.minX + 0.5, y: rect.minY + 0.5)),
+            optionPassesThrough: ignores(at: center, modifiers: .option),
+            visibleFrame: .init(rect), backingFrame: .init(frame), hoverToOpenEnabled: model.hoverToOpenEnabled
+        )
+        controller.refreshPointerInteraction()
+        return result
     }
 
     private static func orderedVisibleWindows() -> [NSWindow] {

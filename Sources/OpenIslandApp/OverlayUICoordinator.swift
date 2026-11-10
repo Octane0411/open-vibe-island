@@ -76,8 +76,7 @@ final class OverlayUICoordinator {
     @ObservationIgnored
     private var isPointerInsideIslandSurface = false
 
-    /// Kept for API compatibility; always false now that the window never
-    /// resizes and close transitions are pure SwiftUI.
+    /// Backing-window compaction does not delay the logical SwiftUI close.
     var isCloseTransitionPending: Bool { false }
 
     private var activeIslandCardSession: AgentSession? {
@@ -200,10 +199,9 @@ final class OverlayUICoordinator {
 
     /// Coordinates overlay transitions.
     ///
-    /// The window stays at a fixed (opened) size at all times.  All visual
-    /// transitions — shape morphing, content fade, corner radius — are
-    /// driven purely by SwiftUI `.animation()` modifiers reacting to
-    /// `notchStatus` changes.  No AppKit animation, no window resize.
+    /// SwiftUI drives the shape morph. AppKit supplies expanded backing
+    /// space immediately on opening, then compacts the mouse-transparent
+    /// backing window after the close animation finishes.
     private func transitionOverlay(
         to status: NotchStatus,
         reason: NotchOpenReason?,

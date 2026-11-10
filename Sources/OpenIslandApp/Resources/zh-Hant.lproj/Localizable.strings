@@ -258,3 +258,6 @@
 "settings.shortcuts.scope" = "面板快捷鍵僅在靈動島獲得鍵盤焦點時生效。文字框保留正常編輯按鍵。";
 
 "subagents.doneCount" = "%lld 個子代理已完成";
+
+"settings.general.hoverToOpen" = "懸停時開啟";
+"settings.general.pointerHelp" = "點擊靈動島或使用快捷鍵開啟。按住 Option（⌥）可點擊靈動島下方的控制項。";

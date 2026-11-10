@@ -259,3 +259,6 @@
 "settings.shortcuts.scope" = "Panel shortcuts work while the island has keyboard focus. Text fields keep their normal editing keys.";
 
 "subagents.doneCount" = "%lld subagents completed";
+
+"settings.general.hoverToOpen" = "Open on hover";
+"settings.general.pointerHelp" = "Click the island or use its keyboard shortcut to open it. Hold Option (⌥) to click controls underneath the island.";

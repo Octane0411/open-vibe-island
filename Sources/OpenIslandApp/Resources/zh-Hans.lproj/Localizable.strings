@@ -259,3 +259,6 @@
 "settings.shortcuts.scope" = "面板快捷键仅在灵动岛获得键盘焦点时生效。文本框保留正常编辑按键。";
 
 "subagents.doneCount" = "%lld 个子代理已完成";
+
+"settings.general.hoverToOpen" = "悬停时打开";
+"settings.general.pointerHelp" = "点击灵动岛或使用快捷键打开。按住 Option（⌥）可点击灵动岛下方的控件。";

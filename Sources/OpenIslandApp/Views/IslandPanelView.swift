@@ -201,7 +201,7 @@ struct IslandPanelView: View {
 
     @ViewBuilder
     private func notchContent(availableSize: CGSize) -> some View {
-        // Window is always at opened size — use opened insets unconditionally.
+        // Both backing sizes reserve the same shadow padding.
         let panelShadowHorizontalInset = IslandChromeMetrics.openedShadowHorizontalInset
         let panelShadowBottomInset = IslandChromeMetrics.openedShadowBottomInset
         let layoutWidth = max(0, availableSize.width - (panelShadowHorizontalInset * 2))
@@ -288,17 +288,7 @@ struct IslandPanelView: View {
     /// preferences re-renders this automatically; UnifiedBars runs its own
     /// TimelineView internally for bar animation.
     private var closedPill: V6ClosedPill {
-        let layout: V6ClosedLayout = isExternalDisplayPlacement ? .external : .macbook
-        let physicalNotchWidth: CGFloat = targetOverlayScreen?.notchSize.width ?? 180
-        return V6ClosedPill(
-            mode: model.islandClosedMode,
-            label: layout == .external && model.islandLayoutMode == .detailed ? model.islandClosedLabel() : nil,
-            rightSlot: model.islandClosedRightSlotContent(),
-            layout: layout,
-            height: closedNotchHeight,
-            physicalNotchWidth: layout == .macbook ? physicalNotchWidth : 0,
-            minWidth: 70
-        )
+        V6ClosedPill(model: model, screen: targetOverlayScreen)
     }
 
     @ViewBuilder
