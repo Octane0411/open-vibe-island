@@ -495,8 +495,12 @@ final class OverlayPanelController {
         let width = Self.closedPanelWidth(notchWidth: screen.notchSize.width,
                                           isNotchedDisplay: screen.safeAreaInsets.top > 0,
                                           notchStatus: model.notchStatus, renderedWidth: pill.resolvedWidth)
-        return NSRect(x: screen.frame.midX - width / 2,
-                      y: screen.frame.maxY - height, width: width, height: height)
+        // AppKit aligns native frames to pixels. Anchor hit geometry to the
+        // resulting frame rather than an unrounded screen midpoint.
+        let centerX = panel?.frame.midX ?? screen.frame.midX
+        let topY = panel?.frame.maxY ?? screen.frame.maxY
+        return NSRect(x: centerX - width / 2,
+                      y: topY - height, width: width, height: height)
     }
 
     private func panelFrame(for model: AppModel?, on screen: NSScreen) -> NSRect {
