@@ -51,7 +51,7 @@ private struct AutoHeightScrollView<Content: View>: View {
 
 extension AgentSession {
     /// Estimated row height matching `IslandSessionRow` layout for viewport sizing.
-    func estimatedIslandRowHeight(at date: Date) -> CGFloat {
+    func estimatedIslandRowHeight(at date: Date, showSubagents: Bool = true, showModel: Bool = true, showReasoningEffort: Bool = true) -> CGFloat {
         let presence = islandPresence(at: date)
         // v8 list rows are full-width scan rows, not rounded cards.
         // Base: vertical padding (22) + headline (~17) + divider rounding.
@@ -59,9 +59,13 @@ extension AgentSession {
         guard presence != .inactive else { return height }
         if spotlightPromptLineText != nil { height += 17 }
         if spotlightActivityLineText != nil { height += 20 }
-        if let subagents = claudeMetadata?.activeSubagents, !subagents.isEmpty {
+        if (showModel && (codexMetadata?.model ?? claudeMetadata?.model) != nil)
+            || (showReasoningEffort && codexMetadata?.reasoningEffort != nil) { height += 20 }
+        if !islandSubagents.isEmpty {
             height += 18
-            height += CGFloat(subagents.count) * 18  // each subagent row (spacing 4 + text 14)
+            let visible = SessionSubagent.visible(islandSubagents, showDetails: showSubagents)
+            height += CGFloat(visible.count) * 18
+            height += CGFloat(visible.filter { (showModel && $0.model != nil) || (showReasoningEffort && $0.reasoningEffort != nil) }.count) * 15  // each subagent row (spacing 4 + text 14)
         }
         if let tasks = claudeMetadata?.activeTasks, !tasks.isEmpty {
             height += 17
@@ -197,7 +201,7 @@ struct IslandPanelView: View {
 
     @ViewBuilder
     private func notchContent(availableSize: CGSize) -> some View {
-        // Window is always at opened size — use opened insets unconditionally.
+        // Both backing sizes reserve the same shadow padding.
         let panelShadowHorizontalInset = IslandChromeMetrics.openedShadowHorizontalInset
         let panelShadowBottomInset = IslandChromeMetrics.openedShadowBottomInset
         let layoutWidth = max(0, availableSize.width - (panelShadowHorizontalInset * 2))
@@ -240,6 +244,9 @@ struct IslandPanelView: View {
         .padding(.horizontal, panelShadowHorizontalInset)
         .padding(.bottom, panelShadowBottomInset)
         .animation(notchTransitionAnimation, value: model.notchStatus)
+        .onChange(of: resolvedClosedPill.resolvedWidth) { _, _ in
+            model.refreshOverlayPlacement()
+        }
         .contentShape(Rectangle())
         .onHover { hovering in
             withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {
@@ -284,17 +291,7 @@ struct IslandPanelView: View {
     /// preferences re-renders this automatically; UnifiedBars runs its own
     /// TimelineView internally for bar animation.
     private var closedPill: V6ClosedPill {
-        let layout: V6ClosedLayout = isExternalDisplayPlacement ? .external : .macbook
-        let physicalNotchWidth: CGFloat = targetOverlayScreen?.notchSize.width ?? 180
-        return V6ClosedPill(
-            mode: model.islandClosedMode,
-            label: layout == .external ? model.islandClosedLabel() : nil,
-            rightSlot: model.islandClosedRightSlotContent(),
-            layout: layout,
-            height: closedNotchHeight,
-            physicalNotchWidth: layout == .macbook ? physicalNotchWidth : 0,
-            minWidth: 70
-        )
+        V6ClosedPill(model: model, screen: targetOverlayScreen)
     }
 
     @ViewBuilder
@@ -581,11 +578,18 @@ struct IslandPanelView: View {
                 VStack(spacing: 0) {
                     sessionPanelHeader(referenceDate: referenceDate)
 
-                    ScrollView(.vertical) {
-                        sessionRowsContent(referenceDate: referenceDate)
+                    ScrollViewReader { proxy in
+                        ScrollView(.vertical) {
+                            sessionRowsContent(referenceDate: referenceDate)
+                        }
+                        .scrollIndicators(.hidden)
+                        .scrollBounceBehavior(.basedOnSize)
+                        .onChange(of: model.islandKeyboardSelectionRevision) { _, _ in
+                            if let id = model.selectedSessionID {
+                                withAnimation(.easeInOut(duration: 0.15)) { proxy.scrollTo(id, anchor: .top) }
+                            }
+                        }
                     }
-                    .scrollIndicators(.hidden)
-                    .scrollBounceBehavior(.basedOnSize)
 
                     sessionPanelFooter
                 }
@@ -607,6 +611,10 @@ struct IslandPanelView: View {
                     referenceDate: referenceDate,
                     stateIndicator: model.islandSessionStateIndicator,
                     completedStaleThreshold: model.completedStaleThreshold.seconds,
+                    isSelected: model.selectedSessionID == session.id,
+                    showSubagents: model.showSubagents,
+                    showModel: model.showModel,
+                    showReasoningEffort: model.showReasoningEffort,
                     isActionable: true,
                     useDrawingGroup: model.notchStatus == .opened,
                     isInteractive: model.notchStatus == .opened,
@@ -649,6 +657,10 @@ struct IslandPanelView: View {
                                 referenceDate: referenceDate,
                                 stateIndicator: model.islandSessionStateIndicator,
                                 completedStaleThreshold: model.completedStaleThreshold.seconds,
+                    isSelected: model.selectedSessionID == session.id,
+                    showSubagents: model.showSubagents,
+                    showModel: model.showModel,
+                    showReasoningEffort: model.showReasoningEffort,
                                 isActionable: session.phase.requiresAttention || session.id == actionableSessionID,
                                 useDrawingGroup: model.notchStatus == .opened,
                                 isInteractive: model.notchStatus == .opened,
@@ -699,6 +711,10 @@ struct IslandPanelView: View {
                         referenceDate: referenceDate,
                         stateIndicator: model.islandSessionStateIndicator,
                         completedStaleThreshold: model.completedStaleThreshold.seconds,
+                    isSelected: model.selectedSessionID == session.id,
+                    showSubagents: model.showSubagents,
+                    showModel: model.showModel,
+                    showReasoningEffort: model.showReasoningEffort,
                         isActionable: session.phase.requiresAttention || session.id == actionableSessionID,
                         useDrawingGroup: model.notchStatus == .opened,
                         isInteractive: model.notchStatus == .opened,
@@ -1259,6 +1275,10 @@ private struct IslandSessionRow: View {
     let referenceDate: Date
     var stateIndicator: IslandSessionStateIndicator = .animatedDot
     var completedStaleThreshold: TimeInterval = AgentSession.staleCompletedDisplayThreshold
+    var isSelected: Bool = false
+    var showSubagents: Bool = true
+    var showModel: Bool = true
+    var showReasoningEffort: Bool = true
     var isActionable: Bool = false
     var useDrawingGroup: Bool = true
     var isInteractive: Bool = true
@@ -1387,6 +1407,18 @@ private struct IslandSessionRow: View {
 
     @ViewBuilder
     private func rowAuxiliaryDetails(presence: IslandSessionPresence) -> some View {
+        if let context = modelContext(
+            model: session.codexMetadata?.model ?? session.claudeMetadata?.model,
+            effort: session.codexMetadata?.reasoningEffort
+        ) {
+            Text(context)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.45))
+                .lineLimit(1)
+                .padding(.leading, detailLeadingInset)
+                .padding(.trailing, sideInset)
+                .padding(.bottom, 7)
+        }
         if !shouldShowEmbeddedDetailBody,
            let activityLine = session.spotlightActivityLineText ?? expandedActivityLineText {
             Text(activityLine)
@@ -1398,47 +1430,61 @@ private struct IslandSessionRow: View {
                 .padding(.bottom, 10)
         }
 
-        if let subagents = session.claudeMetadata?.activeSubagents,
-           !subagents.isEmpty {
-            VStack(alignment: .leading, spacing: 4) {
+        if !session.islandSubagents.isEmpty {
+            let children = session.islandSubagents
+            let visible = SessionSubagent.visible(children, showDetails: showSubagents)
+            let runningCount = children.filter { $0.phase == .running }.count
+            let hiddenSummary = runningCount > 0
+                ? lang.t("subagents.runningCount", runningCount)
+                : (children.allSatisfy { $0.phase == .completed }
+                   ? lang.t("subagents.doneCount", children.count) : lang.t("subagents.title", children.count))
+            VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 5) {
                     Image(systemName: "arrow.triangle.branch")
                         .font(.system(size: 9, weight: .medium))
-                    Text(lang.t("subagents.title", subagents.count))
+                    Text(showSubagents ? lang.t("subagents.title", children.count) : hiddenSummary)
                         .font(.system(size: 10.5, weight: .medium))
                 }
                 .foregroundStyle(.cyan.opacity(0.8))
 
-                ForEach(subagents, id: \.agentID) { sub in
+                ForEach(visible) { child in
+                    VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Circle()
-                            .fill(sub.summary != nil
-                                ? IslandDesignPalette.Status.completed
-                                : IslandDesignPalette.Status.running)
+                            .fill(IslandDesignPalette.Status.tint(for: child.phase))
                             .frame(width: 6, height: 6)
-                        Text(sub.agentType ?? sub.agentID)
+                        Text(child.name)
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.white.opacity(0.8))
                             .lineLimit(1)
-                        if let desc = sub.taskDescription {
-                            Text("(\(desc))")
+                        if let detail = child.role ?? child.task {
+                            Text(detail)
                                 .font(.system(size: 10.5))
                                 .foregroundStyle(.white.opacity(0.5))
                                 .lineLimit(1)
                         }
                         Spacer(minLength: 0)
-                        if sub.summary != nil {
-                            Text(lang.t("subagents.completed"))
-                                .font(.system(size: 10, weight: .medium))
+                        if child.phase == .running, let started = child.startedAt {
+                            Text(subagentElapsed(since: started, at: referenceDate))
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
                                 .foregroundStyle(.white.opacity(0.4))
-                        } else if let started = sub.startedAt {
-                            TimelineView(.periodic(from: .now, by: 1)) { timeline in
-                                Text(subagentElapsed(since: started, at: timeline.date))
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundStyle(.white.opacity(0.4))
-                            }
+                        } else {
+                            Text(subagentStateLabel(child.phase))
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(IslandDesignPalette.Status.tint(for: child.phase).opacity(0.9))
                         }
                     }
+                    if let context = modelContext(model: child.model, effort: child.reasoningEffort) {
+                        Text(context)
+                            .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.4))
+                            .lineLimit(1)
+                            .padding(.leading, 12)
+                    }
+                    }
+                    .padding(.leading, CGFloat(min(max(child.depth - 1, 0), 4)) * 10)
+                    .help(child.task ?? child.name)
+                    .accessibilityElement(children: .combine)
                 }
             }
             .padding(.leading, detailLeadingInset)
@@ -1468,6 +1514,20 @@ private struct IslandSessionRow: View {
             .padding(.leading, detailLeadingInset)
             .padding(.trailing, sideInset)
             .padding(.bottom, 10)
+        }
+    }
+
+    private func modelContext(model: String?, effort: String?) -> String? {
+        let parts = [showModel ? model : nil, showReasoningEffort ? effort : nil].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private func subagentStateLabel(_ phase: SessionPhase) -> String {
+        switch phase {
+        case .running: lang.t("subagents.running")
+        case .waitingForApproval: lang.t("subagents.approval")
+        case .waitingForAnswer: lang.t("subagents.answer")
+        case .completed: lang.t("subagents.completed")
         }
     }
 
@@ -1666,7 +1726,9 @@ private struct IslandSessionRow: View {
         if session.phase == .completed {
             return isActionable && completionHasExpandedBody
         }
-        return session.phase == .running && runningDetailText != nil
+        // Running rows lead with the current step. Full command blocks are
+        // shown only after the user explicitly expands detail.
+        return session.phase == .running && detailOverride == true && runningDetailText != nil
     }
 
     private var completionHasExpandedBody: Bool {
@@ -1991,7 +2053,7 @@ private struct IslandSessionRow: View {
             return Color.clear
         }
 
-        let base = isHighlighted ? Color.white.opacity(isActionable ? 0.06 : 0.04) : Color.clear
+        let base = (isHighlighted || isSelected) ? Color.white.opacity(isActionable ? 0.06 : 0.04) : Color.clear
         guard stateIndicator == .tint else { return base }
 
         let tintOpacity: Double

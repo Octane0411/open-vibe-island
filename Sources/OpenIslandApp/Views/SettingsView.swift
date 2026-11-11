@@ -77,7 +77,7 @@ enum SettingsSection: String, CaseIterable {
         switch self {
         case .system:   lang.t("settings.section.system")
         case .advanced: lang.t("settings.section.advanced")
-        case .app:      "Open Island"
+        case .app:      AppBranding.displayName
         }
     }
 
@@ -149,7 +149,7 @@ struct SettingsView: View {
             case .watch:
                 WatchSettingsPane(model: model)
             case .shortcuts:
-                PlaceholderSettingsPane(model: model, titleKey: "settings.tab.shortcuts", subtitleKey: "settings.shortcuts.comingSoon")
+                IslandShortcutsSettingsPane(model: model)
             case .lab:
                 PlaceholderSettingsPane(model: model, titleKey: "settings.tab.lab", subtitleKey: "settings.lab.comingSoon")
             case .about:
@@ -208,6 +208,27 @@ struct GeneralSettingsPane: View {
             }
 
             Section(lang.t("settings.general.behavior")) {
+                Toggle(lang.t("settings.general.hoverToOpen"), isOn: Binding(
+                    get: { model.hoverToOpenEnabled }, set: { model.hoverToOpenEnabled = $0 }
+                ))
+                Text(lang.t("settings.general.pointerHelp"))
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle(lang.t("settings.general.expandCompletion"), isOn: Binding(
+                    get: { model.autoExpandOnCompletion }, set: { model.autoExpandOnCompletion = $0 }
+                ))
+                Toggle(lang.t("settings.general.expandQuestion"), isOn: Binding(
+                    get: { model.autoExpandOnQuestion }, set: { model.autoExpandOnQuestion = $0 }
+                ))
+                Toggle(lang.t("settings.general.dismissOutside"), isOn: Binding(
+                    get: { model.dismissOnOutsideClick }, set: { model.dismissOnOutsideClick = $0 }
+                ))
+                Toggle(lang.t("settings.general.showSubagents"), isOn: Binding(
+                    get: { model.showSubagents },
+                    set: { model.showSubagents = $0 }
+                ))
+                Text(lang.t("settings.general.showSubagentsHelp"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Toggle(lang.t("settings.general.keepOpenUntilDecision"), isOn: Binding(
                     get: { model.keepNotchOpenUntilDecision },
                     set: { model.keepNotchOpenUntilDecision = $0 }
@@ -257,6 +278,23 @@ struct DisplaySettingsPane: View {
                             .disabled(!option.isAvailable)
                     }
                 }
+            }
+
+            Section(lang.t("settings.display.content")) {
+                Picker(lang.t("settings.display.layout"), selection: Binding(
+                    get: { model.islandLayoutMode }, set: { model.islandLayoutMode = $0 }
+                )) {
+                    Text(lang.t("settings.display.clean")).tag(IslandLayoutMode.clean)
+                    Text(lang.t("settings.display.detailed")).tag(IslandLayoutMode.detailed)
+                }
+                Text(lang.t("settings.display.layoutHelp"))
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle(lang.t("settings.display.showModel"), isOn: Binding(
+                    get: { model.showModel }, set: { model.showModel = $0 }
+                ))
+                Toggle(lang.t("settings.display.showReasoning"), isOn: Binding(
+                    get: { model.showReasoningEffort }, set: { model.showReasoningEffort = $0 }
+                ))
             }
 
             if let diag = model.overlayPlacementDiagnostics {
@@ -492,7 +530,7 @@ struct SetupSettingsPane: View {
                     }
                     Button(lang.t("settings.general.cancel"), role: .cancel) {}
                 } message: {
-                    Text("This will remove the Open Island plugin from ~/.config/opencode/plugins/.")
+                    Text("This will remove the \(AppBranding.displayName) plugin from ~/.config/opencode/plugins/.")
                 }
 
                 hookRow(
@@ -509,7 +547,7 @@ struct SetupSettingsPane: View {
                     }
                     Button(lang.t("settings.general.cancel"), role: .cancel) {}
                 } message: {
-                    Text("This will remove Open Island hooks from ~/.qoder/settings.json.")
+                    Text("This will remove \(AppBranding.displayName) hooks from ~/.qoder/settings.json.")
                 }
 
                 hookRow(
@@ -526,7 +564,7 @@ struct SetupSettingsPane: View {
                     }
                     Button(lang.t("settings.general.cancel"), role: .cancel) {}
                 } message: {
-                    Text("This will remove Open Island hooks from ~/.qwen/settings.json.")
+                    Text("This will remove \(AppBranding.displayName) hooks from ~/.qwen/settings.json.")
                 }
 
                 hookRow(
@@ -543,7 +581,7 @@ struct SetupSettingsPane: View {
                     }
                     Button(lang.t("settings.general.cancel"), role: .cancel) {}
                 } message: {
-                    Text("This will remove Open Island hooks from ~/.factory/settings.json.")
+                    Text("This will remove \(AppBranding.displayName) hooks from ~/.factory/settings.json.")
                 }
 
                 hookRow(
@@ -560,7 +598,7 @@ struct SetupSettingsPane: View {
                     }
                     Button(lang.t("settings.general.cancel"), role: .cancel) {}
                 } message: {
-                    Text("This will remove Open Island hooks from ~/.codebuddy/settings.json.")
+                    Text("This will remove \(AppBranding.displayName) hooks from ~/.codebuddy/settings.json.")
                 }
 
                 hookRow(
@@ -578,7 +616,7 @@ struct SetupSettingsPane: View {
                     }
                     Button(lang.t("settings.general.cancel"), role: .cancel) {}
                 } message: {
-                    Text("This will remove the Open Island hooks from ~/.cursor/hooks.json.")
+                    Text("This will remove the \(AppBranding.displayName) hooks from ~/.cursor/hooks.json.")
                 }
 
                 hookRow(
@@ -595,7 +633,7 @@ struct SetupSettingsPane: View {
                     }
                     Button(lang.t("settings.general.cancel"), role: .cancel) {}
                 } message: {
-                    Text("This will remove Open Island hooks from ~/.gemini/settings.json.")
+                    Text("This will remove \(AppBranding.displayName) hooks from ~/.gemini/settings.json.")
                 }
 
                 hookRow(
@@ -612,7 +650,7 @@ struct SetupSettingsPane: View {
                     }
                     Button(lang.t("settings.general.cancel"), role: .cancel) {}
                 } message: {
-                    Text("This will remove Open Island hooks from ~/.kimi/config.toml.")
+                    Text("This will remove \(AppBranding.displayName) hooks from ~/.kimi/config.toml.")
                 }
 
                 hookRow(
@@ -630,7 +668,7 @@ struct SetupSettingsPane: View {
                     }
                     Button(lang.t("settings.general.cancel"), role: .cancel) {}
                 } message: {
-                    Text("This will remove Open Island hooks from ~/.grok/hooks/open-island.json.")
+                    Text("This will remove \(AppBranding.displayName) hooks from ~/.grok/hooks/open-island.json.")
                 }
 
                 hookRow(
@@ -647,7 +685,7 @@ struct SetupSettingsPane: View {
                     }
                     Button(lang.t("settings.general.cancel"), role: .cancel) {}
                 } message: {
-                    Text("This will remove Open Island hooks from ~/.zcode/cli/config.json.")
+                    Text("This will remove \(AppBranding.displayName) hooks from ~/.zcode/cli/config.json.")
                 }
 
                 hookRow(
@@ -665,7 +703,7 @@ struct SetupSettingsPane: View {
                     }
                     Button(lang.t("settings.general.cancel"), role: .cancel) {}
                 } message: {
-                    Text("This will remove the Open Island extension from ~/.pi/agent/extensions/.")
+                    Text("This will remove the \(AppBranding.displayName) extension from ~/.pi/agent/extensions/.")
                 }
 
                 hookRow(
@@ -683,7 +721,7 @@ struct SetupSettingsPane: View {
                     }
                     Button(lang.t("settings.general.cancel"), role: .cancel) {}
                 } message: {
-                    Text("This will remove the Open Island extension from ~/.omp/agent/extensions/.")
+                    Text("This will remove the \(AppBranding.displayName) extension from ~/.omp/agent/extensions/.")
                 }
 
                 hookRow(
@@ -700,7 +738,7 @@ struct SetupSettingsPane: View {
                     }
                     Button(lang.t("settings.general.cancel"), role: .cancel) {}
                 } message: {
-                    Text("This will remove Open Island hooks from ~/.hermes/config.yaml.")
+                    Text("This will remove \(AppBranding.displayName) hooks from ~/.hermes/config.yaml.")
                 }
             }
 
@@ -1222,7 +1260,7 @@ struct RemoteConnectionSection: View {
                 remoteSetupStep(
                     number: "1",
                     title: "Deploy hooks to remote server",
-                    description: "Run from the Open Island repo directory:",
+                    description: "Run from the \(AppBranding.displayName) repo directory:",
                     command: setupCommand
                 )
 

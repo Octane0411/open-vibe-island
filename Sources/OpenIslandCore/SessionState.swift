@@ -172,7 +172,12 @@ public struct SessionState: Equatable, Sendable {
                 return
             }
 
-            session.codexMetadata = payload.codexMetadata.isEmpty ? nil : payload.codexMetadata
+            var metadata = payload.codexMetadata
+            metadata.subagents = metadata.subagents ?? session.codexMetadata?.subagents
+            metadata.model = metadata.model ?? session.codexMetadata?.model
+            metadata.reasoningEffort = metadata.reasoningEffort ?? session.codexMetadata?.reasoningEffort
+            metadata.parentThreadID = metadata.parentThreadID ?? session.codexMetadata?.parentThreadID
+            session.codexMetadata = metadata.isEmpty ? nil : metadata
             session.updatedAt = payload.timestamp
             upsert(session)
 

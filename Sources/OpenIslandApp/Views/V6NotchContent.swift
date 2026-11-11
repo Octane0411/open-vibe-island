@@ -314,6 +314,24 @@ struct V6ClosedPill: View {
     }
 }
 
+extension V6ClosedPill {
+    /// Share the rendered geometry with AppKit hit testing. In particular,
+    /// an external display's hit region must not use a fixed 360pt reserve.
+    @MainActor
+    init(model: AppModel, screen: NSScreen?) {
+        let notched = (screen?.safeAreaInsets.top ?? 0) > 0
+        self.init(
+            mode: model.islandClosedMode,
+            label: !notched && model.islandLayoutMode == .detailed ? model.islandClosedLabel() : nil,
+            rightSlot: model.islandClosedRightSlotContent(),
+            layout: notched ? .macbook : .external,
+            height: screen?.islandClosedHeight ?? 24,
+            physicalNotchWidth: notched ? (screen?.notchSize.width ?? 180) : 0,
+            minWidth: 70
+        )
+    }
+}
+
 enum V6ClosedLayout: Equatable {
     case external
     case macbook

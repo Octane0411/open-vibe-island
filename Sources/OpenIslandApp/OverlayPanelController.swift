@@ -1,10 +1,7 @@
 import AppKit
 import Combine
-import OSLog
 import SwiftUI
 import OpenIslandCore
-
-private let overlayLog = Logger(subsystem: "app.openisland", category: "overlay")
 
 @MainActor
 final class OverlayPanelController {
@@ -36,11 +33,22 @@ final class OverlayPanelController {
 
     private var panel: NotchPanel?
     private var eventMonitors = NotchEventMonitors()
-    private var lastStrayClickRepair: Date = .distantPast
+    private var compactFrameTask: DispatchWorkItem?
+    private var keepsExpandedBackingDuringClose = false
+    private var isPreparingHoverOpen = false
+    private var modifierTimer: Timer?
+    private var ownsPointerSequence = false
+    var pointerLocationProvider: (() -> NSPoint)?
+    var modifierFlagsProvider: (() -> NSEvent.ModifierFlags)?
+    var isIgnoringMouseEvents: Bool { panel?.ignoresMouseEvents ?? true }
+    var windowFrame: NSRect? { panel?.frame }
+    private var pointerLocation: NSPoint { pointerLocationProvider?() ?? NSEvent.mouseLocation }
+    private var modifierFlags: NSEvent.ModifierFlags { modifierFlagsProvider?() ?? NSEvent.modifierFlags }
     private var hoverTimer: DispatchWorkItem?
-    private var hoverCancelGrace: DispatchWorkItem?
     weak var model: AppModel?
     private(set) var notchRect: NSRect = .zero
+
+    var isKeyPanel: Bool { panel?.isKeyWindow == true }
 
     var isVisible: Bool {
         panel?.isVisible == true
@@ -60,39 +68,97 @@ final class OverlayPanelController {
         self.panel = panel
         positionPanel(panel, preferredScreenID: preferredScreenID, animated: false)
         panel.orderFrontRegardless()
-        panel.ignoresMouseEvents = true
-        panel.acceptsMouseMovedEvents = false
         startEventMonitoring()
+        refreshPointerInteraction()
     }
 
     func show(model: AppModel, preferredScreenID: String?) -> OverlayPlacementDiagnostics? {
         self.model = model
+        compactFrameTask?.cancel()
+        compactFrameTask = nil
+        keepsExpandedBackingDuringClose = false
         let panel = self.panel ?? makePanel(model: model)
         self.panel = panel
         let diagnostics = positionPanel(panel, preferredScreenID: preferredScreenID, animated: true)
         presentPanel(panel, activates: Self.shouldActivatePanel(for: model.notchOpenReason))
-        panel.ignoresMouseEvents = false
-        panel.acceptsMouseMovedEvents = true
         startEventMonitoring()
+        refreshPointerInteraction()
         return diagnostics
     }
 
-    func hide() {
-        panel?.ignoresMouseEvents = true
-        panel?.acceptsMouseMovedEvents = false
+    func setInteractive(_ interactive: Bool) {
+        guard let panel else { return }
+        if interactive {
+            compactFrameTask?.cancel()
+            compactFrameTask = nil
+            keepsExpandedBackingDuringClose = false
+        } else {
+            // Let the visual close finish before reducing the native backing
+            // window. It stays mouse-transparent throughout the contraction.
+            keepsExpandedBackingDuringClose = true
+            panel.ignoresMouseEvents = true
+            panel.acceptsMouseMovedEvents = false
+            compactFrameTask?.cancel()
+            let item = DispatchWorkItem { [weak self] in
+                guard let self, let panel = self.panel, self.model?.notchStatus != .opened else { return }
+                self.keepsExpandedBackingDuringClose = false
+                self.compactFrameTask = nil
+                self.positionPanel(panel, preferredScreenID: nil, animated: false)
+                self.refreshPointerInteraction()
+            }
+            compactFrameTask = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.36, execute: item)
+        }
+        if interactive { refreshPointerInteraction() }
     }
 
-    func setInteractive(_ interactive: Bool) {
-        guard let panel else {
+    /// Update the WindowServer hit region before clicks arrive. Returning nil
+    /// from NSView.hitTest alone does not pass an event to another app's window.
+    func refreshPointerInteraction() {
+        updatePointerInteraction(at: pointerLocation, modifiers: modifierFlags)
+    }
+
+    func updatePointerInteraction(at point: NSPoint, modifiers: NSEvent.ModifierFlags = []) {
+        guard let panel, let model else { return }
+        if !ownsPointerSequence && !panel.frame.contains(point) {
+            if !panel.ignoresMouseEvents { panel.ignoresMouseEvents = true }
+            panel.acceptsMouseMovedEvents = false
+            modifierTimer?.invalidate()
+            modifierTimer = nil
             return
         }
-
-        panel.ignoresMouseEvents = !interactive
-        panel.acceptsMouseMovedEvents = interactive
-
-        if interactive {
-            presentPanel(panel, activates: Self.shouldActivatePanel(for: model?.notchOpenReason))
+        let inside = model.notchStatus == .opened
+            ? isPointInExpandedArea(point) : isPointInClosedSurfaceArea(point)
+        let accepts = ownsPointerSequence || (!keepsExpandedBackingDuringClose && inside && !modifiers.contains(.option))
+        if panel.ignoresMouseEvents == accepts { panel.ignoresMouseEvents = !accepts }
+        panel.acceptsMouseMovedEvents = accepts
+        if (inside || ownsPointerSequence), model.disablesOverlayEventMonitoringDuringHarness == false {
+            if modifierTimer == nil {
+                // Modifier-only changes can be missed by a global key monitor
+                // without Accessibility. Poll only while the pointer is on us.
+                let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.refreshPointerInteraction() }
+                }
+                timer.tolerance = 0.02
+                modifierTimer = timer
+                RunLoop.main.add(timer, forMode: .common)
+            }
+        } else {
+            modifierTimer?.invalidate()
+            modifierTimer = nil
         }
+    }
+
+    func shutDown() {
+        cancelHoverOpenImmediately()
+        compactFrameTask?.cancel()
+        compactFrameTask = nil
+        modifierTimer?.invalidate()
+        modifierTimer = nil
+        eventMonitors.stop()
+        panel?.contentView = nil
+        panel?.close()
+        panel = nil
     }
 
     func reposition(preferredScreenID: String?) -> OverlayPlacementDiagnostics? {
@@ -121,6 +187,7 @@ final class OverlayPanelController {
             defer: false
         )
 
+        panel.isReleasedWhenClosed = false
         panel.isFloatingPanel = true
         panel.becomesKeyOnlyIfNeeded = false
         panel.level = .statusBar
@@ -175,6 +242,7 @@ final class OverlayPanelController {
             panel.setFrame(windowFrame, display: true)
         }
         computeNotchRect(screen: screen)
+        refreshPointerInteraction()
 
         return OverlayDisplayResolver.diagnostics(
             preferredScreenID: preferredScreenID,
@@ -214,8 +282,8 @@ final class OverlayPanelController {
         let screens = NSScreen.screens
         guard !screens.isEmpty else { return nil }
 
-        if let preferredScreenID,
-           let screen = screens.first(where: { OverlayDisplayResolver.screenID(for: $0) == preferredScreenID }) {
+        if let selectedID = preferredScreenID ?? model?.overlayDisplaySelectionID,
+           let screen = screens.first(where: { OverlayDisplayResolver.screenID(for: $0) == selectedID }) {
             return screen
         }
 
@@ -240,20 +308,23 @@ final class OverlayPanelController {
 
         eventMonitors.start { [weak self] location in
             self?.handleMouseMoved(location)
-        } mouseDownHandler: { [weak self] location, isLocalEvent in
-            self?.handleMouseDown(location, isLocalEvent: isLocalEvent)
+        } mouseDownHandler: { [weak self] location, modifiers in
+            self?.handleMouseDown(location, modifiers: modifiers)
+        } mouseUpHandler: { [weak self] location in
+            self?.pointerSequenceEnded(at: location)
         }
     }
 
-    private func handleMouseMoved(_ screenLocation: NSPoint) {
+    func handleMouseMoved(_ screenLocation: NSPoint) {
         guard let model else { return }
 
+        refreshPointerInteraction()
         let inClosedSurfaceArea = isPointInClosedSurfaceArea(screenLocation)
 
-        if model.notchStatus == .closed && inClosedSurfaceArea {
+        if model.notchStatus == .closed && inClosedSurfaceArea && model.hoverToOpenEnabled && !modifierFlags.contains(.option) {
             scheduleHoverOpen()
-        } else if model.notchStatus == .closed && !inClosedSurfaceArea {
-            cancelHoverOpen()
+        } else {
+            cancelHoverOpenImmediately()
         }
 
         let shouldTrackNotificationPointer = model.notchStatus == .opened
@@ -269,57 +340,44 @@ final class OverlayPanelController {
         }
     }
 
-    /// - Parameter isLocalEvent: Whether the click was delivered to this app
-    ///   (local monitor) or to another app (global monitor). Global monitors
-    ///   only observe — the clicked app already received the event — so the
-    ///   synthetic repost must be skipped there or it lands as a duplicate
-    ///   click (double-click word selection, double activation).
-    private func handleMouseDown(_ screenLocation: NSPoint, isLocalEvent: Bool) {
+    /// Global observations never open the island: that click already belongs
+    /// to Chrome or another app. Outside dismissal never re-posts a click.
+    func handleMouseDown(_ screenLocation: NSPoint, modifiers: NSEvent.ModifierFlags = []) {
         guard let model else { return }
-
-        let inClosedSurfaceArea = isPointInClosedSurfaceArea(screenLocation)
-
-        if model.notchStatus == .closed && inClosedSurfaceArea {
-            cancelHoverOpenImmediately()
-            model.notchOpen(reason: .click)
-        } else if model.notchStatus == .opened {
-            if !isPointInExpandedArea(screenLocation) {
-                // Keep the island open while a permission/question is pending
-                // when the user opted into “keep open until decision” (#547).
-                if model.shouldBlockDismissWhileAwaitingDecision {
-                    return
-                }
+        cancelHoverOpenImmediately()
+        let inside = model.notchStatus == .opened
+            ? isPointInExpandedArea(screenLocation) : isPointInClosedSurfaceArea(screenLocation)
+        if model.notchStatus == .opened, !inside || modifiers.contains(.option) {
+            if !model.shouldBlockDismissWhileAwaitingDecision
+                && !(model.notchOpenReason == .notification && !model.dismissOnOutsideClick) {
                 model.notchClose()
-                // Repost only when our panel actually swallowed the original
-                // click: the event entered this app and landed inside the
-                // panel frame, so nothing under the cursor received it. When
-                // another app got the click (notification opened while the
-                // user works elsewhere), reposting injects a second click on
-                // top of the real one and the user's next click “jumps”.
-                if isLocalEvent, let panel, NSPointInRect(screenLocation, panel.frame) {
-                    repostMouseDown(at: screenLocation)
-                }
             }
         }
+        updatePointerInteraction(at: screenLocation, modifiers: modifiers)
     }
 
-    /// Grace period before a hover-open timer is cancelled.  Prevents
-    /// mouse jitter at the notch edge from resetting the delay.
-    private static let hoverCancelGracePeriod: TimeInterval = 0.1
+    func pointerSequenceEnded(at point: NSPoint) {
+        ownsPointerSequence = false
+        updatePointerInteraction(at: point, modifiers: modifierFlags)
+    }
 
     private func scheduleHoverOpen() {
-        // Mouse re-entered during grace period — just revoke the cancel.
-        hoverCancelGrace?.cancel()
-        hoverCancelGrace = nil
-
-        guard model != nil else { return }
+        guard model?.hoverToOpenEnabled == true, let panel else { return }
 
         guard hoverTimer == nil else { return }
 
+        // Let SwiftUI lay out the expanded backing while the visible bar is
+        // still closed. Resizing it in the same turn as notchOpen changed the
+        // GeometryReader's proposal mid-spring and made expansion jump.
+        // Hit testing continues to use only the closed visible shape.
+        isPreparingHoverOpen = true
+        positionPanel(panel, preferredScreenID: nil, animated: false)
+
         let item = DispatchWorkItem { [weak self] in
             guard let self, let model = self.model else { return }
-            self.performHoverOpen(model)
             self.hoverTimer = nil
+            self.performHoverOpen(model)
+            self.finishHoverPreparation()
         }
 
         hoverTimer = item
@@ -327,7 +385,8 @@ final class OverlayPanelController {
     }
 
     private func performHoverOpen(_ model: AppModel) {
-        guard model.notchStatus == .closed else { return }
+        guard model.notchStatus == .closed, model.hoverToOpenEnabled,
+              !modifierFlags.contains(.option), isPointInClosedSurfaceArea(pointerLocation) else { return }
 
         if model.hapticFeedbackEnabled {
             NSHapticFeedbackManager.defaultPerformer.perform(
@@ -339,64 +398,57 @@ final class OverlayPanelController {
         model.notchOpen(reason: .hover)
     }
 
-    private func cancelHoverOpen() {
-        guard hoverTimer != nil else { return }
-
-        // Don't cancel immediately — allow a short grace period so that
-        // mouse jitter at the notch edge doesn't restart the timer.
-        guard hoverCancelGrace == nil else { return }
-
-        let grace = DispatchWorkItem { [weak self] in
-            self?.hoverTimer?.cancel()
-            self?.hoverTimer = nil
-            self?.hoverCancelGrace = nil
-        }
-
-        hoverCancelGrace = grace
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + Self.hoverCancelGracePeriod,
-            execute: grace
-        )
-    }
-
     /// Cancel without grace period — used for click-to-open where the
     /// hover timer must not fire after the click already opened the panel.
     private func cancelHoverOpenImmediately() {
-        hoverCancelGrace?.cancel()
-        hoverCancelGrace = nil
         hoverTimer?.cancel()
         hoverTimer = nil
+        finishHoverPreparation()
+    }
+
+    private func finishHoverPreparation() {
+        guard isPreparingHoverOpen else { return }
+        isPreparingHoverOpen = false
+        if model?.notchStatus != .opened, let panel {
+            positionPanel(panel, preferredScreenID: nil, animated: false)
+        }
     }
 
     // MARK: - Hit testing geometry
 
     func isPointInClosedSurfaceArea(_ screenPoint: NSPoint) -> Bool {
-        guard let model else { return false }
+        guard let model, let panel, panel.frame.contains(screenPoint) else { return false }
 
-        if let closedSurfaceRect = closedSurfaceRect(for: model) {
-            return Self.rectContainsIncludingEdges(closedSurfaceRect, point: screenPoint)
-        }
-
-        let expandedNotch = notchRect.insetBy(dx: -20, dy: -10)
-        return Self.rectContainsIncludingEdges(expandedNotch, point: screenPoint)
+        guard let rect = closedSurfaceRect(for: model) else { return false }
+        return Self.surfaceContains(screenPoint, in: rect, openedTopProfile: nil)
     }
 
     func isPointInExpandedArea(_ screenPoint: NSPoint) -> Bool {
         guard let model, model.notchStatus == .opened else {
             return isPointInClosedSurfaceArea(screenPoint)
         }
+        guard let panel, panel.frame.contains(screenPoint),
+              let rect = contentRect(for: model, in: panel.frame) else { return false }
+        let profile: OpenedIslandSurfaceShape.TopProfile = (resolveTargetScreen()?.safeAreaInsets.top ?? 0) > 0 ? .notch : .topBar
+        return Self.surfaceContains(screenPoint, in: rect, openedTopProfile: profile)
+    }
 
-        guard let panel else {
-            return false
+    /// Screen coordinates are bottom-up; SwiftUI's path coordinates are top-down.
+    nonisolated static func surfaceContains(_ point: NSPoint, in rect: NSRect,
+                                           openedTopProfile: OpenedIslandSurfaceShape.TopProfile?) -> Bool {
+        guard rectContainsIncludingEdges(rect, point: point) else { return false }
+        let local = CGPoint(x: point.x - rect.minX, y: rect.maxY - point.y)
+        let bounds = CGRect(origin: .zero, size: rect.size)
+        if let profile = openedTopProfile {
+            return OpenedIslandSurfaceShape(topProfile: profile).path(in: bounds).contains(local)
         }
+        return V6ClosedPillShape().path(in: bounds).contains(local)
+    }
 
-        // The window is always at opened size, but the visible content area
-        // is the inner content rect (excluding shadow insets).
-        guard let contentRect = contentRect(for: model, in: panel.frame) else {
-            return false
-        }
-
-        return Self.rectContainsIncludingEdges(contentRect, point: screenPoint)
+    func visibleSurfaceRect() -> NSRect? {
+        guard let model else { return nil }
+        if model.notchStatus == .opened, let panel { return contentRect(for: model, in: panel.frame) }
+        return closedSurfaceRect(for: model)
     }
 
     func openedPanelWidth(for screen: NSScreen?) -> CGFloat {
@@ -445,35 +497,28 @@ final class OverlayPanelController {
             && point.y <= rect.maxY
     }
 
-    /// Hit-area width of the v6 closed pill.
-    ///
-    /// - On a MacBook (physical notch present) the pill is locked to
-    ///   `44 + notchWidth + 44`, per the v6 design spec.
-    /// - On an external display the width is content-driven; we return a
-    ///   generous fixed hit-area so hover / click detection works without
-    ///   the controller having to introspect live session state.
     nonisolated static func closedPanelWidth(
-        notchWidth: CGFloat,
-        isNotchedDisplay: Bool,
-        notchStatus: NotchStatus
+        notchWidth: CGFloat, isNotchedDisplay: Bool, notchStatus: NotchStatus,
+        renderedWidth: CGFloat = 70
     ) -> CGFloat {
-        let popBonus: CGFloat = notchStatus == .popping ? 18 : 0
-        if isNotchedDisplay {
-            return notchWidth + 88 + popBonus
-        }
-        return 360 + popBonus
+        let width = isNotchedDisplay ? notchWidth + 88 : renderedWidth
+        return notchStatus == .popping ? width * 1.04 : width
     }
 
     private func closedSurfaceRect(for model: AppModel) -> NSRect? {
-        guard let screen = resolveTargetScreen() else {
-            return nil
-        }
-
-        let closedWidth = closedPanelWidth(for: model, on: screen)
-        return Self.closedSurfaceRect(
-            notchRect: notchRect,
-            closedWidth: closedWidth
-        )
+        guard let screen = resolveTargetScreen() else { return nil }
+        let pill = V6ClosedPill(model: model, screen: screen)
+        let scale: CGFloat = model.notchStatus == .popping ? 1.04 : 1
+        let height = pill.height * scale
+        let width = Self.closedPanelWidth(notchWidth: screen.notchSize.width,
+                                          isNotchedDisplay: screen.safeAreaInsets.top > 0,
+                                          notchStatus: model.notchStatus, renderedWidth: pill.resolvedWidth)
+        // AppKit aligns native frames to pixels. Anchor hit geometry to the
+        // resulting frame rather than an unrounded screen midpoint.
+        let centerX = panel?.frame.midX ?? screen.frame.midX
+        let topY = panel?.frame.maxY ?? screen.frame.maxY
+        return NSRect(x: centerX - width / 2,
+                      y: topY - height, width: width, height: height)
     }
 
     private func panelFrame(for model: AppModel?, on screen: NSScreen) -> NSRect {
@@ -486,9 +531,8 @@ final class OverlayPanelController {
         )
     }
 
-    /// Always returns the maximum (opened) panel size so the window never
-    /// needs to resize.  All visual transitions are driven purely by SwiftUI
-    /// inside this fixed-size window.
+    /// The native window matches the compact pill after closing. During the
+    /// morph it retains expanded backing space so SwiftUI can finish smoothly.
     private func panelSize(for model: AppModel?, on screen: NSScreen) -> CGSize {
         let insets = panelShadowInsets
 
@@ -499,6 +543,11 @@ final class OverlayPanelController {
             )
         }
 
+        if model.notchStatus != .opened && !keepsExpandedBackingDuringClose && !isPreparingHoverOpen {
+            let pill = V6ClosedPill(model: model, screen: screen)
+            return CGSize(width: pill.resolvedWidth + insets.horizontal * 2,
+                          height: pill.height + insets.bottom)
+        }
         let panelWidth = openedPanelWidth(for: screen)
         let contentHeight = openedContentHeight(for: model)
         // Use at least the empty-state height so the window doesn't shrink
@@ -511,21 +560,11 @@ final class OverlayPanelController {
         )
     }
 
-    /// Constant insets — always opened size since the window never shrinks.
+    /// Retain the same shadow padding while the backing frame compacts.
     private var panelShadowInsets: (horizontal: CGFloat, bottom: CGFloat) {
         (
             horizontal: IslandChromeMetrics.openedShadowHorizontalInset,
             bottom: IslandChromeMetrics.openedShadowBottomInset
-        )
-    }
-
-    private func closedPanelWidth(for model: AppModel, on screen: NSScreen) -> CGFloat {
-        let notchWidth = screen.notchSize.width
-        let isNotched = screen.safeAreaInsets.top > 0
-        return Self.closedPanelWidth(
-            notchWidth: notchWidth,
-            isNotchedDisplay: isNotched,
-            notchStatus: model.notchStatus
         )
     }
 
@@ -553,7 +592,7 @@ final class OverlayPanelController {
             // a measurement→reposition cycle.
             if let actionableID,
                let session = model.state.session(id: actionableID) {
-                let rowHeight = session.estimatedIslandRowHeight(at: now)
+                let rowHeight = session.estimatedIslandRowHeight(at: now, showSubagents: model.showSubagents, showModel: model.showModel, showReasoningEffort: model.showReasoningEffort)
                 let bodyHeight = actionableBodyHeight(for: session, model: model)
                 return rowHeight + bodyHeight + Self.notificationEstimatedVerticalInsets
             }
@@ -562,10 +601,10 @@ final class OverlayPanelController {
 
         let rowHeights = visibleSessions.map { session -> CGFloat in
             if session.id == actionableID {
-                return session.estimatedIslandRowHeight(at: now)
+                return session.estimatedIslandRowHeight(at: now, showSubagents: model.showSubagents, showModel: model.showModel, showReasoningEffort: model.showReasoningEffort)
                     + actionableBodyHeight(for: session, model: model)
             }
-            return session.estimatedIslandRowHeight(at: now)
+            return session.estimatedIslandRowHeight(at: now, showSubagents: model.showSubagents, showModel: model.showModel, showReasoningEffort: model.showReasoningEffort)
         }
 
         let rowsHeight = rowHeights.reduce(CGFloat.zero, +)
@@ -687,73 +726,25 @@ final class OverlayPanelController {
         Array(sessions.prefix(Self.maxVisibleSessionRows))
     }
 
-    // MARK: - Stray clicks on a closed island
-
-    /// Minimum spacing between two repaired stray clicks. If the re-asserted
-    /// pass-through did not take, the reposted click would land on us again;
-    /// the throttle turns that into a dropped click instead of a loop.
-    private static let strayClickRepairInterval: TimeInterval = 0.5
-
-    /// Called by `NotchPanel` for every left mouse down it receives. While the
-    /// island is closed the panel is `ignoresMouseEvents`, so it should never
-    /// see a click outside the pill — yet occasionally it does (macOS keeps
-    /// routing clicks to the panel until it is re-ordered, and the user has to
-    /// expand and collapse the island to "unstick" the desktop underneath).
-    /// Re-assert pass-through, re-order the window so the change takes, and
-    /// forward the click to whatever is below. Returns `true` when the event
-    /// must not reach SwiftUI.
+    /// A compact-pill click is consumed before the expanded controls exist,
+    /// so its mouse-up cannot accidentally activate a newly revealed button.
     func panelReceivedMouseDown(_ event: NSEvent) -> Bool {
-        guard let panel, let model, model.notchStatus != .opened else { return false }
-
-        let screenPoint = NSEvent.mouseLocation
-        // A click on the pill itself is legitimate: the click monitor opens the island.
-        guard !isPointInClosedSurfaceArea(screenPoint) else { return false }
-
-        let now = Date()
-        let repost = now.timeIntervalSince(lastStrayClickRepair) > Self.strayClickRepairInterval
-        overlayLog.error(
-            "Closed island panel received a click at (\(screenPoint.x, privacy: .public), \(screenPoint.y, privacy: .public)); ignoresMouseEvents=\(panel.ignoresMouseEvents, privacy: .public) isKey=\(panel.isKeyWindow, privacy: .public) status=\(String(describing: model.notchStatus), privacy: .public) reason=\(String(describing: model.notchOpenReason), privacy: .public). Re-asserting pass-through\(repost ? " and reposting the click" : "", privacy: .public)."
-        )
-
-        panel.ignoresMouseEvents = false
-        panel.ignoresMouseEvents = true
-        panel.acceptsMouseMovedEvents = false
-        panel.orderFrontRegardless()
-
-        if repost {
-            lastStrayClickRepair = now
-            repostMouseDown(at: screenPoint)
+        guard let panel, let model else { return true }
+        let point = panel.convertPoint(toScreen: event.locationInWindow)
+        let inside = model.notchStatus == .opened
+            ? isPointInExpandedArea(point) : isPointInClosedSurfaceArea(point)
+        guard inside, !event.modifierFlags.contains(.option) else {
+            ownsPointerSequence = false
+            updatePointerInteraction(at: point, modifiers: event.modifierFlags)
+            return true
         }
-        return true
-    }
-
-    // MARK: - Event reposting
-
-    /// Re-injects a synthetic click after the panel swallowed the original
-    /// one (event delivered to this app inside the panel frame). Callers must
-    /// not invoke this for clicks another app already received — the window
-    /// under the cursor would see two clicks and treat them as a double click.
-    private func repostMouseDown(at screenPoint: NSPoint) {
-        let flippedY = NSScreen.main.map { $0.frame.height - screenPoint.y } ?? screenPoint.y
-
-        guard let event = CGEvent(
-            mouseEventSource: nil,
-            mouseType: .leftMouseDown,
-            mouseCursorPosition: CGPoint(x: screenPoint.x, y: flippedY),
-            mouseButton: .left
-        ) else { return }
-
-        event.post(tap: .cghidEventTap)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
-            guard let upEvent = CGEvent(
-                mouseEventSource: nil,
-                mouseType: .leftMouseUp,
-                mouseCursorPosition: CGPoint(x: screenPoint.x, y: flippedY),
-                mouseButton: .left
-            ) else { return }
-            upEvent.post(tap: .cghidEventTap)
+        ownsPointerSequence = true
+        if model.notchStatus != .opened {
+            cancelHoverOpenImmediately()
+            model.notchOpen(reason: .click)
+            return true
         }
+        return false
     }
 }
 
@@ -877,64 +868,42 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
 
 @MainActor
 final class NotchEventMonitors {
-    private var globalMoveMonitor: Any?
-    private var localMoveMonitor: Any?
-    private var globalClickMonitor: Any?
-    private var localClickMonitor: Any?
-    private var lastMoveTime: TimeInterval = 0
+    private var monitors: [Any] = []
+    var isActive: Bool { !monitors.isEmpty }
 
-    var isActive: Bool { globalMoveMonitor != nil }
-
-    /// Registers throttled mouse-move monitors plus click monitors for both
-    /// event destinations. The click handler receives `isLocalEvent: true`
-    /// from the local monitor (event delivered to this app) and `false` from
-    /// the global monitor (event delivered to another app, observe-only).
     func start(
         mouseMoveHandler: @MainActor @escaping @Sendable (NSPoint) -> Void,
-        mouseDownHandler: @MainActor @escaping @Sendable (NSPoint, _ isLocalEvent: Bool) -> Void
+        mouseDownHandler: @MainActor @escaping @Sendable (NSPoint, NSEvent.ModifierFlags) -> Void,
+        mouseUpHandler: @MainActor @escaping @Sendable (NSPoint) -> Void
     ) {
-        let throttleInterval: TimeInterval = 0.05
-
-        nonisolated(unsafe) var sharedLastMove: TimeInterval = 0
-
-        globalMoveMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { event in
-            let now = ProcessInfo.processInfo.systemUptime
-            guard now - sharedLastMove >= throttleInterval else { return }
-            sharedLastMove = now
-            let location = NSEvent.mouseLocation
-            Task { @MainActor in mouseMoveHandler(location) }
-        }
-
-        localMoveMonitor = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { event in
-            let now = ProcessInfo.processInfo.systemUptime
-            guard now - sharedLastMove >= throttleInterval else { return event }
-            sharedLastMove = now
-            let location = NSEvent.mouseLocation
-            Task { @MainActor in mouseMoveHandler(location) }
+        // AppKit invokes monitor handlers on the main thread. Do not defer the
+        // routing update to another Task or throttle it behind hover work.
+        if let monitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .flagsChanged], handler: { _ in
+            MainActor.assumeIsolated { mouseMoveHandler(NSEvent.mouseLocation) }
+        }) { monitors.append(monitor) }
+        if let monitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .flagsChanged], handler: { event in
+            MainActor.assumeIsolated { mouseMoveHandler(NSEvent.mouseLocation) }
             return event
-        }
-
-        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { event in
-            let location = NSEvent.mouseLocation
-            Task { @MainActor in mouseDownHandler(location, false) }
-        }
-
-        localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
-            let location = NSEvent.mouseLocation
-            Task { @MainActor in mouseDownHandler(location, true) }
+        }) { monitors.append(monitor) }
+        if let monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown], handler: { event in
+            MainActor.assumeIsolated { mouseDownHandler(NSEvent.mouseLocation, event.modifierFlags) }
+        }) { monitors.append(monitor) }
+        if let monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown], handler: { event in
+            MainActor.assumeIsolated { mouseDownHandler(NSEvent.mouseLocation, event.modifierFlags) }
             return event
-        }
+        }) { monitors.append(monitor) }
+        if let monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp, .rightMouseUp, .otherMouseUp], handler: { _ in
+            MainActor.assumeIsolated { mouseUpHandler(NSEvent.mouseLocation) }
+        }) { monitors.append(monitor) }
+        if let monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseUp, .rightMouseUp, .otherMouseUp], handler: { event in
+            MainActor.assumeIsolated { mouseUpHandler(NSEvent.mouseLocation) }
+            return event
+        }) { monitors.append(monitor) }
     }
 
     func stop() {
-        if let m = globalMoveMonitor { NSEvent.removeMonitor(m) }
-        if let m = localMoveMonitor { NSEvent.removeMonitor(m) }
-        if let m = globalClickMonitor { NSEvent.removeMonitor(m) }
-        if let m = localClickMonitor { NSEvent.removeMonitor(m) }
-        globalMoveMonitor = nil
-        localMoveMonitor = nil
-        globalClickMonitor = nil
-        localClickMonitor = nil
+        for monitor in monitors { NSEvent.removeMonitor(monitor) }
+        monitors.removeAll()
     }
 }
 

@@ -26,6 +26,7 @@ extension AgentSession {
     /// Note: `claudeMetadata.agentID` is NOT a reliable signal here because
     /// SubagentStart hooks set `agent_id` on the *parent* session's metadata.
     var isSubagentSession: Bool {
+        if codexMetadata?.parentThreadID != nil { return true }
         if let path = claudeMetadata?.transcriptPath, path.contains("/subagents/") {
             return true
         }
@@ -161,11 +162,20 @@ extension AgentSession {
         return WorkspaceNameResolver.worktreeBranch(for: workingDirectory)
     }
 
-    var spotlightSubagentLabel: String? {
-        guard let subagents = claudeMetadata?.activeSubagents, !subagents.isEmpty else {
-            return nil
+    var islandSubagents: [SessionSubagent] {
+        if tool == .codex { return codexMetadata?.subagents ?? [] }
+        return (claudeMetadata?.activeSubagents ?? []).map { child in
+            SessionSubagent(
+                id: child.agentID, name: child.agentType ?? child.agentID,
+                task: child.taskDescription,
+                phase: child.summary == nil ? .running : .completed,
+                startedAt: child.startedAt
+            )
         }
-        return "Subagents (\(subagents.count))"
+    }
+
+    var spotlightSubagentLabel: String? {
+        islandSubagents.isEmpty ? nil : "Subagents (\(islandSubagents.count))"
     }
 
     var spotlightHeadlineText: String {
@@ -341,7 +351,7 @@ extension AgentSession {
             return .running
         }
 
-        if phase.requiresAttention {
+        if phase.requiresAttention || islandSubagents.contains(where: { $0.phase != .completed }) {
             return .active
         }
 
@@ -359,6 +369,7 @@ extension AgentSession {
         threshold: TimeInterval = Self.staleCompletedDisplayThreshold
     ) -> Bool {
         phase == .completed
+            && !islandSubagents.contains(where: { $0.phase != .completed })
             && referenceDate.timeIntervalSince(islandActivityDate) >= threshold
     }
 

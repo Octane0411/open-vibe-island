@@ -18,6 +18,11 @@ zip_path="${OPEN_ISLAND_ZIP_PATH:-$package_root/$app_name.zip}"
 dmg_path="${OPEN_ISLAND_DMG_PATH:-$package_root/$app_name.dmg}"
 signing_identity="${OPEN_ISLAND_SIGN_IDENTITY:-}"
 notary_profile="${OPEN_ISLAND_NOTARY_PROFILE:-}"
+custom_build="${OPEN_ISLAND_CUSTOM_BUILD:-false}"
+if [[ "$custom_build" != "true" && "$custom_build" != "false" ]]; then
+    echo "OPEN_ISLAND_CUSTOM_BUILD must be true or false." >&2
+    exit 64
+fi
 
 brand_script="$repo_root/scripts/generate_brand_icons.py"
 dmg_bg_script="$repo_root/scripts/generate_dmg_background.py"
@@ -118,12 +123,16 @@ cat > "$bundle_dir/Contents/Info.plist" <<EOF
     <string>$build_number</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    <key>LSUIElement</key>
+    <true/>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Open Island needs automation access to focus Terminal and iTerm sessions for jump-back.</string>
+    <string>$app_name needs automation access to focus Terminal and iTerm sessions for jump-back.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
+    <key>OpenIslandCustomBuild</key>
+    <$custom_build/>
     <key>SUFeedURL</key>
     <string>https://raw.githubusercontent.com/Octane0411/open-vibe-island/main/appcast.xml</string>
     <key>SUPublicEDKey</key>

@@ -5,6 +5,22 @@ import OpenIslandCore
 
 struct ActiveAgentProcessDiscoveryTests {
     @Test
+    func sharedDaemonFrontendStillSuppliesHostEvidenceWithoutAnOpenRollout() {
+        let discovery = ActiveAgentProcessDiscovery { executablePath, _ in
+            if executablePath == "/bin/ps" {
+                return "202 401 ttys001 /opt/homebrew/bin/codex\n401 900 ttys001 /bin/zsh\n900 1 ?? /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal"
+            }
+            if executablePath == "/usr/sbin/lsof" { return "fcwd\nn/tmp/project" }
+            return nil
+        }
+        let snapshots = discovery.discover()
+        #expect(snapshots.count == 1)
+        #expect(snapshots.first?.sessionID == nil)
+        #expect(snapshots.first?.workingDirectory == "/tmp/project")
+        #expect(snapshots.first?.terminalApp == "Terminal")
+    }
+
+    @Test
     func discoverOnlyReturnsInteractiveClaudeAndCodexProcesses() {
         let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
             if executablePath == "/bin/ps" {

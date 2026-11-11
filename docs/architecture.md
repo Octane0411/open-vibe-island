@@ -44,6 +44,19 @@ OpenCode → JS plugin (~/.config/opencode/plugins/) → Unix socket → BridgeS
 3. Reconcile with active terminal processes
 4. Start live bridge
 
+Codex shared CLI runtimes are observed through their existing local daemon's
+read-only `thread/loaded/list` and `thread/read` APIs over its existing local
+Unix socket, with WebSocket framing handled by the client. The observer never
+resumes a conversation, starts a turn, or answers an
+approval. Real conversation IDs and runtime status drive visibility and phase;
+terminal processes alone do not create rows. Active root conversations remain
+visible, completed conversations expire after five minutes, and ephemeral or
+background subagent threads are excluded. Older standalone runtimes retain their
+existing transcript and hook discovery paths.
+Terminal monitoring starts independently of the background transcript scan;
+restored history merges into live state so a slow scan cannot hide or overwrite
+terminals discovered during startup.
+
 **Fail-open principle**: if the bridge is unavailable, the hook process exits silently without writing to stdout, so the agent continues running unaffected.
 
 ## Event Model

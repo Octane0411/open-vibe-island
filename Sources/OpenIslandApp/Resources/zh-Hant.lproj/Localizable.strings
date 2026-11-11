@@ -225,3 +225,39 @@
 
 /* Window Titles */
 "window.settings" = "Open Island 設定";
+
+"subagents.runningCount" = "%lld 個子代理執行中";
+"subagents.running" = "執行中";
+"subagents.approval" = "需要審批";
+"subagents.answer" = "需要回答";
+"settings.general.showSubagents" = "顯示子代理";
+"settings.general.showSubagentsHelp" = "在父對話中顯示子代理。隱藏詳情時，等待處理的子代理仍然可見。";
+
+"settings.display.content" = "內容";
+"settings.display.layout" = "收起時的佈局";
+"settings.display.clean" = "簡潔";
+"settings.display.detailed" = "詳細";
+"settings.display.layoutHelp" = "簡潔佈局為選單列騰出空間。無瀏海螢幕上的詳細佈局顯示對話標題。";
+"settings.display.showModel" = "顯示 AI 模型";
+"settings.display.showReasoning" = "顯示推理強度";
+
+"settings.general.expandCompletion" = "完成時展開通知";
+"settings.general.expandQuestion" = "提問時展開通知";
+"settings.general.dismissOutside" = "點擊外部關閉自動展開面板";
+
+"settings.shortcuts.enabled" = "啟用鍵盤快捷鍵";
+"settings.shortcuts.toggle" = "切換靈動島（全域）";
+"settings.shortcuts.unavailable" = "該快捷鍵無法使用，請選擇另一組合。";
+"settings.shortcuts.inPanel" = "靈動島獲得鍵盤焦點時";
+"settings.shortcuts.next" = "下一個對話";
+"settings.shortcuts.previous" = "上一個對話";
+"settings.shortcuts.jump" = "跳轉到選中的對話";
+"settings.shortcuts.approve" = "允許目前審批";
+"settings.shortcuts.deny" = "拒絕目前審批";
+"settings.shortcuts.close" = "關閉靈動島";
+"settings.shortcuts.scope" = "面板快捷鍵僅在靈動島獲得鍵盤焦點時生效。文字框保留正常編輯按鍵。";
+
+"subagents.doneCount" = "%lld 個子代理已完成";
+
+"settings.general.hoverToOpen" = "懸停時開啟";
+"settings.general.pointerHelp" = "點擊靈動島或使用快捷鍵開啟。按住 Option（⌥）可點擊靈動島下方的控制項。";
