@@ -10,7 +10,8 @@ The island now separates layout from content surface:
 
 Routing rules:
 
-- manual click opens `sessionList`; hover opening is opt-in in General and requires 450ms of pointer intent
+- manual click opens `sessionList`; hover opening is opt-in in General and requires 150ms of pointer intent
+- hover entry prepares expanded backing space while the visible bar stays closed, so opening uses the original uninterrupted spring; leaving before the delay restores the compact window
 - a global click delivered to another app never opens the island
 - the closed AppKit window contracts to the rendered pill after the close morph
 - only the visible shape accepts mouse events; shadows, transparent corners and outside space pass through natively

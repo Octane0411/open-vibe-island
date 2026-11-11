@@ -139,22 +139,59 @@ struct IslandPointerInteractionTests {
         defer { controller.shutDown() }
         controller.ensurePanel(model: model, preferredScreenID: nil)
         let rect = try #require(controller.visibleSurfaceRect())
+        let compactFrame = try #require(controller.windowFrame)
         let inside = NSPoint(x: rect.midX, y: rect.midY)
         controller.pointerLocationProvider = { inside }
         model.hoverToOpenEnabled = false
         controller.handleMouseMoved(inside)
-        try await Task.sleep(for: .milliseconds(550))
+        try await Task.sleep(for: .milliseconds(250))
         #expect(model.notchStatus == .closed)
         model.hoverToOpenEnabled = true
         controller.handleMouseMoved(inside)
-        controller.pointerLocationProvider = { NSPoint(x: -10_000, y: -10_000) }
-        try await Task.sleep(for: .milliseconds(550))
         #expect(model.notchStatus == .closed)
+        #expect((controller.windowFrame?.height ?? 0) > compactFrame.height)
+        #expect(controller.visibleSurfaceRect() == rect)
+        controller.updatePointerInteraction(at: NSPoint(x: rect.minX - 5, y: rect.midY))
+        #expect(controller.isIgnoringMouseEvents)
+        controller.pointerLocationProvider = { NSPoint(x: -10_000, y: -10_000) }
+        try await Task.sleep(for: .milliseconds(250))
+        #expect(model.notchStatus == .closed)
+        #expect(controller.windowFrame == compactFrame)
         controller.pointerLocationProvider = { inside }
         controller.handleMouseMoved(inside)
-        try await Task.sleep(for: .milliseconds(550))
+        let preparedFrame = controller.windowFrame
+        try await Task.sleep(for: .milliseconds(250))
         #expect(model.notchStatus == .opened)
         #expect(model.notchOpenReason == .hover)
+        #expect(controller.windowFrame == preparedFrame)
+    }
+
+    @Test
+    func leavingDuringHoverPreparationCancelsWithoutOpeningOrLeavingAnOversizedWindow() async throws {
+        let key = "app.hoverToOpenEnabled"
+        let old = UserDefaults.standard.object(forKey: key)
+        defer {
+            if let old { UserDefaults.standard.set(old, forKey: key) }
+            else { UserDefaults.standard.removeObject(forKey: key) }
+        }
+        let model = makeModel()
+        let controller = model.overlay.overlayPanelController
+        defer { controller.shutDown() }
+        controller.ensurePanel(model: model, preferredScreenID: nil)
+        model.hoverToOpenEnabled = true
+        let compact = try #require(controller.windowFrame)
+        let rect = try #require(controller.visibleSurfaceRect())
+        let inside = NSPoint(x: rect.midX, y: rect.midY)
+        let outside = NSPoint(x: rect.midX, y: rect.minY - 10)
+        controller.pointerLocationProvider = { inside }
+        controller.handleMouseMoved(inside)
+        #expect((controller.windowFrame?.height ?? 0) > compact.height)
+        controller.pointerLocationProvider = { outside }
+        controller.handleMouseMoved(outside)
+        #expect(controller.windowFrame == compact)
+        #expect(controller.isIgnoringMouseEvents)
+        try await Task.sleep(for: .milliseconds(250))
+        #expect(model.notchStatus == .closed)
     }
 
 }

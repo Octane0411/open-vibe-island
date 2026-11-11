@@ -35,6 +35,7 @@ final class OverlayPanelController {
     private var eventMonitors = NotchEventMonitors()
     private var compactFrameTask: DispatchWorkItem?
     private var keepsExpandedBackingDuringClose = false
+    private var isPreparingHoverOpen = false
     private var modifierTimer: Timer?
     private var ownsPointerSequence = false
     var pointerLocationProvider: (() -> NSPoint)?
@@ -361,14 +362,22 @@ final class OverlayPanelController {
     }
 
     private func scheduleHoverOpen() {
-        guard model?.hoverToOpenEnabled == true else { return }
+        guard model?.hoverToOpenEnabled == true, let panel else { return }
 
         guard hoverTimer == nil else { return }
 
+        // Let SwiftUI lay out the expanded backing while the visible bar is
+        // still closed. Resizing it in the same turn as notchOpen changed the
+        // GeometryReader's proposal mid-spring and made expansion jump.
+        // Hit testing continues to use only the closed visible shape.
+        isPreparingHoverOpen = true
+        positionPanel(panel, preferredScreenID: nil, animated: false)
+
         let item = DispatchWorkItem { [weak self] in
             guard let self, let model = self.model else { return }
-            self.performHoverOpen(model)
             self.hoverTimer = nil
+            self.performHoverOpen(model)
+            self.finishHoverPreparation()
         }
 
         hoverTimer = item
@@ -394,6 +403,15 @@ final class OverlayPanelController {
     private func cancelHoverOpenImmediately() {
         hoverTimer?.cancel()
         hoverTimer = nil
+        finishHoverPreparation()
+    }
+
+    private func finishHoverPreparation() {
+        guard isPreparingHoverOpen else { return }
+        isPreparingHoverOpen = false
+        if model?.notchStatus != .opened, let panel {
+            positionPanel(panel, preferredScreenID: nil, animated: false)
+        }
     }
 
     // MARK: - Hit testing geometry
@@ -525,7 +543,7 @@ final class OverlayPanelController {
             )
         }
 
-        if model.notchStatus != .opened && !keepsExpandedBackingDuringClose {
+        if model.notchStatus != .opened && !keepsExpandedBackingDuringClose && !isPreparingHoverOpen {
             let pill = V6ClosedPill(model: model, screen: screen)
             return CGSize(width: pill.resolvedWidth + insets.horizontal * 2,
                           height: pill.height + insets.bottom)
