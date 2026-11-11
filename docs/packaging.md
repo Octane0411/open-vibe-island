@@ -69,3 +69,10 @@ The script accepts these environment variables:
 - `OPEN_ISLAND_ZIP_PATH`
 - `OPEN_ISLAND_SIGN_IDENTITY`
 - `OPEN_ISLAND_NOTARY_PROFILE`
+
+`OPEN_ISLAND_APP_NAME` also supplies the visible product label in Settings,
+About, localized app copy, the settings window title and the Automation
+permission prompt. For example, use `OPEN_ISLAND_APP_NAME=open-vibe-island`
+for a package named `open-vibe-island.app`. Keep the existing bundle identifier
+when relabeling an installed custom build to retain its preferences and app
+identity. Swift product and helper executable names remain stable.
