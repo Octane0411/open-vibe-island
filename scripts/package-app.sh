@@ -123,6 +123,8 @@ cat > "$bundle_dir/Contents/Info.plist" <<EOF
     <string>$build_number</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    <key>LSUIElement</key>
+    <true/>
     <key>NSAppleEventsUsageDescription</key>
     <string>$app_name needs automation access to focus Terminal and iTerm sessions for jump-back.</string>
     <key>NSHighResolutionCapable</key>

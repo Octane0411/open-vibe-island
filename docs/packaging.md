@@ -76,3 +76,7 @@ permission prompt. For example, use `OPEN_ISLAND_APP_NAME=open-vibe-island`
 for a package named `open-vibe-island.app`. Keep the existing bundle identifier
 when relabeling an installed custom build to retain its preferences and app
 identity. Swift product and helper executable names remain stable.
+
+Packaged apps launch with `LSUIElement=true` and the Dock icon disabled by
+default, so the island stays out of the regular Dock from startup. The
+General setting can explicitly enable a Dock icon when wanted.

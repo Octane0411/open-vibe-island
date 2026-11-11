@@ -752,7 +752,7 @@ final class AppModel {
         self.terminalJumpAction = terminalJumpAction
         self.isNotificationSessionAlreadyFrontmost = isNotificationSessionAlreadyFrontmost
         UserDefaults.standard.register(defaults: [
-            Self.showDockIconDefaultsKey: true,
+            Self.showDockIconDefaultsKey: false,
             Self.keyboardShortcutsDefaultsKey: true,
             Self.autoExpandCompletionDefaultsKey: true,
             Self.autoExpandQuestionDefaultsKey: true,
