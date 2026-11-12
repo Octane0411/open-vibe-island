@@ -36,6 +36,7 @@ struct V6ClosedPillShape: Shape {
 }
 
 enum V6Palette {
-    static let ink = Color(red: 0x0d / 255.0, green: 0x0d / 255.0, blue: 0x0f / 255.0)
+    // Pure black so the island blends seamlessly with the physical notch.
+    static let ink = Color.black
     static let paper = Color(red: 0xf1 / 255.0, green: 0xea / 255.0, blue: 0xd9 / 255.0)
 }
