@@ -293,7 +293,8 @@ struct IslandPanelView: View {
             layout: layout,
             height: closedNotchHeight,
             physicalNotchWidth: layout == .macbook ? physicalNotchWidth : 0,
-            minWidth: 70
+            minWidth: 70,
+            background: model.islandBackgroundStyle.color
         )
     }
 
@@ -314,7 +315,7 @@ struct IslandPanelView: View {
     ) -> some View {
         let shape = transitionSurfaceShape
         shape
-            .fill(V6Palette.ink)
+            .fill(model.islandBackgroundStyle.color)
             .overlay {
                 shape.stroke(Color.white.opacity(usesOpenedVisualState ? 0.07 : 0), lineWidth: 1)
             }

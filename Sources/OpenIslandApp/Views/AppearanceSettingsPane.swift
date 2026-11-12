@@ -126,6 +126,7 @@ struct AppearanceSettingsPane: View {
             previewSection
             rightSlotSection
             centerLabelSection
+            backgroundSection
         }
     }
 
@@ -179,6 +180,7 @@ struct AppearanceSettingsPane: View {
                     rightSlot: previewRightContent,
                     layout: previewLayout,
                     physicalNotchWidth: physicalNotchW,
+                    background: editingPreferences.background.color,
                     now: context.date
                 )
             }
@@ -226,6 +228,7 @@ struct AppearanceSettingsPane: View {
                 showsSections: editingPreferences.sessionGroup != .none,
                 indicator: editingPreferences.sessionStateIndicator,
                 profile: editingProfile,
+                background: editingPreferences.background.color,
                 lang: lang
             )
             .padding(.horizontal, 18)
@@ -321,6 +324,39 @@ struct AppearanceSettingsPane: View {
             centerLabelCard(.agentAction, sample: "Claude · editing")
             centerLabelCard(.sessionName,  sample: "open-island")
             centerLabelCard(.off,          sample: "—")
+        }
+    }
+
+    // MARK: - Background
+
+    @ViewBuilder
+    private var backgroundSection: some View {
+        sectionHeader(
+            title: lang.t("settings.appearance.background.title"),
+            note: lang.t("settings.appearance.background.note")
+        )
+
+        HStack(spacing: 12) {
+            ForEach(IslandBackgroundStyle.allCases) { option in
+                optionCard(
+                    selected: editingPreferences.background == option,
+                    title: title(for: option)
+                ) {
+                    model.updateAppearancePreferences(for: editingProfile) { $0.background = option }
+                } icon: {
+                    V6ClosedPillShape()
+                        .fill(option.color)
+                        .overlay(V6ClosedPillShape().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                        .frame(width: 72, height: 22)
+                }
+            }
+        }
+    }
+
+    private func title(for option: IslandBackgroundStyle) -> String {
+        switch option {
+        case .graphite: lang.t("settings.appearance.background.graphite")
+        case .black:    lang.t("settings.appearance.background.black")
         }
     }
 
@@ -892,6 +928,7 @@ private struct SessionListPanelPreview: View {
     let showsSections: Bool
     let indicator: IslandSessionStateIndicator
     let profile: IslandAppearanceDisplayProfile
+    let background: Color
     let lang: LanguageManager
 
     private var items: [AppearanceSessionPreviewItem] {
@@ -930,7 +967,7 @@ private struct SessionListPanelPreview: View {
     private func panel(width: CGFloat) -> some View {
         ZStack(alignment: .top) {
             surfaceShape
-                .fill(V6Palette.ink)
+                .fill(background)
                 .shadow(color: .black.opacity(0.36), radius: 22, y: 12)
 
             VStack(spacing: 0) {

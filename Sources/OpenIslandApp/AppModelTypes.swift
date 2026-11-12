@@ -2,6 +2,7 @@ import AppKit
 import CoreGraphics
 import Foundation
 import OpenIslandCore
+import SwiftUI
 
 enum NotchStatus: Equatable {
     case closed
@@ -61,6 +62,24 @@ struct IslandAppearancePreferences: Equatable, Sendable {
     var sessionGroup: IslandSessionGroup = .none
     var sessionSort: IslandSessionSort = .attention
     var completedStaleThreshold: IslandCompletedStaleThreshold = .fiveMinutes
+    var background: IslandBackgroundStyle = .graphite
+}
+
+/// Fill color of the island surface (closed pill and opened panel).
+/// `black` matches the physical MacBook notch exactly, so the island
+/// blends into the hardware cutout instead of reading as dark grey.
+enum IslandBackgroundStyle: String, CaseIterable, Identifiable, Sendable {
+    case graphite
+    case black
+
+    var id: String { rawValue }
+
+    var color: Color {
+        switch self {
+        case .graphite: V6Palette.ink
+        case .black:    Color.black
+        }
+    }
 }
 
 enum IslandUsageDisplay: String, CaseIterable, Identifiable, Sendable {
