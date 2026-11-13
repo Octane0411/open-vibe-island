@@ -52,7 +52,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 
 **15 agents**: Claude Code, Codex, Cursor, Gemini CLI, Grok Build, Kimi CLI, OpenCode, Pi, Oh My Pi, Qoder, Qwen Code, Factory, CodeBuddy, ZCode, Hermes Agent
 
-**15+ terminals & IDEs**: Terminal.app, Ghostty, iTerm2, WezTerm, Zellij, tmux, cmux, Kaku, VS Code, Cursor, Windsurf, Trae, Zed, JetBrains IDEs (IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover)
+**15+ terminals & IDEs**: Terminal.app, Ghostty, iTerm2, WezTerm, Zellij, tmux, cmux, Rex, Kaku, VS Code, Cursor, Windsurf, Trae, Zed, JetBrains IDEs (IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover)
 
 <details>
 <summary>Full compatibility table</summary>
@@ -86,6 +86,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 | **Terminal.app** | Full | Jump-back with TTY targeting |
 | **Ghostty** | Full | Jump-back with ID matching |
 | **cmux** | Full | Jump-back via Unix socket API |
+| **Rex** | Full | Jump-back via `rex block focus` |
 | **Kaku** | Full | Jump-back via CLI pane targeting |
 | **WezTerm** | Full | Jump-back via CLI pane targeting |
 | **iTerm2** | Full | Jump-back with session ID / TTY matching |

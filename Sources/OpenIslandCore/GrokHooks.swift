@@ -393,6 +393,11 @@ public extension GrokHookPayload {
             payload.terminalApp = inferTerminalApp(from: environment)
         }
 
+        // Rex sets REX_BLOCK to the pane's block ID, which `rex block focus` accepts.
+        if payload.terminalApp == "Rex", payload.terminalSessionID == nil {
+            payload.terminalSessionID = environment["REX_BLOCK"]
+        }
+
         if isCmuxTerminalApp(payload.terminalApp), payload.terminalSessionID == nil {
             payload.terminalSessionID = environment["CMUX_SURFACE_ID"]
         }
@@ -442,7 +447,7 @@ public extension GrokHookPayload {
     }
 
     private static let noLocatorTerminalApps: Set<String> = [
-        "cmux", "kaku", "wezterm", "zellij",
+        "cmux", "kaku", "rex", "wezterm", "zellij",
         "vs code", "vs code insiders", "cursor", "windsurf", "trae",
         "intellij idea", "webstorm", "pycharm", "goland", "clion",
         "rubymine", "phpstorm", "rider", "rustrover",
@@ -516,6 +521,7 @@ public extension GrokHookPayload {
             case let value where value.contains("warp"): return "Warp"
             case let value where value.contains("ghostty"): return "Ghostty"
             case "kaku": return "Kaku"
+            case "rex": return "Rex"
             case "wezterm": return "WezTerm"
             case "vscode":
                 if environment["CURSOR_TRACE_ID"] != nil { return "Cursor" }

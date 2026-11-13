@@ -1544,6 +1544,8 @@ final class ProcessMonitoringCoordinator {
             return "iTerm"
         case "cmux":
             return "cmux"
+        case "rex":
+            return "Rex"
         case "warp", "warpterminal":
             return "Warp"
         case "kaku":

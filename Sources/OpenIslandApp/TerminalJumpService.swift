@@ -54,6 +54,11 @@ struct TerminalJumpService {
             aliases: ["cmux"]
         ),
         TerminalAppDescriptor(
+            displayName: "Rex",
+            bundleIdentifier: "com.superlogical.rex",
+            aliases: ["rex"]
+        ),
+        TerminalAppDescriptor(
             displayName: "Ghostty",
             bundleIdentifier: "com.mitchellh.ghostty",
             aliases: ["ghostty"]
@@ -377,6 +382,10 @@ struct TerminalJumpService {
                 if jumpToCmuxTerminal(target) {
                     return "Focused the matching cmux terminal."
                 }
+            case "com.superlogical.rex":
+                if jumpToRexBlock(target) {
+                    return "Focused the matching Rex block."
+                }
             case "com.mitchellh.ghostty":
                 if try jumpToGhosttyTerminal(target) {
                     return "Focused the matching Ghostty terminal."
@@ -517,6 +526,19 @@ struct TerminalJumpService {
             return false
         }
         return processRunner(cli, [projectPath])
+    }
+
+    // The rex CLI ships inside Rex Server, which is not on a GUI app's PATH.
+    private static let rexCLIPath = NSHomeDirectory()
+        + "/Library/Application Support/com.superlogical.rex/RexServer/Versions/Current/Rex Server.app/Contents/MacOS/rex"
+
+    private func jumpToRexBlock(_ target: JumpTarget) -> Bool {
+        guard let blockID = target.terminalSessionID, !blockID.isEmpty,
+              processRunner(Self.rexCLIPath, ["--autostart=false", "block", "focus", blockID]) else {
+            return false
+        }
+        try? openAction(["-b", "com.superlogical.rex"])
+        return true
     }
 
     private func jumpToCmuxTerminal(_ target: JumpTarget) -> Bool {

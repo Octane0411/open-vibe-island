@@ -553,6 +553,11 @@ struct ActiveAgentProcessDiscovery {
             return "cmux"
         }
 
+        // Rex shells are children of the Rex Server process, not Rex.app.
+        if lowered.contains("/rex server.app/contents/macos/rex") {
+            return "Rex"
+        }
+
         if lowered.contains("/ghostty.app/contents/macos/ghostty") || lowered.hasSuffix("/ghostty") {
             return "Ghostty"
         }

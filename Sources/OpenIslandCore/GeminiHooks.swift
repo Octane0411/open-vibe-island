@@ -220,6 +220,11 @@ public extension GeminiHookPayload {
             payload.terminalApp = inferTerminalApp(from: environment)
         }
 
+        // Rex sets REX_BLOCK to the pane's block ID, which `rex block focus` accepts.
+        if payload.terminalApp == "Rex", payload.terminalSessionID == nil {
+            payload.terminalSessionID = environment["REX_BLOCK"]
+        }
+
         if payload.terminalTTY == nil {
             payload.terminalTTY = currentTTYProvider()
         }
@@ -257,7 +262,7 @@ public extension GeminiHookPayload {
     }
 
     private static let noLocatorTerminalApps: Set<String> = [
-        "cmux", "kaku", "wezterm", "zellij",
+        "cmux", "kaku", "rex", "wezterm", "zellij",
         "vs code", "vs code insiders", "cursor", "windsurf", "trae",
         "intellij idea", "webstorm", "pycharm", "goland", "clion",
         "rubymine", "phpstorm", "rider", "rustrover"
@@ -364,6 +369,8 @@ public extension GeminiHookPayload {
             return "WezTerm"
         case .some("kaku"):
             return "Kaku"
+        case .some("rex"):
+            return "Rex"
         case .some("vscode"):
             return "VS Code"
         case .some("vscode-insiders"):

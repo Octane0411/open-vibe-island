@@ -52,7 +52,7 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 
 **15 个 Agents**：Claude Code、Codex、Cursor、Gemini CLI、Grok Build、Kimi CLI、OpenCode、Pi、Oh My Pi、Qoder、Qwen Code、Factory、CodeBuddy、ZCode、Hermes Agent
 
-**15+ 终端和 IDE**：Terminal.app、Ghostty、iTerm2、WezTerm、Zellij、tmux、cmux、Kaku、VS Code、Cursor、Windsurf、Trae、Zed、JetBrains 全家桶（IDEA、WebStorm、PyCharm、GoLand、CLion、RubyMine、PhpStorm、Rider、RustRover）
+**15+ 终端和 IDE**：Terminal.app、Ghostty、iTerm2、WezTerm、Zellij、tmux、cmux、Rex、Kaku、VS Code、Cursor、Windsurf、Trae、Zed、JetBrains 全家桶（IDEA、WebStorm、PyCharm、GoLand、CLion、RubyMine、PhpStorm、Rider、RustRover）
 
 <details>
 <summary>完整兼容列表</summary>
@@ -85,6 +85,7 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 | **Terminal.app** | 完整 | Jump-back，TTY 定位 |
 | **Ghostty** | 完整 | Jump-back，ID 匹配 |
 | **cmux** | 完整 | Jump-back，Unix socket API |
+| **Rex** | 完整 | Jump-back，`rex block focus` |
 | **Kaku** | 完整 | Jump-back，CLI pane 定位 |
 | **WezTerm** | 完整 | Jump-back，CLI pane 定位 |
 | **iTerm2** | 完整 | Jump-back，session ID / TTY 匹配 |

@@ -62,6 +62,7 @@ public struct TmuxPaneResolver: TmuxPaneResolverProtocol {
         ("ghostty.app", "Ghostty"),
         ("warp.app", "Warp"),
         ("kaku.app", "Kaku"),
+        ("rex server.app", "Rex"),
         ("wezterm.app", "WezTerm"),
         ("terminal.app", "Terminal"),
     ]
