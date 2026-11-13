@@ -80,6 +80,15 @@ enum IslandBackgroundStyle: String, CaseIterable, Identifiable, Sendable {
         case .black:    Color.black
         }
     }
+
+    /// Hairline drawn around the opened surface. It separates graphite from
+    /// the wallpaper, but on pure black it outlines the notch it should hide.
+    var openedEdgeStrokeOpacity: Double {
+        switch self {
+        case .graphite: 0.07
+        case .black:    0
+        }
+    }
 }
 
 enum IslandUsageDisplay: String, CaseIterable, Identifiable, Sendable {
