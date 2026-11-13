@@ -65,6 +65,10 @@
 "settings.appearance.centerLabel.agentAction" = "Agent · action";
 "settings.appearance.centerLabel.sessionName" = "Session name";
 "settings.appearance.centerLabel.off" = "Off";
+"settings.appearance.background.title" = "03 · Background";
+"settings.appearance.background.note" = "Pure black blends the island into the MacBook's physical notch.";
+"settings.appearance.background.graphite" = "Graphite";
+"settings.appearance.background.black" = "Pure black";
 "settings.appearance.notchPart.title" = "Notch";
 "settings.appearance.sessionListPart.title" = "Session list";
 "settings.appearance.sessionPreview" = "Preview";
