@@ -533,12 +533,59 @@ struct TerminalJumpService {
         + "/Library/Application Support/com.superlogical.rex/RexServer/Versions/Current/Rex Server.app/Contents/MacOS/rex"
 
     private func jumpToRexBlock(_ target: JumpTarget) -> Bool {
-        guard let blockID = target.terminalSessionID, !blockID.isEmpty,
-              processRunner(Self.rexCLIPath, ["--autostart=false", "block", "focus", blockID]) else {
+        guard let blockID = target.terminalSessionID, !blockID.isEmpty else {
+            return false
+        }
+
+        // `rex block focus` only moves focus inside the block's window. Rex.app
+        // switches to another session only through the client action
+        // `session.select`, which needs Remote Control on in Rex's settings.
+        // Try it, and ignore the failure when Remote Control is off.
+        if let location = rexBlockLocation(blockID) {
+            var selectArguments = ["--autostart=false", "do", "session.select", "session_id=\(location.sessionID)"]
+            if let windowID = location.block.windowID {
+                selectArguments.append("window_id=\(windowID)")
+            }
+            _ = processRunner(Self.rexCLIPath, selectArguments)
+        }
+
+        guard processRunner(Self.rexCLIPath, ["--autostart=false", "block", "focus", blockID]) else {
             return false
         }
         try? openAction(["-b", "com.superlogical.rex"])
         return true
+    }
+
+    private struct RexBlockLocation: Decodable {
+        struct Block: Decodable {
+            let windowID: String?
+
+            enum CodingKeys: String, CodingKey {
+                case windowID = "window_id"
+            }
+        }
+
+        let sessionID: String
+        let block: Block
+
+        enum CodingKeys: String, CodingKey {
+            case sessionID = "session_id"
+            case block
+        }
+    }
+
+    private func rexBlockLocation(_ blockID: String) -> RexBlockLocation? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: Self.rexCLIPath)
+        process.arguments = ["--autostart=false", "--timeout", "2s", "block", "inspect", blockID, "--json"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        guard (try? process.run()) != nil else { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { return nil }
+        return try? JSONDecoder().decode(RexBlockLocation.self, from: data)
     }
 
     private func jumpToCmuxTerminal(_ target: JumpTarget) -> Bool {
