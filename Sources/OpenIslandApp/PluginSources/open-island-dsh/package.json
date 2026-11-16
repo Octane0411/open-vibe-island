@@ -1,0 +1,8 @@
+{
+  "name": "open-island-dsh",
+  "version": "1.0.0",
+  "description": "Open Island bridge plugin for DeepSeek Harness: forwards session/agent lifecycle events to the Open Island notch app.",
+  "type": "module",
+  "main": "./index.js",
+  "private": true
+}

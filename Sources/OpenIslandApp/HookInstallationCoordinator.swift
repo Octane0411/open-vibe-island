@@ -31,6 +31,7 @@ final class HookInstallationCoordinator {
     var grokHookStatus: GrokHookInstallationStatus?
     var zcodeHookStatus: ZCodeHookInstallationStatus?
     var hermesHookStatus: HermesHookInstallationStatus?
+    var dshPluginStatus: DshPluginInstallationStatus?
     var piExtensionStatus: PiExtensionInstallationStatus?
     var ohMyPiExtensionStatus: PiExtensionInstallationStatus?
     var claudeStatusLineStatus: ClaudeStatusLineInstallationStatus?
@@ -50,6 +51,7 @@ final class HookInstallationCoordinator {
     var isGrokHookSetupBusy = false
     var isZcodeHookSetupBusy = false
     var isHermesHookSetupBusy = false
+    var isDshSetupBusy = false
     var isPiSetupBusy = false
     var isOhMyPiSetupBusy = false
     var isClaudeUsageSetupBusy = false
@@ -182,6 +184,10 @@ final class HookInstallationCoordinator {
 
     var hermesHooksInstalled: Bool {
         hermesHookStatus?.managedHooksPresent == true
+    }
+
+    var dshPluginInstalled: Bool {
+        dshPluginStatus?.pluginInstalledInAllDetectedProfiles == true
     }
 
     var piExtensionInstalled: Bool {
@@ -836,6 +842,17 @@ final class HookInstallationCoordinator {
 
             group.addTask { @MainActor [weak self] in
                 guard let self else { return }
+                if let manager = self.dshPluginInstallationManager {
+                    do {
+                        self.dshPluginStatus = try manager.status()
+                    } catch {
+                        self.onStatusMessage?("Failed to read DeepSeek Harness plugin status: \(error.localizedDescription)")
+                    }
+                }
+            }
+
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
                 do {
                     let status = try self.zcodeHookInstallationManager.status(hooksBinaryURL: self.hooksBinaryURL)
                     self.zcodeHookStatus = status
@@ -1054,6 +1071,7 @@ final class HookInstallationCoordinator {
         case .pi: return !(piExtensionStatus?.isCurrent ?? false)
         case .ohMyPi: return !(ohMyPiExtensionStatus?.isCurrent ?? false)
         case .hermes: return !hermesHooksInstalled
+        case .dsh: return !dshPluginInstalled
         case .claudeUsageBridge: return !claudeUsageInstalled
         }
     }
@@ -1083,6 +1101,7 @@ final class HookInstallationCoordinator {
             case .pi: return piExtensionInstalled
             case .ohMyPi: return ohMyPiExtensionInstalled
             case .hermes: return hermesHooksInstalled
+            case .dsh: return dshPluginInstalled
             case .claudeUsageBridge: return claudeUsageInstalled
             }
         }
@@ -1759,6 +1778,84 @@ final class HookInstallationCoordinator {
                 }
             } catch {
                 self.onStatusMessage?("Claude usage bridge update failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    // MARK: - DeepSeek Harness plugin (all detected ~/.dsh profiles)
+
+    private var dshPluginInstallationManager: DshPluginInstallationManager? {
+        guard let pluginURL = resolvedBundledDshPluginURL() else {
+            return nil
+        }
+        return DshPluginInstallationManager(pluginSourceURL: pluginURL)
+    }
+
+    private func resolvedBundledDshPluginURL() -> URL? {
+        if let url = Bundle.appResources.url(forResource: DshPluginInstallationManager.pluginPackageName, withExtension: nil) {
+            return url
+        }
+        return Bundle.main.url(forResource: DshPluginInstallationManager.pluginPackageName, withExtension: nil)
+    }
+
+    func refreshDshPluginStatus() {
+        guard let manager = dshPluginInstallationManager else {
+            dshPluginStatus = nil
+            return
+        }
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                self.dshPluginStatus = try manager.status()
+            } catch {
+                self.onStatusMessage?("Failed to read DeepSeek Harness plugin status: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func installDshPlugin() {
+        guard let manager = dshPluginInstallationManager else {
+            onStatusMessage?("Could not find the bundled Open Island DSH plugin.")
+            return
+        }
+
+        isDshSetupBusy = true
+        onStatusMessage?("Installing DeepSeek Harness plugin into all detected profiles.")
+
+        Task { [weak self] in
+            guard let self else { return }
+            defer { self.isDshSetupBusy = false }
+
+            do {
+                self.dshPluginStatus = try manager.install()
+                self.intentStore.setIntent(.installed, for: .dsh)
+                self.onStatusMessage?("DeepSeek Harness plugin installed.")
+            } catch {
+                self.onStatusMessage?("DeepSeek Harness plugin install failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func uninstallDshPlugin() {
+        guard let manager = dshPluginInstallationManager else {
+            onStatusMessage?("Could not find the bundled Open Island DSH plugin.")
+            return
+        }
+
+        isDshSetupBusy = true
+        onStatusMessage?("Removing DeepSeek Harness plugin.")
+
+        Task { [weak self] in
+            guard let self else { return }
+            defer { self.isDshSetupBusy = false }
+
+            do {
+                self.dshPluginStatus = try manager.uninstall()
+                self.intentStore.setIntent(.uninstalled, for: .dsh)
+                self.onStatusMessage?("DeepSeek Harness plugin removed.")
+            } catch {
+                self.onStatusMessage?("DeepSeek Harness plugin removal failed: \(error.localizedDescription)")
             }
         }
     }

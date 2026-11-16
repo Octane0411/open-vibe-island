@@ -75,10 +75,12 @@ struct ActiveAgentProcessDiscovery {
             // exemption they would be filtered out and their hook-managed
             // sessions could be evicted by the liveness polls.
             // ZCode is an Electron app whose processes never carry a TTY.
+            // DeepSeek Harness is the same shape.
             if process.terminalTTY == nil
                 && !isOpenCodeProcess(command: process.command)
                 && !isHermesProcess(command: process.command)
-                && !isZcodeProcess(command: process.command) {
+                && !isZcodeProcess(command: process.command)
+                && !isDSHProcess(command: process.command) {
                 continue
             }
 
@@ -255,6 +257,25 @@ struct ActiveAgentProcessDiscovery {
                     workingDirectory: nil,
                     terminalTTY: nil,
                     terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+                ))
+                continue
+            }
+
+            if isDSHProcess(command: process.command) {
+                // Whole-app liveness (ZCode shape): DSH sessions are
+                // hook-managed via the open-island-dsh plugin.
+                let claimKey = "dsh:\(process.pid)"
+                guard claimedKeys.insert(claimKey).inserted else {
+                    continue
+                }
+
+                snapshots.append(ProcessSnapshot(
+                    tool: .dsh,
+                    sessionID: nil,
+                    workingDirectory: nil,
+                    terminalTTY: nil,
+                    terminalApp: recognizedTerminalApp(for: process.command)
+                        ?? terminalApp(for: process, processesByPID: processesByPID)
                 ))
                 continue
             }
@@ -608,6 +629,9 @@ struct ActiveAgentProcessDiscovery {
         if lowered.contains("/qoder.app/") {
             return "Qoder"
         }
+        if lowered.contains("/deepseek harness.app/") {
+            return "DeepSeek Harness"
+        }
         if lowered.contains("/zcode.app/contents/macos/zcode") {
             return "ZCode"
         }
@@ -888,6 +912,15 @@ struct ActiveAgentProcessDiscovery {
         let lowered = command.lowercased()
         return lowered.contains("/zcode.app/contents/resources/glm/zcode.cjs")
             || (lowered.hasSuffix("/zcode") && lowered.contains("/zcode.app/contents/macos/"))
+    }
+
+    /// Matches the DeepSeek Harness desktop app main binary, which also hosts
+    /// the `dsh` CLI entry (`MacOS/DeepSeek Harness --expose-internals …/cli.js`).
+    /// Hook-managed sessions; snapshot anchors whole-app liveness.
+    private func isDSHProcess(command: String) -> Bool {
+        let lowered = command.lowercased()
+        return lowered.hasSuffix("/deepseek harness")
+            && lowered.contains("/deepseek harness.app/contents/macos/")
     }
 
     /// Matches the Hermes Agent gateway (`python -m tui_gateway.entry`) and the

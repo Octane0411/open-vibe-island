@@ -488,6 +488,8 @@ public final class BridgeServer: @unchecked Sendable {
             handlePiHook(payload, from: clientID)
         case let .processHermesHook(payload):
             handleHermesHook(payload, from: clientID)
+        case let .processDshHook(payload):
+            handleDshHook(payload, from: clientID)
         }
     }
 
@@ -2301,6 +2303,114 @@ public final class BridgeServer: @unchecked Sendable {
         emit(
             .sessionStarted(
                 piSessionStarted(for: payload, initialPhase: initialPhase)
+            )
+        )
+    }
+
+    /// Fire-and-forget DSH plugin events (same semantics as the Pi extension
+    /// path: no directive is ever returned, sessions are hook-managed).
+    private func handleDshHook(_ payload: DshHookPayload, from clientID: UUID) {
+        switch payload.hookEventName {
+        case .sessionStart:
+            emit(
+                .sessionStarted(
+                    SessionStarted(
+                        sessionID: payload.sessionID,
+                        title: payload.sessionTitle,
+                        tool: .dsh,
+                        origin: .live,
+                        summary: payload.summary ?? "Started DeepSeek Harness session in \(payload.workspaceName).",
+                        timestamp: .now,
+                        jumpTarget: payload.defaultJumpTarget
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .activity:
+            ensureDshSessionExists(for: payload)
+            synchronizeDshJumpTarget(for: payload)
+            emit(
+                .activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: payload.sessionID,
+                        summary: payload.summary ?? payload.activitySummary,
+                        phase: .running,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .turnCompleted:
+            ensureDshSessionExists(for: payload)
+            synchronizeDshJumpTarget(for: payload)
+            emit(
+                .sessionCompleted(
+                    SessionCompleted(
+                        sessionID: payload.sessionID,
+                        summary: payload.completionSummary,
+                        timestamp: .now
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+
+        case .sessionEnd:
+            ensureDshSessionExists(for: payload)
+            emit(
+                .sessionCompleted(
+                    SessionCompleted(
+                        sessionID: payload.sessionID,
+                        summary: "DeepSeek Harness session ended.",
+                        timestamp: .now,
+                        isInterrupt: true,
+                        isSessionEnd: true
+                    )
+                )
+            )
+            send(.response(.acknowledged), to: clientID)
+        }
+    }
+
+    private func ensureDshSessionExists(for payload: DshHookPayload) {
+        guard !hasSession(id: payload.sessionID) else { return }
+        emit(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: payload.sessionID,
+                    title: payload.sessionTitle,
+                    tool: .dsh,
+                    origin: .live,
+                    summary: "DeepSeek Harness session in \(payload.workspaceName).",
+                    timestamp: .now,
+                    jumpTarget: payload.defaultJumpTarget
+                )
+            )
+        )
+    }
+
+    private func synchronizeDshJumpTarget(for payload: DshHookPayload) {
+        guard let existingSession = localState.session(id: payload.sessionID) else {
+            return
+        }
+
+        let jumpTarget = Self.mergeJumpTargetPreservingExistingResolvedFields(
+            incoming: payload.defaultJumpTarget,
+            existing: existingSession.jumpTarget
+        )
+
+        guard existingSession.jumpTarget != jumpTarget else {
+            return
+        }
+
+        emit(
+            .jumpTargetUpdated(
+                JumpTargetUpdated(
+                    sessionID: payload.sessionID,
+                    jumpTarget: jumpTarget,
+                    timestamp: .now
+                )
             )
         )
     }

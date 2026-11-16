@@ -116,6 +116,7 @@ struct AgentSessionPresentationTests {
             (.ohMyPi, "Oh My Pi"),
             (.zcode, "ZCode"),
             (.hermes, "Hermes"),
+            (.dsh, "DeepSeek Harness"),
         ]
         #expect(expectedNames.map { $0.0.rawValue }.sorted() == AgentTool.allCases.map(\.rawValue).sorted())
 

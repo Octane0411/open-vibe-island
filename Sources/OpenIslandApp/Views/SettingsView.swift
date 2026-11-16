@@ -427,6 +427,7 @@ struct SetupSettingsPane: View {
     @State private var confirmingUninstallKimi = false
     @State private var confirmingUninstallGrok = false
     @State private var confirmingUninstallZcode = false
+    @State private var confirmingUninstallDsh = false
     @State private var confirmingUninstallPi = false
     @State private var confirmingUninstallOhMyPi = false
     @State private var confirmingUninstallHermes = false
@@ -648,6 +649,24 @@ struct SetupSettingsPane: View {
                     Button(lang.t("settings.general.cancel"), role: .cancel) {}
                 } message: {
                     Text("This will remove Open Island hooks from ~/.zcode/cli/config.json.")
+                }
+
+                hookRow(
+                    name: "DeepSeek Harness",
+                    installed: model.dshPluginInstalled,
+                    busy: model.isDshSetupBusy,
+                    requiresBinary: false,
+                    configLocationURL: model.dshPluginStatus?.profiles.first?.directory,
+                    installAction: { model.installDshPlugin() },
+                    uninstallAction: { confirmingUninstallDsh = true }
+                )
+                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallDsh) {
+                    Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
+                        model.uninstallDshPlugin()
+                    }
+                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
+                } message: {
+                    Text("This will remove the Open Island plugin from every profile under ~/.dsh/profiles/. Your other profile settings are preserved.")
                 }
 
                 hookRow(
