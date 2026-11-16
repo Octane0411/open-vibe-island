@@ -214,8 +214,8 @@ def main() -> None:
             fail(f"expected closed scenario to use sessionList surface, got {island_surface!r}")
         require_frame_between(
             overlay_frame,
-            width=(200, 620),
-            height=(35, 500),
+            width=(100, 620),
+            height=(35, 100),
             context="closed overlay frame",
         )
         if report.get("liveSessionCount") != 9 and not any("9" in value for value in text_values):
@@ -236,6 +236,16 @@ def main() -> None:
             fail("expected sessionList to expose multiple actionable row buttons")
         if report.get("sessionCount") != 9:
             assert_contains_any(text_values, ["sessions hidden", "9 "], "sessionList text values")
+
+    elif scenario == "subagents":
+        if notch_status != "opened" or island_surface != "sessionList":
+            fail("subagents scenario must render the opened session list")
+        if report.get("sessionCount") != 2:
+            fail("child agents must not increase the root count")
+        children = [child for session in report.get("sessions", []) for child in session.get("subagents", [])]
+        if len(children) != 4:
+            fail("expected Codex and Claude nested child rows")
+        assert_contains_any(labels | text_values, ["Turing"], "waiting child")
 
     elif scenario == "approvalCard":
         if notch_status != "opened":
@@ -297,6 +307,13 @@ def main() -> None:
 
     else:
         fail(f"unsupported scenario {scenario!r}")
+
+    routing = report.get("pointerRouting")
+    if isinstance(routing, dict):
+        for field in ["centerReceivesMouse", "shadowPassesThrough", "sidePassesThrough",
+                      "roundedCornerPassesThrough", "optionPassesThrough"]:
+            if routing.get(field) is not True:
+                fail(f"native pointer routing check failed: {field}")
 
     print(
         f"{scenario}: notch={notch_status}, surface={island_surface}, "

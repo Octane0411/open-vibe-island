@@ -10,7 +10,7 @@ final class OpenIslandAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         ProcessInfo.processInfo.disableAutomaticTermination(
-            "Open Island should remain active while monitoring local agent sessions."
+            "\(AppBranding.displayName) should remain active while monitoring local agent sessions."
         )
         ProcessInfo.processInfo.disableSuddenTermination()
         NSApp.setActivationPolicy(model.showDockIcon ? .regular : .accessory)
@@ -30,16 +30,21 @@ final class OpenIslandAppDelegate: NSObject, NSApplicationDelegate {
                 loadRuntimeState: harnessLaunchConfiguration.scenario == nil
             )
             harnessRuntimeMonitor.recordMilestone("modelStarted")
+            if harnessLaunchConfiguration.scenario == nil { model.startKeyboardShortcuts() }
 
             if let scenario = harnessLaunchConfiguration.scenario {
                 model.loadDebugSnapshot(
                     scenario.snapshot(),
                     presentOverlay: harnessLaunchConfiguration.presentOverlay
                 )
+            } else if harnessLaunchConfiguration.presentOverlay {
+                // Exercise the real discovery pipeline in an expanded panel.
+                // No demo sessions or lifecycle overrides are injected.
+                model.notchOpen(reason: .click)
             }
 
             // Hide all windows on launch — settings opens on demand only.
-            OpenIslandAppDelegate.hideAllAppWindows()
+            OpenIslandAppDelegate.hideInitialSettingsWindows()
 
             harnessRuntimeMonitor.recordMilestone("bootstrapCompleted")
 
@@ -72,12 +77,17 @@ final class OpenIslandAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        model.stopKeyboardShortcuts()
+        model.overlay.overlayPanelController.shutDown()
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
 
-    private static func hideAllAppWindows() {
-        for window in NSApp.windows {
+    private static func hideInitialSettingsWindows() {
+        for window in NSApp.windows where !(window is NSPanel) {
             window.orderOut(nil)
         }
     }
@@ -96,7 +106,7 @@ struct OpenIslandApp: App {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
-        Window("Open Island Settings", id: "settings") {
+        Window(AppBranding.settingsWindowTitle, id: "settings") {
             SettingsWindowContent(model: appDelegate.model)
         }
         .windowResizability(.contentMinSize)

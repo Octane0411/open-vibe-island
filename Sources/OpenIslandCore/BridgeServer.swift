@@ -2671,7 +2671,11 @@ public final class BridgeServer: @unchecked Sendable {
                 existing: existing?.currentCommandPreview,
                 update: update.currentCommandPreview,
                 hookEventName: hookEventName
-            )
+            ),
+            subagents: update.subagents ?? existing?.subagents,
+            model: update.model ?? existing?.model,
+            reasoningEffort: update.reasoningEffort ?? existing?.reasoningEffort,
+            parentThreadID: update.parentThreadID ?? existing?.parentThreadID
         )
     }
 

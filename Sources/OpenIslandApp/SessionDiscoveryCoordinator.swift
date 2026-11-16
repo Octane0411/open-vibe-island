@@ -155,7 +155,7 @@ final class SessionDiscoveryCoordinator {
 
         // Restore persisted Codex sessions.
         if !payload.codexRecords.isEmpty {
-            state = SessionState(sessions: payload.codexRecords.map(\.restorableSession))
+            state = SessionState(sessions: mergeDiscoveredSessions(payload.codexRecords.map(\.restorableSession)))
             onStatusMessage?("Restored \(payload.codexRecords.count) recent Codex session(s) from local cache.")
         }
 
@@ -388,7 +388,11 @@ final class SessionDiscoveryCoordinator {
             lastUserPrompt: discovered.lastUserPrompt ?? existing.lastUserPrompt,
             lastAssistantMessage: discovered.lastAssistantMessage ?? existing.lastAssistantMessage,
             currentTool: discovered.currentTool ?? existing.currentTool,
-            currentCommandPreview: discovered.currentCommandPreview ?? existing.currentCommandPreview
+            currentCommandPreview: discovered.currentCommandPreview ?? existing.currentCommandPreview,
+            subagents: existing.subagents ?? discovered.subagents,
+            model: discovered.model ?? existing.model,
+            reasoningEffort: discovered.reasoningEffort ?? existing.reasoningEffort,
+            parentThreadID: discovered.parentThreadID ?? existing.parentThreadID
         )
         return merged.isEmpty ? nil : merged
     }

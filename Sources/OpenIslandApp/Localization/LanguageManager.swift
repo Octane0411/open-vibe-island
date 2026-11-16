@@ -64,12 +64,12 @@ final class LanguageManager: @unchecked Sendable {
 
     /// Look up a localized string by key.
     func t(_ key: String) -> String {
-        bundle.localizedString(forKey: key, value: key, table: nil)
+        AppBranding.apply(to: bundle.localizedString(forKey: key, value: key, table: nil))
     }
 
     /// Look up a localized format string and apply arguments.
     func t(_ key: String, _ args: any CVarArg...) -> String {
-        let format = bundle.localizedString(forKey: key, value: key, table: nil)
+        let format = t(key)
         return String(format: format, arguments: args)
     }
 

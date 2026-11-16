@@ -144,26 +144,25 @@ struct OverlayPanelControllerTests {
     }
 
     @Test
-    func externalDisplayClosedWidthUsesFixedHitArea() {
-        // v6 external layout: fluid in SwiftUI, but the controller uses a
-        // generous fixed hit-area so hover/click works without knowing the
-        // live content width.
+    func externalDisplayClosedWidthMatchesRenderedPill() {
+        // Empty space beside the rendered pill belongs to the app below.
         let width = OverlayPanelController.closedPanelWidth(
             notchWidth: 0,
             isNotchedDisplay: false,
-            notchStatus: .closed
+            notchStatus: .closed,
+            renderedWidth: 142
         )
-        #expect(width == CGFloat(360))
+        #expect(width == CGFloat(142))
     }
 
     @Test
-    func poppingStatusAddsHoverBudget() {
+    func poppingHitAreaTracksVisibleScale() {
         let width = OverlayPanelController.closedPanelWidth(
             notchWidth: 224,
             isNotchedDisplay: true,
             notchStatus: .popping
         )
-        #expect(width == CGFloat(224 + 88 + 18))
+        #expect(width == CGFloat(224 + 88) * 1.04)
     }
 
     @Test

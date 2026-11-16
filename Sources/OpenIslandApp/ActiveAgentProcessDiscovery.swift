@@ -331,16 +331,18 @@ struct ActiveAgentProcessDiscovery {
         for process: RunningProcess,
         processesByPID: [String: RunningProcess]
     ) -> ProcessSnapshot? {
-        guard let lsofOutput = lsofOutput(pid: process.pid),
-              let transcriptPath = bestCodexTranscriptPath(in: lsofOutput),
-              let sessionID = firstUUID(in: transcriptPath) else {
-            return nil
-        }
+        guard let lsofOutput = lsofOutput(pid: process.pid) else { return nil }
+        let transcriptPath = bestCodexTranscriptPath(in: lsofOutput)
+        let sessionID = transcriptPath.flatMap(firstUUID(in:))
+        let cwd = workingDirectory(from: lsofOutput)
+        // Modern TUI frontends delegate transcript I/O to the daemon. Keep
+        // their host-app evidence for jump fallback; this never creates rows.
+        guard sessionID != nil || cwd != nil else { return nil }
 
         var snapshot = ProcessSnapshot(
             tool: .codex,
             sessionID: sessionID,
-            workingDirectory: workingDirectory(from: lsofOutput),
+            workingDirectory: cwd,
             terminalTTY: process.terminalTTY,
             terminalApp: terminalApp(for: process, processesByPID: processesByPID)
         )
