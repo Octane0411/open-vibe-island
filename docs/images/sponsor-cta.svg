@@ -1,0 +1,24 @@
+<svg width="880" height="260" viewBox="0 0 880 260" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Sponsor Open Island</title>
+  <desc id="desc">Become an Open Island sponsor — Featured and Standard README placements across English and Chinese documentation.</desc>
+  <defs>
+    <linearGradient id="paper" x1="24" y1="20" x2="856" y2="240" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F6EFDC"/>
+      <stop offset="1" stop-color="#E9DFC6"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="880" height="260" rx="28" fill="#F1EAD9"/>
+  <rect x="1" y="1" width="878" height="258" rx="27" stroke="#0D0D0F" stroke-opacity="0.08" stroke-width="2"/>
+
+  <rect x="20" y="20" width="840" height="220" rx="20" fill="url(#paper)"/>
+  <rect x="21" y="21" width="838" height="218" rx="19" stroke="#0D0D0F" stroke-opacity="0.18" stroke-width="2" stroke-dasharray="8 8"/>
+
+  <rect x="330" y="46" width="220" height="32" rx="16" fill="#0D0D0F"/>
+  <circle cx="352" cy="62" r="4.5" fill="#F1EAD9"/>
+  <text x="448" y="67" text-anchor="middle" fill="#F1EAD9" font-family="'SF Mono', 'JetBrains Mono', ui-monospace, monospace" font-size="13" font-weight="600" letter-spacing="0.8">SPONSOR SLOT</text>
+
+  <text x="440" y="128" text-anchor="middle" fill="#0D0D0F" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="34" font-weight="700">Your Product Here</text>
+  <text x="440" y="166" text-anchor="middle" fill="#0D0D0F" fill-opacity="0.64" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="18" font-weight="500">Reach macOS developers running AI coding agents daily</text>
+  <text x="440" y="204" text-anchor="middle" fill="#0D0D0F" fill-opacity="0.46" font-family="'SF Mono', 'JetBrains Mono', ui-monospace, monospace" font-size="14" font-weight="500">Featured &amp; Standard README placements · EN + ZH · wdznb1@gmail.com</text>
+</svg>

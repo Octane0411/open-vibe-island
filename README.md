@@ -22,6 +22,7 @@
 <p align="center">
   <a href="https://github.com/Octane0411/open-vibe-island/releases">Download</a> ·
   <a href="#quick-start">Quick Start</a> ·
+  <a href="#sponsors">Sponsors</a> ·
   <a href="docs/roadmap.md">Roadmap</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
@@ -172,6 +173,25 @@ Four targets in one Swift package:
 See [docs/architecture.md](docs/architecture.md) for the full system design.
 
 </details>
+
+## Sponsors
+
+<!-- SPONSORS:START -->
+<div align="center">
+  <a href="mailto:wdznb1@gmail.com?subject=Open%20Island%20Sponsorship">
+    <img src="docs/images/sponsor-cta.svg" alt="Sponsor Open Island" width="440">
+  </a>
+  <p>
+    Support ongoing open-source development and put your developer tool in front of macOS engineers running <strong>Claude Code, Codex, Cursor</strong>, and 12+ other coding agents daily.
+  </p>
+  <p>
+    <strong>Featured Sponsor</strong> (<code>440px</code> showcase card + intro + link) and <strong>Standard Sponsor</strong> placements are synced across both our English and Chinese READMEs.<br>
+    Interested in sponsoring? Reach out at <a href="mailto:wdznb1@gmail.com?subject=Open%20Island%20Sponsorship">wdznb1@gmail.com</a>.
+  </p>
+</div>
+<!-- SPONSORS:END -->
+
+<sub>Sponsorship placements support open-source maintenance and do not affect Open Island's local-first, telemetry-free product behavior.</sub>
 
 ## Community
 
