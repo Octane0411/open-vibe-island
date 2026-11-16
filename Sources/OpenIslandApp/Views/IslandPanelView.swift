@@ -148,6 +148,21 @@ struct IslandPanelView: View {
             || targetOverlayScreen?.safeAreaInsets.top ?? 0 > 0
     }
 
+    /// True when the island is pinned to the bottom screen edge. Layout then
+    /// mirrors: the header strip sits on the edge, content grows upward, and
+    /// the shadow margin is on top.
+    private var isBottomEdge: Bool {
+        model.overlayEdge == .bottom
+    }
+
+    private var edgeAlignment: Alignment {
+        isBottomEdge ? .bottom : .top
+    }
+
+    private var edgeAnchor: UnitPoint {
+        isBottomEdge ? .bottom : .top
+    }
+
     /// True when the closed island sits on an external (non-notched) display.
     /// The central black rectangle is otherwise aligned with the physical
     /// notch, so center content is only useful here.
@@ -169,11 +184,11 @@ struct IslandPanelView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            ZStack(alignment: .top) {
+            ZStack(alignment: edgeAlignment) {
                 Color.clear
 
                 notchContent(availableSize: geometry.size)
-                    .frame(maxWidth: .infinity, alignment: .top)
+                    .frame(maxWidth: .infinity, alignment: edgeAlignment)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -210,7 +225,7 @@ struct IslandPanelView: View {
         let resolvedClosedPill = closedPill
 
         VStack(spacing: 0) {
-            ZStack(alignment: .top) {
+            ZStack(alignment: edgeAlignment) {
                 transitioningSurface(
                     openedWidth: openedWidth,
                     openedHeight: openedHeight,
@@ -222,7 +237,7 @@ struct IslandPanelView: View {
                         .frame(
                             width: usesOpenedVisualState ? openedWidth : resolvedClosedPill.resolvedWidth,
                             height: usesOpenedVisualState ? openedHeight : closedNotchHeight,
-                            alignment: .top
+                            alignment: edgeAlignment
                         )
                         .clipShape(transitionSurfaceShape)
                         .opacity(usesOpenedVisualState ? 1 : 0)
@@ -234,11 +249,11 @@ struct IslandPanelView: View {
                     .opacity(usesOpenedVisualState ? 0 : 1)
                     .allowsHitTesting(!usesOpenedVisualState)
             }
-            .frame(maxWidth: .infinity, alignment: .top)
+            .frame(maxWidth: .infinity, alignment: edgeAlignment)
         }
-        .scaleEffect(usesOpenedVisualState ? 1 : (isHovering ? IslandChromeMetrics.closedHoverScale : 1), anchor: .top)
+        .scaleEffect(usesOpenedVisualState ? 1 : (isHovering ? IslandChromeMetrics.closedHoverScale : 1), anchor: edgeAnchor)
         .padding(.horizontal, panelShadowHorizontalInset)
-        .padding(.bottom, panelShadowBottomInset)
+        .padding(isBottomEdge ? .top : .bottom, panelShadowBottomInset)
         .animation(notchTransitionAnimation, value: model.notchStatus)
         .contentShape(Rectangle())
         .onHover { hovering in
@@ -293,14 +308,15 @@ struct IslandPanelView: View {
             layout: layout,
             height: closedNotchHeight,
             physicalNotchWidth: layout == .macbook ? physicalNotchWidth : 0,
-            minWidth: 70
+            minWidth: 70,
+            flipped: isBottomEdge
         )
     }
 
     @ViewBuilder
     private func v6ClosedSurface(_ pill: V6ClosedPill) -> some View {
         pill
-        .scaleEffect(isPopping ? 1.04 : 1, anchor: .top)
+        .scaleEffect(isPopping ? 1.04 : 1, anchor: edgeAnchor)
         .animation(popAnimation, value: isPopping)
     }
 
@@ -332,22 +348,35 @@ struct IslandPanelView: View {
         OpenedIslandSurfaceShape(
             topProfile: usesNotchAwareOpenedHeader ? .notch : .topBar,
             topCornerRadius: usesOpenedVisualState ? NotchShape.openedTopRadius : 0,
-            bottomCornerRadius: usesOpenedVisualState ? NotchShape.openedBottomRadius : closedNotchHeight / 2
+            bottomCornerRadius: usesOpenedVisualState ? NotchShape.openedBottomRadius : closedNotchHeight / 2,
+            flipped: isBottomEdge
         )
     }
 
     @ViewBuilder
     private func openedSurfaceContent(width openedWidth: CGFloat, height openedHeight: CGFloat) -> some View {
+        // The header strip always hugs the screen edge; content grows away
+        // from it, so the stacking order flips with the edge.
         VStack(spacing: 0) {
-            openedHeaderContent
-                .frame(height: closedNotchHeight)
-
-            openedContent
-                .frame(width: openedWidth)
-                .frame(maxHeight: max(0, openedHeight - closedNotchHeight), alignment: .top)
-                .clipped()
+            if isBottomEdge {
+                openedContentBody(width: openedWidth, height: openedHeight)
+                openedHeaderContent
+                    .frame(height: closedNotchHeight)
+            } else {
+                openedHeaderContent
+                    .frame(height: closedNotchHeight)
+                openedContentBody(width: openedWidth, height: openedHeight)
+            }
         }
-        .frame(width: openedWidth, height: openedHeight, alignment: .top)
+        .frame(width: openedWidth, height: openedHeight, alignment: edgeAlignment)
+    }
+
+    @ViewBuilder
+    private func openedContentBody(width openedWidth: CGFloat, height openedHeight: CGFloat) -> some View {
+        openedContent
+            .frame(width: openedWidth)
+            .frame(maxHeight: max(0, openedHeight - closedNotchHeight), alignment: edgeAlignment)
+            .clipped()
     }
 
     // MARK: - Closed state

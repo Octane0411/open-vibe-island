@@ -41,6 +41,10 @@ final class OverlayPanelController {
     private var hoverCancelGrace: DispatchWorkItem?
     weak var model: AppModel?
     private(set) var notchRect: NSRect = .zero
+    /// Screen edge the island is pinned to. The coordinator sets this before
+    /// every reposition; the SwiftUI content reads the same value through
+    /// `AppModel.overlayEdge` so geometry and drawing stay in step.
+    var overlayEdge: OverlayEdge = .top
 
     var isVisible: Bool {
         panel?.isVisible == true
@@ -105,7 +109,11 @@ final class OverlayPanelController {
 
     func placementDiagnostics(preferredScreenID: String?) -> OverlayPlacementDiagnostics? {
         let panelSize = panel?.frame.size ?? OverlayDisplayResolver.defaultPanelSize
-        return OverlayDisplayResolver.diagnostics(preferredScreenID: preferredScreenID, panelSize: panelSize)
+        return OverlayDisplayResolver.diagnostics(
+            preferredScreenID: preferredScreenID,
+            panelSize: panelSize,
+            edge: overlayEdge
+        )
     }
 
     // MARK: - Panel creation
@@ -178,7 +186,8 @@ final class OverlayPanelController {
 
         return OverlayDisplayResolver.diagnostics(
             preferredScreenID: preferredScreenID,
-            panelSize: panel.frame.size
+            panelSize: panel.frame.size,
+            edge: overlayEdge
         )
     }
 
@@ -196,11 +205,12 @@ final class OverlayPanelController {
             return
         }
 
-        let notchSize = screen.notchSize
-        let screenFrame = screen.frame
-        let notchX = screenFrame.midX - notchSize.width / 2
-        let notchY = screenFrame.maxY - notchSize.height
-        notchRect = NSRect(x: notchX, y: notchY, width: notchSize.width, height: notchSize.height)
+        notchRect = OverlayEdgeGeometry.anchorRect(
+            edge: overlayEdge,
+            screenFrame: screen.frame,
+            visibleFrame: screen.visibleFrame,
+            size: screen.notchSize
+        )
     }
 
     /// Picks the screen to anchor the overlay to.
@@ -417,11 +427,11 @@ final class OverlayPanelController {
 
     func contentRect(for model: AppModel, in bounds: NSRect) -> NSRect? {
         let insets = panelShadowInsets
-        return NSRect(
-            x: bounds.minX + insets.horizontal,
-            y: bounds.minY + insets.bottom,
-            width: max(0, bounds.width - (insets.horizontal * 2)),
-            height: max(0, bounds.height - insets.bottom)
+        return OverlayEdgeGeometry.contentRect(
+            edge: overlayEdge,
+            bounds: bounds,
+            horizontalInset: insets.horizontal,
+            shadowInset: insets.bottom
         )
     }
 
@@ -478,12 +488,13 @@ final class OverlayPanelController {
 
     private func panelFrame(for model: AppModel?, on screen: NSScreen) -> NSRect {
         let size = panelSize(for: model, on: screen)
-        return NSRect(
-            x: screen.frame.midX - size.width / 2,
-            y: screen.frame.maxY - size.height,
-            width: size.width,
-            height: size.height
+        let origin = OverlayEdgeGeometry.panelOrigin(
+            edge: overlayEdge,
+            screenFrame: screen.frame,
+            visibleFrame: screen.visibleFrame,
+            panelSize: size
         )
+        return NSRect(origin: origin, size: size)
     }
 
     /// Always returns the maximum (opened) panel size so the window never

@@ -118,6 +118,9 @@
 /* Settings - Display */
 "settings.display.monitor" = "Monitor";
 "settings.display.position" = "Display Position";
+"settings.display.edge" = "Screen Edge";
+"settings.display.edge.top" = "Top";
+"settings.display.edge.bottom" = "Bottom (above the Dock)";
 "settings.display.diagnostics" = "Diagnostics";
 "settings.display.currentScreen" = "Current Screen";
 "settings.display.layoutMode" = "Layout Mode";
