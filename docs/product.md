@@ -41,6 +41,7 @@ CLI coding agents are powerful, but they pull attention away from the editor and
 | **Terminal.app** | Full Support | Jump-back with TTY targeting |
 | **Ghostty** | Full Support | Jump-back with ID matching |
 | **cmux** | Full Support | Jump-back via Unix socket API |
+| **Rex** | Full Support | Jump-back via `rex block focus`. Needs Remote Control on to switch sessions |
 | **Kaku** | Full Support | Jump-back via CLI pane targeting |
 | **WezTerm** | Full Support | Jump-back via CLI pane targeting |
 | **iTerm2** | Full Support | Jump-back with session ID / TTY matching |

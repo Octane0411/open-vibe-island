@@ -107,7 +107,7 @@ const detectedTTY = detectTTY();
 function terminalFields(): Record<string, string> {
   const env = process.env;
   const result: Record<string, string> = {};
-  if (env.ITERM_SESSION_ID) {
+  if (env.ITERM_SESSION_ID && env.TERM_PROGRAM !== "rex") {
     result.terminal_app = "iTerm";
     result.terminal_session_id = env.ITERM_SESSION_ID;
   } else if (env.CMUX_WORKSPACE_ID || env.CMUX_SOCKET_PATH) {

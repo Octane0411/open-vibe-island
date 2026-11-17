@@ -542,14 +542,14 @@ struct TerminalJumpService {
         // `session.select`, which needs Remote Control on in Rex's settings.
         // Try it, and ignore the failure when Remote Control is off.
         if let location = rexBlockLocation(blockID) {
-            var selectArguments = ["--autostart=false", "do", "session.select", "session_id=\(location.sessionID)"]
+            var selectArguments = ["--autostart=false", "--timeout", "2s", "do","session.select", "session_id=\(location.sessionID)"]
             if let windowID = location.block.windowID {
                 selectArguments.append("window_id=\(windowID)")
             }
             _ = processRunner(Self.rexCLIPath, selectArguments)
         }
 
-        guard processRunner(Self.rexCLIPath, ["--autostart=false", "block", "focus", blockID]) else {
+        guard processRunner(Self.rexCLIPath, ["--autostart=false", "--timeout", "2s", "block", "focus", blockID]) else {
             return false
         }
         try? openAction(["-b", "com.superlogical.rex"])

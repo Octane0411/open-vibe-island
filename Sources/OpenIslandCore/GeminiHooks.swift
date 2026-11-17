@@ -335,6 +335,13 @@ public extension GeminiHookPayload {
     }
 
     private func inferTerminalApp(from environment: [String: String]) -> String? {
+        // A Rex shell can inherit ITERM_SESSION_ID when Rex is launched from iTerm.
+        if environment["TERM_PROGRAM"]?.lowercased() == "rex",
+           environment["CMUX_WORKSPACE_ID"] == nil, environment["CMUX_SOCKET_PATH"] == nil,
+           environment["ZELLIJ"] == nil {
+            return "Rex"
+        }
+
         if environment["ITERM_SESSION_ID"] != nil || environment["LC_TERMINAL"] == "iTerm2" {
             return "iTerm"
         }

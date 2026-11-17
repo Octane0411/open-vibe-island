@@ -5,6 +5,20 @@ import Testing
 
 struct GeminiHooksTests {
     @Test
+    func geminiRexWinsOverInheritedITermSessionID() {
+        let payload = GeminiHookPayload(
+            cwd: "/tmp/worktree", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: ["TERM_PROGRAM": "rex", "REX_BLOCK": "block:abc", "ITERM_SESSION_ID": "w0t0p0:stale"],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: "wrong", tty: nil, title: "wrong") }
+        )
+
+        #expect(payload.terminalApp == "Rex")
+        #expect(payload.terminalSessionID == "block:abc")
+    }
+
+    @Test
     func geminiHookPayloadDecodesNotification() throws {
         let json = """
         {
