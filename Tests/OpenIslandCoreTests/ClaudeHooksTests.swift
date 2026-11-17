@@ -74,6 +74,64 @@ struct ClaudeHooksTests {
         #expect(!FileManager.default.fileExists(atPath: uninstalled.manifestURL.path))
     }
 
+    /// A leftover hook from the closed-source Vibe Island app must not read as
+    /// "our hooks are installed". It used to, which made Settings show the hooks
+    /// as present and suppressed the startup repair, so no hook of ours ran.
+    @Test
+    func claudeStatusReportsHooksAbsentWhenOnlyVibeIslandBridgeHookExists() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-claude-foreign-\(UUID().uuidString)", isDirectory: true)
+        let claudeDirectory = rootURL.appendingPathComponent(".claude", isDirectory: true)
+        let managedHooksBinaryURL = rootURL
+            .appendingPathComponent("managed", isDirectory: true)
+            .appendingPathComponent("OpenIslandHooks")
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        try FileManager.default.createDirectory(at: managedHooksBinaryURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("claude-hook".utf8).write(to: managedHooksBinaryURL)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: managedHooksBinaryURL.path)
+
+        let bridgeCommand = "/bin/sh -c '[ -x \"$HOME/.vibe-island/bin/vibe-island-bridge\" ] && \"$HOME/.vibe-island/bin/vibe-island-bridge\" --source claude; exit 0'"
+        let settings: [String: Any] = [
+            "hooks": [
+                "SessionStart": [["hooks": [["type": "command", "command": bridgeCommand]]]],
+                "UserPromptSubmit": [["hooks": [["type": "command", "command": bridgeCommand]]]],
+            ],
+        ]
+        try FileManager.default.createDirectory(at: claudeDirectory, withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .sortedKeys])
+            .write(to: claudeDirectory.appendingPathComponent("settings.json"), options: .atomic)
+
+        let manager = ClaudeHookInstallationManager(
+            claudeDirectory: claudeDirectory,
+            managedHooksBinaryURL: managedHooksBinaryURL
+        )
+
+        let status = try manager.status()
+        #expect(!status.managedHooksPresent)
+
+        // Installing still claims the slots — the two apps cannot both drive
+        // the island — and now reports itself as present.
+        let installed = try manager.install(hooksBinaryURL: managedHooksBinaryURL)
+        #expect(installed.managedHooksPresent)
+
+        let settingsObject = try jsonObject(from: Data(contentsOf: installed.settingsURL))
+        let hooksObject = try #require(settingsObject["hooks"] as? [String: Any])
+        let allCommands: [String] = hooksObject.values
+            .compactMap { $0 as? [Any] }
+            .flatMap { $0 }
+            .compactMap { $0 as? [String: Any] }
+            .compactMap { $0["hooks"] as? [Any] }
+            .flatMap { $0 }
+            .compactMap { $0 as? [String: Any] }
+            .compactMap { $0["command"] as? String }
+        #expect(!allCommands.contains(bridgeCommand))
+        #expect(allCommands.contains(where: { $0.contains("OpenIslandHooks") }))
+    }
+
     @Test
     func claudeTranscriptDiscoveryRecoversRecentSessions() throws {
         let rootURL = FileManager.default.temporaryDirectory

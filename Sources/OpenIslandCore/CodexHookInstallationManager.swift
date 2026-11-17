@@ -62,7 +62,7 @@ public final class CodexHookInstallationManager: @unchecked Sendable {
         let managedHooksPresent = ((try? CodexHookInstaller.uninstallHooksJSON(
             existingData: hooksData,
             managedCommand: managedCommand
-        ))?.changed) == true
+        ))?.ownHooksPresent) == true
 
         return CodexHookInstallationStatus(
             codexDirectory: codexDirectory,
