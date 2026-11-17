@@ -14,6 +14,21 @@ struct TerminalJumpServiceTests {
     }
 
     @Test
+    func rexBlockIDMatchesBlockWhoseForegroundOrChildIsTmuxClient() {
+        typealias P = TerminalJumpService.RexBlockProcess
+        let processes: [String: P] = [
+            "block:a": P(child: .init(pid: 10), foreground: .init(pid: 11)),
+            "block:b": P(child: .init(pid: 20), foreground: .init(pid: 42)),
+            "block:c": P(child: .init(pid: 99), foreground: nil),
+        ]
+        let blockIDs = ["block:gone", "block:a", "block:b", "block:c"]
+
+        #expect(TerminalJumpService.rexBlockID(hostingAnyOf: [42], blockIDs: blockIDs) { processes[$0] } == "block:b")
+        #expect(TerminalJumpService.rexBlockID(hostingAnyOf: [99], blockIDs: blockIDs) { processes[$0] } == "block:c")
+        #expect(TerminalJumpService.rexBlockID(hostingAnyOf: [7], blockIDs: blockIDs) { processes[$0] } == nil)
+    }
+
+    @Test
     func ghosttyJumpScriptActivatesWindowAndRetriesFocusUntilItSticks() {
         let target = JumpTarget(
             terminalApp: "Ghostty",
