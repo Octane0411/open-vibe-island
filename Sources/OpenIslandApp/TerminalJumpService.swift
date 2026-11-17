@@ -566,31 +566,47 @@ struct TerminalJumpService {
 
     /// Inside tmux the hooks drop REX_BLOCK, because tmux panes inherit it from
     /// whichever shell started the tmux server. Find the block whose
-    /// foreground process is a tmux client attached to the target session.
+    /// foreground process is a tmux client. Prefer a client that already shows
+    /// the target session; otherwise switch the matched Rex client to it,
+    /// because `jumpToTmuxPane` switches only the first client, which may
+    /// belong to another terminal.
     private func jumpToRexBlockHostingTmux(_ target: JumpTarget) -> Bool {
         guard let tmuxTarget = target.tmuxTarget, let tmuxPath = resolveTmuxPath() else {
             return false
         }
         let session = String(tmuxTarget.prefix { $0 != ":" })
         let socketArgs = target.tmuxSocketPath.map { $0.isEmpty ? [] : ["-S", $0] } ?? []
-        let clients = runTmuxCommand(
+        let clientListing = runTmuxCommand(
             tmuxPath: tmuxPath,
             socketArgs: socketArgs,
-            args: ["list-clients", "-t", session, "-F", "#{client_pid}"]
+            args: ["list-clients", "-F", "#{client_pid}\t#{client_tty}\t#{client_session}"]
         ) ?? ""
-        let clientPIDs = Set(clients.split(separator: "\n").compactMap { Int($0) })
+        let clients = clientListing.split(separator: "\n").compactMap { line -> (pid: Int, tty: String, session: String)? in
+            let fields = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
+            guard fields.count == 3, let pid = Int(fields[0]) else { return nil }
+            return (pid, fields[1], fields[2])
+        }
 
-        guard !clientPIDs.isEmpty,
+        guard !clients.isEmpty,
               let listing = Self.runRex(["block", "ls", "-A", "-q", "--short=false"]),
               let blockIDs = String(data: listing, encoding: .utf8)?.split(separator: "\n").map(String.init),
-              let blockID = Self.rexBlockID(hostingAnyOf: clientPIDs, blockIDs: blockIDs, process: { id in
-                  Self.runRex(["block", "call", "-b", id, "process"])
-                      .flatMap { try? JSONDecoder().decode(RexBlockProcess.self, from: $0) }
-              })
+              let match = Self.rexBlockMatch(
+                  preferring: Set(clients.filter { $0.session == session }.map(\.pid)),
+                  among: Set(clients.map(\.pid)),
+                  blockIDs: blockIDs,
+                  process: { id in
+                      Self.runRex(["block", "call", "-b", id, "process"])
+                          .flatMap { try? JSONDecoder().decode(RexBlockProcess.self, from: $0) }
+                  }
+              )
         else {
             return false
         }
-        return focusRexBlock(blockID)
+
+        if let client = clients.first(where: { $0.pid == match.pid }), client.session != session {
+            _ = runTmuxCommand(tmuxPath: tmuxPath, socketArgs: socketArgs, args: ["switch-client", "-c", client.tty, "-t", session])
+        }
+        return focusRexBlock(match.blockID)
     }
 
     struct RexBlockProcess: Decodable {
@@ -602,16 +618,24 @@ struct TerminalJumpService {
         let foreground: Process?
     }
 
-    // ponytail: one `rex block call` per block until a match. Batch through `rex api` if many blocks make jumps slow.
-    static func rexBlockID(
-        hostingAnyOf pids: Set<Int>,
+    /// First block hosting a PID in `preferred`, else the first block hosting
+    /// any PID in `pids`.
+    // ponytail: one `rex block call` per block. Batch through `rex api` if many blocks make jumps slow.
+    static func rexBlockMatch(
+        preferring preferred: Set<Int>,
+        among pids: Set<Int>,
         blockIDs: [String],
         process: (String) -> RexBlockProcess?
-    ) -> String? {
-        blockIDs.first { blockID in
-            guard let info = process(blockID) else { return false }
-            return [info.foreground?.pid, info.child?.pid].contains { $0.map(pids.contains) ?? false }
+    ) -> (blockID: String, pid: Int)? {
+        var fallback: (blockID: String, pid: Int)?
+        for blockID in blockIDs {
+            guard let info = process(blockID) else { continue }
+            for pid in [info.foreground?.pid, info.child?.pid].compactMap({ $0 }) where pids.contains(pid) {
+                if preferred.contains(pid) { return (blockID, pid) }
+                if fallback == nil { fallback = (blockID, pid) }
+            }
         }
+        return fallback
     }
 
     private struct RexBlockLocation: Decodable {
