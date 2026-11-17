@@ -894,6 +894,8 @@ public extension ClaudeHookPayload {
             return .kimiCLI
         case "zcode":
             return .zcode
+        case "devin":
+            return .devin
         default:
             return .claudeCode
         }

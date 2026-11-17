@@ -276,6 +276,23 @@ struct ActiveAgentProcessDiscovery {
                 continue
             }
 
+            if isDevinProcess(command: process.command) {
+                let claimKey = "devin:\(process.pid)"
+                guard claimedKeys.insert(claimKey).inserted else {
+                    continue
+                }
+
+                let lsofOutput = lsofOutput(pid: process.pid)
+                snapshots.append(ProcessSnapshot(
+                    tool: .devin,
+                    sessionID: nil,
+                    workingDirectory: lsofOutput.flatMap(workingDirectory(from:)),
+                    terminalTTY: process.terminalTTY,
+                    terminalApp: terminalApp(for: process, processesByPID: processesByPID)
+                ))
+                continue
+            }
+
             if let piAgent = piAgentVariant(command: process.command) {
                 let claimKey = "\(piAgent.rawValue):\(process.pid)"
                 guard claimedKeys.insert(claimKey).inserted else {
@@ -918,6 +935,20 @@ struct ActiveAgentProcessDiscovery {
             return false
         }
         return executableName == "node"
+    }
+
+    /// Matches the Devin CLI (`devin`) and the Devin Desktop app process.
+    /// Session IDs come from hooks, so the snapshot only anchors liveness.
+    private func isDevinProcess(command: String) -> Bool {
+        let lowered = command.lowercased()
+        guard let firstToken = lowered.split(whereSeparator: \.isWhitespace).first.map(String.init) else {
+            return false
+        }
+        let binaryName = (firstToken as NSString).lastPathComponent
+        if binaryName == "devin" {
+            return true
+        }
+        return lowered.contains("/devin.app/contents/macos/")
     }
 
     private func piAgentVariant(command: String) -> PiAgentVariant? {

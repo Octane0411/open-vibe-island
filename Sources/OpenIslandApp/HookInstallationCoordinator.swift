@@ -31,6 +31,7 @@ final class HookInstallationCoordinator {
     var grokHookStatus: GrokHookInstallationStatus?
     var zcodeHookStatus: ZCodeHookInstallationStatus?
     var hermesHookStatus: HermesHookInstallationStatus?
+    var devinHookStatus: DevinHookInstallationStatus?
     var piExtensionStatus: PiExtensionInstallationStatus?
     var ohMyPiExtensionStatus: PiExtensionInstallationStatus?
     var claudeStatusLineStatus: ClaudeStatusLineInstallationStatus?
@@ -50,6 +51,7 @@ final class HookInstallationCoordinator {
     var isGrokHookSetupBusy = false
     var isZcodeHookSetupBusy = false
     var isHermesHookSetupBusy = false
+    var isDevinHookSetupBusy = false
     var isPiSetupBusy = false
     var isOhMyPiSetupBusy = false
     var isClaudeUsageSetupBusy = false
@@ -107,6 +109,7 @@ final class HookInstallationCoordinator {
     @ObservationIgnored
     private let zcodeHookInstallationManager = ZCodeHookInstallationManager()
     private let hermesHookInstallationManager = HermesHookInstallationManager()
+    private let devinHookInstallationManager = DevinHookInstallationManager()
     private let piExtensionInstallationManager: PiExtensionInstallationManager
 
     @ObservationIgnored
@@ -182,6 +185,10 @@ final class HookInstallationCoordinator {
 
     var hermesHooksInstalled: Bool {
         hermesHookStatus?.managedHooksPresent == true
+    }
+
+    var devinHooksInstalled: Bool {
+        devinHookStatus?.managedHooksPresent == true
     }
 
     var piExtensionInstalled: Bool {
@@ -507,6 +514,34 @@ final class HookInstallationCoordinator {
         }
 
         return "no managed Hermes hooks"
+    }
+
+    var devinHookStatusTitle: String {
+        if devinHooksInstalled {
+            return "Devin hooks installed"
+        }
+
+        if hooksBinaryURL == nil {
+            return "Build OpenIslandHooks before installing"
+        }
+
+        return "Devin hooks not installed"
+    }
+
+    var devinHookStatusSummary: String {
+        guard devinHookStatus != nil else {
+            return "Reading ~/.config/devin/config.json."
+        }
+
+        if devinHooksInstalled {
+            return "managed hooks present"
+        }
+
+        if hooksBinaryURL == nil {
+            return "Build OpenIslandHooks before installing."
+        }
+
+        return "no managed Devin hooks"
     }
 
     var codexHookStatusTitle: String {
@@ -856,6 +891,16 @@ final class HookInstallationCoordinator {
 
             group.addTask { @MainActor [weak self] in
                 guard let self else { return }
+                do {
+                    let status = try self.devinHookInstallationManager.status(hooksBinaryURL: self.hooksBinaryURL)
+                    self.devinHookStatus = status
+                } catch {
+                    self.onStatusMessage?("Failed to read Devin hook status: \(error.localizedDescription)")
+                }
+            }
+
+            group.addTask { @MainActor [weak self] in
+                guard let self else { return }
                 self.loadPiExtensionStatuses()
             }
         }
@@ -1054,6 +1099,7 @@ final class HookInstallationCoordinator {
         case .pi: return !(piExtensionStatus?.isCurrent ?? false)
         case .ohMyPi: return !(ohMyPiExtensionStatus?.isCurrent ?? false)
         case .hermes: return !hermesHooksInstalled
+        case .devin: return !devinHooksInstalled
         case .claudeUsageBridge: return !claudeUsageInstalled
         }
     }
@@ -1083,6 +1129,7 @@ final class HookInstallationCoordinator {
             case .pi: return piExtensionInstalled
             case .ohMyPi: return ohMyPiExtensionInstalled
             case .hermes: return hermesHooksInstalled
+            case .devin: return devinHooksInstalled
             case .claudeUsageBridge: return claudeUsageInstalled
             }
         }
@@ -1341,6 +1388,23 @@ final class HookInstallationCoordinator {
 
     func uninstallHermesHooks() {
         updateHermesHooks(userMessage: "Removing Hermes hooks.", intent: .uninstalled) { manager in
+            try manager.uninstall()
+        }
+    }
+
+    func installDevinHooks() {
+        guard let hooksBinaryURL else {
+            onStatusMessage?("Could not find a local OpenIslandHooks binary. Build the package first.")
+            return
+        }
+
+        updateDevinHooks(userMessage: "Installing Devin hooks.", intent: .installed) { manager in
+            try manager.install(hooksBinaryURL: hooksBinaryURL)
+        }
+    }
+
+    func uninstallDevinHooks() {
+        updateDevinHooks(userMessage: "Removing Devin hooks.", intent: .uninstalled) { manager in
             try manager.uninstall()
         }
     }
@@ -1726,6 +1790,34 @@ final class HookInstallationCoordinator {
                 }
             } catch {
                 self.onStatusMessage?("Hermes hook update failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func updateDevinHooks(
+        userMessage: String,
+        intent: AgentHookIntent,
+        operation: @escaping (DevinHookInstallationManager) throws -> DevinHookInstallationStatus
+    ) {
+        isDevinHookSetupBusy = true
+        onStatusMessage?(userMessage)
+
+        Task { [weak self] in
+            guard let self else { return }
+
+            defer { self.isDevinHookSetupBusy = false }
+
+            do {
+                let status = try operation(self.devinHookInstallationManager)
+                self.devinHookStatus = status
+                self.intentStore.setIntent(intent, for: .devin)
+                if status.managedHooksPresent {
+                    self.onStatusMessage?("Devin hooks are installed and ready.")
+                } else {
+                    self.onStatusMessage?("Devin hooks are not installed.")
+                }
+            } catch {
+                self.onStatusMessage?("Devin hook update failed: \(error.localizedDescription)")
             }
         }
     }

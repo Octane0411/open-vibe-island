@@ -51,7 +51,7 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 
 ## 支持的 Agents 和终端
 
-**15 个 Agents**：Claude Code、Codex、Cursor、Gemini CLI、Grok Build、Kimi CLI、OpenCode、Pi、Oh My Pi、Qoder、Qwen Code、Factory、CodeBuddy、ZCode、Hermes Agent
+**16 个 Agents**：Claude Code、Codex、Cursor、Gemini CLI、Grok Build、Kimi CLI、OpenCode、Pi、Oh My Pi、Qoder、Qwen Code、Factory、CodeBuddy、ZCode、Hermes Agent、Devin
 
 **15+ 终端和 IDE**：Terminal.app、Ghostty、iTerm2、WezTerm、Zellij、tmux、cmux、Kaku、VS Code、Cursor、Windsurf、Trae、Zed、JetBrains 全家桶（IDEA、WebStorm、PyCharm、GoLand、CLion、RubyMine、PhpStorm、Rider、RustRover）
 
@@ -75,6 +75,7 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 | **Kimi CLI** | 已支持 | Hook 集成，通过 `~/.kimi/config.toml` 的 `[[hooks]]` 数组配置，会话追踪，复用 Claude payload 协议 |
 | **Grok Build** | 已支持 | Hook 集成，写入 `~/.grok/hooks/open-island.json`，会话追踪与终端跳回，fire-and-forget 事件（暂无权限拦截；camelCase payload） |
 | **Hermes Agent** | 已支持 | Hook 集成，写入 `~/.hermes/config.yaml` 的 `hooks:` 块，会话追踪、turn 完成卡片、HITL 问题/审批卡片（clarify / pre_approval_request），fire-and-forget |
+| **Devin** | 已支持 | Hook 集成，写入 `~/.config/devin/config.json` 的 `hooks`（Devin CLI 与 Desktop）。stdin 与 Claude 兼容，使用 `--source devin`；覆盖生命周期、工具和权限事件 |
 | **Pi** | 已支持 | TypeScript 扩展，位于 `~/.pi/agent/extensions/open-island.ts`，会话/提示词/工具/完成事件追踪，进程检测，会话持久化，终端跳转 |
 | **Oh My Pi (OMP)** | 已支持 | TypeScript 扩展，位于 `~/.omp/agent/extensions/open-island.ts`，同等生命周期覆盖，适配 OMP 事件别名 |
 | **ZCode** | 已支持 | Hook 集成，写入 `~/.zcode/cli/config.json` 的 `hooks.events`（ZCode Desktop）。payload 与 Claude Code 兼容，复用 Claude 解码路径；仅注册生命周期事件（SessionStart、UserPromptSubmit、Stop）；进程存活跟随 ZCode.app（同 Codex.app 模式） |
@@ -328,6 +329,14 @@ AI coding 正在成为日常开发流程的一部分，但围绕它的控制层�
   swift run OpenIslandSetup installHermes    # 写入 ~/.hermes/config.yaml 的 hooks 块
   swift run OpenIslandSetup statusHermes     # 查看受管 hooks 是否已安装
   swift run OpenIslandSetup uninstallHermes  # 移除受管条目，保留用户自建 hooks
+  ```
+
+- **Devin** — 基于 hook 的集成，写入 `~/.config/devin/config.json` 的 `hooks`（Devin CLI 与 Devin Desktop）。stdin payload 与 Claude Code 兼容，因此 Open Island 通过 `--source devin` 复用 Claude 解码路径，权限回复则写成 Devin 的 `decision` JSON。受管安装注册 `SessionStart`、`SessionEnd`、`UserPromptSubmit`、`Stop`、`PreToolUse`、`PostToolUse` 和 `PermissionRequest`，并保留配置文件里的其他键和用户自建 hooks。matcher 省略，因为 Devin 把 matcher 当作正则。云端会话的 hook 跑在远端虚拟机上，这次安装只覆盖本机 CLI 和 Desktop。如果 Devin 仍会读取 `~/.claude/settings.json`，那些 Claude hooks 也会触发，会话会显示成 Claude Code。可在设置的安装页安装，或通过 CLI：
+
+  ```sh
+  swift run OpenIslandSetup installDevin
+  swift run OpenIslandSetup statusDevin
+  swift run OpenIslandSetup uninstallDevin
   ```
 
 ### 终端支持

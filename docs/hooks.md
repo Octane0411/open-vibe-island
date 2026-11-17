@@ -1,6 +1,6 @@
 # Hook System
 
-OpenIsland receives lifecycle events from managed hook CLIs and runtime extensions. Codex, Claude-family agents, Gemini CLI, Grok Build, Kimi CLI, and ZCode invoke `OpenIslandHooks`; Pi and Oh My Pi load a TypeScript extension. Both paths forward typed payloads to the app over its Unix socket. Hook sources that support blocking can receive directives on stdout; Pi-family extensions are fire-and-forget.
+OpenIsland receives lifecycle events from managed hook CLIs and runtime extensions. Codex, Claude-family agents, Gemini CLI, Grok Build, Kimi CLI, ZCode, and Devin invoke `OpenIslandHooks`; Pi and Oh My Pi load a TypeScript extension. Both paths forward typed payloads to the app over its Unix socket. Hook sources that support blocking can receive directives on stdout; Pi-family extensions are fire-and-forget.
 
 ## Architecture
 
@@ -375,6 +375,8 @@ Jump-back metadata (terminal app, terminal session ID, TTY) is read from the age
 | Gemini CLI | All events | Bridge default |
 | Grok Build | All managed events | **45 seconds** |
 | ZCode | All managed events | **45 seconds** (shared Claude-format path) |
+| Devin | `PermissionRequest` | **24 hours** (shared Claude-format wait) |
+| Devin | All other managed events | **45 seconds** |
 | Pi / Oh My Pi | Heartbeat liveness | **45 seconds** |
 
 ---
@@ -462,6 +464,44 @@ ZCode additionally supports blocking events (`PreToolUse`, `PermissionRequest`, 
 - ZCode is an Electron desktop app: all sessions share one `ZCode.app` process. Process discovery matches the app process (and its embedded engine at `…/ZCode.app/Contents/Resources/glm/zcode.cjs`) and reports a single snapshot; per-session liveness is hook-driven.
 - While any zcode process is alive, Open Island keeps tracked ZCode sessions in the process-alive set (same conservative fallback as Kimi).
 - `transcript_path` in ZCode payloads points at a hook-runtime temporary file that is deleted after the hook completes; Open Island does not depend on it.
+
+## Devin Hooks (`--source devin`)
+
+**Payload type**: `ClaudeHookPayload` (shared with Claude Code)
+**Source**: [`Sources/OpenIslandCore/DevinHookInstaller.swift`](../Sources/OpenIslandCore/DevinHookInstaller.swift)
+
+Devin CLI and Devin Desktop read a Claude-shaped `hooks` object from `~/.config/devin/config.json`. Stdin is Claude-compatible (`hook_event_name`, `session_id`, `cwd`, `tool_name`, `tool_input`), so the runtime reuses the Claude decode path. Permission replies are translated to Devin's top-level `{"decision":"approve"|"block"}` JSON.
+
+The matcher is a regex. Managed entries omit it so every tool matches. Claude's `"*"` matcher is not written.
+
+### Events (managed install)
+
+| Event | Matcher | Current OpenIsland behavior |
+|---|---|---|
+| `SessionStart` | omitted | Creates or re-opens the Devin session |
+| `SessionEnd` | omitted | Ends the session |
+| `UserPromptSubmit` | omitted | Updates the prompt |
+| `Stop` | omitted | Settles the turn |
+| `PreToolUse` | omitted | Tool activity and optional block |
+| `PostToolUse` | omitted | Tool completion |
+| `PermissionRequest` | omitted | Approval card; the hook waits and replies with `decision` |
+
+`PostCompaction` is not installed.
+
+### Lifecycle / liveness notes
+
+- Local CLI and Desktop only. Cloud sessions run the hook command on a remote VM, where the local `OpenIslandHooks` path does not exist.
+- Process discovery treats a `devin` binary or `Devin.app` as one liveness anchor. Session identity comes from `session_id`.
+- Devin also loads `~/.claude/settings.json` when `read_config_from.claude` is enabled. Those entries stay `--source claude` and surface as Claude Code.
+
+```bash
+swift run OpenIslandSetup installDevin
+swift run OpenIslandSetup statusDevin
+swift run OpenIslandSetup uninstallDevin
+```
+
+Or use **Settings → Setup → Devin** in the app.
+
 ## Hermes Agent Hooks (`--source hermes`)
 
 **Payload type**: `HermesHookPayload`

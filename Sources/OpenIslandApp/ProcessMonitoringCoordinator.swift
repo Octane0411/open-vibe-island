@@ -604,6 +604,14 @@ final class ProcessMonitoringCoordinator {
             }
         }
 
+        let hasDevinProcess = activeProcesses.contains { $0.tool == .devin }
+        if hasDevinProcess {
+            for session in sessions
+            where session.tool == .devin && !session.isDemoSession && !session.isSessionEnded {
+                aliveIDs.insert(session.id)
+            }
+        }
+
         // Cursor sessions: prefer concrete cursor-agent processes when they
         // are visible (Cursor CLI / integrated terminal), then fall back to
         // app-level liveness for IDE-only hook sessions where there is no
@@ -1636,6 +1644,8 @@ final class ProcessMonitoringCoordinator {
             return "ZCode \(session.id.prefix(8))"
         case .hermes:
             return "Hermes \(session.id.prefix(8))"
+        case .devin:
+            return "Devin \(session.id.prefix(8))"
         }
     }
 }

@@ -430,6 +430,7 @@ struct SetupSettingsPane: View {
     @State private var confirmingUninstallPi = false
     @State private var confirmingUninstallOhMyPi = false
     @State private var confirmingUninstallHermes = false
+    @State private var confirmingUninstallDevin = false
     @State private var confirmingUninstallClaudeUsage = false
 
     private var lang: LanguageManager { model.lang }
@@ -702,6 +703,23 @@ struct SetupSettingsPane: View {
                 } message: {
                     Text("This will remove Open Island hooks from ~/.hermes/config.yaml.")
                 }
+
+                hookRow(
+                    name: "Devin",
+                    installed: model.devinHooksInstalled,
+                    busy: model.isDevinHookSetupBusy,
+                    configLocationURL: devinHookConfigURL,
+                    installAction: { model.installDevinHooks() },
+                    uninstallAction: { confirmingUninstallDevin = true }
+                )
+                .alert(lang.t("settings.general.uninstallConfirmTitle"), isPresented: $confirmingUninstallDevin) {
+                    Button(lang.t("settings.general.uninstallConfirmAction"), role: .destructive) {
+                        model.uninstallDevinHooks()
+                    }
+                    Button(lang.t("settings.general.cancel"), role: .cancel) {}
+                } message: {
+                    Text("This will remove Open Island hooks from ~/.config/devin/config.json.")
+                }
             }
 
             Section {
@@ -782,6 +800,7 @@ struct SetupSettingsPane: View {
                     if !model.grokHooksInstalled { model.installGrokHooks() }
                     if !model.zcodeHooksInstalled { model.installZcodeHooks() }
                     if !model.hermesHooksInstalled { model.installHermesHooks() }
+                    if !model.devinHooksInstalled { model.installDevinHooks() }
                     if !model.piExtensionInstalled { model.installPiExtension() }
                     if !model.ohMyPiExtensionInstalled { model.installOhMyPiExtension() }
                     if !model.claudeUsageInstalled { model.installClaudeUsageBridge() }
@@ -847,7 +866,7 @@ struct SetupSettingsPane: View {
             && model.qoderHooksInstalled && model.qwenCodeHooksInstalled && model.factoryHooksInstalled && model.codebuddyHooksInstalled
             && model.cursorHooksInstalled && model.geminiHooksInstalled && model.kimiHooksInstalled
             && model.grokHooksInstalled && model.zcodeHooksInstalled
-            && model.grokHooksInstalled && model.hermesHooksInstalled
+            && model.grokHooksInstalled && model.hermesHooksInstalled && model.devinHooksInstalled
             && model.piExtensionInstalled && model.ohMyPiExtensionInstalled && model.claudeUsageInstalled
     }
 
@@ -890,6 +909,10 @@ struct SetupSettingsPane: View {
     private var hermesHookConfigURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".hermes/config.yaml")
+    }
+
+    private var devinHookConfigURL: URL {
+        DevinHookInstallationManager.defaultDirectory.appendingPathComponent("config.json")
     }
 
     private var hasErrors: Bool {

@@ -21,10 +21,11 @@ struct OpenIslandHooksCLI {
         case grok
         case zcode
         case hermes
+        case devin
 
         var isClaudeFormat: Bool {
             switch self {
-            case .claude, .qoder, .qwen, .factory, .droid, .codebuddy, .kimi, .zcode:
+            case .claude, .qoder, .qwen, .factory, .droid, .codebuddy, .kimi, .zcode, .devin:
                 return true
             case .codex, .cursor, .gemini, .grok, .hermes:
                 return false
@@ -69,7 +70,7 @@ struct OpenIslandHooksCLI {
                 if let output = try CodexHookOutputEncoder.standardOutput(for: response) {
                     FileHandle.standardOutput.write(output)
                 }
-            case .claude, .qoder, .qwen, .factory, .droid, .codebuddy, .kimi, .zcode:
+            case .claude, .qoder, .qwen, .factory, .droid, .codebuddy, .kimi, .zcode, .devin:
                 var payload = try decoder
                     .decode(ClaudeHookPayload.self, from: input)
                     .withRuntimeContext(environment: ProcessInfo.processInfo.environment)
@@ -80,11 +81,16 @@ struct OpenIslandHooksCLI {
                     : 45
 
                 guard let response = try? client.send(.processClaudeHook(payload), timeout: timeout) else {
-                    logStderr("bridge unavailable for claude hook (\(payload.hookEventName.rawValue))")
+                    logStderr("bridge unavailable for \(sourceString ?? "claude") hook (\(payload.hookEventName.rawValue))")
                     return
                 }
 
-                if let output = try ClaudeHookOutputEncoder.standardOutput(for: response) {
+                let output = if source == .devin {
+                    try DevinHookOutputEncoder.standardOutput(for: response)
+                } else {
+                    try ClaudeHookOutputEncoder.standardOutput(for: response)
+                }
+                if let output {
                     FileHandle.standardOutput.write(output)
                 }
             case .cursor:

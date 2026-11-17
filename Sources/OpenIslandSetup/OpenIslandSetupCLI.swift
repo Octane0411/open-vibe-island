@@ -37,6 +37,9 @@ private struct SetupCommand {
         case installHermes
         case uninstallHermes
         case statusHermes
+        case installDevin
+        case uninstallDevin
+        case statusDevin
     }
 
     let action: Action
@@ -46,6 +49,7 @@ private struct SetupCommand {
     let grokDirectory: URL
     let zcodeDirectory: URL
     let hermesDirectory: URL
+    let devinDirectory: URL
     let hooksBinary: URL?
 
     init(arguments: [String]) throws {
@@ -63,6 +67,7 @@ private struct SetupCommand {
         var grokDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".grok", isDirectory: true)
         var zcodeDirectory = ZCodeHookInstallationManager.defaultDirectory
         var hermesDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".hermes", isDirectory: true)
+        var devinDirectory = DevinHookInstallationManager.defaultDirectory
 
         var index = 1
         while index < arguments.count {
@@ -116,6 +121,13 @@ private struct SetupCommand {
                 }
                 hermesDirectory = URL(fileURLWithPath: arguments[index]).standardizedFileURL
 
+            case "--devin-dir":
+                index += 1
+                guard index < arguments.count else {
+                    throw SetupError.missingValue("--devin-dir")
+                }
+                devinDirectory = URL(fileURLWithPath: arguments[index]).standardizedFileURL
+
             default:
                 throw SetupError.unexpectedArgument(arguments[index])
             }
@@ -123,7 +135,7 @@ private struct SetupCommand {
             index += 1
         }
 
-        if (action == .install || action == .installClaude || action == .installKimi || action == .installGrok || action == .installZcode || action == .installHermes), hooksBinary == nil {
+        if (action == .install || action == .installClaude || action == .installKimi || action == .installGrok || action == .installZcode || action == .installHermes || action == .installDevin), hooksBinary == nil {
             hooksBinary = HooksBinaryLocator.locate()
         }
 
@@ -133,6 +145,7 @@ private struct SetupCommand {
         self.grokDirectory = grokDirectory
         self.zcodeDirectory = zcodeDirectory
         self.hermesDirectory = hermesDirectory
+        self.devinDirectory = devinDirectory
         self.hooksBinary = hooksBinary
     }
 
@@ -174,6 +187,12 @@ private struct SetupCommand {
             try uninstallHermes()
         case .statusHermes:
             try statusHermes()
+        case .installDevin:
+            try installDevin()
+        case .uninstallDevin:
+            try uninstallDevin()
+        case .statusDevin:
+            try statusDevin()
         }
     }
 
@@ -438,6 +457,44 @@ private struct SetupCommand {
             print("Manifest: missing")
         }
     }
+
+    private func installDevin() throws {
+        guard let hooksBinary else {
+            throw SetupError.usage
+        }
+
+        let manager = DevinHookInstallationManager(devinDirectory: devinDirectory)
+        let status = try manager.install(hooksBinaryURL: hooksBinary)
+
+        print("Installed Open Island Devin hooks.")
+        print("Devin dir: \(status.devinDirectory.path)")
+        print("Config: \(status.configURL.path)")
+        print("Hooks binary: \(hooksBinary.path)")
+    }
+
+    private func uninstallDevin() throws {
+        let manager = DevinHookInstallationManager(devinDirectory: devinDirectory)
+        let status = try manager.uninstall()
+
+        print("Removed Open Island Devin hooks.")
+        print("Devin dir: \(status.devinDirectory.path)")
+        print("Config: \(status.configURL.path)")
+    }
+
+    private func statusDevin() throws {
+        let manager = DevinHookInstallationManager(devinDirectory: devinDirectory)
+        let status = try manager.status(hooksBinaryURL: hooksBinary)
+
+        print("Devin dir: \(status.devinDirectory.path)")
+        print("Config: \(status.configURL.path)")
+        print("Managed hooks present: \(status.managedHooksPresent ? "yes" : "no")")
+        if let manifest = status.manifest {
+            print("Manifest: present")
+            print("Hook command: \(manifest.hookCommand)")
+        } else {
+            print("Manifest: missing")
+        }
+    }
 }
 
 private enum SetupError: Error, LocalizedError {
@@ -468,6 +525,9 @@ private enum SetupError: Error, LocalizedError {
               swift run OpenIslandSetup installHermes [--hooks-binary /abs/path/to/OpenIslandHooks] [--hermes-dir /abs/path/to/.hermes]
               swift run OpenIslandSetup uninstallHermes [--hermes-dir /abs/path/to/.hermes]
               swift run OpenIslandSetup statusHermes [--hooks-binary /abs/path/to/OpenIslandHooks] [--hermes-dir /abs/path/to/.hermes]
+              swift run OpenIslandSetup installDevin [--hooks-binary /abs/path/to/OpenIslandHooks] [--devin-dir /abs/path/to/.config/devin]
+              swift run OpenIslandSetup uninstallDevin [--devin-dir /abs/path/to/.config/devin]
+              swift run OpenIslandSetup statusDevin [--hooks-binary /abs/path/to/OpenIslandHooks] [--devin-dir /abs/path/to/.config/devin]
             """
         case let .missingValue(flag):
             "Missing value for \(flag)"

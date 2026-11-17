@@ -135,7 +135,9 @@ final class AppModel {
     var geminiHookStatusTitle: String { hooks.geminiHookStatusTitle }
     var geminiHookStatusSummary: String { hooks.geminiHookStatusSummary }
     var hermesHooksInstalled: Bool { hooks.hermesHooksInstalled }
+    var devinHooksInstalled: Bool { hooks.devinHooksInstalled }
     var isHermesHookSetupBusy: Bool { hooks.isHermesHookSetupBusy }
+    var isDevinHookSetupBusy: Bool { hooks.isDevinHookSetupBusy }
     var hermesHookStatus: HermesHookInstallationStatus? { hooks.hermesHookStatus }
     var hermesHookStatusTitle: String { hooks.hermesHookStatusTitle }
     var hermesHookStatusSummary: String { hooks.hermesHookStatusSummary }
@@ -187,6 +189,7 @@ final class AppModel {
             || hooks.grokHooksInstalled
             || hooks.zcodeHooksInstalled
             || hooks.hermesHooksInstalled
+            || hooks.devinHooksInstalled
             || hooks.piExtensionInstalled
             || hooks.ohMyPiExtensionInstalled
     }
@@ -227,6 +230,8 @@ final class AppModel {
     func uninstallZcodeHooks() { hooks.uninstallZcodeHooks() }
     func installHermesHooks() { hooks.installHermesHooks() }
     func uninstallHermesHooks() { hooks.uninstallHermesHooks() }
+    func installDevinHooks() { hooks.installDevinHooks() }
+    func uninstallDevinHooks() { hooks.uninstallDevinHooks() }
     func refreshPiExtensionStatuses() { hooks.refreshPiExtensionStatuses() }
     func installPiExtension() { hooks.installPiExtension() }
     func uninstallPiExtension() { hooks.uninstallPiExtension() }
@@ -1738,6 +1743,7 @@ final class AppModel {
             if self.hooks.shouldAutoInstall(.grok) { self.installGrokHooks() }
             if self.hooks.shouldAutoInstall(.zcode) { self.installZcodeHooks() }
             if self.hooks.shouldAutoInstall(.hermes) { self.installHermesHooks() }
+            if self.hooks.shouldAutoInstall(.devin) { self.installDevinHooks() }
             if self.hooks.shouldAutoInstall(.claudeUsageBridge) { self.installClaudeUsageBridge() }
 
             // Run health checks after install to detect stale paths, conflicts, etc.

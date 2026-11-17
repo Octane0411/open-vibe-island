@@ -51,7 +51,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 
 ## Supported Agents & Terminals
 
-**15 agents**: Claude Code, Codex, Cursor, Gemini CLI, Grok Build, Kimi CLI, OpenCode, Pi, Oh My Pi, Qoder, Qwen Code, Factory, CodeBuddy, ZCode, Hermes Agent
+**16 agents**: Claude Code, Codex, Cursor, Gemini CLI, Grok Build, Kimi CLI, OpenCode, Pi, Oh My Pi, Qoder, Qwen Code, Factory, CodeBuddy, ZCode, Hermes Agent, Devin
 
 **15+ terminals & IDEs**: Terminal.app, Ghostty, iTerm2, WezTerm, Zellij, tmux, cmux, Kaku, VS Code, Cursor, Windsurf, Trae, Zed, JetBrains IDEs (IDEA, WebStorm, PyCharm, GoLand, CLion, RubyMine, PhpStorm, Rider, RustRover)
 
@@ -76,6 +76,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 | **Kimi CLI** | Supported | Hook integration via `~/.kimi/config.toml` `[[hooks]]`, session tracking, permission flow (reuses Claude payload) |
 | **Grok Build** | Supported | Hook integration via `~/.grok/hooks/open-island.json`, session tracking, terminal jump-back, fire-and-forget events (no permission round-trip yet; camelCase payload) |
 | **Hermes Agent** | Supported | Hook integration via `hooks:` block in `~/.hermes/config.yaml`, session tracking, turn completion cards, HITL question/approval cards (clarify / pre_approval_request), fire-and-forget |
+| **Devin** | Supported | Hook integration via the `hooks` key in `~/.config/devin/config.json` (Devin CLI and Desktop). Claude-compatible stdin payload with `--source devin`; lifecycle, tool, and permission events |
 | **Pi** | Supported | TypeScript extension at `~/.pi/agent/extensions/open-island.ts`; session, prompt, tool, completion, process-discovery, persistence, and terminal jump tracking |
 | **Oh My Pi (OMP)** | Supported | TypeScript extension at `~/.omp/agent/extensions/open-island.ts`; the same lifecycle coverage adapted to OMP event aliases |
 | **ZCode** | Supported | Hook integration via `~/.zcode/cli/config.json` `hooks.events` (ZCode Desktop). Claude-compatible payload reuses the Claude decode path; lifecycle-only event set (SessionStart, UserPromptSubmit, Stop); app-process liveness like Codex.app |
@@ -326,6 +327,14 @@ Developers who already live in the terminal and want a better way to work with c
   swift run OpenIslandSetup installHermes    # write hooks block into ~/.hermes/config.yaml
   swift run OpenIslandSetup statusHermes     # report whether managed hooks are present
   swift run OpenIslandSetup uninstallHermes  # remove managed entries, preserve user-authored hooks
+  ```
+
+- **Devin** — Hook-based integration via the `hooks` key in `~/.config/devin/config.json` (Devin CLI and Devin Desktop). Payloads are Claude Code compatible on stdin, so Open Island reuses the Claude decode path behind `--source devin` and writes Devin's `decision` JSON for permission replies. The managed install registers `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `Stop`, `PreToolUse`, `PostToolUse`, and `PermissionRequest`, and preserves other config keys plus user-authored hooks. Matchers are omitted because Devin treats a matcher as a regex. Cloud sessions run hooks on a remote VM, so this install covers local CLI and Desktop only. If Devin still loads `~/.claude/settings.json`, those Claude hooks can also fire and show up as Claude Code. Manage installation from Settings → Setup, or via CLI:
+
+  ```sh
+  swift run OpenIslandSetup installDevin
+  swift run OpenIslandSetup statusDevin
+  swift run OpenIslandSetup uninstallDevin
   ```
 
 ### Terminal Support
