@@ -85,7 +85,7 @@ Open Island 驻留在 Mac 的**刘海区域**（或顶部栏），为你的 AI c
 | **Terminal.app** | 完整 | Jump-back，TTY 定位 |
 | **Ghostty** | 完整 | Jump-back，ID 匹配 |
 | **cmux** | 完整 | Jump-back，Unix socket API |
-| **Rex** | 完整 | Jump-back，`rex block focus` |
+| **Rex** | 完整 | Jump-back，`rex block focus`。需在 Rex 设置 > Rex Server 中开启 Remote Control，jump-back 才能切换到正确的会话 |
 | **Kaku** | 完整 | Jump-back，CLI pane 定位 |
 | **WezTerm** | 完整 | Jump-back，CLI pane 定位 |
 | **iTerm2** | 完整 | Jump-back，session ID / TTY 匹配 |

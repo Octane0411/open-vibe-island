@@ -86,7 +86,7 @@ Think of it as an open-source [Vibe Island](https://vibeisland.app/) — **free,
 | **Terminal.app** | Full | Jump-back with TTY targeting |
 | **Ghostty** | Full | Jump-back with ID matching |
 | **cmux** | Full | Jump-back via Unix socket API |
-| **Rex** | Full | Jump-back via `rex block focus` |
+| **Rex** | Full | Jump-back via `rex block focus`. Turn on Remote Control (Rex Settings > Rex Server) so jump-back can switch to the correct session |
 | **Kaku** | Full | Jump-back via CLI pane targeting |
 | **WezTerm** | Full | Jump-back via CLI pane targeting |
 | **iTerm2** | Full | Jump-back with session ID / TTY matching |
