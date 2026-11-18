@@ -658,13 +658,14 @@ struct TerminalJumpService {
 
     /// Runs the rex CLI and returns stdout, or nil on failure. The CLI scopes
     /// block lookups to REX_SESSION, which Open Island inherits when it is
-    /// launched from a Rex shell, so clear the Rex location variables.
+    /// launched from a Rex shell, so clear the Rex location variables. Clear
+    /// REX_SERVER too, so the CLI always uses its default local server.
     private static func runRex(_ arguments: [String]) -> Data? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: rexCLIPath)
         process.arguments = ["--autostart=false", "--timeout", "2s"] + arguments
         process.environment = ProcessInfo.processInfo.environment.filter {
-            !["REX_SESSION", "REX_WINDOW", "REX_BLOCK", "REX_CLIENT"].contains($0.key)
+            !["REX_SESSION", "REX_WINDOW", "REX_BLOCK", "REX_CLIENT", "REX_SERVER"].contains($0.key)
         }
         let pipe = Pipe()
         process.standardOutput = pipe
