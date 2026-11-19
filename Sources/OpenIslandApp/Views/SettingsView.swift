@@ -1027,11 +1027,11 @@ struct SetupSettingsPane: View {
                     HStack(spacing: 4) {
                         Image(systemName: updateAvailable ? "arrow.triangle.2.circlepath.circle.fill" : "checkmark.circle.fill")
                             .foregroundStyle(updateAvailable ? .orange : .green)
-                        Text(updateAvailable ? lang.t("settings.general.install") : lang.t("settings.general.activated"))
+                        Text(updateAvailable ? lang.t("settings.general.updateAvailable") : lang.t("settings.general.activated"))
                             .foregroundStyle(.secondary)
                     }
                     if updateAvailable {
-                        Button(lang.t("settings.general.install")) {
+                        Button(lang.t("settings.general.update")) {
                             installAction()
                         }
                         .font(.caption)

@@ -31,6 +31,8 @@
 "settings.general.completionReply" = "在完成卡片中回复";
 "settings.general.cliHooks" = "CLI Hooks";
 "settings.general.activated" = "已激活";
+"settings.general.updateAvailable" = "有可用更新";
+"settings.general.update" = "更新";
 "settings.general.install" = "安装";
 "settings.general.uninstall" = "卸载";
 "settings.general.uninstallConfirmTitle" = "确认卸载 Hooks？";
