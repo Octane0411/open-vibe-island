@@ -69,13 +69,31 @@ const formServer = createHttpServer((request, response) => {
   });
 });
 
+const queuedEvents = [];
 const waiters = [];
 function pushEvent(event) {
-  for (const waiter of waiters.splice(0)) waiter(event);
+  if (waiters.length > 0) {
+    waiters.shift()(event);
+  } else {
+    queuedEvents.push(event);
+  }
 }
-async function* subscribe() {
-  while (true) {
-    yield await new Promise((resolve) => waiters.push(resolve));
+async function* subscribe({ signal } = {}) {
+  while (!signal?.aborted) {
+    if (queuedEvents.length > 0) {
+      yield queuedEvents.shift();
+      continue;
+    }
+    const next = await new Promise((resolve) => {
+      const onAbort = () => resolve(null);
+      signal?.addEventListener("abort", onAbort, { once: true });
+      waiters.push((event) => {
+        signal?.removeEventListener("abort", onAbort);
+        resolve(event);
+      });
+    });
+    if (next === null) return;
+    yield next;
   }
 }
 

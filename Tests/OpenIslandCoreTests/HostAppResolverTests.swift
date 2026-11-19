@@ -10,6 +10,8 @@ struct HostAppResolverTests {
             containing: "/Applications/Yab.app/Contents/Frameworks/Yab Helper.app/Contents/MacOS/Yab Helper"
         )?.path == "/Applications/Yab.app")
         #expect(HostAppResolver.outermostAppBundle(containing: "/opt/homebrew/bin/fish") == nil)
+        #expect(HostAppResolver.outermostAppBundle(containing: "/Users/u/project.app/bin/runner") == nil)
+        #expect(HostAppResolver.outermostAppBundle(containing: "/Applications/Codex.app/Contents/Resources/codex") == nil)
     }
 
     @Test

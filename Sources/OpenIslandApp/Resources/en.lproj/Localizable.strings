@@ -31,6 +31,8 @@
 "settings.general.completionReply" = "Reply from completion card";
 "settings.general.cliHooks" = "CLI Hooks";
 "settings.general.activated" = "Activated";
+"settings.general.updateAvailable" = "Update available";
+"settings.general.update" = "Update";
 "settings.general.install" = "Install";
 "settings.general.uninstall" = "Uninstall";
 "settings.general.uninstallConfirmTitle" = "Uninstall Hooks?";

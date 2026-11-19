@@ -466,6 +466,9 @@ function claimEvent(state, id) {
 function sessionState(state, sessionID) {
   if (!state.sessions.has(sessionID)) {
     state.sessions.set(sessionID, { cwd: "", lastAssistantText: "", lookedUp: false });
+    if (state.sessions.size > 500) {
+      state.sessions.delete(state.sessions.keys().next().value);
+    }
   }
   return state.sessions.get(sessionID);
 }
@@ -599,6 +602,7 @@ async function formRequest(endpoint, method, path, body) {
     const response = await fetch(new URL(path, endpoint.url), {
       method,
       headers,
+      signal: AbortSignal.timeout(10000),
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     if (!response.ok) {
@@ -779,7 +783,9 @@ function setupOpenCodeV2(ctx) {
       const response = await ctx.session.get({ sessionID });
       const info = response?.data ?? response;
       if (info?.location?.directory) session.cwd = info.location.directory;
-    } catch {}
+    } catch {
+      session.lookedUp = false;
+    }
   }
 
   function settlePermission(requestID, sessionID, directive) {
@@ -874,14 +880,29 @@ function setupOpenCodeV2(ctx) {
 
   const controller = new AbortController();
   // setup() is awaited before the plugin counts as loaded, so consume the stream
-  // in the background and stop it from the cleanup below.
+  // in the background and stop it from the cleanup below. Resubscribe with
+  // bounded backoff if the transport closes unexpectedly.
   void (async () => {
-    try {
-      for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
-        await handle(event);
+    let delay = 1000;
+    while (!controller.signal.aborted) {
+      try {
+        for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+          delay = 1000;
+          await handle(event);
+        }
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        debugLog(`V2 STREAM ERROR: ${String(error)}`);
       }
-    } catch (error) {
-      if (!controller.signal.aborted) debugLog(`V2 STREAM ERROR: ${String(error)}`);
+      if (controller.signal.aborted) return;
+      await new Promise((resolve) => {
+        const timer = setTimeout(resolve, delay);
+        controller.signal.addEventListener("abort", () => {
+          clearTimeout(timer);
+          resolve();
+        }, { once: true });
+      });
+      delay = Math.min(delay * 2, 30000);
     }
   })();
 

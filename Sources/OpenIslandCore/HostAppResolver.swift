@@ -17,8 +17,14 @@ public enum HostAppResolver {
     }
 
     /// The outermost bundle wins so Electron/Chromium helpers resolve to their host app.
+    /// Require `.app/Contents/` so non-bundle directories named `*.app` do not match, and
+    /// skip bundled CLI binaries under `Contents/Resources/` (for example Codex.app's
+    /// bundled `codex` CLI) so ancestry lookup continues to the real host terminal.
     static func outermostAppBundle(containing executablePath: String) -> URL? {
-        guard let range = executablePath.range(of: ".app/") else { return nil }
+        guard let range = executablePath.range(of: ".app/Contents/") else { return nil }
+        if executablePath[range.upperBound...].hasPrefix("Resources/") {
+            return nil
+        }
         return URL(fileURLWithPath: String(executablePath[..<range.lowerBound]) + ".app")
     }
 
