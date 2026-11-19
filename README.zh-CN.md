@@ -22,6 +22,7 @@
 <p align="center">
   <a href="https://github.com/Octane0411/open-vibe-island/releases">下载</a> ·
   <a href="#快速开始">快速开始</a> ·
+  <a href="#赞助支持">赞助支持</a> ·
   <a href="docs/roadmap.zh-CN.md">路线图</a> ·
   <a href="CONTRIBUTING.zh-CN.md">参与贡献</a>
 </p>
@@ -173,6 +174,25 @@ Hooks **fail open**——如果 Open Island 没在运行，你的 agents 不受�
 
 </details>
 
+## 赞助支持
+
+<!-- SPONSORS:START -->
+<div align="center">
+  <a href="mailto:wdznb1@gmail.com?subject=Open%20Island%20%E8%B5%9E%E5%8A%A9%E5%90%88%E4%BD%9C">
+    <img src="docs/images/sponsor-cta.svg" alt="赞助 Open Island" width="440">
+  </a>
+  <p>
+    欢迎赞助支持 Open Island 的持续开源维护，触达每天深度使用 <strong>Claude Code、Codex、Cursor</strong> 等 15 款编程 Agent 的 macOS 开发者群体。
+  </p>
+  <p>
+    提供 <strong>Featured Sponsor</strong>（<code>440px</code> 独立展示卡 + 简介 + 链接）与 <strong>Standard Sponsor</strong> 赞助展示位，<strong>中英文双语 README 同步曝光</strong>。<br>
+    商务与赞助合作请联系：<a href="mailto:wdznb1@gmail.com?subject=Open%20Island%20%E8%B5%9E%E5%8A%A9%E5%90%88%E4%BD%9C">wdznb1@gmail.com</a>
+  </p>
+</div>
+<!-- SPONSORS:END -->
+
+<sub>注：赞助展示仅用于支持开源项目维护，不影响 Open Island 纯本地运行、无遥测的产品中立性。</sub>
+
 ## 社区
 
 加入 **Discord** 参与讨论、反馈和更快的问题响应：
@@ -274,7 +294,7 @@ AI coding 正在成为日常开发流程的一部分，但围绕它的控制层�
 - **Codex CLI** — Hook 集成。Codex CLI 受管安装器默认只安装 `SessionStart`、`UserPromptSubmit` 和 `Stop`，以保持终端输出低噪声。Open Island 可以解析手动配置的 `PreToolUse` / `PostToolUse` 等更细粒度 Codex hook 事件，但这些事件不属于默认受管安装范围。Codex 文件编辑可能走内部 apply-patch 路径，因此不应把文件编辑审批描述为稳定的 `PreToolUse` 覆盖能力。从本地 rollout 文件读取 5 小时和 7 天 account usage windows。支持从设置窗口或 CLI 安装/卸载受管 hooks。
 - **Codex 桌面 App** — 通过 `__CFBundleIdentifier` 识别；hook session 标记为 `isCodexAppSession`，生命周期由 `NSWorkspace.shared.runningApplications` 判断（而不是每轮对话后退出的 CLI 子进程）。除 hook 外，Open Island 还会启动自己的 `codex app-server` 子进程，通过 stdio JSON-RPC 接收实时的 `thread/started`、`turn/started`、`turn/completed`、`thread/closed` 通知。点击 session 会通过 `codex://threads/<id>` URL scheme 精确打开对应对话。
 - **Claude Code** — 基于 hook 的集成，通过 `~/.claude/settings.json` 配置。从 `~/.claude/projects/` JSONL transcript 自动发现会话。跨应用启动持久化和恢复会话。受管 status line bridge，opt-in 安装。读取缓存的 5 小时和 7 天 usage windows。
-- **OpenCode** — JS 插件集成，通过 `~/.config/opencode/plugins/`。首次启动自动安装插件。接收会话生命周期、工具使用、权限和问答事件。支持权限审批和问答交互。通过 `ps` 进行进程检测。
+- **OpenCode** — JS 插件集成，通过 `~/.config/opencode/plugins/`。首次启动自动安装插件。支持 OpenCode 1.x 与 2.x。接收会话生命周期、工具使用、权限和问答事件。支持权限审批和问答交互。通过 `ps` 进行进程检测。
 - **Qoder** — Claude Code 分支。相同 hook 格式和事件，配置位于 `~/.qoder/settings.json`。使用 `--source qoder` 调用 hooks binary。
 - **Qwen Code** — Claude Code 分支。相同 hook 格式和事件，配置位于 `~/.qwen/settings.json`。使用 `--source qwen` 调用 hooks binary。
 - **Factory** — Claude Code 分支。相同 hook 格式和事件，配置位于 `~/.factory/settings.json`。使用 `--source factory` 调用 hooks binary。

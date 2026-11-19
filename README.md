@@ -22,6 +22,7 @@
 <p align="center">
   <a href="https://github.com/Octane0411/open-vibe-island/releases">Download</a> ·
   <a href="#quick-start">Quick Start</a> ·
+  <a href="#sponsors">Sponsors</a> ·
   <a href="docs/roadmap.md">Roadmap</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
@@ -174,6 +175,25 @@ See [docs/architecture.md](docs/architecture.md) for the full system design.
 
 </details>
 
+## Sponsors
+
+<!-- SPONSORS:START -->
+<div align="center">
+  <a href="mailto:wdznb1@gmail.com?subject=Open%20Island%20Sponsorship">
+    <img src="docs/images/sponsor-cta.svg" alt="Sponsor Open Island" width="440">
+  </a>
+  <p>
+    Support ongoing open-source development and put your developer tool in front of macOS engineers running <strong>Claude Code, Codex, Cursor</strong>, and 12+ other coding agents daily.
+  </p>
+  <p>
+    <strong>Featured Sponsor</strong> (<code>440px</code> showcase card + intro + link) and <strong>Standard Sponsor</strong> placements are synced across both our English and Chinese READMEs.<br>
+    Interested in sponsoring? Reach out at <a href="mailto:wdznb1@gmail.com?subject=Open%20Island%20Sponsorship">wdznb1@gmail.com</a>.
+  </p>
+</div>
+<!-- SPONSORS:END -->
+
+<sub>Sponsorship placements support open-source maintenance and do not affect Open Island's local-first, telemetry-free product behavior.</sub>
+
 ## Community
 
 Join us on **Discord** for discussion, feedback, and faster issue resolution:
@@ -272,7 +292,7 @@ Developers who already live in the terminal and want a better way to work with c
 - **Codex Desktop App** — Detected via `__CFBundleIdentifier`; hook sessions tagged as `isCodexAppSession` so they follow desktop-app liveness (tied to `NSWorkspace.shared.runningApplications` rather than the CLI subprocess that exits after each turn). In addition to hooks, Open Island launches its own `codex app-server` subprocess and speaks JSON-RPC over stdio to receive live `thread/started`, `turn/started`, `turn/completed`, and `thread/closed` notifications. Clicking a session opens the exact conversation via the `codex://threads/<id>` URL scheme.
 - **Claude Code** — Hook-based integration via `~/.claude/settings.json`. Discovers sessions from `~/.claude/projects/` JSONL transcripts. Persists and restores sessions across app launches. Managed status line bridge with opt-in installation. Reads cached 5-hour and 7-day usage windows.
 - **Claude Code (Desktop App)** — The Claude desktop app runs Claude Code in its "local agent mode" as a TTY-less subprocess that `ps`/`lsof` process discovery cannot see. Detected via `CLAUDE_CODE_ENTRYPOINT=claude-desktop` (with `__CFBundleIdentifier=com.anthropic.claudefordesktop` as a fallback) and tagged with a `Claude.app` jump target so liveness follows the running desktop app (`NSWorkspace.shared.runningApplications`) instead of the missing terminal process. Without this, the hook-managed liveness fallback evicted the session ~6 seconds after it appeared ([#510](https://github.com/Octane0411/open-vibe-island/issues/510)). Clicking a session activates Claude. **Usage caveat:** the 5h/7d usage panel is fed by Claude Code's terminal status line, which Claude Desktop's headless `stream-json` mode never renders — so Desktop sessions do not update it on their own, and Claude does not persist the rate-limit windows to a readable file. Because the limits are account-wide, running an interactive `claude` in a terminal occasionally seeds the cache and the panel then reflects total usage (including what Desktop consumed). Native Desktop usage (without a CLI session) needs a separate data source and is tracked as a follow-up.
-- **OpenCode** — JS plugin integration via `~/.config/opencode/plugins/`. Plugin auto-installed on first launch. Receives session lifecycle, tool use, permission, and question events. Permission approval and question answering flows supported. Process detection via `ps`.
+- **OpenCode** — JS plugin integration via `~/.config/opencode/plugins/`. Plugin auto-installed on first launch. Works with OpenCode 1.x and 2.x. Receives session lifecycle, tool use, permission, and question events. Permission approval and question answering flows supported. Process detection via `ps`.
 - **Qoder** — Claude Code fork. Same hook format and events via `~/.qoder/settings.json`. Use `--source qoder` with the hooks binary.
 - **Qwen Code** — Claude Code fork. Same hook format and events via `~/.qwen/settings.json`. Use `--source qwen` with the hooks binary.
 - **Factory** — Claude Code fork. Same hook format and events via `~/.factory/settings.json`. Use `--source factory` with the hooks binary.

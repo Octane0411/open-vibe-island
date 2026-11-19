@@ -206,6 +206,35 @@ struct TerminalJumpServiceTests {
     }
 
     @Test
+    func openCodeDesktopJumpActivatesDesktopApp() throws {
+        let openedArguments = OpenedArgumentsBox()
+        let service = TerminalJumpService(
+            applicationResolver: { bundleIdentifier in
+                bundleIdentifier == "ai.opencode.desktop" ? URL(fileURLWithPath: "/Applications/OpenCode.app") : nil
+            },
+            appRunningChecker: { bundleIdentifier in
+                bundleIdentifier == "ai.opencode.desktop"
+            },
+            openAction: { arguments in
+                openedArguments.values.append(arguments)
+            },
+            appleScriptRunner: { _ in "" }
+        )
+
+        let result = try service.jump(
+            to: JumpTarget(
+                terminalApp: "OpenCode.app",
+                workspaceName: "open-vibe-island",
+                paneTitle: "OpenCode open-vibe-island",
+                workingDirectory: "/Users/test/open-vibe-island"
+            )
+        )
+
+        #expect(result == "Activated OpenCode.app.")
+        #expect(openedArguments.values == [["-b", "ai.opencode.desktop"]])
+    }
+
+    @Test
     func warpJumpReturnsImmediatelyWhenAlreadyOnTargetPane() throws {
         let openedArguments = OpenedArgumentsBox()
         let keystroker = KeystrokeInjectorSpy()
@@ -374,6 +403,26 @@ struct TerminalJumpServiceTests {
             result.contains("Finder"),
             "Expected Finder fallback, got: \(result)"
         )
+    }
+
+    @Test
+    func unrecognizedHostAppIsActivatedByName() throws {
+        let openedArguments = OpenedArgumentsBox()
+        let service = TerminalJumpService(
+            applicationResolver: { _ in URL(fileURLWithPath: "/Applications/iTerm.app") },
+            appRunningChecker: { _ in true },
+            openAction: { arguments in
+                openedArguments.values.append(arguments)
+            },
+            appleScriptRunner: { _ in "" }
+        )
+
+        let result = try service.jump(
+            to: JumpTarget(terminalApp: "Superset", workspaceName: "my-project", paneTitle: "", workingDirectory: "/tmp")
+        )
+
+        #expect(openedArguments.values == [["-a", "Superset"]])
+        #expect(result == "Activated Superset.")
     }
 
     @Test

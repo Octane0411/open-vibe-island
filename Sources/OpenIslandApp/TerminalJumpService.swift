@@ -84,6 +84,11 @@ struct TerminalJumpService {
             aliases: ["codex.app"]
         ),
         TerminalAppDescriptor(
+            displayName: "OpenCode.app",
+            bundleIdentifier: "ai.opencode.desktop",
+            aliases: ["opencode.app", "opencode desktop"]
+        ),
+        TerminalAppDescriptor(
             displayName: "Claude.app",
             bundleIdentifier: "com.anthropic.claudefordesktop",
             aliases: ["claude.app"]
@@ -313,6 +318,11 @@ struct TerminalJumpService {
             }
         }
 
+        if let hostAppName = unrecognizedHostAppName(target.terminalApp),
+           (try? openAction(["-a", hostAppName])) != nil {
+            return "Activated \(hostAppName)."
+        }
+
         let normalizedPreferredName = normalizeTerminalAppName(target.terminalApp)
         let descriptor = resolveTerminalApp(preferredName: target.terminalApp)
         let hasWorkingDirectory = target.workingDirectory.map { FileManager.default.fileExists(atPath: $0) } ?? false
@@ -359,6 +369,9 @@ struct TerminalJumpService {
 
         if let descriptor {
             switch resolvedBundleIdentifier ?? descriptor.bundleIdentifier {
+            case "ai.opencode.desktop":
+                try openAction(["-b", "ai.opencode.desktop"])
+                return "Activated OpenCode.app."
             case "com.openai.codex":
                 // If we have a thread ID, use the codex:// URL scheme to
                 // open the specific conversation directly.  Otherwise just
@@ -1382,6 +1395,17 @@ struct TerminalJumpService {
         }
 
         return Self.knownApps.first(where: isInstalled(descriptor:))
+    }
+
+    /// A host app named by the hook's process-ancestry fallback rather than a terminal we integrate with.
+    private func unrecognizedHostAppName(_ preferredName: String) -> String? {
+        let normalized = normalizeTerminalAppName(preferredName)
+        guard !normalized.isEmpty, normalized != "unknown", normalized != "zellij",
+              !Self.knownApps.contains(where: { $0.displayName.lowercased() == normalized || $0.aliases.contains(normalized) })
+        else {
+            return nil
+        }
+        return preferredName.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func normalizeTerminalAppName(_ preferredName: String) -> String {

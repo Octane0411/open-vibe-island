@@ -53,9 +53,10 @@ struct OpenIslandHooksCLI {
 
             switch source {
             case .codex:
-                let payload = try decoder
+                var payload = try decoder
                     .decode(CodexHookPayload.self, from: input)
                     .withRuntimeContext(environment: ProcessInfo.processInfo.environment)
+                payload.terminalApp = payload.terminalApp ?? HostAppResolver.hostAppName()
 
                 let timeout = payload.hookEventName == .permissionRequest
                     ? interactiveCodexHookTimeout
@@ -73,6 +74,7 @@ struct OpenIslandHooksCLI {
                 var payload = try decoder
                     .decode(ClaudeHookPayload.self, from: input)
                     .withRuntimeContext(environment: ProcessInfo.processInfo.environment)
+                payload.terminalApp = payload.terminalApp ?? HostAppResolver.hostAppName()
                 payload.hookSource = sourceString
 
                 let timeout = payload.hookEventName == .permissionRequest
@@ -105,15 +107,17 @@ struct OpenIslandHooksCLI {
                     FileHandle.standardOutput.write(Data("\n".utf8))
                 }
             case .gemini:
-                let payload = try decoder
+                var payload = try decoder
                     .decode(GeminiHookPayload.self, from: input)
                     .withRuntimeContext(environment: ProcessInfo.processInfo.environment)
+                payload.terminalApp = payload.terminalApp ?? HostAppResolver.hostAppName()
 
                 _ = try? client.send(.processGeminiHook(payload), timeout: 45)
             case .grok:
-                let payload = try decoder
+                var payload = try decoder
                     .decode(GrokHookPayload.self, from: input)
                     .withRuntimeContext(environment: ProcessInfo.processInfo.environment)
+                payload.terminalApp = payload.terminalApp ?? HostAppResolver.hostAppName()
 
                 // Client timeout slightly under managed hook timeout (45s) so
                 // the hook can exit fail-open before Grok kills it.
@@ -121,9 +125,10 @@ struct OpenIslandHooksCLI {
                     logStderr("bridge unavailable for grok hook (\(payload.hookEventName.rawValue))")
                 }
             case .hermes:
-                let payload = try decoder
+                var payload = try decoder
                     .decode(HermesHookPayload.self, from: input)
                     .withRuntimeContext(environment: ProcessInfo.processInfo.environment)
+                payload.terminalApp = payload.terminalApp ?? HostAppResolver.hostAppName()
 
                 if ProcessInfo.processInfo.environment["OPEN_ISLAND_HOOK_DEBUG"] == "1" {
                     let data = try JSONEncoder().encode(payload)
