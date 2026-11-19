@@ -220,7 +220,8 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
                 terminalApp: entrypoint == "claude-desktop" ? "Claude.app" : "Unknown",
                 workspaceName: workspaceName,
                 paneTitle: "Claude \(sessionID.prefix(8))",
-                workingDirectory: cwd
+                workingDirectory: cwd,
+                claudeSessionID: entrypoint == "claude-desktop" ? sessionID : nil
             ),
             claudeMetadata: metadata.isEmpty ? nil : metadata
         )

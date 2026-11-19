@@ -699,7 +699,8 @@ public extension ClaudeHookPayload {
             workingDirectory: cwd,
             terminalSessionID: terminalSessionID,
             terminalTTY: terminalTTY,
-            warpPaneUUID: warpPaneUUID
+            warpPaneUUID: warpPaneUUID,
+            claudeSessionID: terminalApp == "Claude.app" ? sessionID : nil
         )
     }
 
