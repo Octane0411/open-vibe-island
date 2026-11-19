@@ -591,8 +591,9 @@ struct AppearanceSettingsPane: View {
 
     private func title(for option: IslandUsageDisplay) -> String {
         switch option {
-        case .hidden:  lang.t("settings.appearance.usageDisplay.hidden")
-        case .compact: lang.t("settings.appearance.usageDisplay.compact")
+        case .hidden:   lang.t("settings.appearance.usageDisplay.hidden")
+        case .compact:  lang.t("settings.appearance.usageDisplay.compact")
+        case .detailed: lang.t("settings.appearance.usageDisplay.detailed")
         }
     }
 
@@ -1423,29 +1424,34 @@ private struct UsageDisplayPreview: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            if option == .compact {
-                usageChip("Cl", window: "5h", value: 42, color: Color(hex: AgentTool.claudeCode.brandColorHex) ?? .orange)
-                usageChip("Cx", window: "7d", value: 13, color: Color(hex: AgentTool.codex.brandColorHex) ?? .blue)
-            } else {
+            switch option {
+            case .hidden:
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
                     .fill(V6Palette.paper.opacity(0.18))
                     .frame(width: 72, height: 5)
+            case .compact:
+                usageChip("Cl", windows: [("5h", 42, Color(hex: AgentTool.claudeCode.brandColorHex) ?? .orange)])
+                usageChip("Cx", windows: [("7d", 13, Color(hex: AgentTool.codex.brandColorHex) ?? .blue)])
+            case .detailed:
+                usageChip("Cl", windows: [("5h", 42, .green.opacity(0.95)), ("7d", 84, .orange.opacity(0.95))])
             }
         }
         .frame(width: 104, alignment: .center)
     }
 
-    private func usageChip(_ title: String, window: String, value: Int, color: Color) -> some View {
+    private func usageChip(_ title: String, windows: [(label: String, value: Int, color: Color)]) -> some View {
         HStack(spacing: 4) {
             Text(title)
                 .font(.system(size: 9.5, weight: .semibold))
                 .foregroundStyle(V6Palette.paper.opacity(0.66))
-            Text(window)
-                .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                .foregroundStyle(V6Palette.paper.opacity(0.42))
-            Text("\(value)%")
-                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                .foregroundStyle(color)
+            ForEach(windows, id: \.label) { window in
+                Text(window.label)
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(V6Palette.paper.opacity(0.42))
+                Text("\(window.value)%")
+                    .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(window.color)
+            }
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 3)

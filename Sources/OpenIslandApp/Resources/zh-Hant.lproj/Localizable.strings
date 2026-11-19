@@ -75,9 +75,10 @@
 "settings.appearance.profile.macbook.title" = "MacBook 凹槽螢幕";
 "settings.appearance.profile.macbook.note" = "內建凹槽螢幕布局，保留凹槽感知幾何。";
 "settings.appearance.usageDisplay.title" = "02 · 用量";
-"settings.appearance.usageDisplay.note" = "控制展開後的 Island 是否顯示緊湊的代理用量。";
+"settings.appearance.usageDisplay.note" = "控制展開後的 Island 顯示多少代理用量。";
 "settings.appearance.usageDisplay.hidden" = "隱藏";
 "settings.appearance.usageDisplay.compact" = "緊湊";
+"settings.appearance.usageDisplay.detailed" = "詳細";
 "settings.appearance.stateIndicator.title" = "03 · 會話狀態";
 "settings.appearance.stateIndicator.note" = "控制列表列如何呈現執行、等待和完成狀態。";
 "settings.appearance.stateIndicator.animatedDot" = "動效點";
