@@ -222,6 +222,9 @@ struct V6ClosedPill: View {
     /// width that fits just the glyph.
     var minWidth: CGFloat = 70
 
+    /// Island surface fill — see `IslandBackgroundStyle`.
+    var background: Color = V6Palette.ink
+
     var body: some View {
         switch layout {
         case .external: externalBody
@@ -259,7 +262,7 @@ struct V6ClosedPill: View {
 
         return ZStack {
             V6ClosedPillShape()
-                .fill(V6Palette.ink)
+                .fill(background)
 
             HStack(spacing: 0) {
                 UnifiedBars(mode: mode, size: 24)
@@ -296,7 +299,7 @@ struct V6ClosedPill: View {
     private var macbookBody: some View {
         return ZStack {
             V6ClosedPillShape()
-                .fill(V6Palette.ink)
+                .fill(background)
 
             HStack(spacing: 0) {
                 UnifiedBars(mode: mode, size: 24)
@@ -341,6 +344,7 @@ struct IslandPreviewPill: View {
     let rightSlot: IslandRightSlotContent?
     let layout: V6ClosedLayout
     let physicalNotchWidth: CGFloat
+    var background: Color = V6Palette.ink
     let now: Date
 
     var body: some View {
@@ -349,7 +353,8 @@ struct IslandPreviewPill: View {
             label: label,
             rightSlot: rightSlot,
             layout: layout,
-            physicalNotchWidth: physicalNotchWidth
+            physicalNotchWidth: physicalNotchWidth,
+            background: background
         )
         .frame(maxWidth: .infinity, alignment: .center)
     }

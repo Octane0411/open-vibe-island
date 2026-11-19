@@ -65,6 +65,10 @@
 "settings.appearance.centerLabel.agentAction" = "代理 · 动作";
 "settings.appearance.centerLabel.sessionName" = "会话名";
 "settings.appearance.centerLabel.off" = "关闭";
+"settings.appearance.background.title" = "03 · 背景";
+"settings.appearance.background.note" = "纯黑让 Island 与 MacBook 的物理刘海融为一体。";
+"settings.appearance.background.graphite" = "石墨";
+"settings.appearance.background.black" = "纯黑";
 "settings.appearance.notchPart.title" = "刘海";
 "settings.appearance.sessionListPart.title" = "会话列表";
 "settings.appearance.sessionPreview" = "预览";

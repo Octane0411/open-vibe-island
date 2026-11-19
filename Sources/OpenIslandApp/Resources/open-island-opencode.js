@@ -79,7 +79,8 @@ const ENV_KEYS = [
   "ZELLIJ", "ZELLIJ_PANE_ID", "ZELLIJ_SESSION_NAME",
 ];
 
-function detectTerminalApp(env) {
+function detectTerminalApp(env, tty = null) {
+  if (env.OPENCODE_CLIENT === "desktop" && !tty) return "OpenCode.app";
   if (env.ITERM_SESSION_ID) return "iTerm";
   if (env.CMUX_WORKSPACE_ID || env.CMUX_SOCKET_PATH) return "cmux";
   if (env.ZELLIJ != null) return "Zellij";
@@ -113,15 +114,15 @@ function detectTerminalTTY() {
 /// the session's own terminal. Only app-level hints are meaningful in that case.
 function terminalFields(env, tty, sharedService = false) {
   const result = {};
-  const app = detectTerminalApp(env);
+  const app = detectTerminalApp(env, tty);
   if (app) result.terminal_app = app;
 
-  if (!sharedService) {
-    if (env.ITERM_SESSION_ID) {
+  if (!sharedService && app !== "OpenCode.app") {
+    if (app === "iTerm" && env.ITERM_SESSION_ID) {
       result.terminal_session_id = env.ITERM_SESSION_ID;
-    } else if (env.CMUX_WORKSPACE_ID || env.CMUX_SOCKET_PATH) {
+    } else if (app === "cmux") {
       if (env.CMUX_SURFACE_ID) result.terminal_session_id = env.CMUX_SURFACE_ID;
-    } else if (env.ZELLIJ != null) {
+    } else if (app === "Zellij") {
       const paneID = env.ZELLIJ_PANE_ID || "";
       const sessionName = env.ZELLIJ_SESSION_NAME || "";
       if (paneID) result.terminal_session_id = `${paneID}:${sessionName}`;

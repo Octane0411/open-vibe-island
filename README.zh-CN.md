@@ -22,6 +22,7 @@
 <p align="center">
   <a href="https://github.com/Octane0411/open-vibe-island/releases">下载</a> ·
   <a href="#快速开始">快速开始</a> ·
+  <a href="#赞助支持">赞助支持</a> ·
   <a href="docs/roadmap.zh-CN.md">路线图</a> ·
   <a href="CONTRIBUTING.zh-CN.md">参与贡献</a>
 </p>
@@ -171,6 +172,25 @@ Hooks **fail open**——如果 Open Island 没在运行，你的 agents 不受�
 详见 [docs/architecture.md](docs/architecture.md)。
 
 </details>
+
+## 赞助支持
+
+<!-- SPONSORS:START -->
+<div align="center">
+  <a href="mailto:wdznb1@gmail.com?subject=Open%20Island%20%E8%B5%9E%E5%8A%A9%E5%90%88%E4%BD%9C">
+    <img src="docs/images/sponsor-cta.svg" alt="赞助 Open Island" width="440">
+  </a>
+  <p>
+    欢迎赞助支持 Open Island 的持续开源维护，触达每天深度使用 <strong>Claude Code、Codex、Cursor</strong> 等 15 款编程 Agent 的 macOS 开发者群体。
+  </p>
+  <p>
+    提供 <strong>Featured Sponsor</strong>（<code>440px</code> 独立展示卡 + 简介 + 链接）与 <strong>Standard Sponsor</strong> 赞助展示位，<strong>中英文双语 README 同步曝光</strong>。<br>
+    商务与赞助合作请联系：<a href="mailto:wdznb1@gmail.com?subject=Open%20Island%20%E8%B5%9E%E5%8A%A9%E5%90%88%E4%BD%9C">wdznb1@gmail.com</a>
+  </p>
+</div>
+<!-- SPONSORS:END -->
+
+<sub>注：赞助展示仅用于支持开源项目维护，不影响 Open Island 纯本地运行、无遥测的产品中立性。</sub>
 
 ## 社区
 
