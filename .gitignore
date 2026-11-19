@@ -14,7 +14,6 @@ build/
 .build/
 .swiftpm/
 Packages/
-Package.resolved
 
 # Local tooling artifacts
 .claude/
@@ -26,3 +25,6 @@ output/
 *.tmp
 .worktrees/
 .air/
+
+# Pinned CI packaging tool checkout
+.build-tools/

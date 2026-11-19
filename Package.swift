@@ -27,12 +27,14 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.1"),
-        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.0"),
+        .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", exact: "2.4.1"),
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.6"),
     ],
     targets: [
+        .target(name: "OpenIslandTransport"),
         .target(
-            name: "OpenIslandCore"
+            name: "OpenIslandCore",
+            dependencies: ["OpenIslandTransport"]
         ),
         .executableTarget(
             name: "OpenIslandHooks",

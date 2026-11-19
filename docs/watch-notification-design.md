@@ -1,5 +1,8 @@
 # Apple Watch Notification Design
 
+> 历史设计：明文 HTTP、四位配对码及 UserDefaults 令牌已被替换。当前加密配对与安全边界见 [security.md](./security.md)。
+> Historical design: plaintext HTTP, four-digit codes and UserDefaults tokens are superseded by [the secure transport](./security.md).
+
 ## 动机
 
 Agent 等待权限批准或回答问题时，开发者可能没有注意到 — 无论是在 Mac 前专注写代码，还是离开去倒杯咖啡。

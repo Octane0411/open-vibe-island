@@ -226,3 +226,16 @@
 
 /* Window Titles */
 "window.settings" = "Open Island Settings";
+
+// Secure phone pairing
+"watch.title" = "Watch";
+"watch.enabled" = "Watch Notifications";
+"watch.networkDescription" = "Use an encrypted connection to your iPhone on the same Wi-Fi network. SSH is not required.";
+"watch.pairing" = "Pairing";
+"watch.pairNewDevice" = "Pair New Device";
+"watch.copyKey" = "Copy Pairing Key";
+"watch.pairingInstructions" = "Paste this key into the iPhone app. It works once and expires after 2 minutes. Only share it with a device you trust.";
+"watch.devices" = "Devices";
+"watch.connected" = "iPhone connected";
+"watch.disconnected" = "No devices connected";
+"watch.revoke" = "Revoke All Pairings";

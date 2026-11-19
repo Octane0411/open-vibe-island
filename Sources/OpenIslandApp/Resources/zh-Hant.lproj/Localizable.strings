@@ -225,3 +225,16 @@
 
 /* Window Titles */
 "window.settings" = "Open Island 設定";
+
+// Secure phone pairing
+"watch.title" = "手錶";
+"watch.enabled" = "手錶通知";
+"watch.networkDescription" = "透過加密連線與同一 Wi-Fi 網路上的 iPhone 通訊，無需 SSH。";
+"watch.pairing" = "配對";
+"watch.pairNewDevice" = "配對新裝置";
+"watch.copyKey" = "複製配對金鑰";
+"watch.pairingInstructions" = "將金鑰貼入 iPhone 應用程式。金鑰僅可使用一次，2 分鐘後失效。僅與信任的裝置共享。";
+"watch.devices" = "裝置";
+"watch.connected" = "iPhone 已連線";
+"watch.disconnected" = "沒有已連線的裝置";
+"watch.revoke" = "撤銷所有配對";
