@@ -332,6 +332,21 @@ struct ClaudeHooksTests {
     }
 
     @Test
+    func claudeRexUsesRexBlockAsSessionIDAndSkipsLocator() {
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .preToolUse, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: ["TERM_PROGRAM": "rex", "REX_BLOCK": "block:abc"],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: "wrong", tty: nil, title: "wrong") }
+        )
+
+        #expect(payload.terminalApp == "Rex")
+        #expect(payload.terminalSessionID == "block:abc")
+        #expect(payload.terminalTitle == nil)
+    }
+
+    @Test
     func claudeInferTerminalAppRecognizesZedViaTermProgram() {
         let payload = ClaudeHookPayload(
             cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"

@@ -577,6 +577,11 @@ public extension CodexHookPayload {
             payload.terminalApp = inferTerminalApp(from: environment)
         }
 
+        // Rex sets REX_BLOCK to the pane's block ID, which `rex block focus` accepts.
+        if payload.terminalApp == "Rex", payload.terminalSessionID == nil {
+            payload.terminalSessionID = environment["REX_BLOCK"]
+        }
+
         if payload.terminalApp == "Warp", payload.warpPaneUUID == nil {
             payload.warpPaneUUID = warpPaneResolver(payload.cwd)
         }
@@ -638,7 +643,7 @@ public extension CodexHookPayload {
     }
 
     private static let noLocatorTerminalApps: Set<String> = [
-        "cmux", "codex.app", "kaku", "wezterm", "zellij",
+        "cmux", "codex.app", "kaku", "rex", "wezterm", "zellij",
         "vs code", "vs code insiders", "cursor", "windsurf", "trae",
         "intellij idea", "webstorm", "pycharm", "goland", "clion",
         "rubymine", "phpstorm", "rider", "rustrover",
@@ -719,6 +724,8 @@ public extension CodexHookPayload {
                 return "WezTerm"
             case "kaku":
                 return "Kaku"
+            case "rex":
+                return "Rex"
             case "vscode":
                 return "VS Code"
             case "vscode-insiders":

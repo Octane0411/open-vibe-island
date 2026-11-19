@@ -14,6 +14,25 @@ struct TerminalJumpServiceTests {
     }
 
     @Test
+    func rexBlockMatchPrefersClientOnTargetSessionThenFallsBackToAnyRexClient() {
+        typealias P = TerminalJumpService.RexBlockProcess
+        let processes: [String: P] = [
+            "block:a": P(child: .init(pid: 10), foreground: .init(pid: 11)),
+            "block:b": P(child: .init(pid: 20), foreground: .init(pid: 42)),
+            "block:c": P(child: .init(pid: 99), foreground: nil),
+        ]
+        let blockIDs = ["block:gone", "block:a", "block:b", "block:c"]
+        func match(_ preferred: Set<Int>, _ pids: Set<Int>) -> String? {
+            TerminalJumpService.rexBlockMatch(preferring: preferred, among: pids, blockIDs: blockIDs) { processes[$0] }
+                .map { "\($0.blockID)/\($0.pid)" }
+        }
+
+        #expect(match([99], [42, 99]) == "block:c/99")
+        #expect(match([], [42, 99]) == "block:b/42")
+        #expect(match([7], [7]) == nil)
+    }
+
+    @Test
     func ghosttyJumpScriptActivatesWindowAndRetriesFocusUntilItSticks() {
         let target = JumpTarget(
             terminalApp: "Ghostty",

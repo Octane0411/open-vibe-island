@@ -107,7 +107,7 @@ const detectedTTY = detectTTY();
 function terminalFields(): Record<string, string> {
   const env = process.env;
   const result: Record<string, string> = {};
-  if (env.ITERM_SESSION_ID) {
+  if (env.ITERM_SESSION_ID && env.TERM_PROGRAM !== "rex") {
     result.terminal_app = "iTerm";
     result.terminal_session_id = env.ITERM_SESSION_ID;
   } else if (env.CMUX_WORKSPACE_ID || env.CMUX_SOCKET_PATH) {
@@ -118,6 +118,9 @@ function terminalFields(): Record<string, string> {
     const paneID = env.ZELLIJ_PANE_ID || "";
     const sessionName = env.ZELLIJ_SESSION_NAME || "";
     if (paneID) result.terminal_session_id = `${paneID}:${sessionName}`;
+  } else if (env.TERM_PROGRAM === "rex") {
+    result.terminal_app = "Rex";
+    if (env.REX_BLOCK) result.terminal_session_id = env.REX_BLOCK;
   } else if (env.GHOSTTY_RESOURCES_DIR || (env.TERM_PROGRAM || "").toLowerCase().includes("ghostty")) {
     result.terminal_app = "Ghostty";
   } else if (env.TERM_PROGRAM === "Apple_Terminal") {

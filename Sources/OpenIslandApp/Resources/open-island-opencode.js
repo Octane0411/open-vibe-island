@@ -77,13 +77,15 @@ const ENV_KEYS = [
   "TMUX", "TMUX_PANE", "KITTY_WINDOW_ID",
   "CMUX_WORKSPACE_ID", "CMUX_SURFACE_ID", "CMUX_SOCKET_PATH",
   "ZELLIJ", "ZELLIJ_PANE_ID", "ZELLIJ_SESSION_NAME",
+  "REX_SESSION", "REX_BLOCK",
 ];
 
 function detectTerminalApp(env, tty = null) {
   if (env.OPENCODE_CLIENT === "desktop" && !tty) return "OpenCode.app";
-  if (env.ITERM_SESSION_ID) return "iTerm";
+  if (env.ITERM_SESSION_ID && env.TERM_PROGRAM !== "rex") return "iTerm";
   if (env.CMUX_WORKSPACE_ID || env.CMUX_SOCKET_PATH) return "cmux";
   if (env.ZELLIJ != null) return "Zellij";
+  if (env.TERM_PROGRAM === "rex") return "Rex";
   if (env.GHOSTTY_RESOURCES_DIR || (env.TERM_PROGRAM || "").toLowerCase().includes("ghostty")) return "Ghostty";
   if (env.TERM_PROGRAM === "Apple_Terminal") return "Terminal";
   if (env.TERM_PROGRAM) return env.TERM_PROGRAM;
@@ -126,6 +128,8 @@ function terminalFields(env, tty, sharedService = false) {
       const paneID = env.ZELLIJ_PANE_ID || "";
       const sessionName = env.ZELLIJ_SESSION_NAME || "";
       if (paneID) result.terminal_session_id = `${paneID}:${sessionName}`;
+    } else if (app === "Rex") {
+      if (env.REX_BLOCK) result.terminal_session_id = env.REX_BLOCK;
     }
     if (tty) result.terminal_tty = tty;
   }

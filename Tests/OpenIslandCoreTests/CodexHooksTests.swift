@@ -78,6 +78,35 @@ struct CodexHooksTests {
     }
 
     @Test
+    func codexWithRuntimeContextDetectsRexAndStoresBlockID() {
+        var locatorCalls = 0
+        let payload = CodexHookPayload(
+            cwd: "/Users/u/demo",
+            hookEventName: .sessionStart,
+            model: "gpt-4o",
+            permissionMode: .default,
+            sessionID: "s1",
+            transcriptPath: nil
+        ).withRuntimeContext(
+            environment: [
+                "TERM_PROGRAM": "rex",
+                "REX_SESSION": "session:01a1e158-7fc0-743a-af36-66c1a3bda58b",
+                "REX_BLOCK": "block:01a1e158-7fc0-7693-898e-27ee55d39d9a",
+            ],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in
+                locatorCalls += 1
+                return (sessionID: "SHOULD-NOT-BE-USED", tty: nil, title: nil)
+            },
+            warpPaneResolver: { _ in nil }
+        )
+
+        #expect(payload.terminalApp == "Rex")
+        #expect(payload.terminalSessionID == "block:01a1e158-7fc0-7693-898e-27ee55d39d9a")
+        #expect(locatorCalls == 0)
+    }
+
+    @Test
     func codexWithRuntimeContextDetectsCodexDesktopApp() {
         let payload = CodexHookPayload(
             cwd: "/Users/u/project",

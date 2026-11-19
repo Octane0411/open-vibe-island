@@ -54,6 +54,11 @@ struct TerminalJumpService {
             aliases: ["cmux"]
         ),
         TerminalAppDescriptor(
+            displayName: "Rex",
+            bundleIdentifier: "com.superlogical.rex",
+            aliases: ["rex"]
+        ),
+        TerminalAppDescriptor(
             displayName: "Ghostty",
             bundleIdentifier: "com.mitchellh.ghostty",
             aliases: ["ghostty"]
@@ -293,6 +298,10 @@ struct TerminalJumpService {
                     if try jumpToTerminalTab(target) {
                         return "Focused the matching tmux pane in Terminal."
                     }
+                case "com.superlogical.rex":
+                    if jumpToRexBlockHostingTmux(target) {
+                        return "Focused the matching tmux pane in Rex."
+                    }
                 default:
                     break
                 }
@@ -389,6 +398,10 @@ struct TerminalJumpService {
             case "com.cmuxterm.app":
                 if jumpToCmuxTerminal(target) {
                     return "Focused the matching cmux terminal."
+                }
+            case "com.superlogical.rex":
+                if jumpToRexBlock(target) {
+                    return "Focused the matching Rex block."
                 }
             case "com.mitchellh.ghostty":
                 if try jumpToGhosttyTerminal(target) {
@@ -530,6 +543,150 @@ struct TerminalJumpService {
             return false
         }
         return processRunner(cli, [projectPath])
+    }
+
+    // The rex CLI ships inside Rex Server, which is not on a GUI app's PATH.
+    private static let rexCLIPath = NSHomeDirectory()
+        + "/Library/Application Support/com.superlogical.rex/RexServer/Versions/Current/Rex Server.app/Contents/MacOS/rex"
+
+    private func jumpToRexBlock(_ target: JumpTarget) -> Bool {
+        guard let blockID = target.terminalSessionID, !blockID.isEmpty else {
+            return false
+        }
+        return focusRexBlock(blockID)
+    }
+
+    private func focusRexBlock(_ blockID: String) -> Bool {
+        // `rex block focus` only moves focus inside the block's window. Rex.app
+        // switches to another session only through the client action
+        // `session.select`, which needs Remote Control on in Rex's settings.
+        // Try it, and ignore the failure when Remote Control is off.
+        if let data = Self.runRex(["block", "inspect", blockID, "--json"]),
+           let location = try? JSONDecoder().decode(RexBlockLocation.self, from: data) {
+            var selectArguments = ["do", "session.select", "session_id=\(location.sessionID)"]
+            if let windowID = location.block.windowID {
+                selectArguments.append("window_id=\(windowID)")
+            }
+            _ = Self.runRex(selectArguments)
+        }
+
+        guard Self.runRex(["block", "focus", blockID]) != nil else {
+            return false
+        }
+        try? openAction(["-b", "com.superlogical.rex"])
+        return true
+    }
+
+    /// Inside tmux the hooks drop REX_BLOCK, because tmux panes inherit it from
+    /// whichever shell started the tmux server. Find the block whose
+    /// foreground process is a tmux client. Prefer a client that already shows
+    /// the target session; otherwise switch the matched Rex client to it,
+    /// because `jumpToTmuxPane` switches only the first client, which may
+    /// belong to another terminal.
+    private func jumpToRexBlockHostingTmux(_ target: JumpTarget) -> Bool {
+        guard let tmuxTarget = target.tmuxTarget, let tmuxPath = resolveTmuxPath() else {
+            return false
+        }
+        let session = String(tmuxTarget.prefix { $0 != ":" })
+        let socketArgs = target.tmuxSocketPath.map { $0.isEmpty ? [] : ["-S", $0] } ?? []
+        let clientListing = runTmuxCommand(
+            tmuxPath: tmuxPath,
+            socketArgs: socketArgs,
+            args: ["list-clients", "-F", "#{client_pid}\t#{client_tty}\t#{client_session}"]
+        ) ?? ""
+        let clients = clientListing.split(separator: "\n").compactMap { line -> (pid: Int, tty: String, session: String)? in
+            let fields = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
+            guard fields.count == 3, let pid = Int(fields[0]) else { return nil }
+            return (pid, fields[1], fields[2])
+        }
+
+        guard !clients.isEmpty,
+              let listing = Self.runRex(["block", "ls", "-A", "-q", "--short=false"]),
+              let blockIDs = String(data: listing, encoding: .utf8)?.split(separator: "\n").map(String.init),
+              let match = Self.rexBlockMatch(
+                  preferring: Set(clients.filter { $0.session == session }.map(\.pid)),
+                  among: Set(clients.map(\.pid)),
+                  blockIDs: blockIDs,
+                  process: { id in
+                      Self.runRex(["block", "call", "-b", id, "process"])
+                          .flatMap { try? JSONDecoder().decode(RexBlockProcess.self, from: $0) }
+                  }
+              )
+        else {
+            return false
+        }
+
+        if let client = clients.first(where: { $0.pid == match.pid }), client.session != session {
+            _ = runTmuxCommand(tmuxPath: tmuxPath, socketArgs: socketArgs, args: ["switch-client", "-c", client.tty, "-t", session])
+        }
+        return focusRexBlock(match.blockID)
+    }
+
+    struct RexBlockProcess: Decodable {
+        struct Process: Decodable {
+            let pid: Int
+        }
+
+        let child: Process?
+        let foreground: Process?
+    }
+
+    /// First block hosting a PID in `preferred`, else the first block hosting
+    /// any PID in `pids`.
+    // ponytail: one `rex block call` per block. Batch through `rex api` if many blocks make jumps slow.
+    static func rexBlockMatch(
+        preferring preferred: Set<Int>,
+        among pids: Set<Int>,
+        blockIDs: [String],
+        process: (String) -> RexBlockProcess?
+    ) -> (blockID: String, pid: Int)? {
+        var fallback: (blockID: String, pid: Int)?
+        for blockID in blockIDs {
+            guard let info = process(blockID) else { continue }
+            for pid in [info.foreground?.pid, info.child?.pid].compactMap({ $0 }) where pids.contains(pid) {
+                if preferred.contains(pid) { return (blockID, pid) }
+                if fallback == nil { fallback = (blockID, pid) }
+            }
+        }
+        return fallback
+    }
+
+    private struct RexBlockLocation: Decodable {
+        struct Block: Decodable {
+            let windowID: String?
+
+            enum CodingKeys: String, CodingKey {
+                case windowID = "window_id"
+            }
+        }
+
+        let sessionID: String
+        let block: Block
+
+        enum CodingKeys: String, CodingKey {
+            case sessionID = "session_id"
+            case block
+        }
+    }
+
+    /// Runs the rex CLI and returns stdout, or nil on failure. The CLI scopes
+    /// block lookups to REX_SESSION, which Open Island inherits when it is
+    /// launched from a Rex shell, so clear the Rex location variables. Clear
+    /// REX_SERVER too, so the CLI always uses its default local server.
+    private static func runRex(_ arguments: [String]) -> Data? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: rexCLIPath)
+        process.arguments = ["--autostart=false", "--timeout", "2s"] + arguments
+        process.environment = ProcessInfo.processInfo.environment.filter {
+            !["REX_SESSION", "REX_WINDOW", "REX_BLOCK", "REX_CLIENT", "REX_SERVER"].contains($0.key)
+        }
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        guard (try? process.run()) != nil else { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return process.terminationStatus == 0 ? data : nil
     }
 
     private func jumpToCmuxTerminal(_ target: JumpTarget) -> Bool {
