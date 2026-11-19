@@ -365,9 +365,14 @@ public extension GeminiHookPayload {
         case .some("kaku"):
             return "Kaku"
         case .some("vscode"):
-            return "VS Code"
+            // Cursor and the other VS Code forks all inherit
+            // TERM_PROGRAM=vscode; narrow it down to the actual fork.
+            return VSCodeFamilyHost.displayName(from: environment)
         case .some("vscode-insiders"):
-            return "VS Code Insiders"
+            return VSCodeFamilyHost.displayName(
+                from: environment,
+                default: "VS Code Insiders"
+            )
         case .some("windsurf"):
             return "Windsurf"
         case .some("trae"):
