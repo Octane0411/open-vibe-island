@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "graphID": "dose-regulations-compendium",
+  "version": "scheduling-v1",
+  "digest": {
+    "algorithm": "sha256",
+    "value": "d05e7e9a9ea3448b23eec56c117e715f7577be56bdc4dcb93d27289dd239d388"
+  },
+  "nodes": [
+    {
+      "id": "architect",
+      "title": "Compendium Architect",
+      "dependencyNodeIDs": [],
+      "requiredCapabilities": [
+        "compendium-architecture",
+        "web-research-planning"
+      ]
+    },
+    {
+      "id": "researcher",
+      "title": "Regulatory Web Researcher",
+      "dependencyNodeIDs": [
+        "architect"
+      ],
+      "requiredCapabilities": [
+        "source-verification",
+        "web-scraping"
+      ]
+    },
+    {
+      "id": "graph",
+      "title": "Evidence Graph Builder",
+      "dependencyNodeIDs": [
+        "researcher"
+      ],
+      "requiredCapabilities": [
+        "citation-linking",
+        "knowledge-graph"
+      ]
+    },
+    {
+      "id": "reviewer",
+      "title": "Regulatory Compendium Reviewer",
+      "dependencyNodeIDs": [
+        "graph"
+      ],
+      "requiredCapabilities": [
+        "citation-audit",
+        "regulatory-review"
+      ]
+    }
+  ]
+}

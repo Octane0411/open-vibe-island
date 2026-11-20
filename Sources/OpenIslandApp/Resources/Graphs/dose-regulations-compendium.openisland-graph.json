@@ -1,0 +1,231 @@
+{
+  "schemaVersion": 1,
+  "graphID": "dose-regulations-compendium-local-process",
+  "definitionVersion": "1",
+  "name": "Dose Regulations Compendium",
+  "description": "Deterministic four-stage process fixture for supervised graph execution.",
+  "nodes": [
+    {
+      "id": "architect",
+      "name": "Compendium Architect",
+      "description": "Defines the compendium section plan.",
+      "requiredCapabilities": ["compendium", "local-process"],
+      "specification": {
+        "schemaVersion": 1,
+        "adapterKind": "local_process",
+        "operation": "execute",
+        "parameters": {
+          "executable": "${OPENISLAND_PROCESS_FIXTURE}",
+          "arguments": ["--role", "architect", "--output", "${artifact:node_output}", "--stderr"],
+          "workingDirectory": ".",
+          "environment": {},
+          "inheritedEnvironment": "none",
+          "stdin": "null_device",
+          "outputArtifacts": [
+            {
+              "relativePath": "artifacts/architect.json",
+              "mediaType": "application/json",
+              "role": "node_output",
+              "sensitivity": "internalUse",
+              "maximumBytes": 1048576
+            }
+          ],
+          "retryableExitCodes": [23],
+          "logPolicy": {
+            "maximumBytesPerStream": 1048576,
+            "sensitiveEnvironmentKeys": []
+          }
+        }
+      },
+      "workspace": {
+        "root": "${OPENISLAND_COMPENDIUM_WORKSPACE}",
+        "writableRelativePaths": ["artifacts"]
+      },
+      "environmentAllowlist": [],
+      "inputArtifactRoles": [],
+      "timeoutPolicy": {
+        "executionSeconds": 60,
+        "cancellationAcknowledgementSeconds": 2
+      }
+    },
+    {
+      "id": "researcher",
+      "name": "Regulatory Researcher",
+      "description": "Produces deterministic researched findings from the architecture artifact.",
+      "requiredCapabilities": ["compendium", "local-process"],
+      "specification": {
+        "schemaVersion": 1,
+        "adapterKind": "local_process",
+        "operation": "execute",
+        "parameters": {
+          "executable": "${OPENISLAND_PROCESS_FIXTURE}",
+          "arguments": ["--role", "researcher", "--input", "${input:node_output}", "--output", "${artifact:structured_result}"],
+          "workingDirectory": ".",
+          "environment": {},
+          "inheritedEnvironment": "none",
+          "stdin": "null_device",
+          "outputArtifacts": [
+            {
+              "relativePath": "artifacts/researcher.json",
+              "mediaType": "application/json",
+              "role": "structured_result",
+              "sensitivity": "internalUse",
+              "maximumBytes": 1048576
+            }
+          ],
+          "retryableExitCodes": [23],
+          "logPolicy": {
+            "maximumBytesPerStream": 1048576,
+            "sensitiveEnvironmentKeys": []
+          }
+        }
+      },
+      "workspace": {
+        "root": "${OPENISLAND_COMPENDIUM_WORKSPACE}",
+        "writableRelativePaths": ["artifacts"]
+      },
+      "environmentAllowlist": [],
+      "inputArtifactRoles": ["node_output"],
+      "timeoutPolicy": {
+        "executionSeconds": 60,
+        "cancellationAcknowledgementSeconds": 2
+      }
+    },
+    {
+      "id": "graph",
+      "name": "Evidence Graph Builder",
+      "description": "Builds a deterministic evidence relationship graph.",
+      "requiredCapabilities": ["compendium", "local-process"],
+      "specification": {
+        "schemaVersion": 1,
+        "adapterKind": "local_process",
+        "operation": "execute",
+        "parameters": {
+          "executable": "${OPENISLAND_PROCESS_FIXTURE}",
+          "arguments": ["--role", "graph", "--input", "${input:structured_result}", "--output", "${artifact:diagnostic}"],
+          "workingDirectory": ".",
+          "environment": {},
+          "inheritedEnvironment": "none",
+          "stdin": "null_device",
+          "outputArtifacts": [
+            {
+              "relativePath": "artifacts/graph.json",
+              "mediaType": "application/json",
+              "role": "diagnostic",
+              "sensitivity": "internalUse",
+              "maximumBytes": 1048576
+            }
+          ],
+          "retryableExitCodes": [23],
+          "logPolicy": {
+            "maximumBytesPerStream": 1048576,
+            "sensitiveEnvironmentKeys": []
+          }
+        }
+      },
+      "workspace": {
+        "root": "${OPENISLAND_COMPENDIUM_WORKSPACE}",
+        "writableRelativePaths": ["artifacts"]
+      },
+      "environmentAllowlist": [],
+      "inputArtifactRoles": ["structured_result"],
+      "timeoutPolicy": {
+        "executionSeconds": 60,
+        "cancellationAcknowledgementSeconds": 2
+      }
+    },
+    {
+      "id": "reviewer",
+      "name": "Compendium Reviewer",
+      "description": "Consumes all intended upstream artifacts and emits the review verdict.",
+      "requiredCapabilities": ["compendium", "local-process"],
+      "specification": {
+        "schemaVersion": 1,
+        "adapterKind": "local_process",
+        "operation": "execute",
+        "parameters": {
+          "executable": "${OPENISLAND_PROCESS_FIXTURE}",
+          "arguments": ["--role", "reviewer", "--input", "${input:node_output}", "--input", "${input:structured_result}", "--input", "${input:diagnostic}", "--output", "${artifact:structured_result}"],
+          "workingDirectory": ".",
+          "environment": {},
+          "inheritedEnvironment": "none",
+          "stdin": "null_device",
+          "outputArtifacts": [
+            {
+              "relativePath": "artifacts/reviewer.json",
+              "mediaType": "application/json",
+              "role": "structured_result",
+              "sensitivity": "internalUse",
+              "maximumBytes": 1048576
+            }
+          ],
+          "retryableExitCodes": [23],
+          "logPolicy": {
+            "maximumBytesPerStream": 1048576,
+            "sensitiveEnvironmentKeys": []
+          }
+        }
+      },
+      "workspace": {
+        "root": "${OPENISLAND_COMPENDIUM_WORKSPACE}",
+        "writableRelativePaths": ["artifacts"]
+      },
+      "environmentAllowlist": [],
+      "inputArtifactRoles": ["diagnostic", "node_output", "structured_result"],
+      "timeoutPolicy": {
+        "executionSeconds": 60,
+        "cancellationAcknowledgementSeconds": 2
+      }
+    }
+  ],
+  "edges": [
+    {"sourceNodeID": "architect", "targetNodeID": "researcher", "portType": "dependency"},
+    {"sourceNodeID": "researcher", "targetNodeID": "graph", "portType": "dependency"},
+    {"sourceNodeID": "graph", "targetNodeID": "reviewer", "portType": "dependency"}
+  ],
+  "schedulerPolicy": {
+    "schemaVersion": 1,
+    "policyID": "local-process-compendium",
+    "version": "1",
+    "retryPolicy": {
+      "schemaVersion": 1,
+      "maximumAttempts": 2,
+      "retryableFailureCategories": ["process_exit_23", "process_exit_unobserved", "timeout"],
+      "nonRetryableFailureCategories": ["artifact_collection_failure", "invalid_process_specification", "process_exit_42"],
+      "initialBackoffSeconds": 0,
+      "backoffMultiplier": 2,
+      "maximumBackoffSeconds": 60,
+      "jitterBasisPoints": 0,
+      "jitterSeed": "local-process-compendium",
+      "timeoutBehavior": "retry",
+      "cancellationBehavior": "suppress",
+      "dependencyFailureBehavior": "fail_closed"
+    },
+    "defaultLeaseDurationSeconds": 60,
+    "claimAcquisitionTimeoutSeconds": 30,
+    "attemptExecutionTimeoutSeconds": 60,
+    "cancellationAcknowledgementTimeoutSeconds": 2,
+    "allowExpiredLeaseTakeover": true,
+    "schedulingEnabled": true
+  },
+  "policyReferences": ["openisland:local-process-compendium-v1"],
+  "layout": {
+    "schemaVersion": 1,
+    "nodes": [
+      {"nodeID": "architect", "position": {"x": 0, "y": 0}},
+      {"nodeID": "researcher", "position": {"x": 280, "y": 0}},
+      {"nodeID": "graph", "position": {"x": 560, "y": 0}},
+      {"nodeID": "reviewer", "position": {"x": 840, "y": 0}}
+    ],
+    "zoom": 0.85,
+    "pan": {"x": 0, "y": 0}
+  },
+  "metadata": {
+    "createdAt": "2026-07-22T00:00:00Z",
+    "modifiedAt": "2026-07-22T00:00:00Z",
+    "createdBy": "openisland",
+    "modifiedBy": "openisland"
+  },
+  "sourceRepository": null,
+  "fixtureKind": "supervised_local_process_compendium"
+}
