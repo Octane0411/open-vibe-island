@@ -2,6 +2,12 @@
 
 OpenIsland receives lifecycle events from managed hook CLIs and runtime extensions. Codex, Claude-family agents, Gemini CLI, Grok Build, Kimi CLI, and ZCode invoke `OpenIslandHooks`; Pi and Oh My Pi load a TypeScript extension. Both paths forward typed payloads to the app over its Unix socket. Hook sources that support blocking can receive directives on stdout; Pi-family extensions are fire-and-forget.
 
+---
+
+## Qoder CN Hooks (`--source qoder-cn`)
+
+Qoder CN (Qoder 国内版) is a Claude Code fork with its home at `~/.qoder-cn`. It uses the same wire format, managed install, and decode path as Qoder international — only the directory and `--source` value differ. Install from **Settings → Setup → Qoder CN**; the managed hooks are written into `~/.qoder-cn/settings.json` with a timestamped backup, the standard Claude fork event set, and user keys in the same file preserved.
+
 ## Architecture
 
 ```text

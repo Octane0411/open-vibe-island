@@ -884,6 +884,8 @@ public extension ClaudeHookPayload {
         switch hookSource {
         case "qoder":
             return .qoder
+        case "qoder-cn":
+            return .qoderCN
         case "qwen":
             return .qwenCode
         case "factory", "droid":
