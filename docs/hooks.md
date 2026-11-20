@@ -2,6 +2,12 @@
 
 OpenIsland receives lifecycle events from managed hook CLIs and runtime extensions. Codex, Claude-family agents, Gemini CLI, Grok Build, Kimi CLI, and ZCode invoke `OpenIslandHooks`; Pi and Oh My Pi load a TypeScript extension. Both paths forward typed payloads to the app over its Unix socket. Hook sources that support blocking can receive directives on stdout; Pi-family extensions are fire-and-forget.
 
+---
+
+## WorkBuddy Hooks (`--source workbuddy`)
+
+WorkBuddy (Tencent) embeds a codebuddy-lite agent CLI that reads Claude Code-compatible hooks from `~/.workbuddy/settings.json`. Same managed install shape as the other Claude forks: install from **Settings → Setup → WorkBuddy**; user keys in `settings.json` are preserved and a timestamped backup is written before any mutation.
+
 ## Architecture
 
 ```text

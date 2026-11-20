@@ -238,6 +238,8 @@ extension AgentSession {
             return "ZCode"
         case .hermes:
             return "Hermes"
+        case .workBuddy:
+            return "WorkBuddy"
         }
     }
 
