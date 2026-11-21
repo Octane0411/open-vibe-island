@@ -295,6 +295,20 @@ def main() -> None:
         if selected_session(report).get("id") != "session-completion-long":
             assert_contains_any(text_values, ["README.md", "worktree"], "longCompletionCard text values")
 
+    elif scenario == "claudeSessionTitles":
+        if notch_status != "opened":
+            fail(f"expected opened notch for claudeSessionTitles, got {notch_status!r}")
+        if island_surface != "sessionList":
+            fail(f"expected sessionList surface, got {island_surface!r}")
+        for expected in [
+            "Sign the scooter insurance contract",
+            "Session titles in the notch (feat/claude-desktop-session-titles)",
+            "marketing-reports · Prepare the weekly campaign report",
+        ]:
+            assert_contains_any(text_values, [expected], "claudeSessionTitles headline")
+        if any("uploads/1a2b3c4d" in value for value in text_values):
+            fail("claudeSessionTitles headline still shows the upload path instead of the title")
+
     else:
         fail(f"unsupported scenario {scenario!r}")
 

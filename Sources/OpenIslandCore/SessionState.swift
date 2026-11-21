@@ -53,10 +53,27 @@ public struct SessionState: Equatable, Sendable {
         return sessionsByID[id]
     }
 
+    /// Claude metadata updates replace the whole struct, and several emitters
+    /// (the bridge's subagent/task bookkeeping, `SessionStart` re-emits, hooks
+    /// that race a stale bridge snapshot) build it without the resolved
+    /// session title. A title is never intentionally cleared, so a missing
+    /// incoming title keeps the known one; a non-nil incoming title wins.
+    static func claudeMetadata(
+        _ incoming: ClaudeSessionMetadata?,
+        preservingSessionTitle existingTitle: String?
+    ) -> ClaudeSessionMetadata? {
+        var metadata = incoming ?? ClaudeSessionMetadata()
+        if metadata.sessionTitle == nil {
+            metadata.sessionTitle = existingTitle
+        }
+        return metadata.isEmpty ? nil : metadata
+    }
+
     public mutating func apply(_ event: AgentEvent) {
         switch event {
         case let .sessionStarted(payload):
             let preservedFirstSeenAt = sessionsByID[payload.sessionID]?.firstSeenAt
+            let preservedClaudeTitle = sessionsByID[payload.sessionID]?.claudeMetadata?.sessionTitle
             var session = AgentSession(
                 id: payload.sessionID,
                 title: payload.title,
@@ -69,7 +86,10 @@ public struct SessionState: Equatable, Sendable {
                 firstSeenAt: preservedFirstSeenAt,
                 jumpTarget: payload.jumpTarget,
                 codexMetadata: payload.codexMetadata?.isEmpty == true ? nil : payload.codexMetadata,
-                claudeMetadata: payload.claudeMetadata?.isEmpty == true ? nil : payload.claudeMetadata,
+                claudeMetadata: Self.claudeMetadata(
+                    payload.claudeMetadata,
+                    preservingSessionTitle: preservedClaudeTitle
+                ),
                 geminiMetadata: payload.geminiMetadata?.isEmpty == true ? nil : payload.geminiMetadata,
                 openCodeMetadata: payload.openCodeMetadata?.isEmpty == true ? nil : payload.openCodeMetadata,
                 cursorMetadata: payload.cursorMetadata?.isEmpty == true ? nil : payload.cursorMetadata,
@@ -181,7 +201,10 @@ public struct SessionState: Equatable, Sendable {
                 return
             }
 
-            session.claudeMetadata = payload.claudeMetadata.isEmpty ? nil : payload.claudeMetadata
+            session.claudeMetadata = Self.claudeMetadata(
+                payload.claudeMetadata,
+                preservingSessionTitle: session.claudeMetadata?.sessionTitle
+            )
             session.updatedAt = payload.timestamp
             upsert(session)
 
