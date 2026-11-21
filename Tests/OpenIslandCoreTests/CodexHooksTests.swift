@@ -146,6 +146,152 @@ struct CodexHooksTests {
         #expect(decision?["message"] as? String == "Use a narrower patch.")
     }
 
+    @Test
+    func codexHookPayloadDecodesSubagentFields() throws {
+        let data = """
+        {
+          "session_id": "parent-thread",
+          "turn_id": "turn-1",
+          "agent_id": "subagent-1",
+          "agent_type": "default",
+          "transcript_path": "/tmp/rollout-subagent-1.jsonl",
+          "cwd": "/tmp/demo",
+          "hook_event_name": "Stop",
+          "model": "gpt-5-codex",
+          "permission_mode": "default",
+          "stop_hook_active": false,
+          "last_assistant_message": "Done."
+        }
+        """.data(using: .utf8)!
+
+        let payload = try JSONDecoder().decode(CodexHookPayload.self, from: data)
+
+        #expect(payload.sessionID == "parent-thread")
+        #expect(payload.agentID == "subagent-1")
+        #expect(payload.agentType == "default")
+    }
+
+    @Test
+    func codexHookPayloadWithoutAgentFieldsIsMainSession() throws {
+        let data = """
+        {
+          "session_id": "thread-1",
+          "turn_id": "turn-1",
+          "transcript_path": "/tmp/rollout-thread-1.jsonl",
+          "cwd": "/tmp/demo",
+          "hook_event_name": "Stop",
+          "model": "gpt-5-codex",
+          "permission_mode": "default",
+          "stop_hook_active": false,
+          "last_assistant_message": "Done."
+        }
+        """.data(using: .utf8)!
+
+        let payload = try JSONDecoder().decode(CodexHookPayload.self, from: data)
+
+        #expect(payload.agentID == nil)
+        #expect(payload.agentType == nil)
+    }
+
+    @Test
+    func codexSubagentHooksAreSuppressed() async throws {
+        let socketURL = BridgeSocketLocation.uniqueTestURL()
+        let server = BridgeServer(socketURL: socketURL)
+        try server.start()
+        defer { server.stop() }
+
+        let observer = LocalBridgeClient(socketURL: socketURL)
+        let stream = try observer.connect()
+        defer { observer.disconnect() }
+
+        let collector = CodexAgentEventCollector()
+        let collectionTask = Task {
+            do {
+                for try await event in stream {
+                    await collector.append(event)
+                }
+            } catch {}
+        }
+        defer { collectionTask.cancel() }
+
+        try await observer.send(.registerClient(role: .observer))
+
+        let sessionID = "codex-parent-thread"
+        let subagentPayload = CodexHookPayload(
+            cwd: "/tmp/worktree",
+            hookEventName: .stop,
+            model: "gpt-5-codex",
+            permissionMode: .default,
+            sessionID: sessionID,
+            transcriptPath: "/tmp/codex-subagent.jsonl",
+            lastAssistantMessage: "Subagent done.",
+            agentID: "subagent-1",
+            agentType: "default"
+        )
+        let response = try BridgeCommandClient(socketURL: socketURL).send(
+            .processCodexHook(subagentPayload)
+        )
+        #expect(response == .acknowledged)
+
+        // A marker event from the main session lets us wait until the bridge
+        // has processed everything sent so far.
+        _ = try BridgeCommandClient(socketURL: socketURL).send(
+            .processCodexHook(
+                CodexHookPayload(
+                    cwd: "/tmp/worktree",
+                    hookEventName: .sessionStart,
+                    model: "gpt-5-codex",
+                    permissionMode: .default,
+                    sessionID: "codex-marker-session",
+                    transcriptPath: "/tmp/codex-marker.jsonl"
+                )
+            )
+        )
+
+        let deadline = Date().addingTimeInterval(5)
+        var events: [AgentEvent] = []
+        while Date() < deadline {
+            events = await collector.events()
+            if events.contains(where: { event in
+                if case let .sessionStarted(payload) = event {
+                    return payload.sessionID == "codex-marker-session"
+                }
+                return false
+            }) {
+                break
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+
+        #expect(!events.isEmpty)
+        #expect(!events.contains { event in
+            switch event {
+            case let .sessionStarted(payload):
+                return payload.sessionID == sessionID
+            case let .sessionCompleted(payload):
+                return payload.sessionID == sessionID
+            case let .activityUpdated(payload):
+                return payload.sessionID == sessionID
+            case let .permissionRequested(payload):
+                return payload.sessionID == sessionID
+            default:
+                return false
+            }
+        })
+    }
+
+}
+
+private actor CodexAgentEventCollector {
+    private var storage: [AgentEvent] = []
+
+    func append(_ event: AgentEvent) {
+        storage.append(event)
+    }
+
+    func events() -> [AgentEvent] {
+        storage
+    }
 }
 
 private func jsonObject(from data: Data) throws -> [String: Any] {

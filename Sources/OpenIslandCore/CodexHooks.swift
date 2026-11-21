@@ -141,6 +141,10 @@ public struct CodexHookPayload: Equatable, Codable, Sendable {
     public var prompt: String?
     public var stopHookActive: Bool?
     public var lastAssistantMessage: String?
+    /// Set only on hooks fired by Codex subagent processes. Main-session
+    /// hooks omit `agent_id` / `agent_type` entirely.
+    public var agentID: String?
+    public var agentType: String?
 
     private enum CodingKeys: String, CodingKey {
         case cwd
@@ -163,6 +167,8 @@ public struct CodexHookPayload: Equatable, Codable, Sendable {
         case prompt
         case stopHookActive = "stop_hook_active"
         case lastAssistantMessage = "last_assistant_message"
+        case agentID = "agent_id"
+        case agentType = "agent_type"
     }
 
     public init(
@@ -185,7 +191,9 @@ public struct CodexHookPayload: Equatable, Codable, Sendable {
         toolResponse: CodexHookJSONValue? = nil,
         prompt: String? = nil,
         stopHookActive: Bool? = nil,
-        lastAssistantMessage: String? = nil
+        lastAssistantMessage: String? = nil,
+        agentID: String? = nil,
+        agentType: String? = nil
     ) {
         self.cwd = cwd
         self.hookEventName = hookEventName
@@ -207,6 +215,8 @@ public struct CodexHookPayload: Equatable, Codable, Sendable {
         self.prompt = prompt
         self.stopHookActive = stopHookActive
         self.lastAssistantMessage = lastAssistantMessage
+        self.agentID = agentID
+        self.agentType = agentType
     }
 
     public init(from decoder: any Decoder) throws {
@@ -231,6 +241,8 @@ public struct CodexHookPayload: Equatable, Codable, Sendable {
         prompt = try container.decodeIfPresent(String.self, forKey: .prompt)
         stopHookActive = try container.decodeIfPresent(Bool.self, forKey: .stopHookActive)
         lastAssistantMessage = try container.decodeIfPresent(String.self, forKey: .lastAssistantMessage)
+        agentID = try container.decodeIfPresent(String.self, forKey: .agentID)
+        agentType = try container.decodeIfPresent(String.self, forKey: .agentType)
     }
 }
 
