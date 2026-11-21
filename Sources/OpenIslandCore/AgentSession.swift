@@ -613,7 +613,7 @@ public extension AgentSession {
             }
             return gemini.lastAssistantMessage
         }
-        return lastAssistantMessageText
+        return lastAssistantMessageText.map(StructuredReplyFormatter.readable)
     }
 
     var trackingTranscriptPath: String? {
