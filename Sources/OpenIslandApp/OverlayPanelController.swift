@@ -501,9 +501,11 @@ final class OverlayPanelController {
 
         let panelWidth = openedPanelWidth(for: screen)
         let contentHeight = openedContentHeight(for: model)
+        let isNotification = model.notchOpenReason == .notification && model.islandSurface.sessionID != nil
+        let usageHeight = isNotification ? 0 : usageTableHeight(for: model, on: screen)
         // Use at least the empty-state height so the window doesn't shrink
         // when sessions come and go while opened.
-        let height = screen.notchSize.height + max(contentHeight, Self.openedEmptyStateHeight) + Self.openedContentBottomPadding + insets.bottom
+        let height = screen.notchSize.height + max(contentHeight, Self.openedEmptyStateHeight) + usageHeight + Self.openedContentBottomPadding + insets.bottom
 
         return CGSize(
             width: panelWidth + Self.openedContentWidthPadding + (insets.horizontal * 2),
@@ -527,6 +529,21 @@ final class OverlayPanelController {
             isNotchedDisplay: isNotched,
             notchStatus: model.notchStatus
         )
+    }
+
+    /// Height of the usage table IslandPanelView puts above the session list
+    /// on notched displays: ~22pt per provider row, 8pt between rows, 18pt of
+    /// card padding, 6pt top inset and the stack's 8pt spacing.
+    private func usageTableHeight(for model: AppModel, on screen: NSScreen) -> CGFloat {
+        guard screen.safeAreaInsets.top > 0,
+              model.islandUsageDisplay == .compact else {
+            return 0
+        }
+        var count = 0
+        if let claude = model.claudeUsageSnapshot, claude.isEmpty == false { count += 1 }
+        if model.showCodexUsage, let codex = model.codexUsageSnapshot, codex.isEmpty == false { count += 1 }
+        guard count > 0 else { return 0 }
+        return CGFloat(count) * 22 + CGFloat(count - 1) * 8 + 18 + 6 + 8
     }
 
     private func openedContentHeight(for model: AppModel) -> CGFloat {
