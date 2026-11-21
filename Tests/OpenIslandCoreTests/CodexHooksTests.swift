@@ -342,7 +342,13 @@ struct CodexHooksTests {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
 
-        #expect(!events.isEmpty)
+        let markerSeen = events.contains { event in
+            if case let .sessionStarted(payload) = event {
+                return payload.sessionID == "codex-marker-session"
+            }
+            return false
+        }
+        #expect(markerSeen)
         #expect(!events.contains { event in
             switch event {
             case let .sessionStarted(payload):
