@@ -339,6 +339,48 @@ struct ActiveAgentProcessDiscoveryTests {
     }
 
     @Test
+    func discoverDetectsEvosciProcessAndIgnoresSimilarCommands() {
+        let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
+            if executablePath == "/bin/ps" {
+                return """
+                  801 800 ttys005 /Users/zzq/.local/share/uv/tools/evoscientist/bin/python3 /Users/zzq/.local/bin/evosci
+                  802 801 ?? /Users/zzq/.local/share/uv/tools/evoscientist/bin/python3 /Users/zzq/.local/share/uv/tools/evoscientist/bin/langgraph dev --port 6174
+                  803 800 ttys006 grep evosci /tmp/evoscientist.log
+                  800 900 ttys005 -/bin/zsh
+                  900 1 ?? /Applications/Terminal.app/Contents/MacOS/Terminal
+                """
+            }
+
+            guard executablePath == "/usr/sbin/lsof",
+                  let pid = arguments.dropFirst(2).first else {
+                return nil
+            }
+
+            guard pid == "801" else {
+                Issue.record("unexpected lsof lookup for pid \(pid)")
+                return nil
+            }
+
+            return """
+            fcwd
+            n/Users/zzq/Developer/auto-research/EvoSci
+            """
+        }
+
+        let snapshots = discovery.discover()
+
+        #expect(snapshots == [
+            .init(
+                tool: .evosci,
+                sessionID: nil,
+                workingDirectory: "/Users/zzq/Developer/auto-research/EvoSci",
+                terminalTTY: "/dev/ttys005",
+                terminalApp: "Terminal"
+            ),
+        ])
+    }
+
+    @Test
     func discoverDetectsOpenCodeProcessWithoutTTY() {
         let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
             if executablePath == "/bin/ps" {
